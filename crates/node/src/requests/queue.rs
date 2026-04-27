@@ -709,8 +709,8 @@ mod tests {
             request
         }
 
-        fn add_request_leader_order(&mut self, leaer_order: &[usize]) -> TestRequest {
-            let request = make_request(&self.participant_ids, leaer_order);
+        fn add_request_leader_order(&mut self, leader_order: &[usize]) -> TestRequest {
+            let request = make_request(&self.participant_ids, leader_order);
             self.requests_to_submit.push(request.clone());
             request
         }
@@ -842,7 +842,7 @@ mod tests {
         let requests = setup.add_block_to_canonical();
         pending_requests.notify_new_block(requests);
 
-        // Then: we should not have any requests so attempt
+        // Then: we should not have any requests to attempt
         setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
         assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
     }
@@ -889,8 +889,6 @@ mod tests {
         setup.set_participant_network_height(block_height_req_1 + REQUEST_EXPIRATION_BLOCKS);
 
         // Then: The first request expired, so only the second one is returned.
-        //let b1 = t.block(100);
-        //let b2 = b1.descendant(200);
         let to_attempt1 = pending_requests.get_requests_to_attempt();
         assert_eq!(to_attempt1.len(), 1);
         assert_eq!(to_attempt1[0].request.id, req2.id);
