@@ -215,11 +215,12 @@ mod tests {
             #[serde(default = "default_pccs_urls")]
             pccs_urls: NonEmptyVec<url::Url>,
         }
-        let toml_input = r#"pccs_urls = ["https://pccs.example.org"]"#;
-        let expected: Vec<url::Url> = vec!["https://pccs.example.org/".parse().unwrap()];
+        const URL: &str = "https://pccs.example.org";
+        let toml_input = format!(r#"pccs_urls = ["{URL}"]"#);
+        let expected: Vec<url::Url> = vec![URL.parse().unwrap()];
 
         // When
-        let parsed: Wrapper = toml::from_str(toml_input).unwrap();
+        let parsed: Wrapper = toml::from_str(&toml_input).unwrap();
         let urls: Vec<url::Url> = parsed.pccs_urls.into_iter().collect();
 
         // Then
@@ -236,52 +237,44 @@ mod tests {
             #[serde(default = "default_pccs_urls")]
             pccs_urls: NonEmptyVec<url::Url>,
         }
-        let toml_input = r#"
-            pccs_urls = [
-                "http://localhost:8081",
-                "https://pccs.phala.network",
-                "https://api.trustedservices.intel.com",
-            ]
-            "#;
-        let expected: Vec<url::Url> = vec![
-            "http://localhost:8081/".parse().unwrap(),
-            "https://pccs.phala.network/".parse().unwrap(),
-            "https://api.trustedservices.intel.com/".parse().unwrap(),
+        const URLS: [&str; 3] = [
+            "http://localhost:8081",
+            "https://pccs.phala.network",
+            "https://api.trustedservices.intel.com",
         ];
+        let toml_input = format!(
+            r#"pccs_urls = [{}]"#,
+            URLS.iter()
+                .map(|u| format!(r#""{u}""#))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        let expected: Vec<url::Url> = URLS.iter().map(|u| u.parse().unwrap()).collect();
 
         // When
-        let parsed: Wrapper = toml::from_str(toml_input).unwrap();
+        let parsed: Wrapper = toml::from_str(&toml_input).unwrap();
         let urls: Vec<url::Url> = parsed.pccs_urls.into_iter().collect();
 
         // Then
         assert_eq!(urls, expected);
     }
 
-    /// An empty array is explicitly rejected. `NonEmptyVec`'s Deserialize impl
-    /// surfaces the bound violation through serde's `custom` error, so the
-    /// TOML parser's message mentions the lower-bound problem.
+    /// An empty vec is explicitly rejected by [`NonEmptyVec`]'s bound.
     #[test]
-    fn pccs_urls__should_reject_empty_array() {
+    fn pccs_urls__should_reject_empty_vec() {
         // Given
-        // `pccs_urls` is never *read* in this test because parsing fails
-        // before the struct is constructed; the dead-code lint (rightly)
-        // notices. The field exists to give `Wrapper` the same shape as
-        // the real `StartConfig::pccs_urls`.
-        #[derive(Debug, Deserialize)]
-        #[expect(dead_code)]
-        struct Wrapper {
-            #[serde(default = "default_pccs_urls")]
-            pccs_urls: NonEmptyVec<url::Url>,
-        }
+        let empty: Vec<url::Url> = vec![];
 
         // When
-        let err = toml::from_str::<Wrapper>(r#"pccs_urls = []"#).unwrap_err();
+        let err = NonEmptyVec::<url::Url>::try_from(empty).unwrap_err();
 
         // Then
-        let msg = err.to_string();
-        assert!(
-            msg.contains("LowerBound") || msg.contains("lower") || msg.contains("1"),
-            "expected a non-empty-vec bound error, got: {msg}"
+        assert_eq!(
+            err,
+            near_mpc_bounded_collections::BoundedVecOutOfBounds::LowerBoundError {
+                lower_bound: 1,
+                got: 0,
+            }
         );
     }
 
