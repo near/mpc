@@ -167,8 +167,7 @@ impl DstackAttestation {
             hasher.update(digest);
             let payload_bytes = match hex::decode(&event.event_payload) {
                 Ok(bytes) => bytes,
-                Err(e) => {
-                    tracing::error!("Failed to decode hex string for: {:?}", e);
+                Err(_) => {
                     return Err(VerificationError::EventDecoding(hex::encode(*event.digest)));
                 }
             };
@@ -201,11 +200,7 @@ impl DstackAttestation {
                     ));
                 }
             },
-            Err(e) => {
-                tracing::error!(
-                    "Failed to decode hex string for compose-hash event: {:?}",
-                    e
-                );
+            Err(_) => {
                 return Err(VerificationError::AppComposeEventPayloadNotHex(
                     expected_event_payload_hex.to_string(),
                 ));
