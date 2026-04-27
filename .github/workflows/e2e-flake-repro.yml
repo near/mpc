@@ -180,8 +180,11 @@ jobs:
             # Move every E2E_HOME_DIR the test printed so we don't leak disk
             # between iterations. By default we keep them only on failure;
             # set keep_all_homes=true to keep them all (much larger artifact).
-            grep -E '^E2E_HOME_DIR=' "$out/nextest.log" \
+            # NB: nextest indents captured stderr (4 spaces), so we must NOT
+            # anchor at start-of-line — match the marker anywhere on the line.
+            grep -oE 'E2E_HOME_DIR=[^[:space:]]+' "$out/nextest.log" \
               | sed 's/^E2E_HOME_DIR=//' \
+              | sort -u \
               | while read -r home; do
                   if [ -d "$home" ]; then
                     mv "$home" "$out/home_$(basename "$home")" 2>/dev/null || true
