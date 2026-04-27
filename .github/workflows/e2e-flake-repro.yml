@@ -125,6 +125,11 @@ jobs:
           RUST_LOG: info,e2e_tests=debug
           MPC_NODE_LOG: "DEBUG"
           E2E_KEEP_HOME_DIR: "1"
+          # Make nextest emit stderr for *passing* tests too, so the grep
+          # below sees every `E2E_HOME_DIR=` line. Without this nextest
+          # silently drops passing-test stderr and the workflow leaks all
+          # those /tmp dirs to disk — cumulative leak fills the runner.
+          NEXTEST_SUCCESS_OUTPUT: final
           # `inputs.*` is empty on push events; fall back to the same defaults
           # advertised in the workflow_dispatch input block.
           ITERATIONS: ${{ inputs.iterations || '100' }}
@@ -202,6 +207,22 @@ jobs:
               fail=$((fail+1))
               echo "iter $i: FAIL rc=$rc (${elapsed}s) — logs preserved in $out" | tee -a "$summary"
             fi
+
+            # Hard cleanup between iterations. SIGKILL on `timeout` doesn't
+            # run drop handlers, so test-spawned mpc-node / sandbox children
+            # get orphaned to PID 1 and continue holding deterministic ports.
+            # Likewise, `disable_cleanup(true)` on `tempfile::TempDir` means
+            # every passing-test home dir lives forever in /tmp until we
+            # remove it. Skip /tmp wipe when keep_all_homes=true so the user
+            # can inspect them.
+            pkill -9 -f 'mpc-node|near-sandbox|neard-sandbox' 2>/dev/null || true
+            sleep 1
+            if [ "$KEEP_ALL_HOMES" != "true" ]; then
+              # Leave anything we already moved into flake-artifacts intact.
+              find /tmp -maxdepth 1 -name '.tmp*' -type d -mmin -120 \
+                -exec rm -rf {} + 2>/dev/null || true
+            fi
+            df -h / | tail -1 | tee -a "$summary"
           done
 
           echo "TOTAL: pass=$pass fail=$fail" | tee -a "$summary"
