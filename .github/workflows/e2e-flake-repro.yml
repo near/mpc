@@ -1,16 +1,25 @@
 name: E2E flake repro (#2898)
 
-# Manually-dispatched stress workflow for reproducing parallel-robust-ECDSA
-# flakiness (issue #2898). Mirrors ci.yml's `mpc-e2e-tests` job for the build
-# steps, but runs a *scoped* nextest invocation in a loop so each iteration
-# exercises only the suspect test(s) — full e2e is too slow for repro.
+# Stress workflow for reproducing parallel-robust-ECDSA flakiness (#2898).
+# Mirrors ci.yml's `mpc-e2e-tests` build steps, but loops a *scoped* nextest
+# invocation so each iteration exercises only the suspect test(s) — full
+# e2e is too slow for repro.
 #
-# Trigger from your laptop with:
+# Triggers (the workflow file does NOT need to be on `main`):
 #
-#   gh workflow run e2e-flake-repro.yml \
-#     --ref anodar/fix \
-#     -F iterations=10 \
-#     -F test_filter=parallel_sign_calls
+#   1. Push to any branch with `[flake-repro]` in the head commit message.
+#      Use an empty commit when you just want to re-run on the same code:
+#
+#          git commit --allow-empty -m "[flake-repro]" && git push
+#
+#      Defaults: iterations=10, test_filter=parallel_sign_calls.
+#
+#   2. From the GitHub Actions UI: open any prior run and click
+#      "Re-run all jobs". GitHub replays the workflow at that SHA, no
+#      new commit needed.
+#
+#   3. workflow_dispatch (only works once this file lands on `main` —
+#      kept here so dispatch with custom inputs becomes available later).
 #
 # Artifacts (always uploaded):
 #   - per-iteration nextest stdout/stderr (`iter-N/nextest.log`)
@@ -19,6 +28,9 @@ name: E2E flake repro (#2898)
 #   - run summary (`summary.txt`) with pass/fail counts.
 
 on:
+  push:
+    branches:
+      - '**'
   workflow_dispatch:
     inputs:
       iterations:
@@ -26,7 +38,7 @@ on:
         required: false
         default: "10"
       test_filter:
-        description: "Nextest substring filter. Empty = run all e2e tests."
+        description: "Nextest substring filter. Use 'all' to run every e2e test."
         required: false
         default: "parallel_sign_calls"
       keep_all_homes:
@@ -38,6 +50,12 @@ on:
 jobs:
   stress:
     name: "E2E flake stress"
+    # Push: only run when the head commit explicitly opts in. This keeps a
+    # 4-hour stress job from firing on every unrelated push.
+    # workflow_dispatch and re-run-all-jobs both run unconditionally.
+    if: >-
+      github.event_name != 'push' ||
+      contains(github.event.head_commit.message, '[flake-repro]')
     runs-on: warp-ubuntu-2404-x64-32x
     timeout-minutes: 240
     permissions:
@@ -104,9 +122,11 @@ jobs:
           RUST_LOG: info,e2e_tests=debug
           MPC_NODE_LOG: "DEBUG"
           E2E_KEEP_HOME_DIR: "1"
-          ITERATIONS: ${{ inputs.iterations }}
-          TEST_FILTER: ${{ inputs.test_filter }}
-          KEEP_ALL_HOMES: ${{ inputs.keep_all_homes }}
+          # `inputs.*` is empty on push events; fall back to the same defaults
+          # advertised in the workflow_dispatch input block.
+          ITERATIONS: ${{ inputs.iterations || '10' }}
+          TEST_FILTER: ${{ inputs.test_filter || 'parallel_sign_calls' }}
+          KEEP_ALL_HOMES: ${{ inputs.keep_all_homes && 'true' || 'false' }}
           # _run-e2e-logic in Makefile.toml exports these; we replicate them
           # here because we're calling nextest directly to support a filter.
           MPC_CONTRACT_WASM: ${{ github.workspace }}/target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
@@ -118,7 +138,16 @@ jobs:
           mkdir -p flake-artifacts
           summary=flake-artifacts/summary.txt
           : > "$summary"
-          echo "filter='${TEST_FILTER}' iterations=${ITERATIONS}" | tee -a "$summary"
+
+          # filter='all' (or empty) → no positional filter, runs whole suite.
+          if [ -z "$TEST_FILTER" ] || [ "$TEST_FILTER" = "all" ]; then
+            filter_args=()
+            shown_filter="<all e2e tests>"
+          else
+            filter_args=("$TEST_FILTER")
+            shown_filter="$TEST_FILTER"
+          fi
+          echo "filter='${shown_filter}' iterations=${ITERATIONS} keep_all_homes=${KEEP_ALL_HOMES}" | tee -a "$summary"
 
           for i in $(seq 1 "$ITERATIONS"); do
             echo "::group::iteration $i"
@@ -133,7 +162,7 @@ jobs:
               --locked \
               --profile ci-e2e \
               --no-fail-fast \
-              ${TEST_FILTER:+"$TEST_FILTER"} \
+              "${filter_args[@]}" \
               2>&1 | tee "$out/nextest.log"
             rc=${PIPESTATUS[0]}
             elapsed=$(( $(date +%s) - start ))
