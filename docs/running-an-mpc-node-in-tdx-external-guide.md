@@ -918,6 +918,23 @@ This section shows how to add the MPC node's public key (from the previous secti
 
   > **Note:** This must be a single comma-separated string with no spaces or newlines.
 
+* **`ALLOWANCE`** → The total NEAR budget the function-call key can spend on
+  gas across all calls signed with it. **Recommended: `unlimited`** (or a very
+  large value, e.g. `'1000 NEAR'`).
+
+  > **Why unlimited?** The per-key allowance is *not* a meaningful safety
+  > boundary here — the key is already restricted to specific methods on
+  > `$MPC_CONTRACT_ID` via `--contract-account-id` + `--function-names`, so
+  > it cannot burn NEAR for anything else. A small finite allowance only
+  > creates a slow-burn failure mode: once the budget runs out, the RPC's
+  > pre-validation silently rejects every `respond*` transaction, and
+  > because the node uses `broadcast_tx_async` (fire-and-forget), the
+  > rejection is invisible in node logs — the node will keep reporting
+  > "succeeded" rounds while every response is dropped before reaching a
+  > validator. **Whatever value you pick, monitor and alert on remaining
+  > allowance** (e.g. via Grafana on `view_access_key`) so you don't
+  > rediscover this the same way we did.
+
 ---
 
 #### Example Command
@@ -925,7 +942,7 @@ This section shows how to add the MPC node's public key (from the previous secti
 ```bash
 ./target/release/near account add-key $ACCOUNT_ID \
   grant-function-call-access \
-  --allowance '1 NEAR' \
+  --allowance unlimited \
   --contract-account-id $MPC_CONTRACT_ID \
   --function-names $METHOD_NAMES \
   use-manually-provided-public-key $MPC_NODE_PUBLIC_KEY \
@@ -945,7 +962,7 @@ This section shows how to add the MPC node's public key (from the previous secti
 ACCOUNT_ID="your-node-account.testnet"
 MPC_CONTRACT_ID="v1.signer-prod.testnet"    # use "v1.signer" for mainnet
 MPC_NODE_PUBLIC_KEY="ed25519:YOUR_PUBLIC_KEY_HERE"
-ALLOWANCE="1 NEAR"
+ALLOWANCE="unlimited"   # see the Parameters section above for why
 NETWORK="testnet"   # or "mainnet"
 
 # Methods the MPC node is allowed to call
