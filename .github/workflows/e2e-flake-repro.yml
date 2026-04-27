@@ -1,9 +1,8 @@
 name: E2E flake repro (#2898)
 
 # Stress workflow for reproducing parallel-robust-ECDSA flakiness (#2898).
-# Mirrors ci.yml's `mpc-e2e-tests` build steps, but loops a *scoped* nextest
-# invocation so each iteration exercises only the suspect test(s) — full
-# e2e is too slow for repro.
+# Mirrors ci.yml's `mpc-e2e-tests` build steps, then loops the full nextest
+# e2e suite consecutively to surface intermittent failures.
 #
 # Triggers (the workflow file does NOT need to be on `main`):
 #
@@ -12,7 +11,7 @@ name: E2E flake repro (#2898)
 #
 #          git commit --allow-empty -m "[flake-repro]" && git push
 #
-#      Defaults: iterations=10, test_filter=parallel_sign_calls.
+#      Defaults: iterations=30, test_filter=all (whole e2e suite).
 #
 #   2. From the GitHub Actions UI: open any prior run and click
 #      "Re-run all jobs". GitHub replays the workflow at that SHA, no
@@ -36,11 +35,11 @@ on:
       iterations:
         description: "How many times to run the test loop"
         required: false
-        default: "10"
+        default: "30"
       test_filter:
         description: "Nextest substring filter. Use 'all' to run every e2e test."
         required: false
-        default: "parallel_sign_calls"
+        default: "all"
       keep_all_homes:
         description: "Preserve E2E_HOME_DIR on success too (large artifacts)"
         required: false
@@ -51,13 +50,16 @@ jobs:
   stress:
     name: "E2E flake stress"
     # Push: only run when the head commit explicitly opts in. This keeps a
-    # 4-hour stress job from firing on every unrelated push.
+    # multi-hour stress job from firing on every unrelated push.
     # workflow_dispatch and re-run-all-jobs both run unconditionally.
     if: >-
       github.event_name != 'push' ||
       contains(github.event.head_commit.message, '[flake-repro]')
     runs-on: warp-ubuntu-2404-x64-32x
-    timeout-minutes: 240
+    # 30 iterations × 10 min cap each = 300 min for tests, plus ~60 min for
+    # the build steps and overhead. Each iteration is wrapped in `timeout`
+    # below so a hang fails fast instead of burning the whole budget.
+    timeout-minutes: 360
     permissions:
       contents: read
 
@@ -124,8 +126,8 @@ jobs:
           E2E_KEEP_HOME_DIR: "1"
           # `inputs.*` is empty on push events; fall back to the same defaults
           # advertised in the workflow_dispatch input block.
-          ITERATIONS: ${{ inputs.iterations || '10' }}
-          TEST_FILTER: ${{ inputs.test_filter || 'parallel_sign_calls' }}
+          ITERATIONS: ${{ inputs.iterations || '30' }}
+          TEST_FILTER: ${{ inputs.test_filter || 'all' }}
           KEEP_ALL_HOMES: ${{ inputs.keep_all_homes && 'true' || 'false' }}
           # _run-e2e-logic in Makefile.toml exports these; we replicate them
           # here because we're calling nextest directly to support a filter.
@@ -155,17 +157,24 @@ jobs:
             mkdir -p "$out"
 
             start=$(date +%s)
-            cargo nextest run \
-              --cargo-profile=test-release \
-              -p e2e-tests \
-              --all-features \
-              --locked \
-              --profile ci-e2e \
-              --no-fail-fast \
-              "${filter_args[@]}" \
+            # Per-iteration cap: kill the run after 10 min so a single
+            # hang can't burn the rest of the loop's budget. `timeout`
+            # exits 124 on TERM, 137 on KILL — both surface as iter FAIL.
+            timeout --kill-after=30s 10m \
+              cargo nextest run \
+                --cargo-profile=test-release \
+                -p e2e-tests \
+                --all-features \
+                --locked \
+                --profile ci-e2e \
+                --no-fail-fast \
+                "${filter_args[@]}" \
               2>&1 | tee "$out/nextest.log"
             rc=${PIPESTATUS[0]}
             elapsed=$(( $(date +%s) - start ))
+            if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+              echo "iter $i: HIT 10min TIMEOUT" | tee -a "$out/nextest.log"
+            fi
             echo "::endgroup::"
 
             # Move every E2E_HOME_DIR the test printed so we don't leak disk
