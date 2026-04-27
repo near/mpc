@@ -181,6 +181,7 @@ pub enum DownloadConfigType {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use super::*;
 
@@ -204,53 +205,64 @@ mod tests {
         );
     }
 
-    /// A single-element TOML array parses as a NonEmptyVec with one entry.
+    /// A single-element TOML array parses as a [`NonEmptyVec`] with one entry.
     /// This is the minimum valid form of the `pccs_urls` field.
     #[test]
-    fn pccs_urls_accepts_single_element_array() {
+    fn pccs_urls__should_parse_single_element_array() {
+        // Given
         #[derive(Debug, Deserialize)]
         struct Wrapper {
             #[serde(default = "default_pccs_urls")]
             pccs_urls: NonEmptyVec<url::Url>,
         }
-        let parsed: Wrapper =
-            toml::from_str(r#"pccs_urls = ["https://pccs.example.org"]"#).unwrap();
+        let toml_input = r#"pccs_urls = ["https://pccs.example.org"]"#;
+        let expected: Vec<url::Url> = vec!["https://pccs.example.org/".parse().unwrap()];
+
+        // When
+        let parsed: Wrapper = toml::from_str(toml_input).unwrap();
         let urls: Vec<url::Url> = parsed.pccs_urls.into_iter().collect();
-        assert_eq!(urls.len(), 1);
-        assert_eq!(urls[0].as_str(), "https://pccs.example.org/");
+
+        // Then
+        assert_eq!(urls, expected);
     }
 
     /// Multiple entries parse in order. Order matters: the fetch path tries
     /// each URL in the order the user wrote them.
     #[test]
-    fn pccs_urls_accepts_multiple_entries_preserving_order() {
+    fn pccs_urls__should_preserve_order_of_multiple_entries() {
+        // Given
         #[derive(Debug, Deserialize)]
         struct Wrapper {
             #[serde(default = "default_pccs_urls")]
             pccs_urls: NonEmptyVec<url::Url>,
         }
-        let parsed: Wrapper = toml::from_str(
-            r#"
+        let toml_input = r#"
             pccs_urls = [
                 "http://localhost:8081",
                 "https://pccs.phala.network",
                 "https://api.trustedservices.intel.com",
             ]
-            "#,
-        )
-        .unwrap();
+            "#;
+        let expected: Vec<url::Url> = vec![
+            "http://localhost:8081/".parse().unwrap(),
+            "https://pccs.phala.network/".parse().unwrap(),
+            "https://api.trustedservices.intel.com/".parse().unwrap(),
+        ];
+
+        // When
+        let parsed: Wrapper = toml::from_str(toml_input).unwrap();
         let urls: Vec<url::Url> = parsed.pccs_urls.into_iter().collect();
-        assert_eq!(urls.len(), 3);
-        assert_eq!(urls[0].as_str(), "http://localhost:8081/");
-        assert_eq!(urls[1].as_str(), "https://pccs.phala.network/");
-        assert_eq!(urls[2].as_str(), "https://api.trustedservices.intel.com/");
+
+        // Then
+        assert_eq!(urls, expected);
     }
 
     /// An empty array is explicitly rejected. `NonEmptyVec`'s Deserialize impl
     /// surfaces the bound violation through serde's `custom` error, so the
     /// TOML parser's message mentions the lower-bound problem.
     #[test]
-    fn pccs_urls_rejects_empty_array() {
+    fn pccs_urls__should_reject_empty_array() {
+        // Given
         // `pccs_urls` is never *read* in this test because parsing fails
         // before the struct is constructed; the dead-code lint (rightly)
         // notices. The field exists to give `Wrapper` the same shape as
@@ -261,7 +273,11 @@ mod tests {
             #[serde(default = "default_pccs_urls")]
             pccs_urls: NonEmptyVec<url::Url>,
         }
+
+        // When
         let err = toml::from_str::<Wrapper>(r#"pccs_urls = []"#).unwrap_err();
+
+        // Then
         let msg = err.to_string();
         assert!(
             msg.contains("LowerBound") || msg.contains("lower") || msg.contains("1"),
@@ -272,16 +288,20 @@ mod tests {
     /// When the field is omitted altogether, the `#[serde(default)]` hook
     /// returns the Phala default as a single-element vec.
     #[test]
-    fn pccs_urls_defaults_to_phala_when_omitted() {
+    fn pccs_urls__should_default_to_phala_when_omitted() {
+        // Given
         #[derive(Debug, Deserialize)]
         struct Wrapper {
             #[serde(default = "default_pccs_urls")]
             pccs_urls: NonEmptyVec<url::Url>,
         }
+        let expected: Vec<url::Url> = vec![launcher_interface::DEFAULT_PCCS_URL.parse().unwrap()];
+
+        // When
         let parsed: Wrapper = toml::from_str("").unwrap();
         let urls: Vec<url::Url> = parsed.pccs_urls.into_iter().collect();
-        assert_eq!(urls.len(), 1);
-        let expected: url::Url = launcher_interface::DEFAULT_PCCS_URL.parse().unwrap();
-        assert_eq!(urls[0], expected);
+
+        // Then
+        assert_eq!(urls, expected);
     }
 }
