@@ -12,14 +12,12 @@ on:
     - cron: "0 3 * * *" # Daily at 03:00 UTC
 
 jobs:
-  mpc-pytest-build:
-    name: "MPC pytests: build"
+  mpc-pytests:
+    name: "MPC pytests"
     runs-on: warp-ubuntu-2404-x64-16x
     timeout-minutes: 60
     permissions:
       contents: read
-    env:
-      MPC_PYTEST_BINARIES_CACHE_KEY: mpc-pytest-binaries-${{ github.run_id }}
 
     steps:
       - name: Checkout repository
@@ -110,82 +108,6 @@ jobs:
           cd libs/nearcore
           cargo build -p neard --release
 
-      - name: Save pytest binaries cache
-        uses: WarpBuilds/cache/save@f643a1ba29942d56621d07fc2d4284c7219868ad # v1.4.10
-        with:
-          key: ${{ env.MPC_PYTEST_BINARIES_CACHE_KEY }}
-          path: |
-            target/release/mpc-node
-            target/release/backup-cli
-            target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
-            target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm
-            libs/nearcore/target/release/neard
-
-  mpc-pytests:
-    name: "MPC pytests: ${{ matrix.group }}"
-    needs: mpc-pytest-build
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 60
-    permissions:
-      contents: read
-    env:
-      MPC_PYTEST_BINARIES_CACHE_KEY: mpc-pytest-binaries-${{ github.run_id }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - group: "shared-cluster"
-            tests: "tests/shared_cluster_tests/"
-            runner: warp-ubuntu-2404-x64-2x
-          - group: "robust-ecdsa"
-            tests: "tests/robust_ecdsa/"
-            runner: warp-ubuntu-2404-x64-16x
-          - group: "resharing-cancel"
-            tests: "tests/test_cancellation_of_key_resharing.py"
-            runner: warp-ubuntu-2404-x64-2x
-          - group: "resharing-request"
-            tests: "tests/test_request_during_resharing.py"
-            runner: warp-ubuntu-2404-x64-2x
-          - group: "foreign-tx"
-            tests: "tests/test_foreign_transaction_validation.py tests/test_foreign_chain_policy_auto_voting.py"
-            runner: warp-ubuntu-2404-x64-2x
-          - group: "key-event-single-domain"
-            tests: "tests/test_key_event.py::test_single_domain"
-            runner: warp-ubuntu-2404-x64-8x
-          - group: "key-event-multi-domain"
-            tests: "tests/test_key_event.py::test_multi_domain"
-            runner: warp-ubuntu-2404-x64-2x
-          - group: "migration"
-            tests: "tests/test_migration_service.py"
-            runner: warp-ubuntu-2404-x64-2x
-          - group: "participant-info"
-            tests: "tests/test_submit_participant_info.py"
-            runner: warp-ubuntu-2404-x64-2x
-          - group: "lost-assets"
-            tests: "tests/test_lost_assets.py"
-            runner: warp-ubuntu-2404-x64-2x
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-        with:
-          persist-credentials: false
-
-      - name: Initialize submodules
-        run: git submodule update --init --recursive
-
-      - name: Restore pytest binaries cache
-        uses: WarpBuilds/cache/restore@f643a1ba29942d56621d07fc2d4284c7219868ad # v1.4.10
-        with:
-          key: ${{ env.MPC_PYTEST_BINARIES_CACHE_KEY }}
-          fail-on-cache-miss: true
-          path: |
-            target/release/mpc-node
-            target/release/backup-cli
-            target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
-            target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm
-            libs/nearcore/target/release/neard
-
       - name: Setup python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
@@ -212,28 +134,4 @@ jobs:
         run: |
           source pytest/venv/bin/activate
           cd pytest
-          pytest -m "not ci_excluded" -s -x --skip-nearcore-build --skip-mpc-node-build --skip-mpc-contract-build --skip-parallel-contract-build --skip-backup-cli-build ${{ matrix.tests }}
-
-  mpc-pytests-cache-cleanup:
-    name: "MPC pytests: cache cleanup"
-    needs: mpc-pytests
-    if: always()
-    runs-on: warp-ubuntu-2404-x64-2x
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    env:
-      MPC_PYTEST_BINARIES_CACHE_KEY: mpc-pytest-binaries-${{ github.run_id }}
-
-    steps:
-      - name: Delete pytest binaries cache
-        uses: WarpBuilds/cache@f643a1ba29942d56621d07fc2d4284c7219868ad # v1.4.10
-        with:
-          delete-cache: true
-          key: ${{ env.MPC_PYTEST_BINARIES_CACHE_KEY }}
-          path: |
-            target/release/mpc-node
-            target/release/backup-cli
-            target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
-            target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm
-            libs/nearcore/target/release/neard
+          pytest -m "not ci_excluded" -s -x --skip-nearcore-build --skip-mpc-node-build --skip-mpc-contract-build --skip-parallel-contract-build --skip-backup-cli-build

@@ -157,133 +157,6 @@ jobs:
       - name: Run cargo-nextest
         run: cargo nextest run --cargo-profile=test-release --all-features --locked ${{ matrix.nextest-args }}
 
-  mpc-e2e-tests-build:
-    name: "MPC E2E tests: build"
-    runs-on: warp-ubuntu-2404-x64-16x
-    timeout-minutes: 60
-    permissions:
-      contents: read
-    env:
-      MPC_E2E_TESTS_BINARIES_CACHE_KEY: mpc-e2e-tests-binaries-${{ github.run_id }}
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-        with:
-          persist-credentials: false
-
-      - name: Initialize submodules
-        run: git submodule update --init --recursive
-
-      - run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-          cache-provider: "warpbuild"
-          prefix-key: v0-rust-week-${{ env.WEEK }}
-
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y liblzma-dev
-
-      - name: Install cargo-binstall
-        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
-        with:
-          tool: cargo-binstall
-
-      - name: Install wasm-opt
-        run: |
-          cargo binstall --force --no-confirm --locked wasm-opt@0.116.1
-          echo "${HOME}/.cargo/bin" >> $GITHUB_PATH
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install cargo-near (for reproducible build on main)
-        if: github.ref == 'refs/heads/main'
-        run: |
-          sudo apt-get update && sudo apt-get install --assume-yes libudev-dev
-          cargo binstall --force --no-confirm --locked cargo-near@0.19.1 --pkg-url="{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }.{ archive-format }"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install cargo-make
-        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
-        with:
-          tool: cargo-make@0.37.24
-
-      - name: Build mpc-node
-        run: cargo make build-mpc-node-network-hardship-simulation
-
-      # We run this build step on main as well to cache the contract build.
-      # The non reproducible build will not be used on main since it will be overwritten by the reproducible
-      # step below.
-      - name: Build mpc-contract
-        run: cargo make build-mpc-contract-optimized
-
-      - name: Build mpc-contract reproducibly
-        if: github.ref == 'refs/heads/main'
-        run: |
-          cargo near build reproducible-wasm \
-            --manifest-path crates/contract/Cargo.toml \
-            --out-dir target/wasm32-unknown-unknown/release-contract
-
-      - name: Build test-parallel-contract
-        run: cargo make build-test-parallel-contract-optimized
-
-      - name: Build backup-cli
-        run: |
-          cargo build -p backup-cli --release --locked
-
-      - name: Download near core binary from S3
-        id: download-neard
-        continue-on-error: true
-        run: |
-          os=$(uname)
-          arch=$(uname -m)
-          os_and_arch=${os}-${arch}
-          cd libs/nearcore
-
-          branches=$(git branch -r --contains HEAD | grep -o 'origin/[^ ]*' | sed 's|origin/||' || true)
-          commit_hash=$(git rev-parse HEAD || echo "no-commit")
-
-          mkdir -p target/release
-          downloaded=false
-          for branch_name in $branches; do
-            url="https://s3.us-west-1.amazonaws.com/build.nearprotocol.com/nearcore/${os_and_arch}/${branch_name}/${commit_hash}/neard"
-            status_code=$(curl -s -f -o target/release/neard -w "%{http_code}" "${url}" || true)
-            if [ "$status_code" -eq 200 ]; then
-              echo "Downloaded neard from branch: ${branch_name}"
-              downloaded=true
-              break
-            fi
-            echo "Branch ${branch_name} failed (status ${status_code}), trying next..."
-          done
-
-          if [ "$downloaded" != "true" ]; then
-            echo "All branches failed for commit ${commit_hash}"
-            exit 1
-          fi
-          chmod +x target/release/neard
-
-      - name: Build near core as fallback
-        if: steps.download-neard.outcome != 'success'
-        run: |
-          cd libs/nearcore
-          cargo build -p neard --release
-
-      - name: Save E2E tests binaries cache
-        uses: WarpBuilds/cache/save@f643a1ba29942d56621d07fc2d4284c7219868ad # v1.4.10
-        with:
-          key: ${{ env.MPC_E2E_TESTS_BINARIES_CACHE_KEY }}
-          path: |
-            target/release/mpc-node
-            target/release/backup-cli
-            target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
-            target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm
-            libs/nearcore/target/release/neard
-
   mpc-contract-reproducible-build:
     name: "MPC contract reproducible build"
     runs-on: warp-ubuntu-2404-x64-16x
@@ -320,29 +193,6 @@ jobs:
 
       - name: Check contract WASM size
         run: bash scripts/check-contract-wasm-size.sh
-
-  mpc-e2e-tests-cache-cleanup:
-    name: "MPC E2E tests: cache cleanup"
-    needs: mpc-e2e-tests
-    runs-on: warp-ubuntu-2404-x64-2x
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    env:
-      MPC_E2E_TESTS_BINARIES_CACHE_KEY: mpc-e2e-tests-binaries-${{ github.run_id }}
-
-    steps:
-      - name: Delete E2E tests binaries cache
-        uses: WarpBuilds/cache@f643a1ba29942d56621d07fc2d4284c7219868ad # v1.4.10
-        with:
-          delete-cache: true
-          key: ${{ env.MPC_E2E_TESTS_BINARIES_CACHE_KEY }}
-          path: |
-            target/release/mpc-node
-            target/release/backup-cli
-            target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
-            target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm
-            libs/nearcore/target/release/neard
 
   fast-ci-checks:
     name: "Fast CI checks"
@@ -411,13 +261,10 @@ jobs:
 
   mpc-e2e-tests:
     name: "MPC E2E tests"
-    needs: mpc-e2e-tests-build
     runs-on: warp-ubuntu-2404-x64-32x
     timeout-minutes: 60
     permissions:
       contents: read
-    env:
-      MPC_E2E_TESTS_BINARIES_CACHE_KEY: mpc-e2e-tests-binaries-${{ github.run_id }}
 
     steps:
       - name: Checkout repository
@@ -425,10 +272,8 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y liblzma-dev
+      - name: Initialize submodules
+        run: git submodule update --init --recursive
 
       - run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
       - name: Cache Rust dependencies
@@ -438,27 +283,100 @@ jobs:
           cache-provider: "warpbuild"
           prefix-key: v0-rust-e2e-week-${{ env.WEEK }}
 
-      - name: Restore E2E tests binaries cache
-        uses: WarpBuilds/cache/restore@f643a1ba29942d56621d07fc2d4284c7219868ad # v1.4.10
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y liblzma-dev
+
+      - name: Install cargo-binstall
+        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
         with:
-          key: ${{ env.MPC_E2E_TESTS_BINARIES_CACHE_KEY }}
-          fail-on-cache-miss: true
-          path: |
-            target/release/mpc-node
-            target/release/backup-cli
-            target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
-            target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm
-            libs/nearcore/target/release/neard
+          tool: cargo-binstall
+
+      - name: Install wasm-opt
+        run: |
+          cargo binstall --force --no-confirm --locked wasm-opt@0.116.1
+          echo "${HOME}/.cargo/bin" >> $GITHUB_PATH
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install cargo-near (for reproducible build on main)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          sudo apt-get update && sudo apt-get install --assume-yes libudev-dev
+          cargo binstall --force --no-confirm --locked cargo-near@0.19.1 --pkg-url="{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }.{ archive-format }"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install cargo-make
+        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
+        with:
+          tool: cargo-make@0.37.24
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
         with:
           tool: nextest@0.9.126
 
-      - name: Install cargo-make
-        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
-        with:
-          tool: cargo-make@0.37.24
+      - name: Build mpc-node
+        run: cargo make build-mpc-node-network-hardship-simulation
+
+      # We run this build step on main as well to cache the contract build.
+      # The non reproducible build will not be used on main since it will be overwritten by the reproducible
+      # step below.
+      - name: Build mpc-contract
+        run: cargo make build-mpc-contract-optimized
+
+      - name: Build mpc-contract reproducibly
+        if: github.ref == 'refs/heads/main'
+        run: |
+          cargo near build reproducible-wasm \
+            --manifest-path crates/contract/Cargo.toml \
+            --out-dir target/wasm32-unknown-unknown/release-contract
+
+      - name: Build test-parallel-contract
+        run: cargo make build-test-parallel-contract-optimized
+
+      - name: Build backup-cli
+        run: |
+          cargo build -p backup-cli --release --locked
+
+      - name: Download near core binary from S3
+        id: download-neard
+        continue-on-error: true
+        run: |
+          os=$(uname)
+          arch=$(uname -m)
+          os_and_arch=${os}-${arch}
+          cd libs/nearcore
+
+          branches=$(git branch -r --contains HEAD | grep -o 'origin/[^ ]*' | sed 's|origin/||' || true)
+          commit_hash=$(git rev-parse HEAD || echo "no-commit")
+
+          mkdir -p target/release
+          downloaded=false
+          for branch_name in $branches; do
+            url="https://s3.us-west-1.amazonaws.com/build.nearprotocol.com/nearcore/${os_and_arch}/${branch_name}/${commit_hash}/neard"
+            status_code=$(curl -s -f -o target/release/neard -w "%{http_code}" "${url}" || true)
+            if [ "$status_code" -eq 200 ]; then
+              echo "Downloaded neard from branch: ${branch_name}"
+              downloaded=true
+              break
+            fi
+            echo "Branch ${branch_name} failed (status ${status_code}), trying next..."
+          done
+
+          if [ "$downloaded" != "true" ]; then
+            echo "All branches failed for commit ${commit_hash}"
+            exit 1
+          fi
+          chmod +x target/release/neard
+
+      - name: Build near core as fallback
+        if: steps.download-neard.outcome != 'success'
+        run: |
+          cd libs/nearcore
+          cargo build -p neard --release
 
       - name: Run E2E tests
         run: cargo make e2e-tests-skip-build
