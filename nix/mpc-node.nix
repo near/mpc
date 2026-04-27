@@ -209,6 +209,17 @@ let
       MACOSX_DEPLOYMENT_TARGET = "14.0";
     };
 
+    # Remap the runtime build directory. The `${src}` remap above only
+    # rewrites `/nix/store/<hash>-source` paths, but rustc never sees those
+    # at compile time — it sees `$NIX_BUILD_TOP/source/...`, which is
+    # `/build/source` under the Linux sandbox but
+    # `/nix/var/nix/builds/nix-<pid>-<rand>/source/...` under macOS or a
+    # non-default sandbox. Without this hook the Linux output happens to
+    # match by coincidence and other platforms drift.
+    preBuild = ''
+      export RUSTFLAGS="$RUSTFLAGS --remap-path-prefix=$NIX_BUILD_TOP/source=/build/source --remap-path-prefix=$NIX_BUILD_TOP=/build"
+    '';
+
     doCheck = false;
   };
 
