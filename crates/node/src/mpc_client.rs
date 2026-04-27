@@ -1,7 +1,4 @@
-use crate::indexer::handler::{
-    CKDRequestFromChain, ChainBlockUpdate, SignatureRequestFromChain,
-    VerifyForeignTxRequestFromChain,
-};
+use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::tx_sender::TransactionSender;
 use crate::indexer::types::{
     ChainCKDRespondArgs, ChainSendTransactionRequest, ChainSignatureRespondArgs,
@@ -22,13 +19,12 @@ use crate::storage::{
 };
 use crate::tracking::{self, AutoAbortTaskCollection};
 use crate::types::SignatureRequest;
-use crate::types::{CKDRequest, VerifyForeignTxRequest};
+use crate::types::{CKDRequest, RequestsFromBlock, VerifyForeignTxRequest};
 use crate::web::{DebugRequest, DebugRequestKind};
 use mpc_node_config::ConfigFile;
 
 use mpc_primitives::domain::{Curve, DomainId};
 use near_mpc_contract_interface::types::CKDResponse;
-use near_mpc_crypto_types::kdf::derive_tweak;
 use near_time::Clock;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -233,105 +229,42 @@ where
                         break;
                     };
 
-                    let entropy: [u8; 32] = block_update.block.entropy.clone().into();
-                    let timestamp_nanosec = block_update.block.timestamp_nanosec;
                     self.client.update_indexer_height(block_update.block.height);
-                    let signature_requests = block_update
-                        .signature_requests
-                        .into_iter()
-                        .map(|signature_request_from_chain| {
-                            let SignatureRequestFromChain {
-                                signature_id,
-                                receipt_id,
-                                request,
-                                predecessor_id,
-                            } = signature_request_from_chain;
-                            let signature_request = SignatureRequest {
-                                id: signature_id,
-                                receipt_id,
-                                payload: request.payload,
-                                tweak: derive_tweak(&predecessor_id, &request.path),
-                                entropy,
-                                timestamp_nanosec,
-                                domain: request.domain_id,
-                            };
-                            // Index the signature requests as soon as we see them. We'll decide
-                            // whether to *process* them after.
-                            self.sign_request_store.add(&signature_request);
-                            signature_request
-                        })
-                        .collect::<Vec<_>>();
-
-                    pending_signatures.notify_new_block(
-                        signature_requests,
+                    let signature_requests : RequestsFromBlock<SignatureRequest> = RequestsFromBlock::from_chain(
+                        &block_update.block,
+                        block_update.signature_requests,
                         block_update.completed_signatures,
-                        &block_update.block,
                     );
 
-                    let ckd_requests = block_update
-                        .ckd_requests
-                        .into_iter()
-                        .map(|ckd_request_from_chain| {
-                            let CKDRequestFromChain {
-                                ckd_id,
-                                receipt_id,
-                                request,
-                            } = ckd_request_from_chain;
-                            let ckd_request = CKDRequest {
-                                id: ckd_id,
-                                receipt_id,
-                                app_public_key: request.app_public_key,
-                                app_id: request.app_id,
-                                entropy,
-                                timestamp_nanosec,
-                                domain_id: request.domain_id,
-                            };
-                            // Index the ckd requests as soon as we see them. We'll decide
-                            // whether to *process* them after.
-                            self.ckd_request_store.add(&ckd_request);
-                            ckd_request
-                        })
-                        .collect::<Vec<_>>();
+                    // TODO(#3031): add batch request and unify stores
+                    for request in &signature_requests.requests {
+                        self.sign_request_store.add(request);
+                    }
 
-                    pending_ckds.notify_new_block(
-                        ckd_requests,
-                        block_update.completed_ckds,
+                    // TODO(#3032): remove completed & finalized requests from store
+                    pending_signatures.notify_new_block(signature_requests);
+
+                    let ckd_requests: RequestsFromBlock<CKDRequest> = RequestsFromBlock::from_chain(
                         &block_update.block,
+                        block_update.ckd_requests,
+                        block_update.completed_ckds
+                    );
+                    for request in &ckd_requests.requests {
+                        self.ckd_request_store.add(request);
+                    }
+
+                    pending_ckds.notify_new_block(ckd_requests);
+
+                    let verify_foreign_tx_requests : RequestsFromBlock<VerifyForeignTxRequest> = RequestsFromBlock::from_chain(
+                        &block_update.block,
+                        block_update.verify_foreign_tx_requests,
+                        block_update.completed_verify_foreign_txs
                     );
 
-                    let verify_foreign_tx_requests = block_update
-                        .verify_foreign_tx_requests
-                        .into_iter()
-                        .map(|verify_foreign_tx_request_from_chain| {
-                            let VerifyForeignTxRequestFromChain {
-                                verify_foreign_tx_id,
-                                receipt_id,
-                                request
-                            } = verify_foreign_tx_request_from_chain;
-                            let verify_foreign_tx_request = VerifyForeignTxRequest {
-                                id: verify_foreign_tx_id,
-                                receipt_id,
-                                domain_id: request.domain_id,
-                                entropy,
-                                payload_version: request.payload_version,
-                                request: request.request,
-                                timestamp_nanosec,
-                            };
-                            // Index the foreign tx requests as soon as we see them. We'll decide
-                            // whether to *process* them after.
-                            self.verify_foreign_tx_request_store.add(&verify_foreign_tx_request);
-                            verify_foreign_tx_request
-                        })
-                        .collect::<Vec<_>>();
-
-                    pending_verify_foreign_txs.notify_new_block(
-                        verify_foreign_tx_requests,
-                        block_update.completed_verify_foreign_txs,
-                        &block_update.block,
-                    );
-
-
-
+                    for request in &verify_foreign_tx_requests.requests {
+                        self.verify_foreign_tx_request_store.add(request);
+                    }
+                    pending_verify_foreign_txs.notify_new_block(verify_foreign_tx_requests);
                 }
                 debug_request = debug_receiver.recv() => {
                     if let Ok(debug_request) = debug_request {

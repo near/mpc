@@ -505,7 +505,7 @@ pub mod tests {
         height: u64,
         entropy: BlockEntropy,
         timestamp_nanosec: u64,
-        parent: Option<Arc<TestBlock>>,
+        pub(crate) parent: Option<Arc<TestBlock>>,
         tester: Arc<TestBlockMaker>,
         next_fork_seed: AtomicU64,
     }
@@ -570,7 +570,11 @@ pub mod tests {
             }
         }
 
-        pub fn child(self: &Arc<TestBlock>, height: u64) -> Arc<TestBlock> {
+        pub fn child(self: &Arc<TestBlock>) -> Arc<TestBlock> {
+            self.descendant(self.height + 1)
+        }
+
+        pub fn descendant(self: &Arc<TestBlock>, height: u64) -> Arc<TestBlock> {
             assert!(
                 height > self.height,
                 "Height must be greater than the parent height"
@@ -691,12 +695,12 @@ pub mod tests {
     fn test_no_forks() {
         let mut tester = Tester::new(4);
         let b10 = tester.block(10);
-        let b11 = b10.child(11);
-        let b12 = b11.child(12);
-        let b13 = b12.child(13);
-        let b14 = b13.child(14);
-        let b15 = b14.child(15);
-        let b16 = b15.child(16);
+        let b11 = b10.child();
+        let b12 = b11.child();
+        let b13 = b12.child();
+        let b14 = b13.child();
+        let b15 = b14.child();
+        let b16 = b15.child();
 
         assert_eq!(&tester.add(&b11, "11"), "");
         assert_eq!(&tester.add(&b12, "12"), "");
@@ -739,14 +743,17 @@ pub mod tests {
     fn test_simple_forks() {
         let mut t = Tester::new(5);
         let b10 = t.block(10);
-        let b11 = b10.child(11);
-        let b12 = b11.child(12);
-        let b13 = b12.child(13);
+        let b11 = b10.child();
+        let b12 = b11.child();
         // Start forks (last final block is 11)
-        let b14 = b12.child(14);
-        let b15 = b13.child(15);
-        let b16 = b12.child(16);
-        let b17 = b13.child(17);
+        // fork one:
+        let b13 = b12.child();
+        // fork two:
+        let b14 = b12.descendant(14);
+        let b15 = b13.descendant(15);
+        // fork three:
+        let b16 = b12.descendant(16);
+        let b17 = b13.descendant(17);
 
         assert_eq!(&t.add(&b11, "11"), "");
         assert_eq!(&t.add(&b12, "12"), "");
@@ -775,7 +782,7 @@ pub mod tests {
         assert_eq!(t.check(&b16), CheckBlockResult::OptimisticAndCanonical);
         assert_eq!(t.check(&b17), CheckBlockResult::Unknown);
 
-        let b18 = b14.child(18);
+        let b18 = b14.descendant(18);
         assert_eq!(&t.add(&b18, "18"), "");
         //    Recent blocks: (Window = 14 to 18, GC limit 11)
         // FH └─[11] C F F1BKWCCxzv7PtiVZxLMx3HQuuxDGcrtPRT2FaGgRggpA "11"
@@ -792,8 +799,8 @@ pub mod tests {
         assert_eq!(t.check(&b16), CheckBlockResult::OptimisticButNotCanonical);
         assert_eq!(t.check(&b18), CheckBlockResult::OptimisticAndCanonical);
 
-        let b19 = b18.child(19);
-        let b20 = b19.child(20);
+        let b19 = b18.child();
+        let b20 = b19.child();
         assert_eq!(&t.add(&b19, "19"), "");
         assert_eq!(&t.add(&b20, "20"), "12,14,18");
 
@@ -826,20 +833,20 @@ pub mod tests {
     fn test_complex_forks() {
         let mut t = Tester::new(5);
         let b = t.block(2);
-        let b0 = b.child(4);
-        let b00 = b0.child(6);
-        let b000 = b00.child(8);
-        let b001 = b00.child(9);
-        let b01 = b0.child(7);
-        let b010 = b01.child(9);
-        let b011 = b01.child(10);
-        let b1 = b.child(5);
-        let b10 = b1.child(6);
-        let b100 = b10.child(8);
-        let b101 = b10.child(8);
-        let b11 = b1.child(7);
-        let b110 = b11.child(9);
-        let b111 = b11.child(10);
+        let b0 = b.descendant(4);
+        let b00 = b0.descendant(6);
+        let b000 = b00.descendant(8);
+        let b001 = b00.descendant(9);
+        let b01 = b0.descendant(7);
+        let b010 = b01.descendant(9);
+        let b011 = b01.descendant(10);
+        let b1 = b.descendant(5);
+        let b10 = b1.descendant(6);
+        let b100 = b10.descendant(8);
+        let b101 = b10.descendant(8);
+        let b11 = b1.descendant(7);
+        let b110 = b11.descendant(9);
+        let b111 = b11.descendant(10);
 
         assert_eq!(&t.add(&b0, "b0"), "");
         assert_eq!(&t.add(&b00, "b00"), "");
@@ -887,8 +894,8 @@ pub mod tests {
 
         // Now, we test some pathological cases where the data being given is not consistent
         // with Near blockchain's behavior. Still, we want reasonable behavior and no crashes.
-        let b102 = b10.child(7);
-        let b1020 = b102.child(8);
+        let b102 = b10.descendant(7);
+        let b1020 = b102.descendant(8);
         assert_eq!(t.add(&b102, "b102"), "b1");
         assert_eq!(t.add(&b1020, "b1020"), "b10");
         //    Recent blocks: (Window = 6 to 10, GC limit 6)
@@ -926,9 +933,9 @@ pub mod tests {
         assert_eq!(t.check(&b110), CheckBlockResult::OptimisticButNotCanonical);
         assert_eq!(t.check(&b111), CheckBlockResult::OptimisticButNotCanonical);
 
-        let b10200 = b1020.child(11);
-        let b102000 = b10200.child(12);
-        let b1020000 = b102000.child(13);
+        let b10200 = b1020.descendant(11);
+        let b102000 = b10200.descendant(12);
+        let b1020000 = b102000.descendant(13);
         assert_eq!(&t.add(&b10200, "b10200"), "");
         assert_eq!(&t.add(&b102000, "b102000"), "");
         assert_eq!(&t.add(&b1020000, "b1020000"), "b102,b1020,b10200");
