@@ -156,7 +156,7 @@ itertools = "0.14.0"
 jsonrpsee = { version = "0.26.0", features = ["http-client"] }
 k256 = "0.13.4"
 keccak = "0.1.5"
-lru = "0.16.4"
+lru = "0.17.0"
 mockall = "0.14.0"
 named-lock = "0.4.1"
 near-abi = "0.4.4"
