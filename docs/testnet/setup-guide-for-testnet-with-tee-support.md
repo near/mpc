@@ -237,19 +237,19 @@ Add keys to each NEAR account:
 NODE_METHODS="respond,respond_ckd,respond_verify_foreign_tx,vote_pk,start_keygen_instance,vote_reshared,register_foreign_chain_config,start_reshare_instance,vote_abort_key_event_instance,verify_tee,submit_participant_info,conclude_node_migration"
 
 near account add-key $FRODO_ACCOUNT grant-function-call-access \
-  --allowance '1 NEAR' --contract-account-id $MPC_CONTRACT_ACCOUNT --function-names "$NODE_METHODS" \
+  --allowance unlimited --contract-account-id $MPC_CONTRACT_ACCOUNT --function-names "$NODE_METHODS" \
   use-manually-provided-public-key "$FRODO_PUBKEY" network-config testnet sign-with-keychain send
 
 near account add-key $FRODO_ACCOUNT grant-function-call-access \
-  --allowance '1 NEAR' --contract-account-id $MPC_CONTRACT_ACCOUNT --function-names "$NODE_METHODS" \
+  --allowance unlimited --contract-account-id $MPC_CONTRACT_ACCOUNT --function-names "$NODE_METHODS" \
   use-manually-provided-public-key "$FRODO_RESPONDER_KEY" network-config testnet sign-with-keychain send
 
 near account add-key $SAM_ACCOUNT grant-function-call-access \
-  --allowance '1 NEAR' --contract-account-id $MPC_CONTRACT_ACCOUNT --function-names "$NODE_METHODS" \
+  --allowance unlimited --contract-account-id $MPC_CONTRACT_ACCOUNT --function-names "$NODE_METHODS" \
   use-manually-provided-public-key "$SAM_PUBKEY" network-config testnet sign-with-keychain send
 
 near account add-key $SAM_ACCOUNT grant-function-call-access \
-  --allowance '1 NEAR' --contract-account-id $MPC_CONTRACT_ACCOUNT --function-names "$NODE_METHODS" \
+  --allowance unlimited --contract-account-id $MPC_CONTRACT_ACCOUNT --function-names "$NODE_METHODS" \
   use-manually-provided-public-key "$SAM_RESPONDER_KEY" network-config testnet sign-with-keychain send
 ```
 

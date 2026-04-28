@@ -15,8 +15,6 @@
   bzip2,
   udev,
   dbus,
-  # Darwin-only. Defaulted to null so evaluating this package on Linux does
-  # not require a nixpkgs attr that may not exist there.
   apple-sdk_14 ? null,
   crane,
 }:
@@ -33,6 +31,11 @@ let
   craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
 
   isX86 = stdenv.hostPlatform.isx86_64;
+
+  # Baseline x86-64 ISA passed to clang/cc for both library compilation and
+  # bindgen header parsing. Pinned to the baseline so output bytes don't vary
+  # with the build host's CPU.
+  marchFlag = lib.optionalString isX86 "-march=x86-64";
 
   # Take the version from [workspace.package.version] so this file stays in
   # sync on every release bump.
@@ -140,7 +143,12 @@ let
   '';
 
   commonArgs = {
-    inherit pname version src cargoVendorDir;
+    inherit
+      pname
+      version
+      src
+      cargoVendorDir
+      ;
 
     strictDeps = true;
     cargoProfile = "reproducible";
@@ -198,7 +206,7 @@ let
       # are base-2 logarithms (so LG_PAGE=12 ↔ 2^12 B = 4 KiB). Option
       # semantics:
       # https://github.com/jemalloc/jemalloc/blob/5.3.0/INSTALL.md#advanced-configuration
-
+      #
       # 48-bit user VA (4-level paging)
       # https://github.com/torvalds/linux/blob/v6.7/Documentation/arch/x86/x86_64/mm.rst#L7
       JEMALLOC_SYS_WITH_LG_VADDR = "48";
@@ -209,32 +217,25 @@ let
       # https://github.com/torvalds/linux/blob/v6.7/arch/x86/include/asm/pgtable_64_types.h#L91
       JEMALLOC_SYS_WITH_LG_HUGEPAGE = "21";
 
-
       # Pin the target ISA for both C/C++ (cc-crate for rocksdb, snappy,
       # zstd, ...) and Rust itself. Without this, the cc crate defaults to
       # the build host's CPU and output bytes vary by machine.
-      #
-      # x86-64-v3 ≈ Haswell (2013) and newer: AVX2, BMI2, FMA. Deployment
-      # targets MUST be at least this CPU level; older hardware will SIGILL.
-      CFLAGS = lib.optionalString isX86 "-march=x86-64-v3";
-      CXXFLAGS = "-include cstdint" + lib.optionalString isX86 " -march=x86-64-v3";
+      CFLAGS = marchFlag;
+      CXXFLAGS = "-include cstdint ${marchFlag}";
 
       RUSTFLAGS = lib.concatStringsSep " " (
-        lib.optionals isX86 [ "-C target-cpu=x86-64-v3" ]
+        lib.optionals isX86 [ "-C target-cpu=x86-64" ]
         ++ [
-          # Scrub nix store paths out of rustc-emitted debug info and panic
-          # messages so two builds from different /nix/store/<hash>-source
-          # paths produce identical bytes.
-          "--remap-path-prefix=${src}=/build/source"
+          # Scrub the vendor dir's /nix/store path out of rustc-emitted debug
+          # info and panic messages. The build-sandbox path is handled in
+          # `preBuild` below; do NOT add `${src}` here — it would re-key
+          # cargoArtifacts on every source change and defeat the dep cache.
           "--remap-path-prefix=${cargoVendorDir}=/cargo-vendor"
         ]
       );
 
       # Extra bindgen flags — paths are already provided by bindgenHook.
-      BINDGEN_EXTRA_CLANG_ARGS = lib.concatStringsSep " " (
-        lib.optionals isX86 [ "-march=x86-64-v3" ]
-        ++ [ "-fno-stack-protector" ]
-      );
+      BINDGEN_EXTRA_CLANG_ARGS = marchFlag;
     }
     // lib.optionalAttrs stdenv.isDarwin {
       # Deployment target is independent of the SDK version; pin it so the

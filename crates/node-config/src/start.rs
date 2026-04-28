@@ -1,6 +1,7 @@
 use super::ConfigFile;
 use anyhow::Context;
 use clap::ValueEnum;
+use near_mpc_bounded_collections::NonEmptyVec;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -24,16 +25,19 @@ pub struct StartConfig {
     /// Node configuration (indexer, protocol parameters, etc.).
     pub node: ConfigFile,
     pub log: LogConfig,
-    /// Base URL of the PCCS server used to fetch TDX attestation collateral.
-    /// Defaults to Phala's PCCS if not set in config.
-    #[serde(default = "default_pccs_url")]
-    pub pccs_url: url::Url,
+    /// Base URLs of PCCS servers used to fetch TDX attestation collateral.
+    /// Tried in order on every fetch; the first one to succeed wins, and the
+    /// rest are used only as fallbacks when earlier entries fail. At least
+    /// one URL is required. Defaults to Phala's PCCS if the field is omitted.
+    #[serde(default = "default_pccs_urls")]
+    pub pccs_urls: NonEmptyVec<url::Url>,
 }
 
-pub fn default_pccs_url() -> url::Url {
-    launcher_interface::DEFAULT_PCCS_URL
+pub fn default_pccs_urls() -> NonEmptyVec<url::Url> {
+    let url: url::Url = launcher_interface::DEFAULT_PCCS_URL
         .parse()
-        .expect("default PCCS URL is valid")
+        .expect("default PCCS URL is valid");
+    NonEmptyVec::try_from(vec![url]).expect("single-element vec is non-empty")
 }
 
 impl StartConfig {
@@ -177,6 +181,7 @@ pub enum DownloadConfigType {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use super::*;
 
@@ -198,5 +203,79 @@ mod tests {
             parsed.contains_key("gcp"),
             "GCP field name changed — update tee-launcher's TEE-restricted key list"
         );
+    }
+
+    /// A single-element TOML array parses as a [`NonEmptyVec`] with one entry.
+    /// This is the minimum valid form of the `pccs_urls` field.
+    #[test]
+    fn pccs_urls__should_parse_single_element_array() {
+        // Given
+        #[derive(Debug, Deserialize)]
+        struct Wrapper {
+            #[serde(default = "default_pccs_urls")]
+            pccs_urls: NonEmptyVec<url::Url>,
+        }
+        const URL: &str = "https://pccs.example.org";
+        let toml_input = format!(r#"pccs_urls = ["{URL}"]"#);
+        let expected: Vec<url::Url> = vec![URL.parse().unwrap()];
+
+        // When
+        let parsed: Wrapper = toml::from_str(&toml_input).unwrap();
+        let urls: Vec<url::Url> = parsed.pccs_urls.into_iter().collect();
+
+        // Then
+        assert_eq!(urls, expected);
+    }
+
+    /// Multiple entries parse in order. Order matters: the fetch path tries
+    /// each URL in the order the user wrote them.
+    #[test]
+    fn pccs_urls__should_preserve_order_of_multiple_entries() {
+        // Given
+        #[derive(Debug, Deserialize)]
+        struct Wrapper {
+            #[serde(default = "default_pccs_urls")]
+            pccs_urls: NonEmptyVec<url::Url>,
+        }
+        const URLS: [&str; 3] = [
+            "http://localhost:8081",
+            "https://pccs.phala.network",
+            "https://api.trustedservices.intel.com",
+        ];
+        let toml_input = format!(
+            r#"pccs_urls = [{}]"#,
+            URLS.iter()
+                .map(|u| format!(r#""{u}""#))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        let expected: Vec<url::Url> = URLS.iter().map(|u| u.parse().unwrap()).collect();
+
+        // When
+        let parsed: Wrapper = toml::from_str(&toml_input).unwrap();
+        let urls: Vec<url::Url> = parsed.pccs_urls.into_iter().collect();
+
+        // Then
+        assert_eq!(urls, expected);
+    }
+
+    /// When the field is omitted altogether, the `#[serde(default)]` hook
+    /// returns the Phala default as a single-element vec.
+    #[test]
+    fn pccs_urls__should_default_to_phala_when_omitted() {
+        // Given
+        #[derive(Debug, Deserialize)]
+        struct Wrapper {
+            #[serde(default = "default_pccs_urls")]
+            pccs_urls: NonEmptyVec<url::Url>,
+        }
+        let expected: Vec<url::Url> = vec![launcher_interface::DEFAULT_PCCS_URL.parse().unwrap()];
+
+        // When
+        let parsed: Wrapper = toml::from_str("").unwrap();
+        let urls: Vec<url::Url> = parsed.pccs_urls.into_iter().collect();
+
+        // Then
+        assert_eq!(urls, expected);
     }
 }
