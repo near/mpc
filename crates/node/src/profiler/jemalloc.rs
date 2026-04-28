@@ -42,10 +42,16 @@ async fn dump_heap_file() -> Result<File, Response> {
         return Err((StatusCode::SERVICE_UNAVAILABLE, MSG_PROFILING_INACTIVE).into_response());
     }
 
-    // spawn blocking task since `prof_ctl.dump()` is using blocking IO
+    // `prof_ctl.dump()` is using blocking IO
     tokio::task::spawn_blocking(move || prof_ctl.dump())
         .await
-        .expect("tokio runtime is alive")
+        .map_err(|join_error: tokio::task::JoinError| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("failed joining on tokio task: {:?}", join_error),
+            )
+                .into_response()
+        })?
         .map_err(|err| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
