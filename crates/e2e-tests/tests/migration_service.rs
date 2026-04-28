@@ -20,31 +20,30 @@ struct BackupService {
 }
 
 impl BackupService {
-    fn new(binary_path: PathBuf) -> anyhow::Result<Self> {
-        Ok(Self {
-            home_dir: tempfile::tempdir().context("failed to create backup service home dir")?,
+    fn must_new(binary_path: PathBuf) -> Self {
+        Self {
+            home_dir: tempfile::tempdir().expect("failed to create backup service home dir"),
             binary_path,
-        })
+        }
     }
 
-    fn home_dir_str(&self) -> anyhow::Result<&str> {
+    fn must_home_dir_str(&self) -> &str {
         self.home_dir
             .path()
             .to_str()
-            .context("backup service home dir path is not valid UTF-8")
+            .expect("backup service home dir path is not valid UTF-8")
     }
 
-    fn generate_keys(&self) -> anyhow::Result<()> {
+    fn must_generate_keys(&self) {
         let output = Command::new(&self.binary_path)
-            .args(["--home-dir", self.home_dir_str()?, "generate-keys"])
+            .args(["--home-dir", self.must_home_dir_str(), "generate-keys"])
             .output()
-            .context("failed to run backup-cli generate-keys")?;
-        anyhow::ensure!(
+            .expect("failed to run backup-cli generate-keys");
+        assert!(
             output.status.success(),
             "backup-cli generate-keys failed: {}",
             String::from_utf8_lossy(&output.stderr)
         );
-        Ok(())
     }
 
     fn public_key(&self) -> anyhow::Result<String> {
@@ -82,7 +81,7 @@ impl BackupService {
         let output = Command::new(&self.binary_path)
             .args([
                 "--home-dir",
-                self.home_dir_str()?,
+                self.must_home_dir_str(),
                 "get-keyshares",
                 "--mpc-node-address",
                 node_migration_address,
@@ -110,7 +109,7 @@ impl BackupService {
         let output = Command::new(&self.binary_path)
             .args([
                 "--home-dir",
-                self.home_dir_str()?,
+                self.must_home_dir_str(),
                 "put-keyshares",
                 "--mpc-node-address",
                 node_migration_address,
@@ -469,11 +468,8 @@ async fn migration_service__should_migrate_nodes_via_backup_cli() {
         // When: run the migration flow end-to-end — register backup service,
         // GET keyshares from source, start migration, PUT keyshares to target,
         // wait for completion, then kill the source node.
-        let backup_service =
-            BackupService::new(backup_cli.clone()).expect("failed to create backup service");
-        backup_service
-            .generate_keys()
-            .expect("backup-cli generate-keys failed");
+        let backup_service = BackupService::must_new(backup_cli.clone());
+        backup_service.must_generate_keys();
         register_backup_service_and_wait(&cluster, source_idx, &backup_service)
             .await
             .expect("register_backup_service_and_wait failed");

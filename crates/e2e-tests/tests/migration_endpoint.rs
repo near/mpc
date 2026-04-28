@@ -46,10 +46,10 @@ async fn migration_endpoint__should_track_migration_state() {
         // Given: the migration state carried over from prior iterations
         //         (empty on the first iteration).
         // Then: contract and endpoint already match that carried state.
-        assert_contract_matches(&cluster, &expected_migrations)
+        ensure_contract_matches(&cluster, &expected_migrations)
             .await
             .expect("contract state mismatch");
-        assert_endpoint_matches(&client, &web_addr, &expected_migrations)
+        ensure_endpoint_matches(&client, &web_addr, &expected_migrations)
             .await
             .expect("endpoint state mismatch");
 
@@ -70,10 +70,10 @@ async fn migration_endpoint__should_track_migration_state() {
         expected_migrations.insert(account_id.clone(), (Some(backup_info.clone()), None));
 
         // Then: contract and endpoint both expose the backup registration.
-        assert_contract_matches(&cluster, &expected_migrations)
+        ensure_contract_matches(&cluster, &expected_migrations)
             .await
             .expect("contract state mismatch after backup registration");
-        assert_endpoint_matches(&client, &web_addr, &expected_migrations)
+        ensure_endpoint_matches(&client, &web_addr, &expected_migrations)
             .await
             .expect("endpoint state mismatch after backup registration");
 
@@ -104,10 +104,10 @@ async fn migration_endpoint__should_track_migration_state() {
         expected_migrations.insert(account_id, (Some(backup_info), Some(dest_info)));
 
         // Then: contract and endpoint both expose the destination entry.
-        assert_contract_matches(&cluster, &expected_migrations)
+        ensure_contract_matches(&cluster, &expected_migrations)
             .await
             .expect("contract state mismatch after start_node_migration");
-        assert_endpoint_matches(&client, &web_addr, &expected_migrations)
+        ensure_endpoint_matches(&client, &web_addr, &expected_migrations)
             .await
             .expect("endpoint state mismatch after start_node_migration");
     }
@@ -140,9 +140,9 @@ async fn get_debug_migrations(
         .context("failed to parse migration response")
 }
 
-/// Assert the contract's migration state eventually equals `expected`.
+/// Ensure the contract's migration state eventually equals `expected`.
 /// Retries to absorb indexer lag, then returns an error on timeout.
-async fn assert_contract_matches(
+async fn ensure_contract_matches(
     cluster: &e2e_tests::MpcCluster,
     expected: &MigrationState,
 ) -> anyhow::Result<()> {
@@ -164,9 +164,9 @@ async fn assert_contract_matches(
     .context("timed out waiting for contract migration state to match")
 }
 
-/// Assert the node's `/debug/migrations` endpoint eventually equals `expected`.
+/// Ensure the node's `/debug/migrations` endpoint eventually equals `expected`.
 /// Retries to absorb indexer lag, then returns an error on timeout.
-async fn assert_endpoint_matches(
+async fn ensure_endpoint_matches(
     client: &reqwest::Client,
     web_addr: &str,
     expected: &MigrationState,

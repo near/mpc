@@ -8,8 +8,8 @@ use mpc_primitives::domain::Curve;
 use near_mpc_contract_interface::types::DomainPurpose;
 use rand::SeedableRng;
 
-/// Fetch a URL and assert the response body contains all of `expected`.
-async fn assert_body_contains(
+/// Fetch a URL and ensure the response body contains all of `expected`.
+async fn ensure_body_contains(
     client: &reqwest::Client,
     node: usize,
     url: &str,
@@ -90,10 +90,10 @@ async fn test_web_endpoints() {
         let web_addr = node.web_address();
         let pprof_addr = node.pprof_address();
 
-        assert_body_contains(&client, i, &format!("http://{web_addr}/health"), &["OK"])
+        ensure_body_contains(&client, i, &format!("http://{web_addr}/health"), &["OK"])
             .await
             .expect("health endpoint failed");
-        assert_body_contains(
+        ensure_body_contains(
             &client,
             i,
             &format!("http://{web_addr}/metrics"),
@@ -101,7 +101,7 @@ async fn test_web_endpoints() {
         )
         .await
         .expect("metrics endpoint failed");
-        assert_body_contains(
+        ensure_body_contains(
             &client,
             i,
             &format!("http://{web_addr}/debug/tasks"),
@@ -109,7 +109,7 @@ async fn test_web_endpoints() {
         )
         .await
         .expect("debug/tasks endpoint failed");
-        assert_body_contains(
+        ensure_body_contains(
             &client,
             i,
             &format!("http://{web_addr}/debug/blocks"),
@@ -117,7 +117,7 @@ async fn test_web_endpoints() {
         )
         .await
         .expect("debug/blocks endpoint failed");
-        assert_body_contains(
+        ensure_body_contains(
             &client,
             i,
             &format!("http://{web_addr}/debug/signatures"),
@@ -125,7 +125,7 @@ async fn test_web_endpoints() {
         )
         .await
         .expect("debug/signatures endpoint failed");
-        assert_body_contains(
+        ensure_body_contains(
             &client,
             i,
             &format!("http://{web_addr}/debug/ckds"),
@@ -133,7 +133,7 @@ async fn test_web_endpoints() {
         )
         .await
         .expect("debug/ckds endpoint failed");
-        assert_body_contains(
+        ensure_body_contains(
             &client,
             i,
             &format!("http://{web_addr}/debug/contract"),
