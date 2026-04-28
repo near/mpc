@@ -12,6 +12,7 @@ use near_mpc_bounded_collections::NonEmptyVec;
 use serde::Deserialize;
 use std::path::PathBuf;
 use thiserror::Error;
+use time::format_description::well_known::Rfc3339;
 use tracing::{error, warn};
 use url::Url;
 
@@ -54,6 +55,13 @@ const PCCS_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 /// attestation accepted into the contract is ≤7 days old *and* backed
 /// by collateral whose Intel signature is ≤7 days old.
 const MAX_COLLATERAL_AGE_SECONDS: u64 = 7 * 24 * 60 * 60;
+
+/// Grace window for collateral whose `issueDate` is slightly in our future.
+/// Intended to absorb routine clock skew between Intel's PCS and our node,
+/// not to defend against an attacker — the malicious-operator threat model
+/// (clock backdating, etc.) is addressed separately. Anything past this
+/// window is treated as a misconfiguration / data error and rejected.
+const FUTURE_ISSUE_DATE_GRACE_SECONDS: u64 = 5 * 60;
 
 /// Default path for dstack Unix socket endpoint.
 pub const DEFAULT_DSTACK_ENDPOINT: &str = "/var/run/dstack.sock";
@@ -250,6 +258,26 @@ fn check_field_freshness(
     let issued_at_seconds = parse_rfc3339_to_unix_seconds(&issue_date)
         .with_context(|| format!("parsing `{field}.issueDate` (`{issue_date}`) as RFC3339"))?;
 
+    // Future-dated collateral: a small grace window absorbs clock skew
+    // between Intel's PCS and our node; anything beyond it is a data
+    // error (or a misconfigured PCCS) and we want a hard reject rather
+    // than the silent `saturating_sub → 0 → "fresh"` fall-through.
+    let skew_seconds = issued_at_seconds.saturating_sub(now_seconds);
+    if skew_seconds > FUTURE_ISSUE_DATE_GRACE_SECONDS {
+        warn!(
+            field,
+            issue_date = %issue_date,
+            skew_seconds,
+            grace_seconds = FUTURE_ISSUE_DATE_GRACE_SECONDS,
+            pccs_url,
+            "PCCS collateral rejected: issueDate is in the future beyond grace window"
+        );
+        anyhow::bail!(
+            "PCCS collateral has future issueDate: {field} issued {issue_date} \
+             ({skew_seconds}s in the future, grace {FUTURE_ISSUE_DATE_GRACE_SECONDS}s)"
+        );
+    }
+
     let elapsed_seconds = now_seconds.saturating_sub(issued_at_seconds);
     if elapsed_seconds > MAX_COLLATERAL_AGE_SECONDS {
         warn!(
@@ -269,7 +297,6 @@ fn check_field_freshness(
 }
 
 fn parse_rfc3339_to_unix_seconds(s: &str) -> anyhow::Result<u64> {
-    use time::format_description::well_known::Rfc3339;
     let dt = time::OffsetDateTime::parse(s, &Rfc3339)?;
     let unix = dt.unix_timestamp();
     u64::try_from(unix).map_err(|_| anyhow::anyhow!("issueDate is before unix epoch"))
@@ -682,7 +709,6 @@ mod tests {
     /// Format a unix-seconds timestamp back into RFC3339 (UTC) the way Intel
     /// PCS would emit it, so test fixtures stay close to real-world inputs.
     fn unix_to_rfc3339(unix_seconds: u64) -> String {
-        use time::format_description::well_known::Rfc3339;
         time::OffsetDateTime::from_unix_timestamp(unix_seconds as i64)
             .expect("test timestamp fits in i64")
             .format(&Rfc3339)
@@ -780,6 +806,40 @@ mod tests {
                 .to_string();
 
         assert!(err.contains("too stale"), "got: {err}");
+    }
+
+    /// Slight future-dating (within the grace window) is accepted — covers
+    /// routine clock skew between Intel's PCS and our node without false
+    /// rejections.
+    #[tokio::test]
+    async fn check_collateral_freshness__should_accept_slight_future_within_grace() {
+        let issued = unix_to_rfc3339(TEST_NOW_SECONDS + FUTURE_ISSUE_DATE_GRACE_SECONDS);
+        let collateral = collateral_with_issue_dates(&issued, &issued);
+
+        let result =
+            check_collateral_freshness(&collateral, "https://test.example/", TEST_NOW_SECONDS);
+
+        assert!(result.is_ok(), "expected ok within grace, got {result:?}");
+    }
+
+    /// Future-dating beyond the grace window is rejected, not silently
+    /// treated as fresh by `saturating_sub → 0`. This closes the bypass
+    /// where a misconfigured PCCS or backdated node clock would otherwise
+    /// pass arbitrary collateral.
+    #[tokio::test]
+    async fn check_collateral_freshness__should_reject_future_beyond_grace() {
+        let issued = unix_to_rfc3339(TEST_NOW_SECONDS + FUTURE_ISSUE_DATE_GRACE_SECONDS + 1);
+        let collateral = collateral_with_issue_dates(&issued, &issued);
+
+        let err =
+            check_collateral_freshness(&collateral, "https://test.example/", TEST_NOW_SECONDS)
+                .unwrap_err()
+                .to_string();
+
+        assert!(
+            err.contains("future issueDate"),
+            "expected 'future issueDate' in error, got: {err}"
+        );
     }
 
     #[tokio::test]
