@@ -376,10 +376,56 @@ jobs:
           cd libs/nearcore
           cargo build -p neard --release
 
+      # Sample CPU/memory/load to a CSV during E2E tests so we can correlate
+      # flaky failures with runner resource contention. See near/mpc#2883.
+      - name: Start resource-usage telemetry collector
+        run: |
+          mkdir -p target/telemetry
+          python3 scripts/collect-resource-usage.py \
+            --interval 2 \
+            --output target/telemetry/e2e-resource-usage.csv \
+            > target/telemetry/collector.log 2>&1 &
+          echo $! > target/telemetry/collector.pid
+          echo "Started telemetry collector pid=$(cat target/telemetry/collector.pid)"
+
       - name: Run E2E tests
         run: cargo make e2e-tests-skip-build
         env:
           RUST_LOG: info,e2e_tests=debug
+
+      - name: Stop resource-usage telemetry collector
+        if: always()
+        run: |
+          if [ -f target/telemetry/collector.pid ]; then
+            pid=$(cat target/telemetry/collector.pid)
+            kill -TERM "$pid" 2>/dev/null || true
+            # Give the collector a moment to flush its final sample.
+            for _ in 1 2 3 4 5; do
+              kill -0 "$pid" 2>/dev/null || break
+              sleep 1
+            done
+            kill -KILL "$pid" 2>/dev/null || true
+            rm -f target/telemetry/collector.pid
+          fi
+
+      - name: Print resource-usage summary
+        if: always()
+        run: |
+          if [ -f target/telemetry/e2e-resource-usage.csv ]; then
+            python3 scripts/summarize-resource-usage.py \
+              --input target/telemetry/e2e-resource-usage.csv
+          else
+            echo "No telemetry CSV found; skipping summary."
+          fi
+
+      - name: Upload resource-usage telemetry artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-resource-telemetry
+          path: target/telemetry/
+          if-no-files-found: warn
+          retention-days: 14
 
   ci-extra:
     name: "Extra CI checks"
