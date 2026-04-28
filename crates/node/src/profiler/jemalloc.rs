@@ -118,11 +118,7 @@ fn render_flamegraph_svg(dump_file: File) -> anyhow::Result<Vec<u8>> {
 
         // `parse_jeheap` returns frames root-first, which is also what inferno's
         // collapsed format expects, so no reordering is needed here.
-        let frames: Vec<String> = stack
-            .addrs
-            .iter()
-            .map(|&addr| symbolicate(addr))
-            .collect();
+        let frames: Vec<String> = stack.addrs.iter().map(|&addr| symbolicate(addr)).collect();
 
         collapsed_lines.push(format!("{} {}", frames.join(";"), weight));
     }
