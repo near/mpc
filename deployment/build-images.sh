@@ -145,7 +145,19 @@ if $USE_RUST_LAUNCHER; then
 fi
 
 if $USE_NODE || $USE_NODE_GCP; then
-    SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH repro-env build --env SOURCE_DATE_EPOCH -- cargo build -p mpc-node --profile reproducible --locked
+    # Pin jemalloc's `./configure` auto-detected values so tikv-jemalloc-sys
+    # produces identical bytes across builders. See nix/mpc-node.nix for the
+    # full rationale; values match the standard x86_64 Linux ABI.
+    SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH \
+    JEMALLOC_SYS_WITH_LG_VADDR=48 \
+    JEMALLOC_SYS_WITH_LG_PAGE=12 \
+    JEMALLOC_SYS_WITH_LG_HUGEPAGE=21 \
+    repro-env build \
+      --env SOURCE_DATE_EPOCH \
+      --env JEMALLOC_SYS_WITH_LG_VADDR \
+      --env JEMALLOC_SYS_WITH_LG_PAGE \
+      --env JEMALLOC_SYS_WITH_LG_HUGEPAGE \
+      -- cargo build -p mpc-node --profile reproducible --locked
     node_binary_hash=$(sha256sum target/reproducible/mpc-node | cut -d' ' -f1)
 fi
 
