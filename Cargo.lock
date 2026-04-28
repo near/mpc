@@ -5188,6 +5188,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+ "url",
 ]
 
 [[package]]
@@ -11205,6 +11206,7 @@ dependencies = [
  "launcher-interface",
  "mpc-attestation",
  "near-mpc-bounded-collections",
+ "reqwest 0.12.28",
  "rstest",
  "test-utils",
  "thiserror 2.0.18",

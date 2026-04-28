@@ -3,6 +3,7 @@ use std::{fmt, path::PathBuf};
 
 use mpc_primitives::hash::NodeImageHash;
 use serde::{Deserialize, Serialize};
+use url::Url;
 
 const SHA256_PREFIX: &str = "sha256:";
 
@@ -22,6 +23,36 @@ pub enum TeeAuthorityConfig {
     Dstack { dstack_endpoint: PathBuf },
 }
 
+/// One PCCS endpoint as listed in the operator's `pccs_endpoints` config —
+/// a URL plus an optional per-URL TLS trust override.
+///
+/// The TOML representation uses an array of tables:
+///
+/// ```toml
+/// [[mpc_node_config.pccs_endpoints]]
+/// url = "https://localhost:8081/"
+/// tls = { mode = "insecure" }
+///
+/// [[mpc_node_config.pccs_endpoints]]
+/// url = "https://pccs.phala.network/"
+/// # no `tls` line — default reqwest+rustls trust roots (Mozilla webpki-roots)
+/// ```
+///
+/// Putting the trust policy on each entry instead of as a single global
+/// field on `StartConfig` lets an operator combine a self-signed local
+/// PCCS (insecure or pinned) with public-CA fallbacks in the same
+/// fallback chain — see the discussion on PR #3026.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PccsEndpointConfig {
+    pub url: Url,
+    /// Per-endpoint TLS trust override. `None` = default reqwest+rustls
+    /// trust roots (the bundled Mozilla webpki-roots). See [`PccsTlsTrust`]
+    /// for the override modes.
+    #[serde(default)]
+    pub tls: Option<PccsTlsTrust>,
+}
+
 /// PCCS TLS trust policy.
 ///
 /// The two operator-tunable trust modes are mutually exclusive — at most
@@ -38,8 +69,10 @@ pub enum TeeAuthorityConfig {
 /// for the unit variant, and extends naturally if a third trust mode is
 /// added later (just another variant).
 ///
-/// `None` on `StartConfig` (i.e. no `[mpc_node_config.pccs_tls]` table)
-/// means "use the system trust roots" — the default behaviour.
+/// `None` (no `tls` field on a `[[pccs_endpoints]]` entry) means "use the
+/// default reqwest+rustls trust roots" — the bundled Mozilla `webpki-roots`
+/// (not OS-native roots), which validate every public PCCS endpoint
+/// (Phala, Intel) out of the box.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PccsTlsTrust {

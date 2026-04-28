@@ -11,22 +11,56 @@ port_mappings = [
 
 [mpc_node_config]
 home_dir = "/data"
-# PCCS URLs for TDX attestation collateral, tried in order until one succeeds.
-# If set, must contain at least one URL. If omitted, defaults to Phala's PCCS.
-# pccs_urls = ["https://pccs.phala.network"]
-# pccs_urls = ["http://localhost:8081", "https://pccs.phala.network"]
-
-# Optional TLS-trust policy for the PCCS request. Set this only when
-# pointing `pccs_url` at a self-signed local PCCS (e.g. the stock Intel
-# `sgx-dcap-pccs` install). Configured via the `[mpc_node_config.pccs_tls]`
-# sub-table with `mode = "ca_cert_pem"` or `mode = "insecure"` — the two
-# modes are mutually exclusive *by construction* (single enum field).
+# PCCS endpoints used to fetch TDX attestation collateral. Each entry is a
+# URL with an optional per-URL TLS trust override. Tried in order until
+# one succeeds. At least one entry is required. If the entire field is
+# omitted, defaults to Phala's PCCS with default trust roots.
 #
-# !! Stock-cert gotcha: the cert that ships in the Ubuntu `sgx-dcap-pccs`
-# package (`/opt/intel/sgx-dcap-pccs/ssl_key/file.crt`) is X.509 v1,
-# expired, has no SAN. Pinning that cert via `mode = "ca_cert_pem"` will
-# still fail TLS validation. Regenerate it as a v3 cert with valid dates
-# and a SAN matching your `pccs_url` host before pinning, e.g.:
+# Common case (single public endpoint, default trust roots — bundled
+# Mozilla webpki-roots used by reqwest+rustls):
+#
+#   [[mpc_node_config.pccs_endpoints]]
+#   url = "https://pccs.phala.network/"
+#
+# Multi-endpoint fallback chain, all with default trust:
+#
+#   [[mpc_node_config.pccs_endpoints]]
+#   url = "https://pccs.phala.network/"
+#
+#   [[mpc_node_config.pccs_endpoints]]
+#   url = "https://api.trustedservices.intel.com/"
+#
+# Per-URL TLS trust override — set `tls = ...` on entries that need it.
+# Two override modes are available:
+#
+#   tls = { mode = "ca_cert_pem", ca_cert_pem = "..." }
+#       Pin the PCCS server's certificate as an additional trust anchor.
+#       Default trust roots stay active; this just adds the operator's
+#       cert on top. Production-recommended for local self-signed PCCS.
+#
+#   tls = { mode = "insecure" }
+#       Disable TLS certificate verification entirely for this endpoint.
+#       Loopback only — startup rejects it for non-loopback URLs.
+#       Acceptable on loopback (host = trust boundary) but ca_cert_pem
+#       is preferred when a properly-formed cert is available.
+#
+# Self-signed local PCCS as primary, public-CA fallbacks:
+#
+#   [[mpc_node_config.pccs_endpoints]]
+#   url = "https://localhost:8081/"
+#   tls = { mode = "insecure" }
+#
+#   [[mpc_node_config.pccs_endpoints]]
+#   url = "https://pccs.phala.network/"
+#
+#   [[mpc_node_config.pccs_endpoints]]
+#   url = "https://api.trustedservices.intel.com/"
+#
+# !! Stock-cert gotcha for `mode = "ca_cert_pem"`: the cert that ships in
+# the Ubuntu `sgx-dcap-pccs` package (`/opt/intel/sgx-dcap-pccs/ssl_key/
+# file.crt`) is X.509 v1, expired, no SAN. Pinning that cert directly
+# will still fail TLS validation. Regenerate as v3 with valid dates and
+# a SAN matching the `url` host before pinning, e.g.:
 #
 #   sudo openssl req -x509 -nodes -newkey rsa:2048 \
 #     -keyout /opt/intel/sgx-dcap-pccs/ssl_key/private.pem \
@@ -35,31 +69,6 @@ home_dir = "/data"
 #     -addext "subjectAltName=DNS:localhost,IP:127.0.0.1,IP:10.0.2.2"
 #   sudo chown pccs:pccs /opt/intel/sgx-dcap-pccs/ssl_key/{file.crt,private.pem}
 #   sudo systemctl restart pccs
-#
-# Mode "ca_cert_pem": pin the PCCS server's certificate as a trust anchor.
-# Recommended for production-style local-PCCS deployments.
-#
-# [mpc_node_config.pccs_tls]
-# mode = "ca_cert_pem"
-# ca_cert_pem = """
-# -----BEGIN CERTIFICATE-----
-# ...
-# -----END CERTIFICATE-----
-# """
-#
-# Mode "insecure": disable TLS certificate verification entirely.
-# Loopback only; the node startup rejects this for non-loopback PCCS
-# hosts. Allowed hosts:
-#   - localhost
-#   - any IPv4 in 127.0.0.0/8
-#   - IPv6 loopback — write `https://[::1]:<port>/` (brackets required)
-#   - QEMU slirp gateway — `10.0.2.2`
-# Acceptable for production loopback-PCCS deployments — the host is the
-# trust boundary, so TLS authentication is redundant — but `ca_cert_pem`
-# is preferred when a properly-formed cert is available.
-#
-# [mpc_node_config.pccs_tls]
-# mode = "insecure"
 
 [mpc_node_config.log]
 format = "plain"

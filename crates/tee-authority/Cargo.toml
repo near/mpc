@@ -17,6 +17,13 @@ hex = { workspace = true }
 launcher-interface = { workspace = true }
 mpc-attestation = { workspace = true, features = ["dstack-conversions"] }
 near-mpc-bounded-collections = { workspace = true }
+# Constrained to the 0.12 series to match `dcap-qvl`'s `reqwest`. `dcap-qvl`'s
+# `CollateralClient::new(reqwest::Client, _)` requires us to hand it a client
+# typed by the same major. The workspace pin is on a newer major (0.13) used
+# by other crates, so we declare an explicit `0.12.x` dep here.
+# TODO(#3027): drop this once `dcap-qvl` exposes the `HttpClient` trait
+# upstream, then we can implement it for any client and stop pinning.
+reqwest = { version = "0.12.24", default-features = false, features = ["rustls-tls"] }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
