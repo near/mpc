@@ -295,7 +295,7 @@ near_add_key_skip_if_exists() {
   # The key can only call node-facing methods on the MPC contract.
   local node_methods="respond,respond_ckd,respond_verify_foreign_tx,vote_pk,start_keygen_instance,vote_reshared,register_foreign_chain_config,start_reshare_instance,vote_abort_key_event_instance,verify_tee,submit_participant_info,conclude_node_migration"
   local cmd=(near account add-key "$acct" grant-function-call-access
-             --allowance '1 NEAR'
+             --allowance unlimited
              --contract-account-id "$MPC_CONTRACT_ACCOUNT"
              --function-names "$node_methods"
              use-manually-provided-public-key "$pk"
