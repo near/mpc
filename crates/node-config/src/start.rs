@@ -1,6 +1,7 @@
 use super::ConfigFile;
 use anyhow::Context;
 use clap::ValueEnum;
+use near_mpc_bounded_collections::NonEmptyVec;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -24,38 +25,19 @@ pub struct StartConfig {
     /// Node configuration (indexer, protocol parameters, etc.).
     pub node: ConfigFile,
     pub log: LogConfig,
-    /// Base URL of the PCCS server used to fetch TDX attestation collateral.
-    /// Defaults to Phala's PCCS if not set in config.
-    #[serde(default = "default_pccs_url")]
-    pub pccs_url: url::Url,
-
-    /// PCCS TLS trust policy. When omitted, the node uses the system
-    /// trust roots — the default behaviour for `pccs.phala.network`,
-    /// `api.trustedservices.intel.com`, etc. Set the `[mpc_node_config.pccs_tls]`
-    /// sub-table (with `mode = "ca_cert_pem"` or `mode = "insecure"`)
-    /// when pointing at a local PCCS that uses a self-signed cert.
-    ///
-    /// The two operator modes are mutually exclusive *by construction*:
-    /// the underlying type is a tagged enum
-    /// ([`PccsTlsTrust`](launcher_interface::types::PccsTlsTrust)), so
-    /// at most one can be set in any given config. See that type's
-    /// docs for the full mode descriptions and rationale. Per pbeza's
-    /// review on PR #3026 this replaces a previous pair of fields
-    /// (`pccs_ca_cert_pem` + `pccs_tls_insecure`) that required runtime
-    /// mutual-exclusivity validation.
-    ///
-    /// Loopback-only enforcement on the `Insecure` variant still
-    /// happens at startup — that gate is orthogonal to the type
-    /// encoding (it depends on `pccs_url`, which the type doesn't
-    /// know about).
-    #[serde(default)]
-    pub pccs_tls: Option<launcher_interface::types::PccsTlsTrust>,
+    /// Base URLs of PCCS servers used to fetch TDX attestation collateral.
+    /// Tried in order on every fetch; the first one to succeed wins, and the
+    /// rest are used only as fallbacks when earlier entries fail. At least
+    /// one URL is required. Defaults to Phala's PCCS if the field is omitted.
+    #[serde(default = "default_pccs_urls")]
+    pub pccs_urls: NonEmptyVec<url::Url>,
 }
 
-pub fn default_pccs_url() -> url::Url {
-    launcher_interface::DEFAULT_PCCS_URL
+pub fn default_pccs_urls() -> NonEmptyVec<url::Url> {
+    let url: url::Url = launcher_interface::DEFAULT_PCCS_URL
         .parse()
-        .expect("default PCCS URL is valid")
+        .expect("default PCCS URL is valid");
+    NonEmptyVec::try_from(vec![url]).expect("single-element vec is non-empty")
 }
 
 impl StartConfig {
@@ -199,9 +181,9 @@ pub enum DownloadConfigType {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
 
     /// The tee-launcher blocks the "gcp" key in TEE mode using the hardcoded
     /// string "gcp" (see crates/tee-launcher/src/config.rs).
@@ -223,78 +205,77 @@ mod tests {
         );
     }
 
-    /// Two complementary checks on the PCCS-TLS knob:
-    ///
-    /// 1. `mem::offset_of!(StartConfig, pccs_tls)` — fails to compile
-    ///    if the field is renamed (or removed) on `StartConfig`. Cheap
-    ///    field-existence guarantee for free.
-    /// 2. A local `Probe` struct with the same field name exercises serde
-    ///    deserialization (both variants of `PccsTlsTrust`), default
-    ///    behaviour (no `[pccs_tls]` table → `None`), and that the
-    ///    serialized form keeps the expected `mode` tag.
-    ///
-    /// What this doesn't catch: a future `#[serde(rename = "...")]` on
-    /// `StartConfig`'s field would slip past this. To catch that we'd need
-    /// to round-trip a real `StartConfig` instance, which currently requires
-    /// constructing all the non-default fields on `StartConfig` (dstack
-    /// endpoint, log config, indexer config, etc.) — significantly more
-    /// fixture for marginal value over the `offset_of!` rename guard.
+    /// A single-element TOML array parses as a [`NonEmptyVec`] with one entry.
+    /// This is the minimum valid form of the `pccs_urls` field.
     #[test]
-    #[expect(non_snake_case)]
-    fn pccs_tls_field__should_use_expected_toml_names() {
-        use launcher_interface::types::PccsTlsTrust;
-
-        // Compile-time check: a rename on StartConfig fails this line.
-        let _ = std::mem::offset_of!(StartConfig, pccs_tls);
-
-        // Given an isolated struct that has only the field we care about,
-        // populated from the canonical TOML strings.
-        #[derive(Serialize, Deserialize, Debug)]
-        struct Probe {
-            #[serde(default)]
-            pccs_tls: Option<PccsTlsTrust>,
+    fn pccs_urls__should_parse_single_element_array() {
+        // Given
+        #[derive(Debug, Deserialize)]
+        struct Wrapper {
+            #[serde(default = "default_pccs_urls")]
+            pccs_urls: NonEmptyVec<url::Url>,
         }
+        const URL: &str = "https://pccs.example.org";
+        let toml_input = format!(r#"pccs_urls = ["{URL}"]"#);
+        let expected: Vec<url::Url> = vec![URL.parse().unwrap()];
 
-        // ca_cert_pem variant — TOML form must round-trip.
-        let toml_pem = r#"
-[pccs_tls]
-mode = "ca_cert_pem"
-ca_cert_pem = "-----BEGIN CERTIFICATE-----\nMIIBkTCB+w==\n-----END CERTIFICATE-----"
-"#;
-        let probe: Probe = toml::from_str(toml_pem).expect("TOML parses");
-        assert_matches!(
-            probe.pccs_tls,
-            Some(PccsTlsTrust::CaCertPem { ref ca_cert_pem })
-                if ca_cert_pem.contains("BEGIN CERTIFICATE")
+        // When
+        let parsed: Wrapper = toml::from_str(&toml_input).unwrap();
+        let urls: Vec<url::Url> = parsed.pccs_urls.into_iter().collect();
+
+        // Then
+        assert_eq!(urls, expected);
+    }
+
+    /// Multiple entries parse in order. Order matters: the fetch path tries
+    /// each URL in the order the user wrote them.
+    #[test]
+    fn pccs_urls__should_preserve_order_of_multiple_entries() {
+        // Given
+        #[derive(Debug, Deserialize)]
+        struct Wrapper {
+            #[serde(default = "default_pccs_urls")]
+            pccs_urls: NonEmptyVec<url::Url>,
+        }
+        const URLS: [&str; 3] = [
+            "http://localhost:8081",
+            "https://pccs.phala.network",
+            "https://api.trustedservices.intel.com",
+        ];
+        let toml_input = format!(
+            r#"pccs_urls = [{}]"#,
+            URLS.iter()
+                .map(|u| format!(r#""{u}""#))
+                .collect::<Vec<_>>()
+                .join(", ")
         );
+        let expected: Vec<url::Url> = URLS.iter().map(|u| u.parse().unwrap()).collect();
 
-        // insecure variant — unit form, no extra fields.
-        let toml_insecure = r#"
-[pccs_tls]
-mode = "insecure"
-"#;
-        let probe: Probe = toml::from_str(toml_insecure).expect("TOML parses");
-        assert_matches!(probe.pccs_tls, Some(PccsTlsTrust::Insecure));
+        // When
+        let parsed: Wrapper = toml::from_str(&toml_input).unwrap();
+        let urls: Vec<url::Url> = parsed.pccs_urls.into_iter().collect();
 
-        // Empty TOML yields the documented default (None).
-        let probe_default: Probe = toml::from_str("").expect("empty TOML parses");
-        assert!(probe_default.pccs_tls.is_none());
+        // Then
+        assert_eq!(urls, expected);
+    }
 
-        // Mutual exclusivity is now a parse-time guarantee: setting both
-        // mode-specific fields is rejected by serde because only one
-        // variant can match. We don't need a dedicated test for it —
-        // the type system enforces it.
+    /// When the field is omitted altogether, the `#[serde(default)]` hook
+    /// returns the Phala default as a single-element vec.
+    #[test]
+    fn pccs_urls__should_default_to_phala_when_omitted() {
+        // Given
+        #[derive(Debug, Deserialize)]
+        struct Wrapper {
+            #[serde(default = "default_pccs_urls")]
+            pccs_urls: NonEmptyVec<url::Url>,
+        }
+        let expected: Vec<url::Url> = vec![launcher_interface::DEFAULT_PCCS_URL.parse().unwrap()];
 
-        // Round-trip stays consistent (struct field name matches the
-        // expected TOML key, after `[pccs_tls]` table header).
-        let serialized = toml::to_string(&Probe {
-            pccs_tls: Some(PccsTlsTrust::CaCertPem {
-                ca_cert_pem: "x".into(),
-            }),
-        })
-        .unwrap();
-        assert!(serialized.contains("[pccs_tls]"));
-        assert!(serialized.contains("mode = \"ca_cert_pem\""));
-        assert!(serialized.contains("ca_cert_pem"));
+        // When
+        let parsed: Wrapper = toml::from_str("").unwrap();
+        let urls: Vec<url::Url> = parsed.pccs_urls.into_iter().collect();
+
+        // Then
+        assert_eq!(urls, expected);
     }
 }

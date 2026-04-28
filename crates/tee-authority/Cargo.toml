@@ -15,14 +15,8 @@ derive_more = { workspace = true }
 dstack-sdk = { workspace = true }
 hex = { workspace = true }
 launcher-interface = { workspace = true }
-mpc-attestation = { workspace = true }
-# Constrained to the 0.12 series to match the version used by `dcap-qvl`
-# so we can pass a `reqwest::Client` directly into `CollateralClient::new`.
-# The workspace dependency is on a newer major (0.13) used by other crates.
-# TODO(#3027): drop this explicit constraint once `dcap-qvl` re-exports
-# `reqwest` upstream — then we can use `dcap_qvl::reqwest` and the
-# workspace converges on a single reqwest version.
-reqwest = { version = "0.12.24", default-features = false, features = ["rustls-tls"] }
+mpc-attestation = { workspace = true, features = ["dstack-conversions"] }
+near-mpc-bounded-collections = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
@@ -30,7 +24,6 @@ url = { workspace = true }
 
 [dev-dependencies]
 hex = { workspace = true }
-rcgen = { workspace = true }
 rstest = { workspace = true }
 test-utils = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }

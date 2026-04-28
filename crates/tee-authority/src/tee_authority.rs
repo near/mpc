@@ -1,18 +1,16 @@
-use anyhow::Context;
 use backon::{BackoffBuilder, ExponentialBuilder};
 use core::{future::Future, time::Duration};
 use derive_more::{Constructor, From};
 use dstack_sdk::dstack_client::DstackClient;
-use launcher_interface::types::PccsTlsTrust;
 use mpc_attestation::{
     attestation::{Attestation, DstackAttestation, MockAttestation},
     collateral::Collateral,
     report_data::ReportData,
 };
-use std::net::IpAddr;
+use near_mpc_bounded_collections::NonEmptyVec;
 use std::path::PathBuf;
 use thiserror::Error;
-use tracing::error;
+use tracing::{error, info, warn};
 use url::Url;
 
 /// Errors that can occur during TEE attestation generation.
@@ -30,11 +28,57 @@ pub enum AttestationError {
     #[error("TDX quote decoding failed: {0:#}")]
     QuoteDecode(#[source] anyhow::Error),
 
-    #[error("collateral fetch failed: {0:#}")]
-    CollateralFetch(#[source] anyhow::Error),
+    #[error("collateral fetch failed: {0}")]
+    CollateralFetch(#[source] AllPccsEndpointsFailed),
 
     #[error("dstack_endpoint path is not valid UTF-8")]
     InvalidEndpoint,
+}
+
+/// One PCCS endpoint's failure. Carries the URL it was tried against and
+/// the underlying cause. The cause stays as `anyhow::Error` because the
+/// upstream `dcap_qvl::CollateralClient` itself returns `anyhow::Result`.
+#[derive(Debug, Error)]
+pub enum PccsEndpointError {
+    #[error("invalid PCCS client construction for {url}: {source:#}")]
+    ClientConstruction {
+        url: Url,
+        #[source]
+        source: anyhow::Error,
+    },
+
+    #[error("timed out fetching collateral from {url} after {timeout:?}")]
+    Timeout { url: Url, timeout: Duration },
+
+    #[error("collateral fetch failed for {url}: {source:#}")]
+    Fetch {
+        url: Url,
+        #[source]
+        source: anyhow::Error,
+    },
+}
+
+/// Returned when every configured PCCS endpoint failed. Owns the full list
+/// of per-endpoint failures in the order they were tried. The collection is
+/// non-empty by construction: this error only ever fires after a loop over a
+/// `NonEmptyVec<Url>`, so the type-level invariant matches the value-level
+/// one and rules out nonsense renderings like "all 0 PCCS endpoints failed".
+#[derive(Debug, Error)]
+#[error(
+    "all {} PCCS endpoints failed:\n{}",
+    failures.len(),
+    format_pccs_failures(failures.as_slice())
+)]
+pub struct AllPccsEndpointsFailed {
+    pub failures: NonEmptyVec<PccsEndpointError>,
+}
+
+fn format_pccs_failures(failures: &[PccsEndpointError]) -> String {
+    failures
+        .iter()
+        .map(|e| format!("  - {e}"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// The maximum duration to wait for retrying requests.
@@ -63,96 +107,21 @@ impl Default for LocalTeeAuthorityConfig {
 pub struct DstackTeeAuthorityConfig {
     /// Endpoint to contact dstack service. Defaults to [`DEFAULT_DSTACK_ENDPOINT`]
     dstack_endpoint: PathBuf,
-    /// Base URL of the PCCS server used to fetch TDX attestation collateral.
-    pccs_url: Url,
-    /// Operator's PCCS TLS trust policy. `None` means "use the system trust
-    /// roots" — the default for public PCCS endpoints. The two non-default
-    /// modes (pinned-cert vs. insecure) are encoded as variants of
-    /// [`PccsTlsTrust`], which means they are mutually exclusive *by
-    /// construction* — see that type's docs for the rationale.
-    pccs_tls: Option<PccsTlsTrust>,
+    /// Base URLs of PCCS servers used to fetch TDX attestation collateral.
+    /// Tried in order; the first one to succeed wins, the rest act as
+    /// fallbacks. At least one URL is required (enforced by the type).
+    pccs_urls: NonEmptyVec<Url>,
 }
 
 impl Default for DstackTeeAuthorityConfig {
     fn default() -> Self {
+        let default_url: Url = launcher_interface::DEFAULT_PCCS_URL
+            .parse()
+            .expect("default PCCS URL is valid");
         Self {
             dstack_endpoint: PathBuf::from(DEFAULT_DSTACK_ENDPOINT),
-            pccs_url: launcher_interface::DEFAULT_PCCS_URL
-                .parse()
-                .expect("default PCCS URL is valid"),
-            pccs_tls: None,
-        }
-    }
-}
-
-/// Domain names whitelisted for `PccsTlsTrust::Insecure`. IP-based hosts
-/// are matched separately via [`std::net::IpAddr::is_loopback`] (plus the
-/// `10.0.2.2` slirp gateway). Loopback-only enforcement keeps a copy-pasted
-/// dev config from silently disabling TLS validation against a real
-/// network endpoint.
-const LOOPBACK_PCCS_DOMAINS: &[&str] = &["localhost"];
-
-/// Returns true if the URL's host is loopback-ish enough to honor the
-/// `PccsTlsTrust::Insecure` mode. Accepts:
-/// - `localhost`
-/// - any IPv4 in `127.0.0.0/8` (per `Ipv4Addr::is_loopback`)
-/// - IPv6 loopback `::1`
-/// - the QEMU slirp gateway `10.0.2.2`
-fn pccs_host_is_loopback(pccs_url: &Url) -> bool {
-    match pccs_url.host() {
-        Some(url::Host::Domain(d)) => LOOPBACK_PCCS_DOMAINS.contains(&d),
-        Some(url::Host::Ipv4(ip)) => ip.is_loopback() || ip.octets() == [10, 0, 2, 2],
-        Some(url::Host::Ipv6(ip)) => IpAddr::V6(ip).is_loopback(),
-        None => false,
-    }
-}
-
-/// Validate the PCCS TLS-trust knob at startup. Runs once during config
-/// conversion and is intended to fail fast on operator config mistakes:
-///
-/// - `PccsTlsTrust::CaCertPem`, when set, must contain a parseable PEM
-///   certificate. Catching this here means a typo'd cert fails at startup
-///   with a clear message rather than at the first attestation attempt.
-/// - `PccsTlsTrust::Insecure` is only honored for loopback-ish PCCS URLs
-///   so a copy-pasted dev config cannot silently disable TLS validation
-///   against a real network endpoint.
-///
-/// Note: mutual exclusivity used to be the third check here. It is now a
-/// type-level invariant — `PccsTlsTrust` is a tagged enum, so at most one
-/// variant can be active by construction. (Per pbeza's review on PR #3026.)
-///
-/// Also emits the one-time WARN log when `Insecure` mode is active, so
-/// operators see the security signal at startup rather than scattered
-/// through every collateral fetch.
-pub fn validate_pccs_tls_config(
-    pccs_url: &Url,
-    pccs_tls: Option<&PccsTlsTrust>,
-) -> anyhow::Result<()> {
-    match pccs_tls {
-        None => Ok(()),
-        Some(PccsTlsTrust::CaCertPem { .. }) => {
-            // Fail fast on a malformed PEM rather than at the first fetch.
-            // Building a throwaway client here mirrors the work
-            // build_pccs_http_client does at fetch time, so anything that
-            // would make the production fetch fail surfaces at startup
-            // instead.
-            let _ = build_pccs_http_client(pccs_tls)
-                .context("failed to build TLS client with pccs_tls.ca_cert_pem at startup")?;
-            Ok(())
-        }
-        Some(PccsTlsTrust::Insecure) => {
-            anyhow::ensure!(
-                pccs_host_is_loopback(pccs_url),
-                "pccs_tls.mode = \"insecure\" is only allowed for loopback PCCS URLs \
-                 (localhost, 127.0.0.0/8, ::1, or 10.0.2.2); got {:?}",
-                pccs_url.host_str().unwrap_or(""),
-            );
-            tracing::warn!(
-                "pccs_tls.mode = \"insecure\": PCCS TLS certificate verification is DISABLED. \
-                 Only honored for loopback PCCS hosts; the host is the effective \
-                 trust boundary."
-            );
-            Ok(())
+            pccs_urls: NonEmptyVec::try_from(vec![default_url])
+                .expect("single-element vec is non-empty"),
         }
     }
 }
@@ -219,13 +188,9 @@ impl TeeAuthority {
         let quote_bytes: Vec<u8> =
             hex::decode(&quote).map_err(|e| AttestationError::QuoteDecode(e.into()))?;
 
-        let collateral = Self::fetch_collateral(
-            config.pccs_url.as_str(),
-            config.pccs_tls.as_ref(),
-            &quote_bytes,
-        )
-        .await
-        .map_err(AttestationError::CollateralFetch)?;
+        let collateral = Self::fetch_collateral(&config.pccs_urls, &quote_bytes)
+            .await
+            .map_err(AttestationError::CollateralFetch)?;
 
         Ok(Attestation::Dstack(DstackAttestation::new(
             quote_bytes.into(),
@@ -234,65 +199,99 @@ impl TeeAuthority {
         )))
     }
 
-    /// Fetches attestation collateral from a PCCS server for the given TDX quote.
+    /// Fetches attestation collateral from a list of PCCS servers, tried in
+    /// order. The first URL to return success wins; later URLs act as
+    /// fallbacks and are only contacted when earlier ones fail (after their
+    /// own per-URL backoff). When every URL fails, returns an
+    /// [`AllPccsEndpointsFailed`] aggregating each endpoint's failure.
     async fn fetch_collateral(
-        pccs_url: &str,
-        pccs_tls: Option<&PccsTlsTrust>,
+        pccs_urls: &NonEmptyVec<Url>,
         quote: &[u8],
-    ) -> anyhow::Result<Collateral> {
-        let http = build_pccs_http_client(pccs_tls)?;
-        // Use `DefaultConfig` to match the trust posture of `with_default_http`
-        // (selected as `RingConfig` when the `ring` feature is on, which we do).
-        let client =
-            dcap_qvl::collateral::CollateralClient::<dcap_qvl::configs::DefaultConfig>::new(
-                http, pccs_url,
-            );
+    ) -> Result<Collateral, AllPccsEndpointsFailed> {
+        try_each_pccs_endpoint(pccs_urls, async |url: Url| {
+            Self::fetch_collateral_from(&url, quote).await
+        })
+        .await
+    }
+
+    /// Fetches attestation collateral from a single PCCS endpoint, with the
+    /// usual per-request timeout and a single retry via exponential backoff.
+    async fn fetch_collateral_from(
+        pccs_url: &Url,
+        quote: &[u8],
+    ) -> Result<Collateral, PccsEndpointError> {
+        let client = dcap_qvl::collateral::CollateralClient::with_default_http(pccs_url.as_str())
+            .map_err(|e| PccsEndpointError::ClientConstruction {
+            url: pccs_url.clone(),
+            source: anyhow::anyhow!(e),
+        })?;
         let fetch = async || {
             tokio::time::timeout(PCCS_REQUEST_TIMEOUT, client.fetch(quote))
                 .await
-                .map_err(|_| anyhow::anyhow!("timed out fetching collateral from PCCS"))?
+                .map_err(|_| PccsEndpointError::Timeout {
+                    url: pccs_url.clone(),
+                    timeout: PCCS_REQUEST_TIMEOUT,
+                })?
                 .map(Collateral::from)
-                .map_err(|e| anyhow::anyhow!(e))
+                .map_err(|e| PccsEndpointError::Fetch {
+                    url: pccs_url.clone(),
+                    source: anyhow::anyhow!(e),
+                })
         };
 
         get_with_backoff(fetch, "fetch collateral from PCCS", Some(1)).await
     }
 }
 
-/// Build the `reqwest::Client` used to talk to the PCCS server, applying the
-/// operator's TLS-trust policy. With `None` the result is the standard
-/// `reqwest` client with the trust anchors built into the selected `reqwest`
-/// TLS feature (currently `rustls-tls`, which uses the bundled Mozilla
-/// `webpki-roots`) — same trust posture as `with_default_http`.
-///
-/// Matching is exhaustive over the [`PccsTlsTrust`] enum, so adding a new
-/// trust mode in the future is a compile error here until the new variant
-/// is handled. (This is the type-system payoff for the enum encoding —
-/// previous code matched four input quadrants that included one impossible
-/// combination guarded only by runtime validation.)
-fn build_pccs_http_client(pccs_tls: Option<&PccsTlsTrust>) -> anyhow::Result<reqwest::Client> {
-    let builder = reqwest::Client::builder().timeout(PCCS_REQUEST_TIMEOUT);
-
-    let builder = match pccs_tls {
-        None => builder,
-        Some(PccsTlsTrust::CaCertPem { ca_cert_pem }) => {
-            let cert = reqwest::Certificate::from_pem(ca_cert_pem.as_bytes())
-                .context("failed to parse pccs_tls.ca_cert_pem as a PEM-encoded certificate")?;
-            builder.add_root_certificate(cert)
+/// Try each PCCS endpoint in order, returning the first success. If every
+/// endpoint fails, returns [`AllPccsEndpointsFailed`] listing each
+/// per-endpoint failure in attempt order. Failed attempts log at `warn`;
+/// a fallback success (attempt > 1) logs at `info` so an always-failing
+/// primary masked by a healthy fallback isn't invisible.
+async fn try_each_pccs_endpoint<Fetcher, Fut>(
+    pccs_urls: &NonEmptyVec<Url>,
+    fetcher: Fetcher,
+) -> Result<Collateral, AllPccsEndpointsFailed>
+where
+    Fetcher: Fn(Url) -> Fut,
+    Fut: Future<Output = Result<Collateral, PccsEndpointError>>,
+{
+    let mut failures: Vec<PccsEndpointError> = Vec::new();
+    let total_endpoints = pccs_urls.len();
+    for (index, url) in pccs_urls.iter().enumerate() {
+        let attempt = index + 1;
+        let is_last_endpoint = attempt == total_endpoints;
+        match fetcher(url.clone()).await {
+            Ok(collateral) => {
+                if attempt > 1 {
+                    info!(
+                        %url,
+                        attempt,
+                        total_endpoints,
+                        "fetched collateral via PCCS fallback"
+                    );
+                }
+                return Ok(collateral);
+            }
+            Err(err) => {
+                warn!(
+                    ?err,
+                    %url,
+                    attempt,
+                    total_endpoints,
+                    "failed to fetch collateral from PCCS; {}",
+                    if is_last_endpoint { "no more endpoints remain" } else { "trying next endpoint" }
+                );
+                failures.push(err);
+            }
         }
-        Some(PccsTlsTrust::Insecure) => {
-            // Disable both cert-chain and hostname verification so the
-            // observable behavior matches "TLS authentication off entirely",
-            // matching the doc-comment on `PccsTlsTrust::Insecure`. (rustls's
-            // `NoVerifier` covers both today, but the explicit second flag
-            // documents intent and is stable across reqwest backends.)
-            builder
-                .danger_accept_invalid_certs(true)
-                .danger_accept_invalid_hostnames(true)
-        }
-    };
-
-    builder.build().context("failed to build PCCS HTTP client")
+    }
+    // Sound by construction: the loop iterates `pccs_urls`, which is itself a
+    // `NonEmptyVec<Url>`, so any path that exits the loop without an early
+    // `Ok(...)` return must have pushed at least one failure.
+    let failures = NonEmptyVec::try_from(failures)
+        .expect("loop over NonEmptyVec<Url> guarantees at least one failure");
+    Err(AllPccsEndpointsFailed { failures })
 }
 
 async fn get_with_backoff<Operation, OperationFuture, Value, Error>(
@@ -366,158 +365,6 @@ mod tests {
     use test_utils::attestation::{account_key, p2p_tls_key};
 
     extern crate std;
-
-    /// Generate a small valid X.509 v3 self-signed cert as PEM, for tests
-    /// that need a real cert `reqwest::Certificate::from_pem` will accept.
-    fn test_cert_pem() -> String {
-        let cert =
-            rcgen::generate_simple_self_signed(vec!["test.local".into()]).expect("rcgen generate");
-        cert.cert.pem()
-    }
-
-    /// Convenience constructor for the cert-pem variant in tests.
-    fn pem_trust(pem: impl Into<String>) -> PccsTlsTrust {
-        PccsTlsTrust::CaCertPem {
-            ca_cert_pem: pem.into(),
-        }
-    }
-
-    #[rstest]
-    #[case::loopback_localhost("https://localhost:8081/")]
-    #[case::loopback_127("https://127.0.0.1:8081/")]
-    #[case::loopback_ipv6("https://[::1]:8081/")]
-    #[case::loopback_slirp("https://10.0.2.2:8081/")]
-    fn validate_pccs_tls_config__should_accept_insecure_for_loopback_hosts(#[case] url: &str) {
-        // Given
-        let url: Url = url.parse().expect("valid URL");
-
-        // When
-        let result = validate_pccs_tls_config(&url, Some(&PccsTlsTrust::Insecure));
-
-        // Then
-        assert!(result.is_ok(), "expected ok, got {result:?}");
-    }
-
-    #[rstest]
-    #[case::public_host("https://pccs.phala.network/")]
-    #[case::intel_host("https://api.trustedservices.intel.com/")]
-    #[case::other_loopback_alias("https://0.0.0.0:8081/")]
-    fn validate_pccs_tls_config__should_reject_insecure_for_non_loopback_hosts(#[case] url: &str) {
-        // Given
-        let url: Url = url.parse().expect("valid URL");
-
-        // When
-        let result = validate_pccs_tls_config(&url, Some(&PccsTlsTrust::Insecure));
-
-        // Then
-        assert!(result.is_err(), "expected err for {url}, got {result:?}");
-    }
-
-    #[rstest]
-    #[case::public_host("https://pccs.phala.network/")]
-    #[case::loopback_localhost("https://localhost:8081/")]
-    fn validate_pccs_tls_config__should_accept_default_trust_for_any_host(#[case] url: &str) {
-        // Given
-        let url: Url = url.parse().expect("valid URL");
-
-        // When (no [pccs_tls] table at all → default trust roots)
-        let result = validate_pccs_tls_config(&url, None);
-
-        // Then
-        assert!(result.is_ok(), "expected ok, got {result:?}");
-    }
-
-    #[rstest]
-    #[case::public_host("https://pccs.phala.network/")]
-    #[case::intel_host("https://api.trustedservices.intel.com/")]
-    #[case::loopback_localhost("https://localhost:8081/")]
-    fn validate_pccs_tls_config__should_accept_pem_for_any_host(#[case] url: &str) {
-        // Given a real PEM (validate parses the cert as a fail-fast check,
-        // so we need a structurally valid PEM).
-        let url: Url = url.parse().expect("valid URL");
-        let trust = pem_trust(test_cert_pem());
-
-        // When
-        let result = validate_pccs_tls_config(&url, Some(&trust));
-
-        // Then
-        assert!(result.is_ok(), "expected ok for {url}, got {result:?}");
-    }
-
-    // Note: there is no "both knobs set" test because the type system
-    // forbids it. `PccsTlsTrust` is a tagged enum, so at most one variant
-    // can be active. (Per pbeza's review on PR #3026 — replaces the prior
-    // runtime mutual-exclusivity check with a type-level invariant.)
-
-    #[test]
-    fn validate_pccs_tls_config__should_reject_invalid_pem() {
-        // Given a malformed PEM (spaces in the body break base64 decode).
-        let url: Url = "https://pccs.phala.network/".parse().expect("valid URL");
-        let trust =
-            pem_trust("-----BEGIN CERTIFICATE-----\nnot really base64\n-----END CERTIFICATE-----");
-
-        // When
-        let result = validate_pccs_tls_config(&url, Some(&trust));
-
-        // Then
-        assert!(
-            result.is_err(),
-            "expected err for invalid PEM at startup, got {result:?}"
-        );
-    }
-
-    #[test]
-    fn build_pccs_http_client__should_reject_invalid_pem() {
-        // Given
-        let trust =
-            pem_trust("-----BEGIN CERTIFICATE-----\nnot really base64\n-----END CERTIFICATE-----");
-
-        // When
-        let result = build_pccs_http_client(Some(&trust));
-
-        // Then
-        assert!(
-            result.is_err(),
-            "expected err for invalid PEM, got {result:?}"
-        );
-    }
-
-    #[test]
-    fn build_pccs_http_client__should_succeed_with_default_trust() {
-        // Given default inputs (the no-config path that every existing
-        // operator hits on the public Phala / Intel endpoints).
-
-        // When
-        let result = build_pccs_http_client(None);
-
-        // Then
-        assert!(result.is_ok(), "expected ok, got {result:?}");
-    }
-
-    #[test]
-    fn build_pccs_http_client__should_succeed_with_insecure() {
-        // When
-        let result = build_pccs_http_client(Some(&PccsTlsTrust::Insecure));
-
-        // Then
-        assert!(result.is_ok(), "expected ok, got {result:?}");
-    }
-
-    #[test]
-    fn build_pccs_http_client__should_succeed_with_valid_pem() {
-        // Given a real, freshly-generated PEM cert.
-        let trust = pem_trust(test_cert_pem());
-
-        // When
-        let result = build_pccs_http_client(Some(&trust));
-
-        // Then
-        assert!(result.is_ok(), "expected ok, got {result:?}");
-    }
-
-    // Note: build_pccs_http_client__should_fail_when_both_knobs_set has
-    // been removed — the both-set state is no longer representable
-    // (`PccsTlsTrust` is an enum, not a struct of two `Option`s).
 
     #[rstest]
     #[tokio::test]
@@ -685,6 +532,183 @@ mod tests {
         assert!(elapsed >= Duration::from_secs(total_expected_secs));
     }
 
+    /// Build a minimal `Collateral` for tests. None of the fields are
+    /// inspected — it just needs to be a valid value that round-trips through
+    /// the fetch path.
+    fn dummy_collateral(tag: &str) -> Collateral {
+        dcap_qvl::QuoteCollateralV3 {
+            pck_crl_issuer_chain: tag.into(),
+            root_ca_crl: Vec::new(),
+            pck_crl: Vec::new(),
+            tcb_info_issuer_chain: String::new(),
+            tcb_info: String::new(),
+            tcb_info_signature: Vec::new(),
+            qe_identity_issuer_chain: String::new(),
+            qe_identity: String::new(),
+            qe_identity_signature: Vec::new(),
+            pck_certificate_chain: None,
+        }
+        .into()
+    }
+
+    fn urls(list: &[&str]) -> NonEmptyVec<Url> {
+        let vec: Vec<Url> = list.iter().map(|s| s.parse().unwrap()).collect();
+        NonEmptyVec::try_from(vec).expect("test inputs must be non-empty")
+    }
+
+    /// A single-URL list should call the fetcher exactly once and propagate
+    /// the success.
+    #[tokio::test]
+    async fn try_each_pccs_endpoint__single_url_success() {
+        let call_count = Arc::new(AtomicI32::new(0));
+        let expected = dummy_collateral("single");
+
+        let result = try_each_pccs_endpoint(&urls(&["https://a.example/"]), |url: Url| {
+            let call_count = call_count.clone();
+            let expected = expected.clone();
+            async move {
+                call_count.fetch_add(1, Ordering::SeqCst);
+                assert_eq!(url.as_str(), "https://a.example/");
+                Ok(expected)
+            }
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(call_count.load(Ordering::SeqCst), 1);
+        assert_eq!(result.pck_crl_issuer_chain, "single");
+    }
+
+    /// When the first URL fails and the second succeeds, the fetcher is
+    /// called exactly twice — once per URL, in the configured order — and the
+    /// second URL's collateral is returned.
+    #[tokio::test]
+    async fn try_each_pccs_endpoint__fallback_to_second() {
+        let seen_urls = Rc::new(RefCell::new(Vec::<Url>::new()));
+
+        let result = try_each_pccs_endpoint(
+            &urls(&["https://primary.example/", "https://fallback.example/"]),
+            |url: Url| {
+                let seen_urls = seen_urls.clone();
+                async move {
+                    let is_primary = url.as_str().contains("primary");
+                    seen_urls.borrow_mut().push(url.clone());
+                    if is_primary {
+                        Err(PccsEndpointError::Fetch {
+                            url,
+                            source: anyhow::anyhow!("simulated primary outage"),
+                        })
+                    } else {
+                        Ok(dummy_collateral("fallback"))
+                    }
+                }
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            seen_urls.borrow().as_slice(),
+            &[
+                "https://primary.example/".parse::<Url>().unwrap(),
+                "https://fallback.example/".parse::<Url>().unwrap(),
+            ],
+            "endpoints must be tried in the exact order the user listed them"
+        );
+        assert_eq!(result.pck_crl_issuer_chain, "fallback");
+    }
+
+    /// When every URL fails, the loop captures every per-endpoint failure in
+    /// the order the URLs were tried — so structured consumers (alerting,
+    /// support tickets, tests) see the full picture, not just the last
+    /// attempt.
+    #[tokio::test]
+    async fn try_each_pccs_endpoint__should_collect_every_endpoint_failure_in_order() {
+        // PccsEndpointError can't derive PartialEq (anyhow::Error: !PartialEq),
+        // so we project to a comparable shape that drops the source field but
+        // keeps the variant + URL — the only properties this test asserts.
+        #[derive(Debug, PartialEq)]
+        enum FailureShape {
+            Fetch(Url),
+            Timeout(Url),
+            ClientConstruction(Url),
+        }
+
+        impl From<&PccsEndpointError> for FailureShape {
+            fn from(err: &PccsEndpointError) -> Self {
+                match err {
+                    PccsEndpointError::Fetch { url, .. } => Self::Fetch(url.clone()),
+                    PccsEndpointError::Timeout { url, .. } => Self::Timeout(url.clone()),
+                    PccsEndpointError::ClientConstruction { url, .. } => {
+                        Self::ClientConstruction(url.clone())
+                    }
+                }
+            }
+        }
+
+        // Given
+        let pccs_urls = urls(&[
+            "https://first.example/",
+            "https://second.example/",
+            "https://third.example/",
+        ]);
+
+        // When
+        let err = try_each_pccs_endpoint(&pccs_urls, |url: Url| async move {
+            Err::<Collateral, _>(PccsEndpointError::Fetch {
+                url: url.clone(),
+                source: anyhow::anyhow!("{url} is down"),
+            })
+        })
+        .await
+        .unwrap_err();
+
+        // Then
+        let actual: Vec<FailureShape> = err.failures.iter().map(FailureShape::from).collect();
+        let expected: Vec<FailureShape> = pccs_urls
+            .iter()
+            .map(|url| FailureShape::Fetch(url.clone()))
+            .collect();
+        assert_eq!(actual, expected);
+    }
+
+    /// `Display` renders one line per failure for log/ticket pastes.
+    #[tokio::test]
+    async fn all_pccs_endpoints_failed__should_render_each_failure_on_its_own_line() {
+        // Given
+        const FIRST_URL: &str = "https://first.example/";
+        const SECOND_URL: &str = "https://second.example/";
+        const TIMEOUT: Duration = Duration::from_secs(10);
+        const FETCH_ERROR: &str = "503 Service Unavailable";
+
+        let err = AllPccsEndpointsFailed {
+            failures: NonEmptyVec::try_from(vec![
+                PccsEndpointError::Timeout {
+                    url: FIRST_URL.parse().unwrap(),
+                    timeout: TIMEOUT,
+                },
+                PccsEndpointError::Fetch {
+                    url: SECOND_URL.parse().unwrap(),
+                    source: anyhow::anyhow!(FETCH_ERROR),
+                },
+            ])
+            .expect("two-element vec is non-empty"),
+        };
+
+        // When
+        let rendered = err.to_string();
+
+        // Then
+        assert_eq!(
+            rendered,
+            format!(
+                "all 2 PCCS endpoints failed:\n\
+                 \x20 - timed out fetching collateral from {FIRST_URL} after {TIMEOUT:?}\n\
+                 \x20 - collateral fetch failed for {SECOND_URL}: {FETCH_ERROR}"
+            )
+        );
+    }
+
     #[tokio::test]
     #[cfg(feature = "external-services-tests")]
     async fn test_fetch_collateral_from_pccs() {
@@ -694,11 +718,7 @@ mod tests {
 
         let result = tokio::time::timeout(
             Duration::from_secs(30),
-            TeeAuthority::fetch_collateral(
-                config.pccs_url.as_str(),
-                config.pccs_tls.as_ref(),
-                &quote_bytes,
-            ),
+            TeeAuthority::fetch_collateral(&config.pccs_urls, &quote_bytes),
         )
         .await;
 

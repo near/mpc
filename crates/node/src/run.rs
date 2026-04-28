@@ -17,6 +17,7 @@ use crate::{
     web::{start_web_server, static_web_data, DebugRequest},
 };
 use anyhow::{anyhow, Context};
+use itertools::Itertools;
 use mpc_attestation::report_data::ReportDataV1;
 use mpc_node_config::{ConfigFile, StartConfig};
 use near_mpc_contract_interface::types::Ed25519PublicKey;
@@ -59,7 +60,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
             launcher_interface::types::TeeAuthorityConfig::Local => "local",
         },
         image_hash = %config.tee.image_hash,
-        pccs_url = %config.pccs_url,
+        pccs_urls = %config.pccs_urls.iter().map(url::Url::as_str).join(", "),
         "TEE config"
     );
     if let Some(ref near_init) = config.near_init {
@@ -106,7 +107,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     let tee_authority = config
         .tee
         .clone()
-        .into_tee_authority(config.pccs_url.clone(), config.pccs_tls.clone())?;
+        .into_tee_authority(config.pccs_urls.clone())?;
     let tls_public_key = &secrets.persistent_secrets.p2p_private_key.verifying_key();
 
     let account_public_key = &secrets.persistent_secrets.near_signer_key.verifying_key();
@@ -130,7 +131,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
                 .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_FAILURE])
                 .inc();
             tracing::error!(
-                error = ?e,
+                error = %e,
                 "TEE attestation failed. Node will continue without attestation and retry periodically",
             );
             None
