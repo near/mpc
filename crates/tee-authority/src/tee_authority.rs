@@ -634,6 +634,28 @@ mod tests {
     /// attempt.
     #[tokio::test]
     async fn try_each_pccs_endpoint__should_collect_every_endpoint_failure_in_order() {
+        // PccsEndpointError can't derive PartialEq (anyhow::Error: !PartialEq),
+        // so we project to a comparable shape that drops the source field but
+        // keeps the variant + URL — the only properties this test asserts.
+        #[derive(Debug, PartialEq)]
+        enum FailureShape {
+            Fetch(Url),
+            Timeout(Url),
+            ClientConstruction(Url),
+        }
+
+        impl From<&PccsEndpointError> for FailureShape {
+            fn from(err: &PccsEndpointError) -> Self {
+                match err {
+                    PccsEndpointError::Fetch { url, .. } => Self::Fetch(url.clone()),
+                    PccsEndpointError::Timeout { url, .. } => Self::Timeout(url.clone()),
+                    PccsEndpointError::ClientConstruction { url, .. } => {
+                        Self::ClientConstruction(url.clone())
+                    }
+                }
+            }
+        }
+
         // Given
         let pccs_urls = urls(&[
             "https://first.example/",
@@ -652,14 +674,12 @@ mod tests {
         .unwrap_err();
 
         // Then
-        let failed_urls: Vec<&Url> = err.failures.iter().map(PccsEndpointError::url).collect();
-        let expected_urls: Vec<&Url> = pccs_urls.iter().collect();
-        assert_eq!(failed_urls, expected_urls);
-        assert!(
-            err.failures
-                .iter()
-                .all(|e| matches!(e, PccsEndpointError::Fetch { .. }))
-        );
+        let actual: Vec<FailureShape> = err.failures.iter().map(FailureShape::from).collect();
+        let expected: Vec<FailureShape> = pccs_urls
+            .iter()
+            .map(|url| FailureShape::Fetch(url.clone()))
+            .collect();
+        assert_eq!(actual, expected);
     }
 
     /// `Display` for the aggregate error renders one line per failure, so the
