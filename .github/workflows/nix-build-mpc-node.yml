@@ -1,0 +1,44 @@
+name: Nix build mpc-node
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  nix-build-mpc-node:
+    name: "Nix build mpc-node"
+    runs-on: warp-ubuntu-2404-x64-32x
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@21a544727d0c62386e78b4befe52d19ad12692e3 # v17
+
+      - name: Restore /nix from cache
+        uses: near/cache-nix-action@3e2c4eea4e825e74575cbc8e25d38173df7686c2 # enable-warpbuild-cache
+        with:
+          backend: warpbuild
+          primary-key: nix-${{ runner.os }}-mpc-node-${{ hashFiles('flake.nix', 'flake.lock', 'nix/**', 'rust-toolchain.toml', 'Cargo.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-mpc-node-
+          # Temporarily save on every branch so two consecutive PR runs can verify
+          # cache-hit behavior. Restore before merging.
+          # save: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build mpc-node
+        run: nix build --print-build-logs .#mpc-node
+
+      - name: Print mpc-node binary hash
+        run: |
+          echo "Store path: $(readlink -f result)"
+          sha256sum result/bin/mpc-node

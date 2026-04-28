@@ -194,6 +194,12 @@ jobs:
       - name: Check contract WASM size
         run: bash scripts/check-contract-wasm-size.sh
 
+  nix-build-mpc-node:
+    name: "Nix build mpc-node"
+    permissions:
+      contents: read
+    uses: ./.github/workflows/nix-build-mpc-node.yml
+
   fast-ci-checks:
     name: "Fast CI checks"
     runs-on: warp-ubuntu-2404-x64-8x
