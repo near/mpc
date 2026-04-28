@@ -44,16 +44,11 @@ const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
 /// Per-request timeout for fetching collateral from PCCS.
 const PCCS_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Maximum age (in seconds) accepted for PCCS collateral. Hard-coded per
-/// the 2026-04-27 team decision (see `near/mpc-private#293` and
-/// `near/mpc#3042`). Not exposed as configuration — a malicious operator
-/// should not have an obvious bypass knob; the trade-off is that this
-/// value can only be changed via a node release.
-///
-/// Today the value is 7 days, chosen to align with the contract's
-/// `DEFAULT_EXPIRATION_DURATION_SECONDS` (also 7 days). Combined, any
-/// attestation accepted into the contract is ≤7 days old *and* backed
-/// by collateral whose Intel signature is ≤7 days old.
+/// Maximum age accepted for PCCS collateral. Hard-coded at 7 days per
+/// the team decision in `near/mpc-private#293`; stricter than Intel's
+/// 30-day `nextUpdate` window but more permissive than any default PCCS
+/// refresh schedule (Intel reference and Phala both refresh ~daily), so
+/// legitimate operators have ample headroom.
 const MAX_COLLATERAL_AGE_SECONDS: u64 = 7 * 24 * 60 * 60;
 
 /// Grace window for collateral whose `issueDate` is slightly in our future.
