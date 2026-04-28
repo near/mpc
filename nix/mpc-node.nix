@@ -15,8 +15,6 @@
   bzip2,
   udev,
   dbus,
-  # Darwin-only. Defaulted to null so evaluating this package on Linux does
-  # not require a nixpkgs attr that may not exist there.
   apple-sdk_14 ? null,
   crane,
 }:
@@ -189,18 +187,14 @@ let
       # Prevents rocksdb's build.rs from probing /proc/cpuinfo and baking
       # host-specific ISA choices into its object files.
       PORTABLE = "1";
-
       # Pin the target ISA for both C/C++ (cc-crate for rocksdb, snappy,
       # zstd, ...) and Rust itself. Without this, the cc crate defaults to
       # the build host's CPU and output bytes vary by machine.
-      #
-      # x86-64-v3 ≈ Haswell (2013) and newer: AVX2, BMI2, FMA. Deployment
-      # targets MUST be at least this CPU level; older hardware will SIGILL.
-      CFLAGS = lib.optionalString isX86 "-march=x86-64-v3";
-      CXXFLAGS = "-include cstdint" + lib.optionalString isX86 " -march=x86-64-v3";
+      CFLAGS = lib.optionalString isX86 "-march=x86-64";
+      CXXFLAGS = "-include cstdint" + lib.optionalString isX86 " -march=x86-64";
 
       RUSTFLAGS = lib.concatStringsSep " " (
-        lib.optionals isX86 [ "-C target-cpu=x86-64-v3" ]
+        lib.optionals isX86 [ "-C target-cpu=x86-64" ]
         ++ [
           # Scrub nix store paths out of rustc-emitted debug info and panic
           # messages so two builds from different /nix/store/<hash>-source
@@ -212,7 +206,7 @@ let
 
       # Extra bindgen flags — paths are already provided by bindgenHook.
       BINDGEN_EXTRA_CLANG_ARGS = lib.concatStringsSep " " (
-        lib.optionals isX86 [ "-march=x86-64-v3" ]
+        lib.optionals isX86 [ "-march=x86-64" ]
         ++ [ "-fno-stack-protector" ]
       );
     }
