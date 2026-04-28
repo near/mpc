@@ -773,7 +773,8 @@ mod tests {
     }
 
     #[test_log::test]
-    fn test_pending_requests_requests_leader_retry() {
+    #[expect(non_snake_case)]
+    fn test_pending_requests__requests_leader_should_retry() {
         // Given: a request queue
         let (mut pending_requests, mut setup) = TestSetup::new();
 
@@ -858,7 +859,8 @@ mod tests {
     }
 
     #[test_log::test]
-    fn test_pending_signature_requests_abort_after_maximum_attempts() {
+    #[expect(non_snake_case)]
+    fn test_pending_requests__should_abort_after_maximum_attempts() {
         // Given: a request queue
         let (mut pending_requests, mut setup) = TestSetup::new();
 
@@ -882,7 +884,8 @@ mod tests {
     }
 
     #[test_log::test]
-    fn test_pending_signature_requests_discard_old_and_non_canonical_requests() {
+    #[expect(non_snake_case)]
+    fn test_pending_requests__should_discard_old_and_non_canonical_requests() {
         // Given: a request queue with two request from two different blocks
         let (mut pending_requests, mut setup) = TestSetup::new();
         let _req1 = setup.add_request_leader();
@@ -951,7 +954,8 @@ mod tests {
     }
 
     #[test_log::test]
-    fn test_pending_signature_requests_fallback_leader() {
+    #[expect(non_snake_case)]
+    fn test_pending_requests__should_fallback_leader() {
         // Given: a request queue
         let (mut pending_requests, mut setup) = TestSetup::new();
 
@@ -1020,7 +1024,8 @@ mod tests {
     }
 
     #[test_log::test]
-    fn test_signature_request_latency_debug() {
+    #[expect(non_snake_case)]
+    fn test_request__latency_debug_should_display_time() {
         // Given: a request queue with a request as leader
         let (mut pending_requests, mut setup) = TestSetup::new();
         setup.advance_clock(Duration::seconds(1));
