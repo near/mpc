@@ -69,7 +69,10 @@ pub(super) async fn jemalloc_heap_pprof() -> impl IntoResponse {
     };
 
     let pprof_result = tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<u8>> {
-        let profile = pprof_util::parse_jeheap(BufReader::new(dump_file), None)?;
+        // Embed runtime binary mappings so pprof can relocate addresses through
+        // ASLR; without this every frame collapses to the binary's mapping name.
+        let profile =
+            pprof_util::parse_jeheap(BufReader::new(dump_file), mappings::MAPPINGS.as_deref())?;
         Ok(profile.to_pprof(("inuse_space", "bytes"), ("space", "bytes"), None))
     })
     .await;

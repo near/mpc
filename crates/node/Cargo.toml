@@ -90,6 +90,7 @@ url = { workspace = true }
 backtrace = { workspace = true }
 inferno = { workspace = true }
 jemalloc_pprof = { workspace = true }
+mappings = { workspace = true }
 pprof_util = { workspace = true }
 
 # Use frame-pointer to get the back-trace on macOS
