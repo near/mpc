@@ -58,16 +58,6 @@ pub enum PccsEndpointError {
     },
 }
 
-impl PccsEndpointError {
-    pub fn url(&self) -> &Url {
-        match self {
-            Self::ClientConstruction { url, .. }
-            | Self::Timeout { url, .. }
-            | Self::Fetch { url, .. } => url,
-        }
-    }
-}
-
 /// Returned when every configured PCCS endpoint failed. Owns the full list
 /// of per-endpoint failures in the order they were tried. The collection is
 /// non-empty by construction: this error only ever fires after a loop over a
