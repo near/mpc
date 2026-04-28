@@ -166,7 +166,9 @@ pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Ti
                 crate::metrics::MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
                     .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_FAILURE])
                     .inc();
-                tracing::warn!(error = ?e, "TEE attestation failed, will retry next interval");
+                // %e (Display) renders the multi-line per-endpoint summary;
+                // ?e (Debug) would lose it.
+                tracing::warn!(error = %e, "TEE attestation failed, will retry next interval");
                 continue;
             }
             Err(e) => {
@@ -265,8 +267,10 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
                     crate::metrics::MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
                         .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_FAILURE])
                         .inc();
+                    // %e (Display) renders the multi-line per-endpoint
+                    // summary; ?e (Debug) would lose it.
                     tracing::warn!(
-                        error = ?e,
+                        error = %e,
                         "TEE attestation failed, periodic attestation task will retry",
                     );
                     was_available = is_available;
