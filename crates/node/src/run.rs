@@ -130,10 +130,6 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
             crate::metrics::MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
                 .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_FAILURE])
                 .inc();
-            // %e (Display): renders the multi-line per-endpoint summary.
-            // ?e (Debug) would print the derived `AllPccsEndpointsFailed { .. }`
-            // shape and lose the per-failure breakdown the typed error exists
-            // to surface.
             tracing::error!(
                 error = %e,
                 "TEE attestation failed. Node will continue without attestation and retry periodically",
