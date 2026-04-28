@@ -250,7 +250,7 @@ URLs into the per-node `ForeignChainsConfig` via `MpcClusterConfig`.
 
 Tests live under `crates/e2e-tests/tests/<feature>.rs` and must be declared as
 a module from `tests/e2e.rs`. `tests/common.rs` provides helpers used by most
-tests (`setup_cluster`, `wait_for_presignatures`, `must_load_contract_wasm`,
+tests (`must_setup_cluster`, `wait_for_presignatures`, `must_load_contract_wasm`,
 `send_sign_request`, etc.).
 
 ```rust
@@ -260,7 +260,7 @@ use crate::common;
 #[tokio::test]
 async fn request_lifecycle__signature_request_succeeds() {
     let (cluster, running) =
-        common::setup_cluster(common::SIGN_REQUEST_PER_SCHEME_PORT_SEED, |_| {}).await;
+        common::must_setup_cluster(common::SIGN_REQUEST_PER_SCHEME_PORT_SEED, |_| {}).await;
 
     let mut rng = rand::thread_rng();
     let user = cluster.default_user_account().clone();
@@ -268,7 +268,7 @@ async fn request_lifecycle__signature_request_succeeds() {
 }
 ```
 
-`setup_cluster` builds the default 3-node / 2-of-3 / 3-domain cluster, waits
+`must_setup_cluster` builds the default 3-node / 2-of-3 / 3-domain cluster, waits
 for `Running`, and blocks until presignatures are buffered. Pass a closure to
 override fields on `MpcClusterConfig`.
 
@@ -353,7 +353,7 @@ suites don't drift.
   from `docs/engineering-standards.md`.
 - Reserve a unique `port_seed` constant in `tests/common.rs` before adding a
   new test. Don't reuse someone else's seed, even if the test is short.
-- Prefer `common::setup_cluster` over calling `MpcCluster::start` directly;
+- Prefer `common::must_setup_cluster` over calling `MpcCluster::start` directly;
   it initialises `tracing_subscriber` and waits for presignatures.
 - Tests must be deterministic across parallel execution. Use the port
   allocator, the per-cluster temp directory, and the deterministic key

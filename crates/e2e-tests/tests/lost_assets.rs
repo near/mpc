@@ -15,11 +15,10 @@ const PRESIGNATURES_TO_BUFFER: usize = 8;
 async fn dead_node_presignatures_purged_and_signing_recovers() {
     // given
     let mut rng = rand::rngs::StdRng::seed_from_u64(0);
-    let (mut cluster, running) = common::setup_cluster(common::LOST_ASSETS_PORT_SEED, |c| {
+    let (mut cluster, running) = common::must_setup_cluster(common::LOST_ASSETS_PORT_SEED, |c| {
         c.presignatures_to_buffer = PRESIGNATURES_TO_BUFFER;
     })
-    .await
-    .expect("setup_cluster failed");
+    .await;
 
     assert_eq!(cluster.nodes.len(), 3, "expected 3 nodes");
     assert!(

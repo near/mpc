@@ -17,36 +17,36 @@ async fn mpc_cluster_should_successfully_process_parallel_requests() {
     const N: u64 = ROBUST_ECDSA_CALLS + ECDSA_CALLS + EDDSA_CALLS + CKD_CALLS;
 
     // given
-    let (cluster, _running) = common::setup_cluster(common::PARALLEL_SIGN_CALLS_PORT_SEED, |c| {
-        c.num_nodes = 6;
-        c.initial_participant_indices = (0..6).collect();
-        c.threshold = 5;
-        c.domains = vec![
-            DomainConfig {
-                id: DomainId(0),
-                curve: Curve::V2Secp256k1,
-                purpose: DomainPurpose::Sign,
-            },
-            DomainConfig {
-                id: DomainId(1),
-                curve: Curve::Secp256k1,
-                purpose: DomainPurpose::Sign,
-            },
-            DomainConfig {
-                id: DomainId(2),
-                curve: Curve::Edwards25519,
-                purpose: DomainPurpose::Sign,
-            },
-            DomainConfig {
-                id: DomainId(3),
-                curve: Curve::Bls12381,
-                purpose: DomainPurpose::CKD,
-            },
-        ];
-        c.presignatures_to_buffer = 6;
-    })
-    .await
-    .expect("setup_cluster failed");
+    let (cluster, _running) =
+        common::must_setup_cluster(common::PARALLEL_SIGN_CALLS_PORT_SEED, |c| {
+            c.num_nodes = 6;
+            c.initial_participant_indices = (0..6).collect();
+            c.threshold = 5;
+            c.domains = vec![
+                DomainConfig {
+                    id: DomainId(0),
+                    curve: Curve::V2Secp256k1,
+                    purpose: DomainPurpose::Sign,
+                },
+                DomainConfig {
+                    id: DomainId(1),
+                    curve: Curve::Secp256k1,
+                    purpose: DomainPurpose::Sign,
+                },
+                DomainConfig {
+                    id: DomainId(2),
+                    curve: Curve::Edwards25519,
+                    purpose: DomainPurpose::Sign,
+                },
+                DomainConfig {
+                    id: DomainId(3),
+                    curve: Curve::Bls12381,
+                    purpose: DomainPurpose::CKD,
+                },
+            ];
+            c.presignatures_to_buffer = 6;
+        })
+        .await;
 
     let wasm = common::must_load_parallel_contract_wasm();
     let key = ed25519_dalek::SigningKey::from_bytes(&[0xABu8; 32]);

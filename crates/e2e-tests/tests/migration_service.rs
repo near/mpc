@@ -432,13 +432,13 @@ async fn migration_service__should_migrate_nodes_via_backup_cli() {
 
     // Given: cluster with 2 participants + 2 migration targets. Targets start
     // alongside the participants so their indexers sync before blocks pile up.
-    let (mut cluster, running) = common::setup_cluster(common::MIGRATION_SERVICE_PORT_SEED, |c| {
-        c.num_nodes = 2;
-        c.threshold = 2;
-        c.migration_targets = vec![0, 1];
-    })
-    .await
-    .expect("setup_cluster failed");
+    let (mut cluster, running) =
+        common::must_setup_cluster(common::MIGRATION_SERVICE_PORT_SEED, |c| {
+            c.num_nodes = 2;
+            c.threshold = 2;
+            c.migration_targets = vec![0, 1];
+        })
+        .await;
 
     // Then: the cluster is healthy — sign + ckd requests succeed against the
     // source participants.

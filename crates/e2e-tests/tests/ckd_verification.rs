@@ -42,9 +42,8 @@ fn verify_ckd(
 #[expect(non_snake_case)]
 async fn ckd_response__passes_cryptographic_verification() {
     // given
-    let (cluster, running) = common::setup_cluster(common::CKD_VERIFICATION_PORT_SEED, |_| {})
-        .await
-        .expect("setup_cluster failed");
+    let (cluster, running) =
+        common::must_setup_cluster(common::CKD_VERIFICATION_PORT_SEED, |_| {}).await;
 
     let bls_domain = running
         .domains
@@ -94,9 +93,8 @@ async fn ckd_response__passes_cryptographic_verification() {
 #[expect(non_snake_case)]
 async fn ckd_pv_response__passes_cryptographic_verification() {
     // given
-    let (cluster, running) = common::setup_cluster(common::CKD_PV_VERIFICATION_PORT_SEED, |_| {})
-        .await
-        .expect("setup_cluster failed");
+    let (cluster, running) =
+        common::must_setup_cluster(common::CKD_PV_VERIFICATION_PORT_SEED, |_| {}).await;
 
     let bls_domain = running
         .domains

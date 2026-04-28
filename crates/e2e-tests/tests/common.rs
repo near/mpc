@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use anyhow::{Context, bail};
+use anyhow::Context;
 use backon::{ConstantBuilder, Retryable};
 use blstrs::{G1Projective, Scalar};
 use e2e_tests::{CLUSTER_WAIT_TIMEOUT, MpcCluster, MpcClusterConfig, metrics};
@@ -37,20 +37,23 @@ pub const MULTI_DOMAIN_PORT_SEED: u16 = 17;
 /// Uses `configure` to override defaults (3 nodes, threshold 2, 3 domains).
 /// Pass `|_| {}` for defaults.
 ///
+/// Plumbing helper: every caller treats setup failure as fatal, so we panic
+/// instead of returning `Result`.
+///
 /// ```ignore
 /// // Default 3-node cluster:
-/// setup_cluster(SEED, |_| {}).await;
+/// must_setup_cluster(SEED, |_| {}).await;
 ///
 /// // Custom 4-node cluster with 2 initial participants:
-/// setup_cluster(SEED, |c| {
+/// must_setup_cluster(SEED, |c| {
 ///     c.num_nodes = 4;
 ///     c.initial_participant_indices = vec![0, 1];
 /// }).await;
 /// ```
-pub async fn setup_cluster(
+pub async fn must_setup_cluster(
     port_seed: u16,
     configure: impl FnOnce(&mut MpcClusterConfig),
-) -> anyhow::Result<(MpcCluster, RunningContractState)> {
+) -> (MpcCluster, RunningContractState) {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -67,7 +70,7 @@ pub async fn setup_cluster(
     let presignatures_to_buffer = config.presignatures_to_buffer;
     let cluster = MpcCluster::start(config)
         .await
-        .context("failed to start cluster")?;
+        .expect("failed to start cluster");
 
     let protocol_state = cluster
         .wait_for_state(
@@ -75,9 +78,9 @@ pub async fn setup_cluster(
             CLUSTER_WAIT_TIMEOUT,
         )
         .await
-        .context("cluster did not reach Running state")?;
+        .expect("cluster did not reach Running state");
     let ProtocolContractState::Running(running) = protocol_state else {
-        bail!("expected Running state");
+        panic!("expected Running state");
     };
 
     wait_for_presignatures(
@@ -85,9 +88,10 @@ pub async fn setup_cluster(
         &initial_participant_indices,
         presignatures_to_buffer,
     )
-    .await?;
+    .await
+    .expect("presignature buffering failed");
 
-    Ok((cluster, running))
+    (cluster, running)
 }
 
 /// Wait until the first `participant_count` nodes each have at least

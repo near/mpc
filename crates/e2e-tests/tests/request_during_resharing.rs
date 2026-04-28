@@ -18,7 +18,7 @@ use rand::SeedableRng;
 async fn test_request_during_resharing() {
     // given
     let (mut cluster, contract_state) =
-        common::setup_cluster(common::REQUEST_DURING_RESHARING_PORT_SEED, |c| {
+        common::must_setup_cluster(common::REQUEST_DURING_RESHARING_PORT_SEED, |c| {
             c.num_nodes = 6;
             c.initial_participant_indices = (0..5).collect();
             c.threshold = 5;
@@ -30,8 +30,7 @@ async fn test_request_during_resharing() {
                 purpose: DomainPurpose::Sign,
             });
         })
-        .await
-        .expect("setup_cluster failed");
+        .await;
 
     // when
     tracing::info!("beginning resharing to 6 nodes, threshold 6");

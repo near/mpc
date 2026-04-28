@@ -16,14 +16,13 @@ use rand::SeedableRng;
 async fn test_key_resharing() {
     // Start 5 nodes but only 2 as initial participants. Node 4 stays idle
     // (syncing) so it can be used as a fresh replacement when node 0 is dropped.
-    let (cluster, running) = common::setup_cluster(common::KEY_RESHARING_PORT_SEED, |c| {
+    let (cluster, running) = common::must_setup_cluster(common::KEY_RESHARING_PORT_SEED, |c| {
         c.num_nodes = 5;
         c.initial_participant_indices = (0..2).collect();
         c.triples_to_buffer = 2;
         c.presignatures_to_buffer = 2;
     })
-    .await
-    .expect("setup_cluster failed");
+    .await;
     let mut rng = rand::rngs::StdRng::seed_from_u64(0);
 
     // Verify initial state: 2 participants, threshold 2.
@@ -115,14 +114,13 @@ async fn test_key_resharing() {
 async fn test_multi_domain() {
     // given: 4-node cluster reshared to 4 participants at threshold 3, with
     // 7 domains (3 default + 4 added). Liveness verified after each setup stage.
-    let (mut cluster, running) = common::setup_cluster(common::MULTI_DOMAIN_PORT_SEED, |c| {
+    let (mut cluster, running) = common::must_setup_cluster(common::MULTI_DOMAIN_PORT_SEED, |c| {
         c.num_nodes = 4;
         c.initial_participant_indices = (0..2).collect();
         c.triples_to_buffer = 2;
         c.presignatures_to_buffer = 2;
     })
-    .await
-    .expect("setup_cluster failed");
+    .await;
     let mut rng = rand::rngs::StdRng::seed_from_u64(0);
     assert_eq!(running.domains.next_domain_id, 3);
     common::send_sign_request(&cluster, &running, &mut rng, cluster.default_user_account())

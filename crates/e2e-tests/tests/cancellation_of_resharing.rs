@@ -13,14 +13,13 @@ use rand::SeedableRng;
 #[tokio::test]
 async fn test_cancellation_of_resharing() {
     let (mut cluster, _running) =
-        common::setup_cluster(common::CANCELLATION_OF_RESHARING_PORT_SEED, |c| {
+        common::must_setup_cluster(common::CANCELLATION_OF_RESHARING_PORT_SEED, |c| {
             c.num_nodes = 6;
             c.initial_participant_indices = (0..3).collect();
             c.triples_to_buffer = 2;
             c.presignatures_to_buffer = 2;
         })
-        .await
-        .expect("setup_cluster failed");
+        .await;
     let mut rng = rand::rngs::StdRng::seed_from_u64(0);
 
     // Begin resharing to 5 nodes [0..5], threshold 3.

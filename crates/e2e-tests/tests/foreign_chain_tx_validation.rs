@@ -122,18 +122,18 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
 
     let fc_config = build_foreign_chains_config(&urls);
 
-    let (cluster, _running) = common::setup_cluster(common::FOREIGN_TX_VALIDATION_PORT_SEED, |c| {
-        c.num_nodes = 2;
-        c.threshold = 2;
-        c.domains = vec![DomainConfig {
-            id: DomainId(0),
-            curve: Curve::Secp256k1,
-            purpose: DomainPurpose::ForeignTx,
-        }];
-        c.node_foreign_chains_configs = vec![fc_config.clone(), fc_config];
-    })
-    .await
-    .context("setup_cluster failed")?;
+    let (cluster, _running) =
+        common::must_setup_cluster(common::FOREIGN_TX_VALIDATION_PORT_SEED, |c| {
+            c.num_nodes = 2;
+            c.threshold = 2;
+            c.domains = vec![DomainConfig {
+                id: DomainId(0),
+                curve: Curve::Secp256k1,
+                purpose: DomainPurpose::ForeignTx,
+            }];
+            c.node_foreign_chains_configs = vec![fc_config.clone(), fc_config];
+        })
+        .await;
 
     let expected_supported_chains: std::collections::BTreeSet<ForeignChain> = [
         ForeignChain::Bitcoin,

@@ -53,15 +53,15 @@ fn solana_foreign_chain_configuration_dto() -> ForeignChainConfiguration {
 #[expect(non_snake_case)]
 async fn supported_foreign_chains__should_require_all_participants_to_register() {
     // given — 3-node cluster with foreign chains on nodes 0 and 1 only
-    let (cluster, _running) = common::setup_cluster(common::FOREIGN_CHAIN_POLICY_PORT_SEED, |c| {
-        c.node_foreign_chains_configs = vec![
-            solana_foreign_chains_config(), // node 0
-            solana_foreign_chains_config(), // node 1
-            ForeignChainsConfig::default(), // node 2 — no foreign chains
-        ];
-    })
-    .await
-    .expect("setup_cluster failed");
+    let (cluster, _running) =
+        common::must_setup_cluster(common::FOREIGN_CHAIN_POLICY_PORT_SEED, |c| {
+            c.node_foreign_chains_configs = vec![
+                solana_foreign_chains_config(), // node 0
+                solana_foreign_chains_config(), // node 1
+                ForeignChainsConfig::default(), // node 2 — no foreign chains
+            ];
+        })
+        .await;
 
     // when — wait for all three nodes to register (one with an empty configuration)
     // without Solana becoming supported

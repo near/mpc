@@ -40,9 +40,8 @@ async fn ensure_body_contains(
 
 #[tokio::test]
 async fn test_web_endpoints() {
-    let (cluster, running) = common::setup_cluster(common::WEB_ENDPOINTS_PORT_SEED, |_| {})
-        .await
-        .expect("setup_cluster failed");
+    let (cluster, running) =
+        common::must_setup_cluster(common::WEB_ENDPOINTS_PORT_SEED, |_| {}).await;
 
     // Send one request per domain.
     assert!(!running.domains.domains.is_empty(), "no domains found");

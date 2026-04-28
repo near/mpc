@@ -14,9 +14,8 @@ use rand::SeedableRng;
 async fn cleanup_lagging_node__should_purge_offline_presignatures_and_keep_signing() {
     // given
     let mut rng = rand::rngs::StdRng::seed_from_u64(0);
-    let (cluster, running) = common::setup_cluster(common::CLEANUP_LAGGING_NODE_PORT_SEED, |_| {})
-        .await
-        .expect("setup_cluster failed");
+    let (cluster, running) =
+        common::must_setup_cluster(common::CLEANUP_LAGGING_NODE_PORT_SEED, |_| {}).await;
 
     // Wait for all nodes to have presignatures buffered.
     common::wait_for_presignatures(&cluster, &[0, 1, 2], DEFAULT_PRESIGNATURES_TO_BUFFER)

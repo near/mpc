@@ -10,9 +10,7 @@ use rand::SeedableRng;
 async fn mpc_cluster__should_sign_with_scheme_matching_domain() {
     // given
     let (cluster, running) =
-        common::setup_cluster(common::SIGN_REQUEST_PER_SCHEME_PORT_SEED, |_| {})
-            .await
-            .expect("setup_cluster failed");
+        common::must_setup_cluster(common::SIGN_REQUEST_PER_SCHEME_PORT_SEED, |_| {}).await;
 
     assert!(
         !running.domains.domains.is_empty(),
@@ -86,7 +84,7 @@ async fn mpc_cluster__should_sign_with_scheme_matching_domain() {
 #[expect(non_snake_case)]
 async fn mpc_cluster__should_successfully_process_robust_ecdsa_requests() {
     // given
-    let (cluster, running) = common::setup_cluster(common::ROBUST_ECDSA_PORT_SEED, |c| {
+    let (cluster, running) = common::must_setup_cluster(common::ROBUST_ECDSA_PORT_SEED, |c| {
         c.num_nodes = 6;
         c.initial_participant_indices = (0..6).collect();
         c.threshold = 5;
@@ -98,8 +96,7 @@ async fn mpc_cluster__should_successfully_process_robust_ecdsa_requests() {
         c.triples_to_buffer = 0;
         c.presignatures_to_buffer = 6;
     })
-    .await
-    .expect("setup_cluster failed");
+    .await;
 
     let domain = running
         .domains

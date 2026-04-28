@@ -27,9 +27,8 @@ type MigrationState = BTreeMap<String, AccountEntry>;
 #[expect(non_snake_case)]
 async fn migration_endpoint__should_track_migration_state() {
     // Given: a fresh cluster with no migration state.
-    let (cluster, _running) = common::setup_cluster(common::MIGRATION_ENDPOINT_PORT_SEED, |_| {})
-        .await
-        .expect("setup_cluster failed");
+    let (cluster, _running) =
+        common::must_setup_cluster(common::MIGRATION_ENDPOINT_PORT_SEED, |_| {}).await;
 
     let client = reqwest::Client::new();
     let mut expected_migrations = MigrationState::new();
