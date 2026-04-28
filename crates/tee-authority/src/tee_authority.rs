@@ -254,11 +254,10 @@ impl TeeAuthority {
 }
 
 /// Try each PCCS endpoint in order, returning the first success. If every
-/// endpoint fails, an [`AllPccsEndpointsFailed`] aggregating each per-endpoint
-/// failure is returned. `fetcher(url) -> Future` is called once per URL in the
-/// order the caller listed them; intermediate failures are logged at `warn`
-/// level and do not short-circuit. A success on attempt 2+ emits a single
-/// `info!` so silent primary degradation is visible to log-based alerting.
+/// endpoint fails, returns [`AllPccsEndpointsFailed`] listing each
+/// per-endpoint failure in attempt order. Failed attempts log at `warn`;
+/// a fallback success (attempt > 1) logs at `info` so an always-failing
+/// primary masked by a healthy fallback isn't invisible.
 async fn try_each_pccs_endpoint<Fetcher, Fut>(
     pccs_urls: &NonEmptyVec<Url>,
     fetcher: Fetcher,
