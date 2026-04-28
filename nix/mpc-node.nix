@@ -205,10 +205,7 @@ let
       );
 
       # Extra bindgen flags — paths are already provided by bindgenHook.
-      BINDGEN_EXTRA_CLANG_ARGS = lib.concatStringsSep " " (
-        lib.optionals isX86 [ "-march=x86-64" ]
-        ++ [ "-fno-stack-protector" ]
-      );
+      BINDGEN_EXTRA_CLANG_ARGS = lib.optionalString isX86 "-march=x86-64";
     }
     // lib.optionalAttrs stdenv.isDarwin {
       # Deployment target is independent of the SDK version; pin it so the
