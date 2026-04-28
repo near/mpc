@@ -10,7 +10,7 @@ use mpc_attestation::{
 use near_mpc_bounded_collections::NonEmptyVec;
 use std::path::PathBuf;
 use thiserror::Error;
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 use url::Url;
 
 /// Errors that can occur during TEE attestation generation.
@@ -250,7 +250,8 @@ impl TeeAuthority {
 /// endpoint fails, an [`AllPccsEndpointsFailed`] aggregating each per-endpoint
 /// failure is returned. `fetcher(url) -> Future` is called once per URL in the
 /// order the caller listed them; intermediate failures are logged at `warn`
-/// level and do not short-circuit.
+/// level and do not short-circuit. A success on attempt 2+ emits a single
+/// `info!` so silent primary degradation is visible to log-based alerting.
 async fn try_each_pccs_endpoint<Fetcher, Fut>(
     pccs_urls: &NonEmptyVec<Url>,
     fetcher: Fetcher,
@@ -265,7 +266,17 @@ where
         let attempt = index + 1;
         let is_last_endpoint = attempt == total_endpoints;
         match fetcher(url.clone()).await {
-            Ok(collateral) => return Ok(collateral),
+            Ok(collateral) => {
+                if attempt > 1 {
+                    info!(
+                        %url,
+                        attempt,
+                        total_endpoints,
+                        "fetched collateral via PCCS fallback"
+                    );
+                }
+                return Ok(collateral);
+            }
             Err(err) => {
                 warn!(
                     ?err,
