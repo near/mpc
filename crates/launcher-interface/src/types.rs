@@ -23,65 +23,24 @@ pub enum TeeAuthorityConfig {
     Dstack { dstack_endpoint: PathBuf },
 }
 
-/// One PCCS endpoint as listed in the operator's `pccs_endpoints` config —
-/// a URL plus an optional per-URL TLS trust override.
-///
-/// The TOML representation uses an array of tables:
-///
-/// ```toml
-/// [[mpc_node_config.pccs_endpoints]]
-/// url = "https://localhost:8081/"
-/// tls = { mode = "insecure" }
-///
-/// [[mpc_node_config.pccs_endpoints]]
-/// url = "https://pccs.phala.network/"
-/// # no `tls` line — default reqwest+rustls trust roots (Mozilla webpki-roots)
-/// ```
-///
-/// Putting the trust policy on each entry instead of as a single global
-/// field on `StartConfig` lets an operator combine a self-signed local
-/// PCCS (insecure or pinned) with public-CA fallbacks in the same
-/// fallback chain — see the discussion on PR #3026.
+/// One PCCS endpoint: a URL plus an optional per-URL TLS trust override.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PccsEndpointConfig {
     pub url: Url,
-    /// Per-endpoint TLS trust override. `None` = default reqwest+rustls
-    /// trust roots (the bundled Mozilla webpki-roots). See [`PccsTlsTrust`]
-    /// for the override modes.
     #[serde(default)]
     pub tls: Option<PccsTlsTrust>,
 }
 
-/// PCCS TLS trust policy.
-///
-/// The two operator-tunable trust modes are mutually exclusive — at most
-/// one can be active. Encoding the choice as a tagged enum (rather than
-/// two `Option`s + runtime validation) makes the mutual-exclusivity a
-/// *type-level* invariant: serde rejects an ill-formed config at parse
-/// time, and downstream code only matches over the variants it has to
-/// handle. Per pbeza's review on PR #3026 — replaces the previous
-/// `pccs_ca_cert_pem` + `pccs_tls_insecure` field pair, which required
-/// runtime mutual-exclusivity validation.
-///
-/// Tagged form (`mode = "..."`) over an untagged enum because tagged
-/// gives clean serde error messages, doesn't need a custom deserializer
-/// for the unit variant, and extends naturally if a third trust mode is
-/// added later (just another variant).
-///
-/// `None` (no `tls` field on a `[[pccs_endpoints]]` entry) means "use the
-/// default reqwest+rustls trust roots" — the bundled Mozilla `webpki-roots`
-/// (not OS-native roots), which validate every public PCCS endpoint
-/// (Phala, Intel) out of the box.
+/// Per-endpoint TLS trust override. `None` = default reqwest+rustls trust
+/// roots (bundled Mozilla webpki-roots).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PccsTlsTrust {
-    /// Trust an operator-pinned PEM certificate as an additional root
-    /// anchor. Use when the PCCS uses a self-signed cert. System trust
-    /// roots remain active for any other endpoint.
+    /// Pin a PEM certificate as an additional trust anchor. Default
+    /// trust roots stay active.
     CaCertPem { ca_cert_pem: String },
-    /// Disable TLS certificate verification entirely. Loopback PCCS
-    /// only — startup rejects this for non-loopback hosts.
+    /// Disable TLS certificate verification. Loopback URLs only.
     Insecure,
 }
 
