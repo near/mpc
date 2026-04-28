@@ -860,8 +860,8 @@ mod tests {
 
     /// Collateral whose `issueDate` is 6 days old (well within the 7-day
     /// window) is accepted.
-    #[tokio::test]
-    async fn check_collateral_freshness__should_accept_within_window() {
+    #[test]
+    fn check_collateral_freshness__should_accept_within_window() {
         let issued = rfc3339(test_now() - time::Duration::days(6));
         let collateral = collateral_with_issue_dates(&issued, &issued);
 
@@ -873,8 +873,8 @@ mod tests {
     /// A stale `tcb_info` is rejected even when `qe_identity` is fresh.
     /// Error message identifies which field tripped the check, so operators
     /// can debug from logs alone.
-    #[tokio::test]
-    async fn check_collateral_freshness__should_reject_when_tcb_info_too_old() {
+    #[test]
+    fn check_collateral_freshness__should_reject_when_tcb_info_too_old() {
         let stale_tcb = rfc3339(test_now() - time::Duration::days(8));
         let fresh_qe = rfc3339(test_now() - time::Duration::days(1));
         let collateral = collateral_with_issue_dates(&stale_tcb, &fresh_qe);
@@ -896,8 +896,8 @@ mod tests {
     /// A stale `qe_identity` is rejected even when `tcb_info` is fresh.
     /// Symmetric to the previous test — both fields are independently
     /// validated.
-    #[tokio::test]
-    async fn check_collateral_freshness__should_reject_when_qe_identity_too_old() {
+    #[test]
+    fn check_collateral_freshness__should_reject_when_qe_identity_too_old() {
         let fresh_tcb = rfc3339(test_now() - time::Duration::days(1));
         let stale_qe = rfc3339(test_now() - time::Duration::days(8));
         let collateral = collateral_with_issue_dates(&fresh_tcb, &stale_qe);
@@ -915,8 +915,8 @@ mod tests {
     /// At exactly `MAX_COLLATERAL_AGE` the collateral is accepted — the
     /// comparison is `elapsed > MAX_AGE`, not `>=`. Documents the
     /// inclusive-of-boundary behavior so it can't drift silently.
-    #[tokio::test]
-    async fn check_collateral_freshness__should_accept_at_exact_boundary() {
+    #[test]
+    fn check_collateral_freshness__should_accept_at_exact_boundary() {
         let issued = rfc3339(test_now() - MAX_COLLATERAL_AGE);
         let collateral = collateral_with_issue_dates(&issued, &issued);
 
@@ -929,8 +929,8 @@ mod tests {
     }
 
     /// One second past the boundary trips the check.
-    #[tokio::test]
-    async fn check_collateral_freshness__should_reject_one_second_past_boundary() {
+    #[test]
+    fn check_collateral_freshness__should_reject_one_second_past_boundary() {
         let issued = rfc3339(test_now() - MAX_COLLATERAL_AGE - time::Duration::seconds(1));
         let collateral = collateral_with_issue_dates(&issued, &issued);
 
@@ -944,8 +944,8 @@ mod tests {
     /// Slight future-dating (within the grace window) is accepted — covers
     /// routine clock skew between Intel's PCS and our node without false
     /// rejections.
-    #[tokio::test]
-    async fn check_collateral_freshness__should_accept_slight_future_within_grace() {
+    #[test]
+    fn check_collateral_freshness__should_accept_slight_future_within_grace() {
         let issued = rfc3339(test_now() + FUTURE_ISSUE_DATE_GRACE);
         let collateral = collateral_with_issue_dates(&issued, &issued);
 
@@ -957,8 +957,8 @@ mod tests {
     /// Future-dating beyond the grace window is rejected. Closes the bypass
     /// where a misconfigured PCCS or backdated node clock would otherwise
     /// pass arbitrary collateral.
-    #[tokio::test]
-    async fn check_collateral_freshness__should_reject_future_beyond_grace() {
+    #[test]
+    fn check_collateral_freshness__should_reject_future_beyond_grace() {
         let issued = rfc3339(test_now() + FUTURE_ISSUE_DATE_GRACE + time::Duration::seconds(1));
         let collateral = collateral_with_issue_dates(&issued, &issued);
 
