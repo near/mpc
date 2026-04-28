@@ -49,14 +49,12 @@ const PCCS_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 /// 30-day `nextUpdate` window but more permissive than any default PCCS
 /// refresh schedule (Intel reference and Phala both refresh ~daily), so
 /// legitimate operators have ample headroom.
-const MAX_COLLATERAL_AGE_SECONDS: u64 = 7 * 24 * 60 * 60;
+const MAX_COLLATERAL_AGE: time::Duration = time::Duration::days(7);
 
 /// Grace window for collateral whose `issueDate` is slightly in our future.
-/// Intended to absorb routine clock skew between Intel's PCS and our node,
-/// not to defend against an attacker — the malicious-operator threat model
-/// (clock backdating, etc.) is addressed separately. Anything past this
-/// window is treated as a misconfiguration / data error and rejected.
-const FUTURE_ISSUE_DATE_GRACE_SECONDS: u64 = 5 * 60;
+/// Absorbs routine clock skew between Intel's PCS and our node; anything
+/// past it is treated as a data error and rejected.
+const FUTURE_ISSUE_DATE_GRACE: time::Duration = time::Duration::minutes(5);
 
 /// Default path for dstack Unix socket endpoint.
 pub const DEFAULT_DSTACK_ENDPOINT: &str = "/var/run/dstack.sock";
@@ -186,7 +184,7 @@ impl TeeAuthority {
 
     /// Fetches attestation collateral from a single PCCS endpoint, with the
     /// usual per-request timeout and a single retry via exponential backoff.
-    /// Also enforces [`MAX_COLLATERAL_AGE_SECONDS`] on the response — a
+    /// Also enforces [`MAX_COLLATERAL_AGE`] on the response — a
     /// stale-but-Intel-signed bundle is treated as a fetch failure here so
     /// that [`try_each_pccs_endpoint`] falls through to the next URL,
     /// turning the configured `pccs_urls` list into a freshness ladder.
@@ -202,8 +200,11 @@ impl TeeAuthority {
         };
 
         let collateral = get_with_backoff(fetch, "fetch collateral from PCCS", Some(1)).await?;
-        let now_seconds = current_unix_seconds()?;
-        check_collateral_freshness(&collateral, pccs_url.as_str(), now_seconds)?;
+        check_collateral_freshness(
+            &collateral,
+            pccs_url.as_str(),
+            time::OffsetDateTime::now_utc(),
+        )?;
         Ok(collateral)
     }
 }
@@ -217,27 +218,22 @@ struct CollateralIssueDate {
 }
 
 /// Reject collateral whose Intel `issueDate` (on either the TCB Info or QE
-/// Identity field) is older than [`MAX_COLLATERAL_AGE_SECONDS`].
+/// Identity field) is older than [`MAX_COLLATERAL_AGE`].
 ///
 /// Combined with the multi-PCCS support from [`try_each_pccs_endpoint`], a
 /// rejection here causes the helper to fall through to the next URL — i.e.
 /// `pccs_urls` acts as a freshness ladder, the stale primary is bypassed
 /// in favor of a fresher fallback (e.g. Intel as the last entry).
 ///
-/// The `now_seconds` argument is parameterized so tests can drive specific
+/// The `now` argument is parameterized so tests can drive specific
 /// boundary cases without depending on the wall clock.
 fn check_collateral_freshness(
     collateral: &Collateral,
     pccs_url: &str,
-    now_seconds: u64,
+    now: time::OffsetDateTime,
 ) -> anyhow::Result<()> {
-    check_field_freshness("tcb_info", &collateral.tcb_info, pccs_url, now_seconds)?;
-    check_field_freshness(
-        "qe_identity",
-        &collateral.qe_identity,
-        pccs_url,
-        now_seconds,
-    )?;
+    check_field_freshness("tcb_info", &collateral.tcb_info, pccs_url, now)?;
+    check_field_freshness("qe_identity", &collateral.qe_identity, pccs_url, now)?;
     Ok(())
 }
 
@@ -245,63 +241,48 @@ fn check_field_freshness(
     field: &'static str,
     raw_json: &str,
     pccs_url: &str,
-    now_seconds: u64,
+    now: time::OffsetDateTime,
 ) -> anyhow::Result<()> {
     let CollateralIssueDate { issue_date } = serde_json::from_str(raw_json)
         .with_context(|| format!("parsing `issueDate` from PCCS `{field}` field"))?;
-
-    let issued_at_seconds = parse_rfc3339_to_unix_seconds(&issue_date)
+    let issued_at = time::OffsetDateTime::parse(&issue_date, &Rfc3339)
         .with_context(|| format!("parsing `{field}.issueDate` (`{issue_date}`) as RFC3339"))?;
 
-    // Future-dated collateral: a small grace window absorbs clock skew
-    // between Intel's PCS and our node; anything beyond it is a data
-    // error (or a misconfigured PCCS) and we want a hard reject rather
-    // than the silent `saturating_sub → 0 → "fresh"` fall-through.
-    let skew_seconds = issued_at_seconds.saturating_sub(now_seconds);
-    if skew_seconds > FUTURE_ISSUE_DATE_GRACE_SECONDS {
+    let elapsed = now - issued_at;
+
+    if elapsed < -FUTURE_ISSUE_DATE_GRACE {
+        let skew = -elapsed;
         warn!(
             field,
             issue_date = %issue_date,
-            skew_seconds,
-            grace_seconds = FUTURE_ISSUE_DATE_GRACE_SECONDS,
+            skew_seconds = skew.whole_seconds(),
+            grace_seconds = FUTURE_ISSUE_DATE_GRACE.whole_seconds(),
             pccs_url,
             "PCCS collateral rejected: issueDate is in the future beyond grace window"
         );
         anyhow::bail!(
-            "PCCS collateral has future issueDate: {field} issued {issue_date} \
-             ({skew_seconds}s in the future, grace {FUTURE_ISSUE_DATE_GRACE_SECONDS}s)"
+            "PCCS collateral has future issueDate: {field} issued {issue_date} ({}s in the future, grace {}s)",
+            skew.whole_seconds(),
+            FUTURE_ISSUE_DATE_GRACE.whole_seconds(),
         );
     }
 
-    let elapsed_seconds = now_seconds.saturating_sub(issued_at_seconds);
-    if elapsed_seconds > MAX_COLLATERAL_AGE_SECONDS {
+    if elapsed > MAX_COLLATERAL_AGE {
         warn!(
             field,
             issue_date = %issue_date,
-            elapsed_seconds,
-            max_age_seconds = MAX_COLLATERAL_AGE_SECONDS,
+            elapsed_seconds = elapsed.whole_seconds(),
+            max_age_seconds = MAX_COLLATERAL_AGE.whole_seconds(),
             pccs_url,
             "PCCS collateral rejected as stale (older than max age)"
         );
         anyhow::bail!(
-            "PCCS collateral too stale: {field} issued {issue_date} \
-             ({elapsed_seconds}s ago, max {MAX_COLLATERAL_AGE_SECONDS}s)"
+            "PCCS collateral too stale: {field} issued {issue_date} ({}s ago, max {}s)",
+            elapsed.whole_seconds(),
+            MAX_COLLATERAL_AGE.whole_seconds(),
         );
     }
     Ok(())
-}
-
-fn parse_rfc3339_to_unix_seconds(s: &str) -> anyhow::Result<u64> {
-    let dt = time::OffsetDateTime::parse(s, &Rfc3339)?;
-    let unix = dt.unix_timestamp();
-    u64::try_from(unix).map_err(|_| anyhow::anyhow!("issueDate is before unix epoch"))
-}
-
-fn current_unix_seconds() -> anyhow::Result<u64> {
-    Ok(std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .context("system clock is before unix epoch")?
-        .as_secs())
 }
 
 /// Try each PCCS endpoint in order, returning the first success. If every
@@ -701,29 +682,28 @@ mod tests {
         .into()
     }
 
-    /// Format a unix-seconds timestamp back into RFC3339 (UTC) the way Intel
-    /// PCS would emit it, so test fixtures stay close to real-world inputs.
-    fn unix_to_rfc3339(unix_seconds: u64) -> String {
-        time::OffsetDateTime::from_unix_timestamp(unix_seconds as i64)
-            .expect("test timestamp fits in i64")
-            .format(&Rfc3339)
-            .expect("RFC3339 format always succeeds for valid datetime")
+    /// Format an `OffsetDateTime` as RFC3339 (UTC) the way Intel PCS would
+    /// emit it, so test fixtures stay close to real-world inputs.
+    fn rfc3339(t: time::OffsetDateTime) -> String {
+        t.format(&Rfc3339)
+            .expect("RFC3339 format always succeeds for a valid datetime")
     }
 
-    /// 2026-01-01T00:00:00Z — arbitrary fixed `now` for boundary tests so
+    /// Arbitrary fixed `now` (2026-01-01T00:00:00Z) for boundary tests so
     /// they don't depend on the wall clock.
-    const TEST_NOW_SECONDS: u64 = 1_767_225_600;
-    const ONE_DAY: u64 = 24 * 60 * 60;
+    fn test_now() -> time::OffsetDateTime {
+        time::OffsetDateTime::from_unix_timestamp(1_767_225_600)
+            .expect("test timestamp is in range")
+    }
 
     /// Collateral whose `issueDate` is 6 days old (well within the 7-day
     /// window) is accepted.
     #[tokio::test]
     async fn check_collateral_freshness__should_accept_within_window() {
-        let issued = unix_to_rfc3339(TEST_NOW_SECONDS - 6 * ONE_DAY);
+        let issued = rfc3339(test_now() - time::Duration::days(6));
         let collateral = collateral_with_issue_dates(&issued, &issued);
 
-        let result =
-            check_collateral_freshness(&collateral, "https://test.example/", TEST_NOW_SECONDS);
+        let result = check_collateral_freshness(&collateral, "https://test.example/", test_now());
 
         assert!(result.is_ok(), "expected ok, got {result:?}");
     }
@@ -733,14 +713,13 @@ mod tests {
     /// can debug from logs alone.
     #[tokio::test]
     async fn check_collateral_freshness__should_reject_when_tcb_info_too_old() {
-        let stale_tcb = unix_to_rfc3339(TEST_NOW_SECONDS - 8 * ONE_DAY);
-        let fresh_qe = unix_to_rfc3339(TEST_NOW_SECONDS - ONE_DAY);
+        let stale_tcb = rfc3339(test_now() - time::Duration::days(8));
+        let fresh_qe = rfc3339(test_now() - time::Duration::days(1));
         let collateral = collateral_with_issue_dates(&stale_tcb, &fresh_qe);
 
-        let err =
-            check_collateral_freshness(&collateral, "https://test.example/", TEST_NOW_SECONDS)
-                .unwrap_err()
-                .to_string();
+        let err = check_collateral_freshness(&collateral, "https://test.example/", test_now())
+            .unwrap_err()
+            .to_string();
 
         assert!(
             err.contains("tcb_info"),
@@ -757,14 +736,13 @@ mod tests {
     /// validated.
     #[tokio::test]
     async fn check_collateral_freshness__should_reject_when_qe_identity_too_old() {
-        let fresh_tcb = unix_to_rfc3339(TEST_NOW_SECONDS - ONE_DAY);
-        let stale_qe = unix_to_rfc3339(TEST_NOW_SECONDS - 8 * ONE_DAY);
+        let fresh_tcb = rfc3339(test_now() - time::Duration::days(1));
+        let stale_qe = rfc3339(test_now() - time::Duration::days(8));
         let collateral = collateral_with_issue_dates(&fresh_tcb, &stale_qe);
 
-        let err =
-            check_collateral_freshness(&collateral, "https://test.example/", TEST_NOW_SECONDS)
-                .unwrap_err()
-                .to_string();
+        let err = check_collateral_freshness(&collateral, "https://test.example/", test_now())
+            .unwrap_err()
+            .to_string();
 
         assert!(
             err.contains("qe_identity"),
@@ -772,16 +750,15 @@ mod tests {
         );
     }
 
-    /// At exactly `MAX_COLLATERAL_AGE_SECONDS` the collateral is accepted —
-    /// the comparison is `elapsed > MAX_AGE`, not `>=`. Documents the
+    /// At exactly `MAX_COLLATERAL_AGE` the collateral is accepted — the
+    /// comparison is `elapsed > MAX_AGE`, not `>=`. Documents the
     /// inclusive-of-boundary behavior so it can't drift silently.
     #[tokio::test]
     async fn check_collateral_freshness__should_accept_at_exact_boundary() {
-        let issued = unix_to_rfc3339(TEST_NOW_SECONDS - MAX_COLLATERAL_AGE_SECONDS);
+        let issued = rfc3339(test_now() - MAX_COLLATERAL_AGE);
         let collateral = collateral_with_issue_dates(&issued, &issued);
 
-        let result =
-            check_collateral_freshness(&collateral, "https://test.example/", TEST_NOW_SECONDS);
+        let result = check_collateral_freshness(&collateral, "https://test.example/", test_now());
 
         assert!(
             result.is_ok(),
@@ -792,13 +769,12 @@ mod tests {
     /// One second past the boundary trips the check.
     #[tokio::test]
     async fn check_collateral_freshness__should_reject_one_second_past_boundary() {
-        let issued = unix_to_rfc3339(TEST_NOW_SECONDS - MAX_COLLATERAL_AGE_SECONDS - 1);
+        let issued = rfc3339(test_now() - MAX_COLLATERAL_AGE - time::Duration::seconds(1));
         let collateral = collateral_with_issue_dates(&issued, &issued);
 
-        let err =
-            check_collateral_freshness(&collateral, "https://test.example/", TEST_NOW_SECONDS)
-                .unwrap_err()
-                .to_string();
+        let err = check_collateral_freshness(&collateral, "https://test.example/", test_now())
+            .unwrap_err()
+            .to_string();
 
         assert!(err.contains("too stale"), "got: {err}");
     }
@@ -808,28 +784,25 @@ mod tests {
     /// rejections.
     #[tokio::test]
     async fn check_collateral_freshness__should_accept_slight_future_within_grace() {
-        let issued = unix_to_rfc3339(TEST_NOW_SECONDS + FUTURE_ISSUE_DATE_GRACE_SECONDS);
+        let issued = rfc3339(test_now() + FUTURE_ISSUE_DATE_GRACE);
         let collateral = collateral_with_issue_dates(&issued, &issued);
 
-        let result =
-            check_collateral_freshness(&collateral, "https://test.example/", TEST_NOW_SECONDS);
+        let result = check_collateral_freshness(&collateral, "https://test.example/", test_now());
 
         assert!(result.is_ok(), "expected ok within grace, got {result:?}");
     }
 
-    /// Future-dating beyond the grace window is rejected, not silently
-    /// treated as fresh by `saturating_sub → 0`. This closes the bypass
+    /// Future-dating beyond the grace window is rejected. Closes the bypass
     /// where a misconfigured PCCS or backdated node clock would otherwise
     /// pass arbitrary collateral.
     #[tokio::test]
     async fn check_collateral_freshness__should_reject_future_beyond_grace() {
-        let issued = unix_to_rfc3339(TEST_NOW_SECONDS + FUTURE_ISSUE_DATE_GRACE_SECONDS + 1);
+        let issued = rfc3339(test_now() + FUTURE_ISSUE_DATE_GRACE + time::Duration::seconds(1));
         let collateral = collateral_with_issue_dates(&issued, &issued);
 
-        let err =
-            check_collateral_freshness(&collateral, "https://test.example/", TEST_NOW_SECONDS)
-                .unwrap_err()
-                .to_string();
+        let err = check_collateral_freshness(&collateral, "https://test.example/", test_now())
+            .unwrap_err()
+            .to_string();
 
         assert!(
             err.contains("future issueDate"),
