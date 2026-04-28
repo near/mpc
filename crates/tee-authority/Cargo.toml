@@ -17,7 +17,10 @@ hex = { workspace = true }
 launcher-interface = { workspace = true }
 mpc-attestation = { workspace = true, features = ["dstack-conversions"] }
 near-mpc-bounded-collections = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
+time = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
