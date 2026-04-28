@@ -152,6 +152,8 @@
             jq
             perl
             procps  # pgrep, used by the kill-orphan-mpc-nodes cargo-make task
+            pprof
+            graphviz
           ];
 
           buildLibs =
