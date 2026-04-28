@@ -15,18 +15,18 @@ use crate::{
     requests::recent_blocks_tracker::BlockViewLite,
 };
 
-pub(crate) struct RequestsFromBlock<T> {
+pub(crate) struct RequestsUpdate<T> {
     pub(crate) block: BlockViewLite,
     pub(crate) requests: Vec<T>,
     pub(crate) completed_requests: Vec<RequestId>,
 }
 
-impl<T> RequestsFromBlock<T> {
+impl<T> RequestsUpdate<T> {
     pub(crate) fn from_chain<U>(
         block: &BlockViewLite,
         new_requests: Vec<U>,
         completed_requests: Vec<CryptoHash>,
-    ) -> RequestsFromBlock<T>
+    ) -> RequestsUpdate<T>
     where
         T: FromChain<U>,
     {
@@ -35,7 +35,7 @@ impl<T> RequestsFromBlock<T> {
             .map(|request_from_chain| T::from_chain(request_from_chain, block))
             .collect::<Vec<_>>();
 
-        RequestsFromBlock {
+        RequestsUpdate {
             block: block.clone(),
             requests,
             completed_requests,

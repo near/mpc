@@ -19,7 +19,7 @@ use crate::storage::{
 };
 use crate::tracking::{self, AutoAbortTaskCollection};
 use crate::types::SignatureRequest;
-use crate::types::{CKDRequest, RequestsFromBlock, VerifyForeignTxRequest};
+use crate::types::{CKDRequest, RequestsUpdate, VerifyForeignTxRequest};
 use crate::web::{DebugRequest, DebugRequestKind};
 use mpc_node_config::ConfigFile;
 
@@ -230,7 +230,7 @@ where
                     };
 
                     self.client.update_indexer_height(block_update.block.height);
-                    let signature_requests : RequestsFromBlock<SignatureRequest> = RequestsFromBlock::from_chain(
+                    let signature_requests : RequestsUpdate<SignatureRequest> = RequestsUpdate::from_chain(
                         &block_update.block,
                         block_update.signature_requests,
                         block_update.completed_signatures,
@@ -244,7 +244,7 @@ where
                     // TODO(#3032): remove completed & finalized requests from store
                     pending_signatures.notify_new_block(signature_requests);
 
-                    let ckd_requests: RequestsFromBlock<CKDRequest> = RequestsFromBlock::from_chain(
+                    let ckd_requests: RequestsUpdate<CKDRequest> = RequestsUpdate::from_chain(
                         &block_update.block,
                         block_update.ckd_requests,
                         block_update.completed_ckds
@@ -255,7 +255,7 @@ where
 
                     pending_ckds.notify_new_block(ckd_requests);
 
-                    let verify_foreign_tx_requests : RequestsFromBlock<VerifyForeignTxRequest> = RequestsFromBlock::from_chain(
+                    let verify_foreign_tx_requests : RequestsUpdate<VerifyForeignTxRequest> = RequestsUpdate::from_chain(
                         &block_update.block,
                         block_update.verify_foreign_tx_requests,
                         block_update.completed_verify_foreign_txs
