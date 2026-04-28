@@ -26,7 +26,7 @@ jobs:
         uses: DeterminateSystems/nix-installer-action@21a544727d0c62386e78b4befe52d19ad12692e3 # v17
 
       - name: Restore /nix from cache
-        uses: DSharifi/cache-nix-action@3e2c4eea4e825e74575cbc8e25d38173df7686c2 # enable-warpbuild-cache
+        uses: near/cache-nix-action@3e2c4eea4e825e74575cbc8e25d38173df7686c2 # enable-warpbuild-cache
         with:
           backend: warpbuild
           primary-key: nix-${{ runner.os }}-mpc-node-${{ hashFiles('flake.nix', 'flake.lock', 'nix/**', 'rust-toolchain.toml', 'Cargo.lock') }}
