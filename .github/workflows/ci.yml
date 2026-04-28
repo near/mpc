@@ -196,6 +196,8 @@ jobs:
 
   nix-build-mpc-node:
     name: "Nix build mpc-node"
+    permissions:
+      contents: read
     uses: ./.github/workflows/nix-build-mpc-node.yml
 
   fast-ci-checks:
