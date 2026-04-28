@@ -1,21 +1,22 @@
 use anyhow::Context;
 use launcher_interface::types::{TeeAuthorityConfig, TeeConfig};
 use mpc_node_config::{ConfigFile, DownloadConfigType, NearInitConfig, StartConfig};
+use near_mpc_bounded_collections::NonEmptyVec;
 use std::path::Path;
 use tee_authority::tee_authority::{
     DstackTeeAuthorityConfig, LocalTeeAuthorityConfig, TeeAuthority,
 };
 
 pub trait TeeAuthorityImpl {
-    fn into_tee_authority(self, pccs_url: url::Url) -> anyhow::Result<TeeAuthority>;
+    fn into_tee_authority(self, pccs_urls: NonEmptyVec<url::Url>) -> anyhow::Result<TeeAuthority>;
 }
 
 impl TeeAuthorityImpl for TeeConfig {
-    fn into_tee_authority(self, pccs_url: url::Url) -> anyhow::Result<TeeAuthority> {
+    fn into_tee_authority(self, pccs_urls: NonEmptyVec<url::Url>) -> anyhow::Result<TeeAuthority> {
         Ok(match self.authority {
             TeeAuthorityConfig::Local => LocalTeeAuthorityConfig::default().into(),
             TeeAuthorityConfig::Dstack { dstack_endpoint } => {
-                DstackTeeAuthorityConfig::new(dstack_endpoint, pccs_url).into()
+                DstackTeeAuthorityConfig::new(dstack_endpoint, pccs_urls).into()
             }
         })
     }

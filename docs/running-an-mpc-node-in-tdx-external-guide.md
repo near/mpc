@@ -918,6 +918,10 @@ This section shows how to add the MPC node's public key (from the previous secti
 
   > **Note:** This must be a single comma-separated string with no spaces or newlines.
 
+* **`ALLOWANCE`** → Use `unlimited`. A finite allowance just means the node
+  will eventually stop being able to submit `respond*` transactions once the
+  budget runs out, with no error visible in node logs.
+
 ---
 
 #### Example Command
@@ -925,7 +929,7 @@ This section shows how to add the MPC node's public key (from the previous secti
 ```bash
 ./target/release/near account add-key $ACCOUNT_ID \
   grant-function-call-access \
-  --allowance '1 NEAR' \
+  --allowance unlimited \
   --contract-account-id $MPC_CONTRACT_ID \
   --function-names $METHOD_NAMES \
   use-manually-provided-public-key $MPC_NODE_PUBLIC_KEY \
@@ -945,7 +949,7 @@ This section shows how to add the MPC node's public key (from the previous secti
 ACCOUNT_ID="your-node-account.testnet"
 MPC_CONTRACT_ID="v1.signer-prod.testnet"    # use "v1.signer" for mainnet
 MPC_NODE_PUBLIC_KEY="ed25519:YOUR_PUBLIC_KEY_HERE"
-ALLOWANCE="1 NEAR"
+ALLOWANCE="unlimited"
 NETWORK="testnet"   # or "mainnet"
 
 # Methods the MPC node is allowed to call
@@ -1207,7 +1211,6 @@ $ ./deployment/build-images.sh --node
 commit hash: 828f816be36aed6f0d2438e0131b3e9d7d0931ad
 SOURCE_DATE_EPOCH used: 0
 node binary hash: 86c8f7d8913d6fe37a6992bba165d15a3a1d88fbf6cdff605e4827d5183721bc
-node docker image hash: sha256:0e48003c0ac6ec01e79ce47aa094379e7a8fac428512dfeb18d49d558e100a53
 node manifest digest: sha256:331cfec941671ac343c52847e255eb36a280da65535d2a1e4d002c4c64686e19
 ```
 
@@ -1289,7 +1292,6 @@ git checkout <commit-hash>
 $ ./deployment/build-images.sh --rust-launcher
 ...
 rust launcher binary hash: <hex>
-rust launcher docker image hash: sha256:<hex>
 rust launcher manifest digest: sha256:<hex>
 ```
 
