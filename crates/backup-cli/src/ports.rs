@@ -1,7 +1,8 @@
 use std::future::Future;
 
-use mpc_contract::{primitives::key_state::Keyset, state::ProtocolContractState};
+use mpc_contract::state::ProtocolContractState;
 use mpc_node::keyshare::Keyshare;
+use near_mpc_contract_interface::types::Keyset;
 
 use crate::types;
 

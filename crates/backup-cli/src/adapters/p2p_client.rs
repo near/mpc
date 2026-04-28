@@ -1,6 +1,6 @@
 use ed25519_dalek::{SigningKey, VerifyingKey};
-use mpc_contract::primitives::key_state::Keyset;
 use mpc_node::{config::AesKey256, keyshare::Keyshare, migration_service::web::client};
+use near_mpc_contract_interface::types::Keyset;
 
 use crate::{cli::NodeAddress, ports};
 
@@ -51,10 +51,9 @@ impl ports::P2PClient for MpcP2PClient {
         .await
         .map_err(Error::ServerConnection)?;
 
-        let keyset_dto: near_mpc_contract_interface::types::Keyset = keyset.clone().into();
         let keyshares = client::make_keyshare_get_request(
             &mut send_request,
-            &keyset_dto,
+            keyset,
             &self.backup_encryption_key,
         )
         .await

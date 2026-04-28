@@ -1,7 +1,7 @@
 use super::permanent::PermanentKeyshareData;
 use super::{Keyshare, KeyshareData};
-use mpc_contract::primitives::key_state::{EpochId, KeyEventId, KeyForDomain, Keyset};
-use mpc_primitives::domain::DomainId;
+use mpc_primitives::{domain::DomainId, EpochId, KeyEventId};
+use near_mpc_crypto_types::{KeyForDomain, Keyset};
 use rand::{CryptoRng, RngCore, SeedableRng};
 use threshold_signatures::ecdsa::KeygenOutput;
 use threshold_signatures::frost_secp256k1::Secp256K1Sha256;
@@ -98,7 +98,7 @@ fn keyset_from_keyshares(epoch_id: u64, keyshares: &[Keyshare]) -> Keyset {
             let public_key = keyshare.public_key().unwrap();
             KeyForDomain {
                 domain_id: keyshare.key_id.domain_id,
-                key: public_key.try_into().unwrap(),
+                key: public_key.into(),
                 attempt: keyshare.key_id.attempt_id,
             }
         })

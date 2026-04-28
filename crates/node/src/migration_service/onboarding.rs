@@ -4,8 +4,8 @@ use anyhow::Context;
 use backon::{ExponentialBuilder, Retryable};
 use ed25519_dalek::VerifyingKey;
 use futures::TryFutureExt;
-use mpc_contract::primitives::key_state::Keyset;
 use near_account_id::AccountId;
+use near_mpc_crypto_types::Keyset;
 use tokio::sync::{watch, RwLock};
 use tokio_util::sync::CancellationToken;
 
@@ -220,7 +220,7 @@ async fn send_conclude_onboarding(
 ) -> anyhow::Result<()> {
     let transaction =
         ChainSendTransactionRequest::ConcludeNodeMigration(ConcludeNodeMigrationArgs {
-            keyset: imported_keyset.into(),
+            keyset: imported_keyset,
         });
     tx_sender.send(transaction).await?;
     Ok(())

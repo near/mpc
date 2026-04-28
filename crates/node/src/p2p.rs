@@ -1049,8 +1049,7 @@ mod tests {
     };
     use crate::providers::EcdsaTaskId;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
-    use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
-    use mpc_primitives::domain::DomainId;
+    use mpc_primitives::{domain::DomainId, AttemptId, EpochId, KeyEventId};
     use rand::Rng;
     use std::time::Duration;
     use tokio::time::timeout;
@@ -1099,7 +1098,7 @@ mod tests {
                     channel_id,
                     kind: crate::primitives::MpcMessageKind::Start(MpcStartMessage {
                         task_id: MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyResharing {
-                            key_event: key_id.into(),
+                            key_event: key_id,
                         }),
                         participants: vec![participant0, participant1],
                     }),
