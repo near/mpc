@@ -1,3 +1,5 @@
+#[cfg(target_os = "linux")]
+use super::jemalloc::jemalloc_heap_profile;
 use super::pprof::collect_pprof;
 
 use axum::{
@@ -11,6 +13,8 @@ use tower::limit::GlobalConcurrencyLimitLayer;
 
 const CONTENT_TYPE_SVG: &str = "image/svg+xml";
 const PPROF_FLAMEGRAPH_PATH: &str = "/profiler/pprof/flamegraph";
+#[cfg(target_os = "linux")]
+const JEMALLOC_HEAP_PATH: &str = "/profiler/jemalloc/heap";
 const MAX_CONCURRENT_PPROF_REQUESTS: usize = 5;
 
 const DEFAULT_PPROF_SAMPLE_DURATION: Duration = Duration::from_secs(30);
@@ -22,11 +26,18 @@ const MIN_PPROF_SAMPLE_FREQUENCY_HZ: i32 = 100;
 const MAX_PPROF_SAMPLE_FREQUENCY_HZ: i32 = 2000;
 
 pub(crate) async fn start_web_server(bind_address: SocketAddr) -> Result<(), io::Error> {
-    let pprof_router = axum::Router::new()
-        .route(PPROF_FLAMEGRAPH_PATH, axum::routing::get(pprof_flamegraph))
-        .layer(GlobalConcurrencyLimitLayer::new(
-            MAX_CONCURRENT_PPROF_REQUESTS,
-        ));
+    let pprof_router =
+        axum::Router::new().route(PPROF_FLAMEGRAPH_PATH, axum::routing::get(pprof_flamegraph));
+
+    #[cfg(target_os = "linux")]
+    let pprof_router = pprof_router.route(
+        JEMALLOC_HEAP_PATH,
+        axum::routing::get(jemalloc_heap_profile),
+    );
+
+    let pprof_router = pprof_router.layer(GlobalConcurrencyLimitLayer::new(
+        MAX_CONCURRENT_PPROF_REQUESTS,
+    ));
 
     let tcp_listener = TcpListener::bind(&bind_address).await?;
 

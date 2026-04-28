@@ -90,6 +90,10 @@ url = { workspace = true }
 [target.'cfg(target_os = "macos")'.dependencies]
 pprof = { workspace = true, features = ["frame-pointer"] }
 
+# jemalloc heap profiling is only supported on Linux.
+[target.'cfg(target_os = "linux")'.dependencies]
+jemalloc_pprof = { workspace = true }
+
 [build-dependencies]
 built = { workspace = true }
 
