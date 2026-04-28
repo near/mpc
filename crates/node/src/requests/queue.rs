@@ -11,6 +11,7 @@ use near_time::Duration;
 use sha3::Digest;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
+use std::ops::Add;
 use std::sync::{Arc, Mutex, Weak};
 use time::ext::InstantExt as _;
 
@@ -428,8 +429,6 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
 
         let (eligible_leaders, maximum_height) = self.eligible_leaders_and_maximum_height();
         tracing::debug!(target: "request", "Eligible leaders: {:?}", eligible_leaders);
-        self.recent_blocks
-            .notify_maximum_height_available(maximum_height);
 
         let mut result = Vec::new();
 
@@ -445,6 +444,26 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 tracing::debug!(target: "request", "Skipping request {:?} from block {} because there's already an active attempt", request.request.get_id(), request.block_height);
                 continue;
             }
+            // check it against the network height
+            if maximum_height
+                .saturating_sub(REQUEST_EXPIRATION_BLOCKS)
+                .add(1)
+                > request.block_height
+            {
+                // this request expired for at least one participant in the network. We can already
+                // remove it from the queue.
+                tracing::debug!(target: "request", "Discarding {} request {:?} from block {}", RequestType::get_type(), request.request.get_id(), request.block_height);
+                // Increment metric for timeout (only for signature requests)
+                if matches!(RequestType::get_type(), types::RequestType::Signature) {
+                    metrics::MPC_CLUSTER_FAILED_SIGNATURES_COUNT
+                        .with_label_values(&["timeout"])
+                        .inc();
+                }
+                // This request is definitely not useful anymore, so discard it.
+                requests_to_remove.push(*id);
+                continue;
+            }
+
             match self
                 .recent_blocks
                 .classify_block(request.block_hash, request.block_height)
@@ -1048,6 +1067,52 @@ mod tests {
             debug.contains("blk        101 ->        102 (+1, 2s432ms)"),
             "{}",
             debug
+        );
+    }
+
+    #[test_log::test]
+    #[expect(non_snake_case)]
+    fn get_requests_to_attempt__should_not_expire_request_at_expiration_boundary() {
+        // Given: one leader request at block height H
+        let (mut pending_requests, mut setup) = TestSetup::new();
+        let req1 = setup.add_request_leader();
+        let requests = setup.update();
+        let block_height = requests.block.height;
+        pending_requests.notify_new_block(requests);
+
+        // When: set network height to H + REQUEST_EXPIRATION_BLOCKS - 1
+        setup.set_participant_network_height(block_height + REQUEST_EXPIRATION_BLOCKS - 1);
+
+        // Then: request is NOT expired (returned by get_requests_to_attempt)
+        let to_attempt = pending_requests.get_requests_to_attempt();
+        assert_eq!(to_attempt.len(), 1);
+        assert_eq!(to_attempt[0].request.id, req1.id);
+    }
+
+    #[test_log::test]
+    #[expect(non_snake_case)]
+    fn get_requests_to_attempt__should_expire_request_past_expiration_boundary() {
+        // Given: one leader request at block height H
+        let (mut pending_requests, mut setup) = TestSetup::new();
+        let req1 = setup.add_request_leader();
+        let requests = setup.update();
+        let block_height = requests.block.height;
+        pending_requests.notify_new_block(requests);
+        assert!(
+            pending_requests.requests.contains_key(&req1.id),
+            "request should be in the queue"
+        );
+
+        // When: set network height to H + REQUEST_EXPIRATION_BLOCKS
+        setup.set_participant_network_height(block_height + REQUEST_EXPIRATION_BLOCKS);
+
+        // Then: request IS expired, not returned by get_requests_to_attempt and removed from
+        // queue.
+        let to_attempt = pending_requests.get_requests_to_attempt();
+        assert_eq!(to_attempt.len(), 0);
+        assert!(
+            !pending_requests.requests.contains_key(&req1.id),
+            "expired request should be removed from the queue"
         );
     }
 }
