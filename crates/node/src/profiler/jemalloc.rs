@@ -116,8 +116,6 @@ fn render_flamegraph_svg(dump_file: File) -> anyhow::Result<Vec<u8>> {
             continue;
         }
 
-        // `parse_jeheap` returns frames root-first, which is also what inferno's
-        // collapsed format expects, so no reordering is needed here.
         let frames: Vec<String> = stack.addrs.iter().map(|&addr| symbolicate(addr)).collect();
 
         collapsed_lines.push(format!("{} {}", frames.join(";"), weight));
@@ -143,7 +141,6 @@ fn symbolicate(addr: usize) -> String {
             return;
         }
         if let Some(name) = sym.name() {
-            // SymbolName::Display demangles automatically.
             resolved = Some(name.to_string());
         }
     });
