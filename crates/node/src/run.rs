@@ -131,7 +131,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
                 .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_FAILURE])
                 .inc();
             tracing::error!(
-                error = ?e,
+                error = %e,
                 "TEE attestation failed. Node will continue without attestation and retry periodically",
             );
             None
