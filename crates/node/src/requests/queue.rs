@@ -30,7 +30,7 @@ pub const CHECK_EACH_REQUEST_INTERVAL: Duration = Duration::seconds(1);
 const STALE_PARTICIPANT_THRESHOLD: NumBlocks = 10;
 /// The number of blocks after which a request is assumed to have timed out.
 /// This is equal to the yield-resume timeout on the blockchain.
-pub(super) const REQUEST_EXPIRATION_BLOCKS: NumBlocks = 200;
+pub const REQUEST_EXPIRATION_BLOCKS: NumBlocks = 200;
 /// The maximum time we'll wait, after a transaction is submitted to the chain, before we decide
 /// that the transaction is lost and that we should retry.
 const MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE: Duration = Duration::seconds(10);
@@ -583,11 +583,10 @@ mod tests {
                 tweak: Tweak::new([0; 32]),
                 domain: DomainId::legacy_ecdsa_id(),
             };
-            let leader_selection_order = QueuedRequest::<
-                    SignatureRequest,
-                    ChainSignatureRespondArgs,
-                >::leader_selection_order(
-                    participants, request.id
+            let leader_selection_order =
+                QueuedRequest::<SignatureRequest, TestRequestRespondArgs>::leader_selection_order(
+                    participants,
+                    request.id,
                 );
             if leader_selection_order.starts_with(&desired_leader_order) {
                 return request;
@@ -661,13 +660,12 @@ mod tests {
             let my_participant_id = participants[Self::MY_INDEX];
             let network_api = Arc::new(TestNetworkAPI::new(&participants));
 
-            let pending_requests =
-                PendingRequests::<SignatureRequest, ChainSignatureRespondArgs>::new(
-                    clock.clock(),
-                    participants.clone(),
-                    my_participant_id,
-                    network_api.clone(),
-                );
+            let pending_requests = PendingRequests::<SignatureRequest, TestRequestRespondArgs>::new(
+                clock.clock(),
+                participants.clone(),
+                my_participant_id,
+                network_api.clone(),
+            );
             for participant in &participants {
                 network_api.set_height(*participant, 100);
             }

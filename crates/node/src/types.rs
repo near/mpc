@@ -25,7 +25,7 @@ impl<T> RequestsUpdate<T> {
     pub(crate) fn from_chain<U>(
         block: &BlockViewLite,
         new_requests: Vec<U>,
-        completed_requests: Vec<CryptoHash>,
+        completed_requests: Vec<RequestId>,
     ) -> RequestsUpdate<T>
     where
         T: FromChain<U>,
@@ -77,6 +77,10 @@ pub struct CKDRequest {
     pub domain_id: DomainId,
 }
 
+pub(crate) trait FromChain<T> {
+    fn from_chain(chain_value: T, block: &BlockViewLite) -> Self;
+}
+
 impl FromChain<CKDRequestFromChain> for CKDRequest {
     fn from_chain(chain_value: CKDRequestFromChain, block: &BlockViewLite) -> Self {
         let CKDRequestFromChain {
@@ -109,10 +113,6 @@ pub struct SignatureRequest {
     pub entropy: [u8; 32],
     pub timestamp_nanosec: u64,
     pub domain: DomainId,
-}
-
-pub(crate) trait FromChain<T> {
-    fn from_chain(chain_value: T, block: &BlockViewLite) -> Self;
 }
 
 impl FromChain<SignatureRequestFromChain> for SignatureRequest {
