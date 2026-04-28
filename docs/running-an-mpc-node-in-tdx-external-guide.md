@@ -918,6 +918,10 @@ This section shows how to add the MPC node's public key (from the previous secti
 
   > **Note:** This must be a single comma-separated string with no spaces or newlines.
 
+* **`ALLOWANCE`** → Use `unlimited`. A finite allowance just means the node
+  will eventually stop being able to submit `respond*` transactions once the
+  budget runs out, with no error visible in node logs.
+
 ---
 
 #### Example Command
@@ -925,7 +929,7 @@ This section shows how to add the MPC node's public key (from the previous secti
 ```bash
 ./target/release/near account add-key $ACCOUNT_ID \
   grant-function-call-access \
-  --allowance '1 NEAR' \
+  --allowance unlimited \
   --contract-account-id $MPC_CONTRACT_ID \
   --function-names $METHOD_NAMES \
   use-manually-provided-public-key $MPC_NODE_PUBLIC_KEY \
@@ -945,7 +949,7 @@ This section shows how to add the MPC node's public key (from the previous secti
 ACCOUNT_ID="your-node-account.testnet"
 MPC_CONTRACT_ID="v1.signer-prod.testnet"    # use "v1.signer" for mainnet
 MPC_NODE_PUBLIC_KEY="ed25519:YOUR_PUBLIC_KEY_HERE"
-ALLOWANCE="1 NEAR"
+ALLOWANCE="unlimited"
 NETWORK="testnet"   # or "mainnet"
 
 # Methods the MPC node is allowed to call
