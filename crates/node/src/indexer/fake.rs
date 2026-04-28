@@ -510,7 +510,7 @@ impl FakeIndexerCore {
                 }
             }
 
-            let block = current_block.child(current_block.height() + 1);
+            let block = current_block.child();
 
             let mut transactions_to_process = Vec::new();
             while let Some((height, _, _)) = pending_transactions.front() {

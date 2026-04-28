@@ -81,11 +81,8 @@ jobs:
 
     outputs:
       mpc_node_manifest_digest: ${{ steps.digests.outputs.mpc_node_manifest_digest }}
-      mpc_node_image_id: ${{ steps.digests.outputs.mpc_node_image_id }}
       mpc_node_gcp_manifest_digest: ${{ steps.digests.outputs.mpc_node_gcp_manifest_digest }}
-      mpc_node_gcp_image_id: ${{ steps.digests.outputs.mpc_node_gcp_image_id }}
       mpc_launcher_manifest_digest: ${{ steps.digests.outputs.mpc_launcher_manifest_digest }}
-      mpc_launcher_image_id: ${{ steps.digests.outputs.mpc_launcher_image_id }}
 
     steps:
       - name: Install skopeo
@@ -102,13 +99,11 @@ jobs:
           for REPO in mpc-launcher mpc-node-gcp mpc-node; do
             SAFE_NAME="${REPO//-/_}"
             MANIFEST_DIGEST=$(skopeo inspect docker://nearone/$REPO:$RELEASE_TAG | jq -r '.Digest')
-            IMAGE_ID=$(skopeo inspect --raw --override-os linux --override-arch amd64 docker://nearone/$REPO:$RELEASE_TAG | jq -r '.config.digest')
-            if [[ -z "$MANIFEST_DIGEST" || -z "$IMAGE_ID" ]]; then
-              echo "::error::Failed to get digests for nearone/$REPO:$RELEASE_TAG"
+            if [[ -z "$MANIFEST_DIGEST" ]]; then
+              echo "::error::Failed to get manifest digest for nearone/$REPO:$RELEASE_TAG"
               exit 1
             fi
             echo "${SAFE_NAME}_manifest_digest=$MANIFEST_DIGEST" >> "$GITHUB_OUTPUT"
-            echo "${SAFE_NAME}_image_id=$IMAGE_ID" >> "$GITHUB_OUTPUT"
           done
 
   build-contract:
@@ -200,11 +195,8 @@ jobs:
         env:
           VERSION: ${{ needs.release-info.outputs.version }}
           NODE_MANIFEST: ${{ needs.collect-digests.outputs.mpc_node_manifest_digest }}
-          NODE_IMAGE_ID: ${{ needs.collect-digests.outputs.mpc_node_image_id }}
           NODE_GCP_MANIFEST: ${{ needs.collect-digests.outputs.mpc_node_gcp_manifest_digest }}
-          NODE_GCP_IMAGE_ID: ${{ needs.collect-digests.outputs.mpc_node_gcp_image_id }}
           LAUNCHER_MANIFEST: ${{ needs.collect-digests.outputs.mpc_launcher_manifest_digest }}
-          LAUNCHER_IMAGE_ID: ${{ needs.collect-digests.outputs.mpc_launcher_image_id }}
           CONTRACT_HASH: ${{ needs.build-contract.outputs.contract-hash }}
         run: |
           cp release-notes-raw.md release-notes.md
@@ -214,15 +206,12 @@ jobs:
 
           - [nearone/mpc-node:${VERSION}](https://hub.docker.com/layers/nearone/mpc-node/${VERSION}/)
             Manifest digest: \`${NODE_MANIFEST}\`
-            Image ID: \`${NODE_IMAGE_ID}\`
 
           - [nearone/mpc-node-gcp:${VERSION}](https://hub.docker.com/layers/nearone/mpc-node-gcp/${VERSION}/)
             Manifest digest: \`${NODE_GCP_MANIFEST}\`
-            Image ID: \`${NODE_GCP_IMAGE_ID}\`
 
           - [nearone/mpc-launcher:${VERSION}](https://hub.docker.com/layers/nearone/mpc-launcher/${VERSION}/)
             Manifest digest: \`${LAUNCHER_MANIFEST}\`
-            Image ID: \`${LAUNCHER_IMAGE_ID}\`
 
           ## MPC contract
 

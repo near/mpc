@@ -22,6 +22,8 @@ venv
 
 # Nix
 .direnv/
+result
+result-*
 
 .envrc
 
