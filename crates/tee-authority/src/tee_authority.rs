@@ -61,7 +61,7 @@ pub enum PccsEndpointError {
     },
 
     #[error("collateral failed freshness check at {url}: {source:#}")]
-    Stale {
+    FreshnessCheck {
         url: Url,
         #[source]
         source: anyhow::Error,
@@ -240,7 +240,7 @@ impl TeeAuthority {
     /// usual per-request timeout and a single retry via exponential backoff.
     /// Also enforces [`MAX_COLLATERAL_AGE`] on the response — a
     /// stale-but-Intel-signed bundle is rejected here as
-    /// [`PccsEndpointError::Stale`] so that [`try_each_pccs_endpoint`]
+    /// [`PccsEndpointError::FreshnessCheck`] so that [`try_each_pccs_endpoint`]
     /// falls through to the next URL, turning the configured `pccs_urls`
     /// list into a freshness ladder.
     async fn fetch_collateral_from(
@@ -272,7 +272,7 @@ impl TeeAuthority {
             pccs_url.as_str(),
             time::OffsetDateTime::now_utc(),
         )
-        .map_err(|source| PccsEndpointError::Stale {
+        .map_err(|source| PccsEndpointError::FreshnessCheck {
             url: pccs_url.clone(),
             source,
         })?;
@@ -745,7 +745,7 @@ mod tests {
             Fetch(Url),
             Timeout(Url),
             ClientConstruction(Url),
-            Stale(Url),
+            FreshnessCheck(Url),
         }
 
         impl From<&PccsEndpointError> for FailureShape {
@@ -756,7 +756,9 @@ mod tests {
                     PccsEndpointError::ClientConstruction { url, .. } => {
                         Self::ClientConstruction(url.clone())
                     }
-                    PccsEndpointError::Stale { url, .. } => Self::Stale(url.clone()),
+                    PccsEndpointError::FreshnessCheck { url, .. } => {
+                        Self::FreshnessCheck(url.clone())
+                    }
                 }
             }
         }
