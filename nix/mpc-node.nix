@@ -32,6 +32,11 @@ let
 
   isX86 = stdenv.hostPlatform.isx86_64;
 
+  # Baseline x86-64 ISA passed to clang/cc for both library compilation and
+  # bindgen header parsing. Pinned to the baseline so output bytes don't vary
+  # with the build host's CPU.
+  marchFlag = lib.optionalString isX86 "-march=x86-64";
+
   # Take the version from [workspace.package.version] so this file stays in
   # sync on every release bump.
   workspaceCargoToml = lib.importTOML ../Cargo.toml;
@@ -190,8 +195,8 @@ let
       # Pin the target ISA for both C/C++ (cc-crate for rocksdb, snappy,
       # zstd, ...) and Rust itself. Without this, the cc crate defaults to
       # the build host's CPU and output bytes vary by machine.
-      CFLAGS = lib.optionalString isX86 "-march=x86-64";
-      CXXFLAGS = "-include cstdint" + lib.optionalString isX86 " -march=x86-64";
+      CFLAGS = marchFlag;
+      CXXFLAGS = "-include cstdint ${marchFlag}";
 
       RUSTFLAGS = lib.concatStringsSep " " (
         lib.optionals isX86 [ "-C target-cpu=x86-64" ]
@@ -205,7 +210,7 @@ let
       );
 
       # Extra bindgen flags — paths are already provided by bindgenHook.
-      BINDGEN_EXTRA_CLANG_ARGS = lib.optionalString isX86 "-march=x86-64";
+      BINDGEN_EXTRA_CLANG_ARGS = marchFlag;
     }
     // lib.optionalAttrs stdenv.isDarwin {
       # Deployment target is independent of the SDK version; pin it so the
