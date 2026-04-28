@@ -12,10 +12,6 @@ const MSG_PROFILING_UNAVAILABLE: &str =
      and started with `MALLOC_CONF=prof:true,prof_active:true`";
 const MSG_PROFILING_INACTIVE: &str = "jemalloc heap profiling is not active";
 
-// Hold the profiler lock only long enough to acquire the heap dump file.
-// Post-processing (symbolication, flamegraph rendering, pprof encoding) can
-// then run on the blocking pool without keeping the profiler locked or
-// stalling the async runtime.
 async fn dump_heap_file() -> Result<File, Response> {
     let Some(prof_ctl_mutex) = jemalloc_pprof::PROF_CTL.as_ref() else {
         return Err((StatusCode::SERVICE_UNAVAILABLE, MSG_PROFILING_UNAVAILABLE).into_response());
@@ -25,13 +21,18 @@ async fn dump_heap_file() -> Result<File, Response> {
     if !prof_ctl.activated() {
         return Err((StatusCode::SERVICE_UNAVAILABLE, MSG_PROFILING_INACTIVE).into_response());
     }
-    prof_ctl.dump().map_err(|err| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("failed to dump heap profile: {err:#}"),
-        )
-            .into_response()
-    })
+
+    // spawn blocking task since `prof_ctl.dump()` is using blocking IO
+    tokio::task::spawn_blocking(move || prof_ctl.dump())
+        .await
+        .expect("tokio runtime is alive")
+        .map_err(|err| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("failed to dump heap profile: {err:#}"),
+            )
+                .into_response()
+        })
 }
 
 pub(super) async fn jemalloc_heap_flamegraph() -> impl IntoResponse {
