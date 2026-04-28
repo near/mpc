@@ -20,14 +20,14 @@ struct BackupService {
 }
 
 impl BackupService {
-    fn must_new(binary_path: PathBuf) -> Self {
+    fn must_get_new(binary_path: PathBuf) -> Self {
         Self {
             home_dir: tempfile::tempdir().expect("failed to create backup service home dir"),
             binary_path,
         }
     }
 
-    fn must_home_dir_str(&self) -> &str {
+    fn must_get_home_dir_str(&self) -> &str {
         self.home_dir
             .path()
             .to_str()
@@ -36,7 +36,7 @@ impl BackupService {
 
     fn must_generate_keys(&self) {
         let output = Command::new(&self.binary_path)
-            .args(["--home-dir", self.must_home_dir_str(), "generate-keys"])
+            .args(["--home-dir", self.must_get_home_dir_str(), "generate-keys"])
             .output()
             .expect("failed to run backup-cli generate-keys");
         assert!(
@@ -81,7 +81,7 @@ impl BackupService {
         let output = Command::new(&self.binary_path)
             .args([
                 "--home-dir",
-                self.must_home_dir_str(),
+                self.must_get_home_dir_str(),
                 "get-keyshares",
                 "--mpc-node-address",
                 node_migration_address,
@@ -109,7 +109,7 @@ impl BackupService {
         let output = Command::new(&self.binary_path)
             .args([
                 "--home-dir",
-                self.must_home_dir_str(),
+                self.must_get_home_dir_str(),
                 "put-keyshares",
                 "--mpc-node-address",
                 node_migration_address,
@@ -468,7 +468,7 @@ async fn migration_service__should_migrate_nodes_via_backup_cli() {
         // When: run the migration flow end-to-end — register backup service,
         // GET keyshares from source, start migration, PUT keyshares to target,
         // wait for completion, then kill the source node.
-        let backup_service = BackupService::must_new(backup_cli.clone());
+        let backup_service = BackupService::must_get_new(backup_cli.clone());
         backup_service.must_generate_keys();
         register_backup_service_and_wait(&cluster, source_idx, &backup_service)
             .await
