@@ -201,10 +201,10 @@ let
       RUSTFLAGS = lib.concatStringsSep " " (
         lib.optionals isX86 [ "-C target-cpu=x86-64" ]
         ++ [
-          # Scrub nix store paths out of rustc-emitted debug info and panic
-          # messages so two builds from different /nix/store/<hash>-source
-          # paths produce identical bytes.
-          "--remap-path-prefix=${src}=/build/source"
+          # Scrub the vendor dir's /nix/store path out of rustc-emitted debug
+          # info and panic messages. The build-sandbox path is handled in
+          # `preBuild` below; do NOT add `${src}` here — it would re-key
+          # cargoArtifacts on every source change and defeat the dep cache.
           "--remap-path-prefix=${cargoVendorDir}=/cargo-vendor"
         ]
       );
