@@ -676,15 +676,20 @@ mod tests {
     #[tokio::test]
     async fn all_pccs_endpoints_failed__should_render_each_failure_on_its_own_line() {
         // Given
+        const FIRST_URL: &str = "https://first.example/";
+        const SECOND_URL: &str = "https://second.example/";
+        const TIMEOUT: Duration = Duration::from_secs(10);
+        const FETCH_ERROR: &str = "503 Service Unavailable";
+
         let err = AllPccsEndpointsFailed {
             failures: NonEmptyVec::try_from(vec![
                 PccsEndpointError::Timeout {
-                    url: "https://first.example/".parse().unwrap(),
-                    timeout: Duration::from_secs(10),
+                    url: FIRST_URL.parse().unwrap(),
+                    timeout: TIMEOUT,
                 },
                 PccsEndpointError::Fetch {
-                    url: "https://second.example/".parse().unwrap(),
-                    source: anyhow::anyhow!("503 Service Unavailable"),
+                    url: SECOND_URL.parse().unwrap(),
+                    source: anyhow::anyhow!(FETCH_ERROR),
                 },
             ])
             .expect("two-element vec is non-empty"),
@@ -696,9 +701,11 @@ mod tests {
         // Then
         assert_eq!(
             rendered,
-            "all 2 PCCS endpoints failed:\n\
-             \x20 - timed out fetching collateral from https://first.example/ after 10s\n\
-             \x20 - collateral fetch failed for https://second.example/: 503 Service Unavailable"
+            format!(
+                "all 2 PCCS endpoints failed:\n\
+                 \x20 - timed out fetching collateral from {FIRST_URL} after {TIMEOUT:?}\n\
+                 \x20 - collateral fetch failed for {SECOND_URL}: {FETCH_ERROR}"
+            )
         );
     }
 
