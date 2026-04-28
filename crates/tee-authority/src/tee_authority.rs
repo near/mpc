@@ -682,12 +682,7 @@ mod tests {
         assert_eq!(actual, expected);
     }
 
-    /// `Display` for the aggregate error renders one line per failure, so the
-    /// reviewer's example shape ("all 3 PCCS endpoints failed: …") shows up
-    /// intact in `tracing::error!(error = %e, …)` (Display) and
-    /// support-ticket pastes. Note: `?e` (Debug) prints the derived
-    /// `AllPccsEndpointsFailed { failures: [...] }` shape instead, so call
-    /// sites that want the multi-line summary must format with `%e`.
+    /// `Display` renders one line per failure for log/ticket pastes.
     #[tokio::test]
     async fn all_pccs_endpoints_failed__should_render_each_failure_on_its_own_line() {
         // Given
