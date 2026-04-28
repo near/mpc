@@ -69,11 +69,18 @@ impl PccsEndpointError {
 }
 
 /// Returned when every configured PCCS endpoint failed. Owns the full list
-/// of per-endpoint failures in the order they were tried.
+/// of per-endpoint failures in the order they were tried. The collection is
+/// non-empty by construction: this error only ever fires after a loop over a
+/// `NonEmptyVec<Url>`, so the type-level invariant matches the value-level
+/// one and rules out nonsense renderings like "all 0 PCCS endpoints failed".
 #[derive(Debug, Error)]
-#[error("all {} PCCS endpoints failed:\n{}", failures.len(), format_pccs_failures(failures))]
+#[error(
+    "all {} PCCS endpoints failed:\n{}",
+    failures.len(),
+    format_pccs_failures(failures.as_slice())
+)]
 pub struct AllPccsEndpointsFailed {
-    pub failures: Vec<PccsEndpointError>,
+    pub failures: NonEmptyVec<PccsEndpointError>,
 }
 
 fn format_pccs_failures(failures: &[PccsEndpointError]) -> String {
@@ -290,6 +297,11 @@ where
             }
         }
     }
+    // Sound by construction: the loop iterates `pccs_urls`, which is itself a
+    // `NonEmptyVec<Url>`, so any path that exits the loop without an early
+    // `Ok(...)` return must have pushed at least one failure.
+    let failures = NonEmptyVec::try_from(failures)
+        .expect("loop over NonEmptyVec<Url> guarantees at least one failure");
     Err(AllPccsEndpointsFailed { failures })
 }
 
@@ -653,12 +665,15 @@ mod tests {
 
     /// `Display` for the aggregate error renders one line per failure, so the
     /// reviewer's example shape ("all 3 PCCS endpoints failed: …") shows up
-    /// intact in `tracing::error!(?e)` and support-ticket pastes.
+    /// intact in `tracing::error!(error = %e, …)` (Display) and
+    /// support-ticket pastes. Note: `?e` (Debug) prints the derived
+    /// `AllPccsEndpointsFailed { failures: [...] }` shape instead, so call
+    /// sites that want the multi-line summary must format with `%e`.
     #[tokio::test]
     async fn all_pccs_endpoints_failed__should_render_each_failure_on_its_own_line() {
         // Given
         let err = AllPccsEndpointsFailed {
-            failures: vec![
+            failures: NonEmptyVec::try_from(vec![
                 PccsEndpointError::Timeout {
                     url: "https://first.example/".parse().unwrap(),
                     timeout: Duration::from_secs(10),
@@ -667,7 +682,8 @@ mod tests {
                     url: "https://second.example/".parse().unwrap(),
                     source: anyhow::anyhow!("503 Service Unavailable"),
                 },
-            ],
+            ])
+            .expect("two-element vec is non-empty"),
         };
 
         // When
