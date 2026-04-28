@@ -7,9 +7,29 @@ use std::{ffi::c_void, fs::File, io::BufReader};
 const CONTENT_TYPE_SVG: &str = "image/svg+xml";
 const CONTENT_TYPE_PPROF: &str = "application/octet-stream";
 
+// Content-Disposition header for the pprof endpoint; pins the saved filename
+// to `heap.pb.gz` so `go tool pprof` / `pprof` recognize it as gzipped pprof.
+const CONTENT_DISPOSITION_PPROF: &str = "attachment; filename=\"heap.pb.gz\"";
+
+// Title rendered at the top of the flamegraph SVG.
+const FLAMEGRAPH_TITLE: &str = "jemalloc heap profile";
+// Unit label for sample weights in the flamegraph; each stack is weighted by
+// allocated bytes.
+const FLAMEGRAPH_COUNT_NAME: &str = "bytes";
+
+// pprof sample type: bytes currently allocated and not yet freed (live heap).
+// Tuple is (name, unit) per the pprof proto spec.
+const PPROF_SAMPLE_TYPE: (&str, &str) = ("inuse_space", "bytes");
+// pprof period type: the unit between successive samples, matching the sample
+// type for a heap profile.
+const PPROF_PERIOD_TYPE: (&str, &str) = ("space", "bytes");
+
 const MSG_PROFILING_UNAVAILABLE: &str =
     "jemalloc heap profiling is not available; ensure the binary was built with the `profiling` feature \
      and started with `MALLOC_CONF=prof:true,prof_active:true`";
+
+// Returned when profiling is compiled in but currently paused
+// (`prof_active:false` at runtime).
 const MSG_PROFILING_INACTIVE: &str = "jemalloc heap profiling is not active";
 
 async fn dump_heap_file() -> Result<File, Response> {
@@ -74,7 +94,7 @@ pub(super) async fn jemalloc_heap_pprof() -> impl IntoResponse {
         // ASLR; without this every frame collapses to the binary's mapping name.
         let profile =
             pprof_util::parse_jeheap(BufReader::new(dump_file), mappings::MAPPINGS.as_deref())?;
-        Ok(profile.to_pprof(("inuse_space", "bytes"), ("space", "bytes"), None))
+        Ok(profile.to_pprof(PPROF_SAMPLE_TYPE, PPROF_PERIOD_TYPE, None))
     })
     .await;
 
@@ -83,10 +103,7 @@ pub(super) async fn jemalloc_heap_pprof() -> impl IntoResponse {
             StatusCode::OK,
             [
                 (header::CONTENT_TYPE, CONTENT_TYPE_PPROF),
-                (
-                    header::CONTENT_DISPOSITION,
-                    "attachment; filename=\"heap.pb.gz\"",
-                ),
+                (header::CONTENT_DISPOSITION, CONTENT_DISPOSITION_PPROF),
             ],
             bytes,
         )
@@ -124,8 +141,8 @@ fn render_flamegraph_svg(dump_file: File) -> anyhow::Result<Vec<u8>> {
 
     let mut svg = Vec::new();
     let mut opts = inferno::flamegraph::Options::default();
-    opts.title = "jemalloc heap profile".to_string();
-    opts.count_name = "bytes".to_string();
+    opts.title = FLAMEGRAPH_TITLE.to_string();
+    opts.count_name = FLAMEGRAPH_COUNT_NAME.to_string();
     inferno::flamegraph::from_lines(
         &mut opts,
         collapsed_lines.iter().map(String::as_str),
