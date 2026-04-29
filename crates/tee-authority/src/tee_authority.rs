@@ -15,6 +15,7 @@ use thiserror::Error;
 use time::format_description::well_known::Rfc3339;
 use tracing::{error, info, warn};
 use url::Url;
+use x509_parser::prelude::FromDer;
 
 /// Errors that can occur during TEE attestation generation.
 #[derive(Debug, Error)]
@@ -102,6 +103,10 @@ const PCCS_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 /// 30-day `nextUpdate` window but more permissive than any default PCCS
 /// refresh schedule (Intel reference and Phala both refresh ~daily), so
 /// legitimate operators have ample headroom.
+///
+/// Applies uniformly to the three periodically re-signed pieces of
+/// collateral that share Intel's 30-day window: `tcb_info.issueDate`,
+/// `qe_identity.issueDate`, and PCK CRL `thisUpdate`.
 const MAX_COLLATERAL_AGE: time::Duration = time::Duration::days(7);
 
 /// Grace window for collateral whose `issueDate` is slightly in our future.
@@ -288,8 +293,11 @@ struct CollateralIssueDate {
     issue_date: String,
 }
 
-/// Reject collateral whose Intel `issueDate` (on either the TCB Info or QE
-/// Identity field) is older than [`MAX_COLLATERAL_AGE`].
+/// Reject collateral whose Intel-issued timestamp is older than
+/// [`MAX_COLLATERAL_AGE`]. Checks all three periodically re-signed pieces:
+/// `tcb_info.issueDate`, `qe_identity.issueDate`, and PCK CRL `thisUpdate`.
+/// All three share Intel's 30-day validity window, so a single MAX_AGE
+/// covers them.
 ///
 /// Combined with the multi-PCCS support from [`try_each_pccs_endpoint`], a
 /// rejection here causes the helper to fall through to the next URL — i.e.
@@ -303,12 +311,13 @@ fn check_collateral_freshness(
     pccs_url: &str,
     now: time::OffsetDateTime,
 ) -> anyhow::Result<()> {
-    check_field_freshness("tcb_info", &collateral.tcb_info, pccs_url, now)?;
-    check_field_freshness("qe_identity", &collateral.qe_identity, pccs_url, now)?;
+    check_json_issue_date_freshness("tcb_info", &collateral.tcb_info, pccs_url, now)?;
+    check_json_issue_date_freshness("qe_identity", &collateral.qe_identity, pccs_url, now)?;
+    check_pck_crl_freshness(&collateral.pck_crl, pccs_url, now)?;
     Ok(())
 }
 
-fn check_field_freshness(
+fn check_json_issue_date_freshness(
     field: &'static str,
     raw_json: &str,
     pccs_url: &str,
@@ -318,21 +327,42 @@ fn check_field_freshness(
         .with_context(|| format!("parsing `issueDate` from PCCS `{field}` field"))?;
     let issued_at = time::OffsetDateTime::parse(&issue_date, &Rfc3339)
         .with_context(|| format!("parsing `{field}.issueDate` (`{issue_date}`) as RFC3339"))?;
+    check_age_within_window(field, issued_at, pccs_url, now)
+}
 
+/// PCK CRL is DER-encoded X.509 v2 CRL. Extract `thisUpdate` and apply
+/// the same age check as the JSON-shaped fields.
+fn check_pck_crl_freshness(
+    pck_crl_der: &[u8],
+    pccs_url: &str,
+    now: time::OffsetDateTime,
+) -> anyhow::Result<()> {
+    let (_, crl) = x509_parser::revocation_list::CertificateRevocationList::from_der(pck_crl_der)
+        .context("parsing PCCS `pck_crl` as X.509 CRL")?;
+    let issued_at = crl.last_update().to_datetime();
+    check_age_within_window("pck_crl", issued_at, pccs_url, now)
+}
+
+fn check_age_within_window(
+    field: &'static str,
+    issued_at: time::OffsetDateTime,
+    pccs_url: &str,
+    now: time::OffsetDateTime,
+) -> anyhow::Result<()> {
     let elapsed = now - issued_at;
 
     if elapsed < -FUTURE_ISSUE_DATE_GRACE {
         let skew = -elapsed;
         warn!(
             field,
-            issue_date = %issue_date,
+            issued_at = %issued_at,
             skew_seconds = skew.whole_seconds(),
             grace_seconds = FUTURE_ISSUE_DATE_GRACE.whole_seconds(),
             pccs_url,
-            "PCCS collateral rejected: issueDate is in the future beyond grace window"
+            "PCCS collateral rejected: issuance time is in the future beyond grace window"
         );
         anyhow::bail!(
-            "PCCS collateral has future issueDate: {field} issued {issue_date} ({}s in the future, grace {}s)",
+            "PCCS collateral has future issuance time: {field} issued {issued_at} ({}s in the future, grace {}s)",
             skew.whole_seconds(),
             FUTURE_ISSUE_DATE_GRACE.whole_seconds(),
         );
@@ -341,14 +371,14 @@ fn check_field_freshness(
     if elapsed > MAX_COLLATERAL_AGE {
         warn!(
             field,
-            issue_date = %issue_date,
+            issued_at = %issued_at,
             elapsed_seconds = elapsed.whole_seconds(),
             max_age_seconds = MAX_COLLATERAL_AGE.whole_seconds(),
             pccs_url,
             "PCCS collateral rejected as stale (older than max age)"
         );
         anyhow::bail!(
-            "PCCS collateral too stale: {field} issued {issue_date} ({}s ago, max {}s)",
+            "PCCS collateral too stale: {field} issued {issued_at} ({}s ago, max {}s)",
             elapsed.whole_seconds(),
             MAX_COLLATERAL_AGE.whole_seconds(),
         );
@@ -826,15 +856,32 @@ mod tests {
         );
     }
 
+    /// PCK CRL bytes from the captured test fixture. Its `thisUpdate` is
+    /// `2026-03-30T11:17:23Z` (verified via `openssl crl -lastupdate`).
+    /// [`test_now`] is set to land just after this so the fixture CRL is
+    /// fresh for the JSON-field tests; the dedicated CRL-staleness tests
+    /// drive their own `now` past the window.
+    fn fixture_pck_crl() -> Vec<u8> {
+        let collateral_json = test_utils::attestation::collateral();
+        let hex_str = collateral_json
+            .get("pck_crl")
+            .and_then(|v| v.as_str())
+            .expect("test fixture has pck_crl");
+        hex::decode(hex_str).expect("test fixture pck_crl is valid hex")
+    }
+
     /// Build a `Collateral` with synthetic `tcb_info` / `qe_identity` JSON
-    /// blobs containing only `issueDate` — that is the only field
-    /// `check_collateral_freshness` looks at; the rest of the bytes round
-    /// through unparsed.
+    /// blobs containing only `issueDate`, plus a real PCK CRL from the
+    /// fixture so the X.509 freshness check has parseable bytes. Tests
+    /// that want to exercise the CRL path drive [`test_now`] (or pass a
+    /// custom `now`) relative to the fixture CRL's `thisUpdate`; tests
+    /// that exercise the JSON path get a fresh-enough CRL by virtue of
+    /// the [`test_now`] choice.
     fn collateral_with_issue_dates(tcb_info_iso: &str, qe_identity_iso: &str) -> Collateral {
         dcap_qvl::QuoteCollateralV3 {
             pck_crl_issuer_chain: String::new(),
             root_ca_crl: Vec::new(),
-            pck_crl: Vec::new(),
+            pck_crl: fixture_pck_crl(),
             tcb_info_issuer_chain: String::new(),
             tcb_info: format!(r#"{{"issueDate":"{tcb_info_iso}"}}"#),
             tcb_info_signature: Vec::new(),
@@ -853,11 +900,13 @@ mod tests {
             .expect("RFC3339 format always succeeds for a valid datetime")
     }
 
-    /// Arbitrary fixed `now` (2026-01-01T00:00:00Z) for boundary tests so
-    /// they don't depend on the wall clock.
+    /// Fixed `now` for boundary tests so they don't depend on the wall
+    /// clock. Chosen ~43 min after the fixture PCK CRL's `thisUpdate`
+    /// (`2026-03-30T11:17:23Z`) so the fixture CRL is fresh for tests
+    /// that exercise only the JSON-field path.
     fn test_now() -> time::OffsetDateTime {
-        time::OffsetDateTime::from_unix_timestamp(1_767_225_600)
-            .expect("test timestamp is in range")
+        time::OffsetDateTime::parse("2026-03-30T12:00:00Z", &Rfc3339)
+            .expect("test_now is a valid RFC3339 timestamp")
     }
 
     /// Collateral whose `issueDate` is 6 days old (well within the 7-day
@@ -969,8 +1018,52 @@ mod tests {
             .to_string();
 
         assert!(
-            err.contains("future issueDate"),
-            "expected 'future issueDate' in error, got: {err}"
+            err.contains("future issuance time"),
+            "expected 'future issuance time' in error, got: {err}"
+        );
+    }
+
+    /// PCK CRL `thisUpdate` past `MAX_COLLATERAL_AGE` is rejected even
+    /// when the JSON-shaped fields are fresh — covers the case netrome
+    /// raised on `near/mpc-private#293`: PCK CRL has the same 30-day
+    /// validity window as TCB Info / QE Identity and a withholding PCCS
+    /// can hide newly-revoked PCK certs within it.
+    #[test]
+    fn check_collateral_freshness__should_reject_when_pck_crl_too_old() {
+        // Fixture CRL's thisUpdate is 2026-03-30T11:17:23Z; pick a `now`
+        // ~9 days later so the CRL is past the 7-day window.
+        let now = test_now() + time::Duration::days(9);
+        // JSON fields fresh relative to `now` so only the CRL trips.
+        let fresh_iso = rfc3339(now - time::Duration::days(1));
+        let collateral = collateral_with_issue_dates(&fresh_iso, &fresh_iso);
+
+        let err = check_collateral_freshness(&collateral, "https://test.example/", now)
+            .unwrap_err()
+            .to_string();
+
+        assert!(
+            err.contains("pck_crl"),
+            "error should identify pck_crl; got: {err}"
+        );
+        assert!(
+            err.contains("too stale"),
+            "error should say 'too stale'; got: {err}"
+        );
+    }
+
+    /// Unparseable PCK CRL bytes surface a context-tagged error rather
+    /// than silently passing — protects against a buggy or hostile PCCS
+    /// returning garbage in this field.
+    #[test]
+    fn check_collateral_freshness__should_reject_unparseable_pck_crl() {
+        let err =
+            check_pck_crl_freshness(b"not a valid DER CRL", "https://test.example/", test_now())
+                .unwrap_err()
+                .to_string();
+
+        assert!(
+            err.contains("pck_crl"),
+            "error should mention pck_crl; got: {err}"
         );
     }
 

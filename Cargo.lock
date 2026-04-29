@@ -11214,6 +11214,7 @@ dependencies = [
  "tokio",
  "tracing",
  "url",
+ "x509-parser 0.18.1",
 ]
 
 [[package]]
