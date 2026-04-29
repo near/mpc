@@ -1,7 +1,10 @@
 name: Nix build mpc-node
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # Hardcoded group name (not `${{ github.workflow }}`) because when invoked via
+  # `workflow_call`, `github.workflow` resolves to the *caller's* workflow name,
+  # which causes a concurrency-group collision with the caller and a deadlock.
+  group: nix-build-mpc-node-${{ github.ref }}
   cancel-in-progress: true
 
 on:
