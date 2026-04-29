@@ -1,5 +1,7 @@
 name: Restore Nix cache
-description: Restore /nix from the shared CI cache, optionally saving on completion.
+description: |
+  Restore /nix from the shared CI cache and runs garbage collection
+  before storing if save is set to true.
 inputs:
   save:
     description: Whether this job should save the cache after running.
@@ -15,3 +17,11 @@ runs:
         primary-key: nix-${{ runner.os }}-ci-${{ hashFiles('flake.nix', 'flake.lock', 'nix/**', 'rust-toolchain.toml', 'Cargo.lock') }}
         restore-prefixes-first-match: nix-${{ runner.os }}-ci-
         save: ${{ inputs.save }}
+        # Target store size of 0 means always run garbage collection.
+        # Note that pinning step below prevents the usable cache to be cleaned.
+        gc-max-store-size: 0
+
+    - name: Pin dev-shell closure as GC root
+      if: inputs.save == 'true'
+      shell: bash
+      run: nix develop --profile "$RUNNER_TEMP/ci-devshell" --command true
