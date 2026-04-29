@@ -86,7 +86,7 @@ pub enum CheckBlockResult {
     /// The block is optimistically included in the chain, but it is not on the canonical chain.
     /// It is also recent enough.
     OptimisticButNotCanonical,
-    /// We have not seen the block yet, but it appears recent, judging from the height.
+    /// We may have not seen the block and removed it, or we may never have seen it.
     Unknown,
 }
 
@@ -438,9 +438,8 @@ impl<T: Clone> RecentBlocksTracker<T> {
                 CheckBlockResult::OptimisticButNotCanonical
             }
             None => {
-                // At this point, the block is recent enough but we have not seen it yet.
-                // We could do a few more checks to narrow down the case, but it's not really
-                // worth the complexity. So just return Unknown.
+                // We don't know this block: either it is too old and we removed it, or we have
+                // geninely never seen it.
                 CheckBlockResult::Unknown
             }
         }
