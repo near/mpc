@@ -3,7 +3,9 @@ use super::recent_blocks_tracker::AtomicBlockStatus;
 use crate::indexer::types::ChainRespondArgs;
 use crate::primitives::ParticipantId;
 use crate::requests::metrics;
-use crate::requests::recent_blocks_tracker::RecentBlocksTracker;
+use crate::requests::recent_blocks_tracker::{
+    AddBlockResult, CheckBlockResult, RecentBlocksTracker,
+};
 use crate::types::{self, Request, RequestId, RequestsUpdate};
 use k256::sha2::Sha256;
 use near_indexer_primitives::types::NumBlocks;
@@ -11,7 +13,6 @@ use near_indexer_primitives::CryptoHash;
 use near_time::Duration;
 use sha3::Digest;
 use std::collections::{HashMap, HashSet};
-use std::fmt::Debug;
 use std::ops::Add;
 use std::sync::{Arc, Mutex, Weak};
 use time::ext::InstantExt as _;
@@ -71,58 +72,39 @@ pub struct PendingRequests<RequestType: Request, ChainRespondArgsType: ChainResp
     /// See `RecentBlocksTracker`; allows us to decide what to do with each request in
     /// the queue, as well as provide us a stream of finalized blocks from which we determine
     /// which requests has been responded to.
-    recent_blocks: RecentBlocksTracker<BufferedBlockData>,
+    recent_blocks: RecentBlocksTracker,
 
     /// Provides information about connectivity and indexer heights.
     pub(super) network_api: Arc<dyn NetworkAPIForRequests>,
 
     /// Recently completed requests, for debugging purposes only.
     pub(super) recently_completed_requests: CompletedRequests<RequestType, ChainRespondArgsType>,
+
+    /// Index of observed request blocks back to the requests they contain. Populated
+    /// by `notify_new_block` for every block in which a request id was indexed (multiple
+    /// blocks per request id arise from forks). Read in `get_requests_to_attempt`'s
+    /// classification step indirectly via `QueuedRequest.request_blocks`.
+    /// Cleanup: `remove_request` scrubs entries here using the back-pointer in
+    /// `QueuedRequest.request_blocks`.
+    pub(super) requests_by_block: HashMap<CryptoHash, Vec<RequestId>>,
+
+    /// Index of observed response blocks back to the requests they complete. Populated
+    /// by `notify_new_block`; read when `add_block` reports a newly-finalized block, so
+    /// that the matching requests can be removed in lock-step with finality. The inner
+    /// `Vec` accommodates batches: one block can complete multiple requests.
+    /// Cleanup: when a request leaves the queue (for any reason), `remove_request`
+    /// scrubs its entries here using the back-pointer in `QueuedRequest.response_blocks`.
+    pub(super) responses_by_block: HashMap<CryptoHash, Vec<RequestId>>,
 }
 
-/// Block data to be buffered until the block is final.
-#[derive(Clone)]
-struct BufferedBlockData {
-    requests: Vec<RequestId>,
-    completed_requests: Vec<RequestId>,
-    timestamp_received: near_time::Instant,
-}
-
-fn ellipsified_shortened_hash_list(hashes: &[CryptoHash]) -> String {
-    let mut result = String::new();
-    for (i, hash) in hashes.iter().take(3).enumerate() {
-        let hash = format!("{:?}", hash);
-        result.push_str(&hash[..6]);
-        if i < hashes.len() - 1 {
-            result.push_str(", ");
-        }
-    }
-    if hashes.len() > 3 {
-        result.push_str("...");
-    }
-    result
-}
-
-impl Debug for BufferedBlockData {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if !self.requests.is_empty() {
-            write!(
-                f,
-                "{} reqs: {}",
-                self.requests.len(),
-                ellipsified_shortened_hash_list(&self.requests)
-            )?;
-        }
-        if !self.completed_requests.is_empty() {
-            write!(
-                f,
-                "{} completed: {}",
-                self.completed_requests.len(),
-                ellipsified_shortened_hash_list(&self.completed_requests)
-            )?;
-        }
-        Ok(())
-    }
+struct RequestsFromBlocks<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> {
+    /// Map from request ID to the request. Successful and expired requests are removed
+    /// from this map. This is the "queue".
+    pub(super) requests: HashMap<RequestId, QueuedRequest<RequestType, ChainRespondArgsType>>,
+    /// Requests by block
+    pub(super) requests_by_block: HashMap<CryptoHash, Vec<RequestId>>,
+    /// responses by block
+    pub(super) responses_by_block: HashMap<CryptoHash, Vec<RequestId>>,
 }
 
 /// The state of a single request in the queue.
@@ -132,7 +114,18 @@ pub(super) struct QueuedRequest<RequestType: Request, ChainRespondArgsType: Chai
     /// Finality status of the block the request was included
     status: Weak<AtomicBlockStatus>,
 
+    /// Block height of the *first* observation. Anchors the network-height-based
+    /// expiration check (`maximum_height - REQUEST_EXPIRATION_BLOCKS + 1 > block_height`).
+    /// Forks normally land at the same height, so this is stable in practice; if heights
+    /// diverge, the earliest is the most conservative timeout.
     pub block_height: u64,
+
+    /// Blocks in which this request has been observed. Multiple entries arise from forks
+    /// (the same receipt landing in competing same-height blocks). Classifications are
+    /// aggregated across all entries so that a request stays alive as long as *any*
+    /// observation is on a live chain. Also a back-pointer into
+    /// `PendingRequests.requests_by_block` for `remove_request` cleanup.
+    request_blocks: Vec<CryptoHash>,
 
     /// A pre-computed order of participants that we consider for leader selection.
     /// The leader for the request would be the first in this list that is eligible
@@ -156,6 +149,14 @@ pub(super) struct QueuedRequest<RequestType: Request, ChainRespondArgsType: Chai
 
     /// The time that the request was indexed.
     pub time_indexed: near_time::Instant,
+
+    /// Blocks in which a response to this request has been observed, paired with the
+    /// wall-clock time the queue observed each block. Due to forks and retries, the same
+    /// response may be observed in multiple blocks; any one reaching finality completes
+    /// the request. The block-hash list is also a back-pointer into
+    /// `PendingRequests.responses_by_block`, used by `remove_request` for cleanup.
+    /// Timestamps drive `*_REQUEST_RESPONSE_LATENCY_SECONDS` at finality time.
+    response_blocks: Vec<(CryptoHash, near_time::Instant)>,
 }
 
 /// Struct given to the response generation code.
@@ -216,6 +217,8 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
             next_check_due: clock.now(),
             active_attempt: Weak::new(),
             time_indexed,
+            request_blocks: Vec::new(),
+            response_blocks: Vec::new(),
         }
     }
 
@@ -258,6 +261,28 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
     }
 }
 
+/// Aggregates `classify_block` across all blocks in which a request was observed.
+/// As long as any observation is on a live chain (final, canonical, or even
+/// not-yet-canonical optimistic), the request stays alive. Discard only fires when
+/// every observation is in a dead bucket.
+fn aggregate_classification(
+    blocks: &[CryptoHash],
+    tracker: &RecentBlocksTracker,
+) -> CheckBlockResult {
+    blocks
+        .iter()
+        .map(|h| tracker.classify_block(*h))
+        .min_by_key(|c| match c {
+            CheckBlockResult::RecentAndFinal => 0u8,
+            CheckBlockResult::OptimisticAndCanonical => 1,
+            CheckBlockResult::OptimisticButNotCanonical => 2,
+            CheckBlockResult::Unknown => 3,
+            CheckBlockResult::NotIncluded => 4,
+            CheckBlockResult::OlderThanRecentWindow => 5,
+        })
+        .expect("request_blocks is non-empty by construction")
+}
+
 impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
     PendingRequests<RequestType, ChainRespondArgsType>
 {
@@ -275,7 +300,37 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             recent_blocks: RecentBlocksTracker::new(REQUEST_EXPIRATION_BLOCKS),
             network_api,
             recently_completed_requests: CompletedRequests::default(),
+            requests_by_block: HashMap::new(),
+            responses_by_block: HashMap::new(),
         }
+    }
+
+    /// Removes a request from the queue, also scrubbing its entries from
+    /// `responses_by_block` so the index never leaks past the request's lifetime.
+    /// Returns the removed `QueuedRequest` so callers can pull data off it (e.g.
+    /// to record the completion).
+    fn remove_request(
+        &mut self,
+        id: RequestId,
+    ) -> Option<QueuedRequest<RequestType, ChainRespondArgsType>> {
+        let request = self.requests.remove(&id)?;
+        for block_hash in &request.request_blocks {
+            if let Some(entries) = self.requests_by_block.get_mut(block_hash) {
+                entries.retain(|rid| *rid != id);
+                if entries.is_empty() {
+                    self.requests_by_block.remove(block_hash);
+                }
+            }
+        }
+        for (block_hash, _) in &request.response_blocks {
+            if let Some(entries) = self.responses_by_block.get_mut(block_hash) {
+                entries.retain(|rid| *rid != id);
+                if entries.is_empty() {
+                    self.responses_by_block.remove(block_hash);
+                }
+            }
+        }
+        Some(request)
     }
 
     /// This must be called for every block that comes from the indexer.
@@ -287,15 +342,11 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             requests,
             completed_requests,
         } = requests;
-        let add_result = match self.recent_blocks.add_block(
-            &block,
-            BufferedBlockData {
-                requests: requests.iter().map(|r| r.get_id()).collect(),
-                completed_requests,
-                timestamp_received: self.clock.now(),
-            },
-        ) {
-            Ok(add_result) => add_result,
+
+        let new_final_blocks = match self.recent_blocks.add_block(&block) {
+            Ok(AddBlockResult {
+                new_final_blocks, ..
+            }) => new_final_blocks,
             Err(err) => {
                 // block already exists.
                 tracing::warn!(target: "request", "Ignoring block {:?} at height {}: {:?}", block.hash, block.height, err);
@@ -305,7 +356,6 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
 
         let (
             mpc_pending_queue_blocks_indexed,
-            mpc_pending_queue_finalized_blocks_indexed,
             mpc_pending_queue_responses_indexed,
             mpc_pending_queue_matching_responses_indexed,
             request_response_latency_blocks,
@@ -314,7 +364,6 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
         ) = match RequestType::get_type() {
             types::RequestType::CKD => (
                 &metrics::MPC_PENDING_CKDS_QUEUE_BLOCKS_INDEXED,
-                &metrics::MPC_PENDING_CKDS_QUEUE_FINALIZED_BLOCKS_INDEXED,
                 &metrics::MPC_PENDING_CKDS_QUEUE_RESPONSES_INDEXED,
                 &metrics::MPC_PENDING_CKDS_QUEUE_MATCHING_RESPONSES_INDEXED,
                 &metrics::CKD_REQUEST_RESPONSE_LATENCY_BLOCKS,
@@ -323,7 +372,6 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             ),
             types::RequestType::Signature => (
                 &metrics::MPC_PENDING_SIGNATURES_QUEUE_BLOCKS_INDEXED,
-                &metrics::MPC_PENDING_SIGNATURES_QUEUE_FINALIZED_BLOCKS_INDEXED,
                 &metrics::MPC_PENDING_SIGNATURES_QUEUE_RESPONSES_INDEXED,
                 &metrics::MPC_PENDING_SIGNATURES_QUEUE_MATCHING_RESPONSES_INDEXED,
                 &metrics::SIGNATURE_REQUEST_RESPONSE_LATENCY_BLOCKS,
@@ -332,7 +380,6 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             ),
             types::RequestType::VerifyForeignTx => (
                 &metrics::MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_BLOCKS_INDEXED_TOTAL,
-                &metrics::MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_FINALIZED_BLOCKS_INDEXED_TOTAL,
                 &metrics::MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_RESPONSES_INDEXED_TOTAL,
                 &metrics::MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_MATCHING_RESPONSES_INDEXED_TOTAL,
                 &metrics::VERIFY_FOREIGN_TXS_REQUEST_RESPONSE_LATENCY_BLOCKS,
@@ -342,41 +389,15 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
         };
 
         mpc_pending_queue_blocks_indexed.inc();
-        for (final_block_height, buffered_block_data) in add_result.new_final_blocks {
-            mpc_pending_queue_finalized_blocks_indexed.inc();
-            mpc_pending_queue_responses_indexed
-                .inc_by(buffered_block_data.completed_requests.len() as u64);
+        mpc_pending_queue_responses_indexed.inc_by(completed_requests.len() as u64);
 
-            for request_id in &buffered_block_data.completed_requests {
-                tracing::debug!(target: "request", "Removing completed request {:?}", request_id);
-                if let Some(request) = self.requests.remove(request_id) {
-                    mpc_pending_queue_matching_responses_indexed.inc();
+        let now = self.clock.now();
 
-                    let response_latency_blocks = final_block_height - request.block_height;
-                    let response_latency_duration = buffered_block_data
-                        .timestamp_received
-                        .signed_duration_since(request.time_indexed);
-
-                    request_response_latency_blocks.observe(response_latency_blocks as f64);
-
-                    request_response_latency_seconds
-                        .observe(response_latency_duration.as_seconds_f64());
-
-                    self.recently_completed_requests
-                        .add_completed_request(CompletedRequest {
-                            indexed_block_height: request.block_height,
-                            request: request.request,
-                            progress: request.computation_progress,
-                            completion_delay: Some((
-                                response_latency_blocks,
-                                response_latency_duration,
-                            )),
-                        });
-                }
-            }
-        }
+        // Enqueue new requests first so that a response that lands in the same block as
+        // its request can find a matching `QueuedRequest` in the next loop.
         mpc_pending_requests_queue_requests_indexed.inc_by(requests.len() as u64);
         for request in requests {
+            let id = request.get_id();
             self.requests
                 .entry(request.get_id())
                 .or_insert(QueuedRequest::new(
@@ -386,7 +407,70 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                     add_result.block_ref.clone(),
                     &self.all_participants,
                     self.clock.now(),
-                ));
+                ))
+                .request_blocks
+                .push(block.hash);
+            self.requests_by_block
+                .entry(block.hash)
+                .or_default()
+                .push(id);
+        }
+
+        // Record observed responses. Only index responses for requests that exist in
+        // the queue; orphan responses are dropped (the matching request was either
+        // already completed, expired, or never observed).
+        for request_id in &completed_requests {
+            if let Some(request) = self.requests.get_mut(request_id) {
+                mpc_pending_queue_matching_responses_indexed.inc();
+                request.response_blocks.push((block.hash, now));
+                self.responses_by_block
+                    .entry(block.hash)
+                    .or_default()
+                    .push(*request_id);
+            }
+        }
+
+        // Process finality: any newly-final block that contains a response completes
+        // its request synchronously here. This is authoritative — we don't need a
+        // separate per-tick walk that races with tracker pruning.
+        for finalized in new_final_blocks {
+            let Some(request_ids) = self.responses_by_block.remove(&finalized.hash) else {
+                continue;
+            };
+            for request_id in request_ids {
+                let timestamp_received = self.requests.get(&request_id).and_then(|r| {
+                    r.response_blocks
+                        .iter()
+                        .find(|(h, _)| *h == finalized.hash)
+                        .map(|(_, t)| *t)
+                });
+                let Some(timestamp_received) = timestamp_received else {
+                    // Request was already removed or never tracked this response —
+                    // nothing to do.
+                    continue;
+                };
+                let Some(request) = self.remove_request(request_id) else {
+                    continue;
+                };
+                tracing::debug!(
+                    target: "request",
+                    request_id = %request.request.get_id(),
+                    block_height = request.block_height,
+                    "removing completed request"
+                );
+                let latency_blocks = finalized.height - request.block_height;
+                let latency_duration =
+                    timestamp_received.signed_duration_since(request.time_indexed);
+                request_response_latency_blocks.observe(latency_blocks as f64);
+                request_response_latency_seconds.observe(latency_duration.as_seconds_f64());
+                self.recently_completed_requests
+                    .add_completed_request(CompletedRequest {
+                        indexed_block_height: request.block_height,
+                        request: request.request,
+                        progress: request.computation_progress,
+                        completion_delay: Some((latency_blocks, latency_duration)),
+                    });
+            }
         }
     }
 
@@ -434,7 +518,8 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
 
         let mut result = Vec::new();
 
-        let mut requests_to_remove = Vec::new();
+        let recent_blocks = &self.recent_blocks;
+        let mut requests_to_remove: Vec<RequestId> = Vec::new();
         for (id, request) in &mut self.requests {
             let _span = tracing::debug_span!(
                 target: "request",
@@ -549,7 +634,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             }
         }
         for id in requests_to_remove {
-            if let Some(request) = self.requests.remove(&id) {
+            if let Some(request) = self.remove_request(id) {
                 self.recently_completed_requests
                     .add_completed_request(CompletedRequest {
                         indexed_block_height: request.block_height,
@@ -1135,5 +1220,28 @@ mod tests {
             !pending_requests.requests.contains_key(&req1.id),
             "expired request should be removed from the queue"
         );
+    }
+
+    #[test_log::test]
+    #[expect(non_snake_case)]
+    fn test_pending_requests__should_track_request_across_fork() {
+        // Given: the same request id appears in a block on the soon-to-be-dead fork…
+        let (mut pending_requests, mut setup) = TestSetup::new();
+        let req = setup.add_request_leader();
+        let requests_dead_fork = setup.update();
+        pending_requests.notify_new_block(requests_dead_fork);
+
+        // …and also in a block on the canonical chain.
+        // (Re-emit the same request id; `update_canonical_fork` builds a higher block
+        // off the original parent so it wins the canonical-chain tie-break.)
+        setup.requests_to_submit.push(req.clone());
+        let requests_canonical_fork = setup.update_canonical_fork();
+        pending_requests.notify_new_block(requests_canonical_fork);
+
+        // Then: the request stays eligible — the canonical observation keeps it alive
+        // even though the first-observed block is now NotIncluded.
+        let to_attempt = pending_requests.get_requests_to_attempt();
+        assert_eq!(to_attempt.len(), 1);
+        assert_eq!(to_attempt[0].request.id, req.id);
     }
 }
