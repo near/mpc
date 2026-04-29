@@ -439,7 +439,7 @@ impl<T: Clone> RecentBlocksTracker<T> {
             }
             None => {
                 // We don't know this block: either it is too old and we removed it, or we have
-                // geninely never seen it.
+                // genuinely never seen it.
                 CheckBlockResult::Unknown
             }
         }
