@@ -192,6 +192,7 @@ pub enum DownloadConfigType {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use assert_matches::assert_matches;
 
     /// The tee-launcher blocks the "gcp" key in TEE mode using the hardcoded
     /// string "gcp" (see crates/tee-launcher/src/config.rs).
@@ -273,7 +274,7 @@ mod tests {
         // Then
         assert_eq!(entries.len(), 3);
         assert_eq!(entries[0].url.as_str(), "https://localhost:8081/");
-        assert!(matches!(entries[0].tls, Some(PccsTlsTrust::Insecure)));
+        assert_matches!(entries[0].tls, Some(PccsTlsTrust::Insecure));
         assert_eq!(entries[1].url.as_str(), "https://pccs.phala.network/");
         assert!(entries[1].tls.is_none());
         assert_eq!(
