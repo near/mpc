@@ -1,5 +1,12 @@
 # MPC
 
+[![CI](https://github.com/near/mpc/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/near/mpc/actions/workflows/ci.yml?query=branch%3Amain)
+[![External Services Tests](https://github.com/near/mpc/actions/workflows/external-services-tests.yml/badge.svg?branch=main)](https://github.com/near/mpc/actions/workflows/external-services-tests.yml?query=branch%3Amain)
+[![nearcore](https://img.shields.io/badge/nearcore-2.11.1-blue)](https://github.com/near/nearcore/releases/tag/2.11.1)
+[![rust](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnear%2Fmpc%2Fmain%2Frust-toolchain.toml&query=%24.toolchain.channel&label=rust&color=orange&logo=rust)](./rust-toolchain.toml)
+[![mainnet contract](https://img.shields.io/badge/mainnet-v1.signer-brightgreen)](https://nearblocks.io/address/v1.signer)
+[![testnet contract](https://img.shields.io/badge/testnet-v1.signer--prod.testnet-yellow)](https://testnet.nearblocks.io/address/v1.signer-prod.testnet)
+
 This repository contains the code for the NEAR MPC node that powers [Chain Signatures](https://docs.near.org/chain-abstraction/chain-signatures).
 
 ## How it works

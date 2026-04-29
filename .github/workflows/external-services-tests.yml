@@ -42,7 +42,7 @@ jobs:
           tool: nextest@0.9.126
 
       - name: Run contract-history tests
-        if: always()
+        if: always() && github.event_name == 'schedule'
         run: cargo nextest run -p contract-history --features external-services-tests --cargo-profile test-release --locked
 
       - name: Run tee-launcher registry tests
