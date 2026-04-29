@@ -123,7 +123,7 @@ jobs:
           backend: warpbuild
           primary-key: nix-${{ runner.os }}-ci-${{ hashFiles('flake.nix', 'flake.lock', 'nix/**', 'rust-toolchain.toml', 'Cargo.lock') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-ci-
-          save: ${{ github.ref == 'refs/heads/main' }}
+          save: false
 
       - run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
       - name: Cache Rust dependencies
@@ -158,6 +158,7 @@ jobs:
           backend: warpbuild
           primary-key: nix-${{ runner.os }}-ci-${{ hashFiles('flake.nix', 'flake.lock', 'nix/**', 'rust-toolchain.toml', 'Cargo.lock') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-ci-
+          # only save nix cache in this single job to avoid duplicate cache saves from other jobs
           save: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Build mpc-contract (reproducible)
@@ -194,7 +195,7 @@ jobs:
           backend: warpbuild
           primary-key: nix-${{ runner.os }}-ci-${{ hashFiles('flake.nix', 'flake.lock', 'nix/**', 'rust-toolchain.toml', 'Cargo.lock') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-ci-
-          save: ${{ github.ref == 'refs/heads/main' }}
+          save: false
 
       - run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
       - name: Cache Rust dependencies
@@ -232,7 +233,7 @@ jobs:
           backend: warpbuild
           primary-key: nix-${{ runner.os }}-ci-${{ hashFiles('flake.nix', 'flake.lock', 'nix/**', 'rust-toolchain.toml', 'Cargo.lock') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-ci-
-          save: ${{ github.ref == 'refs/heads/main' }}
+          save: false
 
       - run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
       - name: Cache Rust dependencies
@@ -323,7 +324,7 @@ jobs:
           backend: warpbuild
           primary-key: nix-${{ runner.os }}-ci-${{ hashFiles('flake.nix', 'flake.lock', 'nix/**', 'rust-toolchain.toml', 'Cargo.lock') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-ci-
-          save: ${{ github.ref == 'refs/heads/main' }}
+          save: false
 
       - name: Run cargo-make extra checks
         run: nix develop --command cargo make check-extra
