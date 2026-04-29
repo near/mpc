@@ -471,13 +471,6 @@ impl<T: Clone + Debug> Debug for RecentBlocksTracker<T> {
                 }],
                 final_head,
                 canonical_head,
-                &|hash, f| {
-                    if let Some(content) = self.node_to_content.get(hash) {
-                        write!(f, "{:?}", content)
-                    } else {
-                        write!(f, "")
-                    }
-                },
             )?;
         }
         Ok(())
@@ -655,24 +648,16 @@ pub mod tests {
             self.tracker.classify_block(block.hash)
         }
 
-        pub fn add(&mut self, block: &Arc<TestBlock>, name: &str) -> String {
+        pub fn add(&mut self, block: &Arc<TestBlock>, name: &str) -> Vec<CryptoHash> {
             assert!(
                 !self.parents_of_added_blocks.contains(&block.hash),
                 "Cannot retroactively add the parent of an already added block"
             );
-            let result = self
-                .tracker
-                .add_block(&block.to_block_view(), name.to_string())
-                .unwrap();
+            let result = self.tracker.add_block(&block.to_block_view()).unwrap();
             if let Some(parent) = block.parent.clone() {
                 self.parents_of_added_blocks.insert(parent.hash);
             }
-            result
-                .new_final_blocks
-                .iter()
-                .map(|(_, name)| name.clone())
-                .collect::<Vec<_>>()
-                .join(",")
+            result.iter().map(|(_, hash)| *hash).collect::<Vec<_>>()
         }
 
         pub fn print(&self) {
