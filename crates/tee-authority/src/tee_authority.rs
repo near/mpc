@@ -163,7 +163,8 @@ fn pccs_host_is_loopback(pccs_url: &Url) -> bool {
 ///   clear message rather than at the first attestation attempt).
 /// - Each `PccsTlsTrust::Insecure` is only honored for loopback-ish URLs
 ///   so a copy-pasted dev config cannot silently disable TLS validation
-///   against a real network endpoint.
+///   against a real network endpoint. The loopback gate is a
+///   misconfiguration guardrail, not a security barrier.
 ///
 /// Also emits one WARN per `Insecure` endpoint at startup so operators
 /// see the security signal up front instead of buried in fetch logs.
