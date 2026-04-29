@@ -181,12 +181,8 @@ pub fn validate_pccs_endpoints(
         match &endpoint.tls {
             None => {}
             Some(PccsTlsTrust::CaCertPem { .. }) => {
-                let _ = build_pccs_http_client(endpoint.tls.as_ref()).with_context(|| {
-                    format!(
-                        "failed to build TLS client with `tls.ca_cert_pem` for {} at startup",
-                        endpoint.url
-                    )
-                })?;
+                build_pccs_http_client(endpoint)
+                    .context("failed to build TLS client at startup")?;
             }
             Some(PccsTlsTrust::Insecure) => {
                 anyhow::ensure!(
@@ -211,20 +207,35 @@ pub fn validate_pccs_endpoints(
 /// `dcap_qvl::collateral::CollateralClient::new`. With `tls = None` the
 /// caller is expected to use `with_default_http` instead — this helper
 /// only fires for the override modes.
-fn build_pccs_http_client(tls: Option<&PccsTlsTrust>) -> anyhow::Result<reqwest::Client> {
+///
+/// Returns [`PccsEndpointError::ClientConstruction`] (carrying the
+/// endpoint URL) on any failure so callers can propagate with `?` and
+/// don't have to attach the URL themselves.
+fn build_pccs_http_client(
+    endpoint: &PccsEndpointConfig,
+) -> Result<reqwest::Client, PccsEndpointError> {
+    let to_construction_err = |source: anyhow::Error| PccsEndpointError::ClientConstruction {
+        url: endpoint.url.clone(),
+        source,
+    };
+
     let builder = reqwest::Client::builder().timeout(PCCS_REQUEST_TIMEOUT);
-    let builder = match tls {
+    let builder = match endpoint.tls.as_ref() {
         None => builder,
         Some(PccsTlsTrust::CaCertPem { ca_cert_pem }) => {
             let cert = reqwest::Certificate::from_pem(ca_cert_pem.as_bytes())
-                .context("failed to parse `tls.ca_cert_pem` as a PEM-encoded certificate")?;
+                .context("failed to parse `tls.ca_cert_pem` as a PEM-encoded certificate")
+                .map_err(to_construction_err)?;
             builder.add_root_certificate(cert)
         }
         Some(PccsTlsTrust::Insecure) => builder
             .danger_accept_invalid_certs(true)
             .danger_accept_invalid_hostnames(true),
     };
-    builder.build().context("failed to build PCCS HTTP client")
+    builder
+        .build()
+        .context("failed to build PCCS HTTP client")
+        .map_err(to_construction_err)
 }
 
 /// TeeAuthority is an abstraction over different TEE attestation generator implementations. It
@@ -335,13 +346,8 @@ impl TeeAuthority {
                         source: anyhow::anyhow!(e),
                     })?
             }
-            Some(tls) => {
-                let http = build_pccs_http_client(Some(tls)).map_err(|source| {
-                    PccsEndpointError::ClientConstruction {
-                        url: endpoint.url.clone(),
-                        source,
-                    }
-                })?;
+            Some(_) => {
+                let http = build_pccs_http_client(endpoint)?;
                 dcap_qvl::collateral::CollateralClient::<dcap_qvl::configs::DefaultConfig>::new(
                     http,
                     endpoint.url.as_str(),

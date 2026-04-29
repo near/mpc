@@ -192,7 +192,6 @@ pub enum DownloadConfigType {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
     use launcher_interface::types::PccsTlsTrust;
 
     /// The tee-launcher blocks the "gcp" key in TEE mode using the hardcoded
@@ -238,9 +237,11 @@ mod tests {
         let entries: Vec<PccsEndpointConfig> = parsed.pccs_endpoints.into_iter().collect();
 
         // Then
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].url.as_str(), URL);
-        assert!(entries[0].tls.is_none());
+        let expected = vec![PccsEndpointConfig {
+            url: URL.parse().unwrap(),
+            tls: None,
+        }];
+        assert_eq!(entries, expected);
     }
 
     /// Multiple entries parse in order; entries with `tls` overrides are
@@ -271,16 +272,21 @@ mod tests {
         let entries: Vec<PccsEndpointConfig> = parsed.pccs_endpoints.into_iter().collect();
 
         // Then
-        assert_eq!(entries.len(), 3);
-        assert_eq!(entries[0].url.as_str(), "https://localhost:8081/");
-        assert_matches!(entries[0].tls, Some(PccsTlsTrust::Insecure));
-        assert_eq!(entries[1].url.as_str(), "https://pccs.phala.network/");
-        assert!(entries[1].tls.is_none());
-        assert_eq!(
-            entries[2].url.as_str(),
-            "https://api.trustedservices.intel.com/"
-        );
-        assert!(entries[2].tls.is_none());
+        let expected = vec![
+            PccsEndpointConfig {
+                url: "https://localhost:8081/".parse().unwrap(),
+                tls: Some(PccsTlsTrust::Insecure),
+            },
+            PccsEndpointConfig {
+                url: "https://pccs.phala.network/".parse().unwrap(),
+                tls: None,
+            },
+            PccsEndpointConfig {
+                url: "https://api.trustedservices.intel.com/".parse().unwrap(),
+                tls: None,
+            },
+        ];
+        assert_eq!(entries, expected);
     }
 
     /// When the field is omitted altogether, the `#[serde(default)]` hook
@@ -293,15 +299,16 @@ mod tests {
             #[serde(default = "default_pccs_endpoints")]
             pccs_endpoints: NonEmptyVec<PccsEndpointConfig>,
         }
-        let expected_url: url::Url = launcher_interface::DEFAULT_PCCS_URL.parse().unwrap();
 
         // When
         let parsed: Wrapper = toml::from_str("").unwrap();
         let entries: Vec<PccsEndpointConfig> = parsed.pccs_endpoints.into_iter().collect();
 
         // Then
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].url, expected_url);
-        assert!(entries[0].tls.is_none());
+        let expected = vec![PccsEndpointConfig {
+            url: launcher_interface::DEFAULT_PCCS_URL.parse().unwrap(),
+            tls: None,
+        }];
+        assert_eq!(entries, expected);
     }
 }

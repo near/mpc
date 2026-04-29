@@ -24,7 +24,7 @@ pub enum TeeAuthorityConfig {
 }
 
 /// One PCCS endpoint: a URL plus an optional per-URL TLS trust override.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PccsEndpointConfig {
     pub url: Url,
@@ -34,7 +34,7 @@ pub struct PccsEndpointConfig {
 
 /// Per-endpoint TLS trust override. `None` = default reqwest+rustls trust
 /// roots (bundled Mozilla webpki-roots).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PccsTlsTrust {
     /// Pin a PEM certificate as an additional trust anchor. Default
