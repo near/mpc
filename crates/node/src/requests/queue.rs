@@ -435,13 +435,23 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
         let mut requests_to_remove = Vec::new();
         for (id, request) in &mut self.requests {
             if request.next_check_due > now {
-                tracing::debug!(target: "request", "Skipping request {:?} from block {} because it's not time yet", request.request.get_id(), request.block_height);
+                tracing::debug!(
+                    target: "request",
+                    request_id = %request.request.get_id(),
+                    block_height = request.block_height,
+                    "skipping request because it's not time yet"
+                );
                 continue;
             }
             request.next_check_due = now + CHECK_EACH_REQUEST_INTERVAL;
             if request.active_attempt.strong_count() > 0 {
                 // There's a current attempt to generate the response, so don't do anything.
-                tracing::debug!(target: "request", "Skipping request {:?} from block {} because there's already an active attempt", request.request.get_id(), request.block_height);
+                tracing::debug!(
+                    target: "request",
+                    request_id = %request.request.get_id(),
+                    block_height = request.block_height,
+                    "skipping request because there's already an active attempt",
+                );
                 continue;
             }
             // check it against the network height
@@ -452,7 +462,13 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             {
                 // this request expired for at least one participant in the network. We can already
                 // remove it from the queue.
-                tracing::debug!(target: "request", "Discarding {} request {:?} from block {}", RequestType::get_type(), request.request.get_id(), request.block_height);
+                tracing::debug!(
+                    target: "request",
+                    request_type = %RequestType::get_type(),
+                    request_id = %request.request.get_id(),
+                    block_height = request.block_height,
+                    "disarding expired request"
+                );
                 // Increment metric for timeout (only for signature requests)
                 if matches!(RequestType::get_type(), types::RequestType::Signature) {
                     metrics::MPC_CLUSTER_FAILED_SIGNATURES_COUNT
@@ -472,13 +488,27 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 | CheckBlockResult::OptimisticAndCanonical
                 | CheckBlockResult::Unknown => {
                     if let Some(leader) = request.current_leader(&eligible_leaders) {
-                        tracing::debug!(target: "request", "Leader for {} request {:?} from block {} is {}", RequestType::get_type(), request.request.get_id(), request.block_height, leader);
+                        tracing::debug!(
+                            target: "request",
+                            request_type = %RequestType::get_type(),
+                            request_id = %request.request.get_id(),
+                            block_height = request.block_height,
+                            leader = %leader,
+                            "processing request"
+                        );
                         let mut progress = request.computation_progress.lock().unwrap();
                         progress.selected_leader = Some(leader);
                         if leader == self.my_participant_id {
                             {
                                 if progress.attempts >= MAX_ATTEMPTS_PER_REQUEST_AS_LEADER {
-                                    tracing::debug!(target: "request", "Discarding {} request {:?} from block {} because it has been attempted too many ({}) times", RequestType::get_type(), request.request.get_id(), request.block_height, MAX_ATTEMPTS_PER_REQUEST_AS_LEADER);
+                                    tracing::debug!(
+                                        target: "request",
+                                        request_type = %RequestType::get_type(),
+                                        request_id = %request.request.get_id(),
+                                        block_height = request.block_height,
+                                        attempt_id = progress.attempts,
+                                        "discarding request because it has been attempted too many times",
+                                    );
                                     // Increment metric for max retries exceeded (only for signature requests)
                                     if matches!(
                                         RequestType::get_type(),
@@ -494,7 +524,13 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                                 if progress.last_response_submission.is_some_and(|t| {
                                     now < t + MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE
                                 }) {
-                                    tracing::debug!(target: "request", "Skipping {} request {:?} from block {} because the last response was submitted too recently", RequestType::get_type(), request.request.get_id(), request.block_height);
+                                    tracing::debug!(
+                                        target: "request",
+                                        request_type = %RequestType::get_type(),
+                                        request_id = %request.request.get_id(),
+                                        block_height = request.block_height,
+                                        "skipping request because the last response was submitted too recently",
+                                    );
                                     continue;
                                 }
                                 progress.attempts += 1;
@@ -511,10 +547,24 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 CheckBlockResult::OptimisticButNotCanonical => {
                     // Don't act on it yet. If it becomes canonical later, we'll try to generate
                     // the request.
-                    tracing::debug!(target: "request", "Ignoring non-canonical {} request {:?} from block {}", RequestType::get_type(), request.request.get_id(), request.block_height);
+                    tracing::debug!(
+                        target: "request",
+                        request_type = %RequestType::get_type(),
+                        request_id= %request.request.get_id(),
+                        block_height= request.block_height,
+                        "ignoring non-canonical request",
+                    );
                 }
                 CheckBlockResult::NotIncluded | CheckBlockResult::OlderThanRecentWindow => {
-                    tracing::debug!(target: "request", "Discarding {} request {:?} from block {}", RequestType::get_type(), request.request.get_id(), request.block_height);
+                    // note: We will not receive "OlderThanRecentWindow" if the `RecentBlocksTracker`
+                    // has the same recencly window as the queue.
+                    tracing::debug!(
+                        target: "request",
+                        request_type = %RequestType::get_type(),
+                        request_id = %request.request.get_id(),
+                        block_height = request.block_height,
+                        "disarding request because it was not included or expired"
+                    );
                     // Increment metric for timeout (only for signature requests)
                     if matches!(RequestType::get_type(), types::RequestType::Signature) {
                         metrics::MPC_CLUSTER_FAILED_SIGNATURES_COUNT
