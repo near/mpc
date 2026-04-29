@@ -75,11 +75,11 @@ args = [
 
 [tasks.ruff-format]
 command = "ruff"
-args = ["format", "--diff", "--exclude", "libs/nearcore"]
+args = ["format", "--diff"]
 
 [tasks.ruff-check]
 command = "ruff"
-args = ["check", "--diff", "--exclude", "libs/nearcore"]
+args = ["check", "--diff"]
 
 [tasks.zizmor]
 command = "zizmor"
@@ -144,7 +144,7 @@ command = "bash"
 args = ["scripts/check-sandbox-image-version.sh"]
 
 # These build tasks are the single source of truth for both local and CI builds.
-# CI (`mpc-pytest-build` and `mpc-e2e-tests` jobs) invokes them via `cargo make`.
+# CI's `mpc-e2e-tests` job invokes them via `cargo make`.
 # All three are skipped when `E2E_SKIP_BUILD` is set (used by `e2e-tests-skip-build`).
 
 [tasks.build-mpc-node-network-hardship-simulation]

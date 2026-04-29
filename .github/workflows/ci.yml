@@ -208,9 +208,6 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Initialize submodules
-        run: git submodule update --init --recursive
-
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@21a544727d0c62386e78b4befe52d19ad12692e3 # v17
 
@@ -244,42 +241,6 @@ jobs:
 
       - name: Build backup-cli
         run: nix develop --command cargo build -p backup-cli --release --locked
-
-      - name: Download near core binary from S3
-        id: download-neard
-        continue-on-error: true
-        run: |
-          os=$(uname)
-          arch=$(uname -m)
-          os_and_arch=${os}-${arch}
-          cd libs/nearcore
-
-          branches=$(git branch -r --contains HEAD | grep -o 'origin/[^ ]*' | sed 's|origin/||' || true)
-          commit_hash=$(git rev-parse HEAD || echo "no-commit")
-
-          mkdir -p target/release
-          downloaded=false
-          for branch_name in $branches; do
-            url="https://s3.us-west-1.amazonaws.com/build.nearprotocol.com/nearcore/${os_and_arch}/${branch_name}/${commit_hash}/neard"
-            status_code=$(curl -s -f -o target/release/neard -w "%{http_code}" "${url}" || true)
-            if [ "$status_code" -eq 200 ]; then
-              echo "Downloaded neard from branch: ${branch_name}"
-              downloaded=true
-              break
-            fi
-            echo "Branch ${branch_name} failed (status ${status_code}), trying next..."
-          done
-
-          if [ "$downloaded" != "true" ]; then
-            echo "All branches failed for commit ${commit_hash}"
-            exit 1
-          fi
-          chmod +x target/release/neard
-
-      - name: Build near core as fallback
-        if: steps.download-neard.outcome != 'success'
-        working-directory: libs/nearcore
-        run: nix develop ../.. --command cargo build -p neard --release
 
       - name: Run E2E tests
         run: nix develop --command cargo make e2e-tests-skip-build

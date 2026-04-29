@@ -37,11 +37,10 @@ git push origin --delete "$BRANCH" 2>/dev/null || true
 
 sed -i "s|tag = \"$CURRENT_TAG\"|tag = \"$NEW_TAG\"|g" Cargo.toml
 sed -i "/DEFAULT_SANDBOX_VERSION/s|\"$CURRENT_TAG\"|\"$NEW_TAG\"|g" crates/e2e-tests/src/cluster.rs
-(cd libs/nearcore && git fetch origin --tags && git checkout "$NEW_TAG")
 cargo update nearcore
 
 git checkout -b "$BRANCH"
-git add Cargo.toml Cargo.lock libs/nearcore crates/e2e-tests/src/cluster.rs
+git add Cargo.toml Cargo.lock crates/e2e-tests/src/cluster.rs
 git commit -m "chore: bump to nearcore $NEW_TAG"
 git push origin "$BRANCH"
 

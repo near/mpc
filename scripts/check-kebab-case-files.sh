@@ -4,7 +4,7 @@
 # (lowercase + hyphens only).
 #
 # Only checks git-tracked files in the directories listed in SEARCH_DIRS below.
-# Everything else (libs/, pytest/, .github/, etc.) is ignored.
+# Everything else (e.g. .github/) is ignored.
 # Untracked local files are never flagged.
 
 # Directories to search recursively

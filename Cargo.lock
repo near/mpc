@@ -2045,7 +2045,6 @@ name = "contract-history"
 version = "3.9.0"
 dependencies = [
  "bs58 0.5.1",
- "clap",
  "reqwest 0.13.2",
  "serde",
  "serde_json",
