@@ -409,22 +409,26 @@ impl<T: Clone> RecentBlocksTracker<T> {
     }
 
     /// Classifies a block into one of the categories in `CheckBlockResult`.
-    pub fn classify_block(&self, block_hash: CryptoHash, block_height: u64) -> CheckBlockResult {
-        if self
-            .maximum_height_available
-            .saturating_sub(self.window_size)
-            .add(1)
-            > block_height
-        {
-            return CheckBlockResult::OlderThanRecentWindow;
-        }
+    pub fn classify_block(&self, block_hash: CryptoHash) -> CheckBlockResult {
         match self.hash_to_node.get(&block_hash) {
             Some(node) => {
+                if self
+                    .maximum_height_available
+                    .saturating_sub(self.window_size)
+                    .add(1)
+                    > node.height
+                {
+                    // this can happen if the block in question is expired, but has not yet been
+                    // removed because it is the last final block
+                    return CheckBlockResult::OlderThanRecentWindow;
+                }
                 if node.is_final.load(Ordering::Relaxed) {
                     return CheckBlockResult::RecentAndFinal;
                 }
                 if let Some(final_head) = &self.final_head {
-                    if block_height <= final_head.height {
+                    // The block is not final, yet, we have a final head of greater height.
+                    // That means, the block was not included.
+                    if node.height <= final_head.height {
                         return CheckBlockResult::NotIncluded;
                     }
                 }
@@ -648,7 +652,7 @@ pub mod tests {
         }
 
         pub fn check(&self, block: &Arc<TestBlock>) -> CheckBlockResult {
-            self.tracker.classify_block(block.hash, block.height)
+            self.tracker.classify_block(block.hash)
         }
 
         pub fn add(&mut self, block: &Arc<TestBlock>, name: &str) -> String {
@@ -700,8 +704,8 @@ pub mod tests {
         tester.print();
 
         // At this point, the tracker should keep blocks 12, 13, 14, 15.
-        assert_eq!(tester.check(&b10), CheckBlockResult::OlderThanRecentWindow);
-        assert_eq!(tester.check(&b11), CheckBlockResult::OlderThanRecentWindow);
+        assert_eq!(tester.check(&b10), CheckBlockResult::Unknown);
+        assert_eq!(tester.check(&b11), CheckBlockResult::Unknown);
         assert_eq!(tester.check(&b12), CheckBlockResult::RecentAndFinal);
         assert_eq!(tester.check(&b13), CheckBlockResult::RecentAndFinal);
         assert_eq!(tester.check(&b14), CheckBlockResult::OptimisticAndCanonical);
@@ -741,7 +745,8 @@ pub mod tests {
         // CH   └─[16] C   81v6keTjdkVp8RgTdWQE2vx7E7nof7NxtZNaYFh3oVpG "16"
         t.print();
 
-        assert_eq!(t.check(&b10), CheckBlockResult::OlderThanRecentWindow);
+        // This block has been removed by the tracker
+        assert_eq!(t.check(&b10), CheckBlockResult::Unknown);
         // The tracker kept the block internally as it is the last final block, but it is still
         // outside of the window.
         assert_eq!(t.check(&b11), CheckBlockResult::OlderThanRecentWindow);
@@ -781,8 +786,9 @@ pub mod tests {
         //    └─[16]     81v6keTjdkVp8RgTdWQE2vx7E7nof7NxtZNaYFh3oVpG "16"
         t.print();
 
-        assert_eq!(t.check(&b14), CheckBlockResult::OlderThanRecentWindow);
-        assert_eq!(t.check(&b15), CheckBlockResult::OlderThanRecentWindow);
+        // b14 and b15 were removed, they are too old and we have newer, final blocks
+        assert_eq!(t.check(&b14), CheckBlockResult::Unknown);
+        assert_eq!(t.check(&b15), CheckBlockResult::Unknown);
         assert_eq!(t.check(&b16), CheckBlockResult::NotIncluded);
         assert_eq!(t.check(&b17), CheckBlockResult::Unknown);
         assert_eq!(t.check(&b18), CheckBlockResult::RecentAndFinal);
@@ -878,7 +884,8 @@ pub mod tests {
         // Note above: the canonical head is not a descendant of final head. This can't happen in
         // the real blockchain, but here we fed in a pathological scenario.
         t.print();
-        assert_eq!(t.check(&b0), CheckBlockResult::OlderThanRecentWindow);
+        // b0 was removed, becasue it was not included and is older than recent window
+        assert_eq!(t.check(&b0), CheckBlockResult::Unknown);
         assert_eq!(t.check(&b00), CheckBlockResult::NotIncluded);
         // Note: b000 has no chance of being included in the canonical chain due to b10 being final.
         // However, checking that case is not worth the complexity. In practice, the check we use of
@@ -887,7 +894,8 @@ pub mod tests {
         assert_eq!(t.check(&b01), CheckBlockResult::OptimisticAndCanonical);
         assert_eq!(t.check(&b010), CheckBlockResult::OptimisticButNotCanonical);
         assert_eq!(t.check(&b011), CheckBlockResult::OptimisticAndCanonical);
-        assert_eq!(t.check(&b1), CheckBlockResult::OlderThanRecentWindow);
+        // b1 was removed, because it is too old and we have newer final blocks
+        assert_eq!(t.check(&b1), CheckBlockResult::Unknown);
         assert_eq!(t.check(&b10), CheckBlockResult::RecentAndFinal);
         assert_eq!(t.check(&b100), CheckBlockResult::OptimisticButNotCanonical);
         assert_eq!(t.check(&b11), CheckBlockResult::OptimisticButNotCanonical);

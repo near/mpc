@@ -467,7 +467,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                     request_type = %RequestType::get_type(),
                     request_id = %request.request.get_id(),
                     block_height = request.block_height,
-                    "disarding expired request"
+                    "discarding expired request"
                 );
                 // Increment metric for timeout (only for signature requests)
                 if matches!(RequestType::get_type(), types::RequestType::Signature) {
@@ -479,14 +479,9 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 requests_to_remove.push(*id);
                 continue;
             }
-
-            match self
-                .recent_blocks
-                .classify_block(request.block_hash, request.block_height)
-            {
-                CheckBlockResult::RecentAndFinal
-                | CheckBlockResult::OptimisticAndCanonical
-                | CheckBlockResult::Unknown => {
+            let block_classification = self.recent_blocks.classify_block(request.block_hash);
+            match block_classification {
+                CheckBlockResult::RecentAndFinal | CheckBlockResult::OptimisticAndCanonical => {
                     if let Some(leader) = request.current_leader(&eligible_leaders) {
                         tracing::debug!(
                             target: "request",
@@ -555,15 +550,21 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                         "ignoring non-canonical request",
                     );
                 }
-                CheckBlockResult::NotIncluded | CheckBlockResult::OlderThanRecentWindow => {
+                CheckBlockResult::NotIncluded
+                | CheckBlockResult::OlderThanRecentWindow
+                | CheckBlockResult::Unknown => {
                     // note: We will not receive "OlderThanRecentWindow" if the `RecentBlocksTracker`
                     // has the same recencly window as the queue.
+                    // Since we add signature requests to the queue after adding the block to the
+                    // tracker, receiving `Unknown` means that the tracker removed the block, most
+                    // likely due to the block being expired.
                     tracing::debug!(
                         target: "request",
                         request_type = %RequestType::get_type(),
                         request_id = %request.request.get_id(),
                         block_height = request.block_height,
-                        "disarding request because it was not included or expired"
+                        reason = ?block_classification,
+                        "discarding request because it was not included, expired, or the tracker removed the block"
                     );
                     // Increment metric for timeout (only for signature requests)
                     if matches!(RequestType::get_type(), types::RequestType::Signature) {
