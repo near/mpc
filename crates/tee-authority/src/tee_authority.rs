@@ -87,7 +87,13 @@ fn format_pccs_failures(failures: &[PccsEndpointError]) -> String {
 /// The maximum duration to wait for retrying requests.
 const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
 
-/// Per-request timeout for fetching collateral from PCCS.
+/// Per-request timeout for fetching collateral from PCCS. Applied at two
+/// layers — `reqwest::Client::builder().timeout(...)` (per-HTTP-request)
+/// and `tokio::time::timeout(...)` around `client.fetch(quote)` (whole
+/// fetch operation). claude bot review on PR #3026 flagged the double
+/// timeout; using the same constant at both layers is intentional —
+/// each fetch is a single HTTP request, so there's no current benefit
+/// to splitting them, and the redundancy is harmless.
 const PCCS_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Default path for dstack Unix socket endpoint.
