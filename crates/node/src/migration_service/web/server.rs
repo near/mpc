@@ -71,19 +71,32 @@ async fn handle_stream(
         "TLS handshake complete, backup service authenticated and encrypted channel established"
     );
     let http_protocol = hyper::server::conn::Http::new();
+    let conn = http_protocol.serve_connection(
+        stream,
+        service_fn(move |req| handle_request(req, state.clone())),
+    );
+    tokio::pin!(conn);
 
     tokio::select! {
-        res = http_protocol.serve_connection(
-            stream,
-            service_fn(move |req| handle_request(req, state.clone())),
-        ) => {
+        res = conn.as_mut() => {
             match res {
                 Ok(_) => tracing::info!("connection closed gracefully"),
                 Err(err) => tracing::error!("error serving connection: {err:?}"),
             }
         }
         _ = expected_peer.cancelled.cancelled() => {
-            tracing::info!("dropping connection due to cancellation (change in migration info or cancellation of web server)");
+            // Don't kill the in-flight request — that surfaces to the
+            // backup-cli client as "peer closed connection without sending
+            // TLS close_notify" because hyper drops the TLS stream without
+            // sending close_notify. Instead, signal hyper to stop accepting
+            // new requests on this connection and let the current one (e.g.
+            // the PUT keyshares whose receipt itself triggered the migration
+            // state change) finish cleanly.
+            tracing::info!("graceful shutdown on cancellation (migration info change or web-server shutdown)");
+            conn.as_mut().graceful_shutdown();
+            if let Err(err) = conn.await {
+                tracing::error!("error draining connection: {err:?}");
+            }
         }
     }
     anyhow::Ok(())

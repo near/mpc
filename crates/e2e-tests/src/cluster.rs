@@ -27,7 +27,11 @@ const SANDBOX_ROOT_SECRET_KEY: &str = near_sandbox::config::DEFAULT_GENESIS_ACCO
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
 pub const DEFAULT_TRIPLES_TO_BUFFER: usize = 20;
 pub const DEFAULT_PRESIGNATURES_TO_BUFFER: usize = 10;
-pub const CLUSTER_WAIT_TIMEOUT: Duration = Duration::from_secs(120);
+// Bumped from 120 s after telemetry showed concurrent e2e tests on the runner
+// can stretch presignature/triple generation past the old budget — see
+// `wait_for_presignatures` (parallel_sign_calls test) which is the most
+// pressure-sensitive consumer.
+pub const CLUSTER_WAIT_TIMEOUT: Duration = Duration::from_secs(240);
 const SIGN_GAS: near_kit::Gas = near_kit::Gas::from_tgas(15);
 // AppPublicKeyPV does an on-chain bls12381_pairing_check (2 pairs) before yielding,
 // which costs significantly more than a plain CKD or sign request.
@@ -945,8 +949,18 @@ async fn init_contract(
         num_participants = participant_indices.len(),
         "initializing contract"
     );
+    // The default `key_event_timeout_blocks=30` was sized for ~1 block/s on
+    // mainnet (≈30 s per attempt). The e2e sandbox runs at ~8 blocks/s, which
+    // compresses the budget to ~3.7 s — too tight for resharing's
+    // start_reshare → indexer detection × N nodes → MPC compute → vote_reshared
+    // round-trip under any contention. Use 240 blocks (≈30 s in sandbox) so
+    // the test reflects mainnet's actual headroom.
+    let init_config = json!({ "key_event_timeout_blocks": 240u64 });
     let outcome = contract
-        .call(method_names::INIT, json!({ "parameters": params }))
+        .call(
+            method_names::INIT,
+            json!({ "parameters": params, "init_config": init_config }),
+        )
         .await?;
     anyhow::ensure!(
         outcome.is_success(),
