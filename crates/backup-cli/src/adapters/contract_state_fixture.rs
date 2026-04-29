@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
-use mpc_contract::primitives::key_state::Keyset;
 use mpc_contract::state::ProtocolContractState;
+use near_mpc_contract_interface::types::Keyset;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 
@@ -61,10 +61,15 @@ pub fn get_keyset_from_contract_state(
         ProtocolContractState::NotInitialized | ProtocolContractState::Resharing(_) => Err(
             Error::IncorrectContractState(contract_state.name().to_string()),
         ),
-        ProtocolContractState::Initializing(state) => {
-            Ok(Keyset::new(state.epoch_id, state.generated_keys.clone()))
-        }
-        ProtocolContractState::Running(state) => Ok(state.keyset.clone()),
+        ProtocolContractState::Initializing(state) => Ok(Keyset {
+            epoch_id: state.epoch_id,
+            domains: state
+                .generated_keys
+                .iter()
+                .map(|k| k.clone().into())
+                .collect(),
+        }),
+        ProtocolContractState::Running(state) => Ok(state.keyset.clone().into()),
     }
 }
 

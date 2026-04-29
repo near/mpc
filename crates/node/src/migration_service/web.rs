@@ -79,8 +79,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let keyset_dto: near_mpc_contract_interface::types::Keyset =
-            KeysetBuilder::new(1).keyset().into();
+        let keyset_dto: near_mpc_contract_interface::types::Keyset = KeysetBuilder::new(1).keyset();
         let res = make_keyshare_get_request(
             &mut send_request,
             &keyset_dto,
@@ -104,7 +103,7 @@ mod tests {
             )
             .await
             .unwrap();
-        let keyset_dto: near_mpc_contract_interface::types::Keyset = keyset_builder.keyset().into();
+        let keyset_dto: near_mpc_contract_interface::types::Keyset = keyset_builder.keyset();
         let res = make_keyshare_get_request(
             &mut send_request,
             &keyset_dto,

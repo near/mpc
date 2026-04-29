@@ -22,10 +22,7 @@ use crate::{
     errors::{ConversionError, Error},
     primitives::{
         domain::{AddDomainsVotes, DomainRegistry},
-        key_state::{
-            AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyEventId,
-            KeyForDomain, Keyset,
-        },
+        key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, KeyForDomain, Keyset},
         participants::{ParticipantInfo, Participants},
         threshold_votes::ThresholdParametersVotes,
         thresholds::ThresholdParameters,
@@ -578,24 +575,6 @@ mod from_dto {
         }
     }
 
-    impl From<dtos::EpochId> for EpochId {
-        fn from(id: dtos::EpochId) -> Self {
-            EpochId::new(id.0)
-        }
-    }
-
-    impl From<dtos::AttemptId> for AttemptId {
-        fn from(id: dtos::AttemptId) -> Self {
-            AttemptId::from_u64(id.0)
-        }
-    }
-
-    impl From<dtos::KeyEventId> for KeyEventId {
-        fn from(id: dtos::KeyEventId) -> Self {
-            KeyEventId::new(id.epoch_id.into(), id.domain_id, id.attempt_id.into())
-        }
-    }
-
     impl TryFrom<dtos::KeyForDomain> for KeyForDomain {
         type Error = Error;
         fn try_from(kfd: dtos::KeyForDomain) -> Result<Self, Self::Error> {
@@ -607,7 +586,7 @@ mod from_dto {
                     .map_err(|e| ConversionError::DataConversion {
                         reason: format!("Failed to convert PublicKeyExtended: {e:?}"),
                     })?,
-                attempt: kfd.attempt.into(),
+                attempt: kfd.attempt,
             })
         }
     }
@@ -617,7 +596,7 @@ mod from_dto {
         fn try_from(keyset: dtos::Keyset) -> Result<Self, Self::Error> {
             let domains: Result<Vec<KeyForDomain>, _> =
                 keyset.domains.into_iter().map(TryFrom::try_from).collect();
-            Ok(Keyset::new(keyset.epoch_id.into(), domains?))
+            Ok(Keyset::new(keyset.epoch_id, domains?))
         }
     }
 
@@ -633,44 +612,15 @@ mod from_dto {
 mod to_dto {
     use super::*;
 
-    impl From<EpochId> for dtos::EpochId {
-        fn from(id: EpochId) -> Self {
-            dtos::EpochId(id.get())
-        }
-    }
-
-    impl From<AttemptId> for dtos::AttemptId {
-        fn from(id: AttemptId) -> Self {
-            dtos::AttemptId(id.get())
-        }
-    }
-
-    impl From<KeyEventId> for dtos::KeyEventId {
-        fn from(id: KeyEventId) -> Self {
-            dtos::KeyEventId {
-                epoch_id: id.epoch_id.into(),
-                domain_id: id.domain_id,
-                attempt_id: id.attempt_id.into(),
-            }
-        }
-    }
-
     impl From<KeyForDomain> for dtos::KeyForDomain {
         fn from(kfd: KeyForDomain) -> Self {
-            dtos::KeyForDomain {
-                domain_id: kfd.domain_id,
-                key: (&kfd.key).into_dto_type(),
-                attempt: kfd.attempt.into(),
-            }
+            (&kfd).into_dto_type()
         }
     }
 
     impl From<Keyset> for dtos::Keyset {
         fn from(keyset: Keyset) -> Self {
-            dtos::Keyset {
-                epoch_id: keyset.epoch_id.into(),
-                domains: keyset.domains.into_iter().map(Into::into).collect(),
-            }
+            (&keyset).into_dto_type()
         }
     }
 
@@ -697,18 +647,6 @@ mod to_dto {
 }
 
 // --- Simple wrapper types ---
-
-impl IntoInterfaceType<dtos::EpochId> for EpochId {
-    fn into_dto_type(self) -> dtos::EpochId {
-        dtos::EpochId(self.get())
-    }
-}
-
-impl IntoInterfaceType<dtos::AttemptId> for AttemptId {
-    fn into_dto_type(self) -> dtos::AttemptId {
-        dtos::AttemptId(self.get())
-    }
-}
 
 impl IntoInterfaceType<dtos::AuthenticatedParticipantId> for &AuthenticatedParticipantId {
     fn into_dto_type(self) -> dtos::AuthenticatedParticipantId {
@@ -756,35 +694,6 @@ impl IntoInterfaceType<dtos::PublicKeyExtended> for &PublicKeyExtended {
 }
 
 // --- Key state types ---
-
-impl IntoInterfaceType<dtos::KeyForDomain> for &KeyForDomain {
-    fn into_dto_type(self) -> dtos::KeyForDomain {
-        dtos::KeyForDomain {
-            domain_id: self.domain_id,
-            key: (&self.key).into_dto_type(),
-            attempt: self.attempt.into_dto_type(),
-        }
-    }
-}
-
-impl IntoInterfaceType<dtos::Keyset> for &Keyset {
-    fn into_dto_type(self) -> dtos::Keyset {
-        dtos::Keyset {
-            epoch_id: self.epoch_id.into_dto_type(),
-            domains: self.domains.iter().map(|k| k.into_dto_type()).collect(),
-        }
-    }
-}
-
-impl IntoInterfaceType<dtos::KeyEventId> for &KeyEventId {
-    fn into_dto_type(self) -> dtos::KeyEventId {
-        dtos::KeyEventId {
-            epoch_id: self.epoch_id.into_dto_type(),
-            domain_id: self.domain_id,
-            attempt_id: self.attempt_id.into_dto_type(),
-        }
-    }
-}
 
 // --- Participants types ---
 
@@ -847,12 +756,33 @@ impl IntoInterfaceType<dtos::AddDomainsVotes> for &AddDomainsVotes {
     }
 }
 
+// --- Key state types ---
+
+impl IntoInterfaceType<dtos::KeyForDomain> for &KeyForDomain {
+    fn into_dto_type(self) -> dtos::KeyForDomain {
+        dtos::KeyForDomain {
+            domain_id: self.domain_id,
+            key: (&self.key).into_dto_type(),
+            attempt: self.attempt,
+        }
+    }
+}
+
+impl IntoInterfaceType<dtos::Keyset> for &Keyset {
+    fn into_dto_type(self) -> dtos::Keyset {
+        dtos::Keyset {
+            epoch_id: self.epoch_id,
+            domains: self.domains.iter().map(|k| k.into_dto_type()).collect(),
+        }
+    }
+}
+
 // --- Key event types ---
 
 impl IntoInterfaceType<dtos::KeyEventInstance> for &KeyEventInstance {
     fn into_dto_type(self) -> dtos::KeyEventInstance {
         dtos::KeyEventInstance {
-            attempt_id: self.attempt_id().into_dto_type(),
+            attempt_id: self.attempt_id(),
             started_in: self.started_in(),
             expires_on: self.expires_on(),
             completed: self.completed().iter().map(|p| p.into_dto_type()).collect(),
@@ -864,11 +794,11 @@ impl IntoInterfaceType<dtos::KeyEventInstance> for &KeyEventInstance {
 impl IntoInterfaceType<dtos::KeyEvent> for &KeyEvent {
     fn into_dto_type(self) -> dtos::KeyEvent {
         dtos::KeyEvent {
-            epoch_id: self.epoch_id().into_dto_type(),
+            epoch_id: self.epoch_id(),
             domain: self.domain().clone(),
             parameters: self.proposed_parameters().into_dto_type(),
             instance: self.instance().as_ref().map(|i| i.into_dto_type()),
-            next_attempt_id: self.next_attempt_id().into_dto_type(),
+            next_attempt_id: self.next_attempt_id(),
         }
     }
 }
@@ -879,7 +809,7 @@ impl IntoInterfaceType<dtos::InitializingContractState> for &InitializingContrac
     fn into_dto_type(self) -> dtos::InitializingContractState {
         dtos::InitializingContractState {
             domains: (&self.domains).into_dto_type(),
-            epoch_id: self.epoch_id.into_dto_type(),
+            epoch_id: self.epoch_id,
             generated_keys: self
                 .generated_keys
                 .iter()
@@ -903,9 +833,7 @@ impl IntoInterfaceType<dtos::RunningContractState> for &RunningContractState {
             parameters: (&self.parameters).into_dto_type(),
             parameters_votes: (&self.parameters_votes).into_dto_type(),
             add_domains_votes: (&self.add_domains_votes).into_dto_type(),
-            previously_cancelled_resharing_epoch_id: self
-                .previously_cancelled_resharing_epoch_id
-                .map(|e| e.into_dto_type()),
+            previously_cancelled_resharing_epoch_id: self.previously_cancelled_resharing_epoch_id,
         }
     }
 }
