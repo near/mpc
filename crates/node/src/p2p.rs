@@ -161,13 +161,14 @@ impl OutgoingConnection {
     ) -> anyhow::Result<OutgoingConnection> {
         let tcp_stream = TcpStream::connect(target_address)
             .await
-            .context("TCP connect")?;
-        let tcp_stream = configure_tcp_stream(tcp_stream)?;
+            .context("failed to establish tcp stream")?;
+        let tcp_stream =
+            configure_tcp_stream(tcp_stream).context("failed to configure tcp stream")?;
 
         let mut tls_stream = tokio_rustls::TlsConnector::from(client_config)
             .connect("dummy".try_into().unwrap(), tcp_stream)
             .await
-            .context("TLS connect")?;
+            .context("failed to establish tls stream")?;
 
         let peer_id = verify_peer_identity(tls_stream.get_ref().1, participant_identities)
             .context("verify server identity")?;
@@ -414,19 +415,21 @@ impl PersistentConnection {
                     {
                         Ok(new_conn) => {
                             tracing::info!(
-                                "Outgoing {} --> {} connected",
-                                my_id,
-                                target_participant_id
+                                my_id = %my_id,
+                                target_participant_id = %target_participant_id,
+                                "outgoing connection established"
                             );
+
                             new_conn
                         }
                         Err(e) => {
                             tracing::info!(
-                                "Could not connect to {}, retrying: {}, me {}",
-                                target_participant_id,
-                                e,
-                                my_id
+                                my_id = %my_id,
+                                target_participant_id = %target_participant_id,
+                                error = %format_args!("{e:#}"),
+                                "could not connect, retrying"
                             );
+
                             // Don't immediately retry, to avoid spamming the network with
                             // connection attempts.
                             tokio::time::sleep(Self::CONNECTION_RETRY_DELAY).await;
