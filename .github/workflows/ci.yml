@@ -114,10 +114,16 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y liblzma-dev
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@21a544727d0c62386e78b4befe52d19ad12692e3 # v17
+
+      - name: Restore /nix from cache
+        uses: near/cache-nix-action@3e2c4eea4e825e74575cbc8e25d38173df7686c2 # enable-warpbuild-cache
+        with:
+          backend: warpbuild
+          primary-key: nix-${{ runner.os }}-ci-${{ hashFiles('flake.nix', 'flake.lock', 'nix/**', 'rust-toolchain.toml', 'Cargo.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-ci-
+          save: ${{ github.ref == 'refs/heads/main' }}
 
       - run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
       - name: Cache Rust dependencies
@@ -127,35 +133,8 @@ jobs:
           cache-provider: "warpbuild"
           prefix-key: v0-rust-tests-${{ matrix.group }}-week-${{ env.WEEK }}
 
-      - name: Install cargo-nextest
-        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
-        with:
-          tool: nextest@0.9.126
-
-      - name: Install cargo-binstall
-        if: matrix.extra-tools
-        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
-        with:
-          tool: cargo-binstall
-
-      - name: Install cargo-near
-        if: matrix.extra-tools
-        run: |
-          sudo apt-get update && sudo apt-get install --assume-yes libudev-dev
-          cargo binstall --force --no-confirm --locked cargo-near@0.19.1 --pkg-url="{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }.{ archive-format }"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install wasm-opt
-        if: matrix.extra-tools
-        run: |
-          cargo binstall --force --no-confirm --locked wasm-opt@0.116.1
-          echo "${HOME}/.cargo/bin" >> $GITHUB_PATH
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Run cargo-nextest
-        run: cargo nextest run --cargo-profile=test-release --all-features --locked ${{ matrix.nextest-args }}
+        run: nix develop --command cargo nextest run --cargo-profile=test-release --all-features --locked ${{ matrix.nextest-args }}
 
   mpc-contract-reproducible-build:
     name: "MPC contract reproducible build"
@@ -170,29 +149,24 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y liblzma-dev libudev-dev
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@21a544727d0c62386e78b4befe52d19ad12692e3 # v17
 
-      - name: Install cargo-binstall
-        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
+      - name: Restore /nix from cache
+        uses: near/cache-nix-action@3e2c4eea4e825e74575cbc8e25d38173df7686c2 # enable-warpbuild-cache
         with:
-          tool: cargo-binstall
-
-      - name: Install cargo-near
-        run: |
-          cargo binstall --force --no-confirm --locked cargo-near@0.19.1 --pkg-url="{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }.{ archive-format }"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          backend: warpbuild
+          primary-key: nix-${{ runner.os }}-ci-${{ hashFiles('flake.nix', 'flake.lock', 'nix/**', 'rust-toolchain.toml', 'Cargo.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-ci-
+          save: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Build mpc-contract (reproducible)
         run: |
-          cargo near build reproducible-wasm \
+          nix develop --command cargo near build reproducible-wasm \
             --manifest-path crates/contract/Cargo.toml
 
       - name: Check contract WASM size
-        run: bash scripts/check-contract-wasm-size.sh
+        run: nix develop --command bash scripts/check-contract-wasm-size.sh
 
   nix-build-mpc-node:
     name: "Nix build mpc-node"
@@ -211,6 +185,17 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@21a544727d0c62386e78b4befe52d19ad12692e3 # v17
+
+      - name: Restore /nix from cache
+        uses: near/cache-nix-action@3e2c4eea4e825e74575cbc8e25d38173df7686c2 # enable-warpbuild-cache
+        with:
+          backend: warpbuild
+          primary-key: nix-${{ runner.os }}-ci-${{ hashFiles('flake.nix', 'flake.lock', 'nix/**', 'rust-toolchain.toml', 'Cargo.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-ci-
+          save: ${{ github.ref == 'refs/heads/main' }}
+
       - run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -219,51 +204,8 @@ jobs:
           cache-provider: "warpbuild"
           prefix-key: v0-rust-week-${{ env.WEEK }}
 
-      - name: Install ruff
-        uses: astral-sh/ruff-action@0ce1b0bf8b818ef400413f810f8a11cdbda0034b # v4.0.0
-        with:
-          args: "--version" # workaround to avoid running ruff check here
-
-      - name: Install cargo-shear
-        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
-        with:
-          tool: cargo-shear@1.11.2
-
-      - name: Install cargo-sort
-        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
-        with:
-          tool: cargo-sort@2.1.3
-
-      - name: Install zizmor
-        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
-        with:
-          tool: zizmor@1.24.1
-
-      - name: Install cargo-deny
-        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
-        with:
-          tool: cargo-deny@0.19.4
-
-      - name: Install lychee
-        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
-        with:
-          tool: lychee@0.23.0
-
-      - name: Install cargo-make
-        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
-        with:
-          tool: cargo-make@0.37.24
-
-      - name: Setup python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
-        with:
-          python-version: "3.11"
-
-      - name: Install Python dependencies
-        run: pip install -r scripts/requirements.txt
-
       - name: Run cargo-make fast checks
-        run: cargo make check-all-fast
+        run: nix develop --command cargo make check-all-fast
 
   mpc-e2e-tests:
     name: "MPC E2E tests"
@@ -281,6 +223,17 @@ jobs:
       - name: Initialize submodules
         run: git submodule update --init --recursive
 
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@21a544727d0c62386e78b4befe52d19ad12692e3 # v17
+
+      - name: Restore /nix from cache
+        uses: near/cache-nix-action@3e2c4eea4e825e74575cbc8e25d38173df7686c2 # enable-warpbuild-cache
+        with:
+          backend: warpbuild
+          primary-key: nix-${{ runner.os }}-ci-${{ hashFiles('flake.nix', 'flake.lock', 'nix/**', 'rust-toolchain.toml', 'Cargo.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-ci-
+          save: ${{ github.ref == 'refs/heads/main' }}
+
       - run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -289,61 +242,25 @@ jobs:
           cache-provider: "warpbuild"
           prefix-key: v0-rust-e2e-week-${{ env.WEEK }}
 
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y liblzma-dev
-
-      - name: Install cargo-binstall
-        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
-        with:
-          tool: cargo-binstall
-
-      - name: Install wasm-opt
-        run: |
-          cargo binstall --force --no-confirm --locked wasm-opt@0.116.1
-          echo "${HOME}/.cargo/bin" >> $GITHUB_PATH
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install cargo-near (for reproducible build on main)
-        if: github.ref == 'refs/heads/main'
-        run: |
-          sudo apt-get update && sudo apt-get install --assume-yes libudev-dev
-          cargo binstall --force --no-confirm --locked cargo-near@0.19.1 --pkg-url="{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }.{ archive-format }"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install cargo-make
-        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
-        with:
-          tool: cargo-make@0.37.24
-
-      - name: Install cargo-nextest
-        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
-        with:
-          tool: nextest@0.9.126
-
       - name: Build mpc-node
-        run: cargo make build-mpc-node-network-hardship-simulation
+        run: nix develop --command cargo make build-mpc-node-network-hardship-simulation
 
       - name: Build mpc-contract
         if: github.ref != 'refs/heads/main'
-        run: cargo make build-mpc-contract-optimized
+        run: nix develop --command cargo make build-mpc-contract-optimized
 
       - name: Build mpc-contract reproducibly
         if: github.ref == 'refs/heads/main'
         run: |
-          cargo near build reproducible-wasm \
+          nix develop --command cargo near build reproducible-wasm \
             --manifest-path crates/contract/Cargo.toml \
             --out-dir target/wasm32-unknown-unknown/release-contract
 
       - name: Build test-parallel-contract
-        run: cargo make build-test-parallel-contract-optimized
+        run: nix develop --command cargo make build-test-parallel-contract-optimized
 
       - name: Build backup-cli
-        run: |
-          cargo build -p backup-cli --release --locked
+        run: nix develop --command cargo build -p backup-cli --release --locked
 
       - name: Download near core binary from S3
         id: download-neard
@@ -378,12 +295,11 @@ jobs:
 
       - name: Build near core as fallback
         if: steps.download-neard.outcome != 'success'
-        run: |
-          cd libs/nearcore
-          cargo build -p neard --release
+        working-directory: libs/nearcore
+        run: nix develop ../.. --command cargo build -p neard --release
 
       - name: Run E2E tests
-        run: cargo make e2e-tests-skip-build
+        run: nix develop --command cargo make e2e-tests-skip-build
         env:
           RUST_LOG: info,e2e_tests=debug
 
@@ -398,18 +314,19 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install cargo-deny
-        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
-        with:
-          tool: cargo-deny@0.19.4
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@21a544727d0c62386e78b4befe52d19ad12692e3 # v17
 
-      - name: Install cargo-make
-        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
+      - name: Restore /nix from cache
+        uses: near/cache-nix-action@3e2c4eea4e825e74575cbc8e25d38173df7686c2 # enable-warpbuild-cache
         with:
-          tool: cargo-make@0.37.24
+          backend: warpbuild
+          primary-key: nix-${{ runner.os }}-ci-${{ hashFiles('flake.nix', 'flake.lock', 'nix/**', 'rust-toolchain.toml', 'Cargo.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-ci-
+          save: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Run cargo-make extra checks
-        run: cargo make check-extra
+        run: nix develop --command cargo make check-extra
 
   check-todo-closed-issues:
     name: "Check TODOs for issues closed by this PR"
