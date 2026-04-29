@@ -132,6 +132,7 @@
           pythonTools = with pkgs; [
             python311
             python311Packages.keyring
+            python311Packages.matplotlib # used by scripts/plot-resource-usage.py
             python311Packages.tree-sitter
             python311Packages.tree-sitter-rust
             ruff # linter and formatter

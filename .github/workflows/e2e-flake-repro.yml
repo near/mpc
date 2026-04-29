@@ -11,7 +11,7 @@ name: E2E flake repro (#2898)
 #
 #          git commit --allow-empty -m "[flake-repro]" && git push
 #
-#      Defaults: iterations=100, test_filter=all (whole e2e suite).
+#      Defaults: iterations=50, test_filter=all (whole e2e suite).
 #
 #   2. From the GitHub Actions UI: open any prior run and click
 #      "Re-run all jobs". GitHub replays the workflow at that SHA, no
@@ -25,6 +25,9 @@ name: E2E flake repro (#2898)
 #   - on failure: each node's preserved home dir, including `stdout.log`,
 #     `stderr.log`, and the generated config files (E2E_KEEP_HOME_DIR opt-in).
 #   - run summary (`summary.txt`) with pass/fail counts.
+#   - resource-usage telemetry (`telemetry/e2e-resource-usage.csv`) covering
+#     the whole iteration loop, for correlating flakes with CPU / load /
+#     memory pressure (see PR #3055 for the same approach in ci.yml).
 
 on:
   push:
@@ -35,7 +38,7 @@ on:
       iterations:
         description: "How many times to run the test loop"
         required: false
-        default: "100"
+        default: "50"
       test_filter:
         description: "Nextest substring filter. Use 'all' to run every e2e test."
         required: false
@@ -56,11 +59,11 @@ jobs:
       github.event_name != 'push' ||
       contains(github.event.head_commit.message, '[flake-repro]')
     runs-on: warp-ubuntu-2404-x64-32x
-    # 100 iterations: typical run is ~150s/iter ≈ 250 min for tests, plus
-    # ~30 min for the build. Cap of 600 min covers worst-case scheduling
+    # 50 iterations: typical run is ~150s/iter ≈ 125 min for tests, plus
+    # ~30 min for the build. Cap of 360 min covers worst-case scheduling
     # variance. Each iteration is wrapped in 10-min `timeout` below so a
     # single hang fails fast instead of burning the whole budget.
-    timeout-minutes: 600
+    timeout-minutes: 360
     permissions:
       contents: read
 
@@ -120,6 +123,19 @@ jobs:
       - name: Build backup-cli
         run: cargo build -p backup-cli --release --locked
 
+      # Sample CPU/memory/load to a CSV across the whole iteration loop so we
+      # can correlate flaky failures with runner resource contention. Mirrors
+      # the per-job collector PR #3055 added to ci.yml. See near/mpc#2883.
+      - name: Start resource-usage telemetry collector
+        run: |
+          mkdir -p target/telemetry flake-artifacts
+          python3 scripts/collect-resource-usage.py \
+            --interval 2 \
+            --output target/telemetry/e2e-resource-usage.csv \
+            > target/telemetry/collector.log 2>&1 &
+          echo $! > target/telemetry/collector.pid
+          echo "Started telemetry collector pid=$(cat target/telemetry/collector.pid)"
+
       - name: Run E2E tests in a loop
         env:
           RUST_LOG: info,e2e_tests=debug
@@ -132,7 +148,7 @@ jobs:
           NEXTEST_SUCCESS_OUTPUT: final
           # `inputs.*` is empty on push events; fall back to the same defaults
           # advertised in the workflow_dispatch input block.
-          ITERATIONS: ${{ inputs.iterations || '100' }}
+          ITERATIONS: ${{ inputs.iterations || '50' }}
           TEST_FILTER: ${{ inputs.test_filter || 'all' }}
           KEEP_ALL_HOMES: ${{ inputs.keep_all_homes && 'true' || 'false' }}
           # _run-e2e-logic in Makefile.toml exports these; we replicate them
@@ -227,6 +243,34 @@ jobs:
 
           echo "TOTAL: pass=$pass fail=$fail" | tee -a "$summary"
           if [ "$fail" -gt 0 ]; then exit 1; fi
+
+      - name: Stop resource-usage telemetry collector
+        if: always()
+        run: |
+          if [ -f target/telemetry/collector.pid ]; then
+            pid=$(cat target/telemetry/collector.pid)
+            kill -TERM "$pid" 2>/dev/null || true
+            for _ in 1 2 3 4 5; do
+              kill -0 "$pid" 2>/dev/null || break
+              sleep 1
+            done
+            kill -KILL "$pid" 2>/dev/null || true
+            rm -f target/telemetry/collector.pid
+          fi
+          # Copy into the artifact bundle so it lands alongside iter-N/.
+          if [ -d target/telemetry ]; then
+            cp -r target/telemetry flake-artifacts/telemetry || true
+          fi
+
+      - name: Print resource-usage summary
+        if: always()
+        run: |
+          if [ -f target/telemetry/e2e-resource-usage.csv ]; then
+            python3 scripts/summarize-resource-usage.py \
+              --input target/telemetry/e2e-resource-usage.csv
+          else
+            echo "No telemetry CSV found; skipping summary."
+          fi
 
       - name: Upload artifacts
         if: always()

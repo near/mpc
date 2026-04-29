@@ -11,7 +11,7 @@ test-group = 'contract-sandbox'
 
 [test-groups.e2e]
 # TODO(#2898): tune this if parallel_sign_calls test is still flaky.
-max-threads = 4
+max-threads = 8
 
 [profile.ci-e2e]
 [[profile.ci-e2e.overrides]]
