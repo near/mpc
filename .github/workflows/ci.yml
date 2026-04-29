@@ -118,12 +118,7 @@ jobs:
         uses: DeterminateSystems/nix-installer-action@21a544727d0c62386e78b4befe52d19ad12692e3 # v17
 
       - name: Restore /nix from cache
-        uses: near/cache-nix-action@3e2c4eea4e825e74575cbc8e25d38173df7686c2 # enable-warpbuild-cache
-        with:
-          backend: warpbuild
-          primary-key: nix-${{ runner.os }}-ci-${{ hashFiles('flake.nix', 'flake.lock', 'nix/**', 'rust-toolchain.toml', 'Cargo.lock') }}
-          restore-prefixes-first-match: nix-${{ runner.os }}-ci-
-          save: false
+        uses: ./.github/actions/restore-nix-cache
 
       - run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
       - name: Cache Rust dependencies
@@ -152,13 +147,10 @@ jobs:
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@21a544727d0c62386e78b4befe52d19ad12692e3 # v17
 
+      # only save nix cache in this single job to avoid duplicate cache saves from other jobs
       - name: Restore /nix from cache
-        uses: near/cache-nix-action@3e2c4eea4e825e74575cbc8e25d38173df7686c2 # enable-warpbuild-cache
+        uses: ./.github/actions/restore-nix-cache
         with:
-          backend: warpbuild
-          primary-key: nix-${{ runner.os }}-ci-${{ hashFiles('flake.nix', 'flake.lock', 'nix/**', 'rust-toolchain.toml', 'Cargo.lock') }}
-          restore-prefixes-first-match: nix-${{ runner.os }}-ci-
-          # only save nix cache in this single job to avoid duplicate cache saves from other jobs
           save: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Build mpc-contract (reproducible)
@@ -190,12 +182,7 @@ jobs:
         uses: DeterminateSystems/nix-installer-action@21a544727d0c62386e78b4befe52d19ad12692e3 # v17
 
       - name: Restore /nix from cache
-        uses: near/cache-nix-action@3e2c4eea4e825e74575cbc8e25d38173df7686c2 # enable-warpbuild-cache
-        with:
-          backend: warpbuild
-          primary-key: nix-${{ runner.os }}-ci-${{ hashFiles('flake.nix', 'flake.lock', 'nix/**', 'rust-toolchain.toml', 'Cargo.lock') }}
-          restore-prefixes-first-match: nix-${{ runner.os }}-ci-
-          save: false
+        uses: ./.github/actions/restore-nix-cache
 
       - run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
       - name: Cache Rust dependencies
@@ -228,12 +215,7 @@ jobs:
         uses: DeterminateSystems/nix-installer-action@21a544727d0c62386e78b4befe52d19ad12692e3 # v17
 
       - name: Restore /nix from cache
-        uses: near/cache-nix-action@3e2c4eea4e825e74575cbc8e25d38173df7686c2 # enable-warpbuild-cache
-        with:
-          backend: warpbuild
-          primary-key: nix-${{ runner.os }}-ci-${{ hashFiles('flake.nix', 'flake.lock', 'nix/**', 'rust-toolchain.toml', 'Cargo.lock') }}
-          restore-prefixes-first-match: nix-${{ runner.os }}-ci-
-          save: false
+        uses: ./.github/actions/restore-nix-cache
 
       - run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
       - name: Cache Rust dependencies
@@ -319,12 +301,7 @@ jobs:
         uses: DeterminateSystems/nix-installer-action@21a544727d0c62386e78b4befe52d19ad12692e3 # v17
 
       - name: Restore /nix from cache
-        uses: near/cache-nix-action@3e2c4eea4e825e74575cbc8e25d38173df7686c2 # enable-warpbuild-cache
-        with:
-          backend: warpbuild
-          primary-key: nix-${{ runner.os }}-ci-${{ hashFiles('flake.nix', 'flake.lock', 'nix/**', 'rust-toolchain.toml', 'Cargo.lock') }}
-          restore-prefixes-first-match: nix-${{ runner.os }}-ci-
-          save: false
+        uses: ./.github/actions/restore-nix-cache
 
       - name: Run cargo-make extra checks
         run: nix develop --command cargo make check-extra
