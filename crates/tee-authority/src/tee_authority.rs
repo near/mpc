@@ -205,36 +205,23 @@ pub fn validate_pccs_endpoints(
     Ok(())
 }
 
-/// `dcap_qvl::http::HttpClient` adapter wrapping a `reqwest::Client`.
-///
-/// `dcap-qvl` does not expose `reqwest::Client` in its public API any
-/// more (see [Phala-Network/dcap-qvl#156](https://github.com/Phala-Network/dcap-qvl/pull/156)) —
-/// `CollateralClient::new` takes any `impl HttpClient`. This adapter is
-/// what we hand it on the override path so that we can use a workspace
-/// `reqwest 0.13` instead of being forced to match `dcap-qvl`'s
-/// internal reqwest version.
-#[derive(Clone)]
+/// `dcap_qvl::http::HttpClient` adapter over a `reqwest::Client`.
+/// `dcap-qvl` keeps `reqwest::Client` out of its public API
+/// ([Phala-Network/dcap-qvl#156](https://github.com/Phala-Network/dcap-qvl/pull/156)),
+/// so callers using a custom client must implement this trait themselves.
 struct PccsHttpClient(reqwest::Client);
 
 impl HttpClient for PccsHttpClient {
     async fn get(&self, url: &str) -> anyhow::Result<HttpResponse> {
         let resp = self.0.get(url).send().await?;
-        let status = resp.status().as_u16();
-        let headers = resp
-            .headers()
-            .iter()
-            .map(|(name, value)| {
-                let v = value
-                    .to_str()
-                    .with_context(|| format!("non-ASCII value for header `{name}`"))?;
-                Ok::<_, anyhow::Error>((name.as_str().to_string(), v.to_string()))
-            })
-            .collect::<anyhow::Result<BTreeMap<_, _>>>()?;
-        let body = resp.bytes().await?.to_vec();
         Ok(HttpResponse {
-            status,
-            headers,
-            body,
+            status: resp.status().as_u16(),
+            headers: resp
+                .headers()
+                .iter()
+                .map(|(n, v)| Ok((n.as_str().to_string(), v.to_str()?.to_string())))
+                .collect::<anyhow::Result<BTreeMap<_, _>>>()?,
+            body: resp.bytes().await?.to_vec(),
         })
     }
 }
