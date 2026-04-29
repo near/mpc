@@ -92,9 +92,7 @@ pub async fn get_keyshares(
 ) -> anyhow::Result<Vec<Keyshare>> {
     let key_storage_config = make_key_storage_config(home_dir, local_encryption_key);
     let keystore = key_storage_config.create().await.unwrap();
-    let contract_keyset: mpc_contract::primitives::key_state::Keyset =
-        keyset.clone().try_into().unwrap();
-    keystore.get_keyshares(&contract_keyset).await
+    keystore.get_keyshares(keyset).await
 }
 
 impl OneNodeTestConfig {

@@ -295,16 +295,6 @@ impl<T: Clone> RecentBlocksTracker<T> {
         Ok(AddBlockResult { new_final_blocks })
     }
 
-    /// Notifies the tracker that we have heard of the given height being available.
-    /// This may move the window forward and cause older blocks to return
-    /// `CheckBlockResult::OlderThanRecentWindow`.
-    pub fn notify_maximum_height_available(&mut self, height: u64) {
-        if height > self.maximum_height_available {
-            self.maximum_height_available = height;
-            self.prune_old_blocks();
-        }
-    }
-
     /// Update the final head if the new final head received from a block is newer.
     /// Returns the list of newly finalized blocks in increasing height order.
     fn maybe_update_final_head(&mut self, potential_final_head: CryptoHash) -> Vec<Arc<BlockNode>> {
@@ -681,11 +671,6 @@ pub mod tests {
                 .join(",")
         }
 
-        pub fn avail(&mut self, height: u64) -> &mut Self {
-            self.tracker.notify_maximum_height_available(height);
-            self
-        }
-
         pub fn print(&self) {
             println!("{:?}", self.tracker);
         }
@@ -719,21 +704,6 @@ pub mod tests {
         assert_eq!(tester.check(&b11), CheckBlockResult::OlderThanRecentWindow);
         assert_eq!(tester.check(&b12), CheckBlockResult::RecentAndFinal);
         assert_eq!(tester.check(&b13), CheckBlockResult::RecentAndFinal);
-        assert_eq!(tester.check(&b14), CheckBlockResult::OptimisticAndCanonical);
-        assert_eq!(tester.check(&b15), CheckBlockResult::OptimisticAndCanonical);
-        assert_eq!(tester.check(&b16), CheckBlockResult::Unknown);
-
-        // We received announcement that block 17 is already available.
-        tester.avail(17);
-        //    Recent blocks: (Window = 14 to 17, GC limit 13)
-        // FH └─[13] C F DTYziqMhQ9i2wbruEfoNiWZNp34dzVYto6FLy3FUZKwt "13"
-        //      [14] C   4q6agzf1AcZWcVbNnULR8969K8MhmPCEJ7pKapjmEGmA "14"
-        // CH   [15] C   7inNzFR4mz4TRu9CSajNQnWxwhKDcYzTYubtM6zFri7Y "15"
-        tester.print();
-        assert_eq!(tester.check(&b10), CheckBlockResult::OlderThanRecentWindow);
-        assert_eq!(tester.check(&b11), CheckBlockResult::OlderThanRecentWindow);
-        assert_eq!(tester.check(&b12), CheckBlockResult::OlderThanRecentWindow);
-        assert_eq!(tester.check(&b13), CheckBlockResult::OlderThanRecentWindow);
         assert_eq!(tester.check(&b14), CheckBlockResult::OptimisticAndCanonical);
         assert_eq!(tester.check(&b15), CheckBlockResult::OptimisticAndCanonical);
         assert_eq!(tester.check(&b16), CheckBlockResult::Unknown);
@@ -814,15 +784,6 @@ pub mod tests {
         assert_eq!(t.check(&b14), CheckBlockResult::OlderThanRecentWindow);
         assert_eq!(t.check(&b15), CheckBlockResult::OlderThanRecentWindow);
         assert_eq!(t.check(&b16), CheckBlockResult::NotIncluded);
-        assert_eq!(t.check(&b17), CheckBlockResult::Unknown);
-        assert_eq!(t.check(&b18), CheckBlockResult::RecentAndFinal);
-        assert_eq!(t.check(&b19), CheckBlockResult::OptimisticAndCanonical);
-        assert_eq!(t.check(&b20), CheckBlockResult::OptimisticAndCanonical);
-
-        // We receive announcement that block 21 is already available.
-        t.avail(21);
-        t.print();
-        assert_eq!(t.check(&b16), CheckBlockResult::OlderThanRecentWindow);
         assert_eq!(t.check(&b17), CheckBlockResult::Unknown);
         assert_eq!(t.check(&b18), CheckBlockResult::RecentAndFinal);
         assert_eq!(t.check(&b19), CheckBlockResult::OptimisticAndCanonical);
@@ -958,21 +919,5 @@ pub mod tests {
         assert_eq!(t.check(&b1020000), CheckBlockResult::OptimisticAndCanonical);
         assert_eq!(t.check(&b110), CheckBlockResult::NotIncluded);
         assert_eq!(t.check(&b111), CheckBlockResult::NotIncluded);
-
-        // We receive announcement that block 15 is already available.
-        t.avail(15);
-        //    Recent blocks: (Window = 11 to 15, GC limit 11)
-        // FH └─[11] C F NW4CWxr6ptWa9tsV2gMhGPdE7ecNWfCrnJDfJwx9yv9 "b10200"
-        //      [12] C   4Vwtcagaq6fi5j82suG4j8HiaU3SMbqotrZzT3bjqwcP "b102000"
-        // CH   [13] C   GktyudcCf3dBkWCdjq9dFssY7KZRRZQJ1TZH3ZMw8LWk "b1020000"
-        t.print();
-        assert_eq!(t.check(&b001), CheckBlockResult::OlderThanRecentWindow);
-        assert_eq!(t.check(&b010), CheckBlockResult::OlderThanRecentWindow);
-        assert_eq!(t.check(&b011), CheckBlockResult::OlderThanRecentWindow);
-        assert_eq!(t.check(&b10200), CheckBlockResult::RecentAndFinal);
-        assert_eq!(t.check(&b102000), CheckBlockResult::OptimisticAndCanonical);
-        assert_eq!(t.check(&b1020000), CheckBlockResult::OptimisticAndCanonical);
-        assert_eq!(t.check(&b110), CheckBlockResult::OlderThanRecentWindow);
-        assert_eq!(t.check(&b111), CheckBlockResult::OlderThanRecentWindow);
     }
 }

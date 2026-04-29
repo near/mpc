@@ -1,7 +1,7 @@
 use ed25519_dalek::VerifyingKey;
-use mpc_contract::primitives::key_state::Keyset;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{BackupServiceInfo, DestinationNodeInfo};
+use near_mpc_crypto_types::Keyset;
 use serde::Serialize;
 use tokio_util::sync::CancellationToken;
 
@@ -139,16 +139,14 @@ fn infer_migration_status(
 pub mod tests {
     use ed25519_dalek::VerifyingKey;
     use mpc_contract::{
-        primitives::{
-            key_state::Keyset,
-            test_utils::{bogus_ed25519_public_key, gen_participant},
-        },
+        primitives::test_utils::{bogus_ed25519_public_key, gen_participant},
         state::{
             test_utils::{gen_initializing_state, gen_resharing_state, gen_running_state},
             ProtocolContractState,
         },
     };
     use near_account_id::AccountId;
+    use near_mpc_crypto_types::Keyset;
 
     use crate::{
         config,
@@ -508,7 +506,7 @@ pub mod tests {
 
         (
             ContractCase::new(contract, onboarding_node_p2p_public_key),
-            running_state.keyset,
+            running_state.keyset.into(),
         )
     }
     pub(crate) fn make_initializing_contract_case(

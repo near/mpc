@@ -4,8 +4,7 @@ use crate::db::{DBCol, SecretDB, EPOCH_ID_KEY};
 use crate::primitives;
 use crate::providers::ecdsa::presign::PresignOutputWithParticipants;
 use crate::providers::ecdsa::triple::{PairedTriple, TRIPLE_STORE_DOMAIN_ID};
-use mpc_contract::primitives::key_state::EpochId;
-use mpc_primitives::domain::DomainId;
+use mpc_primitives::{domain::DomainId, EpochId};
 use serde::{self, Deserialize, Serialize};
 use std::sync::Arc;
 
