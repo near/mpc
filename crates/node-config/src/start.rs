@@ -193,6 +193,7 @@ pub enum DownloadConfigType {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
+    use launcher_interface::types::PccsTlsTrust;
 
     /// The tee-launcher blocks the "gcp" key in TEE mode using the hardcoded
     /// string "gcp" (see crates/tee-launcher/src/config.rs).
@@ -247,8 +248,6 @@ mod tests {
     /// tries each endpoint in the order the user wrote them.
     #[test]
     fn pccs_endpoints__should_preserve_order_with_mixed_tls_overrides() {
-        use launcher_interface::types::PccsTlsTrust;
-
         // Given
         #[derive(Debug, Deserialize)]
         struct Wrapper {
