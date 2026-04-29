@@ -131,7 +131,7 @@ jobs:
         with:
           save-if: ${{ github.ref != 'refs/heads/main' }}
           cache-provider: "warpbuild"
-          prefix-key: test-v0-rust-tests-${{ matrix.group }}-week-${{ env.WEEK }}
+          prefix-key: v1-rust-tests-${{ matrix.group }}-week-${{ env.WEEK }}
 
       - name: Run cargo-nextest
         run: nix develop --command cargo nextest run --cargo-profile=test-release --all-features --locked ${{ matrix.nextest-args }}
@@ -202,7 +202,7 @@ jobs:
         with:
           save-if: ${{ github.ref != 'refs/heads/main' }}
           cache-provider: "warpbuild"
-          prefix-key: test-v0-rust-week-${{ env.WEEK }}
+          prefix-key: v1-rust-week-${{ env.WEEK }}
 
       - name: Run cargo-make fast checks
         run: nix develop --command cargo make check-all-fast
@@ -240,7 +240,7 @@ jobs:
         with:
           save-if: ${{ github.ref != 'refs/heads/main' }}
           cache-provider: "warpbuild"
-          prefix-key: test-v0-rust-e2e-week-${{ env.WEEK }}
+          prefix-key: v1-rust-e2e-week-${{ env.WEEK }}
 
       - name: Build mpc-node
         run: nix develop --command cargo make build-mpc-node-network-hardship-simulation
