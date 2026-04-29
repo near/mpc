@@ -11,7 +11,7 @@ name: E2E flake repro (#2898)
 #
 #          git commit --allow-empty -m "[flake-repro]" && git push
 #
-#      Defaults: iterations=50, test_filter=all (whole e2e suite).
+#      Defaults: iterations=200, test_filter=all (whole e2e suite).
 #
 #   2. From the GitHub Actions UI: open any prior run and click
 #      "Re-run all jobs". GitHub replays the workflow at that SHA, no
@@ -38,7 +38,7 @@ on:
       iterations:
         description: "How many times to run the test loop"
         required: false
-        default: "50"
+        default: "200"
       test_filter:
         description: "Nextest substring filter. Use 'all' to run every e2e test."
         required: false
@@ -59,11 +59,12 @@ jobs:
       github.event_name != 'push' ||
       contains(github.event.head_commit.message, '[flake-repro]')
     runs-on: warp-ubuntu-2404-x64-32x
-    # 50 iterations: typical run is ~150s/iter ≈ 125 min for tests, plus
-    # ~30 min for the build. Cap of 360 min covers worst-case scheduling
-    # variance. Each iteration is wrapped in 10-min `timeout` below so a
-    # single hang fails fast instead of burning the whole budget.
-    timeout-minutes: 360
+    # 200 iterations: recent runs average ~85s/iter (post-cleanup,
+    # parallelism=8) so 200 × ~100s avg ≈ 333 min for tests, plus ~30 min
+    # for the build. Cap of 600 min covers worst-case scheduling variance.
+    # Each iteration is wrapped in 10-min `timeout` below so a single hang
+    # fails fast instead of burning the whole budget.
+    timeout-minutes: 600
     permissions:
       contents: read
 
@@ -148,7 +149,7 @@ jobs:
           NEXTEST_SUCCESS_OUTPUT: final
           # `inputs.*` is empty on push events; fall back to the same defaults
           # advertised in the workflow_dispatch input block.
-          ITERATIONS: ${{ inputs.iterations || '50' }}
+          ITERATIONS: ${{ inputs.iterations || '200' }}
           TEST_FILTER: ${{ inputs.test_filter || 'all' }}
           KEEP_ALL_HOMES: ${{ inputs.keep_all_homes && 'true' || 'false' }}
           # _run-e2e-logic in Makefile.toml exports these; we replicate them
@@ -172,6 +173,10 @@ jobs:
             shown_filter="$TEST_FILTER"
           fi
           echo "filter='${shown_filter}' iterations=${ITERATIONS} keep_all_homes=${KEEP_ALL_HOMES}" | tee -a "$summary"
+
+          # Keep one passing iter's nextest.log as a reference; drop later
+          # passing iters so the artifact stays small at high iteration counts.
+          kept_pass_sample=false
 
           for i in $(seq 1 "$ITERATIONS"); do
             echo "::group::iteration $i"
@@ -218,6 +223,13 @@ jobs:
               echo "iter $i: PASS (${elapsed}s)" | tee -a "$summary"
               if [ "$KEEP_ALL_HOMES" != "true" ]; then
                 rm -rf "$out"/home_*
+              fi
+              if [ "$kept_pass_sample" = "true" ]; then
+                # Already kept one passing iter as a reference; drop this one
+                # to keep the artifact bundle small at high iteration counts.
+                rm -rf "$out"
+              else
+                kept_pass_sample=true
               fi
             else
               fail=$((fail+1))
