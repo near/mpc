@@ -70,7 +70,7 @@ pub struct PendingRequests<RequestType: Request, ChainRespondArgsType: ChainResp
     /// See `RecentBlocksTracker`; allows us to decide what to do with each request in
     /// the queue, as well as provide us a stream of finalized blocks from which we determine
     /// which requests has been responded to.
-    recent_blocks: RecentBlocksTracker<BufferedBlockData>,
+    recent_blocks: RecentBlocksTracker,
 
     /// Provides information about connectivity and indexer heights.
     pub(super) network_api: Arc<dyn NetworkAPIForRequests>,
@@ -82,8 +82,7 @@ pub struct PendingRequests<RequestType: Request, ChainRespondArgsType: ChainResp
 /// A block in which the response to a queued request has been observed.
 #[derive(Clone, Debug)]
 struct SubmittedResponse {
-    block_hash: CryptoHash,
-    block_height: u64,
+    ref: BlockReference,
     /// Wall-clock time at which the queue observed the block containing the response.
     /// used to compute `*_REQUEST_RESPONSE_LATENCY_SECONDS`,
     /// measuring the time difference between request and response block
@@ -259,14 +258,9 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             requests,
             completed_requests,
         } = requests;
-        let add_result = match self.recent_blocks.add_block(
-            &block,
-            BufferedBlockData {
-                requests: requests.iter().map(|r| r.get_id()).collect(),
-                completed_requests,
-                timestamp_received: self.clock.now(),
-            },
-        ) {
+        let timestamp_received = self.clock.now();
+
+        let add_result = match self.recent_blocks.add_block(&block) {
             Ok(add_result) => add_result,
             Err(err) => {
                 // block already exists.
@@ -314,7 +308,20 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
         };
 
         mpc_pending_queue_blocks_indexed.inc();
-        for (final_block_height, buffered_block_data) in add_result.0 {
+        mpc_pending_queue_responses_indexed.inc_by(completed_requests.len() as u64);
+
+        let now = self.clock.now();
+        for request_id in &completed_requests {
+            if let Some(request) = self.requests.get_mut(request_id) {
+                mpc_pending_queue_matching_responses_indexed.inc();
+                request.response_blocks.push(SubmittedResponse {
+                    block_hash: block.hash,
+                    block_height: block.height,
+                    timestamp_received: now,
+                });
+            }
+        }
+        for block_ref in add_result {
             mpc_pending_queue_finalized_blocks_indexed.inc();
             mpc_pending_queue_responses_indexed
                 .inc_by(buffered_block_data.completed_requests.len() as u64);

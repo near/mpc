@@ -1,4 +1,4 @@
-use derive_more::Into;
+use derive_more::{Deref, From, Into, IntoIterator};
 use near_indexer_primitives::types::BlockHeight;
 use near_indexer_primitives::CryptoHash;
 use std::collections::HashMap;
@@ -90,6 +90,7 @@ pub enum CheckBlockResult {
 /// the block height and the block hash.
 /// It is guaranteed that the new final blocks returned from multiple calls to add_block are
 /// contiguous, thus forming the stream of finalized blocks.
+#[derive(From, Deref, IntoIterator)]
 pub(crate) struct NewFinalBlocks(pub(crate) Vec<BlockReference>);
 
 pub(crate) struct BlockReference {
@@ -280,14 +281,7 @@ impl RecentBlocksTracker {
             self.root_children.push(node.clone());
         }
 
-        let new_final_blocks = self
-            .maybe_update_final_head(block.last_final_block)
-            .into_iter()
-            .map(|n| BlockReference {
-                hash: n.hash,
-                height: n.height,
-            })
-            .collect();
+        let new_final_blocks = self.maybe_update_final_head(block.last_final_block);
         match self.canonical_head.as_ref() {
             None => {
                 self.update_canonical_head(&node);
@@ -302,12 +296,12 @@ impl RecentBlocksTracker {
             self.maximum_height_available = block.height;
         }
         self.prune_old_blocks();
-        Ok(NewFinalBlocks(new_final_blocks))
+        Ok(new_final_blocks)
     }
 
     /// Update the final head if the new final head received from a block is newer.
     /// Returns the list of newly finalized blocks in increasing height order.
-    fn maybe_update_final_head(&mut self, potential_final_head: CryptoHash) -> Vec<Arc<BlockNode>> {
+    fn maybe_update_final_head(&mut self, potential_final_head: CryptoHash) -> NewFinalBlocks {
         let final_head_node = self.hash_to_node.get(&potential_final_head);
         let mut new_final_blocks = Vec::new();
         if let Some(final_head_node) = final_head_node {
@@ -317,7 +311,10 @@ impl RecentBlocksTracker {
                     break;
                 }
                 node.is_final.store(true, Ordering::Relaxed);
-                new_final_blocks.push(node.clone());
+                new_final_blocks.push(BlockReference {
+                    hash: node.hash,
+                    height: node.height,
+                });
                 let Some(parent) = node.parent.lock().unwrap().clone() else {
                     break;
                 };
@@ -332,7 +329,7 @@ impl RecentBlocksTracker {
             }
         }
         new_final_blocks.reverse();
-        new_final_blocks
+        new_final_blocks.into()
     }
 
     /// Updates the canonical chain to the chain of the given block.
@@ -901,10 +898,7 @@ pub mod tests {
         let b1020000 = b102000.descendant(13);
         assert_eq!(t.add(&b10200), vec![]);
         assert_eq!(t.add(&b102000), vec![]);
-        assert_eq!(
-            t.add(&b1020000),
-            vec![b102.hash, b1020.hash, b10200.hash]
-        );
+        assert_eq!(t.add(&b1020000), vec![b102.hash, b1020.hash, b10200.hash]);
 
         //    Recent blocks: (Window = 9 to 13, GC limit 9)
         //    ├─[9]     DC88XsXQdWZXipUU4vRHQqYo22nwtGVnp3rHptw44mJz "b001"
