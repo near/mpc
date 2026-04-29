@@ -143,7 +143,12 @@ let
   '';
 
   commonArgs = {
-    inherit pname version src cargoVendorDir;
+    inherit
+      pname
+      version
+      src
+      cargoVendorDir
+      ;
 
     strictDeps = true;
     cargoProfile = "reproducible";
@@ -192,6 +197,26 @@ let
       # Prevents rocksdb's build.rs from probing /proc/cpuinfo and baking
       # host-specific ISA choices into its object files.
       PORTABLE = "1";
+
+      # tikv-jemalloc-sys runs jemalloc's `./configure`, which auto-detects
+      # these from the build host (CPUID, sysconf, /proc/meminfo). When the
+      # detected values diverge between builders, the static `emap_global`
+      # rtree is sized differently and .bss — plus a few inlined .text
+      # constants — drift. Pin to the standard x86_64 Linux values; values
+      # are base-2 logarithms (so LG_PAGE=12 ↔ 2^12 B = 4 KiB). Option
+      # semantics:
+      # https://github.com/jemalloc/jemalloc/blob/5.3.0/INSTALL.md#advanced-configuration
+      #
+      # 48-bit user VA (4-level paging)
+      # https://github.com/torvalds/linux/blob/v6.7/Documentation/arch/x86/x86_64/mm.rst#L7
+      JEMALLOC_SYS_WITH_LG_VADDR = "48";
+      # 4 KiB base page (PAGE_SHIFT = 12)
+      # https://github.com/torvalds/linux/blob/v6.7/arch/x86/include/asm/page_types.h#L10
+      JEMALLOC_SYS_WITH_LG_PAGE = "12";
+      # 2 MiB huge page (HPAGE_SHIFT = PMD_SHIFT = 21)
+      # https://github.com/torvalds/linux/blob/v6.7/arch/x86/include/asm/pgtable_64_types.h#L91
+      JEMALLOC_SYS_WITH_LG_HUGEPAGE = "21";
+
       # Pin the target ISA for both C/C++ (cc-crate for rocksdb, snappy,
       # zstd, ...) and Rust itself. Without this, the cc crate defaults to
       # the build host's CPU and output bytes vary by machine.
