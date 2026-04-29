@@ -1,6 +1,7 @@
 use anyhow::Context as _;
 use backon::{BackoffBuilder, ExponentialBuilder};
 use core::{future::Future, time::Duration};
+use dcap_qvl::http::{HttpClient, HttpResponse};
 use derive_more::{Constructor, From};
 use dstack_sdk::dstack_client::DstackClient;
 use launcher_interface::types::{PccsEndpointConfig, PccsTlsTrust};
@@ -10,6 +11,7 @@ use mpc_attestation::{
     report_data::ReportData,
 };
 use near_mpc_bounded_collections::NonEmptyVec;
+use std::collections::BTreeMap;
 use std::net::IpAddr;
 use std::path::PathBuf;
 use thiserror::Error;
@@ -203,17 +205,52 @@ pub fn validate_pccs_endpoints(
     Ok(())
 }
 
-/// Build the per-endpoint `reqwest::Client` that's handed to
-/// `dcap_qvl::collateral::CollateralClient::new`. With `tls = None` the
-/// caller is expected to use `with_default_http` instead — this helper
-/// only fires for the override modes.
+/// `dcap_qvl::http::HttpClient` adapter wrapping a `reqwest::Client`.
+///
+/// `dcap-qvl` does not expose `reqwest::Client` in its public API any
+/// more (see [Phala-Network/dcap-qvl#156](https://github.com/Phala-Network/dcap-qvl/pull/156)) —
+/// `CollateralClient::new` takes any `impl HttpClient`. This adapter is
+/// what we hand it on the override path so that we can use a workspace
+/// `reqwest 0.13` instead of being forced to match `dcap-qvl`'s
+/// internal reqwest version.
+#[derive(Clone)]
+struct PccsHttpClient(reqwest::Client);
+
+impl HttpClient for PccsHttpClient {
+    async fn get(&self, url: &str) -> anyhow::Result<HttpResponse> {
+        let resp = self.0.get(url).send().await?;
+        let status = resp.status().as_u16();
+        let headers = resp
+            .headers()
+            .iter()
+            .map(|(name, value)| {
+                let v = value
+                    .to_str()
+                    .with_context(|| format!("non-ASCII value for header `{name}`"))?;
+                Ok::<_, anyhow::Error>((name.as_str().to_string(), v.to_string()))
+            })
+            .collect::<anyhow::Result<BTreeMap<_, _>>>()?;
+        let body = resp.bytes().await?.to_vec();
+        Ok(HttpResponse {
+            status,
+            headers,
+            body,
+        })
+    }
+}
+
+/// Build the per-endpoint HTTP client that's handed to
+/// `dcap_qvl::collateral::CollateralClient::new`. Used for every
+/// endpoint regardless of `tls` setting — the builder applies any
+/// per-endpoint trust override on top of the default reqwest+rustls
+/// trust roots.
 ///
 /// Returns [`PccsEndpointError::ClientConstruction`] (carrying the
 /// endpoint URL) on any failure so callers can propagate with `?` and
 /// don't have to attach the URL themselves.
 fn build_pccs_http_client(
     endpoint: &PccsEndpointConfig,
-) -> Result<reqwest::Client, PccsEndpointError> {
+) -> Result<PccsHttpClient, PccsEndpointError> {
     let to_construction_err = |source: anyhow::Error| PccsEndpointError::ClientConstruction {
         url: endpoint.url.clone(),
         source,
@@ -235,6 +272,7 @@ fn build_pccs_http_client(
     builder
         .build()
         .context("failed to build PCCS HTTP client")
+        .map(PccsHttpClient)
         .map_err(to_construction_err)
 }
 
@@ -329,31 +367,20 @@ impl TeeAuthority {
 
     /// Fetches attestation collateral from a single PCCS endpoint, with
     /// the usual per-request timeout and a single retry via exponential
-    /// backoff. Honors the endpoint's per-URL TLS trust override: `tls =
-    /// None` uses dcap-qvl's `with_default_http` (default reqwest +
-    /// rustls trust roots — bundled Mozilla webpki-roots); a set `tls`
-    /// builds a custom `reqwest::Client` reflecting the override and
-    /// hands it to `CollateralClient::new`.
+    /// backoff. Honors the endpoint's per-URL TLS trust override: with
+    /// `tls = None` the client uses default reqwest+rustls trust roots
+    /// (bundled Mozilla webpki-roots); with a set `tls` the client
+    /// reflects the override (`add_root_certificate` for `CaCertPem`,
+    /// `danger_accept_invalid_certs` for `Insecure`).
     async fn fetch_collateral_from(
         endpoint: &PccsEndpointConfig,
         quote: &[u8],
     ) -> Result<Collateral, PccsEndpointError> {
-        let client = match endpoint.tls.as_ref() {
-            None => {
-                dcap_qvl::collateral::CollateralClient::with_default_http(endpoint.url.as_str())
-                    .map_err(|e| PccsEndpointError::ClientConstruction {
-                        url: endpoint.url.clone(),
-                        source: anyhow::anyhow!(e),
-                    })?
-            }
-            Some(_) => {
-                let http = build_pccs_http_client(endpoint)?;
-                dcap_qvl::collateral::CollateralClient::<dcap_qvl::configs::DefaultConfig>::new(
-                    http,
-                    endpoint.url.as_str(),
-                )
-            }
-        };
+        let http = build_pccs_http_client(endpoint)?;
+        let client = dcap_qvl::collateral::CollateralClient::<
+            dcap_qvl::configs::DefaultConfig,
+            PccsHttpClient,
+        >::new(http, endpoint.url.as_str());
         let fetch = async || {
             tokio::time::timeout(PCCS_REQUEST_TIMEOUT, client.fetch(quote))
                 .await

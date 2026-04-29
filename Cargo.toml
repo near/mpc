@@ -96,10 +96,13 @@ curve25519-dalek = { version = "4.1.3", features = [
 ], default-features = false }
 # TODO(#3008): swap this git pin for a crates.io `version = "X.Y.Z"` and
 # drop the matching `deny.toml` allow-git entry once upstream cuts a release
-# containing <https://github.com/Phala-Network/dcap-qvl/pull/153> (merged as
-# commit 9c21fa52 on 2026-04-24). Until then, we pin to upstream master at
-# that merge commit so that we can enable the `json-core` opt-in feature.
-dcap-qvl = { git = "https://github.com/Phala-Network/dcap-qvl", rev = "9c21fa520feb5585281554f962a93a384baa2d0e", default-features = false, features = [
+# containing the `HttpClient` transport trait
+# (<https://github.com/Phala-Network/dcap-qvl/pull/156>) and the
+# reqwest 0.13 bump (<https://github.com/Phala-Network/dcap-qvl/pull/157>),
+# both merged at commit 63e9d4ae on 2026-04-27. Until then, we pin to
+# upstream master at that commit so that `tee-authority` can decouple
+# its reqwest version from `dcap-qvl`'s public API (closes #3027).
+dcap-qvl = { git = "https://github.com/Phala-Network/dcap-qvl", rev = "63e9d4ae8a0de53e2d77e1929ff1fcefa88f31df", default-features = false, features = [
     "contract",
     "borsh",
     "std",
