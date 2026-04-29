@@ -4,7 +4,8 @@ use axum::{
 };
 use std::{ffi::c_void, fs::File, io::BufReader};
 
-const CONTENT_TYPE_SVG: &str = "image/svg+xml";
+use crate::profiler::web_server::CONTENT_TYPE_SVG;
+
 const CONTENT_TYPE_PPROF: &str = "application/octet-stream";
 
 // Content-Disposition header for the pprof endpoint; pins the saved filename
@@ -25,8 +26,7 @@ const PPROF_SAMPLE_TYPE: (&str, &str) = ("inuse_space", "bytes");
 const PPROF_PERIOD_TYPE: (&str, &str) = ("space", "bytes");
 
 const MSG_PROFILING_UNAVAILABLE: &str =
-    "jemalloc heap profiling is not available; ensure the binary was built with the `profiling` feature \
-     and started with `MALLOC_CONF=prof:true,prof_active:true`";
+    "jemalloc heap profiling is not available; jemalloc_pprof::PROF_CTL evaluated to None";
 
 // Returned when profiling is compiled in but currently paused
 // (`prof_active:false` at runtime).

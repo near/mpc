@@ -11,7 +11,7 @@ use std::{net::SocketAddr, time::Duration};
 use tokio::{io, net::TcpListener};
 use tower::limit::GlobalConcurrencyLimitLayer;
 
-const CONTENT_TYPE_SVG: &str = "image/svg+xml";
+pub(crate) const CONTENT_TYPE_SVG: &str = "image/svg+xml";
 const PPROF_FLAMEGRAPH_PATH: &str = "/profiler/pprof/flamegraph";
 #[cfg(target_os = "linux")]
 const JEMALLOC_FLAMEGRAPH_PATH: &str = "/profiler/jemalloc/flamegraph";
