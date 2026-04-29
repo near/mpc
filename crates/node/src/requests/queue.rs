@@ -79,49 +79,16 @@ pub struct PendingRequests<RequestType: Request, ChainRespondArgsType: ChainResp
     pub(super) recently_completed_requests: CompletedRequests<RequestType, ChainRespondArgsType>,
 }
 
-/// Block data to be buffered until the block is final.
-#[derive(Clone)]
-struct BufferedBlockData {
-    requests: Vec<RequestId>,
-    completed_requests: Vec<RequestId>,
+/// A block in which the response to a queued request has been observed.
+#[derive(Clone, Debug)]
+struct SubmittedResponse {
+    block_hash: CryptoHash,
+    block_height: u64,
+    /// Wall-clock time at which the queue observed the block containing the response.
+    /// used to compute `*_REQUEST_RESPONSE_LATENCY_SECONDS`,
+    /// measuring the time difference between request and response block
+    /// (response-block seen) − (request-block seen).
     timestamp_received: near_time::Instant,
-}
-
-fn ellipsified_shortened_hash_list(hashes: &[CryptoHash]) -> String {
-    let mut result = String::new();
-    for (i, hash) in hashes.iter().take(3).enumerate() {
-        let hash = format!("{:?}", hash);
-        result.push_str(&hash[..6]);
-        if i < hashes.len() - 1 {
-            result.push_str(", ");
-        }
-    }
-    if hashes.len() > 3 {
-        result.push_str("...");
-    }
-    result
-}
-
-impl Debug for BufferedBlockData {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if !self.requests.is_empty() {
-            write!(
-                f,
-                "{} reqs: {}",
-                self.requests.len(),
-                ellipsified_shortened_hash_list(&self.requests)
-            )?;
-        }
-        if !self.completed_requests.is_empty() {
-            write!(
-                f,
-                "{} completed: {}",
-                self.completed_requests.len(),
-                ellipsified_shortened_hash_list(&self.completed_requests)
-            )?;
-        }
-        Ok(())
-    }
 }
 
 /// The state of a single request in the queue.
@@ -154,6 +121,12 @@ pub(super) struct QueuedRequest<RequestType: Request, ChainRespondArgsType: Chai
 
     /// The time that the request was indexed.
     pub time_indexed: near_time::Instant,
+
+    /// Blocks in which a response to this request has been observed.
+    /// Due to forks and retries, the same response may be observed in multiple blocks.
+    /// Any one reaching finality completes the request. Entries are pruned
+    /// on each tick in `get_requests_to_attempt` against the current tracker state.
+    response_blocks: Vec<SubmittedResponse>,
 }
 
 /// Struct given to the response generation code.
@@ -214,6 +187,7 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
             next_check_due: clock.now(),
             active_attempt: Weak::new(),
             time_indexed,
+            response_blocks: Vec::new(),
         }
     }
 
@@ -340,7 +314,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
         };
 
         mpc_pending_queue_blocks_indexed.inc();
-        for (final_block_height, buffered_block_data) in add_result.new_final_blocks {
+        for (final_block_height, buffered_block_data) in add_result.0 {
             mpc_pending_queue_finalized_blocks_indexed.inc();
             mpc_pending_queue_responses_indexed
                 .inc_by(buffered_block_data.completed_requests.len() as u64);

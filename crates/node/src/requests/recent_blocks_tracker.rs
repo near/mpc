@@ -46,7 +46,7 @@ use std::sync::{Arc, Mutex};
 ///
 /// Note: The use of Arc is a little unfortunate. Logically we only need Rc, but this code needs
 /// to work in futures, and Rc is not Send. So we use Arc instead.
-pub struct RecentBlocksTracker<T: Clone + 'static> {
+pub struct RecentBlocksTracker {
     window_size: u64,
     /// By "root", we mean the blocks whose parents we don't know or are older than the window.
     /// The children of the root are the earliest blocks we are keeping who do not have any order
@@ -64,10 +64,6 @@ pub struct RecentBlocksTracker<T: Clone + 'static> {
     maximum_height_available: BlockHeight,
     /// Maps block hashes to their nodes in the tree.
     hash_to_node: HashMap<CryptoHash, Arc<BlockNode>>,
-    /// Maps block hashes to their content; this is to provide the stream of finalized blocks.
-    /// Technically, instead of a hashmap we could put this in the node, but that would clutter
-    /// the code by requiring the T type parameter everywhere.
-    node_to_content: HashMap<CryptoHash, T>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -90,12 +86,33 @@ pub enum CheckBlockResult {
     Unknown,
 }
 
-pub struct AddBlockResult<T> {
-    /// The list of newly finalized blocks, in ascending height order. Each entry is a tuple of
-    /// the block height and the data passed to us when adding the block.
-    /// It is guaranteed that the new final blocks returned from multiple calls to add_block are
-    /// contiguous, thus forming the stream of finalized blocks.
-    pub new_final_blocks: Vec<(u64, T)>,
+/// The list of newly finalized blocks, in ascending height order. Each entry is a tuple of
+/// the block height and the block hash.
+/// It is guaranteed that the new final blocks returned from multiple calls to add_block are
+/// contiguous, thus forming the stream of finalized blocks.
+pub(crate) struct NewFinalBlocks(pub(crate) Vec<BlockReference>);
+
+pub(crate) struct BlockReference {
+    pub(crate) hash: CryptoHash,
+    pub(crate) height: u64,
+}
+
+impl From<&BlockViewLite> for BlockReference {
+    fn from(value: &BlockViewLite) -> Self {
+        BlockReference {
+            hash: value.hash,
+            height: value.height,
+        }
+    }
+}
+
+impl From<BlockViewLite> for BlockReference {
+    fn from(value: BlockViewLite) -> Self {
+        BlockReference {
+            hash: value.hash,
+            height: value.height,
+        }
+    }
 }
 
 /// Represents a block in the recent blockchain.
@@ -149,7 +166,6 @@ impl BlockNode {
         indents: &mut Vec<u8>,
         final_head: Option<CryptoHash>,
         canonical_head: Option<CryptoHash>,
-        content_printer: &impl Fn(&CryptoHash, &mut std::fmt::Formatter<'_>) -> std::fmt::Result,
     ) -> std::fmt::Result {
         if Some(self.hash) == final_head {
             write!(f, "FH ")?;
@@ -186,16 +202,15 @@ impl BlockNode {
             },
             format!("{:?}", self.hash),
         )?;
-        content_printer(&self.hash, f)?;
         writeln!(f)?;
         let children = self.children.lock().unwrap();
         for (i, child) in children.iter().enumerate() {
             if children.len() == 1 {
-                child.debug_print(f, indents, final_head, canonical_head, content_printer)?;
+                child.debug_print(f, indents, final_head, canonical_head)?;
             } else {
                 let indent = if i + 1 == children.len() { 2 } else { 3 };
                 indents.push(indent);
-                child.debug_print(f, indents, final_head, canonical_head, content_printer)?;
+                child.debug_print(f, indents, final_head, canonical_head)?;
                 indents.pop();
             }
         }
@@ -229,7 +244,7 @@ pub struct BlockViewLite {
     pub timestamp_nanosec: u64,
 }
 
-impl<T: Clone> RecentBlocksTracker<T> {
+impl RecentBlocksTracker {
     pub fn new(window_size: u64) -> Self {
         Self {
             window_size,
@@ -238,18 +253,13 @@ impl<T: Clone> RecentBlocksTracker<T> {
             final_head: None,
             maximum_height_available: 0,
             hash_to_node: HashMap::new(),
-            node_to_content: HashMap::new(),
         }
     }
 
     /// Adds a block to the tracker. This is expected to be called for EVERY block given by the
     /// indexer (whether or not it is interesting). The content is whatever content that we want
     /// to buffer for the stream of final blocks.
-    pub fn add_block(
-        &mut self,
-        block: &BlockViewLite,
-        content: T,
-    ) -> anyhow::Result<AddBlockResult<T>> {
+    pub fn add_block(&mut self, block: &BlockViewLite) -> anyhow::Result<AddBlockResult> {
         if self.hash_to_node.contains_key(&block.hash) {
             anyhow::bail!("Block already exists in the tracker");
         }
@@ -263,7 +273,6 @@ impl<T: Clone> RecentBlocksTracker<T> {
             children: Mutex::new(Vec::new()),
         });
         self.hash_to_node.insert(block.hash, node.clone());
-        self.node_to_content.insert(block.hash, content);
         if let Some(parent) = parent {
             parent.children.lock().unwrap().push(node.clone());
         } else {
@@ -271,13 +280,6 @@ impl<T: Clone> RecentBlocksTracker<T> {
         }
 
         let new_final_blocks = self.maybe_update_final_head(block.last_final_block);
-        // We must do this lookup before calling prune_old_blocks or else we may no longer have
-        // some of the blocks. Note: filter_map should not really filter anything out, but we're
-        // doing this defensively to not crash just in case we have a bug.
-        let new_final_blocks = new_final_blocks
-            .into_iter()
-            .filter_map(|node| Some((node.height, self.node_to_content.get(&node.hash)?.clone())))
-            .collect();
         match self.canonical_head.as_ref() {
             None => {
                 self.update_canonical_head(&node);
@@ -404,7 +406,6 @@ impl<T: Clone> RecentBlocksTracker<T> {
         self.root_children = new_root_children;
         for old_node in old_nodes {
             self.hash_to_node.remove(&old_node.hash);
-            self.node_to_content.remove(&old_node.hash);
         }
     }
 
