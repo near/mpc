@@ -24,4 +24,7 @@ runs:
     - name: Pin dev-shell closure as GC root
       if: inputs.save == 'true'
       shell: bash
+      # `--profile` registers the dev-shell closure as an indirect GC root,
+      # so the pre-upload garbage collection keeps it (and its dependencies)
+      # while dropping everything else.
       run: nix develop --profile "$RUNNER_TEMP/ci-devshell" --command true
