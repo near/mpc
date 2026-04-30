@@ -8,29 +8,27 @@ repository = "https://github.com/near/mpc"
 # fields to configure build with WASM reproducibility, according to specs
 # in https://github.com/near/NEPs/blob/master/neps/nep-0330.md
 [package.metadata.near.reproducible_build]
-# docker image, descriptor of build environment
-image = "sourcescan/cargo-near:0.17.0-rust-1.86.0"
-# tag after colon above serves only descriptive purpose; image is identified by digest
-image_digest = "sha256:1784ca6310f3496f0048356ce420921c8f5fdf71ee8124d43a2e1ceb1f70db8a"
-# list of environment variables names, whose values, if set, will be used as external build parameters
-# in a reproducible manner
-# supported by `sourcescan/cargo-near:0.10.1-rust-1.82.0` image or later images
+# Custom image extending sourcescan/cargo-near:0.17.0-rust-1.86.0 with the
+# `binaryen` apt package so a standalone `wasm-opt` is available on PATH.
+# cargo-near's bundled wasm-opt is hard-coded to `-O`; we want `-Os` for size
+# (~64 KB savings on this contract). See docs/contract-build-size-optimization.md.
+# Built and published by .github/workflows/cargo-near-image.yml.
+image = "nearone/cargo-near-mpc:latest"
+# TODO: replace with the actual digest after the cargo-near-image workflow
+# publishes the first build. cargo-near verifies the image matches this digest
+# at reproducible-wasm time, so this PR is a draft until the digest is filled.
+image_digest = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
 passed_env = []
-# build command inside of docker container
-# if docker image from default gallery is used https://hub.docker.com/r/sourcescan/cargo-near/tags,
-# the command may be any combination of flags of `cargo-near`,
-# supported by respective version of binary inside the container besides `--no-locked` flag
+# We replace cargo-near's bundled wasm-opt step (`-O`) with our own `wasm-opt
+# -Os --strip-*` invocation. The pipeline:
+#   1. cargo-near builds the wasm without optimization (--no-wasmopt)
+#   2. wasm-opt -Os shrinks code-size with no runtime cost vs `-O`
+#   3. --strip-debug --strip-producers --strip-target-features --vacuum
+#      drops sections that contribute size but nothing functional
 container_build_command = [
-    "cargo",
-    "near",
-    "build",
-    # this is counter intuitive, but it correctly follows the docs,
-    # the non-reproducible build inside a reproducible environment becomes reproducible
-    "non-reproducible-wasm",
-    "--locked",
-    "--profile=release-contract",
-    "--features",
-    "abi",
+    "bash",
+    "-c",
+    "cargo near build non-reproducible-wasm --locked --profile=release-contract --features abi --no-wasmopt && wasm-opt -Os --strip-debug --strip-producers --strip-target-features --vacuum target/near/mpc_contract/mpc_contract.wasm -o target/near/mpc_contract/mpc_contract.wasm",
 ]
 
 [lib]
