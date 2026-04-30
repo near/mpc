@@ -23,16 +23,10 @@ that is used by the MPC binary defined in the workspace cargo file, `/Cargo.toml
 neard --version
 ```
 
-You should install `neard` from the git submodule:
+You should install `neard` from the same nearcore tag this workspace pins (see the `tag = "..."` value on the `near-*` git dependencies in [`Cargo.toml`](../../Cargo.toml)):
 
 ```shell
-git submodule foreach --recursive git reset --hard
-git submodule foreach --recursive git clean -fdx
-git submodule update --init --recursive --force
-```
-
-```shell
-cargo install --path libs/nearcore/neard --locked
+cargo install --git https://github.com/near/nearcore --tag <NEARCORE_TAG> neard --locked
 ```
 
 ```shell

@@ -72,7 +72,7 @@ There are additional ports defined in frodo/sam.env, but you may change those to
 Those are the recommended configuration settings:
 you will need the following files:
 
-* [docker-compose.yml](../../deployment/cvm-deployment/launcher_docker_compose.yaml)
+* [launcher_docker_compose.yaml](../../deployment/cvm-deployment/launcher_docker_compose.yaml)
 * [frodo.toml](../../deployment/localnet/tee/frodo.toml) / [sam.toml](../../deployment/localnet/tee/sam.toml) 
 * [frodo.env](../../deployment/localnet/tee/frodo.env)/ [sam.env](../../deployment/localnet/tee/sam.env)    - if you use the deployment script
 
@@ -84,7 +84,7 @@ mkdir -p "/tmp/$USER"
 ```
 
 
-Concfiguratoin fields in `docker-compose.yml`
+Configuration fields in `launcher_docker_compose.yaml`
 
 Update to use the correct launcher image: (note - this must match the launcher template defined in the MPC contract)
 
@@ -134,51 +134,56 @@ You can start the nodes **manually** as described in the Operator Guide, or you 
 
 Once all paths and configuration files (`*.env` and `*.toml`) are prepared, you can launch each MPC node (Frodo and Sam) using the `deploy-launcher.sh` helper script.
 
-#### 1. Move into the `deployment/cvm-deployment` Directory
+All commands below are run from the **repo root** unless noted otherwise.
+
+#### 1. Copy the TOML config files into place
+
+The `.env` files reference `/tmp/$USER/frodo.toml` and `/tmp/$USER/sam.toml` via `USER_CONFIG_FILE_PATH`, so the checked-in templates need to land there before deployment:
+
+```bash
+cp deployment/localnet/tee/frodo.toml "/tmp/$USER/frodo.toml"
+cp deployment/localnet/tee/sam.toml   "/tmp/$USER/sam.toml"
+```
+
+The TOML files already contain a working `boot_nodes` entry pointing at `10.0.2.2:24566` — the QEMU slirp gateway inside the CVM, which routes to the host's loopback and works regardless of whether `neard` binds to `0.0.0.0` or `127.0.0.1` on the host (see #2949). `MACHINE_IP` is still needed for externally-reachable endpoints (public-data, telemetry) and should remain set.
+
+#### 2. Move into the `deployment/cvm-deployment` Directory
 
 ```bash
 cd deployment/cvm-deployment
 ```
 
-#### 2. Ensure the Script Is Executable
+#### 3. Ensure the Script Is Executable
 
 ```bash
 chmod +x deploy-launcher.sh
 ```
-#### 3. Set your env variables 
+
+#### 4. Set your env variables
 
 Set your `BASE_PATH` to the DStack directory that contains the `vmm` folder.
 
-Example:  
+Example:
 `$BASE_PATH/vmm/src/vmm-cli.py` should exist.
 
 ```bash
 export BASE_PATH="dstask base path"
 ```
 
-#### 4. Replace ${MACHINE_IP} inside the config files
-```bash
-envsubst '${MACHINE_IP}' < deployment/localnet/tee/frodo.toml > "/tmp/$USER/frodo.toml"
-```
-
-```bash
-envsubst '${MACHINE_IP}' < deployment/localnet/tee/sam.toml > "/tmp/$USER/sam.toml"
-```
-
 #### 5. Start the Frodo MPC Node
 
 ```bash
 ./deploy-launcher.sh \
-  --env-file ../deployment/localnet/tee/frodo.env \
+  --env-file ../localnet/tee/frodo.env \
   --base-path $BASE_PATH \
   --python-exec python
 ```
 
-#### 5. Start the Sam MPC Node
+#### 6. Start the Sam MPC Node
 
 ```bash
 ./deploy-launcher.sh \
-  --env-file ../deployment/localnet/tee/sam.env \
+  --env-file ../localnet/tee/sam.env \
   --base-path $BASE_PATH \
   --python-exec python
 ```
@@ -223,10 +228,10 @@ near account add-key sam.test.near grant-function-call-access --allowance unlimi
 
 ### Initialize the MPC Contract
 
-Move to MPC root folder:
+Move back to the MPC repo root (we are currently in `deployment/cvm-deployment/`):
 
 ```bash
-cd ..
+cd ../..
 ```
 
 Initialize the MPC contract with the two participants (using the `P2P_KEY` values retrieved earlier).
@@ -254,7 +259,7 @@ near contract call-function as-read-only mpc-contract.test.near state json-args 
 ## Voting for a New MPC Docker Image Hash
 
 Before voting, the contract’s list of valid MPC image hashes is empty.  
-Therefor, node attestation submissions will fail.
+Therefore, node attestation submissions will fail.
 
 **Sample Error Log (Expected Before Voting):**
 
@@ -265,7 +270,7 @@ mpc_node::indexer::tx_sender: sending tx 381yxJCV5ByYo27oD8fX3BsGwnFpfGSzNCgDpfQ
 ERROR mpc_node::tee::remote_attestation: failed to submit attestation cause=attestation submission was not executed
 ```
 
-You can view the trasaction details by calling:
+You can view the transaction details by calling:
 
 ```bash
 near transaction view-status <transaction_Id> network-config mpc-localnet
@@ -399,7 +404,7 @@ In the MPC node's logs you should see something like this:
 
 ```bash
 near contract call-function as-transaction mpc-contract.test.near sign \
-  file-args docs/localnet/args/sign.json \
+  file-args docs/localnet/args/sign_ecdsa.json \
   prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' \
   sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
 ```
@@ -428,7 +433,7 @@ near contract call-function as-transaction mpc-contract.test.near sign \
 
 ## Troubleshooting
 
-You can view trascation using:
+You can view a transaction using:
 ```bash
 near transaction view-status <transaction_Id>  network-config mpc-localnet
 ```

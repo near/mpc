@@ -17,7 +17,7 @@ pub enum StorageKey {
     _DeprecatedPendingCKDRequests,
     BackupServicesInfo,
     NodeMigrations,
-    ForeignChainPolicyVotes,
+    _ForeignChainPolicyVotes,
     PendingVerifyForeignTxRequests,
     PendingCKDRequestsV2,
     _SupportedForeignChainsVotes,

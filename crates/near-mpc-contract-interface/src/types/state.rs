@@ -103,8 +103,6 @@ pub enum DomainPurpose {
 )]
 pub struct DomainConfig {
     pub id: DomainId,
-    // Accepts "scheme" for compat with pre-3.9.0 contracts. Remove after 3.9.0 deployment.
-    #[serde(alias = "scheme")]
     pub curve: Curve,
     pub purpose: DomainPurpose,
 }

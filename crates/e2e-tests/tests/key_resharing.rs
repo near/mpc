@@ -8,8 +8,6 @@ use near_mpc_contract_interface::types::{
 };
 use rand::SeedableRng;
 
-/// Port of pytest `test_key_event::test_single_domain`.
-///
 /// Tests single-domain key generation and multiple rounds of resharing
 /// with participant set changes, verifying liveness after each round.
 #[tokio::test]
@@ -105,8 +103,6 @@ async fn test_key_resharing() {
         .expect("ckd request failed");
 }
 
-/// Port of pytest `test_key_event::test_multi_domain`.
-///
 /// Verifies that `vote_cancel_keygen` rolls back a stalled keygen: the
 /// cancelled domain is absent from both the keyset and the domain registry,
 /// and `next_domain_id` advances past the skipped id.
