@@ -479,7 +479,9 @@ fn check_age_within_window(
     let max_age_seconds = MAX_COLLATERAL_AGE.whole_seconds();
 
     if elapsed_seconds < -grace_seconds {
-        let skew_seconds = -elapsed_seconds;
+        let skew_seconds = elapsed_seconds
+            .checked_neg()
+            .ok_or(FreshnessError::TimestampOutOfRange { field, issued_at })?;
         return Err(FreshnessError::FutureTimestamp {
             field,
             issued_at,
@@ -530,14 +532,19 @@ where
                 return Ok(collateral);
             }
             Err(err) => {
-                warn!(
-                    ?err,
-                    %url,
-                    attempt,
-                    total_endpoints,
-                    "failed to fetch collateral from PCCS; {}",
-                    if is_last_endpoint { "no more endpoints remain" } else { "trying next endpoint" }
-                );
+                // Freshness rejections already emit a structured WARN with
+                // explicit fields via `log_freshness_failure`; a generic
+                // `?err` warn here would just duplicate it.
+                if !matches!(err, PccsEndpointError::FreshnessCheck { .. }) {
+                    warn!(
+                        ?err,
+                        %url,
+                        attempt,
+                        total_endpoints,
+                        "failed to fetch collateral from PCCS; {}",
+                        if is_last_endpoint { "no more endpoints remain" } else { "trying next endpoint" }
+                    );
+                }
                 failures.push(err);
             }
         }
