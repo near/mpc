@@ -99,6 +99,7 @@ impl FakeMpcContractState {
         &self.supported_foreign_chains_by_node
     }
 
+    #[expect(deprecated)]
     pub fn register_foreign_chain_config(
         &mut self,
         account_id: AccountId,
@@ -148,9 +149,10 @@ impl FakeMpcContractState {
 
         let mut chain_to_supporters: BTreeMap<dtos::ForeignChain, BTreeSet<dtos::AccountId>> =
             BTreeMap::new();
-        for (voter_id, chains) in &self
+        for voter_id in self
             .supported_foreign_chains_by_node
             .foreign_chain_support_by_node
+            .keys()
         {
             for chain in local_foreign_chain_support.iter().copied() {
                 chain_to_supporters

@@ -5,7 +5,7 @@ use mpc_node_config::foreign_chains::RpcProviderName;
 use mpc_node_config::{
     AuthConfig, ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig,
 };
-use near_mpc_contract_interface::types::{ForeignChain, RpcProvider};
+use near_mpc_contract_interface::types::ForeignChain;
 use near_time::Clock;
 use std::collections::BTreeSet;
 use std::num::NonZeroU64;
