@@ -1,7 +1,10 @@
 name: Nix build mpc-node
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # Hardcoded group name (not `${{ github.workflow }}`) because when invoked via
+  # `workflow_call`, `github.workflow` resolves to the *caller's* workflow name,
+  # which causes a concurrency-group collision with the caller and a deadlock.
+  group: nix-build-mpc-node-${{ github.ref }}
   cancel-in-progress: true
 
 on:
@@ -31,9 +34,7 @@ jobs:
           backend: warpbuild
           primary-key: nix-${{ runner.os }}-mpc-node-${{ hashFiles('flake.nix', 'flake.lock', 'nix/**', 'rust-toolchain.toml', 'Cargo.lock') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-mpc-node-
-          # Temporarily save on every branch so two consecutive PR runs can verify
-          # cache-hit behavior. Restore before merging.
-          # save: ${{ github.ref == 'refs/heads/main' }}
+          save: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Build mpc-node
         run: nix build --print-build-logs .#mpc-node
