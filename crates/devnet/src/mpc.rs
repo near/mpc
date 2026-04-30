@@ -35,7 +35,7 @@ use near_jsonrpc_client::methods;
 use near_jsonrpc_client::methods::query::RpcQueryError;
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_mpc_contract_interface::method_names;
-use near_mpc_contract_interface::types::DomainConfig;
+use near_mpc_contract_interface::types::{DomainConfig, Protocol};
 use near_primitives::types::{BlockReference, Finality, FunctionArgs};
 use near_primitives::views::QueryRequest;
 use near_sdk::borsh;
@@ -616,6 +616,7 @@ impl MpcVoteAddDomainsCmd {
             proposal.push(DomainConfig {
                 id: DomainId(next_domain),
                 curve: *scheme,
+                protocol: Protocol::from(*scheme),
                 purpose: infer_purpose_from_curve(*scheme),
             });
             next_domain += 1;

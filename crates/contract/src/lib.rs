@@ -2303,7 +2303,7 @@ mod tests {
     use crate::tee::tee_state::NodeId;
     use assert_matches::assert_matches;
     use dtos::{Attestation, Ed25519PublicKey, ForeignTxSignPayload, MockAttestation};
-    use dtos::{Curve, DomainConfig, DomainId, Payload, Tweak};
+    use dtos::{Curve, DomainConfig, DomainId, Payload, Protocol, Tweak};
     use elliptic_curve::Field as _;
     use elliptic_curve::Group;
     use k256::{self, ecdsa::SigningKey, elliptic_curve, Secp256k1};
@@ -2465,6 +2465,7 @@ mod tests {
         let domains = vec![DomainConfig {
             id: domain_id,
             curve,
+            protocol: Protocol::from(curve),
             purpose,
         }];
         let epoch_id = EpochId::new(0);
@@ -4538,6 +4539,7 @@ mod tests {
         let domains = vec![DomainConfig {
             id: domain_id,
             curve: Curve::Secp256k1,
+            protocol: Protocol::from(Curve::Secp256k1),
             purpose: DomainPurpose::Sign,
         }];
         let (pk, _) = make_public_key_for_domain(Curve::Secp256k1, &mut OsRng);

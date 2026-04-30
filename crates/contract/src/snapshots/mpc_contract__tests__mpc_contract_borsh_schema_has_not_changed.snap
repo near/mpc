@@ -328,6 +328,10 @@ BorshSchemaContainer {
                         "Curve",
                     ),
                     (
+                        "protocol",
+                        "Protocol",
+                    ),
+                    (
                         "purpose",
                         "DomainPurpose",
                     ),
@@ -863,6 +867,31 @@ BorshSchemaContainer {
                 ],
             ),
         },
+        "Protocol": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "CaitSith",
+                    "Protocol__CaitSith",
+                ),
+                (
+                    1,
+                    "Frost",
+                    "Protocol__Frost",
+                ),
+                (
+                    2,
+                    "ConfidentialKeyDerivation",
+                    "Protocol__ConfidentialKeyDerivation",
+                ),
+                (
+                    3,
+                    "DamgardEtAl",
+                    "Protocol__DamgardEtAl",
+                ),
+            ],
+        },
         "ProtocolContractState": Enum {
             tag_width: 1,
             variants: [
@@ -911,6 +940,18 @@ BorshSchemaContainer {
                     "RunningContractState",
                 ],
             ),
+        },
+        "Protocol__CaitSith": Struct {
+            fields: Empty,
+        },
+        "Protocol__ConfidentialKeyDerivation": Struct {
+            fields: Empty,
+        },
+        "Protocol__DamgardEtAl": Struct {
+            fields: Empty,
+        },
+        "Protocol__Frost": Struct {
+            fields: Empty,
         },
         "PublicKey": Struct {
             fields: NamedFields(
