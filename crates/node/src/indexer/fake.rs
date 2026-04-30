@@ -126,9 +126,16 @@ impl FakeMpcContractState {
         }
 
         let voter = account_id.clone();
+
+        let local_foreign_chain_support: dtos::SupportedForeignChains = local_foreign_chain_config
+            .keys()
+            .copied()
+            .collect::<BTreeSet<_>>()
+            .into();
+
         self.supported_foreign_chains_by_node
             .foreign_chain_configuration_by_node
-            .insert(voter, local_foreign_chain_config);
+            .insert(voter, local_foreign_chain_support.clone());
 
         // Derive supported_foreign_chains as intersection of all active participants' votes
         let active_participant_account_ids: BTreeSet<dtos::AccountId> = state
@@ -145,9 +152,9 @@ impl FakeMpcContractState {
             .supported_foreign_chains_by_node
             .foreign_chain_configuration_by_node
         {
-            for chain in chains.keys() {
+            for chain in local_foreign_chain_support.iter().copied() {
                 chain_to_supporters
-                    .entry(*chain)
+                    .entry(chain)
                     .or_default()
                     .insert(voter_id.clone());
             }
