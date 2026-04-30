@@ -130,6 +130,10 @@ required_env_vars=(
   "INTERNAL_AGENT_ADDR"
   "SEALING_KEY_TYPE"
   "DISK"
+  "USER_CONFIG_FILE_PATH"
+  "DOCKER_COMPOSE_FILE_PATH"
+  "APP_NAME"
+  "OS_IMAGE"
 )
 
 echo $VMM_RPC
@@ -138,6 +142,18 @@ for var in "${required_env_vars[@]}"; do
   if [ -z "${!var}" ]; then
     echo "Error: Required environment variable $var is not set."
     echo "Please edit the .env file and set a value for $var, then run this script again."
+    exit 1
+  fi
+done
+
+required_files=(
+  "USER_CONFIG_FILE_PATH"
+  "DOCKER_COMPOSE_FILE_PATH"
+)
+
+for var in "${required_files[@]}"; do
+  if [ ! -f "${!var}" ]; then
+    echo "Error: $var points to a non-existent file: ${!var}"
     exit 1
   fi
 done
