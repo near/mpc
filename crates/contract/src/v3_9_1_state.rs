@@ -153,7 +153,7 @@ pub struct MpcContract {
     proposed_updates: ProposedUpdates,
     foreign_chain_policy: ForeignChainPolicy,
     foreign_chain_policy_votes: ForeignChainPolicyVotes,
-    node_foreign_chain_configurations: SupportedForeignChainsByNode,
+    node_foreign_chain_configurations: NodeForeignChainConfigurations,
     config: Config,
     tee_state: OldTeeState,
     accept_requests: bool,
@@ -282,13 +282,31 @@ impl From<MpcContract> for crate::MpcContract {
 
         value.foreign_chain_policy_votes.proposal_by_account.clear();
 
+        let mut node_foreign_chain_support = SupportedForeignChainsByNode::default();
+
+        value
+            .node_foreign_chain_configurations
+            .foreign_chain_configuration_by_node
+            .drain()
+            .for_each(|(account_id, foreign_chain_config)| {
+                let supported_chains = foreign_chain_config
+                    .keys()
+                    .copied()
+                    .collect::<BTreeSet<_>>()
+                    .into();
+
+                node_foreign_chain_support
+                    .foreign_chain_support_by_node
+                    .insert(account_id, supported_chains);
+            });
+
         Self {
             protocol_state: value.protocol_state.into(),
             pending_signature_requests: value.pending_signature_requests,
             pending_ckd_requests: value.pending_ckd_requests,
             pending_verify_foreign_tx_requests: value.pending_verify_foreign_tx_requests,
             proposed_updates: value.proposed_updates,
-            node_foreign_chain_support: value.node_foreign_chain_configurations.into(),
+            node_foreign_chain_support,
             config: value.config,
             tee_state: value.tee_state.into(),
             accept_requests: value.accept_requests,
