@@ -11197,6 +11197,7 @@ name = "tee-authority"
 version = "3.9.0"
 dependencies = [
  "anyhow",
+ "assert_matches",
  "backon",
  "dcap-qvl",
  "derive_more 2.1.1",

@@ -1,4 +1,3 @@
-use anyhow::Context as _;
 use backon::{BackoffBuilder, ExponentialBuilder};
 use core::{future::Future, time::Duration};
 use derive_more::{Constructor, From};
@@ -39,9 +38,10 @@ pub enum AttestationError {
     InvalidEndpoint,
 }
 
-/// One PCCS endpoint's failure. Carries the URL it was tried against and
-/// the underlying cause. The cause stays as `anyhow::Error` because the
-/// upstream `dcap_qvl::CollateralClient` itself returns `anyhow::Result`.
+/// One PCCS endpoint's failure. The URL is attached at this layer
+/// because the inner per-step errors (collateral fetch, freshness
+/// check) don't all need it — we add it once here for operator-facing
+/// log/error messages.
 #[derive(Debug, Error)]
 pub enum PccsEndpointError {
     #[error("invalid PCCS client construction for {url}: {source:#}")]
@@ -61,11 +61,69 @@ pub enum PccsEndpointError {
         source: anyhow::Error,
     },
 
-    #[error("collateral failed freshness check at {url}: {source:#}")]
+    #[error("collateral failed freshness check at {url}: {source}")]
     FreshnessCheck {
         url: Url,
         #[source]
-        source: anyhow::Error,
+        source: FreshnessError,
+    },
+}
+
+/// Why a freshness check rejected a collateral bundle. Pure-logic
+/// failure modes — no URL or transport state, since the check itself
+/// only operates on the parsed collateral fields. The caller wraps
+/// this into [`PccsEndpointError::FreshnessCheck`] to attach the URL
+/// for operator-facing reporting.
+#[derive(Debug, Error)]
+pub enum FreshnessError {
+    #[error("failed to parse JSON `issueDate` from PCCS `{field}` field: {source}")]
+    JsonParseFailed {
+        field: &'static str,
+        #[source]
+        source: serde_json::Error,
+    },
+
+    #[error("failed to parse `{field}.issueDate` (`{raw}`) as RFC3339: {source}")]
+    IssueDateRfc3339Failed {
+        field: &'static str,
+        raw: String,
+        #[source]
+        source: time::error::Parse,
+    },
+
+    #[error("failed to parse PCCS `pck_crl` as DER X.509 CRL: {message}")]
+    CrlParseFailed { message: String },
+
+    #[error(
+        "PCCS collateral has future issuance time: \
+         {field} issued {issued_at} ({skew_seconds}s in the future, grace {grace_seconds}s)"
+    )]
+    FutureIssueDate {
+        field: &'static str,
+        issued_at: time::OffsetDateTime,
+        skew_seconds: i64,
+        grace_seconds: i64,
+    },
+
+    #[error(
+        "PCCS collateral too stale: \
+         {field} issued {issued_at} ({elapsed_seconds}s ago, max {max_age_seconds}s)"
+    )]
+    TooStale {
+        field: &'static str,
+        issued_at: time::OffsetDateTime,
+        elapsed_seconds: i64,
+        max_age_seconds: i64,
+    },
+
+    /// Defensive: would only fire if `issued_at` and `now` are both at
+    /// the extreme ends of `OffsetDateTime`'s range. Cannot occur for
+    /// any realistic Intel collateral or system clock, but the typed
+    /// branch keeps the arithmetic total — no panicking subtraction.
+    #[error("PCCS collateral timestamp arithmetic overflowed: {field} issued {issued_at}")]
+    TimestampOutOfRange {
+        field: &'static str,
+        issued_at: time::OffsetDateTime,
     },
 }
 
@@ -272,15 +330,12 @@ impl TeeAuthority {
         };
 
         let collateral = get_with_backoff(fetch, "fetch collateral from PCCS", Some(1)).await?;
-        check_collateral_freshness(
-            &collateral,
-            pccs_url.as_str(),
-            time::OffsetDateTime::now_utc(),
-        )
-        .map_err(|source| PccsEndpointError::FreshnessCheck {
-            url: pccs_url.clone(),
-            source,
-        })?;
+        check_collateral_freshness(&collateral, time::OffsetDateTime::now_utc()).map_err(
+            |source| PccsEndpointError::FreshnessCheck {
+                url: pccs_url.clone(),
+                source,
+            },
+        )?;
         Ok(collateral)
     }
 }
@@ -304,84 +359,86 @@ struct CollateralIssueDate {
 /// `pccs_urls` acts as a freshness ladder, the stale primary is bypassed
 /// in favor of a fresher fallback (e.g. Intel as the last entry).
 ///
-/// The `now` argument is parameterized so tests can drive specific
-/// boundary cases without depending on the wall clock.
+/// Pure-logic: takes `now` as a parameter so tests can drive boundary
+/// cases without depending on the wall clock, and never logs or talks
+/// to the network. The caller attaches the URL for operator-facing
+/// errors via [`PccsEndpointError::FreshnessCheck`].
 fn check_collateral_freshness(
     collateral: &Collateral,
-    pccs_url: &str,
     now: time::OffsetDateTime,
-) -> anyhow::Result<()> {
-    check_json_issue_date_freshness("tcb_info", &collateral.tcb_info, pccs_url, now)?;
-    check_json_issue_date_freshness("qe_identity", &collateral.qe_identity, pccs_url, now)?;
-    check_pck_crl_freshness(&collateral.pck_crl, pccs_url, now)?;
+) -> Result<(), FreshnessError> {
+    let tcb_info = parse_issue_date_json("tcb_info", &collateral.tcb_info)?;
+    check_age_within_window("tcb_info", tcb_info, now)?;
+
+    let qe_identity = parse_issue_date_json("qe_identity", &collateral.qe_identity)?;
+    check_age_within_window("qe_identity", qe_identity, now)?;
+
+    let pck_crl_thisupdate = parse_pck_crl_thisupdate(&collateral.pck_crl)?;
+    check_age_within_window("pck_crl", pck_crl_thisupdate, now)?;
     Ok(())
 }
 
-fn check_json_issue_date_freshness(
+/// Extract the `issueDate` field from a TCB-Info-shaped or
+/// QE-Identity-shaped JSON blob and parse it as RFC3339.
+fn parse_issue_date_json(
     field: &'static str,
     raw_json: &str,
-    pccs_url: &str,
-    now: time::OffsetDateTime,
-) -> anyhow::Result<()> {
+) -> Result<time::OffsetDateTime, FreshnessError> {
     let CollateralIssueDate { issue_date } = serde_json::from_str(raw_json)
-        .with_context(|| format!("parsing `issueDate` from PCCS `{field}` field"))?;
-    let issued_at = time::OffsetDateTime::parse(&issue_date, &Rfc3339)
-        .with_context(|| format!("parsing `{field}.issueDate` (`{issue_date}`) as RFC3339"))?;
-    check_age_within_window(field, issued_at, pccs_url, now)
+        .map_err(|source| FreshnessError::JsonParseFailed { field, source })?;
+    time::OffsetDateTime::parse(&issue_date, &Rfc3339).map_err(|source| {
+        FreshnessError::IssueDateRfc3339Failed {
+            field,
+            raw: issue_date,
+            source,
+        }
+    })
 }
 
-/// PCK CRL is DER-encoded X.509 v2 CRL. Extract `thisUpdate` and apply
-/// the same age check as the JSON-shaped fields.
-fn check_pck_crl_freshness(
-    pck_crl_der: &[u8],
-    pccs_url: &str,
-    now: time::OffsetDateTime,
-) -> anyhow::Result<()> {
+/// PCK CRL is DER-encoded X.509 v2 CRL. Extract `thisUpdate` from the
+/// TBS structure.
+fn parse_pck_crl_thisupdate(pck_crl_der: &[u8]) -> Result<time::OffsetDateTime, FreshnessError> {
     let (_, crl) = x509_parser::revocation_list::CertificateRevocationList::from_der(pck_crl_der)
-        .context("parsing PCCS `pck_crl` as X.509 CRL")?;
-    let issued_at = crl.last_update().to_datetime();
-    check_age_within_window("pck_crl", issued_at, pccs_url, now)
+        .map_err(|e| FreshnessError::CrlParseFailed {
+        message: e.to_string(),
+    })?;
+    Ok(crl.last_update().to_datetime())
 }
 
+/// Pure-logic check that `issued_at` is neither past `MAX_COLLATERAL_AGE`
+/// in the past nor more than `FUTURE_ISSUE_DATE_GRACE` in the future.
+/// Subtraction goes through unix-timestamp `i64::checked_sub` so the
+/// arithmetic stays total even in pathological cases.
 fn check_age_within_window(
     field: &'static str,
     issued_at: time::OffsetDateTime,
-    pccs_url: &str,
     now: time::OffsetDateTime,
-) -> anyhow::Result<()> {
-    let elapsed = now - issued_at;
+) -> Result<(), FreshnessError> {
+    let elapsed_seconds = now
+        .unix_timestamp()
+        .checked_sub(issued_at.unix_timestamp())
+        .ok_or(FreshnessError::TimestampOutOfRange { field, issued_at })?;
 
-    if elapsed < -FUTURE_ISSUE_DATE_GRACE {
-        let skew = -elapsed;
-        warn!(
+    let grace_seconds = FUTURE_ISSUE_DATE_GRACE.whole_seconds();
+    let max_age_seconds = MAX_COLLATERAL_AGE.whole_seconds();
+
+    if elapsed_seconds < -grace_seconds {
+        let skew_seconds = -elapsed_seconds;
+        return Err(FreshnessError::FutureIssueDate {
             field,
-            issued_at = %issued_at,
-            skew_seconds = skew.whole_seconds(),
-            grace_seconds = FUTURE_ISSUE_DATE_GRACE.whole_seconds(),
-            pccs_url,
-            "PCCS collateral rejected: issuance time is in the future beyond grace window"
-        );
-        anyhow::bail!(
-            "PCCS collateral has future issuance time: {field} issued {issued_at} ({}s in the future, grace {}s)",
-            skew.whole_seconds(),
-            FUTURE_ISSUE_DATE_GRACE.whole_seconds(),
-        );
+            issued_at,
+            skew_seconds,
+            grace_seconds,
+        });
     }
 
-    if elapsed > MAX_COLLATERAL_AGE {
-        warn!(
+    if elapsed_seconds > max_age_seconds {
+        return Err(FreshnessError::TooStale {
             field,
-            issued_at = %issued_at,
-            elapsed_seconds = elapsed.whole_seconds(),
-            max_age_seconds = MAX_COLLATERAL_AGE.whole_seconds(),
-            pccs_url,
-            "PCCS collateral rejected as stale (older than max age)"
-        );
-        anyhow::bail!(
-            "PCCS collateral too stale: {field} issued {issued_at} ({}s ago, max {}s)",
-            elapsed.whole_seconds(),
-            MAX_COLLATERAL_AGE.whole_seconds(),
-        );
+            issued_at,
+            elapsed_seconds,
+            max_age_seconds,
+        });
     }
     Ok(())
 }
@@ -491,6 +548,7 @@ where
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use assert_matches::assert_matches;
     use mpc_attestation::report_data::ReportDataV1;
     use rstest::rstest;
     use std::{
@@ -916,7 +974,7 @@ mod tests {
         let issued = rfc3339(test_now() - time::Duration::days(6));
         let collateral = collateral_with_issue_dates(&issued, &issued);
 
-        let result = check_collateral_freshness(&collateral, "https://test.example/", test_now());
+        let result = check_collateral_freshness(&collateral, test_now());
 
         assert!(result.is_ok(), "expected ok, got {result:?}");
     }
@@ -930,7 +988,7 @@ mod tests {
         let fresh_qe = rfc3339(test_now() - time::Duration::days(1));
         let collateral = collateral_with_issue_dates(&stale_tcb, &fresh_qe);
 
-        let err = check_collateral_freshness(&collateral, "https://test.example/", test_now())
+        let err = check_collateral_freshness(&collateral, test_now())
             .unwrap_err()
             .to_string();
 
@@ -953,7 +1011,7 @@ mod tests {
         let stale_qe = rfc3339(test_now() - time::Duration::days(8));
         let collateral = collateral_with_issue_dates(&fresh_tcb, &stale_qe);
 
-        let err = check_collateral_freshness(&collateral, "https://test.example/", test_now())
+        let err = check_collateral_freshness(&collateral, test_now())
             .unwrap_err()
             .to_string();
 
@@ -971,7 +1029,7 @@ mod tests {
         let issued = rfc3339(test_now() - MAX_COLLATERAL_AGE);
         let collateral = collateral_with_issue_dates(&issued, &issued);
 
-        let result = check_collateral_freshness(&collateral, "https://test.example/", test_now());
+        let result = check_collateral_freshness(&collateral, test_now());
 
         assert!(
             result.is_ok(),
@@ -985,7 +1043,7 @@ mod tests {
         let issued = rfc3339(test_now() - MAX_COLLATERAL_AGE - time::Duration::seconds(1));
         let collateral = collateral_with_issue_dates(&issued, &issued);
 
-        let err = check_collateral_freshness(&collateral, "https://test.example/", test_now())
+        let err = check_collateral_freshness(&collateral, test_now())
             .unwrap_err()
             .to_string();
 
@@ -1000,7 +1058,7 @@ mod tests {
         let issued = rfc3339(test_now() + FUTURE_ISSUE_DATE_GRACE);
         let collateral = collateral_with_issue_dates(&issued, &issued);
 
-        let result = check_collateral_freshness(&collateral, "https://test.example/", test_now());
+        let result = check_collateral_freshness(&collateral, test_now());
 
         assert!(result.is_ok(), "expected ok within grace, got {result:?}");
     }
@@ -1013,7 +1071,7 @@ mod tests {
         let issued = rfc3339(test_now() + FUTURE_ISSUE_DATE_GRACE + time::Duration::seconds(1));
         let collateral = collateral_with_issue_dates(&issued, &issued);
 
-        let err = check_collateral_freshness(&collateral, "https://test.example/", test_now())
+        let err = check_collateral_freshness(&collateral, test_now())
             .unwrap_err()
             .to_string();
 
@@ -1037,7 +1095,7 @@ mod tests {
         let fresh_iso = rfc3339(now - time::Duration::days(1));
         let collateral = collateral_with_issue_dates(&fresh_iso, &fresh_iso);
 
-        let err = check_collateral_freshness(&collateral, "https://test.example/", now)
+        let err = check_collateral_freshness(&collateral, now)
             .unwrap_err()
             .to_string();
 
@@ -1051,20 +1109,14 @@ mod tests {
         );
     }
 
-    /// Unparseable PCK CRL bytes surface a context-tagged error rather
-    /// than silently passing — protects against a buggy or hostile PCCS
-    /// returning garbage in this field.
+    /// Unparseable PCK CRL bytes surface a typed `CrlParseFailed`
+    /// variant rather than silently passing — protects against a buggy
+    /// or hostile PCCS returning garbage in this field.
     #[test]
-    fn check_collateral_freshness__should_reject_unparseable_pck_crl() {
-        let err =
-            check_pck_crl_freshness(b"not a valid DER CRL", "https://test.example/", test_now())
-                .unwrap_err()
-                .to_string();
+    fn parse_pck_crl_thisupdate__should_error_on_garbage_bytes() {
+        let err = parse_pck_crl_thisupdate(b"not a valid DER CRL").unwrap_err();
 
-        assert!(
-            err.contains("pck_crl"),
-            "error should mention pck_crl; got: {err}"
-        );
+        assert_matches!(err, FreshnessError::CrlParseFailed { .. });
     }
 
     #[tokio::test]
