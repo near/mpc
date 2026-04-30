@@ -134,29 +134,9 @@ You can start the nodes **manually** as described in the Operator Guide, or you 
 
 Once all paths and configuration files (`*.env` and `*.toml`) are prepared, you can launch each MPC node (Frodo and Sam) using the `deploy-launcher.sh` helper script.
 
-#### 1. Move into the `deployment/cvm-deployment` Directory
+All commands below are run from the **repo root** unless noted otherwise.
 
-```bash
-cd deployment/cvm-deployment
-```
-
-#### 2. Ensure the Script Is Executable
-
-```bash
-chmod +x deploy-launcher.sh
-```
-#### 3. Set your env variables 
-
-Set your `BASE_PATH` to the DStack directory that contains the `vmm` folder.
-
-Example:  
-`$BASE_PATH/vmm/src/vmm-cli.py` should exist.
-
-```bash
-export BASE_PATH="dstask base path"
-```
-
-#### 4. Copy the TOML config files into place
+#### 1. Copy the TOML config files into place
 
 The `.env` files reference `/tmp/$USER/frodo.toml` and `/tmp/$USER/sam.toml` via `USER_CONFIG_FILE_PATH`, so the checked-in templates need to land there before deployment:
 
@@ -167,20 +147,43 @@ cp deployment/localnet/tee/sam.toml   "/tmp/$USER/sam.toml"
 
 The TOML files already contain a working `boot_nodes` entry pointing at `10.0.2.2:24566` — the QEMU slirp gateway inside the CVM, which routes to the host's loopback and works regardless of whether `neard` binds to `0.0.0.0` or `127.0.0.1` on the host (see #2949). `MACHINE_IP` is still needed for externally-reachable endpoints (public-data, telemetry) and should remain set.
 
+#### 2. Move into the `deployment/cvm-deployment` Directory
+
+```bash
+cd deployment/cvm-deployment
+```
+
+#### 3. Ensure the Script Is Executable
+
+```bash
+chmod +x deploy-launcher.sh
+```
+
+#### 4. Set your env variables
+
+Set your `BASE_PATH` to the DStack directory that contains the `vmm` folder.
+
+Example:
+`$BASE_PATH/vmm/src/vmm-cli.py` should exist.
+
+```bash
+export BASE_PATH="dstask base path"
+```
+
 #### 5. Start the Frodo MPC Node
 
 ```bash
 ./deploy-launcher.sh \
-  --env-file ../deployment/localnet/tee/frodo.env \
+  --env-file ../localnet/tee/frodo.env \
   --base-path $BASE_PATH \
   --python-exec python
 ```
 
-#### 5. Start the Sam MPC Node
+#### 6. Start the Sam MPC Node
 
 ```bash
 ./deploy-launcher.sh \
-  --env-file ../deployment/localnet/tee/sam.env \
+  --env-file ../localnet/tee/sam.env \
   --base-path $BASE_PATH \
   --python-exec python
 ```

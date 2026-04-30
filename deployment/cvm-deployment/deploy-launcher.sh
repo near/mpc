@@ -132,6 +132,8 @@ required_env_vars=(
   "DISK"
   "USER_CONFIG_FILE_PATH"
   "DOCKER_COMPOSE_FILE_PATH"
+  "APP_NAME"
+  "OS_IMAGE"
 )
 
 echo $VMM_RPC
