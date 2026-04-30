@@ -149,12 +149,11 @@ impl FakeMpcContractState {
 
         let mut chain_to_supporters: BTreeMap<dtos::ForeignChain, BTreeSet<dtos::AccountId>> =
             BTreeMap::new();
-        for voter_id in self
+        for (voter_id, chains) in &self
             .supported_foreign_chains_by_node
             .foreign_chain_support_by_node
-            .keys()
         {
-            for chain in local_foreign_chain_support.iter().copied() {
+            for chain in chains.iter().copied() {
                 chain_to_supporters
                     .entry(chain)
                     .or_default()
