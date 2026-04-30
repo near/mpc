@@ -415,9 +415,9 @@ struct CollateralIssueDate {
 /// `pccs_urls` acts as a freshness ladder, the stale primary is bypassed
 /// in favor of a fresher fallback (e.g. Intel as the last entry).
 ///
-/// Pure-logic: takes `now` as a parameter so tests can drive boundary
-/// cases without depending on the wall clock, and never logs or talks
-/// to the network. The caller attaches the URL for operator-facing
+/// Takes `now` as a parameter so tests can drive boundary cases
+/// without depending on the wall clock, and never logs or talks to
+/// the network. The caller attaches the URL for operator-facing
 /// errors via [`PccsEndpointError::FreshnessCheck`].
 fn check_collateral_freshness(
     collateral: &Collateral,
@@ -461,8 +461,8 @@ fn parse_pck_crl_thisupdate(pck_crl_der: &[u8]) -> Result<time::OffsetDateTime, 
     Ok(crl.last_update().to_datetime())
 }
 
-/// Pure-logic check that `issued_at` is neither past `MAX_COLLATERAL_AGE`
-/// in the past nor more than `FUTURE_TIMESTAMP_GRACE` in the future.
+/// Checks that `issued_at` is neither past `MAX_COLLATERAL_AGE` in the
+/// past nor more than `FUTURE_TIMESTAMP_GRACE` in the future.
 /// Subtraction goes through unix-timestamp `i64::checked_sub` so the
 /// arithmetic stays total even in pathological cases.
 fn check_age_within_window(
