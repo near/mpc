@@ -40,7 +40,9 @@ pub enum PccsTlsTrust {
     /// Pin a PEM certificate as an additional trust anchor. Default
     /// trust roots stay active.
     CaCertPem { ca_cert_pem: String },
-    /// Disable TLS certificate verification. Loopback URLs only.
+    /// Disable TLS certificate verification. Recommended only for
+    /// local/loopback PCCS endpoints — not enforced by code; see
+    /// `deployment/cvm-deployment/user-config.toml` for guidance.
     Insecure,
 }
 

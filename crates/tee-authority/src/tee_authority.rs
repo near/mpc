@@ -12,7 +12,6 @@ use mpc_attestation::{
 };
 use near_mpc_bounded_collections::NonEmptyVec;
 use std::collections::BTreeMap;
-use std::net::IpAddr;
 use std::path::PathBuf;
 use thiserror::Error;
 use tracing::{error, info, warn};
@@ -141,38 +140,9 @@ impl Default for DstackTeeAuthorityConfig {
     }
 }
 
-/// Domain names whitelisted for `PccsTlsTrust::Insecure`. IP-based hosts
-/// are matched separately via [`std::net::IpAddr::is_loopback`] (plus the
-/// `10.0.2.2` slirp gateway). Loopback-only enforcement keeps a copy-pasted
-/// dev config from silently disabling TLS validation against a real
-/// network endpoint.
-const LOOPBACK_PCCS_DOMAINS: &[&str] = &["localhost"];
-
-/// Returns true if the URL's host is loopback-ish enough to honor the
-/// `PccsTlsTrust::Insecure` mode. Accepts:
-/// - `localhost`
-/// - any IPv4 in `127.0.0.0/8` (per `Ipv4Addr::is_loopback`)
-/// - IPv6 loopback `::1`
-/// - the QEMU slirp gateway `10.0.2.2`
-fn pccs_host_is_loopback(pccs_url: &Url) -> bool {
-    match pccs_url.host() {
-        Some(url::Host::Domain(d)) => LOOPBACK_PCCS_DOMAINS.contains(&d),
-        Some(url::Host::Ipv4(ip)) => ip.is_loopback() || ip.octets() == [10, 0, 2, 2],
-        Some(url::Host::Ipv6(ip)) => IpAddr::V6(ip).is_loopback(),
-        None => false,
-    }
-}
-
 /// Validate the PCCS endpoint list at startup. Runs once during config
-/// conversion to fail fast on operator config mistakes:
-///
-/// - Each `PccsTlsTrust::CaCertPem` must contain a parseable PEM
-///   certificate (caught here so a typo'd cert fails at startup with a
-///   clear message rather than at the first attestation attempt).
-/// - Each `PccsTlsTrust::Insecure` is only honored for loopback-ish URLs
-///   so a copy-pasted dev config cannot silently disable TLS validation
-///   against a real network endpoint. The loopback gate is a
-///   misconfiguration guardrail, not a security barrier.
+/// conversion to fail fast on a typo'd `ca_cert_pem` (so the operator
+/// gets a clear message at startup rather than at first attestation).
 ///
 /// Also emits one WARN per `Insecure` endpoint at startup so operators
 /// see the security signal up front instead of buried in fetch logs.
@@ -187,17 +157,10 @@ pub fn validate_pccs_endpoints(
                     .context("failed to build TLS client at startup")?;
             }
             Some(PccsTlsTrust::Insecure) => {
-                anyhow::ensure!(
-                    pccs_host_is_loopback(&endpoint.url),
-                    "`tls.mode = \"insecure\"` is only allowed for loopback PCCS URLs \
-                     (localhost, 127.0.0.0/8, ::1, or 10.0.2.2); got {:?}",
-                    endpoint.url.host_str().unwrap_or(""),
-                );
                 tracing::warn!(
                     url = %endpoint.url,
                     "tls.mode = \"insecure\": PCCS TLS certificate verification is DISABLED \
-                     for this endpoint. Only honored on loopback hosts; the host is the \
-                     effective trust boundary."
+                     for this endpoint. Recommended only for local/loopback PCCS endpoints."
                 );
             }
         }
@@ -862,97 +825,6 @@ mod tests {
                  \x20 - collateral fetch failed for {SECOND_URL}: {FETCH_ERROR}"
             )
         );
-    }
-
-    /// `Insecure` is accepted at startup for any of the loopback host
-    /// shapes the gate recognises (domain `localhost`, the IPv4 loopback
-    /// range, the IPv6 loopback `::1`, and the QEMU slirp gateway
-    /// `10.0.2.2`).
-    #[rstest]
-    #[case::loopback_localhost("https://localhost:8081/")]
-    #[case::loopback_127("https://127.0.0.1:8081/")]
-    #[case::loopback_ipv6("https://[::1]:8081/")]
-    #[case::loopback_slirp("https://10.0.2.2:8081/")]
-    fn validate_pccs_endpoints__should_accept_insecure_on_loopback(#[case] url: &str) {
-        let endpoints = NonEmptyVec::try_from(vec![PccsEndpointConfig {
-            url: url.parse().expect("valid URL"),
-            tls: Some(PccsTlsTrust::Insecure),
-        }])
-        .expect("non-empty");
-
-        let result = validate_pccs_endpoints(&endpoints);
-
-        assert!(result.is_ok(), "expected ok for {url}, got {result:?}");
-    }
-
-    /// `Insecure` is rejected at startup for non-loopback URLs — the gate
-    /// keeps a copy-pasted dev config from silently disabling TLS
-    /// validation against a real network endpoint.
-    #[rstest]
-    #[case::public_phala("https://pccs.phala.network/")]
-    #[case::public_intel("https://api.trustedservices.intel.com/")]
-    #[case::wildcard_zero("https://0.0.0.0:8081/")]
-    fn validate_pccs_endpoints__should_reject_insecure_on_non_loopback(#[case] url: &str) {
-        let endpoints = NonEmptyVec::try_from(vec![PccsEndpointConfig {
-            url: url.parse().expect("valid URL"),
-            tls: Some(PccsTlsTrust::Insecure),
-        }])
-        .expect("non-empty");
-
-        let result = validate_pccs_endpoints(&endpoints);
-
-        assert!(result.is_err(), "expected err for {url}, got {result:?}");
-    }
-
-    /// The per-URL gate is the point: `Insecure` on a loopback primary
-    /// MAY coexist with default-trust public-CA fallbacks in the same
-    /// list. (Pre-this-PR, a global gate would have rejected the entire
-    /// list because of the non-loopback fallbacks.)
-    #[test]
-    fn validate_pccs_endpoints__should_accept_mixed_loopback_insecure_with_public_fallbacks() {
-        let endpoints = NonEmptyVec::try_from(vec![
-            PccsEndpointConfig {
-                url: "https://localhost:8081/".parse().expect("valid URL"),
-                tls: Some(PccsTlsTrust::Insecure),
-            },
-            PccsEndpointConfig {
-                url: "https://pccs.phala.network/".parse().expect("valid URL"),
-                tls: None,
-            },
-            PccsEndpointConfig {
-                url: "https://api.trustedservices.intel.com/"
-                    .parse()
-                    .expect("valid URL"),
-                tls: None,
-            },
-        ])
-        .expect("non-empty");
-
-        let result = validate_pccs_endpoints(&endpoints);
-
-        assert!(result.is_ok(), "expected ok, got {result:?}");
-    }
-
-    /// Conversely, an `Insecure` entry whose URL is non-loopback fails
-    /// startup even when the rest of the list is fine — the gate is
-    /// per-URL, not "any URL is loopback => allow."
-    #[test]
-    fn validate_pccs_endpoints__should_reject_insecure_non_loopback_even_in_mixed_list() {
-        let endpoints = NonEmptyVec::try_from(vec![
-            PccsEndpointConfig {
-                url: "https://pccs.phala.network/".parse().expect("valid URL"),
-                tls: Some(PccsTlsTrust::Insecure),
-            },
-            PccsEndpointConfig {
-                url: "https://localhost:8081/".parse().expect("valid URL"),
-                tls: None,
-            },
-        ])
-        .expect("non-empty");
-
-        let result = validate_pccs_endpoints(&endpoints);
-
-        assert!(result.is_err(), "expected err, got {result:?}");
     }
 
     #[tokio::test]

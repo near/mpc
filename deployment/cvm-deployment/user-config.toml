@@ -16,7 +16,14 @@ home_dir = "/data"
 #
 # Per-URL TLS trust override — set `tls = ...` on entries that need it:
 #   tls = { mode = "ca_cert_pem", ca_cert_pem = "..." }  # additional trust anchor
-#   tls = { mode = "insecure" }                          # loopback URLs only
+#   tls = { mode = "insecure" }                          # disables TLS auth — local/loopback only
+#
+# `mode = "insecure"` skips all TLS certificate validation. Use only
+# for a local PCCS reachable over loopback (`localhost`, `127.0.0.1`,
+# `::1`, or the QEMU slirp gateway `10.0.2.2`). It is *not* enforced
+# by the code — using it against a public URL will silently disable
+# the only transport-level identity check on that endpoint. Prefer
+# `ca_cert_pem` whenever you can pin the cert.
 #
 # Example: self-signed local primary + public-CA fallbacks:
 #
