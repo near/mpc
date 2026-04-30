@@ -75,7 +75,7 @@ async fn supported_foreign_chains__should_require_all_participants_to_register()
             .await
             .expect("failed to view supported chains");
 
-        let configurations = &registrations.foreign_chain_configuration_by_node;
+        let configurations = &registrations.foreign_chain_support_by_node;
         anyhow::ensure!(
             configurations.len() == 3,
             "expected exactly 3 registrations, got {}",

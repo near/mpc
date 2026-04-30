@@ -18,7 +18,7 @@ pub const VOTE_PK: &str = "vote_pk";
 pub const VOTE_RESHARED: &str = "vote_reshared";
 pub const VOTE_NEW_PARAMETERS: &str = "vote_new_parameters";
 pub const VOTE_ADD_DOMAINS: &str = "vote_add_domains";
-pub const REGISTER_FOREIGN_CHAIN_CONFIG: &str = "register_foreign_chain_config";
+pub const REGISTER_FOREIGN_CHAIN_SUPPORT: &str = "register_foreign_chain_support";
 pub const VOTE_CODE_HASH: &str = "vote_code_hash";
 pub const VOTE_ADD_LAUNCHER_HASH: &str = "vote_add_launcher_hash";
 pub const VOTE_REMOVE_LAUNCHER_HASH: &str = "vote_remove_launcher_hash";
@@ -82,3 +82,7 @@ pub const CODE_HASH_VOTES: &str = "code_hash_votes";
 pub const OS_MEASUREMENT_VOTES: &str = "os_measurement_votes";
 pub const ALLOWED_OS_MEASUREMENTS: &str = "allowed_os_measurements";
 pub const MIGRATION_INFO: &str = "migration_info";
+
+// Deprecated methods
+#[deprecated(note = "https://github.com/near/mpc/issues/3079")]
+pub const REGISTER_FOREIGN_CHAIN_CONFIG: &str = "register_foreign_chain_config";

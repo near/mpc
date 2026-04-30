@@ -134,7 +134,7 @@ impl FakeMpcContractState {
             .into();
 
         self.supported_foreign_chains_by_node
-            .foreign_chain_configuration_by_node
+            .foreign_chain_support_by_node
             .insert(voter, local_foreign_chain_support.clone());
 
         // Derive supported_foreign_chains as intersection of all active participants' votes
@@ -150,7 +150,7 @@ impl FakeMpcContractState {
             BTreeMap::new();
         for (voter_id, chains) in &self
             .supported_foreign_chains_by_node
-            .foreign_chain_configuration_by_node
+            .foreign_chain_support_by_node
         {
             for chain in local_foreign_chain_support.iter().copied() {
                 chain_to_supporters

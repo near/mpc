@@ -21,9 +21,8 @@ use mpc_contract::{
     update::{ProposeUpdateArgs, UpdateId},
 };
 use near_account_id::AccountId;
-use near_mpc_bounded_collections::NonEmptyBTreeSet;
 use near_mpc_contract_interface::types::{
-    Curve, DomainConfig, DomainId, DomainPurpose, ForeignChainConfiguration,
+    Curve, DomainConfig, DomainId, DomainPurpose, SupportedForeignChains,
 };
 use near_mpc_contract_interface::{
     method_names,
@@ -31,11 +30,11 @@ use near_mpc_contract_interface::{
         self as dtos, Attestation, BitcoinExtractedValue, BitcoinExtractor, BitcoinRpcRequest,
         BitcoinTxId, BlockConfirmations, EvmExtractedValue, EvmExtractor, EvmFinality,
         EvmRpcRequest, EvmTxId, ForeignTxSignPayload, ForeignTxSignPayloadV1, MockAttestation,
-        RpcProvider, StarknetExtractedValue, StarknetExtractor, StarknetFelt, StarknetFinality,
+        StarknetExtractedValue, StarknetExtractor, StarknetFelt, StarknetFinality,
         StarknetRpcRequest, StarknetTxId, VerifyForeignTransactionResponse,
     },
 };
-use near_mpc_sdk::foreign_chain::{ExtractedValue, ForeignChain, ForeignChainRpcRequest, Hash256};
+use near_mpc_sdk::foreign_chain::{ExtractedValue, ForeignChainRpcRequest, Hash256};
 use near_workspaces::{network::Sandbox, result::ExecutionSuccess, Contract};
 use near_workspaces::{result::Execution, Account, Worker};
 use rand_core::CryptoRngCore;
@@ -603,29 +602,17 @@ fn hash(code: &[u8]) -> [u8; 32] {
     hasher.finalize().into()
 }
 
-/// Build a [`ForeignChainConfiguration`] that enables the given chain with a dummy RPC URL.
-pub fn make_configured_foreign_chain(chain: ForeignChain) -> ForeignChainConfiguration {
-    let mut chains = std::collections::BTreeMap::new();
-    chains.insert(
-        chain,
-        NonEmptyBTreeSet::new(RpcProvider {
-            rpc_url: format!("https://{chain:?}-rpc.example.com").to_lowercase(),
-        }),
-    );
-    chains.into()
-}
-
 /// registers a foreign chain configuration so the foreign chains are supported
 pub async fn register_foreign_chain_configuration(
     chain: near_mpc_contract_interface::types::ForeignChain,
     contract: &Contract,
     accounts: &[Account],
 ) {
-    let foreign_chain_configuration = make_configured_foreign_chain(chain);
+    let node_foreign_chain_support = SupportedForeignChains::from(BTreeSet::from([chain]));
     for account in accounts {
         let result = account
-            .call(contract.id(), method_names::REGISTER_FOREIGN_CHAIN_CONFIG)
-            .args_json(json!({ "foreign_chain_configuration": foreign_chain_configuration }))
+            .call(contract.id(), method_names::REGISTER_FOREIGN_CHAIN_SUPPORT)
+            .args_json(json!({ "foreign_chain_support": node_foreign_chain_support }))
             .transact()
             .await
             .unwrap()
@@ -633,7 +620,7 @@ pub async fn register_foreign_chain_configuration(
         assert!(
             result.is_ok(),
             "{} should succeed",
-            method_names::REGISTER_FOREIGN_CHAIN_CONFIG
+            method_names::REGISTER_FOREIGN_CHAIN_SUPPORT
         );
     }
 }
