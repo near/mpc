@@ -72,7 +72,7 @@ There are additional ports defined in frodo/sam.env, but you may change those to
 Those are the recommended configuration settings:
 you will need the following files:
 
-* [docker-compose.yml](../../deployment/cvm-deployment/launcher_docker_compose.yaml)
+* [launcher_docker_compose.yaml](../../deployment/cvm-deployment/launcher_docker_compose.yaml)
 * [frodo.toml](../../deployment/localnet/tee/frodo.toml) / [sam.toml](../../deployment/localnet/tee/sam.toml) 
 * [frodo.env](../../deployment/localnet/tee/frodo.env)/ [sam.env](../../deployment/localnet/tee/sam.env)    - if you use the deployment script
 
@@ -84,7 +84,7 @@ mkdir -p "/tmp/$USER"
 ```
 
 
-Concfiguratoin fields in `docker-compose.yml`
+Configuration fields in `launcher_docker_compose.yaml`
 
 Update to use the correct launcher image: (note - this must match the launcher template defined in the MPC contract)
 
@@ -228,10 +228,10 @@ near account add-key sam.test.near grant-function-call-access --allowance unlimi
 
 ### Initialize the MPC Contract
 
-Move to MPC root folder:
+Move back to the MPC repo root (we are currently in `deployment/cvm-deployment/`):
 
 ```bash
-cd ..
+cd ../..
 ```
 
 Initialize the MPC contract with the two participants (using the `P2P_KEY` values retrieved earlier).
@@ -259,7 +259,7 @@ near contract call-function as-read-only mpc-contract.test.near state json-args 
 ## Voting for a New MPC Docker Image Hash
 
 Before voting, the contract’s list of valid MPC image hashes is empty.  
-Therefor, node attestation submissions will fail.
+Therefore, node attestation submissions will fail.
 
 **Sample Error Log (Expected Before Voting):**
 
@@ -270,7 +270,7 @@ mpc_node::indexer::tx_sender: sending tx 381yxJCV5ByYo27oD8fX3BsGwnFpfGSzNCgDpfQ
 ERROR mpc_node::tee::remote_attestation: failed to submit attestation cause=attestation submission was not executed
 ```
 
-You can view the trasaction details by calling:
+You can view the transaction details by calling:
 
 ```bash
 near transaction view-status <transaction_Id> network-config mpc-localnet
@@ -404,7 +404,7 @@ In the MPC node's logs you should see something like this:
 
 ```bash
 near contract call-function as-transaction mpc-contract.test.near sign \
-  file-args docs/localnet/args/sign.json \
+  file-args docs/localnet/args/sign_ecdsa.json \
   prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' \
   sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
 ```
@@ -433,7 +433,7 @@ near contract call-function as-transaction mpc-contract.test.near sign \
 
 ## Troubleshooting
 
-You can view trascation using:
+You can view a transaction using:
 ```bash
 near transaction view-status <transaction_Id>  network-config mpc-localnet
 ```
