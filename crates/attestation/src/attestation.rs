@@ -125,20 +125,63 @@ impl DstackAttestation {
     /// On success, returns the matched measurements.
     pub fn verify(
         &self,
-        _expected_report_data: ReportData,
+        expected_report_data: ReportData,
         _timestamp_seconds: u64,
         accepted_measurements: &[ExpectedMeasurements],
     ) -> Result<ExpectedMeasurements, VerificationError> {
-        // PoC stub for binary-size measurement: skips DCAP/TDX verification
-        // entirely and accepts any attestation by returning the first
-        // entry of the allowed measurements list. **Not for production.**
-        // Demonstrates the wasm size impact of moving the heavy `dcap-qvl`
-        // verification out of `mpc-contract` (e.g. into a verifier
-        // contract called via cross-contract promise).
-        accepted_measurements
-            .first()
-            .copied()
-            .ok_or(VerificationError::EmptyMeasurementsList)
+        // PoC stub for binary-size measurement.
+        //
+        // Replaces only the heavy `dcap_qvl::verify::verify(...)` call with
+        // a hand-constructed dummy `VerifiedReport`; everything else (the
+        // `self.verify_*` helpers, `as_td10`, the type metadata for
+        // `VerifiedReport`/`TDReport10`/`Report`) stays reachable so this
+        // measurement reflects a *conservative* refactor that outsources
+        // only the heavy crypto, not the policy checks above it.
+        // **Not for production.**
+        let verification_result = dcap_qvl::verify::VerifiedReport {
+            status: alloc::string::String::new(),
+            advisory_ids: alloc::vec::Vec::new(),
+            report: dcap_qvl::quote::Report::TD10(dcap_qvl::quote::TDReport10 {
+                tee_tcb_svn: [0u8; 16],
+                mr_seam: [0u8; 48],
+                mr_signer_seam: [0u8; 48],
+                seam_attributes: [0u8; 8],
+                td_attributes: [0u8; 8],
+                xfam: [0u8; 8],
+                mr_td: [0u8; 48],
+                mr_config_id: [0u8; 48],
+                mr_owner: [0u8; 48],
+                mr_owner_config: [0u8; 48],
+                rt_mr0: [0u8; 48],
+                rt_mr1: [0u8; 48],
+                rt_mr2: [0u8; 48],
+                rt_mr3: [0u8; 48],
+                report_data: [0u8; 64],
+            }),
+            ppid: alloc::vec::Vec::new(),
+            qe_status: dcap_qvl::tcb_info::TcbStatusWithAdvisory::new(
+                dcap_qvl::tcb_info::TcbStatus::UpToDate,
+                alloc::vec::Vec::new(),
+            ),
+            platform_status: dcap_qvl::tcb_info::TcbStatusWithAdvisory::new(
+                dcap_qvl::tcb_info::TcbStatus::UpToDate,
+                alloc::vec::Vec::new(),
+            ),
+        };
+
+        let report_data = verification_result
+            .report
+            .as_td10()
+            .ok_or(VerificationError::ReportNotTd10)?;
+
+        // Verify all attestation components
+        self.verify_tcb_status(&verification_result)?;
+        self.verify_report_data(&expected_report_data, report_data)?;
+
+        self.verify_rtmr3(report_data, &self.tcb_info)?;
+        self.verify_app_compose(&self.tcb_info)?;
+
+        self.verify_any_measurements(report_data, &self.tcb_info, accepted_measurements)
     }
 
     /// Replays RTMR3 from the event log by hashing all relevant events together and verifies all
