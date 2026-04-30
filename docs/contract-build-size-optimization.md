@@ -1,109 +1,135 @@
-# Contract build size optimization
+# Contract build size optimization — investigation log
 
-## Why this exists
+> **Status: superseded by measurement-driven conclusion. PR closed without
+> merging.** This document is the record of what we investigated and what
+> the corrected measurements showed. Kept here so future readers don't
+> repeat the same analysis from scratch. The current build pipeline is
+> unchanged; revisit if real size pressure appears.
 
-The `mpc-contract` WASM artifact is deployed to NEAR mainnet by passing the
-bytes through a `DeployContract` action. NEAR's protocol-level
-`max_transaction_size` is **1,572,864 bytes** (1.5 MiB), so the deploy
-transaction — which carries the wasm — must fit under that ceiling. The repo
-guards this in `scripts/check-contract-wasm-size.sh` with a tighter
-self-imposed limit of 1,490,000 bytes to keep some headroom.
+## Why this was opened
 
-The contract has been growing close to that limit. Before this change the
-artifact built by `cargo near build reproducible-wasm` was **1,499,976 bytes**
-— already over the safety margin. This change reduces it to
-**~1,435,586 bytes** (–64 KB / –4.3%) while keeping the reproducibility
-guarantee intact.
+The contract WASM was thought to be ~1,499,976 bytes — over the repo's
+self-imposed safety margin in `scripts/check-contract-wasm-size.sh`
+(`HARD_LIMIT=1490000`) and approaching NEAR's 1,572,864-byte
+`max_transaction_size` ceiling.
 
-## What changed
+The proposed remedy was to extend the pinned cargo-near reproducible-build
+image with `binaryen` so we could swap cargo-near's bundled `wasm-opt -O`
+for `-Os` (or `-Oz`) and apply `--strip-*` flags. The expected savings were
+~64 KB from the strip flags and an additional ~22 KB from `-Oz`.
 
-The reproducible build runs inside a digest-pinned docker image. The pinned
-upstream image (`sourcescan/cargo-near:0.17.0-rust-1.86.0`) only exposes
-`cargo-near`'s bundled wasm-opt at `-O`, with no flag to choose a different
-optimization level. To run wasm-opt at `-Os` we need a standalone `wasm-opt`
-binary on PATH inside the container — and the pinned image doesn't have one.
+## What measurement actually showed
 
-This PR adds a thin custom image (`nearone/cargo-near-mpc`) that extends the
-pinned base with `apt-get install binaryen`. The contract's
-`[package.metadata.near.reproducible_build]` then points at it, skips
-cargo-near's bundled wasm-opt (`--no-wasmopt`), and chains `wasm-opt -Os
---strip-*` as the optimization step.
+### The 1,499,976 baseline was wrong
 
-Reproducibility is preserved: everything still happens inside a digest-pinned
-image, with the same source and the same flags. Anyone running
-`cargo near build reproducible-wasm` produces byte-identical output. The
-sha256 published in GitHub release notes — and used by participants in
-`vote_update` — remains derivable from source.
+The "production" baseline came from a stale local-host build using
+`cargo-near 0.20.0`, not from a `cargo near build reproducible-wasm` run.
+The real reproducible-build output, produced inside the digest-pinned
+`sourcescan/cargo-near:0.17.0-rust-1.86.0` image, is **~1,436,167 bytes**
+— already 54 KB *under* the safety margin and 137 KB under the protocol
+ceiling. The headline urgency was based on a number that doesn't represent
+what actually ships.
 
-## Why `-Os` and not `-O` or `-Oz`
+### The strip flags save 0 bytes
 
-We measured all three on the same raw (un-optimized) wasm using wasm-opt 120
-inside the new image, with `--strip-debug --strip-producers
---strip-target-features --vacuum` applied to all variants:
+Measured inside the same docker image, on the identical raw (un-optimized)
+wasm, applying each strip flag in isolation:
 
-| Pipeline | Size (bytes) | Δ vs current production | Runtime tradeoff |
-|---|---|---|---|
-| Current production (cargo-near's bundled `-O`, no extra strip flags) | 1,499,976 | — | baseline |
-| Our pipeline `-O` + strip-flags | 1,435,586 | **−64,390 (−4.29%)** | none |
-| Our pipeline `-Os` + strip-flags | 1,435,586 | **−64,390 (−4.29%)** | none |
-| Our pipeline `-Oz` + strip-flags | 1,413,072 | −86,904 (−5.79%) | possibly slower runtime |
+| Pipeline | Size |
+|---|---|
+| Raw (no opt) | 1,755,836 |
+| `-O` (no flags) | 1,435,586 |
+| `-O --vacuum` | 1,435,586 |
+| `-O --strip-debug` | 1,435,586 |
+| `-O --strip-producers` | 1,435,586 |
+| `-O --strip-target-features` | 1,435,586 |
+| `-O` + all four strip-flags | 1,435,586 |
 
-Two takeaways:
+Every variant produces byte-identical output. The release profile already
+has `strip = true` in `[profile.release-contract]` so debug info is gone
+before wasm-opt sees the file, and the producer/target-features sections
+are either already absent or are dropped by `-O`'s default passes. The
+"~64 KB from strip flags" figure earlier in the investigation was actually
+the build-environment difference between cargo-near 0.20 (host) and
+cargo-near 0.17 (docker) — a baseline error, not a flag-attributable win.
 
-1. **Most of the win comes from the strip-flags**, not the optimization level.
-   Cargo-near's bundled wasm-opt doesn't strip the `producers` /
-   `target_features` sections by default, and those weigh ~64 KB on this
-   contract.
-2. **`-O` and `-Os` produce byte-identical output here.** wasm-opt 120's `-O`
-   pipeline already runs all the size-reducing passes that `-Os` enables;
-   there's nothing extra for `-Os` to do on this binary. `-Oz` runs additional
-   shrink-only passes (e.g. avoiding inlining that costs bytes) and saves a
-   further ~22 KB at the cost of potentially slower generated code.
+### `-O` and `-Os` are byte-identical on this contract
 
-We chose **`-Os`** for this PR because:
+| Pipeline | Size |
+|---|---|
+| `-O + strip-flags` | 1,435,586 |
+| `-Os + strip-flags` | 1,435,586 |
 
-- It captures the entire 64 KB win from the strip-flags with **zero runtime
-  risk** versus today's production binary (it is byte-identical to `-O` on
-  this contract — the instruction selection is unchanged).
-- The remaining 22 KB difference vs `-Oz` would require validating gas
-  parity on representative calls (e.g. `sign()`), which is an additional
-  step we would prefer not to bundle into a build-pipeline PR.
-- 64 KB of headroom is enough to bring the artifact comfortably under the
-  self-imposed 1,490,000-byte safety margin (54 KB headroom under the script
-  limit, 137 KB under the protocol ceiling).
+Same sha256 across the two outputs. wasm-opt 120's `-O` already runs the
+size-favoring passes that `-Os` enables; there's nothing extra to do on
+this binary.
 
-If size pressure returns later, switching to `-Oz` is a one-line change to
-`container_build_command`, gated on a quick gas-parity measurement.
+### Only `-Oz` saves real bytes
 
-## Reproducibility argument
+| Pipeline | Size | vs reproducible production |
+|---|---|---|
+| Reproducible production today | ~1,436,167 | — |
+| Any `-O` / `-Os` pipeline (with or without strip-flags) | ~1,435,586 | ~580 B (noise) |
+| `-Oz + strip-flags` | 1,413,072 | **−23,095 B (−1.6%)** |
 
-The full chain remains end-to-end deterministic:
+`-Oz` is the only variant that materially differs. It runs additional
+shrink-only passes (e.g. avoiding inlining decisions that would grow the
+binary) at the cost of potentially slower generated code.
 
-1. **Source** is fixed (the contract crate at a given commit).
-2. **Image** is fixed by digest (`image_digest` in `Cargo.toml` is the sha256
-   manifest digest of the published image; cargo-near refuses to run if the
-   pulled image doesn't match).
-3. **Compiler toolchain** is the rust toolchain bundled in the pinned image.
-4. **Optimizer** is `binaryen=120-4` from Debian trixie, installed at image
-   build time. The pinned image digest captures the exact `wasm-opt`
-   binary bytes; no rebuild can drift it without changing the digest.
-5. **Build command** is fixed in `container_build_command`.
+## Conclusion
 
-We verified empirically that two clean runs through this pipeline produce
-byte-identical output (sha256 stable across runs).
+The PR's premise was *"we're over the limit, this is urgent."* Real
+measurement shows we're not over any limit, and the proposed `-Os` change
+saves nothing on this contract. The `-Oz` path would save ~23 KB but
+introduces a new optimization level whose runtime cost would need to be
+validated with gas measurements on a representative call (e.g. `sign()`)
+before merging.
 
-## Operational notes
+Since there is no immediate size pressure, the PR was closed without
+merging. The build pipeline remains:
 
-- The image is published to `nearone/cargo-near-mpc` via
-  `.github/workflows/cargo-near-image.yml`. The workflow tags every build
-  with the source commit sha and `latest`, and prints the published manifest
-  digest in the workflow log.
-- After the first publish, update `image_digest` in
-  `crates/contract/Cargo.toml` to the published digest. Without this, the
-  reproducible build will fail.
-- When bumping the rust toolchain or cargo-near version, update the `FROM`
-  line in `docker/cargo-near-mpc/Dockerfile`, push a new image, and update
-  `image_digest` in lockstep.
-- The contract sha256 changes once on first release after this lands (the
-  release-notes hash will reflect the new value automatically; consumers
-  with hardcoded expectations of the prior hash need a heads-up).
+- `cargo near build reproducible-wasm` against the
+  `sourcescan/cargo-near:0.17.0-rust-1.86.0` image,
+- which runs cargo-near's bundled `wasm-opt -O` post-step,
+- producing ~1,436,167 bytes today, with ~54 KB headroom under the
+  self-imposed safety margin.
+
+## When to revisit
+
+Pivot to a `-Oz` pipeline if **either** of these becomes true:
+
+1. The contract grows past ~1.45 MB and headroom under the safety margin
+   shrinks below ~40 KB.
+2. A specific feature lands that pushes us past the script's
+   `HARD_LIMIT=1490000`.
+
+If revisited, the work is roughly:
+
+- Build a custom image extending the pinned `sourcescan/cargo-near` base
+  with `binaryen` (the Dockerfile from the closed PR is preserved at
+  `docker/cargo-near-mpc/Dockerfile` on branch
+  `experiment/wasm-opt-oz-reproducible-build` if useful).
+- Update `[package.metadata.near.reproducible_build]` in
+  `crates/contract/Cargo.toml` to point at the new image and chain
+  `bash -c "cargo near build … --no-wasmopt && wasm-opt -Oz --strip-* --vacuum …"`.
+- Gas-validate a representative `sign()` call on sandbox before merging.
+
+For larger headroom (multi-hundred-KB), structural options remain (in
+preference order):
+
+1. Move DCAP/TDX quote verification off the contract (sub-contract or
+   off-chain attestation oracle). Single call site at
+   `crates/attestation/src/attestation.rs`. Frees ~300–500 KB.
+2. Delete `crates/contract/src/v3_9_1_state.rs` once 3.9.1 has fully
+   rolled out (~20–50 KB).
+3. Collapse `crates/contract/src/dto_mapping.rs` (975 lines bridging two
+   parallel type universes).
+
+## Process lesson for next time
+
+The measurement design should isolate each variable from the start. The
+right setup is: same docker image, same source, vary one flag, measure.
+Comparing a host build to a docker build and calling the gap a "saving"
+mixed two effects (environment and flag) and produced misleading
+headline numbers. The corrected numbers above came from doing the
+isolation properly.
