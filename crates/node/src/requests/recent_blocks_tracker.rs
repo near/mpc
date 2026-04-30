@@ -262,7 +262,7 @@ impl RecentBlocksTracker {
     /// indexer (whether or not it is interesting). Returns the list of newly finalized blocks
     /// in ascending height order; concatenated across calls, this forms the contiguous stream of
     /// finalized blocks.
-    pub fn add_block(&mut self, block: &BlockViewLite) -> anyhow::Result<NewFinalBlocks> {
+    pub(crate) fn add_block(&mut self, block: &BlockViewLite) -> anyhow::Result<NewFinalBlocks> {
         if self.hash_to_node.contains_key(&block.hash) {
             anyhow::bail!("Block already exists in the tracker");
         }
