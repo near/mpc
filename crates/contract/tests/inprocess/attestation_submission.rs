@@ -216,6 +216,7 @@ impl TestSetup {
         testing_env!(context);
         self.contract
             .submit_participant_info(attestation, node_id.tls_public_key.clone())
+            .map(|_| ())
     }
 
     /// Switches testing context to a given participant at a specific timestamp

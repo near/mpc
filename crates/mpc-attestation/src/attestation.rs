@@ -142,45 +142,9 @@ impl Attestation {
     ) -> Result<VerifiedAttestation, VerificationError> {
         match self {
             Self::Dstack(dstack_attestation) => {
-                // Makes MPC related attestation verification first
-                let mpc_image_hash: NodeImageHash = {
-                    let mpc_image_hash_payload = &dstack_attestation
-                        .tcb_info
-                        .get_single_event(MPC_IMAGE_HASH_EVENT)?
-                        .event_payload;
-
-                    // TODO(#2478): decode raw bytes
-                    let mpc_image_hash_bytes: Vec<u8> = hex::decode(mpc_image_hash_payload)
-                        .map_err(|err| {
-                            VerificationError::Custom(format!(
-                                "provided mpc image is not hex encoded: {:?}",
-                                err
-                            ))
-                        })?;
-                    let mpc_image_hash_bytes: [u8; 32] =
-                        mpc_image_hash_bytes.try_into().map_err(|_| {
-                            VerificationError::Custom(
-                                "The provided MPC image hash is not 32 bytes".to_string(),
-                            )
-                        })?;
-                    NodeImageHash::from(mpc_image_hash_bytes)
-                };
-
-                let () = verify_mpc_hash(&mpc_image_hash, allowed_mpc_docker_image_hashes)?;
-
-                let launcher_compose_hash: LauncherDockerComposeHash = {
-                    let app_compose: AppCompose =
-                        serde_json::from_str(&dstack_attestation.tcb_info.app_compose)
-                            .map_err(|e| VerificationError::AppComposeParsing(e.to_string()))?;
-
-                    let launcher_compose_hash_bytes: [u8; 32] =
-                        Sha256::digest(app_compose.docker_compose_file.as_bytes()).into();
-
-                    LauncherDockerComposeHash::from(launcher_compose_hash_bytes)
-                };
-
-                let () = verify_launcher_compose_hash(
-                    &launcher_compose_hash,
+                let pre_check = dstack_pre_check(
+                    dstack_attestation,
+                    allowed_mpc_docker_image_hashes,
                     allowed_launcher_docker_compose_hashes,
                 )?;
 
@@ -194,16 +158,14 @@ impl Attestation {
                 let expiration_timestamp_seconds =
                     current_timestamp_seconds + DEFAULT_EXPIRATION_DURATION_SECONDS;
                 Ok(VerifiedAttestation::Dstack(ValidatedDstackAttestation {
-                    mpc_image_hash,
-                    launcher_compose_hash,
+                    mpc_image_hash: pre_check.mpc_image_hash,
+                    launcher_compose_hash: pre_check.launcher_compose_hash,
                     expiry_timestamp_seconds: expiration_timestamp_seconds,
                     measurements,
                 }))
             }
             Self::Mock(mock_attestation) => {
-                // Override attestation verification for this case
-                let () = verify_mock_attestation(
-                    mock_attestation,
+                mock_attestation.verify(
                     allowed_mpc_docker_image_hashes,
                     allowed_launcher_docker_compose_hashes,
                     accepted_measurements,
@@ -216,8 +178,93 @@ impl Attestation {
     }
 }
 
+impl MockAttestation {
+    /// Verify a mock attestation against the allowed lists. Does not touch
+    /// `dcap-qvl`. Used by `mpc-contract` directly so the heavy DCAP code path
+    /// is not in its call graph.
+    pub fn verify(
+        &self,
+        allowed_mpc_docker_image_hashes: &[NodeImageHash],
+        allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
+        allowed_measurements: &[ExpectedMeasurements],
+        timestamp_seconds: u64,
+    ) -> Result<(), VerificationError> {
+        verify_mock_attestation(
+            self,
+            allowed_mpc_docker_image_hashes,
+            allowed_launcher_docker_compose_hashes,
+            allowed_measurements,
+            timestamp_seconds,
+        )
+    }
+}
+
+/// Result of the pre-DCAP checks on a Dstack attestation: the mpc image hash
+/// and launcher compose hash, both extracted from the (untrusted) `tcb_info`
+/// and confirmed to be in the allowed lists. The DCAP verification — which
+/// proves `tcb_info` was actually measured into the quote — is performed
+/// separately (e.g. in a verifier contract via cross-contract call).
+#[derive(Clone, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+pub struct DstackPreCheck {
+    pub mpc_image_hash: NodeImageHash,
+    pub launcher_compose_hash: LauncherDockerComposeHash,
+}
+
+/// Pre-DCAP checks on a Dstack attestation. Extracts the mpc image hash and
+/// launcher compose hash from `tcb_info`, then validates each against its
+/// allowed list. Safe to run in the contract because it does not call any
+/// `dcap-qvl` code; the cross-contract verifier runs the heavy crypto check
+/// that proves `tcb_info` itself is genuine.
+pub fn dstack_pre_check(
+    dstack_attestation: &DstackAttestation,
+    allowed_mpc_docker_image_hashes: &[NodeImageHash],
+    allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
+) -> Result<DstackPreCheck, VerificationError> {
+    let mpc_image_hash: NodeImageHash = {
+        let mpc_image_hash_payload = &dstack_attestation
+            .tcb_info
+            .get_single_event(MPC_IMAGE_HASH_EVENT)?
+            .event_payload;
+
+        // TODO(#2478): decode raw bytes
+        let mpc_image_hash_bytes: Vec<u8> =
+            hex::decode(mpc_image_hash_payload).map_err(|err| {
+                VerificationError::Custom(format!(
+                    "provided mpc image is not hex encoded: {:?}",
+                    err
+                ))
+            })?;
+        let mpc_image_hash_bytes: [u8; 32] = mpc_image_hash_bytes.try_into().map_err(|_| {
+            VerificationError::Custom("The provided MPC image hash is not 32 bytes".to_string())
+        })?;
+        NodeImageHash::from(mpc_image_hash_bytes)
+    };
+
+    verify_mpc_hash(&mpc_image_hash, allowed_mpc_docker_image_hashes)?;
+
+    let launcher_compose_hash: LauncherDockerComposeHash = {
+        let app_compose: AppCompose = serde_json::from_str(&dstack_attestation.tcb_info.app_compose)
+            .map_err(|e| VerificationError::AppComposeParsing(e.to_string()))?;
+
+        let launcher_compose_hash_bytes: [u8; 32] =
+            Sha256::digest(app_compose.docker_compose_file.as_bytes()).into();
+
+        LauncherDockerComposeHash::from(launcher_compose_hash_bytes)
+    };
+
+    verify_launcher_compose_hash(
+        &launcher_compose_hash,
+        allowed_launcher_docker_compose_hashes,
+    )?;
+
+    Ok(DstackPreCheck {
+        mpc_image_hash,
+        launcher_compose_hash,
+    })
+}
+
 /// Verifies MPC node image hash is in allowed list.
-fn verify_mpc_hash(
+pub fn verify_mpc_hash(
     image_hash: &NodeImageHash,
     allowed_hashes: &[NodeImageHash],
 ) -> Result<(), VerificationError> {
@@ -238,7 +285,7 @@ fn verify_mpc_hash(
     Ok(())
 }
 
-fn verify_launcher_compose_hash(
+pub fn verify_launcher_compose_hash(
     launcher_compose_hash: &LauncherDockerComposeHash,
     allowed_hashes: &[LauncherDockerComposeHash],
 ) -> Result<(), VerificationError> {

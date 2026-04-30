@@ -566,6 +566,61 @@ expression: abi
         }
       },
       {
+        "name": "on_dstack_attestation_verified",
+        "doc": " Callback for [`Self::submit_participant_info`] when the proposed\n attestation is `Attestation::Dstack`. Records the verified attestation\n and charges the caller for storage.\n\n On verifier failure (panic or rejection), this callback panics so the\n receipt rolls back; the deposit attached to the original call has\n already been credited to this contract and is not auto-refunded —\n reclaim is left as a follow-up beyond the PoC.",
+        "kind": "call",
+        "modifiers": [
+          "private"
+        ],
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "node_id",
+              "type_schema": {
+                "$ref": "#/definitions/NodeId"
+              }
+            },
+            {
+              "name": "mpc_image_hash",
+              "type_schema": {
+                "$ref": "#/definitions/DockerImageHash"
+              }
+            },
+            {
+              "name": "launcher_compose_hash",
+              "type_schema": {
+                "$ref": "#/definitions/LauncherDockerComposeHash"
+              }
+            },
+            {
+              "name": "timestamp_seconds",
+              "type_schema": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            },
+            {
+              "name": "attached_deposit_yocto",
+              "type_schema": {
+                "type": "integer",
+                "format": "uint128",
+                "minimum": 0.0
+              }
+            }
+          ]
+        },
+        "callbacks": [
+          {
+            "serialization_type": "json",
+            "type_schema": {
+              "$ref": "#/definitions/ContractExpectedMeasurements"
+            }
+          }
+        ]
+      },
+      {
         "name": "os_measurement_votes",
         "doc": " Returns the current OS measurement votes, showing each participant's vote.",
         "kind": "view",
@@ -1119,7 +1174,7 @@ expression: abi
       },
       {
         "name": "submit_participant_info",
-        "doc": " (Prospective) Participants can submit their tee participant information through this\n endpoint.",
+        "doc": " (Prospective) Participants can submit their tee participant information through this\n endpoint.\n\n For the `Mock` variant, verification runs synchronously in-contract.\n For the `Dstack` variant, the heavy DCAP/TDX verification is delegated\n to the external verifier contract at [`tee_verifier_account_id`] via a\n cross-contract call, and the attestation is recorded by the\n [`MpcContract::on_dstack_attestation_verified`] callback. The caller\n must attach a deposit to cover storage in either case.",
         "kind": "call",
         "modifiers": [
           "payable"
@@ -1144,7 +1199,7 @@ expression: abi
         "result": {
           "serialization_type": "json",
           "type_schema": {
-            "type": "null"
+            "$ref": "#/definitions/PromiseOrValueNull"
           }
         }
       },
@@ -3056,6 +3111,9 @@ expression: abi
               "$ref": "#/definitions/Bls12381G1PublicKey"
             }
           }
+        },
+        "PromiseOrValueNull": {
+          "type": "null"
         },
         "PromiseOrValueSignatureResponse": {
           "oneOf": [

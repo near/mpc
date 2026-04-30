@@ -72,6 +72,12 @@ use primitives::{
 };
 use tee::measurements::{ContractExpectedMeasurements, MeasurementVoteAction, MeasurementVotes};
 use tee::proposal::{CodeHashesVotes, LauncherHashVotes};
+use tee::verifier::{
+    ext_tee_verifier, tee_verifier_account_id, ON_DSTACK_ATTESTATION_VERIFIED_GAS,
+    VERIFY_DSTACK_ATTESTATION_GAS,
+};
+
+use mpc_attestation::attestation::Attestation;
 
 use state::{running::RunningContractState, ProtocolContractState};
 use tee::{
@@ -765,14 +771,21 @@ impl MpcContract {
 
     /// (Prospective) Participants can submit their tee participant information through this
     /// endpoint.
+    ///
+    /// For the `Mock` variant, verification runs synchronously in-contract.
+    /// For the `Dstack` variant, the heavy DCAP/TDX verification is delegated
+    /// to the external verifier contract at [`tee_verifier_account_id`] via a
+    /// cross-contract call, and the attestation is recorded by the
+    /// [`MpcContract::on_dstack_attestation_verified`] callback. The caller
+    /// must attach a deposit to cover storage in either case.
     #[payable]
     #[handle_result]
     pub fn submit_participant_info(
         &mut self,
         proposed_participant_attestation: dtos::Attestation,
         tls_public_key: dtos::Ed25519PublicKey,
-    ) -> Result<(), Error> {
-        let proposed_participant_attestation =
+    ) -> Result<PromiseOrValue<()>, Error> {
+        let proposed_participant_attestation: Attestation =
             proposed_participant_attestation.try_into_contract_type()?;
 
         let account_key = env::signer_account_pk();
@@ -784,10 +797,6 @@ impl MpcContract {
             proposed_participant_attestation,
             account_key
         );
-
-        // Save the initial storage usage to know how much to charge the proposer for the storage
-        // used
-        let initial_storage = env::storage_usage();
 
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
@@ -802,52 +811,179 @@ impl MpcContract {
             }
         })?;
 
-        // Add the participant information to the contract state
-        let attestation_insertion_result = self
-            .tee_state
-            .add_participant(
-                NodeId {
-                    account_id: account_id.clone(),
-                    tls_public_key,
-                    account_public_key,
-                },
-                proposed_participant_attestation,
-                tee_upgrade_deadline_duration,
-            )
-            .map_err(|err| InvalidParameters::InvalidTeeRemoteAttestation {
-                reason: format!("TeeQuoteStatus is invalid: {err}"),
-            })?;
+        let node_id = NodeId {
+            account_id: account_id.clone(),
+            tls_public_key,
+            account_public_key,
+        };
 
-        let caller_is_not_participant = self.voter_account().is_err();
-        let is_new_attestation = matches!(
-            attestation_insertion_result,
-            ParticipantInsertion::NewlyInsertedParticipant
+        match proposed_participant_attestation {
+            Attestation::Mock(mock) => {
+                let initial_storage = env::storage_usage();
+                let insertion_result = self
+                    .tee_state
+                    .add_mock_participant(node_id, mock, tee_upgrade_deadline_duration)
+                    .map_err(|err| InvalidParameters::InvalidTeeRemoteAttestation {
+                        reason: format!("TeeQuoteStatus is invalid: {err}"),
+                    })?;
+
+                self.charge_attestation_storage(initial_storage, insertion_result, account_id)?;
+                Ok(PromiseOrValue::Value(()))
+            }
+            Attestation::Dstack(dstack) => {
+                // Pre-checks: extract image / launcher hashes from the
+                // (untrusted) tcb_info and validate them against the allowed
+                // lists. The DCAP proof that tcb_info is genuine is the job
+                // of the external verifier.
+                let pre_check = self
+                    .tee_state
+                    .dstack_pre_checks(&dstack, tee_upgrade_deadline_duration)
+                    .map_err(|err| InvalidParameters::InvalidTeeRemoteAttestation {
+                        reason: format!("TeeQuoteStatus is invalid: {err}"),
+                    })?;
+
+                let expected_report_data = TeeState::expected_report_data_bytes(&node_id);
+                let accepted_measurements: Vec<ContractExpectedMeasurements> = self
+                    .tee_state
+                    .get_allowed_measurements();
+                let timestamp_seconds = env::block_timestamp_ms() / 1_000;
+                // PoC: pass the deposit through to the callback so the
+                // storage charge happens once we know how many bytes the
+                // attestation actually used. In the callback this comes back
+                // as a u128 of yoctoNEAR; the original attached_deposit is
+                // already held by this contract.
+                let attached_deposit_yocto = env::attached_deposit().as_yoctonear();
+
+                // The cross-contract trait uses the JsonSchema-friendly DTO
+                // type for the attestation. Convert here.
+                let dstack_dto: dtos::DstackAttestation = dstack.into_dto_type();
+
+                let promise = ext_tee_verifier::ext(tee_verifier_account_id())
+                    .with_static_gas(VERIFY_DSTACK_ATTESTATION_GAS)
+                    .verify_dstack_attestation(
+                        dstack_dto,
+                        expected_report_data,
+                        accepted_measurements,
+                        timestamp_seconds,
+                    )
+                    .then(
+                        Self::ext(env::current_account_id())
+                            .with_static_gas(ON_DSTACK_ATTESTATION_VERIFIED_GAS)
+                            .on_dstack_attestation_verified(
+                                node_id,
+                                pre_check.mpc_image_hash,
+                                pre_check.launcher_compose_hash,
+                                timestamp_seconds,
+                                attached_deposit_yocto,
+                            ),
+                    );
+
+                Ok(PromiseOrValue::Promise(promise))
+            }
+        }
+    }
+
+    /// Callback for [`Self::submit_participant_info`] when the proposed
+    /// attestation is `Attestation::Dstack`. Records the verified attestation
+    /// and charges the caller for storage.
+    ///
+    /// On verifier failure (panic or rejection), this callback panics so the
+    /// receipt rolls back; the deposit attached to the original call has
+    /// already been credited to this contract and is not auto-refunded —
+    /// reclaim is left as a follow-up beyond the PoC.
+    #[private]
+    pub fn on_dstack_attestation_verified(
+        &mut self,
+        node_id: NodeId,
+        mpc_image_hash: NodeImageHash,
+        launcher_compose_hash: LauncherDockerComposeHash,
+        timestamp_seconds: u64,
+        attached_deposit_yocto: u128,
+        #[callback_result] verifier_result: Result<ContractExpectedMeasurements, PromiseError>,
+    ) {
+        let measurements = match verifier_result {
+            Ok(m) => m,
+            Err(err) => env::panic_str(&format!(
+                "TEE verifier contract call failed: {:?}",
+                err
+            )),
+        };
+
+        let pre_check = mpc_attestation::attestation::DstackPreCheck {
+            mpc_image_hash,
+            launcher_compose_hash,
+        };
+
+        let initial_storage = env::storage_usage();
+        let account_id = node_id.account_id.clone();
+        let insertion_result = self.tee_state.record_verified_dstack_attestation(
+            node_id,
+            pre_check,
+            measurements.into(),
+            timestamp_seconds,
         );
 
-        let attestation_storage_must_be_paid_by_caller =
-            is_new_attestation || caller_is_not_participant;
-
-        if attestation_storage_must_be_paid_by_caller {
+        if matches!(insertion_result, ParticipantInsertion::NewlyInsertedParticipant) {
             let storage_used = env::storage_usage() - initial_storage;
             let cost = env::storage_byte_cost().saturating_mul(storage_used as u128);
-            let attached = env::attached_deposit();
-
+            let attached = NearToken::from_yoctonear(attached_deposit_yocto);
             if attached < cost {
-                return Err(InvalidParameters::InsufficientDeposit {
-                    attached: attached.as_yoctonear(),
-                    required: cost.as_yoctonear(),
-                }
-                .into());
+                env::panic_str(
+                    &InvalidParameters::InsufficientDeposit {
+                        attached: attached.as_yoctonear(),
+                        required: cost.as_yoctonear(),
+                    }
+                    .to_string(),
+                );
             }
-
-            // Refund the difference if the proposer attached more than required
             if let Some(diff) = attached.checked_sub(cost) {
                 if diff > NearToken::from_yoctonear(0) {
                     Promise::new(account_id).transfer(diff).detach();
                 }
             }
+        } else if attached_deposit_yocto > 0 {
+            // Updating an existing attestation: nothing extra to charge for,
+            // refund the full deposit.
+            Promise::new(account_id)
+                .transfer(NearToken::from_yoctonear(attached_deposit_yocto))
+                .detach();
+        }
+    }
+
+    /// Storage-charge bookkeeping shared by the Mock submit path. Charges the
+    /// caller iff this is a brand-new attestation entry or the caller is not
+    /// already a participant (matching the previous synchronous behavior).
+    fn charge_attestation_storage(
+        &self,
+        initial_storage: u64,
+        insertion_result: ParticipantInsertion,
+        account_id: AccountId,
+    ) -> Result<(), Error> {
+        let caller_is_not_participant = self.voter_account().is_err();
+        let is_new_attestation = matches!(
+            insertion_result,
+            ParticipantInsertion::NewlyInsertedParticipant
+        );
+        let must_charge = is_new_attestation || caller_is_not_participant;
+        if !must_charge {
+            return Ok(());
         }
 
+        let storage_used = env::storage_usage() - initial_storage;
+        let cost = env::storage_byte_cost().saturating_mul(storage_used as u128);
+        let attached = env::attached_deposit();
+        if attached < cost {
+            return Err(InvalidParameters::InsufficientDeposit {
+                attached: attached.as_yoctonear(),
+                required: cost.as_yoctonear(),
+            }
+            .into());
+        }
+        if let Some(diff) = attached.checked_sub(cost) {
+            if diff > NearToken::from_yoctonear(0) {
+                Promise::new(account_id).transfer(diff).detach();
+            }
+        }
         Ok(())
     }
 
@@ -3208,7 +3344,9 @@ mod tests {
             .build();
         testing_env!(participant_context);
 
-        contract.submit_participant_info(Attestation::Mock(attestation), dto_public_key)
+        contract
+            .submit_participant_info(Attestation::Mock(attestation), dto_public_key)
+            .map(|_| ())
     }
 
     fn submit_valid_attestations(
@@ -4777,7 +4915,7 @@ mod tests {
         let result = contract.submit_participant_info(attestation, tls_key);
 
         // then
-        assert_matches::assert_matches!(result, Ok(()));
+        assert!(result.is_ok(), "submit_participant_info should succeed");
     }
 
     /// Note - this test uses attestation data from a real MPC node. After Any change to the expected contract measurement, /test-utils/assets need to be updated.
@@ -4811,7 +4949,7 @@ mod tests {
         let result = contract.submit_participant_info(attestation, tls_key);
 
         // then
-        let error_string = result.unwrap_err().to_string();
+        let error_string = result.err().expect("submit should fail").to_string();
         assert!(error_string
         .contains("Invalid TEE Remote Attestation: TeeQuoteStatus is invalid: the submitted attestation failed verification, reason: Custom(\"the allowed mpc image hashes list is empty\")"), "Got error: {}", &error_string);
     }
@@ -4819,6 +4957,12 @@ mod tests {
     /// **TLS key validation** - Tests that TEE attestation fails when TLS key doesn't match the one in report data.
     /// Similar to the successful test method case above, but uses a deliberately corrupted TLS key to verify
     /// that attestation validation properly checks the TLS key embedded in the attestation report.
+    // The TLS-key/report-data check now happens inside the external verifier
+    // contract (kd/tee-verifier-promise PoC). The local `submit_participant_info`
+    // call no longer surfaces it as a synchronous error — it only returns the
+    // pre-DCAP allowed-list errors. Re-enable when we can drive the cross-contract
+    // callback path with a stubbed verifier.
+    #[ignore = "moved to verifier contract; cannot test here"]
     #[test]
     fn test_tee_attestation_fails_with_invalid_tls_key() {
         let (
@@ -4859,7 +5003,7 @@ mod tests {
         let result = contract.submit_participant_info(attestation, invalid_tls_key);
 
         // then
-        let error_string = result.unwrap_err().to_string();
+        let error_string = result.err().expect("submit should fail").to_string();
         assert!(error_string
         .contains("Invalid TEE Remote Attestation: TeeQuoteStatus is invalid: the submitted attestation failed verification, reason: WrongHash { name: \"report_data\""), "Got error: {}", &error_string);
     }

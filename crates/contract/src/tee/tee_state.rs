@@ -11,7 +11,10 @@ use crate::{
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_attestation::{
-    attestation::{self, Attestation, VerifiedAttestation},
+    attestation::{
+        self, dstack_pre_check, DstackPreCheck, ExpectedMeasurements, MockAttestation,
+        ValidatedDstackAttestation, VerifiedAttestation, DEFAULT_EXPIRATION_DURATION_SECONDS,
+    },
     report_data::{ReportData, ReportDataV1},
 };
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash};
@@ -138,30 +141,81 @@ impl TeeState {
         current_time_milliseconds / 1_000
     }
 
-    /// Adds a participant attestation for the given node iff the attestation succeeds verification.
-    pub(crate) fn add_participant(
+    /// Records a Mock attestation. No DCAP work is involved, so this stays
+    /// fully synchronous — used only for tests and bootstrapping. Real
+    /// (Dstack) attestations go through `dstack_pre_checks` +
+    /// `record_verified_dstack_attestation`, with the heavy verification
+    /// delegated to an external verifier contract via cross-contract call.
+    pub(crate) fn add_mock_participant(
         &mut self,
         node_id: NodeId,
-        attestation: Attestation,
+        mock: MockAttestation,
         tee_upgrade_deadline_duration: Duration,
     ) -> Result<ParticipantInsertion, AttestationSubmissionError> {
-        let expected_report_data: ReportData = ReportDataV1::new(
+        let accepted_measurements = self.get_accepted_measurements();
+        mock.verify(
+            &self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration),
+            &self.get_allowed_launcher_compose_hashes(),
+            &accepted_measurements,
+            Self::current_time_seconds(),
+        )?;
+
+        Ok(self.insert_attestation(node_id, VerifiedAttestation::Mock(mock)))
+    }
+
+    /// Pre-DCAP checks for a Dstack attestation: extracts the mpc image hash
+    /// and launcher compose hash from the (untrusted) `tcb_info` and confirms
+    /// each is in its allowed list. The DCAP check that proves `tcb_info`
+    /// itself is genuine is delegated to the verifier contract.
+    pub(crate) fn dstack_pre_checks(
+        &self,
+        dstack: &attestation::DstackAttestation,
+        tee_upgrade_deadline_duration: Duration,
+    ) -> Result<DstackPreCheck, AttestationSubmissionError> {
+        Ok(dstack_pre_check(
+            dstack,
+            &self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration),
+            &self.get_allowed_launcher_compose_hashes(),
+        )?)
+    }
+
+    /// Builds the expected `ReportData` bytes for the given node. This is
+    /// passed to the verifier contract so it can confirm the quote was
+    /// produced for this specific (tls, account) pair.
+    pub(crate) fn expected_report_data_bytes(node_id: &NodeId) -> Vec<u8> {
+        let report_data: ReportData = ReportDataV1::new(
             *node_id.tls_public_key.as_bytes(),
             *node_id.account_public_key.as_bytes(),
         )
         .into();
+        report_data.to_bytes().to_vec()
+    }
 
-        let accepted_measurements = self.get_accepted_measurements();
-        let verified_attestation = attestation.verify(
-            expected_report_data.into(),
-            Self::current_time_seconds(),
-            &self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration),
-            &self.get_allowed_launcher_compose_hashes(),
-            &accepted_measurements,
-        )?;
+    /// Records a Dstack attestation that has been verified by the external
+    /// verifier contract. Called from `on_dstack_attestation_verified`.
+    pub(crate) fn record_verified_dstack_attestation(
+        &mut self,
+        node_id: NodeId,
+        pre_check: DstackPreCheck,
+        measurements: ExpectedMeasurements,
+        current_time_seconds: u64,
+    ) -> ParticipantInsertion {
+        let verified = VerifiedAttestation::Dstack(ValidatedDstackAttestation {
+            mpc_image_hash: pre_check.mpc_image_hash,
+            launcher_compose_hash: pre_check.launcher_compose_hash,
+            // TODO(#1639): extract timestamp from certificate itself.
+            expiry_timestamp_seconds: current_time_seconds + DEFAULT_EXPIRATION_DURATION_SECONDS,
+            measurements,
+        });
+        self.insert_attestation(node_id, verified)
+    }
 
+    fn insert_attestation(
+        &mut self,
+        node_id: NodeId,
+        verified_attestation: VerifiedAttestation,
+    ) -> ParticipantInsertion {
         let tls_pk = node_id.tls_public_key.clone();
-
         let insertion = self.stored_attestations.insert(
             tls_pk,
             NodeAttestation {
@@ -169,11 +223,32 @@ impl TeeState {
                 verified_attestation,
             },
         );
-
-        Ok(match insertion {
+        match insertion {
             Some(_previous_attestation) => ParticipantInsertion::UpdatedExistingParticipant,
             None => ParticipantInsertion::NewlyInsertedParticipant,
-        })
+        }
+    }
+
+    /// Test-only back-compat shim. Routes `Mock` attestations through
+    /// `add_mock_participant`; `Dstack` is unsupported in unit tests because
+    /// the heavy verification now lives in an external contract.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub(crate) fn add_participant(
+        &mut self,
+        node_id: NodeId,
+        attestation: attestation::Attestation,
+        tee_upgrade_deadline_duration: Duration,
+    ) -> Result<ParticipantInsertion, AttestationSubmissionError> {
+        match attestation {
+            attestation::Attestation::Mock(mock) => {
+                self.add_mock_participant(node_id, mock, tee_upgrade_deadline_duration)
+            }
+            attestation::Attestation::Dstack(_) => panic!(
+                "add_participant: Dstack attestations are verified via cross-contract \
+                 promise in production; unit tests should drive the Mock path or call \
+                 record_verified_dstack_attestation directly"
+            ),
+        }
     }
 
     /// reverifies stored participant attestations.
@@ -360,7 +435,9 @@ impl TeeState {
     /// Returns accepted measurements for attestation verification.
     /// Returns the on-chain list as-is (empty list means no measurements are accepted,
     /// consistent with docker image hashes and launcher hashes).
-    fn get_accepted_measurements(&self) -> Vec<mpc_attestation::attestation::ExpectedMeasurements> {
+    pub(crate) fn get_accepted_measurements(
+        &self,
+    ) -> Vec<mpc_attestation::attestation::ExpectedMeasurements> {
         self.allowed_measurements.to_attestation_measurements()
     }
 
