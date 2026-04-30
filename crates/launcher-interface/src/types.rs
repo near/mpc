@@ -35,7 +35,7 @@ pub struct PccsEndpointConfig {
 /// Per-endpoint TLS trust override. `None` = default reqwest+rustls trust
 /// roots (bundled Mozilla webpki-roots).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "override", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PccsTlsTrust {
     /// Pin a PEM certificate as an additional trust anchor. Default
     /// trust roots stay active.

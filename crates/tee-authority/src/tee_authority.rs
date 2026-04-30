@@ -159,7 +159,7 @@ pub fn validate_pccs_endpoints(
             Some(PccsTlsTrust::Insecure) => {
                 tracing::warn!(
                     url = %endpoint.url,
-                    "tls.mode = \"insecure\": PCCS TLS certificate verification is DISABLED \
+                    "tls.override = \"insecure\": PCCS TLS certificate verification is DISABLED \
                      for this endpoint. Recommended only for local/loopback PCCS endpoints."
                 );
             }

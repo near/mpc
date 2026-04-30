@@ -34,7 +34,7 @@ pub struct StartConfig {
     ///
     /// Per-URL TLS trust override (the `tls = ...` part of each entry)
     /// lets an operator combine, for example, a self-signed local PCCS
-    /// (`tls = { mode = "insecure" }`) with public-CA fallbacks
+    /// (`tls = { override = "insecure" }`) with public-CA fallbacks
     /// (`tls` omitted) in the same fallback chain.
     #[serde(default = "default_pccs_endpoints")]
     pub pccs_endpoints: NonEmptyVec<PccsEndpointConfig>,
@@ -258,7 +258,7 @@ mod tests {
         let toml_input = r#"
             [[pccs_endpoints]]
             url = "https://localhost:8081/"
-            tls = { mode = "insecure" }
+            tls = { override = "insecure" }
 
             [[pccs_endpoints]]
             url = "https://pccs.phala.network/"
