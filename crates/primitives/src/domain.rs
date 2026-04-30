@@ -61,8 +61,6 @@ impl DomainId {
 pub enum Curve {
     #[default]
     Secp256k1,
-    // Accepts "Ed25519" for compat with pre-3.9.0 contracts. Remove after 3.9.0 deployment.
-    #[serde(alias = "Ed25519")]
     Edwards25519,
     Bls12381,
     /// Robust ECDSA variant.

@@ -419,43 +419,6 @@ async fn upgrade_allows_new_request_types(
     }
 }
 
-/// Verifies that the DTO `ProtocolContractState` can be deserialized from JSON
-/// produced by an older contract (which uses `"scheme"/"Ed25519"` instead of
-/// `"curve"/"Edwards25519"`). This matters because the node reads old contract
-/// state via the DTO's serde aliases.
-#[rstest]
-#[tokio::test]
-async fn protocol_contract_state__should_deserialize_from_old_contract_json(
-    #[values(Network::Mainnet, Network::Testnet)] network: Network,
-) {
-    // Given: an old contract with populated Running state
-    let worker = near_workspaces::sandbox().await.unwrap();
-    let contract = deploy_old(&worker, network).await.unwrap();
-    let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN)
-        .await
-        .unwrap();
-    execute_key_generation_and_add_random_state(
-        &accounts,
-        participants,
-        &contract,
-        &worker,
-        &mut OsRng,
-    )
-    .await;
-
-    // When: we read the raw JSON and deserialize into the DTO type (which
-    // accepts both old "scheme"/"Ed25519" and new "curve"/"Edwards25519" via
-    // serde aliases). This is the same path the node takes.
-    let state: ProtocolContractState = get_state(&contract).await;
-
-    // Then: the state is Running
-    assert!(
-        matches!(state, ProtocolContractState::Running(_)),
-        "Expected Running state, got: {:?}",
-        state
-    );
-}
-
 #[tokio::test]
 async fn init_running_rejects_external_callers_pre_initialization() {
     let (worker, contract) = init().await;

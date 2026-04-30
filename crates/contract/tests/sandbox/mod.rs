@@ -7,7 +7,6 @@ pub mod tee;
 pub mod tee_cleanup_after_resharing;
 pub mod update_votes_cleanup_after_resharing;
 pub mod upgrade_from_current_contract;
-#[expect(non_snake_case)]
 pub mod upgrade_to_current_contract;
 pub mod user_views;
 pub mod vote;
