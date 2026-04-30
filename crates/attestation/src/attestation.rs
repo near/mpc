@@ -125,27 +125,20 @@ impl DstackAttestation {
     /// On success, returns the matched measurements.
     pub fn verify(
         &self,
-        expected_report_data: ReportData,
-        timestamp_seconds: u64,
+        _expected_report_data: ReportData,
+        _timestamp_seconds: u64,
         accepted_measurements: &[ExpectedMeasurements],
     ) -> Result<ExpectedMeasurements, VerificationError> {
-        let verification_result =
-            dcap_qvl::verify::verify(&self.quote, &self.collateral, timestamp_seconds)
-                .map_err(|e| VerificationError::DcapVerification(e.to_string()))?;
-
-        let report_data = verification_result
-            .report
-            .as_td10()
-            .ok_or(VerificationError::ReportNotTd10)?;
-
-        // Verify all attestation components
-        self.verify_tcb_status(&verification_result)?;
-        self.verify_report_data(&expected_report_data, report_data)?;
-
-        self.verify_rtmr3(report_data, &self.tcb_info)?;
-        self.verify_app_compose(&self.tcb_info)?;
-
-        self.verify_any_measurements(report_data, &self.tcb_info, accepted_measurements)
+        // PoC stub for binary-size measurement: skips DCAP/TDX verification
+        // entirely and accepts any attestation by returning the first
+        // entry of the allowed measurements list. **Not for production.**
+        // Demonstrates the wasm size impact of moving the heavy `dcap-qvl`
+        // verification out of `mpc-contract` (e.g. into a verifier
+        // contract called via cross-contract promise).
+        accepted_measurements
+            .first()
+            .copied()
+            .ok_or(VerificationError::EmptyMeasurementsList)
     }
 
     /// Replays RTMR3 from the event log by hashing all relevant events together and verifies all
