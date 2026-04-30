@@ -2,7 +2,9 @@ use super::debug::{CompletedRequest, CompletedRequests};
 use crate::indexer::types::ChainRespondArgs;
 use crate::primitives::ParticipantId;
 use crate::requests::metrics;
-use crate::requests::recent_blocks_tracker::{CheckBlockResult, RecentBlocksTracker};
+use crate::requests::recent_blocks_tracker::{
+    BlockReference, CheckBlockResult, RecentBlocksTracker,
+};
 use crate::types::{self, Request, RequestId, RequestsUpdate};
 use k256::sha2::Sha256;
 use near_indexer_primitives::types::NumBlocks;
@@ -79,10 +81,20 @@ pub struct PendingRequests<RequestType: Request, ChainRespondArgsType: ChainResp
     pub(super) recently_completed_requests: CompletedRequests<RequestType, ChainRespondArgsType>,
 }
 
+struct RequestsFromBlocks<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> {
+    /// Map from request ID to the request. Successful and expired requests are removed
+    /// from this map. This is the "queue".
+    pub(super) requests: HashMap<RequestId, QueuedRequest<RequestType, ChainRespondArgsType>>,
+    /// Requests by block
+    pub(super) requests_by_block: HashMap<CryptoHash, Vec<RequestId>>,
+    /// responses by block
+    pub(super) responses_by_block: HashMap<CryptoHash, Vec<RequestId>>,
+}
+
 /// A block in which the response to a queued request has been observed.
 #[derive(Clone, Debug)]
 struct SubmittedResponse {
-    ref: BlockReference,
+    block: BlockReference,
     /// Wall-clock time at which the queue observed the block containing the response.
     /// used to compute `*_REQUEST_RESPONSE_LATENCY_SECONDS`,
     /// measuring the time difference between request and response block
@@ -258,51 +270,35 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             requests,
             completed_requests,
         } = requests;
-        let timestamp_received = self.clock.now();
 
-        let add_result = match self.recent_blocks.add_block(&block) {
-            Ok(add_result) => add_result,
-            Err(err) => {
-                // block already exists.
-                tracing::warn!(target: "request", "Ignoring block {:?} at height {}: {:?}", block.hash, block.height, err);
-                return;
-            }
-        };
+        if let Err(err) = self.recent_blocks.add_block(&block) {
+            // block already exists.
+            tracing::warn!(target: "request", "Ignoring block {:?} at height {}: {:?}", block.hash, block.height, err);
+            return;
+        }
 
         let (
             mpc_pending_queue_blocks_indexed,
-            mpc_pending_queue_finalized_blocks_indexed,
             mpc_pending_queue_responses_indexed,
             mpc_pending_queue_matching_responses_indexed,
-            request_response_latency_blocks,
-            request_response_latency_seconds,
             mpc_pending_requests_queue_requests_indexed,
         ) = match RequestType::get_type() {
             types::RequestType::CKD => (
                 &metrics::MPC_PENDING_CKDS_QUEUE_BLOCKS_INDEXED,
-                &metrics::MPC_PENDING_CKDS_QUEUE_FINALIZED_BLOCKS_INDEXED,
                 &metrics::MPC_PENDING_CKDS_QUEUE_RESPONSES_INDEXED,
                 &metrics::MPC_PENDING_CKDS_QUEUE_MATCHING_RESPONSES_INDEXED,
-                &metrics::CKD_REQUEST_RESPONSE_LATENCY_BLOCKS,
-                &metrics::CKD_REQUEST_RESPONSE_LATENCY_SECONDS,
                 &metrics::MPC_PENDING_CKDS_QUEUE_REQUESTS_INDEXED,
             ),
             types::RequestType::Signature => (
                 &metrics::MPC_PENDING_SIGNATURES_QUEUE_BLOCKS_INDEXED,
-                &metrics::MPC_PENDING_SIGNATURES_QUEUE_FINALIZED_BLOCKS_INDEXED,
                 &metrics::MPC_PENDING_SIGNATURES_QUEUE_RESPONSES_INDEXED,
                 &metrics::MPC_PENDING_SIGNATURES_QUEUE_MATCHING_RESPONSES_INDEXED,
-                &metrics::SIGNATURE_REQUEST_RESPONSE_LATENCY_BLOCKS,
-                &metrics::SIGNATURE_REQUEST_RESPONSE_LATENCY_SECONDS,
                 &metrics::MPC_PENDING_SIGNATURES_QUEUE_REQUESTS_INDEXED,
             ),
             types::RequestType::VerifyForeignTx => (
                 &metrics::MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_BLOCKS_INDEXED_TOTAL,
-                &metrics::MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_FINALIZED_BLOCKS_INDEXED_TOTAL,
                 &metrics::MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_RESPONSES_INDEXED_TOTAL,
                 &metrics::MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_MATCHING_RESPONSES_INDEXED_TOTAL,
-                &metrics::VERIFY_FOREIGN_TXS_REQUEST_RESPONSE_LATENCY_BLOCKS,
-                &metrics::VERIFY_FOREIGN_TXS_REQUEST_RESPONSE_LATENCY_SECONDS,
                 &metrics::MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_REQUESTS_INDEXED_TOTAL,
             ),
         };
@@ -314,48 +310,18 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
         for request_id in &completed_requests {
             if let Some(request) = self.requests.get_mut(request_id) {
                 mpc_pending_queue_matching_responses_indexed.inc();
+                // track this block, as a response to this request has been observed in it
                 request.response_blocks.push(SubmittedResponse {
-                    block_hash: block.hash,
-                    block_height: block.height,
+                    block: BlockReference::from(&block),
                     timestamp_received: now,
                 });
             }
         }
-        for block_ref in add_result {
-            mpc_pending_queue_finalized_blocks_indexed.inc();
-            mpc_pending_queue_responses_indexed
-                .inc_by(buffered_block_data.completed_requests.len() as u64);
 
-            for request_id in &buffered_block_data.completed_requests {
-                tracing::debug!(target: "request", "Removing completed request {:?}", request_id);
-                if let Some(request) = self.requests.remove(request_id) {
-                    mpc_pending_queue_matching_responses_indexed.inc();
-
-                    let response_latency_blocks = final_block_height - request.block_height;
-                    let response_latency_duration = buffered_block_data
-                        .timestamp_received
-                        .signed_duration_since(request.time_indexed);
-
-                    request_response_latency_blocks.observe(response_latency_blocks as f64);
-
-                    request_response_latency_seconds
-                        .observe(response_latency_duration.as_seconds_f64());
-
-                    self.recently_completed_requests
-                        .add_completed_request(CompletedRequest {
-                            indexed_block_height: request.block_height,
-                            request: request.request,
-                            progress: request.computation_progress,
-                            completion_delay: Some((
-                                response_latency_blocks,
-                                response_latency_duration,
-                            )),
-                        });
-                }
-            }
-        }
         mpc_pending_requests_queue_requests_indexed.inc_by(requests.len() as u64);
         for request in requests {
+            // todo: if we get the same request in different blocks, we might miss them here.
+            // we might want to keep track of all blocks in which this request was submitted.
             self.requests
                 .entry(request.get_id())
                 .or_insert(QueuedRequest::new(
@@ -364,7 +330,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                     block.hash,
                     block.height,
                     &self.all_participants,
-                    self.clock.now(),
+                    now,
                 ));
         }
     }
@@ -411,10 +377,73 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
         let (eligible_leaders, maximum_height) = self.eligible_leaders_and_maximum_height();
         tracing::debug!(target: "request", "Eligible leaders: {:?}", eligible_leaders);
 
+        let (request_response_latency_blocks, request_response_latency_seconds) =
+            match RequestType::get_type() {
+                types::RequestType::CKD => (
+                    &metrics::CKD_REQUEST_RESPONSE_LATENCY_BLOCKS,
+                    &metrics::CKD_REQUEST_RESPONSE_LATENCY_SECONDS,
+                ),
+                types::RequestType::Signature => (
+                    &metrics::SIGNATURE_REQUEST_RESPONSE_LATENCY_BLOCKS,
+                    &metrics::SIGNATURE_REQUEST_RESPONSE_LATENCY_SECONDS,
+                ),
+                types::RequestType::VerifyForeignTx => (
+                    &metrics::VERIFY_FOREIGN_TXS_REQUEST_RESPONSE_LATENCY_BLOCKS,
+                    &metrics::VERIFY_FOREIGN_TXS_REQUEST_RESPONSE_LATENCY_SECONDS,
+                ),
+            };
+
         let mut result = Vec::new();
 
-        let mut requests_to_remove = Vec::new();
+        let recent_blocks = &self.recent_blocks;
+        let mut requests_to_remove: Vec<(RequestId, Option<(NumBlocks, Duration)>)> = Vec::new();
         for (id, request) in &mut self.requests {
+            // First, check if any previously observed response block has reached finality
+            // since the last tick. Drop entries that died on a fork, were not included, or
+            // aged out of the network's expiration window.
+            let mut finalized_completion: Option<SubmittedResponse> = None;
+            request.response_blocks.retain(|sr| {
+                // we should not do this for the responses
+                if maximum_height
+                    .saturating_sub(REQUEST_EXPIRATION_BLOCKS)
+                    .add(1)
+                    > sr.block.height
+                {
+                    return false;
+                }
+                // if the tracker cleaned up the response, we might miss it here.
+                match recent_blocks.classify_block(sr.block.hash) {
+                    CheckBlockResult::RecentAndFinal => {
+                        if finalized_completion.is_none() {
+                            finalized_completion = Some(sr.clone());
+                        }
+                        false
+                    }
+                    CheckBlockResult::NotIncluded | CheckBlockResult::OlderThanRecentWindow => {
+                        false
+                    }
+                    CheckBlockResult::OptimisticAndCanonical
+                    | CheckBlockResult::OptimisticButNotCanonical
+                    | CheckBlockResult::Unknown => true,
+                }
+            });
+            if let Some(sr) = finalized_completion {
+                tracing::debug!(
+                    target: "request",
+                    request_id = %request.request.get_id(),
+                    block_height = request.block_height,
+                    "removing completed request"
+                );
+                let latency_blocks = sr.block.height - request.block_height;
+                let latency_duration = sr
+                    .timestamp_received
+                    .signed_duration_since(request.time_indexed);
+                request_response_latency_blocks.observe(latency_blocks as f64);
+                request_response_latency_seconds.observe(latency_duration.as_seconds_f64());
+                requests_to_remove.push((*id, Some((latency_blocks, latency_duration))));
+                continue;
+            }
+
             if request.next_check_due > now {
                 tracing::debug!(
                     target: "request",
@@ -457,7 +486,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                         .inc();
                 }
                 // This request is definitely not useful anymore, so discard it.
-                requests_to_remove.push(*id);
+                requests_to_remove.push((*id, None));
                 continue;
             }
             let block_classification = self.recent_blocks.classify_block(request.block_hash);
@@ -494,7 +523,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                                             .with_label_values(&["max_tries_exceeded"])
                                             .inc();
                                     }
-                                    requests_to_remove.push(*id);
+                                    requests_to_remove.push((*id, None));
                                     continue;
                                 }
                                 if progress.last_response_submission.is_some_and(|t| {
@@ -555,18 +584,18 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                     }
 
                     // This request is definitely not useful anymore, so discard it.
-                    requests_to_remove.push(*id);
+                    requests_to_remove.push((*id, None));
                 }
             }
         }
-        for id in requests_to_remove {
+        for (id, completion_delay) in requests_to_remove {
             if let Some(request) = self.requests.remove(&id) {
                 self.recently_completed_requests
                     .add_completed_request(CompletedRequest {
                         indexed_block_height: request.block_height,
                         request: request.request,
                         progress: request.computation_progress,
-                        completion_delay: None,
+                        completion_delay,
                     });
             }
         }

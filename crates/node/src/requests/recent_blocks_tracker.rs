@@ -93,6 +93,7 @@ pub enum CheckBlockResult {
 #[derive(From, Deref, IntoIterator)]
 pub(crate) struct NewFinalBlocks(pub(crate) Vec<BlockReference>);
 
+#[derive(Clone, Debug)]
 pub(crate) struct BlockReference {
     pub(crate) hash: CryptoHash,
     pub(crate) height: u64,
