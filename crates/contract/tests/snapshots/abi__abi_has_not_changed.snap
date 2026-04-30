@@ -264,7 +264,7 @@ expression: abi
         }
       },
       {
-        "name": "get_foreign_chain_configurations",
+        "name": "get_foreign_chain_support_by_node",
         "kind": "view",
         "result": {
           "serialization_type": "json",

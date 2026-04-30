@@ -50,7 +50,7 @@ pub struct FakeMpcContractState {
     pub pending_ckds: BTreeMap<dtos::CkdAppId, CKDId>,
     pub pending_verify_foreign_txs: BTreeMap<dtos::ForeignChainRpcRequest, VerifyForeignTxId>,
     supported_foreign_chains: dtos::SupportedForeignChains,
-    supported_foreign_chains_by_node: dtos::NodeForeignChainConfigurations,
+    supported_foreign_chains_by_node: dtos::ForeignChainSupportByNode,
     pub migration_service: NodeMigrations,
 }
 
@@ -86,7 +86,7 @@ impl FakeMpcContractState {
             pending_ckds: BTreeMap::new(),
             pending_verify_foreign_txs: BTreeMap::new(),
             supported_foreign_chains: dtos::SupportedForeignChains::default(),
-            supported_foreign_chains_by_node: dtos::NodeForeignChainConfigurations::default(),
+            supported_foreign_chains_by_node: dtos::ForeignChainSupportByNode::default(),
             migration_service: NodeMigrations::default(),
         }
     }
@@ -95,7 +95,7 @@ impl FakeMpcContractState {
         &self.supported_foreign_chains
     }
 
-    pub fn supported_foreign_chains_by_node(&self) -> &dtos::NodeForeignChainConfigurations {
+    pub fn supported_foreign_chains_by_node(&self) -> &dtos::ForeignChainSupportByNode {
         &self.supported_foreign_chains_by_node
     }
 

@@ -77,7 +77,7 @@ def test_supported_foreign_chains_requires_all_participants(
     # as supported because node 2's configuration does not include it.
     def all_nodes_registered_with_one_empty() -> bool:
         registrations = cluster.view_contract_function(
-            "get_foreign_chain_configurations"
+            "get_foreign_chain_support_by_node"
         )["foreign_chain_configuration_by_node"]
         supported = cluster.view_contract_function("get_supported_foreign_chains")
         empty_count = sum(1 for config in registrations.values() if not config)

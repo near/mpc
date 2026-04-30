@@ -49,7 +49,7 @@ use crate::{
         tee_state::{NodeAttestation, TeeState},
     },
     update::ProposedUpdates,
-    Config, NodeForeignChainConfigurations,
+    Config, SupportedForeignChainsByNode,
 };
 
 /// Previous `ParticipantInfo` layout — the TLS key was stored as a tagged
@@ -59,6 +59,12 @@ use crate::{
 struct OldParticipantInfo {
     url: String,
     sign_pk: near_sdk::PublicKey,
+}
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct NodeForeignChainConfigurations {
+    foreign_chain_configuration_by_node:
+        IterableMap<dtos::AccountId, dtos::ForeignChainConfiguration>,
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
@@ -147,7 +153,7 @@ pub struct MpcContract {
     proposed_updates: ProposedUpdates,
     foreign_chain_policy: ForeignChainPolicy,
     foreign_chain_policy_votes: ForeignChainPolicyVotes,
-    node_foreign_chain_configurations: NodeForeignChainConfigurations,
+    node_foreign_chain_configurations: SupportedForeignChainsByNode,
     config: Config,
     tee_state: OldTeeState,
     accept_requests: bool,
@@ -282,7 +288,7 @@ impl From<MpcContract> for crate::MpcContract {
             pending_ckd_requests: value.pending_ckd_requests,
             pending_verify_foreign_tx_requests: value.pending_verify_foreign_tx_requests,
             proposed_updates: value.proposed_updates,
-            node_foreign_chain_configurations: value.node_foreign_chain_configurations,
+            node_foreign_chain_support: value.node_foreign_chain_configurations.into(),
             config: value.config,
             tee_state: value.tee_state.into(),
             accept_requests: value.accept_requests,

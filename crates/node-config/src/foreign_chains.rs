@@ -79,6 +79,7 @@ impl ForeignChainsConfig {
         self.all_configured_chains().is_empty()
     }
 
+    #[expect(deprecated, reason = "https://github.com/near/mpc/issues/3079")]
     pub fn configured_chains(&self) -> dtos::ForeignChainConfiguration {
         self.all_configured_chains()
             .into_iter()
