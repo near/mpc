@@ -18,12 +18,12 @@ use jsonrpsee::core::client::error::Error as RpcClientError;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Mocks the three RPC calls the inspector issues, in order:
-///   1. `eth_getBlockByNumber(<finality tag>)` → finality head
-///   2. `eth_getTransactionReceipt(<tx hash>)` → receipt
+///   1. `eth_getTransactionReceipt(<tx hash>)` → receipt
+///   2. `eth_getBlockByNumber(<finality tag>)` → finality head
 ///   3. `eth_getBlockByNumber(<receipt.block_number>)` → canonical block at that height
 ///
-/// The third call is only reached when the first finality check passes; tests that exercise the
-/// failure paths before it still need to supply a value, but it will not be observed.
+/// Later calls are only reached if earlier checks pass; tests that exercise an early failure
+/// path still need to supply later responses, but they will not be observed.
 fn mock_evm_client(
     finality_block_response: GetBlockByNumberResponse,
     tx_response: GetTransactionReceiptResponse,
@@ -33,8 +33,8 @@ fn mock_evm_client(
     FixedResponseRpcClient::new(move || {
         let count = call_count.fetch_add(1, Ordering::SeqCst);
         match count {
-            0 => Ok(serde_json::to_value(&finality_block_response).unwrap()),
-            1 => Ok(serde_json::to_value(&tx_response).unwrap()),
+            0 => Ok(serde_json::to_value(&tx_response).unwrap()),
+            1 => Ok(serde_json::to_value(&finality_block_response).unwrap()),
             2 => Ok(serde_json::to_value(&canonical_block_response).unwrap()),
             _ => panic!("unexpected fourth RPC call"),
         }
