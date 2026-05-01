@@ -93,6 +93,23 @@ pub enum CheckBlockResult {
 #[derive(From, Deref, IntoIterator)]
 pub(crate) struct NewFinalBlocks(pub(crate) Vec<BlockReference>);
 
+/// The list of newly discarded blocks — blocks that just transitioned to definitively
+/// un-includable on the canonical chain (`final_head` advanced past their height while
+/// they were not on the canonical-final chain). Sorted by `(height, hash)` ascending for
+/// determinism. Each block is emitted at most once across the lifetime of the tracker:
+/// dedup is structural, since `final_head.height` is monotonic and each `add_block` call
+/// only scans the height range `(prev_final_head_height, final_head.height]`. Concatenated
+/// across calls, this forms the stream of discarded blocks.
+#[derive(From, Deref, IntoIterator)]
+pub(crate) struct NewDiscardedBlocks(pub(crate) Vec<BlockReference>);
+
+/// Composite return value of `add_block`: the two block-state-transition streams the
+/// tracker emits per ingested block.
+pub(crate) struct AddBlockResult {
+    pub(crate) new_final_blocks: NewFinalBlocks,
+    pub(crate) newly_discarded_blocks: NewDiscardedBlocks,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct BlockReference {
     pub(crate) hash: CryptoHash,
@@ -259,10 +276,11 @@ impl RecentBlocksTracker {
     }
 
     /// Adds a block to the tracker. This is expected to be called for EVERY block given by the
-    /// indexer (whether or not it is interesting). Returns the list of newly finalized blocks
-    /// in ascending height order; concatenated across calls, this forms the contiguous stream of
-    /// finalized blocks.
-    pub(crate) fn add_block(&mut self, block: &BlockViewLite) -> anyhow::Result<NewFinalBlocks> {
+    /// indexer (whether or not it is interesting). Returns the two block-state-transition
+    /// streams the tracker emits per ingested block: newly-finalized blocks (ascending height)
+    /// and newly-discarded blocks (sorted by `(height, hash)` for determinism). Concatenated
+    /// across calls, these form the contiguous streams of finalized and discarded blocks.
+    pub(crate) fn add_block(&mut self, block: &BlockViewLite) -> anyhow::Result<AddBlockResult> {
         if self.hash_to_node.contains_key(&block.hash) {
             anyhow::bail!("Block already exists in the tracker");
         }
@@ -282,7 +300,20 @@ impl RecentBlocksTracker {
             self.root_children.push(node.clone());
         }
 
+        // Snapshot final_head.height BEFORE maybe_update_final_head may advance it. Used as the
+        // exclusive lower bound when scanning for newly-discarded blocks below.
+        let prev_final_head_height = self.final_head.as_ref().map(|n| n.height);
+
         let new_final_blocks = self.maybe_update_final_head(block.last_final_block);
+
+        // Find every node whose height is in (prev_final_head_height, final_head.height] and
+        // is not on the canonical-final chain (!is_final). Each such node just transitioned
+        // from "could still be on the canonical-final chain" to "definitively not." De-dupe is
+        // structural: each height range is visited exactly once across the lifetime of the
+        // tracker, since `final_head.height` is monotonic.
+        let mut newly_discarded_nodes =
+            self.collect_newly_discarded_in_range(prev_final_head_height);
+
         match self.canonical_head.as_ref() {
             None => {
                 self.update_canonical_head(&node);
@@ -297,7 +328,44 @@ impl RecentBlocksTracker {
             self.maximum_height_available = block.height;
         }
         self.prune_old_blocks();
-        Ok(new_final_blocks)
+
+        // Sort by (height, hash) for deterministic ordering, then map to BlockReference.
+        newly_discarded_nodes.sort_by_key(|n| (n.height, n.hash.0));
+        let newly_discarded_blocks = newly_discarded_nodes
+            .into_iter()
+            .map(|n| BlockReference {
+                hash: n.hash,
+                height: n.height,
+            })
+            .collect::<Vec<_>>();
+
+        Ok(AddBlockResult {
+            new_final_blocks,
+            newly_discarded_blocks: NewDiscardedBlocks(newly_discarded_blocks),
+        })
+    }
+
+    /// Find every node at height `> prev_final_head_height` and `<= final_head.height` that is
+    /// not on the canonical-final chain. Those are the blocks that just transitioned to
+    /// `NotIncluded` as a result of `maybe_update_final_head` advancing `final_head`. If
+    /// `final_head` did not advance (or is still `None`), this returns nothing.
+    fn collect_newly_discarded_in_range(
+        &self,
+        prev_final_head_height: Option<u64>,
+    ) -> Vec<Arc<BlockNode>> {
+        let Some(final_head) = &self.final_head else {
+            return Vec::new();
+        };
+        let upper_inclusive = final_head.height;
+        self.hash_to_node
+            .values()
+            .filter(|node| {
+                node.height <= upper_inclusive
+                    && prev_final_head_height.is_none_or(|prev| node.height > prev)
+                    && !node.is_final.load(Ordering::Relaxed)
+            })
+            .cloned()
+            .collect()
     }
 
     /// Update the final head if the new final head received from a block is newer.
@@ -485,7 +553,7 @@ impl Debug for RecentBlocksTracker {
 
 #[cfg(test)]
 pub mod tests {
-    use super::{BlockEntropy, BlockViewLite, NewFinalBlocks, RecentBlocksTracker};
+    use super::{AddBlockResult, BlockEntropy, BlockViewLite, RecentBlocksTracker};
     use crate::requests::recent_blocks_tracker::CheckBlockResult;
     use near_indexer::near_primitives::hash::hash;
     use near_indexer_primitives::CryptoHash;
@@ -501,6 +569,15 @@ pub mod tests {
         pub(crate) parent: Option<Arc<TestBlock>>,
         tester: Arc<TestBlockMaker>,
         next_fork_seed: AtomicU64,
+    }
+
+    /// Sort the given test blocks by `(height, hash)` ascending and return their hashes.
+    /// Mirrors the ordering `add_block` uses for `newly_discarded_blocks` so test
+    /// assertions don't depend on hand-computed hash order.
+    fn sorted_by_height_and_hash(blocks: &[&Arc<TestBlock>]) -> Vec<CryptoHash> {
+        let mut blocks: Vec<&Arc<TestBlock>> = blocks.iter().copied().collect();
+        blocks.sort_by_key(|b| (b.height, b.hash.0));
+        blocks.iter().map(|b| b.hash).collect()
     }
 
     pub struct TestBlockMaker {
@@ -654,17 +731,22 @@ pub mod tests {
             self.tracker.classify_block(block.hash)
         }
 
-        pub fn add(&mut self, block: &Arc<TestBlock>) -> Vec<CryptoHash> {
+        pub fn add(&mut self, block: &Arc<TestBlock>) -> (Vec<CryptoHash>, Vec<CryptoHash>) {
             assert!(
                 !self.parents_of_added_blocks.contains(&block.hash),
                 "Cannot retroactively add the parent of an already added block"
             );
-            let NewFinalBlocks(new_final_blocks) =
-                self.tracker.add_block(&block.to_block_view()).unwrap();
+            let AddBlockResult {
+                new_final_blocks,
+                newly_discarded_blocks,
+            } = self.tracker.add_block(&block.to_block_view()).unwrap();
             if let Some(parent) = block.parent.clone() {
                 self.parents_of_added_blocks.insert(parent.hash);
             }
-            new_final_blocks.into_iter().map(|b| b.hash).collect()
+            (
+                new_final_blocks.into_iter().map(|b| b.hash).collect(),
+                newly_discarded_blocks.into_iter().map(|b| b.hash).collect(),
+            )
         }
 
         pub fn print(&self) {
@@ -683,11 +765,11 @@ pub mod tests {
         let b15 = b14.child();
         let b16 = b15.child();
 
-        assert_eq!(tester.add(&b11), vec![]);
-        assert_eq!(tester.add(&b12), vec![]);
-        assert_eq!(tester.add(&b13), vec![b11.hash]);
-        assert_eq!(tester.add(&b14), vec![b12.hash]);
-        assert_eq!(tester.add(&b15), vec![b13.hash]);
+        assert_eq!(tester.add(&b11), (vec![], vec![]));
+        assert_eq!(tester.add(&b12), (vec![], vec![]));
+        assert_eq!(tester.add(&b13), (vec![b11.hash], vec![]));
+        assert_eq!(tester.add(&b14), (vec![b12.hash], vec![]));
+        assert_eq!(tester.add(&b15), (vec![b13.hash], vec![]));
         //    Recent blocks: (Window = 12 to 15, GC limit 12)
         //    └─[12] C F 7wk1ewkZKmCNLRRhCrjFuoYy1K94dis9qAUv7JUKzCkG "12"
         // FH   [13] C F DTYziqMhQ9i2wbruEfoNiWZNp34dzVYto6FLy3FUZKwt "13"
@@ -721,12 +803,12 @@ pub mod tests {
         let b16 = b12.descendant(16);
         let b17 = b13.descendant(17);
 
-        assert_eq!(t.add(&b11), vec![]);
-        assert_eq!(t.add(&b12), vec![]);
-        assert_eq!(t.add(&b13), vec![b11.hash]);
-        assert_eq!(t.add(&b14), vec![]);
-        assert_eq!(t.add(&b16), vec![]);
-        assert_eq!(t.add(&b15), vec![]);
+        assert_eq!(t.add(&b11), (vec![], vec![]));
+        assert_eq!(t.add(&b12), (vec![], vec![]));
+        assert_eq!(t.add(&b13), (vec![b11.hash], vec![]));
+        assert_eq!(t.add(&b14), (vec![], vec![]));
+        assert_eq!(t.add(&b16), (vec![], vec![]));
+        assert_eq!(t.add(&b15), (vec![], vec![]));
 
         //    Recent blocks: (Window = 12 to 16, GC limit 11)
         // FH └─[11] C F F1BKWCCxzv7PtiVZxLMx3HQuuxDGcrtPRT2FaGgRggpA "11"
@@ -750,7 +832,7 @@ pub mod tests {
         assert_eq!(t.check(&b17), CheckBlockResult::Unknown);
 
         let b18 = b14.descendant(18);
-        assert_eq!(t.add(&b18), vec![]);
+        assert_eq!(t.add(&b18), (vec![], vec![]));
         //    Recent blocks: (Window = 14 to 18, GC limit 11)
         // FH └─[11] C F F1BKWCCxzv7PtiVZxLMx3HQuuxDGcrtPRT2FaGgRggpA "11"
         //      [12] C   7wk1ewkZKmCNLRRhCrjFuoYy1K94dis9qAUv7JUKzCkG "12"
@@ -768,8 +850,16 @@ pub mod tests {
 
         let b19 = b18.child();
         let b20 = b19.child();
-        assert_eq!(t.add(&b19), vec![]);
-        assert_eq!(t.add(&b20), vec![b12.hash, b14.hash, b18.hash]);
+        assert_eq!(t.add(&b19), (vec![], vec![]));
+        assert_eq!(
+            t.add(&b20),
+            (
+                vec![b12.hash, b14.hash, b18.hash],
+                // b13 (h=13), b15 (h=15), b16 (h=16) just transitioned to NotIncluded when
+                // final_head jumped from b11 to b18. Sorted by (height, hash).
+                vec![b13.hash, b15.hash, b16.hash],
+            ),
+        );
 
         //    Recent blocks: (Window = 16 to 20, GC limit 16)
         // FH ├─[18] C F GHjy91467tR3nyE2ycq9JM4MH22ZoBZCrkXSEFnT7Vhp "18"
@@ -807,20 +897,20 @@ pub mod tests {
         let b110 = b11.descendant(9);
         let b111 = b11.descendant(10);
 
-        assert_eq!(t.add(&b0), vec![]);
-        assert_eq!(t.add(&b00), vec![]);
-        assert_eq!(t.add(&b000), vec![]);
-        assert_eq!(t.add(&b001), vec![]);
-        assert_eq!(t.add(&b01), vec![]);
-        assert_eq!(t.add(&b010), vec![]);
-        assert_eq!(t.add(&b011), vec![]);
-        assert_eq!(t.add(&b1), vec![]);
-        assert_eq!(t.add(&b10), vec![]);
-        assert_eq!(t.add(&b100), vec![]);
-        assert_eq!(t.add(&b101), vec![]);
-        assert_eq!(t.add(&b11), vec![]);
-        assert_eq!(t.add(&b110), vec![]);
-        assert_eq!(t.add(&b111), vec![]);
+        assert_eq!(t.add(&b0), (vec![], vec![]));
+        assert_eq!(t.add(&b00), (vec![], vec![]));
+        assert_eq!(t.add(&b000), (vec![], vec![]));
+        assert_eq!(t.add(&b001), (vec![], vec![]));
+        assert_eq!(t.add(&b01), (vec![], vec![]));
+        assert_eq!(t.add(&b010), (vec![], vec![]));
+        assert_eq!(t.add(&b011), (vec![], vec![]));
+        assert_eq!(t.add(&b1), (vec![], vec![]));
+        assert_eq!(t.add(&b10), (vec![], vec![]));
+        assert_eq!(t.add(&b100), (vec![], vec![]));
+        assert_eq!(t.add(&b101), (vec![], vec![]));
+        assert_eq!(t.add(&b11), (vec![], vec![]));
+        assert_eq!(t.add(&b110), (vec![], vec![]));
+        assert_eq!(t.add(&b111), (vec![], vec![]));
 
         //    Recent blocks: (Window = 6 to 10, GC limit 0)
         //    ├─[4] C   F1BKWCCxzv7PtiVZxLMx3HQuuxDGcrtPRT2FaGgRggpA "b0"
@@ -855,8 +945,10 @@ pub mod tests {
         // with Near blockchain's behavior. Still, we want reasonable behavior and no crashes.
         let b102 = b10.descendant(7);
         let b1020 = b102.descendant(8);
-        assert_eq!(t.add(&b102), vec![b1.hash]);
-        assert_eq!(t.add(&b1020), vec![b10.hash]);
+        // final_head moves to b1 (h=5); b0 (h=4, sibling fork) becomes NotIncluded.
+        assert_eq!(t.add(&b102), (vec![b1.hash], vec![b0.hash]));
+        // final_head moves to b10 (h=6); b00 (h=6, non-canonical sibling) becomes NotIncluded.
+        assert_eq!(t.add(&b1020), (vec![b10.hash], vec![b00.hash]));
         //    Recent blocks: (Window = 6 to 10, GC limit 6)
         //    ├─[6]     7wk1ewkZKmCNLRRhCrjFuoYy1K94dis9qAUv7JUKzCkG "b00"
         //    │ ├─[8]     DTYziqMhQ9i2wbruEfoNiWZNp34dzVYto6FLy3FUZKwt "b000"
@@ -897,9 +989,20 @@ pub mod tests {
         let b10200 = b1020.descendant(11);
         let b102000 = b10200.descendant(12);
         let b1020000 = b102000.descendant(13);
-        assert_eq!(t.add(&b10200), vec![]);
-        assert_eq!(t.add(&b102000), vec![]);
-        assert_eq!(t.add(&b1020000), vec![b102.hash, b1020.hash, b10200.hash]);
+        assert_eq!(t.add(&b10200), (vec![], vec![]));
+        assert_eq!(t.add(&b102000), (vec![], vec![]));
+        // final_head jumps from b10 (h=6) to b10200 (h=11). Every non-canonical block at
+        // height in (6, 11] just transitioned to NotIncluded: b01, b11 (h=7); b000, b100,
+        // b101 (h=8); b001, b010, b110 (h=9); b011, b111 (h=10). Sorted by (height, hash).
+        assert_eq!(
+            t.add(&b1020000),
+            (
+                vec![b102.hash, b1020.hash, b10200.hash],
+                sorted_by_height_and_hash(&[
+                    &b01, &b11, &b000, &b100, &b101, &b001, &b010, &b110, &b011, &b111,
+                ]),
+            ),
+        );
 
         //    Recent blocks: (Window = 9 to 13, GC limit 9)
         //    ├─[9]     DC88XsXQdWZXipUU4vRHQqYo22nwtGVnp3rHptw44mJz "b001"
