@@ -65,6 +65,10 @@ pub enum ForeignChainInspectionError {
     },
     #[error("transaction has not reached expected finality level")]
     NotFinalized,
+    #[error(
+        "transaction receipt's block_hash does not match the canonical chain at that block number"
+    )]
+    NonCanonicalBlock,
     #[error("The transaction's status was not success")]
     TransactionFailed,
     #[error("provided log index is out of bounds")]

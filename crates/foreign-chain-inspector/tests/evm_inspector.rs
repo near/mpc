@@ -17,17 +17,26 @@ use httpmock::{HttpMockRequest, HttpMockResponse};
 use jsonrpsee::core::client::error::Error as RpcClientError;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+/// Mocks the three RPC calls the inspector issues, in order:
+///   1. `eth_getBlockByNumber(<finality tag>)` → finality head
+///   2. `eth_getTransactionReceipt(<tx hash>)` → receipt
+///   3. `eth_getBlockByNumber(<receipt.block_number>)` → canonical block at that height
+///
+/// The third call is only reached when the first finality check passes; tests that exercise the
+/// failure paths before it still need to supply a value, but it will not be observed.
 fn mock_evm_client(
-    block_response: GetBlockByNumberResponse,
+    finality_block_response: GetBlockByNumberResponse,
     tx_response: GetTransactionReceiptResponse,
+    canonical_block_response: GetBlockByNumberResponse,
 ) -> FixedResponseRpcClient<impl Fn() -> Result<serde_json::Value, RpcClientError>> {
     let call_count = AtomicUsize::new(0);
     FixedResponseRpcClient::new(move || {
         let count = call_count.fetch_add(1, Ordering::SeqCst);
         match count {
-            0 => Ok(serde_json::to_value(&block_response).unwrap()),
+            0 => Ok(serde_json::to_value(&finality_block_response).unwrap()),
             1 => Ok(serde_json::to_value(&tx_response).unwrap()),
-            _ => panic!("unexpected third RPC call"),
+            2 => Ok(serde_json::to_value(&canonical_block_response).unwrap()),
+            _ => panic!("unexpected fourth RPC call"),
         }
     })
 }
@@ -90,6 +99,7 @@ macro_rules! evm_inspector_tests {
 
                 let block_response = GetBlockByNumberResponse {
                     number: U64::from(100),
+                    hash: H256::from([0xaa; 32]),
                 };
                 let tx_response = GetTransactionReceiptResponse {
                     block_hash: H256::from([4; 32]),
@@ -97,9 +107,14 @@ macro_rules! evm_inspector_tests {
                     status: U64::one(),
                     logs: vec![test_log()],
                 };
+                let canonical_block_response = GetBlockByNumberResponse {
+                    number: tx_response.block_number,
+                    hash: tx_response.block_hash,
+                };
 
                 let expected = expected_extracted_value::<$chain>(&extractor, &tx_response);
-                let mock_client = mock_evm_client(block_response, tx_response);
+                let mock_client =
+                    mock_evm_client(block_response, tx_response, canonical_block_response);
                 let inspector = Inspector::new(mock_client);
 
                 // when
@@ -121,6 +136,7 @@ macro_rules! evm_inspector_tests {
                 let block_number = U64::from(50);
                 let block_response = GetBlockByNumberResponse {
                     number: block_number,
+                    hash: H256::from([0xaa; 32]),
                 };
                 let tx_response = GetTransactionReceiptResponse {
                     block_hash: H256::from([4; 32]),
@@ -128,8 +144,13 @@ macro_rules! evm_inspector_tests {
                     status: U64::one(),
                     logs: vec![test_log()],
                 };
+                let canonical_block_response = GetBlockByNumberResponse {
+                    number: block_number,
+                    hash: tx_response.block_hash,
+                };
 
-                let mock_client = mock_evm_client(block_response, tx_response);
+                let mock_client =
+                    mock_evm_client(block_response, tx_response, canonical_block_response);
                 let inspector = Inspector::new(mock_client);
 
                 // when
@@ -155,6 +176,7 @@ macro_rules! evm_inspector_tests {
 
                 let block_response = GetBlockByNumberResponse {
                     number: U64::from(50),
+                    hash: H256::from([0xaa; 32]),
                 };
                 let tx_response = GetTransactionReceiptResponse {
                     block_hash: H256::from([2; 32]),
@@ -162,8 +184,14 @@ macro_rules! evm_inspector_tests {
                     status: U64::one(),
                     logs: vec![test_log()],
                 };
+                // not reached: extract returns NotFinalized before the canonical lookup
+                let canonical_block_response = GetBlockByNumberResponse {
+                    number: tx_response.block_number,
+                    hash: tx_response.block_hash,
+                };
 
-                let mock_client = mock_evm_client(block_response, tx_response);
+                let mock_client =
+                    mock_evm_client(block_response, tx_response, canonical_block_response);
                 let inspector = Inspector::new(mock_client);
 
                 // when
@@ -186,6 +214,7 @@ macro_rules! evm_inspector_tests {
 
                 let block_response = GetBlockByNumberResponse {
                     number: U64::from(100),
+                    hash: H256::from([0xaa; 32]),
                 };
                 let tx_response = GetTransactionReceiptResponse {
                     block_hash: H256::from([2; 32]),
@@ -193,8 +222,13 @@ macro_rules! evm_inspector_tests {
                     status: U64::zero(),
                     logs: vec![test_log()],
                 };
+                let canonical_block_response = GetBlockByNumberResponse {
+                    number: tx_response.block_number,
+                    hash: tx_response.block_hash,
+                };
 
-                let mock_client = mock_evm_client(block_response, tx_response);
+                let mock_client =
+                    mock_evm_client(block_response, tx_response, canonical_block_response);
                 let inspector = Inspector::new(mock_client);
 
                 // when
@@ -220,6 +254,7 @@ macro_rules! evm_inspector_tests {
 
                 let block_response = GetBlockByNumberResponse {
                     number: U64::from(100),
+                    hash: H256::from([0xaa; 32]),
                 };
                 let tx_response = GetTransactionReceiptResponse {
                     block_hash: H256::from([12; 32]),
@@ -227,8 +262,13 @@ macro_rules! evm_inspector_tests {
                     status: U64::one(),
                     logs: vec![test_log()],
                 };
+                let canonical_block_response = GetBlockByNumberResponse {
+                    number: tx_response.block_number,
+                    hash: tx_response.block_hash,
+                };
 
-                let mock_client = mock_evm_client(block_response, tx_response);
+                let mock_client =
+                    mock_evm_client(block_response, tx_response, canonical_block_response);
                 let inspector = Inspector::new(mock_client);
 
                 // when
@@ -279,8 +319,9 @@ macro_rules! evm_inspector_tests {
                 let tx_id = TxHash::from([9; 32]);
                 let expected_block_hash = BlockHash::from([5; 32]);
 
-                let block_response = GetBlockByNumberResponse {
+                let finality_block_response = GetBlockByNumberResponse {
                     number: U64::from(100),
+                    hash: H256::from([0xaa; 32]),
                 };
 
                 let tx_response = GetTransactionReceiptResponse {
@@ -288,6 +329,11 @@ macro_rules! evm_inspector_tests {
                     block_number: U64::from(90),
                     status: U64::one(),
                     logs: vec![test_log()],
+                };
+
+                let canonical_block_response = GetBlockByNumberResponse {
+                    number: tx_response.block_number,
+                    hash: tx_response.block_hash,
                 };
 
                 server.mock(|when, then| {
@@ -300,7 +346,22 @@ macro_rules! evm_inspector_tests {
 
                         let result = match method {
                             "eth_getBlockByNumber" => {
-                                serde_json::to_value(&block_response).unwrap()
+                                // Dispatch on the first param: a finality tag like "finalized"
+                                // or a hex-encoded block number. The inspector queries the
+                                // finality head first and then the canonical block at the
+                                // receipt's height.
+                                let first_param = body["params"][0]
+                                    .as_str()
+                                    .expect("first param is a string");
+                                let is_finality_tag = matches!(
+                                    first_param,
+                                    "finalized" | "safe" | "latest"
+                                );
+                                if is_finality_tag {
+                                    serde_json::to_value(&finality_block_response).unwrap()
+                                } else {
+                                    serde_json::to_value(&canonical_block_response).unwrap()
+                                }
                             }
                             "eth_getTransactionReceipt" => {
                                 serde_json::to_value(&tx_response).unwrap()
@@ -349,6 +410,7 @@ macro_rules! evm_inspector_tests {
 
                 let block_response = GetBlockByNumberResponse {
                     number: U64::from(100),
+                    hash: H256::from([0xaa; 32]),
                 };
                 let tx_response = GetTransactionReceiptResponse {
                     block_hash: H256::from([2; 32]),
@@ -356,8 +418,13 @@ macro_rules! evm_inspector_tests {
                     status: U64::one(),
                     logs: vec![test_log()],
                 };
+                let canonical_block_response = GetBlockByNumberResponse {
+                    number: tx_response.block_number,
+                    hash: tx_response.block_hash,
+                };
 
-                let mock_client = mock_evm_client(block_response, tx_response);
+                let mock_client =
+                    mock_evm_client(block_response, tx_response, canonical_block_response);
                 let inspector = Inspector::new(mock_client);
 
                 // when
@@ -407,6 +474,7 @@ macro_rules! evm_inspector_tests {
 
                 let block_response = GetBlockByNumberResponse {
                     number: U64::from(100),
+                    hash: H256::from([0xaa; 32]),
                 };
                 let tx_response = GetTransactionReceiptResponse {
                     block_hash: H256::from([4; 32]),
@@ -414,8 +482,13 @@ macro_rules! evm_inspector_tests {
                     status: U64::one(),
                     logs: vec![log_at_index_20, log_at_index_21],
                 };
+                let canonical_block_response = GetBlockByNumberResponse {
+                    number: tx_response.block_number,
+                    hash: tx_response.block_hash,
+                };
 
-                let mock_client = mock_evm_client(block_response, tx_response);
+                let mock_client =
+                    mock_evm_client(block_response, tx_response, canonical_block_response);
                 let inspector = Inspector::new(mock_client);
 
                 // when: request log by its EVM logIndex (21), not array position (1)
@@ -431,6 +504,48 @@ macro_rules! evm_inspector_tests {
                 // then
                 let expected_extractions = vec![ExtractedValue::Log(expected_log)];
                 assert_eq!(expected_extractions, extracted_values);
+            }
+
+            #[tokio::test]
+            async fn extract_returns_error_when_receipt_block_hash_is_not_canonical() {
+                // given: the receipt is past the finality head (so the number-only check passes)
+                // but its block hash differs from the canonical block hash at that height,
+                // simulating an RPC that served a side-block receipt for a finalized height.
+                let tx_id = TxHash::from([1; 32]);
+
+                let block_response = GetBlockByNumberResponse {
+                    number: U64::from(100),
+                    hash: H256::from([0xaa; 32]),
+                };
+                let tx_response = GetTransactionReceiptResponse {
+                    block_hash: H256::from([0xbb; 32]),
+                    block_number: U64::from(90),
+                    status: U64::one(),
+                    logs: vec![test_log()],
+                };
+                let canonical_block_response = GetBlockByNumberResponse {
+                    number: tx_response.block_number,
+                    hash: H256::from([0xcc; 32]),
+                };
+
+                let mock_client =
+                    mock_evm_client(block_response, tx_response, canonical_block_response);
+                let inspector = Inspector::new(mock_client);
+
+                // when
+                let response = inspector
+                    .extract(
+                        tx_id,
+                        EthereumFinality::Finalized,
+                        vec![EvmExtractor::BlockHash],
+                    )
+                    .await;
+
+                // then
+                assert_matches!(
+                    response,
+                    Err(ForeignChainInspectionError::NonCanonicalBlock)
+                );
             }
         }
     };
