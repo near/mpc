@@ -460,11 +460,12 @@ impl TeeAuthority {
 
     /// Fetches attestation collateral from a single PCCS endpoint, with
     /// the usual per-request timeout and a single retry via exponential
-    /// backoff. Honors the endpoint's per-URL TLS trust override: with
-    /// `tls = None` the client uses default reqwest+rustls trust roots
-    /// (bundled Mozilla webpki-roots); with a set `tls` the client
-    /// reflects the override (`add_root_certificate` for `CaCertPem`,
-    /// `danger_accept_invalid_certs` for `Insecure`).
+    /// backoff. Honors the endpoint's per-URL TLS trust override (the
+    /// `tls = { override = ... }` part of each `[[pccs_endpoints]]` entry):
+    /// when the operator omits `tls`, the client uses default reqwest+rustls
+    /// trust roots (bundled Mozilla webpki-roots); with `tls.override`
+    /// set, the client reflects it (`add_root_certificate` for
+    /// `ca_cert_pem`, `danger_accept_invalid_certs` for `insecure`).
     ///
     /// Also enforces [`MAX_COLLATERAL_AGE`] on the response — a
     /// stale-but-Intel-signed bundle is rejected here as
