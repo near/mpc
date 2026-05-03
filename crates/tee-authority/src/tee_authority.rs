@@ -224,9 +224,9 @@ const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
 /// to splitting them, and the redundancy is harmless.
 const PCCS_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Maximum age accepted for PCCS collateral. Hard-coded at 7 days
-/// (not exposed as configuration) so a malicious operator cannot relax
-/// the bound.
+/// Maximum age accepted for PCCS collateral. Hard-coded at 7 days.
+/// Lives in the node binary (governed via image-hash approval), not
+/// as per-operator configuration.
 ///
 /// 7 days is stricter than Intel's 30-day `nextUpdate` window but
 /// more permissive than any default PCCS refresh schedule (Intel
