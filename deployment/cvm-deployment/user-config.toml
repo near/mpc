@@ -11,28 +11,25 @@ port_mappings = [
 
 [mpc_node_config]
 home_dir = "/data"
-# PCCS endpoints for TDX attestation collateral. Tried in order until
-# one succeeds. Defaults to Phala's PCCS if omitted.
+
+# PCCS endpoints for TDX attestation collateral. The node tries each
+# entry in order until one succeeds. Defaults below: Phala primary,
+# Intel direct as fallback.
 #
-# Per-URL TLS trust override — set `tls = ...` on entries that need it:
-#   tls = { override = "ca_cert_pem", ca_cert_pem = "..." }  # additional trust anchor
-#   tls = { override = "insecure" }                          # disables TLS auth — local/loopback only
-#
-# `override = "insecure"` skips all TLS certificate validation. Use only
-# for a local PCCS reachable over loopback (`localhost`, `127.0.0.1`,
-# `::1`, or the QEMU slirp gateway `10.0.2.2`). It is *not* enforced
-# by the code — using it against a public URL will silently disable
-# the only transport-level identity check on that endpoint. Prefer
-# `ca_cert_pem` whenever you can pin the cert.
-#
-# Example: self-signed local primary + public-CA fallbacks:
+# To add a self-hosted local PCCS (e.g. for an operator running their
+# own), prepend an entry with a `tls` override. See the operator
+# deployment guide's "Self-hosting a local PCCS" appendix for the cert
+# setup. Example (commented):
 #
 #   [[mpc_node_config.pccs_endpoints]]
-#   url = "https://localhost:8081/"
-#   tls = { override = "insecure" }
-#
-#   [[mpc_node_config.pccs_endpoints]]
-#   url = "https://pccs.phala.network/"
+#   url = "https://10.0.2.2:8081/"
+#   tls = { override = "ca_cert_pem", ca_cert_pem = "..." }
+
+[[mpc_node_config.pccs_endpoints]]
+url = "https://pccs.phala.network/"
+
+[[mpc_node_config.pccs_endpoints]]
+url = "https://api.trustedservices.intel.com/"
 
 [mpc_node_config.log]
 format = "plain"
