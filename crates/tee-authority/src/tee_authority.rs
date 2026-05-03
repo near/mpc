@@ -532,8 +532,8 @@ struct CollateralIssueDate {
 ///
 /// Combined with the multi-PCCS support from [`try_each_pccs_endpoint`], a
 /// rejection here causes the helper to fall through to the next URL — i.e.
-/// `pccs_urls` acts as a freshness ladder, the stale primary is bypassed
-/// in favor of a fresher fallback (e.g. Intel as the last entry).
+/// `pccs_endpoints` acts as a freshness ladder, the stale primary is
+/// bypassed in favor of a fresher fallback (e.g. Intel as the last entry).
 ///
 /// Takes `now` as a parameter so tests can drive boundary cases
 /// without depending on the wall clock, and never logs or talks to
