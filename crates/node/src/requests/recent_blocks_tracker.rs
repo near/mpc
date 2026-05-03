@@ -86,7 +86,7 @@ pub enum CheckBlockResult {
     /// The block is optimistically included in the chain, but it is not on the canonical chain.
     /// It is also recent enough.
     OptimisticButNotCanonical,
-    /// We have not seen the block yet, but it appears recent, judging from the height.
+    /// We may have not seen the block and removed it, or we may never have seen it.
     Unknown,
 }
 
@@ -295,16 +295,6 @@ impl<T: Clone> RecentBlocksTracker<T> {
         Ok(AddBlockResult { new_final_blocks })
     }
 
-    /// Notifies the tracker that we have heard of the given height being available.
-    /// This may move the window forward and cause older blocks to return
-    /// `CheckBlockResult::OlderThanRecentWindow`.
-    pub fn notify_maximum_height_available(&mut self, height: u64) {
-        if height > self.maximum_height_available {
-            self.maximum_height_available = height;
-            self.prune_old_blocks();
-        }
-    }
-
     /// Update the final head if the new final head received from a block is newer.
     /// Returns the list of newly finalized blocks in increasing height order.
     fn maybe_update_final_head(&mut self, potential_final_head: CryptoHash) -> Vec<Arc<BlockNode>> {
@@ -419,22 +409,26 @@ impl<T: Clone> RecentBlocksTracker<T> {
     }
 
     /// Classifies a block into one of the categories in `CheckBlockResult`.
-    pub fn classify_block(&self, block_hash: CryptoHash, block_height: u64) -> CheckBlockResult {
-        if self
-            .maximum_height_available
-            .saturating_sub(self.window_size)
-            .add(1)
-            > block_height
-        {
-            return CheckBlockResult::OlderThanRecentWindow;
-        }
+    pub fn classify_block(&self, block_hash: CryptoHash) -> CheckBlockResult {
         match self.hash_to_node.get(&block_hash) {
             Some(node) => {
+                if self
+                    .maximum_height_available
+                    .saturating_sub(self.window_size)
+                    .add(1)
+                    > node.height
+                {
+                    // this can happen if the block in question is expired, but has not yet been
+                    // removed because it is the last final block
+                    return CheckBlockResult::OlderThanRecentWindow;
+                }
                 if node.is_final.load(Ordering::Relaxed) {
                     return CheckBlockResult::RecentAndFinal;
                 }
                 if let Some(final_head) = &self.final_head {
-                    if block_height <= final_head.height {
+                    // The block is not final, yet, we have a final head of greater height.
+                    // That means, the block was not included.
+                    if node.height <= final_head.height {
                         return CheckBlockResult::NotIncluded;
                     }
                 }
@@ -444,9 +438,8 @@ impl<T: Clone> RecentBlocksTracker<T> {
                 CheckBlockResult::OptimisticButNotCanonical
             }
             None => {
-                // At this point, the block is recent enough but we have not seen it yet.
-                // We could do a few more checks to narrow down the case, but it's not really
-                // worth the complexity. So just return Unknown.
+                // We don't know this block: either it is too old and we removed it, or we have
+                // genuinely never seen it.
                 CheckBlockResult::Unknown
             }
         }
@@ -658,7 +651,7 @@ pub mod tests {
         }
 
         pub fn check(&self, block: &Arc<TestBlock>) -> CheckBlockResult {
-            self.tracker.classify_block(block.hash, block.height)
+            self.tracker.classify_block(block.hash)
         }
 
         pub fn add(&mut self, block: &Arc<TestBlock>, name: &str) -> String {
@@ -679,11 +672,6 @@ pub mod tests {
                 .map(|(_, name)| name.clone())
                 .collect::<Vec<_>>()
                 .join(",")
-        }
-
-        pub fn avail(&mut self, height: u64) -> &mut Self {
-            self.tracker.notify_maximum_height_available(height);
-            self
         }
 
         pub fn print(&self) {
@@ -715,25 +703,10 @@ pub mod tests {
         tester.print();
 
         // At this point, the tracker should keep blocks 12, 13, 14, 15.
-        assert_eq!(tester.check(&b10), CheckBlockResult::OlderThanRecentWindow);
-        assert_eq!(tester.check(&b11), CheckBlockResult::OlderThanRecentWindow);
+        assert_eq!(tester.check(&b10), CheckBlockResult::Unknown);
+        assert_eq!(tester.check(&b11), CheckBlockResult::Unknown);
         assert_eq!(tester.check(&b12), CheckBlockResult::RecentAndFinal);
         assert_eq!(tester.check(&b13), CheckBlockResult::RecentAndFinal);
-        assert_eq!(tester.check(&b14), CheckBlockResult::OptimisticAndCanonical);
-        assert_eq!(tester.check(&b15), CheckBlockResult::OptimisticAndCanonical);
-        assert_eq!(tester.check(&b16), CheckBlockResult::Unknown);
-
-        // We received announcement that block 17 is already available.
-        tester.avail(17);
-        //    Recent blocks: (Window = 14 to 17, GC limit 13)
-        // FH └─[13] C F DTYziqMhQ9i2wbruEfoNiWZNp34dzVYto6FLy3FUZKwt "13"
-        //      [14] C   4q6agzf1AcZWcVbNnULR8969K8MhmPCEJ7pKapjmEGmA "14"
-        // CH   [15] C   7inNzFR4mz4TRu9CSajNQnWxwhKDcYzTYubtM6zFri7Y "15"
-        tester.print();
-        assert_eq!(tester.check(&b10), CheckBlockResult::OlderThanRecentWindow);
-        assert_eq!(tester.check(&b11), CheckBlockResult::OlderThanRecentWindow);
-        assert_eq!(tester.check(&b12), CheckBlockResult::OlderThanRecentWindow);
-        assert_eq!(tester.check(&b13), CheckBlockResult::OlderThanRecentWindow);
         assert_eq!(tester.check(&b14), CheckBlockResult::OptimisticAndCanonical);
         assert_eq!(tester.check(&b15), CheckBlockResult::OptimisticAndCanonical);
         assert_eq!(tester.check(&b16), CheckBlockResult::Unknown);
@@ -771,7 +744,8 @@ pub mod tests {
         // CH   └─[16] C   81v6keTjdkVp8RgTdWQE2vx7E7nof7NxtZNaYFh3oVpG "16"
         t.print();
 
-        assert_eq!(t.check(&b10), CheckBlockResult::OlderThanRecentWindow);
+        // This block has been removed by the tracker
+        assert_eq!(t.check(&b10), CheckBlockResult::Unknown);
         // The tracker kept the block internally as it is the last final block, but it is still
         // outside of the window.
         assert_eq!(t.check(&b11), CheckBlockResult::OlderThanRecentWindow);
@@ -811,18 +785,10 @@ pub mod tests {
         //    └─[16]     81v6keTjdkVp8RgTdWQE2vx7E7nof7NxtZNaYFh3oVpG "16"
         t.print();
 
-        assert_eq!(t.check(&b14), CheckBlockResult::OlderThanRecentWindow);
-        assert_eq!(t.check(&b15), CheckBlockResult::OlderThanRecentWindow);
+        // b14 and b15 were removed, they are too old and we have newer, final blocks
+        assert_eq!(t.check(&b14), CheckBlockResult::Unknown);
+        assert_eq!(t.check(&b15), CheckBlockResult::Unknown);
         assert_eq!(t.check(&b16), CheckBlockResult::NotIncluded);
-        assert_eq!(t.check(&b17), CheckBlockResult::Unknown);
-        assert_eq!(t.check(&b18), CheckBlockResult::RecentAndFinal);
-        assert_eq!(t.check(&b19), CheckBlockResult::OptimisticAndCanonical);
-        assert_eq!(t.check(&b20), CheckBlockResult::OptimisticAndCanonical);
-
-        // We receive announcement that block 21 is already available.
-        t.avail(21);
-        t.print();
-        assert_eq!(t.check(&b16), CheckBlockResult::OlderThanRecentWindow);
         assert_eq!(t.check(&b17), CheckBlockResult::Unknown);
         assert_eq!(t.check(&b18), CheckBlockResult::RecentAndFinal);
         assert_eq!(t.check(&b19), CheckBlockResult::OptimisticAndCanonical);
@@ -917,7 +883,8 @@ pub mod tests {
         // Note above: the canonical head is not a descendant of final head. This can't happen in
         // the real blockchain, but here we fed in a pathological scenario.
         t.print();
-        assert_eq!(t.check(&b0), CheckBlockResult::OlderThanRecentWindow);
+        // b0 was removed, becasue it was not included and is older than recent window
+        assert_eq!(t.check(&b0), CheckBlockResult::Unknown);
         assert_eq!(t.check(&b00), CheckBlockResult::NotIncluded);
         // Note: b000 has no chance of being included in the canonical chain due to b10 being final.
         // However, checking that case is not worth the complexity. In practice, the check we use of
@@ -926,7 +893,8 @@ pub mod tests {
         assert_eq!(t.check(&b01), CheckBlockResult::OptimisticAndCanonical);
         assert_eq!(t.check(&b010), CheckBlockResult::OptimisticButNotCanonical);
         assert_eq!(t.check(&b011), CheckBlockResult::OptimisticAndCanonical);
-        assert_eq!(t.check(&b1), CheckBlockResult::OlderThanRecentWindow);
+        // b1 was removed, because it is too old and we have newer final blocks
+        assert_eq!(t.check(&b1), CheckBlockResult::Unknown);
         assert_eq!(t.check(&b10), CheckBlockResult::RecentAndFinal);
         assert_eq!(t.check(&b100), CheckBlockResult::OptimisticButNotCanonical);
         assert_eq!(t.check(&b11), CheckBlockResult::OptimisticButNotCanonical);
@@ -958,21 +926,5 @@ pub mod tests {
         assert_eq!(t.check(&b1020000), CheckBlockResult::OptimisticAndCanonical);
         assert_eq!(t.check(&b110), CheckBlockResult::NotIncluded);
         assert_eq!(t.check(&b111), CheckBlockResult::NotIncluded);
-
-        // We receive announcement that block 15 is already available.
-        t.avail(15);
-        //    Recent blocks: (Window = 11 to 15, GC limit 11)
-        // FH └─[11] C F NW4CWxr6ptWa9tsV2gMhGPdE7ecNWfCrnJDfJwx9yv9 "b10200"
-        //      [12] C   4Vwtcagaq6fi5j82suG4j8HiaU3SMbqotrZzT3bjqwcP "b102000"
-        // CH   [13] C   GktyudcCf3dBkWCdjq9dFssY7KZRRZQJ1TZH3ZMw8LWk "b1020000"
-        t.print();
-        assert_eq!(t.check(&b001), CheckBlockResult::OlderThanRecentWindow);
-        assert_eq!(t.check(&b010), CheckBlockResult::OlderThanRecentWindow);
-        assert_eq!(t.check(&b011), CheckBlockResult::OlderThanRecentWindow);
-        assert_eq!(t.check(&b10200), CheckBlockResult::RecentAndFinal);
-        assert_eq!(t.check(&b102000), CheckBlockResult::OptimisticAndCanonical);
-        assert_eq!(t.check(&b1020000), CheckBlockResult::OptimisticAndCanonical);
-        assert_eq!(t.check(&b110), CheckBlockResult::OlderThanRecentWindow);
-        assert_eq!(t.check(&b111), CheckBlockResult::OlderThanRecentWindow);
     }
 }

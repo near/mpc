@@ -1522,12 +1522,7 @@ expression: abi
           }
         },
         "AttemptId": {
-          "type": "integer",
-          "format": "uint64",
-          "minimum": 0.0
-        },
-        "AttemptId2": {
-          "description": "Attempt identifier within a key event.",
+          "description": "Attempt identifier within a key event. Incremented for each attempt within the same epoch and domain.",
           "type": "integer",
           "format": "uint64",
           "minimum": 0.0
@@ -2096,12 +2091,6 @@ expression: abi
           "format": "uint64",
           "minimum": 0.0
         },
-        "EpochId2": {
-          "description": "Epoch identifier for key generation/resharing cycles.",
-          "type": "integer",
-          "format": "uint64",
-          "minimum": 0.0
-        },
         "EventLog": {
           "description": "Represents an event log entry in the system",
           "type": "object",
@@ -2473,7 +2462,7 @@ expression: abi
               "$ref": "#/definitions/DomainRegistry"
             },
             "epoch_id": {
-              "$ref": "#/definitions/EpochId2"
+              "$ref": "#/definitions/EpochId"
             },
             "generated_keys": {
               "type": "array",
@@ -2525,7 +2514,7 @@ expression: abi
               "$ref": "#/definitions/DomainConfig"
             },
             "epoch_id": {
-              "$ref": "#/definitions/EpochId2"
+              "$ref": "#/definitions/EpochId"
             },
             "instance": {
               "anyOf": [
@@ -2538,7 +2527,7 @@ expression: abi
               ]
             },
             "next_attempt_id": {
-              "$ref": "#/definitions/AttemptId2"
+              "$ref": "#/definitions/AttemptId"
             },
             "parameters": {
               "$ref": "#/definitions/ThresholdParameters"
@@ -2576,7 +2565,7 @@ expression: abi
           ],
           "properties": {
             "attempt_id": {
-              "$ref": "#/definitions/AttemptId2"
+              "$ref": "#/definitions/AttemptId"
             },
             "completed": {
               "type": "array",
@@ -2643,7 +2632,7 @@ expression: abi
           }
         },
         "KeyForDomain2": {
-          "description": "A public key for a specific domain.",
+          "description": "The identification of a specific distributed key, based on which a node would know exactly what keyshare it has corresponds to this distributed key. (A distributed key refers to a specific set of keyshares that nodes have which can be pieced together to form the secret key.)",
           "type": "object",
           "required": [
             "attempt",
@@ -2652,13 +2641,28 @@ expression: abi
           ],
           "properties": {
             "attempt": {
-              "$ref": "#/definitions/AttemptId2"
+              "description": "The attempt ID that generated (initially or as a result of resharing) this distributed key. Nodes may have made multiple attempts to generate the distributed key, and this uniquely identifies which one should ultimately be used.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/AttemptId"
+                }
+              ]
             },
             "domain_id": {
-              "$ref": "#/definitions/DomainId"
+              "description": "Identifies the domain this key is intended for.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/DomainId"
+                }
+              ]
             },
             "key": {
-              "$ref": "#/definitions/PublicKeyExtended2"
+              "description": "Identifies the public key. Although technically redundant given that we have the AttemptId, we keep it here in the contract so that it can be verified against and queried.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/PublicKeyExtended2"
+                }
+              ]
             }
           }
         },
@@ -2688,7 +2692,7 @@ expression: abi
           }
         },
         "Keyset2": {
-          "description": "Set of keys for the current epoch.",
+          "description": "Represents a key for every domain in a specific epoch.",
           "type": "object",
           "required": [
             "domains",
@@ -2702,7 +2706,7 @@ expression: abi
               }
             },
             "epoch_id": {
-              "$ref": "#/definitions/EpochId2"
+              "$ref": "#/definitions/EpochId"
             }
           }
         },
@@ -3478,7 +3482,7 @@ expression: abi
             "previously_cancelled_resharing_epoch_id": {
               "anyOf": [
                 {
-                  "$ref": "#/definitions/EpochId2"
+                  "$ref": "#/definitions/EpochId"
                 },
                 {
                   "type": "null"

@@ -11,6 +11,7 @@ use near_time::Duration;
 use sha3::Digest;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
+use std::ops::Add;
 use std::sync::{Arc, Mutex, Weak};
 use time::ext::InstantExt as _;
 
@@ -428,38 +429,81 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
 
         let (eligible_leaders, maximum_height) = self.eligible_leaders_and_maximum_height();
         tracing::debug!(target: "request", "Eligible leaders: {:?}", eligible_leaders);
-        self.recent_blocks
-            .notify_maximum_height_available(maximum_height);
 
         let mut result = Vec::new();
 
         let mut requests_to_remove = Vec::new();
         for (id, request) in &mut self.requests {
             if request.next_check_due > now {
-                tracing::debug!(target: "request", "Skipping request {:?} from block {} because it's not time yet", request.request.get_id(), request.block_height);
+                tracing::debug!(
+                    target: "request",
+                    request_id = %request.request.get_id(),
+                    block_height = request.block_height,
+                    "skipping request because it's not time yet"
+                );
                 continue;
             }
             request.next_check_due = now + CHECK_EACH_REQUEST_INTERVAL;
             if request.active_attempt.strong_count() > 0 {
                 // There's a current attempt to generate the response, so don't do anything.
-                tracing::debug!(target: "request", "Skipping request {:?} from block {} because there's already an active attempt", request.request.get_id(), request.block_height);
+                tracing::debug!(
+                    target: "request",
+                    request_id = %request.request.get_id(),
+                    block_height = request.block_height,
+                    "skipping request because there's already an active attempt",
+                );
                 continue;
             }
-            match self
-                .recent_blocks
-                .classify_block(request.block_hash, request.block_height)
+            // check it against the network height
+            if maximum_height
+                .saturating_sub(REQUEST_EXPIRATION_BLOCKS)
+                .add(1)
+                > request.block_height
             {
-                CheckBlockResult::RecentAndFinal
-                | CheckBlockResult::OptimisticAndCanonical
-                | CheckBlockResult::Unknown => {
+                // this request expired for at least one participant in the network. We can already
+                // remove it from the queue.
+                tracing::debug!(
+                    target: "request",
+                    request_type = %RequestType::get_type(),
+                    request_id = %request.request.get_id(),
+                    block_height = request.block_height,
+                    "discarding expired request"
+                );
+                // Increment metric for timeout (only for signature requests)
+                if matches!(RequestType::get_type(), types::RequestType::Signature) {
+                    metrics::MPC_CLUSTER_FAILED_SIGNATURES_COUNT
+                        .with_label_values(&["timeout"])
+                        .inc();
+                }
+                // This request is definitely not useful anymore, so discard it.
+                requests_to_remove.push(*id);
+                continue;
+            }
+            let block_classification = self.recent_blocks.classify_block(request.block_hash);
+            match block_classification {
+                CheckBlockResult::RecentAndFinal | CheckBlockResult::OptimisticAndCanonical => {
                     if let Some(leader) = request.current_leader(&eligible_leaders) {
-                        tracing::debug!(target: "request", "Leader for {} request {:?} from block {} is {}", RequestType::get_type(), request.request.get_id(), request.block_height, leader);
+                        tracing::debug!(
+                            target: "request",
+                            request_type = %RequestType::get_type(),
+                            request_id = %request.request.get_id(),
+                            block_height = request.block_height,
+                            leader = %leader,
+                            "processing request"
+                        );
                         let mut progress = request.computation_progress.lock().unwrap();
                         progress.selected_leader = Some(leader);
                         if leader == self.my_participant_id {
                             {
                                 if progress.attempts >= MAX_ATTEMPTS_PER_REQUEST_AS_LEADER {
-                                    tracing::debug!(target: "request", "Discarding {} request {:?} from block {} because it has been attempted too many ({}) times", RequestType::get_type(), request.request.get_id(), request.block_height, MAX_ATTEMPTS_PER_REQUEST_AS_LEADER);
+                                    tracing::debug!(
+                                        target: "request",
+                                        request_type = %RequestType::get_type(),
+                                        request_id = %request.request.get_id(),
+                                        block_height = request.block_height,
+                                        attempt_id = progress.attempts,
+                                        "discarding request because it has been attempted too many times",
+                                    );
                                     // Increment metric for max retries exceeded (only for signature requests)
                                     if matches!(
                                         RequestType::get_type(),
@@ -475,7 +519,13 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                                 if progress.last_response_submission.is_some_and(|t| {
                                     now < t + MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE
                                 }) {
-                                    tracing::debug!(target: "request", "Skipping {} request {:?} from block {} because the last response was submitted too recently", RequestType::get_type(), request.request.get_id(), request.block_height);
+                                    tracing::debug!(
+                                        target: "request",
+                                        request_type = %RequestType::get_type(),
+                                        request_id = %request.request.get_id(),
+                                        block_height = request.block_height,
+                                        "skipping request because the last response was submitted too recently",
+                                    );
                                     continue;
                                 }
                                 progress.attempts += 1;
@@ -492,10 +542,30 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 CheckBlockResult::OptimisticButNotCanonical => {
                     // Don't act on it yet. If it becomes canonical later, we'll try to generate
                     // the request.
-                    tracing::debug!(target: "request", "Ignoring non-canonical {} request {:?} from block {}", RequestType::get_type(), request.request.get_id(), request.block_height);
+                    tracing::debug!(
+                        target: "request",
+                        request_type = %RequestType::get_type(),
+                        request_id= %request.request.get_id(),
+                        block_height= request.block_height,
+                        "ignoring non-canonical request",
+                    );
                 }
-                CheckBlockResult::NotIncluded | CheckBlockResult::OlderThanRecentWindow => {
-                    tracing::debug!(target: "request", "Discarding {} request {:?} from block {}", RequestType::get_type(), request.request.get_id(), request.block_height);
+                CheckBlockResult::NotIncluded
+                | CheckBlockResult::OlderThanRecentWindow
+                | CheckBlockResult::Unknown => {
+                    // note: We will not receive "OlderThanRecentWindow" if the `RecentBlocksTracker`
+                    // has the same recency window as the queue.
+                    // Since we add signature requests to the queue after adding the block to the
+                    // tracker, receiving `Unknown` means that the tracker removed the block, most
+                    // likely due to the block being expired.
+                    tracing::debug!(
+                        target: "request",
+                        request_type = %RequestType::get_type(),
+                        request_id = %request.request.get_id(),
+                        block_height = request.block_height,
+                        reason = ?block_classification,
+                        "discarding request because it was not included, expired, or the tracker removed the block"
+                    );
                     // Increment metric for timeout (only for signature requests)
                     if matches!(RequestType::get_type(), types::RequestType::Signature) {
                         metrics::MPC_CLUSTER_FAILED_SIGNATURES_COUNT
@@ -1048,6 +1118,52 @@ mod tests {
             debug.contains("blk        101 ->        102 (+1, 2s432ms)"),
             "{}",
             debug
+        );
+    }
+
+    #[test_log::test]
+    #[expect(non_snake_case)]
+    fn get_requests_to_attempt__should_not_expire_request_at_expiration_boundary() {
+        // Given: one leader request at block height H
+        let (mut pending_requests, mut setup) = TestSetup::new();
+        let req1 = setup.add_request_leader();
+        let requests = setup.update();
+        let block_height = requests.block.height;
+        pending_requests.notify_new_block(requests);
+
+        // When: set network height to H + REQUEST_EXPIRATION_BLOCKS - 1
+        setup.set_participant_network_height(block_height + REQUEST_EXPIRATION_BLOCKS - 1);
+
+        // Then: request is NOT expired (returned by get_requests_to_attempt)
+        let to_attempt = pending_requests.get_requests_to_attempt();
+        assert_eq!(to_attempt.len(), 1);
+        assert_eq!(to_attempt[0].request.id, req1.id);
+    }
+
+    #[test_log::test]
+    #[expect(non_snake_case)]
+    fn get_requests_to_attempt__should_expire_request_past_expiration_boundary() {
+        // Given: one leader request at block height H
+        let (mut pending_requests, mut setup) = TestSetup::new();
+        let req1 = setup.add_request_leader();
+        let requests = setup.update();
+        let block_height = requests.block.height;
+        pending_requests.notify_new_block(requests);
+        assert!(
+            pending_requests.requests.contains_key(&req1.id),
+            "request should be in the queue"
+        );
+
+        // When: set network height to H + REQUEST_EXPIRATION_BLOCKS
+        setup.set_participant_network_height(block_height + REQUEST_EXPIRATION_BLOCKS);
+
+        // Then: request IS expired, not returned by get_requests_to_attempt and removed from
+        // queue.
+        let to_attempt = pending_requests.get_requests_to_attempt();
+        assert_eq!(to_attempt.len(), 0);
+        assert!(
+            !pending_requests.requests.contains_key(&req1.id),
+            "expired request should be removed from the queue"
         );
     }
 }

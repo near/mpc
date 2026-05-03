@@ -41,12 +41,9 @@ For each scheme, the participating set is fixed from the offline phase through t
 
 MPC nodes can run inside a trusted execution environment (TEE). For more details, see the [TEE design doc](docs/securing-mpc-with-tee-design-doc.md).
 
-## Dependencies and submodules
+## Dependencies
 
-All crates are organized in a [Cargo workspace](Cargo.toml) under `crates/`.
-
-- **Nearcore Node**: Included as a submodule in `/libs`, used only for system tests (pytest). Not required for building the node or contract.
-- **Other Dependencies**: All other dependencies are handled by Cargo.
+All crates are organized in a [Cargo workspace](Cargo.toml) under `crates/`. All dependencies are handled by Cargo.
 
 ## Development Environment (Nix)
 
@@ -78,12 +75,12 @@ The Rust toolchain version is pinned in [`rust-toolchain.toml`](rust-toolchain.t
 We use the following terminology when referring to tests:
 - _unit test_ -> a rust test in `/src` folder (per crate)
 - _integration test_ -> a rust test in `/tests` folder (per crate)
-- _system test_ -> a pytest in the `/pytest` folder
+- _e2e test_ -> a rust test in the `crates/e2e-tests` crate
 
 ### Run tests
 
 - **Unit and integration tests**: Run with `cargo nextest run --cargo-profile=test-release`
-- **System tests**: See the README in the `/pytest` directory.
+- **E2E tests**: See the README in [`crates/e2e-tests`](crates/e2e-tests/README.md).
 
 ### Updating snapshots
 

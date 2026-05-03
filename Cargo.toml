@@ -1,6 +1,5 @@
 [workspace]
 resolver = "3"
-exclude = ["libs/nearcore"]
 members = [
     "crates/attestation",
     "crates/attestation-cli",
@@ -80,6 +79,7 @@ auto_ops = "0.3.0"
 average = "0.17"
 axum = "0.8.9"
 backon = { version = "1.6.0", features = ["tokio-sleep"] }
+backtrace = "0.3"
 base64 = "0.22.1"
 blstrs = "0.7.1"
 borsh = { version = "1.6.1", features = ["derive"] }
@@ -96,10 +96,13 @@ curve25519-dalek = { version = "4.1.3", features = [
 ], default-features = false }
 # TODO(#3008): swap this git pin for a crates.io `version = "X.Y.Z"` and
 # drop the matching `deny.toml` allow-git entry once upstream cuts a release
-# containing <https://github.com/Phala-Network/dcap-qvl/pull/153> (merged as
-# commit 9c21fa52 on 2026-04-24). Until then, we pin to upstream master at
-# that merge commit so that we can enable the `json-core` opt-in feature.
-dcap-qvl = { git = "https://github.com/Phala-Network/dcap-qvl", rev = "9c21fa520feb5585281554f962a93a384baa2d0e", default-features = false, features = [
+# containing the `HttpClient` transport trait
+# (<https://github.com/Phala-Network/dcap-qvl/pull/156>) and the
+# reqwest 0.13 bump (<https://github.com/Phala-Network/dcap-qvl/pull/157>),
+# both merged at commit 63e9d4ae on 2026-04-27. Until then, we pin to
+# upstream master at that commit so that `tee-authority` can decouple
+# its reqwest version from `dcap-qvl`'s public API (closes #3027).
+dcap-qvl = { git = "https://github.com/Phala-Network/dcap-qvl", rev = "63e9d4ae8a0de53e2d77e1929ff1fcefa88f31df", default-features = false, features = [
     "contract",
     "borsh",
     "std",
@@ -151,12 +154,23 @@ http = "1.4.0"
 humantime = "2.3.0"
 # TODO(#1299): updating this brings considerable breaking changes
 hyper = { version = "0.14.32", features = ["server", "http1", "tcp", "stream"] }
+inferno = "0.11"
 insta = { version = "1.46.3", features = ["json", "redactions"] }
 itertools = "0.14.0"
+# Pinned to the 0.4.x line so it stays compatible with `tikv-jemalloc-ctl 0.5`
+# (and therefore `tikv-jemalloc-sys 0.5`, which is what `librocksdb-sys 0.11`
+# brings into the dep graph via `nearcore`'s `near-store`). Bumping past 0.5.x
+# would require also bumping that transitive rocksdb to >= 0.23 to avoid a
+# `links = "jemalloc"` collision.
+jemalloc_pprof = "0.4.2"
 jsonrpsee = { version = "0.26.0", features = ["http-client"] }
 k256 = "0.13.4"
 keccak = "0.1.5"
 lru = "0.17.0"
+# Re-exported by `jemalloc_pprof` (workspace sibling). Used to embed runtime
+# binary mappings into emitted pprof profiles so `pprof` can symbolicate
+# addresses through ASLR.
+mappings = "0.5"
 mockall = "0.14.0"
 named-lock = "0.4.1"
 near-abi = "0.4.4"
@@ -178,6 +192,10 @@ pprof = { version = "0.15.0", features = [
     "cpp",
     "flamegraph",
 ], default-features = false }
+# `pprof_util 0.4.x` shares the `tikv-jemalloc-ctl 0.5` constraint with
+# `jemalloc_pprof 0.4.2`; needed to render heap dumps as flamegraphs in-process
+# since 0.4.x has no built-in `dump_flamegraph`.
+pprof_util = "0.4"
 proc-macro2 = "1.0"
 quote = "1.0"
 # TODO(#2051): updating this brings considerable breaking changes
@@ -209,6 +227,10 @@ syn = "2.0"
 tempfile = "3.27.0"
 test-log = "0.2.20"
 thiserror = "2.0.18"
+tikv-jemallocator = { version = "0.5.4", features = [
+    "profiling",
+    "unprefixed_malloc_on_supported_platforms",
+] }
 tokio = { version = "1.52.1", features = ["full", "test-util"] }
 tokio-metrics = { version = "0.5.0" }
 tokio-rustls = { version = "0.26.4", default-features = false }

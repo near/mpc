@@ -1,0 +1,30 @@
+name: Restore Nix cache
+description: |
+  Restore /nix from the shared CI cache and runs garbage collection
+  before storing if save is set to true.
+inputs:
+  save:
+    description: Whether this job should save the cache after running.
+    required: false
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - name: Restore /nix from cache
+      uses: near/cache-nix-action@3e2c4eea4e825e74575cbc8e25d38173df7686c2 # enable-warpbuild-cache
+      with:
+        backend: warpbuild
+        primary-key: nix-${{ runner.os }}-ci-${{ hashFiles('flake.nix', 'flake.lock', 'nix/**', 'rust-toolchain.toml', 'Cargo.lock') }}
+        restore-prefixes-first-match: nix-${{ runner.os }}-ci-
+        save: ${{ inputs.save }}
+        # Target store size of 0 means always run garbage collection.
+        # Note that pinning step below prevents the usable cache to be cleaned.
+        gc-max-store-size: 0
+
+    - name: Pin dev-shell closure as GC root
+      if: inputs.save == 'true'
+      shell: bash
+      # `--profile` registers the dev-shell closure as an indirect GC root,
+      # so the pre-upload garbage collection keeps it (and its dependencies)
+      # while dropping everything else.
+      run: nix develop --profile "$RUNNER_TEMP/ci-devshell" --command true

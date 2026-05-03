@@ -34,7 +34,6 @@ k256 = { workspace = true }
 launcher-interface = { workspace = true }
 lru = { workspace = true }
 mpc-attestation = { workspace = true }
-mpc-contract = { workspace = true, features = ["compat"] }
 mpc-node-config = { workspace = true }
 mpc-primitives = { workspace = true }
 mpc-tls = { workspace = true }
@@ -73,6 +72,7 @@ tee-authority = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
 threshold-signatures = { workspace = true }
+tikv-jemallocator = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
 tokio-metrics = { workspace = true }
@@ -83,6 +83,14 @@ tower = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 url = { workspace = true }
+
+# jemalloc heap profiling is only supported on Linux.
+[target.'cfg(target_os = "linux")'.dependencies]
+backtrace = { workspace = true }
+inferno = { workspace = true }
+jemalloc_pprof = { workspace = true }
+mappings = { workspace = true }
+pprof_util = { workspace = true }
 
 # Use frame-pointer to get the back-trace on macOS
 # see: https://github.com/tikv/pprof-rs/issues/131#issuecomment-1146991294
@@ -98,7 +106,7 @@ blstrs = { workspace = true }
 elliptic-curve = { workspace = true }
 itertools = { workspace = true }
 mockall = { workspace = true }
-mpc-contract = { workspace = true, features = ["test-utils"] }
+mpc-contract = { workspace = true, features = ["compat", "test-utils"] }
 near-sdk = { workspace = true }
 rstest = { workspace = true }
 serial_test = { workspace = true }

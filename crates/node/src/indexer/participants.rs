@@ -3,13 +3,11 @@ use crate::config::{ParticipantInfo, ParticipantStatus, ParticipantsConfig};
 use crate::primitives::ParticipantId;
 use anyhow::Context;
 use ed25519_dalek::VerifyingKey;
-use mpc_contract::primitives::key_state::{
-    KeyEventId as ContractKeyEventId, KeyForDomain as ContractKeyForDomain,
-    Keyset as ContractKeyset,
-};
+use mpc_primitives::KeyEventId as ContractKeyEventId;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::{KeyEvent, ProtocolContractState, ThresholdParameters};
+use near_mpc_crypto_types::{KeyForDomain as ContractKeyForDomain, Keyset as ContractKeyset};
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use tokio::sync::watch;
@@ -40,8 +38,7 @@ pub fn convert_key_event_to_instance(
                     epoch_id: key_event.epoch_id,
                     domain_id: key_event.domain.id,
                     attempt_id: current_instance.attempt_id,
-                }
-                .into(),
+                },
                 domain: key_event.domain.clone(),
                 started: true,
                 completed: current_instance
@@ -57,8 +54,7 @@ pub fn convert_key_event_to_instance(
                 epoch_id: key_event.epoch_id,
                 domain_id: key_event.domain.id,
                 attempt_id: key_event.next_attempt_id,
-            }
-            .into(),
+            },
             domain: key_event.domain.clone(),
             started: false,
             completed: BTreeSet::new(),
@@ -195,7 +191,7 @@ impl ContractState {
             }
             ProtocolContractState::Running(running_state) => {
                 ContractState::Running(ContractRunningState {
-                    keyset: running_state.keyset.clone().try_into()?,
+                    keyset: running_state.keyset.clone(),
                     participants: convert_participant_infos(
                         running_state.parameters.clone(),
                         port_override,
@@ -212,8 +208,7 @@ impl ContractState {
                     reshared_keys: dtos::Keyset {
                         epoch_id: state.resharing_key.epoch_id,
                         domains: state.reshared_keys.clone(),
-                    }
-                    .try_into()?,
+                    },
                     key_event: convert_key_event_to_instance(
                         &state.resharing_key,
                         height,
@@ -225,7 +220,7 @@ impl ContractState {
                 let running_state = state.previous_running_state.clone();
 
                 ContractState::Running(ContractRunningState {
-                    keyset: running_state.keyset.clone().try_into()?,
+                    keyset: running_state.keyset.clone(),
                     participants: convert_participant_infos(
                         running_state.parameters.clone(),
                         port_override,

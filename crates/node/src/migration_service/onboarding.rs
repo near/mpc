@@ -4,8 +4,8 @@ use anyhow::Context;
 use backon::{ExponentialBuilder, Retryable};
 use ed25519_dalek::VerifyingKey;
 use futures::TryFutureExt;
-use mpc_contract::primitives::key_state::Keyset;
 use near_account_id::AccountId;
+use near_mpc_crypto_types::Keyset;
 use tokio::sync::{watch, RwLock};
 use tokio_util::sync::CancellationToken;
 
@@ -37,7 +37,7 @@ pub(crate) async fn onboard(
     tracing::info!(?my_near_account_id, "starting onboarding");
     let (cancel_monitoring_task, mut onboarding_job_receiver) = start_onboarding_monitoring_task(
         contract_state_receiver,
-        my_migration_info_receiver,
+        my_migration_info_receiver.clone(),
         my_near_account_id.clone(),
         tls_public_key,
     );
@@ -66,6 +66,7 @@ pub(crate) async fn onboard(
                     keyshare_storage.clone(),
                     keyshare_receiver.clone(),
                     tx_sender.clone(),
+                    my_migration_info_receiver.clone(),
                     cancellation_token.clone(),
                 )
                 .await;
@@ -152,24 +153,71 @@ fn start_onboarding_monitoring_task(
     (cancel_monitoring_task, receiver)
 }
 
-/// Sends the conclude-onboarding transaction with exponential backoff until successful.
-/// No limit on the number of retries, this function will either succeed or get cancelled.
+/// Retries `conclude_node_migration` until the contract reflects completion.
+///
+/// `tx_sender::send` returns `Ok` once the tx is applied — even if the
+/// contract method returned `Err` and rolled back. So we also wait for
+/// `active_migration` to flip false on the local `MigrationInfo` watch
+/// (cleared when the contract removes our migration record on success); if
+/// it doesn't, we retry.
 async fn retry_conclude_onboarding(
     importing_keyset: Keyset,
     tx_sender: impl TransactionSender,
+    my_migration_info_receiver: watch::Receiver<MigrationInfo>,
 ) -> anyhow::Result<()> {
     const MIN_DELAY: Duration = Duration::from_secs(2);
     const MAX_TIMEOUT: Duration = Duration::from_secs(60);
+    const POST_TX_OBSERVATION_TIMEOUT: Duration = Duration::from_secs(10);
+
     let builder = ExponentialBuilder::new()
         .with_max_delay(MAX_TIMEOUT)
         .with_min_delay(MIN_DELAY)
         .without_max_times();
-    let send = move || {
-        send_conclude_onboarding(importing_keyset.clone(), tx_sender.clone()).inspect_err(|err| {
-            tracing::error!(?err, "error sending conclude migration transaction");
-        })
+
+    let attempt = move || {
+        let importing_keyset = importing_keyset.clone();
+        let tx_sender = tx_sender.clone();
+        let mut my_migration_info_receiver = my_migration_info_receiver.clone();
+        async move {
+            send_conclude_onboarding(importing_keyset, tx_sender)
+                .inspect_err(|err| {
+                    tracing::error!(?err, "error sending conclude migration transaction");
+                })
+                .await?;
+            wait_for_active_migration_to_clear(
+                &mut my_migration_info_receiver,
+                POST_TX_OBSERVATION_TIMEOUT,
+            )
+            .await
+            .inspect_err(|err| {
+                tracing::warn!(
+                    ?err,
+                    "conclude migration tx submitted but contract has not reflected completion; retrying"
+                );
+            })
+        }
     };
-    send.retry(builder).await
+    attempt.retry(builder).await
+}
+
+/// Waits up to `timeout` for `active_migration` to flip false.
+async fn wait_for_active_migration_to_clear(
+    receiver: &mut watch::Receiver<MigrationInfo>,
+    timeout: Duration,
+) -> anyhow::Result<()> {
+    tokio::time::timeout(timeout, async {
+        loop {
+            if !receiver.borrow_and_update().active_migration {
+                return Ok::<(), anyhow::Error>(());
+            }
+            receiver
+                .changed()
+                .await
+                .map_err(|_| anyhow::anyhow!("migration info channel closed"))?;
+        }
+    })
+    .await
+    .map_err(|_| anyhow::anyhow!("active_migration did not clear within {timeout:?}"))?
 }
 
 /// Performs the onboarding process for a given keyset.
@@ -187,6 +235,7 @@ async fn execute_onboarding(
     keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     keyshare_receiver: watch::Receiver<Vec<Keyshare>>,
     tx_sender: impl TransactionSender,
+    my_migration_info_receiver: watch::Receiver<MigrationInfo>,
     cancel_import_token: CancellationToken,
 ) -> anyhow::Result<()> {
     if keyshare_storage
@@ -206,7 +255,11 @@ async fn execute_onboarding(
     }
 
     tokio::select! {
-        _ = retry_conclude_onboarding(importing_keyset, tx_sender) => {},
+        _ = retry_conclude_onboarding(
+            importing_keyset,
+            tx_sender,
+            my_migration_info_receiver,
+        ) => {},
         _ = cancel_import_token.cancelled() => {
             tracing::info!("import cancelled");
         },
@@ -220,7 +273,7 @@ async fn send_conclude_onboarding(
 ) -> anyhow::Result<()> {
     let transaction =
         ChainSendTransactionRequest::ConcludeNodeMigration(ConcludeNodeMigrationArgs {
-            keyset: imported_keyset.into(),
+            keyset: imported_keyset,
         });
     tx_sender.send(transaction).await?;
     Ok(())

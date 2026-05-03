@@ -32,13 +32,13 @@ cargo insta accept                                          # Accept all pending
 # Commit updated .snap files alongside code changes
 ```
 
-### System Tests (pytest)
+### E2E Tests
 ```bash
-cd pytest
-pytest                                         # Run all tests
-pytest -m "not slow"                           # Skip slow tests
-pytest --non-reproducible tests/path/test.py::test_name  # Single test
+cargo make e2e-tests                            # Build required binaries and run all E2E tests
+cargo make e2e-tests-skip-build                 # Reuse binaries from a previous run
+cargo make e2e-tests-skip-build -- <name>       # Run a single test (filter passed to nextest)
 ```
+See `crates/e2e-tests/README.md` for details.
 
 ## Architecture Overview
 
@@ -122,7 +122,7 @@ Do not suggest using `checked_add`, `checked_mul`, `checked_sub`, `saturating_ad
 
 - **Unit test**: Rust test in `/src` folder
 - **Integration test**: Rust test in `/tests` folder
-- **System test**: pytest in `/pytest` folder
+- **E2E test**: Rust test in `crates/e2e-tests`
 
 ## Documentation alignment
 

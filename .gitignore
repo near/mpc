@@ -9,10 +9,6 @@ venv
 **/res/
 **/target/
 **/__pycache__/
-/pytest/output.log
-/pytest/venv/
-/pytest/contract_history/*.wasm
-/pytest/nearcore_pytest/nearcore_pytest.egg-info/
 
 # Generated on MacOs' file explorer - https://en.wikipedia.org/wiki/.DS_Store
 *.DS_Store

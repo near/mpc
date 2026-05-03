@@ -99,8 +99,6 @@
               "-fno-stack-protector"
             ];
 
-            PYTHONPATH = "./pytest:./nearcore_pytest";
-
             # OpenSSL
             PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig";
             OPENSSL_DIR = "${pkgs.openssl.dev}";
@@ -152,6 +150,8 @@
             jq
             perl
             procps  # pgrep, used by the kill-orphan-mpc-nodes cargo-make task
+            pprof
+            graphviz
           ];
 
           buildLibs =

@@ -148,7 +148,7 @@ pub struct MpcContract {
     foreign_chain_policy: ForeignChainPolicy,
     foreign_chain_policy_votes: ForeignChainPolicyVotes,
     node_foreign_chain_configurations: NodeForeignChainConfigurations,
-    config: OldConfig,
+    config: Config,
     tee_state: OldTeeState,
     accept_requests: bool,
     node_migrations: NodeMigrations,
@@ -283,7 +283,7 @@ impl From<MpcContract> for crate::MpcContract {
             pending_verify_foreign_tx_requests: value.pending_verify_foreign_tx_requests,
             proposed_updates: value.proposed_updates,
             node_foreign_chain_configurations: value.node_foreign_chain_configurations,
-            config: value.config.into(),
+            config: value.config,
             tee_state: value.tee_state.into(),
             accept_requests: value.accept_requests,
             node_migrations: value.node_migrations,
@@ -301,72 +301,52 @@ struct OldStaleData {
     pending_signature_requests_pre_upgrade: LookupMap<SignatureRequest, YieldIndex>,
 }
 
-/// Previous `Config` layout — v3.9.0 predated `clean_invalid_attestations_tera_gas`, so the
-/// current `Config` has one extra `u64` and cannot be used to borsh-decode deployed state.
+/// Previous `TeeState` layout — `stored_attestations` was an `IterableMap`
+/// keyed by `near_sdk::PublicKey` (TLS key with curve tag) and held
+/// [`OldNodeAttestation`]. The new layout keys by raw [`Ed25519PublicKey`]
+/// and stores [`NodeAttestation`] with non-optional account keys.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
-struct OldConfig {
-    key_event_timeout_blocks: u64,
-    tee_upgrade_deadline_duration_seconds: u64,
-    contract_upgrade_deposit_tera_gas: u64,
-    sign_call_gas_attachment_requirement_tera_gas: u64,
-    ckd_call_gas_attachment_requirement_tera_gas: u64,
-    return_signature_and_clean_state_on_success_call_tera_gas: u64,
-    return_ck_and_clean_state_on_success_call_tera_gas: u64,
-    fail_on_timeout_tera_gas: u64,
-    clean_tee_status_tera_gas: u64,
-    cleanup_orphaned_node_migrations_tera_gas: u64,
-    remove_non_participant_update_votes_tera_gas: u64,
-    clean_foreign_chain_data_tera_gas: u64,
-}
-
-impl From<OldConfig> for Config {
-    fn from(old: OldConfig) -> Self {
-        Self {
-            key_event_timeout_blocks: old.key_event_timeout_blocks,
-            tee_upgrade_deadline_duration_seconds: old.tee_upgrade_deadline_duration_seconds,
-            contract_upgrade_deposit_tera_gas: old.contract_upgrade_deposit_tera_gas,
-            sign_call_gas_attachment_requirement_tera_gas: old
-                .sign_call_gas_attachment_requirement_tera_gas,
-            ckd_call_gas_attachment_requirement_tera_gas: old
-                .ckd_call_gas_attachment_requirement_tera_gas,
-            return_signature_and_clean_state_on_success_call_tera_gas: old
-                .return_signature_and_clean_state_on_success_call_tera_gas,
-            return_ck_and_clean_state_on_success_call_tera_gas: old
-                .return_ck_and_clean_state_on_success_call_tera_gas,
-            fail_on_timeout_tera_gas: old.fail_on_timeout_tera_gas,
-            clean_tee_status_tera_gas: old.clean_tee_status_tera_gas,
-            clean_invalid_attestations_tera_gas: Config::default()
-                .clean_invalid_attestations_tera_gas,
-            cleanup_orphaned_node_migrations_tera_gas: old
-                .cleanup_orphaned_node_migrations_tera_gas,
-            remove_non_participant_update_votes_tera_gas: old
-                .remove_non_participant_update_votes_tera_gas,
-            clean_foreign_chain_data_tera_gas: old.clean_foreign_chain_data_tera_gas,
-        }
-    }
-}
-
-/// Previous `TeeState` layout — the `stored_attestations` map was keyed by
-/// `near_sdk::PublicKey` (TLS key with curve tag) and held [`OldNodeAttestation`].
-#[derive(Debug, Default, BorshSerialize, BorshDeserialize)]
 struct OldTeeState {
     allowed_docker_image_hashes: AllowedDockerImageHashes,
     allowed_launcher_images: AllowedLauncherImages,
     votes: CodeHashesVotes,
     launcher_votes: LauncherHashVotes,
-    stored_attestations: BTreeMap<near_sdk::PublicKey, OldNodeAttestation>,
+    stored_attestations: IterableMap<near_sdk::PublicKey, OldNodeAttestation>,
     allowed_measurements: AllowedMeasurements,
     measurement_votes: MeasurementVotes,
 }
 
+impl Default for OldTeeState {
+    fn default() -> Self {
+        Self {
+            allowed_docker_image_hashes: Default::default(),
+            allowed_launcher_images: Default::default(),
+            votes: Default::default(),
+            launcher_votes: Default::default(),
+            stored_attestations: IterableMap::new(StorageKey::StoredAttestations),
+            allowed_measurements: Default::default(),
+            measurement_votes: Default::default(),
+        }
+    }
+}
+
 impl From<OldTeeState> for TeeState {
-    fn from(old: OldTeeState) -> Self {
-        // Migrate entry-by-entry: skip any whose TLS key is not Ed25519, whose
-        // `account_public_key` is missing, or whose `account_public_key` is
-        // not Ed25519. A stored non-Ed25519 TLS key could never match the
+    fn from(mut old: OldTeeState) -> Self {
+        // Drain the old IterableMap to clear its on-chain entries before we
+        // populate a fresh IterableMap under the same `StoredAttestations`
+        // storage key. Without draining, leftover entries written under the
+        // old `near_sdk::PublicKey` borsh encoding would collide with the new
+        // `Ed25519PublicKey`-keyed entries.
+        //
+        // We migrate entry-by-entry: skip any whose TLS key is not Ed25519,
+        // whose `account_public_key` is missing, or whose `account_public_key`
+        // is not Ed25519. A stored non-Ed25519 TLS key could never match the
         // node's actual key (the contract always signed with Ed25519), so
         // dropping it is safe — we prefer silent skip over panic to avoid
         // bricking the migration transaction on pathological stored state.
+        let drained: Vec<(near_sdk::PublicKey, OldNodeAttestation)> =
+            old.stored_attestations.drain().collect();
+
         let mut new = TeeState {
             allowed_docker_image_hashes: old.allowed_docker_image_hashes,
             allowed_launcher_images: old.allowed_launcher_images,
@@ -377,7 +357,7 @@ impl From<OldTeeState> for TeeState {
             measurement_votes: old.measurement_votes,
         };
 
-        for (tls_pk, old_attestation) in old.stored_attestations {
+        for (tls_pk, old_attestation) in drained {
             let Some(new_tls_key) = dtos::Ed25519PublicKey::try_from(&tls_pk).ok() else {
                 continue;
             };
@@ -416,7 +396,7 @@ struct OldNodeAttestation {
 /// Previous `NodeId` layout — `tls_public_key` and `account_public_key` used the
 /// `near_sdk::PublicKey` tagged borsh encoding. The new layout stores the TLS
 /// key as a raw 32-byte [`dtos::Ed25519PublicKey`] and the account key as a
-/// [`dtos::PublicKey`] (with an explicit curve tag), so we need a dedicated
+/// non-optional [`dtos::Ed25519PublicKey`], so we need a dedicated
 /// pre-migration type here.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 struct OldNodeId {
@@ -430,6 +410,8 @@ struct OldNodeId {
 mod tests {
     use super::*;
     use mpc_attestation::attestation::MockAttestation;
+    use near_sdk::test_utils::VMContextBuilder;
+    use near_sdk::testing_env;
 
     fn old_ed25519_near_pk(byte: u8) -> near_sdk::PublicKey {
         near_sdk::PublicKey::from_parts(near_sdk::CurveType::ED25519, vec![byte; 32]).unwrap()
@@ -457,6 +439,7 @@ mod tests {
     #[test]
     fn tee_state_migration__should_rekey_stored_attestations_to_ed25519() {
         // Given
+        testing_env!(VMContextBuilder::new().build());
         let tls_pk = old_ed25519_near_pk(7);
         let account_pk = old_ed25519_near_pk(8);
         let mut old = OldTeeState::default();
@@ -485,6 +468,7 @@ mod tests {
     #[test]
     fn tee_state_migration__should_skip_missing_account_key() {
         // Given a legacy/mock node that never recorded an account key
+        testing_env!(VMContextBuilder::new().build());
         let tls_pk = old_ed25519_near_pk(1);
         let mut old = OldTeeState::default();
         old.stored_attestations
@@ -500,6 +484,7 @@ mod tests {
     #[test]
     fn tee_state_migration__should_skip_entries_with_non_ed25519_tls_key() {
         // Given one Ed25519 entry and one secp256k1 entry in the old state
+        testing_env!(VMContextBuilder::new().build());
         let good_tls = old_ed25519_near_pk(4);
         let bad_tls = old_secp256k1_near_pk(5);
         let account_pk = old_ed25519_near_pk(6);
@@ -526,6 +511,7 @@ mod tests {
     #[test]
     fn tee_state_migration__should_drop_non_ed25519_account_key() {
         // Given a stored entry whose account_public_key is (unexpectedly) secp256k1
+        testing_env!(VMContextBuilder::new().build());
         let tls_pk = old_ed25519_near_pk(2);
         let secp_account_pk = old_secp256k1_near_pk(3);
         let mut old = OldTeeState::default();
@@ -539,44 +525,6 @@ mod tests {
 
         // Then the entry is dropped entirely
         assert!(new.stored_attestations.is_empty());
-    }
-
-    #[test]
-    fn tee_state_migration__should_round_trip_through_borsh() {
-        // Given an OldTeeState serialized with borsh (mirrors the on-chain path)
-        let tls_pk = old_ed25519_near_pk(9);
-        let account_pk = old_ed25519_near_pk(10);
-        let mut pre_migration = OldTeeState::default();
-        pre_migration.stored_attestations.insert(
-            tls_pk.clone(),
-            old_attestation("dave.near", tls_pk, Some(account_pk)),
-        );
-        let bytes = borsh::to_vec(&pre_migration).unwrap();
-
-        // When
-        let decoded: OldTeeState = borsh::from_slice(&bytes).unwrap();
-        let migrated: TeeState = decoded.into();
-
-        // Then
-        let expected_key = dtos::Ed25519PublicKey::from([9u8; 32]);
-        assert!(migrated.stored_attestations.contains_key(&expected_key));
-    }
-
-    fn sample_old_config() -> OldConfig {
-        OldConfig {
-            key_event_timeout_blocks: 1,
-            tee_upgrade_deadline_duration_seconds: 2,
-            contract_upgrade_deposit_tera_gas: 3,
-            sign_call_gas_attachment_requirement_tera_gas: 4,
-            ckd_call_gas_attachment_requirement_tera_gas: 5,
-            return_signature_and_clean_state_on_success_call_tera_gas: 6,
-            return_ck_and_clean_state_on_success_call_tera_gas: 7,
-            fail_on_timeout_tera_gas: 8,
-            clean_tee_status_tera_gas: 9,
-            cleanup_orphaned_node_migrations_tera_gas: 10,
-            remove_non_participant_update_votes_tera_gas: 11,
-            clean_foreign_chain_data_tera_gas: 12,
-        }
     }
 
     fn old_participants(
@@ -617,37 +565,6 @@ mod tests {
             add_domains_votes: AddDomainsVotes::default(),
             previously_cancelled_resharing_epoch_id: None,
         }
-    }
-
-    #[test]
-    fn config_migration__should_round_trip_through_borsh_and_fill_new_field_with_default() {
-        // Given an OldConfig serialized with borsh (mirrors the on-chain path)
-        let pre_migration = sample_old_config();
-        let bytes = borsh::to_vec(&pre_migration).unwrap();
-
-        // When
-        let decoded: OldConfig = borsh::from_slice(&bytes).unwrap();
-        let migrated: Config = decoded.into();
-
-        // Then: every pre-existing field is preserved, and the new field falls back to default.
-        assert_eq!(migrated.key_event_timeout_blocks, 1);
-        assert_eq!(migrated.tee_upgrade_deadline_duration_seconds, 2);
-        assert_eq!(migrated.clean_tee_status_tera_gas, 9);
-        assert_eq!(migrated.cleanup_orphaned_node_migrations_tera_gas, 10);
-        assert_eq!(migrated.clean_foreign_chain_data_tera_gas, 12);
-        assert_eq!(
-            migrated.clean_invalid_attestations_tera_gas,
-            Config::default().clean_invalid_attestations_tera_gas
-        );
-    }
-
-    #[test]
-    fn config_migration__old_config_borsh_size_must_match_current_config_minus_one_u64() {
-        // Guards against future Config drift: if someone adds/removes a u64 on the current
-        // Config without updating OldConfig, this test fails before the sandbox suite does.
-        let old_size = borsh::to_vec(&sample_old_config()).unwrap().len();
-        let new_size = borsh::to_vec(&Config::default()).unwrap().len();
-        assert_eq!(new_size, old_size + std::mem::size_of::<u64>());
     }
 
     #[test]

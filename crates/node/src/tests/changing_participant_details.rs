@@ -100,12 +100,7 @@ async fn test_changing_participant_set_test_keyshare_import() {
         std::fs::create_dir_all(&home_dir_last).unwrap();
         let key_storage_config = make_key_storage_config(home_dir_last, local_encryption_key_last);
         let mut keystore = key_storage_config.create().await.unwrap();
-        let contract_keyset: mpc_contract::primitives::key_state::Keyset =
-            keyset.try_into().unwrap();
-        keystore
-            .import_backup(keyshares, &contract_keyset)
-            .await
-            .unwrap();
+        keystore.import_backup(keyshares, &keyset).await.unwrap();
     }
 
     // finally, change the participant info. Remove the first node and insert the last node.
