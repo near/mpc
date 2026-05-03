@@ -435,7 +435,7 @@ The node will use the Dstack APIs in order to generate the remote attestation in
 
     _Note_ - In a future release, we plan to add the hash of node's public account key as well - in order to be able to add restriction on the operator calling some of the contract APIs
 
-- Collateral (TCB info, QE identity, PCK CRL) — fetched from a configurable PCCS endpoint chain. See [PCCS Collateral Handling](#pccs-collateral-handling) below for endpoint configuration, freshness, and TLS trust.
+- Collateral (TCB Info, QE Identity, PCK CRL) — fetched from a configurable PCCS endpoint chain. See [PCCS Collateral Handling](#pccs-collateral-handling) below for endpoint configuration, freshness, and TLS trust.
 
 - Dstack TCP info + Event log. containing a list of Dstack configuration and list of events that extended the RTMRs.
 
@@ -443,11 +443,11 @@ For more information see Phala's attestation web page: <https://docs.phala.com/p
 
 ### PCCS Collateral Handling
 
-Beyond the TDX quote itself, attestation requires PCCS-supplied collateral — TCB info, QE identity, and the PCK CRL — so that verifiers can check the quote's chain of trust and the platform's TCB level. The node configures, fetches, and validates this collateral with the following design:
+Beyond the TDX quote itself, attestation requires PCCS-supplied collateral — TCB Info, QE Identity, and the PCK CRL — so that verifiers can check the quote's chain of trust and the platform's TCB level. The node configures, fetches, and validates this collateral with the following design:
 
 - **Endpoint configuration and fallback.** Operators list one or more PCCS endpoints in `pccs_endpoints`. The node tries each in order until one returns valid collateral. When the field is unspecified, the node falls back to a single default endpoint (Phala).
 
-- **TLS trust.** PCCS endpoints use standard public-CA trust roots by default. Each entry optionally accepts a TLS override: `tls.override = "ca_cert_pem"` pins a self-signed root, and `tls.override = "insecure"` disables TLS validation entirely. Both overrides are intended to be set by operators only for self-hosted local PCCS deployments.
+- **TLS trust.** PCCS endpoints use standard public-CA trust roots by default. Each entry optionally accepts a TLS override: `tls.override = "ca_cert_pem"` adds a self-signed root as an additional trust anchor — the default public-CA roots remain active. `tls.override = "insecure"` disables TLS validation entirely. Both overrides are intended for self-hosted local PCCS deployments only.
 
 - **Freshness validation.** Collateral older than 7 days is rejected. The threshold applies uniformly to `tcb_info.issueDate`, `qe_identity.issueDate`, and the PCK CRL `thisUpdate`. A stale response from one endpoint causes the node to fall back to the next.
 
