@@ -42,10 +42,11 @@ pub enum AttestationError {
     InvalidEndpoint,
 }
 
-/// One PCCS endpoint's failure. The URL is attached at this layer
-/// because the inner per-step errors (collateral fetch, freshness
-/// check) don't all need it — we add it once here for operator-facing
-/// log/error messages.
+/// Wraps a single PCCS endpoint attempt's failure with the URL of the
+/// endpoint that failed. Each variant carries a `url` field so that
+/// per-endpoint log/error output can name which endpoint it's about
+/// without the inner error types (e.g. `FreshnessError`) needing to
+/// know about URLs themselves.
 #[derive(Debug, Error)]
 pub enum PccsEndpointError {
     #[error("invalid PCCS client construction for {url}: {source:#}")]
@@ -223,11 +224,17 @@ const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
 /// to splitting them, and the redundancy is harmless.
 const PCCS_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Maximum age accepted for PCCS collateral. Hard-coded at 7 days per
-/// the team decision in `near/mpc-private#293`; stricter than Intel's
-/// 30-day `nextUpdate` window but more permissive than any default PCCS
-/// refresh schedule (Intel reference and Phala both refresh ~daily), so
-/// legitimate operators have ample headroom.
+/// Maximum age accepted for PCCS collateral. Hard-coded at 7 days
+/// (not exposed as configuration) so a malicious operator cannot relax
+/// the bound.
+///
+/// 7 days is stricter than Intel's 30-day `nextUpdate` window but
+/// more permissive than any default PCCS refresh schedule (Intel
+/// reference and Phala both refresh ~daily), so legitimate operators
+/// have ample headroom. The choice aligns with the contract's
+/// `DEFAULT_EXPIRATION_DURATION_SECONDS`: any attestation accepted by
+/// the contract is ≤7 days old *and* backed by collateral whose Intel
+/// signature is ≤7 days old.
 ///
 /// Applies uniformly to the three periodically re-signed pieces of
 /// collateral that share Intel's 30-day window: `tcb_info.issueDate`,
@@ -1147,13 +1154,22 @@ mod tests {
     }
 
     /// Fixed `now` for boundary tests so they don't depend on the wall
-    /// clock. Chosen ~43 min after the fixture PCK CRL's `thisUpdate`
-    /// (`2026-03-30T11:17:23Z`) so the fixture CRL is fresh for tests
-    /// that exercise only the JSON-field path.
+    /// clock. Constructed relative to the fixture PCK CRL's
+    /// `thisUpdate` so the fixture CRL is fresh for tests that exercise
+    /// only the JSON-field path; the offset is well under
+    /// [`MAX_COLLATERAL_AGE`] so a 7-day-back JSON `issueDate` still
+    /// fits without underflowing into the future-grace path.
     fn test_now() -> time::OffsetDateTime {
-        time::OffsetDateTime::parse("2026-03-30T12:00:00Z", &Rfc3339)
-            .expect("test_now is a valid RFC3339 timestamp")
+        let crl_thisupdate =
+            parse_pck_crl_thisupdate(&fixture_pck_crl()).expect("fixture pck_crl is parseable");
+        crl_thisupdate + TEST_NOW_OFFSET_FROM_FIXTURE_CRL
     }
+
+    /// Offset of [`test_now`] from the fixture CRL's `thisUpdate`. ~43
+    /// minutes — long enough that downstream `rfc3339(test_now() - X)`
+    /// round-trips don't lose sub-minute precision, short enough that
+    /// the CRL stays freshly within the 7-day window.
+    const TEST_NOW_OFFSET_FROM_FIXTURE_CRL: time::Duration = time::Duration::minutes(43);
 
     /// Collateral whose `issueDate` is 6 days old (well within the 7-day
     /// window) is accepted.
