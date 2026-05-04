@@ -28,6 +28,7 @@ struct MockServerUrls {
     bnb: String,
     starknet: String,
     base: String,
+    arbitrum: String,
 }
 
 fn build_foreign_chains_config(urls: &MockServerUrls) -> ForeignChainsConfig {
@@ -87,6 +88,17 @@ fn build_foreign_chains_config(urls: &MockServerUrls) -> ForeignChainsConfig {
                 },
             ),
         }),
+        arbitrum: Some(ForeignChainConfig {
+            timeout_sec: NonZeroU64::new(30).unwrap(),
+            max_retries: NonZeroU64::new(3).unwrap(),
+            providers: NonEmptyBTreeMap::new(
+                "mock".to_string().into(),
+                ForeignChainProviderConfig {
+                    rpc_url: urls.arbitrum.clone(),
+                    auth: Default::default(),
+                },
+            ),
+        }),
         ..Default::default()
     }
 }
@@ -97,12 +109,14 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
     let bnb_server = MockServer::start();
     let starknet_server = MockServer::start();
     let base_server = MockServer::start();
+    let arbitrum_server = MockServer::start();
 
     setup_bitcoin_mock(&bitcoin_server);
     setup_evm_mock(&abstract_server);
     setup_evm_mock(&bnb_server);
     setup_starknet_mock(&starknet_server);
     setup_evm_mock(&base_server);
+    setup_evm_mock(&arbitrum_server);
 
     let urls = MockServerUrls {
         bitcoin: bitcoin_server.url("/"),
@@ -110,6 +124,7 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
         bnb: bnb_server.url("/"),
         starknet: starknet_server.url("/"),
         base: base_server.url("/"),
+        arbitrum: arbitrum_server.url("/"),
     };
 
     let mock_servers = vec![
@@ -118,6 +133,7 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
         bnb_server,
         starknet_server,
         base_server,
+        arbitrum_server,
     ];
 
     let fc_config = build_foreign_chains_config(&urls);
@@ -141,6 +157,7 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
         ForeignChain::Bnb,
         ForeignChain::Starknet,
         ForeignChain::Base,
+        ForeignChain::Arbitrum,
     ]
     .into_iter()
     .collect();
@@ -325,6 +342,24 @@ async fn verify_starknet(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
     verify_foreign_tx_response(&outcome)
 }
 
+async fn verify_arbitrum(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
+    let request = VerifyForeignTransactionRequestArgs {
+        request: ForeignChainRpcRequest::Arbitrum(EvmRpcRequest {
+            tx_id: EvmTxId([0xbb; 32]),
+            extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }],
+            finality: EvmFinality::Finalized,
+        }),
+        domain_id: env.secp_domain_id,
+        payload_version: ForeignTxPayloadVersion::V1,
+    };
+    let outcome = env
+        .cluster
+        .send_verify_foreign_transaction(&request)
+        .await
+        .context("verify_foreign_transaction (Arbitrum) failed")?;
+    verify_foreign_tx_response(&outcome)
+}
+
 /// Sets up a single 2-node cluster with mock RPC servers for all chains,
 /// then submits verify_foreign_transaction requests for Bitcoin, Abstract,
 /// BNB, Base, and Starknet and verifies the MPC nodes return valid signed responses.
@@ -349,6 +384,9 @@ async fn verify_foreign_transaction__should_sign_all_supported_chains() {
     verify_starknet(&env)
         .await
         .expect("starknet verification failed");
+    verify_arbitrum(&env)
+        .await
+        .expect("arbitrum verification failed");
 
     // When — requesting Ethereum, which is not in the foreign chain config
     let request = VerifyForeignTransactionRequestArgs {
