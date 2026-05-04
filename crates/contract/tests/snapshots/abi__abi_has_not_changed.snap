@@ -2300,7 +2300,7 @@ expression: abi
               },
               "additionalProperties": false
             },
-			{
+            {
               "type": "object",
               "required": [
                 "Arbitrum"
@@ -2323,7 +2323,7 @@ expression: abi
                 }
               },
               "additionalProperties": false
-			}
+            }
           ]
         },
         "Hash256": {
