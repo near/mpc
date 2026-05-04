@@ -27,7 +27,7 @@ fn hex_to_32(s: &str) -> [u8; 32] {
 }
 
 #[tokio::test]
-#[ignore = "manual RPC test — set TONCENTER_BASE_URL/ACCOUNT_HEX/TX_HASH_HEX env vars"]
+#[ignore = "manual RPC test — set TONCENTER_BASE_URL/TONCENTER_ACCOUNT_HEX/TONCENTER_TX_HASH_HEX env vars"]
 async fn inspector_extracts_log_against_live_toncenter() {
     // given
     let base_url = env("TONCENTER_BASE_URL");
