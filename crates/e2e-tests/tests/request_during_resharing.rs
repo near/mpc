@@ -1,7 +1,9 @@
 use crate::common;
 
 use mpc_primitives::domain::{Curve, DomainId};
-use near_mpc_contract_interface::types::{DomainConfig, DomainPurpose, ProtocolContractState};
+use near_mpc_contract_interface::types::{
+    DomainConfig, DomainPurpose, Protocol, ProtocolContractState,
+};
 use rand::SeedableRng;
 
 /// Tests that signature and CKD requests are processed using the previous
@@ -27,6 +29,7 @@ async fn test_request_during_resharing() {
             c.domains.push(DomainConfig {
                 id: DomainId(c.domains.len() as u64),
                 curve: Curve::V2Secp256k1,
+                protocol: Protocol::from(Curve::V2Secp256k1),
                 purpose: DomainPurpose::Sign,
             });
         })

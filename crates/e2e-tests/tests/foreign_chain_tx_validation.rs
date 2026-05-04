@@ -12,7 +12,7 @@ use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::types::{
     BitcoinExtractor, BitcoinRpcRequest, BitcoinTxId, BlockConfirmations, Curve, DomainConfig,
     DomainId, DomainPurpose, EvmExtractor, EvmFinality, EvmRpcRequest, EvmTxId, ForeignChain,
-    ForeignChainRpcRequest, ForeignTxPayloadVersion, StarknetExtractor, StarknetFelt,
+    ForeignChainRpcRequest, ForeignTxPayloadVersion, Protocol, StarknetExtractor, StarknetFelt,
     StarknetFinality, StarknetRpcRequest, StarknetTxId, VerifyForeignTransactionRequestArgs,
 };
 
@@ -145,6 +145,7 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
             c.domains = vec![DomainConfig {
                 id: DomainId(0),
                 curve: Curve::Secp256k1,
+                protocol: Protocol::from(Curve::Secp256k1),
                 purpose: DomainPurpose::ForeignTx,
             }];
             c.node_foreign_chains_configs = vec![fc_config.clone(), fc_config];

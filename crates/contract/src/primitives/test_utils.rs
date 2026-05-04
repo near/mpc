@@ -8,7 +8,7 @@ use crate::{
 };
 use curve25519_dalek::edwards::CompressedEdwardsY;
 use near_account_id::AccountId;
-use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, DomainPurpose};
+use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, DomainPurpose, Protocol};
 use rand::{distributions::Uniform, Rng};
 use std::collections::BTreeMap;
 // Re-export for convenience
@@ -29,6 +29,7 @@ pub fn gen_domain_registry(num_domains: usize) -> DomainRegistry {
         domains.push(DomainConfig {
             id: DomainId(i as u64 * 2),
             curve,
+            protocol: Protocol::from(curve),
             purpose: infer_purpose_from_curve(curve),
         });
     }
@@ -43,6 +44,7 @@ pub fn gen_domains_to_add(registry: &DomainRegistry, num_domains: usize) -> Vec<
         new_domains.push(DomainConfig {
             id: DomainId(registry.next_domain_id() + i as u64),
             curve,
+            protocol: Protocol::from(curve),
             purpose: infer_purpose_from_curve(curve),
         });
     }
