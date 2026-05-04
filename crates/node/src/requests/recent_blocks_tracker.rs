@@ -405,6 +405,7 @@ impl<T: Clone> RecentBlocksTracker<T> {
         for old_node in old_nodes {
             self.hash_to_node.remove(&old_node.hash);
             self.node_to_content.remove(&old_node.hash);
+            *old_node.children.lock().unwrap() = Vec::new();
         }
     }
 
