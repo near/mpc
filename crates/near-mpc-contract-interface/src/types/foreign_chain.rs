@@ -146,6 +146,7 @@ pub enum ForeignChainRpcRequest {
     Starknet(StarknetRpcRequest),
     Bnb(EvmRpcRequest),
     Base(EvmRpcRequest),
+    Arbitrum(EvmRpcRequest),
 }
 
 impl ForeignChainRpcRequest {
@@ -158,6 +159,7 @@ impl ForeignChainRpcRequest {
             Self::Starknet(_) => ForeignChain::Starknet,
             Self::Bnb(_) => ForeignChain::Bnb,
             Self::Base(_) => ForeignChain::Base,
+            Self::Arbitrum(_) => ForeignChain::Arbitrum,
         }
     }
 }
@@ -1093,6 +1095,14 @@ mod tests {
             finality: EvmFinality::Finalized,
         }),
         ForeignChain::Base,
+    )]
+    #[case::bnb(
+        ForeignChainRpcRequest::Arbitrum(EvmRpcRequest {
+            tx_id: EvmTxId([12; 32]),
+            extractors: vec![],
+            finality: EvmFinality::Finalized,
+        }),
+        ForeignChain::Arbitrum,
     )]
     fn foreign_chain_rpc_request_chain__should_return_correct_chain(
         #[case] request: ForeignChainRpcRequest,
