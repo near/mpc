@@ -306,7 +306,7 @@ pub mod ed25519_types {
     pub struct Signature(
         #[cfg_attr(
             all(feature = "abi", not(target_arch = "wasm32")),
-            schemars(with = "Vec<u8>") // Schemars doesn't support arrays of size greater than 32. 
+            schemars(with = "Vec<u8>") // Schemars doesn't support arrays of size greater than 32.
         )]
         #[serde_as(as = "[_; 64]")]
         [u8; 64],

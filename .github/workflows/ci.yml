@@ -195,6 +195,19 @@ jobs:
       - name: Run cargo-make fast checks
         run: nix develop --command cargo make check-all-fast
 
+      - name: Check trailing whitespace
+        run: |
+          if grep -rne '\s$' \
+               --exclude-dir=.git --exclude-dir=target --exclude-dir=libs \
+               --exclude='*.snap' --exclude='*.snap.new' \
+               --exclude='*.md' --exclude='Cargo.lock' \
+               --exclude='licenses.html' \
+               .
+          then
+            echo 'Trailing whitespace found. Please remove it.'
+            exit 1
+          fi
+
   mpc-e2e-tests:
     name: "MPC E2E tests"
     runs-on: warp-ubuntu-2404-x64-32x
