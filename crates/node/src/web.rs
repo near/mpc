@@ -262,8 +262,7 @@ async fn contract_state(state: State<WebServerState>) -> String {
         // Clone to avoid holding a lock
         .clone();
 
-    // TODO(#2880): share `protocol_state_to_string` with the contract crate.
-    format!("{:#?}", protocol_state)
+    near_mpc_contract_interface::types::protocol_state_to_string(&protocol_state)
 }
 
 async fn third_party_licenses() -> Html<&'static str> {

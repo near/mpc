@@ -24,7 +24,7 @@ pub mod types {
         DomainConfig, DomainPurpose, DomainRegistry, EpochId, InitializingContractState, KeyEvent,
         KeyEventId, KeyEventInstance, KeyForDomain, Keyset, ProtocolContractState,
         ResharingContractState, RunningContractState, Threshold, ThresholdParameters,
-        ThresholdParametersVotes,
+        ThresholdParametersVotes, protocol_state_to_string,
     };
     pub use tee::NodeId;
     pub use updates::{ProposedUpdates, UpdateHash};
