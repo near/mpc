@@ -3083,14 +3083,13 @@ mod tests {
     }
 
     #[rstest]
-    #[case(DomainPurpose::ForeignTx)]
-    #[case(DomainPurpose::CKD)]
+    #[case(Curve::Secp256k1, DomainPurpose::ForeignTx)]
+    #[case(Curve::Bls12381, DomainPurpose::CKD)]
     #[should_panic(expected = "this method requires Sign")]
-    fn sign__should_reject_non_sign_domain(#[case] purpose: DomainPurpose) {
+    fn sign__should_reject_non_sign_domain(#[case] curve: Curve, #[case] purpose: DomainPurpose) {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (_context, mut contract, _sk) =
-            basic_setup_with_purpose(Curve::Secp256k1, purpose, &mut rng);
+        let (_context, mut contract, _sk) = basic_setup_with_purpose(curve, purpose, &mut rng);
 
         // When
         contract.sign(SignRequestArgs {
@@ -3101,14 +3100,16 @@ mod tests {
     }
 
     #[rstest]
-    #[case(DomainPurpose::Sign)]
-    #[case(DomainPurpose::CKD)]
+    #[case(Curve::Secp256k1, DomainPurpose::Sign)]
+    #[case(Curve::Bls12381, DomainPurpose::CKD)]
     #[should_panic(expected = "this method requires ForeignTx")]
-    fn verify_foreign_tx__should_reject_non_foreign_tx_domain(#[case] purpose: DomainPurpose) {
+    fn verify_foreign_tx__should_reject_non_foreign_tx_domain(
+        #[case] curve: Curve,
+        #[case] purpose: DomainPurpose,
+    ) {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (_context, mut contract, _sk) =
-            basic_setup_with_purpose(Curve::Secp256k1, purpose, &mut rng);
+        let (_context, mut contract, _sk) = basic_setup_with_purpose(curve, purpose, &mut rng);
 
         // When
         contract.verify_foreign_transaction(VerifyForeignTransactionRequestArgs {
