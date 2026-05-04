@@ -136,7 +136,7 @@ async fn test_web_endpoints() {
             &client,
             i,
             &format!("http://{web_addr}/debug/contract"),
-            &["RunningContractState"],
+            &["Contract is in Running state"],
         )
         .await
         .expect("debug/contract endpoint failed");
