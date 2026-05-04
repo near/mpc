@@ -88,9 +88,10 @@ impl TonRpcClient for ReqwestTonClient {
             .base_url
             .join(GET_TRANSACTIONS_PATH)
             .map_err(TonRpcError::InvalidUrl)?;
-        // toncenter accepts `account=<workchain>:<hex>` and `hash=<hex>`.
-        // We send lowercase hex for determinism across the node fleet (the
-        // RPC treats case-insensitively but nodes compare response bytes).
+        // The v3 API treats `account` and `hash` case-insensitively, but MPC
+        // nodes compare each other's RPC responses byte-for-byte — so all
+        // nodes must send the identical lowercase form to get identical
+        // responses.
         let account = format_ton_account(workchain, account_hash);
         url.query_pairs_mut()
             .append_pair("account", &account)
