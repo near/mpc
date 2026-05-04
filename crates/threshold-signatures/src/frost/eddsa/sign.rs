@@ -172,7 +172,7 @@ async fn do_sign_coordinator_v1(
     // We supply empty map as `verifying_shares` because we have disabled "cheater-detection" feature flag.
     // Feature "cheater-detection" only points to a malicious participant, if there's such.
     // It doesn't bring any additional guarantees.
-    let public_key_package = PublicKeyPackage::new(BTreeMap::new(), vk_package);
+    let public_key_package = PublicKeyPackage::new(BTreeMap::new(), vk_package, None);
     let signature = aggregate(&signing_package, &signature_shares, &public_key_package)
         .map_err(|e| ProtocolError::AssertionFailed(e.to_string()))?;
 
@@ -229,7 +229,7 @@ async fn do_sign_coordinator_v2(
     // We supply empty map as `verifying_shares` because we have disabled "cheater-detection" feature flag.
     // Feature "cheater-detection" only points to a malicious participant, if there's such.
     // It doesn't bring any additional guarantees.
-    let public_key_package = PublicKeyPackage::new(BTreeMap::new(), vk_package);
+    let public_key_package = PublicKeyPackage::new(BTreeMap::new(), vk_package, None);
     let signature = aggregate(&signing_package, &signature_shares, &public_key_package)
         .map_err(|e| ProtocolError::AssertionFailed(e.to_string()))?;
 

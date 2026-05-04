@@ -136,11 +136,11 @@ either = "1.15.0"
 elliptic-curve = "0.13.8"
 ethereum-types = "0.16.0"
 flume = "0.12.0"
-frost-core = { version = "2.2.0", default-features = false, features = [
+frost-core = { version = "3.0.0", default-features = false, features = [
     "serde",
 ] }
-frost-ed25519 = { version = "2.2.0", default-features = false }
-frost-secp256k1 = { version = "2.2.0", default-features = false }
+frost-ed25519 = { version = "3.0.0", default-features = false }
+frost-secp256k1 = { version = "3.0.0", default-features = false }
 futures = "0.3.32"
 futures-lite = "2.6.1"
 gcloud-sdk = { version = "0.29.0", default-features = false, features = [
