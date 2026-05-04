@@ -1,20 +1,16 @@
 use serde::{Deserialize, Serialize};
 use tonlib_core::types::TonAddress;
 
-// `#[serde(default)]` policy for this module:
-//
-// All optional fields use `#[serde(default)]` so the deserializer returns a
-// type-default (empty `Vec`, `false`, `None`) when a field is absent in the
-// JSON. This is necessary because `serde_json` errors on missing fields by
-// default — even for `Option<T>` — and toncenter v3 omits irrelevant fields
-// (e.g. `compute_ph` on tick/tock transactions) instead of emitting `null`.
+// `#[serde(default)]` is only used on fields the v3 API legitimately omits in
+// well-formed responses; everything else stays strict so schema drift fails
+// loudly. Note: `serde_json` errors on missing `Option<T>` too, hence the
+// explicit `default` on optional fields.
 
 /// Top-level response from `GET /api/v3/transactions?...`. The `transactions`
 /// array is always present; an empty array means no transaction matched the
 /// lookup.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GetTransactionsResponse {
-    #[serde(default)]
     pub transactions: Vec<TonTransaction>,
 }
 
@@ -47,7 +43,6 @@ pub struct TonTransaction {
 
     /// Outgoing messages produced by this transaction, in TVM emission order.
     /// The MPC inspector filters these to keep only ext-out messages.
-    #[serde(default)]
     pub out_msgs: Vec<TonMessage>,
 }
 
@@ -57,10 +52,8 @@ pub struct TonTransaction {
 /// rest of the description (storage phase, action phase, etc.) is ignored.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TonTransactionDescription {
-    #[serde(default)]
     pub aborted: bool,
 
-    #[serde(default)]
     pub destroyed: bool,
 
     /// Compute-phase summary. Absent on tick/tock/storage-only transactions.
@@ -161,7 +154,7 @@ mod tests {
         {{
           "account": "{ADDR_AA}",
           "hash": "00",
-          "description": {{}},
+          "description": {{ "aborted": false, "destroyed": false }},
           "out_msgs": []
         }}
         "#
@@ -179,7 +172,7 @@ mod tests {
           "account": "{ADDR_AA}",
           "hash": "00",
           "mc_block_seqno": null,
-          "description": {{}},
+          "description": {{ "aborted": false, "destroyed": false }},
           "out_msgs": []
         }}
         "#
@@ -187,6 +180,40 @@ mod tests {
 
         let tx: TonTransaction = serde_json::from_str(&json).unwrap();
         assert_eq!(tx.mc_block_seqno, None);
+    }
+
+    #[test]
+    fn deserialize__should_reject_when_transactions_field_is_missing() {
+        // Schema drift / wrong envelope: a 200 with no `transactions` field
+        // must surface as a parse error, not be coerced into "no transaction
+        // matched".
+        let err =
+            serde_json::from_str::<GetTransactionsResponse>(r#"{"address_book": {}}"#).unwrap_err();
+        assert!(err.to_string().contains("transactions"));
+    }
+
+    #[test]
+    fn deserialize__should_reject_when_aborted_or_destroyed_missing() {
+        // Description with only compute_ph but no aborted/destroyed: must
+        // fail rather than be silently treated as a successful transaction.
+        let json = format!(
+            r#"
+        {{
+          "account": "{ADDR_AA}",
+          "hash": "00",
+          "mc_block_seqno": 1,
+          "description": {{ "compute_ph": {{ "success": true }} }},
+          "out_msgs": []
+        }}
+        "#
+        );
+
+        let err = serde_json::from_str::<TonTransaction>(&json).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("aborted") || msg.contains("destroyed"),
+            "expected parse error to mention aborted/destroyed, got: {msg}"
+        );
     }
 
     #[test]
