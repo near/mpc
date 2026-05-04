@@ -63,7 +63,7 @@ end
 
 subgraph NEAR[NEAR Blockchain]
     direction LR
-    
+
     subgraph MEMPOOL[NEAR Non-finalized blocks]
         direction LR
         STREAMER[
@@ -123,7 +123,7 @@ CORE --> WRITE
 
 %% Indexer --> NEAR Blockchain
 VIEW --> CONTRACT_VIEW
-VIEW -->STREAMER 
+VIEW -->STREAMER
 %%|Monitor Blocks for<br/>Signature & CKD Requests| STREAMER
 WRITE --> CONTRACT_WRITE
 
@@ -256,7 +256,7 @@ subgraph CHAIN[Chain Gateway]
     direction TB
     TX_SUBSCRIBER[**Block Event Subscriber**<br/><br/>
         **Filters** non-finalized NEAR blocks for specific transactions
-        **Returns** matching args in a stream 
+        **Returns** matching args in a stream
     ]
 
     CONTRACT_STATE_VIEWER[**Contract State Subscriber**<br/><br/>
@@ -282,7 +282,7 @@ end
 
 subgraph NEAR[NEAR Blockchain]
     direction TB
-    
+
     subgraph MEMPOOL[NEAR Mempool]
     end
 
@@ -371,7 +371,7 @@ subgraph CHAIN[Chain Gateway]
     direction TB
     TX_SUBSCRIBER[**Block Event Subscriber**<br/><br/>
         **Filters** non-finalized NEAR blocks for specific transactions
-        **Returns** matching args in a stream 
+        **Returns** matching args in a stream
     ]
 
     CONTRACT_STATE_VIEWER[**Contract State Subscriber**<br/><br/>

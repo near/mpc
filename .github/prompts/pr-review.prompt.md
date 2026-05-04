@@ -54,7 +54,7 @@ REVIEW STYLE:
 - Sign off with: ✅ (approved) or ⚠️ (issues found)
 
 Consult the repository's [CLAUDE.md], [CONTRIBUTING.md], and [AGENTS.md] for project-specific conventions.
-Don't try to use `gh pr review` you don't have permissions for that and it will fail. 
+Don't try to use `gh pr review` you don't have permissions for that and it will fail.
 Please always use `gh pr comment` to post your review instead.
 
 [CLAUDE.md]: ../../CLAUDE.md

@@ -72,7 +72,7 @@ enum ForeignChain {
 }
 
 struct RpcProvider {
-    // this base url part is what the nodes will check against before using 
+    // this base url part is what the nodes will check against before using
     // an RPC provider that the operator has added to its configuration
     base_url: String,
     name: String,

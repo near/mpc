@@ -6,10 +6,10 @@ This crate defines the **MPC Contract**, which governs the MPC network and allow
      ┌───────┐  ┌─────────────┐   ┌───────────┐
      │ User  │  │ Participant │   │ MPC Node  │
      └───────┘  └─────────────┘   └───────────┘
-         │            │                │      
-Request signature.    │                │      
-         │    Vote on changes.         │      
-         │            │                │      
+         │            │                │
+Request signature.    │                │
+         │    Vote on changes.         │
+         │            │                │
          └────────┐   │   ┌──Respond to signature requests.
                   │   │   │
                   ▼   ▼   ▼
