@@ -4,107 +4,18 @@ use crate::errors::{DomainError, Error, InvalidState};
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::DomainId;
 use near_sdk::{env, near};
-use std::fmt::Display;
 
-/// An EpochId uniquely identifies a ThresholdParameters (but not vice-versa).
-/// Every time we change the ThresholdParameters (participants and threshold),
-/// we increment EpochId.
-/// Locally on each node, each keyshare is uniquely identified by the tuple
-/// (EpochId, DomainId, AttemptId).
-#[near(serializers=[borsh, json])]
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, PartialOrd, Ord)]
-pub struct EpochId(u64);
-
-impl EpochId {
-    pub const fn next(&self) -> Self {
-        EpochId(self.0 + 1)
-    }
-    pub const fn new(epoch_id: u64) -> Self {
-        EpochId(epoch_id)
-    }
-    pub fn get(&self) -> u64 {
-        self.0
-    }
-}
-
-impl Display for EpochId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-#[near(serializers=[borsh, json])]
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, PartialOrd, Ord)]
-pub struct AttemptId(u64);
-
-impl AttemptId {
-    pub fn new() -> Self {
-        AttemptId(0)
-    }
-    pub fn next(&self) -> Self {
-        AttemptId(&self.0 + 1)
-    }
-    pub fn get(&self) -> u64 {
-        self.0
-    }
-    pub fn legacy_attempt_id() -> Self {
-        AttemptId(0)
-    }
-
-    // TODO(#381): Remove once the node no longer depends on the contract crate.
-    pub(crate) fn from_u64(val: u64) -> Self {
-        AttemptId(val)
-    }
-}
-
-impl Default for AttemptId {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Display for AttemptId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-/// A unique identifier for a key event (generation or resharing):
-/// `epoch_id`: identifies the ThresholdParameters that this key is intended to function in.
-/// `domain_id`: the domain this key is intended for.
-/// `attempt_id`: identifies a particular attempt for this key event, in case multiple attempts
-///               yielded partially valid results. This is incremented for each attempt within the
-///               same epoch and domain.
-#[near(serializers=[borsh, json])]
-#[derive(Debug, PartialEq, Eq, Copy, Clone, Hash, PartialOrd, Ord)]
-pub struct KeyEventId {
-    pub epoch_id: EpochId,
-    pub domain_id: DomainId,
-    pub attempt_id: AttemptId,
-}
-
-impl KeyEventId {
-    pub fn new(epoch_id: EpochId, domain_id: DomainId, attempt_id: AttemptId) -> Self {
-        KeyEventId {
-            epoch_id,
-            domain_id,
-            attempt_id,
-        }
-    }
-
-    #[cfg(test)]
-    pub fn next_attempt(&self) -> Self {
-        KeyEventId {
-            epoch_id: self.epoch_id,
-            domain_id: self.domain_id,
-            attempt_id: self.attempt_id.next(),
-        }
-    }
-}
+pub use mpc_primitives::{AttemptId, EpochId, KeyEventId};
 
 /// The identification of a specific distributed key, based on which a node would know exactly what
 /// keyshare it has corresponds to this distributed key. (A distributed key refers to a specific set
 /// of keyshares that nodes have which can be pieced together to form the secret key.)
+//
+// This is the contract-internal storage type, distinct from the DTO
+// [`near_mpc_contract_interface::types::KeyForDomain`] used over the wire.
+// They are kept separate because the contract stores public keys as
+// [`PublicKeyExtended`] (`near_sdk::PublicKey` plus a decompressed Edwards
+// point), while the DTO uses the JSON-friendly string/byte form.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct KeyForDomain {
@@ -120,6 +31,8 @@ pub struct KeyForDomain {
 }
 
 /// Represents a key for every domain in a specific epoch.
+//
+// Contract-internal counterpart to [`near_mpc_contract_interface::types::Keyset`].
 #[near(serializers=[borsh, json])]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Keyset {

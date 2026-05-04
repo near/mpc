@@ -8,6 +8,8 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    crane.url = "github:ipetkov/crane";
   };
 
   outputs =
@@ -15,6 +17,7 @@
       self,
       nixpkgs,
       rust-overlay,
+      crane,
     }:
     let
       lib = nixpkgs.lib;
@@ -44,6 +47,12 @@
 
     in
     {
+      packages = forAllSystems (pkgs: {
+        mpc-node = pkgs.callPackage ./nix/mpc-node.nix {
+          inherit crane;
+        };
+      });
+
       devShells = forAllSystems (
         pkgs:
         let
@@ -89,8 +98,6 @@
               "-I${libcDev}/include"
               "-fno-stack-protector"
             ];
-
-            PYTHONPATH = "./pytest:./nearcore_pytest";
 
             # OpenSSL
             PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig";
@@ -143,6 +150,8 @@
             jq
             perl
             procps  # pgrep, used by the kill-orphan-mpc-nodes cargo-make task
+            pprof
+            graphviz
           ];
 
           buildLibs =

@@ -16,57 +16,7 @@ use super::primitives::DomainId;
 // Simple Wrapper Types (newtypes)
 // =============================================================================
 
-/// Epoch identifier for key generation/resharing cycles.
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-    derive_more::From,
-    derive_more::Into,
-    derive_more::AsRef,
-    derive_more::Display,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
-)]
-pub struct EpochId(pub u64);
-
-/// Attempt identifier within a key event.
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-    derive_more::From,
-    derive_more::Into,
-    derive_more::AsRef,
-    derive_more::Display,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
-)]
-pub struct AttemptId(pub u64);
-
-pub use mpc_primitives::Threshold;
+pub use mpc_primitives::{AttemptId, EpochId, Threshold};
 
 /// A participant ID that has been authenticated (i.e., the caller is this participant).
 #[derive(
@@ -153,8 +103,6 @@ pub enum DomainPurpose {
 )]
 pub struct DomainConfig {
     pub id: DomainId,
-    // Accepts "scheme" for compat with pre-3.9.0 contracts. Remove after 3.9.0 deployment.
-    #[serde(alias = "scheme")]
     pub curve: Curve,
     pub purpose: DomainPurpose,
 }
@@ -174,51 +122,8 @@ pub struct DomainRegistry {
 // Key State Types
 // =============================================================================
 
-/// A public key for a specific domain.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
-)]
-pub struct KeyForDomain {
-    pub domain_id: DomainId,
-    pub key: PublicKeyExtended,
-    pub attempt: AttemptId,
-}
-
-/// Set of keys for the current epoch.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
-)]
-pub struct Keyset {
-    pub epoch_id: EpochId,
-    pub domains: Vec<KeyForDomain>,
-}
-
-/// Identifier for a key event (generation or resharing attempt).
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    PartialEq,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
-)]
-pub struct KeyEventId {
-    pub epoch_id: EpochId,
-    pub domain_id: DomainId,
-    pub attempt_id: AttemptId,
-}
+pub use mpc_primitives::KeyEventId;
+pub use near_mpc_crypto_types::{KeyForDomain, Keyset};
 
 // =============================================================================
 // Threshold/Participants Types

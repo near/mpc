@@ -23,16 +23,10 @@ that is used by the MPC binary defined in the workspace cargo file, `/Cargo.toml
 neard --version
 ```
 
-You should install `neard` from the git submodule:
+You should install `neard` from the same nearcore tag this workspace pins (see the `tag = "..."` value on the `near-*` git dependencies in [`Cargo.toml`](../../Cargo.toml)):
 
 ```shell
-git submodule foreach --recursive git reset --hard
-git submodule foreach --recursive git clean -fdx
-git submodule update --init --recursive --force
-```
-
-```shell
-cargo install --path libs/nearcore/neard --locked
+cargo install --git https://github.com/near/nearcore --tag <NEARCORE_TAG> neard --locked
 ```
 
 ```shell
@@ -243,11 +237,11 @@ Now we can add these keys to the appropriate NEAR accounts with the NEAR CLI.
 ```shell
 NODE_METHODS="respond,respond_ckd,respond_verify_foreign_tx,vote_pk,start_keygen_instance,vote_reshared,register_foreign_chain_config,start_reshare_instance,vote_abort_key_event_instance,verify_tee,submit_participant_info,conclude_node_migration"
 
-near account add-key frodo.test.near grant-function-call-access --allowance '1 NEAR' --contract-account-id mpc-contract.test.near --function-names "$NODE_METHODS" use-manually-provided-public-key "$FRODO_PUBKEY" network-config mpc-localnet sign-with-keychain send
-near account add-key frodo.test.near grant-function-call-access --allowance '1 NEAR' --contract-account-id mpc-contract.test.near --function-names "$NODE_METHODS" use-manually-provided-public-key "$FRODO_RESPONDER_KEY" network-config mpc-localnet sign-with-keychain send
+near account add-key frodo.test.near grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names "$NODE_METHODS" use-manually-provided-public-key "$FRODO_PUBKEY" network-config mpc-localnet sign-with-keychain send
+near account add-key frodo.test.near grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names "$NODE_METHODS" use-manually-provided-public-key "$FRODO_RESPONDER_KEY" network-config mpc-localnet sign-with-keychain send
 
-near account add-key sam.test.near grant-function-call-access --allowance '1 NEAR' --contract-account-id mpc-contract.test.near --function-names "$NODE_METHODS" use-manually-provided-public-key "$SAM_PUBKEY" network-config mpc-localnet sign-with-keychain send
-near account add-key sam.test.near grant-function-call-access --allowance '1 NEAR' --contract-account-id mpc-contract.test.near --function-names "$NODE_METHODS" use-manually-provided-public-key "$SAM_RESPONDER_KEY" network-config mpc-localnet sign-with-keychain send
+near account add-key sam.test.near grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names "$NODE_METHODS" use-manually-provided-public-key "$SAM_PUBKEY" network-config mpc-localnet sign-with-keychain send
+near account add-key sam.test.near grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names "$NODE_METHODS" use-manually-provided-public-key "$SAM_RESPONDER_KEY" network-config mpc-localnet sign-with-keychain send
 ```
 
 ## 4. Initialize the MPC contract

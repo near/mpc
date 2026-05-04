@@ -2,6 +2,7 @@ use crate::common;
 
 use std::collections::BTreeMap;
 
+use anyhow::{Context, bail};
 use backon::{ConstantBuilder, Retryable};
 use e2e_tests::MpcNodeState;
 use near_mpc_contract_interface::types::{BackupServiceInfo, DestinationNodeInfo, ParticipantInfo};
@@ -27,7 +28,7 @@ type MigrationState = BTreeMap<String, AccountEntry>;
 async fn migration_endpoint__should_track_migration_state() {
     // Given: a fresh cluster with no migration state.
     let (cluster, _running) =
-        common::setup_cluster(common::MIGRATION_ENDPOINT_PORT_SEED, |_| {}).await;
+        common::must_setup_cluster(common::MIGRATION_ENDPOINT_PORT_SEED, |_| {}).await;
 
     let client = reqwest::Client::new();
     let mut expected_migrations = MigrationState::new();
@@ -44,8 +45,12 @@ async fn migration_endpoint__should_track_migration_state() {
         // Given: the migration state carried over from prior iterations
         //         (empty on the first iteration).
         // Then: contract and endpoint already match that carried state.
-        assert_contract_matches(&cluster, &expected_migrations).await;
-        assert_endpoint_matches(&client, &web_addr, &expected_migrations).await;
+        ensure_contract_matches(&cluster, &expected_migrations)
+            .await
+            .expect("contract state mismatch");
+        ensure_endpoint_matches(&client, &web_addr, &expected_migrations)
+            .await
+            .expect("endpoint state mismatch");
 
         // When: register a bogus backup service for this node.
         let backup_service_info = serde_json::json!({ "public_key": p2p_public_key });
@@ -64,8 +69,12 @@ async fn migration_endpoint__should_track_migration_state() {
         expected_migrations.insert(account_id.clone(), (Some(backup_info.clone()), None));
 
         // Then: contract and endpoint both expose the backup registration.
-        assert_contract_matches(&cluster, &expected_migrations).await;
-        assert_endpoint_matches(&client, &web_addr, &expected_migrations).await;
+        ensure_contract_matches(&cluster, &expected_migrations)
+            .await
+            .expect("contract state mismatch after backup registration");
+        ensure_endpoint_matches(&client, &web_addr, &expected_migrations)
+            .await
+            .expect("endpoint state mismatch after backup registration");
 
         // When: start node migration with a bogus destination.
         let destination_node_info = serde_json::json!({
@@ -94,36 +103,51 @@ async fn migration_endpoint__should_track_migration_state() {
         expected_migrations.insert(account_id, (Some(backup_info), Some(dest_info)));
 
         // Then: contract and endpoint both expose the destination entry.
-        assert_contract_matches(&cluster, &expected_migrations).await;
-        assert_endpoint_matches(&client, &web_addr, &expected_migrations).await;
+        ensure_contract_matches(&cluster, &expected_migrations)
+            .await
+            .expect("contract state mismatch after start_node_migration");
+        ensure_endpoint_matches(&client, &web_addr, &expected_migrations)
+            .await
+            .expect("endpoint state mismatch after start_node_migration");
     }
 }
 
-async fn get_contract_migrations(cluster: &e2e_tests::MpcCluster) -> MigrationState {
+async fn get_contract_migrations(
+    cluster: &e2e_tests::MpcCluster,
+) -> anyhow::Result<MigrationState> {
     cluster
         .view_migration_info::<MigrationState>()
         .await
-        .expect("failed to view migration info")
+        .context("failed to view migration info")
 }
 
-async fn get_debug_migrations(client: &reqwest::Client, web_addr: &str) -> (u64, MigrationState) {
+async fn get_debug_migrations(
+    client: &reqwest::Client,
+    web_addr: &str,
+) -> anyhow::Result<(u64, MigrationState)> {
     let resp = client
         .get(format!("http://{web_addr}/debug/migrations"))
         .send()
         .await
-        .expect("failed to fetch /debug/migrations");
-    assert_eq!(resp.status(), reqwest::StatusCode::OK);
+        .context("failed to fetch /debug/migrations")?;
+    let status = resp.status();
+    if status != reqwest::StatusCode::OK {
+        bail!("unexpected /debug/migrations status: {status}");
+    }
     resp.json::<(u64, MigrationState)>()
         .await
-        .expect("failed to parse migration response")
+        .context("failed to parse migration response")
 }
 
-/// Assert the contract's migration state eventually equals `expected`.
-/// Retries to absorb indexer lag, then panics on timeout.
-async fn assert_contract_matches(cluster: &e2e_tests::MpcCluster, expected: &MigrationState) {
+/// Ensure the contract's migration state eventually equals `expected`.
+/// Retries to absorb indexer lag, then returns an error on timeout.
+async fn ensure_contract_matches(
+    cluster: &e2e_tests::MpcCluster,
+    expected: &MigrationState,
+) -> anyhow::Result<()> {
     let expected = expected.clone();
     (|| async {
-        let actual = get_contract_migrations(cluster).await;
+        let actual = get_contract_migrations(cluster).await?;
         anyhow::ensure!(
             actual == expected,
             "contract migration state mismatch: expected {expected:?}, got {actual:?}"
@@ -136,19 +160,19 @@ async fn assert_contract_matches(cluster: &e2e_tests::MpcCluster, expected: &Mig
             .with_max_times(20),
     )
     .await
-    .expect("timed out waiting for contract migration state to match");
+    .context("timed out waiting for contract migration state to match")
 }
 
-/// Assert the node's `/debug/migrations` endpoint eventually equals `expected`.
-/// Retries to absorb indexer lag, then panics on timeout.
-async fn assert_endpoint_matches(
+/// Ensure the node's `/debug/migrations` endpoint eventually equals `expected`.
+/// Retries to absorb indexer lag, then returns an error on timeout.
+async fn ensure_endpoint_matches(
     client: &reqwest::Client,
     web_addr: &str,
     expected: &MigrationState,
-) {
+) -> anyhow::Result<()> {
     let expected = expected.clone();
     (|| async {
-        let (_, actual) = get_debug_migrations(client, web_addr).await;
+        let (_, actual) = get_debug_migrations(client, web_addr).await?;
         anyhow::ensure!(
             actual == expected,
             "endpoint migration state mismatch: expected {expected:?}, got {actual:?}"
@@ -161,5 +185,5 @@ async fn assert_endpoint_matches(
             .with_max_times(20),
     )
     .await
-    .expect("timed out waiting for debug endpoint migration state to match");
+    .context("timed out waiting for debug endpoint migration state to match")
 }

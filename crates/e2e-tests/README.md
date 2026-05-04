@@ -3,9 +3,8 @@
 ## Purpose
 
 This is a mostly Claude-generated document describing the Rust end-to-end test
-framework that is replacing the Python pytest system tests. It reflects the
-implementation that lives in `crates/e2e-tests/` and is intended as a reference
-for engineers writing new tests.
+framework. It reflects the implementation that lives in `crates/e2e-tests/`
+and is intended as a reference for engineers writing new tests.
 
 This is a living document — the earlier draft ([#2446]) set the direction; the
 sections below have been revised to match what was actually built.
@@ -250,7 +249,7 @@ URLs into the per-node `ForeignChainsConfig` via `MpcClusterConfig`.
 
 Tests live under `crates/e2e-tests/tests/<feature>.rs` and must be declared as
 a module from `tests/e2e.rs`. `tests/common.rs` provides helpers used by most
-tests (`setup_cluster`, `wait_for_presignatures`, `load_contract_wasm`,
+tests (`must_setup_cluster`, `wait_for_presignatures`, `must_load_contract_wasm`,
 `send_sign_request`, etc.).
 
 ```rust
@@ -260,7 +259,7 @@ use crate::common;
 #[tokio::test]
 async fn request_lifecycle__signature_request_succeeds() {
     let (cluster, running) =
-        common::setup_cluster(common::SIGN_REQUEST_PER_SCHEME_PORT_SEED, |_| {}).await;
+        common::must_setup_cluster(common::SIGN_REQUEST_PER_SCHEME_PORT_SEED, |_| {}).await;
 
     let mut rng = rand::thread_rng();
     let user = cluster.default_user_account().clone();
@@ -268,7 +267,7 @@ async fn request_lifecycle__signature_request_succeeds() {
 }
 ```
 
-`setup_cluster` builds the default 3-node / 2-of-3 / 3-domain cluster, waits
+`must_setup_cluster` builds the default 3-node / 2-of-3 / 3-domain cluster, waits
 for `Running`, and blocks until presignatures are buffered. Pass a closure to
 override fields on `MpcClusterConfig`.
 
@@ -307,43 +306,12 @@ The task runner builds three things before tests run: the mpc-node binary
 with the `network-hardship-simulation` feature, the MPC contract WASM, and
 the test parallel contract WASM. Paths are passed to tests via the
 `MPC_CONTRACT_WASM` and `MPC_PARALLEL_CONTRACT_WASM` environment variables
-read by `load_contract_wasm` / `load_parallel_contract_wasm` in
+read by `must_load_contract_wasm` / `must_load_parallel_contract_wasm` in
 `tests/common.rs`; if the env var is unset and no pre-built WASM is found,
 `test-utils::contract_build::ContractBuilder` builds it on the fly (useful for
 local iteration).
 
 CI runs the same task via the `mpc-e2e-tests` job.
-
----
-
-## Ported tests
-
-The following tests have been ported from pytest to the Rust framework and
-live in `crates/e2e-tests/tests/`:
-
-- `cancellation_of_resharing`
-- `ckd_verification`
-- `cleanup_lagging_node`
-- `foreign_chain_policy`
-- `foreign_chain_tx_validation`
-- `key_resharing`
-- `lost_assets`
-- `parallel_sign_calls`
-- `request_during_resharing`
-- `request_lifecycle`
-- `submit_participant_info`
-- `web_endpoints`
-
-Still on the pytest side (`pytest/tests/`) at the time of writing:
-
-- `test_migration_service.py` — migration service / migration endpoint; seeds
-  14 and 15 are reserved in `tests/common.rs` for the Rust port.
-- `robust_ecdsa/` — robust ECDSA scenarios.
-- `test_key_event.py` — overlaps with `key_resharing` but has additional
-  coverage that has not yet been migrated.
-
-When a pytest is ported, delete the Python version in the same PR so the two
-suites don't drift.
 
 ---
 
@@ -353,7 +321,7 @@ suites don't drift.
   from `docs/engineering-standards.md`.
 - Reserve a unique `port_seed` constant in `tests/common.rs` before adding a
   new test. Don't reuse someone else's seed, even if the test is short.
-- Prefer `common::setup_cluster` over calling `MpcCluster::start` directly;
+- Prefer `common::must_setup_cluster` over calling `MpcCluster::start` directly;
   it initialises `tracing_subscriber` and waits for presignatures.
 - Tests must be deterministic across parallel execution. Use the port
   allocator, the per-cluster temp directory, and the deterministic key

@@ -2,10 +2,8 @@ use super::debug::{CompletedRequest, CompletedRequests};
 use crate::indexer::types::ChainRespondArgs;
 use crate::primitives::ParticipantId;
 use crate::requests::metrics;
-use crate::requests::recent_blocks_tracker::{
-    BlockViewLite, CheckBlockResult, RecentBlocksTracker,
-};
-use crate::types::{self, Request, RequestId};
+use crate::requests::recent_blocks_tracker::{CheckBlockResult, RecentBlocksTracker};
+use crate::types::{self, Request, RequestId, RequestsUpdate};
 use k256::sha2::Sha256;
 use near_indexer_primitives::types::NumBlocks;
 use near_indexer_primitives::CryptoHash;
@@ -13,6 +11,7 @@ use near_time::Duration;
 use sha3::Digest;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
+use std::ops::Add;
 use std::sync::{Arc, Mutex, Weak};
 use time::ext::InstantExt as _;
 
@@ -32,7 +31,7 @@ pub const CHECK_EACH_REQUEST_INTERVAL: Duration = Duration::seconds(1);
 const STALE_PARTICIPANT_THRESHOLD: NumBlocks = 10;
 /// The number of blocks after which a request is assumed to have timed out.
 /// This is equal to the yield-resume timeout on the blockchain.
-const REQUEST_EXPIRATION_BLOCKS: NumBlocks = 200;
+pub const REQUEST_EXPIRATION_BLOCKS: NumBlocks = 200;
 /// The maximum time we'll wait, after a transaction is submitted to the chain, before we decide
 /// that the transaction is lost and that we should retry.
 const MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE: Duration = Duration::seconds(10);
@@ -280,14 +279,14 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
     /// This must be called for every block that comes from the indexer.
     /// These are the requests successfully submitted in the block, and the
     /// completed_requests are the requests whose responses are included in the block.
-    pub fn notify_new_block(
-        &mut self,
-        requests: Vec<RequestType>,
-        completed_requests: Vec<RequestId>,
-        block: &BlockViewLite,
-    ) {
-        let add_result = match self.recent_blocks.add_block(
+    pub(crate) fn notify_new_block(&mut self, requests: RequestsUpdate<RequestType>) {
+        let RequestsUpdate::<RequestType> {
             block,
+            requests,
+            completed_requests,
+        } = requests;
+        let add_result = match self.recent_blocks.add_block(
+            &block,
             BufferedBlockData {
                 requests: requests.iter().map(|r| r.get_id()).collect(),
                 completed_requests,
@@ -430,38 +429,81 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
 
         let (eligible_leaders, maximum_height) = self.eligible_leaders_and_maximum_height();
         tracing::debug!(target: "request", "Eligible leaders: {:?}", eligible_leaders);
-        self.recent_blocks
-            .notify_maximum_height_available(maximum_height);
 
         let mut result = Vec::new();
 
         let mut requests_to_remove = Vec::new();
         for (id, request) in &mut self.requests {
             if request.next_check_due > now {
-                tracing::debug!(target: "request", "Skipping request {:?} from block {} because it's not time yet", request.request.get_id(), request.block_height);
+                tracing::debug!(
+                    target: "request",
+                    request_id = %request.request.get_id(),
+                    block_height = request.block_height,
+                    "skipping request because it's not time yet"
+                );
                 continue;
             }
             request.next_check_due = now + CHECK_EACH_REQUEST_INTERVAL;
             if request.active_attempt.strong_count() > 0 {
                 // There's a current attempt to generate the response, so don't do anything.
-                tracing::debug!(target: "request", "Skipping request {:?} from block {} because there's already an active attempt", request.request.get_id(), request.block_height);
+                tracing::debug!(
+                    target: "request",
+                    request_id = %request.request.get_id(),
+                    block_height = request.block_height,
+                    "skipping request because there's already an active attempt",
+                );
                 continue;
             }
-            match self
-                .recent_blocks
-                .classify_block(request.block_hash, request.block_height)
+            // check it against the network height
+            if maximum_height
+                .saturating_sub(REQUEST_EXPIRATION_BLOCKS)
+                .add(1)
+                > request.block_height
             {
-                CheckBlockResult::RecentAndFinal
-                | CheckBlockResult::OptimisticAndCanonical
-                | CheckBlockResult::Unknown => {
+                // this request expired for at least one participant in the network. We can already
+                // remove it from the queue.
+                tracing::debug!(
+                    target: "request",
+                    request_type = %RequestType::get_type(),
+                    request_id = %request.request.get_id(),
+                    block_height = request.block_height,
+                    "discarding expired request"
+                );
+                // Increment metric for timeout (only for signature requests)
+                if matches!(RequestType::get_type(), types::RequestType::Signature) {
+                    metrics::MPC_CLUSTER_FAILED_SIGNATURES_COUNT
+                        .with_label_values(&["timeout"])
+                        .inc();
+                }
+                // This request is definitely not useful anymore, so discard it.
+                requests_to_remove.push(*id);
+                continue;
+            }
+            let block_classification = self.recent_blocks.classify_block(request.block_hash);
+            match block_classification {
+                CheckBlockResult::RecentAndFinal | CheckBlockResult::OptimisticAndCanonical => {
                     if let Some(leader) = request.current_leader(&eligible_leaders) {
-                        tracing::debug!(target: "request", "Leader for {} request {:?} from block {} is {}", RequestType::get_type(), request.request.get_id(), request.block_height, leader);
+                        tracing::debug!(
+                            target: "request",
+                            request_type = %RequestType::get_type(),
+                            request_id = %request.request.get_id(),
+                            block_height = request.block_height,
+                            leader = %leader,
+                            "processing request"
+                        );
                         let mut progress = request.computation_progress.lock().unwrap();
                         progress.selected_leader = Some(leader);
                         if leader == self.my_participant_id {
                             {
                                 if progress.attempts >= MAX_ATTEMPTS_PER_REQUEST_AS_LEADER {
-                                    tracing::debug!(target: "request", "Discarding {} request {:?} from block {} because it has been attempted too many ({}) times", RequestType::get_type(), request.request.get_id(), request.block_height, MAX_ATTEMPTS_PER_REQUEST_AS_LEADER);
+                                    tracing::debug!(
+                                        target: "request",
+                                        request_type = %RequestType::get_type(),
+                                        request_id = %request.request.get_id(),
+                                        block_height = request.block_height,
+                                        attempt_id = progress.attempts,
+                                        "discarding request because it has been attempted too many times",
+                                    );
                                     // Increment metric for max retries exceeded (only for signature requests)
                                     if matches!(
                                         RequestType::get_type(),
@@ -477,7 +519,13 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                                 if progress.last_response_submission.is_some_and(|t| {
                                     now < t + MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE
                                 }) {
-                                    tracing::debug!(target: "request", "Skipping {} request {:?} from block {} because the last response was submitted too recently", RequestType::get_type(), request.request.get_id(), request.block_height);
+                                    tracing::debug!(
+                                        target: "request",
+                                        request_type = %RequestType::get_type(),
+                                        request_id = %request.request.get_id(),
+                                        block_height = request.block_height,
+                                        "skipping request because the last response was submitted too recently",
+                                    );
                                     continue;
                                 }
                                 progress.attempts += 1;
@@ -494,10 +542,30 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 CheckBlockResult::OptimisticButNotCanonical => {
                     // Don't act on it yet. If it becomes canonical later, we'll try to generate
                     // the request.
-                    tracing::debug!(target: "request", "Ignoring non-canonical {} request {:?} from block {}", RequestType::get_type(), request.request.get_id(), request.block_height);
+                    tracing::debug!(
+                        target: "request",
+                        request_type = %RequestType::get_type(),
+                        request_id= %request.request.get_id(),
+                        block_height= request.block_height,
+                        "ignoring non-canonical request",
+                    );
                 }
-                CheckBlockResult::NotIncluded | CheckBlockResult::OlderThanRecentWindow => {
-                    tracing::debug!(target: "request", "Discarding {} request {:?} from block {}", RequestType::get_type(), request.request.get_id(), request.block_height);
+                CheckBlockResult::NotIncluded
+                | CheckBlockResult::OlderThanRecentWindow
+                | CheckBlockResult::Unknown => {
+                    // note: We will not receive "OlderThanRecentWindow" if the `RecentBlocksTracker`
+                    // has the same recency window as the queue.
+                    // Since we add signature requests to the queue after adding the block to the
+                    // tracker, receiving `Unknown` means that the tracker removed the block, most
+                    // likely due to the block being expired.
+                    tracing::debug!(
+                        target: "request",
+                        request_type = %RequestType::get_type(),
+                        request_id = %request.request.get_id(),
+                        block_height = request.block_height,
+                        reason = ?block_classification,
+                        "discarding request because it was not included, expired, or the tracker removed the block"
+                    );
                     // Increment metric for timeout (only for signature requests)
                     if matches!(RequestType::get_type(), types::RequestType::Signature) {
                         metrics::MPC_CLUSTER_FAILED_SIGNATURES_COUNT
@@ -550,15 +618,15 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
 #[cfg(test)]
 mod tests {
     use super::{NetworkAPIForRequests, PendingRequests, QueuedRequest};
-    use crate::indexer::types::{ChainCKDRespondArgs, ChainSignatureRespondArgs};
+    use crate::indexer::types::ChainSignatureRespondArgs;
     use crate::primitives::ParticipantId;
     use crate::requests::queue::{
         CHECK_EACH_REQUEST_INTERVAL, MAX_ATTEMPTS_PER_REQUEST_AS_LEADER,
-        MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE,
+        MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE, REQUEST_EXPIRATION_BLOCKS,
     };
-    use crate::requests::recent_blocks_tracker::tests::TestBlockMaker;
+    use crate::requests::recent_blocks_tracker::tests::{TestBlock, TestBlockMaker};
     use crate::tests::into_participant_ids;
-    use crate::types::{CKDRequest, SignatureRequest};
+    use crate::types::{RequestsUpdate, SignatureRequest};
     use mpc_primitives::domain::DomainId;
     use near_indexer_primitives::CryptoHash;
     use near_mpc_contract_interface::types::{Payload, Tweak};
@@ -567,47 +635,9 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use threshold_signatures::test_utils::generate_participants;
 
-    /// Generates a ckd request for testing, brute-forcing the ckd ID until the leader
-    /// selection order starts with the given.
-    fn test_ckd_request(
-        participants: &[ParticipantId],
-        desired_leader_order: &[usize],
-    ) -> CKDRequest {
-        let desired_leader_order = desired_leader_order
-            .iter()
-            .map(|i| participants[*i])
-            .collect::<Vec<_>>();
-        loop {
-            let request = CKDRequest {
-                id: CryptoHash(rand::random()),
-                receipt_id: CryptoHash(rand::random()),
-                app_public_key: near_mpc_contract_interface::types::CKDAppPublicKey::AppPublicKey(
-                    "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
-                        .parse()
-                        .unwrap(),
-                ),
-                app_id: [1u8; 32].into(),
-                entropy: [0; 32],
-                timestamp_nanosec: 0,
-                domain_id: DomainId::legacy_ecdsa_id(),
-            };
-            let leader_selection_order =
-                QueuedRequest::<CKDRequest, ChainCKDRespondArgs>::leader_selection_order(
-                    participants,
-                    request.id,
-                );
-            if leader_selection_order.starts_with(&desired_leader_order) {
-                return request;
-            }
-        }
-    }
-
     /// Generates a signature request for testing, brute-forcing the signature ID until the leader
     /// selection order starts with the given.
-    fn test_sign_request(
-        participants: &[ParticipantId],
-        desired_leader_order: &[usize],
-    ) -> SignatureRequest {
+    fn make_request(participants: &[ParticipantId], desired_leader_order: &[usize]) -> TestRequest {
         let desired_leader_order = desired_leader_order
             .iter()
             .map(|i| participants[*i])
@@ -624,7 +654,10 @@ mod tests {
                 domain: DomainId::legacy_ecdsa_id(),
             };
             let leader_selection_order =
-                QueuedRequest::<SignatureRequest, ChainSignatureRespondArgs>::leader_selection_order(participants, request.id);
+                QueuedRequest::<SignatureRequest, TestRequestRespondArgs>::leader_selection_order(
+                    participants,
+                    request.id,
+                );
             if leader_selection_order.starts_with(&desired_leader_order) {
                 return request;
             }
@@ -675,223 +708,235 @@ mod tests {
         }
     }
 
-    #[test_log::test]
-    fn test_pending_ckd_requests_leader_retry() {
-        let clock = FakeClock::default();
-        let participants = into_participant_ids(&generate_participants(4));
-        let my_participant_id = participants[1];
-        let network_api = Arc::new(TestNetworkAPI::new(&participants));
+    type TestRequest = SignatureRequest;
+    type TestRequestRespondArgs = ChainSignatureRespondArgs;
 
-        let mut pending_requests = PendingRequests::<CKDRequest, ChainCKDRespondArgs>::new(
-            clock.clock(),
-            participants.clone(),
-            my_participant_id,
-            network_api.clone(),
-        );
-
-        for participant in &participants {
-            network_api.set_height(*participant, 100);
-        }
-
-        let t = TestBlockMaker::new();
-
-        let req1 = test_ckd_request(&participants, &[0]);
-        let req2 = test_ckd_request(&participants, &[1]);
-        let b1 = t.block(100);
-        pending_requests.notify_new_block(
-            vec![req1.clone(), req2.clone()],
-            vec![],
-            &b1.to_block_view(),
-        );
-
-        // req1 is not attempted because we're not the leader. req2 is attempted.
-        let to_attempt1 = pending_requests.get_requests_to_attempt();
-        assert_eq!(to_attempt1.len(), 1);
-        assert_eq!(to_attempt1[0].request.id, req2.id);
-
-        // Another attempt should not be issued while the first one is still ongoing.
-        clock.advance(Duration::seconds(2));
-        assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
-
-        let req3 = test_ckd_request(&participants, &[1]);
-        let req4 = test_ckd_request(&participants, &[2]);
-        let b2 = b1.child(101);
-        pending_requests.notify_new_block(
-            vec![req3.clone(), req4.clone()],
-            vec![],
-            &b2.to_block_view(),
-        );
-
-        // More ckd requests came in while we're attempting the first. req3 should be
-        // attempted, because we're the leader as well. req4 is not attempted as we're not leader.
-        let to_attempt2 = pending_requests.get_requests_to_attempt();
-        assert_eq!(to_attempt2.len(), 1);
-        assert_eq!(to_attempt2[0].request.id, req3.id);
-
-        clock.advance(Duration::seconds(2));
-        assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
-
-        // Drop the attempt on req2. It should not immediately retry, because we need to wait
-        // for at least a second before retrying anything.
-        drop(to_attempt1);
-        assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
-        clock.advance(CHECK_EACH_REQUEST_INTERVAL);
-        let to_attempt3 = pending_requests.get_requests_to_attempt();
-        assert_eq!(to_attempt3.len(), 1);
-        assert_eq!(to_attempt3[0].request.id, req2.id);
-
-        // This attempt submits a response, but it is not yet recorded on the blockchain.
-        to_attempt3[0]
-            .computation_progress
-            .lock()
-            .unwrap()
-            .last_response_submission = Some(clock.now());
-        drop(to_attempt3);
-        clock.advance(CHECK_EACH_REQUEST_INTERVAL);
-        assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
-
-        // The response doesn't get recorded on the blockchain. It should try again.
-        clock.advance(MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE);
-        let to_attempt4 = pending_requests.get_requests_to_attempt();
-        assert_eq!(to_attempt4.len(), 1);
-        assert_eq!(to_attempt4[0].request.id, req2.id);
-
-        // This time it gets onto the blockchain, but the block isn't finalized yet, so we should still retry.
-        drop(to_attempt4);
-        let b3 = b2.child(102);
-        pending_requests.notify_new_block(vec![], vec![req2.id], &b3.to_block_view());
-        clock.advance(CHECK_EACH_REQUEST_INTERVAL);
-        assert_eq!(pending_requests.get_requests_to_attempt().len(), 1);
-
-        // Make b3 final, so the response is recorded, removing the request.
-        let b4 = b3.child(103);
-        let b5 = b4.child(104);
-        pending_requests.notify_new_block(vec![], vec![], &b4.to_block_view());
-        pending_requests.notify_new_block(vec![], vec![], &b5.to_block_view());
-        clock.advance(CHECK_EACH_REQUEST_INTERVAL);
-        assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
+    struct TestSetup {
+        clock: FakeClock,
+        participant_ids: Vec<ParticipantId>,
+        network_api: Arc<TestNetworkAPI>,
+        head: Arc<TestBlock>,
+        fork: Option<Arc<TestBlock>>,
+        requests_to_submit: Vec<TestRequest>,
+        responses_to_submit: Vec<CryptoHash>,
+        rng: rand::rngs::StdRng,
     }
 
-    #[test_log::test]
-    fn test_pending_signature_requests_leader_retry() {
-        let clock = FakeClock::default();
-        let participants = into_participant_ids(&generate_participants(4));
-        let my_participant_id = participants[1];
-        let network_api = Arc::new(TestNetworkAPI::new(&participants));
+    impl TestSetup {
+        const MY_INDEX: usize = 1;
+        fn new() -> (PendingRequests<TestRequest, TestRequestRespondArgs>, Self) {
+            let clock = FakeClock::default();
+            let participants = into_participant_ids(&generate_participants(4));
+            let my_participant_id = participants[Self::MY_INDEX];
+            let network_api = Arc::new(TestNetworkAPI::new(&participants));
 
-        let mut pending_requests =
-            PendingRequests::<SignatureRequest, ChainSignatureRespondArgs>::new(
+            let pending_requests = PendingRequests::<SignatureRequest, TestRequestRespondArgs>::new(
                 clock.clock(),
                 participants.clone(),
                 my_participant_id,
                 network_api.clone(),
             );
+            for participant in &participants {
+                network_api.set_height(*participant, 100);
+            }
 
-        for participant in &participants {
-            network_api.set_height(*participant, 100);
+            let t = TestBlockMaker::new();
+            let genesis = t.block(100);
+
+            (
+                pending_requests,
+                Self {
+                    clock,
+                    participant_ids: participants,
+                    network_api,
+                    head: genesis,
+                    fork: None,
+                    responses_to_submit: Vec::new(),
+                    requests_to_submit: Vec::new(),
+                    rng: <rand::rngs::StdRng as rand::SeedableRng>::seed_from_u64(0),
+                },
+            )
         }
 
-        let t = TestBlockMaker::new();
+        fn set_participant_network_height(&mut self, height: u64) {
+            for participant in &self.participant_ids {
+                self.network_api.set_height(*participant, height);
+            }
+        }
 
-        let req1 = test_sign_request(&participants, &[0]);
-        let req2 = test_sign_request(&participants, &[1]);
-        let b1 = t.block(100);
-        pending_requests.notify_new_block(
-            vec![req1.clone(), req2.clone()],
-            vec![],
-            &b1.to_block_view(),
-        );
+        fn add_request_leader(&mut self) -> TestRequest {
+            let request = make_request(&self.participant_ids, &[TestSetup::MY_INDEX]);
+            self.requests_to_submit.push(request.clone());
+            request
+        }
 
-        // req1 is not attempted because we're not the leader. req2 is attempted.
+        fn add_request_follower(&mut self) -> TestRequest {
+            let n = self.participant_ids.len();
+            let r = <rand::rngs::StdRng as rand::Rng>::gen_range(&mut self.rng, 0..n - 1);
+            let leader_idx = if r >= TestSetup::MY_INDEX { r + 1 } else { r };
+            let request = make_request(&self.participant_ids, &[leader_idx]);
+            self.requests_to_submit.push(request.clone());
+            request
+        }
+
+        fn add_request_leader_order(&mut self, leader_order: &[usize]) -> TestRequest {
+            let request = make_request(&self.participant_ids, leader_order);
+            self.requests_to_submit.push(request.clone());
+            request
+        }
+
+        fn add_response(&mut self, hash: CryptoHash) {
+            self.responses_to_submit.push(hash);
+        }
+
+        /// Highest block height across all known heads. Each new block (canonical or fork)
+        /// is built strictly above this so that the most-recently-added block always wins
+        /// the canonical-chain tie-break inside `RecentBlocksTracker`.
+        fn max_known_height(&self) -> u64 {
+            let fork_height = self
+                .fork
+                .as_ref()
+                .map(|fork_head| fork_head.height())
+                .unwrap_or(0);
+            self.head.height().max(fork_height)
+        }
+
+        /// Generates a request update and a block for the main chain
+        fn update(&mut self) -> RequestsUpdate<TestRequest> {
+            let new_height = self.max_known_height() + 1;
+            let new_block = self.head.descendant(new_height);
+            let requests = RequestsUpdate {
+                block: new_block.to_block_view(),
+                requests: self.requests_to_submit.clone(),
+                completed_requests: self.responses_to_submit.clone(),
+            };
+            self.requests_to_submit = Vec::new();
+            self.responses_to_submit = Vec::new();
+            self.head = new_block;
+            requests
+        }
+
+        /// makes an update, forking the current head, making a new canonical chain.
+        fn update_canonical_fork(&mut self) -> RequestsUpdate<TestRequest> {
+            let new_height = self.max_known_height() + 1;
+            if self.fork.is_none() {
+                self.fork = self.head.parent.clone();
+            }
+            // we fork the parent of the current canonical
+            let new_block = self.fork.as_ref().unwrap().descendant(new_height);
+            let requests = RequestsUpdate {
+                block: new_block.to_block_view(),
+                requests: self.requests_to_submit.clone(),
+                completed_requests: self.responses_to_submit.clone(),
+            };
+            self.requests_to_submit = Vec::new();
+            self.responses_to_submit = Vec::new();
+            self.fork = Some(new_block);
+            requests
+        }
+
+        fn advance_clock(&self, duration: Duration) {
+            self.clock.advance(duration);
+        }
+    }
+
+    #[test_log::test]
+    #[expect(non_snake_case)]
+    fn test_pending_requests__requests_leader_should_retry() {
+        // Given: a request queue
+        let (mut pending_requests, mut setup) = TestSetup::new();
+
+        // When: a request is added for which we are a follower
+        let _req1 = setup.add_request_follower();
+        // and a request is added for which we are a leader
+        let req2 = setup.add_request_leader();
+        let requests = setup.update();
+        pending_requests.notify_new_block(requests);
+
+        // Then: req1 is not attempted because we're not the leader. req2 is attempted.
         let to_attempt1 = pending_requests.get_requests_to_attempt();
         assert_eq!(to_attempt1.len(), 1);
         assert_eq!(to_attempt1[0].request.id, req2.id);
 
+        // Then: `get_requests_to_attempt()` does not return the same request again
         // Another attempt should not be issued while the first one is still ongoing.
-        clock.advance(Duration::seconds(2));
+        setup.advance_clock(2 * CHECK_EACH_REQUEST_INTERVAL);
         assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
 
-        let req3 = test_sign_request(&participants, &[1]);
-        let req4 = test_sign_request(&participants, &[2]);
-        let b2 = b1.child(101);
-        pending_requests.notify_new_block(
-            vec![req3.clone(), req4.clone()],
-            vec![],
-            &b2.to_block_view(),
-        );
+        // When: a new request is issues for which we are a leader
+        let req3 = setup.add_request_leader();
+        let _req4 = setup.add_request_follower();
+        let requests = setup.update();
+        pending_requests.notify_new_block(requests);
 
-        // More signature requests came in while we're attempting the first. req3 should be
-        // attempted, because we're the leader as well. req4 is not attempted as we're not leader.
+        // Then: req3 should be attempted, while request 4 should be ignored, as we're not leader.
         let to_attempt2 = pending_requests.get_requests_to_attempt();
         assert_eq!(to_attempt2.len(), 1);
         assert_eq!(to_attempt2[0].request.id, req3.id);
 
-        clock.advance(Duration::seconds(2));
+        // Then: `get_requests_to_attempt()` does not return the same request again
+        // Another attempt should not be issued while the first one is still ongoing.
+        setup.advance_clock(2 * CHECK_EACH_REQUEST_INTERVAL);
         assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
 
-        // Drop the attempt on req2. It should not immediately retry, because we need to wait
-        // for at least a second before retrying anything.
+        // When: we drop the attempt for req2
         drop(to_attempt1);
+        // Then: It should not immediately retry, because we need to wait
+        // for at least a second before retrying anything.
         assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
-        clock.advance(CHECK_EACH_REQUEST_INTERVAL);
+        // Then: we should retry after the interval passed
+        setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
         let to_attempt3 = pending_requests.get_requests_to_attempt();
         assert_eq!(to_attempt3.len(), 1);
         assert_eq!(to_attempt3[0].request.id, req2.id);
 
-        // This attempt submits a response, but it is not yet recorded on the blockchain.
+        // When: this attempt submits a response, but it is not yet recorded on the blockchain.
         to_attempt3[0]
             .computation_progress
             .lock()
             .unwrap()
-            .last_response_submission = Some(clock.now());
+            .last_response_submission = Some(setup.clock.now());
         drop(to_attempt3);
-        clock.advance(CHECK_EACH_REQUEST_INTERVAL);
+        // Then: we should re-attempt after `MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE`
+        setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
         assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
-
-        // The response doesn't get recorded on the blockchain. It should try again.
-        clock.advance(MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE);
+        setup.advance_clock(MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE);
         let to_attempt4 = pending_requests.get_requests_to_attempt();
         assert_eq!(to_attempt4.len(), 1);
         assert_eq!(to_attempt4[0].request.id, req2.id);
 
-        // This time it gets onto the blockchain, but the block isn't finalized yet, so we should still retry.
+        // When: this attempt submits a response and it is recorded on the blockain, but the block
+        // is not yet finalized
         drop(to_attempt4);
-        let b3 = b2.child(102);
-        pending_requests.notify_new_block(vec![], vec![req2.id], &b3.to_block_view());
-        clock.advance(CHECK_EACH_REQUEST_INTERVAL);
+        setup.add_response(req2.id);
+        let requests = setup.update();
+        pending_requests.notify_new_block(requests);
+        // Then: we should re-attempt the response
+        setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
         assert_eq!(pending_requests.get_requests_to_attempt().len(), 1);
 
-        // Make b3 final, so the response is recorded, removing the request.
-        let b4 = b3.child(103);
-        let b5 = b4.child(104);
-        pending_requests.notify_new_block(vec![], vec![], &b4.to_block_view());
-        pending_requests.notify_new_block(vec![], vec![], &b5.to_block_view());
-        clock.advance(CHECK_EACH_REQUEST_INTERVAL);
+        // When: the latest submitted response becomes final
+        let requests = setup.update();
+        pending_requests.notify_new_block(requests);
+        let requests = setup.update();
+        pending_requests.notify_new_block(requests);
+
+        // Then: we should not have any requests to attempt
+        setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
         assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
     }
 
     #[test_log::test]
-    fn test_pending_ckd_requests_abort_after_maximum_attempts() {
-        let clock = FakeClock::default();
-        let participants = into_participant_ids(&generate_participants(4));
-        let my_participant_id = participants[1];
-        let network_api = Arc::new(TestNetworkAPI::new(&participants));
+    #[expect(non_snake_case)]
+    fn test_pending_requests__should_abort_after_maximum_attempts() {
+        // Given: a request queue
+        let (mut pending_requests, mut setup) = TestSetup::new();
 
-        let mut pending_requests = PendingRequests::<CKDRequest, ChainCKDRespondArgs>::new(
-            clock.clock(),
-            participants.clone(),
-            my_participant_id,
-            network_api.clone(),
-        );
-
-        for participant in &participants {
-            network_api.set_height(*participant, 100);
-        }
-
-        let t = TestBlockMaker::new();
-        let req1 = test_ckd_request(&participants, &[1]);
-        let b1 = t.block(100);
-        pending_requests.notify_new_block(vec![req1.clone()], vec![], &b1.to_block_view());
+        // When: we have a request as leader
+        let req1 = setup.add_request_leader();
+        let requests = setup.update();
+        pending_requests.notify_new_block(requests);
+        // then: attempt exactly `MAX_ATTEMPTS_PER_REQUEST_AS_LEADER
         for i in 0..MAX_ATTEMPTS_PER_REQUEST_AS_LEADER {
             let to_attempt = pending_requests.get_requests_to_attempt();
             assert_eq!(to_attempt.len(), 1);
@@ -901,118 +946,73 @@ mod tests {
                 i + 1
             );
             drop(to_attempt);
-            clock.advance(CHECK_EACH_REQUEST_INTERVAL);
+            setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
         }
         assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
     }
 
     #[test_log::test]
-    fn test_pending_signature_requests_abort_after_maximum_attempts() {
-        let clock = FakeClock::default();
-        let participants = into_participant_ids(&generate_participants(4));
-        let my_participant_id = participants[1];
-        let network_api = Arc::new(TestNetworkAPI::new(&participants));
+    #[expect(non_snake_case)]
+    fn test_pending_requests__should_discard_old_and_non_canonical_requests() {
+        // Given: a request queue with two request from two different blocks
+        let (mut pending_requests, mut setup) = TestSetup::new();
+        let _req1 = setup.add_request_leader();
+        let requests = setup.update();
+        let block_height_req_1 = requests.block.height;
+        pending_requests.notify_new_block(requests);
+        let req2 = setup.add_request_leader();
+        let requests = setup.update();
+        let block_height_req_2 = requests.block.height;
+        pending_requests.notify_new_block(requests);
 
-        let mut pending_requests =
-            PendingRequests::<SignatureRequest, ChainSignatureRespondArgs>::new(
-                clock.clock(),
-                participants.clone(),
-                my_participant_id,
-                network_api.clone(),
-            );
+        // When: we set the network height past the expiry of the first, but before expiry of the
+        // second signature
+        setup.set_participant_network_height(block_height_req_1 + REQUEST_EXPIRATION_BLOCKS);
 
-        for participant in &participants {
-            network_api.set_height(*participant, 100);
-        }
-
-        let t = TestBlockMaker::new();
-        let req1 = test_sign_request(&participants, &[1]);
-        let b1 = t.block(100);
-        pending_requests.notify_new_block(vec![req1.clone()], vec![], &b1.to_block_view());
-        for i in 0..MAX_ATTEMPTS_PER_REQUEST_AS_LEADER {
-            let to_attempt = pending_requests.get_requests_to_attempt();
-            assert_eq!(to_attempt.len(), 1);
-            assert_eq!(to_attempt[0].request.id, req1.id);
-            assert_eq!(
-                to_attempt[0].computation_progress.lock().unwrap().attempts,
-                i + 1
-            );
-            drop(to_attempt);
-            clock.advance(CHECK_EACH_REQUEST_INTERVAL);
-        }
-        assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
-    }
-
-    #[test_log::test]
-    fn test_pending_ckd_requests_discard_old_and_non_canonical_requests() {
-        let clock = FakeClock::default();
-        let participants = into_participant_ids(&generate_participants(4));
-        let my_participant_id = participants[1];
-        let network_api = Arc::new(TestNetworkAPI::new(&participants));
-
-        let mut pending_requests = PendingRequests::<CKDRequest, ChainCKDRespondArgs>::new(
-            clock.clock(),
-            participants.clone(),
-            my_participant_id,
-            network_api.clone(),
-        );
-
-        for participant in &participants {
-            network_api.set_height(*participant, 350);
-        }
-
-        let t = TestBlockMaker::new();
-
-        let req1 = test_ckd_request(&participants, &[1]);
-        let req2 = test_ckd_request(&participants, &[1]);
-        let b1 = t.block(100);
-        let b2 = b1.child(200);
-        pending_requests.notify_new_block(vec![req1.clone()], vec![], &b1.to_block_view());
-        pending_requests.notify_new_block(vec![req2.clone()], vec![], &b2.to_block_view());
-
-        // The first request expired, so only the second one is returned.
+        // Then: The first request expired, so only the second one is returned.
         let to_attempt1 = pending_requests.get_requests_to_attempt();
         assert_eq!(to_attempt1.len(), 1);
         assert_eq!(to_attempt1[0].request.id, req2.id);
 
+        // When: we set participants to a newer height, expiring the second request as well;
         drop(to_attempt1);
-        clock.advance(CHECK_EACH_REQUEST_INTERVAL);
-
-        // Set participants to a newer height, expiring the second request as well; it should not retry.
-        for participant in &participants {
-            network_api.set_height(*participant, 500);
-        }
+        setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
+        setup.set_participant_network_height(block_height_req_2 + REQUEST_EXPIRATION_BLOCKS);
+        // Then: it should not retry.
         assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
 
-        clock.advance(CHECK_EACH_REQUEST_INTERVAL);
-        let req3 = test_ckd_request(&participants, &[1]);
-        let b3 = b2.child(350);
-        pending_requests.notify_new_block(vec![req3.clone()], vec![], &b3.to_block_view());
+        // When: we get a third request that is now recent enough
+        setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
+        let req3 = setup.add_request_leader();
+        let requests = setup.update();
+        pending_requests.notify_new_block(requests);
 
-        // The third request is now recent enough.
+        // Then: we should attempt it
         let to_attempt2 = pending_requests.get_requests_to_attempt();
         assert_eq!(to_attempt2.len(), 1);
         assert_eq!(to_attempt2[0].request.id, req3.id);
 
-        // Add a new request in a different fork that becomes the canonical chain.
-        // Req3 is now on a non-canonical fork so should not be attempted.
+        // When: we drop the attempt and have a fork in the chain
+        // When: Add a new request in a different fork that becomes the canonical chain.
         drop(to_attempt2);
-        clock.advance(CHECK_EACH_REQUEST_INTERVAL);
-        let b4 = b2.child(360);
-        let req4 = test_ckd_request(&participants, &[1]);
-        pending_requests.notify_new_block(vec![req4.clone()], vec![], &b4.to_block_view());
+        setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
+        let req4 = setup.add_request_leader();
+        let requests = setup.update_canonical_fork();
+        pending_requests.notify_new_block(requests);
 
+        // Then: Req3 is now on a non-canonical fork so should not be attempted.
         let to_attempt3 = pending_requests.get_requests_to_attempt();
         assert_eq!(to_attempt3.len(), 1);
         assert_eq!(to_attempt3[0].request.id, req4.id);
 
-        // Bring req3's block back to canonical; now we should attempt that instead.
+        // When: Bring req3's block back to canonical;
         drop(to_attempt3);
-        clock.advance(CHECK_EACH_REQUEST_INTERVAL);
-        let b5 = b3.child(370);
-        let req5 = test_ckd_request(&participants, &[1]);
-        pending_requests.notify_new_block(vec![req5.clone()], vec![], &b5.to_block_view());
+        setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
+        let req5 = setup.add_request_leader();
+        let requests = setup.update();
+        pending_requests.notify_new_block(requests);
 
+        // Then: we should attempt that instead.
         let to_attempt4 = pending_requests.get_requests_to_attempt();
         assert_eq!(to_attempt4.len(), 2);
         assert!(set_equals(
@@ -1022,120 +1022,27 @@ mod tests {
     }
 
     #[test_log::test]
-    fn test_pending_signature_requests_discard_old_and_non_canonical_requests() {
-        let clock = FakeClock::default();
-        let participants = into_participant_ids(&generate_participants(4));
-        let my_participant_id = participants[1];
-        let network_api = Arc::new(TestNetworkAPI::new(&participants));
-
-        let mut pending_requests =
-            PendingRequests::<SignatureRequest, ChainSignatureRespondArgs>::new(
-                clock.clock(),
-                participants.clone(),
-                my_participant_id,
-                network_api.clone(),
-            );
-
-        for participant in &participants {
-            network_api.set_height(*participant, 350);
-        }
-
-        let t = TestBlockMaker::new();
-
-        let req1 = test_sign_request(&participants, &[1]);
-        let req2 = test_sign_request(&participants, &[1]);
-        let b1 = t.block(100);
-        let b2 = b1.child(200);
-        pending_requests.notify_new_block(vec![req1.clone()], vec![], &b1.to_block_view());
-        pending_requests.notify_new_block(vec![req2.clone()], vec![], &b2.to_block_view());
-
-        // The first request expired, so only the second one is returned.
-        let to_attempt1 = pending_requests.get_requests_to_attempt();
-        assert_eq!(to_attempt1.len(), 1);
-        assert_eq!(to_attempt1[0].request.id, req2.id);
-
-        drop(to_attempt1);
-        clock.advance(CHECK_EACH_REQUEST_INTERVAL);
-
-        // Set participants to a newer height, expiring the second request as well; it should not retry.
-        for participant in &participants {
-            network_api.set_height(*participant, 500);
-        }
-        assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
-
-        clock.advance(CHECK_EACH_REQUEST_INTERVAL);
-        let req3 = test_sign_request(&participants, &[1]);
-        let b3 = b2.child(350);
-        pending_requests.notify_new_block(vec![req3.clone()], vec![], &b3.to_block_view());
-
-        // The third request is now recent enough.
-        let to_attempt2 = pending_requests.get_requests_to_attempt();
-        assert_eq!(to_attempt2.len(), 1);
-        assert_eq!(to_attempt2[0].request.id, req3.id);
-
-        // Add a new request in a different fork that becomes the canonical chain.
-        // Req3 is now on a non-canonical fork so should not be attempted.
-        drop(to_attempt2);
-        clock.advance(CHECK_EACH_REQUEST_INTERVAL);
-        let b4 = b2.child(360);
-        let req4 = test_sign_request(&participants, &[1]);
-        pending_requests.notify_new_block(vec![req4.clone()], vec![], &b4.to_block_view());
-
-        let to_attempt3 = pending_requests.get_requests_to_attempt();
-        assert_eq!(to_attempt3.len(), 1);
-        assert_eq!(to_attempt3[0].request.id, req4.id);
-
-        // Bring req3's block back to canonical; now we should attempt that instead.
-        drop(to_attempt3);
-        clock.advance(CHECK_EACH_REQUEST_INTERVAL);
-        let b5 = b3.child(370);
-        let req5 = test_sign_request(&participants, &[1]);
-        pending_requests.notify_new_block(vec![req5.clone()], vec![], &b5.to_block_view());
-
-        let to_attempt4 = pending_requests.get_requests_to_attempt();
-        assert_eq!(to_attempt4.len(), 2);
-        assert!(set_equals(
-            &to_attempt4.iter().map(|a| a.request.id).collect::<Vec<_>>(),
-            &[req3.id, req5.id]
-        ));
-    }
-
-    #[test_log::test]
-    fn test_pending_ckd_requests_fallback_leader() {
-        let clock = FakeClock::default();
-        let participants = into_participant_ids(&generate_participants(4));
-        let my_participant_id = participants[1];
-        let network_api = Arc::new(TestNetworkAPI::new(&participants));
-
-        let mut pending_requests = PendingRequests::<CKDRequest, ChainCKDRespondArgs>::new(
-            clock.clock(),
-            participants.clone(),
-            my_participant_id,
-            network_api.clone(),
-        );
+    #[expect(non_snake_case)]
+    fn test_pending_requests__should_fallback_leader() {
+        // Given: a request queue
+        let (mut pending_requests, mut setup) = TestSetup::new();
 
         // Indexer 0 is offline; indexer 2 is stale. We let indexer 0 have a higher height than
         // normal. This is to test a pathological case, in case some node reports an incorrectly high
         // height and we want to allow shutting down that node to be a mitigation.
-        network_api.bring_down(participants[0]);
-        network_api.set_height(participants[0], 120); // ignored because offline
-        network_api.set_height(participants[1], 100);
-        network_api.set_height(participants[2], 80); // stale
-        network_api.set_height(participants[3], 100);
+        setup.network_api.bring_down(setup.participant_ids[0]);
+        setup.network_api.set_height(setup.participant_ids[0], 120); // ignored because offline
+        setup.network_api.set_height(setup.participant_ids[1], 100);
+        setup.network_api.set_height(setup.participant_ids[2], 80); // stale
+        setup.network_api.set_height(setup.participant_ids[3], 100);
 
-        let t = TestBlockMaker::new();
+        let req1 = setup.add_request_leader_order(&[0, 1]);
+        let req2 = setup.add_request_leader_order(&[2, 0, 1]);
+        let _req3 = setup.add_request_leader_order(&[3, 1]);
+        let requests = setup.update();
+        pending_requests.notify_new_block(requests);
 
-        let req1 = test_ckd_request(&participants, &[0, 1]);
-        let req2 = test_ckd_request(&participants, &[2, 0, 1]);
-        let req3 = test_ckd_request(&participants, &[3, 1]);
-        let b1 = t.block(100);
-        pending_requests.notify_new_block(
-            vec![req1.clone(), req2.clone(), req3.clone()],
-            vec![],
-            &b1.to_block_view(),
-        );
-
-        // Since 0 and 2 are unavailable, and we are the first available leader for req1 and req2,
+        // Then: Since 0 and 2 are unavailable, and we are the first available leader for req1 and req2,
         // we should attempt these.
         let to_attempt1 = pending_requests.get_requests_to_attempt();
         assert_eq!(to_attempt1.len(), 2);
@@ -1145,101 +1052,19 @@ mod tests {
         ));
 
         drop(to_attempt1);
-        clock.advance(CHECK_EACH_REQUEST_INTERVAL);
-
-        // Bring up node 0. This causes node 1 to itself realize it is stale, so it should refuse to
-        // attempt any ckds, even if it were the preferred leader.
-        network_api.bring_up(participants[0]);
-        let b2 = b1.child(101);
-        let req4 = test_ckd_request(&participants, &[1]);
-        pending_requests.notify_new_block(vec![req4.clone()], vec![], &b2.to_block_view());
-        assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
-
-        // Bring down node 0 again. Now, node 1 should retry req1, req2 again, as well as trying req4.
-        network_api.bring_down(participants[0]);
-        clock.advance(CHECK_EACH_REQUEST_INTERVAL);
-        let to_attempt2 = pending_requests.get_requests_to_attempt();
-        assert_eq!(to_attempt2.len(), 3);
-        assert!(set_equals(
-            &to_attempt2.iter().map(|a| a.request.id).collect::<Vec<_>>(),
-            &[req1.id, req2.id, req4.id]
-        ));
-
-        // Node 0 actually manages to complete req1 and req4 somehow. Node 1 should not retry
-        // these anymore.
-        drop(to_attempt2);
-        let b3 = b2.child(102);
-        let b4 = b3.child(103);
-        let b5 = b4.child(104);
-        pending_requests.notify_new_block(vec![], vec![req1.id, req4.id], &b3.to_block_view());
-        pending_requests.notify_new_block(vec![], vec![], &b4.to_block_view());
-        pending_requests.notify_new_block(vec![], vec![], &b5.to_block_view());
-        clock.advance(CHECK_EACH_REQUEST_INTERVAL);
-
-        let to_attempt3 = pending_requests.get_requests_to_attempt();
-        assert_eq!(to_attempt3.len(), 1);
-        assert_eq!(to_attempt3[0].request.id, req2.id);
-    }
-
-    #[test_log::test]
-    fn test_pending_signature_requests_fallback_leader() {
-        let clock = FakeClock::default();
-        let participants = into_participant_ids(&generate_participants(4));
-        let my_participant_id = participants[1];
-        let network_api = Arc::new(TestNetworkAPI::new(&participants));
-
-        let mut pending_requests =
-            PendingRequests::<SignatureRequest, ChainSignatureRespondArgs>::new(
-                clock.clock(),
-                participants.clone(),
-                my_participant_id,
-                network_api.clone(),
-            );
-
-        // Indexer 0 is offline; indexer 2 is stale. We let indexer 0 have a higher height than
-        // normal. This is to test a pathological case, in case some node reports an incorrectly high
-        // height and we want to allow shutting down that node to be a mitigation.
-        network_api.bring_down(participants[0]);
-        network_api.set_height(participants[0], 120); // ignored because offline
-        network_api.set_height(participants[1], 100);
-        network_api.set_height(participants[2], 80); // stale
-        network_api.set_height(participants[3], 100);
-
-        let t = TestBlockMaker::new();
-
-        let req1 = test_sign_request(&participants, &[0, 1]);
-        let req2 = test_sign_request(&participants, &[2, 0, 1]);
-        let req3 = test_sign_request(&participants, &[3, 1]);
-        let b1 = t.block(100);
-        pending_requests.notify_new_block(
-            vec![req1.clone(), req2.clone(), req3.clone()],
-            vec![],
-            &b1.to_block_view(),
-        );
-
-        // Since 0 and 2 are unavailable, and we are the first available leader for req1 and req2,
-        // we should attempt these.
-        let to_attempt1 = pending_requests.get_requests_to_attempt();
-        assert_eq!(to_attempt1.len(), 2);
-        assert!(set_equals(
-            &to_attempt1.iter().map(|a| a.request.id).collect::<Vec<_>>(),
-            &[req1.id, req2.id]
-        ));
-
-        drop(to_attempt1);
-        clock.advance(CHECK_EACH_REQUEST_INTERVAL);
+        setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
 
         // Bring up node 0. This causes node 1 to itself realize it is stale, so it should refuse to
         // attempt any signatures, even if it were the preferred leader.
-        network_api.bring_up(participants[0]);
-        let b2 = b1.child(101);
-        let req4 = test_sign_request(&participants, &[1]);
-        pending_requests.notify_new_block(vec![req4.clone()], vec![], &b2.to_block_view());
+        setup.network_api.bring_up(setup.participant_ids[0]);
+        let req4 = setup.add_request_leader_order(&[1]);
+        let requests = setup.update();
+        pending_requests.notify_new_block(requests);
         assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
 
         // Bring down node 0 again. Now, node 1 should retry req1, req2 again, as well as trying req4.
-        network_api.bring_down(participants[0]);
-        clock.advance(CHECK_EACH_REQUEST_INTERVAL);
+        setup.network_api.bring_down(setup.participant_ids[0]);
+        setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
         let to_attempt2 = pending_requests.get_requests_to_attempt();
         assert_eq!(to_attempt2.len(), 3);
         assert!(set_equals(
@@ -1250,13 +1075,16 @@ mod tests {
         // Node 0 actually manages to complete req1 and req4 somehow. Node 1 should not retry
         // these anymore.
         drop(to_attempt2);
-        let b3 = b2.child(102);
-        let b4 = b3.child(103);
-        let b5 = b4.child(104);
-        pending_requests.notify_new_block(vec![], vec![req1.id, req4.id], &b3.to_block_view());
-        pending_requests.notify_new_block(vec![], vec![], &b4.to_block_view());
-        pending_requests.notify_new_block(vec![], vec![], &b5.to_block_view());
-        clock.advance(CHECK_EACH_REQUEST_INTERVAL);
+        setup.add_response(req1.id);
+        setup.add_response(req4.id);
+        let requests = setup.update();
+
+        pending_requests.notify_new_block(requests);
+        let requests = setup.update();
+        pending_requests.notify_new_block(requests);
+        let requests = setup.update();
+        pending_requests.notify_new_block(requests);
+        setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
 
         let to_attempt3 = pending_requests.get_requests_to_attempt();
         assert_eq!(to_attempt3.len(), 1);
@@ -1264,89 +1092,78 @@ mod tests {
     }
 
     #[test_log::test]
-    fn test_ckd_request_latency_debug() {
-        let clock = FakeClock::default();
-        let participants = into_participant_ids(&generate_participants(4));
-        let my_participant_id = participants[1];
-        let network_api = Arc::new(TestNetworkAPI::new(&participants));
+    #[expect(non_snake_case)]
+    fn test_request__latency_debug_should_display_time() {
+        // Given: a request queue with a request as leader
+        let (mut pending_requests, mut setup) = TestSetup::new();
+        setup.advance_clock(Duration::seconds(1));
+        let req1 = setup.add_request_leader();
+        let requests = setup.update();
+        pending_requests.notify_new_block(requests);
+        // When: we are lagging behind
+        setup.advance_clock(Duration::microseconds(2432123));
+        // When: we have a response in the subsequent block
+        setup.add_response(req1.id);
+        let requests = setup.update();
+        pending_requests.notify_new_block(requests);
+        setup.advance_clock(Duration::seconds(1));
+        // When: we finalize request and response
+        pending_requests.notify_new_block(setup.update());
+        pending_requests.notify_new_block(setup.update());
+        setup.advance_clock(Duration::seconds(1));
 
-        let mut pending_requests = PendingRequests::<CKDRequest, ChainCKDRespondArgs>::new(
-            clock.clock(),
-            participants.clone(),
-            my_participant_id,
-            network_api.clone(),
-        );
-
-        for participant in &participants {
-            network_api.set_height(*participant, 100);
-        }
-
-        let t = TestBlockMaker::new();
-
-        clock.advance(near_time::Duration::seconds(1));
-        let req1 = test_ckd_request(&participants, &[0]);
-        let b1 = t.block(100);
-        pending_requests.notify_new_block(vec![req1.clone()], vec![], &b1.to_block_view());
-        clock.advance(near_time::Duration::microseconds(2432123));
-        let b2 = b1.child(101);
-        pending_requests.notify_new_block(vec![], vec![req1.id], &b2.to_block_view());
-        clock.advance(near_time::Duration::seconds(1));
-        let b3 = b2.child(102);
-        pending_requests.notify_new_block(vec![], vec![], &b3.to_block_view());
-        clock.advance(near_time::Duration::seconds(1));
-        let b4 = b3.child(103);
-        pending_requests.notify_new_block(vec![], vec![], &b4.to_block_view());
-        clock.advance(near_time::Duration::seconds(1));
-
+        // Then: we expect to see the time delay reflected in the debug message
         let debug = format!("{:?}", pending_requests);
         assert!(
-            debug.contains("blk        100 ->        101 (+1, 2s432ms)"),
+            debug.contains("blk        101 ->        102 (+1, 2s432ms)"),
             "{}",
             debug
         );
     }
 
     #[test_log::test]
-    fn test_signature_request_latency_debug() {
-        let clock = FakeClock::default();
-        let participants = into_participant_ids(&generate_participants(4));
-        let my_participant_id = participants[1];
-        let network_api = Arc::new(TestNetworkAPI::new(&participants));
+    #[expect(non_snake_case)]
+    fn get_requests_to_attempt__should_not_expire_request_at_expiration_boundary() {
+        // Given: one leader request at block height H
+        let (mut pending_requests, mut setup) = TestSetup::new();
+        let req1 = setup.add_request_leader();
+        let requests = setup.update();
+        let block_height = requests.block.height;
+        pending_requests.notify_new_block(requests);
 
-        let mut pending_requests =
-            PendingRequests::<SignatureRequest, ChainSignatureRespondArgs>::new(
-                clock.clock(),
-                participants.clone(),
-                my_participant_id,
-                network_api.clone(),
-            );
+        // When: set network height to H + REQUEST_EXPIRATION_BLOCKS - 1
+        setup.set_participant_network_height(block_height + REQUEST_EXPIRATION_BLOCKS - 1);
 
-        for participant in &participants {
-            network_api.set_height(*participant, 100);
-        }
+        // Then: request is NOT expired (returned by get_requests_to_attempt)
+        let to_attempt = pending_requests.get_requests_to_attempt();
+        assert_eq!(to_attempt.len(), 1);
+        assert_eq!(to_attempt[0].request.id, req1.id);
+    }
 
-        let t = TestBlockMaker::new();
-
-        clock.advance(near_time::Duration::seconds(1));
-        let req1 = test_sign_request(&participants, &[0]);
-        let b1 = t.block(100);
-        pending_requests.notify_new_block(vec![req1.clone()], vec![], &b1.to_block_view());
-        clock.advance(near_time::Duration::microseconds(2432123));
-        let b2 = b1.child(101);
-        pending_requests.notify_new_block(vec![], vec![req1.id], &b2.to_block_view());
-        clock.advance(near_time::Duration::seconds(1));
-        let b3 = b2.child(102);
-        pending_requests.notify_new_block(vec![], vec![], &b3.to_block_view());
-        clock.advance(near_time::Duration::seconds(1));
-        let b4 = b3.child(103);
-        pending_requests.notify_new_block(vec![], vec![], &b4.to_block_view());
-        clock.advance(near_time::Duration::seconds(1));
-
-        let debug = format!("{:?}", pending_requests);
+    #[test_log::test]
+    #[expect(non_snake_case)]
+    fn get_requests_to_attempt__should_expire_request_past_expiration_boundary() {
+        // Given: one leader request at block height H
+        let (mut pending_requests, mut setup) = TestSetup::new();
+        let req1 = setup.add_request_leader();
+        let requests = setup.update();
+        let block_height = requests.block.height;
+        pending_requests.notify_new_block(requests);
         assert!(
-            debug.contains("blk        100 ->        101 (+1, 2s432ms)"),
-            "{}",
-            debug
+            pending_requests.requests.contains_key(&req1.id),
+            "request should be in the queue"
+        );
+
+        // When: set network height to H + REQUEST_EXPIRATION_BLOCKS
+        setup.set_participant_network_height(block_height + REQUEST_EXPIRATION_BLOCKS);
+
+        // Then: request IS expired, not returned by get_requests_to_attempt and removed from
+        // queue.
+        let to_attempt = pending_requests.get_requests_to_attempt();
+        assert_eq!(to_attempt.len(), 0);
+        assert!(
+            !pending_requests.requests.contains_key(&req1.id),
+            "expired request should be removed from the queue"
         );
     }
 }

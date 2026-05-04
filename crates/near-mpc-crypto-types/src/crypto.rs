@@ -277,6 +277,39 @@ impl From<&Bls12381G2PublicKey> for String {
     }
 }
 
+impl TryFrom<&PublicKeyExtended> for PublicKey {
+    type Error = ParsePublicKeyError;
+    fn try_from(pk: &PublicKeyExtended) -> Result<Self, Self::Error> {
+        match pk {
+            PublicKeyExtended::Secp256k1 { near_public_key } => {
+                std::str::FromStr::from_str(near_public_key.as_str())
+            }
+            PublicKeyExtended::Ed25519 {
+                near_public_key_compressed,
+                ..
+            } => std::str::FromStr::from_str(near_public_key_compressed.as_str()),
+            PublicKeyExtended::Bls12381 { public_key } => Ok(public_key.clone()),
+        }
+    }
+}
+
+impl From<PublicKey> for PublicKeyExtended {
+    fn from(pk: PublicKey) -> Self {
+        match pk {
+            PublicKey::Secp256k1(inner) => PublicKeyExtended::Secp256k1 {
+                near_public_key: String::from(&inner),
+            },
+            PublicKey::Ed25519(inner) => PublicKeyExtended::Ed25519 {
+                near_public_key_compressed: String::from(&inner),
+                edwards_point: inner.0,
+            },
+            PublicKey::Bls12381(inner) => PublicKeyExtended::Bls12381 {
+                public_key: PublicKey::Bls12381(inner),
+            },
+        }
+    }
+}
+
 impl std::str::FromStr for PublicKey {
     type Err = ParsePublicKeyError;
 
@@ -495,7 +528,7 @@ impl<'de> serde::Deserialize<'de> for Bls12381G2PublicKey {
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub enum PublicKeyExtended {
     /// Secp256k1 public key (ECDSA).
