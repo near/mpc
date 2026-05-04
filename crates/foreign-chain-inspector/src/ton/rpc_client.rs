@@ -84,20 +84,12 @@ impl TonRpcClient for ReqwestTonClient {
         account_hash: &[u8; 32],
         tx_hash_hex: &str,
     ) -> Result<GetTransactionsResponse, TonRpcError> {
-        let mut url = self
-            .base_url
-            .join(GET_TRANSACTIONS_PATH)
-            .map_err(TonRpcError::InvalidUrl)?;
         // The v3 API treats `account` and `hash` case-insensitively, but MPC
         // nodes compare each other's RPC responses byte-for-byte — so all
         // nodes must send the identical lowercase form to get identical
         // responses.
         let account = format_ton_account(workchain, account_hash);
-        url.query_pairs_mut()
-            .append_pair("account", &account)
-            .append_pair("hash", tx_hash_hex)
-            .append_pair("include_msgs", "true")
-            .append_pair("limit", "1");
+        let url = build_get_transactions_url(&self.base_url, &account, tx_hash_hex);
 
         let response = self.client.get(url).send().await?;
         let status = response.status();
@@ -119,6 +111,23 @@ impl TonRpcClient for ReqwestTonClient {
 /// parameters.
 pub(crate) fn format_ton_account(workchain: i8, account_hash: &[u8; 32]) -> String {
     format!("{workchain}:{}", hex::encode(account_hash))
+}
+
+/// Build the `GET /api/v3/transactions?...` URL.
+///
+/// Uses `set_path` rather than `Url::join` so any pre-existing query string
+/// on the base URL (e.g. `?api_key=...` for query-param auth flows) is
+/// preserved — `Url::join` clears the base's query per RFC 3986 §5.3.
+fn build_get_transactions_url(base_url: &url::Url, account: &str, tx_hash_hex: &str) -> url::Url {
+    let mut url = base_url.clone();
+    let new_path = format!("{}{}", url.path(), GET_TRANSACTIONS_PATH);
+    url.set_path(&new_path);
+    url.query_pairs_mut()
+        .append_pair("account", account)
+        .append_pair("hash", tx_hash_hex)
+        .append_pair("include_msgs", "true")
+        .append_pair("limit", "1");
+    url
 }
 
 /// Build a [`ReqwestTonClient`] — the TON analog of
@@ -153,26 +162,45 @@ mod tests {
     }
 
     #[test]
-    fn new__should_append_trailing_slash_when_missing() {
-        // Without normalization, `Url::join("transactions")` would replace the
-        // last segment of `/api/v3` and produce `/api/transactions`.
+    fn build_get_transactions_url__should_append_trailing_slash_when_missing() {
+        // Without normalization in `new()`, path concatenation would produce
+        // `/api/v3transactions` (no separator).
         let client = ReqwestTonClient::new(
             "https://example.invalid/api/v3".to_string(),
             RpcAuthentication::KeyInUrl,
         )
         .expect("valid base url");
-        let joined = client.base_url.join(GET_TRANSACTIONS_PATH).unwrap();
-        assert_eq!(joined.path(), "/api/v3/transactions");
+        let url = build_get_transactions_url(&client.base_url, "0:aa", "deadbeef");
+        assert_eq!(url.path(), "/api/v3/transactions");
     }
 
     #[test]
-    fn new__should_preserve_existing_trailing_slash() {
+    fn build_get_transactions_url__should_preserve_existing_trailing_slash() {
         let client = ReqwestTonClient::new(
             "https://example.invalid/api/v3/".to_string(),
             RpcAuthentication::KeyInUrl,
         )
         .expect("valid base url");
-        let joined = client.base_url.join(GET_TRANSACTIONS_PATH).unwrap();
-        assert_eq!(joined.path(), "/api/v3/transactions");
+        let url = build_get_transactions_url(&client.base_url, "0:aa", "deadbeef");
+        assert_eq!(url.path(), "/api/v3/transactions");
+    }
+
+    #[test]
+    fn build_get_transactions_url__should_preserve_pre_existing_query_string() {
+        // Operators may embed query-param auth (e.g. `?api_key=...`) on the
+        // base URL when configuring `KeyInUrl`. `Url::join` would drop it; we
+        // must not.
+        let client = ReqwestTonClient::new(
+            "https://example.invalid/api/v3/?api_key=secret".to_string(),
+            RpcAuthentication::KeyInUrl,
+        )
+        .expect("valid base url");
+        let url = build_get_transactions_url(&client.base_url, "0:aa", "deadbeef");
+        let pairs: std::collections::BTreeMap<_, _> = url.query_pairs().collect();
+        assert_eq!(pairs.get("api_key").map(|v| v.as_ref()), Some("secret"));
+        assert_eq!(pairs.get("account").map(|v| v.as_ref()), Some("0:aa"));
+        assert_eq!(pairs.get("hash").map(|v| v.as_ref()), Some("deadbeef"));
+        assert_eq!(pairs.get("include_msgs").map(|v| v.as_ref()), Some("true"));
+        assert_eq!(pairs.get("limit").map(|v| v.as_ref()), Some("1"));
     }
 }
