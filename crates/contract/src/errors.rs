@@ -204,6 +204,11 @@ pub enum DomainError {
         protocol: Protocol,
         expected: Curve,
     },
+    #[error("Invalid protocol-purpose combination: protocol {protocol:?} is not compatible with purpose {purpose:?}")]
+    InvalidProtocolPurposeCombination {
+        protocol: Protocol,
+        purpose: DomainPurpose,
+    },
 }
 
 /// A list specifying general categories of MPC Contract errors.

@@ -29,24 +29,30 @@ pub fn is_valid_protocol_for_purpose(purpose: DomainPurpose, protocol: Protocol)
     )
 }
 
-/// Validates that `domain.curve` matches the curve derived from
-/// `domain.protocol`. Once dispatch is rewired to read `protocol` directly,
-/// every entry point must reject inconsistent pairs so that stored state is
-/// authoritative.
+/// Validates that a `DomainConfig` is internally consistent:
+///   - `curve` matches the curve derived from `protocol`, and
+///   - `protocol` is allowed for the requested `purpose`.
 ///
 /// The legacy `Curve::V2Secp256k1` value is accepted as a stand-in for
 /// `(Secp256k1, DamgardEtAl)`.
 // TODO(#2442): drop the V2Secp256k1 carve-out once that variant is removed
 // from `Curve` in the next PR.
-pub fn validate_curve_protocol_consistency(domain: &DomainConfig) -> Result<(), Error> {
+pub fn validate_domain_consistency(domain: &DomainConfig) -> Result<(), Error> {
     let expected = Curve::from(domain.protocol);
-    let consistent = domain.curve == expected
+    let curve_ok = domain.curve == expected
         || (domain.curve == Curve::V2Secp256k1 && domain.protocol == Protocol::DamgardEtAl);
-    if !consistent {
+    if !curve_ok {
         return Err(DomainError::InconsistentCurveProtocol {
             curve: domain.curve,
             protocol: domain.protocol,
             expected,
+        }
+        .into());
+    }
+    if !is_valid_protocol_for_purpose(domain.purpose, domain.protocol) {
+        return Err(DomainError::InvalidProtocolPurposeCombination {
+            protocol: domain.protocol,
+            purpose: domain.purpose,
         }
         .into());
     }
@@ -96,7 +102,7 @@ impl DomainRegistry {
     pub fn add_domains(&self, domains: Vec<DomainConfig>) -> Result<DomainRegistry, Error> {
         let mut new_registry = self.clone();
         for domain in domains {
-            validate_curve_protocol_consistency(&domain)?;
+            validate_domain_consistency(&domain)?;
             let new_domain_id =
                 new_registry.add_domain(domain.curve, domain.protocol, domain.purpose);
             if new_domain_id != domain.id {
@@ -148,7 +154,7 @@ impl DomainRegistry {
             next_domain_id,
         };
         for domain in &registry.domains {
-            validate_curve_protocol_consistency(domain)?;
+            validate_domain_consistency(domain)?;
         }
         for (left, right) in registry.domains.iter().zip(registry.domains.iter().skip(1)) {
             if left.id.0 >= right.id.0 {
@@ -220,9 +226,9 @@ impl AddDomainsVotes {
 #[cfg(test)]
 pub mod tests {
     use super::{
-        is_valid_curve_for_purpose, is_valid_protocol_for_purpose,
-        validate_curve_protocol_consistency, AddDomainsVotes, Curve, DomainConfig, DomainId,
-        DomainPurpose, DomainRegistry, Participants, Protocol,
+        is_valid_curve_for_purpose, is_valid_protocol_for_purpose, validate_domain_consistency,
+        AddDomainsVotes, Curve, DomainConfig, DomainId, DomainPurpose, DomainRegistry,
+        Participants, Protocol,
     };
     use crate::primitives::key_state::AuthenticatedParticipantId;
     use crate::primitives::test_utils::{
@@ -453,33 +459,52 @@ pub mod tests {
     }
 
     #[rstest]
-    // Canonical pairings
-    #[case(Curve::Secp256k1, Protocol::CaitSith, true)]
-    #[case(Curve::Secp256k1, Protocol::DamgardEtAl, true)]
-    #[case(Curve::Edwards25519, Protocol::Frost, true)]
-    #[case(Curve::Bls12381, Protocol::ConfidentialKeyDerivation, true)]
+    // Canonical pairings (curve consistent with protocol AND protocol allowed for purpose)
+    #[case(Curve::Secp256k1, Protocol::CaitSith, DomainPurpose::Sign, true)]
+    #[case(Curve::Secp256k1, Protocol::CaitSith, DomainPurpose::ForeignTx, true)]
+    #[case(Curve::Secp256k1, Protocol::DamgardEtAl, DomainPurpose::Sign, true)]
+    #[case(Curve::Edwards25519, Protocol::Frost, DomainPurpose::Sign, true)]
+    #[case(
+        Curve::Bls12381,
+        Protocol::ConfidentialKeyDerivation,
+        DomainPurpose::CKD,
+        true
+    )]
     // Legacy: V2Secp256k1 stands in for (Secp256k1, DamgardEtAl) until V2 is removed.
-    #[case(Curve::V2Secp256k1, Protocol::DamgardEtAl, true)]
-    // Mismatches
-    #[case(Curve::Secp256k1, Protocol::Frost, false)]
-    #[case(Curve::Edwards25519, Protocol::CaitSith, false)]
-    #[case(Curve::Bls12381, Protocol::DamgardEtAl, false)]
-    #[case(Curve::V2Secp256k1, Protocol::CaitSith, false)]
-    fn test_curve_protocol_consistency(
+    #[case(Curve::V2Secp256k1, Protocol::DamgardEtAl, DomainPurpose::Sign, true)]
+    // Curve/protocol mismatches
+    #[case(Curve::Secp256k1, Protocol::Frost, DomainPurpose::Sign, false)]
+    #[case(Curve::Edwards25519, Protocol::CaitSith, DomainPurpose::Sign, false)]
+    #[case(Curve::Bls12381, Protocol::DamgardEtAl, DomainPurpose::Sign, false)]
+    #[case(Curve::V2Secp256k1, Protocol::CaitSith, DomainPurpose::Sign, false)]
+    // Protocol/purpose mismatches (curve/protocol consistent, but protocol not allowed for purpose)
+    #[case(
+        Curve::Secp256k1,
+        Protocol::DamgardEtAl,
+        DomainPurpose::ForeignTx,
+        false
+    )]
+    #[case(Curve::Edwards25519, Protocol::Frost, DomainPurpose::ForeignTx, false)]
+    #[case(
+        Curve::Bls12381,
+        Protocol::ConfidentialKeyDerivation,
+        DomainPurpose::Sign,
+        false
+    )]
+    #[case(Curve::Secp256k1, Protocol::CaitSith, DomainPurpose::CKD, false)]
+    fn test_domain_consistency(
         #[case] curve: Curve,
         #[case] protocol: Protocol,
+        #[case] purpose: DomainPurpose,
         #[case] expected_ok: bool,
     ) {
         let domain = DomainConfig {
             id: DomainId(0),
             curve,
             protocol,
-            purpose: DomainPurpose::Sign,
+            purpose,
         };
-        assert_eq!(
-            validate_curve_protocol_consistency(&domain).is_ok(),
-            expected_ok
-        );
+        assert_eq!(validate_domain_consistency(&domain).is_ok(), expected_ok);
     }
 
     fn setup_participants(n: usize) -> (Participants, Vec<AuthenticatedParticipantId>) {
