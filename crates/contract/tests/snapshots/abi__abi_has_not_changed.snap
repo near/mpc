@@ -2323,7 +2323,7 @@ expression: abi
                 }
               },
               "additionalProperties": false
-            }
+			}
           ]
         },
         "Hash256": {
