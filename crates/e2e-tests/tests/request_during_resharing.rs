@@ -10,8 +10,8 @@ use rand::SeedableRng;
 /// running state's threshold while resharing is in progress.
 ///
 /// Setup: 6 nodes, 5 initial participants (threshold 5). Domains cover
-/// classic ECDSA (Secp256k1), robust ECDSA (V2Secp256k1), EdDSA
-/// (Edwards25519) and CKD (Bls12381). Threshold is 5 because robust ECDSA
+/// classic ECDSA (CaitSith), robust ECDSA (DamgardEtAl), EdDSA (Frost) and
+/// CKD (ConfidentialKeyDerivation). Threshold is 5 because robust ECDSA
 /// requires ≥ 5 signers (see `robust_ecdsa::translate_threshold`). Begin
 /// resharing to all 6 with threshold 6, then kill node 5 so resharing can't
 /// complete. Requests should still succeed using the old threshold of 5
@@ -28,8 +28,8 @@ async fn test_request_during_resharing() {
             c.presignatures_to_buffer = 2;
             c.domains.push(DomainConfig {
                 id: DomainId(c.domains.len() as u64),
-                curve: Curve::V2Secp256k1,
-                protocol: Protocol::from(Curve::V2Secp256k1),
+                curve: Curve::Secp256k1,
+                protocol: Protocol::DamgardEtAl,
                 purpose: DomainPurpose::Sign,
             });
         })
@@ -50,14 +50,18 @@ async fn test_request_during_resharing() {
         .domains
         .domains
         .iter()
-        .find(|d| d.curve == Curve::Secp256k1 && d.purpose == DomainPurpose::Sign)
-        .expect("no Secp256k1 Sign domain");
+        .find(|d| {
+            d.curve == Curve::Secp256k1
+                && d.protocol == Protocol::CaitSith
+                && d.purpose == DomainPurpose::Sign
+        })
+        .expect("no CaitSith Sign domain");
     let robust_ecdsa_domain = contract_state
         .domains
         .domains
         .iter()
-        .find(|d| d.curve == Curve::V2Secp256k1 && d.purpose == DomainPurpose::Sign)
-        .expect("no V2Secp256k1 Sign domain");
+        .find(|d| d.protocol == Protocol::DamgardEtAl && d.purpose == DomainPurpose::Sign)
+        .expect("no DamgardEtAl Sign domain");
     let eddsa_domain = contract_state
         .domains
         .domains

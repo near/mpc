@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 
 use crate::sandbox::common::SandboxTestSetup;
-use crate::sandbox::utils::consts::ALL_CURVES;
+use crate::sandbox::utils::consts::ALL_PROTOCOLS;
 use assert_matches::assert_matches;
 use near_mpc_bounded_collections::NonEmptyBTreeSet;
 use near_mpc_contract_interface::method_names::REGISTER_FOREIGN_CHAIN_CONFIG;
@@ -17,7 +17,7 @@ async fn register_foreign_chain_config__stores_and_returns_supported_chains() {
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
 
@@ -75,7 +75,7 @@ async fn register_foreign_chain_config__excludes_chains_not_supported_by_all() {
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
 
@@ -151,7 +151,7 @@ async fn register_foreign_chain_config__returns_empty_when_not_all_registered() 
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
 

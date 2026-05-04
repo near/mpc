@@ -32,7 +32,7 @@ use crate::web::DebugRequest;
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use mpc_node_config::ConfigFile;
-use mpc_primitives::domain::{Curve, DomainId};
+use mpc_primitives::domain::{DomainId, Protocol};
 use mpc_primitives::EpochId;
 use near_time::Clock;
 use std::collections::HashMap;
@@ -547,28 +547,50 @@ where
                     mpc_primitives::domain::DomainId,
                     confidential_key_derivation::KeygenOutput,
                 > = HashMap::new();
-                let mut domain_to_curve: HashMap<DomainId, Curve> = HashMap::new();
+                let domain_to_protocol: HashMap<DomainId, Protocol> = running_state
+                    .domains
+                    .iter()
+                    .map(|d| (d.id, d.protocol))
+                    .collect();
 
+                let mut routing_invariant_violated = false;
                 for keyshare in keyshares {
                     let domain_id = keyshare.key_id.domain_id;
-                    match keyshare.data {
-                        KeyshareData::Secp256k1(data) => {
-                            ecdsa_keyshares.insert(keyshare.key_id.domain_id, data);
-                            domain_to_curve.insert(domain_id, Curve::Secp256k1);
+                    let Some(protocol) = domain_to_protocol.get(&domain_id).copied() else {
+                        tracing::error!(
+                            ?domain_id,
+                            "Keyshare references a domain that is not in the contract registry",
+                        );
+                        routing_invariant_violated = true;
+                        continue;
+                    };
+                    match (keyshare.data, protocol) {
+                        (KeyshareData::Secp256k1(data), Protocol::CaitSith) => {
+                            ecdsa_keyshares.insert(domain_id, data);
                         }
-                        KeyshareData::Ed25519(data) => {
-                            eddsa_keyshares.insert(keyshare.key_id.domain_id, data);
-                            domain_to_curve.insert(domain_id, Curve::Edwards25519);
+                        (KeyshareData::Secp256k1(data), Protocol::DamgardEtAl) => {
+                            robust_ecdsa_keyshares.insert(domain_id, data);
                         }
-                        KeyshareData::Bls12381(data) => {
-                            ckd_keyshares.insert(keyshare.key_id.domain_id, data);
-                            domain_to_curve.insert(domain_id, Curve::Bls12381);
+                        (KeyshareData::Ed25519(data), Protocol::Frost) => {
+                            eddsa_keyshares.insert(domain_id, data);
                         }
-                        KeyshareData::V2Secp256k1(data) => {
-                            robust_ecdsa_keyshares.insert(keyshare.key_id.domain_id, data);
-                            domain_to_curve.insert(domain_id, Curve::V2Secp256k1);
+                        (KeyshareData::Bls12381(data), Protocol::ConfidentialKeyDerivation) => {
+                            ckd_keyshares.insert(domain_id, data);
+                        }
+                        (data, protocol) => {
+                            tracing::error!(
+                                ?domain_id,
+                                ?protocol,
+                                data_kind = ?std::mem::discriminant(&data),
+                                "Keyshare data does not match the domain protocol",
+                            );
+                            routing_invariant_violated = true;
                         }
                     }
+                }
+                if routing_invariant_violated {
+                    tracing::error!("Keyshare/domain routing invariant violated; halting until contract state changes.");
+                    return Ok(MpcJobResult::HaltUntilInterrupted);
                 }
 
                 let ecdsa_signature_provider = Arc::new(EcdsaSignatureProvider::new(
@@ -625,7 +647,7 @@ where
                     eddsa_signature_provider,
                     ckd_provider,
                     verify_foreign_tx_provider,
-                    domain_to_curve,
+                    domain_to_protocol,
                 ));
 
                 mpc_client

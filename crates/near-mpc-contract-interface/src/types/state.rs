@@ -122,7 +122,14 @@ struct DomainConfigCompat {
 
 impl From<DomainConfigCompat> for DomainConfig {
     fn from(c: DomainConfigCompat) -> Self {
-        let protocol = c.protocol.unwrap_or_else(|| Protocol::from(c.curve));
+        // Pre-`protocol` JSON: infer the canonical protocol from the curve.
+        // Old contracts only ever emitted CaitSith/Frost/CKD via this path —
+        // DamgardEtAl never existed in old JSON, so this fallback is total.
+        let protocol = c.protocol.unwrap_or(match c.curve {
+            Curve::Secp256k1 => Protocol::CaitSith,
+            Curve::Edwards25519 => Protocol::Frost,
+            Curve::Bls12381 => Protocol::ConfidentialKeyDerivation,
+        });
         Self {
             id: c.id,
             curve: c.curve,
