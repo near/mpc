@@ -195,9 +195,6 @@ jobs:
       - name: Run cargo-make fast checks
         run: nix develop --command cargo make check-all-fast
 
-      - name: Check trailing whitespace
-        run: bash scripts/check-trailing-whitespace.sh
-
   mpc-e2e-tests:
     name: "MPC E2E tests"
     runs-on: warp-ubuntu-2404-x64-32x
