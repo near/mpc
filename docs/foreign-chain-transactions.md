@@ -116,6 +116,8 @@ pub enum ForeignChainRpcRequest {
     Ethereum(EvmRpcRequest),
     Solana(SolanaRpcRequest),
     Bitcoin(BitcoinRpcRequest),
+    Starknet(StarknetRpcRequest),
+    Ton(TonRpcRequest),
     // Future chains...
 }
 
@@ -137,6 +139,13 @@ pub struct BitcoinRpcRequest {
     pub extractors: Vec<BitcoinExtractor>,
 }
 
+pub struct TonRpcRequest {
+    pub tx_id: TonTxId,
+    pub account: TonAddress, // Required: TON tx hashes are not globally unique
+    pub finality: TonFinality,
+    pub extractors: Vec<TonExtractor>,
+}
+
 pub enum EvmFinality {
     Latest,
     Safe,
@@ -147,7 +156,34 @@ pub enum SolanaFinality {
     Confirmed,
     Finalized,
 }
+pub enum TonFinality {
+    /// The transaction's shard block has been referenced by a masterchain
+    /// block. Masterchain inclusion is irreversible on TON, so this is the
+    /// deepest finality level available and the only one accepted in v1.
+    MasterchainIncluded,
+}
 ```
+
+#### TON specifics
+
+* **Basechain only in v1.** The inspector rejects any request where
+  `account.workchain != 0`. The `TonAddress` type carries the workchain for
+  forward-compatibility, but only workchain 0 is accepted.
+* **Ext-out filtering is intrinsic to indexing.** `TonExtractor::Log {
+  message_index }` indexes into the list of out-messages *after* internal
+  messages (`destination = Some(...)`) have been filtered out. A tx that emits
+  one internal message followed by one ext-out exposes the ext-out at
+  `message_index: 0`.
+* **Body format.** `TonLog` carries `from_address: [u8; 32]` (the emitter's
+  basechain account hash), `body_bits: Vec<u8>` (the top-level cell's inline
+  bytes — a byte-aligned cell is required; non-aligned bodies are rejected),
+  and `body_refs: Vec<Vec<u8>>` (each reference cell serialized as its own
+  canonical single-root BoC with no CRC). Downstream consumers lazy-decode the
+  refs as needed.
+* **Transport.** toncenter v3 is a REST API (not JSON-RPC), so TON nodes run
+  a dedicated `ReqwestTonClient` alongside the shared `jsonrpsee` clients used
+  by the EVM, Bitcoin, and Starknet paths. Authentication reuses the same
+  `auth` config block as the other chains.
 
 ### Response DTOs
 
@@ -308,6 +344,7 @@ pub enum ForeignChain {
     Arbitrum,
     Abstract,
     Starknet,
+    Ton,
     // Future chains...
 }
 
@@ -414,6 +451,23 @@ foreign_chains:
         rpc_url: "https://rpc.public.example.com"
         auth:
           kind: none
+  ton:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      toncenter:
+        # Must be the /api/v3/ root (REST, not JSON-RPC).
+        rpc_url: "https://toncenter.com/api/v3/"
+        auth:
+          # toncenter uses a bare X-API-Key header (no Bearer prefix).
+          kind: header
+          name: X-API-Key
+          token:
+            env: TONCENTER_API_KEY
+      public_testnet:
+        rpc_url: "https://testnet.toncenter.com/api/v3/"
+        auth:
+          kind: none
 ```
 
 Each registered configuration references providers by **rpc_url**, and nodes must have matching
@@ -421,7 +475,9 @@ provider entries in config (including API keys) to actually serve traffic for th
 
 Auth variants are explicitly modeled because providers differ in how they expect API keys
 to be supplied (e.g., bearer tokens, custom headers, query params, or URL path tokens), and some
-providers require no auth at all.
+providers require no auth at all. The `header` variant supports an optional `scheme` field; omit
+it (as in the toncenter example above) to send a bare token value, or set it to `"Bearer"` for
+providers that expect `Authorization: Bearer <token>`.
 
 ## Risks
 

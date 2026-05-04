@@ -445,6 +445,28 @@ pub fn load_listening_blocks_file(home_dir: &Path) -> anyhow::Result<bool> {
 ///
 /// This lives in mpc-node (rather than the config crate) to avoid adding
 /// `foreign-chain-inspector` as a dependency of the lightweight config crate.
+///
+/// # Behaviour change since v3.9.0
+///
+/// `AuthConfig::Header { scheme: None, .. }` (or `scheme: Some("")`) now emits
+/// the **bare token value** as the header value. Previously it defaulted to
+/// `"Bearer <token>"`. The new behaviour is required for non-OAuth API key
+/// headers like toncenter's `X-API-Key`, where any prefix would be rejected
+/// by the upstream provider.
+///
+/// Operator config that previously relied on the implicit `Bearer` default
+/// must now spell it out explicitly:
+///
+/// ```yaml
+/// auth:
+///   kind: header
+///   name: Authorization
+///   scheme: Bearer        # <-- previously optional, now required for Bearer
+///   token: { env: MY_KEY }
+/// ```
+///
+/// Configs that already set `scheme: Bearer` (the example in the existing
+/// `docs/foreign-chain-transactions.md`) are unaffected.
 pub fn auth_config_to_rpc_auth(
     auth: AuthConfig,
     rpc_url: &mut String,
@@ -456,9 +478,15 @@ pub fn auth_config_to_rpc_auth(
             scheme,
             token,
         } => {
-            let scheme = scheme.unwrap_or_else(|| "Bearer".to_string());
             let token_value = token.resolve()?;
-            let header_value = HeaderValue::from_str(&format!("{scheme} {token_value}"))?;
+            // Behaviour change: see this function's docstring. An absent or
+            // empty `scheme` emits a bare token value (required for
+            // `X-API-Key`-style headers); any other `scheme` is prefixed with
+            // a single space before the token.
+            let header_value = match scheme.as_deref() {
+                None | Some("") => HeaderValue::from_str(&token_value)?,
+                Some(scheme) => HeaderValue::from_str(&format!("{scheme} {token_value}"))?,
+            };
             Ok(RpcAuthentication::CustomHeader {
                 header_name,
                 header_value,
@@ -894,5 +922,78 @@ cores: 4
         // Then
         assert_matches!(result, RpcAuthentication::CustomHeader { .. });
         assert_eq!(url, "https://rpc.example.com/v2/");
+    }
+
+    #[test]
+    fn auth_config_to_rpc_auth__header_auth_with_bearer_scheme_includes_prefix() {
+        // Given
+        let auth = AuthConfig::Header {
+            name: http::HeaderName::from_static("authorization"),
+            scheme: Some("Bearer".to_string()),
+            token: TokenConfig::Val {
+                val: "secret".to_string(),
+            },
+        };
+        let mut url = "https://rpc.example.com".to_string();
+
+        // When
+        let result = auth_config_to_rpc_auth(auth, &mut url).unwrap();
+
+        // Then
+        let RpcAuthentication::CustomHeader { header_value, .. } = result else {
+            panic!("expected CustomHeader");
+        };
+        assert_eq!(header_value.to_str().unwrap(), "Bearer secret");
+    }
+
+    #[test]
+    fn auth_config_to_rpc_auth__header_auth_without_scheme_emits_bare_token() {
+        // Needed for X-API-Key-style headers (e.g. toncenter) where no
+        // scheme prefix is allowed.
+        //
+        // Given
+        let auth = AuthConfig::Header {
+            name: http::HeaderName::from_static("x-api-key"),
+            scheme: None,
+            token: TokenConfig::Val {
+                val: "secret".to_string(),
+            },
+        };
+        let mut url = "https://toncenter.com/api/v3/".to_string();
+
+        // When
+        let result = auth_config_to_rpc_auth(auth, &mut url).unwrap();
+
+        // Then
+        let RpcAuthentication::CustomHeader { header_value, .. } = result else {
+            panic!("expected CustomHeader");
+        };
+        assert_eq!(header_value.to_str().unwrap(), "secret");
+    }
+
+    #[test]
+    fn auth_config_to_rpc_auth__header_auth_with_empty_scheme_emits_bare_token() {
+        // Defensive: if an operator explicitly writes `scheme: ""`, treat it
+        // the same as the absent case rather than emitting " secret" with a
+        // leading space.
+        //
+        // Given
+        let auth = AuthConfig::Header {
+            name: http::HeaderName::from_static("x-api-key"),
+            scheme: Some(String::new()),
+            token: TokenConfig::Val {
+                val: "secret".to_string(),
+            },
+        };
+        let mut url = "https://toncenter.com/api/v3/".to_string();
+
+        // When
+        let result = auth_config_to_rpc_auth(auth, &mut url).unwrap();
+
+        // Then
+        let RpcAuthentication::CustomHeader { header_value, .. } = result else {
+            panic!("expected CustomHeader");
+        };
+        assert_eq!(header_value.to_str().unwrap(), "secret");
     }
 }

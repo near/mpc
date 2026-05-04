@@ -1,0 +1,19 @@
+{
+    "request": {
+        "request": {
+            "Ton": {
+                "tx_id": "0000000000000000000000000000000000000000000000000000000000000000",
+                "account": {
+                    "workchain": 0,
+                    "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+                },
+                "finality": "MasterchainIncluded",
+                "extractors": [
+                    { "Log": { "message_index": 0 } }
+                ]
+            }
+        },
+        "domain_id": 4,
+        "payload_version": 1
+    }
+}

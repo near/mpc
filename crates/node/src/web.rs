@@ -139,6 +139,8 @@ struct ForeignChains {
     bnb: Option<ForeignChain>,
     #[serde(skip_serializing_if = "Option::is_none")]
     base: Option<ForeignChain>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ton: Option<ForeignChain>,
 }
 
 impl From<ForeignChainsConfig> for ForeignChains {
@@ -151,6 +153,7 @@ impl From<ForeignChainsConfig> for ForeignChains {
             starknet: config.starknet.map(Into::into),
             bnb: config.bnb.map(Into::into),
             base: config.base.map(Into::into),
+            ton: config.ton.map(Into::into),
         }
     }
 }
@@ -482,6 +485,17 @@ mod tests {
                         },
                     },
                 )),
+                ton: Some(test_chain(
+                    "toncenter",
+                    "https://toncenter.com/api/v3/",
+                    AuthConfig::Header {
+                        name: http::HeaderName::from_static("x-api-key"),
+                        scheme: None,
+                        token: TokenConfig::Val {
+                            val: "toncenter-secret".to_string(),
+                        },
+                    },
+                )),
             },
             cores: Some(4),
         }
@@ -619,6 +633,25 @@ mod tests {
             *provider,
             ForeignChainProvider {
                 rpc_url: "https://base.publicnode.com".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn node_config_response_from__omits_auth_from_ton_provider() {
+        // Given
+        let config = test_config();
+
+        // When
+        let response = NodeConfigResponse::from(config);
+
+        // Then
+        let provider = &response.foreign_chains.ton.unwrap().providers
+            [&RpcProviderName::from("toncenter".to_string())];
+        assert_eq!(
+            *provider,
+            ForeignChainProvider {
+                rpc_url: "https://toncenter.com/api/v3/".to_string(),
             }
         );
     }

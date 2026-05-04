@@ -10,6 +10,14 @@ use serde_with::{DisplayFromStr, serde_as};
 pub enum AuthConfig {
     #[default]
     None,
+    /// HTTP header authentication.
+    ///
+    /// Behaviour change since v3.9.0: an absent or empty `scheme` now produces
+    /// a bare token header value (required for `X-API-Key`-style providers
+    /// such as toncenter v3). Previously, an absent `scheme` was implicitly
+    /// treated as `"Bearer"`. Operators relying on the implicit default must
+    /// now set `scheme: Bearer` explicitly. See `auth_config_to_rpc_auth` in
+    /// `crates/node/src/config.rs` for the full conversion rule.
     Header {
         #[serde_as(as = "DisplayFromStr")]
         name: http::HeaderName,

@@ -4,6 +4,7 @@ use foreign_chain_inspector::base::inspector::BaseExtractor;
 use foreign_chain_inspector::bitcoin::inspector::BitcoinExtractor;
 use foreign_chain_inspector::bnb::inspector::BnbExtractor;
 use foreign_chain_inspector::starknet::inspector::{StarknetExtractor, StarknetFinality};
+use foreign_chain_inspector::ton::inspector::{TonExtractor, TonFinality, TonTransactionId};
 use foreign_chain_inspector::{EthereumFinality, ForeignChainInspector};
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
@@ -236,6 +237,32 @@ where
                 let transaction_id = request.tx_id.0 .0.into();
                 let finality: StarknetFinality = request.finality.clone().try_into()?;
                 let extractors: Vec<StarknetExtractor> = request
+                    .extractors
+                    .iter()
+                    .cloned()
+                    .map(TryInto::try_into)
+                    .collect::<Result<_, _>>()?;
+
+                let extracted_values = inspector
+                    .extract(transaction_id, finality, extractors)
+                    .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
+                    .await
+                    .context("timed out during execution of foreign chain request")??;
+
+                extracted_values.into_iter().map(Into::into).collect()
+            }
+            dtos::ForeignChainRpcRequest::Ton(request) => {
+                let inspector =
+                    select_inspector(&self.inspectors.ton, &request_id, my_participant_index)
+                        .context("no inspector configured for TON")?;
+
+                let transaction_id = TonTransactionId {
+                    workchain: request.account.workchain,
+                    account: request.account.hash.0,
+                    tx_hash: request.tx_id.0 .0,
+                };
+                let finality: TonFinality = request.finality.clone().try_into()?;
+                let extractors: Vec<TonExtractor> = request
                     .extractors
                     .iter()
                     .cloned()

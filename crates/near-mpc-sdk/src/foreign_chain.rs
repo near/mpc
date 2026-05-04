@@ -8,6 +8,7 @@ pub mod bitcoin;
 pub mod bnb;
 pub mod evm;
 pub mod starknet;
+pub mod ton;
 
 use near_mpc_contract_interface::types::PublicKey;
 // response types
