@@ -216,7 +216,9 @@ pub mod running_tests {
     use crate::{
         primitives::threshold_votes::ThresholdParametersVotes, state::test_utils::gen_running_state,
     };
-    use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, DomainPurpose};
+    use near_mpc_contract_interface::types::{
+        Curve, DomainConfig, DomainId, DomainPurpose, Protocol,
+    };
 
     fn test_running_for(num_domains: usize) {
         let mut state = gen_running_state(num_domains);
@@ -363,6 +365,7 @@ pub mod running_tests {
         let invalid_domain = vec![DomainConfig {
             id: DomainId(next_id),
             curve,
+            protocol: Protocol::from(curve),
             purpose,
         }];
 

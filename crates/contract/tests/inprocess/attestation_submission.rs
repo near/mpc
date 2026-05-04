@@ -12,7 +12,7 @@ use mpc_contract::{
     MpcContract,
 };
 use near_mpc_contract_interface::types::{
-    Attestation, InitConfig, MockAttestation, ProtocolContractState,
+    Attestation, InitConfig, MockAttestation, Protocol, ProtocolContractState,
 };
 use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, DomainPurpose};
 
@@ -106,6 +106,7 @@ impl TestSetupBuilder {
         let domains = vec![DomainConfig {
             id: DomainId::default(),
             curve: Curve::Secp256k1,
+            protocol: Protocol::from(Curve::Secp256k1),
             purpose: DomainPurpose::Sign,
         }];
 
@@ -158,6 +159,7 @@ impl TestSetupBuilder {
                         .vote_add_domains(vec![DomainConfig {
                             id: DomainId(1),
                             curve: Curve::Edwards25519,
+                            protocol: Protocol::from(Curve::Edwards25519),
                             purpose: DomainPurpose::Sign,
                         }])
                         .unwrap();
