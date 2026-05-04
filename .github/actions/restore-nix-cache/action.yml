@@ -16,13 +16,13 @@ runs:
         backend: warpbuild
         primary-key: nix-${{ runner.os }}-ci-${{ hashFiles('flake.nix', 'flake.lock', 'nix/**', 'rust-toolchain.toml', 'Cargo.lock') }}
         restore-prefixes-first-match: nix-${{ runner.os }}-ci-
-        save: true
+        save: ${{ inputs.save }}
         # Target store size of 0 means always run garbage collection.
         # Note that pinning step below prevents the usable cache to be cleaned.
         gc-max-store-size: 0
 
     - name: Pin dev-shell closure as GC root
-      # if: inputs.save == 'true'
+      if: inputs.save == 'true'
       shell: bash
       # `--profile` registers the dev-shell closure as an indirect GC root,
       # so the pre-upload garbage collection keeps it (and its dependencies)
