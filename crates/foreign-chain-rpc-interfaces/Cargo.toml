@@ -11,6 +11,7 @@ jsonrpsee = { workspace = true }
 mpc-primitives = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+tonlib-core = { workspace = true }
 
 [lints]
 workspace = true

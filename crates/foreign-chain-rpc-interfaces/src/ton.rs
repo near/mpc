@@ -1,9 +1,17 @@
 use serde::{Deserialize, Serialize};
+use tonlib_core::types::TonAddress;
 
-/// Top-level response from `GET /api/v3/transactions?...`.
-///
-/// toncenter returns the transactions array even when no transactions match —
-/// in that case it is empty.
+// `#[serde(default)]` policy for this module:
+//
+// All optional fields use `#[serde(default)]` so the deserializer returns a
+// type-default (empty `Vec`, `false`, `None`) when a field is absent in the
+// JSON. This is necessary because `serde_json` errors on missing fields by
+// default — even for `Option<T>` — and toncenter v3 omits irrelevant fields
+// (e.g. `compute_ph` on tick/tock transactions) instead of emitting `null`.
+
+/// Top-level response from `GET /api/v3/transactions?...`. The `transactions`
+/// array is always present; an empty array means no transaction matched the
+/// lookup.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GetTransactionsResponse {
     #[serde(default)]
@@ -13,11 +21,12 @@ pub struct GetTransactionsResponse {
 /// A single TON transaction record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TonTransaction {
-    /// Raw account address in `"<workchain>:<hex>"` format (e.g. `"0:a1b2…"`).
-    pub account: String,
+    /// Account that produced this transaction. `tonlib_core::TonAddress`
+    /// accepts the raw `<workchain>:<hex>` form via its `FromStr` impl.
+    pub account: TonAddress,
 
-    /// Transaction hash. toncenter v3 returns this as standard base64
-    /// (44 chars including `=` padding; may contain `+` and `/`), not hex.
+    /// Transaction hash, base64-encoded (44 chars including `=` padding; may
+    /// contain `+` and `/`).
     pub hash: String,
 
     /// Masterchain block seqno that references this transaction's shard block.
@@ -42,7 +51,7 @@ pub struct TonTransaction {
     pub out_msgs: Vec<TonMessage>,
 }
 
-/// Subset of the `description` object returned by toncenter v3.
+/// Subset of the transaction description object.
 ///
 /// Only `aborted`, `destroyed`, and the optional `compute_ph` are parsed; the
 /// rest of the description (storage phase, action phase, etc.) is ignored.
@@ -61,8 +70,8 @@ pub struct TonTransactionDescription {
 
 /// Compute-phase summary.
 ///
-/// toncenter serializes two shapes: a "skipped" shape (no `success` field) and
-/// a "normal" shape with `success: bool`. Modelling `success` as
+/// The compute phase has two on-wire shapes: a "skipped" shape (no `success`
+/// field) and a "normal" shape with `success: bool`. Modelling `success` as
 /// `Option<bool>` captures both: `None` on skipped, `Some(true|false)` on
 /// normal.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -74,29 +83,27 @@ pub struct TonComputePhase {
 /// An outgoing (or incoming) message record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TonMessage {
-    /// Source account (`"<workchain>:<hex>"`). `None` for ext-in messages
-    /// (external to the chain).
+    /// Source account. `None` for ext-in messages (external to the chain).
     #[serde(default)]
-    pub source: Option<String>,
+    pub source: Option<TonAddress>,
 
     /// Destination account. `None` for ext-out messages (destination =
     /// `addr_none`, meaning external to the chain). This is the primary
     /// discriminator for ext-out filtering.
     #[serde(default)]
-    pub destination: Option<String>,
+    pub destination: Option<TonAddress>,
 
     /// Logical time at which the TVM created this message. Within a single
     /// transaction, every emitted message has a distinct, monotonically
     /// increasing `created_lt` — this is a TON protocol invariant
-    /// (`SENDRAWMSG` snapshots and bumps the lt counter), not a
-    /// toncenter-specific guarantee. The MPC inspector parses this and uses
-    /// it to sort ext-out messages so that ext-out indexing is independent of
-    /// the order toncenter happens to serialize them in.
+    /// (`SENDRAWMSG` snapshots and bumps the lt counter). The MPC inspector
+    /// parses this and uses it to sort ext-out messages so that ext-out
+    /// indexing is independent of the upstream serialization order.
     ///
-    /// toncenter v3 returns the value as a JSON string (the underlying TON
-    /// type is a 64-bit unsigned integer that doesn't always fit safely into
-    /// a JSON number). The inspector rejects the request if any ext-out
-    /// message is missing or has an unparseable `created_lt`.
+    /// Wire format: JSON string (the underlying TON type is a 64-bit unsigned
+    /// integer that doesn't always fit safely into a JSON number). The
+    /// inspector rejects the request if any ext-out message is missing or has
+    /// an unparseable `created_lt`.
     #[serde(default)]
     pub created_lt: Option<String>,
 
@@ -143,54 +150,64 @@ mod tests {
         assert!(tx.out_msgs.is_empty());
     }
 
+    // 64-char hex tail — TonAddress::from_hex_str expects exactly 32 bytes.
+    const ADDR_AA: &str = "0:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const ADDR_BB: &str = "0:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
     #[test]
     fn deserialize__should_treat_missing_mc_block_seqno_as_none() {
-        let json = r#"
-        {
-          "account": "0:00",
+        let json = format!(
+            r#"
+        {{
+          "account": "{ADDR_AA}",
           "hash": "00",
-          "description": {},
+          "description": {{}},
           "out_msgs": []
-        }
-        "#;
+        }}
+        "#
+        );
 
-        let tx: TonTransaction = serde_json::from_str(json).unwrap();
+        let tx: TonTransaction = serde_json::from_str(&json).unwrap();
         assert_eq!(tx.mc_block_seqno, None);
     }
 
     #[test]
     fn deserialize__should_treat_null_mc_block_seqno_as_none() {
-        let json = r#"
-        {
-          "account": "0:00",
+        let json = format!(
+            r#"
+        {{
+          "account": "{ADDR_AA}",
           "hash": "00",
           "mc_block_seqno": null,
-          "description": {},
+          "description": {{}},
           "out_msgs": []
-        }
-        "#;
+        }}
+        "#
+        );
 
-        let tx: TonTransaction = serde_json::from_str(json).unwrap();
+        let tx: TonTransaction = serde_json::from_str(&json).unwrap();
         assert_eq!(tx.mc_block_seqno, None);
     }
 
     #[test]
     fn deserialize__should_accept_skipped_compute_phase() {
-        let json = r#"
-        {
-          "account": "0:00",
+        let json = format!(
+            r#"
+        {{
+          "account": "{ADDR_AA}",
           "hash": "00",
           "mc_block_seqno": 1,
-          "description": {
+          "description": {{
             "aborted": false,
             "destroyed": false,
-            "compute_ph": {}
-          },
+            "compute_ph": {{}}
+          }},
           "out_msgs": []
-        }
-        "#;
+        }}
+        "#
+        );
 
-        let tx: TonTransaction = serde_json::from_str(json).unwrap();
+        let tx: TonTransaction = serde_json::from_str(&json).unwrap();
         assert!(tx.description.compute_ph.is_some());
         assert_eq!(
             tx.description.compute_ph.as_ref().and_then(|c| c.success),
@@ -201,36 +218,40 @@ mod tests {
     #[test]
     fn deserialize__should_distinguish_ext_out_from_internal_msg() {
         // destination=null is ext-out; destination="0:..." is internal.
-        let json = r#"
+        let json = format!(
+            r#"
         [
-          {
-            "source": "0:aa",
+          {{
+            "source": "{ADDR_AA}",
             "destination": null,
-            "message_content": { "body": "te6cckEBAQEAAgAAAEysuc0=" }
-          },
-          {
-            "source": "0:aa",
-            "destination": "0:bb",
-            "message_content": { "body": "te6cckEBAQEAAgAAAEysuc0=" }
-          }
+            "message_content": {{ "body": "te6cckEBAQEAAgAAAEysuc0=" }}
+          }},
+          {{
+            "source": "{ADDR_AA}",
+            "destination": "{ADDR_BB}",
+            "message_content": {{ "body": "te6cckEBAQEAAgAAAEysuc0=" }}
+          }}
         ]
-        "#;
+        "#
+        );
 
-        let msgs: Vec<TonMessage> = serde_json::from_str(json).unwrap();
+        let msgs: Vec<TonMessage> = serde_json::from_str(&json).unwrap();
         assert!(msgs[0].destination.is_none());
-        assert_eq!(msgs[1].destination.as_deref(), Some("0:bb"));
+        assert!(msgs[1].destination.is_some());
     }
 
     #[test]
     fn deserialize__should_accept_message_without_body() {
-        let json = r#"
-        {
-          "source": "0:aa",
+        let json = format!(
+            r#"
+        {{
+          "source": "{ADDR_AA}",
           "destination": null
-        }
-        "#;
+        }}
+        "#
+        );
 
-        let msg: TonMessage = serde_json::from_str(json).unwrap();
+        let msg: TonMessage = serde_json::from_str(&json).unwrap();
         assert!(msg.message_content.is_none());
     }
 }

@@ -4,7 +4,7 @@ use assert_matches::assert_matches;
 use foreign_chain_inspector::{
     ForeignChainInspectionError, ForeignChainInspector, RpcAuthentication,
     ton::{
-        TonExtractedValue,
+        TonExtractedValue, TonInspectionError,
         inspector::{TonExtractor, TonFinality, TonInspector, TonTransactionId},
         rpc_client::{ReqwestTonClient, build_ton_http_client},
     },
@@ -37,15 +37,10 @@ fn mount_toncenter_mock(server: &MockServer, body: &str) {
     });
 }
 
-fn inspector_for(server: &MockServer) -> TonInspector<ReqwestTonClient> {
-    inspector_with_auth(server, RpcAuthentication::KeyInUrl)
-}
-
 fn inspector_with_auth(
     server: &MockServer,
     auth: RpcAuthentication,
 ) -> TonInspector<ReqwestTonClient> {
-    // toncenter client wants a trailing slash on the base URL.
     let client = build_ton_http_client(server.url("/"), auth).expect("client build should succeed");
     TonInspector::new(client)
 }
@@ -93,7 +88,7 @@ async fn extract__should_return_log_for_simple_no_refs_fixture() {
     let fixture = load_fixture("simple_no_refs.json");
     mount_toncenter_mock(&server, &fixture);
 
-    let inspector = inspector_for(&server);
+    let inspector = inspector_with_auth(&server, RpcAuthentication::KeyInUrl);
 
     let tx_id = TonTransactionId {
         workchain: 0,
@@ -130,7 +125,7 @@ async fn extract__should_return_log_with_ref_for_event_fixture() {
     let fixture = load_fixture("event_with_ref.json");
     mount_toncenter_mock(&server, &fixture);
 
-    let inspector = inspector_for(&server);
+    let inspector = inspector_with_auth(&server, RpcAuthentication::KeyInUrl);
 
     let tx_id = TonTransactionId {
         workchain: 0,
@@ -171,7 +166,7 @@ async fn extract__should_return_log_with_multiple_refs_for_init_transfer_fixture
     let fixture = load_fixture("synthetic_init_transfer.json");
     mount_toncenter_mock(&server, &fixture);
 
-    let inspector = inspector_for(&server);
+    let inspector = inspector_with_auth(&server, RpcAuthentication::KeyInUrl);
 
     let tx_id = TonTransactionId {
         workchain: 0,
@@ -215,7 +210,7 @@ async fn extract__should_reject_when_mc_block_seqno_is_null() {
     v["transactions"][0]["mc_block_seqno"] = Value::Null;
     mount_toncenter_mock(&server, &serde_json::to_string(&v).unwrap());
 
-    let inspector = inspector_for(&server);
+    let inspector = inspector_with_auth(&server, RpcAuthentication::KeyInUrl);
     let tx_id = TonTransactionId {
         workchain: 0,
         account: hex_to_32(FX_A_ACCOUNT_HEX),
@@ -244,7 +239,7 @@ async fn extract__should_reject_when_description_aborted() {
     v["transactions"][0]["description"]["aborted"] = Value::Bool(true);
     mount_toncenter_mock(&server, &serde_json::to_string(&v).unwrap());
 
-    let inspector = inspector_for(&server);
+    let inspector = inspector_with_auth(&server, RpcAuthentication::KeyInUrl);
     let tx_id = TonTransactionId {
         workchain: 0,
         account: hex_to_32(FX_B_ACCOUNT_HEX),
@@ -271,7 +266,7 @@ async fn extract__should_reject_when_account_in_response_does_not_match_request(
     let fixture = load_fixture("event_with_ref.json");
     mount_toncenter_mock(&server, &fixture);
 
-    let inspector = inspector_for(&server);
+    let inspector = inspector_with_auth(&server, RpcAuthentication::KeyInUrl);
     let tx_id = TonTransactionId {
         workchain: 0,
         account: hex_to_32(FX_A_ACCOUNT_HEX),
@@ -290,7 +285,9 @@ async fn extract__should_reject_when_account_in_response_does_not_match_request(
     // then
     assert_matches!(
         result,
-        Err(ForeignChainInspectionError::AccountMismatch { .. })
+        Err(ForeignChainInspectionError::Ton(
+            TonInspectionError::AccountMismatch { .. }
+        ))
     );
 }
 

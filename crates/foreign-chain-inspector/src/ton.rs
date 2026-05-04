@@ -27,15 +27,44 @@ pub enum TonBocError {
     SerializeRef(TonCellError),
 }
 
-/// Split a TON cell (supplied as a base64-encoded BoC) into the canonical
-/// `(body_bits, body_refs)` pair consumed by the bridge's TON log parser.
+/// All errors specific to the TON inspector.
 ///
-/// * `body_bits` — the top-level cell's inline data as a packed byte vector of
-///   length `bit_len / 8`. Byte alignment is required; non-aligned cells are
-///   rejected with [`TonBocError::NonByteAlignedBody`].
-/// * `body_refs` — each reference cell re-serialized as its own canonical,
-///   single-root BoC (`BagOfCells::new(&[ref]).serialize(false)`). Downstream
-///   consumers lazy-decode these as needed.
+/// Bundled into one enum so the cross-chain
+/// [`crate::ForeignChainInspectionError`] only needs a single TON variant
+/// instead of leaking every TON-specific failure mode.
+#[derive(Debug, thiserror::Error)]
+pub enum TonInspectionError {
+    #[error("toncenter RPC error: {0}")]
+    RpcError(#[from] crate::ton::rpc_client::TonRpcError),
+
+    #[error("no transaction found on TON for hash {tx_hash_hex}")]
+    TransactionNotFound { tx_hash_hex: String },
+
+    #[error("TON transaction account mismatch: request asked for {expected}, RPC returned {got}")]
+    AccountMismatch { expected: String, got: String },
+
+    #[error("TON message at index {index} is not an ext-out message")]
+    NotAnExtOutMessage { index: u64 },
+
+    #[error(
+        "TON workchain {got} is not supported in v1 (only workchain 0 / basechain is supported)"
+    )]
+    UnsupportedWorkchain { got: i8 },
+
+    #[error(transparent)]
+    BocError(#[from] crate::ton::TonBocError),
+
+    #[error(
+        "TON ext-out message is missing `created_lt`; cannot establish deterministic message order"
+    )]
+    MessageMissingCreatedLt,
+
+    #[error("TON ext-out message has unparseable `created_lt`: {value}")]
+    MessageMalformedCreatedLt { value: String },
+}
+
+/// Split a TON cell (supplied as a base64-encoded BoC) into the
+/// `(body_bits, body_refs)` pair consumed by the bridge's TON log parser.
 pub fn normalize_body_boc(body_boc_b64: &str) -> Result<(Vec<u8>, Vec<Vec<u8>>), TonBocError> {
     let boc = BagOfCells::parse_base64(body_boc_b64).map_err(TonBocError::Parse)?;
 
@@ -47,8 +76,11 @@ pub fn normalize_body_boc(body_boc_b64: &str) -> Result<(Vec<u8>, Vec<Vec<u8>>),
     }
     let byte_len = bit_len / 8;
 
+    // Top-level cell's inline data, packed to `bit_len / 8` bytes.
     let body_bits = root.data().get(..byte_len).unwrap_or(root.data()).to_vec();
 
+    // Each reference cell re-serialized as its own canonical single-root BoC,
+    // so downstream consumers can lazy-decode refs without parsing the parent.
     let body_refs: Vec<Vec<u8>> = root
         .references()
         .iter()

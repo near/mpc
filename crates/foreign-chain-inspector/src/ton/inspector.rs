@@ -1,8 +1,9 @@
-use super::{TonExtractedValue, normalize_body_boc};
+use super::{TonExtractedValue, TonInspectionError, normalize_body_boc};
 use crate::ton::rpc_client::TonRpcClient;
 use crate::{ForeignChainInspectionError, ForeignChainInspector};
 use foreign_chain_rpc_interfaces::ton::{TonMessage, TonTransaction};
 use near_mpc_contract_interface::types::{Hash256, TonLog};
+use tonlib_core::types::TonAddress;
 
 /// Inspector-side finality type, convertible from the contract DTO's
 /// `TonFinality`. Keeps the enum mirror of the DTO so the inspector compiles
@@ -64,7 +65,7 @@ impl<Client: TonRpcClient> ForeignChainInspector for TonInspector<Client> {
         } = tx_id;
 
         if workchain != 0 {
-            return Err(ForeignChainInspectionError::UnsupportedWorkchain { got: workchain });
+            return Err(TonInspectionError::UnsupportedWorkchain { got: workchain }.into());
         }
 
         let tx_hash_hex = hex::encode(tx_hash);
@@ -72,10 +73,11 @@ impl<Client: TonRpcClient> ForeignChainInspector for TonInspector<Client> {
         let response = self
             .client
             .get_transaction(workchain, &account, &tx_hash_hex)
-            .await?;
+            .await
+            .map_err(TonInspectionError::from)?;
 
         let tx = response.transactions.into_iter().next().ok_or(
-            ForeignChainInspectionError::TonTransactionNotFound {
+            TonInspectionError::TransactionNotFound {
                 tx_hash_hex: tx_hash_hex.clone(),
             },
         )?;
@@ -122,27 +124,30 @@ fn message_created_lt(msg: &TonMessage) -> Result<u64, ForeignChainInspectionErr
     let raw = msg
         .created_lt
         .as_deref()
-        .ok_or(ForeignChainInspectionError::TonMessageMissingCreatedLt)?;
-    raw.parse::<u64>().map_err(
-        |_| ForeignChainInspectionError::TonMessageMalformedCreatedLt {
+        .ok_or(TonInspectionError::MessageMissingCreatedLt)?;
+    raw.parse::<u64>()
+        .map_err(|_| TonInspectionError::MessageMalformedCreatedLt {
             value: raw.to_string(),
-        },
-    )
+        })
+        .map_err(Into::into)
 }
 
 fn ensure_account_matches(
     workchain: i8,
     expected_hash: &[u8; 32],
-    rpc_account: &str,
+    rpc_account: &TonAddress,
 ) -> Result<(), ForeignChainInspectionError> {
-    let expected = crate::ton::rpc_client::format_ton_account(workchain, expected_hash);
-    if expected.eq_ignore_ascii_case(rpc_account) {
+    let expected_workchain: i32 = workchain.into();
+    if rpc_account.workchain == expected_workchain
+        && rpc_account.hash_part.as_slice() == expected_hash
+    {
         Ok(())
     } else {
-        Err(ForeignChainInspectionError::AccountMismatch {
-            expected,
-            got: rpc_account.to_string(),
-        })
+        Err(TonInspectionError::AccountMismatch {
+            expected: crate::ton::rpc_client::format_ton_account(workchain, expected_hash),
+            got: rpc_account.to_hex(),
+        }
+        .into())
     }
 }
 
@@ -188,9 +193,10 @@ fn extract_value(
             // filter bug, not a user error — report it precisely rather than
             // as a cell error downstream.
             if msg.destination.is_some() {
-                return Err(ForeignChainInspectionError::NotAnExtOutMessage {
+                return Err(TonInspectionError::NotAnExtOutMessage {
                     index: *message_index as u64,
-                });
+                }
+                .into());
             }
 
             let body_b64 = msg
@@ -204,7 +210,7 @@ fn extract_value(
             let (body_bits, body_refs) = if body_b64.is_empty() {
                 (Vec::new(), Vec::new())
             } else {
-                normalize_body_boc(body_b64)?
+                normalize_body_boc(body_b64).map_err(TonInspectionError::from)?
             };
 
             Ok(TonExtractedValue::Log(TonLog {
@@ -223,7 +229,6 @@ mod tests {
     use crate::RpcAuthentication;
     use crate::ton::rpc_client::{ReqwestTonClient, TonRpcError};
     use assert_matches::assert_matches;
-    use async_trait::async_trait;
     use base64::Engine;
     use foreign_chain_rpc_interfaces::ton::{
         GetTransactionsResponse, TonCellBoc, TonComputePhase, TonMessage, TonTransaction,
@@ -245,7 +250,6 @@ mod tests {
         }
     }
 
-    #[async_trait]
     impl TonRpcClient for StubClient {
         async fn get_transaction(
             &self,
@@ -268,15 +272,15 @@ mod tests {
         [0x11; 32]
     }
 
-    fn account_string(workchain: i8, hash: &[u8; 32]) -> String {
-        crate::ton::rpc_client::format_ton_account(workchain, hash)
+    fn ton_address(workchain: i8, hash: &[u8; 32]) -> TonAddress {
+        TonAddress::new(workchain.into(), tonlib_core::types::TonHash::from(*hash))
     }
 
     /// Build a valid, finalized, successful transaction with one ext-out carrying
     /// a 4-byte payload cell.
     fn happy_tx() -> TonTransaction {
         TonTransaction {
-            account: account_string(0, &account_hash()),
+            account: ton_address(0, &account_hash()),
             hash: "dead".to_string(),
             mc_block_seqno: Some(12345),
             description: TonTransactionDescription {
@@ -287,7 +291,7 @@ mod tests {
                 }),
             },
             out_msgs: vec![TonMessage {
-                source: Some(account_string(0, &account_hash())),
+                source: Some(ton_address(0, &account_hash())),
                 destination: None, // ext-out
                 created_lt: Some("100".to_string()),
                 message_content: Some(TonCellBoc {
@@ -425,14 +429,14 @@ mod tests {
             .unwrap_err();
         assert_matches!(
             err,
-            ForeignChainInspectionError::TonTransactionNotFound { .. }
+            ForeignChainInspectionError::Ton(TonInspectionError::TransactionNotFound { .. })
         );
     }
 
     #[tokio::test]
     async fn extract__should_reject_on_account_mismatch() {
         let mut tx = happy_tx();
-        tx.account = account_string(0, &[0x22; 32]); // different account
+        tx.account = ton_address(0, &[0x22; 32]); // different account
         let inspector = inspector_from_tx(tx);
 
         let err = inspector
@@ -443,7 +447,10 @@ mod tests {
             )
             .await
             .unwrap_err();
-        assert_matches!(err, ForeignChainInspectionError::AccountMismatch { .. });
+        assert_matches!(
+            err,
+            ForeignChainInspectionError::Ton(TonInspectionError::AccountMismatch { .. })
+        );
     }
 
     #[tokio::test]
@@ -464,7 +471,7 @@ mod tests {
             .unwrap_err();
         assert_matches!(
             err,
-            ForeignChainInspectionError::UnsupportedWorkchain { got: -1 }
+            ForeignChainInspectionError::Ton(TonInspectionError::UnsupportedWorkchain { got: -1 })
         );
     }
 
@@ -491,8 +498,8 @@ mod tests {
         let ext_out = tx.out_msgs.pop().unwrap();
         tx.out_msgs = vec![
             TonMessage {
-                source: Some(account_string(0, &account_hash())),
-                destination: Some(account_string(0, &[0x33; 32])),
+                source: Some(ton_address(0, &account_hash())),
+                destination: Some(ton_address(0, &[0x33; 32])),
                 // Internal messages aren't required to carry created_lt for
                 // ordering — the inspector filters them out before the sort.
                 created_lt: None,
@@ -524,13 +531,13 @@ mod tests {
         let earlier_body = encode_cell(vec![0xaa; 4], 32, vec![]);
         tx.out_msgs = vec![
             TonMessage {
-                source: Some(account_string(0, &account_hash())),
+                source: Some(ton_address(0, &account_hash())),
                 destination: None,
                 created_lt: Some("200".to_string()),
                 message_content: Some(TonCellBoc { body: later_body }),
             },
             TonMessage {
-                source: Some(account_string(0, &account_hash())),
+                source: Some(ton_address(0, &account_hash())),
                 destination: None,
                 created_lt: Some("100".to_string()),
                 message_content: Some(TonCellBoc { body: earlier_body }),
@@ -578,7 +585,10 @@ mod tests {
             )
             .await
             .unwrap_err();
-        assert_matches!(err, ForeignChainInspectionError::TonMessageMissingCreatedLt);
+        assert_matches!(
+            err,
+            ForeignChainInspectionError::Ton(TonInspectionError::MessageMissingCreatedLt)
+        );
     }
 
     #[tokio::test]
@@ -597,7 +607,7 @@ mod tests {
             .unwrap_err();
         assert_matches!(
             err,
-            ForeignChainInspectionError::TonMessageMalformedCreatedLt { .. }
+            ForeignChainInspectionError::Ton(TonInspectionError::MessageMalformedCreatedLt { .. })
         );
     }
 
@@ -630,6 +640,9 @@ mod tests {
             )
             .await
             .unwrap_err();
-        assert_matches!(err, ForeignChainInspectionError::TonClientError(_));
+        assert_matches!(
+            err,
+            ForeignChainInspectionError::Ton(TonInspectionError::RpcError(_))
+        );
     }
 }
