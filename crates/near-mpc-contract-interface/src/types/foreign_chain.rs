@@ -1096,7 +1096,7 @@ mod tests {
         }),
         ForeignChain::Base,
     )]
-    #[case::bnb(
+    #[case::arbitrum(
         ForeignChainRpcRequest::Arbitrum(EvmRpcRequest {
             tx_id: EvmTxId([12; 32]),
             extractors: vec![],
