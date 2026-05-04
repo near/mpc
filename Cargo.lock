@@ -3603,7 +3603,6 @@ name = "foreign-chain-inspector"
 version = "3.9.0"
 dependencies = [
  "assert_matches",
- "async-trait",
  "base64 0.22.1",
  "derive_more 2.1.1",
  "ethereum-types",
@@ -3634,6 +3633,7 @@ dependencies = [
  "mpc-primitives",
  "serde",
  "serde_json",
+ "tonlib-core",
 ]
 
 [[package]]

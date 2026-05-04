@@ -1,27 +1,24 @@
 use crate::RpcAuthentication;
-use async_trait::async_trait;
 use foreign_chain_rpc_interfaces::ton::GetTransactionsResponse;
 use http::HeaderMap;
 use reqwest::Client;
+use std::future::Future;
 use thiserror::Error;
 
 const GET_TRANSACTIONS_PATH: &str = "transactions";
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 
 /// Trait hiding the concrete HTTP transport so tests can swap in mocks.
-#[async_trait]
 pub trait TonRpcClient: Send + Sync {
     /// Fetch a single transaction on a given account by hash, with outgoing
-    /// messages included.
-    ///
-    /// toncenter v3 returns `{"transactions": [...]}` even when no transaction
-    /// matches; the caller is responsible for interpreting an empty array.
-    async fn get_transaction(
+    /// messages included. The response always carries a `transactions` array;
+    /// an empty array means no transaction matched the lookup.
+    fn get_transaction(
         &self,
         workchain: i8,
         account_hash: &[u8; 32],
         tx_hash_hex: &str,
-    ) -> Result<GetTransactionsResponse, TonRpcError>;
+    ) -> impl Future<Output = Result<GetTransactionsResponse, TonRpcError>> + Send;
 }
 
 /// Errors raised by [`ReqwestTonClient`].
@@ -41,9 +38,6 @@ pub enum TonRpcError {
 }
 
 /// `reqwest`-based [`TonRpcClient`] implementation.
-///
-/// One instance represents one configured upstream; the MPC node pre-builds
-/// a pool of these so request handling only needs to index into the pool.
 pub struct ReqwestTonClient {
     base_url: url::Url,
     client: Client,
@@ -83,7 +77,6 @@ impl ReqwestTonClient {
     }
 }
 
-#[async_trait]
 impl TonRpcClient for ReqwestTonClient {
     async fn get_transaction(
         &self,
