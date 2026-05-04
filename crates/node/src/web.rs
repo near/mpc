@@ -139,6 +139,8 @@ struct ForeignChains {
     bnb: Option<ForeignChain>,
     #[serde(skip_serializing_if = "Option::is_none")]
     base: Option<ForeignChain>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    arbitrum: Option<ForeignChain>,
 }
 
 impl From<ForeignChainsConfig> for ForeignChains {
@@ -151,6 +153,7 @@ impl From<ForeignChainsConfig> for ForeignChains {
             starknet: config.starknet.map(Into::into),
             bnb: config.bnb.map(Into::into),
             base: config.base.map(Into::into),
+            arbitrum: config.arbitrum.map(Into::into),
         }
     }
 }
@@ -259,8 +262,7 @@ async fn contract_state(state: State<WebServerState>) -> String {
         // Clone to avoid holding a lock
         .clone();
 
-    // TODO(#2880): share `protocol_state_to_string` with the contract crate.
-    format!("{:#?}", protocol_state)
+    near_mpc_contract_interface::types::protocol_state_to_string(&protocol_state)
 }
 
 async fn third_party_licenses() -> Html<&'static str> {
@@ -481,6 +483,11 @@ mod tests {
                             val: "blast-secret".to_string(),
                         },
                     },
+                )),
+                arbitrum: Some(test_chain(
+                    "public",
+                    "https://arbitrum.publicnode.com",
+                    AuthConfig::None,
                 )),
             },
             cores: Some(4),

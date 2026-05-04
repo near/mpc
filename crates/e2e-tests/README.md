@@ -3,9 +3,8 @@
 ## Purpose
 
 This is a mostly Claude-generated document describing the Rust end-to-end test
-framework that is replacing the Python pytest system tests. It reflects the
-implementation that lives in `crates/e2e-tests/` and is intended as a reference
-for engineers writing new tests.
+framework. It reflects the implementation that lives in `crates/e2e-tests/`
+and is intended as a reference for engineers writing new tests.
 
 This is a living document — the earlier draft ([#2446]) set the direction; the
 sections below have been revised to match what was actually built.
@@ -313,37 +312,6 @@ read by `must_load_contract_wasm` / `must_load_parallel_contract_wasm` in
 local iteration).
 
 CI runs the same task via the `mpc-e2e-tests` job.
-
----
-
-## Ported tests
-
-The following tests have been ported from pytest to the Rust framework and
-live in `crates/e2e-tests/tests/`:
-
-- `cancellation_of_resharing`
-- `ckd_verification`
-- `cleanup_lagging_node`
-- `foreign_chain_policy`
-- `foreign_chain_tx_validation`
-- `key_resharing`
-- `lost_assets`
-- `parallel_sign_calls`
-- `request_during_resharing`
-- `request_lifecycle`
-- `submit_participant_info`
-- `web_endpoints`
-
-Still on the pytest side (`pytest/tests/`) at the time of writing:
-
-- `test_migration_service.py` — migration service / migration endpoint; seeds
-  14 and 15 are reserved in `tests/common.rs` for the Rust port.
-- `robust_ecdsa/` — robust ECDSA scenarios.
-- `test_key_event.py` — overlaps with `key_resharing` but has additional
-  coverage that has not yet been migrated.
-
-When a pytest is ported, delete the Python version in the same PR so the two
-suites don't drift.
 
 ---
 

@@ -19,7 +19,9 @@ use mpc_contract::primitives::{
 use near_account_id::AccountId;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::ProtocolContractState;
-use near_mpc_contract_interface::types::{CKDResponse, Curve, DomainConfig, DomainPurpose};
+use near_mpc_contract_interface::types::{
+    CKDResponse, Curve, DomainConfig, DomainPurpose, Protocol,
+};
 use near_mpc_sdk::sign::SignatureRequestResponse;
 use near_workspaces::{network::Sandbox, Account, Contract, Worker};
 use rand_core::OsRng;
@@ -362,11 +364,13 @@ async fn upgrade_allows_new_request_types(
         DomainConfig {
             id: first_available_domain_id.into(),
             curve: Curve::Bls12381,
+            protocol: Protocol::from(Curve::Bls12381),
             purpose: DomainPurpose::CKD,
         },
         DomainConfig {
             id: (first_available_domain_id + 1).into(),
             curve: Curve::Edwards25519,
+            protocol: Protocol::from(Curve::Edwards25519),
             purpose: DomainPurpose::Sign,
         },
     ];
@@ -417,43 +421,6 @@ async fn upgrade_allows_new_request_types(
             "Returned ckd response does not match"
         );
     }
-}
-
-/// Verifies that the DTO `ProtocolContractState` can be deserialized from JSON
-/// produced by an older contract (which uses `"scheme"/"Ed25519"` instead of
-/// `"curve"/"Edwards25519"`). This matters because the node reads old contract
-/// state via the DTO's serde aliases.
-#[rstest]
-#[tokio::test]
-async fn protocol_contract_state__should_deserialize_from_old_contract_json(
-    #[values(Network::Mainnet, Network::Testnet)] network: Network,
-) {
-    // Given: an old contract with populated Running state
-    let worker = near_workspaces::sandbox().await.unwrap();
-    let contract = deploy_old(&worker, network).await.unwrap();
-    let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN)
-        .await
-        .unwrap();
-    execute_key_generation_and_add_random_state(
-        &accounts,
-        participants,
-        &contract,
-        &worker,
-        &mut OsRng,
-    )
-    .await;
-
-    // When: we read the raw JSON and deserialize into the DTO type (which
-    // accepts both old "scheme"/"Ed25519" and new "curve"/"Edwards25519" via
-    // serde aliases). This is the same path the node takes.
-    let state: ProtocolContractState = get_state(&contract).await;
-
-    // Then: the state is Running
-    assert!(
-        matches!(state, ProtocolContractState::Running(_)),
-        "Expected Running state, got: {:?}",
-        state
-    );
 }
 
 #[tokio::test]

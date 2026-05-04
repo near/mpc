@@ -1980,6 +1980,7 @@ expression: abi
           "required": [
             "curve",
             "id",
+            "protocol",
             "purpose"
           ],
           "properties": {
@@ -1988,6 +1989,9 @@ expression: abi
             },
             "id": {
               "$ref": "#/definitions/DomainId"
+            },
+            "protocol": {
+              "$ref": "#/definitions/Protocol"
             },
             "purpose": {
               "$ref": "#/definitions/DomainPurpose"
@@ -2294,6 +2298,18 @@ expression: abi
               ],
               "properties": {
                 "Base": {
+                  "$ref": "#/definitions/EvmRpcRequest"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Arbitrum"
+              ],
+              "properties": {
+                "Arbitrum": {
                   "$ref": "#/definitions/EvmRpcRequest"
                 }
               },
@@ -3144,6 +3160,16 @@ expression: abi
               }
             }
           }
+        },
+        "Protocol": {
+          "description": "MPC protocol run for a domain.",
+          "type": "string",
+          "enum": [
+            "CaitSith",
+            "Frost",
+            "ConfidentialKeyDerivation",
+            "DamgardEtAl"
+          ]
         },
         "ProtocolContractState": {
           "description": "The main protocol contract state enum.",

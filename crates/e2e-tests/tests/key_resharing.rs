@@ -4,12 +4,10 @@ use anyhow::{Context, bail};
 use e2e_tests::CLUSTER_WAIT_TIMEOUT;
 use mpc_primitives::domain::{Curve, DomainId};
 use near_mpc_contract_interface::types::{
-    AttemptId, DomainConfig, DomainPurpose, ProtocolContractState,
+    AttemptId, DomainConfig, DomainPurpose, Protocol, ProtocolContractState,
 };
 use rand::SeedableRng;
 
-/// Port of pytest `test_key_event::test_single_domain`.
-///
 /// Tests single-domain key generation and multiple rounds of resharing
 /// with participant set changes, verifying liveness after each round.
 #[tokio::test]
@@ -105,8 +103,6 @@ async fn test_key_resharing() {
         .expect("ckd request failed");
 }
 
-/// Port of pytest `test_key_event::test_multi_domain`.
-///
 /// Verifies that `vote_cancel_keygen` rolls back a stalled keygen: the
 /// cancelled domain is absent from both the keyset and the domain registry,
 /// and `next_domain_id` advances past the skipped id.
@@ -135,21 +131,25 @@ async fn test_multi_domain() {
             DomainConfig {
                 id: DomainId(3),
                 curve: Curve::Secp256k1,
+                protocol: Protocol::from(Curve::Secp256k1),
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(4),
                 curve: Curve::Edwards25519,
+                protocol: Protocol::from(Curve::Edwards25519),
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(5),
                 curve: Curve::Secp256k1,
+                protocol: Protocol::from(Curve::Secp256k1),
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(6),
                 curve: Curve::Edwards25519,
+                protocol: Protocol::from(Curve::Edwards25519),
                 purpose: DomainPurpose::Sign,
             },
         ])
@@ -172,6 +172,7 @@ async fn test_multi_domain() {
         .start_add_domains(vec![DomainConfig {
             id: DomainId(7),
             curve: Curve::Secp256k1,
+            protocol: Protocol::from(Curve::Secp256k1),
             purpose: DomainPurpose::Sign,
         }])
         .await

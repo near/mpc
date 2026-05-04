@@ -43,9 +43,6 @@ jobs:
         env:
           GITHUB_EVENT_INPUTS_BUILD_REF: ${{ github.event.inputs.build-ref }}
 
-      - name: Initialize submodules
-        run: git submodule update --init --recursive
-
       - name: Login to Docker Hub
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:

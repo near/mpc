@@ -205,15 +205,21 @@ To generate a new threshold signature key, all participants must vote for it to 
   "domains":[
     {
       "id":2,
-      "curve":"Secp256k1"
+      "curve":"Secp256k1",
+      "protocol":"CaitSith",
+      "purpose":"Sign"
     },
     {
       "id":3,
-      "curve":"Edwards25519"
+      "curve":"Edwards25519",
+      "protocol":"Frost",
+      "purpose":"Sign"
     },
     {
       "id":4,
-      "curve":"Bls12381"
+      "curve":"Bls12381",
+      "protocol":"ConfidentialKeyDerivation",
+      "purpose":"CKD"
     }
   ]
 }

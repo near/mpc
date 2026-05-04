@@ -442,3 +442,7 @@ evm_inspector_tests!(
 );
 evm_inspector_tests!(foreign_chain_inspector::base::inspector::Base, base);
 evm_inspector_tests!(foreign_chain_inspector::bnb::inspector::Bnb, bnb);
+evm_inspector_tests!(
+    foreign_chain_inspector::arbitrum::inspector::Arbitrum,
+    arbitrum
+);

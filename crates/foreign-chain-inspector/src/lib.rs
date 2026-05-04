@@ -6,6 +6,7 @@ use thiserror::Error;
 pub use jsonrpsee::http_client;
 
 pub mod abstract_chain;
+pub mod arbitrum;
 pub mod base;
 pub mod bitcoin;
 pub mod bnb;
