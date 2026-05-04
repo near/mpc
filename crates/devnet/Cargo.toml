@@ -13,7 +13,7 @@ ed25519-dalek = { workspace = true }
 flume = { workspace = true }
 futures = { workspace = true }
 hex = { workspace = true }
-mpc-contract = { workspace = true, features = ["test-utils", "dev-utils"] }
+mpc-contract = { workspace = true, features = ["compat", "test-utils", "dev-utils"] }
 mpc-primitives = { workspace = true }
 near-account-id = { workspace = true }
 near-mpc-bounded-collections = { workspace = true }

@@ -49,6 +49,7 @@ abi = [
     "near-mpc-contract-interface/abi",
     "mpc-attestation/abi",
     "mpc-primitives/abi",
+    "schemars",
 ]
 # This is used when running `cargo clippy --all-features`, because otherwise `abi` feat will break compilation.
 # But we can't put it under `abi` feat either, because it should appear only when building schema. In other words,
@@ -72,11 +73,7 @@ k256 = { workspace = true, features = [
 ] }
 mpc-attestation = { workspace = true }
 mpc-primitives = { workspace = true }
-near-account-id = { workspace = true, features = [
-    "schemars-v0_8",
-    "abi",
-    "serde",
-] }
+near-account-id = { workspace = true, features = ["serde"] }
 near-mpc-bounded-collections = { workspace = true }
 near-mpc-contract-interface = { workspace = true, features = [
     "ed25519-dalek",
@@ -86,12 +83,19 @@ near-mpc-contract-interface = { workspace = true, features = [
 near-mpc-signature-verifier = { workspace = true }
 near-sdk = { workspace = true }
 rand = { workspace = true, optional = true }
-schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
 thiserror = { workspace = true }
 threshold-signatures = { workspace = true, optional = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+near-account-id = { workspace = true, features = [
+    "serde",
+    "schemars-v0_8",
+    "abi",
+] }
+schemars = { workspace = true, optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { workspace = true, features = ["custom"] }

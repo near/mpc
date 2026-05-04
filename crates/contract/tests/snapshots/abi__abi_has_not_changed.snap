@@ -2302,6 +2302,18 @@ expression: abi
                 }
               },
               "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Arbitrum"
+              ],
+              "properties": {
+                "Arbitrum": {
+                  "$ref": "#/definitions/EvmRpcRequest"
+                }
+              },
+              "additionalProperties": false
             }
           ]
         },

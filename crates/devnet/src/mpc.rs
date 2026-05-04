@@ -26,7 +26,6 @@ use mpc_contract::{
         thresholds::{Threshold, ThresholdParameters},
     },
     state::ProtocolContractState,
-    utils::protocol_state_to_string,
 };
 use mpc_primitives::domain::{Curve, DomainId};
 use near_account_id::AccountId;
@@ -35,7 +34,10 @@ use near_jsonrpc_client::methods;
 use near_jsonrpc_client::methods::query::RpcQueryError;
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_mpc_contract_interface::method_names;
-use near_mpc_contract_interface::types::{DomainConfig, Protocol};
+use near_mpc_contract_interface::types::{
+    protocol_state_to_string, DomainConfig, Protocol,
+    ProtocolContractState as ProtocolContractStateDto,
+};
 use near_primitives::types::{BlockReference, Finality, FunctionArgs};
 use near_primitives::views::QueryRequest;
 use near_sdk::borsh;
@@ -897,7 +899,8 @@ impl MpcDescribeCmd {
         if let Some(contract) = &mpc_setup.contract {
             println!("MPC contract deployed at: {}", contract);
             let contract_state = read_contract_state(&config.rpc, contract).await;
-            print!("{}", protocol_state_to_string(&contract_state));
+            let contract_state_dto: ProtocolContractStateDto = contract_state.into();
+            print!("{}", protocol_state_to_string(&contract_state_dto));
         } else {
             println!("MPC contract is not deployed");
         }

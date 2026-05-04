@@ -793,6 +793,14 @@ pub fn base_evm_request() -> ForeignChainRpcRequest {
     })
 }
 
+pub fn arbitrum_evm_request() -> ForeignChainRpcRequest {
+    ForeignChainRpcRequest::Arbitrum(EvmRpcRequest {
+        tx_id: EvmTxId([0xbb; 32]),
+        extractors: vec![EvmExtractor::BlockHash],
+        finality: EvmFinality::Finalized,
+    })
+}
+
 /// Mirrors the pre-3.10 JSON wire shape of `ThresholdParameters` so that tests
 /// which deploy a production contract binary (whose DTO still expects
 /// `sign_pk`) can feed it threshold-parameter arguments. The current DTO
