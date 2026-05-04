@@ -119,6 +119,13 @@ fn ordered_ext_out_msgs(
         .map(|m| message_created_lt(m).map(|lt| (lt, m)))
         .collect::<Result<_, _>>()?;
     ext_outs_with_lt.sort_by_key(|(lt, _)| *lt);
+    // TON guarantees distinct `created_lt` per emitted message, but a
+    // misbehaving provider could violate that — equal lt values would leave
+    // ordering up to the upstream JSON's array order, producing different
+    // `message_index` assignments across MPC nodes.
+    if let Some(window) = ext_outs_with_lt.windows(2).find(|w| w[0].0 == w[1].0) {
+        return Err(TonInspectionError::MessageDuplicateCreatedLt { value: window[0].0 }.into());
+    }
     Ok(ext_outs_with_lt.into_iter().map(|(_, m)| m).collect())
 }
 
@@ -654,6 +661,35 @@ mod tests {
         assert_matches!(
             err,
             ForeignChainInspectionError::Ton(TonInspectionError::MessageMalformedCreatedLt { .. })
+        );
+    }
+
+    #[tokio::test]
+    async fn extract__should_reject_when_two_ext_outs_share_created_lt() {
+        // Two ext-outs with identical lt — TON protocol forbids it, but a
+        // buggy provider could emit it. Sort order would then depend on the
+        // upstream JSON's array order, which differs across providers/nodes.
+        let mut tx = happy_tx();
+        let other_body = encode_cell(vec![0xaa; 4], 32, vec![]);
+        tx.out_msgs.push(TonMessage {
+            source: Some(ton_address(0, &account_hash())),
+            destination: None,
+            created_lt: tx.out_msgs[0].created_lt.clone(),
+            message_content: Some(TonCellBoc { body: other_body }),
+        });
+        let inspector = inspector_from_tx(tx);
+
+        let err = inspector
+            .extract(
+                tx_id(),
+                TonFinality::MasterchainIncluded,
+                vec![TonExtractor::Log { message_index: 0 }],
+            )
+            .await
+            .unwrap_err();
+        assert_matches!(
+            err,
+            ForeignChainInspectionError::Ton(TonInspectionError::MessageDuplicateCreatedLt { .. })
         );
     }
 

@@ -64,6 +64,11 @@ pub enum TonInspectionError {
 
     #[error("TON ext-out message has unparseable `created_lt`: {value}")]
     MessageMalformedCreatedLt { value: String },
+
+    #[error(
+        "TON ext-out messages share `created_lt` {value}; ordering is nondeterministic across nodes"
+    )]
+    MessageDuplicateCreatedLt { value: u64 },
 }
 
 /// Split a TON cell (supplied as a base64-encoded BoC) into the
