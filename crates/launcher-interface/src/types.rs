@@ -3,6 +3,7 @@ use std::{fmt, path::PathBuf};
 
 use mpc_primitives::hash::NodeImageHash;
 use serde::{Deserialize, Serialize};
+use url::Url;
 
 const SHA256_PREFIX: &str = "sha256:";
 
@@ -20,6 +21,29 @@ pub struct TeeConfig {
 pub enum TeeAuthorityConfig {
     Local,
     Dstack { dstack_endpoint: PathBuf },
+}
+
+/// One PCCS endpoint: a URL plus an optional per-URL TLS trust override.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PccsEndpointConfig {
+    pub url: Url,
+    #[serde(default)]
+    pub tls: Option<PccsTlsTrust>,
+}
+
+/// Per-endpoint TLS trust override. `None` = default reqwest+rustls trust
+/// roots (bundled Mozilla webpki-roots).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "override", rename_all = "snake_case", deny_unknown_fields)]
+pub enum PccsTlsTrust {
+    /// Pin a PEM certificate as an additional trust anchor. Default
+    /// trust roots stay active.
+    CaCertPem { ca_cert_pem: String },
+    /// Disable TLS certificate verification. Recommended only for
+    /// local/loopback PCCS endpoints — not enforced by code; see
+    /// `deployment/cvm-deployment/user-config.toml` for guidance.
+    Insecure,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
