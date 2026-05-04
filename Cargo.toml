@@ -195,7 +195,7 @@ pprof = { version = "0.15.0", features = [
 # `pprof_util 0.4.x` shares the `tikv-jemalloc-ctl 0.5` constraint with
 # `jemalloc_pprof 0.4.2`; needed to render heap dumps as flamegraphs in-process
 # since 0.4.x has no built-in `dump_flamegraph`.
-pprof_util = "0.4"
+pprof_util = "0.8"
 proc-macro2 = "1.0"
 quote = "1.0"
 # TODO(#2051): updating this brings considerable breaking changes
