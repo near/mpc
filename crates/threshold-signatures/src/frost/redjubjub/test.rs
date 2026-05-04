@@ -12,12 +12,10 @@ use crate::test_utils::{
 
 use std::error::Error;
 
-use frost_core::{Field, Scalar};
+use frost_core::Scalar;
 use rand::SeedableRng;
-use rand_core::CryptoRngCore;
-use reddsa::frost::redjubjub::{
-    keys::SigningShare, JubjubBlake2b512, JubjubScalarField, Randomizer, SigningKey, VerifyingKey,
-};
+use rand_core::{CryptoRngCore, RngCore};
+use reddsa::frost::redjubjub::{keys::SigningShare, JubjubBlake2b512, SigningKey, VerifyingKey};
 
 type C = JubjubBlake2b512;
 
@@ -40,9 +38,10 @@ pub fn run_sign_with_presign(
     msg_hash: HashOutput,
 ) -> Result<Vec<(Participant, SignatureOption)>, Box<dyn Error>> {
     let mut rng = MockCryptoRng::seed_from_u64(644_221);
-    let randomizer_scalar = JubjubScalarField::random(&mut rng);
-    // only for testing
-    let randomizer = Randomizer::from_scalar(randomizer_scalar);
+    // 32-byte randomizer seed matches the serialized size of `JubjubScalarField`,
+    // which is what `Randomizer::new_from_commitments` uses upstream.
+    let mut randomizer_seed = vec![0u8; 32];
+    rng.fill_bytes(&mut randomizer_seed);
 
     let mut protocols: GenProtocol<SignatureOption> = Vec::with_capacity(participants.len());
     let presig = run_presign(participants, threshold, actual_signers, rng)?;
@@ -60,7 +59,7 @@ pub fn run_sign_with_presign(
         assert_eq!(participant, participant_redundancy);
         let randomize = if *participant == coordinator {
             is_valid_coordinator = true;
-            Some(randomizer)
+            Some(randomizer_seed.clone())
         } else {
             None
         };

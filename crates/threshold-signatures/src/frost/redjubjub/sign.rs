@@ -13,11 +13,11 @@ use crate::{
 };
 
 use reddsa::frost::redjubjub::{
-    aggregate,
     keys::{KeyPackage, PublicKeyPackage},
-    round2,
+    rerandomized,
+    rerandomized::RandomizedParams,
     round2::SignatureShare,
-    Identifier, RandomizedParams, Randomizer, SigningPackage,
+    CheaterDetection, Identifier, SigningPackage,
 };
 use std::collections::BTreeMap;
 use zeroize::Zeroizing;
@@ -41,6 +41,12 @@ pub(crate) const REDJUBJUB_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES: usize = 1;
 
 /// /!\ Warning: the threshold in this scheme is the exactly the
 ///              same as the max number of malicious parties.
+///
+/// The `randomizer_seed` is the upstream-recommended way to randomize a FROST
+/// signing run: the coordinator passes `Some(seed)` and other participants pass
+/// `None`. The seed is forwarded to participants, who deterministically derive
+/// the randomizer from `(seed, signing_commitments)` so they don't have to
+/// trust the coordinator's RNG.
 #[allow(clippy::too_many_arguments)]
 pub fn sign(
     participants: &[Participant],
@@ -50,7 +56,7 @@ pub fn sign(
     keygen_output: KeygenOutput,
     presignature: PresignOutput,
     message: Vec<u8>,
-    randomizer: Option<Randomizer>,
+    randomizer_seed: Option<Vec<u8>>,
 ) -> Result<impl Protocol<Output = SignatureOption>, InitializationError> {
     let threshold = threshold.into();
     let participants = assert_sign_inputs(participants, threshold, me, coordinator)?;
@@ -66,7 +72,7 @@ pub fn sign(
         keygen_output,
         presignature,
         message,
-        randomizer,
+        randomizer_seed,
     );
     Ok(make_protocol(comms, fut))
 }
@@ -81,11 +87,11 @@ async fn fut_wrapper(
     keygen_output: KeygenOutput,
     presignature: PresignOutput,
     message: Vec<u8>,
-    randomizer: Option<Randomizer>,
+    randomizer_seed: Option<Vec<u8>>,
 ) -> Result<SignatureOption, ProtocolError> {
     if me == coordinator {
-        match randomizer {
-            Some(randomizer) => {
+        match randomizer_seed {
+            Some(seed) => {
                 do_sign_coordinator(
                     chan,
                     participants,
@@ -94,18 +100,18 @@ async fn fut_wrapper(
                     keygen_output,
                     &presignature,
                     message,
-                    randomizer,
+                    seed,
                 )
                 .await
             }
             None => Err(ProtocolError::InvalidInput(
-                "Randomizer should not be some".to_string(),
+                "Randomizer seed should not be none for coordinator".to_string(),
             )),
         }
     } else {
-        match randomizer {
+        match randomizer_seed {
             Some(_) => Err(ProtocolError::InvalidInput(
-                "Randomizer should be none".to_string(),
+                "Randomizer seed should be none for non-coordinator".to_string(),
             )),
             None => {
                 do_sign_participant(
@@ -141,26 +147,30 @@ async fn do_sign_coordinator(
     keygen_output: KeygenOutput,
     presignature: &PresignOutput,
     message: Vec<u8>,
-    randomizer: Randomizer,
+    randomizer_seed: Vec<u8>,
 ) -> Result<SignatureOption, ProtocolError> {
     // --- Round 1
     let key_package = construct_key_package(threshold, me, &keygen_output)?;
     let key_package = Zeroizing::new(key_package);
     let signing_package = SigningPackage::new(presignature.commitments_map.clone(), &message);
-    let randomized_params =
-        RandomizedParams::from_randomizer(&keygen_output.public_key, randomizer);
+    let randomized_params = RandomizedParams::regenerate_from_seed_and_commitments(
+        &keygen_output.public_key,
+        &randomizer_seed,
+        &presignature.commitments_map,
+    )
+    .map_err(|_| ProtocolError::ErrorFrostSigningFailed)?;
 
-    let randomizer = randomized_params.randomizer();
-    // Send the Randomizer to everyone
+    // Send the randomizer seed to everyone; participants regenerate the
+    // randomizer themselves from the seed and signing commitments.
     let wait_round_1 = chan.next_waitpoint();
-    chan.send_many(wait_round_1, &randomizer)?;
+    chan.send_many(wait_round_1, &randomizer_seed)?;
 
     // Round 2
-    let signature_share = round2::sign(
+    let signature_share = rerandomized::sign_with_randomizer_seed(
         &signing_package,
         &presignature.nonces,
         &key_package,
-        *randomizer,
+        &randomizer_seed,
     )
     .map_err(|_| ProtocolError::ErrorFrostSigningFailed)?;
 
@@ -179,12 +189,16 @@ async fn do_sign_coordinator(
 
     // We use empty BTreeMap because "cheater-detection" feature is disabled
     // Feature "cheater-detection" unveils existant malicious participants
-    let pk_package = PublicKeyPackage::new(BTreeMap::new(), keygen_output.public_key);
+    let pk_package = PublicKeyPackage::new(BTreeMap::new(), keygen_output.public_key, None);
 
-    let signature = aggregate(
+    // Use `Disabled` cheater detection because we intentionally pass an empty
+    // verifying-shares map in `pk_package`. The default `aggregate` (which uses
+    // `FirstCheater`) would reject this with `UnknownIdentifier`.
+    let signature = rerandomized::aggregate_custom(
         &signing_package,
         &signature_shares,
         &pk_package,
+        CheaterDetection::Disabled,
         &randomized_params,
     )
     .map_err(|_| ProtocolError::ErrorFrostAggregation)?;
@@ -218,25 +232,25 @@ async fn do_sign_participant(
         ));
     }
 
-    // Receive the Randomizer from the coordinator
+    // Receive the randomizer seed from the coordinator
     let wait_round_1 = chan.next_waitpoint();
-    let randomizer = loop {
-        let (from, randomizer): (_, Randomizer) = chan.recv(wait_round_1).await?;
+    let randomizer_seed = loop {
+        let (from, seed): (_, Vec<u8>) = chan.recv(wait_round_1).await?;
         if from != coordinator {
             continue;
         }
-        break randomizer;
+        break seed;
     };
 
     let key_package = construct_key_package(threshold, me, &keygen_output)?;
     let key_package = Zeroizing::new(key_package);
     let signing_package = SigningPackage::new(presignature.commitments_map.clone(), &message);
     // nonces are zeroized when presignature drops (ZeroizeOnDrop)
-    let signature_share = round2::sign(
+    let signature_share = rerandomized::sign_with_randomizer_seed(
         &signing_package,
         &presignature.nonces,
         &key_package,
-        randomizer,
+        &randomizer_seed,
     )
     .map_err(|_| ProtocolError::ErrorFrostSigningFailed)?;
 
@@ -291,11 +305,20 @@ mod test {
     use frost_core::Field;
     use rand::{seq::SliceRandom as _, SeedableRng};
     use rand_core::RngCore;
-    use reddsa::frost::redjubjub::{
-        round1::commit, JubjubBlake2b512, JubjubScalarField, Randomizer,
-    };
+    use reddsa::frost::redjubjub::{round1::commit, JubjubBlake2b512, JubjubScalarField};
     use rstest::rstest;
     use std::collections::BTreeMap;
+
+    /// Length in bytes of a randomizer seed for `JubjubBlake2b512`. This must
+    /// match the serialized size of a `JubjubScalarField` element, which is
+    /// what `Randomizer::new_from_commitments` uses upstream.
+    const RANDOMIZER_SEED_LEN: usize = 32;
+
+    fn make_randomizer_seed<R: RngCore>(rng: &mut R) -> Vec<u8> {
+        let mut seed = vec![0u8; RANDOMIZER_SEED_LEN];
+        rng.fill_bytes(&mut seed);
+        seed
+    }
 
     #[test]
     fn stress() {
@@ -351,9 +374,7 @@ mod test {
         }
 
         let mut rng = MockCryptoRng::seed_from_u64(644_221);
-        let randomizer_scalar = JubjubScalarField::random(&mut rng);
-        // Only for testing
-        let randomizer = Randomizer::from_scalar(randomizer_scalar);
+        let randomizer_seed = make_randomizer_seed(&mut rng);
         // This checks the output signature validity internally
         let result = crate::test_utils::run_sign::<JubjubBlake2b512, _, _, _>(
             participants_sign_builder,
@@ -366,8 +387,8 @@ mod test {
                     nonces,
                     commitments_map: commitments_map.clone(),
                 };
-                let randomize = if me == coordinator {
-                    Some(randomizer)
+                let seed = if me == coordinator {
+                    Some(randomizer_seed.clone())
                 } else {
                     None
                 };
@@ -379,7 +400,7 @@ mod test {
                     keygen_output,
                     presignature,
                     msg.clone(),
-                    randomize,
+                    seed,
                 )
                 .map(|sig| Box::new(sig) as Box<dyn Protocol<Output = SignatureOption>>)
             },
@@ -414,8 +435,7 @@ mod test {
             nonces_map.insert(*p, nonces);
         }
 
-        let randomizer_scalar = JubjubScalarField::random(&mut presig_rng);
-        let randomizer = Randomizer::from_scalar(randomizer_scalar);
+        let randomizer_seed = make_randomizer_seed(&mut presig_rng);
 
         let participants_list: Vec<_> = keys.iter().map(|(p, _)| *p).collect();
 
@@ -429,8 +449,8 @@ mod test {
                     nonces: nonces_map[&p].clone(),
                     commitments_map: commitments_map.clone(),
                 };
-                let randomize = if p == coordinator {
-                    Some(randomizer)
+                let seed = if p == coordinator {
+                    Some(randomizer_seed.clone())
                 } else {
                     None
                 };
@@ -443,7 +463,7 @@ mod test {
                     keygen_output,
                     presign_output,
                     message.clone(),
-                    randomize,
+                    seed,
                 )
             },
             expected_buffer_by_role(
