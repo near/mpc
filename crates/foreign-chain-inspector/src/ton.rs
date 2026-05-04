@@ -43,6 +43,9 @@ pub enum TonInspectionError {
     #[error("TON transaction account mismatch: request asked for {expected}, RPC returned {got}")]
     AccountMismatch { expected: String, got: String },
 
+    #[error("TON transaction hash mismatch: request asked for {expected}, RPC returned {got}")]
+    HashMismatch { expected: String, got: String },
+
     #[error("TON message at index {index} is not an ext-out message")]
     NotAnExtOutMessage { index: u64 },
 

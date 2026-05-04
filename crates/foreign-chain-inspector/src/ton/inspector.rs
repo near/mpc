@@ -1,6 +1,7 @@
 use super::{TonExtractedValue, TonInspectionError, normalize_body_boc};
 use crate::ton::rpc_client::TonRpcClient;
 use crate::{ForeignChainInspectionError, ForeignChainInspector};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use foreign_chain_rpc_interfaces::ton::{TonMessage, TonTransaction};
 use near_mpc_contract_interface::types::{Hash256, TonLog};
 use tonlib_core::types::TonAddress;
@@ -83,6 +84,7 @@ impl<Client: TonRpcClient> ForeignChainInspector for TonInspector<Client> {
         )?;
 
         ensure_account_matches(workchain, &account, &tx.account)?;
+        ensure_hash_matches(&tx_hash, &tx.hash)?;
         ensure_finalized(&tx, &finality)?;
         ensure_transaction_succeeded(&tx)?;
 
@@ -149,6 +151,21 @@ fn ensure_account_matches(
         }
         .into())
     }
+}
+
+fn ensure_hash_matches(
+    expected: &[u8; 32],
+    rpc_hash_b64: &str,
+) -> Result<(), ForeignChainInspectionError> {
+    let mismatch = || TonInspectionError::HashMismatch {
+        expected: hex::encode(expected),
+        got: rpc_hash_b64.to_string(),
+    };
+    let decoded = STANDARD.decode(rpc_hash_b64).map_err(|_| mismatch())?;
+    if decoded.as_slice() != expected.as_slice() {
+        return Err(mismatch().into());
+    }
+    Ok(())
 }
 
 fn ensure_finalized(
@@ -272,6 +289,12 @@ mod tests {
         [0x11; 32]
     }
 
+    /// The tx hash the request asks for; `happy_tx()`'s response echoes its
+    /// base64 form so `ensure_hash_matches` is satisfied.
+    fn tx_hash_bytes() -> [u8; 32] {
+        [0xde; 32]
+    }
+
     fn ton_address(workchain: i8, hash: &[u8; 32]) -> TonAddress {
         TonAddress::new(workchain.into(), tonlib_core::types::TonHash::from(*hash))
     }
@@ -281,7 +304,7 @@ mod tests {
     fn happy_tx() -> TonTransaction {
         TonTransaction {
             account: ton_address(0, &account_hash()),
-            hash: "dead".to_string(),
+            hash: base64::engine::general_purpose::STANDARD.encode(tx_hash_bytes()),
             mc_block_seqno: Some(12345),
             description: TonTransactionDescription {
                 aborted: false,
@@ -317,7 +340,7 @@ mod tests {
         TonTransactionId {
             workchain: 0,
             account: account_hash(),
-            tx_hash: [0xde; 32],
+            tx_hash: tx_hash_bytes(),
         }
     }
 
@@ -450,6 +473,29 @@ mod tests {
         assert_matches!(
             err,
             ForeignChainInspectionError::Ton(TonInspectionError::AccountMismatch { .. })
+        );
+    }
+
+    #[tokio::test]
+    async fn extract__should_reject_when_response_hash_does_not_match_request() {
+        // Same account, but the response transaction's hash differs from what
+        // the request asked for (e.g. provider regression that ignores the
+        // hash filter).
+        let mut tx = happy_tx();
+        tx.hash = base64::engine::general_purpose::STANDARD.encode([0x55; 32]);
+        let inspector = inspector_from_tx(tx);
+
+        let err = inspector
+            .extract(
+                tx_id(),
+                TonFinality::MasterchainIncluded,
+                vec![TonExtractor::Log { message_index: 0 }],
+            )
+            .await
+            .unwrap_err();
+        assert_matches!(
+            err,
+            ForeignChainInspectionError::Ton(TonInspectionError::HashMismatch { .. })
         );
     }
 
