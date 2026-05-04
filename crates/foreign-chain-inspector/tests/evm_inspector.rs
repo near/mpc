@@ -544,7 +544,13 @@ macro_rules! evm_inspector_tests {
                 // then
                 assert_matches!(
                     response,
-                    Err(ForeignChainInspectionError::NonCanonicalBlock)
+                    Err(ForeignChainInspectionError::NonCanonicalBlock {
+                        block_number,
+                        receipt_hash,
+                        canonical_hash,
+                    }) if block_number == U64::from(90)
+                        && receipt_hash == H256::from([0xbb; 32])
+                        && canonical_hash == H256::from([0xcc; 32])
                 );
             }
         }

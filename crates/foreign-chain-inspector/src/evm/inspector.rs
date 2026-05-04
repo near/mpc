@@ -133,7 +133,11 @@ where
             .await?;
 
         if canonical.hash != receipt_block_hash {
-            return Err(ForeignChainInspectionError::NonCanonicalBlock);
+            return Err(ForeignChainInspectionError::NonCanonicalBlock {
+                block_number: receipt_block_number,
+                receipt_hash: receipt_block_hash,
+                canonical_hash: canonical.hash,
+            });
         }
         Ok(())
     }
