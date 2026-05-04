@@ -16,7 +16,8 @@ pub struct TonTransaction {
     /// Raw account address in `"<workchain>:<hex>"` format (e.g. `"0:a1b2…"`).
     pub account: String,
 
-    /// Transaction hash. toncenter v3 returns lowercase hex (64 chars).
+    /// Transaction hash. toncenter v3 returns this as standard base64
+    /// (44 chars including `=` padding; may contain `+` and `/`), not hex.
     pub hash: String,
 
     /// Masterchain block seqno that references this transaction's shard block.

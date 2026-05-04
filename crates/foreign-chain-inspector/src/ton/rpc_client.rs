@@ -52,8 +52,9 @@ pub struct ReqwestTonClient {
 impl ReqwestTonClient {
     /// Construct from a configured base URL and auth kind.
     ///
-    /// `base_url` must be the `/api/v3/` root — the caller is responsible for
-    /// the trailing slash (consistent with other adapters' config).
+    /// `base_url` should be the `/api/v3/` root. A trailing slash is appended
+    /// if missing — without it, `Url::join("transactions")` would drop the
+    /// last path segment (`/api/v3` + `transactions` = `/api/transactions`).
     pub fn new(base_url: String, auth: RpcAuthentication) -> Result<Self, TonRpcError> {
         let mut headers = HeaderMap::new();
         match auth {
@@ -72,7 +73,11 @@ impl ReqwestTonClient {
             .build()
             .map_err(TonRpcError::Http)?;
 
-        let base_url = url::Url::parse(&base_url).map_err(TonRpcError::InvalidUrl)?;
+        let mut base_url = url::Url::parse(&base_url).map_err(TonRpcError::InvalidUrl)?;
+        if !base_url.path().ends_with('/') {
+            let normalized = format!("{}/", base_url.path());
+            base_url.set_path(&normalized);
+        }
 
         Ok(Self { base_url, client })
     }
@@ -151,5 +156,29 @@ mod tests {
         let hash = [0x00; 32];
         let got = format_ton_account(-1, &hash);
         assert!(got.starts_with("-1:"));
+    }
+
+    #[test]
+    fn new__should_append_trailing_slash_when_missing() {
+        // Without normalization, `Url::join("transactions")` would replace the
+        // last segment of `/api/v3` and produce `/api/transactions`.
+        let client = ReqwestTonClient::new(
+            "https://example.invalid/api/v3".to_string(),
+            RpcAuthentication::KeyInUrl,
+        )
+        .expect("valid base url");
+        let joined = client.base_url.join(GET_TRANSACTIONS_PATH).unwrap();
+        assert_eq!(joined.path(), "/api/v3/transactions");
+    }
+
+    #[test]
+    fn new__should_preserve_existing_trailing_slash() {
+        let client = ReqwestTonClient::new(
+            "https://example.invalid/api/v3/".to_string(),
+            RpcAuthentication::KeyInUrl,
+        )
+        .expect("valid base url");
+        let joined = client.base_url.join(GET_TRANSACTIONS_PATH).unwrap();
+        assert_eq!(joined.path(), "/api/v3/transactions");
     }
 }
