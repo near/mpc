@@ -58,7 +58,7 @@ foreign_chains:
     max_retries: 3
     providers:
       public:
-        # toncenter v3 REST endpoint; trailing slash required.
+        # toncenter v3 REST endpoint.
         rpc_url: "https://testnet.toncenter.com/api/v3/"
         auth:
           kind: none

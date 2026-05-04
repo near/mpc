@@ -456,7 +456,7 @@ foreign_chains:
     max_retries: 3
     providers:
       toncenter:
-        # Must be the /api/v3/ root (REST, not JSON-RPC). Trailing slash required.
+        # Must be the /api/v3/ root (REST, not JSON-RPC).
         rpc_url: "https://toncenter.com/api/v3/"
         auth:
           # toncenter uses a bare X-API-Key header (no Bearer prefix).
