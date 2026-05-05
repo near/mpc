@@ -64,7 +64,9 @@ where
         )
         .await?;
 
-        if transaction_receipt.status != U64::one() {
+        let transaction_success = transaction_receipt.status != U64::one();
+
+        if transaction_success {
             return Err(ForeignChainInspectionError::TransactionFailed);
         }
 
