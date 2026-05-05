@@ -1,7 +1,7 @@
 use super::key_state::AuthenticatedParticipantId;
 use crate::errors::{DomainError, Error};
 use crate::primitives::participants::Participants;
-use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, DomainPurpose};
+use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, DomainPurpose, Protocol};
 use near_sdk::{log, near};
 use std::collections::BTreeMap;
 
@@ -15,6 +15,48 @@ pub fn is_valid_curve_for_purpose(purpose: DomainPurpose, curve: Curve) -> bool 
             | (DomainPurpose::ForeignTx, Curve::Secp256k1)
             | (DomainPurpose::CKD, Curve::Bls12381)
     )
+}
+
+/// Returns whether the given protocol is valid for the given purpose.
+pub fn is_valid_protocol_for_purpose(purpose: DomainPurpose, protocol: Protocol) -> bool {
+    matches!(
+        (purpose, protocol),
+        (DomainPurpose::Sign, Protocol::CaitSith)
+            | (DomainPurpose::Sign, Protocol::DamgardEtAl)
+            | (DomainPurpose::Sign, Protocol::Frost)
+            | (DomainPurpose::ForeignTx, Protocol::CaitSith)
+            | (DomainPurpose::CKD, Protocol::ConfidentialKeyDerivation)
+    )
+}
+
+/// Validates that a `DomainConfig` is internally consistent:
+///   - `curve` matches the curve derived from `protocol`, and
+///   - `protocol` is allowed for the requested `purpose`.
+///
+/// The legacy `Curve::V2Secp256k1` value is accepted as a stand-in for
+/// `(Secp256k1, DamgardEtAl)`.
+// TODO(#2442): drop the V2Secp256k1 carve-out once that variant is removed
+// from `Curve` in the next PR.
+pub fn validate_domain_consistency(domain: &DomainConfig) -> Result<(), Error> {
+    let expected = Curve::from(domain.protocol);
+    let curve_ok = domain.curve == expected
+        || (domain.curve == Curve::V2Secp256k1 && domain.protocol == Protocol::DamgardEtAl);
+    if !curve_ok {
+        return Err(DomainError::InconsistentCurveProtocol {
+            curve: domain.curve,
+            protocol: domain.protocol,
+            expected,
+        }
+        .into());
+    }
+    if !is_valid_protocol_for_purpose(domain.purpose, domain.protocol) {
+        return Err(DomainError::InvalidProtocolPurposeCombination {
+            protocol: domain.protocol,
+            purpose: domain.purpose,
+        }
+        .into());
+    }
+    Ok(())
 }
 
 /// All the domains present in the contract, as well as the next domain ID which is kept to ensure
@@ -35,16 +77,18 @@ impl DomainRegistry {
     /// Migration from legacy: creates a DomainRegistry with a single ecdsa key.
     pub fn new_single_ecdsa_key_from_legacy() -> Self {
         let mut registry = Self::default();
-        registry.add_domain(Curve::Secp256k1, DomainPurpose::Sign);
+        registry.add_domain(Curve::Secp256k1, Protocol::CaitSith, DomainPurpose::Sign);
         registry
     }
 
-    /// Add a single domain with the given protocol and purpose, returning the DomainId of the
-    /// added domain.
-    fn add_domain(&mut self, curve: Curve, purpose: DomainPurpose) -> DomainId {
+    /// Append a domain at `next_domain_id`, returning its DomainId. The caller is
+    /// responsible for any validation (curve/protocol consistency, etc.); this
+    /// helper does no checks.
+    fn add_domain(&mut self, curve: Curve, protocol: Protocol, purpose: DomainPurpose) -> DomainId {
         let domain = DomainConfig {
             id: DomainId(self.next_domain_id),
             curve,
+            protocol,
             purpose,
         };
         self.next_domain_id += 1;
@@ -58,7 +102,9 @@ impl DomainRegistry {
     pub fn add_domains(&self, domains: Vec<DomainConfig>) -> Result<DomainRegistry, Error> {
         let mut new_registry = self.clone();
         for domain in domains {
-            let new_domain_id = new_registry.add_domain(domain.curve, domain.purpose);
+            validate_domain_consistency(&domain)?;
+            let new_domain_id =
+                new_registry.add_domain(domain.curve, domain.protocol, domain.purpose);
             if new_domain_id != domain.id {
                 return Err(DomainError::NewDomainIdsNotContiguous {
                     expected_id: new_domain_id,
@@ -107,6 +153,9 @@ impl DomainRegistry {
             domains,
             next_domain_id,
         };
+        for domain in &registry.domains {
+            validate_domain_consistency(domain)?;
+        }
         for (left, right) in registry.domains.iter().zip(registry.domains.iter().skip(1)) {
             if left.id.0 >= right.id.0 {
                 return Err(DomainError::InvalidDomains.into());
@@ -177,8 +226,9 @@ impl AddDomainsVotes {
 #[cfg(test)]
 pub mod tests {
     use super::{
-        is_valid_curve_for_purpose, AddDomainsVotes, Curve, DomainConfig, DomainId, DomainPurpose,
-        DomainRegistry, Participants,
+        is_valid_curve_for_purpose, is_valid_protocol_for_purpose, validate_domain_consistency,
+        AddDomainsVotes, Curve, DomainConfig, DomainId, DomainPurpose, DomainRegistry,
+        Participants, Protocol,
     };
     use crate::primitives::key_state::AuthenticatedParticipantId;
     use crate::primitives::test_utils::{
@@ -195,11 +245,13 @@ pub mod tests {
             DomainConfig {
                 id: DomainId(0),
                 curve: Curve::Secp256k1,
+                protocol: Protocol::from(Curve::Secp256k1),
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(1),
                 curve: Curve::Edwards25519,
+                protocol: Protocol::from(Curve::Edwards25519),
                 purpose: DomainPurpose::Sign,
             },
         ];
@@ -210,11 +262,13 @@ pub mod tests {
             DomainConfig {
                 id: DomainId(2),
                 curve: Curve::Bls12381,
+                protocol: Protocol::from(Curve::Bls12381),
                 purpose: DomainPurpose::CKD,
             },
             DomainConfig {
                 id: DomainId(3),
                 curve: Curve::V2Secp256k1,
+                protocol: Protocol::from(Curve::V2Secp256k1),
                 purpose: DomainPurpose::Sign,
             },
         ];
@@ -226,6 +280,7 @@ pub mod tests {
         let domains3 = vec![DomainConfig {
             id: DomainId(5),
             curve: Curve::Secp256k1,
+            protocol: Protocol::from(Curve::Secp256k1),
             purpose: DomainPurpose::Sign,
         }];
         let _ = new_registry.add_domains(domains3).unwrap_err();
@@ -235,11 +290,13 @@ pub mod tests {
             DomainConfig {
                 id: DomainId(5),
                 curve: Curve::Secp256k1,
+                protocol: Protocol::from(Curve::Secp256k1),
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(4),
                 curve: Curve::Secp256k1,
+                protocol: Protocol::from(Curve::Secp256k1),
                 purpose: DomainPurpose::Sign,
             },
         ];
@@ -252,21 +309,25 @@ pub mod tests {
             DomainConfig {
                 id: DomainId(0),
                 curve: Curve::Secp256k1,
+                protocol: Protocol::from(Curve::Secp256k1),
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(2),
                 curve: Curve::Edwards25519,
+                protocol: Protocol::from(Curve::Edwards25519),
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(3),
                 curve: Curve::Bls12381,
+                protocol: Protocol::from(Curve::Bls12381),
                 purpose: DomainPurpose::CKD,
             },
             DomainConfig {
                 id: DomainId(4),
                 curve: Curve::V2Secp256k1,
+                protocol: Protocol::from(Curve::V2Secp256k1),
                 purpose: DomainPurpose::Sign,
             },
         ];
@@ -291,16 +352,19 @@ pub mod tests {
                 DomainConfig {
                     id: DomainId(0),
                     curve: Curve::Secp256k1,
+                    protocol: Protocol::from(Curve::Secp256k1),
                     purpose: DomainPurpose::Sign,
                 },
                 DomainConfig {
                     id: DomainId(2),
                     curve: Curve::Edwards25519,
+                    protocol: Protocol::from(Curve::Edwards25519),
                     purpose: DomainPurpose::Sign,
                 },
                 DomainConfig {
                     id: DomainId(3),
                     curve: Curve::Secp256k1,
+                    protocol: Protocol::from(Curve::Secp256k1),
                     purpose: DomainPurpose::Sign,
                 },
             ],
@@ -373,6 +437,76 @@ pub mod tests {
         assert_eq!(is_valid_curve_for_purpose(purpose, curve), expected);
     }
 
+    #[rstest]
+    // Valid combinations
+    #[case(DomainPurpose::Sign, Protocol::CaitSith, true)]
+    #[case(DomainPurpose::Sign, Protocol::DamgardEtAl, true)]
+    #[case(DomainPurpose::Sign, Protocol::Frost, true)]
+    #[case(DomainPurpose::ForeignTx, Protocol::CaitSith, true)]
+    #[case(DomainPurpose::CKD, Protocol::ConfidentialKeyDerivation, true)]
+    // Invalid combinations
+    #[case(DomainPurpose::Sign, Protocol::ConfidentialKeyDerivation, false)]
+    #[case(DomainPurpose::ForeignTx, Protocol::Frost, false)]
+    #[case(DomainPurpose::ForeignTx, Protocol::ConfidentialKeyDerivation, false)]
+    #[case(DomainPurpose::ForeignTx, Protocol::DamgardEtAl, false)]
+    #[case(DomainPurpose::CKD, Protocol::CaitSith, false)]
+    fn test_valid_protocol_purpose_combinations(
+        #[case] purpose: DomainPurpose,
+        #[case] protocol: Protocol,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(is_valid_protocol_for_purpose(purpose, protocol), expected);
+    }
+
+    #[rstest]
+    // Canonical pairings (curve consistent with protocol AND protocol allowed for purpose)
+    #[case(Curve::Secp256k1, Protocol::CaitSith, DomainPurpose::Sign, true)]
+    #[case(Curve::Secp256k1, Protocol::CaitSith, DomainPurpose::ForeignTx, true)]
+    #[case(Curve::Secp256k1, Protocol::DamgardEtAl, DomainPurpose::Sign, true)]
+    #[case(Curve::Edwards25519, Protocol::Frost, DomainPurpose::Sign, true)]
+    #[case(
+        Curve::Bls12381,
+        Protocol::ConfidentialKeyDerivation,
+        DomainPurpose::CKD,
+        true
+    )]
+    // Legacy: V2Secp256k1 stands in for (Secp256k1, DamgardEtAl) until V2 is removed.
+    #[case(Curve::V2Secp256k1, Protocol::DamgardEtAl, DomainPurpose::Sign, true)]
+    // Curve/protocol mismatches
+    #[case(Curve::Secp256k1, Protocol::Frost, DomainPurpose::Sign, false)]
+    #[case(Curve::Edwards25519, Protocol::CaitSith, DomainPurpose::Sign, false)]
+    #[case(Curve::Bls12381, Protocol::DamgardEtAl, DomainPurpose::Sign, false)]
+    #[case(Curve::V2Secp256k1, Protocol::CaitSith, DomainPurpose::Sign, false)]
+    // Protocol/purpose mismatches (curve/protocol consistent, but protocol not allowed for purpose)
+    #[case(
+        Curve::Secp256k1,
+        Protocol::DamgardEtAl,
+        DomainPurpose::ForeignTx,
+        false
+    )]
+    #[case(Curve::Edwards25519, Protocol::Frost, DomainPurpose::ForeignTx, false)]
+    #[case(
+        Curve::Bls12381,
+        Protocol::ConfidentialKeyDerivation,
+        DomainPurpose::Sign,
+        false
+    )]
+    #[case(Curve::Secp256k1, Protocol::CaitSith, DomainPurpose::CKD, false)]
+    fn test_domain_consistency(
+        #[case] curve: Curve,
+        #[case] protocol: Protocol,
+        #[case] purpose: DomainPurpose,
+        #[case] expected_ok: bool,
+    ) {
+        let domain = DomainConfig {
+            id: DomainId(0),
+            curve,
+            protocol,
+            purpose,
+        };
+        assert_eq!(validate_domain_consistency(&domain).is_ok(), expected_ok);
+    }
+
     fn setup_participants(n: usize) -> (Participants, Vec<AuthenticatedParticipantId>) {
         let mut participants = Participants::new();
         let mut accounts = Vec::new();
@@ -395,6 +529,7 @@ pub mod tests {
         vec![DomainConfig {
             id: DomainId(0),
             curve: Curve::Secp256k1,
+            protocol: Protocol::from(Curve::Secp256k1),
             purpose: DomainPurpose::Sign,
         }]
     }
@@ -473,11 +608,13 @@ pub mod tests {
         let proposal_a = vec![DomainConfig {
             id: DomainId(0),
             curve: Curve::Secp256k1,
+            protocol: Protocol::from(Curve::Secp256k1),
             purpose: DomainPurpose::Sign,
         }];
         let proposal_b = vec![DomainConfig {
             id: DomainId(0),
             curve: Curve::Edwards25519,
+            protocol: Protocol::from(Curve::Edwards25519),
             purpose: DomainPurpose::Sign,
         }];
         let mut votes = AddDomainsVotes::default();

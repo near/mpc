@@ -21,7 +21,9 @@ use near_mpc_bounded_collections::NonEmptyBTreeSet;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::ProtocolContractState;
-use near_mpc_contract_interface::types::{CKDResponse, Curve, DomainConfig, DomainPurpose};
+use near_mpc_contract_interface::types::{
+    CKDResponse, Curve, DomainConfig, DomainPurpose, Protocol,
+};
 use near_mpc_sdk::sign::SignatureRequestResponse;
 use near_workspaces::{network::Sandbox, Account, Contract, Worker};
 use rand_core::OsRng;
@@ -365,11 +367,13 @@ async fn upgrade_allows_new_request_types(
         DomainConfig {
             id: first_available_domain_id.into(),
             curve: Curve::Bls12381,
+            protocol: Protocol::from(Curve::Bls12381),
             purpose: DomainPurpose::CKD,
         },
         DomainConfig {
             id: (first_available_domain_id + 1).into(),
             curve: Curve::Edwards25519,
+            protocol: Protocol::from(Curve::Edwards25519),
             purpose: DomainPurpose::Sign,
         },
     ];

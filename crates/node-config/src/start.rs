@@ -1,6 +1,7 @@
 use super::ConfigFile;
 use anyhow::Context;
 use clap::ValueEnum;
+use launcher_interface::types::PccsEndpointConfig;
 use near_mpc_bounded_collections::NonEmptyVec;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -25,19 +26,26 @@ pub struct StartConfig {
     /// Node configuration (indexer, protocol parameters, etc.).
     pub node: ConfigFile,
     pub log: LogConfig,
-    /// Base URLs of PCCS servers used to fetch TDX attestation collateral.
-    /// Tried in order on every fetch; the first one to succeed wins, and the
-    /// rest are used only as fallbacks when earlier entries fail. At least
-    /// one URL is required. Defaults to Phala's PCCS if the field is omitted.
-    #[serde(default = "default_pccs_urls")]
-    pub pccs_urls: NonEmptyVec<url::Url>,
+    /// PCCS servers used to fetch TDX attestation collateral. Each entry
+    /// is a URL plus an optional per-URL TLS trust override. Tried in
+    /// order on every fetch; the first one to succeed wins, the rest are
+    /// fallbacks. At least one entry is required. Defaults to Phala's
+    /// PCCS if the field is omitted.
+    ///
+    /// Per-URL TLS trust override (the `tls = ...` part of each entry)
+    /// lets an operator combine, for example, a self-signed local PCCS
+    /// (`tls = { override = "insecure" }`) with public-CA fallbacks
+    /// (`tls` omitted) in the same fallback chain.
+    #[serde(default = "default_pccs_endpoints")]
+    pub pccs_endpoints: NonEmptyVec<PccsEndpointConfig>,
 }
 
-pub fn default_pccs_urls() -> NonEmptyVec<url::Url> {
+pub fn default_pccs_endpoints() -> NonEmptyVec<PccsEndpointConfig> {
     let url: url::Url = launcher_interface::DEFAULT_PCCS_URL
         .parse()
         .expect("default PCCS URL is valid");
-    NonEmptyVec::try_from(vec![url]).expect("single-element vec is non-empty")
+    NonEmptyVec::try_from(vec![PccsEndpointConfig { url, tls: None }])
+        .expect("single-element vec is non-empty")
 }
 
 impl StartConfig {
@@ -184,6 +192,7 @@ pub enum DownloadConfigType {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use launcher_interface::types::PccsTlsTrust;
 
     /// The tee-launcher blocks the "gcp" key in TEE mode using the hardcoded
     /// string "gcp" (see crates/tee-launcher/src/config.rs).
@@ -205,77 +214,101 @@ mod tests {
         );
     }
 
-    /// A single-element TOML array parses as a [`NonEmptyVec`] with one entry.
-    /// This is the minimum valid form of the `pccs_urls` field.
+    /// A single bare-URL entry (no `tls` override) parses as a one-element
+    /// [`NonEmptyVec`] with default trust.
     #[test]
-    fn pccs_urls__should_parse_single_element_array() {
+    fn pccs_endpoints__should_parse_single_bare_url_entry() {
         // Given
         #[derive(Debug, Deserialize)]
         struct Wrapper {
-            #[serde(default = "default_pccs_urls")]
-            pccs_urls: NonEmptyVec<url::Url>,
+            #[serde(default = "default_pccs_endpoints")]
+            pccs_endpoints: NonEmptyVec<PccsEndpointConfig>,
         }
-        const URL: &str = "https://pccs.example.org";
-        let toml_input = format!(r#"pccs_urls = ["{URL}"]"#);
-        let expected: Vec<url::Url> = vec![URL.parse().unwrap()];
+        const URL: &str = "https://pccs.example.org/";
+        let toml_input = format!(
+            r#"
+                [[pccs_endpoints]]
+                url = "{URL}"
+            "#
+        );
 
         // When
         let parsed: Wrapper = toml::from_str(&toml_input).unwrap();
-        let urls: Vec<url::Url> = parsed.pccs_urls.into_iter().collect();
+        let entries: Vec<PccsEndpointConfig> = parsed.pccs_endpoints.into_iter().collect();
 
         // Then
-        assert_eq!(urls, expected);
+        let expected = vec![PccsEndpointConfig {
+            url: URL.parse().unwrap(),
+            tls: None,
+        }];
+        assert_eq!(entries, expected);
     }
 
-    /// Multiple entries parse in order. Order matters: the fetch path tries
-    /// each URL in the order the user wrote them.
+    /// Multiple entries parse in order; entries with `tls` overrides are
+    /// distinguishable from bare entries. Order matters: the fetch path
+    /// tries each endpoint in the order the user wrote them.
     #[test]
-    fn pccs_urls__should_preserve_order_of_multiple_entries() {
+    fn pccs_endpoints__should_preserve_order_with_mixed_tls_overrides() {
         // Given
         #[derive(Debug, Deserialize)]
         struct Wrapper {
-            #[serde(default = "default_pccs_urls")]
-            pccs_urls: NonEmptyVec<url::Url>,
+            #[serde(default = "default_pccs_endpoints")]
+            pccs_endpoints: NonEmptyVec<PccsEndpointConfig>,
         }
-        const URLS: [&str; 3] = [
-            "http://localhost:8081",
-            "https://pccs.phala.network",
-            "https://api.trustedservices.intel.com",
-        ];
-        let toml_input = format!(
-            r#"pccs_urls = [{}]"#,
-            URLS.iter()
-                .map(|u| format!(r#""{u}""#))
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
-        let expected: Vec<url::Url> = URLS.iter().map(|u| u.parse().unwrap()).collect();
+        let toml_input = r#"
+            [[pccs_endpoints]]
+            url = "https://localhost:8081/"
+            tls = { override = "insecure" }
+
+            [[pccs_endpoints]]
+            url = "https://pccs.phala.network/"
+
+            [[pccs_endpoints]]
+            url = "https://api.trustedservices.intel.com/"
+        "#;
 
         // When
-        let parsed: Wrapper = toml::from_str(&toml_input).unwrap();
-        let urls: Vec<url::Url> = parsed.pccs_urls.into_iter().collect();
+        let parsed: Wrapper = toml::from_str(toml_input).unwrap();
+        let entries: Vec<PccsEndpointConfig> = parsed.pccs_endpoints.into_iter().collect();
 
         // Then
-        assert_eq!(urls, expected);
+        let expected = vec![
+            PccsEndpointConfig {
+                url: "https://localhost:8081/".parse().unwrap(),
+                tls: Some(PccsTlsTrust::Insecure),
+            },
+            PccsEndpointConfig {
+                url: "https://pccs.phala.network/".parse().unwrap(),
+                tls: None,
+            },
+            PccsEndpointConfig {
+                url: "https://api.trustedservices.intel.com/".parse().unwrap(),
+                tls: None,
+            },
+        ];
+        assert_eq!(entries, expected);
     }
 
     /// When the field is omitted altogether, the `#[serde(default)]` hook
     /// returns the Phala default as a single-element vec.
     #[test]
-    fn pccs_urls__should_default_to_phala_when_omitted() {
+    fn pccs_endpoints__should_default_to_phala_when_omitted() {
         // Given
         #[derive(Debug, Deserialize)]
         struct Wrapper {
-            #[serde(default = "default_pccs_urls")]
-            pccs_urls: NonEmptyVec<url::Url>,
+            #[serde(default = "default_pccs_endpoints")]
+            pccs_endpoints: NonEmptyVec<PccsEndpointConfig>,
         }
-        let expected: Vec<url::Url> = vec![launcher_interface::DEFAULT_PCCS_URL.parse().unwrap()];
 
         // When
         let parsed: Wrapper = toml::from_str("").unwrap();
-        let urls: Vec<url::Url> = parsed.pccs_urls.into_iter().collect();
+        let entries: Vec<PccsEndpointConfig> = parsed.pccs_endpoints.into_iter().collect();
 
         // Then
-        assert_eq!(urls, expected);
+        let expected = vec![PccsEndpointConfig {
+            url: launcher_interface::DEFAULT_PCCS_URL.parse().unwrap(),
+            tls: None,
+        }];
+        assert_eq!(entries, expected);
     }
 }

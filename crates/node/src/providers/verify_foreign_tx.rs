@@ -8,6 +8,7 @@ use crate::storage::VerifyForeignTransactionRequestStorage;
 use crate::types::VerifyForeignTxId;
 use borsh::{BorshDeserialize, BorshSerialize};
 use foreign_chain_inspector::abstract_chain::inspector::AbstractInspector;
+use foreign_chain_inspector::arbitrum::inspector::ArbitrumInspector;
 use foreign_chain_inspector::base::inspector::BaseInspector;
 use foreign_chain_inspector::bitcoin::inspector::BitcoinInspector;
 use foreign_chain_inspector::bnb::inspector::BnbInspector;
@@ -31,6 +32,7 @@ pub(crate) struct ForeignChainInspectors<Client> {
     pub bnb: Vec<BnbInspector<Client>>,
     pub starknet: Vec<StarknetInspector<Client>>,
     pub base: Vec<BaseInspector<Client>>,
+    pub arbitrum: Vec<ArbitrumInspector<Client>>,
 }
 
 impl ForeignChainInspectors<HttpClient> {
@@ -60,6 +62,7 @@ impl ForeignChainInspectors<HttpClient> {
             base: build_inspectors!(&config.base, BaseInspector),
             bnb: build_inspectors!(&config.bnb, BnbInspector),
             starknet: build_inspectors!(&config.starknet, StarknetInspector),
+            arbitrum: build_inspectors!(&config.arbitrum, ArbitrumInspector),
         })
     }
 }

@@ -22,7 +22,7 @@ use mpc_contract::{
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
-    Curve, DomainConfig, DomainId, DomainPurpose, SupportedForeignChains,
+    Curve, DomainConfig, DomainId, DomainPurpose, Protocol, SupportedForeignChains,
 };
 use near_mpc_contract_interface::{
     method_names,
@@ -225,6 +225,7 @@ impl SandboxTestSetupBuilder {
             let config = DomainConfig {
                 id: domain_id,
                 curve: *curve,
+                protocol: Protocol::from(*curve),
                 purpose,
             };
             keys.push(DomainKey {
@@ -249,6 +250,7 @@ impl SandboxTestSetupBuilder {
             let config = DomainConfig {
                 id: domain_id,
                 curve: Curve::Secp256k1,
+                protocol: Protocol::from(Curve::Secp256k1),
                 purpose: DomainPurpose::ForeignTx,
             };
             keys.push(DomainKey {
@@ -570,16 +572,19 @@ pub async fn execute_key_generation_and_add_random_state(
         DomainConfig {
             id: 0.into(),
             curve: Curve::Edwards25519,
+            protocol: Protocol::from(Curve::Edwards25519),
             purpose: DomainPurpose::Sign,
         },
         DomainConfig {
             id: 1.into(),
             curve: Curve::Secp256k1,
+            protocol: Protocol::from(Curve::Secp256k1),
             purpose: DomainPurpose::Sign,
         },
         DomainConfig {
             id: 2.into(),
             curve: Curve::Edwards25519,
+            protocol: Protocol::from(Curve::Edwards25519),
             purpose: DomainPurpose::Sign,
         },
     ];
@@ -769,6 +774,14 @@ pub fn bnb_evm_request() -> ForeignChainRpcRequest {
 
 pub fn base_evm_request() -> ForeignChainRpcRequest {
     ForeignChainRpcRequest::Base(EvmRpcRequest {
+        tx_id: EvmTxId([0xbb; 32]),
+        extractors: vec![EvmExtractor::BlockHash],
+        finality: EvmFinality::Finalized,
+    })
+}
+
+pub fn arbitrum_evm_request() -> ForeignChainRpcRequest {
+    ForeignChainRpcRequest::Arbitrum(EvmRpcRequest {
         tx_id: EvmTxId([0xbb; 32]),
         extractors: vec![EvmExtractor::BlockHash],
         finality: EvmFinality::Finalized,

@@ -8,7 +8,10 @@
 //! A better approach: only copy the structures that have changed and import the rest from the existing codebase.
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use dtos::{DomainConfig, Ed25519PublicKey, ParticipantId, Threshold};
+use dtos::{
+    Curve, DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, ParticipantId, Protocol,
+    Threshold,
+};
 use mpc_attestation::attestation::VerifiedAttestation;
 use near_account_id::AccountId;
 use near_mpc_bounded_collections::NonEmptyBTreeSet;
@@ -51,6 +54,65 @@ use crate::{
     update::ProposedUpdates,
     Config, SupportedForeignChainsByNode,
 };
+
+/// Previous `DomainConfig` layout — `protocol` was not stored; it is now
+/// derived from `curve` during migration via `Protocol::from(curve)`.
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldDomainConfig {
+    id: DomainId,
+    curve: Curve,
+    purpose: DomainPurpose,
+}
+
+/// Previous `DomainRegistry` Borsh layout — wraps `Vec<OldDomainConfig>`.
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldDomainRegistry {
+    domains: Vec<OldDomainConfig>,
+    next_domain_id: u64,
+}
+
+/// Previous `AddDomainsVotes` Borsh layout — stored old `DomainConfig`s.
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldAddDomainsVotes {
+    proposal_by_account: BTreeMap<AuthenticatedParticipantId, Vec<OldDomainConfig>>,
+}
+
+impl From<OldDomainConfig> for DomainConfig {
+    fn from(old: OldDomainConfig) -> Self {
+        DomainConfig {
+            id: old.id,
+            curve: old.curve,
+            protocol: Protocol::from(old.curve),
+            purpose: old.purpose,
+        }
+    }
+}
+
+impl From<OldDomainRegistry> for DomainRegistry {
+    fn from(old: OldDomainRegistry) -> Self {
+        let domains: Vec<DomainConfig> = old.domains.into_iter().map(Into::into).collect();
+        // The on-chain DomainRegistry was previously valid by construction;
+        // its invariants (id contiguity, monotonic next_domain_id) carry over.
+        DomainRegistry::from_raw_validated(domains, old.next_domain_id)
+            .expect("on-chain DomainRegistry should be valid")
+    }
+}
+
+impl From<OldAddDomainsVotes> for AddDomainsVotes {
+    fn from(old: OldAddDomainsVotes) -> Self {
+        let proposal_by_account = old
+            .proposal_by_account
+            .into_iter()
+            .map(|(account, proposal)| {
+                let proposal: Vec<DomainConfig> = proposal.into_iter().map(Into::into).collect();
+                (account, proposal)
+            })
+            .collect();
+        AddDomainsVotes {
+            proposal_by_account,
+        }
+    }
+}
 
 /// Previous `ParticipantInfo` layout — the TLS key was stored as a tagged
 /// `near_sdk::PublicKey` under the misleading `sign_pk` name. The new layout
@@ -110,13 +172,13 @@ struct OldThresholdParametersVotes {
     proposal_by_account: BTreeMap<AuthenticatedAccountId, OldThresholdParameters>,
 }
 
-/// Mirror of the current `KeyEvent` with `OldThresholdParameters` swapped in.
-/// `KeyEventInstance` does not transitively contain `ParticipantInfo`, so it
-/// is reused as-is.
+/// Mirror of the current `KeyEvent` with `OldThresholdParameters` and
+/// `OldDomainConfig` swapped in. `KeyEventInstance` does not transitively
+/// contain `ParticipantInfo` or `DomainConfig`, so it is reused as-is.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 struct OldKeyEvent {
     epoch_id: EpochId,
-    domain: DomainConfig,
+    domain: OldDomainConfig,
     parameters: OldThresholdParameters,
     instance: Option<KeyEventInstance>,
     next_attempt_id: AttemptId,
@@ -124,17 +186,17 @@ struct OldKeyEvent {
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 struct OldRunningContractState {
-    domains: DomainRegistry,
+    domains: OldDomainRegistry,
     keyset: Keyset,
     parameters: OldThresholdParameters,
     parameters_votes: OldThresholdParametersVotes,
-    add_domains_votes: AddDomainsVotes,
+    add_domains_votes: OldAddDomainsVotes,
     previously_cancelled_resharing_epoch_id: Option<EpochId>,
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 struct OldInitializingContractState {
-    domains: DomainRegistry,
+    domains: OldDomainRegistry,
     epoch_id: EpochId,
     generated_keys: Vec<KeyForDomain>,
     generating_key: OldKeyEvent,
@@ -237,7 +299,7 @@ impl From<OldKeyEvent> for KeyEvent {
     fn from(old: OldKeyEvent) -> Self {
         KeyEvent::from_raw(
             old.epoch_id,
-            old.domain,
+            old.domain.into(),
             old.parameters.into(),
             old.instance,
             old.next_attempt_id,
@@ -248,11 +310,11 @@ impl From<OldKeyEvent> for KeyEvent {
 impl From<OldRunningContractState> for RunningContractState {
     fn from(old: OldRunningContractState) -> Self {
         RunningContractState {
-            domains: old.domains,
+            domains: old.domains.into(),
             keyset: old.keyset,
             parameters: old.parameters.into(),
             parameters_votes: old.parameters_votes.into(),
-            add_domains_votes: old.add_domains_votes,
+            add_domains_votes: old.add_domains_votes.into(),
             previously_cancelled_resharing_epoch_id: old.previously_cancelled_resharing_epoch_id,
         }
     }
@@ -261,7 +323,7 @@ impl From<OldRunningContractState> for RunningContractState {
 impl From<OldInitializingContractState> for InitializingContractState {
     fn from(old: OldInitializingContractState) -> Self {
         InitializingContractState {
-            domains: old.domains,
+            domains: old.domains.into(),
             epoch_id: old.epoch_id,
             generated_keys: old.generated_keys,
             generating_key: old.generating_key.into(),
@@ -586,13 +648,18 @@ mod tests {
             threshold: Threshold(threshold),
         };
         OldRunningContractState {
-            domains: DomainRegistry::default(),
+            domains: OldDomainRegistry {
+                domains: vec![],
+                next_domain_id: 0,
+            },
             keyset: Keyset::new(EpochId::new(0), vec![]),
             parameters,
             parameters_votes: OldThresholdParametersVotes {
                 proposal_by_account: BTreeMap::new(),
             },
-            add_domains_votes: AddDomainsVotes::default(),
+            add_domains_votes: OldAddDomainsVotes {
+                proposal_by_account: BTreeMap::new(),
+            },
             previously_cancelled_resharing_epoch_id: None,
         }
     }
@@ -763,5 +830,37 @@ mod tests {
 
         // Then the migrated map is empty
         assert!(new.foreign_chain_support_by_node.is_empty());
+    }
+    #[test]
+    fn domain_config_migration__should_derive_protocol_from_curve_for_each_variant() {
+        // Given OldDomainConfigs covering every curve, including V2Secp256k1
+        let cases = [
+            (Curve::Secp256k1, Protocol::CaitSith),
+            (Curve::Edwards25519, Protocol::Frost),
+            (Curve::Bls12381, Protocol::ConfidentialKeyDerivation),
+            (Curve::V2Secp256k1, Protocol::DamgardEtAl),
+        ];
+
+        for (i, (curve, expected_protocol)) in cases.into_iter().enumerate() {
+            let old = OldDomainConfig {
+                id: DomainId(i as u64),
+                curve,
+                purpose: if curve == Curve::Bls12381 {
+                    DomainPurpose::CKD
+                } else {
+                    DomainPurpose::Sign
+                },
+            };
+            let bytes = borsh::to_vec(&old).unwrap();
+
+            // When borsh-decoding the old layout and converting to the new DomainConfig
+            let decoded: OldDomainConfig = borsh::from_slice(&bytes).unwrap();
+            let migrated: DomainConfig = decoded.into();
+
+            // Then protocol is derived from curve and curve is preserved
+            assert_eq!(migrated.curve, curve);
+            assert_eq!(migrated.protocol, expected_protocol);
+            assert_eq!(migrated.id, DomainId(i as u64));
+        }
     }
 }
