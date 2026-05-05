@@ -10,7 +10,7 @@ use anyhow::{Context, bail};
 use backon::{ConstantBuilder, Retryable};
 use e2e_tests::MpcNodeState;
 use near_mpc_contract_interface::types::{
-    AccountId, BackupServiceInfo, DestinationNodeInfo, ProtocolContractState,
+    AccountId, BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey, ProtocolContractState,
 };
 use rand::SeedableRng;
 
@@ -57,7 +57,7 @@ impl BackupService {
         );
     }
 
-    fn public_key(&self) -> anyhow::Result<String> {
+    fn public_key(&self) -> anyhow::Result<Ed25519PublicKey> {
         let secrets_path = self.home_dir.path().join("secrets.json");
         let contents = std::fs::read_to_string(&secrets_path)
             .with_context(|| format!("failed to read {}", secrets_path.display()))?;
@@ -69,9 +69,7 @@ impl BackupService {
             .try_into()
             .map_err(|_| anyhow::anyhow!("expected 32 bytes for signing key"))?;
         let signing_key = ed25519_dalek::SigningKey::from_bytes(&secret_bytes);
-        let public_key =
-            near_mpc_crypto_types::Ed25519PublicKey::from(&signing_key.verifying_key());
-        Ok(String::from(&public_key))
+        Ok(Ed25519PublicKey::from(&signing_key.verifying_key()))
     }
 
     fn set_contract_state(&self, state: &ProtocolContractState) -> anyhow::Result<()> {
@@ -269,10 +267,10 @@ async fn register_backup_service_and_wait(
         let actual = info
             .get(&source_account)
             .and_then(|(backup, _)| backup.as_ref())
-            .map(|b| String::from(&b.public_key));
+            .map(|b| &b.public_key);
         anyhow::ensure!(
-            actual.as_deref() == Some(backup_public_key.as_str()),
-            "source debug endpoint backup_service_info.public_key={actual:?}, expected {backup_public_key}"
+            actual == Some(&backup_public_key),
+            "source debug endpoint backup_service_info.public_key={actual:?}, expected {backup_public_key:?}"
         );
         Ok(())
     })
@@ -321,7 +319,7 @@ async fn start_migration_and_wait(
     target_idx: usize,
 ) -> anyhow::Result<()> {
     let source_account_id = cluster.nodes[source_idx].account_id().to_string();
-    let target_p2p_key = cluster.nodes[target_idx].p2p_public_key_str();
+    let target_p2p_key = cluster.nodes[target_idx].p2p_public_key();
     let target_p2p_url = cluster.nodes[target_idx].p2p_url();
     let target_signer_pk = cluster.nodes[target_idx].near_signer_public_key_str();
 
@@ -382,10 +380,10 @@ async fn start_migration_and_wait(
         let actual = info
             .get(&source_account)
             .and_then(|(_, destination)| destination.as_ref())
-            .map(|d| String::from(&d.destination_node_info.tls_public_key));
+            .map(|d| &d.destination_node_info.tls_public_key);
         anyhow::ensure!(
-            actual.as_deref() == Some(target_p2p_key.as_str()),
-            "target debug endpoint destination_node_info.tls_public_key={actual:?}, expected {target_p2p_key}"
+            actual == Some(&target_p2p_key),
+            "target debug endpoint destination_node_info.tls_public_key={actual:?}, expected {target_p2p_key:?}"
         );
         Ok(())
     })
