@@ -553,9 +553,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                         "ignoring non-canonical request",
                     );
                 }
-                CheckBlockResult::NotIncluded
-                | CheckBlockResult::OlderThanRecentWindow
-                | CheckBlockResult::Unknown => {
+                CheckBlockResult::OlderThanRecentWindow | CheckBlockResult::Unknown => {
                     // note: We will not receive "OlderThanRecentWindow" if the `RecentBlocksTracker`
                     // has the same recency window as the queue.
                     // Since we add signature requests to the queue after adding the block to the
