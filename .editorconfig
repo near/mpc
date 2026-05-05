@@ -19,10 +19,6 @@ trim_trailing_whitespace = false
 trim_trailing_whitespace = false
 end_of_line = unset
 
-# Vendored license text — preserve byte-for-byte
-[crates/threshold-signatures/LICENSE]
-insert_final_newline = false
-
 # Test fixtures consumed byte-exact via include_str! (see create-assets.sh
 # and crates/attestation/tests/app_compose.rs). Adding a final newline breaks
 # string equality and hex/key parsing.
