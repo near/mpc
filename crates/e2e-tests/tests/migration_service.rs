@@ -330,7 +330,43 @@ async fn start_migration_and_wait(
             ),
     )
     .await
-    .context("timed out waiting for contract to reflect node migration")
+    .context("timed out waiting for contract to reflect node migration")?;
+
+    // Wait until the target node's own indexer has caught up to the
+    // start_node_migration block. Without this, the target's
+    // `MigrationInfo.active_migration` flips false → true mid-PUT, which
+    // fires the migration web-server's per-connection cancellation token
+    // and tears down backup-cli's in-flight TLS stream
+    // (see `migration_service::web::server::handle_stream`). Mirrors the
+    // source-side poll in `register_backup_service_and_wait`.
+    let target_web_addr = match &cluster.nodes[target_idx] {
+        MpcNodeState::Running(n) => n.web_address(),
+        _ => bail!("target node not running"),
+    };
+    let http_client = reqwest::Client::new();
+    (|| async {
+        let resp = http_client
+            .get(format!("http://{target_web_addr}/debug/migrations"))
+            .send()
+            .await?;
+        let body = resp.text().await?;
+        anyhow::ensure!(
+            body.contains(&target_p2p_key),
+            "target node debug endpoint doesn't reflect destination_node_info yet"
+        );
+        Ok(())
+    })
+    .retry(
+        ConstantBuilder::default()
+            .with_delay(common::POLL_INTERVAL)
+            .with_max_times(
+                (INDEXER_SYNC_TIMEOUT.as_millis() / common::POLL_INTERVAL.as_millis()) as usize,
+            ),
+    )
+    .await
+    .context("timed out waiting for target node to index node migration")?;
+
+    Ok(())
 }
 
 /// PUT keyshares to the target node via the backup CLI.
