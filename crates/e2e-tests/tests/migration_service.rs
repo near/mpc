@@ -4,11 +4,22 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
 
+use std::collections::BTreeMap;
+
 use anyhow::{Context, bail};
 use backon::{ConstantBuilder, Retryable};
 use e2e_tests::MpcNodeState;
-use near_mpc_contract_interface::types::ProtocolContractState;
+use near_mpc_contract_interface::types::{
+    AccountId, BackupServiceInfo, DestinationNodeInfo, ProtocolContractState,
+};
 use rand::SeedableRng;
+
+/// Mirror of the production `node::indexer::migrations::ContractMigrationInfo`
+/// type. Used to deserialize the `/debug/migrations` response strictly so the
+/// readiness asserts compare typed fields rather than substring-match the
+/// JSON body.
+type ContractMigrationInfo =
+    BTreeMap<AccountId, (Option<BackupServiceInfo>, Option<DestinationNodeInfo>)>;
 
 const MIGRATION_PORT_TIMEOUT: Duration = Duration::from_secs(120);
 const INDEXER_SYNC_TIMEOUT: Duration = Duration::from_secs(30);
@@ -163,6 +174,24 @@ async fn wait_for_migration_port(address: &str) -> anyhow::Result<()> {
     .with_context(|| format!("migration port {address} never became reachable"))
 }
 
+/// Fetch one node's `/debug/migrations` endpoint and deserialize the body
+/// into the typed `ContractMigrationInfo` map (the second element of the
+/// `(indexer_height, ContractMigrationInfo)` tuple the endpoint returns).
+async fn fetch_debug_migration_info(
+    http_client: &reqwest::Client,
+    web_addr: &str,
+) -> anyhow::Result<ContractMigrationInfo> {
+    let body = http_client
+        .get(format!("http://{web_addr}/debug/migrations"))
+        .send()
+        .await?
+        .text()
+        .await?;
+    let (_indexer_height, info) = serde_json::from_str::<(u64, ContractMigrationInfo)>(&body)
+        .with_context(|| format!("failed to parse /debug/migrations: {body}"))?;
+    Ok(info)
+}
+
 fn running_state_matches_participant_key(
     state: &ProtocolContractState,
     account_id: &str,
@@ -231,16 +260,19 @@ async fn register_backup_service_and_wait(
         MpcNodeState::Running(n) => n.web_address(),
         _ => bail!("source node not running"),
     };
+    let source_account: AccountId = source_account_id
+        .parse()
+        .with_context(|| format!("invalid source account id: {source_account_id}"))?;
     let http_client = reqwest::Client::new();
     (|| async {
-        let resp = http_client
-            .get(format!("http://{source_web_addr}/debug/migrations"))
-            .send()
-            .await?;
-        let body = resp.text().await?;
+        let info = fetch_debug_migration_info(&http_client, &source_web_addr).await?;
+        let actual = info
+            .get(&source_account)
+            .and_then(|(backup, _)| backup.as_ref())
+            .map(|b| String::from(&b.public_key));
         anyhow::ensure!(
-            body.contains(&backup_public_key),
-            "node debug endpoint doesn't reflect backup registration yet"
+            actual.as_deref() == Some(backup_public_key.as_str()),
+            "source debug endpoint backup_service_info.public_key={actual:?}, expected {backup_public_key}"
         );
         Ok(())
     })
@@ -341,16 +373,19 @@ async fn start_migration_and_wait(
         MpcNodeState::Running(n) => n.web_address(),
         _ => bail!("target node not running"),
     };
+    let source_account: AccountId = source_account_id
+        .parse()
+        .with_context(|| format!("invalid source account id: {source_account_id}"))?;
     let http_client = reqwest::Client::new();
     (|| async {
-        let resp = http_client
-            .get(format!("http://{target_web_addr}/debug/migrations"))
-            .send()
-            .await?;
-        let body = resp.text().await?;
+        let info = fetch_debug_migration_info(&http_client, &target_web_addr).await?;
+        let actual = info
+            .get(&source_account)
+            .and_then(|(_, destination)| destination.as_ref())
+            .map(|d| String::from(&d.destination_node_info.tls_public_key));
         anyhow::ensure!(
-            body.contains(&target_p2p_key),
-            "target node debug endpoint doesn't reflect destination_node_info yet"
+            actual.as_deref() == Some(target_p2p_key.as_str()),
+            "target debug endpoint destination_node_info.tls_public_key={actual:?}, expected {target_p2p_key}"
         );
         Ok(())
     })
