@@ -98,7 +98,7 @@ export MPC_NETWORK_NAME=yourusername-test
 mpc-devnet mpc $MPC_NETWORK_NAME new \
   --num-participants 2 \
   --num-responding-access-keys 8 \
-  --near-per-responding-account 1 
+  --near-per-responding-account 1
   [--ssd] # use only if you don't plan to run this for a long period, as it is more expensive
 ```
 
@@ -109,7 +109,7 @@ independent nonce.
 Then, deploy the contract.
 
 ```shell
-mpc-devnet mpc $MPC_NETWORK_NAME deploy-contract 
+mpc-devnet mpc $MPC_NETWORK_NAME deploy-contract
 ```
 
 The path of the contract binary can be overridden via `--path`.
@@ -189,7 +189,7 @@ running in TEE to be authenticated.
 You can add approved image hashes with the following command:
 
 ```shell
-mpc-devnet mpc $MPC_NETWORK_NAME vote-code-hash --mpc-docker-image-hash <IMAGE_DIGEST>   
+mpc-devnet mpc $MPC_NETWORK_NAME vote-code-hash --mpc-docker-image-hash <IMAGE_DIGEST>
 ```
 
 ### Checking the Network State

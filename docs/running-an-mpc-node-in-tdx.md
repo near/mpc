@@ -16,7 +16,7 @@ To run the MPC node within a TEE, you need a TDX-enabled server. There are
 several providers to choose from, such as
 [phoenixNap](https://phoenixnap.com/), [OVHcloud](https://www.ovhcloud.com/),
 [openmetal](https://openmetal.io/) and
-[Hivelocity](https://www.hivelocity.net/), to name a few.  
+[Hivelocity](https://www.hivelocity.net/), to name a few.
 
 1. SSH to Near's TDX dev machine. In this case we will use `TDX_SERVER=91.134.92.20`
 

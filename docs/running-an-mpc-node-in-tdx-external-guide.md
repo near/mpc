@@ -11,7 +11,7 @@ We use Dstack (from Phala) to orchestrate the environment and run the MPC contai
 ## Limitations and Restrictions
 
  **Important:**
- 
+
 The CVM filesystem is encrypted with a hardware-bound key derived from SGX sealing, so copying the CVM or disk data to another machine will not work and may result in data loss, including loss of key shares and P2P identity keys.
 
 Platform-bound sealed data may also become unrecoverable if TDX-related hardware changes (for example, a CPU replacement).
@@ -37,52 +37,52 @@ For a full architecture review of the TEE-based MPC, see: [design doc](securing-
 
 ### Hardware Requirements
 
-* Have a TDX enabled, bare metal, server.  
+* Have a TDX enabled, bare metal, server.
 
-Note \- we currently only support bare metal and do not support virtualized TDX solutions (such as GCP)  
+Note \- we currently only support bare metal and do not support virtualized TDX solutions (such as GCP)
 
-* Intel Xeon 5th/6th Generation CPU (TDX Support) and 8 RAM slots filled  
-  See [Intel TDX HW requirements](https://cc-enabling.trustedservices.intel.com/intel-tdx-enabling-guide/03/hardware_selection/)  
-* Memory \- 64GB  
-* (v)Cores \- 8  
+* Intel Xeon 5th/6th Generation CPU (TDX Support) and 8 RAM slots filled
+  See [Intel TDX HW requirements](https://cc-enabling.trustedservices.intel.com/intel-tdx-enabling-guide/03/hardware_selection/)
+* Memory \- 64GB
+* (v)Cores \- 8
 * Disk space \- 500GB, SSD NVMe or similar performance
 
 For a list of supported cloud providers offering bare metal servers with Intel TDX, see [Cloud Providers Supporting Bare Metal Servers with Intel TDX](./cloud-providers-tdx.md).
 
 ### General
 
-* Firewall:allow ingress port 80 (MPC), 24567 (near) and port 8080 (web)  
+* Firewall:allow ingress port 80 (MPC), 24567 (near) and port 8080 (web)
 * Assign a static public IP for access towards machine from outside
 
 ### Create DNS A record (optional)
 
 Although a node can be accessed using a public IP address, it is recommended to use a domain name instead. Using a domain name allows some flexibility in case of public IP address change/repurpose or failover scenarios. To use a domain name, one must register a DNS A record. Some recommended providers:
 
-* [Namecheap](https://www.namecheap.com/support/knowledgebase/article.aspx/319/2237/how-can-i-set-up-an-a-address-record-for-my-domain/)  
+* [Namecheap](https://www.namecheap.com/support/knowledgebase/article.aspx/319/2237/how-can-i-set-up-an-a-address-record-for-my-domain/)
 * [Cloudflare](https://developers.cloudflare.com/dns/manage-dns-records/how-to/create-dns-records/)
 
 ### TDX and Dstack Setup
 
-This section describes how to enable TDX on your machine (BIOS, operating system, and software configurations), and how to install and configure Dstack.  
+This section describes how to enable TDX on your machine (BIOS, operating system, and software configurations), and how to install and configure Dstack.
 
 Follow the three steps below to ensure you have a working TDX machine with Dstack configured:
 
-1. [Set up a bare-metal TDX server](#1-tdx-bare-metal-server-setup)  
-2. [Dstack Setup and Configuration](#2-dstack-setup-and-configuration)  
+1. [Set up a bare-metal TDX server](#1-tdx-bare-metal-server-setup)
+2. [Dstack Setup and Configuration](#2-dstack-setup-and-configuration)
 3. [Set up a Local Gramine-Sealing-Key-Provider](#3-local-gramine-sealing-key-provider-setup)
 
 ---
 
 #### 1. TDX Bare-Metal Server Setup
 
-To create a bare-metal TDX server, follow the [canonical/tdx guide](https://github.com/canonical/tdx/blob/9023cb2d952f5fe9d72004092b93a155482ba18a/README.md).  
+To create a bare-metal TDX server, follow the [canonical/tdx guide](https://github.com/canonical/tdx/blob/9023cb2d952f5fe9d72004092b93a155482ba18a/README.md).
 
 Make sure to complete:
 
-* Steps 1–4 (basic TDX setup configuration)  
-* Steps 9.1–9.2 (Remote Attestation setup)  
+* Steps 1–4 (basic TDX setup configuration)
+* Steps 9.1–9.2 (Remote Attestation setup)
 
-This ensures that your TDX setup is correctly configured.  
+This ensures that your TDX setup is correctly configured.
 
 ---
 
@@ -253,7 +253,7 @@ Notice that some of the commands require `sudo`, so they cannot be run using the
 
 ##### Guest OS Image (optional)
 
-> **Important:** The guest OS image that runs inside the CVM must be **identical across all nodes**.  
+> **Important:** The guest OS image that runs inside the CVM must be **identical across all nodes**.
 > The image is **measured**, and those measurements are **hardcoded in the contract**.
 
 The guest OS image was downloaded automatically during **Step 4** of the installation process using version **0.5.8**. This version ensures **compatibility** and **reproducibility** across all MPC nodes.
@@ -494,21 +494,21 @@ range = [
 
 #### 3. Local Gramine-Sealing-Key-Provider Setup
 
-In this solution, we use the `gramine-sealing-key-provider`, which runs inside an SGX enclave, to generate a key.  
-This key is derived from TDX measurements and the SGX enclave’s hardware sealing key, and it is used to encrypt the CVM’s file system.  
+In this solution, we use the `gramine-sealing-key-provider`, which runs inside an SGX enclave, to generate a key.
+This key is derived from TDX measurements and the SGX enclave’s hardware sealing key, and it is used to encrypt the CVM’s file system.
 
 > **Note:** This key is tied to the platform. Losing it will prevent the CVM from decrypting the drive on subsequent VM boots.
 
-For more information, see [local-key-provider-from-phala](https://github.com/Dstack-TEE/dstack/tree/master/kms#local-key-provider-mode-1).  
+For more information, see [local-key-provider-from-phala](https://github.com/Dstack-TEE/dstack/tree/master/kms#local-key-provider-mode-1).
 
 ##### Setup Instructions
 
 1. Follow the [canonical/tdx setup](#1-tdx-bare-metal-server-setup) if not already completed — especially step 9.1–2 (establishing an SGX PCCS: Provisioning Certification Caching Service).
 
-2. Deploy an instance of `gramine-sealing-key-provider` on the host machine.  
-   * On the TDX server, run the script [run.sh](https://github.com/Dstack-TEE/dstack/blob/master/key-provider-build/run.sh)  
+2. Deploy an instance of `gramine-sealing-key-provider` on the host machine.
+   * On the TDX server, run the script [run.sh](https://github.com/Dstack-TEE/dstack/blob/master/key-provider-build/run.sh)
    > **Prerequisite:** Docker must be installed.
-   
+
     ```bash
     cd /opt/mpc/dstack/key-provider-build
     ./run.sh
@@ -537,8 +537,8 @@ Including
 
 * Preparing a configuration file based on [user-config.toml](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/user-config.toml)
 
-* Creating a docker compose file for the launcher based on [launcher\_docker\_compose.yaml](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/launcher_docker_compose.yaml).  
-* Configuring and starting your CVM with the MPC node.  
+* Creating a docker compose file for the launcher based on [launcher\_docker\_compose.yaml](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/launcher_docker_compose.yaml).
+* Configuring and starting your CVM with the MPC node.
 * Accessing mpc docker logs.
 * Retrieve keys from the CVM.
 * Verify the node's attestation before trusting the keys.
@@ -546,9 +546,9 @@ Including
 
 ### Create a NEAR Account for Your Node
 
-> **Important** – In the following examples, the account keys are auto-generated as part of the command. But it is also possible to create the keys separately and add them to the account creation command.  
+> **Important** – In the following examples, the account keys are auto-generated as part of the command. But it is also possible to create the keys separately and add them to the account creation command.
 >
-> In either case, it is the operator's full responsibility to manage and protect these keys.  
+> In either case, it is the operator's full responsibility to manage and protect these keys.
 >
 > See the [NEAR CLI](https://github.com/near/near-cli-rs/blob/main/docs/GUIDE.en.md) documentation for more options and details.
 
@@ -669,15 +669,15 @@ The transaction output will include the latest MPC Docker image manifest digest.
 
 ### Required Ports and Port Collisions
 
-MPC nodes use a fixed set of ports for communication and telemetry.  
+MPC nodes use a fixed set of ports for communication and telemetry.
 This creates a limitation when trying to run both **mainnet** and **testnet** nodes on the same physical server, since both sets of nodes attempt to bind to the same ports.
 
 ---
 
-* **Single network per machine**: By default, running both mainnet and testnet on the same machine is not supported because of port collisions.  
-* **Workaround with multiple IPs**: It is possible to run multiple nodes (e.g., one mainnet and one testnet) on the same host if the server is configured with **multiple external IP addresses**.  
-  * Each node binds to the required ports (see below) on a separate IP.  
-  * Additional IP/port routing on the local machine may be required.  
+* **Single network per machine**: By default, running both mainnet and testnet on the same machine is not supported because of port collisions.
+* **Workaround with multiple IPs**: It is possible to run multiple nodes (e.g., one mainnet and one testnet) on the same host if the server is configured with **multiple external IP addresses**.
+  * Each node binds to the required ports (see below) on a separate IP.
+  * Additional IP/port routing on the local machine may be required.
 
 ---
 
@@ -695,10 +695,10 @@ This creates a limitation when trying to run both **mainnet** and **testnet** no
 
 There are 2 ways to manage the VM that will run the MPC node.
 
-1\. Using the Web interface  
+1\. Using the Web interface
 2\. Using a script.
 
-Note \- both methods provide the same functionality. The Web interface provides a more manual approach and control. While the script is useful for automating processes.  
+Note \- both methods provide the same functionality. The Web interface provides a more manual approach and control. While the script is useful for automating processes.
 
 #### **Using the Web interface**
 
@@ -706,17 +706,17 @@ Follow the [Dstack guide](https://github.com/Dstack-TEE/dstack?tab=readme-ov-fil
 
 Use the following custom settings for MPC:
 
-1. Launcher docker compose file \- provided above.  
-2. VM HW setting: (use exactly those settings, since vCPU/Memory are measured )  
-    vCPU number=8 , Memory \= 64GB, disk \= 500 GB  
-3. Pre script \- empty.  
-4. user-config \- provided above  
-5. KMS=disable, Local Keyprovier=enabled, Tproxy=disable, public logs=enabled,public sysinfo=enabled,pin NUMA=disabled  
-6. Port mapping: (taken from the list above)  
+1. Launcher docker compose file \- provided above.
+2. VM HW setting: (use exactly those settings, since vCPU/Memory are measured )
+    vCPU number=8 , Memory \= 64GB, disk \= 500 GB
+3. Pre script \- empty.
+4. user-config \- provided above
+5. KMS=disable, Local Keyprovier=enabled, Tproxy=disable, public logs=enabled,public sysinfo=enabled,pin NUMA=disabled
+6. Port mapping: (taken from the list above)
    Public 80:80 (main node to node communication port)
-   Public 24567:24567 (required for decentralized state sync)  
+   Public 24567:24567 (required for decentralized state sync)
    Public 8080:8080 (required for collecting debug and telemetry information)
-   Local 3030:3030: (use public with you want the debug metrics to be available on the internet)  
+   Local 3030:3030: (use public with you want the debug metrics to be available on the internet)
    Local <dstack_agent_port>:8090: (required for access CVM information and container logs)
 
 7. Key Provider ID: (The MrEnclave for the sgx local key provider) 6b5ed02e549a1c30aaa8e3171a045f1f449b0017353ef595e78e39c348c98d01
@@ -726,23 +726,23 @@ Use the following custom settings for MPC:
 #### Using the script
 
 Use the script [deploy-launcher.sh](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/deploy-launcher.sh) described in
-[deploy-launcher-guide.md](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/deploy-launcher-guide.md)  
+[deploy-launcher-guide.md](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/deploy-launcher-guide.md)
 to configure and start your VM.
 
 ### Accessing MPC (or Launcher) Docker Logs
 
 #### Overview
 
-Dstack provides a dedicated web page to view CVM information, including links to the Docker logs.  
-More details can be found in [Phala's guide](https://github.com/Dstack-TEE/dstack?tab=readme-ov-file#deploy-an-app).  
+Dstack provides a dedicated web page to view CVM information, including links to the Docker logs.
+More details can be found in [Phala's guide](https://github.com/Dstack-TEE/dstack?tab=readme-ov-file#deploy-an-app).
 
 ---
 
 #### Local Access
 
-The web page is available on the **TDX server** at **`dstack_agent_port`** configured earlier in [Using the Web Interface](#using-the-web-interface).  
+The web page is available on the **TDX server** at **`dstack_agent_port`** configured earlier in [Using the Web Interface](#using-the-web-interface).
 
-Open in your browser:  
+Open in your browser:
 
 ```txt
 http://localhost:<dstack_agent_port>
@@ -752,15 +752,15 @@ http://localhost:<dstack_agent_port>
 
 #### Remote Access
 
-If you need to access the web page from another machine, set up SSH port forwarding.  
+If you need to access the web page from another machine, set up SSH port forwarding.
 
-For example, if `dstack_agent_port = 8090`:  
+For example, if `dstack_agent_port = 8090`:
 
 ```bash
 ssh -NL 17190:localhost:8090 USER_NAME@TDX_SERVER
 ```
 
-Then open:  
+Then open:
 
 ```txt
 http://localhost:17190
@@ -774,10 +774,10 @@ http://localhost:17190
 
 ### Retrieve public keys from the MPC node
 
-There are 2 keys that should be retrieved from node.  
+There are 2 keys that should be retrieved from node.
 
-* P2P (near\_p2p\_public\_key)- this key is used by the nodes to authenticate with one another. This key needs to be registered on the contract. (see details below)  
-* Node Account Key (near\_signer\_public\_key) \- this key is used by the node to issue operations such as "vote\_reshared".  
+* P2P (near\_p2p\_public\_key)- this key is used by the nodes to authenticate with one another. This key needs to be registered on the contract. (see details below)
+* Node Account Key (near\_signer\_public\_key) \- this key is used by the node to issue operations such as "vote\_reshared".
   This key needs to be added to the Near account that was created in the step above.
 
 ### Retrieve the node account key and P2P key
@@ -899,18 +899,18 @@ This section shows how to add the MPC node's public key (from the previous secti
 
 #### Parameters
 
-* **`ACCOUNT_ID`** → The NEAR account that will own the new key.  
+* **`ACCOUNT_ID`** → The NEAR account that will own the new key.
   Example: `your-node-account.testnet`
 
-* **`MPC_CONTRACT_ID`** → The MPC signer contract ID:  
-  
-  Testnet:   v1.signer-prod.testnet  
+* **`MPC_CONTRACT_ID`** → The MPC signer contract ID:
+
+  Testnet:   v1.signer-prod.testnet
   Mainnet:   v1.signer
 
-* **`MPC_NODE_PUBLIC_KEY`** → The public key of the MPC node you want to add.  
+* **`MPC_NODE_PUBLIC_KEY`** → The public key of the MPC node you want to add.
   Example: `ed25519:ABCDEFG...`
 
-* **`METHOD_NAMES`** → The list of contract methods the MPC node is allowed to call:  
+* **`METHOD_NAMES`** → The list of contract methods the MPC node is allowed to call:
 
   ```txt
   respond,respond_ckd,respond_verify_foreign_tx,vote_pk,start_keygen_instance,vote_reshared,vote_foreign_chain_policy,start_reshare_instance,vote_abort_key_event_instance,verify_tee,submit_participant_info,conclude_node_migration
@@ -991,21 +991,21 @@ Wait until the NEAR Indexer has completed state sync. This process can take seve
 
 ```bash
 $ curl http://127.0.0.1:3030/metrics | grep near_sync_status
-# Sync is completed when status is 0: 
+# Sync is completed when status is 0:
 near_sync_status 0
 ```
 
 ### Submitting Participant Info
 
-> **Note:** During the [transition phase](#transition-phase), this step is optional. The contract will accept nodes that do not submit an attestation.  
+> **Note:** During the [transition phase](#transition-phase), this step is optional. The contract will accept nodes that do not submit an attestation.
 
 Once the MPC node is fully synced, it will call `submit_participant_info` to submit its attestation information to the contract.
 
 If the node’s key has not been added to the account, this operation will fail. In that case, the node will retry the operation in a loop.
 
-> **Note:** This behavior is not yet implemented. See issue [#1069](https://github.com/near/mpc/issues/1069).  
+> **Note:** This behavior is not yet implemented. See issue [#1069](https://github.com/near/mpc/issues/1069).
 > **TBD [#1079]:** Add screenshot/logs/cURL example for detecting when the MPC node has submitted attestation information.
-> **Note:** Calling this method will incur a cost (TBD, XXX NEAR). Ensure this amount is available in your account.  
+> **Note:** Calling this method will incur a cost (TBD, XXX NEAR). Ensure this amount is available in your account.
 > _(TBD [#903](https://github.com/near/mpc/issues/903) – confirm exact cost)_
 
 ### Voting: (vote_new_parameters)
@@ -1068,7 +1068,7 @@ To generate a voting command, follow these steps:
            ]
          },
          "threshold": 5
-     
+
        }
      }
    }
@@ -1079,10 +1079,10 @@ To generate a voting command, follow these steps:
    * `epoch_id` (10 in this example)
    * `next_id` (12 in this example)
 
-2. **Update the state**  
-   * Add your new participant to the `participants` array.  
-   * Set `prospective_epoch_id = epoch_id + 1` (11 in this example).  
-   * Set `next_id = next_id + 1` (13 in this example).  
+2. **Update the state**
+   * Add your new participant to the `participants` array.
+   * Set `prospective_epoch_id = epoch_id + 1` (11 in this example).
+   * Set `next_id = next_id + 1` (13 in this example).
 
 #### Before
 
@@ -1155,7 +1155,7 @@ To generate a voting command, follow these steps:
    near contract call-function as-transaction v1.signer vote_new_parameters json-args "$REQUEST" prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' sign-as $YOUR_MPC_NEAR_ACCOUNT network-config mainnet sign-with-keychain send
    ```
 
-After all participants have voted, the contract will move to a resharing phase.  
+After all participants have voted, the contract will move to a resharing phase.
 You can see this in the node logs (TBD) [#906](https://github.com/near/mpc/issues/906)
 
 And when the resharing has finished look for… (TBD) [#906](https://github.com/near/mpc/issues/906)
@@ -1446,8 +1446,8 @@ The image version is determined by the manifest digest from the contract (not by
 
 ### Steps
 
-1. **Stop the CVM**  
-2. **Update `user-config.toml`** with the new values  
+1. **Stop the CVM**
+2. **Update `user-config.toml`** with the new values
 3. **Start the CVM**
 
 ---
@@ -1456,8 +1456,8 @@ The image version is determined by the manifest digest from the contract (not by
 
 #### Manually Via Web UI
 
-* Stop the CVM from the WebUI.  
-* Press the **update** button  
+* Stop the CVM from the WebUI.
+* Press the **update** button
 * Update The config file and press **Upgrade**
 * Start the CVM
 
@@ -1470,16 +1470,16 @@ The image version is determined by the manifest digest from the contract (not by
 
 #### Via Command Line
 
-* See the [VMM CLI user guide](https://github.com/Dstack-TEE/dstack/blob/master/docs/vmm-cli-user-guide.md).  
-* The CLI script is located at:  
-  `meta-dstack/dstack/vmm/src/vmm-cli.py`  
+* See the [VMM CLI user guide](https://github.com/Dstack-TEE/dstack/blob/master/docs/vmm-cli-user-guide.md).
+* The CLI script is located at:
+  `meta-dstack/dstack/vmm/src/vmm-cli.py`
 
-First, define environment variables (once per shell session):  
+First, define environment variables (once per shell session):
 
 ```bash
 
-export VMM_URL=http://127.0.0.1:11100 # change to your port 
-export VMM_CLI_PATH="meta-dstack/dstack/vmm/src/vmm-cli.py" # change to your meta-dstack location 
+export VMM_URL=http://127.0.0.1:11100 # change to your port
+export VMM_CLI_PATH="meta-dstack/dstack/vmm/src/vmm-cli.py" # change to your meta-dstack location
 ```
 
 Then you can use `$VMM_CLI` for all commands:
@@ -1500,7 +1500,7 @@ python $VMM_CLI_PATH --url $VMM_URL start <vm-id>
 
 #### Restart the CVM
 
-If not done in the previous step, stop and start the CVM.  
+If not done in the previous step, stop and start the CVM.
 
 The new MPC docker binary should be automatically pulled from docker hub, verified and launched, and a remote attestation will be sent to the contract.
 
@@ -1511,9 +1511,9 @@ You can see in the MPC node's logs (TBD) [#910](https://github.com/near/mpc/issu
 TBD [#912](https://github.com/near/mpc/issues/912)
 Reviewers \- please add here more scenarios (with or without solutions)
 
-* do we have logs that indicate the node version/hash?  
-* How to see what MPC node hash is expected by the launcher (docker-compose v.s file on disk)  
-* Recovery \- how to erase the indexer state (e.g data folder)  
+* do we have logs that indicate the node version/hash?
+* How to see what MPC node hash is expected by the launcher (docker-compose v.s file on disk)
+* Recovery \- how to erase the indexer state (e.g data folder)
 * …..
 
 ## Transition phase {#transition-phase}

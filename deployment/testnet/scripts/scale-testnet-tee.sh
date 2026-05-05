@@ -895,7 +895,7 @@ deploy_contract() {
   log "Deploying MPC contract to $MPC_CONTRACT_ACCOUNT"
   # FIX #5: retry wrapper + sleep
   near_tx_retry "deploy contract to $MPC_CONTRACT_ACCOUNT" \
-    
+
      near contract deploy "$MPC_CONTRACT_ACCOUNT" use-file "$MPC_CONTRACT_PATH" \
       without-init-call network-config testnet sign-with-keychain send
   near_sleep "deploy contract"
@@ -1270,7 +1270,7 @@ if ! [[ "$old_count" =~ ^[0-9]+$ ]]; then
   echo "$state_json" | jq .
   exit 1
 fi
- 
+
 
   local new_total
   if [ -n "$NEW_TOTAL_N" ]; then

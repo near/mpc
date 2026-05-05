@@ -331,8 +331,8 @@ sequenceDiagram
 
 # Design Details
 
-This section is intended for readers who want to **deep dive into the technical design choices** of the MPC solution.  
-It expands on the high-level architecture by covering specific implementation details such as key handling,  
+This section is intended for readers who want to **deep dive into the technical design choices** of the MPC solution.
+It expands on the high-level architecture by covering specific implementation details such as key handling,
 smart contract APIs, MPC node behavior, attestation generation and verification, and upgrade mechanisms.
 
 ## Smart Contract
@@ -482,7 +482,7 @@ The event log consists of a sorted list of entries of the form `imr: [0-3], even
 
 For example `{"imr":3,"event_type":134217729,"digest":"0f96812....","event":"mpc-hash","event_payload":"c97d9523b67...."}` is the event we defined to measure the mpc image digest the launcher starts.
 
-The contract will replay (recalculate) the expected RTMR3 value from the event log, and make sure it matches the **signed** RTMR3 from the TDX quote.  
+The contract will replay (recalculate) the expected RTMR3 value from the event log, and make sure it matches the **signed** RTMR3 from the TDX quote.
 Then it will look for specific events in the RTMR3 log, and make sure the a value measured into RTMR3, matches expected values.
 
 List of important RTMR3 events:
@@ -491,7 +491,7 @@ List of important RTMR3 events:
 - MPC_docker_image_hash
 - App compose / Docker Compose
 
-**SGX Key Provider**  
+**SGX Key Provider**
 Check that the `event_payload` of the key-provider event equals the expected hash:
 
 ```json
@@ -514,7 +514,7 @@ Check that the event log contains an entry `compose-hash` that matches one of th
 
 The Contract has a parameterized template of the launcher docker_compose file ([`launcher_docker_compose.yaml.template`](https://github.com/near/mpc/blob/main/crates/contract/assets/launcher_docker_compose.yaml.template)) with two placeholders: `{{LAUNCHER_IMAGE_HASH}}` for the launcher image hash and `{{DEFAULT_IMAGE_DIGEST_HASH}}` for the MPC node image hash.
 
-Compose hashes are derived on-chain as the cross-product of allowed launcher image hashes and allowed MPC image hashes. When a new MPC image hash is voted in (`vote_code_hash`), compose hashes are derived for all existing launcher hashes. When a new launcher hash is voted in (`vote_add_launcher_hash`), compose hashes are derived for all existing MPC hashes. This decouples launcher upgrades from contract deployments.  
+Compose hashes are derived on-chain as the cross-product of allowed launcher image hashes and allowed MPC image hashes. When a new MPC image hash is voted in (`vote_code_hash`), compose hashes are derived for all existing launcher hashes. When a new launcher hash is voted in (`vote_add_launcher_hash`), compose hashes are derived for all existing MPC hashes. This decouples launcher upgrades from contract deployments.
 A valid Docker compose file to start the MPC node might look like the following
 
 ```yaml
@@ -557,7 +557,7 @@ Given this Docker compose file, the resulting `app-compose.json` might look like
 }
 ```
 
-The specific format of `app-compose.json` depends on dstack (and version of dstack).  
+The specific format of `app-compose.json` depends on dstack (and version of dstack).
 This may change in the future (see dstack update section).
 
 # MPC Node Upgradability
@@ -586,13 +586,13 @@ Follow the launcher approach specified in <https://phalanetwork.notion.site/NEAR
 
 ## Kicking out nodes with invalid attestation
 
-After a new MPC docker image hash has been successfully voted by Threshold participants.  
-The old MPC docker image hash will still be valid for 7 days.  
+After a new MPC docker image hash has been successfully voted by Threshold participants.
+The old MPC docker image hash will still be valid for 7 days.
 After 7 days, any call to the contract API `verify_tee` will removing the old MPC hash from the approved list, and trigger a check for the validity of the registered attestation for each one of the participants.
 
 _Note_ - Each MPC node will periodically call the `verify_tee`every 7 days.
 
-If any participant fails this check (since it did not submit a remote attestation with the new MPC docker image hash), then this participant will be automatically kicked out from the network, and a key re-sharing between the remaining participants will start.  
+If any participant fails this check (since it did not submit a remote attestation with the new MPC docker image hash), then this participant will be automatically kicked out from the network, and a key re-sharing between the remaining participants will start.
 Note - In case the number of remaining participants is less that the threshold. The node will not be kicked out, instead the contract will stop to accept signing requests until this is solved.
 
 # CVM Upgrades
