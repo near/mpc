@@ -332,13 +332,11 @@ async fn start_migration_and_wait(
     .await
     .context("timed out waiting for contract to reflect node migration")?;
 
-    // Wait until the target node's own indexer has caught up to the
-    // start_node_migration block. Without this, the target's
-    // `MigrationInfo.active_migration` flips false → true mid-PUT, which
-    // fires the migration web-server's per-connection cancellation token
-    // and tears down backup-cli's in-flight TLS stream
-    // (see `migration_service::web::server::handle_stream`). Mirrors the
-    // source-side poll in `register_backup_service_and_wait`.
+    // Wait for the target's own indexer to ingest start_node_migration
+    // before backup-cli does PUT keyshares. Otherwise the target's
+    // `MigrationInfo.active_migration` flips mid-PUT, fires the
+    // migration web-server's per-connection cancellation token, and
+    // tears down the in-flight TLS stream.
     let target_web_addr = match &cluster.nodes[target_idx] {
         MpcNodeState::Running(n) => n.web_address(),
         _ => bail!("target node not running"),
