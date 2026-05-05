@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::ops::Add;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 
 /// Tracks the topology of the recent blocks, using the blocks given by the indexer.
 ///
@@ -110,9 +110,10 @@ struct BlockNode {
     canonical: AtomicBool,
     /// Whether this block is on the final chain. This only ever goes from false to true.
     is_final: AtomicBool,
-    /// The parent block, if we're aware of it. This may be None if we either have never
-    /// heard of the parent or the parent has been pruned (too old).
-    parent: Mutex<Option<Arc<BlockNode>>>,
+    /// The parent block, if we're aware of it. This may be None if we have never
+    /// heard of the parent.
+    /// The Weak becomes a dangling pointer when the parent is pruned.
+    parent: Option<Weak<BlockNode>>,
     /// The children blocks; there can be multiple if there are forks. The children are
     /// kept in no specific order.
     children: Mutex<Vec<Arc<BlockNode>>>,
@@ -141,6 +142,10 @@ impl BlockNode {
                 );
             }
         }
+    }
+
+    fn get_parent(&self) -> Option<Arc<BlockNode>> {
+        self.parent.as_ref().and_then(Weak::upgrade)
     }
 
     fn debug_print(
@@ -259,7 +264,7 @@ impl<T: Clone> RecentBlocksTracker<T> {
             height: block.height,
             canonical: AtomicBool::new(false),
             is_final: AtomicBool::new(false),
-            parent: Mutex::new(parent.clone()),
+            parent: parent.as_ref().map(Arc::downgrade),
             children: Mutex::new(Vec::new()),
         });
         self.hash_to_node.insert(block.hash, node.clone());
@@ -308,7 +313,7 @@ impl<T: Clone> RecentBlocksTracker<T> {
                 }
                 node.is_final.store(true, Ordering::Relaxed);
                 new_final_blocks.push(node.clone());
-                let Some(parent) = node.parent.lock().unwrap().clone() else {
+                let Some(parent) = node.get_parent() else {
                     break;
                 };
                 node = parent;
@@ -337,7 +342,7 @@ impl<T: Clone> RecentBlocksTracker<T> {
                 break;
             }
             current_node.canonical.store(true, Ordering::Relaxed);
-            node = current_node.parent.lock().unwrap().clone();
+            node = current_node.get_parent();
         }
         let common_ancestor = node;
 
@@ -349,7 +354,7 @@ impl<T: Clone> RecentBlocksTracker<T> {
                 }
             }
             current_node.canonical.store(false, Ordering::Relaxed);
-            old_node = current_node.parent.lock().unwrap().clone();
+            old_node = current_node.get_parent();
         }
         self.canonical_head = Some(new_canonical_head.clone());
     }
@@ -397,9 +402,6 @@ impl<T: Clone> RecentBlocksTracker<T> {
                 &mut new_root_children,
                 &mut old_nodes,
             );
-        }
-        for child in &new_root_children {
-            *child.parent.lock().unwrap() = None;
         }
         self.root_children = new_root_children;
         for old_node in old_nodes {
