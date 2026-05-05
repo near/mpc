@@ -4,13 +4,48 @@ use crate::sandbox::common::SandboxTestSetup;
 use crate::sandbox::utils::consts::ALL_PROTOCOLS;
 use assert_matches::assert_matches;
 use near_mpc_bounded_collections::NonEmptyBTreeSet;
-use near_mpc_contract_interface::method_names::REGISTER_FOREIGN_CHAIN_CONFIG;
+use near_mpc_contract_interface::method_names::REGISTER_FOREIGN_CHAIN_SUPPORT;
 use near_mpc_contract_interface::types as dtos;
+use rstest::rstest;
 use serde_json::json;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
+#[expect(deprecated)]
+use near_mpc_contract_interface::method_names::REGISTER_FOREIGN_CHAIN_CONFIG;
+
+#[rstest]
+#[expect(deprecated)]
+#[case(REGISTER_FOREIGN_CHAIN_CONFIG,
+        json!({
+            "foreign_chain_configuration": dtos::ForeignChainConfiguration::from(BTreeMap::from([
+                (
+                    dtos::ForeignChain::Bitcoin,
+                    NonEmptyBTreeSet::new(dtos::RpcProvider {
+                        rpc_url: "https://btc.example.com".to_string(),
+                    }),
+                ),
+                (
+                    dtos::ForeignChain::Starknet,
+                    NonEmptyBTreeSet::new(dtos::RpcProvider {
+                        rpc_url: "https://starknet.example.com".to_string(),
+                    }),
+                ),
+            ]))
+        })
+    )]
+#[case(REGISTER_FOREIGN_CHAIN_SUPPORT,
+        json!({
+            "foreign_chain_support": dtos::SupportedForeignChains::from(BTreeSet::from([
+                dtos::ForeignChain::Bitcoin,
+                dtos::ForeignChain::Starknet,
+            ]))
+        })
+    )]
 #[tokio::test]
-async fn register_foreign_chain_config__stores_and_returns_supported_chains() {
+async fn register_foreign_chain_support__stores_and_returns_supported_chains(
+    #[case] method_name: &str,
+    #[case] payload: serde_json::Value,
+) {
     // Given: a running contract with participants
     let SandboxTestSetup {
         contract,
@@ -21,33 +56,15 @@ async fn register_foreign_chain_config__stores_and_returns_supported_chains() {
         .build()
         .await;
 
-    // When: ALL participants register the same supported chains
-    let foreign_chain_configuration: dtos::ForeignChainConfiguration = BTreeMap::from([
-        (
-            dtos::ForeignChain::Bitcoin,
-            NonEmptyBTreeSet::new(dtos::RpcProvider {
-                rpc_url: "https://btc.example.com".to_string(),
-            }),
-        ),
-        (
-            dtos::ForeignChain::Starknet,
-            NonEmptyBTreeSet::new(dtos::RpcProvider {
-                rpc_url: "https://starknet.example.com".to_string(),
-            }),
-        ),
-    ])
-    .into();
-
     for account in &mpc_signer_accounts {
         let result = account
-            .call(contract.id(), REGISTER_FOREIGN_CHAIN_CONFIG)
-            .args_json(json!({
-                "foreign_chain_configuration": foreign_chain_configuration
-            }))
+            .call(contract.id(), method_name)
+            .args_json(payload.clone())
             .transact()
             .await
             .unwrap()
             .into_result();
+
         assert_matches!(result, Ok(_), "register should succeed for participant");
     }
 
@@ -67,8 +84,56 @@ async fn register_foreign_chain_config__stores_and_returns_supported_chains() {
     );
 }
 
+#[rstest]
+#[expect(deprecated)]
+#[case(REGISTER_FOREIGN_CHAIN_CONFIG,
+        json!({
+            "foreign_chain_configuration": dtos::ForeignChainConfiguration::from(BTreeMap::from([
+                (
+                    dtos::ForeignChain::Bitcoin,
+                    NonEmptyBTreeSet::new(dtos::RpcProvider {
+                        rpc_url: "https://btc.example.com".to_string(),
+                    }),
+                ),
+                (
+                    dtos::ForeignChain::Starknet,
+                    NonEmptyBTreeSet::new(dtos::RpcProvider {
+                        rpc_url: "https://starknet.example.com".to_string(),
+                    }),
+                ),
+            ]))
+        }),
+        json!({
+            "foreign_chain_configuration": dtos::ForeignChainConfiguration::from(BTreeMap::from([
+                (
+                    dtos::ForeignChain::Bitcoin,
+                    NonEmptyBTreeSet::new(dtos::RpcProvider {
+                        rpc_url: "https://btc.example.com".to_string(),
+                    }),
+                ),
+            ]))
+        })
+
+    )]
+#[case(REGISTER_FOREIGN_CHAIN_SUPPORT,
+        json!({
+            "foreign_chain_support": dtos::SupportedForeignChains::from(BTreeSet::from([
+                dtos::ForeignChain::Bitcoin,
+                dtos::ForeignChain::Starknet,
+            ]))
+        }),
+        json!({
+            "foreign_chain_support": dtos::SupportedForeignChains::from(BTreeSet::from([
+                dtos::ForeignChain::Bitcoin,
+            ]))
+        })
+    )]
 #[tokio::test]
-async fn register_foreign_chain_config__excludes_chains_not_supported_by_all() {
+async fn register_foreign_chain_config__excludes_chains_not_supported_by_all(
+    #[case] method_name: &str,
+    #[case] bitcoin_and_starknet: serde_json::Value,
+    #[case] bitcoin_only: serde_json::Value,
+) {
     // Given: a running contract with participants
     let SandboxTestSetup {
         contract,
@@ -80,27 +145,9 @@ async fn register_foreign_chain_config__excludes_chains_not_supported_by_all() {
         .await;
 
     // When: first participant registers Bitcoin + Starknet
-    let bitcoin_and_starknet: dtos::ForeignChainConfiguration = BTreeMap::from([
-        (
-            dtos::ForeignChain::Bitcoin,
-            NonEmptyBTreeSet::new(dtos::RpcProvider {
-                rpc_url: "https://btc.example.com".to_string(),
-            }),
-        ),
-        (
-            dtos::ForeignChain::Starknet,
-            NonEmptyBTreeSet::new(dtos::RpcProvider {
-                rpc_url: "https://starknet.example.com".to_string(),
-            }),
-        ),
-    ])
-    .into();
-
     let result = mpc_signer_accounts[0]
-        .call(contract.id(), REGISTER_FOREIGN_CHAIN_CONFIG)
-        .args_json(json!({
-            "foreign_chain_configuration": bitcoin_and_starknet
-        }))
+        .call(contract.id(), method_name)
+        .args_json(bitcoin_and_starknet)
         .transact()
         .await
         .unwrap()
@@ -108,20 +155,10 @@ async fn register_foreign_chain_config__excludes_chains_not_supported_by_all() {
     assert_matches!(result, Ok(_));
 
     // And: remaining participants register only Bitcoin
-    let bitcoin_only: dtos::ForeignChainConfiguration = BTreeMap::from([(
-        dtos::ForeignChain::Bitcoin,
-        NonEmptyBTreeSet::new(dtos::RpcProvider {
-            rpc_url: "https://btc.example.com".to_string(),
-        }),
-    )])
-    .into();
-
     for account in &mpc_signer_accounts[1..] {
         let result = account
-            .call(contract.id(), REGISTER_FOREIGN_CHAIN_CONFIG)
-            .args_json(json!({
-                "foreign_chain_configuration": bitcoin_only
-            }))
+            .call(contract.id(), method_name)
+            .args_json(bitcoin_only.clone())
             .transact()
             .await
             .unwrap()
@@ -143,8 +180,32 @@ async fn register_foreign_chain_config__excludes_chains_not_supported_by_all() {
     );
 }
 
+#[rstest]
+#[expect(deprecated)]
+#[case(REGISTER_FOREIGN_CHAIN_CONFIG,
+        json!({
+            "foreign_chain_configuration": dtos::ForeignChainConfiguration::from(BTreeMap::from([
+                (
+                    dtos::ForeignChain::Bitcoin,
+                    NonEmptyBTreeSet::new(dtos::RpcProvider {
+                        rpc_url: "https://btc.example.com".to_string(),
+                    }),
+                ),
+            ]))
+        })
+    )]
+#[case(REGISTER_FOREIGN_CHAIN_SUPPORT,
+        json!({
+            "foreign_chain_support": dtos::SupportedForeignChains::from(BTreeSet::from([
+                dtos::ForeignChain::Bitcoin,
+            ]))
+        })
+    )]
 #[tokio::test]
-async fn register_foreign_chain_config__returns_empty_when_not_all_registered() {
+async fn register_foreign_chain_config__returns_empty_when_not_all_registered(
+    #[case] method_name: &str,
+    #[case] bitcoin_only: serde_json::Value,
+) {
     // Given: a running contract with participants
     let SandboxTestSetup {
         contract,
@@ -156,19 +217,9 @@ async fn register_foreign_chain_config__returns_empty_when_not_all_registered() 
         .await;
 
     // When: only one participant registers
-    let bitcoin_only: dtos::ForeignChainConfiguration = BTreeMap::from([(
-        dtos::ForeignChain::Bitcoin,
-        NonEmptyBTreeSet::new(dtos::RpcProvider {
-            rpc_url: "https://btc.example.com".to_string(),
-        }),
-    )])
-    .into();
-
     let result = mpc_signer_accounts[0]
-        .call(contract.id(), REGISTER_FOREIGN_CHAIN_CONFIG)
-        .args_json(json!({
-            "foreign_chain_configuration": bitcoin_only
-        }))
+        .call(contract.id(), method_name)
+        .args_json(bitcoin_only.clone())
         .transact()
         .await
         .unwrap()
