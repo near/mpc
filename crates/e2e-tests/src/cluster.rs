@@ -970,8 +970,19 @@ async fn init_contract(
         num_participants = participant_indices.len(),
         "initializing contract"
     );
+    // The contract's default `key_event_timeout_blocks = 30` is ~18 s on
+    // mainnet (~600 ms blocks). The e2e sandbox runs ~8 blocks/s, so the
+    // same 30 collapses to ~3.7 s — too tight for the resharing
+    // round-trip (start_reshare → indexer × N → MPC compute →
+    // vote_reshared) once concurrent e2e tests put the runner under
+    // load. Override to 240 blocks (~30 s in sandbox) as a comfortable
+    // budget over mainnet's effective headroom.
+    let init_config = json!({ "key_event_timeout_blocks": 240u64 });
     let outcome = contract
-        .call(method_names::INIT, json!({ "parameters": params }))
+        .call(
+            method_names::INIT,
+            json!({ "parameters": params, "init_config": init_config }),
+        )
         .await?;
     anyhow::ensure!(
         outcome.is_success(),
