@@ -15,7 +15,7 @@ use crate::sandbox::{
 };
 use assert_matches::assert_matches;
 use dtos::{
-    AttemptId, Curve, DomainConfig, DomainPurpose, KeyEventId, ProtocolContractState,
+    AttemptId, Curve, DomainConfig, DomainPurpose, KeyEventId, Protocol, ProtocolContractState,
     RunningContractState,
 };
 use mpc_contract::primitives::{
@@ -52,6 +52,7 @@ async fn test_keygen() -> anyhow::Result<()> {
         &[DomainConfig {
             id: domain_id.into(),
             curve,
+            protocol: Protocol::from(curve),
             purpose: DomainPurpose::Sign,
         }],
     )
@@ -65,6 +66,7 @@ async fn test_keygen() -> anyhow::Result<()> {
     let expected_domain = dtos::DomainConfig {
         id: dtos::DomainId(domain_id),
         curve,
+        protocol: Protocol::from(curve),
         purpose: dtos::DomainPurpose::Sign,
     };
     let found = init
@@ -157,6 +159,7 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
             &[DomainConfig {
                 id: next_domain_id.into(),
                 curve: *curve,
+                protocol: Protocol::from(*curve),
                 purpose: infer_purpose_from_curve(*curve),
             }],
         )
@@ -175,6 +178,7 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
         let expected_domain = dtos::DomainConfig {
             id: dtos::DomainId(next_domain_id),
             curve: *curve,
+            protocol: Protocol::from(*curve),
             purpose: expected_purpose,
         };
         let found = init

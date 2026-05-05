@@ -7,7 +7,7 @@ use crate::tests::{
 };
 use crate::tracking::AutoAbortTask;
 use mpc_primitives::domain::{Curve, DomainId};
-use near_mpc_contract_interface::types::{DomainConfig, DomainPurpose};
+use near_mpc_contract_interface::types::{DomainConfig, DomainPurpose, Protocol};
 use near_time::Clock;
 
 // Make a cluster of four nodes, test that we can generate keyshares
@@ -34,18 +34,21 @@ async fn test_basic_cluster() {
     let signature_domain_ecdsa = DomainConfig {
         id: DomainId(0),
         curve: Curve::Secp256k1,
+        protocol: Protocol::from(Curve::Secp256k1),
         purpose: DomainPurpose::Sign,
     };
 
     let signature_domain_eddsa = DomainConfig {
         id: DomainId(1),
         curve: Curve::Edwards25519,
+        protocol: Protocol::from(Curve::Edwards25519),
         purpose: DomainPurpose::Sign,
     };
 
     let ckd_domain = DomainConfig {
         id: DomainId(2),
         curve: Curve::Bls12381,
+        protocol: Protocol::from(Curve::Bls12381),
         purpose: DomainPurpose::CKD,
     };
 

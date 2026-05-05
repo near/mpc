@@ -1,7 +1,7 @@
 use crate::common;
 
 use near_mpc_contract_interface::types::{
-    Curve, DomainConfig, DomainId, DomainPurpose, SignatureResponse,
+    Curve, DomainConfig, DomainId, DomainPurpose, Protocol, SignatureResponse,
 };
 use rand::SeedableRng;
 
@@ -91,6 +91,7 @@ async fn mpc_cluster__should_successfully_process_robust_ecdsa_requests() {
         c.domains = vec![DomainConfig {
             id: DomainId(0),
             curve: Curve::V2Secp256k1,
+            protocol: Protocol::from(Curve::V2Secp256k1),
             purpose: DomainPurpose::Sign,
         }];
         c.triples_to_buffer = 0;

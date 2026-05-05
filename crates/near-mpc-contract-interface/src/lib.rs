@@ -22,9 +22,9 @@ pub mod types {
     pub use state::{
         AddDomainsVotes, AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, Curve,
         DomainConfig, DomainPurpose, DomainRegistry, EpochId, InitializingContractState, KeyEvent,
-        KeyEventId, KeyEventInstance, KeyForDomain, Keyset, ProtocolContractState,
+        KeyEventId, KeyEventInstance, KeyForDomain, Keyset, Protocol, ProtocolContractState,
         ResharingContractState, RunningContractState, Threshold, ThresholdParameters,
-        ThresholdParametersVotes,
+        ThresholdParametersVotes, protocol_state_to_string,
     };
     pub use tee::NodeId;
     pub use updates::{ProposedUpdates, UpdateHash};
