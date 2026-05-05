@@ -17,7 +17,9 @@ use mpc_contract::primitives::{
     thresholds::{Threshold, ThresholdParameters},
 };
 use near_account_id::AccountId;
+use near_mpc_bounded_collections::NonEmptyBTreeSet;
 use near_mpc_contract_interface::method_names;
+use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use near_mpc_contract_interface::types::{
     CKDResponse, Curve, DomainConfig, DomainPurpose, Protocol,
@@ -27,6 +29,7 @@ use near_workspaces::{network::Sandbox, Account, Contract, Worker};
 use rand_core::OsRng;
 use rstest::rstest;
 use std::collections::HashSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone, Copy)]
 enum Network {
@@ -461,4 +464,86 @@ async fn init_running_rejects_external_callers_pre_initialization() {
         "init_running call was accepted by external caller. expected method to be private. {:?}",
         error_message
     )
+}
+
+/// Verifies that per-node foreign chain configurations registered on the old
+/// contract via the deprecated `register_foreign_chain_config` are migrated to
+/// the new `node_foreign_chain_support` layout: each node's full
+/// `ForeignChainConfiguration` (chain → RPC providers) collapses to the set of
+/// supported chains, and per-node entries are preserved (not merged).
+#[rstest]
+#[tokio::test]
+async fn upgrade_preserves_per_node_foreign_chain_support(
+    #[values(Network::Mainnet, Network::Testnet)] network: Network,
+) -> anyhow::Result<()> {
+    // Three participants, each registering a distinct chain configuration. The
+    // chosen sets are deliberately overlapping but not equal so the test can
+    // detect any per-node merging or loss.
+    let per_node_chains: [&[dtos::ForeignChain]; 3] = [
+        &[dtos::ForeignChain::Bitcoin, dtos::ForeignChain::Ethereum],
+        &[dtos::ForeignChain::Bitcoin],
+        &[dtos::ForeignChain::Solana],
+    ];
+
+    // Given: an old contract with participants and per-node foreign chain
+    // configurations registered through the deprecated method.
+    let worker = near_workspaces::sandbox().await?;
+    let contract = deploy_old(&worker, network).await?;
+    let (accounts, _participants) =
+        init_old_contract(&worker, &contract, per_node_chains.len()).await?;
+
+    for (account, chains) in accounts.iter().zip(per_node_chains.iter()) {
+        #[expect(deprecated)]
+        let configuration: dtos::ForeignChainConfiguration = chains
+            .iter()
+            .map(|chain| {
+                (
+                    *chain,
+                    NonEmptyBTreeSet::new(dtos::RpcProvider {
+                        rpc_url: format!("https://{:?}.{}.example.near", chain, account.id()),
+                    }),
+                )
+            })
+            .collect::<BTreeMap<_, _>>()
+            .into();
+
+        #[expect(deprecated)]
+        account
+            .call(contract.id(), method_names::REGISTER_FOREIGN_CHAIN_CONFIG)
+            .args_json(serde_json::json!({
+                "foreign_chain_configuration": configuration,
+            }))
+            .transact()
+            .await?
+            .into_result()?;
+    }
+
+    // When: we upgrade the contract and run migrate.
+    let contract = upgrade_to_new(contract).await?;
+    migrate_and_assert_contract_code(&contract)
+        .await
+        .expect("❌ migration() failed");
+
+    // Then: each node's supported-chain set matches the chains it originally
+    // registered (RPC providers are dropped by the new layout).
+    let support: dtos::ForeignChainSupportByNode = contract
+        .view(method_names::GET_FOREIGN_CHAIN_SUPPORT_BY_NODE)
+        .await?
+        .json()?;
+
+    for (account, chains) in accounts.iter().zip(per_node_chains.iter()) {
+        let actual = support
+            .foreign_chain_support_by_node
+            .get(account.id())
+            .unwrap_or_else(|| panic!("entry for {} preserved post-upgrade", account.id()));
+        let expected: dtos::SupportedForeignChains =
+            chains.iter().copied().collect::<BTreeSet<_>>().into();
+        assert_eq!(
+            *actual,
+            expected,
+            "supported chains for {} should match what was registered pre-upgrade",
+            account.id(),
+        );
+    }
+    Ok(())
 }
