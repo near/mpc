@@ -1276,10 +1276,10 @@ mod tests {
     }
 
     /// PCK CRL `thisUpdate` past `MAX_COLLATERAL_AGE` is rejected even
-    /// when the JSON-shaped fields are fresh — covers the case netrome
-    /// raised on `near/mpc-private#293`: PCK CRL has the same 30-day
-    /// validity window as TCB Info / QE Identity and a withholding PCCS
-    /// can hide newly-revoked PCK certs within it.
+    /// when the JSON-shaped fields are fresh. The PCK CRL has the same
+    /// 30-day validity window as TCB Info / QE Identity, and a withholding
+    /// PCCS can hide newly-revoked PCK certs within it — so the same
+    /// max-age check applies uniformly to all three.
     #[test]
     fn check_collateral_freshness__should_reject_when_pck_crl_too_old() {
         // Fixture CRL's thisUpdate is 2026-03-30T11:17:23Z; pick a `now`
