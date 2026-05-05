@@ -688,8 +688,8 @@ BorshSchemaContainer {
                         "ProposedUpdates",
                     ),
                     (
-                        "node_foreign_chain_configurations",
-                        "NodeForeignChainConfigurations",
+                        "node_foreign_chain_support",
+                        "SupportedForeignChainsByNode",
                     ),
                     (
                         "config",
@@ -742,16 +742,6 @@ BorshSchemaContainer {
             fields: UnnamedFields(
                 [
                     "[u8; 48]",
-                ],
-            ),
-        },
-        "NodeForeignChainConfigurations": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "foreign_chain_configuration_by_node",
-                        "IterableMap",
-                    ),
                 ],
             ),
         },
@@ -1111,6 +1101,16 @@ BorshSchemaContainer {
             length_width: 4,
             length_range: 0..=4294967295,
             elements: "u8",
+        },
+        "SupportedForeignChainsByNode": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "foreign_chain_support_by_node",
+                        "IterableMap",
+                    ),
+                ],
+            ),
         },
         "TeeState": Struct {
             fields: NamedFields(

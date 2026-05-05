@@ -1,3 +1,7 @@
+// allow deprecation for module, since macro decorators don't work
+// when applied directly on struct.
+#![expect(deprecated, reason = "ForeignChainConfiguration is being deprecated")]
+
 use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_bounded_collections::NonEmptyBTreeSet;
 use serde::{Deserialize, Serialize};
@@ -621,6 +625,7 @@ pub enum ForeignChain {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
+#[deprecated(note = "https://github.com/near/mpc/issues/3079")]
 pub struct ForeignChainConfiguration(BTreeMap<ForeignChain, NonEmptyBTreeSet<RpcProvider>>);
 
 #[derive(
@@ -687,8 +692,8 @@ pub struct RpcProvider {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct NodeForeignChainConfigurations {
-    pub foreign_chain_configuration_by_node: BTreeMap<AccountId, ForeignChainConfiguration>,
+pub struct ForeignChainSupportByNode {
+    pub foreign_chain_support_by_node: BTreeMap<AccountId, SupportedForeignChains>,
 }
 
 #[derive(
