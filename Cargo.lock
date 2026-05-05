@@ -11310,6 +11310,7 @@ name = "tee-authority"
 version = "3.9.0"
 dependencies = [
  "anyhow",
+ "assert_matches",
  "backon",
  "dcap-qvl",
  "derive_more 2.1.1",
@@ -11320,11 +11321,15 @@ dependencies = [
  "near-mpc-bounded-collections",
  "reqwest 0.13.3",
  "rstest",
+ "serde",
+ "serde_json",
  "test-utils",
  "thiserror 2.0.18",
+ "time",
  "tokio",
  "tracing",
  "url",
+ "x509-parser 0.18.1",
 ]
 
 [[package]]
