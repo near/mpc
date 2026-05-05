@@ -104,8 +104,14 @@ git push -u "$REMOTE" "$BRANCH"
 # --- Generate changelog ---
 
 # Branch must be pushed first so git-cliff can resolve PR links.
+# Use --prepend --unreleased so the new release section is added on top of
+# CHANGELOG.md, preserving any manually authored sections (e.g. for releases
+# whose tag does not live on main, like 3.9.1 on release/v3.9.1). When new
+# sections need to be hand-written, append the relevant duplicate cherry-pick
+# commits to .cliffignore so they don't reappear in the next auto-generated
+# release block.
 echo "==> Generating changelog..."
-git-cliff -t "$VERSION" > CHANGELOG.md
+git-cliff --prepend CHANGELOG.md --unreleased -t "$VERSION"
 
 # --- Bump workspace version in Cargo.toml ---
 
