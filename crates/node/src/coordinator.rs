@@ -32,7 +32,7 @@ use crate::web::DebugRequest;
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use mpc_node_config::ConfigFile;
-use mpc_primitives::domain::{DomainId, Protocol};
+use mpc_primitives::domain::{Curve, DomainId, Protocol};
 use mpc_primitives::EpochId;
 use near_time::Clock;
 use std::collections::HashMap;
@@ -553,44 +553,40 @@ where
                     .map(|d| (d.id, d.protocol))
                     .collect();
 
-                let mut routing_invariant_violated = false;
                 for keyshare in keyshares {
                     let domain_id = keyshare.key_id.domain_id;
                     let Some(protocol) = domain_to_protocol.get(&domain_id).copied() else {
-                        tracing::error!(
-                            ?domain_id,
-                            "Keyshare references a domain that is not in the contract registry",
+                        anyhow::bail!(
+                            "Keyshare references domain {domain_id:?} which is not in the contract registry",
                         );
-                        routing_invariant_violated = true;
-                        continue;
                     };
-                    match (keyshare.data, protocol) {
-                        (KeyshareData::Secp256k1(data), Protocol::CaitSith) => {
-                            ecdsa_keyshares.insert(domain_id, data);
-                        }
-                        (KeyshareData::Secp256k1(data), Protocol::DamgardEtAl) => {
-                            robust_ecdsa_keyshares.insert(domain_id, data);
-                        }
-                        (KeyshareData::Ed25519(data), Protocol::Frost) => {
+                    let expected_curve = Curve::from(protocol);
+                    match (expected_curve, keyshare.data) {
+                        (Curve::Secp256k1, KeyshareData::Secp256k1(data)) => match protocol {
+                            Protocol::CaitSith => {
+                                ecdsa_keyshares.insert(domain_id, data);
+                            }
+                            Protocol::DamgardEtAl => {
+                                robust_ecdsa_keyshares.insert(domain_id, data);
+                            }
+                            other => anyhow::bail!(
+                                "Unexpected protocol {other:?} for Secp256k1 keyshare on domain {domain_id:?}",
+                            ),
+                        },
+                        (Curve::Edwards25519, KeyshareData::Ed25519(data)) => {
                             eddsa_keyshares.insert(domain_id, data);
                         }
-                        (KeyshareData::Bls12381(data), Protocol::ConfidentialKeyDerivation) => {
+                        (Curve::Bls12381, KeyshareData::Bls12381(data)) => {
                             ckd_keyshares.insert(domain_id, data);
                         }
-                        (data, protocol) => {
-                            tracing::error!(
-                                ?domain_id,
-                                ?protocol,
-                                data_kind = ?std::mem::discriminant(&data),
-                                "Keyshare data does not match the domain protocol",
-                            );
-                            routing_invariant_violated = true;
-                        }
+                        (expected, data) => anyhow::bail!(
+                            "Keyshare data does not match the domain protocol's expected curve: domain_id={:?}, protocol={:?}, expected_curve={:?}, data_kind={:?}",
+                            domain_id,
+                            protocol,
+                            expected,
+                            std::mem::discriminant(&data),
+                        ),
                     }
-                }
-                if routing_invariant_violated {
-                    tracing::error!("Keyshare/domain routing invariant violated; halting until contract state changes.");
-                    return Ok(MpcJobResult::HaltUntilInterrupted);
                 }
 
                 let ecdsa_signature_provider = Arc::new(EcdsaSignatureProvider::new(

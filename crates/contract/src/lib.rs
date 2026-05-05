@@ -2424,11 +2424,11 @@ mod tests {
         }
     }
 
-    pub fn make_public_key_for_domain(
-        domain_curve: Curve,
+    pub fn make_public_key_for_curve(
+        curve: Curve,
         rng: &mut impl CryptoRngCore,
     ) -> (dtos::PublicKey, SharedSecretKey) {
-        match domain_curve {
+        match curve {
             Curve::Secp256k1 => {
                 let (pk, sk) = new_secp256k1(rng);
                 (pk.into(), SharedSecretKey::Secp256k1(sk))
@@ -2477,7 +2477,7 @@ mod tests {
             purpose,
         }];
         let epoch_id = EpochId::new(0);
-        let (pk, sk) = make_public_key_for_domain(curve, rng);
+        let (pk, sk) = make_public_key_for_curve(curve, rng);
         let key_for_domain = KeyForDomain {
             domain_id,
             key: pk.try_into().unwrap(),
@@ -4559,7 +4559,7 @@ mod tests {
             protocol: Protocol::CaitSith,
             purpose: DomainPurpose::Sign,
         }];
-        let (pk, _) = make_public_key_for_domain(Curve::Secp256k1, &mut OsRng);
+        let (pk, _) = make_public_key_for_curve(Curve::Secp256k1, &mut OsRng);
         let key_for_domain = KeyForDomain {
             domain_id,
             key: pk.try_into().unwrap(),
