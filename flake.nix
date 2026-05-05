@@ -147,6 +147,7 @@
           miscTools = with pkgs; [
             git
             binaryen
+            editorconfig-checker
             jq
             perl
             procps  # pgrep, used by the kill-orphan-mpc-nodes cargo-make task
