@@ -3,8 +3,8 @@ use tonlib_core::types::TonAddress;
 
 // `#[serde(default)]` is only used on fields the v3 API legitimately omits in
 // well-formed responses; everything else stays strict so schema drift fails
-// loudly. Note: `serde_json` errors on missing `Option<T>` too, hence the
-// explicit `default` on optional fields.
+// loudly. Missing `Option<T>` fields already deserialize as `None` without
+// `#[serde(default)]`; use `default` only where omission is intentionally accepted.
 
 /// Top-level response from `GET /api/v3/transactions?...`. The `transactions`
 /// array is always present; an empty array means no transaction matched the
