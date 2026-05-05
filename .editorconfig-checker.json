@@ -1,7 +1,0 @@
-{
-  "Exclude": [
-    "^libs/",
-    "^crates/contract-history/archive/",
-    "^third-party-licenses/licenses\\.html$"
-  ]
-}
