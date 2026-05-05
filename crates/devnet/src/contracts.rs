@@ -5,7 +5,7 @@ use near_mpc_bounded_collections::BoundedVec;
 use near_mpc_contract_interface::{
     method_names,
     types::{
-        CKDAppPublicKey, CKDRequestArgs, Curve, DomainConfig, Payload, SignRequestArgs,
+        CKDAppPublicKey, CKDRequestArgs, DomainConfig, Payload, Protocol, SignRequestArgs,
         EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
     },
 };
@@ -49,17 +49,21 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
     match call {
         ContractActionCall::ParallelSignCall(args) => {
             let mut ecdsa_calls_by_domain = BTreeMap::new();
+            let mut robust_ecdsa_calls_by_domain = BTreeMap::new();
             let mut eddsa_calls_by_domain = BTreeMap::new();
             let mut ckd_calls_by_domain = BTreeMap::new();
             for (domain, prot_calls) in args.calls_by_domain {
-                match domain.curve {
-                    Curve::Secp256k1 | Curve::V2Secp256k1 => {
+                match domain.protocol {
+                    Protocol::CaitSith => {
                         ecdsa_calls_by_domain.insert(domain.id.0, prot_calls);
                     }
-                    Curve::Edwards25519 => {
+                    Protocol::DamgardEtAl => {
+                        robust_ecdsa_calls_by_domain.insert(domain.id.0, prot_calls);
+                    }
+                    Protocol::Frost => {
                         eddsa_calls_by_domain.insert(domain.id.0, prot_calls);
                     }
-                    Curve::Bls12381 => {
+                    Protocol::ConfidentialKeyDerivation => {
                         ckd_calls_by_domain.insert(domain.id.0, prot_calls);
                     }
                 }
@@ -71,6 +75,7 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
                     &serde_json::to_vec(&ParallelSignArgsV2 {
                         target_contract: args.mpc_contract,
                         ecdsa_calls_by_domain,
+                        robust_ecdsa_calls_by_domain,
                         eddsa_calls_by_domain,
                         ckd_calls_by_domain,
                         seed: rand::random(),
@@ -89,7 +94,7 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
                     request: SignRequestArgs {
                         domain_id: args.domain_config.id,
                         path: "".to_string(),
-                        payload: make_payload(args.domain_config.curve),
+                        payload: make_payload(args.domain_config.protocol),
                     },
                 })
                 .unwrap(),
@@ -160,15 +165,18 @@ struct CKDArgs {
 struct ParallelSignArgsV2 {
     target_contract: AccountId,
     ecdsa_calls_by_domain: BTreeMap<u64, u64>,
+    robust_ecdsa_calls_by_domain: BTreeMap<u64, u64>,
     eddsa_calls_by_domain: BTreeMap<u64, u64>,
     ckd_calls_by_domain: BTreeMap<u64, u64>,
     seed: u64,
 }
 
-fn make_payload(curve: Curve) -> Payload {
-    match curve {
-        Curve::Secp256k1 | Curve::V2Secp256k1 => Payload::Ecdsa(rand::random::<[u8; 32]>().into()),
-        Curve::Edwards25519 => {
+fn make_payload(protocol: Protocol) -> Payload {
+    match protocol {
+        Protocol::CaitSith | Protocol::DamgardEtAl => {
+            Payload::Ecdsa(rand::random::<[u8; 32]>().into())
+        }
+        Protocol::Frost => {
             let len = rand::random_range(
                 EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES..=EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
             );
@@ -183,8 +191,10 @@ fn make_payload(curve: Curve) -> Payload {
 
             Payload::Eddsa(bounded_payload)
         }
-        Curve::Bls12381 => {
-            unreachable!("make_payload should not be called with `Bls12381` curve")
+        Protocol::ConfidentialKeyDerivation => {
+            unreachable!(
+                "make_payload should not be called with `ConfidentialKeyDerivation` protocol"
+            )
         }
     }
 }

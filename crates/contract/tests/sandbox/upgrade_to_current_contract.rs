@@ -367,13 +367,13 @@ async fn upgrade_allows_new_request_types(
         DomainConfig {
             id: first_available_domain_id.into(),
             curve: Curve::Bls12381,
-            protocol: Protocol::from(Curve::Bls12381),
+            protocol: Protocol::ConfidentialKeyDerivation,
             purpose: DomainPurpose::CKD,
         },
         DomainConfig {
             id: (first_available_domain_id + 1).into(),
             curve: Curve::Edwards25519,
-            protocol: Protocol::from(Curve::Edwards25519),
+            protocol: Protocol::Frost,
             purpose: DomainPurpose::Sign,
         },
     ];

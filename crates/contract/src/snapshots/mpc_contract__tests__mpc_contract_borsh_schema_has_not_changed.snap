@@ -290,11 +290,6 @@ BorshSchemaContainer {
                     "Bls12381",
                     "Curve__Bls12381",
                 ),
-                (
-                    3,
-                    "V2Secp256k1",
-                    "Curve__V2Secp256k1",
-                ),
             ],
         },
         "Curve__Bls12381": Struct {
@@ -304,9 +299,6 @@ BorshSchemaContainer {
             fields: Empty,
         },
         "Curve__Secp256k1": Struct {
-            fields: Empty,
-        },
-        "Curve__V2Secp256k1": Struct {
             fields: Empty,
         },
         "DockerImageHash": Struct {

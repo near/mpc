@@ -1951,22 +1951,11 @@ expression: abi
         },
         "Curve": {
           "description": "Elliptic curve used by a domain.",
-          "oneOf": [
-            {
-              "type": "string",
-              "enum": [
-                "Secp256k1",
-                "Edwards25519",
-                "Bls12381"
-              ]
-            },
-            {
-              "description": "Robust ECDSA variant.",
-              "type": "string",
-              "enum": [
-                "V2Secp256k1"
-              ]
-            }
+          "type": "string",
+          "enum": [
+            "Secp256k1",
+            "Edwards25519",
+            "Bls12381"
           ]
         },
         "DestinationNodeInfo": {

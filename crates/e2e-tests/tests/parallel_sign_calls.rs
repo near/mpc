@@ -25,26 +25,26 @@ async fn mpc_cluster_should_successfully_process_parallel_requests() {
             c.domains = vec![
                 DomainConfig {
                     id: DomainId(0),
-                    curve: Curve::V2Secp256k1,
-                    protocol: Protocol::from(Curve::V2Secp256k1),
+                    curve: Curve::Secp256k1,
+                    protocol: Protocol::DamgardEtAl,
                     purpose: DomainPurpose::Sign,
                 },
                 DomainConfig {
                     id: DomainId(1),
                     curve: Curve::Secp256k1,
-                    protocol: Protocol::from(Curve::Secp256k1),
+                    protocol: Protocol::CaitSith,
                     purpose: DomainPurpose::Sign,
                 },
                 DomainConfig {
                     id: DomainId(2),
                     curve: Curve::Edwards25519,
-                    protocol: Protocol::from(Curve::Edwards25519),
+                    protocol: Protocol::Frost,
                     purpose: DomainPurpose::Sign,
                 },
                 DomainConfig {
                     id: DomainId(3),
                     curve: Curve::Bls12381,
-                    protocol: Protocol::from(Curve::Bls12381),
+                    protocol: Protocol::ConfidentialKeyDerivation,
                     purpose: DomainPurpose::CKD,
                 },
             ];
@@ -81,7 +81,7 @@ async fn mpc_cluster_should_successfully_process_parallel_requests() {
         .expect("failed to sum CKD queue attempts");
 
     // when — fire all 9 calls in a single transaction with 1000 TGas.
-    // Domains: 0=V2Secp256k1(Sign), 1=Secp256k1(Sign), 2=Edwards25519(Sign), 3=Bls12381(CKD).
+    // Domains: 0=DamgardEtAl(Sign), 1=CaitSith(Sign), 2=Frost(Sign), 3=ConfidentialKeyDerivation(CKD).
     let outcome = parallel_contract
         .call(
             "make_parallel_sign_calls",

@@ -193,7 +193,7 @@ impl ResharingContractState {
 }
 #[cfg(test)]
 pub mod tests {
-    use crate::primitives::test_utils::NUM_CURVES;
+    use crate::primitives::test_utils::NUM_PROTOCOLS;
     use crate::state::{key_event::tests::find_leader, running::RunningContractState};
     use crate::{
         primitives::{
@@ -347,15 +347,15 @@ pub mod tests {
     #[case(1)]
     #[case(2)]
     #[case(3)]
-    #[case(NUM_CURVES)]
-    #[case(2*NUM_CURVES)]
+    #[case(NUM_PROTOCOLS)]
+    #[case(2*NUM_PROTOCOLS)]
     fn test_resharing_contract_state(#[case] num_domains: usize) {
         test_resharing_contract_state_for(num_domains);
     }
 
     #[test]
     fn test_resharing_reproposal() {
-        let (mut env, mut state) = gen_resharing_state(NUM_CURVES);
+        let (mut env, mut state) = gen_resharing_state(NUM_PROTOCOLS);
 
         // Vote for first domain's key.
         let leader = find_leader(&state.resharing_key);

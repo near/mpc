@@ -5,7 +5,7 @@ use crate::sandbox::{
         SandboxTestSetup,
     },
     utils::{
-        consts::{ALL_CURVES, GAS_FOR_VOTE_CANCEL_KEYGEN, PARTICIPANT_LEN},
+        consts::{ALL_PROTOCOLS, GAS_FOR_VOTE_CANCEL_KEYGEN, PARTICIPANT_LEN},
         initializing_utils::{start_keygen_instance, vote_add_domains, vote_public_key},
         interface::IntoContractType,
         mpc_contract::get_state,
@@ -34,7 +34,7 @@ async fn test_keygen() -> anyhow::Result<()> {
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
     let init_state = get_state(&contract).await;
@@ -44,6 +44,7 @@ async fn test_keygen() -> anyhow::Result<()> {
     let epoch_id = init_running.keyset.epoch_id;
     let domain_id = init_running.domains.next_domain_id;
     let curve = Curve::Edwards25519;
+    let protocol = Protocol::Frost;
 
     // vote to add the domain and verify we enter initializing state
     vote_add_domains(
@@ -52,7 +53,7 @@ async fn test_keygen() -> anyhow::Result<()> {
         &[DomainConfig {
             id: domain_id.into(),
             curve,
-            protocol: Protocol::from(curve),
+            protocol,
             purpose: DomainPurpose::Sign,
         }],
     )
@@ -66,7 +67,7 @@ async fn test_keygen() -> anyhow::Result<()> {
     let expected_domain = dtos::DomainConfig {
         id: dtos::DomainId(domain_id),
         curve,
-        protocol: Protocol::from(curve),
+        protocol,
         purpose: dtos::DomainPurpose::Sign,
     };
     let found = init
@@ -116,7 +117,7 @@ async fn test_keygen() -> anyhow::Result<()> {
         found_key,
         near_sdk::PublicKey::try_from(public_key.clone()).unwrap()
     );
-    assert_eq!(running.domains.domains.len(), ALL_CURVES.len() + 1);
+    assert_eq!(running.domains.domains.len(), ALL_PROTOCOLS.len() + 1);
     // assert that the epoch id did not change
     assert_eq!(running.keyset.epoch_id, epoch_id);
 
@@ -140,7 +141,7 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
     let init_state = get_state(&contract).await;
@@ -149,7 +150,8 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
     };
     let epoch_id: u64 = init_running.keyset.epoch_id.0;
     let mut next_domain_id: u64 = init_running.domains.next_domain_id;
-    for curve in ALL_CURVES {
+    for protocol in ALL_PROTOCOLS {
+        let curve = Curve::from(*protocol);
         let threshold = init_running.parameters.threshold.0 as usize;
 
         // vote to start key generation
@@ -158,9 +160,9 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
             &mpc_signer_accounts,
             &[DomainConfig {
                 id: next_domain_id.into(),
-                curve: *curve,
-                protocol: Protocol::from(*curve),
-                purpose: infer_purpose_from_curve(*curve),
+                curve,
+                protocol: *protocol,
+                purpose: infer_purpose_from_curve(curve),
             }],
         )
         .await
@@ -177,8 +179,8 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
         };
         let expected_domain = dtos::DomainConfig {
             id: dtos::DomainId(next_domain_id),
-            curve: *curve,
-            protocol: Protocol::from(*curve),
+            curve,
+            protocol: *protocol,
             purpose: expected_purpose,
         };
         let found = init
@@ -213,7 +215,7 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
                 .all(|k| k.domain_id.0 != next_domain_id),
             "No key should be registered for the cancelled domain"
         );
-        assert_eq!(running.domains.domains.len(), ALL_CURVES.len());
+        assert_eq!(running.domains.domains.len(), ALL_PROTOCOLS.len());
 
         // verify that the contract's `public_key` view method fails for the cancelled domain
         let public_key_result = contract
@@ -332,7 +334,7 @@ async fn setup_resharing_state(
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .with_number_of_participants(number_of_participants)
         .build()
         .await;
@@ -767,7 +769,7 @@ async fn vote_new_parameters_errors_if_new_participant_is_missing_valid_attestat
         mut mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
 

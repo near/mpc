@@ -38,7 +38,7 @@ async fn test_faulty_cluster() {
     let domain = DomainConfig {
         id: DomainId(0),
         curve: Curve::Secp256k1,
-        protocol: Protocol::from(Curve::Secp256k1),
+        protocol: Protocol::CaitSith,
         purpose: DomainPurpose::Sign,
     };
 
@@ -174,7 +174,7 @@ async fn test_indexer_stuck() {
     let domain = DomainConfig {
         id: DomainId(0),
         curve: Curve::Secp256k1,
-        protocol: Protocol::from(Curve::Secp256k1),
+        protocol: Protocol::CaitSith,
         purpose: DomainPurpose::Sign,
     };
 

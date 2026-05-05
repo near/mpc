@@ -32,7 +32,7 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(&[Curve::Secp256k1])
+        .with_protocols(&[Protocol::CaitSith])
         .build()
         .await;
 
@@ -151,7 +151,7 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(&[Curve::Secp256k1])
+        .with_protocols(&[Protocol::CaitSith])
         .build()
         .await;
 
@@ -168,7 +168,7 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
     let domains_to_add = vec![DomainConfig {
         id: DomainId(next_domain_id),
         curve: Curve::Edwards25519,
-        protocol: Protocol::from(Curve::Edwards25519),
+        protocol: Protocol::Frost,
         purpose: DomainPurpose::Sign,
     }];
     execute_async_transactions(
