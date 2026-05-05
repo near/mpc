@@ -4,7 +4,7 @@ dependencies = [
   "crate-names",
   "kebab-file-names",
   "todo-format",
-  "trailing-whitespace",
+  "editorconfig",
   "assert-matches",
   "use-in-fn",
   "ruff-format",
@@ -98,10 +98,10 @@ args = ["scripts/check-kebab-case-files.sh"]
 command = "bash"
 args = ["scripts/check-todo-format.sh"]
 
-[tasks.trailing-whitespace]
-description = "Check for trailing whitespace in tracked files"
+[tasks.editorconfig]
+description = "Enforce .editorconfig rules across all tracked files"
 command = "bash"
-args = ["scripts/check-trailing-whitespace.sh"]
+args = ["-c", "git ls-files -z | xargs -0 editorconfig-checker"]
 
 [tasks.check-contract-size]
 description = "Check reproducible contract WASM size against baseline"
