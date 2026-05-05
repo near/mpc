@@ -68,7 +68,7 @@ impl TestContract {
                             method_names::SIGN.to_string(),
                             serde_json::to_vec(&args).unwrap(),
                             NearToken::from_yoctonear(1),
-                            Gas::from_tgas(30),
+                            Gas::from_tgas(15),
                         )
                     })
                 })

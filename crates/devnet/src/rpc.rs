@@ -25,7 +25,14 @@ struct NearRpcClient {
 
 impl NearRpcClient {
     fn new(config: RpcConfig) -> Self {
-        let client = JsonRpcClient::connect(config.url);
+        let url = match &config.api_key {
+            Some(key) => {
+                let separator = if config.url.contains('?') { '&' } else { '?' };
+                format!("{}{separator}apiKey={key}", config.url)
+            }
+            None => config.url,
+        };
+        let client = JsonRpcClient::connect(url);
         let concurrency = tokio::sync::Semaphore::new(config.max_concurrency);
         let (sender, receiver) = flume::bounded(config.rate_limit);
         tokio::spawn(async move {
