@@ -1,6 +1,6 @@
 pub mod common;
 
-use crate::common::FixedResponseRpcClient;
+use crate::common::{FixedResponseRpcClient, SequentialResponseMockClientBuilder};
 
 use foreign_chain_inspector::{
     EthereumFinality, ForeignChainInspectionError, ForeignChainInspector, RpcAuthentication,
@@ -15,59 +15,6 @@ use foreign_chain_rpc_interfaces::evm::{
 use httpmock::prelude::*;
 use httpmock::{HttpMockRequest, HttpMockResponse};
 use jsonrpsee::core::client::error::Error as RpcClientError;
-use std::sync::atomic::{AtomicUsize, Ordering};
-
-/// Mocks the three RPC calls the inspector issues, in order:
-///   1. `eth_getTransactionReceipt(<tx hash>)` → receipt
-///   2. `eth_getBlockByNumber(<finality tag>)` → finality head
-///   3. `eth_getBlockByNumber(<receipt.block_number>)` → canonical block at that height
-///
-/// Later calls are only reached if earlier checks pass; tests that exercise an early failure
-/// path still need to supply later responses, but they will not be observed.
-fn mock_evm_client(
-    finality_block_response: GetBlockByNumberResponse,
-    tx_response: GetTransactionReceiptResponse,
-    canonical_block_response: GetBlockByNumberResponse,
-) -> FixedResponseRpcClient<impl Fn() -> Result<serde_json::Value, RpcClientError>> {
-    let call_count = AtomicUsize::new(0);
-    FixedResponseRpcClient::new(move || {
-        let count = call_count.fetch_add(1, Ordering::SeqCst);
-        match count {
-            0 => Ok(serde_json::to_value(&tx_response).unwrap()),
-            1 => Ok(serde_json::to_value(&finality_block_response).unwrap()),
-            2 => Ok(serde_json::to_value(&canonical_block_response).unwrap()),
-            _ => panic!("unexpected fourth RPC call"),
-        }
-    })
-}
-
-// TODO(claude): Document
-pub struct SequentialResponseMockClientBuilder {
-    responses: Vec<serde_json::Value>,
-}
-
-impl SequentialResponseMockClientBuilder {
-    fn with_response(mut self, response: impl serde::Serialize) -> Self {
-        self.responses
-            .push(serde_json::to_value(&response).unwrap());
-        self
-    }
-
-    fn build(
-        self,
-    ) -> FixedResponseRpcClient<impl Fn() -> Result<serde_json::Value, RpcClientError> + Sync> {
-        let call_count = AtomicUsize::new(0);
-
-        FixedResponseRpcClient::new(move || {
-            let count = call_count.fetch_add(1, Ordering::SeqCst);
-            Ok(self
-                .responses
-                .get(count)
-                .cloned()
-                .expect("mock client should have been configured with enough responses"))
-        })
-    }
-}
 
 fn expected_extracted_value<Chain: EvmChain>(
     extractor: &EvmExtractor,
@@ -125,7 +72,7 @@ macro_rules! evm_inspector_tests {
                 // given
                 let tx_id = TxHash::from([3; 32]);
 
-                let block_response = GetBlockByNumberResponse {
+                let finality_block_response = GetBlockByNumberResponse {
                     number: U64::from(100),
                     hash: H256::from([0xaa; 32]),
                 };
@@ -141,8 +88,11 @@ macro_rules! evm_inspector_tests {
                 };
 
                 let expected = expected_extracted_value::<$chain>(&extractor, &tx_response);
-                let mock_client =
-                    mock_evm_client(block_response, tx_response, canonical_block_response);
+                let mock_client = SequentialResponseMockClientBuilder::new()
+                    .with_response(&tx_response)
+                    .with_response(&finality_block_response)
+                    .with_response(&canonical_block_response)
+                    .build();
                 let inspector = Inspector::new(mock_client);
 
                 // when
@@ -162,7 +112,7 @@ macro_rules! evm_inspector_tests {
                 let expected_block_hash = BlockHash::from([4; 32]);
 
                 let block_number = U64::from(50);
-                let block_response = GetBlockByNumberResponse {
+                let finality_block_response = GetBlockByNumberResponse {
                     number: block_number,
                     hash: H256::from([0xaa; 32]),
                 };
@@ -177,8 +127,11 @@ macro_rules! evm_inspector_tests {
                     hash: tx_response.block_hash,
                 };
 
-                let mock_client =
-                    mock_evm_client(block_response, tx_response, canonical_block_response);
+                let mock_client = SequentialResponseMockClientBuilder::new()
+                    .with_response(&tx_response)
+                    .with_response(&finality_block_response)
+                    .with_response(&canonical_block_response)
+                    .build();
                 let inspector = Inspector::new(mock_client);
 
                 // when
@@ -202,7 +155,7 @@ macro_rules! evm_inspector_tests {
                 // given
                 let tx_id = TxHash::from([1; 32]);
 
-                let block_response = GetBlockByNumberResponse {
+                let finality_block_response = GetBlockByNumberResponse {
                     number: U64::from(50),
                     hash: H256::from([0xaa; 32]),
                 };
@@ -212,14 +165,13 @@ macro_rules! evm_inspector_tests {
                     status: U64::one(),
                     logs: vec![test_log()],
                 };
-                // not reached: extract returns NotFinalized before the canonical lookup
-                let canonical_block_response = GetBlockByNumberResponse {
-                    number: tx_response.block_number,
-                    hash: tx_response.block_hash,
-                };
 
-                let mock_client =
-                    mock_evm_client(block_response, tx_response, canonical_block_response);
+                // extract returns NotFinalized before the canonical lookup, so only two RPC
+                // calls are exercised.
+                let mock_client = SequentialResponseMockClientBuilder::new()
+                    .with_response(&tx_response)
+                    .with_response(&finality_block_response)
+                    .build();
                 let inspector = Inspector::new(mock_client);
 
                 // when
@@ -240,7 +192,7 @@ macro_rules! evm_inspector_tests {
                 // given
                 let tx_id = TxHash::from([1; 32]);
 
-                let block_response = GetBlockByNumberResponse {
+                let finality_block_response = GetBlockByNumberResponse {
                     number: U64::from(100),
                     hash: H256::from([0xaa; 32]),
                 };
@@ -255,8 +207,13 @@ macro_rules! evm_inspector_tests {
                     hash: tx_response.block_hash,
                 };
 
-                let mock_client =
-                    mock_evm_client(block_response, tx_response, canonical_block_response);
+                // The status check happens after the canonical lookup, so all three RPC
+                // calls are exercised before TransactionFailed is returned.
+                let mock_client = SequentialResponseMockClientBuilder::new()
+                    .with_response(&tx_response)
+                    .with_response(&finality_block_response)
+                    .with_response(&canonical_block_response)
+                    .build();
                 let inspector = Inspector::new(mock_client);
 
                 // when
@@ -280,7 +237,7 @@ macro_rules! evm_inspector_tests {
                 // given
                 let tx_id = TxHash::from([11; 32]);
 
-                let block_response = GetBlockByNumberResponse {
+                let finality_block_response = GetBlockByNumberResponse {
                     number: U64::from(100),
                     hash: H256::from([0xaa; 32]),
                 };
@@ -295,8 +252,11 @@ macro_rules! evm_inspector_tests {
                     hash: tx_response.block_hash,
                 };
 
-                let mock_client =
-                    mock_evm_client(block_response, tx_response, canonical_block_response);
+                let mock_client = SequentialResponseMockClientBuilder::new()
+                    .with_response(&tx_response)
+                    .with_response(&finality_block_response)
+                    .with_response(&canonical_block_response)
+                    .build();
                 let inspector = Inspector::new(mock_client);
 
                 // when
@@ -436,7 +396,7 @@ macro_rules! evm_inspector_tests {
                 // given
                 let tx_id = TxHash::from([1; 32]);
 
-                let block_response = GetBlockByNumberResponse {
+                let finality_block_response = GetBlockByNumberResponse {
                     number: U64::from(100),
                     hash: H256::from([0xaa; 32]),
                 };
@@ -451,8 +411,11 @@ macro_rules! evm_inspector_tests {
                     hash: tx_response.block_hash,
                 };
 
-                let mock_client =
-                    mock_evm_client(block_response, tx_response, canonical_block_response);
+                let mock_client = SequentialResponseMockClientBuilder::new()
+                    .with_response(&tx_response)
+                    .with_response(&finality_block_response)
+                    .with_response(&canonical_block_response)
+                    .build();
                 let inspector = Inspector::new(mock_client);
 
                 // when
@@ -500,7 +463,7 @@ macro_rules! evm_inspector_tests {
                 };
                 let expected_log = log_at_index_21.clone();
 
-                let block_response = GetBlockByNumberResponse {
+                let finality_block_response = GetBlockByNumberResponse {
                     number: U64::from(100),
                     hash: H256::from([0xaa; 32]),
                 };
@@ -515,8 +478,11 @@ macro_rules! evm_inspector_tests {
                     hash: tx_response.block_hash,
                 };
 
-                let mock_client =
-                    mock_evm_client(block_response, tx_response, canonical_block_response);
+                let mock_client = SequentialResponseMockClientBuilder::new()
+                    .with_response(&tx_response)
+                    .with_response(&finality_block_response)
+                    .with_response(&canonical_block_response)
+                    .build();
                 let inspector = Inspector::new(mock_client);
 
                 // when: request log by its EVM logIndex (21), not array position (1)
@@ -541,7 +507,7 @@ macro_rules! evm_inspector_tests {
                 // simulating an RPC that served a side-block receipt for a finalized height.
                 let tx_id = TxHash::from([1; 32]);
 
-                let block_response = GetBlockByNumberResponse {
+                let finality_block_response = GetBlockByNumberResponse {
                     number: U64::from(100),
                     hash: H256::from([0xaa; 32]),
                 };
@@ -556,8 +522,11 @@ macro_rules! evm_inspector_tests {
                     hash: H256::from([0xcc; 32]),
                 };
 
-                let mock_client =
-                    mock_evm_client(block_response, tx_response, canonical_block_response);
+                let mock_client = SequentialResponseMockClientBuilder::new()
+                    .with_response(&tx_response)
+                    .with_response(&finality_block_response)
+                    .with_response(&canonical_block_response)
+                    .build();
                 let inspector = Inspector::new(mock_client);
 
                 // when
