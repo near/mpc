@@ -35,7 +35,7 @@ use crate::tests::common::MockTransactionSender;
 use crate::tracking::{self, start_root_task, AutoAbortTask};
 use crate::web::{start_web_server, static_web_data};
 use assert_matches::assert_matches;
-use mpc_primitives::domain::Curve;
+use mpc_primitives::domain::{Curve, Protocol};
 use near_account_id::AccountId;
 use near_indexer_primitives::types::Finality;
 use near_indexer_primitives::CryptoHash;
@@ -276,14 +276,14 @@ pub async fn request_signature_and_await_response(
     domain: &DomainConfig,
     timeout_sec: std::time::Duration,
 ) -> Option<std::time::Duration> {
-    let payload = match domain.curve {
-        Curve::Secp256k1 | Curve::V2Secp256k1 => {
+    let payload = match domain.protocol {
+        Protocol::CaitSith | Protocol::DamgardEtAl => {
             let mut payload = [0; 32];
             rand::thread_rng().fill_bytes(payload.as_mut());
 
             Payload::Ecdsa(payload.into())
         }
-        Curve::Edwards25519 => {
+        Protocol::Frost => {
             let len = rand::thread_rng().gen_range(
                 EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES..EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
             );
@@ -298,7 +298,7 @@ pub async fn request_signature_and_await_response(
 
             Payload::Eddsa(bounded_payload)
         }
-        Curve::Bls12381 => unreachable!(),
+        Protocol::ConfidentialKeyDerivation => unreachable!(),
     };
     let request = SignatureRequestFromChain {
         signature_id: CryptoHash(rand::random()),

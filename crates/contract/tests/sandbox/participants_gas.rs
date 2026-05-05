@@ -272,7 +272,7 @@ async fn setup_test_env_with_state(n_participants: usize, running_state: bool) -
         let domain = DomainConfig {
             id: domain_id,
             curve: Curve::Secp256k1,
-            protocol: Protocol::from(Curve::Secp256k1),
+            protocol: Protocol::CaitSith,
             purpose: DomainPurpose::Sign,
         };
         let (dto_pk, _) = new_secp256k1();

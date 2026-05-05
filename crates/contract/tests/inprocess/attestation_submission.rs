@@ -106,7 +106,7 @@ impl TestSetupBuilder {
         let domains = vec![DomainConfig {
             id: DomainId::default(),
             curve: Curve::Secp256k1,
-            protocol: Protocol::from(Curve::Secp256k1),
+            protocol: Protocol::CaitSith,
             purpose: DomainPurpose::Sign,
         }];
 
@@ -159,7 +159,7 @@ impl TestSetupBuilder {
                         .vote_add_domains(vec![DomainConfig {
                             id: DomainId(1),
                             curve: Curve::Edwards25519,
-                            protocol: Protocol::from(Curve::Edwards25519),
+                            protocol: Protocol::Frost,
                             purpose: DomainPurpose::Sign,
                         }])
                         .unwrap();

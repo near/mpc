@@ -1,7 +1,7 @@
 use crate::sandbox::{
     common::{candidates, create_account_given_id, init, SandboxTestSetup},
     utils::{
-        consts::ALL_CURVES,
+        consts::ALL_PROTOCOLS,
         shared_key_utils::SharedSecretKey,
         sign_utils::{
             gen_secp_256k1_sign_test, submit_ckd_response_measure_gas, submit_signature_response,
@@ -19,7 +19,7 @@ use mpc_contract::{
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::method_names;
-use near_mpc_contract_interface::types::Curve;
+use near_mpc_contract_interface::types::Protocol;
 use near_workspaces::types::NearToken;
 use rand::SeedableRng;
 use std::time::Duration;
@@ -36,7 +36,7 @@ async fn test_contract_request_all_schemes() -> anyhow::Result<()> {
         mpc_signer_accounts,
         keys,
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
     let attested_account = &mpc_signer_accounts[0];
@@ -77,7 +77,7 @@ async fn test_contract_request_duplicate_requests_all_schemes() -> anyhow::Resul
         mpc_signer_accounts,
         keys,
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
     let attested_account = &mpc_signer_accounts[0];
@@ -126,7 +126,7 @@ async fn test_contract_request_timeout_all_schemes() -> anyhow::Result<()> {
         keys,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
 
@@ -152,7 +152,7 @@ async fn test_contract_success_refund_all_schemes() -> anyhow::Result<()> {
         mpc_signer_accounts,
         keys,
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
     let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
@@ -195,7 +195,7 @@ async fn test_contract_fail_refund_all_schemes() -> anyhow::Result<()> {
         keys,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
     let mut rng = rand::rngs::StdRng::from_seed([2u8; 32]);
@@ -236,7 +236,7 @@ async fn test_contract_request_deposits_all_schemes() -> anyhow::Result<()> {
         keys,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
     let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
@@ -297,7 +297,7 @@ async fn test_sign_v1_compatibility() -> anyhow::Result<()> {
         keys,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(&[Curve::Secp256k1])
+        .with_protocols(&[Protocol::CaitSith])
         .build()
         .await;
     let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
@@ -398,7 +398,7 @@ async fn test_contract_ckd_pv_request() -> anyhow::Result<()> {
         mpc_signer_accounts,
         keys,
     } = SandboxTestSetup::builder()
-        .with_curves(&[Curve::Bls12381])
+        .with_protocols(&[Protocol::ConfidentialKeyDerivation])
         .build()
         .await;
     let attested_account = &mpc_signer_accounts[0];
@@ -433,7 +433,7 @@ async fn test_ckd_gas_regression() -> anyhow::Result<()> {
         mpc_signer_accounts,
         keys,
     } = SandboxTestSetup::builder()
-        .with_curves(&[Curve::Bls12381])
+        .with_protocols(&[Protocol::ConfidentialKeyDerivation])
         .build()
         .await;
     let attested_account = &mpc_signer_accounts[0];

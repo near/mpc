@@ -162,7 +162,7 @@ pub struct SandboxTestSetup {
 impl SandboxTestSetup {
     pub fn builder() -> SandboxTestSetupBuilder {
         SandboxTestSetupBuilder {
-            curves: Vec::new(),
+            protocols: Vec::new(),
             foreign_tx: false,
             number_of_participants: PARTICIPANT_LEN,
             init_config: None,
@@ -179,15 +179,15 @@ impl SandboxTestSetup {
 }
 
 pub struct SandboxTestSetupBuilder {
-    curves: Vec<Curve>,
+    protocols: Vec<Protocol>,
     foreign_tx: bool,
     number_of_participants: usize,
     init_config: Option<dtos::InitConfig>,
 }
 
 impl SandboxTestSetupBuilder {
-    pub fn with_curves(mut self, curves: &[Curve]) -> Self {
-        self.curves = curves.to_vec();
+    pub fn with_protocols(mut self, protocols: &[Protocol]) -> Self {
+        self.protocols = protocols.to_vec();
         self
     }
 
@@ -215,17 +215,18 @@ impl SandboxTestSetupBuilder {
         let mut domain_configs = Vec::new();
         let mut key_for_domains = Vec::new();
 
-        // Sign-purpose domains from curves
-        for curve in &self.curves {
-            let (pk, sk) = make_key_for_domain(*curve);
-            let purpose = infer_purpose_from_curve(*curve);
+        // Sign-purpose domains from protocols
+        for protocol in &self.protocols {
+            let curve = Curve::from(*protocol);
+            let (pk, sk) = make_key_for_domain(curve);
+            let purpose = infer_purpose_from_curve(curve);
             let domain_id = DomainId(domain_configs.len() as u64);
 
             let key: PublicKeyExtended = pk.try_into().unwrap();
             let config = DomainConfig {
                 id: domain_id,
-                curve: *curve,
-                protocol: Protocol::from(*curve),
+                curve,
+                protocol: *protocol,
                 purpose,
             };
             keys.push(DomainKey {
@@ -250,7 +251,7 @@ impl SandboxTestSetupBuilder {
             let config = DomainConfig {
                 id: domain_id,
                 curve: Curve::Secp256k1,
-                protocol: Protocol::from(Curve::Secp256k1),
+                protocol: Protocol::CaitSith,
                 purpose: DomainPurpose::ForeignTx,
             };
             keys.push(DomainKey {
@@ -572,19 +573,19 @@ pub async fn execute_key_generation_and_add_random_state(
         DomainConfig {
             id: 0.into(),
             curve: Curve::Edwards25519,
-            protocol: Protocol::from(Curve::Edwards25519),
+            protocol: Protocol::Frost,
             purpose: DomainPurpose::Sign,
         },
         DomainConfig {
             id: 1.into(),
             curve: Curve::Secp256k1,
-            protocol: Protocol::from(Curve::Secp256k1),
+            protocol: Protocol::CaitSith,
             purpose: DomainPurpose::Sign,
         },
         DomainConfig {
             id: 2.into(),
             curve: Curve::Edwards25519,
-            protocol: Protocol::from(Curve::Edwards25519),
+            protocol: Protocol::Frost,
             purpose: DomainPurpose::Sign,
         },
     ];

@@ -34,21 +34,21 @@ async fn test_basic_cluster() {
     let signature_domain_ecdsa = DomainConfig {
         id: DomainId(0),
         curve: Curve::Secp256k1,
-        protocol: Protocol::from(Curve::Secp256k1),
+        protocol: Protocol::CaitSith,
         purpose: DomainPurpose::Sign,
     };
 
     let signature_domain_eddsa = DomainConfig {
         id: DomainId(1),
         curve: Curve::Edwards25519,
-        protocol: Protocol::from(Curve::Edwards25519),
+        protocol: Protocol::Frost,
         purpose: DomainPurpose::Sign,
     };
 
     let ckd_domain = DomainConfig {
         id: DomainId(2),
         curve: Curve::Bls12381,
-        protocol: Protocol::from(Curve::Bls12381),
+        protocol: Protocol::ConfidentialKeyDerivation,
         purpose: DomainPurpose::CKD,
     };
 

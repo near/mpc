@@ -49,7 +49,7 @@ async fn test_changing_participant_set_test_keyshare_import() {
     let domain = DomainConfig {
         id: DomainId(0),
         curve: Curve::Secp256k1,
-        protocol: Protocol::from(Curve::Secp256k1),
+        protocol: Protocol::CaitSith,
         purpose: DomainPurpose::Sign,
     };
 

@@ -1,15 +1,15 @@
 use std::time::Duration;
 
-use near_mpc_contract_interface::types::Curve;
+use near_mpc_contract_interface::types::Protocol;
 use near_sdk::{Gas, NearToken};
 
 /* --- Protocol defaults --- */
 pub const PARTICIPANT_LEN: usize = 10;
-pub const ALL_CURVES: &[Curve; 4] = &[
-    Curve::Secp256k1,
-    Curve::Edwards25519,
-    Curve::Bls12381,
-    Curve::V2Secp256k1,
+pub const ALL_PROTOCOLS: &[Protocol; 4] = &[
+    Protocol::CaitSith,
+    Protocol::Frost,
+    Protocol::ConfidentialKeyDerivation,
+    Protocol::DamgardEtAl,
 ];
 
 /* --- Gas constants --- */

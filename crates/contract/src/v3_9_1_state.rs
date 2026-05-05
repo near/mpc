@@ -55,12 +55,24 @@ use crate::{
     Config, SupportedForeignChainsByNode,
 };
 
+/// Previous `Curve` Borsh layout — included `V2Secp256k1` (variant index 3)
+/// for Robust ECDSA. Kept here so the migration can decode legacy state that
+/// was serialized before `V2Secp256k1` was removed; in the new representation,
+/// it maps to `(Curve::Secp256k1, Protocol::DamgardEtAl)`.
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+enum OldCurve {
+    Secp256k1,
+    Edwards25519,
+    Bls12381,
+    V2Secp256k1,
+}
+
 /// Previous `DomainConfig` layout — `protocol` was not stored; it is now
-/// derived from `curve` during migration via `Protocol::from(curve)`.
+/// derived from `curve` during migration.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 struct OldDomainConfig {
     id: DomainId,
-    curve: Curve,
+    curve: OldCurve,
     purpose: DomainPurpose,
 }
 
@@ -79,10 +91,16 @@ struct OldAddDomainsVotes {
 
 impl From<OldDomainConfig> for DomainConfig {
     fn from(old: OldDomainConfig) -> Self {
+        let (curve, protocol) = match old.curve {
+            OldCurve::Secp256k1 => (Curve::Secp256k1, Protocol::CaitSith),
+            OldCurve::Edwards25519 => (Curve::Edwards25519, Protocol::Frost),
+            OldCurve::Bls12381 => (Curve::Bls12381, Protocol::ConfidentialKeyDerivation),
+            OldCurve::V2Secp256k1 => (Curve::Secp256k1, Protocol::DamgardEtAl),
+        };
         DomainConfig {
             id: old.id,
-            curve: old.curve,
-            protocol: Protocol::from(old.curve),
+            curve,
+            protocol,
             purpose: old.purpose,
         }
     }
@@ -833,23 +851,31 @@ mod tests {
     }
     #[test]
     fn domain_config_migration__should_derive_protocol_from_curve_for_each_variant() {
-        // Given OldDomainConfigs covering every curve, including V2Secp256k1
+        // Given OldDomainConfigs covering every legacy curve, including V2Secp256k1
         let cases = [
-            (Curve::Secp256k1, Protocol::CaitSith),
-            (Curve::Edwards25519, Protocol::Frost),
-            (Curve::Bls12381, Protocol::ConfidentialKeyDerivation),
-            (Curve::V2Secp256k1, Protocol::DamgardEtAl),
+            (OldCurve::Secp256k1, Curve::Secp256k1, Protocol::CaitSith),
+            (OldCurve::Edwards25519, Curve::Edwards25519, Protocol::Frost),
+            (
+                OldCurve::Bls12381,
+                Curve::Bls12381,
+                Protocol::ConfidentialKeyDerivation,
+            ),
+            (
+                OldCurve::V2Secp256k1,
+                Curve::Secp256k1,
+                Protocol::DamgardEtAl,
+            ),
         ];
 
-        for (i, (curve, expected_protocol)) in cases.into_iter().enumerate() {
+        for (i, (old_curve, expected_curve, expected_protocol)) in cases.into_iter().enumerate() {
+            let purpose = match expected_curve {
+                Curve::Bls12381 => DomainPurpose::CKD,
+                _ => DomainPurpose::Sign,
+            };
             let old = OldDomainConfig {
                 id: DomainId(i as u64),
-                curve,
-                purpose: if curve == Curve::Bls12381 {
-                    DomainPurpose::CKD
-                } else {
-                    DomainPurpose::Sign
-                },
+                curve: old_curve,
+                purpose,
             };
             let bytes = borsh::to_vec(&old).unwrap();
 
@@ -857,8 +883,8 @@ mod tests {
             let decoded: OldDomainConfig = borsh::from_slice(&bytes).unwrap();
             let migrated: DomainConfig = decoded.into();
 
-            // Then protocol is derived from curve and curve is preserved
-            assert_eq!(migrated.curve, curve);
+            // Then curve and protocol match the expected post-migration pair
+            assert_eq!(migrated.curve, expected_curve);
             assert_eq!(migrated.protocol, expected_protocol);
             assert_eq!(migrated.id, DomainId(i as u64));
         }

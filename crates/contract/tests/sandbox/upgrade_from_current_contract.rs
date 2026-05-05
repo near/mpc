@@ -5,7 +5,7 @@ use crate::sandbox::{
     },
     utils::{
         consts::{
-            ALL_CURVES, CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_BEFORE_THRESHOLD,
+            ALL_PROTOCOLS, CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_BEFORE_THRESHOLD,
             GAS_FOR_VOTE_UPDATE, MAX_GAS_FOR_THRESHOLD_VOTE, PARTICIPANT_LEN,
         },
         contract_build::{current_contract, migration_contract},
@@ -50,7 +50,7 @@ async fn test_propose_contract_max_size_upload() {
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
     dbg!(contract.id());
@@ -81,7 +81,7 @@ async fn test_propose_update_config() {
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
     let threshold = assert_running_return_threshold(&contract).await;
@@ -192,7 +192,7 @@ async fn test_propose_update_contract() {
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
     propose_and_vote_contract_binary(&mpc_signer_accounts, &contract, current_contract()).await;
@@ -205,7 +205,7 @@ async fn test_invalid_contract_deploy() {
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
     dbg!(contract.id());
@@ -248,7 +248,7 @@ async fn test_propose_update_contract_many() {
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
     dbg!(contract.id());
@@ -309,7 +309,7 @@ async fn test_vote_update_gas_before_threshold() {
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
 
@@ -386,7 +386,7 @@ async fn test_propose_incorrect_updates() {
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
     dbg!(contract.id());
@@ -428,7 +428,7 @@ async fn many_sequential_updates() {
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .with_number_of_participants(number_of_participants)
         .build()
         .await;
@@ -455,7 +455,7 @@ async fn only_one_vote_from_participant() {
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .with_number_of_participants(number_of_participants)
         .build()
         .await;

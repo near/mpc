@@ -577,15 +577,15 @@ struct VoteUpdateArgs {
 impl MpcVoteAddDomainsCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
         println!(
-            "Going to vote_add_domains MPC network {} for signature schemes {:?}",
-            name, self.schemes
+            "Going to vote_add_domains MPC network {} for protocols {:?}",
+            name, self.protocols
         );
-        let schemes: Vec<Curve> = self
-            .schemes
+        let protocols: Vec<Protocol> = self
+            .protocols
             .iter()
-            .map(|scheme| {
-                serde_json::from_str(&format!("\"{}\"", scheme))
-                    .expect(&format!("Failed to parse signature scheme {}", scheme))
+            .map(|protocol| {
+                serde_json::from_str(&format!("\"{}\"", protocol))
+                    .expect(&format!("Failed to parse protocol {}", protocol))
             })
             .collect::<Vec<_>>();
         let mut setup = OperatingDevnetSetup::load(config.rpc.clone()).await;
@@ -614,12 +614,13 @@ impl MpcVoteAddDomainsCmd {
         };
         let mut proposal = Vec::new();
         let mut next_domain = domains.next_domain_id();
-        for scheme in &schemes {
+        for protocol in &protocols {
+            let curve = Curve::from(*protocol);
             proposal.push(DomainConfig {
                 id: DomainId(next_domain),
-                curve: *scheme,
-                protocol: Protocol::from(*scheme),
-                purpose: infer_purpose_from_curve(*scheme),
+                curve,
+                protocol: *protocol,
+                purpose: infer_purpose_from_curve(curve),
             });
             next_domain += 1;
         }

@@ -3,7 +3,7 @@
 use crate::sandbox::{
     common::{build_sandbox_node_ids, gen_accounts, submit_tee_attestations, SandboxTestSetup},
     utils::{
-        consts::ALL_CURVES,
+        consts::ALL_PROTOCOLS,
         interface::IntoContractType,
         mpc_contract::{
             assert_running_return_participants, assert_running_return_threshold,
@@ -17,7 +17,7 @@ use anyhow::Result;
 use mpc_contract::primitives::{participants::Participants, test_utils::bogus_ed25519_public_key};
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
 use near_mpc_contract_interface::method_names;
-use near_mpc_contract_interface::types::Curve;
+use near_mpc_contract_interface::types::Protocol;
 use near_mpc_contract_interface::types::{self as dtos, Attestation, MockAttestation};
 use near_workspaces::Contract;
 use test_utils::attestation::{image_digest, p2p_tls_key};
@@ -32,7 +32,7 @@ async fn test_vote_code_hash_basic_threshold_and_stability() -> Result<()> {
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
     let threshold = assert_running_return_threshold(&contract).await;
@@ -84,7 +84,7 @@ async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Res
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
     let threshold = assert_running_return_threshold(&contract).await;
@@ -147,7 +147,7 @@ async fn test_vote_code_hash_doesnt_accept_account_id_not_in_participant_list() 
     let SandboxTestSetup {
         worker, contract, ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
     let random_account = &gen_accounts(&worker, 1).await.0[0];
@@ -178,7 +178,7 @@ async fn test_vote_code_hash_accepts_allowed_mpc_image_digest_hex_parameter() ->
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
     let allowed_mpc_image_digest =
@@ -243,7 +243,7 @@ async fn test_submit_participant_info_succeeds_with_mock_attestation() -> Result
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
     let mock_attestation = Attestation::Mock(MockAttestation::Valid);
@@ -267,7 +267,7 @@ async fn test_clean_tee_status_denies_external_account_access() -> Result<()> {
     let SandboxTestSetup {
         worker, contract, ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
 
@@ -309,7 +309,7 @@ async fn clean_tee_status__should_succeed_when_contract_calls_itself_and_leave_a
         mut mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
 
@@ -369,7 +369,7 @@ async fn clean_invalid_attestations__should_remove_expired_entries() -> Result<(
         mut mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
 
@@ -434,7 +434,7 @@ async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verifi
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
     let threshold = assert_running_return_threshold(&contract).await;
@@ -494,7 +494,7 @@ async fn get_attestation_returns_none_when_tls_key_is_not_associated_with_an_att
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
 
@@ -530,7 +530,7 @@ async fn get_attestation_returns_some_when_tls_key_associated_with_an_attestatio
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
 
@@ -601,7 +601,7 @@ async fn get_attestation_overwrites_when_same_tls_key_is_reused() {
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
 
@@ -669,7 +669,7 @@ async fn test_function_allowed_launcher_compose_hashes() -> anyhow::Result<()> {
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
 
@@ -727,7 +727,7 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(&[Curve::Secp256k1])
+        .with_protocols(&[Protocol::CaitSith])
         .with_number_of_participants(PARTICIPANT_COUNT)
         .build()
         .await;
