@@ -100,8 +100,7 @@ args = ["scripts/check-todo-format.sh"]
 
 [tasks.editorconfig]
 description = "Enforce .editorconfig rules across all tracked files"
-command = "bash"
-args = ["scripts/check-editorconfig.sh"]
+command = "editorconfig-checker"
 
 [tasks.check-contract-size]
 description = "Check reproducible contract WASM size against baseline"
