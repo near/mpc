@@ -101,7 +101,7 @@ args = ["scripts/check-todo-format.sh"]
 [tasks.editorconfig]
 description = "Enforce .editorconfig rules across all tracked files"
 command = "bash"
-args = ["-c", "git ls-files -z | xargs -0 editorconfig-checker"]
+args = ["scripts/check-editorconfig.sh"]
 
 [tasks.check-contract-size]
 description = "Check reproducible contract WASM size against baseline"
