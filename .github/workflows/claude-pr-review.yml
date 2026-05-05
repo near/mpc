@@ -30,6 +30,12 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
+      - name: symlink fix workaround
+        run: |
+          # see https://github.com/anthropics/claude-code-action/issues/1205#issuecomment-4248704481
+          rm CLAUDE.md
+          cp AGENTS.md CLAUDE.md
+
       - name: Fetch PR Comments Context
         id: fetch-comments
         env:
@@ -62,7 +68,7 @@ jobs:
 
       - name: Run Claude Code Review
         id: claude-review
-        uses: anthropics/claude-code-action@6062f3709600659be5e47fcddf2cf76993c235c2 #v1.0.76
+        uses: anthropics/claude-code-action@2cc1ac1331eac7a6a96d716dd204dd2888d0fcd2 # main @ Claude Code 2.1.128 / Agent SDK 0.2.128 (needed for --effort xhigh)
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API }}
           prompt: ${{ env.REVIEW_PROMPT }}

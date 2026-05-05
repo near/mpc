@@ -13,7 +13,7 @@
           }
         ],
         [
-          "sam.test.near", 
+          "sam.test.near",
           1,
           {
             "tls_public_key": "$SAM_P2P_KEY",

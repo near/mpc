@@ -2,7 +2,7 @@
 
 This guide explains how to create and test a **Multi-Party Computation (MPC)** network on a local blockchain (localnet), where each MPC node runs inside a **Confidential Virtual Machine (CVM)**.
 
-It builds upon the [Localnet Setup Guide](https://github.com/near/mpc/blob/main/docs/localnet/localnet.md), which describes how to launch a local blockchain network.  
+It builds upon the [Localnet Setup Guide](https://github.com/near/mpc/blob/main/docs/localnet/localnet.md), which describes how to launch a local blockchain network.
 However, instead of running MPC nodes as local binaries, this setup runs each MPC node inside a CVM, where the MPC node itself runs as a Docker container.
 
 For details on how to set up a TDX-based Confidential VM and prepare the DStack environment, refer to the [Running an MPC Node in TDX External Guide](https://github.com/near/mpc/blob/main/docs/running-an-mpc-node-in-tdx-external-guide.md).
@@ -11,16 +11,16 @@ For details on how to set up a TDX-based Confidential VM and prepare the DStack 
 
 ## High-Level Steps
 
-1. Prepare a TDX-enabled setup as described in the [TDX Guide](https://github.com/near/mpc/blob/main/docs/running-an-mpc-node-in-tdx-external-guide.md).  
-2. Prepare the localnet setup as described in the [Localnet Setup Guide](https://github.com/near/mpc/blob/main/docs/localnet/localnet.md), excluding the startup of the MPC nodes.  
-3. Start two MPC nodes that will run inside CVMs.  
-4. Extract the public keys from the nodes and add them to the contract and user accounts.  
-5. Vote for a new MPC Docker image hash on the contract.  
-6. Vote to add a domain to the contract.  
+1. Prepare a TDX-enabled setup as described in the [TDX Guide](https://github.com/near/mpc/blob/main/docs/running-an-mpc-node-in-tdx-external-guide.md).
+2. Prepare the localnet setup as described in the [Localnet Setup Guide](https://github.com/near/mpc/blob/main/docs/localnet/localnet.md), excluding the startup of the MPC nodes.
+3. Start two MPC nodes that will run inside CVMs.
+4. Extract the public keys from the nodes and add them to the contract and user accounts.
+5. Vote for a new MPC Docker image hash on the contract.
+6. Vote to add a domain to the contract.
 7. Send a `sign` command to the network.
 
 ---
-## Step 1: Prepare a TDX-enabled setup 
+## Step 1: Prepare a TDX-enabled setup
 Follow the [TDX Guide](https://github.com/near/mpc/blob/main/docs/running-an-mpc-node-in-tdx-external-guide.md). Up until (but not including **MPC Node Setup and Deployment**
 )
 
@@ -73,7 +73,7 @@ Those are the recommended configuration settings:
 you will need the following files:
 
 * [launcher_docker_compose.yaml](../../deployment/cvm-deployment/launcher_docker_compose.yaml)
-* [frodo.toml](../../deployment/localnet/tee/frodo.toml) / [sam.toml](../../deployment/localnet/tee/sam.toml) 
+* [frodo.toml](../../deployment/localnet/tee/frodo.toml) / [sam.toml](../../deployment/localnet/tee/sam.toml)
 * [frodo.env](../../deployment/localnet/tee/frodo.env)/ [sam.env](../../deployment/localnet/tee/sam.env)    - if you use the deployment script
 
 
@@ -99,7 +99,7 @@ DEFAULT_IMAGE_DIGEST=sha256:abc
 ```
 
 
-Define the machine's external IP once  
+Define the machine's external IP once
 
 ```bash
 export MACHINE_IP=$(curl -4 -s ifconfig.me)  # or use known IP for the machine
@@ -188,7 +188,7 @@ export BASE_PATH="dstask base path"
   --python-exec python
 ```
 
-If successful, each command will output an **App ID** and confirm creation of a **CVM instance** (e.g., `Created VM with ID: …`).  
+If successful, each command will output an **App ID** and confirm creation of a **CVM instance** (e.g., `Created VM with ID: …`).
 Your MPC nodes are now running inside TDX-backed CVMs and ready to participate in the network.
 
 ## Extracting Keys from MPC Nodes
@@ -258,7 +258,7 @@ near contract call-function as-read-only mpc-contract.test.near state json-args 
 
 ## Voting for a New MPC Docker Image Hash
 
-Before voting, the contract’s list of valid MPC image hashes is empty.  
+Before voting, the contract’s list of valid MPC image hashes is empty.
 Therefore, node attestation submissions will fail.
 
 **Sample Error Log (Expected Before Voting):**
@@ -370,8 +370,8 @@ You should see both nodes with valid attestations containing a `tls_public_key` 
 
 ## Add a Domain
 
-Now the contract should be initialized and both nodes should be running.  
-To verify that the network is functional, request a signature from it.  
+Now the contract should be initialized and both nodes should be running.
+To verify that the network is functional, request a signature from it.
 Before that, add a domain.
 
 Both Frodo and Sam should vote to add a **Secp256k1** domain:

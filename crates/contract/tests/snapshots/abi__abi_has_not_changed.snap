@@ -1086,7 +1086,7 @@ expression: abi
       },
       {
         "name": "start_node_migration",
-        "doc": " Sets the destination node for the calling account.\n\n This function can only be called while the protocol is in a `Running` state.\n The signer must be a current participant of the current epoch, otherwise an error is returned.\n On success, the provided `DestinationNodeInfo` is stored in the contract state\n under the signer’s account ID.\n\n # Errors\n - [`InvalidState::ProtocolStateNotRunning`] if the protocol is not in the `Running` state.  \n - [`InvalidState::NotParticipant`] if the signer is not a current participant.\n # Note:\n - might require a deposit",
+        "doc": " Sets the destination node for the calling account.\n\n This function can only be called while the protocol is in a `Running` state.\n The signer must be a current participant of the current epoch, otherwise an error is returned.\n On success, the provided `DestinationNodeInfo` is stored in the contract state\n under the signer’s account ID.\n\n # Errors\n - [`InvalidState::ProtocolStateNotRunning`] if the protocol is not in the `Running` state.\n - [`InvalidState::NotParticipant`] if the signer is not a current participant.\n # Note:\n - might require a deposit",
         "kind": "call",
         "params": {
           "serialization_type": "json",

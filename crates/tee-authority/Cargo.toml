@@ -18,12 +18,17 @@ launcher-interface = { workspace = true }
 mpc-attestation = { workspace = true, features = ["dstack-conversions"] }
 near-mpc-bounded-collections = { workspace = true }
 reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
+time = { workspace = true, features = ["parsing", "formatting"] }
 tokio = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
+x509-parser = { workspace = true }
 
 [dev-dependencies]
+assert_matches = { workspace = true }
 hex = { workspace = true }
 rstest = { workspace = true }
 test-utils = { workspace = true }
