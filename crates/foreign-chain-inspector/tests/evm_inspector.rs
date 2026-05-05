@@ -41,6 +41,34 @@ fn mock_evm_client(
     })
 }
 
+// TODO(claude): Document
+pub struct SequentialResponseMockClientBuilder {
+    responses: Vec<serde_json::Value>,
+}
+
+impl SequentialResponseMockClientBuilder {
+    fn with_response(mut self, response: impl serde::Serialize) -> Self {
+        self.responses
+            .push(serde_json::to_value(&response).unwrap());
+        self
+    }
+
+    fn build(
+        self,
+    ) -> FixedResponseRpcClient<impl Fn() -> Result<serde_json::Value, RpcClientError> + Sync> {
+        let call_count = AtomicUsize::new(0);
+
+        FixedResponseRpcClient::new(move || {
+            let count = call_count.fetch_add(1, Ordering::SeqCst);
+            Ok(self
+                .responses
+                .get(count)
+                .cloned()
+                .expect("mock client should have been configured with enough responses"))
+        })
+    }
+}
+
 fn expected_extracted_value<Chain: EvmChain>(
     extractor: &EvmExtractor,
     tx_response: &GetTransactionReceiptResponse,
