@@ -27,7 +27,7 @@ exceptions = [
   # a non-LGPL-compatible licence — the MPC node is internal infrastructure
   # not shipped to third parties as a closed-source product. If that ever
   # changes, this exception (and the tonlib-core dep) needs to be revisited.
-  { name = "nacl", allow = ["LGPL-3.0-or-later"] },
+  { name = "nacl", version = "=0.5.3", allow = ["LGPL-3.0-or-later"] },
 ]
 
 [advisories]
