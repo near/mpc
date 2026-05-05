@@ -63,7 +63,7 @@ pub struct AuthenticatedAccountId(pub AccountId);
 // Domain Types
 // =============================================================================
 
-pub use mpc_primitives::domain::Curve;
+pub use mpc_primitives::domain::{Curve, Protocol};
 
 /// The purpose that a domain serves.
 #[derive(
@@ -101,10 +101,35 @@ pub enum DomainPurpose {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
+#[serde(from = "DomainConfigCompat")]
 pub struct DomainConfig {
     pub id: DomainId,
     pub curve: Curve,
+    pub protocol: Protocol,
     pub purpose: DomainPurpose,
+}
+
+// `Deserialize` is implemented manually via this compat struct so that JSON
+// emitted by older contracts (pre-`protocol` field) still deserializes:
+// the missing `protocol` is inferred from `curve`.
+#[derive(Deserialize)]
+struct DomainConfigCompat {
+    id: DomainId,
+    curve: Curve,
+    protocol: Option<Protocol>,
+    purpose: DomainPurpose,
+}
+
+impl From<DomainConfigCompat> for DomainConfig {
+    fn from(c: DomainConfigCompat) -> Self {
+        let protocol = c.protocol.unwrap_or_else(|| Protocol::from(c.curve));
+        Self {
+            id: c.id,
+            curve: c.curve,
+            protocol,
+            purpose: c.purpose,
+        }
+    }
 }
 
 /// Registry of all signature domains.

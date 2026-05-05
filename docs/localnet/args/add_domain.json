@@ -3,21 +3,25 @@
     {
       "id": 0,
       "curve": "Secp256k1",
+      "protocol": "CaitSith",
       "purpose": "Sign"
     },
     {
       "id": 1,
       "curve": "Edwards25519",
+      "protocol": "Frost",
       "purpose": "Sign"
     },
     {
       "id": 2,
       "curve": "Bls12381",
+      "protocol": "ConfidentialKeyDerivation",
       "purpose": "CKD"
     },
     {
       "id": 3,
       "curve": "Secp256k1",
+      "protocol": "CaitSith",
       "purpose": "ForeignTx"
     }
   ]

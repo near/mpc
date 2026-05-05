@@ -328,6 +328,10 @@ BorshSchemaContainer {
                         "Curve",
                     ),
                     (
+                        "protocol",
+                        "Protocol",
+                    ),
+                    (
                         "purpose",
                         "DomainPurpose",
                     ),
@@ -684,8 +688,8 @@ BorshSchemaContainer {
                         "ProposedUpdates",
                     ),
                     (
-                        "node_foreign_chain_configurations",
-                        "NodeForeignChainConfigurations",
+                        "node_foreign_chain_support",
+                        "SupportedForeignChainsByNode",
                     ),
                     (
                         "config",
@@ -738,16 +742,6 @@ BorshSchemaContainer {
             fields: UnnamedFields(
                 [
                     "[u8; 48]",
-                ],
-            ),
-        },
-        "NodeForeignChainConfigurations": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "foreign_chain_configuration_by_node",
-                        "IterableMap",
-                    ),
                 ],
             ),
         },
@@ -863,6 +857,31 @@ BorshSchemaContainer {
                 ],
             ),
         },
+        "Protocol": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "CaitSith",
+                    "Protocol__CaitSith",
+                ),
+                (
+                    1,
+                    "Frost",
+                    "Protocol__Frost",
+                ),
+                (
+                    2,
+                    "ConfidentialKeyDerivation",
+                    "Protocol__ConfidentialKeyDerivation",
+                ),
+                (
+                    3,
+                    "DamgardEtAl",
+                    "Protocol__DamgardEtAl",
+                ),
+            ],
+        },
         "ProtocolContractState": Enum {
             tag_width: 1,
             variants: [
@@ -911,6 +930,18 @@ BorshSchemaContainer {
                     "RunningContractState",
                 ],
             ),
+        },
+        "Protocol__CaitSith": Struct {
+            fields: Empty,
+        },
+        "Protocol__ConfidentialKeyDerivation": Struct {
+            fields: Empty,
+        },
+        "Protocol__DamgardEtAl": Struct {
+            fields: Empty,
+        },
+        "Protocol__Frost": Struct {
+            fields: Empty,
         },
         "PublicKey": Struct {
             fields: NamedFields(
@@ -1070,6 +1101,16 @@ BorshSchemaContainer {
             length_width: 4,
             length_range: 0..=4294967295,
             elements: "u8",
+        },
+        "SupportedForeignChainsByNode": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "foreign_chain_support_by_node",
+                        "IterableMap",
+                    ),
+                ],
+            ),
         },
         "TeeState": Struct {
             fields: NamedFields(

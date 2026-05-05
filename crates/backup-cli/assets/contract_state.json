@@ -5,11 +5,13 @@
         {
           "id": 0,
           "curve": "Secp256k1",
+          "protocol": "CaitSith",
           "purpose": "Sign"
         },
         {
           "id": 1,
           "curve": "Edwards25519",
+          "protocol": "Frost",
           "purpose": "Sign"
         }
       ],

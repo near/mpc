@@ -8,9 +8,9 @@ use k256::{
 use mpc_primitives::domain::DomainId;
 use near_indexer_primitives::types::Gas;
 use near_mpc_contract_interface::method_names::{
-    CONCLUDE_NODE_MIGRATION, REGISTER_FOREIGN_CHAIN_CONFIG, RESPOND, RESPOND_CKD,
-    RESPOND_VERIFY_FOREIGN_TX, START_KEYGEN_INSTANCE, START_RESHARE_INSTANCE,
-    SUBMIT_PARTICIPANT_INFO, VERIFY_TEE, VOTE_ABORT_KEY_EVENT_INSTANCE, VOTE_PK, VOTE_RESHARED,
+    CONCLUDE_NODE_MIGRATION, RESPOND, RESPOND_CKD, RESPOND_VERIFY_FOREIGN_TX,
+    START_KEYGEN_INSTANCE, START_RESHARE_INSTANCE, SUBMIT_PARTICIPANT_INFO, VERIFY_TEE,
+    VOTE_ABORT_KEY_EVENT_INSTANCE, VOTE_PK, VOTE_RESHARED,
 };
 pub use near_mpc_contract_interface::types::SubmitParticipantInfoArgs;
 use near_mpc_contract_interface::types::{
@@ -22,6 +22,9 @@ use serde::{Deserialize, Serialize};
 use threshold_signatures::ecdsa::Signature;
 use threshold_signatures::frost_ed25519;
 use threshold_signatures::frost_secp256k1::VerifyingKey;
+
+#[expect(deprecated)]
+use near_mpc_contract_interface::method_names::REGISTER_FOREIGN_CHAIN_CONFIG;
 
 const MAX_GAS: Gas = Gas::from_teragas(300);
 
@@ -161,6 +164,7 @@ pub struct ChainVoteResharedArgs {
 
 #[derive(Serialize, Debug)]
 pub struct ChainRegisterForeignChainConfigArgs {
+    #[expect(deprecated)]
     pub foreign_chain_configuration: dtos::ForeignChainConfiguration,
 }
 
@@ -215,7 +219,9 @@ impl ChainSendTransactionRequest {
             ChainSendTransactionRequest::CKDRespond(_) => RESPOND_CKD,
             ChainSendTransactionRequest::VotePk(_) => VOTE_PK,
             ChainSendTransactionRequest::VoteReshared(_) => VOTE_RESHARED,
-            ChainSendTransactionRequest::RegisterForeignChainConfig(_) => {
+            ChainSendTransactionRequest::RegisterForeignChainConfig(_) =>
+            {
+                #[expect(deprecated)]
                 REGISTER_FOREIGN_CHAIN_CONFIG
             }
             ChainSendTransactionRequest::StartReshare(_) => START_RESHARE_INSTANCE,

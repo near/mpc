@@ -50,7 +50,7 @@ pub struct FakeMpcContractState {
     pub pending_ckds: BTreeMap<dtos::CkdAppId, CKDId>,
     pub pending_verify_foreign_txs: BTreeMap<dtos::ForeignChainRpcRequest, VerifyForeignTxId>,
     supported_foreign_chains: dtos::SupportedForeignChains,
-    supported_foreign_chains_by_node: dtos::NodeForeignChainConfigurations,
+    supported_foreign_chains_by_node: dtos::ForeignChainSupportByNode,
     pub migration_service: NodeMigrations,
 }
 
@@ -86,7 +86,7 @@ impl FakeMpcContractState {
             pending_ckds: BTreeMap::new(),
             pending_verify_foreign_txs: BTreeMap::new(),
             supported_foreign_chains: dtos::SupportedForeignChains::default(),
-            supported_foreign_chains_by_node: dtos::NodeForeignChainConfigurations::default(),
+            supported_foreign_chains_by_node: dtos::ForeignChainSupportByNode::default(),
             migration_service: NodeMigrations::default(),
         }
     }
@@ -95,10 +95,11 @@ impl FakeMpcContractState {
         &self.supported_foreign_chains
     }
 
-    pub fn supported_foreign_chains_by_node(&self) -> &dtos::NodeForeignChainConfigurations {
+    pub fn supported_foreign_chains_by_node(&self) -> &dtos::ForeignChainSupportByNode {
         &self.supported_foreign_chains_by_node
     }
 
+    #[expect(deprecated)]
     pub fn register_foreign_chain_config(
         &mut self,
         account_id: AccountId,
@@ -126,9 +127,16 @@ impl FakeMpcContractState {
         }
 
         let voter = account_id.clone();
+
+        let local_foreign_chain_support: dtos::SupportedForeignChains = local_foreign_chain_config
+            .keys()
+            .copied()
+            .collect::<BTreeSet<_>>()
+            .into();
+
         self.supported_foreign_chains_by_node
-            .foreign_chain_configuration_by_node
-            .insert(voter, local_foreign_chain_config);
+            .foreign_chain_support_by_node
+            .insert(voter, local_foreign_chain_support.clone());
 
         // Derive supported_foreign_chains as intersection of all active participants' votes
         let active_participant_account_ids: BTreeSet<dtos::AccountId> = state
@@ -143,11 +151,11 @@ impl FakeMpcContractState {
             BTreeMap::new();
         for (voter_id, chains) in &self
             .supported_foreign_chains_by_node
-            .foreign_chain_configuration_by_node
+            .foreign_chain_support_by_node
         {
-            for chain in chains.keys() {
+            for chain in chains.iter().copied() {
                 chain_to_supporters
-                    .entry(*chain)
+                    .entry(chain)
                     .or_default()
                     .insert(voter_id.clone());
             }

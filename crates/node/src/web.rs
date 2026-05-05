@@ -139,6 +139,8 @@ struct ForeignChains {
     bnb: Option<ForeignChain>,
     #[serde(skip_serializing_if = "Option::is_none")]
     base: Option<ForeignChain>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    arbitrum: Option<ForeignChain>,
 }
 
 impl From<ForeignChainsConfig> for ForeignChains {
@@ -151,6 +153,7 @@ impl From<ForeignChainsConfig> for ForeignChains {
             starknet: config.starknet.map(Into::into),
             bnb: config.bnb.map(Into::into),
             base: config.base.map(Into::into),
+            arbitrum: config.arbitrum.map(Into::into),
         }
     }
 }
@@ -480,6 +483,11 @@ mod tests {
                             val: "blast-secret".to_string(),
                         },
                     },
+                )),
+                arbitrum: Some(test_chain(
+                    "public",
+                    "https://arbitrum.publicnode.com",
+                    AuthConfig::None,
                 )),
             },
             cores: Some(4),

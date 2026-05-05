@@ -289,13 +289,9 @@ general-purpose `sign()` keys, even if the same account and derivation path are 
 The contract stores a foreign-chain configuration **per participant** — there is no global, voted-on policy. The set of chains the network collectively supports is derived as the **intersection** of chains registered by every active participant.
 
 ```rust
-pub struct NodeForeignChainConfigurations {
-    pub foreign_chain_configuration_by_node: BTreeMap<AccountId, ForeignChainConfiguration>,
+pub struct ForeignChainSupportByNode {
+    pub foreign_chain_support_by_node: BTreeMap<AccountId, SupportedForeignChains>,
 }
-
-pub struct ForeignChainConfiguration(
-    pub BTreeMap<ForeignChain, NonEmptyBTreeSet<RpcProvider>>,
-);
 
 pub struct SupportedForeignChains(pub BTreeSet<ForeignChain>);
 
@@ -310,17 +306,13 @@ pub enum ForeignChain {
     Starknet,
     // Future chains...
 }
-
-pub struct RpcProvider {
-    pub rpc_url: String,
-}
 ```
 
 Relevant contract methods:
 
 * `register_foreign_chain_config(foreign_chain_configuration: ForeignChainConfiguration)` — call method. The authenticated participant (re)registers its per-chain provider set. The call is idempotent.
 * `get_supported_foreign_chains() -> SupportedForeignChains` — view method. Returns the set of chains that appear in **every** active participant's registered configuration.
-* `get_foreign_chain_configurations() -> NodeForeignChainConfigurations` — view method. Returns each participant's registered configuration.
+* `get_foreign_chain_support_by_node() -> ForeignChainSupportByNode` — view method. Returns each participant's registered set of supported chains.
 
 ## Deterministic Provider Selection
 
@@ -376,7 +368,7 @@ See "Contract State (Foreign Chain Configurations)" above.
 * On startup, each node submits a single `register_foreign_chain_config` transaction derived from its local configuration. The call is idempotent.
 * Nodes do **not** vote, poll, or wait for network-wide consensus — the transaction is sent and startup continues.
 * A chain appears in `get_supported_foreign_chains()` only once **every** active participant has registered it.
-* Per-participant registrations can be inspected with `get_foreign_chain_configurations()`.
+* Per-participant registrations can be inspected with `get_foreign_chain_support_by_node()`.
 
 ### Configuration (Node)
 

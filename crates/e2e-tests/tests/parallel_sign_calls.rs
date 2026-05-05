@@ -2,7 +2,7 @@ use crate::common;
 
 use e2e_tests::{CLUSTER_WAIT_TIMEOUT, metrics};
 use mpc_primitives::domain::{Curve, DomainId};
-use near_mpc_contract_interface::types::{DomainConfig, DomainPurpose};
+use near_mpc_contract_interface::types::{DomainConfig, DomainPurpose, Protocol};
 use serde_json::json;
 
 /// 9 parallel calls (3 robust ECDSA + 2 ECDSA + 2 EdDSA + 2 CKD) via the test parallel
@@ -26,21 +26,25 @@ async fn mpc_cluster_should_successfully_process_parallel_requests() {
                 DomainConfig {
                     id: DomainId(0),
                     curve: Curve::V2Secp256k1,
+                    protocol: Protocol::from(Curve::V2Secp256k1),
                     purpose: DomainPurpose::Sign,
                 },
                 DomainConfig {
                     id: DomainId(1),
                     curve: Curve::Secp256k1,
+                    protocol: Protocol::from(Curve::Secp256k1),
                     purpose: DomainPurpose::Sign,
                 },
                 DomainConfig {
                     id: DomainId(2),
                     curve: Curve::Edwards25519,
+                    protocol: Protocol::from(Curve::Edwards25519),
                     purpose: DomainPurpose::Sign,
                 },
                 DomainConfig {
                     id: DomainId(3),
                     curve: Curve::Bls12381,
+                    protocol: Protocol::from(Curve::Bls12381),
                     purpose: DomainPurpose::CKD,
                 },
             ];
