@@ -993,7 +993,7 @@ dependencies = [
  "mpc-primitives",
  "near-mpc-crypto-types",
  "node-types",
- "reqwest 0.13.2",
+ "reqwest 0.13.3",
  "serde_json",
  "sha2 0.10.9",
  "tempfile",
@@ -2045,7 +2045,7 @@ name = "contract-history"
 version = "3.9.0"
 dependencies = [
  "bs58 0.5.1",
- "reqwest 0.13.2",
+ "reqwest 0.13.3",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -2613,7 +2613,7 @@ dependencies = [
  "log",
  "parity-scale-codec",
  "pem",
- "reqwest 0.13.2",
+ "reqwest 0.13.3",
  "ring",
  "rustls-pki-types",
  "scale-info",
@@ -3057,7 +3057,7 @@ dependencies = [
  "near-mpc-crypto-types",
  "near-sandbox",
  "rand 0.8.6",
- "reqwest 0.13.2",
+ "reqwest 0.13.3",
  "serde",
  "serde_json",
  "tempfile",
@@ -3874,7 +3874,7 @@ dependencies = [
  "once_cell",
  "prost 0.14.3",
  "prost-types",
- "reqwest 0.13.2",
+ "reqwest 0.13.3",
  "secret-vault-value",
  "serde",
  "serde_json",
@@ -5733,7 +5733,7 @@ dependencies = [
  "near-sdk",
  "node-types",
  "rand 0.9.4",
- "reqwest 0.13.2",
+ "reqwest 0.13.3",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -6717,7 +6717,7 @@ dependencies = [
  "near-kit-macros",
  "near-token",
  "rand 0.8.6",
- "reqwest 0.13.2",
+ "reqwest 0.13.3",
  "serde",
  "serde_json",
  "serde_with",
@@ -9691,9 +9691,9 @@ dependencies = [
 
 [[package]]
 name = "reqwest"
-version = "0.13.2"
+version = "0.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab3f43e3283ab1488b624b44b0e988d0acea0b3214e694730a055cb6b2efa801"
+checksum = "62e0021ea2c22aed41653bc7e1419abb2c97e038ff2c33d0e1309e49a97deec0"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -10111,9 +10111,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.38"
+version = "0.23.40"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69f9466fb2c14ea04357e91413efb882e2a6d4a406e625449bc0a5d360d53a21"
+checksum = "ef86cd5876211988985292b91c96a8f2d298df24e75989a43a3c73f2d4d8168b"
 dependencies = [
  "aws-lc-rs",
  "log",
@@ -11318,7 +11318,7 @@ dependencies = [
  "launcher-interface",
  "mpc-attestation",
  "near-mpc-bounded-collections",
- "reqwest 0.13.2",
+ "reqwest 0.13.3",
  "rstest",
  "test-utils",
  "thiserror 2.0.18",

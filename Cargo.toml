@@ -205,10 +205,10 @@ reddsa = { git = "https://github.com/near/reddsa", rev = "c7cd92a55f7399d8d7f8c0
     "frost",
 ] }
 regex = "1.12.3"
-reqwest = { version = "0.13.2", features = ["multipart", "json"] }
+reqwest = { version = "0.13.3", features = ["multipart", "json"] }
 rmp-serde = "1.3.1"
 rstest = { version = "0.26.1" }
-rustls = { version = "0.23.38", default-features = false, features = [
+rustls = { version = "0.23.39", default-features = false, features = [
     "ring",
     "std",
 ] }
