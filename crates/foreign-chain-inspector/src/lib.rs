@@ -1,4 +1,5 @@
 use derive_more::{Deref, Display, From};
+use ethereum_types::{H256, U64};
 use http::{HeaderMap, HeaderName, HeaderValue};
 use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
 use thiserror::Error;
@@ -67,6 +68,14 @@ pub enum ForeignChainInspectionError {
     },
     #[error("transaction has not reached expected finality level")]
     NotFinalized,
+    #[error(
+        "transaction receipt's block_hash does not match the canonical chain at block {block_number}: receipt_hash={receipt_hash:?}, canonical_hash={canonical_hash:?}"
+    )]
+    NonCanonicalBlock {
+        block_number: U64,
+        receipt_hash: H256,
+        canonical_hash: H256,
+    },
     #[error("The transaction's status was not success")]
     TransactionFailed,
     #[error("provided log index is out of bounds")]

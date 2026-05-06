@@ -1,3 +1,5 @@
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use jsonrpsee::core::{
     client::BatchResponse,
     client::{ClientT, error::Error as RpcClientError},
@@ -62,4 +64,44 @@ pub struct JsonRpcResponse<T> {
     pub jsonrpc: String,
     pub result: T,
     pub id: u64,
+}
+
+/// Builds a mock RPC client that returns pre-configured responses in call order.
+///
+/// Each call to the resulting client pops the next response from the queue, regardless
+/// of method name or params. Useful for tests of flows that issue a deterministic sequence
+/// of RPC calls. Panics if the client is called more times than responses were configured;
+/// excess responses are silently ignored.
+#[derive(Default)]
+pub struct SequentialResponseMockClientBuilder {
+    responses: Vec<serde_json::Value>,
+}
+
+impl SequentialResponseMockClientBuilder {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_response(mut self, response: impl serde::Serialize) -> Self {
+        self.responses
+            .push(serde_json::to_value(&response).unwrap());
+        self
+    }
+
+    pub fn build(
+        self,
+    ) -> FixedResponseRpcClient<impl Fn() -> Result<serde_json::Value, RpcClientError> + Sync> {
+        let call_count = AtomicUsize::new(0);
+        let total = self.responses.len();
+        FixedResponseRpcClient::new(move || {
+            let count = call_count.fetch_add(1, Ordering::SeqCst);
+            Ok(self.responses.get(count).cloned().unwrap_or_else(|| {
+                panic!(
+                    "mock client received call #{} but only {} responses were configured",
+                    count + 1,
+                    total,
+                )
+            }))
+        })
+    }
 }
