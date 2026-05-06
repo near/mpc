@@ -20,7 +20,7 @@ The intended outcome: a thin global contract wrapping `dcap_qvl::verify()` that 
 3. [Short-term design (v1)](#3-short-term-design-v1)
 4. [Long-term design vision](#4-long-term-design-vision)
 5. [Cross-team considerations](#5-cross-team-considerations)
-6. [Migration plan](#6-migration-plan)
+6. [Migration](#6-migration)
 7. [Open questions](#7-open-questions)
 
 ## 1. Current state
@@ -138,13 +138,13 @@ submit_participant_info(attestation, tls_pk)        [entry point — lib.rs:773]
   ├─ build NodeId
   ├─ compute expected_report_data = ReportDataV1::new(tls_pk, account_pk).into_bytes()
   ├─ snapshot current allowlists (mpc_image_hashes, launcher_compose_hashes, measurements)
-  ├─ stash (NodeId, expected_report_data, snapshot, attached_deposit) in pending_attestations[caller]
+  ├─ stash (NodeId, expected_report_data, snapshot, attached_deposit) for the caller
   ├─ schedule Promise: tee_verifier.verify_quote(quote, collateral, now)
   └─ chain callback: on_attestation_verified(caller)
 
 on_attestation_verified(caller)                     [callback — new]
   ├─ retrieve VerifiedReport from PromiseResult
-  ├─ load (NodeId, expected_report_data, snapshot, deposit) from pending_attestations[caller]
+  ├─ load (NodeId, expected_report_data, snapshot, deposit) for the caller
   ├─ run all the post-DCAP checks the attestation crate does today:
   │     - report.status == "UpToDate"
   │     - report.advisory_ids.is_empty()
@@ -159,7 +159,7 @@ on_attestation_verified(caller)                     [callback — new]
   │     - compute & check launcher compose hash against snapshot.launcher_compose_hashes
   ├─ build ValidatedDstackAttestation { mpc_image_hash, launcher_compose_hash, expiry, measurements }
   ├─ insert into stored_attestations[node_id.tls_public_key]
-  └─ refund excess attached_deposit; clear pending_attestations[caller]
+  └─ refund excess attached_deposit; clear stashed pending state for the caller
 ```
 
 The post-DCAP checks above are **exactly** what `attestation::DstackAttestation::verify` plus `mpc-attestation::Attestation::verify` do today (see [attestation.rs:126](crates/attestation/src/attestation.rs#L126) and [mpc-attestation/attestation.rs:135](crates/mpc-attestation/src/attestation.rs#L135)). They simply move from running synchronously inside `tee_state.add_participant` to running inside `on_attestation_verified` after the verifier returns the parsed report. The `DstackAttestation` struct itself becomes the input to the callback (the caller still submits `quote`, `collateral`, `tcb_info`); we only offload the cryptographic dcap-qvl part to the verifier, then re-attach the parsed report to the local `tcb_info` for the event-log/app-compose checks.
@@ -190,16 +190,6 @@ This deliberately leaves the [Automata-style PCCS-on-chain](https://github.com/a
 - Net WASM size win: roughly half of what a naive "move everything TEE-related" effort would yield, but with zero state-migration risk.
 
 The "second half" of the savings is realized in the long-term split (§4).
-
-### 3.6 Critical files modified in v1
-
-- New crate: `crates/tee-verifier/` — the global contract. Pulls in `dcap-qvl` directly. ~150 lines.
-- New crate: `crates/tee-verifier-interface/` — Borsh DTOs (`Collateral`, `VerifiedReport`, error enum) shared between verifier and callers. ~200 lines.
-- [`crates/contract/src/lib.rs`](crates/contract/src/lib.rs) — `submit_participant_info` becomes Promise-based; new `on_attestation_verified` callback; new `pending_attestations` map field on `MpcContract`.
-- [`crates/contract/src/tee/tee_state.rs`](crates/contract/src/tee/tee_state.rs) — split `add_participant` into `start_add_participant(node_id, expected_report_data, allowlists_snapshot) -> PromiseAction` and `finish_add_participant(node_id, verified_report) -> Result<ParticipantInsertion, ...>`.
-- [`crates/mpc-attestation/src/attestation.rs`](crates/mpc-attestation/src/attestation.rs) — extract the post-DCAP checks (currently mixed into `Attestation::verify`) into a function that takes a pre-verified `VerifiedReport` and the `tcb_info`/`expected_report_data`/allowlists. Reuse it in `finish_add_participant`. The existing `Attestation::verify` becomes a thin wrapper that calls dcap-qvl locally — kept for tests and for any consumer that doesn't want the global verifier.
-
-The `attestation` crate doesn't need code changes; it's already factored well.
 
 ## 4. Long-term design vision
 
@@ -332,31 +322,15 @@ In v2:
 
 ### 5.5 dcap-qvl version alignment
 
-Today MPC tracks dcap-qvl from /Users/patryk/dcap-qvl/src/ (a working copy, possibly a fork). Proximity uses 0.4.0. The global verifier should pin to a specific dcap-qvl version, and that pin becomes the de facto network-wide standard. Bumping the pin is a verifier upgrade — pushed by the verifier's `admin_id`. This is the headline benefit of the global contract: dcap-qvl bugfixes get rolled out once, not three times.
+MPC and Proximity currently pin different dcap-qvl versions in their respective `Cargo.toml`. The global verifier should pin to a specific dcap-qvl version, and that pin becomes the de facto network-wide standard. Bumping the pin is a verifier upgrade — pushed by the verifier's `admin_id`. This is the headline benefit of the global contract: dcap-qvl bugfixes get rolled out once, not three times.
 
-## 6. Migration plan
+## 6. Migration
 
-### 6.1 v1 (this design)
+The v1 migration is **state-preserving**: existing `stored_attestations` are untouched, the `TeeState` Borsh layout is unchanged, all governance entry points keep working. The only behavioural change is that `submit_participant_info` becomes a two-step transaction (Promise to the verifier + callback that finalizes insertion).
 
-Sequence of PRs, all targeting `crates/contract`:
+The verifier is deployed first; once stable, the MPC contract is upgraded to point at it. Node operators are coordinated since `submit_participant_info` becomes async on the off-chain side.
 
-1. **Create `crates/tee-verifier-interface`.** Define Borsh `Collateral`, `VerifiedReport`, `VerifierError`. Verify roundtrip with `dcap_qvl::verify::VerifiedReport`. No on-chain impact yet.
-
-2. **Create `crates/tee-verifier`.** Single-method contract. Deploy to testnet first; functional tests under `crates/e2e-tests` that invoke `verify_quote` with real Dstack quotes.
-
-3. **Refactor `crates/mpc-attestation/src/attestation.rs`** to extract the post-DCAP logic into a free function `verify_post_dcap(verified_report, tcb_info, expected_report_data, allowed_*) -> ValidatedDstackAttestation`. The existing `Attestation::verify` becomes `dcap_qvl::verify(...) → verify_post_dcap(...)`. No behavior change yet.
-
-4. **Wire MPC contract to call the verifier.** Split `tee_state.add_participant` into start/finish halves. Change `submit_participant_info` to schedule the verifier Promise and chain `on_attestation_verified`. Add `pending_attestations: IterableMap<AccountId, PendingAttestation>` to `MpcContract`. The pending entry stores: the `Attestation` payload, the constructed `NodeId`, the `expected_report_data`, the snapshot of allowlists at submission time, and the attached deposit. On callback: verify post-DCAP, finalize insertion or refund.
-
-5. **Drop dcap-qvl from `mpc-contract` Cargo.toml.** This is the moment the WASM size shrinks. Verify with `cargo near build` size diff.
-
-6. **Mainnet deployment**: deploy `tee-verifier.near` first; once stable, upgrade `mpc-contract` to point at it. Coordinate node operators since `submit_participant_info` becomes async.
-
-The migration is **state-preserving**: existing `stored_attestations` are untouched, the `TeeState` Borsh layout is unchanged, all governance entry points keep working. The only behavioural change is that `submit_participant_info` becomes a two-step transaction.
-
-### 6.2 v2 and beyond
-
-Out of scope for this design doc. Sketched in §4.
+A detailed PR sequence will accompany the implementation; that lives outside this design doc.
 
 ## 7. Open questions
 
@@ -376,7 +350,7 @@ The verifier's `verify_quote` does a non-trivial amount of work (cert chain vali
 
 ### 7.3 Failure modes of the async path
 
-If the verifier promise fails (e.g., the verifier contract is unreachable, runs out of gas, or returns `VerificationError`), `on_attestation_verified` must clean up `pending_attestations` and refund the attached deposit. If the callback itself fails, the deposit is potentially stuck. We should add a `clear_stale_pending_attestations` entry point (mirrors the existing `clean_invalid_attestations` pattern) so anyone can sweep stale pending entries after a timeout.
+If the verifier promise fails (e.g., the verifier contract is unreachable, runs out of gas, or returns `VerificationError`), the callback must clean up the caller's stashed pending state and refund the attached deposit. If the callback itself fails, the deposit is potentially stuck. We should expose a sweep entry point (mirroring the existing `clean_invalid_attestations` pattern) so anyone can clear stale pending entries after a timeout.
 
 ### 7.4 Should the verifier optionally do the report_data binding?
 
