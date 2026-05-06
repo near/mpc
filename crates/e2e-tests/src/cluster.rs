@@ -36,11 +36,10 @@ const SIGN_GAS: near_kit::Gas = near_kit::Gas::from_tgas(15);
 // which costs significantly more than a plain CKD or sign request.
 const CKD_PV_GAS: near_kit::Gas = near_kit::Gas::from_tgas(100);
 const SIGN_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_yoctonear(1);
-// Mirrors `CURRENT_CONTRACT_DEPLOY_DEPOSIT` from the contract sandbox tests.
-// The deposit must cover storage for the contract WASM payload (~17 NEAR for
-// current binaries); the contract panics if the attached deposit is short.
 const CONTRACT_UPDATE_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_millinear(17_000);
+const CONTRACT_UPDATE_GAS: near_kit::Gas = near_kit::Gas::from_tgas(300);
 const CONTRACT_DEPLOY_TIMEOUT: Duration = Duration::from_secs(15);
+const PROPOSER_NODE_INDEX: usize = 0;
 
 // Seed offsets for `generate_deterministic_key` — each range holds up to 100 keys.
 const KEY_SEED_NEAR_SIGNER: u64 = 0;
@@ -84,13 +83,7 @@ pub struct MpcClusterConfig {
     /// cluster so their indexers sync before blocks accumulate (`start_near_node`
     /// blocks until synced).
     pub migration_targets: Vec<usize>,
-    /// Wire format used when calling `init` on the contract. Defaults to
-    /// `Current`; switch to a `Legacy*` variant when `contract_wasm` is an
-    /// older production binary whose `init` signature is incompatible with
-    /// the current `ThresholdParameters` JSON.
-    ///
-    /// See [`ContractInitFormat`] for guidance on adding/removing variants
-    /// when the production contract changes.
+    /// Wire format used when calling `init`. See [`ContractInitFormat`].
     pub init_format: ContractInitFormat,
 }
 
@@ -109,9 +102,6 @@ pub struct MpcClusterConfig {
 ///   the obsolete variant and any tests that pin to it. The `current_*()`
 ///   pointers in `contract-history` will already reference a binary that
 ///   speaks the new format, so `Current` is enough.
-/// - **`init_format` should always be `Current`** for tests that deploy the
-///   *current* contract WASM (the default). Only override it when the test
-///   pins `contract_wasm` to an older `contract_history::*` binary.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ContractInitFormat {
     /// Current `ThresholdParameters` shape (uses `tls_public_key`).
@@ -210,6 +200,7 @@ pub struct MpcCluster {
     /// Separate access keys used by the test to cast votes on node accounts.
     /// Disjoint from `node_keys` so the MPC node's own nonce sequence is never disturbed.
     pub operator_keys: Vec<SigningKey>,
+    pub threshold: usize,
     pub user_accounts: HashMap<AccountId, SigningKey>,
     pub ports: E2ePortAllocator,
     /// Held to keep the temp directory alive for the lifetime of the cluster.
@@ -222,6 +213,7 @@ impl MpcCluster {
     /// binaries, and wait for Running state.
     pub async fn start(config: MpcClusterConfig) -> anyhow::Result<Self> {
         config.validate()?;
+        let threshold = config.threshold;
         let ports = E2ePortAllocator::new(config.port_seed);
         let test_dir = create_test_dir(&config.home_base)?;
 
@@ -265,12 +257,14 @@ impl MpcCluster {
         init_contract(
             &blockchain,
             &contract,
-            &node_near_keys,
-            &node_p2p_keys,
-            config.threshold,
-            &participant_indices,
             &ports,
-            config.init_format,
+            InitContractArgs {
+                near_keys: node_near_keys.clone(),
+                p2p_keys: node_p2p_keys.clone(),
+                threshold: config.threshold,
+                participant_indices: participant_indices.clone(),
+                init_format: config.init_format,
+            },
         )
         .await?;
 
@@ -310,6 +304,7 @@ impl MpcCluster {
             nodes,
             node_keys,
             operator_keys,
+            threshold,
             user_accounts,
             ports,
             test_dir,
@@ -882,15 +877,10 @@ impl MpcCluster {
             .await
     }
 
-    /// Propose a contract code update with the given WASM and cast votes
-    /// from operator accounts until `vote_update` reports the threshold has
-    /// been reached.
-    ///
-    /// **Note**: a `true` return from `vote_update` only means the deploy +
-    /// `migrate()` promise has been *scheduled*. If `migrate` later panics,
-    /// the runtime rolls back the deploy and the old code stays in place.
-    /// To make sure the new WASM is actually live, call
-    /// [`Self::assert_deployed_code`] after this returns.
+    /// Propose a contract code update and cast votes until `vote_update` reports
+    /// the threshold reached. Pair with [`Self::assert_deployed_code`]: the deploy
+    /// and `migrate()` promise runs asynchronously, and a panicking `migrate`
+    /// rolls the deploy back without changing the threshold-reached signal.
     pub async fn propose_and_vote_contract_update(&self, new_wasm: &[u8]) -> anyhow::Result<()> {
         anyhow::ensure!(
             !self.nodes.is_empty(),
@@ -901,14 +891,14 @@ impl MpcCluster {
             code: Some(new_wasm),
             config: None,
         };
-        let proposer_client = self.operator_client_for(0)?;
+        let proposer_client = self.operator_client_for(PROPOSER_NODE_INDEX)?;
         let outcome = self
             .contract
             .call_from_borsh_with_deposit(
                 &proposer_client,
                 method_names::PROPOSE_UPDATE,
                 propose_args,
-                near_kit::Gas::from_tgas(300),
+                CONTRACT_UPDATE_GAS,
                 CONTRACT_UPDATE_DEPOSIT,
             )
             .await
@@ -942,6 +932,12 @@ impl MpcCluster {
                 .json()
                 .with_context(|| format!("vote_update from node {i} returned non-bool"))?;
             if update_applied {
+                anyhow::ensure!(
+                    i + 1 == self.threshold,
+                    "expected exactly {} votes to apply update, got {}",
+                    self.threshold,
+                    i + 1,
+                );
                 tracing::info!(votes = i + 1, "contract code update vote threshold reached");
                 return Ok(());
             }
@@ -1090,18 +1086,29 @@ async fn create_node_accounts(
     Ok(())
 }
 
-#[expect(clippy::too_many_arguments)]
+struct InitContractArgs {
+    near_keys: Vec<SigningKey>,
+    p2p_keys: Vec<SigningKey>,
+    threshold: usize,
+    participant_indices: Vec<usize>,
+    init_format: ContractInitFormat,
+}
+
 async fn init_contract(
     blockchain: &NearBlockchain,
     contract: &DeployedContract,
-    near_keys: &[SigningKey],
-    p2p_keys: &[SigningKey],
-    threshold: usize,
-    participant_indices: &[usize],
     ports: &E2ePortAllocator,
-    init_format: ContractInitFormat,
+    args: InitContractArgs,
 ) -> anyhow::Result<()> {
-    let participants = build_participants(participant_indices, p2p_keys, ports);
+    let InitContractArgs {
+        near_keys,
+        p2p_keys,
+        threshold,
+        participant_indices,
+        init_format,
+    } = args;
+
+    let participants = build_participants(&participant_indices, &p2p_keys, ports);
     let params = ThresholdParameters {
         threshold: Threshold(threshold as u64),
         participants,
@@ -1128,7 +1135,7 @@ async fn init_contract(
         outcome.failure_message()
     );
 
-    for &i in participant_indices {
+    for &i in &participant_indices {
         let account = format!("node{i}.{SANDBOX_ROOT_ACCOUNT}");
         let client = blockchain.client_for(&account, &near_keys[i])?;
         let pubkey =
