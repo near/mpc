@@ -353,7 +353,7 @@ foreign_chains:
           scheme: Bearer
           token:
             env: ALCHEMY_API_KEY
-  polygon:
+  not_a_real_chain:
     timeout_sec: 30
     max_retries: 3
     providers:
