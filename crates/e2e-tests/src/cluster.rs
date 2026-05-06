@@ -40,6 +40,7 @@ const SIGN_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_yoctonear(1)
 // The deposit must cover storage for the contract WASM payload (~17 NEAR for
 // current binaries); the contract panics if the attached deposit is short.
 const CONTRACT_UPDATE_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_millinear(17_000);
+const CONTRACT_DEPLOY_TIMEOUT: Duration = Duration::from_secs(15);
 
 // Seed offsets for `generate_deterministic_key` — each range holds up to 100 keys.
 const KEY_SEED_NEAR_SIGNER: u64 = 0;
@@ -882,18 +883,20 @@ impl MpcCluster {
     }
 
     /// Propose a contract code update with the given WASM and cast votes
-    /// from operator accounts until the update is applied. Returns once
-    /// `vote_update` reports the threshold has been reached.
+    /// from operator accounts until `vote_update` reports the threshold has
+    /// been reached.
+    ///
+    /// **Note**: a `true` return from `vote_update` only means the deploy +
+    /// `migrate()` promise has been *scheduled*. If `migrate` later panics,
+    /// the runtime rolls back the deploy and the old code stays in place.
+    /// To make sure the new WASM is actually live, call
+    /// [`Self::assert_deployed_code`] after this returns.
     pub async fn propose_and_vote_contract_update(&self, new_wasm: &[u8]) -> anyhow::Result<()> {
         anyhow::ensure!(
             !self.nodes.is_empty(),
             "cannot propose contract update with no nodes"
         );
 
-        // `propose_update` is borsh-deserialized on the contract side. We use
-        // a local mirror struct (`ProposeUpdateArgsBorsh`) to avoid pulling
-        // the contract crate into the e2e-tests dependency tree for two
-        // fields.
         let propose_args = ProposeUpdateArgsBorsh {
             code: Some(new_wasm),
             config: None,
@@ -919,8 +922,6 @@ impl MpcCluster {
             .json()
             .context("propose_update did not return a JSON UpdateId")?;
 
-        // Cast votes one-by-one. `vote_update` returns `true` once the
-        // threshold has been reached and the new code is in place.
         for (i, _) in self.nodes.iter().enumerate() {
             let client = self.operator_client_for(i)?;
             let vote_outcome = self
@@ -941,11 +942,35 @@ impl MpcCluster {
                 .json()
                 .with_context(|| format!("vote_update from node {i} returned non-bool"))?;
             if update_applied {
-                tracing::info!(votes = i + 1, "contract code update applied");
+                tracing::info!(votes = i + 1, "contract code update vote threshold reached");
                 return Ok(());
             }
         }
         anyhow::bail!("contract code update was not applied after votes from every node")
+    }
+
+    /// Wait until the deployed contract code hash matches `sha256(expected_wasm)`.
+    pub async fn assert_deployed_code(&self, expected_wasm: &[u8]) -> anyhow::Result<()> {
+        let expected = near_kit::CryptoHash::hash(expected_wasm);
+        let deadline = tokio::time::Instant::now() + CONTRACT_DEPLOY_TIMEOUT;
+        loop {
+            let deployed = self.contract.code_hash().await?;
+            if deployed == expected {
+                tracing::info!(
+                    code_hash = %hex::encode(deployed.as_bytes()),
+                    "deployed code matches expected WASM",
+                );
+                return Ok(());
+            }
+            anyhow::ensure!(
+                tokio::time::Instant::now() < deadline,
+                "deployed code hash {} does not match expected {} — `migrate` likely panicked \
+                 and the deploy was rolled back",
+                hex::encode(deployed.as_bytes()),
+                hex::encode(expected.as_bytes()),
+            );
+            tokio::time::sleep(POLL_INTERVAL).await;
+        }
     }
 }
 

@@ -67,6 +67,10 @@ async fn contract_upgrade_compatibility__current_node_runs_against_production_co
         .propose_and_vote_contract_update(&current_contract_wasm)
         .await
         .expect("contract upgrade to current WASM failed");
+    cluster
+        .assert_deployed_code(&current_contract_wasm)
+        .await
+        .expect("deployed contract code does not match current WASM");
 
     // Then: the contract is back in Running state under the new code, and
     // both sign and CKD requests continue to succeed end-to-end.

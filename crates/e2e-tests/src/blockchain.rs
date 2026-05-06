@@ -200,4 +200,14 @@ impl DeployedContract {
     pub async fn state(&self) -> anyhow::Result<ProtocolContractState> {
         self.view("state").await
     }
+
+    /// SHA-256 hash of the contract code currently deployed at this account.
+    pub async fn code_hash(&self) -> anyhow::Result<near_kit::CryptoHash> {
+        let view = self
+            .client
+            .account(self.contract_id.as_str())
+            .await
+            .map_err(|e| anyhow::anyhow!("view_account for `{}` failed: {e}", self.contract_id))?;
+        Ok(view.code_hash)
+    }
 }
