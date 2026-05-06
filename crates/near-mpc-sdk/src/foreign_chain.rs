@@ -8,6 +8,8 @@ pub mod base;
 pub mod bitcoin;
 pub mod bnb;
 pub mod evm;
+pub mod hyper_evm;
+pub mod polygon;
 pub mod starknet;
 
 use near_mpc_contract_interface::types::PublicKey;

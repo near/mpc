@@ -17,7 +17,7 @@ use mpc_primitives::domain::{DomainId, Protocol};
 use near_jsonrpc_client::methods::send_tx;
 use near_jsonrpc_client::methods::tx::{RpcTransactionResponse, TransactionInfo};
 use near_jsonrpc_client::methods::EXPERIMENTAL_tx_status::RpcTransactionStatusRequest;
-use near_mpc_contract_interface::types::DomainConfig;
+use near_mpc_contract_interface::types::{DomainConfig, ProtocolContractState};
 use near_primitives::transaction::SignedTransaction;
 use near_primitives::views::{FinalExecutionStatus, TxExecutionStatus};
 use std::f64;
@@ -264,8 +264,7 @@ impl RunLoadtestCmd {
                 .iter()
                 .map(|(domain_id, n_calls)| {
                     (
-                        contract_state
-                            .get_domain_config(DomainId(*domain_id))
+                        find_domain_config(&contract_state, DomainId(*domain_id))
                             .expect("require valid domain id"),
                         *n_calls,
                     )
@@ -279,8 +278,7 @@ impl RunLoadtestCmd {
             crate::contracts::ContractActionCall::ParallelSignCall(args)
         } else if let Some(domain_id) = self.domain_id {
             let contract_state = read_contract_state(&config.rpc, &mpc_account).await;
-            let domain_config = contract_state
-                .get_domain_config(DomainId(domain_id))
+            let domain_config = find_domain_config(&contract_state, DomainId(domain_id))
                 .expect("require valid domain id");
             match domain_config.protocol {
                 Protocol::ConfidentialKeyDerivation => {
@@ -445,6 +443,16 @@ impl RunLoadtestCmd {
 
         let _ = res_handle.await;
     }
+}
+
+fn find_domain_config(state: &ProtocolContractState, id: DomainId) -> Option<DomainConfig> {
+    let domains = match state {
+        ProtocolContractState::Running(state) => &state.domains.domains,
+        ProtocolContractState::Resharing(state) => &state.previous_running_state.domains.domains,
+        ProtocolContractState::Initializing(state) => &state.domains.domains,
+        ProtocolContractState::NotInitialized => return None,
+    };
+    domains.iter().find(|d| d.id == id).cloned()
 }
 
 pub struct TxRpcResponse {
