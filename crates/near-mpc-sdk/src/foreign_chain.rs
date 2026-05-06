@@ -3,6 +3,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 pub use near_mpc_contract_interface::method_names::VERIFY_FOREIGN_TRANSACTION as VERIFY_FOREIGN_TRANSACTION_METHOD_NAME;
 
 pub mod abstract_chain;
+pub mod arbitrum;
 pub mod base;
 pub mod bitcoin;
 pub mod bnb;
