@@ -18,6 +18,9 @@ chain_id = "testnet"
 boot_nodes = "${NEAR_BOOT_NODES}"
 download_genesis = true
 download_config = "rpc"
+# Two new fields under test (PR #3145):
+tier3_public_addr = "${TIER3_PUBLIC_ADDR}"
+external_storage_fallback_threshold = ${FALLBACK_THRESHOLD}
 
 [mpc_node_config.secrets]
 secret_store_key_hex = "${MPC_SECRET_STORE_KEY}"
