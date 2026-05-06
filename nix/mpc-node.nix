@@ -36,7 +36,13 @@ let
   # header parsing. Production nodes all run on v3-capable hardware; pinning
   # to a fixed level (rather than `-march=native`) keeps output bytes from
   # varying with the build host's CPU.
-  marchFlag = lib.optionalString isX86 "-march=x86-64-v3";
+  #
+  # PCLMUL and AES are not part of the v3 micro-arch level (per System V
+  # psABI) but are universally available on v3-capable hardware. We add them
+  # explicitly so rocksdb's PCLMUL-accelerated CRC32C path is compiled in,
+  # and so the dev-shell BINDGEN_EXTRA_CLANG_ARGS in flake.nix can mirror
+  # this exactly.
+  marchFlag = lib.optionalString isX86 "-march=x86-64-v3 -mpclmul -maes";
 
   # Take the version from [workspace.package.version] so this file stays in
   # sync on every release bump.

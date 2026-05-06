@@ -153,13 +153,18 @@ if $USE_NODE || $USE_NODE_GCP; then
     # jemalloc, ...) to match the rustc target-cpu set in .cargo/config.toml.
     # Without this, the cc crate uses the container's default `-march`, which
     # would diverge from the Rust code's ISA expectations.
+    #
+    # PCLMUL and AES are not part of the v3 micro-arch level (per System V
+    # psABI) but are universally available on v3-capable hardware. Adding
+    # them explicitly keeps rocksdb's PCLMUL-accelerated CRC32C path
+    # compiled in. Match nix/mpc-node.nix and flake.nix.
     SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH \
     JEMALLOC_SYS_WITH_LG_VADDR=48 \
     JEMALLOC_SYS_WITH_LG_PAGE=12 \
     JEMALLOC_SYS_WITH_LG_HUGEPAGE=21 \
     GIT_CEILING_DIRECTORIES=/build/target \
-    CFLAGS="-march=x86-64-v3" \
-    CXXFLAGS="-march=x86-64-v3" \
+    CFLAGS="-march=x86-64-v3 -mpclmul -maes" \
+    CXXFLAGS="-march=x86-64-v3 -mpclmul -maes" \
     repro-env build \
       --env SOURCE_DATE_EPOCH \
       --env JEMALLOC_SYS_WITH_LG_VADDR \
