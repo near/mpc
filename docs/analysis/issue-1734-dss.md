@@ -2,12 +2,11 @@
 
 Issue: https://github.com/near/mpc/issues/1734
 
-> **Status: root cause confirmed and fix validated end-to-end.**
-> Reproduced on bare-metal `neard` (no docker, no CVM) on Alice; the fix
-> (`network.experimental.tier3_public_addr`) was applied and DSS started
-> downloading state parts within seconds. The bug is **not CVM-specific**
-> — it's host-level, triggered by any host with multiple IPs where `:24567`
-> is bound to a non-default IP.
+> **Status: root cause confirmed and fix validated end-to-end on bare neard
+> AND through a full TDX CVM** (PR #3145 — launcher TOML plumbing for
+> `tier3_public_addr` and `external_storage_fallback_threshold`). The bug is
+> **not CVM-specific** — it's host-level, triggered by any host with
+> multiple IPs where `:24567` is bound to a non-default IP.
 
 ## TL;DR
 
@@ -20,7 +19,10 @@ Issue: https://github.com/near/mpc/issues/1734
   (Bob, Alice — OVH bare-metal). **Mainnet GCP node is not affected**
   (verified — single external IP, auto-discovery correct).
 - **Fix:** set `network.experimental.tier3_public_addr = "<bound_ip>:24567"`
-  in the neard config. Validated on Alice — DSS recovered within seconds.
+  in the neard config. Validated on Alice end-to-end — both on bare neard
+  (DSS recovered within seconds) and through a full TDX CVM with
+  PR #3145's launcher TOML plumbing (96% DSS success rate, 13–29 Tier3
+  inbound connections from real testnet peers).
 - **Also remove** the hardcoded `external_storage_fallback_threshold = 0`
   in `deployment/start.sh:46`, which forced bucket-only sync and had been
   masking this bug for every MPC node since launch.
@@ -198,46 +200,140 @@ and selecting outbound source via the default route.
 
 ### Validation coverage — what's been tested vs. what hasn't
 
-Tests 1–4 cover the bug *mechanism* and *fix mechanism* end-to-end on bare
-neard, and confirm the mainnet GCP node is unaffected. But the production
-deployment shape adds layers we haven't exercised yet — specifically, the
-TDX/launcher chain on Bob, and the host-level fix options.
-
 **Tested ✅**
 
 - **Bug reproduces** on bare neard 2.11.0 with multi-IP host (Test 2).
 - **`tier3_public_addr` fixes DSS** on bare neard when set directly in
-  `config.json` (Test 3) — observed `near_tier3_public_addr` flip and
-  `near_state_sync_download_result{result="success",source="network"}`
-  start climbing within ~15 s.
-- **GCP single-IP topology is healthy** without any fix (Test 4) —
-  baseline that auto-discovery is correct in normal conditions.
+  `config.json` (Test 3).
+- **GCP single-IP topology is healthy** without any fix (Test 4).
+- **End-to-end through the TDX/launcher chain** (Test 5). PR #3145's
+  `tier3_public_addr` and `external_storage_fallback_threshold` fields
+  flow correctly from launcher TOML → `patch_near_config` → neard config
+  inside the CVM, and DSS state sync works through the full QEMU /
+  dstack / docker network stack.
 
 **Not yet tested ❌**
 
-- **`tier3_public_addr` through the TDX/launcher chain.** Bare-neard test
-  only validates the field on a freshly written `config.json`. The actual
-  TEE deployment path is launcher TOML → `deployment/start.sh` patches →
-  `config.json` inside the container → neard inside QEMU/dstack
-  networking. We haven't verified:
-  - There's a path to inject `tier3_public_addr` in this chain
-    (`start.sh` currently doesn't write it).
-  - The advertised address propagates correctly through the QEMU slirp
-    NAT layer (container's `network.addr` may be on the slirp internal
-    IP, while the value we'd inject is the host's public IP).
-  - Tier3 inbound from real testnet peers actually lands on the container
-    after going through host port-forward → QEMU slirp → docker bridge.
 - **Host-level routing fixes** (Options 2/3a/3b/5). All proposed but
-  none empirically validated. In particular Option 3b (per-CVM SNAT) is
-  the leading candidate for Bob's setup, but we haven't built the
-  iptables rules and watched whether `near_tier3_public_addr` becomes
-  correct via auto-discovery alone (no `tier3_public_addr` config).
+  none empirically validated. In particular Option 3b (per-CVM SNAT)
+  is the leading candidate for Bob's setup; we haven't run the iptables
+  rules and watched whether `near_tier3_public_addr` becomes correct via
+  auto-discovery alone (no `tier3_public_addr` config).
 - **Whether the host fix alone is sufficient without `tier3_public_addr`.**
   Theoretically yes (auto-discovery would pick the now-correct outbound
-  IP), but worth empirically confirming before we recommend the
-  defense-in-depth pattern in production.
+  IP), but worth empirically confirming.
 
-These gaps are the planned tests (1) and (2) of the validation work.
+### Test 5 — full TDX CVM with PR #3145 (run 2026-05-06 on Alice)
+
+Validates the entire fix pipeline against a real testnet TDX CVM:
+
+```
+launcher TOML (tier3_public_addr, external_storage_fallback_threshold)
+  ↓
+launcher's intercept_node_config → mpc-config.toml on shared volume
+  ↓
+mpc-node's StartConfig::from_toml_file → patch_near_config (PR #3145)
+  ↓
+neard config.json
+  (network.experimental.tier3_public_addr +
+   state_sync.sync.ExternalStorage.external_storage_fallback_threshold)
+  ↓
+neard at runtime → near_tier3_public_addr metric
+  ↓
+peers send Tier3 state-sync responses → host port-forward → QEMU slirp
+                                      → docker bridge → neard inside CVM
+```
+
+Setup:
+- Custom mpc-node image built from PR #3145 branch (CI), tag
+  `barak-testing-dss-tier3-public-addr-c371677`,
+  manifest `sha256:7210432270b0d05f62cae03074feb51575d4b28feeceae525fe068935020f206`.
+- Launcher image `nearone/mpc-launcher:main-c0778dc` (latest main, supports
+  the current TOML schema with `image_reference`).
+- Testnet TDX CVM on Alice, dstack-dev-0.5.8, SGX local key provider.
+- TOML fields under test:
+  ```toml
+  [mpc_node_config.near_init]
+  tier3_public_addr = "51.68.219.13:24567"
+  external_storage_fallback_threshold = 1000
+  ```
+- Bound to a single static IP (`51.68.219.13:24567`), mirroring Bob's
+  setup so the bug would reproduce in the unfixed case.
+- Script: `localnet/tee/scripts/rust-launcher/single-node-testnet.sh`.
+
+**mpc-node startup logs** (all timestamps from the same boot):
+
+```
+INFO mpc_node::run: mpc-node 3.9.0 (release 3.9.0) (commit c371677)   ← PR #3145 branch
+INFO mpc_node::run: starting MPC node account_id=dss-test.testnet
+                    contract_id=v1.signer-prod.testnet home_dir=/data
+INFO mpc_node::run: TEE config tee_authority=dstack
+                    image_hash=sha256:7210432...020f206
+INFO mpc_node::run: NEAR init config chain_id=testnet download_genesis=true
+INFO mpc_node::run: TEE attestation generated successfully
+...
+INFO stats: node_status="State 8qYjL...[5: parts] (5 downloads, 0 computations)
+                        11 peers ⬇ 319 kB/s ⬆ 28.9 kB/s ..."
+```
+
+**Metrics observed during state sync (~13 min into run):**
+
+```
+near_tier3_public_addr{addr="51.68.219.13:24567"} 1
+near_block_height_head 42376888                            ← state-sync still in progress
+
+near_peer_connections{peer_type="Inbound",tier="T3"} 13    ← peers landing Tier3 inbound ✅
+near_peer_connections{peer_type="Outbound",tier="T2"} 11
+
+near_state_sync_download_result{result="success",
+   shard_id="5", source="network", type="header"} 1
+near_state_sync_download_result{result="success",
+   shard_id="5", source="network", type="part"} 570        ← ~96% success rate
+near_state_sync_download_result{result="timeout",
+   shard_id="5", source="network", type="part"} 23
+near_state_sync_download_result{result="sender_dropped",
+   shard_id="5", source="network", type="part"} 2
+near_sync_status 5                                          ← state sync phase
+```
+
+**Tier3 disconnect warnings** also observed in the log:
+
+```
+WARN network: received message on connection, disconnecting
+              msg_variant=Disconnect tier=T3
+```
+
+These look concerning at first read but are normal Tier3 lifecycle —
+nearcore explicitly designs Tier3 connections as ephemeral: peer opens
+TCP, sends one state part, sends Disconnect, both sides close (from
+`chain/network/src/tcp.rs`'s `Tier::T3` doc: *"Tier3 connections are
+created ad hoc to directly transfer large messages... we avoid delaying
+other messages and we minimize network bandwidth usage."*). Each
+Disconnect = one successful state-part transfer completing. Repeated
+Disconnects = repeated successful transfers, which is the *desired*
+path.
+
+**Verdict**
+
+End-to-end fix works in TDX. Specifically validated:
+
+1. **Launcher reads `tier3_public_addr`** from the TOML and propagates
+   it into the neard config inside the CVM. Verified: the
+   `near_tier3_public_addr` metric shows the exact configured value
+   (`51.68.219.13:24567`), not the auto-discovered outbound IP that the
+   unfixed case would produce.
+2. **`external_storage_fallback_threshold = 1000` was applied.**
+   Verified: DSS attempts happen at all — with the previous hardcoded
+   `0`, the node would have gone straight to bucket and we'd see no
+   `near_state_sync_download_result{source="network"}` entries.
+3. **Real testnet peers reach the CVM through the full network stack.**
+   Verified: 13–29 Tier3 inbound connections at any given time, 570+
+   successful part downloads after ~13 min, ~96% success rate.
+
+The TDX / dstack / QEMU / docker networking layers do **not** introduce
+additional failure modes beyond the host-level asymmetric-IP issue we
+already identified — once `tier3_public_addr` is set, the fix is the
+same on bare metal and in TDX.
 
 ## Scope of impact
 
