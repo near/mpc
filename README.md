@@ -155,6 +155,7 @@ We run several checks in CI that require tools beyond the default Rust toolchain
 - [`zizmor`](https://github.com/woodruffw/zizmor)
 - [`ruff`](https://github.com/astral-sh/ruff)
 - [`lychee`](https://github.com/lycheeverse/lychee)
+- [`editorconfig-checker`](https://github.com/editorconfig-checker/editorconfig-checker)
 - [`python`](https://www.python.org/) (3.11) with [`tree-sitter`](https://pypi.org/project/tree-sitter/) and [`tree-sitter-rust`](https://pypi.org/project/tree-sitter-rust/)
 
 This set does not include all checks, but only the most common reasons for CI

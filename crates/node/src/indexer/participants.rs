@@ -107,6 +107,7 @@ pub enum KeyEventIdComparisonResult {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContractRunningState {
     pub keyset: ContractKeyset,
+    pub domains: Vec<dtos::DomainConfig>,
     pub participants: ParticipantsConfig,
     pub resharing_state: Option<ContractResharingState>,
 }
@@ -192,6 +193,7 @@ impl ContractState {
             ProtocolContractState::Running(running_state) => {
                 ContractState::Running(ContractRunningState {
                     keyset: running_state.keyset.clone(),
+                    domains: running_state.domains.domains.clone(),
                     participants: convert_participant_infos(
                         running_state.parameters.clone(),
                         port_override,
@@ -221,6 +223,7 @@ impl ContractState {
 
                 ContractState::Running(ContractRunningState {
                     keyset: running_state.keyset.clone(),
+                    domains: running_state.domains.domains.clone(),
                     participants: convert_participant_infos(
                         running_state.parameters.clone(),
                         port_override,

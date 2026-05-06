@@ -13,7 +13,7 @@
           }
         ],
         [
-          "$SAM_ACCOUNT", 
+          "$SAM_ACCOUNT",
           1,
           {
             "tls_public_key": "$SAM_P2P_KEY",

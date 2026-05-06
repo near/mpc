@@ -136,25 +136,25 @@ async fn test_multi_domain() {
             DomainConfig {
                 id: DomainId(3),
                 curve: Curve::Secp256k1,
-                protocol: Protocol::from(Curve::Secp256k1),
+                protocol: Protocol::CaitSith,
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(4),
                 curve: Curve::Edwards25519,
-                protocol: Protocol::from(Curve::Edwards25519),
+                protocol: Protocol::Frost,
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(5),
                 curve: Curve::Secp256k1,
-                protocol: Protocol::from(Curve::Secp256k1),
+                protocol: Protocol::CaitSith,
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(6),
                 curve: Curve::Edwards25519,
-                protocol: Protocol::from(Curve::Edwards25519),
+                protocol: Protocol::Frost,
                 purpose: DomainPurpose::Sign,
             },
         ])
@@ -177,7 +177,7 @@ async fn test_multi_domain() {
         .start_add_domains(vec![DomainConfig {
             id: DomainId(7),
             curve: Curve::Secp256k1,
-            protocol: Protocol::from(Curve::Secp256k1),
+            protocol: Protocol::CaitSith,
             purpose: DomainPurpose::Sign,
         }])
         .await

@@ -106,7 +106,7 @@ async fn test_onboarding() {
     let domain = DomainConfig {
         id: DomainId(0),
         curve: Curve::Secp256k1,
-        protocol: Protocol::from(Curve::Secp256k1),
+        protocol: Protocol::CaitSith,
         purpose: DomainPurpose::Sign,
     };
 

@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.9.1] - 2026-04-21
+
+### 🐛 Bug Fixes
+
+- [#2956](https://github.com/near/mpc/pull/2956)(@gilcu3): Cleanup of stored attestations (#2956)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- [#2978](https://github.com/near/mpc/pull/2978)(@gilcu3): Bump nearcore to 2.11.1 (#2978)
+
+
 ## [3.9.0] - 2026-04-16
 
 ### 🚀 Features
@@ -161,6 +173,8 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#2869](https://github.com/near/mpc/pull/2869)(@pbeza): Reduce contract WASM size and add CI size check (#2869)
 
 - [#2911](https://github.com/near/mpc/pull/2911)(@netrome): Make llm agents better at following our testing conventions (#2911)
+
+- [#2920](https://github.com/near/mpc/pull/2920)(@gilcu3): Prepare for 3.9.0 release  (#2920)
 
 
 ## [3.8.1] - 2026-04-07

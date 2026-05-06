@@ -1,7 +1,8 @@
-# Commits to exclude from the changelog (used by scripts/generate-changelog.sh).
-# These are the 502 commits from the threshold-signatures repo that were merged
-# in 59037a57 ("Merge threshold-signatures repo"). Their full pre-merge history
-# would otherwise pollute the changelog.
+# Commits to exclude from the changelog (read by git-cliff via cliff.toml,
+# invoked from scripts/prepare-release.sh and the manual flow in RELEASES.md).
+# The block below is the 502 commits from the threshold-signatures repo that
+# were merged in 59037a57 ("Merge threshold-signatures repo"). Their full
+# pre-merge history would otherwise pollute the changelog.
 #
 # Generated with: git rev-list 59037a57^1..59037a57^2
 fdcaf329c7ca849a826a5be1e8c036ee6bef10f9
@@ -506,3 +507,9 @@ b848328193516d51f0532e380598ebc0db046c3c
 e8a2fdb038ce1347ac5e6421c0db5c7d6d430cad
 4ff405bb6e1c80ef758bd89ca5356bda6555af16
 9285d278b956e1327c7ecf350cf6e5aa28393906
+
+# 3.9.1 was tagged on release/v3.9.1 (not on main). The fixes were also
+# cherry-picked to main with new PR numbers; ignore the main-side duplicates
+# so they don't appear in the next auto-generated release block.
+0a5a7988573d5f55af2230747e7f29059dd2014b
+5e2386dd0f6318c8bfc0065543b7aebb80039ae3

@@ -67,8 +67,10 @@ Installation instructions can be found [here](https://git-cliff.org/docs/install
 
 For typical releases, the following command should be sufficient.
 ```sh
-git-cliff -t 3.1.0 > CHANGELOG.md
+git-cliff --prepend CHANGELOG.md --unreleased -t 3.1.0
 ```
+
+This prepends the new release block to `CHANGELOG.md` rather than regenerating the entire file, so any hand-authored sections (e.g. for releases whose tag does not live on `main`, like a backport tagged on a `release/vX.Y.Z` branch) are preserved. If a previous patch release was tagged off-`main` and its fixes were also cherry-picked to `main`, append the main-side cherry-pick commits to `.cliffignore` so they don't reappear in the next auto-generated block.
 
 Note: The tag doesn't have to have been created yet.
 

@@ -145,7 +145,7 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
             c.domains = vec![DomainConfig {
                 id: DomainId(0),
                 curve: Curve::Secp256k1,
-                protocol: Protocol::from(Curve::Secp256k1),
+                protocol: Protocol::CaitSith,
                 purpose: DomainPurpose::ForeignTx,
             }];
             c.node_foreign_chains_configs = vec![fc_config.clone(), fc_config];

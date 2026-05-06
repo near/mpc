@@ -290,11 +290,6 @@ BorshSchemaContainer {
                     "Bls12381",
                     "Curve__Bls12381",
                 ),
-                (
-                    3,
-                    "V2Secp256k1",
-                    "Curve__V2Secp256k1",
-                ),
             ],
         },
         "Curve__Bls12381": Struct {
@@ -304,9 +299,6 @@ BorshSchemaContainer {
             fields: Empty,
         },
         "Curve__Secp256k1": Struct {
-            fields: Empty,
-        },
-        "Curve__V2Secp256k1": Struct {
             fields: Empty,
         },
         "DockerImageHash": Struct {
@@ -688,8 +680,8 @@ BorshSchemaContainer {
                         "ProposedUpdates",
                     ),
                     (
-                        "node_foreign_chain_configurations",
-                        "NodeForeignChainConfigurations",
+                        "node_foreign_chain_support",
+                        "SupportedForeignChainsByNode",
                     ),
                     (
                         "config",
@@ -742,16 +734,6 @@ BorshSchemaContainer {
             fields: UnnamedFields(
                 [
                     "[u8; 48]",
-                ],
-            ),
-        },
-        "NodeForeignChainConfigurations": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "foreign_chain_configuration_by_node",
-                        "IterableMap",
-                    ),
                 ],
             ),
         },
@@ -1111,6 +1093,16 @@ BorshSchemaContainer {
             length_width: 4,
             length_range: 0..=4294967295,
             elements: "u8",
+        },
+        "SupportedForeignChainsByNode": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "foreign_chain_support_by_node",
+                        "IterableMap",
+                    ),
+                ],
+            ),
         },
         "TeeState": Struct {
             fields: NamedFields(

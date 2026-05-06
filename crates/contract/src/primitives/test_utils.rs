@@ -13,23 +13,24 @@ use rand::{distributions::Uniform, Rng};
 use std::collections::BTreeMap;
 // Re-export for convenience
 
-const ALL_CURVES: [Curve; 4] = [
-    Curve::Secp256k1,
-    Curve::Edwards25519,
-    Curve::Bls12381,
-    Curve::V2Secp256k1,
+const ALL_PROTOCOLS: [Protocol; 4] = [
+    Protocol::CaitSith,
+    Protocol::Frost,
+    Protocol::ConfidentialKeyDerivation,
+    Protocol::DamgardEtAl,
 ];
-pub const NUM_CURVES: usize = ALL_CURVES.len();
+pub const NUM_PROTOCOLS: usize = ALL_PROTOCOLS.len();
 
-/// Generates a valid DomainRegistry with various curves, with num_domains total.
+/// Generates a valid DomainRegistry covering all protocols, with num_domains total.
 pub fn gen_domain_registry(num_domains: usize) -> DomainRegistry {
     let mut domains = Vec::new();
     for i in 0..num_domains {
-        let curve = ALL_CURVES[i % ALL_CURVES.len()];
+        let protocol = ALL_PROTOCOLS[i % ALL_PROTOCOLS.len()];
+        let curve = Curve::from(protocol);
         domains.push(DomainConfig {
             id: DomainId(i as u64 * 2),
             curve,
-            protocol: Protocol::from(curve),
+            protocol,
             purpose: infer_purpose_from_curve(curve),
         });
     }
@@ -40,11 +41,12 @@ pub fn gen_domain_registry(num_domains: usize) -> DomainRegistry {
 pub fn gen_domains_to_add(registry: &DomainRegistry, num_domains: usize) -> Vec<DomainConfig> {
     let mut new_domains = Vec::new();
     for i in 0..num_domains {
-        let curve = ALL_CURVES[i % ALL_CURVES.len()];
+        let protocol = ALL_PROTOCOLS[i % ALL_PROTOCOLS.len()];
+        let curve = Curve::from(protocol);
         new_domains.push(DomainConfig {
             id: DomainId(registry.next_domain_id() + i as u64),
             curve,
-            protocol: Protocol::from(curve),
+            protocol,
             purpose: infer_purpose_from_curve(curve),
         });
     }

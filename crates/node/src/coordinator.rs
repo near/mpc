@@ -32,7 +32,7 @@ use crate::web::DebugRequest;
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use mpc_node_config::ConfigFile;
-use mpc_primitives::domain::{Curve, DomainId};
+use mpc_primitives::domain::{Curve, DomainId, Protocol};
 use mpc_primitives::EpochId;
 use near_time::Clock;
 use std::collections::HashMap;
@@ -547,27 +547,45 @@ where
                     mpc_primitives::domain::DomainId,
                     confidential_key_derivation::KeygenOutput,
                 > = HashMap::new();
-                let mut domain_to_curve: HashMap<DomainId, Curve> = HashMap::new();
+                let domain_to_protocol: HashMap<DomainId, Protocol> = running_state
+                    .domains
+                    .iter()
+                    .map(|d| (d.id, d.protocol))
+                    .collect();
 
                 for keyshare in keyshares {
                     let domain_id = keyshare.key_id.domain_id;
-                    match keyshare.data {
-                        KeyshareData::Secp256k1(data) => {
-                            ecdsa_keyshares.insert(keyshare.key_id.domain_id, data);
-                            domain_to_curve.insert(domain_id, Curve::Secp256k1);
+                    let Some(protocol) = domain_to_protocol.get(&domain_id).copied() else {
+                        anyhow::bail!(
+                            "Keyshare references domain {domain_id:?} which is not in the contract registry",
+                        );
+                    };
+                    let expected_curve = Curve::from(protocol);
+                    match (expected_curve, keyshare.data) {
+                        (Curve::Secp256k1, KeyshareData::Secp256k1(data)) => match protocol {
+                            Protocol::CaitSith => {
+                                ecdsa_keyshares.insert(domain_id, data);
+                            }
+                            Protocol::DamgardEtAl => {
+                                robust_ecdsa_keyshares.insert(domain_id, data);
+                            }
+                            other => anyhow::bail!(
+                                "Unexpected protocol {other:?} for Secp256k1 keyshare on domain {domain_id:?}",
+                            ),
+                        },
+                        (Curve::Edwards25519, KeyshareData::Ed25519(data)) => {
+                            eddsa_keyshares.insert(domain_id, data);
                         }
-                        KeyshareData::Ed25519(data) => {
-                            eddsa_keyshares.insert(keyshare.key_id.domain_id, data);
-                            domain_to_curve.insert(domain_id, Curve::Edwards25519);
+                        (Curve::Bls12381, KeyshareData::Bls12381(data)) => {
+                            ckd_keyshares.insert(domain_id, data);
                         }
-                        KeyshareData::Bls12381(data) => {
-                            ckd_keyshares.insert(keyshare.key_id.domain_id, data);
-                            domain_to_curve.insert(domain_id, Curve::Bls12381);
-                        }
-                        KeyshareData::V2Secp256k1(data) => {
-                            robust_ecdsa_keyshares.insert(keyshare.key_id.domain_id, data);
-                            domain_to_curve.insert(domain_id, Curve::V2Secp256k1);
-                        }
+                        (expected, data) => anyhow::bail!(
+                            "Keyshare data does not match the domain protocol's expected curve: domain_id={:?}, protocol={:?}, expected_curve={:?}, data_kind={:?}",
+                            domain_id,
+                            protocol,
+                            expected,
+                            std::mem::discriminant(&data),
+                        ),
                     }
                 }
 
@@ -625,7 +643,7 @@ where
                     eddsa_signature_provider,
                     ckd_provider,
                     verify_foreign_tx_provider,
-                    domain_to_curve,
+                    domain_to_protocol,
                 ));
 
                 mpc_client

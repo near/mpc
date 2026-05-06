@@ -27,7 +27,10 @@ const SANDBOX_ROOT_SECRET_KEY: &str = near_sandbox::config::DEFAULT_GENESIS_ACCO
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
 pub const DEFAULT_TRIPLES_TO_BUFFER: usize = 20;
 pub const DEFAULT_PRESIGNATURES_TO_BUFFER: usize = 10;
-pub const CLUSTER_WAIT_TIMEOUT: Duration = Duration::from_secs(120);
+// Concurrent e2e tests on a shared CI runner can stretch
+// triple/presignature generation past 120 s; the most pressure-sensitive
+// consumer is `wait_for_presignatures` (see `parallel_sign_calls` test).
+pub const CLUSTER_WAIT_TIMEOUT: Duration = Duration::from_secs(240);
 const SIGN_GAS: near_kit::Gas = near_kit::Gas::from_tgas(15);
 // AppPublicKeyPV does an on-chain bls12381_pairing_check (2 pairs) before yielding,
 // which costs significantly more than a plain CKD or sign request.
@@ -772,17 +775,17 @@ impl MpcCluster {
     /// View the per-node foreign chain configurations registered with the contract.
     pub async fn view_foreign_chain_configurations(
         &self,
-    ) -> anyhow::Result<near_mpc_contract_interface::types::NodeForeignChainConfigurations> {
+    ) -> anyhow::Result<near_mpc_contract_interface::types::ForeignChainSupportByNode> {
         self.contract
-            .view(method_names::GET_FOREIGN_CHAIN_CONFIGURATIONS)
+            .view(method_names::GET_FOREIGN_CHAIN_SUPPORT_BY_NODE)
             .await
     }
 
-    /// Register a foreign chain configuration from a specific node.
+    /// Register foreign chain support on the contract for a specific node.
     pub async fn register_foreign_chain_config(
         &self,
         node_index: usize,
-        foreign_chain_configuration: &near_mpc_contract_interface::types::ForeignChainConfiguration,
+        foreign_chain_support: &near_mpc_contract_interface::types::SupportedForeignChains,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
         let node = &self.nodes[node_index];
         let client = self
@@ -791,9 +794,9 @@ impl MpcCluster {
         self.contract
             .call_from(
                 &client,
-                method_names::REGISTER_FOREIGN_CHAIN_CONFIG,
+                method_names::REGISTER_FOREIGN_CHAIN_SUPPORT,
                 json!({
-                    "foreign_chain_configuration": serde_json::to_value(foreign_chain_configuration)?,
+                    "foreign_chain_support": serde_json::to_value(foreign_chain_support)?,
                 }),
             )
             .await

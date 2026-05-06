@@ -446,3 +446,11 @@ evm_inspector_tests!(
     foreign_chain_inspector::arbitrum::inspector::Arbitrum,
     arbitrum
 );
+evm_inspector_tests!(
+    foreign_chain_inspector::hyperevm::inspector::HyperEvm,
+    hyperevm
+);
+evm_inspector_tests!(
+    foreign_chain_inspector::polygon::inspector::Polygon,
+    polygon
+);

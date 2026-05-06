@@ -4,6 +4,7 @@ dependencies = [
   "crate-names",
   "kebab-file-names",
   "todo-format",
+  "editorconfig",
   "assert-matches",
   "use-in-fn",
   "ruff-format",
@@ -96,6 +97,10 @@ args = ["scripts/check-kebab-case-files.sh"]
 [tasks.todo-format]
 command = "bash"
 args = ["scripts/check-todo-format.sh"]
+
+[tasks.editorconfig]
+description = "Enforce .editorconfig rules across all tracked files"
+command = "editorconfig-checker"
 
 [tasks.check-contract-size]
 description = "Check reproducible contract WASM size against baseline"

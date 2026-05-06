@@ -106,7 +106,7 @@ near contract call-function as-transaction \
 
 Copy and run the generated command to register your backup-cli with the contract.
 
-**Note:** The "public key" in the registration corresponds to  the `p2p_private_key` created in Step 1. 
+**Note:** The "public key" in the registration corresponds to  the `p2p_private_key` created in Step 1.
 
 ### Verify Registration
 ```bash
@@ -136,7 +136,7 @@ You should see your account and registered backup_cli  public key listed, someth
 
 For additional security, the backup and restore process encrypts keyshares during transport using AES encryption. You need to generate a shared encryption key and set it as an environment variable for both your old and new nodes, as well as for the backup-cli commands.
 
-**Important:** The `MPC_BACKUP_ENCRYPTION_KEY_HEX` must be the same between the backup-cli and the node it is currently communicating with (e.g., the old node when running `get-keyshares`, and the new node when running `put-keyshares`). 
+**Important:** The `MPC_BACKUP_ENCRYPTION_KEY_HEX` must be the same between the backup-cli and the node it is currently communicating with (e.g., the old node when running `get-keyshares`, and the new node when running `put-keyshares`).
 
 
 ### Retrieve a key from an existing node.
@@ -151,7 +151,7 @@ Copy this key and set it as the `BACKUP_ENCRYPTION_KEY` environment variable for
 
 
 
-**Note on key differences:** 
+**Note on key differences:**
 - `BACKUP_ENCRYPTION_KEY` (this key) is used to encrypt keyshares during transport between nodes and the backup-cli
 - `local_storage_aes_key` (from Step 1) is used to encrypt keyshares stored on disk in the backup home directory
 - These are two different keys serving different purposes
@@ -170,7 +170,7 @@ You'll need:
 - **MPC node address**: The host where your node is running (e.g., `node.example.com`)
 - **MPC node P2P public key**: The Ed25519 public key used for P2P communication (found in your node's startup logs or configuration)
 
-Both those values can be found on the contract. 
+Both those values can be found on the contract.
 
 ### Get Contract State
 
@@ -215,8 +215,8 @@ For the new node, add this to the `.env` file (replace `<value>` with the actual
    ```
 
 
-3. **Start the node and retrieve the new keys from the new node**: (P2P (TLS) key, NEAR account key)   
-4. **add the node's near_signer_public_key to your account as an restricted access key** 
+3. **Start the node and retrieve the new keys from the new node**: (P2P (TLS) key, NEAR account key)
+4. **add the node's near_signer_public_key to your account as an restricted access key**
 
 
 See more details on extracting key from the node and adding the keys to your account, in the [running an MPC node in TDX external guide](https://github.com/near/mpc/blob/main/docs/running-an-mpc-node-in-tdx-external-guide.md#add-the-node-account-key-to-your-account)

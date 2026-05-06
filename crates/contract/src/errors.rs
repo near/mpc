@@ -193,11 +193,6 @@ pub enum DomainError {
     InvalidDomains,
     #[error("Domains from keyset do not match the provided domains")]
     DomainsMismatch,
-    #[error("Invalid curve-purpose combination: curve {curve:?} is not compatible with purpose {purpose:?}")]
-    InvalidCurvePurposeCombination {
-        curve: Curve,
-        purpose: DomainPurpose,
-    },
     #[error("Inconsistent curve/protocol pair: curve {curve:?} does not match protocol {protocol:?} (expected {expected:?})")]
     InconsistentCurveProtocol {
         curve: Curve,

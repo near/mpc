@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::num::NonZeroU64;
 
 use crate::common;
@@ -6,8 +6,8 @@ use crate::common;
 use backon::{ConstantBuilder, Retryable};
 use e2e_tests::CLUSTER_WAIT_TIMEOUT;
 use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};
-use near_mpc_bounded_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet};
-use near_mpc_contract_interface::types::{ForeignChain, ForeignChainConfiguration, RpcProvider};
+use near_mpc_bounded_collections::NonEmptyBTreeMap;
+use near_mpc_contract_interface::types::{ForeignChain, SupportedForeignChains};
 
 const SOLANA_PROVIDER_NAME: &str = "public";
 const SOLANA_RPC_URL: &str = "https://rpc.public.example.com";
@@ -29,14 +29,8 @@ fn solana_foreign_chains_config() -> ForeignChainsConfig {
     }
 }
 
-fn solana_foreign_chain_configuration_dto() -> ForeignChainConfiguration {
-    BTreeMap::from([(
-        ForeignChain::Solana,
-        NonEmptyBTreeSet::new(RpcProvider {
-            rpc_url: SOLANA_RPC_URL.to_string(),
-        }),
-    )])
-    .into()
+fn solana_foreign_chain_support_dto() -> SupportedForeignChains {
+    BTreeSet::from([(ForeignChain::Solana)]).into()
 }
 
 /// Verify that a chain is only reported as supported once every active
@@ -75,7 +69,7 @@ async fn supported_foreign_chains__should_require_all_participants_to_register()
             .await
             .expect("failed to view supported chains");
 
-        let configurations = &registrations.foreign_chain_configuration_by_node;
+        let configurations = &registrations.foreign_chain_support_by_node;
         anyhow::ensure!(
             configurations.len() == 3,
             "expected exactly 3 registrations, got {}",
@@ -104,7 +98,7 @@ async fn supported_foreign_chains__should_require_all_participants_to_register()
 
     // when — node 2 registers Solana directly on the contract.
     let outcome = cluster
-        .register_foreign_chain_config(2, &solana_foreign_chain_configuration_dto())
+        .register_foreign_chain_config(2, &solana_foreign_chain_support_dto())
         .await
         .expect("failed to register foreign chain config from node 2");
     assert!(

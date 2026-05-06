@@ -106,7 +106,7 @@ impl TestSetupBuilder {
         let domains = vec![DomainConfig {
             id: DomainId::default(),
             curve: Curve::Secp256k1,
-            protocol: Protocol::from(Curve::Secp256k1),
+            protocol: Protocol::CaitSith,
             purpose: DomainPurpose::Sign,
         }];
 
@@ -159,7 +159,7 @@ impl TestSetupBuilder {
                         .vote_add_domains(vec![DomainConfig {
                             id: DomainId(1),
                             curve: Curve::Edwards25519,
-                            protocol: Protocol::from(Curve::Edwards25519),
+                            protocol: Protocol::Frost,
                             purpose: DomainPurpose::Sign,
                         }])
                         .unwrap();
@@ -652,7 +652,7 @@ fn latest_image_never_expires_if_its_not_superseded() {
 ///
 /// Grace Period Rules:
 /// - v1 expires at: T=4s + 15s + 1s = T=20s
-/// - v2 expires at: T=7s + 15s + 1s = T=23s  
+/// - v2 expires at: T=7s + 15s + 1s = T=23s
 /// - v3 never expires (no successor hash)
 ///
 /// Note: The +1s ensures we test *after* the grace period deadline has passed.

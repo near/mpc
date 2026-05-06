@@ -52,15 +52,27 @@ use crate::{
         tee_state::{NodeAttestation, TeeState},
     },
     update::ProposedUpdates,
-    Config, NodeForeignChainConfigurations,
+    Config, SupportedForeignChainsByNode,
 };
 
+/// Previous `Curve` Borsh layout — included `V2Secp256k1` (variant index 3)
+/// for Robust ECDSA. Kept here so the migration can decode legacy state that
+/// was serialized before `V2Secp256k1` was removed; in the new representation,
+/// it maps to `(Curve::Secp256k1, Protocol::DamgardEtAl)`.
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+enum OldCurve {
+    Secp256k1,
+    Edwards25519,
+    Bls12381,
+    V2Secp256k1,
+}
+
 /// Previous `DomainConfig` layout — `protocol` was not stored; it is now
-/// derived from `curve` during migration via `Protocol::from(curve)`.
+/// derived from `curve` during migration.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 struct OldDomainConfig {
     id: DomainId,
-    curve: Curve,
+    curve: OldCurve,
     purpose: DomainPurpose,
 }
 
@@ -79,10 +91,16 @@ struct OldAddDomainsVotes {
 
 impl From<OldDomainConfig> for DomainConfig {
     fn from(old: OldDomainConfig) -> Self {
+        let (curve, protocol) = match old.curve {
+            OldCurve::Secp256k1 => (Curve::Secp256k1, Protocol::CaitSith),
+            OldCurve::Edwards25519 => (Curve::Edwards25519, Protocol::Frost),
+            OldCurve::Bls12381 => (Curve::Bls12381, Protocol::ConfidentialKeyDerivation),
+            OldCurve::V2Secp256k1 => (Curve::Secp256k1, Protocol::DamgardEtAl),
+        };
         DomainConfig {
             id: old.id,
-            curve: old.curve,
-            protocol: Protocol::from(old.curve),
+            curve,
+            protocol,
             purpose: old.purpose,
         }
     }
@@ -121,6 +139,36 @@ impl From<OldAddDomainsVotes> for AddDomainsVotes {
 struct OldParticipantInfo {
     url: String,
     sign_pk: near_sdk::PublicKey,
+}
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct NodeForeignChainConfigurations {
+    foreign_chain_configuration_by_node:
+        IterableMap<dtos::AccountId, dtos::ForeignChainConfiguration>,
+}
+
+impl From<NodeForeignChainConfigurations> for SupportedForeignChainsByNode {
+    fn from(mut old: NodeForeignChainConfigurations) -> Self {
+        // Drain the old IterableMap to clear its on-chain entries under
+        // `_SupportedForeignChainsVotes` before populating the new map under
+        // the distinct `SupportedForeignChainsByNode` storage key. Each entry's
+        // `ForeignChainConfiguration` collapses to the set of its chain keys —
+        // the RPC-provider list is dropped because the new layout no longer
+        // tracks per-node RPC providers.
+        let mut new = SupportedForeignChainsByNode::default();
+        old.foreign_chain_configuration_by_node.drain().for_each(
+            |(account_id, foreign_chain_config)| {
+                let supported_chains = foreign_chain_config
+                    .keys()
+                    .copied()
+                    .collect::<BTreeSet<_>>()
+                    .into();
+                new.foreign_chain_support_by_node
+                    .insert(account_id, supported_chains);
+            },
+        );
+        new
+    }
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
@@ -344,7 +392,7 @@ impl From<MpcContract> for crate::MpcContract {
             pending_ckd_requests: value.pending_ckd_requests,
             pending_verify_foreign_tx_requests: value.pending_verify_foreign_tx_requests,
             proposed_updates: value.proposed_updates,
-            node_foreign_chain_configurations: value.node_foreign_chain_configurations,
+            node_foreign_chain_support: value.node_foreign_chain_configurations.into(),
             config: value.config,
             tee_state: value.tee_state.into(),
             accept_requests: value.accept_requests,
@@ -687,25 +735,147 @@ mod tests {
         );
     }
 
+    impl Default for NodeForeignChainConfigurations {
+        fn default() -> Self {
+            Self {
+                foreign_chain_configuration_by_node: IterableMap::new(
+                    StorageKey::_SupportedForeignChainsVotes,
+                ),
+            }
+        }
+    }
+
+    fn rpc_provider(url: &str) -> dtos::RpcProvider {
+        dtos::RpcProvider {
+            rpc_url: url.to_string(),
+        }
+    }
+
+    #[expect(deprecated, reason = "ForeignChainConfiguration is being deprecated")]
+    fn old_foreign_chain_configuration(
+        chains: &[(dtos::ForeignChain, &str)],
+    ) -> dtos::ForeignChainConfiguration {
+        chains
+            .iter()
+            .map(|(chain, url)| (*chain, NonEmptyBTreeSet::new(rpc_provider(url))))
+            .collect::<BTreeMap<_, _>>()
+            .into()
+    }
+
+    fn supported_chains(
+        chains: impl IntoIterator<Item = dtos::ForeignChain>,
+    ) -> dtos::SupportedForeignChains {
+        chains.into_iter().collect::<BTreeSet<_>>().into()
+    }
+
+    #[test]
+    fn node_foreign_chain_configurations_migration__should_keep_chains_and_drop_rpc_providers() {
+        // Given a node with multiple chains, each having an RPC provider
+        testing_env!(VMContextBuilder::new().build());
+        let account: dtos::AccountId = "alice.near".parse().unwrap();
+        let mut old = NodeForeignChainConfigurations::default();
+        old.foreign_chain_configuration_by_node.insert(
+            account.clone(),
+            old_foreign_chain_configuration(&[
+                (dtos::ForeignChain::Bitcoin, "https://btc.example.com"),
+                (dtos::ForeignChain::Ethereum, "https://eth.example.com"),
+            ]),
+        );
+
+        // When migrating
+        let new: SupportedForeignChainsByNode = old.into();
+
+        // Then only the chain set survives — RPC providers are dropped
+        let stored = new
+            .foreign_chain_support_by_node
+            .get(&account)
+            .expect("entry was migrated");
+        assert_eq!(
+            *stored,
+            supported_chains([dtos::ForeignChain::Bitcoin, dtos::ForeignChain::Ethereum])
+        );
+    }
+
+    #[test]
+    fn node_foreign_chain_configurations_migration__should_preserve_per_node_chains() {
+        // Given multiple nodes with different chain support
+        testing_env!(VMContextBuilder::new().build());
+        let alice: dtos::AccountId = "alice.near".parse().unwrap();
+        let bob: dtos::AccountId = "bob.near".parse().unwrap();
+        let mut old = NodeForeignChainConfigurations::default();
+        old.foreign_chain_configuration_by_node.insert(
+            alice.clone(),
+            old_foreign_chain_configuration(&[(
+                dtos::ForeignChain::Bitcoin,
+                "https://btc.alice.near",
+            )]),
+        );
+        old.foreign_chain_configuration_by_node.insert(
+            bob.clone(),
+            old_foreign_chain_configuration(&[
+                (dtos::ForeignChain::Solana, "https://sol.bob.near"),
+                (dtos::ForeignChain::Ethereum, "https://eth.bob.near"),
+            ]),
+        );
+
+        // When migrating
+        let new: SupportedForeignChainsByNode = old.into();
+
+        // Then each node's chain set is preserved independently
+        assert_eq!(new.foreign_chain_support_by_node.len(), 2);
+        assert_eq!(
+            *new.foreign_chain_support_by_node
+                .get(&alice)
+                .expect("alice migrated"),
+            supported_chains([dtos::ForeignChain::Bitcoin]),
+        );
+        assert_eq!(
+            *new.foreign_chain_support_by_node
+                .get(&bob)
+                .expect("bob migrated"),
+            supported_chains([dtos::ForeignChain::Solana, dtos::ForeignChain::Ethereum]),
+        );
+    }
+
+    #[test]
+    fn node_foreign_chain_configurations_migration__should_be_empty_when_no_configurations() {
+        // Given an empty configuration map
+        testing_env!(VMContextBuilder::new().build());
+        let old = NodeForeignChainConfigurations::default();
+
+        // When migrating
+        let new: SupportedForeignChainsByNode = old.into();
+
+        // Then the migrated map is empty
+        assert!(new.foreign_chain_support_by_node.is_empty());
+    }
     #[test]
     fn domain_config_migration__should_derive_protocol_from_curve_for_each_variant() {
-        // Given OldDomainConfigs covering every curve, including V2Secp256k1
+        // Given OldDomainConfigs covering every legacy curve, including V2Secp256k1
         let cases = [
-            (Curve::Secp256k1, Protocol::CaitSith),
-            (Curve::Edwards25519, Protocol::Frost),
-            (Curve::Bls12381, Protocol::ConfidentialKeyDerivation),
-            (Curve::V2Secp256k1, Protocol::DamgardEtAl),
+            (OldCurve::Secp256k1, Curve::Secp256k1, Protocol::CaitSith),
+            (OldCurve::Edwards25519, Curve::Edwards25519, Protocol::Frost),
+            (
+                OldCurve::Bls12381,
+                Curve::Bls12381,
+                Protocol::ConfidentialKeyDerivation,
+            ),
+            (
+                OldCurve::V2Secp256k1,
+                Curve::Secp256k1,
+                Protocol::DamgardEtAl,
+            ),
         ];
 
-        for (i, (curve, expected_protocol)) in cases.into_iter().enumerate() {
+        for (i, (old_curve, expected_curve, expected_protocol)) in cases.into_iter().enumerate() {
+            let purpose = match expected_curve {
+                Curve::Bls12381 => DomainPurpose::CKD,
+                _ => DomainPurpose::Sign,
+            };
             let old = OldDomainConfig {
                 id: DomainId(i as u64),
-                curve,
-                purpose: if curve == Curve::Bls12381 {
-                    DomainPurpose::CKD
-                } else {
-                    DomainPurpose::Sign
-                },
+                curve: old_curve,
+                purpose,
             };
             let bytes = borsh::to_vec(&old).unwrap();
 
@@ -713,8 +883,8 @@ mod tests {
             let decoded: OldDomainConfig = borsh::from_slice(&bytes).unwrap();
             let migrated: DomainConfig = decoded.into();
 
-            // Then protocol is derived from curve and curve is preserved
-            assert_eq!(migrated.curve, curve);
+            // Then curve and protocol match the expected post-migration pair
+            assert_eq!(migrated.curve, expected_curve);
             assert_eq!(migrated.protocol, expected_protocol);
             assert_eq!(migrated.id, DomainId(i as u64));
         }

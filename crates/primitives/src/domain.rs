@@ -63,8 +63,6 @@ pub enum Curve {
     Secp256k1,
     Edwards25519,
     Bls12381,
-    /// Robust ECDSA variant.
-    V2Secp256k1,
 }
 
 /// MPC protocol run for a domain.
@@ -104,23 +102,6 @@ impl From<Protocol> for Curve {
     }
 }
 
-/// Migration helper: derives the canonical protocol for a curve as it was used
-/// before `Protocol` was stored in `DomainConfig`. Becomes ambiguous once
-/// `Curve::V2Secp256k1` is removed (both `CaitSith` and `DamgardEtAl` map to
-/// `Secp256k1`); kept only for migrating legacy state.
-// TODO(#2442): remove this impl once `Curve::V2Secp256k1` is dropped in the
-// next PR — the conversion is no longer well-defined.
-impl From<Curve> for Protocol {
-    fn from(curve: Curve) -> Self {
-        match curve {
-            Curve::Secp256k1 => Protocol::CaitSith,
-            Curve::Edwards25519 => Protocol::Frost,
-            Curve::Bls12381 => Protocol::ConfidentialKeyDerivation,
-            Curve::V2Secp256k1 => Protocol::DamgardEtAl,
-        }
-    }
-}
-
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
@@ -146,29 +127,6 @@ mod tests {
         assert_eq!(
             Curve::from(Protocol::ConfidentialKeyDerivation),
             Curve::Bls12381
-        );
-    }
-
-    #[test]
-    fn from_curve_for_protocol__should_map_secp256k1_to_cait_sith() {
-        assert_eq!(Protocol::from(Curve::Secp256k1), Protocol::CaitSith);
-    }
-
-    #[test]
-    fn from_curve_for_protocol__should_map_v2_secp256k1_to_damgard_et_al() {
-        assert_eq!(Protocol::from(Curve::V2Secp256k1), Protocol::DamgardEtAl);
-    }
-
-    #[test]
-    fn from_curve_for_protocol__should_map_edwards25519_to_frost() {
-        assert_eq!(Protocol::from(Curve::Edwards25519), Protocol::Frost);
-    }
-
-    #[test]
-    fn from_curve_for_protocol__should_map_bls12381_to_confidential_key_derivation() {
-        assert_eq!(
-            Protocol::from(Curve::Bls12381),
-            Protocol::ConfidentialKeyDerivation
         );
     }
 }
