@@ -36,6 +36,10 @@ const SIGN_GAS: near_kit::Gas = near_kit::Gas::from_tgas(15);
 // which costs significantly more than a plain CKD or sign request.
 const CKD_PV_GAS: near_kit::Gas = near_kit::Gas::from_tgas(100);
 const SIGN_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_yoctonear(1);
+// Mirrors `CURRENT_CONTRACT_DEPLOY_DEPOSIT` from the contract sandbox tests.
+// The deposit must cover storage for the contract WASM payload (~17 NEAR for
+// current binaries); the contract panics if the attached deposit is short.
+const CONTRACT_UPDATE_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_millinear(17_000);
 
 // Seed offsets for `generate_deterministic_key` — each range holds up to 100 keys.
 const KEY_SEED_NEAR_SIGNER: u64 = 0;
@@ -79,6 +83,45 @@ pub struct MpcClusterConfig {
     /// cluster so their indexers sync before blocks accumulate (`start_near_node`
     /// blocks until synced).
     pub migration_targets: Vec<usize>,
+    /// Wire format used when calling `init` on the contract. Defaults to
+    /// `Current`; switch to a `Legacy*` variant when `contract_wasm` is an
+    /// older production binary whose `init` signature is incompatible with
+    /// the current `ThresholdParameters` JSON.
+    ///
+    /// See [`ContractInitFormat`] for guidance on adding/removing variants
+    /// when the production contract changes.
+    pub init_format: ContractInitFormat,
+}
+
+/// JSON wire format used for the contract's `init` call.
+///
+/// Whenever a wire-breaking change to an `init` argument lands (e.g. the
+/// `sign_pk` → `tls_public_key` rename in 3.10), a new variant is needed so
+/// the cluster can still target the older production contract.
+///
+/// # Maintaining this enum across upgrades
+///
+/// - **When a new wire-breaking change to `init` lands**: add a new variant
+///   (e.g. `Legacy3_10_X`) that emits the now-old shape, and update the
+///   `init_contract` helper in `cluster.rs` to branch on it.
+/// - **After the breaking change has rolled out to Mainnet/Testnet**: remove
+///   the obsolete variant and any tests that pin to it. The `current_*()`
+///   pointers in `contract-history` will already reference a binary that
+///   speaks the new format, so `Current` is enough.
+/// - **`init_format` should always be `Current`** for tests that deploy the
+///   *current* contract WASM (the default). Only override it when the test
+///   pins `contract_wasm` to an older `contract_history::*` binary.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum ContractInitFormat {
+    /// Current `ThresholdParameters` shape (uses `tls_public_key`).
+    #[default]
+    Current,
+    /// Pre-3.10 `ThresholdParameters` shape (uses `sign_pk`). Only the field
+    /// inside `ParticipantInfo` differs; everything else is forward-compatible
+    /// because the 3.9.1 contract ignores unknown JSON fields. Remove this
+    /// variant once `contract_history::current_*()` no longer points at a
+    /// binary that requires the legacy shape.
+    Legacy3_9_1,
 }
 
 impl MpcClusterConfig {
@@ -121,6 +164,7 @@ impl MpcClusterConfig {
             initial_participant_indices: vec![],
             node_foreign_chains_configs: vec![],
             migration_targets: vec![],
+            init_format: ContractInitFormat::Current,
         }
     }
 
@@ -225,6 +269,7 @@ impl MpcCluster {
             config.threshold,
             &participant_indices,
             &ports,
+            config.init_format,
         )
         .await?;
 
@@ -835,6 +880,73 @@ impl MpcCluster {
             )
             .await
     }
+
+    /// Propose a contract code update with the given WASM and cast votes
+    /// from operator accounts until the update is applied. Returns once
+    /// `vote_update` reports the threshold has been reached.
+    pub async fn propose_and_vote_contract_update(&self, new_wasm: &[u8]) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            !self.nodes.is_empty(),
+            "cannot propose contract update with no nodes"
+        );
+
+        // `propose_update` is borsh-deserialized on the contract side. We use
+        // a local mirror struct (`ProposeUpdateArgsBorsh`) to avoid pulling
+        // the contract crate into the e2e-tests dependency tree for two
+        // fields.
+        let propose_args = ProposeUpdateArgsBorsh {
+            code: Some(new_wasm),
+            config: None,
+        };
+        let proposer_client = self.operator_client_for(0)?;
+        let outcome = self
+            .contract
+            .call_from_borsh_with_deposit(
+                &proposer_client,
+                method_names::PROPOSE_UPDATE,
+                propose_args,
+                near_kit::Gas::from_tgas(300),
+                CONTRACT_UPDATE_DEPOSIT,
+            )
+            .await
+            .context("failed to call propose_update")?;
+        anyhow::ensure!(
+            outcome.is_success(),
+            "propose_update failed: {:?}",
+            outcome.failure_message()
+        );
+        let proposal_id: UpdateId = outcome
+            .json()
+            .context("propose_update did not return a JSON UpdateId")?;
+
+        // Cast votes one-by-one. `vote_update` returns `true` once the
+        // threshold has been reached and the new code is in place.
+        for (i, _) in self.nodes.iter().enumerate() {
+            let client = self.operator_client_for(i)?;
+            let vote_outcome = self
+                .contract
+                .call_from(
+                    &client,
+                    method_names::VOTE_UPDATE,
+                    json!({ "id": proposal_id }),
+                )
+                .await
+                .with_context(|| format!("node {i} failed to call vote_update"))?;
+            anyhow::ensure!(
+                vote_outcome.is_success(),
+                "vote_update from node {i} failed: {:?}",
+                vote_outcome.failure_message()
+            );
+            let update_applied: bool = vote_outcome
+                .json()
+                .with_context(|| format!("vote_update from node {i} returned non-bool"))?;
+            if update_applied {
+                tracing::info!(votes = i + 1, "contract code update applied");
+                return Ok(());
+            }
+        }
+        anyhow::bail!("contract code update was not applied after votes from every node")
+    }
 }
 
 impl Drop for MpcCluster {
@@ -953,6 +1065,7 @@ async fn create_node_accounts(
     Ok(())
 }
 
+#[expect(clippy::too_many_arguments)]
 async fn init_contract(
     blockchain: &NearBlockchain,
     contract: &DeployedContract,
@@ -961,6 +1074,7 @@ async fn init_contract(
     threshold: usize,
     participant_indices: &[usize],
     ports: &E2ePortAllocator,
+    init_format: ContractInitFormat,
 ) -> anyhow::Result<()> {
     let participants = build_participants(participant_indices, p2p_keys, ports);
     let params = ThresholdParameters {
@@ -971,10 +1085,17 @@ async fn init_contract(
     tracing::info!(
         threshold,
         num_participants = participant_indices.len(),
+        ?init_format,
         "initializing contract"
     );
+    let parameters_json = match init_format {
+        ContractInitFormat::Current => serde_json::to_value(&params)?,
+        ContractInitFormat::Legacy3_9_1 => {
+            serde_json::to_value(LegacyThresholdParameters::from(&params))?
+        }
+    };
     let outcome = contract
-        .call(method_names::INIT, json!({ "parameters": params }))
+        .call(method_names::INIT, json!({ "parameters": parameters_json }))
         .await?;
     anyhow::ensure!(
         outcome.is_success(),
@@ -1138,6 +1259,70 @@ async fn create_user_accounts(
         map.insert(account, key);
     }
     Ok(map)
+}
+
+/// Borsh-encoded mirror of the contract's `ProposeUpdateArgs`. We keep it
+/// local rather than depending on `mpc-contract` for two fields. `Config` is
+/// modeled as `Option<()>` because we never propose a config-only update; the
+/// `None` discriminator is `[0u8]` regardless of the inner type.
+#[derive(borsh::BorshSerialize)]
+struct ProposeUpdateArgsBorsh<'a> {
+    code: Option<&'a [u8]>,
+    config: Option<()>,
+}
+
+/// JSON mirror of the contract's `UpdateId`. `propose_update` returns it and
+/// `vote_update` consumes it via the `id` field; both wire it as a bare u64.
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+struct UpdateId(u64);
+
+/// Pre-3.10 mirror of `ThresholdParameters` whose `ParticipantInfo` emits
+/// `sign_pk` instead of `tls_public_key`. The 3.9.1 contract's
+/// `ParticipantInfo` only knows the legacy field name (no serde alias), so
+/// this rewrite is required when calling `init` against that binary.
+#[derive(serde::Serialize)]
+struct LegacyThresholdParameters {
+    threshold: Threshold,
+    participants: LegacyParticipants,
+}
+
+#[derive(serde::Serialize)]
+struct LegacyParticipants {
+    next_id: ParticipantId,
+    participants: Vec<(ContractAccountId, ParticipantId, LegacyParticipantInfo)>,
+}
+
+#[derive(serde::Serialize)]
+struct LegacyParticipantInfo {
+    url: String,
+    sign_pk: Ed25519PublicKey,
+}
+
+impl From<&ThresholdParameters> for LegacyThresholdParameters {
+    fn from(params: &ThresholdParameters) -> Self {
+        let participants = params
+            .participants
+            .participants
+            .iter()
+            .map(|(account_id, id, info)| {
+                (
+                    account_id.clone(),
+                    *id,
+                    LegacyParticipantInfo {
+                        url: info.url.clone(),
+                        sign_pk: info.tls_public_key.clone(),
+                    },
+                )
+            })
+            .collect();
+        Self {
+            threshold: params.threshold,
+            participants: LegacyParticipants {
+                next_id: params.participants.next_id,
+                participants,
+            },
+        }
+    }
 }
 
 fn build_participants(
