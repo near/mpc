@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Source this file before running deploy-tee-cluster.sh:
-#   source localnet/tee/scripts/set-localnet-env.sh
+#   source localnet/tee/scripts/rust-launcher/set-localnet-env.sh
 
 export HOST_PROFILE=alice
 export MODE=localnet

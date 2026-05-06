@@ -24,7 +24,7 @@ TREASURY="${1:?Usage: $0 <treasury_account.testnet> [network] [keep_near] [prefi
 NETWORK="${2:-testnet}"               # could also be testnet-fastnear, testnet-lava
 KEEP_NEAR="${3:-0.02}"                # keep a little for storage/fees
 PREFIX="${4:-fundmyself}"             # account prefix
-RPC_URL="https://rpc.testnet.near.org"
+RPC_URL="${RPC_URL:-https://rpc.testnet.near.org}"
 
 need_cmd() { command -v "$1" >/dev/null 2>&1 || { echo "Missing $1"; exit 1; }; }
 need_cmd near
@@ -107,7 +107,8 @@ if [[ "$send_near" == "0" || "$send_near" == "0.000000" ]]; then
 fi
 
 echo "Sweeping ~ ${send_near} NEAR -> ${TREASURY}"
-near send "${NEW_ACCOUNT}" "${TREASURY}" "${send_near}" --network-id "${NETWORK}"
+near tokens "${NEW_ACCOUNT}" send-near "${TREASURY}" "${send_near} NEAR" \
+  network-config "${NETWORK}" sign-with-keychain send
 
 echo
 echo "Done."

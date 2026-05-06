@@ -55,11 +55,11 @@ permission model requires this for `create-account fund-myself`.
 
 ## Funding `FUNDER_ACCOUNT` (testnet)
 
-The default `ROOT_INITIAL_BALANCE=30 NEAR` (or `20` if you lower it for
-small N) means `FUNDER_ACCOUNT` needs at least that many *spendable*
-NEAR. "Spendable" = `amount - storage_minimum`; if the funder account
-has a deployed contract, ~1 NEAR per 100 KB is locked for storage and
-unavailable to send.
+The default `ROOT_INITIAL_BALANCE=20 NEAR` (sized for N≤3; raise for
+larger N or pre-funded scale-up) means `FUNDER_ACCOUNT` needs at least
+that many *spendable* NEAR. "Spendable" = `amount - storage_minimum`;
+if the funder account has a deployed contract, ~1 NEAR per 100 KB is
+locked for storage and unavailable to send.
 
 To check spendable balance:
 
@@ -154,11 +154,11 @@ The script is **resume-safe** and can continue from any phase.
 
 ### Testnet-only
 
-- A funded **top-level** testnet account (≥ 30 NEAR for default
-  `ROOT_INITIAL_BALANCE`, less if you lower it). The faucet caps at
-  10 NEAR/account; consolidate from multiple faucet accounts using PR
-  [#1803](https://github.com/near/mpc/pull/1803)'s
-  `create_and_sweep_to_treasury.sh` if needed.
+- A funded **top-level** testnet account (≥ 20 NEAR for default
+  `ROOT_INITIAL_BALANCE`, raise for larger N). The faucet caps at
+  10 NEAR/account; consolidate from multiple faucet runs using
+  [`create-and-sweep-to-treasury.sh`](create-and-sweep-to-treasury.sh)
+  in this directory.
 - Account credentials in `~/.near-credentials/testnet/`
 - The static IPs picked by `HOST_PROFILE` (alice → `51.68.219.<1+i>`,
   bob → `5.196.36.<113+i>`) must be configured on the host. Override
