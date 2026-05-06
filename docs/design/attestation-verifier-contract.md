@@ -2,7 +2,7 @@
 
 ## Context
 
-The MPC contract at [crates/contract/src/lib.rs](crates/contract/src/lib.rs) has grown to ~5,900 lines, of which ~2,100 lines (35%) are TEE-related: `tee/tee_state.rs` (1,406), `tee/proposal.rs` (540), `tee/measurements.rs` (198), plus ~15 public TEE-related entry-point methods in `lib.rs`. On top of that, the contract pulls in the `mpc-attestation` and `attestation` crates which transitively bring `dcap-qvl`, `ring`/`webpki`, X.509 parsing, SHA-2/SHA-3 — collectively the heaviest WASM dependency surface of the contract. This is the primary motivator for [near/mpc-private#303](https://github.com/near/mpc-private/issues/303).
+The MPC contract at `crates/contract/src/lib.rs` has grown to ~5,900 lines, of which ~2,100 lines (35%) are TEE-related: `tee/tee_state.rs` (1,406), `tee/proposal.rs` (540), `tee/measurements.rs` (198), plus ~15 public TEE-related entry-point methods in `lib.rs`. On top of that, the contract pulls in the `mpc-attestation` and `attestation` crates which transitively bring `dcap-qvl`, `ring`/`webpki`, X.509 parsing, SHA-2/SHA-3 — collectively the heaviest WASM dependency surface of the contract. This is the primary motivator for [near/mpc-private#303](https://github.com/near/mpc-private/issues/303).
 
 A separate concern surfaced in conversations with Defuse and Proximity: both teams have already implemented (Proximity) or plan to implement (Defuse) on-chain TEE attestation verification, with logic that overlaps significantly with ours but diverges in details (Proximity whitelists PPIDs, doesn't whitelist launcher images, embeds measurements differently; Defuse wants a separate collateral-caching contract). All three teams running their own copy of `dcap_qvl::verify()` plus its dependency tree on-chain is wasteful and means every fix to `dcap-qvl` (e.g., TCB cert rotation, advisory-ID handling) has to be applied N times.
 
@@ -32,11 +32,11 @@ Three Rust crates and one contract:
 | Crate / file | Role | LOC |
 |---|---|---|
 | [dcap-qvl](https://github.com/Phala-Network/dcap-qvl) (external) | Cryptographic DCAP verification: cert chains, ECDSA P-256 signatures, TCB matching, QE identity matching. Returns a `VerifiedReport`. | external |
-| [crates/attestation/src/](crates/attestation/src/) | Wraps `dcap_qvl::verify()`. Adds: TCB-status `UpToDate` check, advisory-IDs empty check, RTMR3 event-log replay, app-compose JSON parsing + validation, app-compose-hash event check, report_data binding via `ReportData`, RTMRs match against caller-supplied `ExpectedMeasurements`. **No knowledge of MPC-specific concepts.** | ~870 |
-| [crates/mpc-attestation/src/](crates/mpc-attestation/src/) | MPC-specific extras on top of `attestation`: extracts MPC image hash from a launcher-emitted RTMR3 event, computes launcher compose hash from `app_compose.docker_compose_file`, checks both against caller-supplied allowlists. Defines `ValidatedDstackAttestation` and the `re_verify` method that re-checks a stored attestation against updated allowlists. Also defines `MockAttestation` for tests. | ~890 |
-| [crates/contract/src/tee/](crates/contract/src/tee/) | On-chain state and governance: stores allowed measurements / image hashes / launcher images, tracks votes for adding/removing each, stores `VerifiedAttestation` blobs keyed by TLS pubkey, provides `add_participant` and `reverify_and_cleanup_participants`. Wired into 15+ entry points in [`lib.rs`](crates/contract/src/lib.rs) (`submit_participant_info`, `verify_tee`, `vote_code_hash`, `vote_add_launcher_hash`, `vote_remove_launcher_hash`, `vote_add_os_measurement`, `vote_remove_os_measurement`, `clean_invalid_attestations`, `clean_tee_status`, `get_attestation`, etc.). | ~2,140 |
+| `crates/attestation/src/` | Wraps `dcap_qvl::verify()`. Adds: TCB-status `UpToDate` check, advisory-IDs empty check, RTMR3 event-log replay, app-compose JSON parsing + validation, app-compose-hash event check, report_data binding via `ReportData`, RTMRs match against caller-supplied `ExpectedMeasurements`. **No knowledge of MPC-specific concepts.** | ~870 |
+| `crates/mpc-attestation/src/` | MPC-specific extras on top of `attestation`: extracts MPC image hash from a launcher-emitted RTMR3 event, computes launcher compose hash from `app_compose.docker_compose_file`, checks both against caller-supplied allowlists. Defines `ValidatedDstackAttestation` and the `re_verify` method that re-checks a stored attestation against updated allowlists. Also defines `MockAttestation` for tests. | ~890 |
+| `crates/contract/src/tee/` | On-chain state and governance: stores allowed measurements / image hashes / launcher images, tracks votes for adding/removing each, stores `VerifiedAttestation` blobs keyed by TLS pubkey, provides `add_participant` and `reverify_and_cleanup_participants`. Wired into 15+ entry points in `lib.rs` (`submit_participant_info`, `verify_tee`, `vote_code_hash`, `vote_add_launcher_hash`, `vote_remove_launcher_hash`, `vote_add_os_measurement`, `vote_remove_os_measurement`, `clean_invalid_attestations`, `clean_tee_status`, `get_attestation`, etc.). | ~2,140 |
 
-The verification call chain on `submit_participant_info` ([`lib.rs:773`](crates/contract/src/lib.rs#L773)):
+The verification call chain on `submit_participant_info` (`crates/contract/src/lib.rs:773`):
 
 ```
 submit_participant_info(attestation, tls_pk)
@@ -46,7 +46,7 @@ submit_participant_info(attestation, tls_pk)
         → dcap_qvl::verify::verify(quote, collateral, now)                 // dcap-qvl/verify.rs
 ```
 
-Re-verification on whitelist change (`verify_tee`, [`lib.rs:1506`](crates/contract/src/lib.rs#L1506)):
+Re-verification on whitelist change (`verify_tee`, `crates/contract/src/lib.rs:1506`):
 
 ```
 verify_tee()
@@ -62,7 +62,7 @@ The crucial property: **re-verification does not invoke dcap-qvl.** It just walk
 **Proximity** — [shade-attestation crate](https://github.com/NearDeFi/shade-agent-framework/tree/main/shade-attestation) and [shade-contract-template](https://github.com/NearDeFi/shade-agent-framework/tree/main/shade-contract-template):
 - Crate signature: `DstackAttestation::verify(expected_report_data, now, accepted_measurements, accepted_ppids)`. Adds a **PPID whitelist check** that we don't have.
 - Stores `approved_measurements`, `approved_ppids`, `agents` (verified agents map). Owner-gated governance (`require_owner()`).
-- **No launcher concept.** Per Proximity, their app images are stateless by design — applications are told not to store anything on disk that future versions should not be able to access — so the [launcher pattern](securing-mpc-with-tee-design-doc.md#launcher) MPC uses to bootstrap and reverify CVM images isn't needed. Instead, which app images are allowed to run is gated by **approving the app-compose hash** alongside the other measurements.
+- **No launcher concept.** Per Proximity, their app images are stateless by design — applications are told not to store anything on disk that future versions should not be able to access — so the launcher pattern MPC uses to bootstrap and reverify CVM images (see `docs/securing-mpc-with-tee-design-doc.md`, "Launcher" section) isn't needed. Instead, which app images are allowed to run is gated by **approving the app-compose hash** alongside the other measurements.
 - No multi-image-hash grace period. Report-data binding is the caller's account ID, not a TLS+account pubkey hash.
 - Uses `dcap-qvl 0.4.0`.
 
@@ -115,7 +115,7 @@ pub fn verify_quote(
 ```
 
 Where:
-- `Collateral` is a thin wrapper over `dcap_qvl::QuoteCollateralV3` (already exists in [crates/attestation/src/collateral.rs](crates/attestation/src/collateral.rs)).
+- `Collateral` is a thin wrapper over `dcap_qvl::QuoteCollateralV3` (already exists in `crates/attestation/src/collateral.rs`).
 - `VerifiedReport` is a Borsh-stable wire type that mirrors `dcap_qvl::verify::VerifiedReport`: `status: String`, `advisory_ids: Vec<String>`, `report: TDReport10` (RTMRs, MRTD, report_data, ...), `ppid: [u8; 16]`, plus the QE/platform TCB statuses. The wire type is owned by the verifier contract and re-exported via a small `tee-verifier-interface` crate.
 - Errors: same enum as `dcap_qvl::verify` errors plus a `Custom(String)` variant.
 
@@ -131,7 +131,7 @@ Why no state? Because every per-team policy decision (which measurements, which 
 
 ### 3.3 MPC contract changes in v1
 
-The MPC contract keeps its `TeeState` exactly as today (§1.1). The only behavioural change is that `tee_state.add_participant` in [tee_state.rs:142](crates/contract/src/tee/tee_state.rs#L142) no longer calls `attestation.verify()` synchronously. Instead:
+The MPC contract keeps its `TeeState` exactly as today (§1.1). The only behavioural change is that `tee_state.add_participant` in `crates/contract/src/tee/tee_state.rs:142` no longer calls `attestation.verify()` synchronously. Instead:
 
 ```
 submit_participant_info(attestation, tls_pk)        [entry point — lib.rs:773]
@@ -163,7 +163,7 @@ on_attestation_verified(caller)                     [callback — new]
   └─ refund excess attached_deposit; clear stashed pending state for the caller
 ```
 
-The post-DCAP checks above are **exactly** what `attestation::DstackAttestation::verify` plus `mpc-attestation::Attestation::verify` do today (see [attestation.rs:126](crates/attestation/src/attestation.rs#L126) and [mpc-attestation/attestation.rs:135](crates/mpc-attestation/src/attestation.rs#L135)). They simply move from running synchronously inside `tee_state.add_participant` to running inside `on_attestation_verified` after the verifier returns the parsed report. The `DstackAttestation` struct itself becomes the input to the callback (the caller still submits `quote`, `collateral`, `tcb_info`); we only offload the cryptographic dcap-qvl part to the verifier, then re-attach the parsed report to the local `tcb_info` for the event-log/app-compose checks.
+The post-DCAP checks above are **exactly** what `attestation::DstackAttestation::verify` plus `mpc-attestation::Attestation::verify` do today (see `crates/attestation/src/attestation.rs:126` and `crates/mpc-attestation/src/attestation.rs:135`). They simply move from running synchronously inside `tee_state.add_participant` to running inside `on_attestation_verified` after the verifier returns the parsed report. The `DstackAttestation` struct itself becomes the input to the callback (the caller still submits `quote`, `collateral`, `tcb_info`); we only offload the cryptographic dcap-qvl part to the verifier, then re-attach the parsed report to the local `tcb_info` for the event-log/app-compose checks.
 
 `re_verify` and `verify_tee` are unchanged — they don't call dcap-qvl, so they don't need the verifier.
 
@@ -172,7 +172,7 @@ The post-DCAP checks above are **exactly** what `attestation::DstackAttestation:
 The alternative is to have the verifier do RTMR3 replay, app_compose validation, and the report-data check too — i.e. host the whole `attestation` crate, not just `dcap_qvl`. That makes every consumer's caller-side code one line shorter, but:
 
 1. RTMR3 replay needs `tcb_info.event_log`, which is a separate input from the quote. Either the verifier takes another argument, or every consumer agrees on Dstack's TCB-info shape.
-2. App-compose validation is opinionated — MPC requires `kms_enabled == false`, `gateway_enabled == Some(false)`, etc. ([attestation.rs:366](crates/attestation/src/attestation.rs#L366)). Proximity may want different rules.
+2. App-compose validation is opinionated — MPC requires `kms_enabled == false`, `gateway_enabled == Some(false)`, etc. (`crates/attestation/src/attestation.rs:366`). Proximity may want different rules.
 3. Report-data binding differs across teams (§1.2). The verifier returning the raw report and letting the caller compare is the cleanest way to support all three bindings.
 
 So v1 keeps the verifier at "what dcap-qvl does" and lets the `attestation` crate (still no-std) be linked by each consumer's policy/application contract. Other teams can pull in whichever subset of `attestation` makes sense for them, or write their own.
@@ -291,7 +291,7 @@ This is a separate design and a separate ship. v1 ignores it; the verifier API w
 
 The verifier doesn't check report_data — it just returns it inside `VerifiedReport.report.report_data`. Each team's policy contract checks report_data against whatever it wants:
 
-- MPC: `sha3_384(tls_pk || account_pk)` ([report_data.rs:64](crates/mpc-attestation/src/report_data.rs#L64))
+- MPC: `sha3_384(tls_pk || account_pk)` (`crates/mpc-attestation/src/report_data.rs:64`)
 - Proximity: account ID padded to 64 bytes
 - tee-solver: signer pubkey
 - Future teams: anything else
@@ -300,7 +300,7 @@ This is achieved at zero verifier-side cost: the verifier returns the parsed rep
 
 ### 5.2 Allowed-status policy heterogeneity
 
-Today MPC requires `status == "UpToDate"` and `advisory_ids.is_empty()` ([attestation.rs:23](crates/attestation/src/attestation.rs#L23)). Proximity requires the same. If a future team wants to allow `OutOfDate` or specific advisory IDs (e.g., during a vulnerability patch window), they implement that in their policy contract. The verifier returns the raw status and advisory IDs; the policy decides.
+Today MPC requires `status == "UpToDate"` and `advisory_ids.is_empty()` (`crates/attestation/src/attestation.rs:23`). Proximity requires the same. If a future team wants to allow `OutOfDate` or specific advisory IDs (e.g., during a vulnerability patch window), they implement that in their policy contract. The verifier returns the raw status and advisory IDs; the policy decides.
 
 ### 5.3 Extra checks (RTMR3 replay, launcher, PPID, app_compose)
 
@@ -361,7 +361,7 @@ Recommendation: don't add it. The whole point is to keep the verifier minimal; o
 
 ### 7.5 What happens to `MockAttestation`?
 
-`MockAttestation` (in [mpc-attestation/src/attestation.rs:47](crates/mpc-attestation/src/attestation.rs#L47)) is used heavily in tests. After the split, mock-attestation tests can short-circuit the verifier promise (no verifier call needed; the post-DCAP code path handles `MockAttestation` entirely). This works because the `Attestation` enum is still the input shape on `submit_participant_info` — only the `Dstack` variant requires the verifier round-trip. Make this explicit in the migration.
+`MockAttestation` (in `crates/mpc-attestation/src/attestation.rs:47`) is used heavily in tests. After the split, mock-attestation tests can short-circuit the verifier promise (no verifier call needed; the post-DCAP code path handles `MockAttestation` entirely). This works because the `Attestation` enum is still the input shape on `submit_participant_info` — only the `Dstack` variant requires the verifier round-trip. Make this explicit in the migration.
 
 ### 7.6 Versioning of the verifier wire types
 
