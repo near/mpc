@@ -1,0 +1,84 @@
+# Minimal testnet TOML for DSS testing — see PR #3145 / issue #1734.
+# Goal: deploy a single TDX CVM that exercises DSS state-sync end-to-end.
+# Not a real MPC node: doesn't need contract registration, attestation, or signing.
+
+[launcher_config]
+image_reference = "nearone/mpc-node"   # replace with your custom-built image tag
+port_mappings = [
+    { host = 8080, container = 8080 },     # /metrics, debug
+    { host = 24567, container = 24567 },   # P2P (Tier2 + Tier3)
+]
+
+[mpc_node_config]
+home_dir = "/data"
+
+[mpc_node_config.log]
+format = "json"
+filter = "info,sync=debug,state_sync=debug,network=debug"   # extra verbose for state sync
+
+[mpc_node_config.near_init]
+chain_id = "testnet"
+download_genesis = true
+download_config = "rpc"
+
+# Populate from testnet RPC before deploying:
+#   curl -s -X POST https://rpc.testnet.near.org \
+#     -H "Content-Type: application/json" \
+#     -d '{"jsonrpc":"2.0","method":"network_info","params":[],"id":"x"}' \
+#     | jq -r '.result.active_peers[] | "\(.id)@\(.addr)"' \
+#     | awk -F'@' '!seen[$2]++ {print $0}' | paste -sd',' -
+boot_nodes = "PASTE_TESTNET_BOOT_NODES_HERE"
+
+# === The two fields under test (PR #3145) ===
+
+# Replace with the actual static IP that EXTERNAL_MPC_DECENTRALIZED_STATE_SYNC
+# binds to in your dstack deploy script (NOT 0.0.0.0, NOT the dynamic outbound).
+tier3_public_addr = "51.68.219.13:24567"
+
+# Force DSS-first behavior. 0 = bucket only (current default), high = DSS only.
+# 1000 lets bucket act as safety net if state-parts is still up.
+external_storage_fallback_threshold = 1000
+
+# Bind only to the same static IP, mirroring Bob's setup so the bug reproduces
+# in the unfixed case (and we genuinely test the fix).
+network_addr = "51.68.219.13:24567"
+
+# === Dummy MPC config — DSS doesn't care, but the launcher TOML schema requires it ===
+
+[mpc_node_config.secrets]
+secret_store_key_hex = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+backup_encryption_key_hex = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[mpc_node_config.node]
+# Doesn't need to be a registered/funded testnet account for DSS testing.
+my_near_account_id = "dss-test.testnet"
+near_responder_account_id = "dss-test.testnet"
+number_of_responder_keys = 1
+web_ui = "0.0.0.0:8080"
+migration_web_ui = "0.0.0.0:8078"
+cores = 4
+
+[mpc_node_config.node.indexer]
+validate_genesis = false
+sync_mode = "Latest"
+concurrency = 1
+# Real testnet contract — we track its shard, which is what triggers state sync.
+mpc_contract_id = "v1.signer-prod.testnet"
+finality = "optimistic"
+
+[mpc_node_config.node.triple]
+concurrency = 2
+desired_triples_to_buffer = 128
+timeout_sec = 60
+parallel_triple_generation_stagger_time_sec = 1
+
+[mpc_node_config.node.presignature]
+concurrency = 4
+desired_presignatures_to_buffer = 64
+timeout_sec = 60
+
+[mpc_node_config.node.signature]
+timeout_sec = 60
+
+[mpc_node_config.node.ckd]
+timeout_sec = 60
