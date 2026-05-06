@@ -237,6 +237,7 @@ tokio-rustls = { version = "0.26.4", default-features = false }
 tokio-stream = { version = "0.1" }
 tokio-util = { version = "0.7.12", features = ["time"] }
 toml = "1.1.2"
+tonlib-core = "=0.25.7"
 tower = "0.5.3"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = [

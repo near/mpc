@@ -13,6 +13,7 @@ pub mod bnb;
 pub mod contract_interface_conversions;
 pub mod evm;
 pub mod starknet;
+pub mod ton;
 
 pub trait ForeignChainInspector {
     type TransactionId;
@@ -71,6 +72,9 @@ pub enum ForeignChainInspectionError {
     LogIndexOutOfBounds,
     #[error("failed to borsh serialize log event")]
     EventLogFailedBorshSerialization(std::io::Error),
+
+    #[error(transparent)]
+    Ton(#[from] crate::ton::TonInspectionError),
 }
 
 /// Builds an HTTP client with the specified authentication method.

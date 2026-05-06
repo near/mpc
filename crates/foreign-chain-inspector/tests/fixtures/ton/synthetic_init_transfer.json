@@ -1,0 +1,60 @@
+{
+    "transactions": [
+        {
+            "account": "0:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "hash": "u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7s=",
+            "lt": "12345678000001",
+            "now": 1777100000,
+            "mc_block_seqno": 99999999,
+            "trace_id": "zMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMw=",
+            "prev_trans_hash": "3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d0=",
+            "prev_trans_lt": "12345670000000",
+            "orig_status": "active",
+            "end_status": "active",
+            "total_fees": "1000000",
+            "total_fees_extra_currencies": {},
+            "description": {
+                "type": "ord",
+                "aborted": false,
+                "destroyed": false,
+                "credit_first": true,
+                "compute_ph": {
+                    "skipped": false,
+                    "success": true,
+                    "account_activated": false,
+                    "gas_used": "5000"
+                }
+            },
+            "block_ref": {
+                "workchain": 0,
+                "shard": "8000000000000000",
+                "seqno": 100000
+            },
+            "in_msg": {
+                "hash": "7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u4=",
+                "source": "0:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "destination": "0:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "value": "100000000",
+                "message_content": {
+                    "body": "te6cckEBAQEAAgAAAEysuc0="
+                }
+            },
+            "out_msgs": [
+                {
+                    "hash": "//////////////////////////////////////////8=",
+                    "source": "0:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "destination": null,
+                    "value": "0",
+                    "created_lt": "12345678000002",
+                    "message_content": {
+                        "body": "te6ccgEBAwEARAACOJkAAAEAAAAAyv66vgAAAAAAAAAADeC2s6dkAAABAgAeTkVBUjphbGljZS5uZWFyACJicmlkZ2UtdHJhbnNmZXItMQ=="
+                    }
+                }
+            ],
+            "account_state_before": {},
+            "account_state_after": {},
+            "emulated": false,
+            "finality": "committed"
+        }
+    ]
+}
