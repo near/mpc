@@ -403,36 +403,3 @@ Recommendation: third option. Always introduce a new method when the wire type c
 A shared "do the RTMR3 replay + measurement match given a list of allowed measurements" utility could itself be a verifier method. It's pure compute (no I/O), shared across teams, and would let the MPC contract drop more code. But the inputs heterogenize across teams (Proximity doesn't replay RTMR3 the same way), so it's not a clean abstraction.
 
 Recommendation: not in v1. Re-evaluate in v2 once the policy contracts exist and we see what's actually duplicated.
-
-## Verification
-
-### How to validate v1 end-to-end
-
-1. **Unit tests.** In `crates/tee-verifier-interface`, roundtrip `VerifiedReport` Borsh against `dcap_qvl::verify::VerifiedReport`. In `crates/mpc-attestation`, unit-test `verify_post_dcap` directly with golden fixtures (existing test fixtures under `crates/attestation/tests`).
-
-2. **Verifier contract tests.** In `crates/tee-verifier`, integration tests against the testnet verifier with real Dstack quotes (existing test fixtures from MPC node deployments).
-
-3. **MPC contract integration tests.** New tests in [crates/contract/src/tee/](crates/contract/src/tee/) that exercise the new Promise chain: assert that `submit_participant_info` schedules a verifier call, assert that `on_attestation_verified` correctly inserts on success, assert that it refunds and cleans up on failure. Mock the verifier via near-sdk's `mock_promise_result` or equivalent.
-
-4. **E2E tests.** Add a scenario in `crates/e2e-tests` that deploys both `tee-verifier` and `mpc-contract`, runs the full submit-participant-info flow, and confirms `verify_tee` still works against the stored attestation. Reuse the existing `tee-localnet` setup at [docs/localnet/tee-localnet.md](docs/localnet/tee-localnet.md).
-
-5. **WASM size measurement.** Before/after `cargo near build non-reproducible-wasm` of `mpc-contract` to confirm the size reduction. Document the diff in the PR description.
-
-6. **Testnet rollout.** Deploy `tee-verifier` to testnet, upgrade `mpc-contract` to point at it, run a node migration cycle to confirm `submit_participant_info` works end-to-end with a real Dstack quote.
-
-### Critical files
-
-Created:
-- `crates/tee-verifier/Cargo.toml` and `src/lib.rs`
-- `crates/tee-verifier-interface/Cargo.toml` and `src/lib.rs`
-- New e2e test under `crates/e2e-tests/`
-
-Modified:
-- [`crates/contract/src/lib.rs`](crates/contract/src/lib.rs) — `submit_participant_info` becomes async; new `on_attestation_verified` callback; new `pending_attestations` field.
-- [`crates/contract/src/tee/tee_state.rs`](crates/contract/src/tee/tee_state.rs) — split `add_participant` into `start_add_participant` and `finish_add_participant`.
-- [`crates/contract/Cargo.toml`](crates/contract/Cargo.toml) — drop `dcap-qvl` (transitively via `mpc-attestation`'s dep refactor).
-- [`crates/mpc-attestation/src/attestation.rs`](crates/mpc-attestation/src/attestation.rs) — extract `verify_post_dcap` free function from `Attestation::verify`.
-
-Reused (no changes):
-- [`crates/attestation/src/`](crates/attestation/src/) — used as-is for RTMR3 replay, app_compose validation.
-- [`crates/mpc-attestation/src/report_data.rs`](crates/mpc-attestation/src/report_data.rs) — `ReportDataV1` binding stays as-is.
