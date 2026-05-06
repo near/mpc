@@ -4,7 +4,7 @@ use anyhow::{Context, bail};
 use e2e_tests::CLUSTER_WAIT_TIMEOUT;
 use mpc_primitives::domain::{Curve, DomainId};
 use near_mpc_contract_interface::types::{
-    DomainConfig, DomainPurpose, Protocol, ProtocolContractState,
+    DomainConfig, DomainPurpose, Protocol, ProtocolContractState, ReconstructionThreshold,
 };
 use rand::SeedableRng;
 
@@ -137,24 +137,28 @@ async fn test_multi_domain() {
                 id: DomainId(3),
                 curve: Curve::Secp256k1,
                 protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(4),
                 curve: Curve::Edwards25519,
                 protocol: Protocol::Frost,
+                reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(5),
                 curve: Curve::Secp256k1,
                 protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(6),
                 curve: Curve::Edwards25519,
                 protocol: Protocol::Frost,
+                reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
             },
         ])
@@ -178,6 +182,7 @@ async fn test_multi_domain() {
             id: DomainId(7),
             curve: Curve::Secp256k1,
             protocol: Protocol::CaitSith,
+            reconstruction_threshold: ReconstructionThreshold::new(3),
             purpose: DomainPurpose::Sign,
         }])
         .await

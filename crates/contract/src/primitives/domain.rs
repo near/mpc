@@ -1,7 +1,9 @@
 use super::key_state::AuthenticatedParticipantId;
 use crate::errors::{DomainError, Error};
 use crate::primitives::participants::Participants;
-use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, DomainPurpose, Protocol};
+use near_mpc_contract_interface::types::{
+    Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
+};
 use near_sdk::{log, near};
 use std::collections::BTreeMap;
 
@@ -40,6 +42,41 @@ pub fn validate_domain_consistency(domain: &DomainConfig) -> Result<(), Error> {
     Ok(())
 }
 
+/// Validates the per-domain reconstruction threshold against the participant
+/// count. Universal bound `2 <= t <= n` plus, for `DamgardEtAl`, the
+/// honest-majority bound `2t - 1 <= n`.
+pub fn validate_domain_threshold(
+    domain: &DomainConfig,
+    num_participants: u64,
+) -> Result<(), Error> {
+    let t = domain.reconstruction_threshold.inner();
+    if t < 2 {
+        return Err(DomainError::ReconstructionThresholdTooLow.into());
+    }
+    if t > num_participants {
+        return Err(DomainError::ReconstructionThresholdExceedsParticipants {
+            threshold: t,
+            participants: num_participants,
+        }
+        .into());
+    }
+    if domain.protocol == Protocol::DamgardEtAl {
+        let required = t
+            .checked_mul(2)
+            .and_then(|x| x.checked_sub(1))
+            .unwrap_or(u64::MAX);
+        if required > num_participants {
+            return Err(DomainError::InsufficientParticipantsForProtocol {
+                protocol: domain.protocol,
+                required,
+                participants: num_participants,
+            }
+            .into());
+        }
+    }
+    Ok(())
+}
+
 /// All the domains present in the contract, as well as the next domain ID which is kept to ensure
 /// that we never reuse domain IDs. (Domains may be deleted in only one case: when we decided to
 /// add domains but ultimately canceled that process.)
@@ -55,21 +92,21 @@ impl DomainRegistry {
         &self.domains
     }
 
-    /// Migration from legacy: creates a DomainRegistry with a single ecdsa key.
-    pub fn new_single_ecdsa_key_from_legacy() -> Self {
-        let mut registry = Self::default();
-        registry.add_domain(Curve::Secp256k1, Protocol::CaitSith, DomainPurpose::Sign);
-        registry
-    }
-
     /// Append a domain at `next_domain_id`, returning its DomainId. The caller is
     /// responsible for any validation (curve/protocol consistency, etc.); this
     /// helper does no checks.
-    fn add_domain(&mut self, curve: Curve, protocol: Protocol, purpose: DomainPurpose) -> DomainId {
+    fn add_domain(
+        &mut self,
+        curve: Curve,
+        protocol: Protocol,
+        reconstruction_threshold: ReconstructionThreshold,
+        purpose: DomainPurpose,
+    ) -> DomainId {
         let domain = DomainConfig {
             id: DomainId(self.next_domain_id),
             curve,
             protocol,
+            reconstruction_threshold,
             purpose,
         };
         self.next_domain_id += 1;
@@ -84,8 +121,12 @@ impl DomainRegistry {
         let mut new_registry = self.clone();
         for domain in domains {
             validate_domain_consistency(&domain)?;
-            let new_domain_id =
-                new_registry.add_domain(domain.curve, domain.protocol, domain.purpose);
+            let new_domain_id = new_registry.add_domain(
+                domain.curve,
+                domain.protocol,
+                domain.reconstruction_threshold,
+                domain.purpose,
+            );
             if new_domain_id != domain.id {
                 return Err(DomainError::NewDomainIdsNotContiguous {
                     expected_id: new_domain_id,
@@ -209,6 +250,7 @@ pub mod tests {
     use super::{
         is_valid_protocol_for_purpose, validate_domain_consistency, AddDomainsVotes, Curve,
         DomainConfig, DomainId, DomainPurpose, DomainRegistry, Participants, Protocol,
+        ReconstructionThreshold,
     };
     use crate::primitives::key_state::AuthenticatedParticipantId;
     use crate::primitives::test_utils::{
@@ -226,12 +268,14 @@ pub mod tests {
                 id: DomainId(0),
                 curve: Curve::Secp256k1,
                 protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(1),
                 curve: Curve::Edwards25519,
                 protocol: Protocol::Frost,
+                reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
             },
         ];
@@ -243,12 +287,14 @@ pub mod tests {
                 id: DomainId(2),
                 curve: Curve::Bls12381,
                 protocol: Protocol::ConfidentialKeyDerivation,
+                reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::CKD,
             },
             DomainConfig {
                 id: DomainId(3),
                 curve: Curve::Secp256k1,
                 protocol: Protocol::DamgardEtAl,
+                reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
             },
         ];
@@ -261,6 +307,7 @@ pub mod tests {
             id: DomainId(5),
             curve: Curve::Secp256k1,
             protocol: Protocol::CaitSith,
+            reconstruction_threshold: ReconstructionThreshold::new(2),
             purpose: DomainPurpose::Sign,
         }];
         let _ = new_registry.add_domains(domains3).unwrap_err();
@@ -271,12 +318,14 @@ pub mod tests {
                 id: DomainId(5),
                 curve: Curve::Secp256k1,
                 protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(4),
                 curve: Curve::Secp256k1,
                 protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
             },
         ];
@@ -290,24 +339,28 @@ pub mod tests {
                 id: DomainId(0),
                 curve: Curve::Secp256k1,
                 protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(2),
                 curve: Curve::Edwards25519,
                 protocol: Protocol::Frost,
+                reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(3),
                 curve: Curve::Bls12381,
                 protocol: Protocol::ConfidentialKeyDerivation,
+                reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::CKD,
             },
             DomainConfig {
                 id: DomainId(4),
                 curve: Curve::Secp256k1,
                 protocol: Protocol::DamgardEtAl,
+                reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
             },
         ];
@@ -333,18 +386,21 @@ pub mod tests {
                     id: DomainId(0),
                     curve: Curve::Secp256k1,
                     protocol: Protocol::CaitSith,
+                    reconstruction_threshold: ReconstructionThreshold::new(2),
                     purpose: DomainPurpose::Sign,
                 },
                 DomainConfig {
                     id: DomainId(2),
                     curve: Curve::Edwards25519,
                     protocol: Protocol::Frost,
+                    reconstruction_threshold: ReconstructionThreshold::new(2),
                     purpose: DomainPurpose::Sign,
                 },
                 DomainConfig {
                     id: DomainId(3),
                     curve: Curve::Secp256k1,
                     protocol: Protocol::CaitSith,
+                    reconstruction_threshold: ReconstructionThreshold::new(2),
                     purpose: DomainPurpose::Sign,
                 },
             ],
@@ -363,17 +419,17 @@ pub mod tests {
 
     #[rstest]
     #[case(
-        r#"{"id":3,"curve":"Secp256k1","purpose":"Sign"}"#,
+        r#"{"id":3,"curve":"Secp256k1","reconstruction_threshold":2,"purpose":"Sign"}"#,
         Curve::Secp256k1,
         DomainPurpose::Sign
     )]
     #[case(
-        r#"{"id":1,"curve":"Bls12381","purpose":"CKD"}"#,
+        r#"{"id":1,"curve":"Bls12381","reconstruction_threshold":2,"purpose":"CKD"}"#,
         Curve::Bls12381,
         DomainPurpose::CKD
     )]
     #[case(
-        r#"{"id":1,"curve":"Edwards25519","purpose":"Sign"}"#,
+        r#"{"id":1,"curve":"Edwards25519","reconstruction_threshold":2,"purpose":"Sign"}"#,
         Curve::Edwards25519,
         DomainPurpose::Sign
     )]
@@ -457,6 +513,7 @@ pub mod tests {
             id: DomainId(0),
             curve,
             protocol,
+            reconstruction_threshold: ReconstructionThreshold::new(2),
             purpose,
         };
         assert_eq!(validate_domain_consistency(&domain).is_ok(), expected_ok);
@@ -485,6 +542,7 @@ pub mod tests {
             id: DomainId(0),
             curve: Curve::Secp256k1,
             protocol: Protocol::CaitSith,
+            reconstruction_threshold: ReconstructionThreshold::new(2),
             purpose: DomainPurpose::Sign,
         }]
     }
@@ -564,12 +622,14 @@ pub mod tests {
             id: DomainId(0),
             curve: Curve::Secp256k1,
             protocol: Protocol::CaitSith,
+            reconstruction_threshold: ReconstructionThreshold::new(2),
             purpose: DomainPurpose::Sign,
         }];
         let proposal_b = vec![DomainConfig {
             id: DomainId(0),
             curve: Curve::Edwards25519,
             protocol: Protocol::Frost,
+            reconstruction_threshold: ReconstructionThreshold::new(2),
             purpose: DomainPurpose::Sign,
         }];
         let mut votes = AddDomainsVotes::default();

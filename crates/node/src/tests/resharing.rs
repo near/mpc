@@ -7,7 +7,9 @@ use crate::tests::{
 };
 use crate::tracking::AutoAbortTask;
 use mpc_primitives::domain::{Curve, DomainId};
-use near_mpc_contract_interface::types::{DomainConfig, DomainPurpose, Protocol};
+use near_mpc_contract_interface::types::{
+    DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
+};
 use near_time::Clock;
 use rstest::rstest;
 use serial_test::serial;
@@ -59,6 +61,7 @@ async fn test_key_resharing_simple(
         id: DomainId(0),
         curve,
         protocol,
+        reconstruction_threshold: ReconstructionThreshold::new(3),
         purpose: infer_purpose_from_curve(curve),
     };
 
@@ -182,6 +185,7 @@ async fn test_key_resharing_multistage() {
         id: DomainId(0),
         curve: Curve::Secp256k1,
         protocol: Protocol::CaitSith,
+        reconstruction_threshold: ReconstructionThreshold::new(3),
         purpose: DomainPurpose::Sign,
     };
 
@@ -388,6 +392,7 @@ async fn test_signature_requests_in_resharing_are_processed() {
         id: DomainId(0),
         curve: Curve::Secp256k1,
         protocol: Protocol::CaitSith,
+        reconstruction_threshold: ReconstructionThreshold::new(3),
         purpose: DomainPurpose::Sign,
     };
 

@@ -204,6 +204,18 @@ pub enum DomainError {
         protocol: Protocol,
         purpose: DomainPurpose,
     },
+    #[error("Reconstruction threshold must be at least 2.")]
+    ReconstructionThresholdTooLow,
+    #[error("Reconstruction threshold {threshold} exceeds participant count {participants}.")]
+    ReconstructionThresholdExceedsParticipants { threshold: u64, participants: u64 },
+    #[error(
+        "Protocol {protocol:?} requires at least {required} participants, found {participants}."
+    )]
+    InsufficientParticipantsForProtocol {
+        protocol: Protocol,
+        required: u64,
+        participants: u64,
+    },
 }
 
 /// A list specifying general categories of MPC Contract errors.

@@ -25,7 +25,8 @@ use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
     protocol_state_to_string, DomainConfig, DomainPurpose, EpochId, NodeImageHash, ParticipantId,
-    ParticipantInfo, Participants, Protocol, ProtocolContractState, Threshold, ThresholdParameters,
+    ParticipantInfo, Participants, Protocol, ProtocolContractState, ReconstructionThreshold,
+    Threshold, ThresholdParameters,
 };
 use near_primitives::types::{BlockReference, Finality, FunctionArgs};
 use near_primitives::views::QueryRequest;
@@ -616,6 +617,7 @@ impl MpcVoteAddDomainsCmd {
                 id: DomainId(next_domain),
                 curve: Curve::from(*protocol),
                 protocol: *protocol,
+                reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose,
             });
             next_domain += 1;

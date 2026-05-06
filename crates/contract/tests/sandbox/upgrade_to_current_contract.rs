@@ -22,7 +22,7 @@ use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use near_mpc_contract_interface::types::{
-    CKDResponse, Curve, DomainConfig, DomainPurpose, Protocol,
+    CKDResponse, Curve, DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
 };
 use near_mpc_sdk::sign::SignatureRequestResponse;
 use near_workspaces::{network::Sandbox, Account, Contract, Worker};
@@ -368,12 +368,14 @@ async fn upgrade_allows_new_request_types(
             id: first_available_domain_id.into(),
             curve: Curve::Bls12381,
             protocol: Protocol::ConfidentialKeyDerivation,
+            reconstruction_threshold: ReconstructionThreshold::new(6),
             purpose: DomainPurpose::CKD,
         },
         DomainConfig {
             id: (first_available_domain_id + 1).into(),
             curve: Curve::Edwards25519,
             protocol: Protocol::Frost,
+            reconstruction_threshold: ReconstructionThreshold::new(6),
             purpose: DomainPurpose::Sign,
         },
     ];
