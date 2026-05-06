@@ -276,24 +276,29 @@ INFO stats: node_status="State 8qYjL...[5: parts] (5 downloads, 0 computations)
                         11 peers ⬇ 319 kB/s ⬆ 28.9 kB/s ..."
 ```
 
-**Metrics observed during state sync (~13 min into run):**
+**Final metrics — state sync completed via DSS (~55 min total):**
 
 ```
 near_tier3_public_addr{addr="51.68.219.13:24567"} 1
-near_block_height_head 42376888                            ← state-sync still in progress
+near_block_height_head 249010656                           ← jumped from 42376888 to testnet tip ✅
 
-near_peer_connections{peer_type="Inbound",tier="T3"} 13    ← peers landing Tier3 inbound ✅
-near_peer_connections{peer_type="Outbound",tier="T2"} 11
+near_peer_connections{peer_type="Outbound",tier="T2"} 13
+# (Inbound,T3 = 0 between transfers — Tier3 is ephemeral by design)
 
 near_state_sync_download_result{result="success",
    shard_id="5", source="network", type="header"} 1
 near_state_sync_download_result{result="success",
-   shard_id="5", source="network", type="part"} 570        ← ~96% success rate
+   shard_id="5", source="network", type="part"} 1019       ← 96.3% success rate
 near_state_sync_download_result{result="timeout",
-   shard_id="5", source="network", type="part"} 23
+   shard_id="5", source="network", type="part"} 37
 near_state_sync_download_result{result="sender_dropped",
    shard_id="5", source="network", type="part"} 2
-near_sync_status 5                                          ← state sync phase
+# Total parts: 1058 — 1019 success, 39 transient failures (retried successfully)
+# Critically: ZERO source="external" entries — no bucket fallbacks
+
+near_sync_status 0                                         ← NoSync (caught up) ✅
+near_sync_requirements_current{state="AlreadyCaughtUp"} 1
+near_sync_requirements_total{state="AlreadyCaughtUp"} 18   ← multiple sync cycles all completed
 ```
 
 **Tier3 disconnect warnings** also observed in the log:
@@ -327,8 +332,10 @@ End-to-end fix works in TDX. Specifically validated:
    `0`, the node would have gone straight to bucket and we'd see no
    `near_state_sync_download_result{source="network"}` entries.
 3. **Real testnet peers reach the CVM through the full network stack.**
-   Verified: 13–29 Tier3 inbound connections at any given time, 570+
-   successful part downloads after ~13 min, ~96% success rate.
+   Verified: 13–29 Tier3 inbound connections at peak, 1019 successful
+   part downloads, ~96% success rate. State sync of shard 5 completed
+   entirely via DSS in ~55 min, with zero bucket fallbacks. Node is now
+   caught up at testnet tip and processing recent blocks normally.
 
 The TDX / dstack / QEMU / docker networking layers do **not** introduce
 additional failure modes beyond the host-level asymmetric-IP issue we
