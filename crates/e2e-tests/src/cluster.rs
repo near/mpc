@@ -893,7 +893,7 @@ impl MpcCluster {
     }
 
     /// Propose a contract code update and cast votes until `vote_update` reports
-    /// the threshold reached. Pair with [`Self::assert_deployed_code`]: the deploy
+    /// the threshold reached. Pair with [`Self::ensure_deployed_code`]: the deploy
     /// and `migrate()` promise runs asynchronously, and a panicking `migrate`
     /// rolls the deploy back without changing the threshold-reached signal.
     pub async fn propose_and_vote_contract_update(&self, new_wasm: &[u8]) -> anyhow::Result<()> {
@@ -961,7 +961,7 @@ impl MpcCluster {
     }
 
     /// Wait until the deployed contract code hash matches `sha256(expected_wasm)`.
-    pub async fn assert_deployed_code(&self, expected_wasm: &[u8]) -> anyhow::Result<()> {
+    pub async fn ensure_deployed_code(&self, expected_wasm: &[u8]) -> anyhow::Result<()> {
         let expected = near_kit::CryptoHash::hash(expected_wasm);
         let deadline = tokio::time::Instant::now() + CONTRACT_DEPLOY_TIMEOUT;
         loop {

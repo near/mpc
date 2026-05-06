@@ -68,7 +68,7 @@ async fn contract_upgrade_compatibility__current_node_runs_against_production_co
         .await
         .expect("contract upgrade to current WASM failed");
     cluster
-        .assert_deployed_code(&current_contract_wasm)
+        .ensure_deployed_code(&current_contract_wasm)
         .await
         .expect("deployed contract code does not match current WASM");
 
