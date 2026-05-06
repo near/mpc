@@ -1,15 +1,20 @@
 use std::collections::BTreeMap;
 
+use blstrs::G1Projective;
+use group::Group;
 use near_account_id::AccountId;
 use near_mpc_bounded_collections::BoundedVec;
 use near_mpc_contract_interface::{
     method_names,
     types::{
-        CKDAppPublicKey, CKDRequestArgs, DomainConfig, Payload, Protocol, SignRequestArgs,
-        EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
+        Bls12381G1PublicKey, CKDAppPublicKey, CKDRequestArgs, DomainConfig, Payload, Protocol,
+        SignRequestArgs, EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
+        EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
     },
 };
 use near_primitives::action::Action;
+use rand::rngs::OsRng;
+use rand::Rng;
 use rand::RngCore;
 use serde::Serialize;
 
@@ -126,9 +131,7 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
                     request: CKDRequestArgs {
                         derivation_path: "".to_string(),
                         domain_id: args.domain_config.id,
-                        app_public_key: CKDAppPublicKey::AppPublicKey(
-                            mpc_contract::utils::random_app_public_key(),
-                        ),
+                        app_public_key: CKDAppPublicKey::AppPublicKey(random_app_public_key()),
                     },
                 })
                 .unwrap(),
@@ -177,11 +180,12 @@ fn make_payload(protocol: Protocol) -> Payload {
             Payload::Ecdsa(rand::random::<[u8; 32]>().into())
         }
         Protocol::Frost => {
-            let len = rand::random_range(
+            let mut rng = rand::thread_rng();
+            let len = rng.gen_range(
                 EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES..=EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
             );
             let mut payload = vec![0; len];
-            rand::rng().fill_bytes(&mut payload);
+            rng.fill_bytes(&mut payload);
 
             let bounded_payload: BoundedVec<
                 u8,
@@ -197,6 +201,11 @@ fn make_payload(protocol: Protocol) -> Payload {
             )
         }
     }
+}
+
+fn random_app_public_key() -> Bls12381G1PublicKey {
+    let point = G1Projective::random(&mut OsRng);
+    (&point).into()
 }
 
 fn make_action(method: &str, args: &[u8], tgas: u64, deposit: u128) -> Action {
