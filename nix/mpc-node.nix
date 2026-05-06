@@ -17,6 +17,10 @@
   dbus,
   apple-sdk_14 ? null,
   crane,
+  # Shared production ISA flag string (e.g. "-march=x86-64-v3 -mpclmul -maes"),
+  # passed in from flake.nix so the dev shell, the reproducible build, and
+  # bindgen-parsed headers all agree on the same feature-test macros.
+  prodCFlags,
 }:
 
 let
@@ -32,17 +36,10 @@ let
 
   isX86 = stdenv.hostPlatform.isx86_64;
 
-  # x86-64-v3 ISA passed to clang/cc for both library compilation and bindgen
-  # header parsing. Production nodes all run on v3-capable hardware; pinning
-  # to a fixed level (rather than `-march=native`) keeps output bytes from
-  # varying with the build host's CPU.
-  #
-  # PCLMUL and AES are not part of the v3 micro-arch level (per System V
-  # psABI) but are universally available on v3-capable hardware. We add them
-  # explicitly so rocksdb's PCLMUL-accelerated CRC32C path is compiled in,
-  # and so the dev-shell BINDGEN_EXTRA_CLANG_ARGS in flake.nix can mirror
-  # this exactly.
-  marchFlag = lib.optionalString isX86 "-march=x86-64-v3 -mpclmul -maes";
+  # `prodCFlags` (passed from flake.nix) carries the production ISA string —
+  # see flake.nix for the rationale. Pinned to a fixed level rather than
+  # `-march=native` so output bytes don't vary with the build host's CPU.
+  marchFlag = lib.optionalString isX86 prodCFlags;
 
   # Take the version from [workspace.package.version] so this file stays in
   # sync on every release bump.
