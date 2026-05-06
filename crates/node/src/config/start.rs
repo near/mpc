@@ -144,8 +144,9 @@ fn patch_near_config(
     if is_localnet {
         config["state_sync_enabled"] = serde_json::Value::Bool(false);
     } else {
+        let threshold = near_init.external_storage_fallback_threshold.unwrap_or(0);
         config["state_sync"]["sync"]["ExternalStorage"]["external_storage_fallback_threshold"] =
-            serde_json::json!(0);
+            serde_json::json!(threshold);
     }
 
     // Track the shard that hosts the MPC contract.
@@ -158,6 +159,10 @@ fn patch_near_config(
     }
     if let Some(network_addr) = &near_init.network_addr {
         config["network"]["addr"] = serde_json::Value::String(network_addr.clone());
+    }
+    if let Some(tier3) = &near_init.tier3_public_addr {
+        config["network"]["experimental"]["tier3_public_addr"] =
+            serde_json::Value::String(tier3.clone());
     }
 
     let patched =
