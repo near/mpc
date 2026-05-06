@@ -32,10 +32,11 @@ let
 
   isX86 = stdenv.hostPlatform.isx86_64;
 
-  # Baseline x86-64 ISA passed to clang/cc for both library compilation and
-  # bindgen header parsing. Pinned to the baseline so output bytes don't vary
-  # with the build host's CPU.
-  marchFlag = lib.optionalString isX86 "-march=x86-64";
+  # x86-64-v3 ISA passed to clang/cc for both library compilation and bindgen
+  # header parsing. Production nodes all run on v3-capable hardware; pinning
+  # to a fixed level (rather than `-march=native`) keeps output bytes from
+  # varying with the build host's CPU.
+  marchFlag = lib.optionalString isX86 "-march=x86-64-v3";
 
   # Take the version from [workspace.package.version] so this file stays in
   # sync on every release bump.
@@ -224,7 +225,7 @@ let
       CXXFLAGS = "-include cstdint ${marchFlag}";
 
       RUSTFLAGS = lib.concatStringsSep " " (
-        lib.optionals isX86 [ "-C target-cpu=x86-64" ]
+        lib.optionals isX86 [ "-C target-cpu=x86-64-v3" ]
         ++ [
           # Scrub the vendor dir's /nix/store path out of rustc-emitted debug
           # info and panic messages. The build-sandbox path is handled in

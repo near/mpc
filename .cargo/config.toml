@@ -1,0 +1,10 @@
+# Production nodes run on x86-64-v3-capable hardware (Haswell / Excavator+,
+# ~2013+), so we compile with that ISA baseline to let rustc emit AVX2/BMI2
+# and friends. Scoped to x86_64 so aarch64 dev machines (Apple Silicon) keep
+# building without modification.
+#
+# Note: `nix/mpc-node.nix` exports its own RUSTFLAGS env var, which *replaces*
+# (not merges with) these flags — the Nix build sets `target-cpu=x86-64-v3`
+# explicitly there. Keep both in sync.
+[target.'cfg(target_arch = "x86_64")']
+rustflags = ["-C", "target-cpu=x86-64-v3"]
