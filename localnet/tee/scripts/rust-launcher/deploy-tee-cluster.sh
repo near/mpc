@@ -1,29 +1,83 @@
 #!/usr/bin/env bash
+# Fully-automated, resumable MPC TEE deploy — works for both **localnet**
+# (default) and **testnet**.
+#
+#   Localnet:  bash deploy-tee-cluster.sh                  # MODE=localnet
+#   Testnet:   MODE=testnet NEAR_NETWORK_CONFIG=testnet \
+#                bash deploy-tee-cluster.sh
+#
+# (See `set-localnet-env.sh` for one example env preset.)
+#
+# This script supersedes the older `deployment/testnet/scripts/scale-testnet-tee.sh`,
+# which was deleted in #2952. The two were ~95% duplicated; this is the more
+# polished one (NEAR_BOOT_NODES_OVERRIDE, FUNDER_PRIVATE_KEY, JSON-aware resume
+# checks, error-tolerant fetch_bootnodes).
+#
 set -euo pipefail
 export NEAR_CLI_DISABLE_SPINNER=1
+
+# NEAR network selection — controls the chain that NEAR CLI talks to.
+# Default mpc-localnet; override for testnet/devnet/etc.
+NEAR_NETWORK_CONFIG="${NEAR_NETWORK_CONFIG:-mpc-localnet}"
+# Used by curl-based RPC helpers (balance/bootnodes).
+# Default is derived from NEAR_NETWORK_CONFIG; override for custom setups.
+if [ -z "${NEAR_RPC_URL:-}" ]; then
+  if [ "$NEAR_NETWORK_CONFIG" = "mpc-localnet" ]; then
+    NEAR_RPC_URL="http://127.0.0.1:3030"
+  else
+    NEAR_RPC_URL="https://rpc.${NEAR_NETWORK_CONFIG}.near.org"
+  fi
+fi
+# MPC environment label used by templates / node config
+MPC_ENV="${MPC_ENV:-$NEAR_NETWORK_CONFIG}"
+
+
+
 
 ### =========================
 ### Fully-automated, resumable MPC testnet TEE deploy (with subaccounts)
 ### - Avoids faucet 429 by allowing a funded FUNDER_ACCOUNT to create/top-up ROOT
 ### - Subaccounts are ALWAYS created by ROOT (required by NEAR permission model)
 ### - Contract created as mpc.<root>, nodes as node{i}.<root>
-### - Default funding supports contract (~16 NEAR) + up to 10 nodes (0.3 NEAR ea) + buffer
+### - Default funding supports contract (~16 NEAR) + N nodes (1 NEAR ea) + buffer
+###   (set MAX_NODES_TO_FUND > N to pre-fund extra accounts for later scale-up)
 ### - Resume logic + per-phase ENTER prompts
-### - NEW: scale/extend network with vote_new_parameters (add nodes)
+### - Supports scaling/extending the network via vote_new_parameters (add nodes)
+###
+### NOTE on RESUME:
+### - RESUME=1 is intended for reruns: it reuses existing artifacts and "auto" phase selection.
+### - RESUME=0 primarily affects auto phase selection; artifacts may still exist on disk and
+###   some steps may still skip based on those artifacts unless FORCE_* is set.
 ### =========================
 
 ### Required inputs
 : "${MPC_NETWORK_BASE_NAME:?Must set MPC_NETWORK_BASE_NAME (e.g. export MPC_NETWORK_BASE_NAME=barak-test)}"
-: "${N:?Must set N (e.g. export N=10)}"
+# Practical max N per server on the alice/bob hardware is ~5 — each CVM
+# takes 8 vCPUs, 64 GB memory, and 500 GB disk (see VCPU/MEMORY/DISK in
+# deployment/cvm-deployment/deploy-launcher.sh). Beyond that you'll
+# exhaust host resources. Multi-host deployment is not orchestrated by
+# this script (would need NODE_IP_OVERRIDES + per-host runs).
+: "${N:?Must set N (e.g. export N=2; practical max ~5 per server)}"
 : "${BASE_PATH:?Must set BASE_PATH to dstack base path (contains vmm/src/vmm-cli.py)}"
-: "${MPC_IMAGE_TAGS:?Must set MPC_IMAGE_TAGS (e.g. export MPC_IMAGE_TAGS=3.3.0)}"
+# MACHINE_IP is only used by ADJACENT scripts (`single-node.sh`,
+# `set-localnet-env.sh`, etc) — this script doesn't read it. Kept optional
+# here so a shared `set-localnet-env.sh` source still works.
+MACHINE_IP="${MACHINE_IP:-}"
+
+: "${MPC_MANIFEST_DIGEST:?Must set MPC_MANIFEST_DIGEST (e.g. export MPC_MANIFEST_DIGEST=sha256:abc...)}"
 
 # If set, use this funded testnet account instead of faucet to create/top-up the ROOT account.
 # Example: export FUNDER_ACCOUNT=barak_tee_test1.testnet
 FUNDER_ACCOUNT="${FUNDER_ACCOUNT:-}"
+# Optional: private key for FUNDER_ACCOUNT (useful for localnet where funder may not be in keychain)
+FUNDER_PRIVATE_KEY="${FUNDER_PRIVATE_KEY:-}"
 
 # How much balance to ensure on ROOT (used for creating contract+nodes subaccounts)
-# Default supports ~16 NEAR contract + 10 * 0.3 NEAR nodes + ~1 NEAR buffer => 20 NEAR
+# How much FUNDER sends to ROOT on initial creation. The script will top
+# up further if needed (target = 16 contract + MAX_NODES_TO_FUND * 1 NEAR
+# + buffer). Default sized for a small (N≤3) deploy with default
+# MAX_NODES_TO_FUND=N. Override for larger N or when pre-funding extra
+# scale-up headroom (e.g. `ROOT_INITIAL_BALANCE="40 NEAR"`).
 ROOT_INITIAL_BALANCE="${ROOT_INITIAL_BALANCE:-20 NEAR}"
 
 ### Optional controls
@@ -31,10 +85,14 @@ ACCOUNT_MODE="${ACCOUNT_MODE:-subaccounts}"   # subaccounts|faucet (faucet is fa
 
 # Initial balances (for subaccounts mode)
 CONTRACT_INITIAL_BALANCE="${CONTRACT_INITIAL_BALANCE:-16 NEAR}"
-NODE_INITIAL_BALANCE="${NODE_INITIAL_BALANCE:-0.3 NEAR}"
+NODE_INITIAL_BALANCE="${NODE_INITIAL_BALANCE:-1 NEAR}"
 
-# How many nodes to fund for, even if N is smaller (so you can scale later without re-funding root)
-MAX_NODES_TO_FUND="${MAX_NODES_TO_FUND:-10}"
+# How many node subaccounts to fund (and pre-create on chain) — drives BOTH
+# the ROOT topup target AND the count of node accounts created in
+# near_phase_nodes_and_contract. Defaults to N (no waste, no headroom for
+# future scale-up). Set higher if you plan to scale via ADD_NODES later
+# without re-running the accounts phase.
+MAX_NODES_TO_FUND="${MAX_NODES_TO_FUND:-$N}"
 
 # Faucet retry/backoff (for root creation if FUNDER_ACCOUNT is not set)
 FAUCET_MAX_RETRIES="${FAUCET_MAX_RETRIES:-8}"
@@ -54,7 +112,7 @@ STOP_AFTER_PHASE="${STOP_AFTER_PHASE:-}"
 NO_PAUSE="${NO_PAUSE:-0}"
 
 # --- Scale / add nodes controls ---
-# Set ADD_NODES>0 (or set NEW_TOTAL_N) and run phase near_vote_new_params
+# Set ADD_NODES>0 (or set NEW_TOTAL_N) and run phase near_vote_new_parameters (add nodes)
 ADD_NODES="${ADD_NODES:-0}"                 # how many NEW nodes to add
 NEW_TOTAL_N="${NEW_TOTAL_N:-}"              # optional: absolute total count after scaling
 NEW_THRESHOLD_OVERRIDE="${NEW_THRESHOLD_OVERRIDE:-}"  # optional: override threshold for new proposal
@@ -69,12 +127,26 @@ else
 fi
 
 ### Constants / defaults
-IP_PREFIX="51.68.219."
-IP_START_OCTET=1
+# Host profile: alice | bob
+HOST_PROFILE="${HOST_PROFILE:-bob}"
+
+case "$HOST_PROFILE" in
+  alice)
+    IP_PREFIX="51.68.219."
+    IP_START_OCTET=1
+    ;;
+  bob)
+    IP_PREFIX="5.196.36."
+    IP_START_OCTET=113
+    ;;
+  *)
+    err "Unknown HOST_PROFILE: $HOST_PROFILE (supported: alice | bob)"
+    exit 1
+    ;;
+esac
 
 # Optional per-node IP override (format: "5=5.196.36.113 6=5.196.36.114 ...")
 NODE_IP_OVERRIDES="${NODE_IP_OVERRIDES:-}"
-
 
 SSH_BASE=1220
 AGENT_BASE=18090
@@ -84,6 +156,8 @@ LOCAL_DEBUG_BASE=3031
 STATE_SYNC_PORT=24567
 MAIN_PORT=80
 FUTURE_PORT=13001
+FUTURE_BASE_PORT="${FUTURE_BASE_PORT:-13001}"   # host-side per-node future/N2N port base
+future_port_for_i() { echo $((FUTURE_BASE_PORT + $1)); }
 
 INTERNAL_PUBLIC_DEBUG_PORT=8080
 INTERNAL_LOCAL_DEBUG_PORT=3030
@@ -97,27 +171,61 @@ VMM_RPC="${VMM_RPC:-http://127.0.0.1:10000}"
 
 # Repo-relative paths (assumes you're running from repo root)
 REPO_ROOT="$(pwd)"
-TEE_LAUNCHER_DIR="$REPO_ROOT/tee_launcher"
+TEE_LAUNCHER_DIR="$REPO_ROOT/deployment/cvm-deployment"
 COMPOSE_YAML="$TEE_LAUNCHER_DIR/launcher_docker_compose.yaml"
 ADD_DOMAIN_JSON="$REPO_ROOT/docs/localnet/args/add_domain.json"
 
-# templates live here (per your layout)
-ENV_TPL="$REPO_ROOT/deployment/testnet/scripts/node.env.tpl"
-CONF_TPL="$REPO_ROOT/deployment/testnet/scripts/node.conf.tpl"
+MODE="${MODE:-testnet}"  # testnet|localnet
+
+# templates live here (UPDATED for move to localnet/tee/scripts)
+ENV_TPL="$REPO_ROOT/localnet/tee/scripts/node.env.tpl"
+if [ "$MODE" = "localnet" ]; then
+  CONF_TPL="$REPO_ROOT/localnet/tee/scripts/rust-launcher/node.conf.localnet.toml.tpl"
+else
+  CONF_TPL="$REPO_ROOT/localnet/tee/scripts/rust-launcher/node.conf.testnet.toml.tpl"
+fi
+
+# Convert comma-separated "host:container" port string to TOML inline table array entries.
+# E.g. "8080:8080,24566:24566" -> "    { host = 8080, container = 8080 },\n..."
+ports_to_toml() {
+  local ports="$1" result=""
+  IFS=',' read -ra pairs <<< "$ports"
+  for pair in "${pairs[@]}"; do
+    local host_port="${pair%%:*}"
+    local container_port="${pair##*:}"
+    result+="    { host =$host_port, container =$container_port },
+"
+  done
+  echo -n "$result"
+}
 
 WORKDIR="/tmp/$USER/mpc_testnet_scale/$MPC_NETWORK_NAME"
 mkdir -p "$WORKDIR"
 
-# Derived accounts
-ROOT_ACCOUNT="${MPC_NETWORK_NAME}.testnet"
+# Derived accounts.
+#
+# NEAR's permission model: account `X.parent` can ONLY be created by `parent`.
+# So if FUNDER_ACCOUNT is set, ROOT MUST be a subaccount of FUNDER for
+# `near account create-account fund-myself sign-as $FUNDER` to succeed.
+# Auto-derive ACCOUNT_SUFFIX from FUNDER_ACCOUNT in that case; fall back to
+# ".testnet" when no funder is set (faucet path creates a top-level *.testnet).
+if [ -n "${ACCOUNT_SUFFIX:-}" ]; then
+  : # operator override — respect it as-is
+elif [ -n "$FUNDER_ACCOUNT" ]; then
+  ACCOUNT_SUFFIX=".${FUNDER_ACCOUNT}"
+else
+  ACCOUNT_SUFFIX=".testnet"   # localnet example: ".test.near"
+fi
+ROOT_ACCOUNT="${MPC_NETWORK_NAME}${ACCOUNT_SUFFIX}"
 
 # Subaccount naming (REQUIRED for subaccounts mode)
-MPC_CONTRACT_ACCOUNT="mpc.${ROOT_ACCOUNT}"
+MPC_CONTRACT_ACCOUNT="${MPC_CONTRACT_ACCOUNT:-mpc.${ROOT_ACCOUNT}}"
 node_account_for_i() { echo "node$1.${ROOT_ACCOUNT}"; }
+
+# (Resolved-naming echo lives further down, after ip_for_i() is defined.)
 
 NODE_RANGE_START="${NODE_RANGE_START:-0}"
 NODE_RANGE_END="${NODE_RANGE_END:-$((N-1))}"
-
 
 # Artifact paths
 KEYS_JSON="$WORKDIR/keys.json"
@@ -181,9 +289,26 @@ ip_for_i() {
 
 ssh_port_for_i() { echo $((SSH_BASE + $1)); }
 agent_port_for_i() { echo $((AGENT_BASE + $1)); }
-public_port_for_i() { echo $((PUBLIC_DATA_BASE + $1)); }
+public_port_for_i() { echo 18082; }  # fixed public_data port
 local_dbg_port_for_i() { echo $((LOCAL_DEBUG_BASE + $1)); }
 
+# Echo the resolved naming + per-node IPs up-front. Helpful before any
+# pause_phase fires (which can be skipped with NO_PAUSE=1) and so a
+# misconfigured FUNDER_ACCOUNT / ACCOUNT_SUFFIX / NODE_IP_OVERRIDES is
+# caught immediately, not 10 minutes in.
+echo -e "\033[1;34m[INFO]\033[0m Resolved naming and IPs:"
+echo "    ACCOUNT_SUFFIX      = $ACCOUNT_SUFFIX"
+echo "    ROOT_ACCOUNT        = $ROOT_ACCOUNT"
+echo "    MPC_CONTRACT_ACCOUNT= $MPC_CONTRACT_ACCOUNT"
+echo "    FUNDER_ACCOUNT      = ${FUNDER_ACCOUNT:-<unset, will use faucet>}"
+for _i in $(seq 0 $((N-1))); do
+  printf '    node%-3s            = %-58s @ %s\n' "$_i" "$(node_account_for_i "$_i")" "$(ip_for_i "$_i")"
+done
+unset _i
+
+# NOTE: this preflight check assumes the node IPs are configured as /32 addresses on the host
+# (common for IP aliasing setups). If your environment uses a different prefix length, adjust
+# the grep pattern accordingly.
 host_has_ip() { local ip="$1"; ip addr show | grep -qE "inet ${ip}/32"; }
 
 port_free() {
@@ -197,6 +322,18 @@ port_free() {
 }
 
 file_nonempty() { local p="$1"; [ -f "$p" ] && [ -s "$p" ]; }
+
+# keys.json is a JSON array; treat [] as "empty" even though the file is non-empty.
+json_array_has_entries() {
+  local p="$1"
+  [ -f "$p" ] || return 1
+  set +e
+  local n
+  n="$(jq 'length' "$p" 2>/dev/null)"
+  local rc=$?
+  set -e
+  [ $rc -eq 0 ] && [[ "$n" =~ ^[0-9]+$ ]] && [ "$n" -gt 0 ]
+}
 
 maybe_stop_after_phase() {
   local phase="$1"
@@ -256,7 +393,7 @@ compute_auto_start_phase() {
     echo "near_keys"
     return 0
   fi
-  if file_nonempty "$KEYS_JSON"; then
+  if json_array_has_entries "$KEYS_JSON"; then
     echo "init_args"
     return 0
   fi
@@ -267,13 +404,32 @@ compute_auto_start_phase() {
 ### BOOTNODES (DEDUP BY ADDR)
 ### =========================
 fetch_bootnodes() {
-  curl -s -X POST https://rpc.testnet.near.org \
+  # Bootnodes
+  # - Override via NEAR_BOOT_NODES_OVERRIDE (recommended for fully offline setups)
+  # - Otherwise, query the configured RPC (NEAR_RPC_URL) for network_info
+  if [ -n "${NEAR_BOOT_NODES_OVERRIDE:-}" ]; then
+    echo "$NEAR_BOOT_NODES_OVERRIDE"
+    return 0
+  fi
+
+  # Best-effort: if RPC doesn't support network_info or returns empty, return empty string
+  set +e
+  local out
+  out="$(curl -s -X POST "$NEAR_RPC_URL" \
     -H "Content-Type: application/json" \
-    -d '{"jsonrpc": "2.0", "method": "network_info", "params": [], "id": "dontcare"}' \
-  | jq -r '.result.active_peers[] | "\(.id)@\(.addr)"' \
+    -d '{"jsonrpc": "2.0", "method": "network_info", "params": [], "id": "dontcare"}' 2>/dev/null)"
+  local rc=$?
+  set -e
+  if [ $rc -ne 0 ] || [ -z "$out" ]; then
+    echo ""
+    return 0
+  fi
+  echo "$out" \
+  | jq -r '.result.active_peers[]? | "\(.id)@\(.addr)"' 2>/dev/null \
   | awk -F'@' '!seen[$2]++ {print $0}' \
   | paste -sd',' -
 }
+
 
 ### =========================
 ### NEAR helpers (balance, create, topup)
@@ -299,7 +455,7 @@ near_add_key_skip_if_exists() {
              --contract-account-id "$MPC_CONTRACT_ACCOUNT"
              --function-names "$node_methods"
              use-manually-provided-public-key "$pk"
-             network-config testnet sign-with-keychain send)
+             network-config "$NEAR_NETWORK_CONFIG" sign-with-keychain send)
 
   set +e
   local out
@@ -376,7 +532,7 @@ near_tx_retry() {
 near_account_exists() {
   local acct="$1"
   set +e
-  near account view-account-summary "$acct" network-config testnet now >/dev/null 2>&1
+  near account view-account-summary "$acct" network-config "$NEAR_NETWORK_CONFIG" now >/dev/null 2>&1
   local rc=$?
   set -e
   [ $rc -eq 0 ]
@@ -386,7 +542,7 @@ near_account_exists() {
 near_get_balance() {
   local acct="$1"
   local resp
-  resp="$(curl -s https://rpc.testnet.near.org -H 'content-type: application/json' \
+  resp="$(curl -s $NEAR_RPC_URL -H 'content-type: application/json' \
     -d "{\"jsonrpc\":\"2.0\",\"id\":\"x\",\"method\":\"query\",\"params\":{\"request_type\":\"view_account\",\"finality\":\"final\",\"account_id\":\"$acct\"}}")"
   if echo "$resp" | jq -e '.error' >/dev/null 2>&1; then
     echo "0"
@@ -466,9 +622,15 @@ PY
       exit 1
     fi
     log "Topping up ROOT from $FUNDER_ACCOUNT by ~${need} NEAR"
+    if [ -n "$FUNDER_PRIVATE_KEY" ]; then
     near_tx_retry "top-up ROOT from $FUNDER_ACCOUNT to $ROOT_ACCOUNT (${need} NEAR)" \
        near tokens "$FUNDER_ACCOUNT" send-near "$ROOT_ACCOUNT" "${need} NEAR" \
-        network-config testnet sign-with-keychain send
+        network-config "$NEAR_NETWORK_CONFIG" sign-with-plaintext-private-key "$FUNDER_PRIVATE_KEY" send
+else
+    near_tx_retry "top-up ROOT from $FUNDER_ACCOUNT to $ROOT_ACCOUNT (${need} NEAR)" \
+       near tokens "$FUNDER_ACCOUNT" send-near "$ROOT_ACCOUNT" "${need} NEAR" \
+        network-config "$NEAR_NETWORK_CONFIG" sign-with-keychain send
+fi
     near_sleep "root top-up"
   else
     log "No root top-up needed."
@@ -488,7 +650,7 @@ faucet_create_with_retry() {
     set +e
     local out
     out="$(near account create-account sponsor-by-faucet-service "$acct" \
-      autogenerate-new-keypair save-to-legacy-keychain network-config testnet create 2>&1)"
+      autogenerate-new-keypair save-to-legacy-keychain network-config "$NEAR_NETWORK_CONFIG" create 2>&1)"
     local rc=$?
     set -e
     if [ $rc -eq 0 ]; then
@@ -520,10 +682,18 @@ create_account_fund_myself_if_missing() {
     return 0
   fi
 
+  if [ -n "$FUNDER_PRIVATE_KEY" ] && [ "$payer" = "$FUNDER_ACCOUNT" ]; then
   near_tx_retry "create account $new_acct (balance=$initial_balance, payer=$payer)" \
      near account create-account fund-myself "$new_acct" "$initial_balance" \
       autogenerate-new-keypair save-to-legacy-keychain \
-      sign-as "$payer" network-config testnet sign-with-keychain send
+      sign-as "$payer" network-config "$NEAR_NETWORK_CONFIG" \
+      sign-with-plaintext-private-key "$FUNDER_PRIVATE_KEY" send
+else
+  near_tx_retry "create account $new_acct (balance=$initial_balance, payer=$payer)" \
+     near account create-account fund-myself "$new_acct" "$initial_balance" \
+      autogenerate-new-keypair save-to-legacy-keychain \
+      sign-as "$payer" network-config "$NEAR_NETWORK_CONFIG" sign-with-keychain send
+fi
 
   near_sleep "created account $new_acct"
 }
@@ -543,14 +713,14 @@ preflight() {
   need_cmd awk
   need_cmd python3
 
-  [ -d "$TEE_LAUNCHER_DIR" ] || { err "Missing tee_launcher dir at $TEE_LAUNCHER_DIR"; exit 1; }
+  [ -d "$TEE_LAUNCHER_DIR" ] || { err "Missing launcher dir at $TEE_LAUNCHER_DIR"; exit 1; }
   [ -f "$COMPOSE_YAML" ] || { err "Missing $COMPOSE_YAML"; exit 1; }
   [ -f "$ADD_DOMAIN_JSON" ] || { err "Missing $ADD_DOMAIN_JSON"; exit 1; }
   [ -f "$ENV_TPL" ] || { err "Missing template $ENV_TPL"; exit 1; }
   [ -f "$CONF_TPL" ] || { err "Missing template $CONF_TPL"; exit 1; }
 
   log "Using IP range: ${IP_PREFIX}${IP_START_OCTET} .. ${IP_PREFIX}$((IP_START_OCTET + N - 1))"
-  log "Ports per node: main=$MAIN_PORT future=$FUTURE_PORT state_sync=$STATE_SYNC_PORT public_data_base=$PUBLIC_DATA_BASE"
+  log "Ports per node: main=$MAIN_PORT future_base=$FUTURE_BASE_PORT (per-node) state_sync=$STATE_SYNC_PORT public_data_base=$PUBLIC_DATA_BASE"
   log "Localhost per node: ssh_base=$SSH_BASE agent_base=$AGENT_BASE local_debug_base=$LOCAL_DEBUG_BASE"
 
   local any_fail=0
@@ -571,8 +741,9 @@ preflight() {
     p_ssh="$(ssh_port_for_i "$i")"
     p_agent="$(agent_port_for_i "$i")"
     p_ld="$(local_dbg_port_for_i "$i")"
+    p_future="$(future_port_for_i "$i")"
 
-    for port in "$MAIN_PORT" "$FUTURE_PORT" "$STATE_SYNC_PORT" "$p_pub"; do
+    for port in "$MAIN_PORT" "$STATE_SYNC_PORT" "$p_pub" "$p_future"; do
       if port_free "$ip" "$port"; then
         echo "  ✅ free $ip:$port"
       else
@@ -581,7 +752,7 @@ preflight() {
       fi
     done
 
-    for port in "$p_agent" "$p_ssh" "$p_ld"; do
+    for port in "$p_agent" "$p_ssh"  "$p_ld"; do
       if port_free "127.0.0.1" "$port"; then
         echo "  ✅ free 127.0.0.1:$port"
       else
@@ -610,7 +781,7 @@ render_node_files_range() {
   log "Rendering node env/conf files into $WORKDIR (nodes $start_i..$end_i)"
   log "Threshold (for env): $threshold / $N"
   log "OS_IMAGE=$OS_IMAGE  SEALING_KEY_TYPE=$SEALING_KEY_TYPE  VMM_RPC=$VMM_RPC"
-  log "MPC_IMAGE_TAGS=$MPC_IMAGE_TAGS"
+  log "MPC_MANIFEST_DIGEST=$MPC_MANIFEST_DIGEST"
   log "Contract account: $MPC_CONTRACT_ACCOUNT"
   log "Node naming: node{i}.${ROOT_ACCOUNT}"
 
@@ -628,7 +799,7 @@ render_node_files_range() {
 
     local env_out conf_out
     env_out="$WORKDIR/node${i}.env"
-    conf_out="$WORKDIR/node${i}.conf"
+    conf_out="$WORKDIR/node${i}.toml"
 
     export APP_NAME="$app_name"
     export VMM_RPC
@@ -644,21 +815,35 @@ render_node_files_range() {
     export EXTERNAL_MPC_LOCAL_DEBUG_PORT="127.0.0.1:${local_dbg_port}"
     export EXTERNAL_MPC_DECENTRALIZED_STATE_SYNC="${ip}:${STATE_SYNC_PORT}"
     export EXTERNAL_MPC_MAIN_PORT="${ip}:${MAIN_PORT}"
-    export EXTERNAL_MPC_FUTURE_PORT="${ip}:${FUTURE_PORT}"
+        local future_port
+    future_port="$(future_port_for_i "$i")"
+
+    export EXTERNAL_MPC_FUTURE_PORT="${ip}:${future_port}"
 
     export INTERNAL_MPC_PUBLIC_DEBUG_PORT="$INTERNAL_PUBLIC_DEBUG_PORT"
     export INTERNAL_MPC_LOCAL_DEBUG_PORT="$INTERNAL_LOCAL_DEBUG_PORT"
     export INTERNAL_MPC_DECENTRALIZED_STATE_SYNC="$INTERNAL_STATE_SYNC_PORT"
     export INTERNAL_MPC_MAIN_PORT="$INTERNAL_MAIN_PORT"
-    export INTERNAL_MPC_FUTURE_PORT="$INTERNAL_FUTURE_PORT"
+    export INTERNAL_MPC_FUTURE_PORT="${future_port}"
 
-    export MPC_IMAGE_NAME="nearone/mpc-node"
-    export MPC_IMAGE_TAGS="$MPC_IMAGE_TAGS"
-    export MPC_REGISTRY="registry.hub.docker.com"
+    export MPC_ENV
+
+    export MPC_IMAGE="nearone/mpc-node"
     export MPC_ACCOUNT_ID="$account"
     export MPC_SECRET_STORE_KEY="$(printf '%032x' "$i")"
     export MPC_CONTRACT_ID="$MPC_CONTRACT_ACCOUNT"
-    export NEAR_BOOT_NODES="$bootnodes"
+    if [ "$MODE" = "localnet" ]; then
+      # 24566 forwards the CVM's outbound to the host's localnet neard via the
+      # QEMU slirp gateway (10.0.2.2). On testnet we don't run a host neard;
+      # the CVM's indexer talks to real testnet peers on 24567 directly.
+      export PORTS="8080:8080,24566:24566,${future_port}:${future_port}"
+      export NEAR_BOOT_NODES="ed25519:BGa4WiBj43Mr66f9Ehf6swKtR6wZmWuwCsV3s4PSR3nx@10.0.2.2:24566"
+    else
+      export PORTS="8080:8080,${STATE_SYNC_PORT}:${STATE_SYNC_PORT},${future_port}:${future_port}"
+      export NEAR_BOOT_NODES="$bootnodes"
+    fi
+    export PORTS_TOML
+    PORTS_TOML="$(ports_to_toml "$PORTS")"
 
     envsubst <"$ENV_TPL" >"$env_out"
     envsubst <"$CONF_TPL" >"$conf_out"
@@ -698,8 +883,14 @@ near_phase_accounts() {
     fi
   fi
 
-  # Ensure ROOT has enough to create contract + max nodes.
-  if [ -n "$FUNDER_ACCOUNT" ]; then
+  # Ensure ROOT has enough to create contract + max nodes — but only if the
+  # contract subaccount doesn't already exist. If it does, ROOT's job is done
+  # (the subaccount creations have already drained it as intended), and a
+  # topup here would just waste FUNDER NEAR. Common when re-running the
+  # script after an earlier successful near_nodes phase.
+  if near_account_exists "$MPC_CONTRACT_ACCOUNT"; then
+    log "Contract subaccount already exists ($MPC_CONTRACT_ACCOUNT) — skipping ROOT topup"
+  elif [ -n "$FUNDER_ACCOUNT" ]; then
     pause_phase "NEAR: top-up ROOT if needed (from FUNDER_ACCOUNT)"
     topup_root_if_needed
   else
@@ -716,6 +907,7 @@ near_phase_accounts() {
 }
 
 near_phase_nodes_and_contract() {
+  # This phase creates contract + node subaccounts (historical naming).
   if [ "$ACCOUNT_MODE" = "faucet" ]; then
     pause_phase "NEAR: faucet node accounts (legacy; may hit 429)"
     for i in $(seq 0 $((N-1))); do
@@ -749,7 +941,7 @@ deploy_nodes_range() {
   local start_i="$1"
   local end_i="$2"
 
-  log "Deploying CVMs via tee_launcher/deploy-launcher.sh (nodes $start_i..$end_i)"
+  log "Deploying CVMs via deployment/cvm-deployment/deploy-launcher.sh (nodes $start_i..$end_i)"
   cd "$TEE_LAUNCHER_DIR"
   [ -x "./deploy-launcher.sh" ] || { err "$TEE_LAUNCHER_DIR/deploy-launcher.sh not executable"; exit 1; }
 
@@ -762,8 +954,11 @@ deploy_nodes_range() {
 }
 
 deploy_nodes() {
-  if file_nonempty "$KEYS_JSON" && [ "$FORCE_REDEPLOY" != "1" ]; then
-    warn "keys.json already exists ($KEYS_JSON) -> assuming nodes already deployed. Skipping deploy (set FORCE_REDEPLOY=1 to redeploy)."
+  # NOTE: deploy_nodes() was used for a single-server deployment flow.
+  # For multi-server deployments, deploy_nodes_range() can be used, with some manual operations
+  # (e.g., coordinating per-host IP ownership / env distribution).
+  if json_array_has_entries "$KEYS_JSON" && [ "$FORCE_REDEPLOY" != "1" ]; then
+    warn "keys.json already populated ($KEYS_JSON) -> assuming nodes already deployed. Skipping deploy (set FORCE_REDEPLOY=1 to redeploy)."
     return 0
   fi
   deploy_nodes_range 0 $((N-1))
@@ -833,7 +1028,7 @@ collect_keys_range() {
 }
 
 collect_keys() {
-  if file_nonempty "$KEYS_JSON" && [ "${FORCE_RECOLLECT:-0}" != "1" ]; then
+  if json_array_has_entries "$KEYS_JSON" && [ "${FORCE_RECOLLECT:-0}" != "1" ]; then
     warn "keys.json already exists ($KEYS_JSON) -> skipping collection (set FORCE_RECOLLECT=1 to recollect)."
     return 0
   fi
@@ -850,15 +1045,38 @@ generate_init_args() {
   [ -f "$KEYS_JSON" ] || { err "Missing keys.json at $KEYS_JSON. Run collect phase first."; exit 1; }
 
   local threshold="$1"
-  python3 - <<PY
+python3 - <<PY
+
 import json
-keys=json.load(open("${KEYS_JSON}"))
-threshold=int("${threshold}")
-parts=[]
+
+keys = json.load(open("${KEYS_JSON}"))
+threshold = int("${threshold}")
+
+parts = []
 for k in keys:
-  parts.append([k["account"], k["i"], {"tls_public_key": k["tls_pk"], "url": f'https://{k["ip"]}:13001'}])
-init={"parameters":{"threshold":threshold,"participants":{"next_id":len(keys),"participants":parts}}}
-open("${INIT_ARGS_JSON}","w").write(json.dumps(init,indent=2))
+    url_port = 13001 + int(k["i"])
+    parts.append([
+        k["account"],
+        k["i"],
+        {
+            "tls_public_key": k["tls_pk"],
+            "url": f"https://{k['ip']}:{url_port}",
+        },
+    ])
+
+init = {
+    "parameters": {
+        "threshold": threshold,
+        "participants": {
+            "next_id": len(parts),
+            "participants": parts,
+        },
+    }
+}
+
+with open("${INIT_ARGS_JSON}", "w") as f:
+    json.dump(init, f, indent=2)
+
 print("Wrote", "${INIT_ARGS_JSON}")
 PY
 
@@ -885,19 +1103,20 @@ PY
 ### =========================
 build_contract() {
   log "Building MPC contract"
-  cargo near build non-reproducible-wasm --features abi --manifest-path crates/contract/Cargo.toml --locked
+  cargo near build non-reproducible-wasm --features abi --profile=release-contract --manifest-path crates/contract/Cargo.toml --locked
   export MPC_CONTRACT_PATH="$(pwd)/target/near/mpc_contract/mpc_contract.wasm"
   [ -f "$MPC_CONTRACT_PATH" ] || { err "Contract wasm not found at $MPC_CONTRACT_PATH"; exit 1; }
   log "MPC_CONTRACT_PATH=$MPC_CONTRACT_PATH"
+  log "Contract size: $(stat -c '%s' "$MPC_CONTRACT_PATH") bytes"
+  log "Contract sha256: $(sha256sum "$MPC_CONTRACT_PATH" | awk '{print $1}')"
 }
 
 deploy_contract() {
   log "Deploying MPC contract to $MPC_CONTRACT_ACCOUNT"
   # FIX #5: retry wrapper + sleep
   near_tx_retry "deploy contract to $MPC_CONTRACT_ACCOUNT" \
-
      near contract deploy "$MPC_CONTRACT_ACCOUNT" use-file "$MPC_CONTRACT_PATH" \
-      without-init-call network-config testnet sign-with-keychain send
+      without-init-call network-config "$NEAR_NETWORK_CONFIG" sign-with-keychain send
   near_sleep "deploy contract"
 }
 
@@ -933,16 +1152,16 @@ init_contract() {
      near contract call-function as-transaction "$MPC_CONTRACT_ACCOUNT" init \
       file-args "$INIT_ARGS_JSON" prepaid-gas '300.0 Tgas' \
       attached-deposit '0 NEAR' sign-as "$MPC_CONTRACT_ACCOUNT" \
-      network-config testnet sign-with-keychain send
+      network-config "$NEAR_NETWORK_CONFIG" sign-with-keychain send
 
   near_sleep "init contract"
 }
 
 extract_code_hash() {
-  local digest
-  digest="$(grep -E "DEFAULT_IMAGE_DIGEST=sha256:" "$COMPOSE_YAML" | head -n1 | sed -E 's/.*sha256:([0-9a-f]{64}).*/\1/')"
+  # Use MPC_MANIFEST_DIGEST directly (strip sha256: prefix)
+  local digest="${MPC_MANIFEST_DIGEST#sha256:}"
   if [[ ! "$digest" =~ ^[0-9a-f]{64}$ ]]; then
-    err "Could not extract DEFAULT_IMAGE_DIGEST from $COMPOSE_YAML"
+    err "MPC_MANIFEST_DIGEST is not a valid sha256 digest: $MPC_MANIFEST_DIGEST"
     exit 1
   fi
   echo "$digest"
@@ -970,7 +1189,7 @@ vote_code_hash_threshold() {
        near contract call-function as-transaction "$MPC_CONTRACT_ACCOUNT" vote_code_hash \
         json-args "{\"code_hash\": \"$code_hash\"}" prepaid-gas '100.0 Tgas' \
         attached-deposit '0 NEAR' sign-as "$acct" \
-        network-config testnet sign-with-keychain send
+        network-config "$NEAR_NETWORK_CONFIG" sign-with-keychain send
     near_sleep "vote_code_hash by $acct"
   done
 }
@@ -987,7 +1206,7 @@ vote_add_launcher_hash_threshold() {
        near contract call-function as-transaction "$MPC_CONTRACT_ACCOUNT" vote_add_launcher_hash \
         json-args "{\"launcher_hash\": \"$launcher_hash\"}" prepaid-gas '100.0 Tgas' \
         attached-deposit '0 NEAR' sign-as "$acct" \
-        network-config testnet sign-with-keychain send
+        network-config "$NEAR_NETWORK_CONFIG" sign-with-keychain send
     near_sleep "vote_add_launcher_hash by $acct"
   done
 }
@@ -1028,15 +1247,16 @@ vote_add_os_measurement_threshold() {
        near contract call-function as-transaction "$MPC_CONTRACT_ACCOUNT" vote_add_os_measurement \
         json-args "{\"measurement\": $measurement_json}" prepaid-gas '100.0 Tgas' \
         attached-deposit '0 NEAR' sign-as "$acct" \
-        network-config testnet sign-with-keychain send
+        network-config "$NEAR_NETWORK_CONFIG" sign-with-keychain send
     near_sleep "vote_add_os_measurement by $acct"
   done
 }
 
-vote_add_domain_threshold() {
-  local threshold="$1"
-  log "Voting add domain with threshold=$threshold (file=$ADD_DOMAIN_JSON)"
-  for i in $(seq 0 $((threshold-1))); do
+
+vote_add_domains() {
+
+  log "Voting add domain from ALL nodes (N=$N) (file=$ADD_DOMAIN_JSON)"
+  for i in $(seq 0 $((N-1))); do
     local acct
     acct="$(node_account_for_i "$i")"
     log "vote_add_domains as $acct"
@@ -1044,10 +1264,11 @@ vote_add_domain_threshold() {
        near contract call-function as-transaction "$MPC_CONTRACT_ACCOUNT" vote_add_domains \
         file-args "$ADD_DOMAIN_JSON" prepaid-gas '300.0 Tgas' \
         attached-deposit '0 NEAR' sign-as "$acct" \
-        network-config testnet sign-with-keychain send
+        network-config "$NEAR_NETWORK_CONFIG" sign-with-keychain send
     near_sleep "vote_add_domains by $acct"
   done
 }
+
 
 ### =========================
 ### SCALE: vote_new_parameters (add nodes)
@@ -1057,7 +1278,7 @@ get_contract_state_json() {
   local out
   out="$(near contract call-function as-read-only \
     "$MPC_CONTRACT_ACCOUNT" state json-args '{}' \
-    network-config testnet now 2>/dev/null)"
+    network-config "$NEAR_NETWORK_CONFIG" now 2>/dev/null)"
 
   # Extract first valid JSON value from near-cli output
   python3 -c '
@@ -1077,8 +1298,6 @@ for end in range(start + 1, len(s) + 1):
 raise SystemExit("Found JSON start but could not parse a complete JSON value")
 ' <<<"$out"
 }
-
-
 
 extract_running_fields() {
   # Reads state JSON from stdin and prints:
@@ -1109,7 +1328,6 @@ print(threshold)
 '
 }
 
-
 compute_threshold_default() {
   local total="$1"
   ceil_2n_3 "$total"
@@ -1132,7 +1350,6 @@ make_vote_new_parameters_json() {
   local cur_parts_file
   cur_parts_file="$(mktemp)"
   echo "$state_json" | jq -c '.Running.parameters.participants.participants' > "$cur_parts_file"
-
 
   local num_new old_count total
   num_new="$(jq 'length' "$keys_new_json")"
@@ -1165,7 +1382,8 @@ for k in new_keys:
     acct=k["account"]
     ip=k["ip"]
     tls_pk=k["tls_pk"]  # P2P key == tls_public_key
-    new_parts.append([acct, next_id, {"tls_public_key": tls_pk, "url": f"https://{ip}:13001"}])
+    url_port = 13001 + int(k["i"])
+    new_parts.append([acct, next_id, {"tls_public_key": tls_pk, "url": f"https://127.0.0.1:{url_port}"}])
     next_id += 1
 
 out={
@@ -1204,9 +1422,9 @@ PY
   fi
 }
 
-
-
 vote_new_parameters_all_voters() {
+  # NOTE: Voting from ALL participants is intentional (not just threshold voters).
+  # The contract applies threshold rules, but voting from everyone improves operational robustness.
   local vote_json="$1"
 
   local voters
@@ -1220,7 +1438,7 @@ vote_new_parameters_all_voters() {
     near_tx_retry "vote_new_parameters by $acct" \
        near contract call-function as-transaction "$MPC_CONTRACT_ACCOUNT" vote_new_parameters \
         file-args "$vote_json" prepaid-gas '299.99 Tgas' attached-deposit '0 NEAR' \
-        sign-as "$acct" network-config testnet sign-with-keychain send
+        sign-as "$acct" network-config "$NEAR_NETWORK_CONFIG" sign-with-keychain send
     near_sleep "vote_new_parameters by $acct"
   done <<< "$voters"
 }
@@ -1258,19 +1476,18 @@ near_phase_vote_new_parameters() {
   fi
 
   # Extract directly from state JSON (robust)
-local cur_epoch cur_next_id cur_threshold old_count
-cur_epoch="$(echo "$state_json" | jq -r '.Running.keyset.epoch_id')"
-cur_next_id="$(echo "$state_json" | jq -r '.Running.parameters.participants.next_id')"
-cur_threshold="$(echo "$state_json" | jq -r '.Running.parameters.threshold')"
-old_count="$(echo "$state_json" | jq -r '.Running.parameters.participants.participants | length')"
+  local cur_epoch cur_next_id cur_threshold old_count
+  cur_epoch="$(echo "$state_json" | jq -r '.Running.keyset.epoch_id')"
+  cur_next_id="$(echo "$state_json" | jq -r '.Running.parameters.participants.next_id')"
+  cur_threshold="$(echo "$state_json" | jq -r '.Running.parameters.threshold')"
+  old_count="$(echo "$state_json" | jq -r '.Running.parameters.participants.participants | length')"
 
-# Sanity check
-if ! [[ "$old_count" =~ ^[0-9]+$ ]]; then
-  err "Failed to parse old_count from contract state (got: '$old_count')"
-  echo "$state_json" | jq .
-  exit 1
-fi
-
+  # Sanity check
+  if ! [[ "$old_count" =~ ^[0-9]+$ ]]; then
+    err "Failed to parse old_count from contract state (got: '$old_count')"
+    echo "$state_json" | jq .
+    exit 1
+  fi
 
   local new_total
   if [ -n "$NEW_TOTAL_N" ]; then
@@ -1304,6 +1521,9 @@ fi
   pause_phase "Render+Deploy NEW CVMs (dstack)"
   local bootnodes threshold_for_env
   bootnodes="$(fetch_bootnodes)"
+  if [ -z "$bootnodes" ]; then
+    warn "Fetched empty bootnodes list from RPC. Proceeding, but node networking may be impacted."
+  fi
   threshold_for_env="$(compute_threshold_default "$new_total")"
   render_node_files_range "$bootnodes" "$threshold_for_env" "$start_i" "$end_i"
   deploy_nodes_range "$start_i" "$end_i"
@@ -1342,7 +1562,7 @@ print_summary() {
   echo " CONTRACT_BAL        : $CONTRACT_INITIAL_BALANCE"
   echo " NODE_BAL            : $NODE_INITIAL_BALANCE"
   echo " MAX_NODES_TO_FUND   : $MAX_NODES_TO_FUND"
-  echo " MPC_IMAGE_TAGS      : $MPC_IMAGE_TAGS"
+  echo " MPC_MANIFEST_DIGEST : $MPC_MANIFEST_DIGEST"
   echo " CODE_HASH           : $code_hash"
   echo " LAUNCHER_HASH       : $launcher_hash"
   echo " ADD_NODES           : $ADD_NODES"
@@ -1405,6 +1625,9 @@ main() {
   if should_run_from_start render; then
     pause_phase "Fetch bootnodes (dedup) + render node env/conf files"
     bootnodes="$(fetch_bootnodes)"
+    if [ -z "$bootnodes" ]; then
+      warn "Fetched empty bootnodes list from RPC. Proceeding, but node networking may be impacted."
+    fi
     log "Fetched bootnodes length: ${#bootnodes}"
     render_node_files_range "$bootnodes" "$threshold" "$NODE_RANGE_START" "$NODE_RANGE_END"
     maybe_stop_after_phase render
@@ -1485,17 +1708,23 @@ main() {
 
   if should_run_from_start near_vote_domain; then
     pause_phase "NEAR: vote add domain"
-    vote_add_domain_threshold "$threshold"
+    vote_add_domains
     maybe_stop_after_phase near_vote_domain
   fi
 
-  if should_run_from_start near_vote_new_params; then
-    near_phase_vote_new_parameters
-    maybe_stop_after_phase near_vote_new_params
-  fi
-  if should_run_from_start near_vote_new_params_votes; then
-    near_phase_vote_new_params_votes_only
-    maybe_stop_after_phase near_vote_new_params_votes
+  # By default, a normal deployment ends after near_vote_domain.
+  # Only enter scaling phases if scaling was explicitly requested.
+  if [ "${ADD_NODES:-0}" != "0" ] || [ -n "${NEW_TOTAL_N:-}" ]; then
+    if should_run_from_start near_vote_new_params; then
+      near_phase_vote_new_parameters
+      maybe_stop_after_phase near_vote_new_params
+    fi
+    if should_run_from_start near_vote_new_params_votes; then
+      near_phase_vote_new_params_votes_only
+      maybe_stop_after_phase near_vote_new_params_votes
+    fi
+  else
+    log "No scaling requested (ADD_NODES=0, NEW_TOTAL_N unset); ending after near_vote_domain"
   fi
 
   code_hash="$(extract_code_hash || true)"

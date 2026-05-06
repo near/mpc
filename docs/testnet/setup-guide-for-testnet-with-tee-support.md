@@ -1,14 +1,28 @@
 # MPC Testnet with TEE Support
 
-This guide describes how to set up a testnet MPC cluster, where each MPC node is runing inside a dstack TDX CVM.
+This guide describes how to set up a testnet MPC cluster, where each MPC
+node runs inside a dstack TDX CVM. The flow uses the Rust launcher (TOML
+config) — the older Python launcher and its `.conf` config format have
+been removed (#2951, #2952).
 
 ## Prerequisites
-1. One TDX-enabled machine (with 2 external IPs)
-2. dstack installed and configured
-3. MPC repository cloned
-4. NEAR CLI installed
+1. One TDX-enabled machine (with 2 external IPs), or two such machines.
+2. dstack installed and configured (`v0.5.5+` for reserved port forwarding).
+3. MPC repository cloned.
+4. NEAR CLI installed (`near-cli-rs`).
 
-**Note**, dstack version must be v0.55 or higher (in order to support reserved port forwarding).
+## Two flows
+
+This guide walks the **manual two-node** (`frodo` + `sam`) flow end-to-end —
+useful when learning the system or debugging individual steps.
+
+For deploying **N nodes at once** (or scaling up existing networks), use
+`localnet/tee/scripts/rust-launcher/deploy-tee-cluster.sh` with
+`MODE=testnet NEAR_NETWORK_CONFIG=testnet`. It automates account
+creation, contract deployment, key generation, attestation, and voting
+in a resumable script. See
+[`how-to-run-deploy-tee-cluster.md`](../../localnet/tee/scripts/rust-launcher/how-to-run-deploy-tee-cluster.md)
+for the full reference.
 
 
 ## High-Level Steps
@@ -28,9 +42,11 @@ This guide describes how to set up a testnet MPC cluster, where each MPC node is
 
 ---
 
-**Note:** These operations assume you start from the MPC root directory and are running on the Alice machine. Otherwise, it will be explicitly noted.
+**Note:** These operations assume you start from the MPC repo root.
 
-**Note**, It is possible to run both CVMs on seperate TDX-enabled machines. In that case, adjust the IPs and commands accordingly.
+**Note:** Both CVMs run on the same host below (one machine, two static
+IPs). To split the cluster across two TDX hosts instead, run the
+deploy command for each node on its own host and adjust the IPs.
 
 
 
@@ -193,19 +209,24 @@ Example: `$BASE_PATH/vmm/src/vmm-cli.py` should exist.
 export BASE_PATH="dstack base path"
 ```
 
-Start the nodes:
+Start the nodes (run both on the same host if it has both static IPs;
+otherwise run each on the host that owns its IP):
 
-**On Alice:**
+**Frodo:**
 
 ```bash
 ./deploy-launcher.sh --env-file /tmp/$USER/frodo.env --base-path $BASE_PATH --python-exec python
 ```
 
-**On Bob:**
+**Sam:**
 
 ```bash
 ./deploy-launcher.sh --env-file /tmp/$USER/sam.env --base-path $BASE_PATH --python-exec python
 ```
+
+> The `--python-exec python` flag refers to the Python binary used to invoke
+> dstack's `vmm-cli.py` — **not** to any MPC launcher. Confusingly named
+> but required.
 
 If successful, each command outputs an **App ID** and confirms creation of a **CVM instance**.
 
@@ -321,37 +342,25 @@ near contract call-function as-read-only $MPC_CONTRACT_ACCOUNT  state \
 
 ---
 
-## Step 6: Workaround for Port Override Issue  (optional)
+## Step 6: Workaround for Port Override Issue (optional)
 
-**note:** correctly setting port_override is set for testnet. So regradless of the port defined in the mpc contract, the nodes will try to use port 80.
+**Note:** `port_override = 80` is the default on testnet. The MPC nodes will
+advertise URL port 80 to the contract regardless of the contract's
+`url:` field. If you need a different port (e.g. dstack on this host
+can't forward port 80), change `port_override` post-deploy as follows.
 
-If you which which to change the port overide value here is the steps to do so.
+> SSH into the CVM is **not supported on dstack ≥ 0.5.6** unless the
+> launcher's `pre_launch_script` installs a passwordless SSH key (the
+> dstack-dev images stopped exposing SSH by default). On `dstack-0.5.5`
+> and earlier dev images you can SSH with `ssh root@localhost -p
+> <CVM-SSH-port>` (`1220` for frodo, `1221` for sam by default).
 
-Default `port_override = 80`.
-dstack CVMs had issues forwarding port 80, so update the config on both machines.
-
-SSH into each CVM:
-
-```bash
-ssh root@localhost -p <CVM-SSH-port>  # 1220 Alice, 1221 Bob
-```
-
-Stop the MPC node container:
+Once on the CVM, stop the MPC container, edit the config, restart:
 
 ```bash
 docker stop mpc-node
-```
-
-Replace port 80 with 2080:
-
-```bash
 sed -i 's/port_override: 80/port_override: 2080/' /var/lib/docker/volumes/mpc-data/_data/config.yaml
 sed -i 's/port_override: 80/port_override: 2080/' /var/lib/docker/volumes/mpc-data/_data/config.json
-```
-
-Restart the container:
-
-```bash
 docker start mpc-node
 ```
 

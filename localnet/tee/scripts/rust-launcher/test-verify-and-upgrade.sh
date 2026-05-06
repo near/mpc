@@ -4,7 +4,7 @@
 # =============================================================================
 #
 # Prerequisites:
-#   - A running 2-node MPC cluster deployed by deploy-tee-localnet.sh
+#   - A running 2-node MPC cluster deployed by deploy-tee-cluster.sh
 #   - Source set-localnet-env.sh (or export the required variables) before running
 #
 # Scenario 1 (verify): Validates the cluster is fully operational

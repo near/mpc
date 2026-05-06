@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Source this file before running deploy-tee-localnet.sh:
+# Source this file before running deploy-tee-cluster.sh:
 #   source localnet/tee/scripts/set-localnet-env.sh
 
 export HOST_PROFILE=alice
 export MODE=localnet
 export MPC_NETWORK_BASE_NAME=mpc-local
 export REUSE_NETWORK_NAME=mpc-local
-export N=2
+export N=2   # number of nodes; practical max per server is ~5 (8 vCPU + 64 GB + 500 GB per CVM)
 
 export MACHINE_IP=51.68.219.1
 export BASE_PATH=/mnt/data/barak/dstack_latest/meta-dstack/dstack
