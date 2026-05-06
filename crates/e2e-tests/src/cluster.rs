@@ -36,6 +36,14 @@ const SIGN_GAS: near_kit::Gas = near_kit::Gas::from_tgas(15);
 // which costs significantly more than a plain CKD or sign request.
 const CKD_PV_GAS: near_kit::Gas = near_kit::Gas::from_tgas(100);
 const SIGN_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_yoctonear(1);
+// The contract's default `key_event_timeout_blocks = 30` is ~18 s on
+// mainnet (~600 ms blocks). The e2e sandbox runs ~8 blocks/s, so the
+// same 30 collapses to ~3.7 s — too tight for the resharing
+// round-trip (start_reshare → indexer × N → MPC compute →
+// vote_reshared) once concurrent e2e tests put the runner under
+// load. Override to 240 blocks (~30 s in sandbox) as a comfortable
+// budget over mainnet's effective headroom.
+const KEY_EVENT_TIMEOUT_BLOCKS: u64 = 240;
 
 // Seed offsets for `generate_deterministic_key` — each range holds up to 100 keys.
 const KEY_SEED_NEAR_SIGNER: u64 = 0;
@@ -973,14 +981,7 @@ async fn init_contract(
         num_participants = participant_indices.len(),
         "initializing contract"
     );
-    // The contract's default `key_event_timeout_blocks = 30` is ~18 s on
-    // mainnet (~600 ms blocks). The e2e sandbox runs ~8 blocks/s, so the
-    // same 30 collapses to ~3.7 s — too tight for the resharing
-    // round-trip (start_reshare → indexer × N → MPC compute →
-    // vote_reshared) once concurrent e2e tests put the runner under
-    // load. Override to 240 blocks (~30 s in sandbox) as a comfortable
-    // budget over mainnet's effective headroom.
-    let init_config = json!({ "key_event_timeout_blocks": 240u64 });
+    let init_config = json!({ "key_event_timeout_blocks": KEY_EVENT_TIMEOUT_BLOCKS });
     let outcome = contract
         .call(
             method_names::INIT,
