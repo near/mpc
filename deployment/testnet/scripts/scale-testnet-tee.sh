@@ -83,13 +83,13 @@ LOCAL_DEBUG_BASE=3031
 
 STATE_SYNC_PORT=24567
 MAIN_PORT=80
-FUTURE_PORT=13001
+MIGRATION_PORT=13001
 
 INTERNAL_PUBLIC_DEBUG_PORT=8080
 INTERNAL_LOCAL_DEBUG_PORT=3030
 INTERNAL_STATE_SYNC_PORT=24567
 INTERNAL_MAIN_PORT=80
-INTERNAL_FUTURE_PORT=13001
+INTERNAL_MIGRATION_PORT=13001
 
 OS_IMAGE="${OS_IMAGE:-dstack-dev-0.5.8}"
 SEALING_KEY_TYPE="${SEALING_KEY_TYPE:-SGX}"
@@ -550,7 +550,7 @@ preflight() {
   [ -f "$CONF_TPL" ] || { err "Missing template $CONF_TPL"; exit 1; }
 
   log "Using IP range: ${IP_PREFIX}${IP_START_OCTET} .. ${IP_PREFIX}$((IP_START_OCTET + N - 1))"
-  log "Ports per node: main=$MAIN_PORT future=$FUTURE_PORT state_sync=$STATE_SYNC_PORT public_data_base=$PUBLIC_DATA_BASE"
+  log "Ports per node: main=$MAIN_PORT migration=$MIGRATION_PORT state_sync=$STATE_SYNC_PORT public_data_base=$PUBLIC_DATA_BASE"
   log "Localhost per node: ssh_base=$SSH_BASE agent_base=$AGENT_BASE local_debug_base=$LOCAL_DEBUG_BASE"
 
   local any_fail=0
@@ -572,7 +572,7 @@ preflight() {
     p_agent="$(agent_port_for_i "$i")"
     p_ld="$(local_dbg_port_for_i "$i")"
 
-    for port in "$MAIN_PORT" "$FUTURE_PORT" "$STATE_SYNC_PORT" "$p_pub"; do
+    for port in "$MAIN_PORT" "$MIGRATION_PORT" "$STATE_SYNC_PORT" "$p_pub"; do
       if port_free "$ip" "$port"; then
         echo "  ✅ free $ip:$port"
       else
@@ -644,13 +644,13 @@ render_node_files_range() {
     export EXTERNAL_MPC_LOCAL_DEBUG_PORT="127.0.0.1:${local_dbg_port}"
     export EXTERNAL_MPC_DECENTRALIZED_STATE_SYNC="${ip}:${STATE_SYNC_PORT}"
     export EXTERNAL_MPC_MAIN_PORT="${ip}:${MAIN_PORT}"
-    export EXTERNAL_MPC_FUTURE_PORT="${ip}:${FUTURE_PORT}"
+    export EXTERNAL_MPC_MIGRATION_PORT="${ip}:${MIGRATION_PORT}"
 
     export INTERNAL_MPC_PUBLIC_DEBUG_PORT="$INTERNAL_PUBLIC_DEBUG_PORT"
     export INTERNAL_MPC_LOCAL_DEBUG_PORT="$INTERNAL_LOCAL_DEBUG_PORT"
     export INTERNAL_MPC_DECENTRALIZED_STATE_SYNC="$INTERNAL_STATE_SYNC_PORT"
     export INTERNAL_MPC_MAIN_PORT="$INTERNAL_MAIN_PORT"
-    export INTERNAL_MPC_FUTURE_PORT="$INTERNAL_FUTURE_PORT"
+    export INTERNAL_MPC_MIGRATION_PORT="$INTERNAL_MIGRATION_PORT"
 
     export MPC_IMAGE_NAME="nearone/mpc-node"
     export MPC_IMAGE_TAGS="$MPC_IMAGE_TAGS"

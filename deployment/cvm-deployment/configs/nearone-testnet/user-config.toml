@@ -1,0 +1,99 @@
+[launcher_config]
+# Tag is for readability only; actual image is pulled by digest from the
+# launcher compose DEFAULT_IMAGE_DIGEST (sha256:51ed33bb…).
+image_reference = "nearone/mpc-node:3.9.1"
+port_mappings = [
+  { host = 80,    container = 80 },
+  { host = 8080,  container = 8080 },
+  { host = 8079,  container = 8079 },
+  { host = 3030,  container = 3030 },
+  { host = 24567, container = 24567 },
+]
+
+[mpc_node_config]
+home_dir = "/data"
+
+# Bootstraps the near node's config.json and genesis on first run.
+# Required for `start-with-config-file` (the launcher's invocation), otherwise
+# the indexer panics reading /data/config.json.
+[mpc_node_config.near_init]
+chain_id         = "testnet"
+download_genesis = true
+download_config  = "rpc"
+boot_nodes       = "ed25519:2956bsTqWmXcVmXDSovLYS4HRpdyh51euNCiuQjy1h8Y@65.108.141.230:24567,ed25519:2Ej627FDrHUBA1Mp55qw3zyhACSvJHF25sxtZfyFqasc@65.108.133.7:24567,ed25519:2GorYSFQUWB1But3sXLEM6zARfwb9Pj27QhQMsMpK8Dx@150.136.35.62:24567,ed25519:2nGLw9isJYVqCfaYzA6KHBE9YbtjzGQPPtVcRwYvpJj6@23.88.74.249:24567,ed25519:3VCjDXCbJWNr247wLzBas653C8FT69drtu3vDXbRAG2E@35.188.52.109:24567,ed25519:3wdbS6vbahK7pzgn8r8oFcgFthWvcT8mtXcUgtpQngqW@57.129.88.239:24567,ed25519:49F9yZpbQVefzWegVZYTh18WwFPPcfgvkDmhm7zM5MR4@89.58.28.231:24567,ed25519:4Fx8rLhGobUPVie1FXQCAxFaMQ3Dg6PYMDdm5keZcKW6@84.207.214.228:24567,ed25519:4M63uf6ccsjBkFygqx4T45fKSvKsFFMva9g7FRxjwzTH@176.9.105.103:24568,ed25519:4Rj2NR92umGC4xtXeJFkyCUYymdad3zii1zVEMVnVKqH@5.9.40.211:24567,ed25519:4b5MtShRdtu87BTNoPHX4HDBbZGnm5pjEQoGZk5J7L1w@34.12.14.28:24567,ed25519:4gdz1kjG7ndfbSwgMRtgNYZ7D6reHdnBgZN71U3agwtw@198.244.253.126:24567,ed25519:4qCcK9sWsqCpXzjV6kXxkaLyu5o5UpYNLpQzKFDSjfhA@34.123.242.245:24567,ed25519:4xTqirCWWjJ9QpXQbJLkyUbjRuRBgr4ZVpKMQAs4CjcH@57.128.210.54:24567,ed25519:4xmhjdejr2jWHqpiCrkeGXbrqBt98q9ewZ77WKrAz7JT@148.251.70.186:24567,ed25519:5M9DnL5xecA34RTHnkBpGB8SMXc2NcPvue7784D3GaH4@88.198.57.94:24568,ed25519:5MipaupEtQu7SqdMWsP5mdh2wfHQHgngai2BziCXv2T@185.6.13.181:24567,ed25519:5QmANbVUKooCvHq9qyKTd5cRgp4vYrQrAqjuRrA9M5TT@144.76.43.124:24567,ed25519:5T2wfCxjXT2rFPsyWAAxWnMqLajM24FC2ZWKXA62xbQ1@47.129.128.11:24567,ed25519:5VdRi9UAxjppwL2ku3g2hWXjn4oQZA4i1goEWJxpp9uv@113.172.202.5:24568"
+
+[mpc_node_config.node]
+my_near_account_id       = "n1-multichain.testnet"
+near_responder_account_id = "n1-multichain.testnet"   # same as signer (matches legacy GCP behavior)
+number_of_responder_keys = 1                          # matches the live testnet node
+mpc_contract_id          = "v1.signer-prod.testnet"
+web_ui                   = "0.0.0.0:8080"
+# Explicit migration endpoint (matches operator guide port table and
+# deployment/start.sh; avoids the 8078 default in the CI user-config).
+migration_web_ui         = "0.0.0.0:8079"
+pprof_bind_address       = "0.0.0.0:34001"            # matches deployment/testnet/sam.toml
+cores                    = 12                          # matches deployment/testnet/sam.toml
+
+[mpc_node_config.node.indexer]
+validate_genesis = false
+sync_mode        = "Latest"
+finality         = "optimistic"
+concurrency      = 1
+mpc_contract_id  = "v1.signer-prod.testnet"
+port_override    = 80                                 # participant URLs on chain don't include a port
+
+[mpc_node_config.node.triple]
+concurrency                                 = 2
+desired_triples_to_buffer                   = 16384
+timeout_sec                                 = 60
+parallel_triple_generation_stagger_time_sec = 1
+
+[mpc_node_config.node.presignature]
+concurrency                     = 16
+desired_presignatures_to_buffer = 8192
+timeout_sec                     = 60
+
+[mpc_node_config.node.signature]
+timeout_sec = 60
+
+[mpc_node_config.node.ckd]
+timeout_sec = 60
+
+[mpc_node_config.node.keygen]
+timeout_sec = 60
+
+[mpc_node_config.secrets]
+# 32 hex chars (16 bytes). Generate on Bob: openssl rand -hex 16
+secret_store_key_hex = "<<GENERATE_ON_BOB>>"
+# 64 hex chars (32 bytes). Must equal the OLD node's
+# $MPC_HOME/backup_encryption_key.hex so backup-cli put-keyshares (Phase D)
+# decrypts correctly. Extract on the OLD GCP node and inject here on Bob
+# — never through Alice.
+backup_encryption_key_hex = "<<OLD_NODE_BACKUP_KEY>>"
+
+[mpc_node_config.log]
+format = "plain"
+filter = "mpc=debug,info"
+
+# Foreign chain RPC providers — must mirror the live testnet node's config
+# (Slack feedback 2026-04-23 from Mårten Blankfors). Auth defaults to `none`.
+[mpc_node_config.node.foreign_chains.bitcoin]
+timeout_sec = 30
+max_retries = 3
+[mpc_node_config.node.foreign_chains.bitcoin.providers.public]
+rpc_url     = "https://bitcoin-testnet-rpc.publicnode.com"
+api_variant = "standard"
+
+[mpc_node_config.node.foreign_chains.abstract]
+timeout_sec = 30
+max_retries = 3
+[mpc_node_config.node.foreign_chains.abstract.providers.abstract-testnet]
+rpc_url     = "https://api.testnet.abs.xyz"
+api_variant = "standard"
+
+[mpc_node_config.node.foreign_chains.starknet]
+timeout_sec = 30
+max_retries = 3
+[mpc_node_config.node.foreign_chains.starknet.providers.publicnode]
+rpc_url     = "https://starknet-sepolia-rpc.publicnode.com"
+api_variant = "standard"
