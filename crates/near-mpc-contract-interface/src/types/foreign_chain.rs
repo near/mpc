@@ -151,8 +151,8 @@ pub enum ForeignChainRpcRequest {
     Bnb(EvmRpcRequest),
     Base(EvmRpcRequest),
     Arbitrum(EvmRpcRequest),
-    HyperEvm(EvmRpcRequest),
     Polygon(EvmRpcRequest),
+    HyperEvm(EvmRpcRequest),
 }
 
 impl ForeignChainRpcRequest {
@@ -166,8 +166,8 @@ impl ForeignChainRpcRequest {
             Self::Bnb(_) => ForeignChain::Bnb,
             Self::Base(_) => ForeignChain::Base,
             Self::Arbitrum(_) => ForeignChain::Arbitrum,
-            Self::HyperEvm(_) => ForeignChain::HyperEvm,
             Self::Polygon(_) => ForeignChain::Polygon,
+            Self::HyperEvm(_) => ForeignChain::HyperEvm,
         }
     }
 }
@@ -605,8 +605,8 @@ pub enum ForeignChain {
     Arbitrum,
     Abstract,
     Starknet,
-    HyperEvm,
     Polygon,
+    HyperEvm,
 }
 
 #[derive(
@@ -1117,7 +1117,7 @@ mod tests {
     )]
     #[case::hyper_evm(
         ForeignChainRpcRequest::HyperEvm(EvmRpcRequest {
-            tx_id: EvmTxId([13; 32]),
+            tx_id: EvmTxId([12; 32]),
             extractors: vec![],
             finality: EvmFinality::Finalized,
         }),
@@ -1125,7 +1125,7 @@ mod tests {
     )]
     #[case::polygon(
         ForeignChainRpcRequest::Polygon(EvmRpcRequest {
-            tx_id: EvmTxId([14; 32]),
+            tx_id: EvmTxId([12; 32]),
             extractors: vec![],
             finality: EvmFinality::Finalized,
         }),
