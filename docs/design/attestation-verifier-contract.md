@@ -62,7 +62,8 @@ The crucial property: **re-verification does not invoke dcap-qvl.** It just walk
 **Proximity** — [shade-attestation crate](https://github.com/NearDeFi/shade-agent-framework/tree/main/shade-attestation) and [shade-contract-template](https://github.com/NearDeFi/shade-agent-framework/tree/main/shade-contract-template):
 - Crate signature: `DstackAttestation::verify(expected_report_data, now, accepted_measurements, accepted_ppids)`. Adds a **PPID whitelist check** that we don't have.
 - Stores `approved_measurements`, `approved_ppids`, `agents` (verified agents map). Owner-gated governance (`require_owner()`).
-- No launcher concept. No multi-image-hash grace period. Report-data binding is the caller's account ID, not a TLS+account pubkey hash.
+- **No launcher concept.** Per Proximity, their app images are stateless by design — applications are told not to store anything on disk that future versions should not be able to access — so the [launcher pattern](securing-mpc-with-tee-design-doc.md#launcher) MPC uses to bootstrap and reverify CVM images isn't needed. Instead, which app images are allowed to run is gated by **approving the app-compose hash** alongside the other measurements.
+- No multi-image-hash grace period. Report-data binding is the caller's account ID, not a TLS+account pubkey hash.
 - Uses `dcap-qvl 0.4.0`.
 
 **Defuse** — no on-chain attestation contract yet. Their proposed design (shared in a cross-team Slack thread):
@@ -305,8 +306,8 @@ Today MPC requires `status == "UpToDate"` and `advisory_ids.is_empty()` ([attest
 
 All of these are post-DCAP. The verifier doesn't run them. Each team's policy contract runs whichever subset it needs:
 
-- MPC runs RTMR3 replay + launcher compose hash + MPC image hash + app_compose validation.
-- Proximity runs RTMR3 replay (for app-compose-hash event) + PPID check + app_compose hash check.
+- MPC: RTMR3 replay + launcher compose hash whitelist + MPC image hash whitelist + app_compose JSON validation.
+- Proximity: RTMR3 replay + **app-compose-hash whitelist** (the primary "which app image is allowed" gate, in lieu of a launcher) + PPID whitelist.
 - Defuse: TBD.
 
 The `attestation` crate (not `mpc-attestation`) provides reusable building blocks for these — RTMR3 replay, app_compose JSON validation, etc. — that any team's policy contract can pull in. The crate is no_std and Borsh-serializable, so dropping it into a WASM contract is cheap.
