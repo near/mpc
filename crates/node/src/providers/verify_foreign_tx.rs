@@ -13,6 +13,8 @@ use foreign_chain_inspector::base::inspector::BaseInspector;
 use foreign_chain_inspector::bitcoin::inspector::BitcoinInspector;
 use foreign_chain_inspector::bnb::inspector::BnbInspector;
 use foreign_chain_inspector::http_client::HttpClient;
+use foreign_chain_inspector::hyperevm::inspector::HyperEvmInspector;
+use foreign_chain_inspector::polygon::inspector::PolygonInspector;
 use foreign_chain_inspector::starknet::inspector::StarknetInspector;
 use mpc_node_config::{ConfigFile, ForeignChainsConfig};
 use near_mpc_contract_interface::types as dtos;
@@ -33,6 +35,8 @@ pub(crate) struct ForeignChainInspectors<Client> {
     pub starknet: Vec<StarknetInspector<Client>>,
     pub base: Vec<BaseInspector<Client>>,
     pub arbitrum: Vec<ArbitrumInspector<Client>>,
+    pub hyper_evm: Vec<HyperEvmInspector<Client>>,
+    pub polygon: Vec<PolygonInspector<Client>>,
 }
 
 impl ForeignChainInspectors<HttpClient> {
@@ -63,6 +67,8 @@ impl ForeignChainInspectors<HttpClient> {
             bnb: build_inspectors!(&config.bnb, BnbInspector),
             starknet: build_inspectors!(&config.starknet, StarknetInspector),
             arbitrum: build_inspectors!(&config.arbitrum, ArbitrumInspector),
+            hyper_evm: build_inspectors!(&config.hyper_evm, HyperEvmInspector),
+            polygon: build_inspectors!(&config.polygon, PolygonInspector),
         })
     }
 }

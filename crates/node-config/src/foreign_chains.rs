@@ -34,6 +34,10 @@ pub struct ForeignChainsConfig {
     pub base: Option<ForeignChainConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub arbitrum: Option<ForeignChainConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hyper_evm: Option<ForeignChainConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub polygon: Option<ForeignChainConfig>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -137,6 +141,8 @@ impl ForeignChainsConfig {
             (self.bnb.as_ref(), dtos::ForeignChain::Bnb),
             (self.base.as_ref(), dtos::ForeignChain::Base),
             (self.arbitrum.as_ref(), dtos::ForeignChain::Arbitrum),
+            (self.hyper_evm.as_ref(), dtos::ForeignChain::HyperEvm),
+            (self.polygon.as_ref(), dtos::ForeignChain::Polygon),
         ]
         .into_iter()
         .filter_map(|(config, dto_identifier)| config.map(|config| (config, dto_identifier)))
