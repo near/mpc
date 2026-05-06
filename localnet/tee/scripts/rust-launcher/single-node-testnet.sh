@@ -110,7 +110,7 @@ FALLBACK_THRESHOLD="${FALLBACK_THRESHOLD:-1000}"
 # dstack
 VMM_RPC="${VMM_RPC:-http://127.0.0.1:10000}"
 OS_IMAGE="${OS_IMAGE:-dstack-dev-0.5.8}"
-SEALING_KEY_TYPE="${SEALING_KEY_TYPE:-KMS}"
+SEALING_KEY_TYPE="${SEALING_KEY_TYPE:-SGX}"   # SGX = local key provider, no external KMS dep
 DISK="${DISK:-500G}"
 
 # Paths
