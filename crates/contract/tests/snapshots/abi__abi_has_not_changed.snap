@@ -2219,8 +2219,8 @@ expression: abi
             "Arbitrum",
             "Abstract",
             "Starknet",
-            "HyperEvm",
-            "Polygon"
+            "Polygon",
+            "HyperEvm"
           ]
         },
         "ForeignChainConfiguration": {
@@ -2331,10 +2331,10 @@ expression: abi
             {
               "type": "object",
               "required": [
-                "HyperEvm"
+                "Polygon"
               ],
               "properties": {
-                "HyperEvm": {
+                "Polygon": {
                   "$ref": "#/definitions/EvmRpcRequest"
                 }
               },
@@ -2343,10 +2343,10 @@ expression: abi
             {
               "type": "object",
               "required": [
-                "Polygon"
+                "HyperEvm"
               ],
               "properties": {
-                "Polygon": {
+                "HyperEvm": {
                   "$ref": "#/definitions/EvmRpcRequest"
                 }
               },
