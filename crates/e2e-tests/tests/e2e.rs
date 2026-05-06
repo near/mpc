@@ -2,6 +2,7 @@ mod cancellation_of_resharing;
 mod ckd_verification;
 mod cleanup_lagging_node;
 mod common;
+mod contract_upgrade_compatibility;
 mod foreign_chain_configuration;
 mod foreign_chain_tx_validation;
 mod key_resharing;
