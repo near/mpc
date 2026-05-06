@@ -65,7 +65,7 @@ The crucial property: **re-verification does not invoke dcap-qvl.** It just walk
 - No launcher concept. No multi-image-hash grace period. Report-data binding is the caller's account ID, not a TLS+account pubkey hash.
 - Uses `dcap-qvl 0.4.0`.
 
-**Defuse** — no on-chain attestation contract yet. Their proposed design (the diagram in the user's TODO.md):
+**Defuse** — no on-chain attestation contract yet. Their proposed design (shared in a cross-team Slack thread):
 - Off-chain TEE component calls `verifier.verify_attestation(quote, ..., application_account_id, msg)`.
 - Verifier callbacks into the application via `application.on_tee_attested(sender, msg)`.
 - Application contract is fully TEE-agnostic; gates by `predecessor == verifier.near` plus its own ACL.
