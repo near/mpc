@@ -2,6 +2,7 @@ pub mod blockchain;
 pub mod cluster;
 pub mod conversions;
 pub mod foreign_chain_mock;
+pub mod legacy_init;
 pub mod metrics;
 pub mod mpc_node;
 pub mod near_sandbox;

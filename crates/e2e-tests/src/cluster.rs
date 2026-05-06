@@ -17,6 +17,7 @@ use rand::rngs::StdRng;
 use serde_json::json;
 
 use crate::blockchain::{ClientHandle, DeployedContract, NearBlockchain};
+use crate::legacy_init::LegacyThresholdParameters;
 use crate::mpc_node::{MpcNode, MpcNodeSetup, MpcNodeSetupArgs, NodePorts};
 use crate::near_sandbox::NearSandbox;
 use crate::port_allocator::E2ePortAllocator;
@@ -113,6 +114,20 @@ pub enum ContractInitFormat {
     /// variant once `contract_history::current_*()` no longer points at a
     /// binary that requires the legacy shape.
     Legacy3_9_1,
+}
+
+impl ContractInitFormat {
+    /// JSON shape for the `parameters` argument of the contract's `init` call,
+    /// in the wire format that the targeted contract expects.
+    fn init_parameters_json(
+        self,
+        params: &ThresholdParameters,
+    ) -> serde_json::Result<serde_json::Value> {
+        match self {
+            Self::Current => serde_json::to_value(params),
+            Self::Legacy3_9_1 => serde_json::to_value(LegacyThresholdParameters::from(params)),
+        }
+    }
 }
 
 impl MpcClusterConfig {
@@ -1120,12 +1135,7 @@ async fn init_contract(
         ?init_format,
         "initializing contract"
     );
-    let parameters_json = match init_format {
-        ContractInitFormat::Current => serde_json::to_value(&params)?,
-        ContractInitFormat::Legacy3_9_1 => {
-            serde_json::to_value(LegacyThresholdParameters::from(&params))?
-        }
-    };
+    let parameters_json = init_format.init_parameters_json(&params)?;
     let outcome = contract
         .call(method_names::INIT, json!({ "parameters": parameters_json }))
         .await?;
@@ -1307,55 +1317,6 @@ struct ProposeUpdateArgsBorsh<'a> {
 /// `vote_update` consumes it via the `id` field; both wire it as a bare u64.
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 struct UpdateId(u64);
-
-/// Pre-3.10 mirror of `ThresholdParameters` whose `ParticipantInfo` emits
-/// `sign_pk` instead of `tls_public_key`. The 3.9.1 contract's
-/// `ParticipantInfo` only knows the legacy field name (no serde alias), so
-/// this rewrite is required when calling `init` against that binary.
-#[derive(serde::Serialize)]
-struct LegacyThresholdParameters {
-    threshold: Threshold,
-    participants: LegacyParticipants,
-}
-
-#[derive(serde::Serialize)]
-struct LegacyParticipants {
-    next_id: ParticipantId,
-    participants: Vec<(ContractAccountId, ParticipantId, LegacyParticipantInfo)>,
-}
-
-#[derive(serde::Serialize)]
-struct LegacyParticipantInfo {
-    url: String,
-    sign_pk: Ed25519PublicKey,
-}
-
-impl From<&ThresholdParameters> for LegacyThresholdParameters {
-    fn from(params: &ThresholdParameters) -> Self {
-        let participants = params
-            .participants
-            .participants
-            .iter()
-            .map(|(account_id, id, info)| {
-                (
-                    account_id.clone(),
-                    *id,
-                    LegacyParticipantInfo {
-                        url: info.url.clone(),
-                        sign_pk: info.tls_public_key.clone(),
-                    },
-                )
-            })
-            .collect();
-        Self {
-            threshold: params.threshold,
-            participants: LegacyParticipants {
-                next_id: params.participants.next_id,
-                participants,
-            },
-        }
-    }
-}
 
 fn build_participants(
     indices: &[usize],
