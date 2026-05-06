@@ -81,8 +81,12 @@
           isX86 = stdenv.hostPlatform.isx86_64;
 
           envCommon = {
-            # needed for neard's rocksdb build to avoid unsupported CPU features
-            CXXFLAGS = "-include cstdint" + lib.optionalString isX86 " -msse4.2 -mpclmul";
+            # Match the production ISA baseline (see .cargo/config.toml and
+            # nix/mpc-node.nix) so C/C++ deps (rocksdb, snappy, zstd, jemalloc)
+            # built for tests use the same target-cpu as the shipped binary.
+            # Production nodes all run on x86-64-v3-capable hardware.
+            CFLAGS = lib.optionalString isX86 "-march=x86-64-v3";
+            CXXFLAGS = "-include cstdint" + lib.optionalString isX86 " -march=x86-64-v3";
 
             # WASM Toolchain
             CC_wasm32_unknown_unknown = "${llvmPkgs.clang-unwrapped}/bin/clang";
