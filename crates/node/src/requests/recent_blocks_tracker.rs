@@ -481,33 +481,41 @@ impl<T: Clone> RecentBlocksTracker<T> {
     /// If block 8 is finalized, we can remove the subtrees at (5), (6) and (7):
     ///
     /// ```text
-    ///  ------------------------┐
-    ///     These blocks will    ┆
-    ///      never finalize      ┆
-    ///                          ┆
-    ///   root 1         root 2  ┆   root 3
-    ///   (1)                    ┆             remove because too old
-    ///    │              (2)    ┆             remove because too old
-    ///   (3)              │     ┆             remove because too old
-    ///    │               │     ┆     (4F)    remove because too old
-    ///  ┌─┴─┐             │     ┆    ┌─┴─┐
-    /// ═════════════════════════┆═══════════ ← cutoff (h ≥ 4). Remove blocks older than this.
-    /// (5)  │             │     ┆    │   │    remove because can't finalize
-    ///  │  (6)            │     ┆    │   │    remove because can't finalize
-    ///  │   │            (7)    ┆    │   │    remove because can't finalize
-    ///  │   │             │     ┆  (8F)  │    new root
-    ///  │   │             │     ┆    │  (9)   new root
-    /// -------------------------┆----------- ← below this line are children of new roots
-    ///  │   │             │     ┆    │   │
-    ///  ..  ..            ..    ┆    ..  ..
+    ///  ---------------------------┐
+    ///     These blocks will       ┆
+    ///     never be included       ┆
+    ///                             ┆
+    ///                             ┆
+    ///   root 1   root 2           ┆ root 3
+    ///   (1)                       ┆              Dead-fork prune at (1)
+    ///    │        (2)             ┆              Dead-fork prune at (2)
+    ///   (3)        │              ┆
+    ///    │         │              ┆ (4F)         Recency window prune node (4F)
+    ///  ┌─┴─┐       │       ┌──────────┴─┐
+    /// ════════════════════════════════════════ ← cutoff (h ≥ 4). Remove blocks older than this.
+    /// (5)  │       │       │      ┆     │
+    ///  │   │       │       │      ┆    (7F)      (7F) becomes new root
+    ///  │   │       │       │   ┌────────┴─┐
+    ///  │  (6)      │       │   │  ┆       │
+    ///  │   │       │       │  (8) ┆       │      Dead-fork prune at (8)
+    ///  │   │       │       │   │  ┆     (9F)
+    ///  │   │       │      (10) │  ┆       │      Dead-fork prune at (10)
+    ///  │   │       │       │   │  ┆     (11F)    ← latest final block height.
+    ///  │   │       │       │   │  ┆       │         Remove subtrees of older,
+    ///  │   │       │       │   │  ┆       │         non-final blocks
+    ///  │   │       │       │   │  ┆       │
+    ///  │   │       │       │   │  ┆     (12)
+    ///  │   │       │      (13) │  ┆       │
+    ///  │   │       │       │   │  ┆       │
+    ///  ..  ..      ..      ..  .. ┆       ..
     ///
     /// ```
-    /// After prune, we have two new roots:
+    /// After prune, we have one new root:
     /// ```text
-    ///  root 1  root 2
-    ///   (8F)
-    ///    │       (9)
-    ///    ..       │
+    ///  root 1
+    ///   (7F)
+    ///    │
+    ///    ..
     ///             ..
     ///  ```
     fn prune_old_blocks(&mut self) {
@@ -1121,5 +1129,128 @@ pub mod tests {
             weak_b2.upgrade().is_none(),
             "pruned BlockNode b2 leaked — parent<->children Arc cycle not broken"
         );
+    }
+
+    /// Tests that a subtree that won't be included (b3_fork) is removed, even if that subtree is a
+    /// descendant of a block that is included and recent (b2, F)
+    /// ```text
+    ///   (b1, F)
+    ///    │
+    /// ═══════════════════════ ← cutoff (h ≥ 2). Remove blocks older than this.
+    ///    │
+    ///   (b2, F)               ← new root
+    ///    ├──────────┐
+    ///   (b3, F)  (b3_fork)    ← b3_fork subtree should be pruned
+    ///    │          │
+    ///   (b4)     (b4_fork)    ← should be pruned as part of b3_fork prune
+    ///    │
+    ///   (b5)                  ← This block makes 3F final.
+    /// ```
+    #[test]
+    #[expect(non_snake_case)]
+    fn prune_old_blocks__should_drop_dead_fork_descendants_of_kept_nodes() {
+        let mut tester = Tester::new(4);
+        let b1 = tester.block(1);
+        let b2 = b1.child();
+        let b3 = b2.child();
+        let b4 = b3.child();
+        let b5 = b4.child();
+        let b3_fork = b2.descendant(3);
+        let b4_fork = b3_fork.child();
+
+        // Given: a fork
+        // (b1, F)
+        //    │
+        // (b2, F)
+        //    ├──────────┐
+        //   (b3)     (b3_fork)
+        //    │         │
+        //   (b4)     (b4_fork)
+        tester.add(&b1, "1");
+        tester.add(&b2, "2");
+        tester.add(&b3, "3");
+        tester.add(&b3_fork, "3f");
+        tester.add(&b4, "4");
+        tester.add(&b4_fork, "4f");
+
+        // Sanity checks
+        assert_eq!(tester.check(&b1), CheckBlockResult::RecentAndFinal);
+        assert_eq!(tester.check(&b2), CheckBlockResult::RecentAndFinal);
+
+        let weak_b3_fork = Arc::downgrade(
+            tester
+                .tracker
+                .hash_to_node
+                .get(&b3_fork.hash)
+                .expect("b3_fork present before prune"),
+        );
+        let weak_b4_fork = Arc::downgrade(
+            tester
+                .tracker
+                .hash_to_node
+                .get(&b4_fork.hash)
+                .expect("b4_fork present before prune"),
+        );
+
+        // When: b5 is added, advancing final_head to b3
+        //   (b1, F)
+        //    │
+        // ═══════════════════════ ← cutoff (h ≥ 2). Remove blocks older than this.
+        //    │
+        //   (b2, F)               ← new root
+        //    ├──────────┐
+        //   (b3, F)  (b3_fork)    ← b3_fork subtree should be pruned
+        //    │          │
+        //   (b4)     (b4_fork)    ← should be pruned as part of b3_fork prune
+        //    │
+        //   (b5)                  ← This block makes 3F final.
+        tester.add(&b5, "5");
+
+        // Then: We expect b3_fork subtree to be pruned and b2 to be come the new root
+        //   (b2, F)               ← new root
+        //    │
+        //   (b3, F)
+        //    │
+        //   (b4)
+        //    │
+        //   (b5)
+
+        //   Check that b3_fork was removed:
+        assert_eq!(tester.check(&b3_fork), CheckBlockResult::Unknown);
+        assert_eq!(tester.check(&b4_fork), CheckBlockResult::Unknown);
+        assert!(
+            weak_b3_fork.upgrade().is_none(),
+            "dead-fork BlockNode b3_fork leaked — prune_dead_children did not detach"
+        );
+        assert!(
+            weak_b4_fork.upgrade().is_none(),
+            "dead-fork BlockNode b4_fork leaked — descendant of detached dead-fork not freed"
+        );
+
+        // Additional sanity checks:
+        // b1 should have been removed:
+        assert_eq!(tester.check(&b1), CheckBlockResult::Unknown);
+        // b2, b3 should now be final
+        assert_eq!(tester.check(&b2), CheckBlockResult::RecentAndFinal);
+        assert_eq!(tester.check(&b3), CheckBlockResult::RecentAndFinal);
+        // b4, b5 should be optimistic and canonical
+        assert_eq!(tester.check(&b4), CheckBlockResult::OptimisticAndCanonical);
+        assert_eq!(tester.check(&b5), CheckBlockResult::OptimisticAndCanonical);
+    }
+
+    /// Tests that `minimum_height_to_keep` returns `Some` in case we have a final bock height.
+    /// This is a test to protect against regressions: We only run the cleanup loop in case
+    /// `minimum_height_to_keep` returns Some.
+    #[test]
+    #[expect(non_snake_case)]
+    fn minimum_height_to_keep__should_return_some_if_final_block_exsts() {
+        let mut tester = Tester::new(4);
+        let b1 = tester.block(1);
+        let b2 = b1.child();
+        let b3 = b2.child();
+        tester.add(&b1, "1");
+        tester.add(&b2, "2");
+        tester.add(&b3, "3");
+        assert_eq!(tester.tracker.minimum_height_to_keep(), Some(1))
     }
 }
