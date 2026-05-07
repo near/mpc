@@ -141,6 +141,10 @@ struct ForeignChains {
     base: Option<ForeignChain>,
     #[serde(skip_serializing_if = "Option::is_none")]
     arbitrum: Option<ForeignChain>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hyper_evm: Option<ForeignChain>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    polygon: Option<ForeignChain>,
 }
 
 impl From<ForeignChainsConfig> for ForeignChains {
@@ -154,6 +158,8 @@ impl From<ForeignChainsConfig> for ForeignChains {
             bnb: config.bnb.map(Into::into),
             base: config.base.map(Into::into),
             arbitrum: config.arbitrum.map(Into::into),
+            hyper_evm: config.hyper_evm.map(Into::into),
+            polygon: config.polygon.map(Into::into),
         }
     }
 }
@@ -487,6 +493,16 @@ mod tests {
                 arbitrum: Some(test_chain(
                     "public",
                     "https://arbitrum.publicnode.com",
+                    AuthConfig::None,
+                )),
+                hyper_evm: Some(test_chain(
+                    "public",
+                    "https://rpc.hyperliquid.xyz/evm",
+                    AuthConfig::None,
+                )),
+                polygon: Some(test_chain(
+                    "public",
+                    "https://polygon-bor-rpc.publicnode.com",
                     AuthConfig::None,
                 )),
             },

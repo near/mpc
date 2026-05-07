@@ -66,7 +66,22 @@ pub fn setup_evm_mock(server: &MockServer) {
 
             let result = match method {
                 "eth_getBlockByNumber" => {
-                    serde_json::json!({ "number": "0x16740f3" })
+                    // First param is either a finality tag (e.g. "finalized") for the
+                    // finality-head lookup, or a `0x`-prefixed block number for the
+                    // canonical-chain lookup. Return a hash matching the receipt's
+                    // blockHash for the canonical lookup so the check passes.
+                    let block_id = body["params"][0].as_str().expect("block id param");
+                    if block_id.starts_with("0x") {
+                        serde_json::json!({
+                            "number": block_id,
+                            "hash": format!("0x{MOCK_BLOCK_HASH}"),
+                        })
+                    } else {
+                        serde_json::json!({
+                            "number": "0x16740f3",
+                            "hash": format!("0x{MOCK_BLOCK_HASH}"),
+                        })
+                    }
                 }
                 "eth_getTransactionReceipt" => {
                     serde_json::json!({

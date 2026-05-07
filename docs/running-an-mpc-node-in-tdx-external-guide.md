@@ -598,6 +598,15 @@ port_mappings = [
 [mpc_node_config]
 home_dir = "/data"
 
+# PCCS endpoints for TDX attestation collateral. Tried in order until
+# one succeeds. To customize (e.g. add a self-hosted local PCCS), see
+# [Customizing PCCS endpoints](#customizing-pccs-endpoints-optional) below.
+[[mpc_node_config.pccs_endpoints]]
+url = "https://pccs.phala.network/"
+
+[[mpc_node_config.pccs_endpoints]]
+url = "https://api.trustedservices.intel.com/"
+
 [mpc_node_config.node]
 my_near_account_id = "$MY_MPC_NEAR_ACCOUNT_ID"
 mpc_contract_id = "$CONTRACT_ID"  # v1.signer-prod.testnet for Testnet or v1.signer for Mainnet
@@ -633,6 +642,19 @@ curl -s -X POST https://rpc.[testnet|mainnet].near.org \
 jq -r '.result.active_peers | unique_by(.addr) | unique_by(.id) | map("\(.id)@\(.addr)") | .[]' |\
 paste -sd',' -
 ```
+
+#### Customizing PCCS endpoints (optional)
+
+The MPC node fetches Intel-signed attestation collateral from a PCCS.
+The example above lists Phala and Intel as `pccs_endpoints` — the
+node tries each in order until one succeeds. This works out of the
+box for most operators.
+
+To customize (e.g. add a self-hosted local PCCS as the primary),
+modify the `pccs_endpoints` array. Whatever entries you list become
+the entire fallback chain, in order — no defaults are auto-inserted.
+
+For a self-hosted local PCCS, see [Appendix: Self-hosting a local PCCS](#appendix-self-hosting-a-local-pccs).
 
 ### Preparing a Docker Compose File
 
@@ -1520,3 +1542,109 @@ Reviewers \- please add here more scenarios (with or without solutions)
 
 During the transition phase, both MPC nodes with TEE and without TEE will be allowed.
 After the transition phase is completed, only MPC nodes with valid remote attestation of a valid TEE configuration will be allowed to join the MPC cluster, and any node without a valid TEE configuration will be kicked out of the cluster.
+
+## Appendix: Self-hosting a local PCCS
+
+Run your own PCCS instead of (or alongside) Phala / Intel's public
+services. Install PCCS following step 9.1–2 of the canonical TDX
+setup (see [1. TDX Bare-Metal Server Setup](#1-tdx-bare-metal-server-setup)
+above). That gets you a Node.js service listening on `127.0.0.1:8081`,
+config under `/opt/intel/sgx-dcap-pccs/config/default.json`, and
+self-signed TLS material under `/opt/intel/sgx-dcap-pccs/ssl_key/`.
+
+The two MPC-specific steps below cover what's needed beyond the stock
+install: replacing the unusable shipped TLS cert, and pointing the
+node at the local PCCS with cert pinning.
+
+### Replace the stock TLS certificate
+
+The cert that ships with `sgx-dcap-pccs` is X.509 v1, has no Subject
+Alternative Name, and is short-dated. Modern TLS clients — including
+the rustls-based verifier the MPC node uses — will reject it.
+Regenerate it as a proper PKI before pinning.
+
+The recipe below produces a 2-cert chain: a long-lived **root CA**
+used only as a trust anchor, plus a **leaf cert** (signed by the root)
+that the PCCS server actually serves. This shape is required: rustls
+rejects a single self-signed CA cert that's also presented as the leaf.
+
+```bash
+mkdir -p ~/pccs-pki && cd ~/pccs-pki
+
+# 1. Root CA (CA:TRUE; valid 10y; only used as trust anchor)
+openssl req -x509 -newkey rsa:2048 -nodes \
+  -keyout pccs-rootCA.key -out pccs-rootCA.crt \
+  -days 3650 \
+  -subj "/CN=PCCS Local Root CA" \
+  -addext "basicConstraints=critical,CA:TRUE,pathlen:0" \
+  -addext "keyUsage=critical,keyCertSign,cRLSign"
+
+# 2. Leaf CSR
+openssl req -newkey rsa:2048 -nodes \
+  -keyout pccs-leaf.key -out pccs-leaf.csr \
+  -subj "/CN=pccs.local"
+
+# 3. Sign leaf with root CA — CA:FALSE; SAN must match the URL the
+#    MPC node uses to reach the PCCS. Common SANs:
+#      IP:10.0.2.2     — when the MPC node runs in a QEMU/dstack CVM
+#                         on the same host (slirp gateway address)
+#      IP:<LAN IP>     — when the node is on a separate machine
+cat > pccs-leaf.ext <<EOF
+basicConstraints=critical,CA:FALSE
+keyUsage=critical,digitalSignature,keyEncipherment
+extendedKeyUsage=serverAuth
+subjectAltName=DNS:localhost,IP:127.0.0.1,IP:10.0.2.2
+EOF
+
+openssl x509 -req -in pccs-leaf.csr \
+  -CA pccs-rootCA.crt -CAkey pccs-rootCA.key -CAcreateserial \
+  -out pccs-leaf.crt -days 365 \
+  -extfile pccs-leaf.ext
+
+openssl verify -CAfile pccs-rootCA.crt pccs-leaf.crt    # → OK
+```
+
+### Install the new cert and restart PCCS
+
+```bash
+sudo cp pccs-leaf.crt /opt/intel/sgx-dcap-pccs/ssl_key/file.crt
+sudo cp pccs-leaf.key /opt/intel/sgx-dcap-pccs/ssl_key/private.pem
+sudo chown pccs:pccs /opt/intel/sgx-dcap-pccs/ssl_key/{file.crt,private.pem}
+sudo chmod 644 /opt/intel/sgx-dcap-pccs/ssl_key/file.crt
+sudo chmod 600 /opt/intel/sgx-dcap-pccs/ssl_key/private.pem
+sudo systemctl restart pccs
+
+# Verify the new chain is being served
+echo | openssl s_client -showcerts -connect 127.0.0.1:8081 \
+  -servername localhost 2>/dev/null \
+  | grep -E "subject=|issuer="
+# Expected:
+#   subject=CN = pccs.local
+#   issuer=CN = PCCS Local Root CA
+```
+
+### Configure the MPC node
+
+In `user-config.toml`, pin the **root CA** (not the leaf — the server
+presents the leaf, which chains to the root):
+
+```toml
+[[mpc_node_config.pccs_endpoints]]
+url = "https://10.0.2.2:8081/"
+tls = { override = "ca_cert_pem", ca_cert_pem = """
+-----BEGIN CERTIFICATE-----
+... contents of pccs-rootCA.crt ...
+-----END CERTIFICATE-----
+""" }
+
+# Phala fallback for resilience (Intel direct could also be added as a third entry)
+[[mpc_node_config.pccs_endpoints]]
+url = "https://pccs.phala.network/"
+```
+
+### About `tls.override = "insecure"`
+
+Disables all TLS certificate validation (cert chain *and* hostname).
+The startup log emits a clearly-labeled WARN when this mode is active.
+Acceptable for local-host bring-up before you've provisioned a proper
+cert; not recommended for any persistent setup.
