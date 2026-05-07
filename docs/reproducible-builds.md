@@ -8,7 +8,6 @@ The build is driven entirely by Nix. The flake's package set produces both the b
 
 - `nix` (with flakes enabled)
 - `git`
-- `skopeo` (only needed for pushing images to a registry)
 
 ## Building binaries
 
@@ -47,9 +46,9 @@ Same for `node-gcp-image-manifest-digest` and `rust-launcher-image-manifest-dige
 Push the locally-built tarball with `skopeo`, preserving the manifest digest you just verified:
 
 ```bash
-skopeo copy --preserve-digests \
+nix run nixpkgs#skopeo -- copy --preserve-digests \
   docker-archive:$(nix build --print-out-paths .#node-image) \
   docker://docker.io/nearone/mpc-node:<tag>
 ```
 
-Substitute `node-gcp-image` / `rust-launcher-image` and the matching destination repo as needed. `skopeo` must be authenticated to the registry beforehand (`skopeo login`).
+Substitute `node-gcp-image` / `rust-launcher-image` and the matching destination repo as needed. Skopeo must be authenticated to the registry beforehand (`nix run nixpkgs#skopeo -- login docker.io`).
