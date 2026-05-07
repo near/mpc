@@ -542,7 +542,7 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
                 self.hash_to_node.get(hash).cloned().or_else(|| {
                     // note: this should NEVER happen. Right now, it's a guaranteed dead code path.
                     // However, to protect against future refactors of `partition_subtree`, or some
-                    // odd behavior, we simply print an error. Missing a root chid is not something
+                    // odd behavior, we simply print an error. Missing a root child is not something
                     // that requires us to crash the node.
                     tracing::error!(
                         "Error: missing node for root hash {:?}. RecentBlocksTracker: {:?}",
@@ -1214,7 +1214,7 @@ pub mod tests {
         //   (b5)                  ← This block makes 3F final.
         tester.add(&b5, "5");
 
-        // Then: We expect b3_fork subtree to be pruned and b2 to be come the new root
+        // Then: We expect b3_fork subtree to be pruned and b2 to become the new root
         //   (b2, F)               ← new root
         //    │
         //   (b3, F)

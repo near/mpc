@@ -565,7 +565,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                         request_id = %request.request.get_id(),
                         block_height = request.block_height,
                         reason = ?block_classification,
-                        "discarding request because it was not included, expired, or the tracker removed the block"
+                        "discarding request because it expired or the tracker removed the block"
                     );
                     // Increment failed signature count.
                     // This signature probably ended up in a block that was never included in chain.
