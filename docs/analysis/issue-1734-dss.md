@@ -401,10 +401,24 @@ State sync of shard 5 completed in ~32 min (faster than Test 5's 55 min).
 SNAT rule packet counter climbed past 130, confirming the rule was
 matching outbound peer-port-24567 traffic.
 
-**Verdict:** Option 3b is sufficient by itself for DSS. It provides the
-same correctness as Option 0 with no node code/config changes, just one
-iptables rule. The rule must be in place *before* neard starts making
-peer connections, otherwise conntrack pins the pre-SNAT mapping and
+**Verdict:** Option 3b correctly fixes the source-IP discovery — once
+in place, `near_tier3_public_addr` auto-discovers `51.68.219.13:24567`
+and DSS proceeds normally.
+
+**Important caveat about "no code changes":** Test 6 ran *with* PR #3145's
+binary AND with `external_storage_fallback_threshold = 1000` set in the
+launcher TOML. Without PR #3145, `patch_near_config` hardcodes the
+threshold to `0` (bucket-only) — DSS is never *attempted* in the first
+place, so Option 3b's source-IP correction has nothing to act on. So
+Option 3b is **not** a code-free alternative to Option 0; it's an
+alternative to Option 0's `tier3_public_addr` field while still relying
+on Option 0's `external_storage_fallback_threshold` field. The smallest
+"truly code-free" Option 3b would require us to also remove the
+hardcoded `= 0` line in `patch_near_config` (a one-line code change,
+smaller than the rest of PR #3145).
+
+The SNAT rule must be in place *before* neard starts making peer
+connections — otherwise conntrack pins the pre-SNAT mapping and
 auto-discovery ends up wrong (mitigated by restart-after-rule).
 
 ### Test 6 takeaway: Tier2 inbound recovery is unrelated to either fix
@@ -418,7 +432,8 @@ A surprising finding from comparing Test 5 and Test 6 directly:
 | Successful state parts | 1019 | 1019 (same) |
 | Success rate | 96.3% | ~94% |
 | **`peer_connections{Inbound,T2}`** | **0 (after 1.5+ days)** | **0 (after 32 min)** |
-| Node config change required | yes (PR #3145) | no |
+| Requires PR #3145 | yes (both new fields) | yes (`external_storage_fallback_threshold` only) |
+| Hardcoded IP in node config | yes (`tier3_public_addr`) | no |
 | Host root required | no | yes (iptables) |
 | Persistence | trivial (file) | systemd / iptables-persistent |
 
@@ -808,15 +823,25 @@ only egress as that IP. Strongest isolation.
 
 ### Comparison table
 
-| # | Solution | Type | Available today | Fixes DSS (Tier3) | Fixes Tier2 inbound | Multi-node on one host | Persistence | Perf impact |
+> **Note about "Available today":** stock MPC `main` hardcodes
+> `external_storage_fallback_threshold = 0` in `patch_near_config`
+> (`crates/node/src/config/start.rs`), which forces bucket-only and
+> means **DSS is never attempted at all**. So none of the options below
+> actually enable DSS on stock main — they all require *some* code
+> change to lift that hardcoded threshold. PR #3145 adds it as a
+> launcher TOML field; the smallest possible fix is to just remove the
+> hardcoded line. The "Available today" column reflects what's needed
+> *beyond* that.
+
+| # | Solution | Type | Needs (besides DSS-enable) | Fixes DSS (Tier3) | Fixes Tier2 inbound | Multi-node on one host | Persistence | Perf impact |
 |---|---|---|---|---|---|---|---|---|
-| **0** | **`tier3_public_addr` per-node** | Node config | ✅ | ✅ | ❌ | ✅ | trivial (file) | none |
-| 1 | `network.addr = "0.0.0.0:24567"` | Node config | ✅ | ✅ | ✅ | ❌ (port conflict) | trivial (file) | none |
-| 2 | Host-wide default-route source | Host network config | ✅ | ✅ | ✅ | ❌ | needs systemd hook | none |
-| 3a | UID-based policy routing | Host network + run-as-user | ✅ | ✅ | ✅ | ✅ | needs systemd hook | negligible (one extra rule lookup per `connect()`) |
-| 3b | Per-CVM SNAT on host | Host iptables | ✅ | ✅ | ✅ | ✅ | needs `iptables-persistent` or systemd | low (conntrack + per-packet rewrite) |
-| 4 | neard binds outbound source IP | Upstream nearcore code change | ❌ (needs PR + release) | ✅ | ✅ | ✅ | trivial (file, once shipped) | none |
-| 5 | Network namespace per node | Host networking + process isolation | ✅ | ✅ | ✅ | ✅ | needs systemd hook | low (veth pair per packet) |
+| **0** | **`tier3_public_addr` per-node** | Node config | PR #3145 (the field itself) | ✅ | ❌ (empirical, Test 5) | ✅ | trivial (file) | none |
+| 1 | `network.addr = "0.0.0.0:24567"` | Node config | nothing extra | ✅ | likely ✅ (untested) | ❌ (port conflict) | trivial (file) | none |
+| 2 | Host-wide default-route source | Host network config | nothing extra | ✅ | likely ✅ (untested) | ❌ | needs systemd hook | none |
+| 3a | UID-based policy routing | Host network + run-as-user | nothing extra | ✅ | likely ✅ (untested) | ✅ | needs systemd hook | negligible |
+| **3b** | **Per-CVM SNAT on host** | Host iptables | nothing extra | ✅ (Test 6) | ❌ (empirical, Test 6) | ✅ | needs `iptables-persistent` or systemd | low (conntrack + per-packet rewrite) |
+| 4 | neard binds outbound source IP | Upstream nearcore code change | upstream PR + release | ✅ | likely ✅ (untested) | ✅ | trivial (file, once shipped) | none |
+| 5 | Network namespace per node | Host networking + process isolation | nothing extra | ✅ | likely ✅ (untested) | ✅ | needs systemd hook | low (veth pair per packet) |
 
 ### Picking between them
 

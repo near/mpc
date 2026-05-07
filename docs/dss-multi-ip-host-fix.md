@@ -113,9 +113,31 @@ curl -s http://<node>:<metrics-port>/metrics | grep near_state_sync_download_res
 
 ## Option B (alternative): host-level iptables SNAT
 
-For hosts where you can't easily change the launcher TOML, or you'd
-rather fix it once at the host level. Equivalent correctness; somewhat
-harder to operate.
+For hosts where you don't want to put a specific IP in the launcher
+TOML, or you'd rather fix it once at the host's network layer.
+Equivalent DSS correctness once everything's wired up.
+
+> **You still need PR #3145** to even get DSS running. `start.sh` /
+> `patch_near_config` hardcodes `external_storage_fallback_threshold = 0`
+> for any non-localnet chain — i.e., bucket-only, DSS never attempted.
+> Without PR #3145's `external_storage_fallback_threshold` field set
+> to a non-zero value in the TOML, your iptables rule has nothing to
+> SNAT (no DSS traffic), and state sync stays stuck on the broken
+> bucket path. So Option B is *not* a code-free alternative to Option A
+> — it just lets you skip the `tier3_public_addr` field while keeping
+> the `external_storage_fallback_threshold` field.
+
+In the launcher TOML, set the threshold but leave `tier3_public_addr`
+unset:
+
+```toml
+[mpc_node_config.near_init]
+# (existing fields ...)
+external_storage_fallback_threshold = 1000
+# tier3_public_addr deliberately omitted — host SNAT will correct it
+```
+
+Then on the host:
 
 ```bash
 # Replace 51.68.219.13 with your bound IP and ens49f0np0 with your NIC.
@@ -172,16 +194,16 @@ node's outbound connections to peers being SNAT'd.
 
 | | Option A (`tier3_public_addr`) | Option B (iptables SNAT) |
 |---|---|---|
-| Lives in | node config (TOML) | host firewall |
+| Requires PR #3145 | yes (for both fields) | yes (for `external_storage_fallback_threshold`) |
+| Hardcoded IP in node config | yes (`tier3_public_addr`) | no |
 | Requires root on host | no | yes |
 | Persistence | trivial (file) | needs systemd / `iptables-persistent` |
 | Survives node redeploy | yes | yes |
-| Survives host migration | depends on whether new host has the same IP setup | no — host config doesn't travel |
-| Minimum nearcore version | 2.10+ | any |
+| Survives host migration | depends on whether new host has the same IP setup | no — host iptables doesn't travel with the node |
 | Restart required to apply | yes (once) | yes (once, *after* rule install) |
 
-**Recommendation: Option A**, unless you specifically need a host-level
-fix (e.g., you can't redeploy the node, or you're standardizing on
+**Recommendation: Option A**, unless you specifically need to avoid
+hardcoding an IP in the node config (e.g., you're standardizing on
 host-level network policy across many nodes).
 
 Both options are validated end-to-end on a TDX CVM (Tests 5 and 6 in
