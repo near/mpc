@@ -104,7 +104,10 @@ AGENT_PORT="${AGENT_PORT:-$(find_free_port)}"
 LOCAL_DEBUG_PORT="${LOCAL_DEBUG_PORT:-$(find_free_port)}"
 
 # --- PR #3145 fields under test ---
-TIER3_PUBLIC_ADDR="${TIER3_PUBLIC_ADDR:-${MACHINE_IP}:${STATE_SYNC_PORT}}"
+# TIER3_PUBLIC_ADDR: explicitly empty/unset = omit from TOML (test Option 3b
+# without the application-level fix). Default = MACHINE_IP:STATE_SYNC_PORT
+# (matches Bob's setup, exercises PR #3145).
+TIER3_PUBLIC_ADDR="${TIER3_PUBLIC_ADDR-${MACHINE_IP}:${STATE_SYNC_PORT}}"
 FALLBACK_THRESHOLD="${FALLBACK_THRESHOLD:-1000}"
 
 # dstack
@@ -191,8 +194,15 @@ render_env_and_conf() {
   envsubst <"$ENV_TPL" >"$ENV_OUT"
   envsubst <"$CONF_TPL" >"$CONF_OUT"
 
+  # If TIER3_PUBLIC_ADDR is empty (i.e. operator opted out so we can test
+  # host-level fixes like Option 3b in isolation), drop the rendered line —
+  # neard rejects an empty SocketAddr.
+  if [ -z "$TIER3_PUBLIC_ADDR" ]; then
+    sed -i '/^tier3_public_addr = ""/d' "$CONF_OUT"
+  fi
+
   log "Rendered env/conf in $WORKDIR"
-  log "tier3_public_addr: $TIER3_PUBLIC_ADDR"
+  log "tier3_public_addr: ${TIER3_PUBLIC_ADDR:-<unset — host-level fix expected>}"
   log "external_storage_fallback_threshold: $FALLBACK_THRESHOLD"
   log "Image tag: $MPC_IMAGE_TAG"
 }

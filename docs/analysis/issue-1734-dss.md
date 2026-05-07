@@ -28,10 +28,13 @@ Issue: https://github.com/near/mpc/issues/1734
   masking this bug for every MPC node since launch.
 - **Action on Bob:** apply both via the dstack-vmm "Update VM Config" flow
   (per the runbook in mpc-private PR #304), then Shutdown → Start.
-- **Optional follow-up:** the same multi-IP topology also blocks regular
-  Tier2 inbound peers (currently 0 on Bob). Fixing that needs a host-level
-  change — per-CVM SNAT in our case (Option 3b in the
-  [comparison table](#comparison-table)). Not blocking DSS; can be deferred.
+- **Tier2 inbound peers** (separate symptom, also caused by the same
+  topology) appear to need much longer than our test windows to recover
+  via gossip. Test 6 confirmed even fixing the gossiped `PeerInfo` (via
+  Option 3b) doesn't bring inbound peers within 30 min, and Option 0's
+  Test 5 ran 1.5+ days with the same result. The MPC node functions
+  fine without it (see "Does the MPC node actually need inbound Tier2?"
+  in the body), so this is hygiene/network-citizenship — not a blocker.
 
 ## Summary
 
@@ -211,17 +214,24 @@ and selecting outbound source via the default route.
   flow correctly from launcher TOML → `patch_near_config` → neard config
   inside the CVM, and DSS state sync works through the full QEMU /
   dstack / docker network stack.
+- **Option 3b (per-host SNAT) alone is sufficient for DSS** (Test 6).
+  No node config or code changes; iptables SNAT on `--dport 24567`.
+  State sync completed faster than Option 0 (~32 min vs ~55 min).
+  Caveat: SNAT rule must be in place before neard's first peer
+  connections, otherwise conntrack pins the pre-SNAT mapping and
+  auto-discovery latches onto the wrong IP.
 
 **Not yet tested ❌**
 
-- **Host-level routing fixes** (Options 2/3a/3b/5). All proposed but
-  none empirically validated. In particular Option 3b (per-CVM SNAT)
-  is the leading candidate for Bob's setup; we haven't run the iptables
-  rules and watched whether `near_tier3_public_addr` becomes correct via
-  auto-discovery alone (no `tier3_public_addr` config).
-- **Whether the host fix alone is sufficient without `tier3_public_addr`.**
-  Theoretically yes (auto-discovery would pick the now-correct outbound
-  IP), but worth empirically confirming.
+- **Options 2 / 3a / 5** of the host-level fix list. None empirically
+  validated. We have empirical confirmation only for the leading
+  candidate (Option 3b — see Test 6) and Option 0.
+- **Tier2 inbound recovery on long timescales.** Both Option 0
+  (Test 5, ran 1.5+ days) and Option 3b (Test 6, 32 min) ended with
+  zero Tier2 inbound peers. Either it takes much longer than these
+  windows, or it needs a separate fix entirely. The MPC node functions
+  fine without it (see "Does the MPC node actually need inbound
+  Tier2?"), so this is a hygiene follow-up.
 
 ### Test 5 — full TDX CVM with PR #3145 (run 2026-05-06 on Alice)
 
@@ -341,6 +351,94 @@ The TDX / dstack / QEMU / docker networking layers do **not** introduce
 additional failure modes beyond the host-level asymmetric-IP issue we
 already identified — once `tier3_public_addr` is set, the fix is the
 same on bare metal and in TDX.
+
+### Test 6 — Option 3b validated in TDX, isolated from Option 0 (run 2026-05-07 on Alice)
+
+Companion to Test 5: deliberately deploy *without* `tier3_public_addr`
+and rely **only** on a host-level iptables SNAT rule (Option 3b in this
+doc). Goal: prove the host-only fix works without any node config or
+code change.
+
+Setup:
+- Same custom mpc-node image as Test 5 (still PR #3145's image, but the
+  PR's fields are *unset* in the launcher TOML — so PR #3145 is a no-op
+  for this run).
+- `single-node-testnet.sh` invoked with `TIER3_PUBLIC_ADDR=""` (the
+  script omits the line from the rendered TOML when empty).
+- Single iptables rule on the host:
+  ```bash
+  sudo iptables -t nat -I POSTROUTING 1 \
+    -p tcp --dport 24567 -o ens49f0np0 \
+    -j SNAT --to-source 51.68.219.13
+  ```
+  Matched by destination port `:24567` because dstack uses QEMU
+  user-mode slirp (no host-visible CVM bridge IP to match on, the
+  recipe in [Concrete recipe for Option 3b](#concrete-recipe-for-option-3b-on-boballe-multi-ip-ovh-host)
+  notes this).
+- CVM was restarted *after* the SNAT rule was installed (initial deploy
+  raced — neard's first peer connections established before the rule
+  hit POSTROUTING, so conntrack pinned them with no SNAT and
+  auto-discovery latched onto the wrong IP). Restart resolved this.
+
+Final metrics after 32 min uptime:
+
+```
+near_tier3_public_addr{addr="51.68.219.13:24567"} 1   ← auto-discovered, no config field set ✅
+near_block_height_head 249137957                       ← jumped to testnet tip ✅
+near_sync_status 7                                     ← past state sync, in block sync now ✅
+
+near_state_sync_download_result{result="success",  type="header"} 1
+near_state_sync_download_result{result="success",  type="part"}   1019   ← full state sync ✅
+near_state_sync_download_result{result="timeout",  type="part"}   29
+near_state_sync_download_result{result="sender_dropped",..."part"} 20
+near_state_sync_download_result{result="route_not_found",..."part"} 16
+
+near_peer_connections{peer_type="Outbound",tier="T2"} 18
+near_peer_connections{peer_type="Inbound",tier="T2"}  (absent — 0)   ← still ❌
+```
+
+State sync of shard 5 completed in ~32 min (faster than Test 5's 55 min).
+SNAT rule packet counter climbed past 130, confirming the rule was
+matching outbound peer-port-24567 traffic.
+
+**Verdict:** Option 3b is sufficient by itself for DSS. It provides the
+same correctness as Option 0 with no node code/config changes, just one
+iptables rule. The rule must be in place *before* neard starts making
+peer connections, otherwise conntrack pins the pre-SNAT mapping and
+auto-discovery ends up wrong (mitigated by restart-after-rule).
+
+### Test 6 takeaway: Tier2 inbound recovery is unrelated to either fix
+
+A surprising finding from comparing Test 5 and Test 6 directly:
+
+|  | Option 0 (Test 5) | Option 3b (Test 6) |
+|---|---|---|
+| `near_tier3_public_addr` correct | ✅ via config | ✅ via SNAT auto-discovery |
+| State sync completed | ✅ in ~55 min | ✅ in ~32 min |
+| Successful state parts | 1019 | 1019 (same) |
+| Success rate | 96.3% | ~94% |
+| **`peer_connections{Inbound,T2}`** | **0 (after 1.5+ days)** | **0 (after 32 min)** |
+| Node config change required | yes (PR #3145) | no |
+| Host root required | no | yes (iptables) |
+| Persistence | trivial (file) | systemd / iptables-persistent |
+
+**Both options leave Tier2 inbound at zero**, despite Option 3b correcting
+the source IP that peers observe (so gossiped `PeerInfo` is correct from
+the moment of restart). This contradicts the working hypothesis that
+fixing the gossiped address would let other peers dial us inbound.
+
+What this means:
+- The "missing Tier2 inbound peers" symptom is **not** primarily caused
+  by the wrong gossiped `PeerInfo`. Peers don't actively dial random
+  gossiped addresses, so even a correct address may not produce inbound
+  connections quickly.
+- It's likely a function of network demand / convergence time, not of
+  the fix mechanism. Bob's mainnet GCP node has 9 inbound T2 because
+  it's been running long enough to be in many peers' active connection
+  set. Fresh nodes (us, Bob's TEE) won't catch up in minutes.
+- For our deployment, this means **Option 3b's purported "bonus benefit
+  of also fixing Tier2 inbound" is not real in practice** — at least not
+  on the timescale we tested. Both fixes deliver DSS equally well.
 
 ## Scope of impact
 
@@ -740,15 +838,37 @@ only egress as that IP. Strongest isolation.
 
 **Concrete recommendation for Bob:**
 
-1. **Now:** apply Option 0 (`tier3_public_addr` in launcher TOML, via PR #3145)
-   — unblocks DSS without touching the host networking. Validated on Alice.
-2. **As a follow-up:** apply Option 3b (per-CVM SNAT) on Bob — also unblocks
-   the missing-Tier2-inbound symptom and is the architecturally cleaner
-   long-term answer for any new multi-IP host. See
-   [Concrete recipe for Option 3b](#concrete-recipe-for-option-3b-on-boballe-multi-ip-ovh-host)
-   above.
-3. **Eventually:** if upstream Option 4 lands in a future nearcore release,
-   we can drop Option 0 in favor of native outbound source-IP binding.
+Both Option 0 and Option 3b are now empirically validated (Tests 5 and 6
+respectively). They deliver the same DSS correctness; **neither
+recovers Tier2 inbound** in the test windows. So the choice between them
+is operational, not functional.
+
+1. **Recommended: Option 0** (`tier3_public_addr` in launcher TOML, via
+   PR #3145).
+   - Operationally simpler — one TOML field, no host root, no iptables
+     persistence to maintain.
+   - The fix lives with the node config, so it travels with the
+     deployment automatically. No host-side state to forget on a
+     migration.
+   - Validated end-to-end on TDX (Test 5).
+2. **Alternative: Option 3b** (per-host iptables SNAT).
+   - Faster state sync in our test (~32 min vs ~55 min for Option 0),
+     possibly because the source IP is correct from the moment of the
+     first peer connection rather than only on the request payload.
+   - No node code/config changes — useful if you can't redeploy nodes
+     but can change the host.
+   - Cost: requires root on the host, an iptables rule that needs
+     persistence (systemd / `iptables-persistent`), and a SNAT rule
+     installed *before* neard starts (otherwise conntrack pins the
+     pre-SNAT mapping and the fix is wasted).
+3. **Eventually:** if upstream Option 4 lands in a future nearcore
+   release, we can drop both Option 0 and Option 3b in favor of native
+   outbound source-IP binding.
+
+We initially expected Option 3b's bonus over Option 0 to be "also
+recovers Tier2 inbound peers" — that turned out **not** to materialize
+empirically (see Test 6 takeaway above). So there's no functional
+reason to prefer 3b over 0; the choice is purely operational.
 
 ## Important nuances
 
