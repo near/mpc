@@ -18,6 +18,11 @@ runCommand "${image.imageName}-manifest-digest"
     nativeBuildInputs = [ skopeo ];
   }
   ''
+    # skopeo's docker-archive transport (via containers/image) hardcodes
+    # /var/tmp as the "big files" temp dir and ignores $TMPDIR. The Nix
+    # sandbox doesn't have /var/tmp, so we create it before invoking skopeo.
+    mkdir -p /var/tmp
+
     td=$(mktemp -d)
     # `--insecure-policy` skips the signature-trust policy check. Inside the
     # Nix sandbox $HOME is `/homeless-shelter` and /etc/containers/policy.json
