@@ -24,8 +24,10 @@ impl EddsaSignatureProvider {
     ) -> anyhow::Result<(Signature, VerifyingKey)> {
         let sign_request = self.sign_request_store.get(id).await?;
 
-        let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
-        let threshold = ReconstructionLowerBound::from(threshold);
+        let domain_data = self.domain_data(sign_request.domain)?;
+        let threshold = ReconstructionLowerBound::from(usize::try_from(
+            domain_data.reconstruction_threshold.inner(),
+        )?);
         let running_participants: Vec<_> = self
             .mpc_config
             .participants
@@ -46,9 +48,7 @@ impl EddsaSignatureProvider {
             .client
             .new_channel_for_task(EddsaTaskId::Signature { id }, participants.clone())?;
 
-        let Some(keygen_output) = self.keyshares.get(&sign_request.domain).cloned() else {
-            anyhow::bail!("No keyshare for domain {:?}", sign_request.domain);
-        };
+        let keygen_output = domain_data.keyshare.clone();
 
         let result = SignComputation {
             keygen_output,
@@ -95,15 +95,14 @@ impl EddsaSignatureProvider {
         .await??;
         metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_LOOKUP_SUCCEEDED.inc();
 
-        let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
-        let threshold = ReconstructionLowerBound::from(threshold);
+        let domain_data = self.domain_data(sign_request.domain)?;
+        let threshold = ReconstructionLowerBound::from(usize::try_from(
+            domain_data.reconstruction_threshold.inner(),
+        )?);
 
-        let Some(keygen_output) = self.keyshares.get(&sign_request.domain) else {
-            anyhow::bail!("No keyshare for domain {:?}", sign_request.domain);
-        };
         let participants = channel.participants().to_vec();
         let _ = SignComputation {
-            keygen_output: keygen_output.clone(),
+            keygen_output: domain_data.keyshare.clone(),
             threshold,
             message: sign_request
                 .payload

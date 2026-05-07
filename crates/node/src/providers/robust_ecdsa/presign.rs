@@ -8,14 +8,14 @@ use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{ParticipantId, UniqueId};
 use crate::protocol::run_protocol;
 use crate::providers::robust_ecdsa::{
-    get_number_of_signers, translate_threshold, KeygenOutput, RobustEcdsaSignatureProvider,
-    RobustEcdsaTaskId,
+    max_malicious_for, KeygenOutput, RobustEcdsaSignatureProvider, RobustEcdsaTaskId,
 };
 use crate::providers::HasParticipants;
 use crate::tracking::AutoAbortTaskCollection;
 use crate::{metrics, tracking};
 use mpc_node_config::PresignatureConfig;
 use mpc_primitives::domain::DomainId;
+use near_mpc_contract_interface::types::ReconstructionThreshold;
 use near_time::Clock;
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
@@ -68,6 +68,7 @@ pub(super) async fn run_background_presignature_generation(
     mpc_config: Arc<MpcConfig>,
     config: Arc<PresignatureConfig>,
     domain_id: DomainId,
+    reconstruction_threshold: ReconstructionThreshold,
     presignature_store: Arc<PresignatureStorage>,
     keygen_out: KeygenOutput,
 ) -> anyhow::Result<()> {
@@ -87,14 +88,20 @@ pub(super) async fn run_background_presignature_generation(
         .map(|p| p.id)
         .collect();
 
-    let threshold: usize = mpc_config.participants.threshold.try_into()?;
-    let num_signers = get_number_of_signers(threshold, running_participants.len())?;
-    let robust_ecdsa_threshold = translate_threshold(threshold, running_participants.len())?;
-    anyhow::ensure!(robust_ecdsa_threshold
+    // DamgardEtAl honest-majority: signing/presigning require exactly
+    // `2 * MaxMalicious + 1 = 2t - 1` participants (split-view defense in
+    // `threshold-signatures::ecdsa::robust_ecdsa`).
+    let max_malicious = max_malicious_for(reconstruction_threshold)?;
+    let num_signers = max_malicious
         .value()
         .checked_mul(2)
         .and_then(|v| v.checked_add(1))
-        .is_some_and(|v| v <= num_signers));
+        .ok_or_else(|| anyhow::anyhow!("2 * max_malicious + 1 overflows usize"))?;
+    anyhow::ensure!(
+        num_signers <= running_participants.len(),
+        "DamgardEtAl on domain {domain_id:?} needs {num_signers} signers, only {} available",
+        running_participants.len(),
+    );
 
     loop {
         progress_tracker.update_progress();
@@ -142,7 +149,7 @@ pub(super) async fn run_background_presignature_generation(
                         let _in_flight = in_flight;
                         let _semaphore_guard = parallelism_limiter.acquire().await?;
                         let presignature = PresignComputation {
-                            max_malicious: robust_ecdsa_threshold,
+                            max_malicious,
                             keygen_out,
                         }
                         .perform_leader_centric_computation(
@@ -182,13 +189,10 @@ impl RobustEcdsaSignatureProvider {
     ) -> anyhow::Result<()> {
         id.validate_owned_by(channel.sender().get_leader())?;
         let domain_data = self.domain_data(domain_id)?;
-
-        let number_of_participants = self.mpc_config.participants.participants.len();
-        let threshold = self.mpc_config.participants.threshold.try_into()?;
-        let robust_ecdsa_threshold = translate_threshold(threshold, number_of_participants)?;
+        let max_malicious = max_malicious_for(domain_data.reconstruction_threshold)?;
 
         FollowerPresignComputation {
-            max_malicious: robust_ecdsa_threshold,
+            max_malicious,
             keygen_out: domain_data.keyshare,
             out_presignature_store: domain_data.presignature_store,
             out_presignature_id: id,
