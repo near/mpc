@@ -1740,6 +1740,10 @@ impl MpcContract {
         );
         parameters.validate()?;
         let domains = DomainRegistry::from_raw_validated(domains, next_domain_id)?;
+        let num_participants = parameters.participants().len() as u64;
+        for domain in domains.domains() {
+            crate::primitives::domain::validate_domain_threshold(domain, num_participants)?;
+        }
 
         // Check that the domains match exactly those in the keyset.
         let domain_ids_from_domains = domains.domains().iter().map(|d| d.id).collect::<Vec<_>>();
@@ -2323,7 +2327,7 @@ mod tests {
     use crate::tee::tee_state::NodeId;
     use assert_matches::assert_matches;
     use dtos::{Attestation, Ed25519PublicKey, ForeignTxSignPayload, MockAttestation};
-    use dtos::{Curve, DomainConfig, DomainId, Payload, Protocol, Tweak};
+    use dtos::{Curve, DomainConfig, DomainId, Payload, Protocol, ReconstructionThreshold, Tweak};
     use elliptic_curve::Field as _;
     use elliptic_curve::Group;
     use k256::{self, ecdsa::SigningKey, elliptic_curve, Secp256k1};
@@ -2488,10 +2492,16 @@ mod tests {
             .build();
         testing_env!(context.clone());
         let domain_id = DomainId::default();
+        // DamgardEtAl requires 2t - 1 <= n; with n=4, the max valid t is 2.
+        let reconstruction_threshold = match protocol {
+            Protocol::DamgardEtAl => ReconstructionThreshold::new(2),
+            _ => ReconstructionThreshold::new(3),
+        };
         let domains = vec![DomainConfig {
             id: domain_id,
             curve,
             protocol,
+            reconstruction_threshold,
             purpose,
         }];
         let epoch_id = EpochId::new(0);
@@ -4575,6 +4585,7 @@ mod tests {
             id: domain_id,
             curve: Curve::Secp256k1,
             protocol: Protocol::CaitSith,
+            reconstruction_threshold: ReconstructionThreshold::new(2),
             purpose: DomainPurpose::Sign,
         }];
         let (pk, _) = make_public_key_for_curve(Curve::Secp256k1, &mut OsRng);

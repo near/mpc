@@ -137,6 +137,15 @@ impl RunningContractState {
         // ensure the proposal is valid against the current parameters
         self.parameters.validate_incoming_proposal(proposal)?;
 
+        // TODO(#3169): re-enable once resharing votes carry per-domain `t`
+        // and the node honors per-domain reconstruction thresholds (#3164).
+        // Until both are in place this check would block legitimate
+        // resharings that the node currently signs at the cluster threshold.
+        // let new_num_participants = proposal.participants().len() as u64;
+        // for domain in self.domains.domains() {
+        //     crate::primitives::domain::validate_domain_threshold(domain, new_num_participants)?;
+        // }
+
         // ensure the signer is a proposed participant
         let candidate = AuthenticatedAccountId::new(proposal.participants())?;
 
@@ -167,8 +176,10 @@ impl RunningContractState {
         if domains.is_empty() {
             return Err(DomainError::AddDomainsMustAddAtLeastOneDomain.into());
         }
+        let num_participants = self.parameters.participants().len() as u64;
         for domain in &domains {
             crate::primitives::domain::validate_domain_consistency(domain)?;
+            crate::primitives::domain::validate_domain_threshold(domain, num_participants)?;
         }
         let participant = AuthenticatedParticipantId::new(self.parameters.participants())?;
         let n_votes = self.add_domains_votes.vote(domains.clone(), &participant);
@@ -202,15 +213,14 @@ impl RunningContractState {
 pub mod running_tests {
     use rstest::rstest;
 
+    use super::RunningContractState;
     use crate::primitives::domain::AddDomainsVotes;
     use crate::primitives::test_utils::{gen_threshold_params, NUM_PROTOCOLS};
+    use crate::primitives::threshold_votes::ThresholdParametersVotes;
     use crate::state::key_event::tests::Environment;
-    use crate::state::test_utils::gen_valid_params_proposal;
-    use crate::{
-        primitives::threshold_votes::ThresholdParametersVotes, state::test_utils::gen_running_state,
-    };
+    use crate::state::test_utils::{gen_running_state, gen_valid_params_proposal};
     use near_mpc_contract_interface::types::{
-        Curve, DomainConfig, DomainId, DomainPurpose, Protocol,
+        Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
     };
 
     fn test_running_for(num_domains: usize) {
@@ -359,6 +369,7 @@ pub mod running_tests {
             id: DomainId(next_id),
             curve: Curve::from(protocol),
             protocol,
+            reconstruction_threshold: ReconstructionThreshold::new(2),
             purpose,
         }];
 
@@ -370,6 +381,99 @@ pub mod running_tests {
             err.to_string()
                 .contains("Invalid protocol-purpose combination"),
             "Expected InvalidProtocolPurposeCombination, got: {err}"
+        );
+    }
+
+    fn proposal_with_threshold(state: &RunningContractState, threshold: u64) -> Vec<DomainConfig> {
+        let next_id = state.domains.next_domain_id();
+        vec![DomainConfig {
+            id: DomainId(next_id),
+            curve: Curve::Secp256k1,
+            protocol: Protocol::CaitSith,
+            reconstruction_threshold: ReconstructionThreshold::new(threshold),
+            purpose: DomainPurpose::Sign,
+        }]
+    }
+
+    #[test]
+    fn vote_add_domains__should_reject_threshold_below_two() {
+        // Given a running state and a proposal carrying t = 1
+        let mut state = gen_running_state(1);
+        let mut env = Environment::new(None, None, None);
+        env.set_signer(&state.parameters.participants().participants()[0].0);
+        let proposal = proposal_with_threshold(&state, 1);
+
+        // When voting to add the domain
+        let err = state.vote_add_domains(proposal).unwrap_err();
+
+        // Then the universal lower bound is enforced
+        assert!(
+            err.to_string()
+                .contains("Reconstruction threshold must be at least 2"),
+            "Expected ReconstructionThresholdTooLow, got: {err}"
+        );
+    }
+
+    #[test]
+    fn vote_add_domains__should_reject_threshold_exceeding_participants() {
+        // Given a running state and a proposal whose threshold > n
+        let mut state = gen_running_state(1);
+        let mut env = Environment::new(None, None, None);
+        env.set_signer(&state.parameters.participants().participants()[0].0);
+        let n = state.parameters.participants().len() as u64;
+        let proposal = proposal_with_threshold(&state, n + 1);
+
+        // When voting to add the domain
+        let err = state.vote_add_domains(proposal).unwrap_err();
+
+        // Then the upper bound is enforced
+        assert!(
+            err.to_string().contains("exceeds participant count"),
+            "Expected ReconstructionThresholdExceedsParticipants, got: {err}"
+        );
+    }
+
+    #[test]
+    fn vote_add_domains__should_accept_threshold_equal_to_participant_count() {
+        // Given a running state and a proposal where t == n (boundary case)
+        let mut state = gen_running_state(1);
+        let mut env = Environment::new(None, None, None);
+        env.set_signer(&state.parameters.participants().participants()[0].0);
+        let n = state.parameters.participants().len() as u64;
+        let proposal = proposal_with_threshold(&state, n);
+
+        // When voting to add the domain — vote is recorded without error
+        let res = state.vote_add_domains(proposal);
+
+        // Then the call succeeds (single voter is below quorum, so no transition)
+        assert!(res.is_ok(), "Expected success at boundary t == n: {res:?}");
+    }
+
+    #[test]
+    fn vote_add_domains__should_reject_damgard_etal_threshold_violating_honest_majority() {
+        // Given a running state and a DamgardEtAl proposal with `2t - 1 > n`.
+        // gen_threshold_params produces n in [3, 30]; pick t = n so that
+        // 2t - 1 > n holds (universally true for n >= 2).
+        let mut state = gen_running_state(1);
+        let mut env = Environment::new(None, None, None);
+        env.set_signer(&state.parameters.participants().participants()[0].0);
+        let n = state.parameters.participants().len() as u64;
+        let next_id = state.domains.next_domain_id();
+        let proposal = vec![DomainConfig {
+            id: DomainId(next_id),
+            curve: Curve::Secp256k1,
+            protocol: Protocol::DamgardEtAl,
+            reconstruction_threshold: ReconstructionThreshold::new(n),
+            purpose: DomainPurpose::Sign,
+        }];
+
+        // When voting to add the domain
+        let err = state.vote_add_domains(proposal).unwrap_err();
+
+        // Then the DamgardEtAl-specific bound is enforced
+        assert!(
+            err.to_string().contains("requires at least"),
+            "Expected InsufficientParticipantsForProtocol, got: {err}"
         );
     }
 }

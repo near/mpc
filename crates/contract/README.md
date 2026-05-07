@@ -207,23 +207,28 @@ To generate a new threshold signature key, all participants must vote for it to 
       "id":2,
       "curve":"Secp256k1",
       "protocol":"CaitSith",
+      "reconstruction_threshold":2,
       "purpose":"Sign"
     },
     {
       "id":3,
       "curve":"Edwards25519",
       "protocol":"Frost",
+      "reconstruction_threshold":2,
       "purpose":"Sign"
     },
     {
       "id":4,
       "curve":"Bls12381",
       "protocol":"ConfidentialKeyDerivation",
+      "reconstruction_threshold":2,
       "purpose":"CKD"
     }
   ]
 }
 ```
+
+`reconstruction_threshold` is the per-domain `t` in t-of-n key reconstruction; it must satisfy `2 <= t <= n` against the current participant count. `DamgardEtAl` domains additionally require the honest-majority bound `2t - 1 <= n`.
 
 ### Deployment
 
@@ -289,7 +294,7 @@ These functions require the caller to be a participant or candidate.
 | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | --------------- | ------------------ |
 | `respond(request: SignatureRequest, response: SignatureResponse)`                   | Processes a response to a signature request, verifying its validity and ensuring proper state cleanup.                                                                                                                                  | `Result<(), Error>`       | 10Tgas          | ~6Tgas             |
 | `respond_ckd(request: CKDRequest, response: CKDResponse)`                           | Processes a response to a ckd request, ensuring proper state cleanup.                                                                                                                                                                   | `Result<(), Error>`       | 10Tgas          | ~6Tgas             |
-| `vote_add_domains(domains: Vec<DomainConfig>)`                                      | Votes to add new domains (new keys) to the MPC network; newly proposed domain IDs must start from next_domain_id and be contiguous.                                                                                                     | `Result<(), Error>`       | TBD             | TBD                |
+| `vote_add_domains(domains: Vec<DomainConfig>)`                                      | Votes to add new domains (new keys) to the MPC network; newly proposed domain IDs must start from next_domain_id and be contiguous, and each domain must specify a `reconstruction_threshold` with `2 <= t <= n`.                       | `Result<(), Error>`       | TBD             | TBD                |
 | `vote_new_parameters(prospective_epoch_id: EpochId, proposal: ThresholdParameters)` | Votes to change the set of participants as well as the new threshold for the network. (Prospective epoch ID must be 1 plus current)                                                                                                     | `Result<(), Error>`       | TBD             | TBD                |
 | `vote_code_hash(code_hash: CodeHash)`                                               | Votes to add new whitelisted TEE Docker image code hashes.                                                                                                                                                                              | `Result<(), Error>`       | TBD             | TBD                |
 | `vote_add_launcher_hash(launcher_hash: LauncherImageHash)`                          | Votes to add a launcher image hash to the allowed set. Requires threshold votes.                                                                                                                                                        | `Result<(), Error>`       | TBD             | TBD                |

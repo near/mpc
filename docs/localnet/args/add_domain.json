@@ -4,24 +4,28 @@
       "id": 0,
       "curve": "Secp256k1",
       "protocol": "CaitSith",
+      "reconstruction_threshold": 2,
       "purpose": "Sign"
     },
     {
       "id": 1,
       "curve": "Edwards25519",
       "protocol": "Frost",
+      "reconstruction_threshold": 2,
       "purpose": "Sign"
     },
     {
       "id": 2,
       "curve": "Bls12381",
       "protocol": "ConfidentialKeyDerivation",
+      "reconstruction_threshold": 2,
       "purpose": "CKD"
     },
     {
       "id": 3,
       "curve": "Secp256k1",
       "protocol": "CaitSith",
+      "reconstruction_threshold": 2,
       "purpose": "ForeignTx"
     }
   ]

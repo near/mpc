@@ -17,7 +17,9 @@ use mpc_contract::{
 use near_account_id::AccountId;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types as dtos;
-use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, DomainPurpose, Protocol};
+use near_mpc_contract_interface::types::{
+    Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
+};
 use near_workspaces::Account;
 use serde_json::json;
 use sha2::Digest;
@@ -169,6 +171,7 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
         id: DomainId(next_domain_id),
         curve: Curve::Edwards25519,
         protocol: Protocol::Frost,
+        reconstruction_threshold: ReconstructionThreshold::new(6),
         purpose: DomainPurpose::Sign,
     }];
     execute_async_transactions(

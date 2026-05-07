@@ -8,7 +8,9 @@ use crate::{
 };
 use curve25519_dalek::edwards::CompressedEdwardsY;
 use near_account_id::AccountId;
-use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, DomainPurpose, Protocol};
+use near_mpc_contract_interface::types::{
+    Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
+};
 use rand::{distributions::Uniform, Rng};
 use std::collections::BTreeMap;
 // Re-export for convenience
@@ -21,6 +23,14 @@ const ALL_PROTOCOLS: [Protocol; 4] = [
 ];
 pub const NUM_PROTOCOLS: usize = ALL_PROTOCOLS.len();
 
+/// Default per-domain reconstruction threshold used by test fixtures. `2` is
+/// the minimum valid value (`validate_domain_threshold` requires `t >= 2`).
+/// Works for participant counts `>= 3`, which is what `gen_threshold_params`
+/// produces — needed because fixtures may include `DamgardEtAl` domains,
+/// whose `2t - 1 <= n` bound becomes `n >= 3` at `t = 2`.
+pub const DEFAULT_TEST_RECONSTRUCTION_THRESHOLD: ReconstructionThreshold =
+    ReconstructionThreshold::new(2);
+
 /// Generates a valid DomainRegistry covering all protocols, with num_domains total.
 pub fn gen_domain_registry(num_domains: usize) -> DomainRegistry {
     let mut domains = Vec::new();
@@ -31,6 +41,7 @@ pub fn gen_domain_registry(num_domains: usize) -> DomainRegistry {
             id: DomainId(i as u64 * 2),
             curve,
             protocol,
+            reconstruction_threshold: DEFAULT_TEST_RECONSTRUCTION_THRESHOLD,
             purpose: infer_purpose_from_curve(curve),
         });
     }
@@ -47,6 +58,7 @@ pub fn gen_domains_to_add(registry: &DomainRegistry, num_domains: usize) -> Vec<
             id: DomainId(registry.next_domain_id() + i as u64),
             curve,
             protocol,
+            reconstruction_threshold: DEFAULT_TEST_RECONSTRUCTION_THRESHOLD,
             purpose: infer_purpose_from_curve(curve),
         });
     }
@@ -146,7 +158,10 @@ pub fn gen_seed() -> [u8; 32] {
 }
 
 pub fn gen_threshold_params(max_n: usize) -> ThresholdParameters {
-    let n: usize = rand::thread_rng().gen_range(2..max_n + 1);
+    // Lower bound is 3 (not 2) so the produced parameters are compatible with
+    // every protocol — `DamgardEtAl` requires `n >= 2t - 1`, which forces
+    // `n >= 3` even at the minimum `t = 2`.
+    let n: usize = rand::thread_rng().gen_range(3..max_n + 1);
     let k_min = min_thrershold(n);
     let k = rand::thread_rng().gen_range(k_min..n + 1);
     ThresholdParameters::new(gen_participants(n), Threshold::new(k as u64)).unwrap()

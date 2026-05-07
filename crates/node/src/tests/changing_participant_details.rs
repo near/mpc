@@ -8,7 +8,9 @@ use crate::tests::{
 use crate::tests::{make_key_storage_config, DEFAULT_BLOCK_TIME};
 use crate::tracking::AutoAbortTask;
 use mpc_primitives::domain::{Curve, DomainId};
-use near_mpc_contract_interface::types::{DomainConfig, DomainPurpose, Protocol};
+use near_mpc_contract_interface::types::{
+    DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
+};
 use near_time::Clock;
 
 /// Runs a cluster of 3 nodes, but with only 2 participants.
@@ -50,6 +52,7 @@ async fn test_changing_participant_set_test_keyshare_import() {
         id: DomainId(0),
         curve: Curve::Secp256k1,
         protocol: Protocol::CaitSith,
+        reconstruction_threshold: ReconstructionThreshold::new(2),
         purpose: DomainPurpose::Sign,
     };
 

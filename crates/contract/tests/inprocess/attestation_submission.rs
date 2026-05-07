@@ -13,6 +13,7 @@ use mpc_contract::{
 };
 use near_mpc_contract_interface::types::{
     Attestation, InitConfig, MockAttestation, Protocol, ProtocolContractState,
+    ReconstructionThreshold,
 };
 use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, DomainPurpose};
 
@@ -107,6 +108,7 @@ impl TestSetupBuilder {
             id: DomainId::default(),
             curve: Curve::Secp256k1,
             protocol: Protocol::CaitSith,
+            reconstruction_threshold: ReconstructionThreshold::new(2),
             purpose: DomainPurpose::Sign,
         }];
 
@@ -160,6 +162,7 @@ impl TestSetupBuilder {
                             id: DomainId(1),
                             curve: Curve::Edwards25519,
                             protocol: Protocol::Frost,
+                            reconstruction_threshold: ReconstructionThreshold::new(2),
                             purpose: DomainPurpose::Sign,
                         }])
                         .unwrap();

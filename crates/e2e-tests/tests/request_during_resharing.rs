@@ -2,7 +2,7 @@ use crate::common;
 
 use mpc_primitives::domain::{Curve, DomainId};
 use near_mpc_contract_interface::types::{
-    DomainConfig, DomainPurpose, Protocol, ProtocolContractState,
+    DomainConfig, DomainPurpose, Protocol, ProtocolContractState, ReconstructionThreshold,
 };
 use rand::SeedableRng;
 
@@ -30,6 +30,7 @@ async fn test_request_during_resharing() {
                 id: DomainId(c.domains.len() as u64),
                 curve: Curve::Secp256k1,
                 protocol: Protocol::DamgardEtAl,
+                reconstruction_threshold: ReconstructionThreshold::new(3),
                 purpose: DomainPurpose::Sign,
             });
         })
