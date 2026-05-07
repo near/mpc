@@ -314,9 +314,8 @@ nodes to state-sync and complete keygen.)
 
 ### Get TEE accounts
 ```bash
-near contract call-function as-transaction <contract> get_tee_accounts \
-  json-args {} prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' \
-  sign-as <funder> network-config <network-config> sign-with-keychain send
+near contract call-function as-read-only <contract> get_tee_accounts \
+  json-args {} network-config <network-config> now
 ```
 
 ### Check attestation (should be Dstack, not Mock)
