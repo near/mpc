@@ -7,7 +7,7 @@
 # to use a specific image digest instead of the newest from the approved list.
 #
 # Prerequisites:
-#   - A running 2-node MPC cluster deployed by deploy-tee-localnet.sh
+#   - A running 2-node MPC cluster deployed by deploy-tee-cluster.sh
 #   - At least 2 image hashes approved on-chain
 #   - Source set-localnet-env.sh (or export the required variables)
 #
