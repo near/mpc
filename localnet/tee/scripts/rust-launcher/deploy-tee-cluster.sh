@@ -175,7 +175,7 @@ TEE_LAUNCHER_DIR="$REPO_ROOT/deployment/cvm-deployment"
 COMPOSE_YAML="$TEE_LAUNCHER_DIR/launcher_docker_compose.yaml"
 ADD_DOMAIN_JSON="$REPO_ROOT/docs/localnet/args/add_domain.json"
 
-MODE="${MODE:-testnet}"  # testnet|localnet
+MODE="${MODE:-localnet}"  # localnet|testnet
 
 # templates live here (UPDATED for move to localnet/tee/scripts)
 ENV_TPL="$REPO_ROOT/localnet/tee/scripts/node.env.tpl"
