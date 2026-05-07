@@ -1,109 +1,75 @@
-# Breaking out TEE attestation verification into a shared global contract
+# Shared TEE Attestation Verifier Contract
 
-## Context
+[NEAR's MPC][mpc-repo], [Defuse][defuse-site], and [Proximity][proximity-shade-attestation] all run on-chain Intel TDX attestation verification, each carrying its own copy of `dcap_qvl::verify()` and its dependency closure (`ring`/`webpki`, X.509 parsing, SHA-2/SHA-3). Every fix to `dcap-qvl` (TCB cert rotation, advisory-ID handling) gets applied N times. Worse, the MPC contract WASM is approaching the 1.5 MB transaction-size limit imposed by [NEP-509][nep-509]; the attestation crates are the heaviest dependency surface in that contract.
 
-The MPC contract at `crates/contract/src/lib.rs` has grown to ~5,900 lines, of which ~2,100 lines (35%) are TEE-related: `tee/tee_state.rs` (1,406), `tee/proposal.rs` (540), `tee/measurements.rs` (198), plus ~15 public TEE-related entry-point methods in `lib.rs`. On top of that, the contract pulls in the `mpc-attestation` and `attestation` crates which transitively bring `dcap-qvl`, `ring`/`webpki`, X.509 parsing, SHA-2/SHA-3 — collectively the heaviest WASM dependency surface of the contract. This is the primary motivator for [near/mpc-private#303](https://github.com/near/mpc-private/issues/303).
+Goals:
 
-A separate concern surfaced in conversations with Defuse and Proximity: both teams have already implemented (Proximity) or plan to implement (Defuse) on-chain TEE attestation verification, with logic that overlaps significantly with ours but diverges in details (Proximity whitelists PPIDs, doesn't whitelist launcher images, embeds measurements differently; Defuse wants a separate collateral-caching contract). All three teams running their own copy of `dcap_qvl::verify()` plus its dependency tree on-chain is wasteful and means every fix to `dcap-qvl` (e.g., TCB cert rotation, advisory-ID handling) has to be applied N times.
+- Provide a shared, generic verifier serving any Intel TDX-based NEAR contract — `dcap-qvl` bugfixes ship once.
+- Shrink the MPC contract WASM below the NEP-509 limit by breaking attestation verification out into a separate contract.
+- Roll out incrementally. The MPC team needs the breakout shipped quickly, so v1 keeps state migration to zero. Architectural improvements (per-team policy contracts, on-chain PCCS caching, ACL-shaped interfaces) follow in v2 and v3.
 
-The goal is therefore twofold:
+Design choices that follow from these goals, applied throughout the design below:
 
-1. **Shrink the MPC contract** by removing dcap-qvl plumbing.
-2. **Provide a shared verifier** that Defuse, Proximity, and any future TEE-using project on NEAR can adopt, so the dcap-qvl logic and its WASM cost are paid once across the network.
+- The verifier is the thinnest possible wrapper around `dcap_qvl::verify()`. Anything team-specific lives outside it.
+- State stays where it's governed: per-team allowlists and stored attestations live in per-team contracts, not in the shared verifier.
+- The hot path doesn't change. Re-verification is hash comparisons today; v1 does not regress that.
 
-The intended outcome: a thin global contract wrapping `dcap_qvl::verify()` that takes (`quote`, `collateral`, `now`) and returns the parsed verified report. Per-team allowlists, report-data binding, and extra checks live outside the verifier. The MPC contract keeps its current TEE state shape for v1 to avoid Borsh migrations; longer term, that state moves into a separate per-team policy contract so application contracts become TEE-agnostic.
+## Current State
 
-## Table of Contents
+### MPC contract today
 
-1. [Current state](#1-current-state)
-2. [Design principles](#2-design-principles)
-3. [Short-term design (v1)](#3-short-term-design-v1)
-4. [Long-term design vision](#4-long-term-design-vision)
-5. [Cross-team considerations](#5-cross-team-considerations)
-6. [Migration](#6-migration)
-7. [Open questions](#7-open-questions)
+The MPC contract has two attestation flows:
 
-## 1. Current state
+- **Initial verification** (`submit_participant_info`): runs `dcap_qvl::verify` plus all post-DCAP checks once per node onboarding. Cold path.
+- **Re-verification** (`verify_tee`, post-reshare cleanup, `clean_invalid_attestations`): re-checks each stored `ValidatedDstackAttestation` against current allowlists using only hash comparisons. Hot enough to be called per-sweep across all participants. Crucially, this path does **not** invoke `dcap_qvl::verify`.
 
-### 1.1 Where attestation verification lives today
+This asymmetry is what makes the breakout viable: only the cold path needs the heavyweight verifier; the hot path stays local and cheap.
 
-Three Rust crates and one contract:
+MPC binds report-data as `sha3_384(tls_pk || account_pk)` (see [`crates/mpc-attestation/src/report_data.rs`][mpc-report-data]). It runs RTMR3 event-log replay, MPC image-hash whitelisting, launcher-compose-hash whitelisting, and app_compose JSON validation as post-DCAP checks. Allowlists are governed by a threshold-of-participants vote.
 
-| Crate / file | Role | LOC |
-|---|---|---|
-| [dcap-qvl](https://github.com/Phala-Network/dcap-qvl) (external) | Cryptographic DCAP verification: cert chains, ECDSA P-256 signatures, TCB matching, QE identity matching. Returns a `VerifiedReport`. | external |
-| `crates/attestation/src/` | Wraps `dcap_qvl::verify()`. Adds: TCB-status `UpToDate` check, advisory-IDs empty check, RTMR3 event-log replay, app-compose JSON parsing + validation, app-compose-hash event check, report_data binding via `ReportData`, RTMRs match against caller-supplied `ExpectedMeasurements`. **No knowledge of MPC-specific concepts.** | ~870 |
-| `crates/mpc-attestation/src/` | MPC-specific extras on top of `attestation`: extracts MPC image hash from a launcher-emitted RTMR3 event, computes launcher compose hash from `app_compose.docker_compose_file`, checks both against caller-supplied allowlists. Defines `ValidatedDstackAttestation` and the `re_verify` method that re-checks a stored attestation against updated allowlists. Also defines `MockAttestation` for tests. | ~890 |
-| `crates/contract/src/tee/` | On-chain state and governance: stores allowed measurements / image hashes / launcher images, tracks votes for adding/removing each, stores `VerifiedAttestation` blobs keyed by TLS pubkey, provides `add_participant` and `reverify_and_cleanup_participants`. Wired into 15+ entry points in `lib.rs` (`submit_participant_info`, `verify_tee`, `vote_code_hash`, `vote_add_launcher_hash`, `vote_remove_launcher_hash`, `vote_add_os_measurement`, `vote_remove_os_measurement`, `clean_invalid_attestations`, `clean_tee_status`, `get_attestation`, etc.). | ~2,140 |
+### Other teams
 
-The verification call chain on `submit_participant_info` (`crates/contract/src/lib.rs:773`):
+[**Proximity**][proximity-shade-attestation]:
 
-```
-submit_participant_info(attestation, tls_pk)
-  → tee_state.add_participant(node_id, attestation, grace_period)         // tee_state.rs:142
-    → attestation.verify(expected_report_data, now, allowlists)            // mpc-attestation/attestation.rs:135
-      → DstackAttestation::verify(report_data, now, accepted_measurements) // attestation/attestation.rs:126
-        → dcap_qvl::verify::verify(quote, collateral, now)                 // dcap-qvl/verify.rs
-```
+- PPID whitelist check (MPC has no equivalent).
+- No launcher concept: app images are stateless by design, so the [launcher pattern][mpc-launcher] isn't needed; app-image gating is via the app-compose hash whitelist.
+- Report-data binding is the caller's account ID (vs. MPC's `sha3_384(tls_pk || account_pk)`).
+- Single `owner_id` field gates all governance.
 
-Re-verification on whitelist change (`verify_tee`, `crates/contract/src/lib.rs:1506`):
+[**Defuse**][defuse-site]: no on-chain attestation contract yet. Their proposed design:
+
+- Verifier is global; callbacks the application via `application.on_tee_attested(sender, msg)`.
+- Application is fully TEE-agnostic — gates by `predecessor == verifier.near` plus its own ACL.
+- Two contracts: collateral governance + measurements governance, each with a single `admin_id`.
+
+## Short-Term Design (v1)
+
+The MPC team needs the contract shrunk fast, so v1 is deliberately small: extract `dcap_qvl::verify()` into a shared verifier, point the MPC contract at it, change nothing else. Per-team policy contracts, on-chain PCCS caching, and ACL generalization wait for v2 and v3.
 
 ```
-verify_tee()
-  → tee_state.reverify_and_cleanup_participants(participants, grace)       // tee_state.rs:212
-    → for each participant: VerifiedAttestation::re_verify(now, allowlists) // mpc-attestation/attestation.rs:80
-       (hash-list comparisons only — no dcap-qvl call)
+┌──────────────────────────────┐
+│  tee-verifier-v1.near        │
+│  Global Contract by CodeHash │
+│  verify_quote(...)           │
+│  → VerifiedReport            │
+└──────────────▲───────────────┘
+               │ Promise(verify_quote)
+               │ (cold path: submit_participant_info only)
+┌──────────────┴───────────────┐
+│  mpc-contract                │
+│  TeeState unchanged          │
+│  stored_attestations cache   │
+│  re_verify hot path local    │
+└──────────────────────────────┘
 ```
 
-The crucial property: **re-verification does not invoke dcap-qvl.** It just walks the stored `ValidatedDstackAttestation` (mpc image hash, launcher compose hash, measurements, expiry) against the current allowlists. This is what makes splitting the expensive verify out feasible — it only runs at first submission, not on every signature, and not even on every sweep.
+### Verifier contract
 
-### 1.2 What the other teams do
+The verifier WASM is published as a [NEP-591][nep-591] **Global Contract by CodeHash**. CodeHash makes the published code immutable on the network and auditable by hash — the security story we want for an attestation-verification dependency. Upgrades happen by publishing a new hash and migrating consumers to a new versioned account; we never edit deployed code in place.
 
-**Proximity** — [shade-attestation crate](https://github.com/NearDeFi/shade-agent-framework/tree/main/shade-attestation) and [shade-contract-template](https://github.com/NearDeFi/shade-agent-framework/tree/main/shade-contract-template):
-- Crate signature: `DstackAttestation::verify(expected_report_data, now, accepted_measurements, accepted_ppids)`. Adds a **PPID whitelist check** that we don't have.
-- Stores `approved_measurements`, `approved_ppids`, `agents` (verified agents map). Owner-gated governance (`require_owner()`).
-- **No launcher concept.** Per Proximity, their app images are stateless by design — applications are told not to store anything on disk that future versions should not be able to access — so the launcher pattern MPC uses to bootstrap and reverify CVM images (see `docs/securing-mpc-with-tee-design-doc.md`, "Launcher" section) isn't needed. Instead, which app images are allowed to run is gated by **approving the app-compose hash** alongside the other measurements.
-- No multi-image-hash grace period. Report-data binding is the caller's account ID, not a TLS+account pubkey hash.
-- Uses `dcap-qvl 0.4.0`.
+A versioned account (e.g., `tee-verifier-v1.near`) issues `UseGlobalContractAction(Global(<code_hash>))` to make itself a callable instance of the verifier. Consumers Promise into that account. When v2 of the verifier ships, a fresh account (e.g., `tee-verifier-v2.near`) issues `UseGlobalContractAction` against the new hash and consumers update their Promise targets explicitly. There is no admin on either the published code or the version account.
 
-**Defuse** — no on-chain attestation contract yet. Their proposed design (shared in a cross-team Slack thread):
-- Off-chain TEE component calls `verifier.verify_attestation(quote, ..., application_account_id, msg)`.
-- Verifier callbacks into the application via `application.on_tee_attested(sender, msg)`.
-- Application contract is fully TEE-agnostic; gates by `predecessor == verifier.near` plus its own ACL.
-- Optional separate "Permissionless Collateral Caching Contract".
-- Two separate contracts intended: "collateral governance" and "approved measurements governance", each gated by a single `admin_id` field.
-
-**MPC** — current state described in §1.1.
-
-The three implementations all wrap `dcap_qvl::verify` but disagree on:
-1. **Report-data binding**: MPC binds `sha3_384(tls_pk || account_pk)`, Proximity binds the caller's account ID, tee-solver binds the signer's pubkey.
-2. **Extra post-DCAP checks**: MPC checks launcher + MPC image hash via RTMR3 event-log replay; Proximity checks PPIDs + app-compose hash; tee-solver only checks compose hash.
-3. **Allowlist storage**: all three keep allowlists on-chain but with different shapes and different governance (MPC: threshold-of-participants vote, Proximity: owner, Defuse: planned `admin_id`).
-
-### 1.3 NEAR Global Contracts
-
-[NEAR docs](https://docs.near.org/smart-contracts/global-contracts) describe two flavours:
-- **By account ID**: deployed at an account; that account's owner can upgrade. Callers do normal cross-contract calls to that account. Async, like any cross-contract call. Upgradable.
-- **By code hash**: code identified by hash; immutable. Other accounts can deploy that exact code at their own address (sharing the binary on-network but not state). Calls into the code happen in the local account's context.
-
-Deployment cost is ~10x normal (10 NEAR per 100 KB), but per-call overhead is negligible.
-
-## 2. Design principles
-
-These guide both the v1 scope and the long-term direction:
-
-- **The verifier is the thinnest possible wrapper around `dcap_qvl::verify()`.** Anything team-specific (allowlists, report_data binding, governance) lives outside it. This maximizes reuse: every team agrees on what `verify()` does because it does only what dcap-qvl does.
-- **State stays where it's governed.** Per-team allowlists and stored attestations live in per-team contracts because per-team governance is what mutates them. The verifier doesn't store them and doesn't need to know about them.
-- **Don't break the hot path.** Re-verification (called from `verify_tee`, post-reshare cleanup, `clean_invalid_attestations`) iterates over many participants and must stay synchronous and in-process. It already does — `re_verify` is hash comparisons only — so this is a "don't regress" property, not a new requirement.
-- **Async cross-contract is fine for the cold path.** `submit_participant_info` is called once per node onboarding, then never again for that node. A one-Promise-plus-callback round-trip is acceptable there.
-- **Borsh state is sacred.** Existing on-chain `TeeState` Borsh layout is not changed in v1. Migration of stored attestations is reserved for the long-term split.
-- **Don't bake heterogeneity into the verifier.** Report-data binding differs across teams; the verifier doesn't check report_data at all. Extra checks differ across teams; the verifier doesn't run them.
-
-## 3. Short-term design (v1)
-
-### 3.1 What ships
-
-A single new global contract, **`tee-verifier`**, deployed by-account-id (e.g. as `tee-verifier.near`). It exposes one method:
+The verifier exposes one method:
 
 ```rust
 pub fn verify_quote(
@@ -114,267 +80,176 @@ pub fn verify_quote(
 ) -> Result<VerifiedReport, VerificationError>;
 ```
 
-Where:
-- `Collateral` is a thin wrapper over `dcap_qvl::QuoteCollateralV3` (already exists in `crates/attestation/src/collateral.rs`).
-- `VerifiedReport` is a Borsh-stable wire type that mirrors `dcap_qvl::verify::VerifiedReport`: `status: String`, `advisory_ids: Vec<String>`, `report: TDReport10` (RTMRs, MRTD, report_data, ...), `ppid: [u8; 16]`, plus the QE/platform TCB statuses. The wire type is owned by the verifier contract and re-exported via a small `tee-verifier-interface` crate.
-- Errors: same enum as `dcap_qvl::verify` errors plus a `Custom(String)` variant.
+`Collateral` and `VerifiedReport` are Borsh-stable wire types matching `dcap_qvl::verify::QuoteCollateralV3` and `dcap_qvl::verify::VerifiedReport` respectively, exposed via a new `tee-verifier-interface` crate so callers can decode the response without depending on `dcap-qvl` directly. The returned `VerifiedReport` carries the parsed quote (RTMRs, MRTD, report_data, advisory IDs, TCB statuses); each consumer's downstream policy then decides what counts as acceptable for its application.
 
-The verifier does **only** what `dcap_qvl::verify::verify(&quote, &collateral, now_seconds)` does. No advisory-IDs check. No report_data binding. No RTMR3 replay. No measurement match. The caller does all of those — see §3.3.
+The verifier does only what `dcap_qvl::verify::verify` does. No advisory-ID check, no report-data binding, no RTMR3 replay, no measurement match — those checks differ across teams (RTMR3 inputs, app-compose policy, report-data binding all diverge), so they live in each consumer's policy/application code.
 
-The verifier method is `&self` (read-only logic) but must be a regular call (not a view call) because cross-contract calls to view methods aren't supported from a mutating context. It writes nothing.
+### MPC contract changes
 
-### 3.2 Verifier state and governance (v1)
-
-The verifier's state in v1 is **empty** (the contract has no fields apart from a near-sdk owner). PCCS root certs are compiled into the dcap-qvl crate as constants — the same as today. Upgrades to the verifier (e.g., to pick up a new `dcap-qvl` version with rotated Intel root certs or a new advisory list) are pushed by an `admin_id` (initially the MPC DAO; pluggable to a multi-team committee later — see §7).
-
-Why no state? Because every per-team policy decision (which measurements, which advisory IDs, which TCB statuses to accept, what to bind in report_data) belongs in that team's policy contract, not in the shared verifier. Even "is `UpToDate` the only acceptable TCB status?" is something Proximity and MPC happen to agree on today but might diverge on tomorrow. Keeping it out of the verifier costs nothing and avoids forcing all teams into one policy.
-
-### 3.3 MPC contract changes in v1
-
-The MPC contract keeps its `TeeState` exactly as today (§1.1). The only behavioural change is that `tee_state.add_participant` in `crates/contract/src/tee/tee_state.rs:142` no longer calls `attestation.verify()` synchronously. Instead:
+`TeeState` (the MPC contract's stored attestations and allowlists) is unchanged in v1. Cross-contract calls into a Global Contract are normal NEAR async Promises; the MPC contract becomes a Promise + callback flow on the cold path:
 
 ```
-submit_participant_info(attestation, tls_pk)        [entry point — lib.rs:773]
-  ├─ assert caller is signer; extract account_pk
-  ├─ build NodeId
-  ├─ compute expected_report_data = ReportDataV1::new(tls_pk, account_pk).into_bytes()
-  ├─ snapshot current allowlists (mpc_image_hashes, launcher_compose_hashes, measurements)
-  ├─ stash (NodeId, expected_report_data, snapshot, attached_deposit) for the caller
-  ├─ schedule Promise: tee_verifier.verify_quote(quote, collateral, now)
-  └─ chain callback: on_attestation_verified(caller)
+submit_participant_info(attestation, tls_pk):
+    1. The MPC contract validates the caller, builds a NodeId, computes the
+       expected report_data, and snapshots its current allowlists (image hashes,
+       launcher hashes, measurements).
+    2. It stashes those values plus the caller's attached deposit, keyed by the
+       caller's account ID, so the callback can find them again.
+    3. It schedules a Promise to tee-verifier-v1.near.verify_quote(quote,
+       collateral, now), chained to its own on_attestation_verified callback.
 
-on_attestation_verified(caller)                     [callback — new]
-  ├─ retrieve VerifiedReport from PromiseResult
-  ├─ load (NodeId, expected_report_data, snapshot, deposit) for the caller
-  ├─ run all the post-DCAP checks the attestation crate does today:
-  │     - report.status == "UpToDate"
-  │     - report.advisory_ids.is_empty()
-  │     - report.report.as_td10().is_some()
-  │     - SHA-3 binding match: report.report.report_data == expected_report_data
-  │     - RTMR3 replay against tcb_info.event_log
-  │     - app_compose JSON validation
-  │     - app_compose hash event match
-  │     - RTMR0/1/2/MRTD match against snapshot.measurements
-  │     - key_provider digest match
-  │     - extract & check MPC image hash against snapshot.mpc_image_hashes
-  │     - compute & check launcher compose hash against snapshot.launcher_compose_hashes
-  ├─ build ValidatedDstackAttestation { mpc_image_hash, launcher_compose_hash, expiry, measurements }
-  ├─ insert into stored_attestations[node_id.tls_public_key]
-  └─ refund excess attached_deposit; clear stashed pending state for the caller
+on_attestation_verified(caller):
+    1. Loads the VerifiedReport from the Promise result and the stashed state.
+    2. Runs the post-DCAP checks against the snapshot taken at submit time:
+       status, advisory IDs, report_data binding, RTMR3 replay, app_compose
+       validation, RTMR/MRTD match against allowed measurements, MPC image hash,
+       launcher compose hash.
+    3. On success: builds a ValidatedDstackAttestation and inserts it into
+       stored_attestations.
+    4. On failure: leaves stored_attestations untouched and refunds the deposit.
+       Either way, clears the stashed state.
 ```
 
-The post-DCAP checks above are **exactly** what `attestation::DstackAttestation::verify` plus `mpc-attestation::Attestation::verify` do today (see `crates/attestation/src/attestation.rs:126` and `crates/mpc-attestation/src/attestation.rs:135`). They simply move from running synchronously inside `tee_state.add_participant` to running inside `on_attestation_verified` after the verifier returns the parsed report. The `DstackAttestation` struct itself becomes the input to the callback (the caller still submits `quote`, `collateral`, `tcb_info`); we only offload the cryptographic dcap-qvl part to the verifier, then re-attach the parsed report to the local `tcb_info` for the event-log/app-compose checks.
+The post-DCAP checks happen on the MPC contract because:
 
-`re_verify` and `verify_tee` are unchanged — they don't call dcap-qvl, so they don't need the verifier.
+- RTMR3 replay needs `tcb_info.event_log`, a separate input with a Dstack-specific shape we don't want to standardize at the verifier layer.
+- App-compose validation is opinionated (MPC's `kms_enabled == false`, etc.); other teams may want different rules.
+- Report-data binding differs across teams.
 
-#### Why split this way (and not call the verifier for everything)
+Each verified attestation is **cached** in the MPC contract's `stored_attestations` (keyed by TLS pubkey, just like today). Subsequent operations — signing, re-verification on allowlist changes, post-reshare cleanup — read from this cache and never call the verifier. The verifier is only invoked once per node onboarding.
 
-The alternative is to have the verifier do RTMR3 replay, app_compose validation, and the report-data check too — i.e. host the whole `attestation` crate, not just `dcap_qvl`. That makes every consumer's caller-side code one line shorter, but:
+### Re-verification stays local
 
-1. RTMR3 replay needs `tcb_info.event_log`, which is a separate input from the quote. Either the verifier takes another argument, or every consumer agrees on Dstack's TCB-info shape.
-2. App-compose validation is opinionated — MPC requires `kms_enabled == false`, `gateway_enabled == Some(false)`, etc. (`crates/attestation/src/attestation.rs:366`). Proximity may want different rules.
-3. Report-data binding differs across teams (§1.2). The verifier returning the raw report and letting the caller compare is the cleanest way to support all three bindings.
+`re_verify`, `verify_tee`, post-reshare cleanup, and `clean_invalid_attestations` are unchanged in v1. They operate on cached `ValidatedDstackAttestation` blobs and do hash comparisons against the current allowlists. None of them call the verifier; they don't even need a Promise. Same property as today.
 
-So v1 keeps the verifier at "what dcap-qvl does" and lets the `attestation` crate (still no-std) be linked by each consumer's policy/application contract. Other teams can pull in whichever subset of `attestation` makes sense for them, or write their own.
+In v2/v3, this logic moves into the per-team policy contract (see "Long-Term Direction" below) but the property — re-verification is in-process and local to whoever holds the cache — is preserved.
 
-### 3.4 PCCS / collateral handling (v1)
+### PCCS / collateral handling
 
-Unchanged from today: the off-chain MPC node fetches collateral (via `tee-authority` → Dstack → PCCS) and submits it inline as part of the attestation payload. The verifier accepts inline collateral on every call. No on-chain PCCS cache in v1.
+Unchanged in v1: the off-chain MPC node fetches collateral via `tee-authority` → Dstack → PCCS and submits it inline as part of the attestation payload. The verifier accepts inline collateral on every call.
 
-This deliberately leaves the [Automata-style PCCS-on-chain](https://github.com/automata-network/automata-on-chain-pccs) idea for a follow-up workstream (§4.4).
+On-chain PCCS caching is desirable long-term but not blocking; pinned to v3 below.
 
-### 3.5 What v1 saves on the MPC contract
+### What v1 saves
 
-- Removes `mpc-attestation`'s `dcap-qvl` transitive deps from the WASM build (the largest dep tree it has).
-- Removes ~60 lines from `tee_state.rs` (the dcap-qvl call inside `add_participant`).
-- Adds ~150 lines for the callback path and the `pending_attestations` map.
-- Net WASM size win: roughly half of what a naive "move everything TEE-related" effort would yield, but with zero state-migration risk.
+- The `mpc-contract` WASM no longer transitively depends on `dcap-qvl`, `ring`, `webpki`, or X.509 parsing. This is the load-bearing reduction for the NEP-509 size constraint.
+- No on-chain state migration: existing `stored_attestations` and allowlists keep their Borsh layout, all governance entry points keep working. The only behavioural change is that `submit_participant_info` becomes a two-step transaction.
 
-The "second half" of the savings is realized in the long-term split (§4).
+## Long-Term Direction
 
-## 4. Long-term design vision
-
-### 4.1 Three-contract architecture
-
-The end state has three contract roles per team:
+### v2: Per-team policy contracts
 
 ```
-                         ┌─────────────────────────────────┐
-                         │  tee-verifier (global, shared)  │
-                         │  verify_quote(quote, coll, now) │
-                         │  → VerifiedReport               │
-                         │  state: empty (or PCCS roots)   │
-                         └──────────────┬──────────────────┘
-                                        │
-                       ┌────────────────┼────────────────────┐
-                       │                │                    │
-            ┌──────────▼─────┐  ┌───────▼────────┐  ┌────────▼──────────┐
-            │ mpc-tee-policy │  │ defuse-policy  │  │ proximity-policy  │
-            │ admin_id, all- │  │ admin_id, …    │  │ admin_id, ppids,  │
-            │ owed measure-  │  │                │  │ measurements, …   │
-            │ ments, image   │  │                │  │                   │
-            │ hashes, launch │  │                │  │                   │
-            │ er hashes,     │  │                │  │                   │
-            │ stored_attest- │  │                │  │                   │
-            │ ations         │  │                │  │                   │
-            └──────────┬─────┘  └───────┬────────┘  └────────┬──────────┘
-                       │                │                    │
-            ┌──────────▼─────┐  ┌───────▼────────┐  ┌────────▼──────────┐
-            │ mpc-contract   │  │ defuse-app     │  │ proximity-app     │
-            │ TEE-agnostic:  │  │ TEE-agnostic   │  │ TEE-agnostic      │
-            │ asks policy    │  │                │  │                   │
-            │ "is X attested │  │                │  │                   │
-            │  & authorized?"│  │                │  │                   │
-            └────────────────┘  └────────────────┘  └───────────────────┘
+                    ┌──────────────────────────────┐
+                    │  tee-verifier-v1.near        │
+                    │  (or v2, v3 by code hash)    │
+                    └──────────────▲───────────────┘
+                                   │ Promise(verify_quote)
+              ┌────────────────────┼─────────────────────┐
+              │                    │                     │
+   ┌──────────┴─────┐  ┌───────────┴──────┐  ┌───────────┴──────┐
+   │ mpc-tee-policy │  │  defuse-policy   │  │ proximity-policy │
+   │ (per-team)     │  │  (per-team)      │  │ (per-team)       │
+   │ allowlists,    │  │                  │  │                  │
+   │ stored_attest- │  │                  │  │                  │
+   │ ations, admin  │  │                  │  │                  │
+   │ for governance │  │                  │  │                  │
+   └──────────▲─────┘  └───────────▲──────┘  └───────────▲──────┘
+              │ is_attested?       │                     │
+              │ (hot path)         │                     │
+   ┌──────────┴─────┐  ┌───────────┴──────┐  ┌───────────┴──────┐
+   │ mpc-contract   │  │ defuse-app       │  │ proximity-app    │
+   │ TEE-agnostic   │  │ TEE-agnostic     │  │ TEE-agnostic     │
+   └────────────────┘  └──────────────────┘  └──────────────────┘
 ```
 
-- **`tee-verifier`** is the same global contract as in v1, unchanged. One per network.
-- **Per-team policy contract** (e.g., `mpc-tee-policy.near`) holds: allowed measurements, allowed image / launcher hashes (or PPIDs, or whatever the team uses), stored verified attestations, and the team's extra-check logic (RTMR3 replay rules, report_data binding rules, app_compose validation rules). Single `admin_id` field for governance, per Defuse's design. The admin_id can be a DAO, a proxy, or a single account.
-- **Application contract** (e.g., `mpc.near`) becomes TEE-agnostic. It calls into the policy contract to ask "is the caller currently a valid attested operator?" and the policy contract enforces whatever team-specific rules apply.
+Per-team policy contract (e.g., `mpc-tee-policy.near`) holds: allowlists, the team's extra-check logic, and `stored_attestations`. Each team's policy contract has its own `admin_id` for governance — the `admin_id` is per-team, not shared. That admin can be a DAO, a proxy, a multisig, or a single account. Different teams can pick different governance schemes behind the same interface.
 
-Why this end state:
+Application contract becomes TEE-agnostic and asks the policy "is this node attested?". Re-verification on allowlist change moves with `TeeState` into `mpc-tee-policy`; the verifier remains uninvolved.
 
-- **TEE-agnostic application contracts.** The MPC contract today has 15+ entry points threading TEE concepts. Pushing them out makes the contract conceptually about MPC (signing, key events, governance) and not about TEEs. Bug fixes in attestation logic stop touching the signing-path code.
-- **Per-team policy isolation.** Proximity wants PPID checks; we don't. Defuse may want timelock / DAO-veto integration. Each team's policy contract can encode whatever it needs without negotiating with the others.
-- **Composable governance.** A single `admin_id` is the simplest possible governance interface and lets each team plug in any authorization scheme behind it (Sputnik DAO, RBAC proxy, multisig, single key) without the policy contract having to know.
-- **Re-verification stays synchronous.** Re-verification (`verify_tee`) becomes a cross-contract call from the application to the policy contract — but only when triggered, not on the hot path. Inside the policy contract, the per-attestation `re_verify` work stays in-process, just like today.
+The migration is mechanical: read `TeeState` from `mpc-contract`, write into `mpc-tee-policy`, mark migrated, repoint application callers. State is preserved; on-chain Borsh layout is preserved by re-using the existing structs in the new account.
 
-### 4.2 The application/policy interface
+### v2 application/policy interface
 
-Conceptually:
+Each team owns its policy contract — there's no shared codebase. We may publish a reference trait like the one below as documentation, but teams aren't required to conform exactly:
 
 ```rust
 trait TeePolicyContract {
-    // Cold path: a candidate node submits attestation evidence.
+    // Cold path: candidate node submits attestation evidence.
     // Async: schedules verifier call, runs extra checks in callback, stores result.
     fn submit_attestation(
         attestation: Attestation,
         node_id: NodeId,
-        // optional opaque bytes the application contract wants bound into
-        // report_data; the policy contract checks the binding using its own scheme
         report_data_payload: Vec<u8>,
     ) -> Promise;
 
-    // Hot path: the application contract asks "is this account currently attested?"
+    // Hot path: is this node currently attested?
+    // The application contract is responsible for caching answers
+    // (e.g., a thin local replica updated by policy push notifications, or
+    // coarse-grained authorization at session boundaries) so the hot signing
+    // path doesn't issue a Promise per signature. The policy contract is the
+    // source of truth; the application's cache is an optimization. // TODO I think this could be cached in this contract, not in the application contract
     fn is_attested(&self, node_id: NodeId) -> bool;
 
-    // Re-verification: triggered when whitelists change.
+    // Triggered by an admin action that changes allowlists.
     fn reverify_all(&mut self) -> ReverifyResult;
 }
 ```
 
-The application contract holds the *participant set* (who's authorized to do MPC stuff at all), the policy contract holds the *attestation set* (who has a valid TEE quote on file). Hot-path checks become `policy.is_attested(node_id)` cross-contract calls, which the application contract caches optimistically (the post-attestation set is small and changes rarely).
+`NodeId` is opaque to the trait — each team can use whatever shape it needs (MPC's `(account_id, tls_pubkey, account_pubkey)`, Proximity's account ID, etc.). The interface is currently TEE-flavoured (`is_attested`, `node_id`); v3 generalizes it (see below).
 
-This still carries the cost of a cross-contract call on a path that's currently synchronous (`is_caller_an_attested_participant`). The right way to dodge that is for the policy contract to publish "attested" events the application contract subscribes to, or for the application contract to keep a thin replica of the attested set and trust the policy contract's writes. The exact mechanism is a v2 design problem.
+### v3: ACL-shaped interface and on-chain PCCS
 
-### 4.3 Migration to long-term
+**ACL generalization.** Most TEE-using applications don't actually want to know about TEEs — they want to know "is the caller authorized for this action?". TEE attestation just populates the answer.
 
-The v1 design is a stepping stone, not a dead end:
+Replacing `is_attested(node_id) -> bool` with `is_authorized(account_id, action) -> bool` lets the application contract drop every TEE type. Internally the policy maps `is_authorized` to "is `account_id` in `stored_attestations` AND does it re-verify AND does the action satisfy any role-based restriction?". TEE machinery becomes an implementation detail of the policy.
 
-1. v1 ships the global verifier and re-points the MPC contract's `submit_participant_info` at it. State stays in MPC.
-2. v2 introduces `mpc-tee-policy` and migrates `TeeState` out of the MPC contract into it. This requires Borsh state migration of the existing `stored_attestations` and the allowlist storage. The migration is mechanical (read from MPC, write to policy, mark as migrated).
-3. v3 replaces `is_caller_an_attested_participant` and the rest of the TEE entry points in `mpc-contract` with calls into `mpc-tee-policy`.
+This generalizes naturally: non-TEE policies (admin-set ACL), multi-mechanism policies (TEE OR hardware key OR DAO membership), or delegated policies that forward to another ACL contract — all conform to the same interface.
 
-### 4.4 PCCS on-chain caching (separate workstream)
+This matches the preference Defuse and Proximity have expressed for hiding TEEs behind an authorization layer rather than baking TEE concepts into application contracts.
 
-Both Defuse and Proximity want collateral managed centrally, not re-uploaded on every call. The natural model is to mirror [Automata's on-chain PCCS](https://github.com/automata-network/automata-on-chain-pccs):
+**On-chain PCCS caching.** Mirroring [Automata's design][automata-pccs]: a separate `pccs.near` contract stores fresh collateral per FMSPC, governed by an `admin_id` (or permissionless if root-CA validation is replayed on insert). The verifier grows a `verify_quote_via_pccs(quote, pccs_account_id, fmspc, now)` companion that reads collateral by cross-contract call instead of accepting it inline. This removes the obligation for off-chain components to fetch and bundle collateral on every call.
 
-- A separate global contract `pccs.near` stores the freshest collateral per FMSPC, signed by an admin_id-controlled identity (or permissionless if root-CA chain validation is replayed on insert).
-- The verifier optionally accepts a `(pccs_account_id, fmspc)` tuple instead of inline collateral; in that case it reads collateral via a cross-contract call.
-- The MPC node fetches collateral once, submits it to `pccs.near`, then subsequent quotes from any team can reference it.
+## Adoption Path
 
-This is a separate design and a separate ship. v1 ignores it; the verifier API will need to grow a `verify_quote_via_pccs(quote, pccs_account_id, fmspc, now)` companion when the time comes. Not blocking.
+**v1**: Defuse and Proximity continue running their own verification stacks. They can opportunistically swap their local `dcap_qvl::verify` call for a Promise to `tee-verifier-v1.near`, getting the dcap-qvl-bugfix-once benefit without rewriting their state model.
 
-## 5. Cross-team considerations
+**v2**: `mpc-tee-policy` becomes a reference policy implementation. Other teams fork and customize.
 
-### 5.1 Report-data binding heterogeneity
+**v3**: ACL-shaped interface and PCCS-on-chain available; teams adopt as they like.
 
-The verifier doesn't check report_data — it just returns it inside `VerifiedReport.report.report_data`. Each team's policy contract checks report_data against whatever it wants:
+## Open Questions
 
-- MPC: `sha3_384(tls_pk || account_pk)` (`crates/mpc-attestation/src/report_data.rs:64`)
-- Proximity: account ID padded to 64 bytes
-- tee-solver: signer pubkey
-- Future teams: anything else
+### Verifier governance
 
-This is achieved at zero verifier-side cost: the verifier returns the parsed report and stays out of the binding decision. The cost is that *every* policy contract has to explicitly check report_data — it's not enforced by the verifier. We accept that cost; it keeps the verifier shared.
+By-CodeHash means there is no admin on the verifier code itself — bugs are fixed by publishing a new hash, deploying it at a new versioned account (e.g., `tee-verifier-v2.near`), and getting consumers to migrate their Promise targets. Open questions:
 
-### 5.2 Allowed-status policy heterogeneity
+- Who has the authority to publish new code hashes? The publication action burns ~25–30 NEAR per ~250–300 KB of WASM.
+- Who deploys versioned accounts? Same answer presumably.
 
-Today MPC requires `status == "UpToDate"` and `advisory_ids.is_empty()` (`crates/attestation/src/attestation.rs:23`). Proximity requires the same. If a future team wants to allow `OutOfDate` or specific advisory IDs (e.g., during a vulnerability patch window), they implement that in their policy contract. The verifier returns the raw status and advisory IDs; the policy decides.
+### Promise gas budget
 
-### 5.3 Extra checks (RTMR3 replay, launcher, PPID, app_compose)
+`verify_quote` does cert-chain validation and multiple ECDSA P-256 verifies — non-trivial gas. Measurements needed on testnet before pinning a number.
 
-All of these are post-DCAP. The verifier doesn't run them. Each team's policy contract runs whichever subset it needs:
+The MPC contract attaches gas to its outbound Promise. The deposit attached to `submit_participant_info` covers storage staking for the new attestation entry; gas is paid out of the MPC contract's balance, not the caller's. If the caller wants to retry after a verifier-side gas exhaustion, they re-submit (paying storage staking again from their deposit, refunded if the prior pending entry was already cleaned up).
 
-- MPC: RTMR3 replay + launcher compose hash whitelist + MPC image hash whitelist + app_compose JSON validation.
-- Proximity: RTMR3 replay + **app-compose-hash whitelist** (the primary "which app image is allowed" gate, in lieu of a launcher) + PPID whitelist.
-- Defuse: TBD.
+### Failure modes of the async path
 
-The `attestation` crate (not `mpc-attestation`) provides reusable building blocks for these — RTMR3 replay, app_compose JSON validation, etc. — that any team's policy contract can pull in. The crate is no_std and Borsh-serializable, so dropping it into a WASM contract is cheap.
+If the verifier Promise fails (verifier unreachable, gas exhaustion, `VerificationError`), the callback must clear the caller's stashed pending state and refund the attached deposit. If the callback itself fails, the deposit is potentially stuck. Provide a sweep entry point (mirror of the existing `clean_invalid_attestations` pattern) so anyone can clear stale pending entries after a timeout.
 
-### 5.4 Adoption path for Defuse and Proximity
+### `MockAttestation` in tests
 
-In v1:
-- Both teams continue running their own current verification stacks (Proximity's `shade-attestation` contract, Defuse's not-yet-deployed contract).
-- They can adopt the global `tee-verifier` opportunistically by pointing their `verify` call at it instead of re-implementing dcap-qvl locally.
+`MockAttestation` was an in-process Rust enum used by the MPC contract's tests — it doesn't make sense on a Global Contract verifier (the verifier accepts raw quote bytes; there's no mock variant on the wire). For unit/integration tests of consumer contracts, deploy a stub verifier contract that returns a hand-crafted `VerifiedReport` without invoking `dcap-qvl`. Document this in the v1 migration so test authors know the test scaffolding pattern is changing.
 
-In v2:
-- The `mpc-tee-policy` contract design becomes a reference implementation. Proximity could fork it and customize for PPID checks; Defuse could do the same.
+### Versioning of the verifier wire types
 
-### 5.5 dcap-qvl version alignment
+`VerifiedReport`'s Borsh shape will evolve with `dcap-qvl` (e.g., TDX 1.5 reports add fields). With the by-CodeHash architecture this is automatic: each `dcap-qvl` version corresponds to a different code hash, deployed at a different versioned account. Consumers explicitly migrate when ready. No in-place wire-format compatibility tricks needed.
 
-MPC and Proximity currently pin different dcap-qvl versions in their respective `Cargo.toml`. The global verifier should pin to a specific dcap-qvl version, and that pin becomes the de facto network-wide standard. Bumping the pin is a verifier upgrade — pushed by the verifier's `admin_id`. This is the headline benefit of the global contract: dcap-qvl bugfixes get rolled out once, not three times.
-
-## 6. Migration
-
-The v1 migration is **state-preserving**: existing `stored_attestations` are untouched, the `TeeState` Borsh layout is unchanged, all governance entry points keep working. The only behavioural change is that `submit_participant_info` becomes a two-step transaction (Promise to the verifier + callback that finalizes insertion).
-
-The verifier is deployed first; once stable, the MPC contract is upgraded to point at it. Node operators are coordinated since `submit_participant_info` becomes async on the off-chain side.
-
-A detailed PR sequence will accompany the implementation; that lives outside this design doc.
-
-## 7. Open questions
-
-### 7.1 Verifier governance
-
-Who owns `tee-verifier.near` and decides when to upgrade it? Options:
-
-- MPC DAO controls it. Simplest, but feels presumptuous given that other teams will use it.
-- A multi-team committee account (multisig or Sputnik DAO with reps from MPC, Defuse, Proximity).
-- An on-chain process: e.g., "any pinned dcap-qvl version with at least N team approvals can be deployed".
-
-Recommendation: **start with a multisig of 2-of-{MPC, Proximity, Defuse} reps**. Migrate to a heavier governance scheme if/when the verifier sees more adopters. The relevant near-sdk pattern is the same `admin_id` that Arseny proposed for policy contracts.
-
-### 7.2 Promise gas budget for `submit_participant_info`
-
-The verifier's `verify_quote` does a non-trivial amount of work (cert chain validation, multiple ECDSA P-256 sigs). Estimate is 5-15 TGas. Plus the callback's RTMR3 replay + hash checks (~3-5 TGas). Plus storage writes. Total budget request needs to be set on the cross-contract call. We need to measure on testnet before committing a number.
-
-### 7.3 Failure modes of the async path
-
-If the verifier promise fails (e.g., the verifier contract is unreachable, runs out of gas, or returns `VerificationError`), the callback must clean up the caller's stashed pending state and refund the attached deposit. If the callback itself fails, the deposit is potentially stuck. We should expose a sweep entry point (mirroring the existing `clean_invalid_attestations` pattern) so anyone can clear stale pending entries after a timeout.
-
-### 7.4 Should the verifier optionally do the report_data binding?
-
-Counter-argument to §3.3: every consumer is going to do *some* report_data binding, and 99% of them are going to bind some hash of public-key-ish data. A `verify_quote_with_binding(quote, collateral, expected_report_data: [u8; 64], now)` convenience method that adds a memcmp wouldn't hurt and would save consumers a few lines.
-
-Recommendation: don't add it. The whole point is to keep the verifier minimal; one consumer's "convenience method" is another's "wrong abstraction." Consumers can write a 5-line wrapper.
-
-### 7.5 What happens to `MockAttestation`?
-
-`MockAttestation` (in `crates/mpc-attestation/src/attestation.rs:47`) is used heavily in tests. After the split, mock-attestation tests can short-circuit the verifier promise (no verifier call needed; the post-DCAP code path handles `MockAttestation` entirely). This works because the `Attestation` enum is still the input shape on `submit_participant_info` — only the `Dstack` variant requires the verifier round-trip. Make this explicit in the migration.
-
-### 7.6 Versioning of the verifier wire types
-
-The `VerifiedReport` Borsh shape will likely evolve with dcap-qvl (e.g., TDX 1.5 reports add fields). We need an explicit versioning story before mainnet so that an older caller doesn't crash on a newer verifier output. Options:
-
-- Tag the response with a version byte; callers ignore unknown trailing fields.
-- Require all callers and the verifier to be deployed in lockstep (they aren't — callers are independent).
-- Verifier exposes both `verify_quote_v1` and `verify_quote_v2` in parallel during transitions.
-
-Recommendation: third option. Always introduce a new method when the wire type changes.
-
-### 7.7 Should v1 also expose `verify_post_dcap` from the verifier?
-
-A shared "do the RTMR3 replay + measurement match given a list of allowed measurements" utility could itself be a verifier method. It's pure compute (no I/O), shared across teams, and would let the MPC contract drop more code. But the inputs heterogenize across teams (Proximity doesn't replay RTMR3 the same way), so it's not a clean abstraction.
-
-Recommendation: not in v1. Re-evaluate in v2 once the policy contracts exist and we see what's actually duplicated.
+[mpc-repo]: https://github.com/near/mpc
+[defuse-site]: https://near-intents.org
+[proximity-shade-attestation]: https://github.com/NearDeFi/shade-agent-framework/tree/main/shade-attestation
+[mpc-launcher]: ../securing-mpc-with-tee-design-doc.md#launcher
+[mpc-report-data]: https://github.com/near/mpc/blob/main/crates/mpc-attestation/src/report_data.rs
+[nep-509]: https://github.com/near/NEPs/blob/master/neps/nep-0509.md
+[nep-591]: https://github.com/near/NEPs/blob/master/neps/nep-0591.md
+[automata-pccs]: https://github.com/automata-network/automata-on-chain-pccs
