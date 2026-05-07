@@ -1,7 +1,7 @@
 use crate::common;
 
 use near_mpc_contract_interface::types::{
-    Curve, DomainConfig, DomainId, DomainPurpose, SignatureResponse,
+    Curve, DomainConfig, DomainId, DomainPurpose, Protocol, SignatureResponse,
 };
 use rand::SeedableRng;
 
@@ -90,7 +90,8 @@ async fn mpc_cluster__should_successfully_process_robust_ecdsa_requests() {
         c.threshold = 5;
         c.domains = vec![DomainConfig {
             id: DomainId(0),
-            curve: Curve::V2Secp256k1,
+            curve: Curve::Secp256k1,
+            protocol: Protocol::DamgardEtAl,
             purpose: DomainPurpose::Sign,
         }];
         c.triples_to_buffer = 0;
@@ -102,8 +103,8 @@ async fn mpc_cluster__should_successfully_process_robust_ecdsa_requests() {
         .domains
         .domains
         .iter()
-        .find(|d| d.curve == Curve::V2Secp256k1)
-        .expect("no V2Secp256k1 domain found");
+        .find(|d| d.protocol == Protocol::DamgardEtAl)
+        .expect("no DamgardEtAl domain found");
 
     let mut rng = rand::rngs::StdRng::seed_from_u64(0);
 
@@ -120,7 +121,7 @@ async fn mpc_cluster__should_successfully_process_robust_ecdsa_requests() {
     // then
     assert!(
         outcome.is_success(),
-        "V2Secp256k1 sign request failed: {:?}",
+        "DamgardEtAl sign request failed: {:?}",
         outcome.failure_message()
     );
 

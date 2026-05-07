@@ -20,7 +20,7 @@ use crate::{
         CKDProvider, EcdsaSignatureProvider, RobustEcdsaSignatureProvider, SignatureProvider,
     },
 };
-use mpc_primitives::domain::Curve;
+use mpc_primitives::domain::Protocol;
 use mpc_primitives::KeyEventId;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::DomainConfig;
@@ -60,8 +60,8 @@ pub async fn keygen_computation_inner(
         key_id
     );
 
-    let (keyshare, public_key) = match domain.curve {
-        Curve::Secp256k1 => {
+    let (keyshare, public_key) = match domain.protocol {
+        Protocol::CaitSith => {
             let keyshare =
                 EcdsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
             let public_key = dtos::PublicKey::Secp256k1(dtos::Secp256k1PublicKey::try_from(
@@ -69,15 +69,15 @@ pub async fn keygen_computation_inner(
             )?);
             (KeyshareData::Secp256k1(keyshare), public_key)
         }
-        Curve::V2Secp256k1 => {
+        Protocol::DamgardEtAl => {
             let keyshare =
                 RobustEcdsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
             let public_key = dtos::PublicKey::Secp256k1(dtos::Secp256k1PublicKey::try_from(
                 keyshare.public_key.to_element().to_affine(),
             )?);
-            (KeyshareData::V2Secp256k1(keyshare), public_key)
+            (KeyshareData::Secp256k1(keyshare), public_key)
         }
-        Curve::Edwards25519 => {
+        Protocol::Frost => {
             let keyshare =
                 EddsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
             let public_key = dtos::PublicKey::Ed25519(dtos::Ed25519PublicKey::from(
@@ -85,7 +85,7 @@ pub async fn keygen_computation_inner(
             ));
             (KeyshareData::Ed25519(keyshare), public_key)
         }
-        Curve::Bls12381 => {
+        Protocol::ConfidentialKeyDerivation => {
             let keyshare = CKDProvider::run_key_generation_client(threshold, channel).await?;
             let public_key = dtos::PublicKey::Bls12381(dtos::Bls12381G2PublicKey::from(
                 &keyshare.public_key.to_element(),
@@ -212,10 +212,10 @@ async fn resharing_computation_inner(
 
     let public_key = dtos::PublicKey::try_from(&previous_public_key)?;
 
-    let keyshare_data = match (public_key, domain.curve) {
+    let keyshare_data = match (public_key, domain.protocol) {
         (
             near_mpc_contract_interface::types::PublicKey::Secp256k1(inner_public_key),
-            Curve::Secp256k1,
+            Protocol::CaitSith,
         ) => {
             let pk = k256::PublicKey::try_from(&inner_public_key)?;
             let public_key = frost_secp256k1::VerifyingKey::new(pk.to_projective());
@@ -237,13 +237,13 @@ async fn resharing_computation_inner(
         }
         (
             near_mpc_contract_interface::types::PublicKey::Secp256k1(inner_public_key),
-            Curve::V2Secp256k1,
+            Protocol::DamgardEtAl,
         ) => {
             let pk = k256::PublicKey::try_from(&inner_public_key)?;
             let public_key = frost_secp256k1::VerifyingKey::new(pk.to_projective());
             let my_share = existing_keyshare
                 .map(|keyshare| match keyshare.data {
-                    KeyshareData::V2Secp256k1(data) => Ok(data.private_share),
+                    KeyshareData::Secp256k1(data) => Ok(data.private_share),
                     _ => Err(anyhow::anyhow!("Expected ecdsa keyshare!")),
                 })
                 .transpose()?;
@@ -255,11 +255,11 @@ async fn resharing_computation_inner(
                 channel,
             )
             .await?;
-            KeyshareData::V2Secp256k1(res)
+            KeyshareData::Secp256k1(res)
         }
         (
             near_mpc_contract_interface::types::PublicKey::Ed25519(inner_public_key),
-            Curve::Edwards25519,
+            Protocol::Frost,
         ) => {
             let public_key = frost_ed25519::VerifyingKey::deserialize(inner_public_key.as_ref())?;
             let my_share = existing_keyshare
@@ -278,7 +278,7 @@ async fn resharing_computation_inner(
             .await?;
             KeyshareData::Ed25519(res)
         }
-        (dtos::PublicKey::Bls12381(inner_public_key), Curve::Bls12381) => {
+        (dtos::PublicKey::Bls12381(inner_public_key), Protocol::ConfidentialKeyDerivation) => {
             let public_key = ckd::VerifyingKey::new(ckd::ElementG2::try_from(&inner_public_key)?);
             let my_share = existing_keyshare
                 .map(|keyshare| match keyshare.data {
@@ -296,11 +296,11 @@ async fn resharing_computation_inner(
             .await?;
             KeyshareData::Bls12381(res)
         }
-        (public_key, curve) => {
+        (public_key, protocol) => {
             return Err(anyhow::anyhow!(
                 "Unexpected pair of ({:?}, {:?})",
                 public_key,
-                curve
+                protocol
             ));
         }
     };
@@ -726,7 +726,7 @@ mod tests {
     use assert_matches::assert_matches;
     use mpc_primitives::domain::{Curve, DomainId};
     use mpc_primitives::{AttemptId, EpochId, KeyEventId};
-    use near_mpc_contract_interface::types::{DomainConfig, DomainPurpose};
+    use near_mpc_contract_interface::types::{DomainConfig, DomainPurpose, Protocol};
     use std::collections::BTreeSet;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -885,6 +885,7 @@ mod tests {
             domain: DomainConfig {
                 id: key_event_id.domain_id,
                 curve: Curve::Secp256k1,
+                protocol: Protocol::CaitSith,
                 purpose: DomainPurpose::Sign,
             },
             started,

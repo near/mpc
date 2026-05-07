@@ -9,14 +9,15 @@ use near_kit::AccountId;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
     AccountId as ContractAccountId, CKDAppPublicKey, Curve, DomainConfig, DomainId, DomainPurpose,
-    Ed25519PublicKey, EpochId, ParticipantId, ParticipantInfo, Participants, ProtocolContractState,
-    Threshold, ThresholdParameters,
+    Ed25519PublicKey, EpochId, ParticipantId, ParticipantInfo, Participants, Protocol,
+    ProtocolContractState, Threshold, ThresholdParameters,
 };
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use serde_json::json;
 
 use crate::blockchain::{ClientHandle, DeployedContract, NearBlockchain};
+use crate::legacy_init::LegacyThresholdParameters;
 use crate::mpc_node::{MpcNode, MpcNodeSetup, MpcNodeSetupArgs, NodePorts};
 use crate::near_sandbox::NearSandbox;
 use crate::port_allocator::E2ePortAllocator;
@@ -27,12 +28,19 @@ const SANDBOX_ROOT_SECRET_KEY: &str = near_sandbox::config::DEFAULT_GENESIS_ACCO
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
 pub const DEFAULT_TRIPLES_TO_BUFFER: usize = 20;
 pub const DEFAULT_PRESIGNATURES_TO_BUFFER: usize = 10;
-pub const CLUSTER_WAIT_TIMEOUT: Duration = Duration::from_secs(120);
+// Concurrent e2e tests on a shared CI runner can stretch
+// triple/presignature generation past 120 s; the most pressure-sensitive
+// consumer is `wait_for_presignatures` (see `parallel_sign_calls` test).
+pub const CLUSTER_WAIT_TIMEOUT: Duration = Duration::from_secs(240);
 const SIGN_GAS: near_kit::Gas = near_kit::Gas::from_tgas(15);
 // AppPublicKeyPV does an on-chain bls12381_pairing_check (2 pairs) before yielding,
 // which costs significantly more than a plain CKD or sign request.
 const CKD_PV_GAS: near_kit::Gas = near_kit::Gas::from_tgas(100);
 const SIGN_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_yoctonear(1);
+const CONTRACT_UPDATE_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_millinear(17_000);
+const CONTRACT_UPDATE_GAS: near_kit::Gas = near_kit::Gas::from_tgas(300);
+const CONTRACT_DEPLOY_TIMEOUT: Duration = Duration::from_secs(15);
+const PROPOSER_NODE_INDEX: usize = 0;
 
 // Seed offsets for `generate_deterministic_key` — each range holds up to 100 keys.
 const KEY_SEED_NEAR_SIGNER: u64 = 0;
@@ -76,6 +84,50 @@ pub struct MpcClusterConfig {
     /// cluster so their indexers sync before blocks accumulate (`start_near_node`
     /// blocks until synced).
     pub migration_targets: Vec<usize>,
+    /// Wire format used when calling `init`. See [`ContractInitFormat`].
+    pub init_format: ContractInitFormat,
+}
+
+/// JSON wire format used for the contract's `init` call.
+///
+/// Whenever a wire-breaking change to an `init` argument lands (e.g. the
+/// `sign_pk` → `tls_public_key` rename in 3.10), a new variant is needed so
+/// the cluster can still target the older production contract.
+///
+/// # Maintaining this enum across upgrades
+///
+/// - **When a new wire-breaking change to `init` lands**: add a new variant
+///   (e.g. `Legacy3_10_X`) that emits the now-old shape, and update the
+///   `init_contract` helper in `cluster.rs` to branch on it.
+/// - **After the breaking change has rolled out to Mainnet/Testnet**: remove
+///   the obsolete variant and any tests that pin to it. The `current_*()`
+///   pointers in `contract-history` will already reference a binary that
+///   speaks the new format, so `Current` is enough.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum ContractInitFormat {
+    /// Current `ThresholdParameters` shape (uses `tls_public_key`).
+    #[default]
+    Current,
+    /// Pre-3.10 `ThresholdParameters` shape (uses `sign_pk`). Only the field
+    /// inside `ParticipantInfo` differs; everything else is forward-compatible
+    /// because the 3.9.1 contract ignores unknown JSON fields. Remove this
+    /// variant once `contract_history::current_*()` no longer points at a
+    /// binary that requires the legacy shape.
+    Legacy3_9_1,
+}
+
+impl ContractInitFormat {
+    /// JSON shape for the `parameters` argument of the contract's `init` call,
+    /// in the wire format that the targeted contract expects.
+    fn init_parameters_json(
+        self,
+        params: &ThresholdParameters,
+    ) -> serde_json::Result<serde_json::Value> {
+        match self {
+            Self::Current => serde_json::to_value(params),
+            Self::Legacy3_9_1 => serde_json::to_value(LegacyThresholdParameters::from(params)),
+        }
+    }
 }
 
 impl MpcClusterConfig {
@@ -92,16 +144,19 @@ impl MpcClusterConfig {
                 DomainConfig {
                     id: DomainId(0),
                     curve: Curve::Secp256k1,
+                    protocol: Protocol::CaitSith,
                     purpose: DomainPurpose::Sign,
                 },
                 DomainConfig {
                     id: DomainId(1),
                     curve: Curve::Edwards25519,
+                    protocol: Protocol::Frost,
                     purpose: DomainPurpose::Sign,
                 },
                 DomainConfig {
                     id: DomainId(2),
                     curve: Curve::Bls12381,
+                    protocol: Protocol::ConfidentialKeyDerivation,
                     purpose: DomainPurpose::CKD,
                 },
             ],
@@ -115,6 +170,7 @@ impl MpcClusterConfig {
             initial_participant_indices: vec![],
             node_foreign_chains_configs: vec![],
             migration_targets: vec![],
+            init_format: ContractInitFormat::Current,
         }
     }
 
@@ -159,6 +215,7 @@ pub struct MpcCluster {
     /// Separate access keys used by the test to cast votes on node accounts.
     /// Disjoint from `node_keys` so the MPC node's own nonce sequence is never disturbed.
     pub operator_keys: Vec<SigningKey>,
+    pub threshold: usize,
     pub user_accounts: HashMap<AccountId, SigningKey>,
     pub ports: E2ePortAllocator,
     /// Held to keep the temp directory alive for the lifetime of the cluster.
@@ -171,6 +228,7 @@ impl MpcCluster {
     /// binaries, and wait for Running state.
     pub async fn start(config: MpcClusterConfig) -> anyhow::Result<Self> {
         config.validate()?;
+        let threshold = config.threshold;
         let ports = E2ePortAllocator::new(config.port_seed);
         let test_dir = create_test_dir(&config.home_base)?;
 
@@ -214,11 +272,14 @@ impl MpcCluster {
         init_contract(
             &blockchain,
             &contract,
-            &node_near_keys,
-            &node_p2p_keys,
-            config.threshold,
-            &participant_indices,
             &ports,
+            InitContractArgs {
+                near_keys: node_near_keys.clone(),
+                p2p_keys: node_p2p_keys.clone(),
+                threshold: config.threshold,
+                participant_indices: participant_indices.clone(),
+                init_format: config.init_format,
+            },
         )
         .await?;
 
@@ -258,6 +319,7 @@ impl MpcCluster {
             nodes,
             node_keys,
             operator_keys,
+            threshold,
             user_accounts,
             ports,
             test_dir,
@@ -769,17 +831,17 @@ impl MpcCluster {
     /// View the per-node foreign chain configurations registered with the contract.
     pub async fn view_foreign_chain_configurations(
         &self,
-    ) -> anyhow::Result<near_mpc_contract_interface::types::NodeForeignChainConfigurations> {
+    ) -> anyhow::Result<near_mpc_contract_interface::types::ForeignChainSupportByNode> {
         self.contract
-            .view(method_names::GET_FOREIGN_CHAIN_CONFIGURATIONS)
+            .view(method_names::GET_FOREIGN_CHAIN_SUPPORT_BY_NODE)
             .await
     }
 
-    /// Register a foreign chain configuration from a specific node.
+    /// Register foreign chain support on the contract for a specific node.
     pub async fn register_foreign_chain_config(
         &self,
         node_index: usize,
-        foreign_chain_configuration: &near_mpc_contract_interface::types::ForeignChainConfiguration,
+        foreign_chain_support: &near_mpc_contract_interface::types::SupportedForeignChains,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
         let node = &self.nodes[node_index];
         let client = self
@@ -788,9 +850,9 @@ impl MpcCluster {
         self.contract
             .call_from(
                 &client,
-                method_names::REGISTER_FOREIGN_CHAIN_CONFIG,
+                method_names::REGISTER_FOREIGN_CHAIN_SUPPORT,
                 json!({
-                    "foreign_chain_configuration": serde_json::to_value(foreign_chain_configuration)?,
+                    "foreign_chain_support": serde_json::to_value(foreign_chain_support)?,
                 }),
             )
             .await
@@ -828,6 +890,98 @@ impl MpcCluster {
                 SIGN_DEPOSIT,
             )
             .await
+    }
+
+    /// Propose a contract code update and cast votes until `vote_update` reports
+    /// the threshold reached. Pair with [`Self::ensure_deployed_code`]: the deploy
+    /// and `migrate()` promise runs asynchronously, and a panicking `migrate`
+    /// rolls the deploy back without changing the threshold-reached signal.
+    pub async fn propose_and_vote_contract_update(&self, new_wasm: &[u8]) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            !self.nodes.is_empty(),
+            "cannot propose contract update with no nodes"
+        );
+
+        let propose_args = ProposeUpdateArgsBorsh {
+            code: Some(new_wasm),
+            config: None,
+        };
+        let proposer_client = self.operator_client_for(PROPOSER_NODE_INDEX)?;
+        let outcome = self
+            .contract
+            .call_from_borsh_with_deposit(
+                &proposer_client,
+                method_names::PROPOSE_UPDATE,
+                propose_args,
+                CONTRACT_UPDATE_GAS,
+                CONTRACT_UPDATE_DEPOSIT,
+            )
+            .await
+            .context("failed to call propose_update")?;
+        anyhow::ensure!(
+            outcome.is_success(),
+            "propose_update failed: {:?}",
+            outcome.failure_message()
+        );
+        let proposal_id: UpdateId = outcome
+            .json()
+            .context("propose_update did not return a JSON UpdateId")?;
+
+        for (i, _) in self.nodes.iter().enumerate() {
+            let client = self.operator_client_for(i)?;
+            let vote_outcome = self
+                .contract
+                .call_from(
+                    &client,
+                    method_names::VOTE_UPDATE,
+                    json!({ "id": proposal_id }),
+                )
+                .await
+                .with_context(|| format!("node {i} failed to call vote_update"))?;
+            anyhow::ensure!(
+                vote_outcome.is_success(),
+                "vote_update from node {i} failed: {:?}",
+                vote_outcome.failure_message()
+            );
+            let update_applied: bool = vote_outcome
+                .json()
+                .with_context(|| format!("vote_update from node {i} returned non-bool"))?;
+            if update_applied {
+                anyhow::ensure!(
+                    i + 1 == self.threshold,
+                    "expected exactly {} votes to apply update, got {}",
+                    self.threshold,
+                    i + 1,
+                );
+                tracing::info!(votes = i + 1, "contract code update vote threshold reached");
+                return Ok(());
+            }
+        }
+        anyhow::bail!("contract code update was not applied after votes from every node")
+    }
+
+    /// Wait until the deployed contract code hash matches `sha256(expected_wasm)`.
+    pub async fn ensure_deployed_code(&self, expected_wasm: &[u8]) -> anyhow::Result<()> {
+        let expected = near_kit::CryptoHash::hash(expected_wasm);
+        let deadline = tokio::time::Instant::now() + CONTRACT_DEPLOY_TIMEOUT;
+        loop {
+            let deployed = self.contract.code_hash().await?;
+            if deployed == expected {
+                tracing::info!(
+                    code_hash = %hex::encode(deployed.as_bytes()),
+                    "deployed code matches expected WASM",
+                );
+                return Ok(());
+            }
+            anyhow::ensure!(
+                tokio::time::Instant::now() < deadline,
+                "deployed code hash {} does not match expected {} — `migrate` likely panicked \
+                 and the deploy was rolled back",
+                hex::encode(deployed.as_bytes()),
+                hex::encode(expected.as_bytes()),
+            );
+            tokio::time::sleep(POLL_INTERVAL).await;
+        }
     }
 }
 
@@ -947,16 +1101,29 @@ async fn create_node_accounts(
     Ok(())
 }
 
+struct InitContractArgs {
+    near_keys: Vec<SigningKey>,
+    p2p_keys: Vec<SigningKey>,
+    threshold: usize,
+    participant_indices: Vec<usize>,
+    init_format: ContractInitFormat,
+}
+
 async fn init_contract(
     blockchain: &NearBlockchain,
     contract: &DeployedContract,
-    near_keys: &[SigningKey],
-    p2p_keys: &[SigningKey],
-    threshold: usize,
-    participant_indices: &[usize],
     ports: &E2ePortAllocator,
+    args: InitContractArgs,
 ) -> anyhow::Result<()> {
-    let participants = build_participants(participant_indices, p2p_keys, ports);
+    let InitContractArgs {
+        near_keys,
+        p2p_keys,
+        threshold,
+        participant_indices,
+        init_format,
+    } = args;
+
+    let participants = build_participants(&participant_indices, &p2p_keys, ports);
     let params = ThresholdParameters {
         threshold: Threshold(threshold as u64),
         participants,
@@ -965,10 +1132,12 @@ async fn init_contract(
     tracing::info!(
         threshold,
         num_participants = participant_indices.len(),
+        ?init_format,
         "initializing contract"
     );
+    let parameters_json = init_format.init_parameters_json(&params)?;
     let outcome = contract
-        .call(method_names::INIT, json!({ "parameters": params }))
+        .call(method_names::INIT, json!({ "parameters": parameters_json }))
         .await?;
     anyhow::ensure!(
         outcome.is_success(),
@@ -976,7 +1145,7 @@ async fn init_contract(
         outcome.failure_message()
     );
 
-    for &i in participant_indices {
+    for &i in &participant_indices {
         let account = format!("node{i}.{SANDBOX_ROOT_ACCOUNT}");
         let client = blockchain.client_for(&account, &near_keys[i])?;
         let pubkey =
@@ -1133,6 +1302,21 @@ async fn create_user_accounts(
     }
     Ok(map)
 }
+
+/// Borsh-encoded mirror of the contract's `ProposeUpdateArgs`. We keep it
+/// local rather than depending on `mpc-contract` for two fields. `Config` is
+/// modeled as `Option<()>` because we never propose a config-only update; the
+/// `None` discriminator is `[0u8]` regardless of the inner type.
+#[derive(borsh::BorshSerialize)]
+struct ProposeUpdateArgsBorsh<'a> {
+    code: Option<&'a [u8]>,
+    config: Option<()>,
+}
+
+/// JSON mirror of the contract's `UpdateId`. `propose_update` returns it and
+/// `vote_update` consumes it via the `id` field; both wire it as a bare u64.
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+struct UpdateId(u64);
 
 fn build_participants(
     indices: &[usize],

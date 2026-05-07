@@ -45,11 +45,23 @@
         in
         "${llvmPkgs.clang-unwrapped.lib}/lib/clang/${clangVersion}/include";
 
+      # Production ISA: x86-64-v3 plus PCLMUL and AES. The v3 micro-arch
+      # level (per System V psABI) covers AVX2/BMI2/F16C/FMA/LZCNT/MOVBE
+      # but NOT PCLMUL or AES — we add those explicitly so rocksdb's
+      # PCLMUL-accelerated CRC32C path is compiled in. Production node
+      # fleet is all v3-capable (Haswell / Excavator and newer).
+      #
+      # Shared between the reproducible mpc-node build (nix/mpc-node.nix)
+      # and the dev shell (devShells.default below) so feature-test macros
+      # in bindgen-parsed headers, cc-rs-compiled C/C++ deps, and the
+      # rustc target-cpu line up across all build paths.
+      prodCFlags = "-march=x86-64-v3 -mpclmul -maes";
+
     in
     {
       packages = forAllSystems (pkgs: {
         mpc-node = pkgs.callPackage ./nix/mpc-node.nix {
-          inherit crane;
+          inherit crane prodCFlags;
         };
       });
 
@@ -81,8 +93,12 @@
           isX86 = stdenv.hostPlatform.isx86_64;
 
           envCommon = {
-            # needed for neard's rocksdb build to avoid unsupported CPU features
-            CXXFLAGS = "-include cstdint" + lib.optionalString isX86 " -msse4.2 -mpclmul";
+            # `-include cstdint` is needed by neard's rocksdb C++ build
+            # regardless of host. Production ISA flags are scoped to the
+            # x86_64 Linux host target below so wasm cross-compilation
+            # (e.g. the contract WASM build via blst) isn't polluted —
+            # `-march=x86-64-v3` is invalid for the wasm32 target.
+            CXXFLAGS = "-include cstdint";
 
             # WASM Toolchain
             CC_wasm32_unknown_unknown = "${llvmPkgs.clang-unwrapped}/bin/clang";
@@ -93,11 +109,17 @@
             LIBCLANG_PATH = "${llvmPkgs.libclang.lib}/lib";
             RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";
 
-            BINDGEN_EXTRA_CLANG_ARGS = lib.concatStringsSep " " [
-              "-I${clangResourceInclude llvmPkgs}"
-              "-I${libcDev}/include"
-              "-fno-stack-protector"
-            ];
+            # Match the production-build feature-test macros (`__AVX2__`,
+            # `__FMA__`, `__BMI2__`, `__PCLMUL__`, `__AES__`) so rust-bindgen
+            # generates the same Rust bindings as `nix/mpc-node.nix` does.
+            BINDGEN_EXTRA_CLANG_ARGS = lib.concatStringsSep " " (
+              [
+                "-I${clangResourceInclude llvmPkgs}"
+                "-I${libcDev}/include"
+                "-fno-stack-protector"
+              ]
+              ++ lib.optional isX86 prodCFlags
+            );
 
             # OpenSSL
             PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig";
@@ -107,6 +129,12 @@
 
             # Prevent Cargo from trying to use the system rustup
             RUSTUP_TOOLCHAIN = "";
+          }
+          // lib.optionalAttrs (stdenv.isLinux && isX86) {
+            # Production ISA for cc-crate dependencies (rocksdb, snappy, zstd,
+            # jemalloc). Target-scoped so wasm cross-builds aren't polluted.
+            CFLAGS_x86_64_unknown_linux_gnu = prodCFlags;
+            CXXFLAGS_x86_64_unknown_linux_gnu = "${prodCFlags} -include cstdint";
           };
 
           envDarwin = lib.optionalAttrs stdenv.isDarwin {
@@ -147,6 +175,7 @@
           miscTools = with pkgs; [
             git
             binaryen
+            editorconfig-checker
             jq
             perl
             procps  # pgrep, used by the kill-orphan-mpc-nodes cargo-make task

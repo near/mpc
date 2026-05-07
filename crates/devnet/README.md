@@ -98,7 +98,7 @@ export MPC_NETWORK_NAME=yourusername-test
 mpc-devnet mpc $MPC_NETWORK_NAME new \
   --num-participants 2 \
   --num-responding-access-keys 8 \
-  --near-per-responding-account 1 
+  --near-per-responding-account 1
   [--ssd] # use only if you don't plan to run this for a long period, as it is more expensive
 ```
 
@@ -109,7 +109,7 @@ independent nonce.
 Then, deploy the contract.
 
 ```shell
-mpc-devnet mpc $MPC_NETWORK_NAME deploy-contract 
+mpc-devnet mpc $MPC_NETWORK_NAME deploy-contract
 ```
 
 The path of the contract binary can be overridden via `--path`.
@@ -167,12 +167,15 @@ if we wish to have fewer participants join the network at the beginning.
 ### Generating Keys
 
 When first deployed, the contract has no keys. In order to make any signatures,
-we must first generate some keys. This example generates two keys, one for
-each signature scheme. You can specify duplicate schemes here as well if you wish
-to add multiple keys for each scheme.
+we must first generate some keys. This example generates one key for each
+supported protocol. You can specify duplicate protocols here as well if you
+wish to add multiple keys for the same protocol. Use `DamgardEtAl` to add a
+Robust ECDSA key on Secp256k1 (distinct from `CaitSith`, which is the classic
+ECDSA protocol on the same curve).
 
 ```shell
-mpc-devnet mpc $MPC_NETWORK_NAME vote-add-domains --schemes Secp256k1,Ed25519,Bls12381
+mpc-devnet mpc $MPC_NETWORK_NAME vote-add-domains \
+  --protocols CaitSith,Frost,ConfidentialKeyDerivation
 ```
 
 This triggers the MPC nodes to start performing key generation, after which the
@@ -189,7 +192,7 @@ running in TEE to be authenticated.
 You can add approved image hashes with the following command:
 
 ```shell
-mpc-devnet mpc $MPC_NETWORK_NAME vote-code-hash --mpc-docker-image-hash <IMAGE_DIGEST>   
+mpc-devnet mpc $MPC_NETWORK_NAME vote-code-hash --mpc-docker-image-hash <IMAGE_DIGEST>
 ```
 
 ### Checking the Network State
@@ -209,11 +212,11 @@ Contract is in Running state
   Epoch: 9
   Keyset:
   Domain 0: Secp256k1, key from attempt 0
-  Domain 1: Ed25519, key from attempt 0
+  Domain 1: Edwards25519, key from attempt 0
   Domain 2: Secp256k1, key from attempt 0
-  Domain 3: Ed25519, key from attempt 0
+  Domain 3: Edwards25519, key from attempt 0
   Domain 4: Secp256k1, key from attempt 0
-  Domain 5: Ed25519, key from attempt 0
+  Domain 5: Edwards25519, key from attempt 0
   Parameters:
   Participants:
     ID 3: mpc-2-and-upg-c4c3bbdf00c0.andrei-devnet.testnet (http://mpc-node-2.service.mpc.consul:3000)

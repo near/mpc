@@ -168,14 +168,7 @@ impl RunningContractState {
             return Err(DomainError::AddDomainsMustAddAtLeastOneDomain.into());
         }
         for domain in &domains {
-            if !crate::primitives::domain::is_valid_curve_for_purpose(domain.purpose, domain.curve)
-            {
-                return Err(DomainError::InvalidCurvePurposeCombination {
-                    curve: domain.curve,
-                    purpose: domain.purpose,
-                }
-                .into());
-            }
+            crate::primitives::domain::validate_domain_consistency(domain)?;
         }
         let participant = AuthenticatedParticipantId::new(self.parameters.participants())?;
         let n_votes = self.add_domains_votes.vote(domains.clone(), &participant);
@@ -210,13 +203,15 @@ pub mod running_tests {
     use rstest::rstest;
 
     use crate::primitives::domain::AddDomainsVotes;
-    use crate::primitives::test_utils::{gen_threshold_params, NUM_CURVES};
+    use crate::primitives::test_utils::{gen_threshold_params, NUM_PROTOCOLS};
     use crate::state::key_event::tests::Environment;
     use crate::state::test_utils::gen_valid_params_proposal;
     use crate::{
         primitives::threshold_votes::ThresholdParametersVotes, state::test_utils::gen_running_state,
     };
-    use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, DomainPurpose};
+    use near_mpc_contract_interface::types::{
+        Curve, DomainConfig, DomainId, DomainPurpose, Protocol,
+    };
 
     fn test_running_for(num_domains: usize) {
         let mut state = gen_running_state(num_domains);
@@ -340,18 +335,18 @@ pub mod running_tests {
     #[case(1)]
     #[case(2)]
     #[case(3)]
-    #[case(NUM_CURVES)]
-    #[case(2*NUM_CURVES)]
+    #[case(NUM_PROTOCOLS)]
+    #[case(2*NUM_PROTOCOLS)]
     fn test_running(#[case] n: usize) {
         test_running_for(n);
     }
 
     #[rstest]
-    #[case(Curve::Bls12381, DomainPurpose::Sign)]
-    #[case(Curve::Edwards25519, DomainPurpose::ForeignTx)]
-    #[case(Curve::Secp256k1, DomainPurpose::CKD)]
-    fn vote_add_domains__should_reject_invalid_curve_purpose(
-        #[case] curve: Curve,
+    #[case(Protocol::ConfidentialKeyDerivation, DomainPurpose::Sign)]
+    #[case(Protocol::Frost, DomainPurpose::ForeignTx)]
+    #[case(Protocol::CaitSith, DomainPurpose::CKD)]
+    fn vote_add_domains__should_reject_invalid_protocol_purpose(
+        #[case] protocol: Protocol,
         #[case] purpose: DomainPurpose,
     ) {
         // Given
@@ -362,7 +357,8 @@ pub mod running_tests {
 
         let invalid_domain = vec![DomainConfig {
             id: DomainId(next_id),
-            curve,
+            curve: Curve::from(protocol),
+            protocol,
             purpose,
         }];
 
@@ -372,8 +368,8 @@ pub mod running_tests {
         // Then
         assert!(
             err.to_string()
-                .contains("Invalid curve-purpose combination"),
-            "Expected InvalidCurvePurposeCombination, got: {err}"
+                .contains("Invalid protocol-purpose combination"),
+            "Expected InvalidProtocolPurposeCombination, got: {err}"
         );
     }
 }

@@ -22,7 +22,7 @@ use mpc_contract::{
     },
     tee::tee_state::NodeId,
 };
-use near_mpc_contract_interface::types::Curve;
+use near_mpc_contract_interface::types::Protocol;
 use near_mpc_contract_interface::types::{self as dtos, Attestation, MockAttestation};
 use test_utils::attestation::p2p_tls_key;
 
@@ -47,7 +47,7 @@ async fn reshare__should_leave_valid_non_participant_attestations_in_storage() -
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(&[Curve::Secp256k1])
+        .with_protocols(&[Protocol::CaitSith])
         .build()
         .await;
 
@@ -174,7 +174,7 @@ async fn reshare__should_evict_expired_attestations_via_post_reshare_sweep() -> 
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(&[Curve::Secp256k1])
+        .with_protocols(&[Protocol::CaitSith])
         .build()
         .await;
 

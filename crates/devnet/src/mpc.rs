@@ -15,19 +15,7 @@ use crate::terraform::get_urls;
 use crate::tx::IntoReturnValueExt;
 use crate::types::{MpcNetworkSetup, MpcParticipantSetup, NearAccount, ParsedConfig};
 use borsh::{BorshDeserialize, BorshSerialize};
-use ed25519_dalek::ed25519::signature::rand_core::OsRng;
 use ed25519_dalek::{SigningKey, VerifyingKey};
-use mpc_contract::primitives::test_utils::infer_purpose_from_curve;
-use mpc_contract::tee::proposal::NodeImageHash;
-use mpc_contract::{
-    primitives::{
-        key_state::EpochId,
-        participants::{ParticipantInfo, Participants},
-        thresholds::{Threshold, ThresholdParameters},
-    },
-    state::ProtocolContractState,
-    utils::protocol_state_to_string,
-};
 use mpc_primitives::domain::{Curve, DomainId};
 use near_account_id::AccountId;
 use near_jsonrpc_client::errors::{JsonRpcError, JsonRpcServerError};
@@ -35,11 +23,15 @@ use near_jsonrpc_client::methods;
 use near_jsonrpc_client::methods::query::RpcQueryError;
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_mpc_contract_interface::method_names;
-use near_mpc_contract_interface::types::DomainConfig;
+use near_mpc_contract_interface::types::{
+    protocol_state_to_string, DomainConfig, DomainPurpose, EpochId, NodeImageHash, ParticipantId,
+    ParticipantInfo, Participants, Protocol, ProtocolContractState, Threshold, ThresholdParameters,
+};
 use near_primitives::types::{BlockReference, Finality, FunctionArgs};
 use near_primitives::views::QueryRequest;
 use near_sdk::borsh;
 use node_types::http_server::StaticWebData;
+use rand::rngs::OsRng;
 use reqwest::Client;
 use serde::Serialize;
 use std::sync::Arc;
@@ -337,22 +329,25 @@ impl MpcInitContractCmd {
 
         let mut access_key = setup.accounts.account(&contract).any_access_key().await;
 
-        let mut participants = Participants::new();
+        let mut participant_entries = Vec::new();
+        let mut next_id = ParticipantId::new(0);
         for (i, account_id) in mpc_setup
             .participants
             .iter()
             .enumerate()
             .take(self.init_participants)
         {
-            participants
-                .insert(
-                    account_id.clone(),
-                    mpc_account_to_participant_info(setup.accounts.account(account_id), i),
-                )
-                .unwrap();
+            let info = mpc_account_to_participant_info(setup.accounts.account(account_id), i);
+            participant_entries.push((account_id.clone(), next_id, info));
+            next_id = next_id.next();
         }
-        let parameters =
-            ThresholdParameters::new(participants, Threshold::new(self.threshold)).unwrap();
+        let parameters = ThresholdParameters {
+            participants: Participants {
+                next_id,
+                participants: participant_entries,
+            },
+            threshold: Threshold::new(self.threshold),
+        };
         let args = serde_json::to_vec(&InitV2Args {
             parameters,
             init_config: near_mpc_contract_interface::types::InitConfig::default(),
@@ -575,15 +570,15 @@ struct VoteUpdateArgs {
 impl MpcVoteAddDomainsCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
         println!(
-            "Going to vote_add_domains MPC network {} for signature schemes {:?}",
-            name, self.schemes
+            "Going to vote_add_domains MPC network {} for protocols {:?}",
+            name, self.protocols
         );
-        let schemes: Vec<Curve> = self
-            .schemes
+        let protocols: Vec<Protocol> = self
+            .protocols
             .iter()
-            .map(|scheme| {
-                serde_json::from_str(&format!("\"{}\"", scheme))
-                    .expect(&format!("Failed to parse signature scheme {}", scheme))
+            .map(|protocol| {
+                serde_json::from_str(&format!("\"{}\"", protocol))
+                    .expect(&format!("Failed to parse protocol {}", protocol))
             })
             .collect::<Vec<_>>();
         let mut setup = OperatingDevnetSetup::load(config.rpc.clone()).await;
@@ -611,12 +606,17 @@ impl MpcVoteAddDomainsCmd {
             }
         };
         let mut proposal = Vec::new();
-        let mut next_domain = domains.next_domain_id();
-        for scheme in &schemes {
+        let mut next_domain = domains.next_domain_id;
+        for protocol in &protocols {
+            let purpose = match protocol {
+                Protocol::ConfidentialKeyDerivation => DomainPurpose::CKD,
+                Protocol::CaitSith | Protocol::DamgardEtAl | Protocol::Frost => DomainPurpose::Sign,
+            };
             proposal.push(DomainConfig {
                 id: DomainId(next_domain),
-                curve: *scheme,
-                purpose: infer_purpose_from_curve(*scheme),
+                curve: Curve::from(*protocol),
+                protocol: *protocol,
+                purpose,
             });
             next_domain += 1;
         }
@@ -683,7 +683,7 @@ impl MpcVoteNewParametersCmd {
         let contract_state = read_contract_state(&config.rpc, &contract).await;
         let prospective_epoch_id = match &contract_state {
             ProtocolContractState::Running(state) => state.keyset.epoch_id.next(),
-            ProtocolContractState::Resharing(state) => state.prospective_epoch_id().next(),
+            ProtocolContractState::Resharing(state) => state.resharing_key.epoch_id.next(),
             _ => panic!(),
         };
         let parameters = match contract_state {
@@ -697,40 +697,43 @@ impl MpcVoteNewParametersCmd {
             }
         };
 
-        let mut participants = parameters.participants().clone();
+        let mut participants = parameters.participants.clone();
         for participant_index in &self.remove {
             let account_id = mpc_setup.participants[*participant_index].clone();
-            assert!(
-                participants.is_participant_given_account_id(&account_id),
-                "Participant {} is not in the network",
-                account_id
-            );
-            participants.remove(&account_id);
+            let pos = participants
+                .participants
+                .iter()
+                .position(|(a, _, _)| *a == account_id)
+                .expect(&format!("Participant {} is not in the network", account_id));
+            participants.participants.remove(pos);
         }
         for participant_index in &self.add {
             let account_id = mpc_setup.participants[*participant_index].clone();
             assert!(
-                !participants.is_participant_given_account_id(&account_id),
+                !participants
+                    .participants
+                    .iter()
+                    .any(|(a, _, _)| *a == account_id),
                 "Participant {} is already in the network",
                 account_id
             );
-            participants
-                .insert(
-                    account_id.clone(),
-                    mpc_account_to_participant_info(
-                        setup.accounts.account(&account_id),
-                        *participant_index,
-                    ),
-                )
-                .unwrap();
+            let info = mpc_account_to_participant_info(
+                setup.accounts.account(&account_id),
+                *participant_index,
+            );
+            let id = participants.next_id;
+            participants.participants.push((account_id, id, info));
+            participants.next_id = id.next();
         }
         let threshold = if let Some(threshold) = self.set_threshold {
             Threshold::new(threshold)
         } else {
-            parameters.threshold()
+            parameters.threshold
         };
-        let proposal =
-            ThresholdParameters::new(participants, threshold).expect("New parameters invalid");
+        let proposal = ThresholdParameters {
+            participants,
+            threshold,
+        };
 
         let from_accounts = get_voter_account_ids(mpc_setup, &self.voters);
 
@@ -799,7 +802,7 @@ impl MpcVoteApprovedHashCmd {
             }
         };
 
-        let threshold: u64 = running_state.parameters.threshold().value();
+        let threshold: u64 = running_state.parameters.threshold.value();
         let accounts = get_voter_account_ids(mpc_setup, &self.voters);
         let mut voting_futures = vec![];
 

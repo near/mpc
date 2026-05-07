@@ -1,5 +1,5 @@
 use near_mpc_contract_interface::method_names;
-use near_mpc_contract_interface::types::Curve;
+use near_mpc_contract_interface::types::Protocol;
 use near_sdk::{CurveType, PublicKey};
 use serde_json::json;
 use std::str::FromStr;
@@ -9,7 +9,7 @@ use crate::sandbox::common::SandboxTestSetup;
 #[tokio::test]
 async fn test_key_version() -> anyhow::Result<()> {
     let SandboxTestSetup { contract, .. } = SandboxTestSetup::builder()
-        .with_curves(&[Curve::Secp256k1])
+        .with_protocols(&[Protocol::CaitSith])
         .build()
         .await;
 
@@ -27,7 +27,7 @@ async fn test_key_version() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_public_key() -> anyhow::Result<()> {
     let SandboxTestSetup { contract, .. } = SandboxTestSetup::builder()
-        .with_curves(&[Curve::Secp256k1])
+        .with_protocols(&[Protocol::CaitSith])
         .build()
         .await;
 
@@ -47,7 +47,7 @@ async fn test_public_key() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_derived_public_key() -> anyhow::Result<()> {
     let SandboxTestSetup { contract, .. } = SandboxTestSetup::builder()
-        .with_curves(&[Curve::Secp256k1])
+        .with_protocols(&[Protocol::CaitSith])
         .build()
         .await;
 

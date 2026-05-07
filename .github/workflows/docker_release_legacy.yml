@@ -13,7 +13,7 @@ on:
         default: 'main'
         description: "The branch, tag or SHA to build MPC Docker image from. Default to latest commit on main branch."
         type: string
-    
+
 
 jobs:
   docker-image-build:
@@ -28,12 +28,12 @@ jobs:
         with:
           ref: ${{ github.event.inputs.build-ref }}
           persist-credentials: false
-        
+
       - name: Get short SHA
         shell: bash
         run: |
           echo "sha_short=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
-  
+
       - name: Sanitize build-ref for Docker tags
         shell: bash
         run: |
@@ -48,7 +48,7 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      
+
       - name: Build and push MPC Node Docker image to Docker Hub
         uses: Warpbuilds/build-push-action@ec038a9f4b87a7c7ccb50ac7a26a90d46a610a81 # v6.0.9
         with:

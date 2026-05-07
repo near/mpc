@@ -4,11 +4,22 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
 
+use std::collections::BTreeMap;
+
 use anyhow::{Context, bail};
 use backon::{ConstantBuilder, Retryable};
 use e2e_tests::MpcNodeState;
-use near_mpc_contract_interface::types::ProtocolContractState;
+use near_mpc_contract_interface::types::{
+    AccountId, BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey, ProtocolContractState,
+};
 use rand::SeedableRng;
+
+/// Mirror of the production `node::indexer::migrations::ContractMigrationInfo`
+/// type. Used to deserialize the `/debug/migrations` response strictly so the
+/// readiness asserts compare typed fields rather than substring-match the
+/// JSON body.
+type ContractMigrationInfo =
+    BTreeMap<AccountId, (Option<BackupServiceInfo>, Option<DestinationNodeInfo>)>;
 
 const MIGRATION_PORT_TIMEOUT: Duration = Duration::from_secs(120);
 const INDEXER_SYNC_TIMEOUT: Duration = Duration::from_secs(30);
@@ -46,7 +57,7 @@ impl BackupService {
         );
     }
 
-    fn public_key(&self) -> anyhow::Result<String> {
+    fn public_key(&self) -> anyhow::Result<Ed25519PublicKey> {
         let secrets_path = self.home_dir.path().join("secrets.json");
         let contents = std::fs::read_to_string(&secrets_path)
             .with_context(|| format!("failed to read {}", secrets_path.display()))?;
@@ -58,9 +69,7 @@ impl BackupService {
             .try_into()
             .map_err(|_| anyhow::anyhow!("expected 32 bytes for signing key"))?;
         let signing_key = ed25519_dalek::SigningKey::from_bytes(&secret_bytes);
-        let public_key =
-            near_mpc_crypto_types::Ed25519PublicKey::from(&signing_key.verifying_key());
-        Ok(String::from(&public_key))
+        Ok(Ed25519PublicKey::from(&signing_key.verifying_key()))
     }
 
     fn set_contract_state(&self, state: &ProtocolContractState) -> anyhow::Result<()> {
@@ -163,6 +172,24 @@ async fn wait_for_migration_port(address: &str) -> anyhow::Result<()> {
     .with_context(|| format!("migration port {address} never became reachable"))
 }
 
+/// Fetch one node's `/debug/migrations` endpoint and deserialize the body
+/// into the typed `ContractMigrationInfo` map (the second element of the
+/// `(indexer_height, ContractMigrationInfo)` tuple the endpoint returns).
+async fn fetch_debug_migration_info(
+    http_client: &reqwest::Client,
+    web_addr: &str,
+) -> anyhow::Result<ContractMigrationInfo> {
+    let body = http_client
+        .get(format!("http://{web_addr}/debug/migrations"))
+        .send()
+        .await?
+        .text()
+        .await?;
+    let (_indexer_height, info) = serde_json::from_str::<(u64, ContractMigrationInfo)>(&body)
+        .with_context(|| format!("failed to parse /debug/migrations: {body}"))?;
+    Ok(info)
+}
+
 fn running_state_matches_participant_key(
     state: &ProtocolContractState,
     account_id: &str,
@@ -231,16 +258,19 @@ async fn register_backup_service_and_wait(
         MpcNodeState::Running(n) => n.web_address(),
         _ => bail!("source node not running"),
     };
+    let source_account: AccountId = source_account_id
+        .parse()
+        .with_context(|| format!("invalid source account id: {source_account_id}"))?;
     let http_client = reqwest::Client::new();
     (|| async {
-        let resp = http_client
-            .get(format!("http://{source_web_addr}/debug/migrations"))
-            .send()
-            .await?;
-        let body = resp.text().await?;
+        let info = fetch_debug_migration_info(&http_client, &source_web_addr).await?;
+        let actual = info
+            .get(&source_account)
+            .and_then(|(backup, _)| backup.as_ref())
+            .map(|b| &b.public_key);
         anyhow::ensure!(
-            body.contains(&backup_public_key),
-            "node debug endpoint doesn't reflect backup registration yet"
+            actual == Some(&backup_public_key),
+            "source debug endpoint backup_service_info.public_key={actual:?}, expected {backup_public_key:?}"
         );
         Ok(())
     })
@@ -289,7 +319,7 @@ async fn start_migration_and_wait(
     target_idx: usize,
 ) -> anyhow::Result<()> {
     let source_account_id = cluster.nodes[source_idx].account_id().to_string();
-    let target_p2p_key = cluster.nodes[target_idx].p2p_public_key_str();
+    let target_p2p_key = cluster.nodes[target_idx].p2p_public_key();
     let target_p2p_url = cluster.nodes[target_idx].p2p_url();
     let target_signer_pk = cluster.nodes[target_idx].near_signer_public_key_str();
 
@@ -330,7 +360,44 @@ async fn start_migration_and_wait(
             ),
     )
     .await
-    .context("timed out waiting for contract to reflect node migration")
+    .context("timed out waiting for contract to reflect node migration")?;
+
+    // Wait for the target's own indexer to ingest start_node_migration
+    // before backup-cli does PUT keyshares. Otherwise the target's
+    // `MigrationInfo.active_migration` flips mid-PUT, fires the
+    // migration web-server's per-connection cancellation token, and
+    // tears down the in-flight TLS stream.
+    let target_web_addr = match &cluster.nodes[target_idx] {
+        MpcNodeState::Running(n) => n.web_address(),
+        _ => bail!("target node not running"),
+    };
+    let source_account: AccountId = source_account_id
+        .parse()
+        .with_context(|| format!("invalid source account id: {source_account_id}"))?;
+    let http_client = reqwest::Client::new();
+    (|| async {
+        let info = fetch_debug_migration_info(&http_client, &target_web_addr).await?;
+        let actual = info
+            .get(&source_account)
+            .and_then(|(_, destination)| destination.as_ref())
+            .map(|d| &d.destination_node_info.tls_public_key);
+        anyhow::ensure!(
+            actual == Some(&target_p2p_key),
+            "target debug endpoint destination_node_info.tls_public_key={actual:?}, expected {target_p2p_key:?}"
+        );
+        Ok(())
+    })
+    .retry(
+        ConstantBuilder::default()
+            .with_delay(common::POLL_INTERVAL)
+            .with_max_times(
+                (INDEXER_SYNC_TIMEOUT.as_millis() / common::POLL_INTERVAL.as_millis()) as usize,
+            ),
+    )
+    .await
+    .context("timed out waiting for target node to index node migration")?;
+
+    Ok(())
 }
 
 /// PUT keyshares to the target node via the backup CLI.

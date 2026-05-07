@@ -23,7 +23,7 @@ use crate::types::{CKDRequest, RequestsUpdate, VerifyForeignTxRequest};
 use crate::web::{DebugRequest, DebugRequestKind};
 use mpc_node_config::ConfigFile;
 
-use mpc_primitives::domain::{Curve, DomainId};
+use mpc_primitives::domain::{DomainId, Protocol};
 use near_mpc_contract_interface::types::CKDResponse;
 use near_time::Clock;
 use std::collections::HashMap;
@@ -53,7 +53,7 @@ pub struct MpcClient<ForeignChainPolicyReader> {
     eddsa_signature_provider: Arc<EddsaSignatureProvider>,
     ckd_provider: Arc<CKDProvider>,
     verify_foreign_tx_provider: Arc<VerifyForeignTxProvider<ForeignChainPolicyReader>>,
-    domain_to_curve: HashMap<DomainId, Curve>,
+    domain_to_protocol: HashMap<DomainId, Protocol>,
 }
 
 impl<ForeignChainPolicyReader> MpcClient<ForeignChainPolicyReader>
@@ -72,7 +72,7 @@ where
         eddsa_signature_provider: Arc<EddsaSignatureProvider>,
         ckd_provider: Arc<CKDProvider>,
         verify_foreign_tx_provider: Arc<VerifyForeignTxProvider<ForeignChainPolicyReader>>,
-        domain_to_curve: HashMap<DomainId, Curve>,
+        domain_to_protocol: HashMap<DomainId, Protocol>,
     ) -> Self {
         Self {
             config,
@@ -85,7 +85,7 @@ where
             eddsa_signature_provider,
             ckd_provider,
             verify_foreign_tx_provider,
-            domain_to_curve,
+            domain_to_protocol,
         }
     }
 
@@ -321,10 +321,10 @@ where
                                     .inc();
 
                                 let response = match this
-                                    .domain_to_curve
+                                    .domain_to_protocol
                                     .get(&signature_attempt.request.domain)
                                 {
-                                    Some(Curve::Secp256k1) => {
+                                    Some(Protocol::CaitSith) => {
                                         let (signature, public_key) = timeout(
                                             Duration::from_secs(this.config.signature.timeout_sec),
                                             this.ecdsa_signature_provider
@@ -341,7 +341,7 @@ where
 
                                         Ok(response)
                                     }
-                                    Some(Curve::Edwards25519) => {
+                                    Some(Protocol::Frost) => {
                                         let (signature, _) = timeout(
                                             Duration::from_secs(this.config.signature.timeout_sec),
                                             this.eddsa_signature_provider
@@ -357,11 +357,13 @@ where
 
                                         Ok(response)
                                     }
-                                    Some(Curve::Bls12381) => Err(anyhow::anyhow!(
-                                        "Incorrect protocol for domain: {:?}",
-                                        signature_attempt.request.domain.clone()
-                                    )),
-                                    Some(Curve::V2Secp256k1) => {
+                                    Some(Protocol::ConfidentialKeyDerivation) => {
+                                        Err(anyhow::anyhow!(
+                                            "Incorrect protocol for domain: {:?}",
+                                            signature_attempt.request.domain.clone()
+                                        ))
+                                    }
+                                    Some(Protocol::DamgardEtAl) => {
                                         let (signature, public_key) = timeout(
                                             Duration::from_secs(this.config.signature.timeout_sec),
                                             this.robust_ecdsa_signature_provider
@@ -437,10 +439,10 @@ where
                                     .inc();
 
                                 let response = match this
-                                    .domain_to_curve
+                                    .domain_to_protocol
                                     .get(&ckd_attempt.request.domain_id)
                                 {
-                                    Some(Curve::Bls12381) => {
+                                    Some(Protocol::ConfidentialKeyDerivation) => {
                                         let response = timeout(
                                             Duration::from_secs(this.config.ckd.timeout_sec),
                                             this.ckd_provider
@@ -459,9 +461,9 @@ where
 
                                         Ok(response)
                                     }
-                                    Some(Curve::Secp256k1)
-                                    | Some(Curve::V2Secp256k1)
-                                    | Some(Curve::Edwards25519) => Err(anyhow::anyhow!(
+                                    Some(Protocol::CaitSith)
+                                    | Some(Protocol::DamgardEtAl)
+                                    | Some(Protocol::Frost) => Err(anyhow::anyhow!(
                                         "Signature scheme is not allowed for domain: {:?}",
                                         ckd_attempt.request.domain_id.clone()
                                     )),
@@ -528,10 +530,10 @@ where
                                     .inc();
 
                                 let response = match this
-                                    .domain_to_curve
+                                    .domain_to_protocol
                                     .get(&verify_foreign_tx_attempt.request.domain_id)
                                 {
-                                    Some(Curve::Secp256k1) => {
+                                    Some(Protocol::CaitSith) => {
                                         let response = timeout(
                                             Duration::from_secs(this.config.signature.timeout_sec),
                                             this.verify_foreign_tx_provider.clone().make_signature(
@@ -551,9 +553,9 @@ where
 
                                         Ok(response)
                                     }
-                                    Some(Curve::Bls12381)
-                                    | Some(Curve::V2Secp256k1)
-                                    | Some(Curve::Edwards25519) => Err(anyhow::anyhow!(
+                                    Some(Protocol::ConfidentialKeyDerivation)
+                                    | Some(Protocol::DamgardEtAl)
+                                    | Some(Protocol::Frost) => Err(anyhow::anyhow!(
                                         "Signature scheme is not allowed for domain: {:?}",
                                         verify_foreign_tx_attempt.request.domain_id.clone()
                                     )),

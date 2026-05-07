@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::ops::Add;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 
 /// Tracks the topology of the recent blocks, using the blocks given by the indexer.
 ///
@@ -110,9 +110,10 @@ struct BlockNode {
     canonical: AtomicBool,
     /// Whether this block is on the final chain. This only ever goes from false to true.
     is_final: AtomicBool,
-    /// The parent block, if we're aware of it. This may be None if we either have never
-    /// heard of the parent or the parent has been pruned (too old).
-    parent: Mutex<Option<Arc<BlockNode>>>,
+    /// The parent block, if we're aware of it. This may be None if we have never
+    /// heard of the parent.
+    /// The Weak becomes a dangling pointer when the parent is pruned.
+    parent: Option<Weak<BlockNode>>,
     /// The children blocks; there can be multiple if there are forks. The children are
     /// kept in no specific order.
     children: Mutex<Vec<Arc<BlockNode>>>,
@@ -141,6 +142,10 @@ impl BlockNode {
                 );
             }
         }
+    }
+
+    fn get_parent(&self) -> Option<Arc<BlockNode>> {
+        self.parent.as_ref().and_then(Weak::upgrade)
     }
 
     fn debug_print(
@@ -259,7 +264,7 @@ impl<T: Clone> RecentBlocksTracker<T> {
             height: block.height,
             canonical: AtomicBool::new(false),
             is_final: AtomicBool::new(false),
-            parent: Mutex::new(parent.clone()),
+            parent: parent.as_ref().map(Arc::downgrade),
             children: Mutex::new(Vec::new()),
         });
         self.hash_to_node.insert(block.hash, node.clone());
@@ -308,7 +313,7 @@ impl<T: Clone> RecentBlocksTracker<T> {
                 }
                 node.is_final.store(true, Ordering::Relaxed);
                 new_final_blocks.push(node.clone());
-                let Some(parent) = node.parent.lock().unwrap().clone() else {
+                let Some(parent) = node.get_parent() else {
                     break;
                 };
                 node = parent;
@@ -337,7 +342,7 @@ impl<T: Clone> RecentBlocksTracker<T> {
                 break;
             }
             current_node.canonical.store(true, Ordering::Relaxed);
-            node = current_node.parent.lock().unwrap().clone();
+            node = current_node.get_parent();
         }
         let common_ancestor = node;
 
@@ -349,7 +354,7 @@ impl<T: Clone> RecentBlocksTracker<T> {
                 }
             }
             current_node.canonical.store(false, Ordering::Relaxed);
-            old_node = current_node.parent.lock().unwrap().clone();
+            old_node = current_node.get_parent();
         }
         self.canonical_head = Some(new_canonical_head.clone());
     }
@@ -398,13 +403,11 @@ impl<T: Clone> RecentBlocksTracker<T> {
                 &mut old_nodes,
             );
         }
-        for child in &new_root_children {
-            *child.parent.lock().unwrap() = None;
-        }
         self.root_children = new_root_children;
         for old_node in old_nodes {
             self.hash_to_node.remove(&old_node.hash);
             self.node_to_content.remove(&old_node.hash);
+            *old_node.children.lock().unwrap() = Vec::new();
         }
     }
 
@@ -926,5 +929,62 @@ pub mod tests {
         assert_eq!(t.check(&b1020000), CheckBlockResult::OptimisticAndCanonical);
         assert_eq!(t.check(&b110), CheckBlockResult::NotIncluded);
         assert_eq!(t.check(&b111), CheckBlockResult::NotIncluded);
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn prune_old_blocks__should_drop_connected_pruned_block_nodes() {
+        // Given a tree where finality is stalled by a height gap (b3 is skipped),
+        // so b1 and b2 sit in the tracker without any finality advancement.
+        // The first finality event will jump straight to b4, pruning b1 and b2
+        // together in a single prune_old_blocks call.
+        let mut tester = Tester::new(2);
+        let b1 = tester.block(1);
+        let b2 = b1.child(); // h=2
+        let b4 = b2.descendant(4); // h=4, parent=b2 (h=3 intentionally skipped)
+        let b5 = b4.child(); // h=5
+        let b6 = b5.child(); // h=6 → first block whose grandparent-parent-self
+                             // forms 3 consecutive heights (b4-b5-b6), so its
+                             // last_final_block is b4
+
+        tester.add(&b1, "1");
+        tester.add(&b2, "2");
+        tester.add(&b4, "4");
+        tester.add(&b5, "5");
+
+        // Capture Weak refs to b1 and b2 while they are still in the tree.
+        // After add(b6), final_head will jump from None to b4 (h=4), and
+        // prune_old_blocks will evict both b1 (h=1) and b2 (h=2) in one call.
+        // b1 and b2 are connected by the parent<->children Arc cycle:
+        //   b1.children = [Arc(b2)]
+        //   b2.parent   = Some(Arc(b1))
+        // Without breaking the cycle, neither can be freed.
+        let weak_b1 = Arc::downgrade(
+            tester
+                .tracker
+                .hash_to_node
+                .get(&b1.hash)
+                .expect("b1 present before prune"),
+        );
+        let weak_b2 = Arc::downgrade(
+            tester
+                .tracker
+                .hash_to_node
+                .get(&b2.hash)
+                .expect("b2 present before prune"),
+        );
+
+        // When the finality jump triggers a multi-node prune
+        tester.add(&b6, "6");
+
+        // Then both pruned BlockNodes are dropped (cycle was broken)
+        assert!(
+            weak_b1.upgrade().is_none(),
+            "pruned BlockNode b1 leaked — parent<->children Arc cycle not broken"
+        );
+        assert!(
+            weak_b2.upgrade().is_none(),
+            "pruned BlockNode b2 leaked — parent<->children Arc cycle not broken"
+        );
     }
 }

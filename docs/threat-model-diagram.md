@@ -472,14 +472,14 @@ In the following senarios, two trust assumptions are made;
 - As long as the Smartcontract is honest, everything that is posted there is signed. When the information is read from there the signature is verified - which authenticates the posting party.
 - The operator's  (MPC) public key stored in advance on the smart contract is authentic.
 
-| Entity | Scenario 1 | Scenario 2 | Scenario 3 | Scenario 4 | Scenario 5 | Scenario 6 | Scenario 7 | 
+| Entity | Scenario 1 | Scenario 2 | Scenario 3 | Scenario 4 | Scenario 5 | Scenario 6 | Scenario 7 |
 |--------|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
 | Network | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | Node CVM | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Node Host | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | Migration Service CVM | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Migration Service Host | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-| NEAR Blockchain / Smart Contract | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✗ | 
+| NEAR Blockchain / Smart Contract | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✗ |
 | Operator | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ |
 | TLS connection between CVMs | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ |
 | **Protocol Needed** | **(1)** | **(2)** | **(3)** | **(4)** | **(5)** | **(6)** | **(7)** |

@@ -264,12 +264,12 @@ expression: abi
         }
       },
       {
-        "name": "get_foreign_chain_configurations",
+        "name": "get_foreign_chain_support_by_node",
         "kind": "view",
         "result": {
           "serialization_type": "json",
           "type_schema": {
-            "$ref": "#/definitions/NodeForeignChainConfigurations"
+            "$ref": "#/definitions/ForeignChainSupportByNode"
           }
         }
       },
@@ -808,6 +808,27 @@ expression: abi
         }
       },
       {
+        "name": "register_foreign_chain_support",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "foreign_chain_support",
+              "type_schema": {
+                "$ref": "#/definitions/SupportedForeignChains"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
         "name": "remove_non_participant_update_votes",
         "doc": " Cleans update votes from non-participants after resharing.\n Can be called by any participant or triggered automatically via promise.",
         "kind": "call",
@@ -1065,7 +1086,7 @@ expression: abi
       },
       {
         "name": "start_node_migration",
-        "doc": " Sets the destination node for the calling account.\n\n This function can only be called while the protocol is in a `Running` state.\n The signer must be a current participant of the current epoch, otherwise an error is returned.\n On success, the provided `DestinationNodeInfo` is stored in the contract state\n under the signer’s account ID.\n\n # Errors\n - [`InvalidState::ProtocolStateNotRunning`] if the protocol is not in the `Running` state.  \n - [`InvalidState::NotParticipant`] if the signer is not a current participant.\n # Note:\n - might require a deposit",
+        "doc": " Sets the destination node for the calling account.\n\n This function can only be called while the protocol is in a `Running` state.\n The signer must be a current participant of the current epoch, otherwise an error is returned.\n On success, the provided `DestinationNodeInfo` is stored in the contract state\n under the signer’s account ID.\n\n # Errors\n - [`InvalidState::ProtocolStateNotRunning`] if the protocol is not in the `Running` state.\n - [`InvalidState::NotParticipant`] if the signer is not a current participant.\n # Note:\n - might require a deposit",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -1930,22 +1951,11 @@ expression: abi
         },
         "Curve": {
           "description": "Elliptic curve used by a domain.",
-          "oneOf": [
-            {
-              "type": "string",
-              "enum": [
-                "Secp256k1",
-                "Edwards25519",
-                "Bls12381"
-              ]
-            },
-            {
-              "description": "Robust ECDSA variant.",
-              "type": "string",
-              "enum": [
-                "V2Secp256k1"
-              ]
-            }
+          "type": "string",
+          "enum": [
+            "Secp256k1",
+            "Edwards25519",
+            "Bls12381"
           ]
         },
         "DestinationNodeInfo": {
@@ -1980,6 +1990,7 @@ expression: abi
           "required": [
             "curve",
             "id",
+            "protocol",
             "purpose"
           ],
           "properties": {
@@ -1988,6 +1999,9 @@ expression: abi
             },
             "id": {
               "$ref": "#/definitions/DomainId"
+            },
+            "protocol": {
+              "$ref": "#/definitions/Protocol"
             },
             "purpose": {
               "$ref": "#/definitions/DomainPurpose"
@@ -2204,10 +2218,13 @@ expression: abi
             "Bnb",
             "Arbitrum",
             "Abstract",
-            "Starknet"
+            "Starknet",
+            "Polygon",
+            "HyperEvm"
           ]
         },
         "ForeignChainConfiguration": {
+          "deprecated": true,
           "type": "object",
           "additionalProperties": {
             "$ref": "#/definitions/NonEmptyBTreeSet_RpcProvider"
@@ -2298,8 +2315,58 @@ expression: abi
                 }
               },
               "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Arbitrum"
+              ],
+              "properties": {
+                "Arbitrum": {
+                  "$ref": "#/definitions/EvmRpcRequest"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Polygon"
+              ],
+              "properties": {
+                "Polygon": {
+                  "$ref": "#/definitions/EvmRpcRequest"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "HyperEvm"
+              ],
+              "properties": {
+                "HyperEvm": {
+                  "$ref": "#/definitions/EvmRpcRequest"
+                }
+              },
+              "additionalProperties": false
             }
           ]
+        },
+        "ForeignChainSupportByNode": {
+          "type": "object",
+          "required": [
+            "foreign_chain_support_by_node"
+          ],
+          "properties": {
+            "foreign_chain_support_by_node": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/definitions/SupportedForeignChains"
+              }
+            }
+          }
         },
         "Hash256": {
           "type": "string",
@@ -2907,20 +2974,6 @@ expression: abi
           "minLength": 96,
           "pattern": "^[0-9a-fA-F]+$"
         },
-        "NodeForeignChainConfigurations": {
-          "type": "object",
-          "required": [
-            "foreign_chain_configuration_by_node"
-          ],
-          "properties": {
-            "foreign_chain_configuration_by_node": {
-              "type": "object",
-              "additionalProperties": {
-                "$ref": "#/definitions/ForeignChainConfiguration"
-              }
-            }
-          }
-        },
         "NodeId": {
           "type": "object",
           "required": [
@@ -3144,6 +3197,16 @@ expression: abi
               }
             }
           }
+        },
+        "Protocol": {
+          "description": "MPC protocol run for a domain.",
+          "type": "string",
+          "enum": [
+            "CaitSith",
+            "Frost",
+            "ConfidentialKeyDerivation",
+            "DamgardEtAl"
+          ]
         },
         "ProtocolContractState": {
           "description": "The main protocol contract state enum.",

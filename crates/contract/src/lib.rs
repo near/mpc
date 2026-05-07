@@ -1,3 +1,5 @@
+// applied on module since near proc macro is unable to apply the expect lint
+#![expect(deprecated, reason = "ForeignChainConfiguration is being deprecated")]
 #![doc = include_str!("../README.md")]
 
 pub mod config;
@@ -56,7 +58,7 @@ use near_mpc_contract_interface::types::{
 };
 use near_mpc_contract_interface::{method_names, types::CKDRequestArgs};
 
-use dtos::{Curve, DomainConfig, DomainId, DomainPurpose};
+use dtos::{Curve, DomainConfig, DomainId, DomainPurpose, Protocol};
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash};
 use near_sdk::{
     env, log, near,
@@ -140,7 +142,7 @@ pub struct MpcContract {
     pending_ckd_requests: LookupMap<CKDRequest, YieldIndex>,
     pending_verify_foreign_tx_requests: LookupMap<VerifyForeignTransactionRequest, YieldIndex>,
     proposed_updates: ProposedUpdates,
-    node_foreign_chain_configurations: NodeForeignChainConfigurations,
+    node_foreign_chain_support: SupportedForeignChainsByNode,
     config: Config,
     tee_state: TeeState,
     accept_requests: bool,
@@ -171,31 +173,30 @@ struct StaleData {}
 
 #[near(serializers=[borsh])]
 #[derive(Debug)]
-struct NodeForeignChainConfigurations {
-    foreign_chain_configuration_by_node:
-        IterableMap<dtos::AccountId, dtos::ForeignChainConfiguration>,
+struct SupportedForeignChainsByNode {
+    foreign_chain_support_by_node: IterableMap<dtos::AccountId, dtos::SupportedForeignChains>,
 }
 
-impl Default for NodeForeignChainConfigurations {
+impl Default for SupportedForeignChainsByNode {
     fn default() -> Self {
         Self {
-            foreign_chain_configuration_by_node: IterableMap::new(
-                StorageKey::SupportedForeignChainsVotes,
+            foreign_chain_support_by_node: IterableMap::new(
+                StorageKey::SupportedForeignChainsByNode,
             ),
         }
     }
 }
 
-impl NodeForeignChainConfigurations {
-    fn to_dto(&self) -> dtos::NodeForeignChainConfigurations {
+impl SupportedForeignChainsByNode {
+    fn to_dto(&self) -> dtos::ForeignChainSupportByNode {
         let foreign_chain_configuration_by_node = self
-            .foreign_chain_configuration_by_node
+            .foreign_chain_support_by_node
             .iter()
             .map(|(account_id, foreign_chains)| (account_id.clone(), foreign_chains.clone()))
             .collect();
 
-        dtos::NodeForeignChainConfigurations {
-            foreign_chain_configuration_by_node,
+        dtos::ForeignChainSupportByNode {
+            foreign_chain_support_by_node: foreign_chain_configuration_by_node,
         }
     }
 }
@@ -360,18 +361,20 @@ impl MpcContract {
         // ensure the signer sent a valid signature request
         // It's important we fail here because the MPC nodes will fail in an identical way.
         // This allows users to get the error message
-        match domain_config.curve {
-            Curve::Secp256k1 | Curve::V2Secp256k1 => {
+        match domain_config.protocol {
+            Protocol::CaitSith | Protocol::DamgardEtAl => {
                 let hash = *request.payload.as_ecdsa().expect("Payload is not Ecdsa");
                 k256::Scalar::from_repr(hash.into())
                     .into_option()
                     .expect("Ecdsa payload cannot be converted to Scalar");
             }
-            Curve::Edwards25519 => {
+            Protocol::Frost => {
                 request.payload.as_eddsa().expect("Payload is not EdDSA");
             }
-            Curve::Bls12381 => {
-                env::panic_str("Bls12381 is not supported for signature responses");
+            Protocol::ConfidentialKeyDerivation => {
+                env::panic_str(
+                    "ConfidentialKeyDerivation is not supported for signature responses",
+                );
             }
         }
 
@@ -951,9 +954,9 @@ impl MpcContract {
     }
 
     #[handle_result]
-    pub fn register_foreign_chain_config(
+    pub fn register_foreign_chain_support(
         &mut self,
-        foreign_chain_configuration: dtos::ForeignChainConfiguration,
+        foreign_chain_support: dtos::SupportedForeignChains,
     ) -> Result<(), Error> {
         let ProtocolContractState::Running(running_state) = &self.protocol_state else {
             env::panic_str("protocol must be in running state");
@@ -963,11 +966,28 @@ impl MpcContract {
             AuthenticatedAccountId::new(running_state.parameters.participants())?;
         let account_id = authenticated_voter.get().clone();
 
-        self.node_foreign_chain_configurations
-            .foreign_chain_configuration_by_node
-            .insert(account_id, foreign_chain_configuration);
+        self.node_foreign_chain_support
+            .foreign_chain_support_by_node
+            .insert(account_id, foreign_chain_support);
 
         Ok(())
+    }
+
+    #[deprecated(
+        note = "https://github.com/near/mpc/issues/3079. Node will be upgraded to use register_foreign_chain_support instead"
+    )]
+    #[handle_result]
+    pub fn register_foreign_chain_config(
+        &mut self,
+        foreign_chain_configuration: dtos::ForeignChainConfiguration,
+    ) -> Result<(), Error> {
+        let foreign_chain_support: dtos::SupportedForeignChains = foreign_chain_configuration
+            .keys()
+            .copied()
+            .collect::<BTreeSet<_>>()
+            .into();
+
+        self.register_foreign_chain_support(foreign_chain_support)
     }
 
     /// Starts a new attempt to generate a key for the current domain.
@@ -1629,15 +1649,15 @@ impl MpcContract {
             .collect();
 
         let non_participant_configs: Vec<dtos::AccountId> = self
-            .node_foreign_chain_configurations
-            .foreign_chain_configuration_by_node
+            .node_foreign_chain_support
+            .foreign_chain_support_by_node
             .keys()
             .filter(|account| !participant_accounts.contains(*account))
             .cloned()
             .collect();
         for account in &non_participant_configs {
-            self.node_foreign_chain_configurations
-                .foreign_chain_configuration_by_node
+            self.node_foreign_chain_support
+                .foreign_chain_support_by_node
                 .remove(account);
         }
 
@@ -1690,7 +1710,7 @@ impl MpcContract {
             node_migrations: NodeMigrations::default(),
             stale_data: StaleData {},
             metrics: Default::default(),
-            node_foreign_chain_configurations: Default::default(),
+            node_foreign_chain_support: Default::default(),
         })
     }
 
@@ -1754,7 +1774,7 @@ impl MpcContract {
             node_migrations: NodeMigrations::default(),
             stale_data: StaleData {},
             metrics: Default::default(),
-            node_foreign_chain_configurations: Default::default(),
+            node_foreign_chain_support: Default::default(),
         })
     }
 
@@ -1862,11 +1882,11 @@ impl MpcContract {
         > = BTreeMap::new();
 
         for (account_id, chains) in self
-            .node_foreign_chain_configurations
-            .foreign_chain_configuration_by_node
+            .node_foreign_chain_support
+            .foreign_chain_support_by_node
             .iter()
         {
-            for chain in chains.keys() {
+            for chain in chains.iter() {
                 foreign_chain_to_node_mapping
                     .entry(chain)
                     .or_default()
@@ -1891,8 +1911,8 @@ impl MpcContract {
             .into()
     }
 
-    pub fn get_foreign_chain_configurations(&self) -> dtos::NodeForeignChainConfigurations {
-        self.node_foreign_chain_configurations.to_dto()
+    pub fn get_foreign_chain_support_by_node(&self) -> dtos::ForeignChainSupportByNode {
+        self.node_foreign_chain_support.to_dto()
     }
 
     // contract version
@@ -2113,7 +2133,7 @@ impl MpcContract {
     /// under the signer’s account ID.
     ///
     /// # Errors
-    /// - [`InvalidState::ProtocolStateNotRunning`] if the protocol is not in the `Running` state.  
+    /// - [`InvalidState::ProtocolStateNotRunning`] if the protocol is not in the `Running` state.
     /// - [`InvalidState::NotParticipant`] if the signer is not a current participant.
     /// # Note:
     /// - might require a deposit
@@ -2288,7 +2308,7 @@ mod tests {
     use crate::primitives::participants::{ParticipantId, ParticipantInfo, Participants};
     use crate::primitives::test_utils::{
         bogus_ed25519_near_public_key, bogus_ed25519_public_key, gen_account_id, gen_participant,
-        gen_participants, infer_purpose_from_curve, NUM_CURVES,
+        gen_participants, infer_purpose_from_curve, NUM_PROTOCOLS,
     };
     use crate::state::key_event::tests::Environment;
     use crate::state::key_event::KeyEvent;
@@ -2303,7 +2323,7 @@ mod tests {
     use crate::tee::tee_state::NodeId;
     use assert_matches::assert_matches;
     use dtos::{Attestation, Ed25519PublicKey, ForeignTxSignPayload, MockAttestation};
-    use dtos::{Curve, DomainConfig, DomainId, Payload, Tweak};
+    use dtos::{Curve, DomainConfig, DomainId, Payload, Protocol, Tweak};
     use elliptic_curve::Field as _;
     use elliptic_curve::Group;
     use k256::{self, ecdsa::SigningKey, elliptic_curve, Secp256k1};
@@ -2422,12 +2442,12 @@ mod tests {
         }
     }
 
-    pub fn make_public_key_for_domain(
-        domain_curve: Curve,
+    pub fn make_public_key_for_curve(
+        curve: Curve,
         rng: &mut impl CryptoRngCore,
     ) -> (dtos::PublicKey, SharedSecretKey) {
-        match domain_curve {
-            Curve::Secp256k1 | Curve::V2Secp256k1 => {
+        match curve {
+            Curve::Secp256k1 => {
                 let (pk, sk) = new_secp256k1(rng);
                 (pk.into(), SharedSecretKey::Secp256k1(sk))
             }
@@ -2446,14 +2466,20 @@ mod tests {
         curve: Curve,
         rng: &mut impl CryptoRngCore,
     ) -> (VMContext, MpcContract, SharedSecretKey) {
-        basic_setup_with_purpose(curve, infer_purpose_from_curve(curve), rng)
+        let protocol = match curve {
+            Curve::Secp256k1 => Protocol::CaitSith,
+            Curve::Edwards25519 => Protocol::Frost,
+            Curve::Bls12381 => Protocol::ConfidentialKeyDerivation,
+        };
+        basic_setup_with_protocol(protocol, infer_purpose_from_curve(curve), rng)
     }
 
-    fn basic_setup_with_purpose(
-        curve: Curve,
+    fn basic_setup_with_protocol(
+        protocol: Protocol,
         purpose: DomainPurpose,
         rng: &mut impl CryptoRngCore,
     ) -> (VMContext, MpcContract, SharedSecretKey) {
+        let curve = Curve::from(protocol);
         let contract_account_id = AccountId::from_str("contract_account.near").unwrap();
         let context = VMContextBuilder::new()
             .attached_deposit(NearToken::from_yoctonear(1))
@@ -2465,10 +2491,11 @@ mod tests {
         let domains = vec![DomainConfig {
             id: domain_id,
             curve,
+            protocol,
             purpose,
         }];
         let epoch_id = EpochId::new(0);
-        let (pk, sk) = make_public_key_for_domain(curve, rng);
+        let (pk, sk) = make_public_key_for_curve(curve, rng);
         let key_for_domain = KeyForDomain {
             domain_id,
             key: pk.try_into().unwrap(),
@@ -2550,8 +2577,9 @@ mod tests {
         node_id.account_id.clone()
     }
 
-    fn test_signature_common(success: bool, legacy_v1_api: bool) {
-        let (context, mut contract, secret_key) = basic_setup(Curve::Secp256k1, &mut OsRng);
+    fn test_signature_common(success: bool, legacy_v1_api: bool, protocol: Protocol) {
+        let (context, mut contract, secret_key) =
+            basic_setup_with_protocol(protocol, DomainPurpose::Sign, &mut OsRng);
         let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
             unreachable!();
         };
@@ -2625,14 +2653,18 @@ mod tests {
 
     #[test]
     fn respond__should_succeed_when_response_is_valid_and_request_exists() {
-        test_signature_common(true, false);
-        test_signature_common(false, false);
+        for protocol in [Protocol::CaitSith, Protocol::DamgardEtAl] {
+            test_signature_common(true, false, protocol);
+            test_signature_common(false, false, protocol);
+        }
     }
 
     #[test]
     fn respond__should_succeed_when_response_is_valid_and_request_exists_legacy() {
-        test_signature_common(true, true);
-        test_signature_common(false, true);
+        for protocol in [Protocol::CaitSith, Protocol::DamgardEtAl] {
+            test_signature_common(true, true, protocol);
+            test_signature_common(false, true, protocol);
+        }
     }
 
     #[test]
@@ -2981,7 +3013,7 @@ mod tests {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (context, mut contract, secret_key) =
-            basic_setup_with_purpose(Curve::Secp256k1, DomainPurpose::ForeignTx, &mut rng);
+            basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut rng);
         register_supported_chains(&mut contract, [dtos::ForeignChain::Bitcoin]);
         testing_env!(context.clone());
         let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
@@ -3050,7 +3082,7 @@ mod tests {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (context, mut contract, _secret_key) =
-            basic_setup_with_purpose(Curve::Secp256k1, DomainPurpose::ForeignTx, &mut rng);
+            basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut rng);
         register_supported_chains(&mut contract, [dtos::ForeignChain::Bitcoin]);
         testing_env!(context.clone());
         let request_args = VerifyForeignTransactionRequestArgs {
@@ -3082,14 +3114,16 @@ mod tests {
     }
 
     #[rstest]
-    #[case(DomainPurpose::ForeignTx)]
-    #[case(DomainPurpose::CKD)]
+    #[case(Protocol::CaitSith, DomainPurpose::ForeignTx)]
+    #[case(Protocol::ConfidentialKeyDerivation, DomainPurpose::CKD)]
     #[should_panic(expected = "this method requires Sign")]
-    fn sign__should_reject_non_sign_domain(#[case] purpose: DomainPurpose) {
+    fn sign__should_reject_non_sign_domain(
+        #[case] protocol: Protocol,
+        #[case] purpose: DomainPurpose,
+    ) {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (_context, mut contract, _sk) =
-            basic_setup_with_purpose(Curve::Secp256k1, purpose, &mut rng);
+        let (_context, mut contract, _sk) = basic_setup_with_protocol(protocol, purpose, &mut rng);
 
         // When
         contract.sign(SignRequestArgs {
@@ -3100,14 +3134,16 @@ mod tests {
     }
 
     #[rstest]
-    #[case(DomainPurpose::Sign)]
-    #[case(DomainPurpose::CKD)]
+    #[case(Protocol::CaitSith, DomainPurpose::Sign)]
+    #[case(Protocol::ConfidentialKeyDerivation, DomainPurpose::CKD)]
     #[should_panic(expected = "this method requires ForeignTx")]
-    fn verify_foreign_tx__should_reject_non_foreign_tx_domain(#[case] purpose: DomainPurpose) {
+    fn verify_foreign_tx__should_reject_non_foreign_tx_domain(
+        #[case] protocol: Protocol,
+        #[case] purpose: DomainPurpose,
+    ) {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (_context, mut contract, _sk) =
-            basic_setup_with_purpose(Curve::Secp256k1, purpose, &mut rng);
+        let (_context, mut contract, _sk) = basic_setup_with_protocol(protocol, purpose, &mut rng);
 
         // When
         contract.verify_foreign_transaction(VerifyForeignTransactionRequestArgs {
@@ -3127,7 +3163,7 @@ mod tests {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (context, mut contract, _sk) =
-            basic_setup_with_purpose(Curve::Secp256k1, DomainPurpose::ForeignTx, &mut rng);
+            basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut rng);
         // Supported chains has Solana but not Bitcoin
         register_supported_chains(&mut contract, [dtos::ForeignChain::Solana]);
         testing_env!(context.clone());
@@ -3152,7 +3188,7 @@ mod tests {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (_context, mut contract, _sk) =
-            basic_setup_with_purpose(Curve::Secp256k1, purpose, &mut rng);
+            basic_setup_with_protocol(Protocol::CaitSith, purpose, &mut rng);
 
         // When
         contract.request_app_private_key(CKDRequestArgs {
@@ -3516,7 +3552,7 @@ mod tests {
                 ),
                 accept_requests: true,
                 proposed_updates: Default::default(),
-                node_foreign_chain_configurations: Default::default(),
+                node_foreign_chain_support: Default::default(),
                 config: Default::default(),
                 tee_state: Default::default(),
                 node_migrations: Default::default(),
@@ -3527,7 +3563,7 @@ mod tests {
     }
 
     const NUM_GENERATED_DOMAINS: usize = 1;
-    const NUM_DOMAINS: usize = 2 * NUM_CURVES;
+    const NUM_DOMAINS: usize = 2 * NUM_PROTOCOLS;
     #[test]
     fn test_start_node_migration_failure_not_participant() {
         let running_state = ProtocolContractState::Running(gen_running_state(NUM_DOMAINS));
@@ -4538,9 +4574,10 @@ mod tests {
         let domains = vec![DomainConfig {
             id: domain_id,
             curve: Curve::Secp256k1,
+            protocol: Protocol::CaitSith,
             purpose: DomainPurpose::Sign,
         }];
-        let (pk, _) = make_public_key_for_domain(Curve::Secp256k1, &mut OsRng);
+        let (pk, _) = make_public_key_for_curve(Curve::Secp256k1, &mut OsRng);
         let key_for_domain = KeyForDomain {
             domain_id,
             key: pk.try_into().unwrap(),
@@ -5630,7 +5667,7 @@ mod tests {
     }
 
     #[test]
-    fn register_foreign_chain_config__should_store_supported_chains_for_participant() {
+    fn register_foreign_chain_support__should_store_supported_chains_for_participant() {
         // Given
         let running_state = gen_running_state(1);
         let participants = running_state
@@ -5642,37 +5679,24 @@ mod tests {
         let mut contract =
             MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
 
-        let foreign_chain_configuration: dtos::ForeignChainConfiguration = BTreeMap::from([
-            (
-                dtos::ForeignChain::Bitcoin,
-                NonEmptyBTreeSet::new(dtos::RpcProvider {
-                    rpc_url: "https://btc.example.com".to_string(),
-                }),
-            ),
-            (
-                dtos::ForeignChain::Ethereum,
-                NonEmptyBTreeSet::new(dtos::RpcProvider {
-                    rpc_url: "https://eth.example.com".to_string(),
-                }),
-            ),
-        ])
-        .into();
+        let foreign_chain_support: dtos::SupportedForeignChains =
+            BTreeSet::from([dtos::ForeignChain::Bitcoin, dtos::ForeignChain::Ethereum]).into();
 
         let _env = Environment::new(None, Some(first_account.clone()), None);
 
         // When
         contract
-            .register_foreign_chain_config(foreign_chain_configuration.clone())
+            .register_foreign_chain_support(foreign_chain_support.clone())
             .expect("register should succeed");
 
         // Then
-        let votes = contract.get_foreign_chain_configurations();
-        assert_eq!(votes.foreign_chain_configuration_by_node.len(), 1);
+        let votes = contract.get_foreign_chain_support_by_node();
+        assert_eq!(votes.foreign_chain_support_by_node.len(), 1);
         assert_eq!(
             votes
-                .foreign_chain_configuration_by_node
+                .foreign_chain_support_by_node
                 .get(&first_account.clone()),
-            Some(&foreign_chain_configuration)
+            Some(&foreign_chain_support)
         );
     }
 
@@ -5847,52 +5871,6 @@ mod tests {
         assert!(result.contains(&dtos::ForeignChain::Bitcoin));
         assert!(result.contains(&dtos::ForeignChain::Ethereum));
         assert_eq!(result.len(), 2);
-    }
-
-    #[test]
-    fn register_foreign_chain_config__preserves_per_participant_rpc_urls() {
-        // Given
-        let running_state = gen_running_state(1);
-        let participants = running_state
-            .parameters
-            .participants()
-            .participants()
-            .clone();
-        let mut contract =
-            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
-
-        // Each participant registers the same chains but with different RPC URLs
-        for (i, (account_id, _, _)) in participants.iter().enumerate() {
-            let _env = Environment::new(None, Some(account_id.clone()), None);
-            let foreign_chain_configuration: dtos::ForeignChainConfiguration = BTreeMap::from([(
-                dtos::ForeignChain::Bitcoin,
-                NonEmptyBTreeSet::new(dtos::RpcProvider {
-                    rpc_url: format!("https://btc-node-{i}.example.com"),
-                }),
-            )])
-            .into();
-            contract
-                .register_foreign_chain_config(foreign_chain_configuration)
-                .expect("register should succeed");
-        }
-
-        // When
-        let votes = contract.get_foreign_chain_configurations();
-
-        // Then — each participant's individual RPC URLs are preserved
-        for (i, (account_id, _, _)) in participants.iter().enumerate() {
-            let account_dto = account_id.clone();
-            let config = votes
-                .foreign_chain_configuration_by_node
-                .get(&account_dto)
-                .expect("participant should have a config");
-            let btc_providers = config
-                .get(&dtos::ForeignChain::Bitcoin)
-                .expect("Bitcoin should be present");
-            assert!(btc_providers
-                .iter()
-                .any(|p| p.rpc_url == format!("https://btc-node-{i}.example.com")));
-        }
     }
 
     #[test]

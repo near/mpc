@@ -6,7 +6,7 @@ use crate::tests::{
 };
 use crate::tracking::AutoAbortTask;
 use mpc_primitives::domain::{Curve, DomainId};
-use near_mpc_contract_interface::types::{DomainConfig, DomainPurpose};
+use near_mpc_contract_interface::types::{DomainConfig, DomainPurpose, Protocol};
 use near_time::Clock;
 
 // Make a cluster of four nodes, test that we can generate keyshares
@@ -37,16 +37,19 @@ async fn test_basic_multidomain() {
         DomainConfig {
             id: DomainId(0),
             curve: Curve::Secp256k1,
+            protocol: Protocol::CaitSith,
             purpose: DomainPurpose::Sign,
         },
         DomainConfig {
             id: DomainId(1),
             curve: Curve::Edwards25519,
+            protocol: Protocol::Frost,
             purpose: DomainPurpose::Sign,
         },
         DomainConfig {
             id: DomainId(2),
             curve: Curve::Bls12381,
+            protocol: Protocol::ConfidentialKeyDerivation,
             purpose: DomainPurpose::CKD,
         },
     ];
@@ -75,7 +78,7 @@ async fn test_basic_multidomain() {
     tracing::info!("requesting signature");
     for domain in &domains {
         match domain.curve {
-            Curve::Secp256k1 | Curve::Edwards25519 | Curve::V2Secp256k1 => {
+            Curve::Secp256k1 | Curve::Edwards25519 => {
                 assert!(request_signature_and_await_response(
                     &mut setup.indexer,
                     &format!("user{}", domain.id.0),
@@ -101,16 +104,19 @@ async fn test_basic_multidomain() {
         DomainConfig {
             id: DomainId(3),
             curve: Curve::Edwards25519,
+            protocol: Protocol::Frost,
             purpose: DomainPurpose::Sign,
         },
         DomainConfig {
             id: DomainId(4),
             curve: Curve::Secp256k1,
+            protocol: Protocol::CaitSith,
             purpose: DomainPurpose::Sign,
         },
         DomainConfig {
             id: DomainId(5),
             curve: Curve::Bls12381,
+            protocol: Protocol::ConfidentialKeyDerivation,
             purpose: DomainPurpose::CKD,
         },
     ];
@@ -140,7 +146,7 @@ async fn test_basic_multidomain() {
 
     for domain in &domains {
         match domain.curve {
-            Curve::Secp256k1 | Curve::Edwards25519 | Curve::V2Secp256k1 => {
+            Curve::Secp256k1 | Curve::Edwards25519 => {
                 assert!(request_signature_and_await_response(
                     &mut setup.indexer,
                     &format!("user{}", domain.id.0),
@@ -187,7 +193,7 @@ async fn test_basic_multidomain() {
 
     for domain in &domains {
         match domain.curve {
-            Curve::Secp256k1 | Curve::Edwards25519 | Curve::V2Secp256k1 => {
+            Curve::Secp256k1 | Curve::Edwards25519 => {
                 assert!(request_signature_and_await_response(
                     &mut setup.indexer,
                     &format!("user{}", domain.id.0),

@@ -7,7 +7,7 @@ use crate::tests::{
 };
 use crate::tracking::AutoAbortTask;
 use mpc_primitives::domain::{Curve, DomainId};
-use near_mpc_contract_interface::types::{DomainConfig, DomainPurpose};
+use near_mpc_contract_interface::types::{DomainConfig, DomainPurpose, Protocol};
 use near_time::Clock;
 use rstest::rstest;
 use serial_test::serial;
@@ -25,16 +25,17 @@ fn infer_purpose_from_curve(curve: Curve) -> DomainPurpose {
 #[tokio::test]
 #[test_log::test]
 #[rstest]
-#[case(0, Curve::Secp256k1, 3)]
-#[case(1, Curve::Edwards25519, 3)]
-#[case(2, Curve::Bls12381, 3)]
+#[case(0, Protocol::CaitSith, 3)]
+#[case(1, Protocol::Frost, 3)]
+#[case(2, Protocol::ConfidentialKeyDerivation, 3)]
 // TODO(#1946): re-enable once it is no longer flaky
-// #[case(3, Curve::V2Secp256k1, 5)]
+// #[case(3, Protocol::DamgardEtAl, 5)]
 async fn test_key_resharing_simple(
     #[case] case: u16,
-    #[case] curve: Curve,
+    #[case] protocol: Protocol,
     #[case] threshold: usize,
 ) {
+    let curve = Curve::from(protocol);
     let num_participants: usize = threshold + 1;
     const TXN_DELAY_BLOCKS: u64 = 1;
     let temp_dir = tempfile::tempdir().unwrap();
@@ -57,6 +58,7 @@ async fn test_key_resharing_simple(
     let domain = DomainConfig {
         id: DomainId(0),
         curve,
+        protocol,
         purpose: infer_purpose_from_curve(curve),
     };
 
@@ -83,7 +85,7 @@ async fn test_key_resharing_simple(
 
     // Sanity check.
     match domain.curve {
-        Curve::Secp256k1 | Curve::Edwards25519 | Curve::V2Secp256k1 => {
+        Curve::Secp256k1 | Curve::Edwards25519 => {
             assert!(request_signature_and_await_response(
                 &mut setup.indexer,
                 "user1",
@@ -127,7 +129,7 @@ async fn test_key_resharing_simple(
         .expect("Timeout waiting for resharing to complete");
 
     match domain.curve {
-        Curve::Secp256k1 | Curve::Edwards25519 | Curve::V2Secp256k1 => {
+        Curve::Secp256k1 | Curve::Edwards25519 => {
             assert!(request_signature_and_await_response(
                 &mut setup.indexer,
                 "user1",
@@ -179,6 +181,7 @@ async fn test_key_resharing_multistage() {
     let domain = DomainConfig {
         id: DomainId(0),
         curve: Curve::Secp256k1,
+        protocol: Protocol::CaitSith,
         purpose: DomainPurpose::Sign,
     };
 
@@ -384,6 +387,7 @@ async fn test_signature_requests_in_resharing_are_processed() {
     let domain = DomainConfig {
         id: DomainId(0),
         curve: Curve::Secp256k1,
+        protocol: Protocol::CaitSith,
         purpose: DomainPurpose::Sign,
     };
 

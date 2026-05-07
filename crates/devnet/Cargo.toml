@@ -6,25 +6,26 @@ edition = "2021"
 
 [dependencies]
 anyhow = { workspace = true }
+blstrs = { workspace = true }
 borsh = { workspace = true }
 bs58 = { workspace = true }
 clap = { workspace = true }
 ed25519-dalek = { workspace = true }
 flume = { workspace = true }
 futures = { workspace = true }
+group = { workspace = true }
 hex = { workspace = true }
-mpc-contract = { workspace = true, features = ["test-utils", "dev-utils"] }
 mpc-primitives = { workspace = true }
 near-account-id = { workspace = true }
 near-mpc-bounded-collections = { workspace = true }
 near-mpc-contract-interface = { workspace = true, features = [
+    "blstrs",
     "ed25519-dalek",
     "near",
 ] }
 near-sdk = { workspace = true }
 node-types = { workspace = true }
-# TODO(#658): use workspace version
-rand = "0.9.3"
+rand = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

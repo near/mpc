@@ -26,7 +26,7 @@ pub async fn execute_async_transactions(
     Ok(())
 }
 
-/// Returns an error if any of the outcomes in [`ExecutionFinalResult`] failed  
+/// Returns an error if any of the outcomes in [`ExecutionFinalResult`] failed
 pub fn all_receipts_successful(result: ExecutionFinalResult) -> anyhow::Result<()> {
     anyhow::ensure!(
         result.outcomes().iter().all(|o| !o.is_failure()),

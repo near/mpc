@@ -5,10 +5,9 @@ use mpc_node_config::foreign_chains::RpcProviderName;
 use mpc_node_config::{
     AuthConfig, ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig,
 };
-use near_mpc_bounded_collections::NonEmptyBTreeSet;
-use near_mpc_contract_interface::types::{ForeignChain, ForeignChainConfiguration, RpcProvider};
+use near_mpc_contract_interface::types::ForeignChain;
 use near_time::Clock;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::num::NonZeroU64;
 use std::time::Duration;
 
@@ -52,6 +51,7 @@ async fn foreign_chain_configuration_auto_registered_to_contract_on_startup__sho
         starknet: None,
         bnb: None,
         base: None,
+        arbitrum: None,
     };
     for config in &mut setup.configs {
         config.config.foreign_chains = foreign_chains.clone();
@@ -94,17 +94,12 @@ async fn foreign_chain_configuration_auto_registered_to_contract_on_startup__sho
         expected_foreign_chains
     );
 
-    let expected_configuration = ForeignChainConfiguration::from(BTreeMap::from([(
-        ForeignChain::Solana,
-        NonEmptyBTreeSet::new(RpcProvider {
-            rpc_url: "https://rpc.public.example.com".to_string(),
-        }),
-    )]));
+    let expected_node_support = BTreeSet::from([ForeignChain::Solana]);
 
-    let nodes_submitted_configurations = contract.supported_foreign_chains_by_node();
-    let all_nodes_submitted_configuration = nodes_submitted_configurations
+    let all_nodes_submitted_supported_chains = contract
+        .supported_foreign_chains_by_node()
         .values()
-        .all(|config| config == &expected_configuration);
+        .all(|node_support| **node_support == expected_node_support);
 
-    assert!(all_nodes_submitted_configuration);
+    assert!(all_nodes_submitted_supported_chains);
 }

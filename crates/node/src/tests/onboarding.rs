@@ -18,7 +18,7 @@ use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::state::ProtocolContractState;
 use mpc_primitives::domain::{Curve, DomainId};
 use near_mpc_contract_interface::types::{
-    BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey,
+    BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey, Protocol,
 };
 use near_mpc_contract_interface::types::{DomainConfig, DomainPurpose, Keyset};
 use near_time::Clock;
@@ -106,6 +106,7 @@ async fn test_onboarding() {
     let domain = DomainConfig {
         id: DomainId(0),
         curve: Curve::Secp256k1,
+        protocol: Protocol::CaitSith,
         purpose: DomainPurpose::Sign,
     };
 

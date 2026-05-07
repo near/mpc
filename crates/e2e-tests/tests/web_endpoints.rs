@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use e2e_tests::MpcNodeState;
-use mpc_primitives::domain::Curve;
+use mpc_primitives::domain::Protocol;
 use near_mpc_contract_interface::types::DomainPurpose;
 use rand::SeedableRng;
 
@@ -49,11 +49,11 @@ async fn test_web_endpoints() {
     for domain in &running.domains.domains {
         let outcome = match domain.purpose {
             DomainPurpose::Sign => {
-                let payload = match domain.curve {
-                    Curve::Secp256k1 | Curve::V2Secp256k1 => {
+                let payload = match domain.protocol {
+                    Protocol::CaitSith | Protocol::DamgardEtAl => {
                         common::generate_ecdsa_payload(&mut rng)
                     }
-                    Curve::Edwards25519 => common::generate_eddsa_payload(&mut rng),
+                    Protocol::Frost => common::generate_eddsa_payload(&mut rng),
                     _ => continue,
                 };
                 cluster
@@ -136,7 +136,7 @@ async fn test_web_endpoints() {
             &client,
             i,
             &format!("http://{web_addr}/debug/contract"),
-            &["RunningContractState"],
+            &["Contract is in Running state"],
         )
         .await
         .expect("debug/contract endpoint failed");

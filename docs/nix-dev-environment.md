@@ -5,6 +5,7 @@ This repository includes a [flake.nix](../flake.nix) file that provides a reprod
 Prerequisites
   - **Nix**: [Install Nix](https://nixos.org/download/) with [Flakes enabled](https://nixos.wiki/wiki/Flakes)
   - **Docker**: While tools are provided in the shell, the Docker daemon must be running separately on your host system. Docker is required for reproducible builds of the MPC contract.
+  - **Hardware (x86_64 only)**: An x86-64-v3-capable CPU is required to run binaries built in this dev shell. This covers Intel Haswell / AMD Excavator and newer (~2013+). Pre-v3 x86_64 hardware will fail at runtime with `SIGILL`. The production node fleet is all v3-capable, so the dev shell builds with the same ISA target to keep tests in parity with production. aarch64 hosts (e.g. Apple Silicon) are unaffected.
 
 ## Entering the Shell
 To activate the development environment, run the following command in the project root:

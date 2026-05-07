@@ -5,20 +5,20 @@ This guide describes how to set up a testnet MPC cluster, where each MPC node is
 ## Prerequisites
 1. One TDX-enabled machine (with 2 external IPs)
 2. dstack installed and configured
-3. MPC repository cloned  
-4. NEAR CLI installed  
+3. MPC repository cloned
+4. NEAR CLI installed
 
 **Note**, dstack version must be v0.55 or higher (in order to support reserved port forwarding).
 
 
 ## High-Level Steps
 
-1. Create a NEAR account that will host the MPC contract.  
-2. Deploy the MPC contract.  
-3. Start two TDX CVMs: Running MPC node **frodo** and running MPC node **sam** on the same machine.  
-4. Get account and TLS keys from each node.  
-5. Initialize the contract with node parameters (keys, accounts, IPs).  
-6. Workaround for port override issue.  
+1. Create a NEAR account that will host the MPC contract.
+2. Deploy the MPC contract.
+3. Start two TDX CVMs: Running MPC node **frodo** and running MPC node **sam** on the same machine.
+4. Get account and TLS keys from each node.
+5. Initialize the contract with node parameters (keys, accounts, IPs).
+6. Workaround for port override issue.
 7. Vote for MPC code hash on the contract.
 8. Vote for launcher image hash on the contract.
 9. Vote for OS measurements on the contract.
@@ -54,7 +54,7 @@ export SAM_ACCOUNT=${MPC_NETWORK_NAME}_sam.testnet
 ```
 
 
-Since the faucet gives only **10 NEAR per account** (and the MPC contract storage costs **15 NEAR**),  
+Since the faucet gives only **10 NEAR per account** (and the MPC contract storage costs **15 NEAR**),
 we need to create two accounts and then transfer funds between them.
 
 ```bash
@@ -165,7 +165,7 @@ envsubst < deployment/testnet/sam.env > "/tmp/$USER/sam.env"
 
 
 #### preliminry setup:
-Allow reserved port forwarding (e.g 80) for the CVMs. 
+Allow reserved port forwarding (e.g 80) for the CVMs.
 
 ```bash
 sudo setcap 'cap_net_bind_service=+ep' $(which qemu-system-x86_64)
@@ -217,7 +217,7 @@ If successful, each command outputs an **App ID** and confirms creation of a **C
 
 Each node exposes its keys via:
 
-- Frodo: `http://$SERVER_IP_1:18081/public_data`  
+- Frodo: `http://$SERVER_IP_1:18081/public_data`
 - Sam: `http://$SERVER_IP_2:18082/public_data`
 
 ```bash
@@ -327,7 +327,7 @@ near contract call-function as-read-only $MPC_CONTRACT_ACCOUNT  state \
 
 If you which which to change the port overide value here is the steps to do so.
 
-Default `port_override = 80`.  
+Default `port_override = 80`.
 dstack CVMs had issues forwarding port 80, so update the config on both machines.
 
 SSH into each CVM:
@@ -361,7 +361,7 @@ docker start mpc-node
 
 Hash format: 00006c1059cc0219005b21956a4df8238b0cc33ad559a578a63169de4e28c81e  (no prefix)
 ```bash
-export CODE_HASH=<hash used to start the nodes> 
+export CODE_HASH=<hash used to start the nodes>
 ```
 
 ### Frodo votes

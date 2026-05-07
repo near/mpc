@@ -32,6 +32,8 @@ pub struct ForeignChainsConfig {
     pub bnb: Option<ForeignChainConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base: Option<ForeignChainConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub arbitrum: Option<ForeignChainConfig>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -79,6 +81,7 @@ impl ForeignChainsConfig {
         self.all_configured_chains().is_empty()
     }
 
+    #[expect(deprecated, reason = "https://github.com/near/mpc/issues/3079")]
     pub fn configured_chains(&self) -> dtos::ForeignChainConfiguration {
         self.all_configured_chains()
             .into_iter()
@@ -133,6 +136,7 @@ impl ForeignChainsConfig {
             (self.starknet.as_ref(), dtos::ForeignChain::Starknet),
             (self.bnb.as_ref(), dtos::ForeignChain::Bnb),
             (self.base.as_ref(), dtos::ForeignChain::Base),
+            (self.arbitrum.as_ref(), dtos::ForeignChain::Arbitrum),
         ]
         .into_iter()
         .filter_map(|(config, dto_identifier)| config.map(|config| (config, dto_identifier)))

@@ -32,7 +32,7 @@ const BACKOFF_FACTOR: f32 = 1.5;
 /// This function continuously attempts to submit a [`SubmitParticipantInfoArgs`] transaction containing
 /// the given participant's attestation and TLS public key. It uses the provided
 /// [`TransactionSender`] to send the transaction and waits until [`TransactionStatus::Executed`]
-/// is observed.  
+/// is observed.
 pub async fn submit_remote_attestation(
     tx_sender: impl TransactionSender,
     attestation: Attestation,
