@@ -815,6 +815,12 @@ render_node_files_range() {
     export EXTERNAL_MPC_LOCAL_DEBUG_PORT="127.0.0.1:${local_dbg_port}"
     export EXTERNAL_MPC_DECENTRALIZED_STATE_SYNC="${ip}:${STATE_SYNC_PORT}"
     export EXTERNAL_MPC_MAIN_PORT="${ip}:${MAIN_PORT}"
+
+    # PR #3145 (DSS fix for multi-IP hosts): each node advertises its own
+    # bound IP for Tier3 state-sync responses. On testnet, also enable
+    # DSS-first behavior with bucket fallback as safety net.
+    export TIER3_PUBLIC_ADDR="${ip}:${STATE_SYNC_PORT}"
+    export FALLBACK_THRESHOLD="${FALLBACK_THRESHOLD:-1000}"
         local future_port
     future_port="$(future_port_for_i "$i")"
 
