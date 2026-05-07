@@ -534,6 +534,10 @@ Auto-discovery records the right IP for each, gossip is correct,
 inbound Tier2 peers can connect.
 
 - **Type:** host network config + run-as-user. **No code changes.**
+- **Applies to:** native (non-CVM) deployments only.
+  **Does NOT apply to TEE/CVM deployments** — every dstack CVM on a host
+  is launched by the same `dstack-vmm` daemon under one UNIX user, so
+  a `uidrange` rule cannot distinguish CVMs from each other.
 - **Pros:**
   - Per-node, scales to as many nodes as you have static IPs.
   - Doesn't affect rest of host's outbound traffic.
@@ -545,25 +549,30 @@ inbound Tier2 peers can connect.
     `/etc/networkd-dispatcher` script).
   - Requires that each node actually run as its own UNIX user — adds
     a small operational requirement.
+  - Doesn't fit TEE/CVM (see "Applies to" above).
 - **Performance:** kernel does one extra rule lookup in the routing
   decision per outgoing packet. Negligible (sub-microsecond).
 
 **3b. Containers / CVMs — per-CVM SNAT on the host.**
 Each CVM has its own private IP on a docker / qemu bridge. SNAT on the
-host's POSTROUTING chain rewrites outbound source IP per CVM:
+host's POSTROUTING chain rewrites outbound source IP per CVM, identifying
+the CVM by its bridge-side address:
 
 ```bash
-sudo iptables -t nat -A POSTROUTING -s <cvm1_private_ip>/32 \
+sudo iptables -t nat -A POSTROUTING -s <cvm1_bridge_ip>/32 \
   -o ens49f0np0 -j SNAT --to-source 51.68.219.13
-sudo iptables -t nat -A POSTROUTING -s <cvm2_private_ip>/32 \
+sudo iptables -t nat -A POSTROUTING -s <cvm2_bridge_ip>/32 \
   -o ens49f0np0 -j SNAT --to-source 51.68.219.14
 ```
 
-Same correctness as 3a, but applied at the host's NAT layer rather than
-inside the CVMs. CVMs themselves don't need any networking changes.
+Same correctness as 3a, but matched at the host's NAT layer on the CVM's
+bridge IP rather than at policy-routing time on the UID. CVMs themselves
+don't need any networking changes.
 
 - **Type:** host iptables config. **No code changes** to neard, mpc-node,
   or the launcher. CVMs unchanged.
+- **Applies to:** TEE/CVM deployments (the case 3a does *not* cover) —
+  works identically for plain Docker containers.
 - **Pros:**
   - Native to container/CVM workflows — applies cleanly to dstack
     deployments.
@@ -571,7 +580,8 @@ inside the CVMs. CVMs themselves don't need any networking changes.
   - Doesn't affect host's other traffic.
   - Fixes both DSS and Tier2 inbound peers.
 - **Cons:**
-  - iptables rules need persistence (`iptables-persistent`, systemd unit).
+  - iptables rules need persistence (`iptables-persistent`, systemd unit,
+    or whatever the host uses).
   - Tied to the CVM bridge IPs being stable — which they generally are,
     but a re-deploy that changes the bridge layout breaks the rule.
   - SNAT relies on connection tracking — adds a small per-flow overhead.
@@ -579,6 +589,78 @@ inside the CVMs. CVMs themselves don't need any networking changes.
   For neard's traffic profile (a few hundred TCP connections, modest
   PPS), CPU overhead is in the noise. Becomes meaningful only at much
   higher throughput than neard generates.
+
+### Concrete recipe for Option 3b on Bob/Alice (multi-IP OVH host)
+
+Practical playbook for the only host topology where #1734 actually bites
+in our deployment (multiple public IPs on one NIC, default route picks
+the dynamic one). Same template applies to any analogous bare-metal host.
+
+**1. Identify each CVM's bridge IP.** The dstack/QEMU launcher attaches
+each CVM to a bridge interface (often `virbr0` for libvirt, or a
+docker-managed bridge). Each CVM gets a private IP on that bridge:
+
+```bash
+# Find the bridge the CVMs are attached to
+ip -4 addr show | grep -E "virbr|br-" | head -5
+
+# Inspect each running CVM's bridge IP — name varies by CVM tooling
+sudo ip -4 neigh show dev virbr0 2>/dev/null
+# or check the QEMU hostfwd / dnsmasq leases:
+sudo cat /var/lib/libvirt/dnsmasq/virbr0.status 2>/dev/null
+# or for docker-driven bridges:
+docker inspect <launcher-container> --format='{{.NetworkSettings.IPAddress}}'
+```
+
+**2. Pick the static public IP this CVM should be observed at.** Must be
+one already bound to the host's NIC (`ip -4 addr show ens49f0np0`) and
+configured as the `EXTERNAL_*` host of the deploy script's port-forward
+mappings. For the testnet TEE node on Bob: `46.105.87.136`.
+
+**3. Install the SNAT rule:**
+
+```bash
+# Replace <cvm_bridge_ip> with the CVM's private bridge IP from step 1,
+# and ens49f0np0 with the host's outbound NIC name.
+sudo iptables -t nat -A POSTROUTING \
+  -s <cvm_bridge_ip>/32 \
+  -o ens49f0np0 \
+  -j SNAT --to-source 46.105.87.136
+```
+
+**4. Persist across reboots.** The simplest:
+
+```bash
+sudo apt install iptables-persistent     # if not already
+sudo netfilter-persistent save
+```
+
+Or as a systemd unit / `if-up.d` hook keyed off the bridge interface
+coming up — cleaner if you want the rule re-applied automatically when
+the bridge is recreated by a re-deploy.
+
+**5. Verify the fix landed.** Without restarting the CVM:
+
+```bash
+# (a) Source IP that outbound traffic now egresses with — should match
+# the SNAT --to-source value (46.105.87.136), not the dynamic IP.
+# Run from inside the CVM (or check via tcpdump on the host's NIC):
+sudo tcpdump -n -i ens49f0np0 'tcp and dst port 24567' -c 3
+
+# (b) After restarting neard so auto-discovery re-runs, the metric
+# should show the corrected address:
+curl -s http://<host>:8080/metrics | grep near_tier3_public_addr
+# Expected: addr="46.105.87.136:24567" (NOT the previous "91.134.92.20:...")
+
+# (c) Inbound Tier2 peer count should climb from 0 over the next few minutes
+# as the network re-discovers our correct PeerInfo via gossip.
+curl -s http://<host>:8080/metrics | grep 'near_peer_connections{peer_type="Inbound"'
+```
+
+If (a) still shows the old IP, the rule isn't matching — usually means
+the wrong bridge IP in step 1, or another POSTROUTING rule is matching
+first (`sudo iptables -t nat -L POSTROUTING -n -v --line-numbers` shows
+ordering and hit counts).
 
 ### Option 4 — neard binds outbound source IP (upstream code change)
 
@@ -642,17 +724,31 @@ only egress as that IP. Strongest isolation.
 
 | Scenario | Use |
 |---|---|
-| **Today, immediate fix** | **Option 0** (`tier3_public_addr` per-node) |
-| One node per host, simplest setup | Option 1 (`0.0.0.0` bind) |
+| **Today, immediate DSS fix on Bob** | **Option 0** (`tier3_public_addr` per-node) — unblocks DSS without touching the host |
+| One node per host, simplest setup | Option 1 (`0.0.0.0` bind) — also fixes Tier2 inbound |
 | One node per host, can't bind on `0.0.0.0` for some reason | Option 2 (default-route override) |
-| Multiple native nodes per host | Option 3a (UID routing) — plus Option 0 as defense in depth |
-| Multiple CVMs per host | Option 3b (per-CVM SNAT) — plus Option 0 as defense in depth |
+| Multiple **CVMs/TEE** per host (Bob's case) | **Option 3b** (per-CVM SNAT) — plus Option 0 as defense in depth |
+| Multiple **native** nodes per host (no TEE) | Option 3a (UID routing) — plus Option 0 as defense in depth |
 | Long-term, future MPC release | Option 4 (upstream nearcore feature) |
 | Maximum isolation between nodes | Option 5 (netns) — plus Option 0 |
 
-**For the immediate testnet TEE node fix on Bob: just Option 0 is
-enough to unblock DSS.** The missing-inbound-peers issue is a follow-up,
-addressable later with Option 3b if/when needed.
+> **Note for TEE deployments**: Option 3a (UID-based) does **not** apply —
+> all CVMs on a host run under the same `dstack-vmm` UID, so per-UID rules
+> can't distinguish them. The TEE-correct host-level fix is **Option 3b**
+> (per-CVM SNAT keyed off bridge IP), or — if a single CVM per host is
+> acceptable — Option 1 / 2.
+
+**Concrete recommendation for Bob:**
+
+1. **Now:** apply Option 0 (`tier3_public_addr` in launcher TOML, via PR #3145)
+   — unblocks DSS without touching the host networking. Validated on Alice.
+2. **As a follow-up:** apply Option 3b (per-CVM SNAT) on Bob — also unblocks
+   the missing-Tier2-inbound symptom and is the architecturally cleaner
+   long-term answer for any new multi-IP host. See
+   [Concrete recipe for Option 3b](#concrete-recipe-for-option-3b-on-boballe-multi-ip-ovh-host)
+   above.
+3. **Eventually:** if upstream Option 4 lands in a future nearcore release,
+   we can drop Option 0 in favor of native outbound source-IP binding.
 
 ## Important nuances
 
