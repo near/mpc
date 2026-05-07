@@ -25,8 +25,9 @@ home_dir = "/data"
 #   url = "https://10.0.2.2:8081/"
 #   tls = { override = "ca_cert_pem", ca_cert_pem = "..." }
 #
-# `tls = { override = "insecure" }` disables TLS for any URL (no
-# loopback enforcement, only a WARN). Use only for local PCCS.
+# `tls = { override = "insecure" }` disables TLS certificate/hostname
+# verification for any URL (no loopback enforcement, only a WARN). Use
+# only for local PCCS.
 
 [[mpc_node_config.pccs_endpoints]]
 url = "https://pccs.phala.network/"
