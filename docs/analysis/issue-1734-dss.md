@@ -860,28 +860,52 @@ process-launch.
 - **Performance:** veth pair adds one memory copy + interface dispatch
   per packet. Tiny — comparable to docker bridge networking.
 
-### Option 6 — cgroup-based SNAT (fits dstack-slirp)
+### Option 6 — cgroup-based SNAT (fits dstack-slirp via "one dstack-vmm per CVM")
 
-dstack-vmm spawns one qemu process per CVM, and on systemd-managed hosts
-each qemu lands in its own cgroup (e.g. `/system.slice/dstack-vm-<id>.slice`,
-or a child `cgroup.procs` of dstack-vmm itself). iptables can match
-packets by the source process's cgroup, which gives us **per-CVM
-matching even in slirp where no bridge IP is exposed**:
+iptables can match packets by the source process's cgroup
+(`-m cgroup --path /...`), which gives us per-CVM matching even in slirp
+where no host-visible bridge IP is exposed. The challenge is making sure
+each CVM's qemu actually lands in a distinct cgroup.
+
+**Empirical finding on dstack 0.5.8 (Alice, 2026-05-07):** when **one**
+`dstack-vmm` instance spawns multiple CVMs, all the qemu processes
+inherit the **same** cgroup (`session-N.scope` of whichever shell started
+dstack-vmm). Children of one process share its cgroup. So Option 6 with
+one dstack-vmm doesn't work — verified:
+
+```text
+qemu A (Node A) PID 1416319 → /user.slice/user-1000.slice/session-24531.scope
+qemu B (Node B) PID 1763647 → /user.slice/user-1000.slice/session-24531.scope    ← same cgroup
+dstack-vmm     PID 2137301 → /user.slice/user-1000.slice/session-24531.scope    ← parent
+```
+
+The fix is to run **one `dstack-vmm` instance per CVM**, each in its own
+cgroup. Each instance's qemu child then inherits a distinct cgroup, and
+iptables can SNAT each correctly.
 
 ```bash
-# Match each qemu's outbound by cgroup, SNAT to the right public IP.
+# 1. Start each dstack-vmm in its own systemd scope.
+sudo systemd-run --scope --unit=dstack-vmm-A.scope \
+  --working-directory=/path/to/vmm-A-config \
+  /path/to/dstack-vmm -c vmm-A.toml
+
+sudo systemd-run --scope --unit=dstack-vmm-B.scope \
+  --working-directory=/path/to/vmm-B-config \
+  /path/to/dstack-vmm -c vmm-B.toml
+
+# 2. SNAT each scope's outbound to its assigned public IP.
 sudo iptables -t nat -A POSTROUTING \
-  -m cgroup --path /system.slice/<dstack-vm-A>.slice \
-  -p tcp --dport 24567 -o ens49f0np0 \
+  -m cgroup --path /system.slice/dstack-vmm-A.scope \
+  -o ens49f0np0 -p tcp --dport 24567 \
   -j SNAT --to-source 51.68.219.13
 
 sudo iptables -t nat -A POSTROUTING \
-  -m cgroup --path /system.slice/<dstack-vm-B>.slice \
-  -p tcp --dport 24567 -o ens49f0np0 \
+  -m cgroup --path /system.slice/dstack-vmm-B.scope \
+  -o ens49f0np0 -p tcp --dport 24567 \
   -j SNAT --to-source 51.68.219.14
 ```
 
-Or via `net_cls` cgroup classid (older kernels):
+Or via `net_cls` cgroup classid (older kernels with cgroup v1):
 
 ```bash
 echo 0x100001 | sudo tee /sys/fs/cgroup/<vm-A>/net_cls.classid
@@ -889,28 +913,34 @@ sudo iptables -t nat -A POSTROUTING -m cgroup --cgroup 0x100001 \
   -j SNAT --to-source 51.68.219.13
 ```
 
-- **Type:** host iptables config. **No code changes** to neard, mpc-node,
-  or the launcher.
-- **Applies to:** any setup where each CVM/process is in a distinct
-  cgroup. **Likely fits dstack** (each qemu runs as a subprocess of
-  dstack-vmm, typically under its own cgroup) — needs verification.
+- **Type:** host iptables config + per-CVM dstack-vmm instance.
+  **No code changes** to neard, mpc-node, the launcher, or dstack-vmm
+  itself.
+- **Applies to:** any host with cgroup v2 + iptables `-m cgroup`
+  (verified on Alice). Works on dstack-slirp specifically.
 - **Pros:**
   - Per-CVM in slirp setups (the case Option 3b couldn't handle).
   - No netns/veth re-wiring.
-  - Fixes both DSS and Tier2 inbound peers.
+  - Fixes both DSS and Tier2 inbound peers (in principle).
+  - No code change needed in dstack-vmm.
 - **Cons:**
-  - Depends on dstack-vmm placing each qemu in a distinct cgroup, which
-    is implementation-specific. **Needs empirical verification on
-    dstack 0.5.8.**
-  - cgroup paths change if dstack restarts the VM; rule install needs
-    to be coordinated with VM lifecycle (or use stable label/classid).
-  - iptables rules need persistence.
-  - cgroup match has been empirically less performant than other matches
-    in some kernel versions — usually not material for neard's
-    traffic.
+  - **Operational overhead: each CVM needs its own dstack-vmm process,
+    config file, working directory, RPC port.** ~doubles the dstack
+    management surface for each additional CVM.
+  - Memory: each dstack-vmm process is ~50 MB resident.
+  - Cgroup path is tied to the systemd scope name; if dstack-vmm is
+    restarted (crash → revive), the iptables rule should still match
+    because systemd reuses the unit name, but worth wiring an
+    integrity check.
+  - iptables rules need persistence (`iptables-persistent`, systemd
+    unit, or whatever the host uses).
+  - Hasn't been end-to-end validated yet on dstack 0.5.8 — kernel +
+    iptables support is confirmed, but a real "2 dstack-vmm + 2 SNAT
+    rules + observe per-CVM `near_tier3_public_addr`" experiment hasn't
+    been run.
 - **Performance:** per-packet cgroup lookup; negligible.
-- **Status:** **proposed but not yet validated on dstack.** See
-  "Open questions / follow-ups."
+- **Status:** **proposed; cgroup mechanism verified, end-to-end test
+  not yet run.**
 
 ### Comparison table
 
@@ -924,17 +954,17 @@ sudo iptables -t nat -A POSTROUTING -m cgroup --cgroup 0x100001 \
 > hardcoded line. The "Available today" column reflects what's needed
 > *beyond* that.
 
-| # | Solution | Type | Needs (besides DSS-enable) | Fixes DSS (Tier3) | Fixes Tier2 inbound | Multi-node on dstack-slirp | Persistence | Perf impact |
-|---|---|---|---|---|---|---|---|---|
-| **0** | **`tier3_public_addr` per-node** | Node config | PR #3145 (the field itself) | ✅ | ❌ (empirical, Test 5) | ✅ for DSS, ❌ for T2 inbound | trivial (file) | none |
-| 1 | `network.addr = "0.0.0.0:24567"` | Node config | nothing extra | n/a inside CVM | n/a inside CVM | n/a (CVM-internal) | trivial (file) | none |
-| 2 | Host-wide default-route source | Host network config | nothing extra | ✅ for one IP | partial | ❌ (only one src possible) | needs systemd hook | none |
-| 3a | UID-based policy routing | Host network + run-as-user | nothing extra | ✅ | ✅ (likely, untested) | ❌ (all dstack qemus share `dstack-vmm` UID) | needs systemd hook | negligible |
-| **3b (bridge-IP)** | Per-CVM SNAT keyed by CVM bridge IP | Host iptables | nothing extra | ✅ | ✅ | ❌ (no bridge IP in slirp) | needs persistence | low |
-| **3b (dport, deployed)** | Per-host SNAT keyed by `--dport 24567` | Host iptables | nothing extra | ✅ (Test 6) | ❌ (empirical, Test 6) | ❌ (single CVM only — see "Multi-node trap") | needs persistence | low |
-| 4 | neard binds outbound source IP | Upstream nearcore code change | upstream PR + release | ✅ in non-slirp; ❌ in slirp | ✅ in non-slirp; ❌ in slirp | ❌ in slirp (neard can't bind to host IP from inside CVM) | trivial once shipped | none |
-| 5 | Network namespace per qemu | Host networking + process isolation | dstack-vmm cooperation | ✅ | ✅ | ✅ but needs dstack-vmm patch | needs systemd hook | low |
-| **6** | **cgroup-based SNAT** | Host iptables | dstack-vmm puts each qemu in distinct cgroup | ✅ (proposed) | ✅ (proposed) | ✅ likely (needs verification) | needs persistence | negligible |
+| # | Solution | Type | Needs (besides DSS-enable) | Fixes DSS (Tier3) | Fixes Tier2 inbound | Multi-node on dstack-slirp | Persistence | Perf impact | Tested? |
+|---|---|---|---|---|---|---|---|---|---|
+| **0** | **`tier3_public_addr` per-node** | Node config | PR #3145 (the field itself) | ✅ | ❌ (empirical, Test 5) | ✅ for DSS, ❌ for T2 inbound | trivial (file) | none | ✅ Test 5 (TDX, single CVM) |
+| 1 | `network.addr = "0.0.0.0:24567"` | Node config | nothing extra | n/a inside CVM | n/a inside CVM | n/a (CVM-internal) | trivial (file) | none | ❌ not applicable in CVM |
+| 2 | Host-wide default-route source | Host network config | nothing extra | ✅ for one IP | partial | ❌ (only one src possible) | needs systemd hook | none | ❌ not tested |
+| 3a | UID-based policy routing | Host network + run-as-user | nothing extra | ✅ | ✅ (likely, untested) | ❌ (all dstack qemus share `dstack-vmm` UID) | needs systemd hook | negligible | ❌ not tested |
+| **3b (bridge-IP)** | Per-CVM SNAT keyed by CVM bridge IP | Host iptables | nothing extra | ✅ | ✅ | ❌ (no bridge IP in slirp) | needs persistence | low | ❌ not applicable in slirp |
+| **3b (dport, deployed)** | Per-host SNAT keyed by `--dport 24567` | Host iptables | nothing extra | ✅ (Test 6) | ❌ (empirical, Test 6) | ❌ (single CVM only — see "Multi-node trap") | needs persistence | low | ✅ Test 6 (TDX, single CVM) |
+| 4 | neard binds outbound source IP | Upstream nearcore code change | upstream PR + release | ✅ in non-slirp; ❌ in slirp | ✅ in non-slirp; ❌ in slirp | ❌ in slirp (neard can't bind to host IP from inside CVM) | trivial once shipped | none | ❌ doesn't exist yet |
+| 5 | Network namespace per qemu | Host networking + process isolation | dstack-vmm cooperation | ✅ | ✅ | ✅ but needs dstack-vmm patch | needs systemd hook | low | ❌ not tested |
+| **6** | **cgroup-based SNAT (one dstack-vmm per CVM)** | Host iptables + per-CVM dstack-vmm | nothing in dstack-vmm, but one instance per CVM | ✅ (proposed) | ✅ (proposed) | ✅ (mechanism verified, end-to-end not run) | needs persistence | negligible | ⚠️ partial: cgroup mechanism verified on Alice, full deploy not run |
 
 ### Picking between them
 
