@@ -18,17 +18,26 @@ runCommand "${image.imageName}-manifest-digest"
     nativeBuildInputs = [ skopeo ];
   }
   ''
-    # skopeo's docker-archive transport (via containers/image) hardcodes
-    # /var/tmp as the "big files" temp dir and ignores $TMPDIR. The Nix
-    # sandbox doesn't have /var/tmp, so we create it before invoking skopeo.
-    mkdir -p /var/tmp
+    workdir=$(mktemp -d)
+    mkdir "$workdir/skopeo-tmp" "$workdir/out"
 
-    td=$(mktemp -d)
+    # Two flags to make skopeo work in the Nix sandbox:
+    #
     # `--insecure-policy` skips the signature-trust policy check. Inside the
-    # Nix sandbox $HOME is `/homeless-shelter` and /etc/containers/policy.json
+    # sandbox $HOME is `/homeless-shelter` and /etc/containers/policy.json
     # doesn't exist, so the default policy lookup fails. The check is also
     # meaningless here: we're converting a local docker-archive tarball to a
     # local dir layout, no registry signatures involved.
-    skopeo --insecure-policy copy --all --dest-compress "docker-archive:${image}" "dir:$td"
-    printf 'sha256:%s\n' "$(sha256sum < "$td/manifest.json" | cut -d' ' -f1)" > $out
+    #
+    # `--tmpdir` overrides containers/image's hardcoded /var/tmp big-files
+    # temp dir. The Nix sandbox root is read-only so we can't create
+    # /var/tmp; point skopeo at our writable workdir instead.
+    skopeo \
+      --insecure-policy \
+      --tmpdir "$workdir/skopeo-tmp" \
+      copy --all --dest-compress \
+      "docker-archive:${image}" \
+      "dir:$workdir/out"
+
+    printf 'sha256:%s\n' "$(sha256sum < "$workdir/out/manifest.json" | cut -d' ' -f1)" > $out
   ''
