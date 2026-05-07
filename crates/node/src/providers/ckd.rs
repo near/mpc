@@ -6,7 +6,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_primitives::domain::DomainId;
-use near_mpc_contract_interface::types::KeyEventId;
+use near_mpc_contract_interface::types::{KeyEventId, ReconstructionThreshold};
 use threshold_signatures::confidential_key_derivation::{
     ElementG1, KeygenOutput, SigningShare, VerifyingKey,
 };
@@ -38,12 +38,18 @@ impl From<CKDTaskId> for MpcTaskId {
 }
 
 #[derive(Clone)]
+pub(super) struct PerDomainData {
+    pub keyshare: KeygenOutput,
+    pub reconstruction_threshold: ReconstructionThreshold,
+}
+
+#[derive(Clone)]
 pub struct CKDProvider {
     config: Arc<ConfigFile>,
     mpc_config: Arc<MpcConfig>,
     client: Arc<MeshNetworkClient>,
     ckd_request_store: Arc<CKDRequestStorage>,
-    keyshares: HashMap<DomainId, KeygenOutput>,
+    per_domain_data: HashMap<DomainId, PerDomainData>,
 }
 
 impl CKDProvider {
@@ -52,15 +58,33 @@ impl CKDProvider {
         mpc_config: Arc<MpcConfig>,
         client: Arc<MeshNetworkClient>,
         ckd_request_store: Arc<CKDRequestStorage>,
-        keyshares: HashMap<DomainId, KeygenOutput>,
+        keyshares: HashMap<DomainId, (KeygenOutput, ReconstructionThreshold)>,
     ) -> Self {
+        let per_domain_data = keyshares
+            .into_iter()
+            .map(|(id, (keyshare, reconstruction_threshold))| {
+                (
+                    id,
+                    PerDomainData {
+                        keyshare,
+                        reconstruction_threshold,
+                    },
+                )
+            })
+            .collect();
         Self {
             config,
             mpc_config,
             client,
             ckd_request_store,
-            keyshares,
+            per_domain_data,
         }
+    }
+
+    pub(super) fn domain_data(&self, domain_id: DomainId) -> anyhow::Result<&PerDomainData> {
+        self.per_domain_data
+            .get(&domain_id)
+            .ok_or_else(|| anyhow::anyhow!("No keyshare for domain {:?}", domain_id))
     }
 }
 

@@ -8,14 +8,14 @@ use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{ParticipantId, UniqueId};
 use crate::protocol::run_protocol;
 use crate::providers::robust_ecdsa::{
-    get_number_of_signers, translate_threshold, KeygenOutput, RobustEcdsaSignatureProvider,
-    RobustEcdsaTaskId,
+    max_malicious_for, KeygenOutput, RobustEcdsaSignatureProvider, RobustEcdsaTaskId,
 };
 use crate::providers::HasParticipants;
 use crate::tracking::AutoAbortTaskCollection;
 use crate::{metrics, tracking};
 use mpc_node_config::PresignatureConfig;
 use mpc_primitives::domain::DomainId;
+use near_mpc_contract_interface::types::ReconstructionThreshold;
 use near_time::Clock;
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
@@ -68,6 +68,7 @@ pub(super) async fn run_background_presignature_generation(
     mpc_config: Arc<MpcConfig>,
     config: Arc<PresignatureConfig>,
     domain_id: DomainId,
+    reconstruction_threshold: ReconstructionThreshold,
     presignature_store: Arc<PresignatureStorage>,
     keygen_out: KeygenOutput,
 ) -> ! {
@@ -87,11 +88,13 @@ pub(super) async fn run_background_presignature_generation(
         .map(|p| p.id)
         .collect();
 
-    let (num_signers, robust_ecdsa_threshold) = compute_thresholds(
-        mpc_config.participants.threshold,
+    let (num_signers, max_malicious) = compute_thresholds(
+        reconstruction_threshold,
         running_participants.len(),
     )
-    .expect("invalid governance threshold for robust-ECDSA");
+    .unwrap_or_else(|e| {
+        panic!("invalid reconstruction threshold for robust-ECDSA on domain {domain_id:?}: {e}")
+    });
 
     loop {
         progress_tracker.update_progress();
@@ -149,7 +152,7 @@ pub(super) async fn run_background_presignature_generation(
                         let _in_flight = in_flight;
                         let _semaphore_guard = parallelism_limiter.acquire().await?;
                         let presignature = PresignComputation {
-                            max_malicious: robust_ecdsa_threshold,
+                            max_malicious,
                             keygen_out,
                         }
                         .perform_leader_centric_computation(
@@ -180,26 +183,26 @@ pub(super) async fn run_background_presignature_generation(
     }
 }
 
-/// Computes `(num_signers, robust_ecdsa_threshold)` and validates the
-/// `2 * max_malicious + 1 <= num_signers` invariant. Returns an error only if
-/// the configured governance threshold is invalid for robust-ECDSA.
-///
-/// TODO(#3164): once the node supports per-domain thresholds, this should
-/// take the domain-specific threshold instead of the single governance threshold.
+/// Computes `(num_signers, max_malicious)` from the per-domain
+/// `ReconstructionThreshold` and validates the
+/// `2 * max_malicious + 1 <= num_running_participants` invariant
+/// (DamgardEtAl honest-majority requires `2t - 1` signers, where `t` is the
+/// per-domain reconstruction threshold; see `threshold-signatures::ecdsa::robust_ecdsa`).
 fn compute_thresholds(
-    governance_threshold: u64,
+    reconstruction_threshold: ReconstructionThreshold,
     num_running_participants: usize,
 ) -> anyhow::Result<(usize, MaxMalicious)> {
-    let governance_threshold: usize = governance_threshold.try_into()?;
-    let num_signers = get_number_of_signers(governance_threshold, num_running_participants)?;
-    let robust_ecdsa_threshold =
-        translate_threshold(governance_threshold, num_running_participants)?;
-    anyhow::ensure!(robust_ecdsa_threshold
+    let max_malicious = max_malicious_for(reconstruction_threshold)?;
+    let num_signers = max_malicious
         .value()
         .checked_mul(2)
         .and_then(|v| v.checked_add(1))
-        .is_some_and(|v| v <= num_signers));
-    Ok((num_signers, robust_ecdsa_threshold))
+        .ok_or_else(|| anyhow::anyhow!("2 * max_malicious + 1 overflows usize"))?;
+    anyhow::ensure!(
+        num_signers <= num_running_participants,
+        "DamgardEtAl needs {num_signers} signers, only {num_running_participants} available",
+    );
+    Ok((num_signers, max_malicious))
 }
 
 impl RobustEcdsaSignatureProvider {
@@ -211,13 +214,10 @@ impl RobustEcdsaSignatureProvider {
     ) -> anyhow::Result<()> {
         id.validate_owned_by(channel.sender().get_leader())?;
         let domain_data = self.domain_data(domain_id)?;
-
-        let number_of_participants = self.mpc_config.participants.participants.len();
-        let threshold = self.mpc_config.participants.threshold.try_into()?;
-        let robust_ecdsa_threshold = translate_threshold(threshold, number_of_participants)?;
+        let max_malicious = max_malicious_for(domain_data.reconstruction_threshold)?;
 
         FollowerPresignComputation {
-            max_malicious: robust_ecdsa_threshold,
+            max_malicious,
             keygen_out: domain_data.keyshare,
             out_presignature_store: domain_data.presignature_store,
             out_presignature_id: id,
@@ -339,43 +339,44 @@ impl PresignatureGenerationProgressTracker {
 #[expect(non_snake_case)]
 mod tests {
     use super::compute_thresholds;
+    use near_mpc_contract_interface::types::ReconstructionThreshold;
 
     #[test]
-    fn compute_thresholds__should_succeed_for_valid_governance_threshold() {
-        // Given: in the current node, governance threshold == num_participants
-        let governance_threshold = 5u64;
+    fn compute_thresholds__should_succeed_for_valid_reconstruction_threshold() {
+        // Given: reconstruction_threshold=3, so num_signers = 2*(3-1)+1 = 5
+        let reconstruction_threshold = ReconstructionThreshold::new(3);
         let num_participants = 5;
 
         // When
-        let result = compute_thresholds(governance_threshold, num_participants);
+        let result = compute_thresholds(reconstruction_threshold, num_participants);
 
         // Then
-        let (num_signers, robust_ecdsa_threshold) = result.unwrap();
+        let (num_signers, max_malicious) = result.unwrap();
         assert_eq!(num_signers, 5);
-        assert!(2 * robust_ecdsa_threshold.value() < num_signers);
+        assert_eq!(max_malicious.value(), 2);
     }
 
     #[test]
-    fn compute_thresholds__should_err_when_governance_threshold_too_small_for_robust_ecdsa() {
-        // Given: robust-ECDSA requires the governance threshold to be at least 5
-        let governance_threshold = 4u64;
-        let num_participants = 4;
+    fn compute_thresholds__should_err_when_reconstruction_threshold_is_zero() {
+        // Given: t=0 underflows in MaxMalicious::try_from
+        let reconstruction_threshold = ReconstructionThreshold::new(0);
+        let num_participants = 5;
 
         // When
-        let result = compute_thresholds(governance_threshold, num_participants);
+        let result = compute_thresholds(reconstruction_threshold, num_participants);
 
         // Then
         result.unwrap_err();
     }
 
     #[test]
-    fn compute_thresholds__should_err_when_governance_threshold_exceeds_participants() {
-        // Given
-        let governance_threshold = 8u64;
+    fn compute_thresholds__should_err_when_signers_exceed_participants() {
+        // Given: t=4 needs 2*(4-1)+1 = 7 signers, only 5 available
+        let reconstruction_threshold = ReconstructionThreshold::new(4);
         let num_participants = 5;
 
         // When
-        let result = compute_thresholds(governance_threshold, num_participants);
+        let result = compute_thresholds(reconstruction_threshold, num_participants);
 
         // Then
         result.unwrap_err();

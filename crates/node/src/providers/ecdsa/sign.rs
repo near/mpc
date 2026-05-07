@@ -31,8 +31,9 @@ impl EcdsaSignatureProvider {
     ) -> anyhow::Result<(Signature, VerifyingKey)> {
         let domain_data = self.domain_data(sign_request.domain)?;
         let participants = presignature.participants.clone();
-        let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
-        let threshold = ReconstructionLowerBound::from(threshold);
+        let threshold = ReconstructionLowerBound::from(usize::try_from(
+            domain_data.reconstruction_threshold.inner(),
+        )?);
 
         let (signature, public_key) = SignComputation {
             keygen_out: domain_data.keyshare,
@@ -90,8 +91,9 @@ impl EcdsaSignatureProvider {
         sign_request: SignatureRequest,
     ) -> anyhow::Result<()> {
         let domain_data = self.domain_data(sign_request.domain)?;
-        let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
-        let threshold = ReconstructionLowerBound::from(threshold);
+        let threshold = ReconstructionLowerBound::from(usize::try_from(
+            domain_data.reconstruction_threshold.inner(),
+        )?);
 
         let participants = channel.participants().to_vec();
         FollowerSignComputation {

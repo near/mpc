@@ -174,9 +174,11 @@ impl EcdsaSignatureProvider {
         id.validate_owned_by(channel.sender().get_leader())?;
         let domain_data = self.domain_data(domain_id)?;
 
-        let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
+        let threshold = ReconstructionLowerBound::from(usize::try_from(
+            domain_data.reconstruction_threshold.inner(),
+        )?);
         FollowerPresignComputation {
-            threshold: ReconstructionLowerBound::from(threshold),
+            threshold,
             keygen_out: domain_data.keyshare,
             triple_store: self.triple_store.clone(),
             paired_triple_id,

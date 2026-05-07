@@ -4,7 +4,7 @@ use crate::network::NetworkTaskChannel;
 use crate::primitives::UniqueId;
 use crate::protocol::run_protocol;
 use crate::providers::robust_ecdsa::{
-    translate_threshold, EcdsaMessageHash, KeygenOutput, PresignatureStorage,
+    max_malicious_for, EcdsaMessageHash, KeygenOutput, PresignatureStorage,
     RobustEcdsaSignatureProvider, RobustEcdsaTaskId,
 };
 use crate::types::SignatureId;
@@ -38,9 +38,7 @@ impl RobustEcdsaSignatureProvider {
             },
             presignature.participants,
         )?;
-        let number_of_participants = self.mpc_config.participants.participants.len();
-        let threshold = self.mpc_config.participants.threshold.try_into()?;
-        let robust_ecdsa_threshold = translate_threshold(threshold, number_of_participants)?;
+        let max_malicious = max_malicious_for(domain_data.reconstruction_threshold)?;
 
         let msg_hash = *sign_request
             .payload
@@ -49,7 +47,7 @@ impl RobustEcdsaSignatureProvider {
 
         let (signature, public_key) = SignComputation {
             keygen_out: domain_data.keyshare,
-            max_malicious: robust_ecdsa_threshold,
+            max_malicious,
             presign_out: presignature.presignature,
             msg_hash: msg_hash.into(),
             tweak: sign_request.tweak,
@@ -89,9 +87,7 @@ impl RobustEcdsaSignatureProvider {
         metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_LOOKUP_SUCCEEDED.inc();
 
         let domain_data = self.domain_data(sign_request.domain)?;
-        let number_of_participants = self.mpc_config.participants.participants.len();
-        let threshold = self.mpc_config.participants.threshold.try_into()?;
-        let robust_ecdsa_threshold = translate_threshold(threshold, number_of_participants)?;
+        let max_malicious = max_malicious_for(domain_data.reconstruction_threshold)?;
 
         let msg_hash = *sign_request
             .payload
@@ -101,7 +97,7 @@ impl RobustEcdsaSignatureProvider {
         let participants = channel.participants().to_vec();
         FollowerSignComputation {
             keygen_out: domain_data.keyshare,
-            max_malicious: robust_ecdsa_threshold,
+            max_malicious,
             presignature_store: domain_data.presignature_store.clone(),
             presignature_id,
             msg_hash: msg_hash.into(),

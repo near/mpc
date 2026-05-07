@@ -19,6 +19,7 @@ use mpc_primitives::domain::DomainId;
 #[cfg(test)]
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_mpc_contract_interface::types::KeyEventId;
+use near_mpc_contract_interface::types::ReconstructionThreshold;
 use std::collections::HashMap;
 use std::sync::Arc;
 use threshold_signatures::frost::eddsa::KeygenOutput;
@@ -27,12 +28,18 @@ use threshold_signatures::frost_ed25519::{Signature, VerifyingKey};
 use threshold_signatures::ReconstructionLowerBound;
 
 #[derive(Clone)]
+pub(super) struct PerDomainData {
+    pub keyshare: KeygenOutput,
+    pub reconstruction_threshold: ReconstructionThreshold,
+}
+
+#[derive(Clone)]
 pub struct EddsaSignatureProvider {
     config: Arc<ConfigFile>,
     mpc_config: Arc<MpcConfig>,
     client: Arc<MeshNetworkClient>,
     sign_request_store: Arc<SignRequestStorage>,
-    keyshares: HashMap<DomainId, KeygenOutput>,
+    per_domain_data: HashMap<DomainId, PerDomainData>,
 }
 
 impl EddsaSignatureProvider {
@@ -41,15 +48,33 @@ impl EddsaSignatureProvider {
         mpc_config: Arc<MpcConfig>,
         client: Arc<MeshNetworkClient>,
         sign_request_store: Arc<SignRequestStorage>,
-        keyshares: HashMap<DomainId, KeygenOutput>,
+        keyshares: HashMap<DomainId, (KeygenOutput, ReconstructionThreshold)>,
     ) -> Self {
+        let per_domain_data = keyshares
+            .into_iter()
+            .map(|(id, (keyshare, reconstruction_threshold))| {
+                (
+                    id,
+                    PerDomainData {
+                        keyshare,
+                        reconstruction_threshold,
+                    },
+                )
+            })
+            .collect();
         Self {
             config,
             mpc_config,
             client,
             sign_request_store,
-            keyshares,
+            per_domain_data,
         }
+    }
+
+    pub(super) fn domain_data(&self, domain_id: DomainId) -> anyhow::Result<&PerDomainData> {
+        self.per_domain_data
+            .get(&domain_id)
+            .ok_or_else(|| anyhow::anyhow!("No keyshare for domain {:?}", domain_id))
     }
 }
 
