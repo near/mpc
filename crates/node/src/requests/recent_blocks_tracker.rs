@@ -33,7 +33,7 @@ use std::sync::{Arc, Mutex, Weak};
 ///    height 12 and then another block of height 10 that belongs to a different fork.
 ///  - The indexer, upon startup, may start giving blocks from any position in the blockchain,
 ///    including giving blocks from multiple forks without giving us any common parents.
-///  - The indexer may jump block heigts, as long as the `prev_hash` exists and has been provided.
+///  - The indexer may jump block heights, as long as the `prev_hash` exists and has been provided.
 ///
 /// Given these expectations, we provide the aforementioned functionalities by tracking the
 /// following:
@@ -190,7 +190,7 @@ impl BlockNode {
         if self.height < min_height_to_keep {
             // This block is too old for us to be useful, we will prune it.
             blocks_to_prune.push(self.hash);
-            let children = self.children.lock().expect("lock must not be poisened");
+            let children = self.children.lock().expect("lock must not be poisoned");
             for child in children.iter() {
                 child.partition_subtree(
                     min_height_to_keep,
@@ -232,7 +232,7 @@ impl BlockNode {
     /// Walk this subtree and collect every node's hash on it.
     fn collect_subtree_hashes(&self, blocks_to_prune: &mut Vec<CryptoHash>) {
         blocks_to_prune.push(self.hash);
-        let children = self.children.lock().expect("lock must not be poisened");
+        let children = self.children.lock().expect("lock must not be poisoned");
         for child in children.iter() {
             child.collect_subtree_hashes(blocks_to_prune);
         }
@@ -328,7 +328,7 @@ pub struct BlockViewLite {
     pub timestamp_nanosec: u64,
 }
 
-impl<T: Clone> RecentBlocksTracker<T> {
+impl<T: Clone + Debug> RecentBlocksTracker<T> {
     pub fn new(window_size: u64) -> Self {
         Self {
             window_size,
@@ -538,11 +538,19 @@ impl<T: Clone> RecentBlocksTracker<T> {
 
         self.root_children = new_roots
             .iter()
-            .map(|hash| {
-                self.hash_to_node
-                    .get(hash)
-                    .expect("require node to exist in hashmap")
-                    .clone()
+            .filter_map(|hash| {
+                self.hash_to_node.get(hash).cloned().or_else(|| {
+                    // note: this should NEVER happen. Right now, it's a guaranteed dead code path.
+                    // However, to protect against future refactors of `partition_subtree`, or some
+                    // odd behavior, we simply print an error. Missing a root chid is not something
+                    // that requires us to crash the node.
+                    tracing::error!(
+                        "Error: missing node for root hash {:?}. RecentBlocksTracker: {:?}",
+                        hash,
+                        self
+                    );
+                    None
+                })
             })
             .collect();
 
@@ -1238,12 +1246,12 @@ pub mod tests {
         assert_eq!(tester.check(&b5), CheckBlockResult::OptimisticAndCanonical);
     }
 
-    /// Tests that `minimum_height_to_keep` returns `Some` in case we have a final bock height.
+    /// Tests that `minimum_height_to_keep` returns `Some` in case we have a final block height.
     /// This is a test to protect against regressions: We only run the cleanup loop in case
     /// `minimum_height_to_keep` returns Some.
     #[test]
     #[expect(non_snake_case)]
-    fn minimum_height_to_keep__should_return_some_if_final_block_exsts() {
+    fn minimum_height_to_keep__should_return_some_if_final_block_exists() {
         let mut tester = Tester::new(4);
         let b1 = tester.block(1);
         let b2 = b1.child();
