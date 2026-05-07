@@ -19,6 +19,11 @@ runCommand "${image.imageName}-manifest-digest"
   }
   ''
     td=$(mktemp -d)
-    skopeo copy --all --dest-compress "docker-archive:${image}" "dir:$td"
+    # `--insecure-policy` skips the signature-trust policy check. Inside the
+    # Nix sandbox $HOME is `/homeless-shelter` and /etc/containers/policy.json
+    # doesn't exist, so the default policy lookup fails. The check is also
+    # meaningless here: we're converting a local docker-archive tarball to a
+    # local dir layout, no registry signatures involved.
+    skopeo --insecure-policy copy --all --dest-compress "docker-archive:${image}" "dir:$td"
     printf 'sha256:%s\n' "$(sha256sum < "$td/manifest.json" | cut -d' ' -f1)" > $out
   ''
