@@ -1,4 +1,5 @@
 use crate::crypto_shared::kdf::TweakNotOnCurve;
+use crate::primitives::domain::MIN_RECONSTRUCTION_THRESHOLD;
 use crate::primitives::key_state::{EpochId, Keyset};
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
@@ -204,7 +205,10 @@ pub enum DomainError {
         protocol: Protocol,
         purpose: DomainPurpose,
     },
-    #[error("Reconstruction threshold must be at least 2.")]
+    #[error(
+        "Reconstruction threshold must be at least {}.",
+        MIN_RECONSTRUCTION_THRESHOLD
+    )]
     ReconstructionThresholdTooLow,
     #[error("Reconstruction threshold {threshold} exceeds participant count {participants}.")]
     ReconstructionThresholdExceedsParticipants { threshold: u64, participants: u64 },
@@ -216,6 +220,10 @@ pub enum DomainError {
         required: u64,
         participants: u64,
     },
+    #[error(
+        "Reconstruction threshold {threshold} overflowed when computing the DamgardEtAl bound."
+    )]
+    ReconstructionThresholdOverflow { threshold: u64 },
 }
 
 /// A list specifying general categories of MPC Contract errors.

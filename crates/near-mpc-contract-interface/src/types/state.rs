@@ -600,8 +600,8 @@ mod tests {
     /// would emit. Both `Running` and `Initializing` shapes need to keep
     /// deserializing with the field back-filled from the surrounding
     /// `parameters.threshold`.
-    fn legacy_running_state_json() -> &'static str {
-        r#"{
+    fn legacy_running_state_json() -> serde_json::Value {
+        serde_json::json!({
             "domains": {
                 "domains": [
                     {"id": 0, "curve": "Secp256k1", "purpose": "Sign"},
@@ -616,8 +616,8 @@ mod tests {
             },
             "parameters_votes": { "proposal_by_account": {} },
             "add_domains_votes": { "proposal_by_account": {} },
-            "previously_cancelled_resharing_epoch_id": null
-        }"#
+            "previously_cancelled_resharing_epoch_id": null,
+        })
     }
 
     #[test]
@@ -627,7 +627,7 @@ mod tests {
         let json = legacy_running_state_json();
 
         // When deserializing into the new RunningContractState DTO
-        let state: RunningContractState = serde_json::from_str(json).unwrap();
+        let state: RunningContractState = serde_json::from_value(json).unwrap();
 
         // Then each domain inherits the global threshold (5)
         let expected = ReconstructionThreshold::new(5);

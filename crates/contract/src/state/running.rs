@@ -213,13 +213,12 @@ impl RunningContractState {
 pub mod running_tests {
     use rstest::rstest;
 
+    use super::RunningContractState;
     use crate::primitives::domain::AddDomainsVotes;
     use crate::primitives::test_utils::{gen_threshold_params, NUM_PROTOCOLS};
+    use crate::primitives::threshold_votes::ThresholdParametersVotes;
     use crate::state::key_event::tests::Environment;
-    use crate::state::test_utils::gen_valid_params_proposal;
-    use crate::{
-        primitives::threshold_votes::ThresholdParametersVotes, state::test_utils::gen_running_state,
-    };
+    use crate::state::test_utils::{gen_running_state, gen_valid_params_proposal};
     use near_mpc_contract_interface::types::{
         Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
     };
@@ -385,10 +384,7 @@ pub mod running_tests {
         );
     }
 
-    fn proposal_with_threshold(
-        state: &super::RunningContractState,
-        threshold: u64,
-    ) -> Vec<DomainConfig> {
+    fn proposal_with_threshold(state: &RunningContractState, threshold: u64) -> Vec<DomainConfig> {
         let next_id = state.domains.next_domain_id();
         vec![DomainConfig {
             id: DomainId(next_id),

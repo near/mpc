@@ -228,7 +228,7 @@ To generate a new threshold signature key, all participants must vote for it to 
 }
 ```
 
-`reconstruction_threshold` is the per-domain `t` in t-of-n key reconstruction; it must satisfy `2 <= t <= n` against the current participant count.
+`reconstruction_threshold` is the per-domain `t` in t-of-n key reconstruction; it must satisfy `2 <= t <= n` against the current participant count. `DamgardEtAl` domains additionally require the honest-majority bound `2t - 1 <= n`.
 
 ### Deployment
 

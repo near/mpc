@@ -1,11 +1,14 @@
 use super::key_state::AuthenticatedParticipantId;
 use crate::errors::{DomainError, Error};
 use crate::primitives::participants::Participants;
-use near_mpc_contract_interface::types::{
-    Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
-};
+use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, DomainPurpose, Protocol};
 use near_sdk::{log, near};
 use std::collections::BTreeMap;
+
+/// Lower bound on a domain's reconstruction threshold. `t = 1` would mean a
+/// single share is sufficient to reconstruct the secret, defeating the point
+/// of threshold cryptography.
+pub const MIN_RECONSTRUCTION_THRESHOLD: u64 = 2;
 
 /// Returns whether the given protocol is valid for the given purpose.
 pub fn is_valid_protocol_for_purpose(purpose: DomainPurpose, protocol: Protocol) -> bool {
@@ -50,7 +53,7 @@ pub fn validate_domain_threshold(
     num_participants: u64,
 ) -> Result<(), Error> {
     let t = domain.reconstruction_threshold.inner();
-    if t < 2 {
+    if t < MIN_RECONSTRUCTION_THRESHOLD {
         return Err(DomainError::ReconstructionThresholdTooLow.into());
     }
     if t > num_participants {
@@ -64,7 +67,7 @@ pub fn validate_domain_threshold(
         let required = t
             .checked_mul(2)
             .and_then(|x| x.checked_sub(1))
-            .unwrap_or(u64::MAX);
+            .ok_or(DomainError::ReconstructionThresholdOverflow { threshold: t })?;
         if required > num_participants {
             return Err(DomainError::InsufficientParticipantsForProtocol {
                 protocol: domain.protocol,
@@ -92,26 +95,19 @@ impl DomainRegistry {
         &self.domains
     }
 
-    /// Append a domain at `next_domain_id`, returning its DomainId. The caller is
-    /// responsible for any validation (curve/protocol consistency, etc.); this
-    /// helper does no checks.
-    fn add_domain(
-        &mut self,
-        curve: Curve,
-        protocol: Protocol,
-        reconstruction_threshold: ReconstructionThreshold,
-        purpose: DomainPurpose,
-    ) -> DomainId {
-        let domain = DomainConfig {
+    /// Append `domain` at `next_domain_id`, returning its assigned DomainId.
+    /// The caller's `domain.id` is ignored; the registry assigns the id
+    /// monotonically. The caller is responsible for any validation
+    /// (curve/protocol consistency, etc.); this helper does no checks.
+    fn add_domain(&mut self, domain: DomainConfig) -> DomainId {
+        let assigned = DomainConfig {
             id: DomainId(self.next_domain_id),
-            curve,
-            protocol,
-            reconstruction_threshold,
-            purpose,
+            ..domain
         };
         self.next_domain_id += 1;
-        self.domains.push(domain.clone());
-        domain.id
+        let id = assigned.id;
+        self.domains.push(assigned);
+        id
     }
 
     /// Processes the addition of the given domains, returning a new DomainRegistry.
@@ -121,13 +117,9 @@ impl DomainRegistry {
         let mut new_registry = self.clone();
         for domain in domains {
             validate_domain_consistency(&domain)?;
-            let new_domain_id = new_registry.add_domain(
-                domain.curve,
-                domain.protocol,
-                domain.reconstruction_threshold,
-                domain.purpose,
-            );
-            if new_domain_id != domain.id {
+            let expected_id = domain.id;
+            let new_domain_id = new_registry.add_domain(domain);
+            if new_domain_id != expected_id {
                 return Err(DomainError::NewDomainIdsNotContiguous {
                     expected_id: new_domain_id,
                 }
@@ -250,12 +242,12 @@ pub mod tests {
     use super::{
         is_valid_protocol_for_purpose, validate_domain_consistency, AddDomainsVotes, Curve,
         DomainConfig, DomainId, DomainPurpose, DomainRegistry, Participants, Protocol,
-        ReconstructionThreshold,
     };
     use crate::primitives::key_state::AuthenticatedParticipantId;
     use crate::primitives::test_utils::{
         gen_participant, gen_participants, infer_purpose_from_curve,
     };
+    use near_mpc_contract_interface::types::ReconstructionThreshold;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
     use rstest::rstest;
