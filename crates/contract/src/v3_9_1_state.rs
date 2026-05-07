@@ -10,7 +10,7 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use dtos::{
     Curve, DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, ParticipantId, Protocol,
-    Threshold,
+    ReconstructionThreshold, Threshold,
 };
 use mpc_attestation::attestation::VerifiedAttestation;
 use near_account_id::AccountId;
@@ -36,13 +36,7 @@ use crate::{
         threshold_votes::ThresholdParametersVotes,
         thresholds::ThresholdParameters,
     },
-    state::{
-        initializing::InitializingContractState,
-        key_event::{KeyEvent, KeyEventInstance},
-        resharing::ResharingContractState,
-        running::RunningContractState,
-        ProtocolContractState,
-    },
+    state::{key_event::KeyEventInstance, running::RunningContractState, ProtocolContractState},
     storage_keys::StorageKey,
     tee::{
         measurements::{AllowedMeasurements, MeasurementVotes},
@@ -84,52 +78,50 @@ struct OldDomainRegistry {
 }
 
 /// Previous `AddDomainsVotes` Borsh layout — stored old `DomainConfig`s.
+/// Deserialize-only: kept solely to preserve the on-chain Borsh layout of
+/// `OldRunningContractState`. The migration discards the contents (see the
+/// `From<OldRunningContractState> for RunningContractState` impl below).
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 struct OldAddDomainsVotes {
     proposal_by_account: BTreeMap<AuthenticatedParticipantId, Vec<OldDomainConfig>>,
 }
 
-impl From<OldDomainConfig> for DomainConfig {
-    fn from(old: OldDomainConfig) -> Self {
-        let (curve, protocol) = match old.curve {
-            OldCurve::Secp256k1 => (Curve::Secp256k1, Protocol::CaitSith),
-            OldCurve::Edwards25519 => (Curve::Edwards25519, Protocol::Frost),
-            OldCurve::Bls12381 => (Curve::Bls12381, Protocol::ConfidentialKeyDerivation),
-            OldCurve::V2Secp256k1 => (Curve::Secp256k1, Protocol::DamgardEtAl),
-        };
-        DomainConfig {
-            id: old.id,
-            curve,
-            protocol,
-            purpose: old.purpose,
-        }
+/// Caller supplies the global threshold; legacy state had no per-domain value.
+/// V2Secp256k1 (DamgardEtAl) was never deployed to production, so no
+/// protocol-specific adjustment is required here — every legacy domain
+/// inherits the global threshold uniformly.
+fn migrate_domain_config(
+    old: OldDomainConfig,
+    reconstruction_threshold: ReconstructionThreshold,
+) -> DomainConfig {
+    let (curve, protocol) = match old.curve {
+        OldCurve::Secp256k1 => (Curve::Secp256k1, Protocol::CaitSith),
+        OldCurve::Edwards25519 => (Curve::Edwards25519, Protocol::Frost),
+        OldCurve::Bls12381 => (Curve::Bls12381, Protocol::ConfidentialKeyDerivation),
+        OldCurve::V2Secp256k1 => (Curve::Secp256k1, Protocol::DamgardEtAl),
+    };
+    DomainConfig {
+        id: old.id,
+        curve,
+        protocol,
+        reconstruction_threshold,
+        purpose: old.purpose,
     }
 }
 
-impl From<OldDomainRegistry> for DomainRegistry {
-    fn from(old: OldDomainRegistry) -> Self {
-        let domains: Vec<DomainConfig> = old.domains.into_iter().map(Into::into).collect();
-        // The on-chain DomainRegistry was previously valid by construction;
-        // its invariants (id contiguity, monotonic next_domain_id) carry over.
-        DomainRegistry::from_raw_validated(domains, old.next_domain_id)
-            .expect("on-chain DomainRegistry should be valid")
-    }
-}
-
-impl From<OldAddDomainsVotes> for AddDomainsVotes {
-    fn from(old: OldAddDomainsVotes) -> Self {
-        let proposal_by_account = old
-            .proposal_by_account
-            .into_iter()
-            .map(|(account, proposal)| {
-                let proposal: Vec<DomainConfig> = proposal.into_iter().map(Into::into).collect();
-                (account, proposal)
-            })
-            .collect();
-        AddDomainsVotes {
-            proposal_by_account,
-        }
-    }
+fn migrate_domain_registry(
+    old: OldDomainRegistry,
+    reconstruction_threshold: ReconstructionThreshold,
+) -> DomainRegistry {
+    let domains: Vec<DomainConfig> = old
+        .domains
+        .into_iter()
+        .map(|d| migrate_domain_config(d, reconstruction_threshold))
+        .collect();
+    // The on-chain DomainRegistry was previously valid by construction;
+    // its invariants (id contiguity, monotonic next_domain_id) carry over.
+    DomainRegistry::from_raw_validated(domains, old.next_domain_id)
+        .expect("on-chain DomainRegistry should be valid")
 }
 
 /// Previous `ParticipantInfo` layout — the TLS key was stored as a tagged
@@ -313,81 +305,35 @@ impl From<OldThresholdParametersVotes> for ThresholdParametersVotes {
     }
 }
 
-impl From<OldKeyEvent> for KeyEvent {
-    fn from(old: OldKeyEvent) -> Self {
-        KeyEvent::from_raw(
-            old.epoch_id,
-            old.domain.into(),
-            old.parameters.into(),
-            old.instance,
-            old.next_attempt_id,
-        )
-    }
-}
-
 impl From<OldRunningContractState> for RunningContractState {
     fn from(old: OldRunningContractState) -> Self {
+        let reconstruction_threshold = ReconstructionThreshold::from(old.parameters.threshold);
         RunningContractState {
-            domains: old.domains.into(),
+            domains: migrate_domain_registry(old.domains, reconstruction_threshold),
             keyset: old.keyset,
             parameters: old.parameters.into(),
             parameters_votes: old.parameters_votes.into(),
-            add_domains_votes: old.add_domains_votes.into(),
+            // Pending `add_domains_votes` are dropped: legacy entries didn't
+            // carry a per-domain `reconstruction_threshold`, and stamping
+            // them with the global threshold would cause post-migration
+            // voters that recast with a different threshold to fail to
+            // match — voters re-cast on a clean slate after the upgrade.
+            add_domains_votes: AddDomainsVotes::default(),
             previously_cancelled_resharing_epoch_id: old.previously_cancelled_resharing_epoch_id,
-        }
-    }
-}
-
-impl From<OldInitializingContractState> for InitializingContractState {
-    fn from(old: OldInitializingContractState) -> Self {
-        InitializingContractState {
-            domains: old.domains.into(),
-            epoch_id: old.epoch_id,
-            generated_keys: old.generated_keys,
-            generating_key: old.generating_key.into(),
-            cancel_votes: old.cancel_votes,
-        }
-    }
-}
-
-impl From<OldResharingContractState> for ResharingContractState {
-    fn from(old: OldResharingContractState) -> Self {
-        ResharingContractState {
-            previous_running_state: old.previous_running_state.into(),
-            reshared_keys: old.reshared_keys,
-            resharing_key: old.resharing_key.into(),
-            cancellation_requests: old.cancellation_requests,
-        }
-    }
-}
-
-impl From<OldProtocolContractState> for ProtocolContractState {
-    fn from(old: OldProtocolContractState) -> Self {
-        match old {
-            OldProtocolContractState::NotInitialized => ProtocolContractState::NotInitialized,
-            OldProtocolContractState::Initializing(state) => {
-                ProtocolContractState::Initializing(state.into())
-            }
-            OldProtocolContractState::Running(state) => {
-                ProtocolContractState::Running(state.into())
-            }
-            OldProtocolContractState::Resharing(state) => {
-                ProtocolContractState::Resharing(state.into())
-            }
         }
     }
 }
 
 impl From<MpcContract> for crate::MpcContract {
     fn from(mut value: MpcContract) -> Self {
-        if !matches!(value.protocol_state, OldProtocolContractState::Running(_)) {
+        let OldProtocolContractState::Running(running) = value.protocol_state else {
             env::panic_str("Contract must be in running state when migrating.");
-        }
+        };
 
         value.foreign_chain_policy_votes.proposal_by_account.clear();
 
         Self {
-            protocol_state: value.protocol_state.into(),
+            protocol_state: ProtocolContractState::Running(running.into()),
             pending_signature_requests: value.pending_signature_requests,
             pending_ckd_requests: value.pending_ckd_requests,
             pending_verify_foreign_tx_requests: value.pending_verify_foreign_tx_requests,
@@ -716,18 +662,14 @@ mod tests {
         // Given a minimal Running state with one participant in the old layout
         let participants = old_participants(1, vec![("alice.near", 0, old_ed25519_near_pk(2))]);
         let running = old_running_state(participants, 2);
-        let old_state = OldProtocolContractState::Running(running);
-        let bytes = borsh::to_vec(&old_state).unwrap();
+        let bytes = borsh::to_vec(&running).unwrap();
 
         // When borsh-decoding and migrating to the new layout
-        let decoded: OldProtocolContractState = borsh::from_slice(&bytes).unwrap();
-        let migrated: ProtocolContractState = decoded.into();
+        let decoded: OldRunningContractState = borsh::from_slice(&bytes).unwrap();
+        let migrated: RunningContractState = decoded.into();
 
         // Then the migrated participant exposes tls_public_key with the Ed25519 bytes
-        let ProtocolContractState::Running(state) = migrated else {
-            panic!("expected Running state");
-        };
-        let participants = state.parameters.participants().participants();
+        let participants = migrated.parameters.participants().participants();
         assert_eq!(participants.len(), 1);
         assert_eq!(
             participants[0].2.tls_public_key,
@@ -850,7 +792,7 @@ mod tests {
         assert!(new.foreign_chain_support_by_node.is_empty());
     }
     #[test]
-    fn domain_config_migration__should_derive_protocol_from_curve_for_each_variant() {
+    fn domain_config_migration__should_derive_protocol_from_curve_and_inherit_threshold() {
         // Given OldDomainConfigs covering every legacy curve, including V2Secp256k1
         let cases = [
             (OldCurve::Secp256k1, Curve::Secp256k1, Protocol::CaitSith),
@@ -867,6 +809,7 @@ mod tests {
             ),
         ];
 
+        let global_threshold = ReconstructionThreshold::new(7);
         for (i, (old_curve, expected_curve, expected_protocol)) in cases.into_iter().enumerate() {
             let purpose = match expected_curve {
                 Curve::Bls12381 => DomainPurpose::CKD,
@@ -881,12 +824,46 @@ mod tests {
 
             // When borsh-decoding the old layout and converting to the new DomainConfig
             let decoded: OldDomainConfig = borsh::from_slice(&bytes).unwrap();
-            let migrated: DomainConfig = decoded.into();
+            let migrated = migrate_domain_config(decoded, global_threshold);
 
-            // Then curve and protocol match the expected post-migration pair
+            // Then curve, protocol, and per-domain reconstruction threshold are set
             assert_eq!(migrated.curve, expected_curve);
             assert_eq!(migrated.protocol, expected_protocol);
             assert_eq!(migrated.id, DomainId(i as u64));
+            assert_eq!(migrated.reconstruction_threshold, global_threshold);
+        }
+    }
+
+    #[test]
+    fn running_state_migration__should_copy_global_threshold_into_each_domain() {
+        // Given a legacy running state with two domains and a global threshold
+        testing_env!(VMContextBuilder::new().build());
+        let participants = old_participants(1, vec![("alice.near", 0, old_ed25519_near_pk(2))]);
+        let mut running = old_running_state(participants, 5);
+        running.domains = OldDomainRegistry {
+            domains: vec![
+                OldDomainConfig {
+                    id: DomainId(0),
+                    curve: OldCurve::Secp256k1,
+                    purpose: DomainPurpose::Sign,
+                },
+                OldDomainConfig {
+                    id: DomainId(1),
+                    curve: OldCurve::Edwards25519,
+                    purpose: DomainPurpose::Sign,
+                },
+            ],
+            next_domain_id: 2,
+        };
+
+        // When migrating
+        let migrated: RunningContractState = running.into();
+
+        // Then every migrated domain inherits the legacy global threshold
+        let expected = ReconstructionThreshold::new(5);
+        assert_eq!(migrated.domains.domains().len(), 2);
+        for domain in migrated.domains.domains() {
+            assert_eq!(domain.reconstruction_threshold, expected);
         }
     }
 }

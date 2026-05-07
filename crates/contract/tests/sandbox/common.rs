@@ -22,7 +22,8 @@ use mpc_contract::{
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
-    Curve, DomainConfig, DomainId, DomainPurpose, Protocol, SupportedForeignChains,
+    Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
+    SupportedForeignChains,
 };
 use near_mpc_contract_interface::{
     method_names,
@@ -215,18 +216,30 @@ impl SandboxTestSetupBuilder {
         let mut domain_configs = Vec::new();
         let mut key_for_domains = Vec::new();
 
-        // Sign-purpose domains from protocols
+        // Match the per-domain reconstruction threshold to the cluster
+        // threshold by default. DamgardEtAl additionally requires
+        // `2t - 1 <= n`, so cap t at `n.div_ceil(2)`.
+        let n = self.number_of_participants as u64;
+        let cluster_threshold = threshold_parameters.threshold().value();
+
         for protocol in &self.protocols {
             let curve = Curve::from(*protocol);
             let (pk, sk) = make_key_for_domain(curve);
             let purpose = infer_purpose_from_curve(curve);
             let domain_id = DomainId(domain_configs.len() as u64);
 
+            let reconstruction_threshold = match *protocol {
+                Protocol::DamgardEtAl => {
+                    ReconstructionThreshold::new(cluster_threshold.min(n.div_ceil(2)))
+                }
+                _ => ReconstructionThreshold::new(cluster_threshold),
+            };
             let key: PublicKeyExtended = pk.try_into().unwrap();
             let config = DomainConfig {
                 id: domain_id,
                 curve,
                 protocol: *protocol,
+                reconstruction_threshold,
                 purpose,
             };
             keys.push(DomainKey {
@@ -252,6 +265,7 @@ impl SandboxTestSetupBuilder {
                 id: domain_id,
                 curve: Curve::Secp256k1,
                 protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(cluster_threshold),
                 purpose: DomainPurpose::ForeignTx,
             };
             keys.push(DomainKey {
@@ -574,18 +588,21 @@ pub async fn execute_key_generation_and_add_random_state(
             id: 0.into(),
             curve: Curve::Edwards25519,
             protocol: Protocol::Frost,
+            reconstruction_threshold: ReconstructionThreshold::new(6),
             purpose: DomainPurpose::Sign,
         },
         DomainConfig {
             id: 1.into(),
             curve: Curve::Secp256k1,
             protocol: Protocol::CaitSith,
+            reconstruction_threshold: ReconstructionThreshold::new(6),
             purpose: DomainPurpose::Sign,
         },
         DomainConfig {
             id: 2.into(),
             curve: Curve::Edwards25519,
             protocol: Protocol::Frost,
+            reconstruction_threshold: ReconstructionThreshold::new(6),
             purpose: DomainPurpose::Sign,
         },
     ];

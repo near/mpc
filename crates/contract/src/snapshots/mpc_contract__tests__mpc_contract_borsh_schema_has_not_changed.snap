@@ -324,6 +324,10 @@ BorshSchemaContainer {
                         "Protocol",
                     ),
                     (
+                        "reconstruction_threshold",
+                        "ReconstructionThreshold",
+                    ),
+                    (
                         "purpose",
                         "DomainPurpose",
                     ),
@@ -996,6 +1000,13 @@ BorshSchemaContainer {
                         "near_public_key",
                         "PublicKey",
                     ),
+                ],
+            ),
+        },
+        "ReconstructionThreshold": Struct {
+            fields: UnnamedFields(
+                [
+                    "u64",
                 ],
             ),
         },

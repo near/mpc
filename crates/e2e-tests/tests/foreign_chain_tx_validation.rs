@@ -12,8 +12,9 @@ use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::types::{
     BitcoinExtractor, BitcoinRpcRequest, BitcoinTxId, BlockConfirmations, Curve, DomainConfig,
     DomainId, DomainPurpose, EvmExtractor, EvmFinality, EvmRpcRequest, EvmTxId, ForeignChain,
-    ForeignChainRpcRequest, ForeignTxPayloadVersion, Protocol, StarknetExtractor, StarknetFelt,
-    StarknetFinality, StarknetRpcRequest, StarknetTxId, VerifyForeignTransactionRequestArgs,
+    ForeignChainRpcRequest, ForeignTxPayloadVersion, Protocol, ReconstructionThreshold,
+    StarknetExtractor, StarknetFelt, StarknetFinality, StarknetRpcRequest, StarknetTxId,
+    VerifyForeignTransactionRequestArgs,
 };
 
 struct ForeignTxTestEnv {
@@ -29,6 +30,8 @@ struct MockServerUrls {
     starknet: String,
     base: String,
     arbitrum: String,
+    hyper_evm: String,
+    polygon: String,
 }
 
 fn build_foreign_chains_config(urls: &MockServerUrls) -> ForeignChainsConfig {
@@ -99,6 +102,28 @@ fn build_foreign_chains_config(urls: &MockServerUrls) -> ForeignChainsConfig {
                 },
             ),
         }),
+        hyper_evm: Some(ForeignChainConfig {
+            timeout_sec: NonZeroU64::new(30).unwrap(),
+            max_retries: NonZeroU64::new(3).unwrap(),
+            providers: NonEmptyBTreeMap::new(
+                "mock".to_string().into(),
+                ForeignChainProviderConfig {
+                    rpc_url: urls.hyper_evm.clone(),
+                    auth: Default::default(),
+                },
+            ),
+        }),
+        polygon: Some(ForeignChainConfig {
+            timeout_sec: NonZeroU64::new(30).unwrap(),
+            max_retries: NonZeroU64::new(3).unwrap(),
+            providers: NonEmptyBTreeMap::new(
+                "mock".to_string().into(),
+                ForeignChainProviderConfig {
+                    rpc_url: urls.polygon.clone(),
+                    auth: Default::default(),
+                },
+            ),
+        }),
         ..Default::default()
     }
 }
@@ -110,6 +135,8 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
     let starknet_server = MockServer::start();
     let base_server = MockServer::start();
     let arbitrum_server = MockServer::start();
+    let hyper_evm_server = MockServer::start();
+    let polygon_server = MockServer::start();
 
     setup_bitcoin_mock(&bitcoin_server);
     setup_evm_mock(&abstract_server);
@@ -117,6 +144,8 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
     setup_starknet_mock(&starknet_server);
     setup_evm_mock(&base_server);
     setup_evm_mock(&arbitrum_server);
+    setup_evm_mock(&hyper_evm_server);
+    setup_evm_mock(&polygon_server);
 
     let urls = MockServerUrls {
         bitcoin: bitcoin_server.url("/"),
@@ -125,6 +154,8 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
         starknet: starknet_server.url("/"),
         base: base_server.url("/"),
         arbitrum: arbitrum_server.url("/"),
+        hyper_evm: hyper_evm_server.url("/"),
+        polygon: polygon_server.url("/"),
     };
 
     let mock_servers = vec![
@@ -134,6 +165,8 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
         starknet_server,
         base_server,
         arbitrum_server,
+        hyper_evm_server,
+        polygon_server,
     ];
 
     let fc_config = build_foreign_chains_config(&urls);
@@ -146,6 +179,7 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
                 id: DomainId(0),
                 curve: Curve::Secp256k1,
                 protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::ForeignTx,
             }];
             c.node_foreign_chains_configs = vec![fc_config.clone(), fc_config];
@@ -159,6 +193,8 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
         ForeignChain::Starknet,
         ForeignChain::Base,
         ForeignChain::Arbitrum,
+        ForeignChain::HyperEvm,
+        ForeignChain::Polygon,
     ]
     .into_iter()
     .collect();
@@ -361,14 +397,52 @@ async fn verify_arbitrum(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
     verify_foreign_tx_response(&outcome)
 }
 
+async fn verify_hyper_evm(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
+    let request = VerifyForeignTransactionRequestArgs {
+        request: ForeignChainRpcRequest::HyperEvm(EvmRpcRequest {
+            tx_id: EvmTxId([0xbb; 32]),
+            extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }],
+            finality: EvmFinality::Finalized,
+        }),
+        domain_id: env.secp_domain_id,
+        payload_version: ForeignTxPayloadVersion::V1,
+    };
+    let outcome = env
+        .cluster
+        .send_verify_foreign_transaction(&request)
+        .await
+        .context("verify_foreign_transaction (HyperEVM) failed")?;
+    verify_foreign_tx_response(&outcome)
+}
+
+async fn verify_polygon(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
+    let request = VerifyForeignTransactionRequestArgs {
+        request: ForeignChainRpcRequest::Polygon(EvmRpcRequest {
+            tx_id: EvmTxId([0xbb; 32]),
+            extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }],
+            finality: EvmFinality::Finalized,
+        }),
+        domain_id: env.secp_domain_id,
+        payload_version: ForeignTxPayloadVersion::V1,
+    };
+    let outcome = env
+        .cluster
+        .send_verify_foreign_transaction(&request)
+        .await
+        .context("verify_foreign_transaction (Polygon) failed")?;
+    verify_foreign_tx_response(&outcome)
+}
+
 /// Sets up a single 2-node cluster with mock RPC servers for all chains,
 /// then submits verify_foreign_transaction requests for Bitcoin, Abstract,
-/// BNB, Base, and Starknet and verifies the MPC nodes return valid signed responses.
-/// Also verifies rejection for unsupported chains and non-existent domains.
+/// BNB, Base, Starknet, Arbitrum, HyperEVM, and Polygon and verifies the MPC
+/// nodes return valid signed responses. Also verifies rejection for unsupported
+/// chains and non-existent domains.
 #[tokio::test]
 #[expect(non_snake_case)]
 async fn verify_foreign_transaction__should_sign_all_supported_chains() {
-    // Given — 2-node cluster with Bitcoin, Abstract, BNB, Base, and Starknet configured
+    // Given — 2-node cluster with Bitcoin, Abstract, BNB, Base, Starknet,
+    // Arbitrum, HyperEVM, and Polygon configured
     let env = setup_foreign_tx_cluster()
         .await
         .expect("setup_foreign_tx_cluster failed");
@@ -388,6 +462,12 @@ async fn verify_foreign_transaction__should_sign_all_supported_chains() {
     verify_arbitrum(&env)
         .await
         .expect("arbitrum verification failed");
+    verify_hyper_evm(&env)
+        .await
+        .expect("hyper_evm verification failed");
+    verify_polygon(&env)
+        .await
+        .expect("polygon verification failed");
 
     // When — requesting Ethereum, which is not in the foreign chain config
     let request = VerifyForeignTransactionRequestArgs {

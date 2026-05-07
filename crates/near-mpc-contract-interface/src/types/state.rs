@@ -16,7 +16,7 @@ use super::primitives::DomainId;
 // Simple Wrapper Types (newtypes)
 // =============================================================================
 
-pub use mpc_primitives::{AttemptId, EpochId, Threshold};
+pub use mpc_primitives::{AttemptId, EpochId, ReconstructionThreshold, Threshold};
 
 /// A participant ID that has been authenticated (i.e., the caller is this participant).
 #[derive(
@@ -106,35 +106,73 @@ pub struct DomainConfig {
     pub id: DomainId,
     pub curve: Curve,
     pub protocol: Protocol,
+    pub reconstruction_threshold: ReconstructionThreshold,
     pub purpose: DomainPurpose,
 }
 
-// `Deserialize` is implemented manually via this compat struct so that JSON
-// emitted by older contracts (pre-`protocol` field) still deserializes:
-// the missing `protocol` is inferred from `curve`.
+// TODO(#3166): once every deployment has run the v3.9.1 migration, the
+// legacy-JSON compat below can be removed entirely. After that point `state()`
+// always emits `protocol` and `reconstruction_threshold`, so the
+// `DomainConfig` struct can derive `Deserialize` directly and the following
+// items become dead code:
+//   - `DomainConfigCompat` and its `From<DomainConfigCompat>` impl
+//   - `infer_protocol`
+//   - `RawDomainConfig`, `RawDomainRegistry`, `RawAddDomainsVotes`
+//   - `RunningContractStateCompat`, `KeyEventCompat`,
+//     `InitializingContractStateCompat` (and their `serde(from = …)` attrs)
+/// Standalone-deserialization compat: `protocol` is optional (inferred from
+/// `curve` for legacy JSON); `reconstruction_threshold` is required.
+/// Legacy `state()` reads back-fill the threshold one level up via
+/// `RawDomainConfig`, not here.
 #[derive(Deserialize)]
 struct DomainConfigCompat {
     id: DomainId,
     curve: Curve,
     protocol: Option<Protocol>,
+    reconstruction_threshold: ReconstructionThreshold,
     purpose: DomainPurpose,
 }
 
 impl From<DomainConfigCompat> for DomainConfig {
     fn from(c: DomainConfigCompat) -> Self {
-        // Pre-`protocol` JSON: infer the canonical protocol from the curve.
-        // Old contracts only ever emitted CaitSith/Frost/CKD via this path —
-        // DamgardEtAl never existed in old JSON, so this fallback is total.
-        let protocol = c.protocol.unwrap_or(match c.curve {
-            Curve::Secp256k1 => Protocol::CaitSith,
-            Curve::Edwards25519 => Protocol::Frost,
-            Curve::Bls12381 => Protocol::ConfidentialKeyDerivation,
-        });
         Self {
             id: c.id,
             curve: c.curve,
-            protocol,
+            protocol: c.protocol.unwrap_or_else(|| infer_protocol(c.curve)),
+            reconstruction_threshold: c.reconstruction_threshold,
             purpose: c.purpose,
+        }
+    }
+}
+
+/// Legacy curves map 1:1 to protocols (DamgardEtAl never appeared in old JSON).
+fn infer_protocol(curve: Curve) -> Protocol {
+    match curve {
+        Curve::Secp256k1 => Protocol::CaitSith,
+        Curve::Edwards25519 => Protocol::Frost,
+        Curve::Bls12381 => Protocol::ConfidentialKeyDerivation,
+    }
+}
+
+/// Intermediate for legacy `state()` reads where `reconstruction_threshold`
+/// may be absent and is filled from the surrounding `parameters.threshold`.
+#[derive(Deserialize)]
+struct RawDomainConfig {
+    id: DomainId,
+    curve: Curve,
+    protocol: Option<Protocol>,
+    reconstruction_threshold: Option<ReconstructionThreshold>,
+    purpose: DomainPurpose,
+}
+
+impl RawDomainConfig {
+    fn into_domain_config(self, fallback: ReconstructionThreshold) -> DomainConfig {
+        DomainConfig {
+            id: self.id,
+            curve: self.curve,
+            protocol: self.protocol.unwrap_or_else(|| infer_protocol(self.curve)),
+            reconstruction_threshold: self.reconstruction_threshold.unwrap_or(fallback),
+            purpose: self.purpose,
         }
     }
 }
@@ -220,12 +258,37 @@ pub struct KeyEventInstance {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
+#[serde(from = "KeyEventCompat")]
 pub struct KeyEvent {
     pub epoch_id: EpochId,
     pub domain: DomainConfig,
     pub parameters: ThresholdParameters,
     pub instance: Option<KeyEventInstance>,
     pub next_attempt_id: AttemptId,
+}
+
+/// Legacy compat: back-fill the embedded domain's `reconstruction_threshold`
+/// from the event's own `parameters.threshold`.
+#[derive(Deserialize)]
+struct KeyEventCompat {
+    epoch_id: EpochId,
+    domain: RawDomainConfig,
+    parameters: ThresholdParameters,
+    instance: Option<KeyEventInstance>,
+    next_attempt_id: AttemptId,
+}
+
+impl From<KeyEventCompat> for KeyEvent {
+    fn from(c: KeyEventCompat) -> Self {
+        let fallback = ReconstructionThreshold::from(c.parameters.threshold);
+        Self {
+            epoch_id: c.epoch_id,
+            domain: c.domain.into_domain_config(fallback),
+            parameters: c.parameters,
+            instance: c.instance,
+            next_attempt_id: c.next_attempt_id,
+        }
+    }
 }
 
 // =============================================================================
@@ -238,6 +301,7 @@ pub struct KeyEvent {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
+#[serde(from = "InitializingContractStateCompat")]
 pub struct InitializingContractState {
     pub domains: DomainRegistry,
     pub epoch_id: EpochId,
@@ -246,12 +310,46 @@ pub struct InitializingContractState {
     pub cancel_votes: BTreeSet<AuthenticatedParticipantId>,
 }
 
+/// Legacy compat: back-fill registry thresholds from
+/// `generating_key.parameters.threshold` (the global threshold under which
+/// keygen was started, shared by every domain in the legacy registry).
+#[derive(Deserialize)]
+struct InitializingContractStateCompat {
+    domains: RawDomainRegistry,
+    epoch_id: EpochId,
+    generated_keys: Vec<KeyForDomain>,
+    generating_key: KeyEvent,
+    cancel_votes: BTreeSet<AuthenticatedParticipantId>,
+}
+
+impl From<InitializingContractStateCompat> for InitializingContractState {
+    fn from(c: InitializingContractStateCompat) -> Self {
+        let fallback = ReconstructionThreshold::from(c.generating_key.parameters.threshold);
+        Self {
+            domains: DomainRegistry {
+                domains: c
+                    .domains
+                    .domains
+                    .into_iter()
+                    .map(|d| d.into_domain_config(fallback))
+                    .collect(),
+                next_domain_id: c.domains.next_domain_id,
+            },
+            epoch_id: c.epoch_id,
+            generated_keys: c.generated_keys,
+            generating_key: c.generating_key,
+            cancel_votes: c.cancel_votes,
+        }
+    }
+}
+
 /// State when the contract is ready for signature operations.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
+#[serde(from = "RunningContractStateCompat")]
 pub struct RunningContractState {
     pub domains: DomainRegistry,
     pub keyset: Keyset,
@@ -259,6 +357,66 @@ pub struct RunningContractState {
     pub parameters_votes: ThresholdParametersVotes,
     pub add_domains_votes: AddDomainsVotes,
     pub previously_cancelled_resharing_epoch_id: Option<EpochId>,
+}
+
+/// Legacy compat: back-fill per-domain `reconstruction_threshold` from the
+/// global `parameters.threshold`. Also covers proposals nested in
+/// `add_domains_votes`.
+#[derive(Deserialize)]
+struct RunningContractStateCompat {
+    domains: RawDomainRegistry,
+    keyset: Keyset,
+    parameters: ThresholdParameters,
+    parameters_votes: ThresholdParametersVotes,
+    add_domains_votes: RawAddDomainsVotes,
+    previously_cancelled_resharing_epoch_id: Option<EpochId>,
+}
+
+#[derive(Deserialize)]
+struct RawDomainRegistry {
+    domains: Vec<RawDomainConfig>,
+    next_domain_id: u64,
+}
+
+#[derive(Deserialize)]
+struct RawAddDomainsVotes {
+    proposal_by_account: BTreeMap<AuthenticatedParticipantId, Vec<RawDomainConfig>>,
+}
+
+impl From<RunningContractStateCompat> for RunningContractState {
+    fn from(c: RunningContractStateCompat) -> Self {
+        let fallback = ReconstructionThreshold::from(c.parameters.threshold);
+        Self {
+            domains: DomainRegistry {
+                domains: c
+                    .domains
+                    .domains
+                    .into_iter()
+                    .map(|d| d.into_domain_config(fallback))
+                    .collect(),
+                next_domain_id: c.domains.next_domain_id,
+            },
+            keyset: c.keyset,
+            parameters: c.parameters,
+            parameters_votes: c.parameters_votes,
+            add_domains_votes: AddDomainsVotes {
+                proposal_by_account: c
+                    .add_domains_votes
+                    .proposal_by_account
+                    .into_iter()
+                    .map(|(k, v)| {
+                        (
+                            k,
+                            v.into_iter()
+                                .map(|d| d.into_domain_config(fallback))
+                                .collect(),
+                        )
+                    })
+                    .collect(),
+            },
+            previously_cancelled_resharing_epoch_id: c.previously_cancelled_resharing_epoch_id,
+        }
+    }
 }
 
 /// State when the contract is resharing keys to new participants.
@@ -435,5 +593,64 @@ mod tests {
 
         // Then
         assert_eq!(output, "Contract is not initialized\n");
+    }
+
+    /// Bare-bones legacy `state()` JSON without per-domain
+    /// `reconstruction_threshold`. Mirrors what a not-yet-upgraded contract
+    /// would emit. Both `Running` and `Initializing` shapes need to keep
+    /// deserializing with the field back-filled from the surrounding
+    /// `parameters.threshold`.
+    fn legacy_running_state_json() -> serde_json::Value {
+        serde_json::json!({
+            "domains": {
+                "domains": [
+                    {"id": 0, "curve": "Secp256k1", "purpose": "Sign"},
+                    {"id": 1, "curve": "Edwards25519", "purpose": "Sign"}
+                ],
+                "next_domain_id": 2
+            },
+            "keyset": { "epoch_id": 0, "domains": [] },
+            "parameters": {
+                "participants": { "next_id": 0, "participants": [] },
+                "threshold": 5
+            },
+            "parameters_votes": { "proposal_by_account": {} },
+            "add_domains_votes": { "proposal_by_account": {} },
+            "previously_cancelled_resharing_epoch_id": null,
+        })
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn running_state_compat__should_backfill_missing_reconstruction_threshold() {
+        // Given legacy `state()` JSON with no per-domain reconstruction_threshold
+        let json = legacy_running_state_json();
+
+        // When deserializing into the new RunningContractState DTO
+        let state: RunningContractState = serde_json::from_value(json).unwrap();
+
+        // Then each domain inherits the global threshold (5)
+        let expected = ReconstructionThreshold::new(5);
+        assert_eq!(state.parameters.threshold, Threshold::new(5));
+        assert_eq!(state.domains.domains.len(), 2);
+        for domain in &state.domains.domains {
+            assert_eq!(domain.reconstruction_threshold, expected);
+        }
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn domain_config__should_require_reconstruction_threshold_directly() {
+        // Given JSON missing reconstruction_threshold (e.g. an old vote_add_domains payload)
+        let bad = r#"{"id":0,"curve":"Secp256k1","purpose":"Sign"}"#;
+
+        // When deserializing as a standalone DomainConfig
+        let result: Result<DomainConfig, _> = serde_json::from_str(bad);
+
+        // Then it is rejected — the standalone path is not the place to back-fill
+        assert!(
+            result.is_err(),
+            "Standalone DomainConfig must require reconstruction_threshold"
+        );
     }
 }

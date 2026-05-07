@@ -726,7 +726,9 @@ mod tests {
     use assert_matches::assert_matches;
     use mpc_primitives::domain::{Curve, DomainId};
     use mpc_primitives::{AttemptId, EpochId, KeyEventId};
-    use near_mpc_contract_interface::types::{DomainConfig, DomainPurpose, Protocol};
+    use near_mpc_contract_interface::types::{
+        DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
+    };
     use std::collections::BTreeSet;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -886,6 +888,7 @@ mod tests {
                 id: key_event_id.domain_id,
                 curve: Curve::Secp256k1,
                 protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
             },
             started,

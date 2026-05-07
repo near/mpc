@@ -4,6 +4,8 @@ use foreign_chain_inspector::arbitrum::inspector::ArbitrumExtractor;
 use foreign_chain_inspector::base::inspector::BaseExtractor;
 use foreign_chain_inspector::bitcoin::inspector::BitcoinExtractor;
 use foreign_chain_inspector::bnb::inspector::BnbExtractor;
+use foreign_chain_inspector::hyperevm::inspector::HyperEvmExtractor;
+use foreign_chain_inspector::polygon::inspector::PolygonExtractor;
 use foreign_chain_inspector::starknet::inspector::{StarknetExtractor, StarknetFinality};
 use foreign_chain_inspector::{EthereumFinality, ForeignChainInspector};
 use rand::seq::SliceRandom;
@@ -237,6 +239,49 @@ where
                 let transaction_id = request.tx_id.0.into();
                 let finality: EthereumFinality = request.finality.clone().try_into()?;
                 let extractors: Vec<ArbitrumExtractor> = request
+                    .extractors
+                    .iter()
+                    .cloned()
+                    .map(TryInto::try_into)
+                    .collect::<Result<_, _>>()?;
+                let values = inspector
+                    .extract(transaction_id, finality, extractors)
+                    .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
+                    .await
+                    .context("timed out during execution of foreign chain request")??;
+                values.into_iter().map(Into::into).collect()
+            }
+            dtos::ForeignChainRpcRequest::HyperEvm(request) => {
+                let inspector = select_inspector(
+                    &self.inspectors.hyper_evm,
+                    &request_id,
+                    my_participant_index,
+                )
+                .context("no inspector configured for HyperEVM")?;
+
+                let transaction_id = request.tx_id.0.into();
+                let finality: EthereumFinality = request.finality.clone().try_into()?;
+                let extractors: Vec<HyperEvmExtractor> = request
+                    .extractors
+                    .iter()
+                    .cloned()
+                    .map(TryInto::try_into)
+                    .collect::<Result<_, _>>()?;
+                let values = inspector
+                    .extract(transaction_id, finality, extractors)
+                    .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
+                    .await
+                    .context("timed out during execution of foreign chain request")??;
+                values.into_iter().map(Into::into).collect()
+            }
+            dtos::ForeignChainRpcRequest::Polygon(request) => {
+                let inspector =
+                    select_inspector(&self.inspectors.polygon, &request_id, my_participant_index)
+                        .context("no inspector configured for Polygon")?;
+
+                let transaction_id = request.tx_id.0.into();
+                let finality: EthereumFinality = request.finality.clone().try_into()?;
+                let extractors: Vec<PolygonExtractor> = request
                     .extractors
                     .iter()
                     .cloned()

@@ -1991,7 +1991,8 @@ expression: abi
             "curve",
             "id",
             "protocol",
-            "purpose"
+            "purpose",
+            "reconstruction_threshold"
           ],
           "properties": {
             "curve": {
@@ -2005,6 +2006,11 @@ expression: abi
             },
             "purpose": {
               "$ref": "#/definitions/DomainPurpose"
+            },
+            "reconstruction_threshold": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
             }
           }
         },

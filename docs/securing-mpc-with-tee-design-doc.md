@@ -435,13 +435,25 @@ The node will use the Dstack APIs in order to generate the remote attestation in
 
     _Note_ - In a future release, we plan to add the hash of node's public account key as well - in order to be able to add restriction on the operator calling some of the contract APIs
 
-- Collateral - the node will retrieve this from Phala's collateral endpoint [https://proof.t16z.com](https://proof.t16z.com/api/upload)
-
-  _Note - In a future release we may move to other_ Collateral _retrieval methods, like self hosted_ DCAP, or on chain collateral.
+- Collateral (TCB Info, QE Identity, PCK CRL) — fetched from a configurable PCCS endpoint chain. See [PCCS Collateral Handling](#pccs-collateral-handling) below for endpoint configuration, freshness, and TLS trust.
 
 - Dstack TCP info + Event log. containing a list of Dstack configuration and list of events that extended the RTMRs.
 
 For more information see Phala's attestation web page: <https://docs.phala.com/phala-cloud/attestation/overview>
+
+### PCCS Collateral Handling
+
+Beyond the TDX quote itself, attestation requires PCCS-supplied collateral — TCB Info, QE Identity, and the PCK CRL — so that verifiers can check the quote's chain of trust and the platform's TCB level. The node configures, fetches, and validates this collateral with the following design:
+
+- **Endpoint configuration and fallback.** Operators list one or more PCCS endpoints in `pccs_endpoints`. The node tries each in order until one returns valid collateral. When the field is unspecified, the node falls back to a single default endpoint (Phala).
+
+- **TLS trust.** PCCS endpoints use standard public-CA trust roots by default. Each entry optionally accepts a TLS override: `tls.override = "ca_cert_pem"` adds a self-signed root as an additional trust anchor — the default public-CA roots remain active. `tls.override = "insecure"` disables TLS validation entirely. Both overrides are intended for self-hosted local PCCS deployments only.
+
+- **Freshness validation.** Collateral older than 7 days is rejected. The threshold applies uniformly to `tcb_info.issueDate`, `qe_identity.issueDate`, and the PCK CRL `thisUpdate`. A stale response from one endpoint causes the node to fall back to the next.
+
+- **Freshness threshold is part of the attested image.** The 7-day value is hard-coded in the node binary rather than in operator config. Governance voters approve an image hash that already encodes this policy, so an operator cannot relax freshness without going through image-hash voting.
+
+For the operator-facing setup details (TOML schema, self-hosted PCCS recipe), see [Customizing PCCS endpoints](running-an-mpc-node-in-tdx-external-guide.md#customizing-pccs-endpoints-optional) and [Appendix: Self-hosting a local PCCS](running-an-mpc-node-in-tdx-external-guide.md#appendix-self-hosting-a-local-pccs) in the operator deployment guide.
 
 ## Attestation verification on the contract:
 
