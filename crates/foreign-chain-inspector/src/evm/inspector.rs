@@ -3,7 +3,9 @@ use std::hash::Hash;
 
 use jsonrpsee::core::client::ClientT;
 
-use crate::{EthereumFinality, ForeignChainInspectionError, ForeignChainInspector};
+use crate::{
+    EthereumFinality, ForeignChainInspectionError, ForeignChainInspector, fan_out_and_match,
+};
 
 use foreign_chain_rpc_interfaces::evm::{
     BlockNumberOrTag, FinalityTag, GetBlockByNumberArgs, GetBlockByNumberResponse,
@@ -19,13 +21,20 @@ const GET_BLOCK_BY_NUMBER_METHOD: &str = "eth_getBlockByNumber";
 /// Each chain provides its own block-hash and transaction-hash newtypes so that
 /// different chains remain type-incompatible at the call site, while sharing the
 /// single [`EvmInspector`] implementation.
-pub trait EvmChain {
+///
+/// `PartialEq + Eq` on the marker itself satisfies the derive on
+/// [`EvmExtractedValue`], which compares chain-keyed extracted values when the
+/// inspector fans out across multiple clients.
+pub trait EvmChain: PartialEq + Eq {
     type BlockHash: From<[u8; 32]> + Into<[u8; 32]> + Clone + Debug + PartialEq + Eq + Hash;
     type TransactionHash: From<[u8; 32]> + Into<[u8; 32]> + Clone + Debug + PartialEq + Eq + Hash;
 }
 
+/// An EVM inspector that fans every `extract` call out to **all** of its
+/// configured clients in parallel. The call only succeeds if every client
+/// produces the same extracted values.
 pub struct EvmInspector<Client, Chain> {
-    client: Client,
+    clients: Vec<Client>,
     _chain: std::marker::PhantomData<Chain>,
 }
 
@@ -45,35 +54,15 @@ where
         finality: EthereumFinality,
         extractors: Vec<EvmExtractor>,
     ) -> Result<Vec<EvmExtractedValue<Chain>>, ForeignChainInspectionError> {
-        let get_transaction_receipt_args = GetTransactionReceiptARgs {
-            transaction_hash: H256(transaction.into()),
-        };
-        let transaction_receipt: GetTransactionReceiptResponse = self
-            .client
-            .request(
-                GET_TRANSACTION_RECEIPT_METHOD,
-                &get_transaction_receipt_args,
+        fan_out_and_match(self.clients.iter().map(|client| {
+            extract_with_client::<Client, Chain>(
+                client,
+                transaction.clone(),
+                finality,
+                &extractors,
             )
-            .await?;
-
-        self.verify_finality_level(transaction_receipt.block_number, finality)
-            .await?;
-        self.verify_block_is_canonical(
-            transaction_receipt.block_number,
-            transaction_receipt.block_hash,
-        )
-        .await?;
-
-        let transaction_success = transaction_receipt.status == U64::one();
-
-        if !transaction_success {
-            return Err(ForeignChainInspectionError::TransactionFailed);
-        }
-
-        extractors
-            .iter()
-            .map(|extractor| extractor.extract_value(&transaction_receipt))
-            .collect()
+        }))
+        .await
     }
 }
 
@@ -82,67 +71,102 @@ where
     Client: ClientT + Send,
     Chain: EvmChain,
 {
-    pub fn new(client: Client) -> Self {
+    pub fn new(clients: Vec<Client>) -> Self {
         Self {
-            client,
+            clients,
             _chain: std::marker::PhantomData,
         }
     }
+}
 
-    /// Checks that the receipt's block has reached the requested finality level — i.e. that the
-    /// head of the chain at `finality` is at or past `receipt_block_number`.
-    async fn verify_finality_level(
-        &self,
-        receipt_block_number: U64,
-        finality: EthereumFinality,
-    ) -> Result<(), ForeignChainInspectionError> {
-        let finality_tag = match finality {
-            EthereumFinality::Finalized => FinalityTag::Finalized,
-            EthereumFinality::Safe => FinalityTag::Safe,
-            EthereumFinality::Latest => FinalityTag::Latest,
-        };
-        let args = GetBlockByNumberArgs::new(
-            BlockNumberOrTag::Tag(finality_tag),
-            ReturnFullTransactionObjects::from(false),
-        );
-        let head: GetBlockByNumberResponse = self
-            .client
-            .request(GET_BLOCK_BY_NUMBER_METHOD, &args)
-            .await?;
+async fn extract_with_client<Client, Chain>(
+    client: &Client,
+    transaction: Chain::TransactionHash,
+    finality: EthereumFinality,
+    extractors: &[EvmExtractor],
+) -> Result<Vec<EvmExtractedValue<Chain>>, ForeignChainInspectionError>
+where
+    Client: ClientT + Send,
+    Chain: EvmChain,
+{
+    let get_transaction_receipt_args = GetTransactionReceiptARgs {
+        transaction_hash: H256(transaction.into()),
+    };
+    let transaction_receipt: GetTransactionReceiptResponse = client
+        .request(
+            GET_TRANSACTION_RECEIPT_METHOD,
+            &get_transaction_receipt_args,
+        )
+        .await?;
 
-        if head.number < receipt_block_number {
-            return Err(ForeignChainInspectionError::NotFinalized);
-        }
-        Ok(())
+    verify_finality_level(client, transaction_receipt.block_number, finality).await?;
+    verify_block_is_canonical(
+        client,
+        transaction_receipt.block_number,
+        transaction_receipt.block_hash,
+    )
+    .await?;
+
+    let transaction_success = transaction_receipt.status == U64::one();
+
+    if !transaction_success {
+        return Err(ForeignChainInspectionError::TransactionFailed);
     }
 
-    /// Checks that the receipt's block is on the canonical chain by re-fetching the canonical
-    /// block at `receipt_block_number` and comparing hashes. `eth_getBlockByNumber` only ever
-    /// resolves to a canonical block, so a mismatch means the receipt was indexed against a
-    /// side block (stale tx index, partially-applied reorg, divergent RPC backend, etc.).
-    async fn verify_block_is_canonical(
-        &self,
-        receipt_block_number: U64,
-        receipt_block_hash: H256,
-    ) -> Result<(), ForeignChainInspectionError> {
-        let args = GetBlockByNumberArgs::new(
-            BlockNumberOrTag::Number(receipt_block_number),
-            ReturnFullTransactionObjects::from(false),
-        );
-        let canonical: GetBlockByNumberResponse = self
-            .client
-            .request(GET_BLOCK_BY_NUMBER_METHOD, &args)
-            .await?;
+    extractors
+        .iter()
+        .map(|extractor| extractor.extract_value(&transaction_receipt))
+        .collect()
+}
 
-        if canonical.hash != receipt_block_hash {
-            return Err(ForeignChainInspectionError::NonCanonicalBlock {
-                block_number: receipt_block_number,
-                receipt_hash: receipt_block_hash,
-                canonical_hash: canonical.hash,
-            });
-        }
-        Ok(())
+/// Checks that the receipt's block has reached the requested finality level — i.e. that the
+/// head of the chain at `finality` is at or past `receipt_block_number`.
+async fn verify_finality_level<Client: ClientT + Send>(
+    client: &Client,
+    receipt_block_number: U64,
+    finality: EthereumFinality,
+) -> Result<(), ForeignChainInspectionError> {
+    let finality_tag = match finality {
+        EthereumFinality::Finalized => FinalityTag::Finalized,
+        EthereumFinality::Safe => FinalityTag::Safe,
+        EthereumFinality::Latest => FinalityTag::Latest,
+    };
+    let args = GetBlockByNumberArgs::new(
+        BlockNumberOrTag::Tag(finality_tag),
+        ReturnFullTransactionObjects::from(false),
+    );
+    let head: GetBlockByNumberResponse = client.request(GET_BLOCK_BY_NUMBER_METHOD, &args).await?;
+
+    if head.number < receipt_block_number {
+        return Err(ForeignChainInspectionError::NotFinalized);
     }
+    Ok(())
+}
+
+/// Checks that the receipt's block is on the canonical chain by re-fetching the canonical
+/// block at `receipt_block_number` and comparing hashes. `eth_getBlockByNumber` only ever
+/// resolves to a canonical block, so a mismatch means the receipt was indexed against a
+/// side block (stale tx index, partially-applied reorg, divergent RPC backend, etc.).
+async fn verify_block_is_canonical<Client: ClientT + Send>(
+    client: &Client,
+    receipt_block_number: U64,
+    receipt_block_hash: H256,
+) -> Result<(), ForeignChainInspectionError> {
+    let args = GetBlockByNumberArgs::new(
+        BlockNumberOrTag::Number(receipt_block_number),
+        ReturnFullTransactionObjects::from(false),
+    );
+    let canonical: GetBlockByNumberResponse =
+        client.request(GET_BLOCK_BY_NUMBER_METHOD, &args).await?;
+
+    if canonical.hash != receipt_block_hash {
+        return Err(ForeignChainInspectionError::NonCanonicalBlock {
+            block_number: receipt_block_number,
+            receipt_hash: receipt_block_hash,
+            canonical_hash: canonical.hash,
+        });
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

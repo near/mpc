@@ -31,7 +31,7 @@ async fn inspector_extracts_block_hash_against_live_rpc_provider() {
         RpcAuthentication::KeyInUrl,
     )
     .unwrap();
-    let inspector = ArbitrumInspector::new(http_client);
+    let inspector = ArbitrumInspector::new(vec![http_client]);
 
     // when
     let extracted_values = inspector

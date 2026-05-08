@@ -24,51 +24,56 @@ use threshold_signatures::frost_secp256k1::keys::SigningShare;
 use threshold_signatures::frost_secp256k1::VerifyingKey;
 use threshold_signatures::ReconstructionLowerBound;
 
-/// Pre-built HTTP clients for each foreign chain, keyed in provider config order.
+/// Pre-built per-chain inspectors, each wrapping every provider client configured
+/// for that chain. Each inspector internally fans every request out to all of
+/// its clients, so request handling never has to choose between providers.
 ///
-/// Built once at startup so that request handling only needs to select an index
-/// instead of re-parsing config and constructing clients on every call.
+/// Built once at startup so that request handling only needs to look up the
+/// inspector for a chain instead of re-parsing config and constructing clients
+/// on every call.
 pub(crate) struct ForeignChainInspectors<Client> {
-    pub bitcoin: Vec<BitcoinInspector<Client>>,
-    pub abstract_chain: Vec<AbstractInspector<Client>>,
-    pub bnb: Vec<BnbInspector<Client>>,
-    pub starknet: Vec<StarknetInspector<Client>>,
-    pub base: Vec<BaseInspector<Client>>,
-    pub arbitrum: Vec<ArbitrumInspector<Client>>,
-    pub hyper_evm: Vec<HyperEvmInspector<Client>>,
-    pub polygon: Vec<PolygonInspector<Client>>,
+    pub bitcoin: Option<BitcoinInspector<Client>>,
+    pub abstract_chain: Option<AbstractInspector<Client>>,
+    pub bnb: Option<BnbInspector<Client>>,
+    pub starknet: Option<StarknetInspector<Client>>,
+    pub base: Option<BaseInspector<Client>>,
+    pub arbitrum: Option<ArbitrumInspector<Client>>,
+    pub hyper_evm: Option<HyperEvmInspector<Client>>,
+    pub polygon: Option<PolygonInspector<Client>>,
 }
 
 impl ForeignChainInspectors<HttpClient> {
     fn build(config: &ForeignChainsConfig) -> anyhow::Result<Self> {
         // using a macro because the chain config and inspector types differ per chain
-        macro_rules! build_inspectors {
+        macro_rules! build_inspector {
             ($chain_config:expr, $Inspector:ident) => {
                 match $chain_config {
-                    Some(c) => c
-                        .providers
-                        .values()
-                        .map(|p| {
-                            let mut url = p.rpc_url.clone();
-                            let rpc_auth = auth_config_to_rpc_auth(p.auth.clone(), &mut url)?;
-                            let client = foreign_chain_inspector::build_http_client(url, rpc_auth)?;
-                            Ok($Inspector::new(client))
-                        })
-                        .collect::<anyhow::Result<Vec<_>>>()?,
-                    None => vec![],
+                    Some(c) => {
+                        let clients = c
+                            .providers
+                            .values()
+                            .map(|p| {
+                                let mut url = p.rpc_url.clone();
+                                let rpc_auth = auth_config_to_rpc_auth(p.auth.clone(), &mut url)?;
+                                Ok(foreign_chain_inspector::build_http_client(url, rpc_auth)?)
+                            })
+                            .collect::<anyhow::Result<Vec<_>>>()?;
+                        Some($Inspector::new(clients))
+                    }
+                    None => None,
                 }
             };
         }
 
         Ok(Self {
-            bitcoin: build_inspectors!(&config.bitcoin, BitcoinInspector),
-            abstract_chain: build_inspectors!(&config.abstract_chain, AbstractInspector),
-            base: build_inspectors!(&config.base, BaseInspector),
-            bnb: build_inspectors!(&config.bnb, BnbInspector),
-            starknet: build_inspectors!(&config.starknet, StarknetInspector),
-            arbitrum: build_inspectors!(&config.arbitrum, ArbitrumInspector),
-            hyper_evm: build_inspectors!(&config.hyper_evm, HyperEvmInspector),
-            polygon: build_inspectors!(&config.polygon, PolygonInspector),
+            bitcoin: build_inspector!(&config.bitcoin, BitcoinInspector),
+            abstract_chain: build_inspector!(&config.abstract_chain, AbstractInspector),
+            base: build_inspector!(&config.base, BaseInspector),
+            bnb: build_inspector!(&config.bnb, BnbInspector),
+            starknet: build_inspector!(&config.starknet, StarknetInspector),
+            arbitrum: build_inspector!(&config.arbitrum, ArbitrumInspector),
+            hyper_evm: build_inspector!(&config.hyper_evm, HyperEvmInspector),
+            polygon: build_inspector!(&config.polygon, PolygonInspector),
         })
     }
 }

@@ -1,7 +1,9 @@
 use jsonrpsee::core::client::ClientT;
 
 use crate::bitcoin::{BitcoinExtractedValue, BitcoinTransactionHash};
-use crate::{BlockConfirmations, ForeignChainInspectionError, ForeignChainInspector};
+use crate::{
+    BlockConfirmations, ForeignChainInspectionError, ForeignChainInspector, fan_out_and_match,
+};
 use foreign_chain_rpc_interfaces::bitcoin::{
     GetRawTransactionArgs, GetRawTransactionVerboseResponse, TransportBitcoinTransactionHash,
 };
@@ -10,8 +12,12 @@ use foreign_chain_rpc_interfaces::bitcoin::{
 const GET_RAW_TRANSACTION_METHOD: &str = "getrawtransaction";
 const VERBOSE_RESPONSE: bool = true;
 
+/// A Bitcoin inspector that fans every `extract` call out to **all** of its
+/// configured clients in parallel. The call only succeeds if every client
+/// produces the same extracted values, giving the caller a built-in
+/// cross-provider sanity check.
 pub struct BitcoinInspector<Client> {
-    client: Client,
+    clients: Vec<Client>,
 }
 
 impl<Client> ForeignChainInspector for BitcoinInspector<Client>
@@ -29,34 +35,15 @@ where
         block_confirmations_threshold: BlockConfirmations,
         extractors: Vec<BitcoinExtractor>,
     ) -> Result<Vec<BitcoinExtractedValue>, ForeignChainInspectionError> {
-        let request_parameters = GetRawTransactionArgs {
-            transaction_hash: TransportBitcoinTransactionHash::from(*transaction),
-            verbose: VERBOSE_RESPONSE,
-        };
-
-        // TODO(#1978): add retry mechanism if the error from the request is transient
-        let rpc_response: GetRawTransactionVerboseResponse = self
-            .client
-            .request(GET_RAW_TRANSACTION_METHOD, &request_parameters)
-            .await?;
-
-        let transaction_block_confirmation = rpc_response.confirmations.into();
-        let enough_block_confirmations =
-            block_confirmations_threshold <= transaction_block_confirmation;
-
-        if !enough_block_confirmations {
-            return Err(ForeignChainInspectionError::NotEnoughBlockConfirmations {
-                expected: block_confirmations_threshold,
-                got: transaction_block_confirmation,
-            });
-        }
-
-        let extracted_values = extractors
-            .iter()
-            .map(|extractor| extractor.extract_value(&rpc_response))
-            .collect();
-
-        Ok(extracted_values)
+        fan_out_and_match(self.clients.iter().map(|client| {
+            extract_with_client(
+                client,
+                transaction,
+                block_confirmations_threshold,
+                &extractors,
+            )
+        }))
+        .await
     }
 }
 
@@ -64,9 +51,42 @@ impl<Client> BitcoinInspector<Client>
 where
     Client: ClientT + Send,
 {
-    pub fn new(client: Client) -> Self {
-        Self { client }
+    pub fn new(clients: Vec<Client>) -> Self {
+        Self { clients }
     }
+}
+
+async fn extract_with_client<Client: ClientT + Send>(
+    client: &Client,
+    transaction: BitcoinTransactionHash,
+    block_confirmations_threshold: BlockConfirmations,
+    extractors: &[BitcoinExtractor],
+) -> Result<Vec<BitcoinExtractedValue>, ForeignChainInspectionError> {
+    let request_parameters = GetRawTransactionArgs {
+        transaction_hash: TransportBitcoinTransactionHash::from(*transaction),
+        verbose: VERBOSE_RESPONSE,
+    };
+
+    // TODO(#1978): add retry mechanism if the error from the request is transient
+    let rpc_response: GetRawTransactionVerboseResponse = client
+        .request(GET_RAW_TRANSACTION_METHOD, &request_parameters)
+        .await?;
+
+    let transaction_block_confirmation = rpc_response.confirmations.into();
+    let enough_block_confirmations =
+        block_confirmations_threshold <= transaction_block_confirmation;
+
+    if !enough_block_confirmations {
+        return Err(ForeignChainInspectionError::NotEnoughBlockConfirmations {
+            expected: block_confirmations_threshold,
+            got: transaction_block_confirmation,
+        });
+    }
+
+    Ok(extractors
+        .iter()
+        .map(|extractor| extractor.extract_value(&rpc_response))
+        .collect())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

@@ -82,6 +82,35 @@ pub enum ForeignChainInspectionError {
     LogIndexOutOfBounds,
     #[error("failed to borsh serialize log event")]
     EventLogFailedBorshSerialization(std::io::Error),
+    #[error("inspector clients returned mismatching extracted values")]
+    InspectorResponseMismatch,
+    #[error("inspector has no configured RPC clients")]
+    NoClientsConfigured,
+}
+
+/// Drives every per-client extract future to completion in parallel and returns
+/// the shared list of extracted values only if every client agrees on it. Any
+/// RPC failure is surfaced as-is; any disagreement between the clients becomes
+/// an [`ForeignChainInspectionError::InspectorResponseMismatch`].
+pub(crate) async fn fan_out_and_match<T, Fut>(
+    extract_futures: impl IntoIterator<Item = Fut>,
+) -> Result<Vec<T>, ForeignChainInspectionError>
+where
+    Fut: Future<Output = Result<Vec<T>, ForeignChainInspectionError>>,
+    T: PartialEq,
+{
+    let mut results = futures::future::try_join_all(extract_futures)
+        .await?
+        .into_iter();
+    let first = results
+        .next()
+        .ok_or(ForeignChainInspectionError::NoClientsConfigured)?;
+    for other in results {
+        if other != first {
+            return Err(ForeignChainInspectionError::InspectorResponseMismatch);
+        }
+    }
+    Ok(first)
 }
 
 /// Builds an HTTP client with the specified authentication method.

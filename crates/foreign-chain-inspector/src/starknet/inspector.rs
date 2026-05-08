@@ -1,5 +1,5 @@
 use crate::starknet::{StarknetExtractedValue, StarknetTransactionHash};
-use crate::{ForeignChainInspectionError, ForeignChainInspector};
+use crate::{ForeignChainInspectionError, ForeignChainInspector, fan_out_and_match};
 use foreign_chain_rpc_interfaces::starknet::{
     GetTransactionReceiptArgs, GetTransactionReceiptResponse, H256, StarknetExecutionStatus,
     StarknetFinalityStatus,
@@ -9,8 +9,11 @@ use near_mpc_contract_interface::types::{StarknetFelt, StarknetLog};
 
 const GET_TRANSACTION_RECEIPT_METHOD: &str = "starknet_getTransactionReceipt";
 
+/// A Starknet inspector that fans every `extract` call out to **all** of its
+/// configured clients in parallel. The call only succeeds if every client
+/// produces the same extracted values.
 pub struct StarknetInspector<Client> {
-    client: Client,
+    clients: Vec<Client>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -34,36 +37,10 @@ where
         finality: StarknetFinality,
         extractors: Vec<StarknetExtractor>,
     ) -> Result<Vec<StarknetExtractedValue>, ForeignChainInspectionError> {
-        let request_parameters = GetTransactionReceiptArgs {
-            transaction_hash: H256(transaction.into()),
-        };
-
-        let rpc_response: GetTransactionReceiptResponse = self
-            .client
-            .request(GET_TRANSACTION_RECEIPT_METHOD, &request_parameters)
-            .await?;
-
-        if rpc_response.execution_status != StarknetExecutionStatus::Succeeded {
-            return Err(ForeignChainInspectionError::TransactionFailed);
-        }
-
-        let actual_finality = parse_finality_status(&rpc_response.finality_status)?;
-
-        let finality_sufficient = match finality {
-            StarknetFinality::AcceptedOnL2 => true,
-            StarknetFinality::AcceptedOnL1 => actual_finality == StarknetFinality::AcceptedOnL1,
-        };
-
-        if !finality_sufficient {
-            return Err(ForeignChainInspectionError::NotFinalized);
-        }
-
-        let extracted_values = extractors
-            .iter()
-            .map(|extractor| extractor.extract_value(&rpc_response))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        Ok(extracted_values)
+        fan_out_and_match(self.clients.iter().map(|client| {
+            extract_with_client(client, transaction, finality.clone(), &extractors)
+        }))
+        .await
     }
 }
 
@@ -71,9 +48,44 @@ impl<Client> StarknetInspector<Client>
 where
     Client: ClientT + Send,
 {
-    pub fn new(client: Client) -> Self {
-        Self { client }
+    pub fn new(clients: Vec<Client>) -> Self {
+        Self { clients }
     }
+}
+
+async fn extract_with_client<Client: ClientT + Send>(
+    client: &Client,
+    transaction: StarknetTransactionHash,
+    finality: StarknetFinality,
+    extractors: &[StarknetExtractor],
+) -> Result<Vec<StarknetExtractedValue>, ForeignChainInspectionError> {
+    let request_parameters = GetTransactionReceiptArgs {
+        transaction_hash: H256(transaction.into()),
+    };
+
+    let rpc_response: GetTransactionReceiptResponse = client
+        .request(GET_TRANSACTION_RECEIPT_METHOD, &request_parameters)
+        .await?;
+
+    if rpc_response.execution_status != StarknetExecutionStatus::Succeeded {
+        return Err(ForeignChainInspectionError::TransactionFailed);
+    }
+
+    let actual_finality = parse_finality_status(&rpc_response.finality_status)?;
+
+    let finality_sufficient = match finality {
+        StarknetFinality::AcceptedOnL2 => true,
+        StarknetFinality::AcceptedOnL1 => actual_finality == StarknetFinality::AcceptedOnL1,
+    };
+
+    if !finality_sufficient {
+        return Err(ForeignChainInspectionError::NotFinalized);
+    }
+
+    extractors
+        .iter()
+        .map(|extractor| extractor.extract_value(&rpc_response))
+        .collect()
 }
 
 fn parse_finality_status(
