@@ -56,8 +56,13 @@ rpcs:
   - url: https://test.rpc.fastnear.com
     rate_limit: 5
     max_concurrency: 30
+    # api_key: your-api-key   # optional, sent as `Authorization: Bearer <key>`
 infra_ops_path: path-to-infra-ops-repo
 ```
+
+The optional `api_key` field is sent as `Authorization: Bearer <value>` on
+every request to the corresponding endpoint. Omit it to use the public
+endpoint unauthenticated.
 
 * (Optional) Configure a `funding_account` to use a specific account for funding operations:
 
@@ -397,3 +402,24 @@ Collecting Signature Responses
 Found 4 parallel signature responses and 0 failures. Encountered 0 rpc errors.
 Success Rate: 100
 ```
+
+### Running predefined load-shape scenarios
+
+`scripts/loadtest-scenarios.sh` drives the `run` command above through a fixed
+set of load shapes — sustained baseline, higher steady-state, and a low/burst/
+low spike. It is intended for periodic load testing of the testnet contract.
+
+The script uses the parallel-sign helper contract so each RPC transaction
+fans out to multiple signature requests (default `--batch 10`); deploy it
+once with `mpc-devnet loadtest <name> deploy-parallel-sign-contract` before
+running.
+
+```shell
+./scripts/loadtest-scenarios.sh my-test                  # all scenarios
+./scripts/loadtest-scenarios.sh my-test --scenario spike # just the spike
+./scripts/loadtest-scenarios.sh my-test \
+    --contract v1.signer-prod.testnet \
+    --domain 0
+```
+
+Run `./scripts/loadtest-scenarios.sh --help` for the full list of options.
