@@ -305,6 +305,27 @@ mod tests {
     use std::num::NonZeroU64;
     use std::str::FromStr;
 
+    const PROVIDER_ALCHEMY: &str = "alchemy";
+    const PROVIDER_ANKR: &str = "ankr";
+    const PROVIDER_BLAST: &str = "blast";
+    const PROVIDER_PUBLIC: &str = "public";
+
+    const SOLANA_RPC_URL: &str = "https://solana-mainnet.g.alchemy.com/v2/";
+    const BITCOIN_RPC_URL: &str = "https://rpc.ankr.com/btc/{api_key}";
+    const ETHEREUM_RPC_URL: &str = "https://eth-mainnet.g.alchemy.com/v2/";
+    const ABSTRACT_RPC_URL: &str = "https://api.testnet.abs.xyz";
+    const BNB_RPC_URL: &str = "https://bsc-rpc.publicnode.com";
+    const BASE_RPC_URL: &str = "https://base.publicnode.com";
+    const STARKNET_RPC_URL: &str = "https://starknet-mainnet.blastapi.io/";
+    const ARBITRUM_RPC_URL: &str = "https://arbitrum.publicnode.com";
+    const HYPER_EVM_RPC_URL: &str = "https://rpc.hyperliquid.xyz/evm";
+    const POLYGON_RPC_URL: &str = "https://polygon-bor-rpc.publicnode.com";
+
+    const SOLANA_BEARER_TOKEN: &str = "sk-SUPER-SECRET-KEY";
+    const BITCOIN_PATH_TOKEN: &str = "ankr-secret-token";
+    const STARKNET_QUERY_TOKEN: &str = "blast-secret";
+    const ETHEREUM_TOKEN_ENV_VAR: &str = "ALCHEMY_API_KEY";
+
     fn test_chain(provider_name: &str, rpc_url: &str, auth: AuthConfig) -> ForeignChainConfig {
         ForeignChainConfig {
             timeout_sec: NonZeroU64::new(30).unwrap(),
@@ -355,74 +376,66 @@ mod tests {
             keygen: KeygenConfig { timeout_sec: 60 },
             foreign_chains: ForeignChainsConfig {
                 solana: Some(test_chain(
-                    "alchemy",
-                    "https://solana-mainnet.g.alchemy.com/v2/",
+                    PROVIDER_ALCHEMY,
+                    SOLANA_RPC_URL,
                     AuthConfig::Header {
                         name: http::HeaderName::from_static("authorization"),
                         scheme: Some("Bearer".to_string()),
                         token: TokenConfig::Val {
-                            val: "sk-SUPER-SECRET-KEY".to_string(),
+                            val: SOLANA_BEARER_TOKEN.to_string(),
                         },
                     },
                 )),
                 bitcoin: Some(test_chain(
-                    "ankr",
-                    "https://rpc.ankr.com/btc/{api_key}",
+                    PROVIDER_ANKR,
+                    BITCOIN_RPC_URL,
                     AuthConfig::Path {
                         placeholder: "{api_key}".to_string(),
                         token: TokenConfig::Val {
-                            val: "ankr-secret-token".to_string(),
+                            val: BITCOIN_PATH_TOKEN.to_string(),
                         },
                     },
                 )),
                 ethereum: Some(test_chain(
-                    "alchemy",
-                    "https://eth-mainnet.g.alchemy.com/v2/",
+                    PROVIDER_ALCHEMY,
+                    ETHEREUM_RPC_URL,
                     AuthConfig::Query {
                         name: "api_key".to_string(),
                         token: TokenConfig::Env {
-                            env: "ALCHEMY_API_KEY".to_string(),
+                            env: ETHEREUM_TOKEN_ENV_VAR.to_string(),
                         },
                     },
                 )),
                 abstract_chain: Some(test_chain(
-                    "public",
-                    "https://api.testnet.abs.xyz",
+                    PROVIDER_PUBLIC,
+                    ABSTRACT_RPC_URL,
                     AuthConfig::None,
                 )),
-                bnb: Some(test_chain(
-                    "public",
-                    "https://bsc-rpc.publicnode.com",
-                    AuthConfig::None,
-                )),
-                base: Some(test_chain(
-                    "public",
-                    "https://base.publicnode.com",
-                    AuthConfig::None,
-                )),
+                bnb: Some(test_chain(PROVIDER_PUBLIC, BNB_RPC_URL, AuthConfig::None)),
+                base: Some(test_chain(PROVIDER_PUBLIC, BASE_RPC_URL, AuthConfig::None)),
                 starknet: Some(test_chain(
-                    "blast",
-                    "https://starknet-mainnet.blastapi.io/",
+                    PROVIDER_BLAST,
+                    STARKNET_RPC_URL,
                     AuthConfig::Query {
                         name: "api_key".to_string(),
                         token: TokenConfig::Val {
-                            val: "blast-secret".to_string(),
+                            val: STARKNET_QUERY_TOKEN.to_string(),
                         },
                     },
                 )),
                 arbitrum: Some(test_chain(
-                    "public",
-                    "https://arbitrum.publicnode.com",
+                    PROVIDER_PUBLIC,
+                    ARBITRUM_RPC_URL,
                     AuthConfig::None,
                 )),
                 hyper_evm: Some(test_chain(
-                    "public",
-                    "https://rpc.hyperliquid.xyz/evm",
+                    PROVIDER_PUBLIC,
+                    HYPER_EVM_RPC_URL,
                     AuthConfig::None,
                 )),
                 polygon: Some(test_chain(
-                    "public",
-                    "https://polygon-bor-rpc.publicnode.com",
+                    PROVIDER_PUBLIC,
+                    POLYGON_RPC_URL,
                     AuthConfig::None,
                 )),
             },
@@ -457,13 +470,24 @@ mod tests {
             "arbitrum",
             "hyper_evm",
             "polygon",
-            "alchemy",
-            "ankr",
-            "blast",
-            "sk-SUPER-SECRET-KEY",
-            "ankr-secret-token",
-            "blast-secret",
-            "ALCHEMY_API_KEY",
+            PROVIDER_ALCHEMY,
+            PROVIDER_ANKR,
+            PROVIDER_BLAST,
+            PROVIDER_PUBLIC,
+            SOLANA_RPC_URL,
+            BITCOIN_RPC_URL,
+            ETHEREUM_RPC_URL,
+            ABSTRACT_RPC_URL,
+            BNB_RPC_URL,
+            BASE_RPC_URL,
+            STARKNET_RPC_URL,
+            ARBITRUM_RPC_URL,
+            HYPER_EVM_RPC_URL,
+            POLYGON_RPC_URL,
+            SOLANA_BEARER_TOKEN,
+            BITCOIN_PATH_TOKEN,
+            STARKNET_QUERY_TOKEN,
+            ETHEREUM_TOKEN_ENV_VAR,
         ];
         for needle in forbidden {
             assert!(
