@@ -72,18 +72,17 @@ pub struct RecentBlocksTracker<T: Clone + 'static> {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum CheckBlockResult {
-    /// The block is within the recent window, and also finalized by the blockchain
-    /// (it is an ancestor (including self) of the latest final block).
+    /// The block is finalized by the blockchain.
+    /// It is an ancestor (including self) of the latest final block.
     Final,
     /// The block is optimistically included in the chain, and it is on the canonical chain,
-    /// but it is not yet part of the final chain. It is also recent enough.
+    /// but it is not yet part of the final chain.
     /// Note that if two chains tie for canonical height, the first one seen is considered the
     /// canonical chain (c.f. `RecentBlocksTracker::update_canonical_head`).
     OptimisticAndCanonical,
     /// The block is optimistically included in the chain, but it is not on the canonical chain.
-    /// It is also recent enough.
     OptimisticButNotCanonical,
-    /// We may have not seen the block and removed it, or we may never have seen it.
+    /// We may have seen the block and removed it, or we may never have seen it.
     Unknown,
 }
 
