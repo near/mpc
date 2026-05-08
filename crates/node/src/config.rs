@@ -474,10 +474,17 @@ pub fn auth_config_to_rpc_auth(
         }
         AuthConfig::Query { name, token } => {
             let token_value = token.resolve()?;
-            let mut parsed = url::Url::parse(rpc_url)
-                .with_context(|| format!("invalid RPC URL: `{rpc_url}`"))?;
-            parsed.query_pairs_mut().append_pair(&name, &token_value);
-            *rpc_url = parsed.into();
+            // Validate the URL but preserve original bytes — using `Url::parse` then
+            // writing back its `to_string()` would normalize host casing, append a
+            // trailing `/`, etc. The other arms leave the URL byte-identical aside
+            // from placeholder substitution, so do the same here.
+            url::Url::parse(rpc_url).with_context(|| format!("invalid RPC URL: `{rpc_url}`"))?;
+            let encoded_pair = url::form_urlencoded::Serializer::new(String::new())
+                .append_pair(&name, &token_value)
+                .finish();
+            let separator = if rpc_url.contains('?') { '&' } else { '?' };
+            rpc_url.push(separator);
+            rpc_url.push_str(&encoded_pair);
             Ok(RpcAuthentication::KeyInUrl)
         }
     }
@@ -1010,6 +1017,27 @@ cores: 4
         // Then
         assert_matches!(result, RpcAuthentication::KeyInUrl);
         assert_eq!(url, "https://rpc.example.com/?api-key=a+b%2Bc");
+    }
+
+    #[test]
+    fn auth_config_to_rpc_auth__query_auth_preserves_original_url_bytes() {
+        // Given: a URL with no trailing slash. `Url::parse(...).to_string()` would
+        // normalize this to `https://rpc.example.com/`, but we want to preserve the
+        // operator's exact input aside from the appended auth pair.
+        let auth = AuthConfig::Query {
+            name: "api-key".to_string(),
+            token: TokenConfig::Val {
+                val: "k".to_string(),
+            },
+        };
+        let mut url = "https://rpc.example.com".to_string();
+
+        // When
+        let result = auth_config_to_rpc_auth(auth, &mut url).unwrap();
+
+        // Then
+        assert_matches!(result, RpcAuthentication::KeyInUrl);
+        assert_eq!(url, "https://rpc.example.com?api-key=k");
     }
 
     #[test]
