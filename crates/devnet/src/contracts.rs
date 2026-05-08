@@ -18,6 +18,20 @@ use rand::Rng;
 use rand::RngCore;
 use serde::Serialize;
 
+/// Gas attached to a `sign` (or legacy `sign`) request. Matches the e2e
+/// test cluster's `SIGN_GAS` and the contract's
+/// `sign_call_gas_attachment_requirement_tera_gas` minimum.
+const SIGN_TGAS: u64 = 15;
+/// Gas attached to a `request_app_private_key` (CKD) call. Matches the
+/// e2e cluster's `CKD_PV_GAS`. CKD is more expensive than `sign` because
+/// `AppPublicKeyPV` does an on-chain bls12381 pairing check before
+/// yielding.
+const CKD_TGAS: u64 = 100;
+/// Gas attached to a `make_parallel_sign_calls` invocation on the
+/// parallel-sign helper contract. The helper schedules up to ~10
+/// sub-calls into the MPC contract, so this needs the full block budget.
+const PARALLEL_SIGN_TGAS: u64 = 300;
+
 #[derive(Clone)]
 pub struct ActionCall {
     pub receiver_id: AccountId,
@@ -86,7 +100,7 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
                         seed: rand::random(),
                     })
                     .unwrap(),
-                    300,
+                    PARALLEL_SIGN_TGAS,
                     1,
                 )],
             }
@@ -103,7 +117,7 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
                     },
                 })
                 .unwrap(),
-                300,
+                SIGN_TGAS,
                 1,
             )],
         },
@@ -119,7 +133,7 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
                     },
                 })
                 .unwrap(),
-                300,
+                SIGN_TGAS,
                 1,
             )],
         },
@@ -135,7 +149,7 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
                     },
                 })
                 .unwrap(),
-                300,
+                CKD_TGAS,
                 1,
             )],
         },
