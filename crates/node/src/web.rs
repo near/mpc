@@ -9,12 +9,9 @@ use axum::{serve, Json};
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use mpc_attestation::attestation::Attestation;
-use mpc_node_config::foreign_chains::{
-    ForeignChainConfig, ForeignChainProviderConfig, RpcProviderName,
-};
 use mpc_node_config::{
-    CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, PresignatureConfig,
-    SignatureConfig, TripleConfig,
+    CKDConfig, ConfigFile, IndexerConfig, KeygenConfig, PresignatureConfig, SignatureConfig,
+    TripleConfig,
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
@@ -22,9 +19,7 @@ use near_mpc_contract_interface::types::ProtocolContractState;
 use node_types::http_server::StaticWebData;
 use prometheus::{default_registry, Encoder, TextEncoder};
 use serde::Serialize;
-use std::collections::BTreeMap;
 use std::net::SocketAddr;
-use std::num::NonZeroU64;
 use std::sync::{Arc, OnceLock};
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc, watch};
@@ -92,7 +87,6 @@ struct NodeConfigResponse {
     signature: SignatureConfig,
     ckd: CKDConfig,
     keygen: KeygenConfig,
-    foreign_chains: ForeignChains,
     cores: Option<usize>,
 }
 
@@ -111,87 +105,7 @@ impl From<ConfigFile> for NodeConfigResponse {
             signature: config.signature,
             ckd: config.ckd,
             keygen: config.keygen,
-            foreign_chains: config.foreign_chains.into(),
             cores: config.cores,
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// API-safe duplicates of foreign-chain config types.
-// These deliberately omit sensitive fields (auth tokens, credentials) so they
-// can never be leaked through the debug endpoint.
-// ---------------------------------------------------------------------------
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct ForeignChains {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    solana: Option<ForeignChain>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    bitcoin: Option<ForeignChain>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    ethereum: Option<ForeignChain>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    abstract_chain: Option<ForeignChain>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    starknet: Option<ForeignChain>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    bnb: Option<ForeignChain>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    base: Option<ForeignChain>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    arbitrum: Option<ForeignChain>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    hyper_evm: Option<ForeignChain>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    polygon: Option<ForeignChain>,
-}
-
-impl From<ForeignChainsConfig> for ForeignChains {
-    fn from(config: ForeignChainsConfig) -> Self {
-        Self {
-            solana: config.solana.map(Into::into),
-            bitcoin: config.bitcoin.map(Into::into),
-            ethereum: config.ethereum.map(Into::into),
-            abstract_chain: config.abstract_chain.map(Into::into),
-            starknet: config.starknet.map(Into::into),
-            bnb: config.bnb.map(Into::into),
-            base: config.base.map(Into::into),
-            arbitrum: config.arbitrum.map(Into::into),
-            hyper_evm: config.hyper_evm.map(Into::into),
-            polygon: config.polygon.map(Into::into),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct ForeignChain {
-    timeout_sec: NonZeroU64,
-    max_retries: NonZeroU64,
-    providers: BTreeMap<RpcProviderName, ForeignChainProvider>,
-}
-
-impl From<ForeignChainConfig> for ForeignChain {
-    fn from(config: ForeignChainConfig) -> Self {
-        let providers: BTreeMap<RpcProviderName, ForeignChainProviderConfig> =
-            config.providers.into();
-        Self {
-            timeout_sec: config.timeout_sec,
-            max_retries: config.max_retries,
-            providers: providers.into_iter().map(|(k, v)| (k, v.into())).collect(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct ForeignChainProvider {
-    rpc_url: String,
-}
-
-impl From<ForeignChainProviderConfig> for ForeignChainProvider {
-    fn from(provider: ForeignChainProviderConfig) -> Self {
-        Self {
-            rpc_url: provider.rpc_url,
         }
     }
 }
@@ -381,10 +295,14 @@ pub async fn start_web_server(
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use mpc_node_config::{AuthConfig, SyncMode, TokenConfig};
+    use mpc_node_config::foreign_chains::{
+        ForeignChainConfig, ForeignChainProviderConfig, RpcProviderName,
+    };
+    use mpc_node_config::{AuthConfig, ForeignChainsConfig, SyncMode, TokenConfig};
     use near_indexer_primitives::types::Finality;
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use std::net::Ipv4Addr;
+    use std::num::NonZeroU64;
     use std::str::FromStr;
 
     fn test_chain(provider_name: &str, rpc_url: &str, auth: AuthConfig) -> ForeignChainConfig {
@@ -402,7 +320,9 @@ mod tests {
     }
 
     /// Builds a [`ConfigFile`] with one provider per chain, each exercising a
-    /// different [`AuthConfig`] variant so every conversion path is covered.
+    /// different [`AuthConfig`] variant. Used to verify that no part of
+    /// `foreign_chains` (chain names, provider names, URLs, auth, tokens, or
+    /// secret values) ever appears in the serialized debug response.
     fn test_config() -> ConfigFile {
         ConfigFile {
             my_near_account_id: AccountId::from_str("test.near").unwrap(),
@@ -511,183 +431,45 @@ mod tests {
     }
 
     #[test]
-    fn node_config_response_from__omits_auth_from_solana_provider() {
-        // Given
-        let config = test_config();
-
-        // When
-        let response = NodeConfigResponse::from(config);
-
-        // Then
-        let provider = &response.foreign_chains.solana.unwrap().providers
-            [&RpcProviderName::from("alchemy".to_string())];
-
-        assert_eq!(
-            *provider,
-            ForeignChainProvider {
-                rpc_url: "https://solana-mainnet.g.alchemy.com/v2/".to_string(),
-            }
-        );
-    }
-
-    #[test]
-    fn node_config_response_from__omits_auth_from_bitcoin_provider() {
-        // Given
-        let config = test_config();
-
-        // When
-        let response = NodeConfigResponse::from(config);
-
-        // Then
-        let provider = &response.foreign_chains.bitcoin.unwrap().providers
-            [&RpcProviderName::from("ankr".to_string())];
-
-        assert_eq!(
-            *provider,
-            ForeignChainProvider {
-                rpc_url: "https://rpc.ankr.com/btc/{api_key}".to_string(),
-            }
-        );
-    }
-
-    #[test]
-    fn node_config_response_from__omits_auth_from_ethereum_provider() {
-        // Given
-        let config = test_config();
-
-        // When
-        let response = NodeConfigResponse::from(config);
-
-        // Then
-        let provider = &response.foreign_chains.ethereum.unwrap().providers
-            [&RpcProviderName::from("alchemy".to_string())];
-        assert_eq!(
-            *provider,
-            ForeignChainProvider {
-                rpc_url: "https://eth-mainnet.g.alchemy.com/v2/".to_string(),
-            }
-        );
-    }
-
-    #[test]
-    fn node_config_response_from__omits_auth_from_abstract_provider() {
-        // Given
-        let config = test_config();
-
-        // When
-        let response = NodeConfigResponse::from(config);
-
-        // Then
-        let provider = &response.foreign_chains.abstract_chain.unwrap().providers
-            [&RpcProviderName::from("public".to_string())];
-        assert_eq!(
-            *provider,
-            ForeignChainProvider {
-                rpc_url: "https://api.testnet.abs.xyz".to_string(),
-            }
-        );
-    }
-
-    #[test]
-    fn node_config_response_from__omits_auth_from_starknet_provider() {
-        // Given
-        let config = test_config();
-
-        // When
-        let response = NodeConfigResponse::from(config);
-
-        // Then
-        let provider = &response.foreign_chains.starknet.unwrap().providers
-            [&RpcProviderName::from("blast".to_string())];
-
-        assert_eq!(
-            *provider,
-            ForeignChainProvider {
-                rpc_url: "https://starknet-mainnet.blastapi.io/".to_string(),
-            }
-        );
-    }
-
-    #[test]
-    fn node_config_response_from__omits_auth_from_bnb_provider() {
-        // Given
-        let config = test_config();
-
-        // When
-        let response = NodeConfigResponse::from(config);
-
-        // Then
-        let provider = &response.foreign_chains.bnb.unwrap().providers
-            [&RpcProviderName::from("public".to_string())];
-        assert_eq!(
-            *provider,
-            ForeignChainProvider {
-                rpc_url: "https://bsc-rpc.publicnode.com".to_string(),
-            }
-        );
-    }
-
-    #[test]
-    fn node_config_response_from__omits_auth_from_base_provider() {
-        // Given
-        let config = test_config();
-
-        // When
-        let response = NodeConfigResponse::from(config);
-
-        // Then
-        let provider = &response.foreign_chains.base.unwrap().providers
-            [&RpcProviderName::from("public".to_string())];
-        assert_eq!(
-            *provider,
-            ForeignChainProvider {
-                rpc_url: "https://base.publicnode.com".to_string(),
-            }
-        );
-    }
-
-    #[test]
-    fn node_config_response_from__preserves_chain_level_fields() {
-        // Given
-        let config = test_config();
-
-        // When
-        let response = NodeConfigResponse::from(config);
-
-        // Then
-        let solana = response.foreign_chains.solana.unwrap();
-        assert_eq!(solana.timeout_sec.get(), 30);
-        assert_eq!(solana.max_retries.get(), 3);
-    }
-
-    #[test]
-    fn node_config_response_json__does_not_contain_auth() {
+    fn node_config_response_json__does_not_leak_foreign_chain_info() {
         // Given
         let config = test_config();
 
         // When
         let json = serde_json::to_string(&NodeConfigResponse::from(config)).unwrap();
 
-        // Then
-        assert!(
-            !json.contains("auth"),
-            "JSON response must not contain auth fields, got: {json}"
-        );
-        assert!(
-            !json.contains("token"),
-            "JSON response must not contain token fields, got: {json}"
-        );
-        assert!(
-            !json.contains("sk-SUPER-SECRET-KEY"),
-            "JSON response must not contain secret values"
-        );
-        assert!(
-            !json.contains("ankr-secret-token"),
-            "JSON response must not contain secret values"
-        );
-        assert!(
-            !json.contains("blast-secret"),
-            "JSON response must not contain secret values"
-        );
+        // Then — neither the foreign_chains block nor any of its inner fields
+        // (chain keys, provider names, URLs, auth/token metadata, or secret
+        // values) may appear in the public debug response.
+        let forbidden = [
+            "foreign_chains",
+            "rpc_url",
+            "auth",
+            "token",
+            "providers",
+            "solana",
+            "bitcoin",
+            "ethereum",
+            "abstract_chain",
+            "starknet",
+            "bnb",
+            "base",
+            "arbitrum",
+            "hyper_evm",
+            "polygon",
+            "alchemy",
+            "ankr",
+            "blast",
+            "sk-SUPER-SECRET-KEY",
+            "ankr-secret-token",
+            "blast-secret",
+            "ALCHEMY_API_KEY",
+        ];
+        for needle in forbidden {
+            assert!(
+                !json.contains(needle),
+                "JSON response must not contain `{needle}`, got: {json}"
+            );
+        }
     }
 }
