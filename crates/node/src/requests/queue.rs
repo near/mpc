@@ -470,6 +470,9 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                     "discarding expired request"
                 );
                 // Increment metric for timeout (only for signature requests)
+                // Note that this is not necessarily a good signal for measuring signature request
+                // timeouts. It may be that our node indexer lags behind other indexers in the
+                // network and we simply haven't seen the signature response yet.
                 if matches!(RequestType::get_type(), types::RequestType::Signature) {
                     metrics::MPC_CLUSTER_FAILED_SIGNATURES_COUNT
                         .with_label_values(&["timeout"])
@@ -566,10 +569,13 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                         reason = ?block_classification,
                         "discarding request because it was not included, expired, or the tracker removed the block"
                     );
-                    // Increment metric for timeout (only for signature requests)
+                    // Increment failed signature count.
+                    // This signature probably ended up in a block that was never included in chain.
+                    // This is not a good signal for timed out signature responses, which is why we
+                    // add the label "block_not_found".
                     if matches!(RequestType::get_type(), types::RequestType::Signature) {
                         metrics::MPC_CLUSTER_FAILED_SIGNATURES_COUNT
-                            .with_label_values(&["timeout"])
+                            .with_label_values(&["block_not_found"])
                             .inc();
                     }
 
