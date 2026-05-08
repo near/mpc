@@ -6,7 +6,7 @@ Goals:
 
 - Provide a shared, generic verifier serving any Intel TDX-based NEAR contract — `dcap-qvl` bugfixes ship once.
 - Shrink the MPC contract WASM below the NEP-509 limit by breaking attestation verification out into a separate contract.
-- Roll out incrementally. The MPC team needs the breakout shipped quickly, so v1 keeps state migration to zero. Architectural improvements (per-team policy contracts, on-chain PCCS caching, ACL-shaped interfaces) follow in v2 and v3.
+- Roll out incrementally: v1 keeps state migration to zero. Architectural improvements follow in v2 (per-team policy contracts) and v3 (ACL-shaped interfaces, on-chain PCCS caching).
 
 Design choices that follow from these goals, applied throughout the design below:
 
@@ -52,15 +52,17 @@ The MPC team needs the contract shrunk fast, so v1 is deliberately small: extrac
 │  Global Contract by CodeHash │
 │  verify_quote(...)           │
 │  → VerifiedReport            │
-└──────────────▲───────────────┘
-               │ Promise(verify_quote)
-               │ (cold path: submit_participant_info only)
-┌──────────────┴───────────────┐
-│  mpc-contract                │
-│  TeeState unchanged          │
-│  stored_attestations cache   │
-│  re_verify hot path local    │
-└──────────────────────────────┘
+└──────▲────────────────┬──────┘
+       │                │
+       │ Promise        │ VerifiedReport
+       │ (verify_quote) │ (callback)
+       │                ▼
+┌──────┴────────────────────────┐
+│  mpc-contract                 │
+│  TeeState unchanged           │
+│  stored_attestations cache    │
+│  re_verify hot path local     │
+└───────────────────────────────┘
 ```
 
 ### Verifier contract
@@ -118,22 +120,17 @@ The post-DCAP checks happen on the MPC contract because:
 
 Each verified attestation is **cached** in the MPC contract's `stored_attestations` (keyed by TLS pubkey, just like today). Subsequent operations — signing, re-verification on allowlist changes, post-reshare cleanup — read from this cache and never call the verifier. The verifier is only invoked once per node onboarding.
 
-### Re-verification stays local
+### Re-verification doesn't call the verifier
 
 `re_verify`, `verify_tee`, post-reshare cleanup, and `clean_invalid_attestations` are unchanged in v1. They operate on cached `ValidatedDstackAttestation` blobs and do hash comparisons against the current allowlists. None of them call the verifier; they don't even need a Promise. Same property as today.
 
-In v2/v3, this logic moves into the per-team policy contract (see "Long-Term Direction" below) but the property — re-verification is in-process and local to whoever holds the cache — is preserved.
-
-### PCCS / collateral handling
-
-Unchanged in v1: the off-chain MPC node fetches collateral via `tee-authority` → Dstack → PCCS and submits it inline as part of the attestation payload. The verifier accepts inline collateral on every call.
-
-On-chain PCCS caching is desirable long-term but not blocking; pinned to v3 below.
+In v2/v3, this logic moves into the per-team policy contract (see "Long-Term Direction" below). At every version, re-checking already-stored attestations against current allowlists never calls the verifier — it's a local read of the cache (`mpc-contract`'s in v1, `mpc-tee-policy`'s in v2/v3). The verifier only runs at first submission, never on re-checks.
 
 ### What v1 saves
 
 - The `mpc-contract` WASM no longer transitively depends on `dcap-qvl`, `ring`, `webpki`, or X.509 parsing. This is the load-bearing reduction for the NEP-509 size constraint.
 - No on-chain state migration: existing `stored_attestations` and allowlists keep their Borsh layout, all governance entry points keep working. The only behavioural change is that `submit_participant_info` becomes a two-step transaction.
+- PCCS / collateral handling is unchanged: the off-chain MPC node fetches collateral via `tee-authority` → Dstack → PCCS and submits it inline as part of the attestation payload, and the verifier accepts inline collateral on every call. On-chain PCCS caching is pinned to v3.
 
 ## Long-Term Direction
 
@@ -152,8 +149,9 @@ On-chain PCCS caching is desirable long-term but not blocking; pinned to v3 belo
    │ (per-team)     │  │  (per-team)      │  │ (per-team)       │
    │ allowlists,    │  │                  │  │                  │
    │ stored_attest- │  │                  │  │                  │
-   │ ations, admin  │  │                  │  │                  │
-   │ for governance │  │                  │  │                  │
+   │ ations,        │  │                  │  │                  │
+   │ admin_id for   │  │                  │  │                  │
+   │ governance     │  │                  │  │                  │
    └──────────▲─────┘  └───────────▲──────┘  └───────────▲──────┘
               │ is_attested?       │                     │
               │ (hot path)         │                     │
@@ -166,8 +164,6 @@ On-chain PCCS caching is desirable long-term but not blocking; pinned to v3 belo
 Per-team policy contract (e.g., `mpc-tee-policy.near`) holds: allowlists, the team's extra-check logic, and `stored_attestations`. Each team's policy contract has its own `admin_id` for governance — the `admin_id` is per-team, not shared. That admin can be a DAO, a proxy, a multisig, or a single account. Different teams can pick different governance schemes behind the same interface.
 
 Application contract becomes TEE-agnostic and asks the policy "is this node attested?". Re-verification on allowlist change moves with `TeeState` into `mpc-tee-policy`; the verifier remains uninvolved.
-
-The migration is mechanical: read `TeeState` from `mpc-contract`, write into `mpc-tee-policy`, mark migrated, repoint application callers. State is preserved; on-chain Borsh layout is preserved by re-using the existing structs in the new account.
 
 ### v2 application/policy interface
 
@@ -184,11 +180,12 @@ trait TeePolicyContract {
     ) -> Promise;
 
     // Hot path: is this node currently attested?
-    // The application contract is responsible for caching answers
-    // (e.g., a thin local replica updated by policy push notifications, or
-    // coarse-grained authorization at session boundaries) so the hot signing
-    // path doesn't issue a Promise per signature. The policy contract is the
-    // source of truth; the application's cache is an optimization. // TODO I think this could be cached in this contract, not in the application contract
+    // Answered from the policy contract's local state — `stored_attestations`
+    // is right here, so no further Promises are issued. The application
+    // contract pays one cross-contract call per check; that's the same
+    // round-trip we already accept for `vote_*` flows. If profiling later
+    // shows it's still too expensive on the signing path, application-side
+    // caching becomes a v3 optimization.
     fn is_attested(&self, node_id: NodeId) -> bool;
 
     // Triggered by an admin action that changes allowlists.
