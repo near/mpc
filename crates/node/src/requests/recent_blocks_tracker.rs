@@ -72,8 +72,6 @@ pub struct RecentBlocksTracker<T: Clone + 'static> {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum CheckBlockResult {
-    /// The block is older than the recent window of blocks we keep.
-    OlderThanRecentWindow,
     /// The block is within the recent window, and also finalized by the blockchain
     /// (it is an ancestor (including self) of the latest final block).
     Final,
@@ -566,16 +564,6 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
     pub fn classify_block(&self, block_hash: CryptoHash) -> CheckBlockResult {
         match self.hash_to_node.get(&block_hash) {
             Some(node) => {
-                if self
-                    .maximum_height_available
-                    .saturating_sub(self.window_size)
-                    .add(1)
-                    > node.height
-                {
-                    // this can happen if the block in question is expired, but has not yet been
-                    // removed because it is the last final block
-                    return CheckBlockResult::OlderThanRecentWindow;
-                }
                 if node.is_final.load(Ordering::Relaxed) {
                     return CheckBlockResult::Final;
                 }
@@ -899,7 +887,7 @@ pub mod tests {
         assert_eq!(t.check(&b10), CheckBlockResult::Unknown);
         // The tracker kept the block internally as it is the last final block, but it is still
         // outside of the window.
-        assert_eq!(t.check(&b11), CheckBlockResult::OlderThanRecentWindow);
+        assert_eq!(t.check(&b11), CheckBlockResult::Final);
         assert_eq!(t.check(&b12), CheckBlockResult::OptimisticAndCanonical);
         assert_eq!(t.check(&b13), CheckBlockResult::OptimisticButNotCanonical);
         assert_eq!(t.check(&b14), CheckBlockResult::OptimisticButNotCanonical);
@@ -919,7 +907,7 @@ pub mod tests {
         //      └─[16]     81v6keTjdkVp8RgTdWQE2vx7E7nof7NxtZNaYFh3oVpG "16"
         t.print();
 
-        assert_eq!(t.check(&b13), CheckBlockResult::OlderThanRecentWindow);
+        assert_eq!(t.check(&b13), CheckBlockResult::OptimisticButNotCanonical);
         assert_eq!(t.check(&b14), CheckBlockResult::OptimisticAndCanonical);
         assert_eq!(t.check(&b16), CheckBlockResult::OptimisticButNotCanonical);
         assert_eq!(t.check(&b18), CheckBlockResult::OptimisticAndCanonical);
@@ -998,13 +986,13 @@ pub mod tests {
         //        ├─[9]     6E2vqjZLbuUY2y6VK571Ai3pk43EUHXuNxibJuBGh44T "b110"
         //        └─[10]     Cq9uMZqNZr6zuF7nT6yfGms1ptaVVu5dAdiRJ6pqCTN8 "b111"
         t.print();
-        assert_eq!(t.check(&b0), CheckBlockResult::OlderThanRecentWindow);
+        assert_eq!(t.check(&b0), CheckBlockResult::OptimisticAndCanonical);
         assert_eq!(t.check(&b00), CheckBlockResult::OptimisticButNotCanonical);
         assert_eq!(t.check(&b000), CheckBlockResult::OptimisticButNotCanonical);
         assert_eq!(t.check(&b01), CheckBlockResult::OptimisticAndCanonical);
         assert_eq!(t.check(&b010), CheckBlockResult::OptimisticButNotCanonical);
         assert_eq!(t.check(&b011), CheckBlockResult::OptimisticAndCanonical);
-        assert_eq!(t.check(&b1), CheckBlockResult::OlderThanRecentWindow);
+        assert_eq!(t.check(&b1), CheckBlockResult::OptimisticButNotCanonical);
         assert_eq!(t.check(&b10), CheckBlockResult::OptimisticButNotCanonical);
         assert_eq!(t.check(&b100), CheckBlockResult::OptimisticButNotCanonical);
         assert_eq!(t.check(&b11), CheckBlockResult::OptimisticButNotCanonical);

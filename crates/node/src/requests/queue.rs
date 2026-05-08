@@ -553,9 +553,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                         "ignoring non-canonical request",
                     );
                 }
-                CheckBlockResult::OlderThanRecentWindow | CheckBlockResult::Unknown => {
-                    // note: We will not receive "OlderThanRecentWindow" if the `RecentBlocksTracker`
-                    // has the same recency window as the queue.
+                CheckBlockResult::Unknown => {
                     // Since we add signature requests to the queue after adding the block to the
                     // tracker, receiving `Unknown` means that the tracker removed the block, most
                     // likely due to the block being expired.
