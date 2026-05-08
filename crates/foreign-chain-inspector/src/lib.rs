@@ -88,10 +88,6 @@ pub enum ForeignChainInspectionError {
     NoClientsConfigured,
 }
 
-/// Drives every per-client extract future to completion in parallel and returns
-/// the shared list of extracted values only if every client agrees on it. Any
-/// RPC failure is surfaced as-is; any disagreement between the clients becomes
-/// an [`ForeignChainInspectionError::InspectorResponseMismatch`].
 pub(crate) async fn fan_out_and_match<T, Fut>(
     extract_futures: impl IntoIterator<Item = Fut>,
 ) -> Result<Vec<T>, ForeignChainInspectionError>

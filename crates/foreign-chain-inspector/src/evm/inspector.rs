@@ -21,18 +21,11 @@ const GET_BLOCK_BY_NUMBER_METHOD: &str = "eth_getBlockByNumber";
 /// Each chain provides its own block-hash and transaction-hash newtypes so that
 /// different chains remain type-incompatible at the call site, while sharing the
 /// single [`EvmInspector`] implementation.
-///
-/// `PartialEq + Eq` on the marker itself satisfies the derive on
-/// [`EvmExtractedValue`], which compares chain-keyed extracted values when the
-/// inspector fans out across multiple clients.
 pub trait EvmChain: PartialEq + Eq {
     type BlockHash: From<[u8; 32]> + Into<[u8; 32]> + Clone + Debug + PartialEq + Eq + Hash;
     type TransactionHash: From<[u8; 32]> + Into<[u8; 32]> + Clone + Debug + PartialEq + Eq + Hash;
 }
 
-/// An EVM inspector that fans every `extract` call out to **all** of its
-/// configured clients in parallel. The call only succeeds if every client
-/// produces the same extracted values.
 pub struct EvmInspector<Client, Chain> {
     clients: Vec<Client>,
     _chain: std::marker::PhantomData<Chain>,

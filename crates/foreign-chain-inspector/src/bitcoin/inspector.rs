@@ -12,10 +12,6 @@ use foreign_chain_rpc_interfaces::bitcoin::{
 const GET_RAW_TRANSACTION_METHOD: &str = "getrawtransaction";
 const VERBOSE_RESPONSE: bool = true;
 
-/// A Bitcoin inspector that fans every `extract` call out to **all** of its
-/// configured clients in parallel. The call only succeeds if every client
-/// produces the same extracted values, giving the caller a built-in
-/// cross-provider sanity check.
 pub struct BitcoinInspector<Client> {
     clients: Vec<Client>,
 }

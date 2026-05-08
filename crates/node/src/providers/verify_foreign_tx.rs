@@ -24,13 +24,6 @@ use threshold_signatures::frost_secp256k1::keys::SigningShare;
 use threshold_signatures::frost_secp256k1::VerifyingKey;
 use threshold_signatures::ReconstructionLowerBound;
 
-/// Pre-built per-chain inspectors, each wrapping every provider client configured
-/// for that chain. Each inspector internally fans every request out to all of
-/// its clients, so request handling never has to choose between providers.
-///
-/// Built once at startup so that request handling only needs to look up the
-/// inspector for a chain instead of re-parsing config and constructing clients
-/// on every call.
 pub(crate) struct ForeignChainInspectors<Client> {
     pub bitcoin: Option<BitcoinInspector<Client>>,
     pub abstract_chain: Option<AbstractInspector<Client>>,

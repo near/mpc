@@ -9,9 +9,6 @@ use near_mpc_contract_interface::types::{StarknetFelt, StarknetLog};
 
 const GET_TRANSACTION_RECEIPT_METHOD: &str = "starknet_getTransactionReceipt";
 
-/// A Starknet inspector that fans every `extract` call out to **all** of its
-/// configured clients in parallel. The call only succeeds if every client
-/// produces the same extracted values.
 pub struct StarknetInspector<Client> {
     clients: Vec<Client>,
 }
