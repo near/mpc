@@ -89,8 +89,7 @@ run_scenario() {
     echo
 }
 
-# Acceptance criterion from near/mpc-private#320 is "sustained load of at
-# least 100 transactions per minute".  2 sigs/s = 120 tpm; 10 minutes gives
+# 2 sigs/s = 120 tpm; 10 minutes gives
 # 1200 signatures which is enough to see whether the failure rate is
 # stable over time.
 scenario_sustained() { run_scenario sustained 2 600; }
