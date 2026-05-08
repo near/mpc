@@ -63,7 +63,9 @@ async fn extract__should_return_block_hash_when_finality_is_sufficient(
 
     let receipt = mock_receipt(actual_finality_status, StarknetExecutionStatus::Succeeded);
     let mock_client = mock_client_from_fixed_response(receipt);
-    let inspector = StarknetInspector::new(vec![mock_client]);
+    let inspector = StarknetInspector::new(
+        near_mpc_bounded_collections::NonEmptyVec::from_vec(vec![mock_client]).unwrap(),
+    );
 
     // when
     let extracted_values = inspector
@@ -91,7 +93,9 @@ async fn extract__should_return_not_finalized_when_finality_is_insufficient() {
         StarknetExecutionStatus::Succeeded,
     );
     let mock_client = mock_client_from_fixed_response(receipt);
-    let inspector = StarknetInspector::new(vec![mock_client]);
+    let inspector = StarknetInspector::new(
+        near_mpc_bounded_collections::NonEmptyVec::from_vec(vec![mock_client]).unwrap(),
+    );
 
     // when
     let response = inspector
@@ -116,7 +120,9 @@ async fn extract__should_return_client_error_for_received_finality() {
         StarknetExecutionStatus::Succeeded,
     );
     let mock_client = mock_client_from_fixed_response(receipt);
-    let inspector = StarknetInspector::new(vec![mock_client]);
+    let inspector = StarknetInspector::new(
+        near_mpc_bounded_collections::NonEmptyVec::from_vec(vec![mock_client]).unwrap(),
+    );
 
     // when
     let response = inspector
@@ -141,7 +147,9 @@ async fn extract__should_return_transaction_failed_when_execution_is_reverted() 
         StarknetExecutionStatus::Reverted,
     );
     let mock_client = mock_client_from_fixed_response(receipt);
-    let inspector = StarknetInspector::new(vec![mock_client]);
+    let inspector = StarknetInspector::new(
+        near_mpc_bounded_collections::NonEmptyVec::from_vec(vec![mock_client]).unwrap(),
+    );
 
     // when
     let response = inspector
@@ -169,7 +177,9 @@ async fn extract__should_return_empty_when_no_extractors_are_requested() {
         StarknetExecutionStatus::Succeeded,
     );
     let mock_client = mock_client_from_fixed_response(receipt);
-    let inspector = StarknetInspector::new(vec![mock_client]);
+    let inspector = StarknetInspector::new(
+        near_mpc_bounded_collections::NonEmptyVec::from_vec(vec![mock_client]).unwrap(),
+    );
 
     // when
     let extracted_values = inspector
@@ -193,7 +203,9 @@ async fn extract__should_propagate_rpc_client_errors() {
             "connection refused",
         ))))
     });
-    let inspector = StarknetInspector::new(vec![mock_client]);
+    let inspector = StarknetInspector::new(
+        near_mpc_bounded_collections::NonEmptyVec::from_vec(vec![mock_client]).unwrap(),
+    );
 
     // when
     let response = inspector
@@ -218,7 +230,9 @@ async fn extract__should_return_error_when_log_index_out_of_bounds() {
         StarknetExecutionStatus::Succeeded,
     );
     let mock_client = mock_client_from_fixed_response(receipt);
-    let inspector = StarknetInspector::new(vec![mock_client]);
+    let inspector = StarknetInspector::new(
+        near_mpc_bounded_collections::NonEmptyVec::from_vec(vec![mock_client]).unwrap(),
+    );
 
     // when
     let response = inspector
@@ -260,7 +274,9 @@ async fn extract__should_return_correct_log_for_specific_index() {
         execution_status: StarknetExecutionStatus::Succeeded,
     };
     let mock_client = mock_client_from_fixed_response(receipt);
-    let inspector = StarknetInspector::new(vec![mock_client]);
+    let inspector = StarknetInspector::new(
+        near_mpc_bounded_collections::NonEmptyVec::from_vec(vec![mock_client]).unwrap(),
+    );
 
     // when
     let extracted_values = inspector
@@ -338,7 +354,9 @@ async fn extract__should_return_block_hash_via_http_rpc_client() {
 
     let tx_id = StarknetTransactionHash::from([9; 32]);
     let client = build_http_client(server.url("/"), RpcAuthentication::KeyInUrl).unwrap();
-    let inspector = StarknetInspector::new(vec![client]);
+    let inspector = StarknetInspector::new(
+        near_mpc_bounded_collections::NonEmptyVec::from_vec(vec![client]).unwrap(),
+    );
 
     // when
     let extracted_values = inspector
@@ -369,7 +387,9 @@ async fn extract__should_return_event_log_for_specific_index_via_http_rpc_client
 
     let tx_id = StarknetTransactionHash::from([9; 32]);
     let client = build_http_client(server.url("/"), RpcAuthentication::KeyInUrl).unwrap();
-    let inspector = StarknetInspector::new(vec![client]);
+    let inspector = StarknetInspector::new(
+        near_mpc_bounded_collections::NonEmptyVec::from_vec(vec![client]).unwrap(),
+    );
 
     // when
     let extracted_values = inspector

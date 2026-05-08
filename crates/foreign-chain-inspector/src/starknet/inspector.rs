@@ -5,12 +5,13 @@ use foreign_chain_rpc_interfaces::starknet::{
     StarknetFinalityStatus,
 };
 use jsonrpsee::core::client::ClientT;
+use near_mpc_bounded_collections::NonEmptyVec;
 use near_mpc_contract_interface::types::{StarknetFelt, StarknetLog};
 
 const GET_TRANSACTION_RECEIPT_METHOD: &str = "starknet_getTransactionReceipt";
 
 pub struct StarknetInspector<Client> {
-    clients: Vec<Client>,
+    clients: NonEmptyVec<Client>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -47,7 +48,7 @@ impl<Client> StarknetInspector<Client>
 where
     Client: ClientT + Send,
 {
-    pub fn new(clients: Vec<Client>) -> Self {
+    pub fn new(clients: NonEmptyVec<Client>) -> Self {
         Self { clients }
     }
 }

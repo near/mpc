@@ -32,7 +32,9 @@ async fn inspector_extracts_block_hash_against_live_rpc_provider() {
         .expect("transaction hash should be valid starknet felt hex");
     let block_hash: StarknetBlockHash = parse_starknet_felt_hash(&latest_block.block_hash)
         .expect("block hash should be valid starknet felt hex");
-    let inspector = StarknetInspector::new(vec![http_client]);
+    let inspector = StarknetInspector::new(
+        near_mpc_bounded_collections::NonEmptyVec::from_vec(vec![http_client]).unwrap(),
+    );
 
     // when
     let extracted_values = inspector

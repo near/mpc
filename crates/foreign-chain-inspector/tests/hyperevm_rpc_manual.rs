@@ -31,7 +31,9 @@ async fn inspector_extracts_block_hash_against_live_rpc_provider() {
         RpcAuthentication::KeyInUrl,
     )
     .unwrap();
-    let inspector = HyperEvmInspector::new(vec![http_client]);
+    let inspector = HyperEvmInspector::new(
+        near_mpc_bounded_collections::NonEmptyVec::from_vec(vec![http_client]).unwrap(),
+    );
 
     // when
     let extracted_values = inspector

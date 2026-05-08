@@ -17,6 +17,7 @@ use foreign_chain_inspector::hyperevm::inspector::HyperEvmInspector;
 use foreign_chain_inspector::polygon::inspector::PolygonInspector;
 use foreign_chain_inspector::starknet::inspector::StarknetInspector;
 use mpc_node_config::{ConfigFile, ForeignChainsConfig};
+use near_mpc_bounded_collections::NonEmptyVec;
 use near_mpc_contract_interface::types as dtos;
 use std::sync::Arc;
 use threshold_signatures::ecdsa::{KeygenOutput, Signature};
@@ -51,6 +52,10 @@ impl ForeignChainInspectors<HttpClient> {
                                 Ok(foreign_chain_inspector::build_http_client(url, rpc_auth)?)
                             })
                             .collect::<anyhow::Result<Vec<_>>>()?;
+                        // ForeignChainConfig.providers is itself a NonEmptyBTreeMap, so this
+                        // conversion can never fail.
+                        let clients =
+                            NonEmptyVec::from_vec(clients).expect("provider config is non-empty");
                         Some($Inspector::new(clients))
                     }
                     None => None,

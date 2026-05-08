@@ -93,7 +93,7 @@ macro_rules! evm_inspector_tests {
                     .with_response(&finality_block_response)
                     .with_response(&canonical_block_response)
                     .build();
-                let inspector = Inspector::new(vec![mock_client]);
+                let inspector = Inspector::new(near_mpc_bounded_collections::NonEmptyVec::from_vec(vec![mock_client]).unwrap());
 
                 // when
                 let extracted_values = inspector
@@ -132,7 +132,7 @@ macro_rules! evm_inspector_tests {
                     .with_response(&finality_block_response)
                     .with_response(&canonical_block_response)
                     .build();
-                let inspector = Inspector::new(vec![mock_client]);
+                let inspector = Inspector::new(near_mpc_bounded_collections::NonEmptyVec::from_vec(vec![mock_client]).unwrap());
 
                 // when
                 let extracted_values = inspector
@@ -172,7 +172,7 @@ macro_rules! evm_inspector_tests {
                     .with_response(&tx_response)
                     .with_response(&finality_block_response)
                     .build();
-                let inspector = Inspector::new(vec![mock_client]);
+                let inspector = Inspector::new(near_mpc_bounded_collections::NonEmptyVec::from_vec(vec![mock_client]).unwrap());
 
                 // when
                 let response = inspector
@@ -214,7 +214,7 @@ macro_rules! evm_inspector_tests {
                     .with_response(&finality_block_response)
                     .with_response(&canonical_block_response)
                     .build();
-                let inspector = Inspector::new(vec![mock_client]);
+                let inspector = Inspector::new(near_mpc_bounded_collections::NonEmptyVec::from_vec(vec![mock_client]).unwrap());
 
                 // when
                 let response = inspector
@@ -257,7 +257,7 @@ macro_rules! evm_inspector_tests {
                     .with_response(&finality_block_response)
                     .with_response(&canonical_block_response)
                     .build();
-                let inspector = Inspector::new(vec![mock_client]);
+                let inspector = Inspector::new(near_mpc_bounded_collections::NonEmptyVec::from_vec(vec![mock_client]).unwrap());
 
                 // when
                 let extracted_values = inspector
@@ -281,7 +281,7 @@ macro_rules! evm_inspector_tests {
                         "connection refused",
                     ))))
                 });
-                let inspector = Inspector::new(vec![mock_client]);
+                let inspector = Inspector::new(near_mpc_bounded_collections::NonEmptyVec::from_vec(vec![mock_client]).unwrap());
 
                 // when
                 let response = inspector
@@ -373,7 +373,7 @@ macro_rules! evm_inspector_tests {
 
                 let client =
                     build_http_client(server.url("/"), RpcAuthentication::KeyInUrl).unwrap();
-                let inspector = Inspector::new(vec![client]);
+                let inspector = Inspector::new(near_mpc_bounded_collections::NonEmptyVec::from_vec(vec![client]).unwrap());
 
                 // when
                 let extracted_values = inspector
@@ -416,7 +416,7 @@ macro_rules! evm_inspector_tests {
                     .with_response(&finality_block_response)
                     .with_response(&canonical_block_response)
                     .build();
-                let inspector = Inspector::new(vec![mock_client]);
+                let inspector = Inspector::new(near_mpc_bounded_collections::NonEmptyVec::from_vec(vec![mock_client]).unwrap());
 
                 // when
                 let response = inspector
@@ -483,7 +483,7 @@ macro_rules! evm_inspector_tests {
                     .with_response(&finality_block_response)
                     .with_response(&canonical_block_response)
                     .build();
-                let inspector = Inspector::new(vec![mock_client]);
+                let inspector = Inspector::new(near_mpc_bounded_collections::NonEmptyVec::from_vec(vec![mock_client]).unwrap());
 
                 // when: request log by its EVM logIndex (21), not array position (1)
                 let extracted_values = inspector
@@ -527,7 +527,7 @@ macro_rules! evm_inspector_tests {
                     .with_response(&finality_block_response)
                     .with_response(&canonical_block_response)
                     .build();
-                let inspector = Inspector::new(vec![mock_client]);
+                let inspector = Inspector::new(near_mpc_bounded_collections::NonEmptyVec::from_vec(vec![mock_client]).unwrap());
 
                 // when
                 let response = inspector

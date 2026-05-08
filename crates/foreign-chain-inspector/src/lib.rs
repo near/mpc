@@ -84,8 +84,6 @@ pub enum ForeignChainInspectionError {
     EventLogFailedBorshSerialization(std::io::Error),
     #[error("inspector clients returned mismatching extracted values")]
     InspectorResponseMismatch,
-    #[error("inspector has no configured RPC clients")]
-    NoClientsConfigured,
 }
 
 pub(crate) async fn fan_out_and_match<T, Fut>(
@@ -98,9 +96,8 @@ where
     let mut results = futures::future::try_join_all(extract_futures)
         .await?
         .into_iter();
-    let first = results
-        .next()
-        .ok_or(ForeignChainInspectionError::NoClientsConfigured)?;
+    // Inspector clients are constructed from a NonEmptyVec, so this iterator is never empty.
+    let first = results.next().expect("at least one client");
     for other in results {
         if other != first {
             return Err(ForeignChainInspectionError::InspectorResponseMismatch);

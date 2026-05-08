@@ -12,6 +12,7 @@ futures = { workspace = true }
 http = { workspace = true }
 jsonrpsee = { workspace = true }
 mpc-primitives = { workspace = true }
+near-mpc-bounded-collections = { workspace = true }
 near-mpc-contract-interface = { workspace = true }
 thiserror = { workspace = true }
 

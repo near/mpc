@@ -41,7 +41,9 @@ async fn extract_returns_block_hash_when_confirmations_sufficient(
     };
 
     let mock_client = mock_client_from_fixed_response(mock_response);
-    let inspector = BitcoinInspector::new(vec![mock_client]);
+    let inspector = BitcoinInspector::new(
+        near_mpc_bounded_collections::NonEmptyVec::from_vec(vec![mock_client]).unwrap(),
+    );
 
     // when
     let extracted_values = inspector
@@ -70,7 +72,9 @@ async fn extract_returns_error_when_confirmations_insufficient() {
     };
 
     let mock_client = mock_client_from_fixed_response(mock_response);
-    let inspector = BitcoinInspector::new(vec![mock_client]);
+    let inspector = BitcoinInspector::new(
+        near_mpc_bounded_collections::NonEmptyVec::from_vec(vec![mock_client]).unwrap(),
+    );
 
     // when
     let response = inspector
@@ -101,7 +105,9 @@ async fn extract_returns_empty_when_no_extractors_provided() {
     };
 
     let mock_client = mock_client_from_fixed_response(mock_response);
-    let inspector = BitcoinInspector::new(vec![mock_client]);
+    let inspector = BitcoinInspector::new(
+        near_mpc_bounded_collections::NonEmptyVec::from_vec(vec![mock_client]).unwrap(),
+    );
 
     // when
     let extracted_values = inspector
@@ -126,7 +132,9 @@ async fn extract_propagates_rpc_client_errors() {
             "connection refused",
         ))))
     });
-    let inspector = BitcoinInspector::new(vec![mock_client]);
+    let inspector = BitcoinInspector::new(
+        near_mpc_bounded_collections::NonEmptyVec::from_vec(vec![mock_client]).unwrap(),
+    );
 
     // when
     let response = inspector
@@ -165,7 +173,9 @@ async fn inspector_extracts_block_hash_via_http_rpc_client() {
     });
 
     let client = build_http_client(server.url("/"), RpcAuthentication::KeyInUrl).unwrap();
-    let inspector = BitcoinInspector::new(vec![client]);
+    let inspector = BitcoinInspector::new(
+        near_mpc_bounded_collections::NonEmptyVec::from_vec(vec![client]).unwrap(),
+    );
 
     // when
     let extracted_values = inspector

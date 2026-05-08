@@ -30,7 +30,9 @@ async fn inspector_extracts_block_hash_against_live_rpc_provider() {
         RpcAuthentication::KeyInUrl,
     )
     .unwrap();
-    let inspector = BitcoinInspector::new(vec![http_client]);
+    let inspector = BitcoinInspector::new(
+        near_mpc_bounded_collections::NonEmptyVec::from_vec(vec![http_client]).unwrap(),
+    );
 
     // when
     let extracted_values = inspector

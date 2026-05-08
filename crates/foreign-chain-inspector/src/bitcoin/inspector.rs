@@ -1,4 +1,5 @@
 use jsonrpsee::core::client::ClientT;
+use near_mpc_bounded_collections::NonEmptyVec;
 
 use crate::bitcoin::{BitcoinExtractedValue, BitcoinTransactionHash};
 use crate::{
@@ -13,7 +14,7 @@ const GET_RAW_TRANSACTION_METHOD: &str = "getrawtransaction";
 const VERBOSE_RESPONSE: bool = true;
 
 pub struct BitcoinInspector<Client> {
-    clients: Vec<Client>,
+    clients: NonEmptyVec<Client>,
 }
 
 impl<Client> ForeignChainInspector for BitcoinInspector<Client>
@@ -47,7 +48,7 @@ impl<Client> BitcoinInspector<Client>
 where
     Client: ClientT + Send,
 {
-    pub fn new(clients: Vec<Client>) -> Self {
+    pub fn new(clients: NonEmptyVec<Client>) -> Self {
         Self { clients }
     }
 }

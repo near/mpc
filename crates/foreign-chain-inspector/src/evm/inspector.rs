@@ -2,6 +2,7 @@ use std::fmt::Debug;
 use std::hash::Hash;
 
 use jsonrpsee::core::client::ClientT;
+use near_mpc_bounded_collections::NonEmptyVec;
 
 use crate::{
     EthereumFinality, ForeignChainInspectionError, ForeignChainInspector, fan_out_and_match,
@@ -27,7 +28,7 @@ pub trait EvmChain: PartialEq + Eq {
 }
 
 pub struct EvmInspector<Client, Chain> {
-    clients: Vec<Client>,
+    clients: NonEmptyVec<Client>,
     _chain: std::marker::PhantomData<Chain>,
 }
 
@@ -59,7 +60,7 @@ where
     Client: ClientT + Send,
     Chain: EvmChain,
 {
-    pub fn new(clients: Vec<Client>) -> Self {
+    pub fn new(clients: NonEmptyVec<Client>) -> Self {
         Self {
             clients,
             _chain: std::marker::PhantomData,
