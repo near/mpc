@@ -55,12 +55,7 @@ where
         extractors: Vec<EvmExtractor>,
     ) -> Result<Vec<EvmExtractedValue<Chain>>, ForeignChainInspectionError> {
         fan_out_and_match(self.clients.iter().map(|client| {
-            extract_with_client::<Client, Chain>(
-                client,
-                transaction.clone(),
-                finality,
-                &extractors,
-            )
+            extract_with_client::<Client, Chain>(client, transaction.clone(), finality, &extractors)
         }))
         .await
     }
