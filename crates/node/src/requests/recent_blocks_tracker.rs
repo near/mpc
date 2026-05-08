@@ -76,7 +76,7 @@ pub enum CheckBlockResult {
     OlderThanRecentWindow,
     /// The block is within the recent window, and also finalized by the blockchain
     /// (it is an ancestor (including self) of the latest final block).
-    RecentAndFinal,
+    Final,
     /// The block is optimistically included in the chain, and it is on the canonical chain,
     /// but it is not yet part of the final chain. It is also recent enough.
     /// Note that if two chains tie for canonical height, the first one seen is considered the
@@ -577,7 +577,7 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
                     return CheckBlockResult::OlderThanRecentWindow;
                 }
                 if node.is_final.load(Ordering::Relaxed) {
-                    return CheckBlockResult::RecentAndFinal;
+                    return CheckBlockResult::Final;
                 }
                 // Note: blocks on a dead fork (height ≤ final_head.height,
                 // not on the final chain) are no longer reachable here —
@@ -856,8 +856,8 @@ pub mod tests {
         // At this point, the tracker should keep blocks 12, 13, 14, 15.
         assert_eq!(tester.check(&b10), CheckBlockResult::Unknown);
         assert_eq!(tester.check(&b11), CheckBlockResult::Unknown);
-        assert_eq!(tester.check(&b12), CheckBlockResult::RecentAndFinal);
-        assert_eq!(tester.check(&b13), CheckBlockResult::RecentAndFinal);
+        assert_eq!(tester.check(&b12), CheckBlockResult::Final);
+        assert_eq!(tester.check(&b13), CheckBlockResult::Final);
         assert_eq!(tester.check(&b14), CheckBlockResult::OptimisticAndCanonical);
         assert_eq!(tester.check(&b15), CheckBlockResult::OptimisticAndCanonical);
         assert_eq!(tester.check(&b16), CheckBlockResult::Unknown);
@@ -943,7 +943,7 @@ pub mod tests {
         assert_eq!(t.check(&b15), CheckBlockResult::Unknown);
         assert_eq!(t.check(&b16), CheckBlockResult::Unknown);
         assert_eq!(t.check(&b17), CheckBlockResult::Unknown);
-        assert_eq!(t.check(&b18), CheckBlockResult::RecentAndFinal);
+        assert_eq!(t.check(&b18), CheckBlockResult::Final);
         assert_eq!(t.check(&b19), CheckBlockResult::OptimisticAndCanonical);
         assert_eq!(t.check(&b20), CheckBlockResult::OptimisticAndCanonical);
     }
@@ -1048,7 +1048,7 @@ pub mod tests {
         assert_eq!(t.check(&b011), CheckBlockResult::Unknown);
         // b1 was removed by window-prune (too old, newer final blocks).
         assert_eq!(t.check(&b1), CheckBlockResult::Unknown);
-        assert_eq!(t.check(&b10), CheckBlockResult::RecentAndFinal);
+        assert_eq!(t.check(&b10), CheckBlockResult::Final);
         assert_eq!(t.check(&b100), CheckBlockResult::OptimisticButNotCanonical);
         assert_eq!(t.check(&b11), CheckBlockResult::OptimisticButNotCanonical);
         assert_eq!(t.check(&b110), CheckBlockResult::OptimisticButNotCanonical);
@@ -1077,7 +1077,7 @@ pub mod tests {
         assert_eq!(t.check(&b001), CheckBlockResult::Unknown);
         assert_eq!(t.check(&b010), CheckBlockResult::Unknown);
         assert_eq!(t.check(&b011), CheckBlockResult::Unknown);
-        assert_eq!(t.check(&b10200), CheckBlockResult::RecentAndFinal);
+        assert_eq!(t.check(&b10200), CheckBlockResult::Final);
         assert_eq!(t.check(&b102000), CheckBlockResult::OptimisticAndCanonical);
         assert_eq!(t.check(&b1020000), CheckBlockResult::OptimisticAndCanonical);
         assert_eq!(t.check(&b110), CheckBlockResult::Unknown);
@@ -1184,8 +1184,8 @@ pub mod tests {
         tester.add(&b4_fork, "4f");
 
         // Sanity checks
-        assert_eq!(tester.check(&b1), CheckBlockResult::RecentAndFinal);
-        assert_eq!(tester.check(&b2), CheckBlockResult::RecentAndFinal);
+        assert_eq!(tester.check(&b1), CheckBlockResult::Final);
+        assert_eq!(tester.check(&b2), CheckBlockResult::Final);
 
         let weak_b3_fork = Arc::downgrade(
             tester
@@ -1241,8 +1241,8 @@ pub mod tests {
         // b1 should have been removed:
         assert_eq!(tester.check(&b1), CheckBlockResult::Unknown);
         // b2, b3 should now be final
-        assert_eq!(tester.check(&b2), CheckBlockResult::RecentAndFinal);
-        assert_eq!(tester.check(&b3), CheckBlockResult::RecentAndFinal);
+        assert_eq!(tester.check(&b2), CheckBlockResult::Final);
+        assert_eq!(tester.check(&b3), CheckBlockResult::Final);
         // b4, b5 should be optimistic and canonical
         assert_eq!(tester.check(&b4), CheckBlockResult::OptimisticAndCanonical);
         assert_eq!(tester.check(&b5), CheckBlockResult::OptimisticAndCanonical);

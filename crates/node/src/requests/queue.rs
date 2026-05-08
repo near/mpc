@@ -484,7 +484,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             }
             let block_classification = self.recent_blocks.classify_block(request.block_hash);
             match block_classification {
-                CheckBlockResult::RecentAndFinal | CheckBlockResult::OptimisticAndCanonical => {
+                CheckBlockResult::Final | CheckBlockResult::OptimisticAndCanonical => {
                     if let Some(leader) = request.current_leader(&eligible_leaders) {
                         tracing::debug!(
                             target: "request",
