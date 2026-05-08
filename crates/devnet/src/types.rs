@@ -159,8 +159,8 @@ pub struct RpcConfig {
     pub rate_limit: usize,
     /// Maximum number of in-flight requests that the RPC server will allow.
     pub max_concurrency: usize,
-    /// Optional API key appended to the endpoint URL as `?apiKey=<value>`
-    /// (FastNEAR's authentication scheme).
+    /// Optional API key sent as `Authorization: Bearer <value>` on every
+    /// request.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_key: Option<String>,
 }

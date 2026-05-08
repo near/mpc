@@ -1,7 +1,7 @@
 use crate::types::RpcConfig;
 use futures::future::BoxFuture;
 use futures::FutureExt;
-use near_jsonrpc_client::{methods, JsonRpcClient, MethodCallResult};
+use near_jsonrpc_client::{auth, methods, JsonRpcClient, MethodCallResult};
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -25,14 +25,12 @@ struct NearRpcClient {
 
 impl NearRpcClient {
     fn new(config: RpcConfig) -> Self {
-        let url = match &config.api_key {
-            Some(key) => {
-                let separator = if config.url.contains('?') { '&' } else { '?' };
-                format!("{}{separator}apiKey={key}", config.url)
-            }
-            None => config.url,
+        let client = JsonRpcClient::connect(&config.url);
+        let client = match config.api_key {
+            Some(key) => client
+                .header(auth::Authorization::bearer(key).expect("api_key is not a valid token")),
+            None => client,
         };
-        let client = JsonRpcClient::connect(url);
         let concurrency = tokio::sync::Semaphore::new(config.max_concurrency);
         let (sender, receiver) = flume::bounded(config.rate_limit);
         tokio::spawn(async move {

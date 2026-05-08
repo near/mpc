@@ -56,13 +56,13 @@ rpcs:
   - url: https://test.rpc.fastnear.com
     rate_limit: 5
     max_concurrency: 30
-    # api_key: your-api-key   # optional, appended as `?apiKey=...` to the URL
+    # api_key: your-api-key   # optional, sent as `Authorization: Bearer <key>`
 infra_ops_path: path-to-infra-ops-repo
 ```
 
-The optional `api_key` field is appended as `?apiKey=<value>` to the
-endpoint URL on every request (FastNEAR's authentication scheme). Omit it
-to use the public endpoint unauthenticated.
+The optional `api_key` field is sent as `Authorization: Bearer <value>` on
+every request to the corresponding endpoint. Omit it to use the public
+endpoint unauthenticated.
 
 * (Optional) Configure a `funding_account` to use a specific account for funding operations:
 
