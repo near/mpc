@@ -67,12 +67,16 @@ struct WebServerState {
     node_config: NodeConfigResponse,
 }
 
-/// Safe duplicate of ConfigFile for the debug endpoint.
-/// This struct is intentionally decoupled from ConfigFile so that if secret
-/// fields are added to ConfigFile in the future, they won't be leaked via
-/// the API. When adding new fields to ConfigFile, only add them here if they
-/// are safe to expose.
-/// Moreover, to decouple internal structure from what's served in the API.
+/// API-safe view of [`ConfigFile`] served by `/debug/node_config`.
+///
+/// Intentionally decoupled from [`ConfigFile`]: new fields are opt-in, so
+/// a field added to [`ConfigFile`] is *not* exposed unless it is also
+/// added here. When extending the response, prefer omitting any sub-config
+/// that could carry sensitive or operationally significant data (RPC
+/// providers, auth credentials, third-party integrations) entirely, rather
+/// than mirroring it via "API-safe duplicate" types that strip individual
+/// fields — those duplicates require keeping two definitions in sync and
+/// a missed update silently leaks data.
 #[derive(Clone, Serialize)]
 struct NodeConfigResponse {
     my_near_account_id: AccountId,
@@ -450,26 +454,24 @@ mod tests {
 
         // When
         let json = serde_json::to_string(&NodeConfigResponse::from(config)).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
 
-        // Then — neither the foreign_chains block nor any of its inner fields
-        // (chain keys, provider names, URLs, auth/token metadata, or secret
-        // values) may appear in the public debug response.
+        // Then — the structural invariant: the public debug response must
+        // not carry a `foreign_chains` field at all.
+        let object = value
+            .as_object()
+            .expect("response must serialize as a JSON object");
+        assert!(
+            !object.contains_key("foreign_chains"),
+            "response must not contain a `foreign_chains` key, got: {json}"
+        );
+
+        // Defense in depth: catch a regression that re-introduces RPC
+        // provider data under a different field name. Each needle below is
+        // a value present only in the foreign-chain test fixture, so its
+        // appearance anywhere in the serialized response is unambiguous
+        // evidence of a leak.
         let forbidden = [
-            "foreign_chains",
-            "rpc_url",
-            "auth",
-            "token",
-            "providers",
-            "solana",
-            "bitcoin",
-            "ethereum",
-            "abstract_chain",
-            "starknet",
-            "bnb",
-            "base",
-            "arbitrum",
-            "hyper_evm",
-            "polygon",
             PROVIDER_ALCHEMY,
             PROVIDER_ANKR,
             PROVIDER_BLAST,
