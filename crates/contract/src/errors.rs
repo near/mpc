@@ -114,6 +114,8 @@ pub enum InvalidParameters {
     CallerNotSigner,
     #[error("Requested foreign chain, {requested:?}, is not supported.")]
     ForeignChainNotSupported { requested: ForeignChain },
+    #[error("Pending-request queue is full for this request key (limit: {limit}). Try again once an in-flight response or timeout has cleared room.")]
+    PendingRequestQueueFull { limit: u8 },
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]

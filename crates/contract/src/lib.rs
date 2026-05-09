@@ -19,6 +19,7 @@ pub mod v3_9_1_state;
 #[cfg(feature = "bench-contract-methods")]
 mod bench;
 mod dto_mapping;
+mod pending_requests;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -31,6 +32,7 @@ use crate::{
         TryIntoContractType,
     },
     errors::{Error, RequestError},
+    pending_requests::LegacyPendingRequests,
     primitives::{
         ckd::{app_public_key_check, ckd_output_check, CKDRequest},
         domain::AddDomainsVotes,
@@ -40,7 +42,6 @@ use crate::{
     tee::tee_state::{TeeQuoteStatus, TeeState},
     update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId},
 };
-use borsh::{BorshDeserialize, BorshSerialize};
 use config::Config;
 use crypto_shared::{
     derive_key_secp256k1,
@@ -138,38 +139,19 @@ impl Default for MpcContract {
 #[derive(Debug)]
 pub struct MpcContract {
     protocol_state: ProtocolContractState,
-    pending_signature_requests: LookupMap<SignatureRequest, YieldIndex>,
-    pending_ckd_requests: LookupMap<CKDRequest, YieldIndex>,
-    pending_verify_foreign_tx_requests: LookupMap<VerifyForeignTransactionRequest, YieldIndex>,
+    pending_signature_requests: LookupMap<SignatureRequest, Vec<YieldIndex>>,
+    pending_ckd_requests: LookupMap<CKDRequest, Vec<YieldIndex>>,
+    pending_verify_foreign_tx_requests: LookupMap<VerifyForeignTransactionRequest, Vec<YieldIndex>>,
     proposed_updates: ProposedUpdates,
     node_foreign_chain_support: SupportedForeignChainsByNode,
     config: Config,
     tee_state: TeeState,
     accept_requests: bool,
     node_migrations: NodeMigrations,
-    stale_data: StaleData,
+    legacy_pending_requests: LegacyPendingRequests,
     // TODO(#2937): Remove via state migration.
     metrics: Metrics,
 }
-
-/// A container for "orphaned" state that persists across contract migrations.
-///
-/// ### Why this exists
-/// On the NEAR blockchain, the `migrate` function is limited by the maximum transaction gas
-/// (300 Tgas). Large data structures, specifically `IterableMap` or `LookupMap`
-/// often cannot be cleared in a single block without hitting this limit.
-///
-/// ### The Pattern
-/// 1. During `migrate()`, expensive-to-delete fields are moved from the main state into [`StaleData`].
-/// 2. The main contract state becomes usable immediately.
-/// 3. "Lazy cleanup" methods (like `post_upgrade_cleanup`) are then called in subsequent,
-///    separate transactions to gradually deallocate this storage.
-#[derive(Debug, Default, BorshSerialize, BorshDeserialize)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(borsh::BorshSchema)
-)]
-struct StaleData {}
 
 #[near(serializers=[borsh])]
 #[derive(Debug)]
@@ -213,29 +195,28 @@ impl MpcContract {
         self.protocol_state.threshold()
     }
 
-    /// Returns true if the request was already pending
-    fn add_signature_request(&mut self, request: &SignatureRequest, data_id: CryptoHash) -> bool {
-        self.pending_signature_requests
-            .insert(request.clone(), YieldIndex { data_id })
-            .is_some()
+    fn add_signature_request(&mut self, request: SignatureRequest, data_id: CryptoHash) {
+        pending_requests::push_pending_yield(
+            &mut self.pending_signature_requests,
+            request,
+            data_id,
+        );
     }
 
-    /// Returns true if the request was already pending
-    fn add_ckd_request(&mut self, request: &CKDRequest, data_id: CryptoHash) -> bool {
-        self.pending_ckd_requests
-            .insert(request.clone(), YieldIndex { data_id })
-            .is_some()
+    fn add_ckd_request(&mut self, request: CKDRequest, data_id: CryptoHash) {
+        pending_requests::push_pending_yield(&mut self.pending_ckd_requests, request, data_id);
     }
 
-    /// Returns true if the request was already pending
     fn add_verify_foreign_tx_request(
         &mut self,
-        request: &VerifyForeignTransactionRequest,
+        request: VerifyForeignTransactionRequest,
         data_id: CryptoHash,
-    ) -> bool {
-        self.pending_verify_foreign_tx_requests
-            .insert(request.clone(), YieldIndex { data_id })
-            .is_some()
+    ) {
+        pending_requests::push_pending_yield(
+            &mut self.pending_verify_foreign_tx_requests,
+            request,
+            data_id,
+        );
     }
 
     /// Common preconditions enforced on every user-facing request method (`sign`,
@@ -314,7 +295,7 @@ impl MpcContract {
         callback_method: &str,
         callback_args: Vec<u8>,
         callback_gas: Gas,
-        insert: impl FnOnce(&mut Self, CryptoHash) -> bool,
+        insert: impl FnOnce(&mut Self, CryptoHash),
     ) {
         let promise_index = env::promise_yield_create(
             callback_method,
@@ -328,9 +309,7 @@ impl MpcContract {
             .expect("read_register failed")
             .try_into()
             .expect("conversion to CryptoHash failed");
-        if insert(self, return_id) {
-            log!("request already present, overriding callback.")
-        }
+        insert(self, return_id);
 
         env::promise_return(promise_index);
     }
@@ -395,7 +374,7 @@ impl MpcContract {
             method_names::RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS,
             callback_args,
             callback_gas,
-            move |this, id| this.add_signature_request(&request, id),
+            move |this, id| this.add_signature_request(request, id),
         );
     }
 
@@ -509,7 +488,7 @@ impl MpcContract {
             method_names::RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS,
             callback_args,
             callback_gas,
-            move |this, id| this.add_ckd_request(&request, id),
+            move |this, id| this.add_ckd_request(request, id),
         );
     }
 
@@ -554,7 +533,7 @@ impl MpcContract {
             method_names::RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS,
             callback_args,
             callback_gas,
-            move |this, id| this.add_verify_foreign_tx_request(&request, id),
+            move |this, id| this.add_verify_foreign_tx_request(request, id),
         );
     }
 }
@@ -645,14 +624,12 @@ impl MpcContract {
             return Err(RespondError::InvalidSignature.into());
         }
 
-        // First get the yield promise of the (potentially timed out) request.
-        if let Some(YieldIndex { data_id }) = self.pending_signature_requests.remove(&request) {
-            // Finally, resolve the promise. This will have no effect if the request already timed.
-            env::promise_yield_resume(&data_id, serde_json::to_vec(&response).unwrap());
-            Ok(())
-        } else {
-            Err(InvalidParameters::RequestNotFound.into())
-        }
+        pending_requests::resolve_yields_for(
+            &mut self.pending_signature_requests,
+            &mut self.legacy_pending_requests.signature_requests,
+            &request,
+            serde_json::to_vec(&response).unwrap(),
+        )
     }
 
     #[handle_result]
@@ -686,14 +663,12 @@ impl MpcContract {
             }
         }
 
-        // First get the yield promise of the (potentially timed out) request.
-        if let Some(YieldIndex { data_id }) = self.pending_ckd_requests.remove(&request) {
-            // Finally, resolve the promise. This will have no effect if the request already timed.
-            env::promise_yield_resume(&data_id, serde_json::to_vec(&response).unwrap());
-            Ok(())
-        } else {
-            Err(InvalidParameters::RequestNotFound.into())
-        }
+        pending_requests::resolve_yields_for(
+            &mut self.pending_ckd_requests,
+            &mut self.legacy_pending_requests.ckd_requests,
+            &request,
+            serde_json::to_vec(&response).unwrap(),
+        )
     }
 
     #[handle_result]
@@ -754,16 +729,12 @@ impl MpcContract {
             return Err(RespondError::InvalidSignature.into());
         }
 
-        // First get the yield promise of the (potentially timed out) request.
-        if let Some(YieldIndex { data_id }) =
-            self.pending_verify_foreign_tx_requests.remove(&request)
-        {
-            // Finally, resolve the promise. This will have no effect if the request already timed.
-            env::promise_yield_resume(&data_id, serde_json::to_vec(&response).unwrap());
-            Ok(())
-        } else {
-            Err(InvalidParameters::RequestNotFound.into())
-        }
+        pending_requests::resolve_yields_for(
+            &mut self.pending_verify_foreign_tx_requests,
+            &mut self.legacy_pending_requests.verify_foreign_tx_requests,
+            &request,
+            serde_json::to_vec(&response).unwrap(),
+        )
     }
 
     /// (Prospective) Participants can submit their tee participant information through this
@@ -1698,17 +1669,17 @@ impl MpcContract {
                 parameters,
                 AddDomainsVotes::default(),
             )),
-            pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV3),
-            pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV2),
+            pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV4),
+            pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV3),
             pending_verify_foreign_tx_requests: LookupMap::new(
-                StorageKey::PendingVerifyForeignTxRequests,
+                StorageKey::PendingVerifyForeignTxRequestsV2,
             ),
             proposed_updates: ProposedUpdates::default(),
             config: init_config.map(Into::into).unwrap_or_default(),
             tee_state,
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
-            stale_data: StaleData {},
+            legacy_pending_requests: LegacyPendingRequests::new(),
             metrics: Default::default(),
             node_foreign_chain_support: Default::default(),
         })
@@ -1767,16 +1738,16 @@ impl MpcContract {
                 parameters,
                 AddDomainsVotes::default(),
             )),
-            pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV3),
-            pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV2),
+            pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV4),
+            pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV3),
             pending_verify_foreign_tx_requests: LookupMap::new(
-                StorageKey::PendingVerifyForeignTxRequests,
+                StorageKey::PendingVerifyForeignTxRequestsV2,
             ),
             proposed_updates: Default::default(),
             tee_state,
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
-            stale_data: StaleData {},
+            legacy_pending_requests: LegacyPendingRequests::new(),
             metrics: Default::default(),
             node_foreign_chain_support: Default::default(),
         })
@@ -1850,21 +1821,68 @@ impl MpcContract {
         self.tee_state.votes.clone()
     }
 
+    /// Presence check for a pending signature request, exposed as a view call.
+    ///
+    /// **The returned `YieldIndex` is an arbitrary representative, not "the" yield
+    /// for this request.** Since the duplicate-request fan-out feature (PR #3187),
+    /// a single request key can have N queued yields; this method returns the head of the
+    /// queue. Callers that need to act on the full set are wrong to use this. The
+    /// only correct interpretation is presence: `Some(_)` vs `None`.
+    ///
+    /// The `Option<YieldIndex>` shape is retained for JSON wire compatibility with
+    /// out-of-tree consumers; the in-tree caller (`tx_sender::compute_transaction_status`)
+    /// only matches on presence. Prefer a `bool`-shaped accessor if one is added.
+    ///
+    /// Falls back to the legacy single-yield map for in-flight requests inherited
+    /// from before the fan-out upgrade.
     pub fn get_pending_request(&self, request: &SignatureRequest) -> Option<YieldIndex> {
-        self.pending_signature_requests.get(request).cloned()
+        self.pending_signature_requests
+            .get(request)
+            .and_then(|q| q.first().cloned())
+            .or_else(|| {
+                self.legacy_pending_requests
+                    .signature_requests
+                    .get(request)
+                    .cloned()
+            })
     }
 
+    /// Presence check for a pending CKD request, exposed as a view call.
+    ///
+    /// See [`Self::get_pending_request`] for the contract: the returned `YieldIndex`
+    /// is an arbitrary representative of a fan-out queue, not "the" yield. Only the
+    /// `Some`/`None` distinction is meaningful.
     pub fn get_pending_ckd_request(&self, request: &CKDRequest) -> Option<YieldIndex> {
-        self.pending_ckd_requests.get(request).cloned()
+        self.pending_ckd_requests
+            .get(request)
+            .and_then(|q| q.first().cloned())
+            .or_else(|| {
+                self.legacy_pending_requests
+                    .ckd_requests
+                    .get(request)
+                    .cloned()
+            })
     }
 
+    /// Presence check for a pending foreign-tx verification request, exposed as a
+    /// view call.
+    ///
+    /// See [`Self::get_pending_request`] for the contract: the returned `YieldIndex`
+    /// is an arbitrary representative of a fan-out queue, not "the" yield. Only the
+    /// `Some`/`None` distinction is meaningful.
     pub fn get_pending_verify_foreign_tx_request(
         &self,
         request: &VerifyForeignTransactionRequest,
     ) -> Option<YieldIndex> {
         self.pending_verify_foreign_tx_requests
             .get(request)
-            .cloned()
+            .and_then(|q| q.first().cloned())
+            .or_else(|| {
+                self.legacy_pending_requests
+                    .verify_foreign_tx_requests
+                    .get(request)
+                    .cloned()
+            })
     }
 
     pub fn config(&self) -> dtos::Config {
@@ -1924,19 +1942,28 @@ impl MpcContract {
         env!("CARGO_PKG_VERSION").to_string()
     }
 
-    /// Upon success, removes the signature from state and returns it.
-    /// If the signature request times out, removes the signature request from state and panics to
-    /// fail the original transaction
+    /// Yield-resume callback for a single queued `sign` request.
+    ///
+    /// On success, returns the signature to the original caller. On timeout, pops this
+    /// yield's slot (the head of the FIFO fan-out queue) from the pending-request map
+    /// — falling back to the legacy single-yield map for pre-fan-out entries — and
+    /// fires `fail_on_timeout` to fail the original transaction. Sibling yields queued
+    /// under the same request key remain pending and are cleaned up by their own
+    /// timeouts (or drained together by a subsequent `respond`).
     #[private]
     pub fn return_signature_and_clean_state_on_success(
         &mut self,
-        request: SignatureRequest, // this change here should actually be ok.
+        request: SignatureRequest,
         #[callback_result] signature: Result<dtos::SignatureResponse, PromiseError>,
     ) -> PromiseOrValue<dtos::SignatureResponse> {
         match signature {
             Ok(signature) => PromiseOrValue::Value(signature),
             Err(_) => {
-                self.pending_signature_requests.remove(&request);
+                pending_requests::pop_one_yield_for(
+                    &mut self.pending_signature_requests,
+                    &mut self.legacy_pending_requests.signature_requests,
+                    &request,
+                );
 
                 let fail_on_timeout_gas = Gas::from_tgas(self.config.fail_on_timeout_tera_gas);
                 let promise = Promise::new(env::current_account_id()).function_call(
@@ -1950,9 +1977,15 @@ impl MpcContract {
         }
     }
 
-    /// Upon success, removes the confidential key request from state and returns it.
-    /// If the ckd request times out, removes the ckd request from state and panics to fail the
-    /// original transaction
+    /// Yield-resume callback for a single queued CKD request.
+    ///
+    /// On success, returns the confidential key to the original caller. On timeout,
+    /// pops this yield's slot (the head of the FIFO fan-out queue) from the
+    /// pending-request map — falling back to the legacy single-yield map for
+    /// pre-fan-out entries — and fires `fail_on_timeout` to fail the original
+    /// transaction. Sibling yields queued under the same request key remain pending
+    /// and are cleaned up by their own timeouts (or drained together by a subsequent
+    /// `respond_ckd`).
     #[private]
     pub fn return_ck_and_clean_state_on_success(
         &mut self,
@@ -1962,7 +1995,11 @@ impl MpcContract {
         match ck {
             Ok(ck) => PromiseOrValue::Value(ck),
             Err(_) => {
-                self.pending_ckd_requests.remove(&request);
+                pending_requests::pop_one_yield_for(
+                    &mut self.pending_ckd_requests,
+                    &mut self.legacy_pending_requests.ckd_requests,
+                    &request,
+                );
                 let fail_on_timeout_gas = Gas::from_tgas(self.config.fail_on_timeout_tera_gas);
                 let promise = Promise::new(env::current_account_id()).function_call(
                     method_names::FAIL_ON_TIMEOUT.to_string(),
@@ -1975,9 +2012,15 @@ impl MpcContract {
         }
     }
 
-    /// Upon success, removes the verify foreign tx request from state and returns it.
-    /// If the verify foreign tx request times out, removes the verify foreign tx request from state and panics to fail the
-    /// original transaction
+    /// Yield-resume callback for a single queued foreign-tx verification request.
+    ///
+    /// On success, returns the verification response to the original caller. On
+    /// timeout, pops this yield's slot (the head of the FIFO fan-out queue) from the
+    /// pending-request map — falling back to the legacy single-yield map for
+    /// pre-fan-out entries — and fires `fail_on_timeout` to fail the original
+    /// transaction. Sibling yields queued under the same request key remain pending
+    /// and are cleaned up by their own timeouts (or drained together by a subsequent
+    /// `respond_verify_foreign_tx`).
     #[private]
     pub fn return_verify_foreign_tx_and_clean_state_on_success(
         &mut self,
@@ -1987,7 +2030,11 @@ impl MpcContract {
         match response {
             Ok(response) => PromiseOrValue::Value(response),
             Err(_) => {
-                self.pending_verify_foreign_tx_requests.remove(&request);
+                pending_requests::pop_one_yield_for(
+                    &mut self.pending_verify_foreign_tx_requests,
+                    &mut self.legacy_pending_requests.verify_foreign_tx_requests,
+                    &request,
+                );
                 let fail_on_timeout_gas = Gas::from_tgas(self.config.fail_on_timeout_tera_gas);
                 let promise = Promise::new(env::current_account_id()).function_call(
                     method_names::FAIL_ON_TIMEOUT.to_string(),
@@ -2309,6 +2356,7 @@ mod tests {
 
     use super::*;
     use crate::errors::NodeMigrationError;
+    use crate::pending_requests::MAX_PENDING_REQUEST_FAN_OUT;
     use crate::primitives::participants::{ParticipantId, ParticipantInfo, Participants};
     use crate::primitives::test_utils::{
         bogus_ed25519_near_public_key, bogus_ed25519_public_key, gen_account_id, gen_participant,
@@ -2759,6 +2807,349 @@ mod tests {
             PromiseOrValue::Value(resp) => assert_eq!(resp, signature_response),
             PromiseOrValue::Promise(_) => panic!("Expected Value, got Promise"),
         }
+    }
+
+    #[test]
+    fn sign__should_queue_duplicate_requests_and_drain_all_on_respond() {
+        // Given
+        let (context, mut contract, secret_key) =
+            basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::Sign, &mut OsRng);
+        let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
+            unreachable!();
+        };
+        let payload = Payload::from_legacy_ecdsa([7u8; 32]);
+        let path = "m/44'\''/60'\''/0'\''/0/0".to_string();
+        let signature_request = SignatureRequest::new(
+            DomainId::default(),
+            payload.clone(),
+            &context.predecessor_account_id,
+            &path,
+        );
+        let request_args = SignRequestArgs {
+            payload: payload.clone(),
+            path: path.clone(),
+            domain_id: DomainId::legacy_ecdsa_id(),
+        };
+
+        // When: same caller submits the same request twice in close succession.
+        contract.sign(request_args.clone());
+        contract.sign(request_args);
+
+        // Then: both yields are queued under one map entry.
+        assert_eq!(
+            contract
+                .pending_signature_requests
+                .get(&signature_request)
+                .map(|q| q.len()),
+            Some(2),
+            "duplicate sign requests should fan out into a queue of two",
+        );
+
+        // When: a single valid response is delivered.
+        let derivation_path = derive_tweak(&context.predecessor_account_id, &path);
+        let secret_key_ec: elliptic_curve::SecretKey<Secp256k1> =
+            elliptic_curve::SecretKey::from_bytes(&secret_key.to_bytes()).unwrap();
+        let derived_secret_key = derive_secret_key(&secret_key_ec, &derivation_path);
+        let signing_key = SigningKey::from_bytes(&derived_secret_key.to_bytes()).unwrap();
+        let (signature, recovery_id) = signing_key
+            .sign_prehash_recoverable(payload.as_ecdsa().unwrap())
+            .unwrap();
+        let signature_response = dtos::SignatureResponse::Secp256k1(
+            dtos::K256Signature::from_ecdsa_recoverable(&signature, recovery_id),
+        );
+
+        with_active_participant_and_attested_context(&contract);
+        contract
+            .respond(signature_request.clone(), signature_response)
+            .expect("respond should succeed");
+
+        // Then: the entire queue is drained — both queued yields received the response.
+        assert!(contract
+            .pending_signature_requests
+            .get(&signature_request)
+            .is_none());
+    }
+
+    #[test]
+    fn verify_foreign_transaction__should_queue_duplicates_from_different_callers() {
+        // Given: two different callers will submit the same foreign-tx verification request.
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (context, mut contract, secret_key) =
+            basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut rng);
+        register_supported_chains(&mut contract, [dtos::ForeignChain::Bitcoin]);
+        let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
+            unreachable!();
+        };
+
+        let request_args = VerifyForeignTransactionRequestArgs {
+            domain_id: DomainId::default().0.into(),
+            payload_version: ForeignTxPayloadVersion::V1,
+            request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
+                tx_id: [7u8; 32].into(),
+                confirmations: 2.into(),
+                extractors: vec![BitcoinExtractor::BlockHash],
+            }),
+        };
+        let request = args_into_verify_foreign_tx_request(request_args.clone());
+
+        // When: caller alice submits the request.
+        let alice = AccountId::from_str("alice.near").unwrap();
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(alice.clone())
+            .predecessor_account_id(alice)
+            .current_account_id(context.current_account_id.clone())
+            .attached_deposit(NearToken::from_yoctonear(1))
+            .build());
+        contract.verify_foreign_transaction(request_args.clone());
+
+        // And: caller bob submits the identical request — a different account would today
+        // be blocked from receiving a response by alice's submission.
+        let bob = AccountId::from_str("bob.near").unwrap();
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(bob.clone())
+            .predecessor_account_id(bob)
+            .current_account_id(context.current_account_id.clone())
+            .attached_deposit(NearToken::from_yoctonear(1))
+            .build());
+        contract.verify_foreign_transaction(request_args);
+
+        // Then: both yields are queued under the single (caller-agnostic) request key.
+        assert_eq!(
+            contract
+                .pending_verify_foreign_tx_requests
+                .get(&request)
+                .map(|q| q.len()),
+            Some(2),
+            "duplicate foreign-tx requests from different callers should fan out",
+        );
+
+        // When: a single valid response is delivered.
+        let payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
+            request: request.request.clone(),
+            values: vec![ExtractedValue::BitcoinExtractedValue(
+                BitcoinExtractedValue::BlockHash([42u8; 32].into()),
+            )],
+        });
+        let payload_hash_arr = payload.compute_msg_hash().unwrap().0;
+        let secret_key_ec: elliptic_curve::SecretKey<Secp256k1> =
+            elliptic_curve::SecretKey::from_bytes(&secret_key.to_bytes()).unwrap();
+        let signing_key = SigningKey::from_bytes(&secret_key_ec.to_bytes()).unwrap();
+        let (signature, recovery_id) = signing_key
+            .sign_prehash_recoverable(&payload_hash_arr)
+            .unwrap();
+        let response = VerifyForeignTransactionResponse {
+            payload_hash: payload.compute_msg_hash().unwrap(),
+            signature: dtos::SignatureResponse::Secp256k1(
+                dtos::K256Signature::from_ecdsa_recoverable(&signature, recovery_id),
+            ),
+        };
+
+        with_active_participant_and_attested_context(&contract);
+        contract
+            .respond_verify_foreign_tx(request.clone(), response)
+            .expect("respond_verify_foreign_tx should succeed");
+
+        // Then: both queued yields are drained from the single map entry.
+        assert!(contract
+            .pending_verify_foreign_tx_requests
+            .get(&request)
+            .is_none());
+    }
+
+    #[test]
+    fn add_signature_request__should_panic_when_pending_queue_is_full() {
+        // Given: a contract with a queue already at the fan-out cap for some request key.
+        let (context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let signature_request = SignatureRequest::new(
+            DomainId::default(),
+            Payload::from_legacy_ecdsa([3u8; 32]),
+            &context.predecessor_account_id,
+            "m/44'\''/60'\''/0'\''/0/0",
+        );
+        for i in 0..MAX_PENDING_REQUEST_FAN_OUT {
+            contract.add_signature_request(signature_request.clone(), [i; 32]);
+        }
+        assert_eq!(
+            contract
+                .pending_signature_requests
+                .get(&signature_request)
+                .map(|q| q.len()),
+            Some(usize::from(MAX_PENDING_REQUEST_FAN_OUT)),
+        );
+
+        // When: one more append is attempted.
+        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            contract.add_signature_request(signature_request.clone(), [0xff; 32]);
+        }));
+
+        // Then: it panics with the typed cap-exceeded error and leaves the queue untouched.
+        let err = result.expect_err("appending past the cap should panic");
+        let msg = err
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| err.downcast_ref::<&str>().copied())
+            .unwrap_or_default();
+        assert!(
+            msg.contains("Pending-request queue is full"),
+            "unexpected panic message: {msg}",
+        );
+        assert_eq!(
+            contract
+                .pending_signature_requests
+                .get(&signature_request)
+                .map(|q| q.len()),
+            Some(usize::from(MAX_PENDING_REQUEST_FAN_OUT)),
+            "queue should not have grown past the cap",
+        );
+    }
+
+    #[test]
+    fn return_signature_and_clean_state_on_success__should_pop_only_oldest_yield_on_timeout() {
+        // Given: three duplicate sign requests queued for the same key.
+        let (context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let signature_request = SignatureRequest::new(
+            DomainId::default(),
+            Payload::from_legacy_ecdsa([0u8; 32]),
+            &context.predecessor_account_id,
+            "m/44'\''/60'\''/0'\''/0/0",
+        );
+        for i in 0..3u8 {
+            contract.add_signature_request(signature_request.clone(), [i; 32]);
+        }
+        assert_eq!(
+            contract
+                .pending_signature_requests
+                .get(&signature_request)
+                .map(|q| q.len()),
+            Some(3),
+        );
+
+        // When: the oldest yield times out.
+        let _ = contract.return_signature_and_clean_state_on_success(
+            signature_request.clone(),
+            Err(PromiseError::Failed),
+        );
+
+        // Then: the queue still contains the two remaining yields, oldest-first.
+        let remaining = contract
+            .pending_signature_requests
+            .get(&signature_request)
+            .cloned()
+            .expect("entry must remain while sibling yields are still pending");
+        assert_eq!(remaining.len(), 2);
+        assert_eq!(remaining[0].data_id, [1u8; 32]);
+        assert_eq!(remaining[1].data_id, [2u8; 32]);
+
+        // When: the last two yields time out, the map entry is fully cleaned up.
+        let _ = contract.return_signature_and_clean_state_on_success(
+            signature_request.clone(),
+            Err(PromiseError::Failed),
+        );
+        let _ = contract.return_signature_and_clean_state_on_success(
+            signature_request.clone(),
+            Err(PromiseError::Failed),
+        );
+
+        // Then: the entry is gone.
+        assert!(contract
+            .pending_signature_requests
+            .get(&signature_request)
+            .is_none());
+    }
+
+    #[test]
+    fn get_pending_request__should_fall_back_to_legacy_map() {
+        // Given: a contract where an in-flight signature request only exists in the
+        // legacy fallback map (an entry inherited from the previous schema).
+        let (context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let signature_request = SignatureRequest::new(
+            DomainId::default(),
+            Payload::from_legacy_ecdsa([0u8; 32]),
+            &context.predecessor_account_id,
+            "m/44'\''/60'\''/0'\''/0/0",
+        );
+        contract
+            .legacy_pending_requests
+            .signature_requests
+            .insert(signature_request.clone(), YieldIndex { data_id: [9u8; 32] });
+
+        // When / then: the accessor finds it through the fallback.
+        let pending = contract
+            .get_pending_request(&signature_request)
+            .expect("legacy entry should be visible via get_pending_request");
+        assert_eq!(pending.data_id, [9u8; 32]);
+    }
+
+    #[test]
+    fn return_signature_and_clean_state_on_success__should_remove_legacy_entry_on_timeout() {
+        // Given: a legacy in-flight signature request lives only in the legacy map.
+        let (context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let signature_request = SignatureRequest::new(
+            DomainId::default(),
+            Payload::from_legacy_ecdsa([0u8; 32]),
+            &context.predecessor_account_id,
+            "m/44'\''/60'\''/0'\''/0/0",
+        );
+        contract
+            .legacy_pending_requests
+            .signature_requests
+            .insert(signature_request.clone(), YieldIndex { data_id: [7u8; 32] });
+        assert!(contract.get_pending_request(&signature_request).is_some());
+
+        // When: that legacy yield times out.
+        let _ = contract.return_signature_and_clean_state_on_success(
+            signature_request.clone(),
+            Err(PromiseError::Failed),
+        );
+
+        // Then: the legacy entry is cleared (and nothing leaks in the new map).
+        assert!(contract.get_pending_request(&signature_request).is_none());
+        assert!(contract
+            .legacy_pending_requests
+            .signature_requests
+            .get(&signature_request)
+            .is_none());
+        assert!(contract
+            .pending_signature_requests
+            .get(&signature_request)
+            .is_none());
+    }
+
+    #[test]
+    fn return_signature_and_clean_state_on_success__should_prefer_new_map_when_both_have_entries() {
+        // Given: the same request key has yields in both the new fan-out map and the
+        // legacy fallback (an edge case where a caller resubmitted post-upgrade
+        // while a legacy yield is still outstanding).
+        let (context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let signature_request = SignatureRequest::new(
+            DomainId::default(),
+            Payload::from_legacy_ecdsa([0u8; 32]),
+            &context.predecessor_account_id,
+            "m/44'\''/60'\''/0'\''/0/0",
+        );
+        contract.add_signature_request(signature_request.clone(), [1u8; 32]);
+        contract
+            .legacy_pending_requests
+            .signature_requests
+            .insert(signature_request.clone(), YieldIndex { data_id: [2u8; 32] });
+
+        // When: one timeout fires.
+        let _ = contract.return_signature_and_clean_state_on_success(
+            signature_request.clone(),
+            Err(PromiseError::Failed),
+        );
+
+        // Then: the new map's yield is popped first; the legacy entry is preserved
+        // so its own timeout (or a later `respond`) can still resolve it.
+        assert!(contract
+            .pending_signature_requests
+            .get(&signature_request)
+            .is_none());
+        assert!(contract
+            .legacy_pending_requests
+            .signature_requests
+            .get(&signature_request)
+            .is_some());
     }
 
     #[test]
@@ -3555,10 +3946,10 @@ mod tests {
         pub fn new_from_protocol_state(protocol_state: ProtocolContractState) -> Self {
             MpcContract {
                 protocol_state,
-                pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV3),
-                pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV2),
+                pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV4),
+                pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV3),
                 pending_verify_foreign_tx_requests: LookupMap::new(
-                    StorageKey::PendingVerifyForeignTxRequests,
+                    StorageKey::PendingVerifyForeignTxRequestsV2,
                 ),
                 accept_requests: true,
                 proposed_updates: Default::default(),
@@ -3566,7 +3957,7 @@ mod tests {
                 config: Default::default(),
                 tee_state: Default::default(),
                 node_migrations: Default::default(),
-                stale_data: StaleData {},
+                legacy_pending_requests: LegacyPendingRequests::new(),
                 metrics: Default::default(),
             }
         }

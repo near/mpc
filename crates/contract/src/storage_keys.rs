@@ -24,4 +24,7 @@ pub enum StorageKey {
     PendingSignatureRequestsV3,
     StoredAttestations,
     SupportedForeignChainsByNode,
+    PendingSignatureRequestsV4,
+    PendingCKDRequestsV3,
+    PendingVerifyForeignTxRequestsV2,
 }

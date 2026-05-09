@@ -85,7 +85,6 @@ async fn test_contract_request_duplicate_requests_all_schemes() -> anyhow::Resul
     for key in &keys {
         let alice = worker.dev_create_account().await.unwrap();
         let predecessor_id = alice.id();
-        // check that in case of duplicate request, only the most recent will be signed:
         let req = DomainResponseTest::new(&mut rng, key, predecessor_id);
         let status_1 = req
             .submit_request_ensure_included(&alice, &contract)
@@ -106,13 +105,12 @@ async fn test_contract_request_duplicate_requests_all_schemes() -> anyhow::Resul
             .await
             .unwrap();
         req.submit_response(&contract, attested_account).await?;
+        req.verify_execution_outcome(status_1)
+            .await
+            .expect("first duplicate request should receive the fanned-out response");
         req.verify_execution_outcome(status_2)
             .await
-            .expect("most recent signature request should succeed");
-        worker.fast_forward(SIGNATURE_TIMEOUT_BLOCKS).await.unwrap();
-        verify_timeout(status_1)
-            .await
-            .expect("initial signature request should time out");
+            .expect("second duplicate request should receive the fanned-out response");
     }
     Ok(())
 }
