@@ -22,6 +22,7 @@ use mpc_contract::primitives::{
     test_utils::infer_purpose_from_curve,
     thresholds::{Threshold, ThresholdParameters},
 };
+use near_mpc_contract_interface::types::ReconstructionThreshold;
 use near_mpc_contract_interface::{method_names, types as dtos};
 use near_workspaces::{network::Sandbox, Account, Contract, Worker};
 use rstest::rstest;
@@ -54,6 +55,7 @@ async fn test_keygen() -> anyhow::Result<()> {
             id: domain_id.into(),
             curve,
             protocol,
+            reconstruction_threshold: ReconstructionThreshold::new(6),
             purpose: DomainPurpose::Sign,
         }],
     )
@@ -68,6 +70,7 @@ async fn test_keygen() -> anyhow::Result<()> {
         id: dtos::DomainId(domain_id),
         curve,
         protocol,
+        reconstruction_threshold: ReconstructionThreshold::new(6),
         purpose: dtos::DomainPurpose::Sign,
     };
     let found = init
@@ -154,6 +157,13 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
         let curve = Curve::from(*protocol);
         let threshold = init_running.parameters.threshold.0 as usize;
 
+        // DamgardEtAl requires `2t - 1 <= n` (n=10 => t <= 5); other
+        // protocols use the cluster threshold (= 6 for n=10).
+        let reconstruction_threshold = match *protocol {
+            Protocol::DamgardEtAl => ReconstructionThreshold::new(5),
+            _ => ReconstructionThreshold::new(6),
+        };
+
         // vote to start key generation
         vote_add_domains(
             &contract,
@@ -162,6 +172,7 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
                 id: next_domain_id.into(),
                 curve,
                 protocol: *protocol,
+                reconstruction_threshold,
                 purpose: infer_purpose_from_curve(curve),
             }],
         )
@@ -181,6 +192,7 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
             id: dtos::DomainId(next_domain_id),
             curve,
             protocol: *protocol,
+            reconstruction_threshold,
             purpose: expected_purpose,
         };
         let found = init

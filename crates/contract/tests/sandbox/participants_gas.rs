@@ -19,7 +19,9 @@ use mpc_contract::{
     primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
 };
 use near_account_id::AccountId;
-use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, DomainPurpose, Protocol};
+use near_mpc_contract_interface::types::{
+    Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
+};
 use near_sdk::Gas;
 use near_workspaces::{Account, Contract};
 use rstest::rstest;
@@ -273,6 +275,7 @@ async fn setup_test_env_with_state(n_participants: usize, running_state: bool) -
             id: domain_id,
             curve: Curve::Secp256k1,
             protocol: Protocol::CaitSith,
+            reconstruction_threshold: ReconstructionThreshold::new(2),
             purpose: DomainPurpose::Sign,
         };
         let (dto_pk, _) = new_secp256k1();

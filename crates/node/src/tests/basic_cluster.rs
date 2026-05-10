@@ -7,7 +7,9 @@ use crate::tests::{
 };
 use crate::tracking::AutoAbortTask;
 use mpc_primitives::domain::{Curve, DomainId};
-use near_mpc_contract_interface::types::{DomainConfig, DomainPurpose, Protocol};
+use near_mpc_contract_interface::types::{
+    DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
+};
 use near_time::Clock;
 
 // Make a cluster of four nodes, test that we can generate keyshares
@@ -35,6 +37,7 @@ async fn test_basic_cluster() {
         id: DomainId(0),
         curve: Curve::Secp256k1,
         protocol: Protocol::CaitSith,
+        reconstruction_threshold: ReconstructionThreshold::new(3),
         purpose: DomainPurpose::Sign,
     };
 
@@ -42,6 +45,7 @@ async fn test_basic_cluster() {
         id: DomainId(1),
         curve: Curve::Edwards25519,
         protocol: Protocol::Frost,
+        reconstruction_threshold: ReconstructionThreshold::new(3),
         purpose: DomainPurpose::Sign,
     };
 
@@ -49,6 +53,7 @@ async fn test_basic_cluster() {
         id: DomainId(2),
         curve: Curve::Bls12381,
         protocol: Protocol::ConfidentialKeyDerivation,
+        reconstruction_threshold: ReconstructionThreshold::new(3),
         purpose: DomainPurpose::CKD,
     };
 

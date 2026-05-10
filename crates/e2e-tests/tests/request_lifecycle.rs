@@ -1,7 +1,8 @@
 use crate::common;
 
 use near_mpc_contract_interface::types::{
-    Curve, DomainConfig, DomainId, DomainPurpose, Protocol, SignatureResponse,
+    Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
+    SignatureResponse,
 };
 use rand::SeedableRng;
 
@@ -92,6 +93,7 @@ async fn mpc_cluster__should_successfully_process_robust_ecdsa_requests() {
             id: DomainId(0),
             curve: Curve::Secp256k1,
             protocol: Protocol::DamgardEtAl,
+            reconstruction_threshold: ReconstructionThreshold::new(3),
             purpose: DomainPurpose::Sign,
         }];
         c.triples_to_buffer = 0;

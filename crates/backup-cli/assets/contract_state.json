@@ -6,12 +6,14 @@
           "id": 0,
           "curve": "Secp256k1",
           "protocol": "CaitSith",
+          "reconstruction_threshold": 7,
           "purpose": "Sign"
         },
         {
           "id": 1,
           "curve": "Edwards25519",
           "protocol": "Frost",
+          "reconstruction_threshold": 7,
           "purpose": "Sign"
         }
       ],

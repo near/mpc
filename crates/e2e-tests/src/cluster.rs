@@ -10,7 +10,7 @@ use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
     AccountId as ContractAccountId, CKDAppPublicKey, Curve, DomainConfig, DomainId, DomainPurpose,
     Ed25519PublicKey, EpochId, ParticipantId, ParticipantInfo, Participants, Protocol,
-    ProtocolContractState, Threshold, ThresholdParameters,
+    ProtocolContractState, ReconstructionThreshold, Threshold, ThresholdParameters,
 };
 use rand::SeedableRng;
 use rand::rngs::StdRng;
@@ -153,18 +153,21 @@ impl MpcClusterConfig {
                     id: DomainId(0),
                     curve: Curve::Secp256k1,
                     protocol: Protocol::CaitSith,
+                    reconstruction_threshold: ReconstructionThreshold::new(2),
                     purpose: DomainPurpose::Sign,
                 },
                 DomainConfig {
                     id: DomainId(1),
                     curve: Curve::Edwards25519,
                     protocol: Protocol::Frost,
+                    reconstruction_threshold: ReconstructionThreshold::new(2),
                     purpose: DomainPurpose::Sign,
                 },
                 DomainConfig {
                     id: DomainId(2),
                     curve: Curve::Bls12381,
                     protocol: Protocol::ConfidentialKeyDerivation,
+                    reconstruction_threshold: ReconstructionThreshold::new(2),
                     purpose: DomainPurpose::CKD,
                 },
             ],
