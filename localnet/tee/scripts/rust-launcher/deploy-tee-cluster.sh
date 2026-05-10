@@ -815,6 +815,9 @@ render_node_files_range() {
     export EXTERNAL_MPC_LOCAL_DEBUG_PORT="127.0.0.1:${local_dbg_port}"
     export EXTERNAL_MPC_DECENTRALIZED_STATE_SYNC="${ip}:${STATE_SYNC_PORT}"
     export EXTERNAL_MPC_MAIN_PORT="${ip}:${MAIN_PORT}"
+
+    export TIER3_PUBLIC_ADDR="${ip}:${STATE_SYNC_PORT}"
+    export EXTERNAL_STORAGE_FALLBACK_THRESHOLD="${EXTERNAL_STORAGE_FALLBACK_THRESHOLD:-100}"
         local future_port
     future_port="$(future_port_for_i "$i")"
 

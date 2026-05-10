@@ -162,8 +162,9 @@ fn apply_near_config_patches(
     if near_init.chain_id.is_localnet() {
         config["state_sync_enabled"] = serde_json::Value::Bool(false);
     } else {
+        let storage_fallback_threshold = near_init.external_storage_fallback_threshold.unwrap_or(0);
         config["state_sync"]["sync"]["ExternalStorage"]["external_storage_fallback_threshold"] =
-            serde_json::json!(0);
+            serde_json::json!(storage_fallback_threshold);
     }
 
     // Track the shard that hosts the MPC contract.
@@ -175,6 +176,10 @@ fn apply_near_config_patches(
     }
     if let Some(network_addr) = &near_init.network_addr {
         config["network"]["addr"] = serde_json::Value::String(network_addr.clone());
+    }
+    if let Some(tier3) = &near_init.tier3_public_addr {
+        config["network"]["experimental"]["tier3_public_addr"] =
+            serde_json::Value::String(tier3.clone());
     }
 }
 
@@ -196,6 +201,8 @@ mod tests {
             download_genesis_records_url: None,
             rpc_addr: None,
             network_addr: None,
+            tier3_public_addr: None,
+            external_storage_fallback_threshold: None,
         }
     }
 
@@ -323,6 +330,55 @@ mod tests {
         assert_eq!(
             config["state_sync"]["sync"]["ExternalStorage"]["external_storage_fallback_threshold"],
             serde_json::json!(0)
+        );
+    }
+
+    #[test]
+    fn apply_near_config_patches__should_set_tier3_public_addr_when_provided() {
+        // Given
+        let mut config = empty_config_json();
+        let mut init = near_init(ChainId::Testnet);
+        init.tier3_public_addr = Some("46.105.87.136:24567".to_string());
+
+        // When
+        apply_near_config_patches(&mut config, &init, "v1.signer-prod.testnet");
+
+        // Then
+        assert_eq!(
+            config["network"]["experimental"]["tier3_public_addr"],
+            serde_json::json!("46.105.87.136:24567")
+        );
+    }
+
+    #[test]
+    fn apply_near_config_patches__should_omit_tier3_public_addr_when_unset() {
+        // Given
+        let mut config = empty_config_json();
+        let init = near_init(ChainId::Testnet);
+
+        // When
+        apply_near_config_patches(&mut config, &init, "v1.signer-prod.testnet");
+
+        // Then
+        assert!(config["network"]["experimental"]
+            .get("tier3_public_addr")
+            .is_none());
+    }
+
+    #[test]
+    fn apply_near_config_patches__should_use_configured_fallback_threshold() {
+        // Given
+        let mut config = empty_config_json();
+        let mut init = near_init(ChainId::Testnet);
+        init.external_storage_fallback_threshold = Some(1000);
+
+        // When
+        apply_near_config_patches(&mut config, &init, "v1.signer-prod.testnet");
+
+        // Then
+        assert_eq!(
+            config["state_sync"]["sync"]["ExternalStorage"]["external_storage_fallback_threshold"],
+            serde_json::json!(1000)
         );
     }
 }
