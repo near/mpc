@@ -260,25 +260,53 @@ mod tests {
     }
 
     #[test]
-    fn apply_near_config_patches__should_disable_state_sync_for_localnet() {
-        // Given — pre-populate the threshold with a sentinel so the negative
-        // assertion below is meaningful (otherwise the test passes even if
-        // the function does nothing).
+    fn apply_near_config_patches__should_preserve_existing_network_and_rpc_addr_when_unset() {
+        // Given — pre-populate network/rpc addr so we can prove the function
+        // leaves them alone when the operator hasn't set the override.
         let mut config = empty_config_json();
-        config["state_sync"]["sync"]["ExternalStorage"]["external_storage_fallback_threshold"] =
-            serde_json::json!(999);
-        let init = near_init(ChainId::Localnet);
+        config["network"]["addr"] = serde_json::json!("downloaded-network-addr:24567");
+        config["rpc"]["addr"] = serde_json::json!("downloaded-rpc-addr:3030");
+        let init = near_init(ChainId::Testnet);
 
         // When
-        apply_near_config_patches(&mut config, &init, "mpc-contract.test.near");
+        apply_near_config_patches(&mut config, &init, "v1.signer-prod.testnet");
 
-        // Then
-        assert_eq!(config["state_sync_enabled"], serde_json::json!(false));
-        // Localnet branch must not touch the threshold — sentinel survives.
+        // Then — sentinels survive (don't-clobber-downloaded-config contract).
         assert_eq!(
-            config["state_sync"]["sync"]["ExternalStorage"]["external_storage_fallback_threshold"],
-            serde_json::json!(999)
+            config["network"]["addr"],
+            serde_json::json!("downloaded-network-addr:24567")
         );
+        assert_eq!(
+            config["rpc"]["addr"],
+            serde_json::json!("downloaded-rpc-addr:3030")
+        );
+    }
+
+    #[test]
+    fn apply_near_config_patches__should_disable_state_sync_for_localnet() {
+        // is_localnet() returns true for both Localnet and Sandbox; cover both
+        // so a future split of the variants doesn't silently regress one arm.
+        for chain_id in [ChainId::Localnet, ChainId::Sandbox] {
+            // Given — pre-populate the threshold with a sentinel so the negative
+            // assertion below is meaningful (otherwise the test passes even if
+            // the function does nothing).
+            let mut config = empty_config_json();
+            config["state_sync"]["sync"]["ExternalStorage"]
+                ["external_storage_fallback_threshold"] = serde_json::json!(999);
+            let init = near_init(chain_id);
+
+            // When
+            apply_near_config_patches(&mut config, &init, "mpc-contract.test.near");
+
+            // Then
+            assert_eq!(config["state_sync_enabled"], serde_json::json!(false));
+            // Localnet branch must not touch the threshold — sentinel survives.
+            assert_eq!(
+                config["state_sync"]["sync"]["ExternalStorage"]
+                    ["external_storage_fallback_threshold"],
+                serde_json::json!(999)
+            );
+        }
     }
 
     #[test]
