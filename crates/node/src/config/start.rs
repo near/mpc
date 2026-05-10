@@ -261,8 +261,12 @@ mod tests {
 
     #[test]
     fn apply_near_config_patches__should_disable_state_sync_for_localnet() {
-        // Given
+        // Given — pre-populate the threshold with a sentinel so the negative
+        // assertion below is meaningful (otherwise the test passes even if
+        // the function does nothing).
         let mut config = empty_config_json();
+        config["state_sync"]["sync"]["ExternalStorage"]["external_storage_fallback_threshold"] =
+            serde_json::json!(999);
         let init = near_init(ChainId::Localnet);
 
         // When
@@ -270,8 +274,27 @@ mod tests {
 
         // Then
         assert_eq!(config["state_sync_enabled"], serde_json::json!(false));
-        assert!(config["state_sync"]["sync"]["ExternalStorage"]
-            .get("external_storage_fallback_threshold")
-            .is_none());
+        // Localnet branch must not touch the threshold — sentinel survives.
+        assert_eq!(
+            config["state_sync"]["sync"]["ExternalStorage"]["external_storage_fallback_threshold"],
+            serde_json::json!(999)
+        );
+    }
+
+    #[test]
+    fn apply_near_config_patches__should_set_external_storage_fallback_threshold_for_non_localnet()
+    {
+        // Given
+        let mut config = empty_config_json();
+        let init = near_init(ChainId::Testnet);
+
+        // When
+        apply_near_config_patches(&mut config, &init, "v1.signer-prod.testnet");
+
+        // Then — non-localnet path writes the historical hardcoded 0.
+        assert_eq!(
+            config["state_sync"]["sync"]["ExternalStorage"]["external_storage_fallback_threshold"],
+            serde_json::json!(0)
+        );
     }
 }
