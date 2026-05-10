@@ -179,7 +179,7 @@ fn apply_near_config_patches(
 }
 
 #[cfg(test)]
-#[allow(non_snake_case)] // tests follow `<system_under_test>__should_<assertion>` convention
+#[expect(non_snake_case)] // tests follow `<system_under_test>__should_<assertion>` convention
 mod tests {
     use super::*;
     use mpc_node_config::ChainId;
@@ -252,7 +252,10 @@ mod tests {
         apply_near_config_patches(&mut config, &init, "v1.signer-prod.testnet");
 
         // Then
-        assert_eq!(config["network"]["addr"], serde_json::json!("51.68.219.13:24567"));
+        assert_eq!(
+            config["network"]["addr"],
+            serde_json::json!("51.68.219.13:24567")
+        );
         assert_eq!(config["rpc"]["addr"], serde_json::json!("0.0.0.0:13030"));
     }
 
