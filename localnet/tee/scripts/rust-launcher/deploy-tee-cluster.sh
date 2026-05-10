@@ -816,9 +816,14 @@ render_node_files_range() {
     export EXTERNAL_MPC_DECENTRALIZED_STATE_SYNC="${ip}:${STATE_SYNC_PORT}"
     export EXTERNAL_MPC_MAIN_PORT="${ip}:${MAIN_PORT}"
 
-    export TIER3_PUBLIC_ADDR="${ip}:${STATE_SYNC_PORT}"
-    export EXTERNAL_STORAGE_FALLBACK_THRESHOLD="${EXTERNAL_STORAGE_FALLBACK_THRESHOLD:-100}"
-        local future_port
+    # DSS state-sync fields are only meaningful for testnet; localnet
+    # disables state sync entirely (apply_near_config_patches's localnet
+    # branch sets state_sync_enabled = false).
+    if [ "$MODE" = "testnet" ]; then
+        export TIER3_PUBLIC_ADDR="${ip}:${STATE_SYNC_PORT}"
+        export EXTERNAL_STORAGE_FALLBACK_THRESHOLD="${EXTERNAL_STORAGE_FALLBACK_THRESHOLD:-100}"
+    fi
+    local future_port
     future_port="$(future_port_for_i "$i")"
 
     export EXTERNAL_MPC_FUTURE_PORT="${ip}:${future_port}"
