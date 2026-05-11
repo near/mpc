@@ -33,7 +33,8 @@ use std::sync::{Arc, Mutex, Weak};
 ///    height 12 and then another block of height 10 that belongs to a different fork.
 ///  - The indexer, upon startup, may start giving blocks from any position in the blockchain,
 ///    including giving blocks from multiple forks without giving us any common parents.
-///  - The indexer may jump block heights, as long as the `prev_hash` exists and has been provided.
+///  - The indexer may skip block heights, meaning a block at height h can have a child at height
+///    h+m, for any m>0.
 ///
 /// Given these expectations, we provide the aforementioned functionalities by tracking the
 /// following:
@@ -78,7 +79,8 @@ pub enum CheckBlockResult {
     RecentAndFinal,
     /// The block is optimistically included in the chain, and it is on the canonical chain,
     /// but it is not yet part of the final chain. It is also recent enough.
-    /// On a same-height tie the canonical chain is "first-seen wins" — see `update_canonical_head`.
+    /// Note that if two chains tie for canonical height, the first one seen is considered the
+    /// canonical chain (c.f. [`RecentBlocksTracker::update_canonical_head`]).
     OptimisticAndCanonical,
     /// The block is optimistically included in the chain, but it is not on the canonical chain.
     /// It is also recent enough.
