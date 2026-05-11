@@ -403,6 +403,13 @@ foreign_chains:
           placeholder: "{api_key}"
           token:
             env: ANKR_API_KEY
+      helius:
+        rpc_url: "https://mainnet.helius-rpc.com/"
+        auth:
+          kind: query
+          name: api-key
+          token:
+            env: HELIUS_API_KEY
       public:
         rpc_url: "https://rpc.public.example.com"
         auth:
