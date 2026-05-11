@@ -447,7 +447,7 @@ Beyond the TDX quote itself, attestation requires PCCS-supplied collateral — T
 
 - **Endpoint configuration and fallback.** Operators list one or more PCCS endpoints in `pccs_endpoints`. The node tries each in order until one returns valid collateral. When the field is unspecified, the node falls back to a single default endpoint (Phala).
 
-- **TLS trust.** PCCS endpoints use standard public-CA trust roots by default. Each entry optionally accepts a TLS override: `tls.override = "ca_cert_pem"` adds a self-signed root as an additional trust anchor — the default public-CA roots remain active. `tls.override = "insecure"` disables TLS validation entirely. Both overrides are intended for self-hosted local PCCS deployments only.
+- **TLS trust.** PCCS endpoints use standard public-CA trust roots by default. Each entry optionally accepts a TLS override: `tls.override = "ca_cert_pem"` (with a `tls.ca_cert_pem` PEM body) adds a self-signed root as an additional trust anchor — the default public-CA roots remain active. `tls.override = "insecure"` disables TLS validation entirely. Both overrides are intended for self-hosted local PCCS deployments only.
 
 - **Freshness validation.** Collateral older than 7 days is rejected. The threshold applies uniformly to `tcb_info.issueDate`, `qe_identity.issueDate`, and the PCK CRL `thisUpdate`. A stale response from one endpoint causes the node to fall back to the next.
 

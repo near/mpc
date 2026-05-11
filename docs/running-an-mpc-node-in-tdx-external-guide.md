@@ -1625,8 +1625,9 @@ echo | openssl s_client -showcerts -connect 127.0.0.1:8081 \
 
 ### Configure the MPC node
 
-In `user-config.toml`, pin the **root CA** (not the leaf — the server
-presents the leaf, which chains to the root):
+In `user-config.toml`, add the **root CA** as a trust anchor (default
+public-CA roots remain active). The server presents the leaf, which
+chains to this root:
 
 ```toml
 [[mpc_node_config.pccs_endpoints]]
@@ -1648,3 +1649,7 @@ Disables all TLS certificate validation (cert chain *and* hostname).
 The startup log emits a clearly-labeled WARN when this mode is active.
 Acceptable for local-host bring-up before you've provisioned a proper
 cert; not recommended for any persistent setup.
+
+The code does **not** enforce loopback-only — `insecure` disables TLS
+for any URL configured. It is the operator's responsibility to use this
+value correctly. The startup WARN is the only guardrail.
