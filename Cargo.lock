@@ -3604,6 +3604,7 @@ dependencies = [
  "httpmock",
  "jsonrpsee",
  "mpc-primitives",
+ "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
  "rstest",
  "serde",

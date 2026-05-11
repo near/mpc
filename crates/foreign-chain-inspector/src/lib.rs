@@ -2,6 +2,7 @@ use derive_more::{Deref, Display, From};
 use ethereum_types::{H256, U64};
 use http::{HeaderMap, HeaderName, HeaderValue};
 use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
+use near_mpc_bounded_collections::NonEmptyVec;
 use thiserror::Error;
 
 pub use jsonrpsee::http_client;
@@ -27,7 +28,54 @@ pub trait ForeignChainInspector {
         tx_id: Self::TransactionId,
         finality: Self::Finality,
         extractors: Vec<Self::Extractor>,
-    ) -> impl Future<Output = Result<Vec<Self::ExtractedValue>, ForeignChainInspectionError>>;
+    ) -> impl Future<Output = Result<Vec<Self::ExtractedValue>, ForeignChainInspectionError>> + Send;
+}
+
+#[derive(Clone)]
+struct FanOutInspector<Inspector> {
+    inspectors: NonEmptyVec<Inspector>,
+}
+
+impl<Inspector> ForeignChainInspector for FanOutInspector<Inspector>
+where
+    Inspector: ForeignChainInspector + Clone + Send + Sync + 'static,
+    Inspector::TransactionId: Clone + Send + 'static,
+    Inspector::Finality: Clone + Send + 'static,
+    Inspector::Extractor: Clone + Send + 'static,
+    Inspector::ExtractedValue: Send + 'static,
+{
+    type TransactionId = Inspector::TransactionId;
+    type Finality = Inspector::Finality;
+    type Extractor = Inspector::Extractor;
+    type ExtractedValue = Inspector::ExtractedValue;
+
+    async fn extract(
+        &self,
+        tx_id: Self::TransactionId,
+        finality: Self::Finality,
+        extractors: Vec<Self::Extractor>,
+    ) -> Result<Vec<Self::ExtractedValue>, ForeignChainInspectionError> {
+        let mut join_set = tokio::task::JoinSet::new();
+        let spawns = 
+
+
+        for inspector in self.inspectors.iter().cloned() {
+            let tx_id = tx_id.clone();
+            let finality = finality.clone();
+            let extractors = extractors.clone();
+            join_set.spawn(async move { inspector.extract(tx_id, finality, extractors).await });
+        }
+
+
+        let mut inspectors = self.inspectors.clone();
+
+        inspectors.split_off(at)
+
+        let responses = join_set.join_all().await;
+        let first_re
+
+        todo!()
+    }
 }
 
 #[derive(Debug, Clone)]

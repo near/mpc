@@ -306,6 +306,23 @@ impl<T, const L: usize, const U: usize> BoundedVec<T, L, U, witnesses::NonEmpty<
         self.inner.split_last().unwrap()
     }
 
+    /// Returns the last and all the rest of the elements of the bounded vector.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let x: BoundedVec<_, 2, 8> = vec![0, 1, 2].try_into().unwrap();
+    /// let (last, remainder) = x.split_last_owned();
+    ///
+    /// assert_eq!(last, 2);
+    /// assert_eq!(remainder, vec![0, 1]);
+    /// ```
+    pub fn split_last_owned(mut self) -> (T, Vec<T>) {
+        let last = self.inner.pop().expect("vector is non empty");
+        let remainder = self.inner;
+
+        (last, remainder)
+    }
     /// Return a new BoundedVec with indices included
     pub fn enumerated(self) -> BoundedVec<(usize, T), L, U, witnesses::NonEmpty<L, U>> {
         BoundedVec {
