@@ -102,11 +102,9 @@ where
     Fut: Future<Output = Result<Vec<T>, ForeignChainInspectionError>>,
     T: PartialEq,
 {
-    let (first, rest) = futures::future::try_join(
-        first_future,
-        futures::future::try_join_all(rest_futures),
-    )
-    .await?;
+    let (first, rest) =
+        futures::future::try_join(first_future, futures::future::try_join_all(rest_futures))
+            .await?;
     for other in rest {
         if other != first {
             return Err(ForeignChainInspectionError::InspectorResponseMismatch);

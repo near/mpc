@@ -39,9 +39,9 @@ where
 
         fan_out_and_match(
             extract_with_client(first_client, transaction, finality.clone(), &extractors),
-            rest_clients
-                .iter()
-                .map(|client| extract_with_client(client, transaction, finality.clone(), &extractors)),
+            rest_clients.iter().map(|client| {
+                extract_with_client(client, transaction, finality.clone(), &extractors)
+            }),
         )
         .await
     }
