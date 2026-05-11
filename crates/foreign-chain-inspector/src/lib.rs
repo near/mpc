@@ -130,6 +130,8 @@ pub enum ForeignChainInspectionError {
     LogIndexOutOfBounds,
     #[error("failed to borsh serialize log event")]
     EventLogFailedBorshSerialization(std::io::Error),
+    #[error("inspector clients returned mismatching extracted values")]
+    InspectorResponseMismatch,
 }
 
 /// Builds an HTTP client with the specified authentication method.
