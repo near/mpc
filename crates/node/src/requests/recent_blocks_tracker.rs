@@ -464,11 +464,10 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
         let Some(min_height) = self.minimum_height_to_keep() else {
             return;
         };
-        let fh = self
-            .final_head
-            .as_ref()
-            .expect("final_head is Some whenever minimum_height_to_keep is Some")
-            .height;
+        let Some(fh_node) = &self.final_head else {
+            return;
+        };
+        let fh = fh_node.height;
         let dead_fork = |n: &BlockNode| n.height <= fh && !n.is_final.load(Ordering::Relaxed);
 
         // DFS from each root, skipping dead-fork subtrees (propagates transitivity)
