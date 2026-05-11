@@ -65,6 +65,86 @@ rpc_url = "https://bitcoin-rpc.publicnode.com"
 [node.foreign_chains.bitcoin.providers.public.auth]
 kind = "none"
 
+[node.foreign_chains.bitcoin.providers.nownodes]
+rpc_url = "https://btc.nownodes.io"
+
+[node.foreign_chains.bitcoin.providers.nownodes.auth]
+kind = "header"
+name = "api-key"
+token = { env = "NOWNODES_API_KEY" }
+
+[node.foreign_chains.solana]
+timeout_sec = 30
+max_retries = 3
+
+[node.foreign_chains.solana.providers.nownodes]
+rpc_url = "https://sol.nownodes.io"
+
+[node.foreign_chains.solana.providers.nownodes.auth]
+kind = "header"
+name = "api-key"
+token = { env = "NOWNODES_API_KEY" }
+
+[node.foreign_chains.solana.providers.onfinality]
+rpc_url = "https://solana.api.onfinality.io/rpc?apikey={api_key}"
+
+[node.foreign_chains.solana.providers.onfinality.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { env = "ONFINALITY_API_KEY" }
+
+[node.foreign_chains.arbitrum]
+timeout_sec = 30
+max_retries = 3
+
+[node.foreign_chains.arbitrum.providers.nownodes]
+rpc_url = "https://arbitrum.nownodes.io"
+
+[node.foreign_chains.arbitrum.providers.nownodes.auth]
+kind = "header"
+name = "api-key"
+token = { env = "NOWNODES_API_KEY" }
+
+[node.foreign_chains.arbitrum.providers.onfinality]
+rpc_url = "https://arbitrum.api.onfinality.io/rpc?apikey={api_key}"
+
+[node.foreign_chains.arbitrum.providers.onfinality.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { env = "ONFINALITY_API_KEY" }
+
+[node.foreign_chains.polygon]
+timeout_sec = 30
+max_retries = 3
+
+[node.foreign_chains.polygon.providers.nownodes]
+rpc_url = "https://matic.nownodes.io"
+
+[node.foreign_chains.polygon.providers.nownodes.auth]
+kind = "header"
+name = "api-key"
+token = { env = "NOWNODES_API_KEY" }
+
+[node.foreign_chains.polygon.providers.onfinality]
+rpc_url = "https://polygon.api.onfinality.io/rpc?apikey={api_key}"
+
+[node.foreign_chains.polygon.providers.onfinality.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { env = "ONFINALITY_API_KEY" }
+
+[node.foreign_chains.hyper_evm]
+timeout_sec = 30
+max_retries = 3
+
+[node.foreign_chains.hyper_evm.providers.nownodes]
+rpc_url = "https://hyperliquid.nownodes.io"
+
+[node.foreign_chains.hyper_evm.providers.nownodes.auth]
+kind = "header"
+name = "api-key"
+token = { env = "NOWNODES_API_KEY" }
+
 [node.foreign_chains.abstract]
 timeout_sec = 30
 max_retries = 3
@@ -75,6 +155,14 @@ rpc_url = "https://api.testnet.abs.xyz"
 [node.foreign_chains.abstract.providers.public.auth]
 kind = "none"
 
+[node.foreign_chains.abstract.providers.onfinality]
+rpc_url = "https://abstract.api.onfinality.io/rpc?apikey={api_key}"
+
+[node.foreign_chains.abstract.providers.onfinality.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { env = "ONFINALITY_API_KEY" }
+
 [node.foreign_chains.starknet]
 timeout_sec = 30
 max_retries = 3
@@ -84,3 +172,11 @@ rpc_url = "https://starknet-rpc.publicnode.com"
 
 [node.foreign_chains.starknet.providers.public.auth]
 kind = "none"
+
+[node.foreign_chains.starknet.providers.onfinality]
+rpc_url = "https://starknet.api.onfinality.io/rpc?apikey={api_key}"
+
+[node.foreign_chains.starknet.providers.onfinality.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { env = "ONFINALITY_API_KEY" }
