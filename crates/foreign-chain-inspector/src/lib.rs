@@ -42,7 +42,7 @@ where
     Inspector::TransactionId: Clone + Send + 'static,
     Inspector::Finality: Clone + Send + 'static,
     Inspector::Extractor: Clone + Send + 'static,
-    Inspector::ExtractedValue: Send + 'static,
+    Inspector::ExtractedValue: Send + 'static + PartialEq,
 {
     type TransactionId = Inspector::TransactionId;
     type Finality = Inspector::Finality;
@@ -56,8 +56,6 @@ where
         extractors: Vec<Self::Extractor>,
     ) -> Result<Vec<Self::ExtractedValue>, ForeignChainInspectionError> {
         let mut join_set = tokio::task::JoinSet::new();
-        let spawns = 
-
 
         for inspector in self.inspectors.iter().cloned() {
             let tx_id = tx_id.clone();
@@ -66,13 +64,15 @@ where
             join_set.spawn(async move { inspector.extract(tx_id, finality, extractors).await });
         }
 
+        let mut responses = join_set.join_all().await;
 
-        let mut inspectors = self.inspectors.clone();
+        let first_response = responses
+            .pop()
+            .expect("inspectors is non empty, thus responses is also non empty");
 
-        inspectors.split_off(at)
-
-        let responses = join_set.join_all().await;
-        let first_re
+        responses
+            .iter()
+            .all(|other_response| first_response == other_response);
 
         todo!()
     }
