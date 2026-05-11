@@ -1,0 +1,222 @@
+# TOML equivalent of deployment/localnet/foreign_chains.yaml, namespaced
+# under `[node.foreign_chains.*]` so it can be spliced into a TOML config
+# produced by `envsubst < docs/localnet/mpc-config.template.toml > ...`.
+#
+# Usage:
+#   1. Source the keys:  set -a; source deployment/localnet/.env; set +a
+#   2. Render your mpc-config.toml from the template per docs/localnet/localnet.md.
+#   3. Replace the rendered file's `[node.foreign_chains.*]` blocks (the
+#      "public"-only stubs around lines 58–86 of the template) with the
+#      contents of THIS file.
+#   4. Run: RUST_LOG=info mpc-node start-with-config-file <path>
+#
+# Exclusions and known-failing combos are documented in the YAML sibling.
+
+[node.foreign_chains.bitcoin]
+timeout_sec = 30
+max_retries = 3
+sample_tx_id = "58ee376171bcc4e2cc040c13848d420b5eaf2f634872055b0a08c1fc2ec6453c"
+
+[node.foreign_chains.bitcoin.providers.ankr]
+rpc_url = "https://rpc.ankr.com/btc/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { env = "ANKR_API_KEY" } }
+
+[node.foreign_chains.bitcoin.providers.blockdaemon]
+rpc_url = "https://svc.blockdaemon.com/bitcoin/mainnet/native"
+auth = { kind = "header", name = "Authorization", scheme = "Bearer", token = { env = "BLOCKDAEMON_API_KEY" } }
+
+[node.foreign_chains.bitcoin.providers.drpc]
+rpc_url = "https://lb.drpc.org/ogrpc?network=bitcoin"
+auth = { kind = "query", name = "dkey", token = { env = "DRPC_API_KEY" } }
+
+[node.foreign_chains.bitcoin.providers.nownodes]
+rpc_url = "https://btc.nownodes.io/"
+auth = { kind = "header", name = "api-key", token = { env = "NOWNODES_API_KEY" } }
+
+[node.foreign_chains.bitcoin.providers.tatum]
+rpc_url = "https://bitcoin-mainnet.gateway.tatum.io/"
+auth = { kind = "header", name = "x-api-key", token = { env = "TATUM_API_KEY" } }
+
+[node.foreign_chains.ethereum]
+timeout_sec = 30
+max_retries = 3
+sample_tx_id = "0x596b624cfd6ed5723cf60422a199d10f2b5be8c87c07db8e2643c259414d960a"
+
+[node.foreign_chains.ethereum.providers.ankr]
+rpc_url = "https://rpc.ankr.com/eth/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { env = "ANKR_API_KEY" } }
+
+[node.foreign_chains.ethereum.providers.blockdaemon]
+rpc_url = "https://svc.blockdaemon.com/ethereum/mainnet/native"
+auth = { kind = "header", name = "Authorization", scheme = "Bearer", token = { env = "BLOCKDAEMON_API_KEY" } }
+
+[node.foreign_chains.ethereum.providers.blockpi]
+rpc_url = "https://ethereum.blockpi.network/v1/rpc/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { env = "BLOCKPI_API_KEY" } }
+
+[node.foreign_chains.ethereum.providers.drpc]
+rpc_url = "https://lb.drpc.org/ogrpc?network=ethereum"
+auth = { kind = "query", name = "dkey", token = { env = "DRPC_API_KEY" } }
+
+[node.foreign_chains.ethereum.providers.dwellir]
+rpc_url = "https://api-ethereum-mainnet.n.dwellir.com/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { env = "DWELLIR_API_KEY" } }
+
+[node.foreign_chains.ethereum.providers.infura]
+rpc_url = "https://mainnet.infura.io/v3/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { env = "INFURA_API_KEY" } }
+
+[node.foreign_chains.ethereum.providers.tatum]
+rpc_url = "https://ethereum-mainnet.gateway.tatum.io/"
+auth = { kind = "header", name = "x-api-key", token = { env = "TATUM_API_KEY" } }
+
+[node.foreign_chains.bnb]
+timeout_sec = 30
+max_retries = 3
+sample_tx_id = "0x90514fff1563dc9876bc9a02a7b1d4dd2ce44b8d11ea0490aa8d427166eba349"
+
+[node.foreign_chains.bnb.providers.ankr]
+rpc_url = "https://rpc.ankr.com/bsc/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { env = "ANKR_API_KEY" } }
+
+[node.foreign_chains.bnb.providers.drpc]
+rpc_url = "https://lb.drpc.org/ogrpc?network=bsc"
+auth = { kind = "query", name = "dkey", token = { env = "DRPC_API_KEY" } }
+
+[node.foreign_chains.bnb.providers.dwellir]
+rpc_url = "https://api-bsc-mainnet-full.n.dwellir.com/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { env = "DWELLIR_API_KEY" } }
+
+[node.foreign_chains.bnb.providers.infura]
+rpc_url = "https://bsc-mainnet.infura.io/v3/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { env = "INFURA_API_KEY" } }
+
+[node.foreign_chains.bnb.providers.tatum]
+rpc_url = "https://bsc-mainnet.gateway.tatum.io/"
+auth = { kind = "header", name = "x-api-key", token = { env = "TATUM_API_KEY" } }
+
+[node.foreign_chains.polygon]
+timeout_sec = 30
+max_retries = 3
+sample_tx_id = "0x7b231f0f5bf36782a48db9b1d89e4613bd00618f03c3c0fba922aa59288e4d38"
+
+[node.foreign_chains.polygon.providers.ankr]
+rpc_url = "https://rpc.ankr.com/polygon/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { env = "ANKR_API_KEY" } }
+
+[node.foreign_chains.polygon.providers.blockdaemon]
+rpc_url = "https://svc.blockdaemon.com/polygon/mainnet/native/http-rpc"
+auth = { kind = "header", name = "Authorization", scheme = "Bearer", token = { env = "BLOCKDAEMON_API_KEY" } }
+
+[node.foreign_chains.polygon.providers.drpc]
+rpc_url = "https://lb.drpc.org/ogrpc?network=polygon"
+auth = { kind = "query", name = "dkey", token = { env = "DRPC_API_KEY" } }
+
+[node.foreign_chains.polygon.providers.dwellir]
+rpc_url = "https://api-polygon-mainnet-full.n.dwellir.com/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { env = "DWELLIR_API_KEY" } }
+
+[node.foreign_chains.polygon.providers.infura]
+rpc_url = "https://polygon-mainnet.infura.io/v3/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { env = "INFURA_API_KEY" } }
+
+[node.foreign_chains.polygon.providers.nownodes]
+rpc_url = "https://matic.nownodes.io/"
+auth = { kind = "header", name = "api-key", token = { env = "NOWNODES_API_KEY" } }
+
+[node.foreign_chains.polygon.providers.tatum]
+rpc_url = "https://polygon-mainnet.gateway.tatum.io/"
+auth = { kind = "header", name = "x-api-key", token = { env = "TATUM_API_KEY" } }
+
+[node.foreign_chains.arbitrum]
+timeout_sec = 30
+max_retries = 3
+sample_tx_id = "0x8f1f497285dcf54624cba2c3dd46d13e25fc83466033c139e77e4dce12a1e484"
+
+[node.foreign_chains.arbitrum.providers.ankr]
+rpc_url = "https://rpc.ankr.com/arbitrum/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { env = "ANKR_API_KEY" } }
+
+[node.foreign_chains.arbitrum.providers.blockdaemon]
+rpc_url = "https://svc.blockdaemon.com/arbitrum/mainnet-one/native/http-rpc"
+auth = { kind = "header", name = "Authorization", scheme = "Bearer", token = { env = "BLOCKDAEMON_API_KEY" } }
+
+[node.foreign_chains.arbitrum.providers.drpc]
+rpc_url = "https://lb.drpc.org/ogrpc?network=arbitrum"
+auth = { kind = "query", name = "dkey", token = { env = "DRPC_API_KEY" } }
+
+[node.foreign_chains.arbitrum.providers.dwellir]
+rpc_url = "https://api-arbitrum-mainnet-archive.n.dwellir.com/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { env = "DWELLIR_API_KEY" } }
+
+[node.foreign_chains.arbitrum.providers.infura]
+rpc_url = "https://arbitrum-mainnet.infura.io/v3/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { env = "INFURA_API_KEY" } }
+
+[node.foreign_chains.arbitrum.providers.nownodes]
+rpc_url = "https://arbitrum.nownodes.io/"
+auth = { kind = "header", name = "api-key", token = { env = "NOWNODES_API_KEY" } }
+
+[node.foreign_chains.arbitrum.providers.tatum]
+rpc_url = "https://arb-one-mainnet.gateway.tatum.io/"
+auth = { kind = "header", name = "x-api-key", token = { env = "TATUM_API_KEY" } }
+
+[node.foreign_chains.base]
+timeout_sec = 30
+max_retries = 3
+sample_tx_id = "0xa11eaa1236e80f26ddc7aca164f2ba4c6c2726405cb12b1aa8f52c520bad99e1"
+
+[node.foreign_chains.base.providers.ankr]
+rpc_url = "https://rpc.ankr.com/base/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { env = "ANKR_API_KEY" } }
+
+[node.foreign_chains.base.providers.blockdaemon]
+rpc_url = "https://svc.blockdaemon.com/base/mainnet/native/http-rpc"
+auth = { kind = "header", name = "Authorization", scheme = "Bearer", token = { env = "BLOCKDAEMON_API_KEY" } }
+
+[node.foreign_chains.base.providers.dwellir]
+rpc_url = "https://api-base-mainnet-archive.n.dwellir.com/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { env = "DWELLIR_API_KEY" } }
+
+[node.foreign_chains.base.providers.tatum]
+rpc_url = "https://base-mainnet.gateway.tatum.io/"
+auth = { kind = "header", name = "x-api-key", token = { env = "TATUM_API_KEY" } }
+
+[node.foreign_chains.hyper_evm]
+timeout_sec = 30
+max_retries = 3
+sample_tx_id = "0x4d94e2c9c33c533f125bd28a788e80ee24c108356e8fa8a7878f642cf94dcf4a"
+
+[node.foreign_chains.hyper_evm.providers.drpc]
+rpc_url = "https://lb.drpc.org/ogrpc?network=hyperliquid"
+auth = { kind = "query", name = "dkey", token = { env = "DRPC_API_KEY" } }
+
+[node.foreign_chains.solana]
+timeout_sec = 30
+max_retries = 3
+sample_tx_id = "4KgPsECUGeSgtKmQ2P8YAF7LwsQ61YW3S5nAh8yWcBrBt2g9CjwLwjEH8cneHxugrvoiNSY7RTtEYp7zfWQUza6E"
+
+[node.foreign_chains.solana.providers.blockdaemon]
+rpc_url = "https://svc.blockdaemon.com/solana/mainnet/native"
+auth = { kind = "header", name = "Authorization", scheme = "Bearer", token = { env = "BLOCKDAEMON_API_KEY" } }
+
+[node.foreign_chains.solana.providers.nownodes]
+rpc_url = "https://sol.nownodes.io/"
+auth = { kind = "header", name = "api-key", token = { env = "NOWNODES_API_KEY" } }
+
+[node.foreign_chains.solana.providers.tatum]
+rpc_url = "https://solana-mainnet.gateway.tatum.io/"
+auth = { kind = "header", name = "x-api-key", token = { env = "TATUM_API_KEY" } }
+
+[node.foreign_chains.starknet]
+timeout_sec = 30
+max_retries = 3
+sample_tx_id = "0x7a7645a2672354006c5209ce40d6060c3aa14d581ccdfd3825f5af73b3959c5"
+
+[node.foreign_chains.starknet.providers.dwellir]
+rpc_url = "https://api-starknet-mainnet.n.dwellir.com/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { env = "DWELLIR_API_KEY" } }
+
+[node.foreign_chains.starknet.providers.infura]
+rpc_url = "https://starknet-mainnet.infura.io/v3/{api_key}"
+auth = { kind = "path", placeholder = "{api_key}", token = { env = "INFURA_API_KEY" } }

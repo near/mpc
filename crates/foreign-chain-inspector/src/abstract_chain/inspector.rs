@@ -7,6 +7,7 @@ use crate::{
 pub struct Abstract;
 
 impl EvmChain for Abstract {
+    const NAME: &'static str = "Abstract";
     type BlockHash = AbstractBlockHash;
     type TransactionHash = AbstractTransactionHash;
 }

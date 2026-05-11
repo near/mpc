@@ -1,7 +1,7 @@
 use jsonrpsee::core::client::ClientT;
 
 use crate::bitcoin::{BitcoinExtractedValue, BitcoinTransactionHash};
-use crate::{BlockConfirmations, ForeignChainInspectionError, ForeignChainInspector};
+use crate::{BlockConfirmations, ForeignChainInspectionError, ForeignChainInspector, ProbeError};
 use foreign_chain_rpc_interfaces::bitcoin::{
     GetRawTransactionArgs, GetRawTransactionVerboseResponse, TransportBitcoinTransactionHash,
 };
@@ -66,6 +66,25 @@ where
 {
     pub fn new(client: Client) -> Self {
         Self { client }
+    }
+
+    /// Startup probe: fetch a configured sample transaction and verify the provider returns a
+    /// decodable response. Finality and extractors are intentionally not exercised — the goal is
+    /// to catch connectivity, auth, and response-shape misconfigurations before the chain is
+    /// registered on-chain.
+    pub async fn probe_sample_tx(&self, tx_id: &str) -> Result<(), ProbeError> {
+        let parsed: BitcoinTransactionHash = tx_id
+            .parse()
+            .map_err(|_| ProbeError::InvalidTxId(tx_id.to_string(), "Bitcoin"))?;
+        let args = GetRawTransactionArgs {
+            transaction_hash: TransportBitcoinTransactionHash::from(*parsed),
+            verbose: VERBOSE_RESPONSE,
+        };
+        let _: GetRawTransactionVerboseResponse = self
+            .client
+            .request(GET_RAW_TRANSACTION_METHOD, &args)
+            .await?;
+        Ok(())
     }
 }
 

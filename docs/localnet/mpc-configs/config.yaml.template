@@ -32,24 +32,63 @@ foreign_chains:
   bitcoin:
     timeout_sec: 30
     max_retries: 3
+    sample_tx_id: "58ee376171bcc4e2cc040c13848d420b5eaf2f634872055b0a08c1fc2ec6453c"
     providers:
-      public:
-        rpc_url: "https://bitcoin-rpc.publicnode.com"
-        auth:
-          kind: none
+      ankr:
+        rpc_url: "https://rpc.ankr.com/btc/{api_key}"
+        auth: { kind: path, placeholder: "{api_key}", token: { env: ANKR_API_KEY } }
+
   abstract:
     timeout_sec: 30
     max_retries: 3
+    # Abstract *testnet* tx (matches docs/localnet/args/verify_foreign_tx_abstract.json).
+    sample_tx_id: "497fc5f5b5d81d6bc15cccc6d4d8be8ef6ad19376233b944a60dc435593f7234"
     providers:
       public:
         rpc_url: "https://api.testnet.abs.xyz"
-        auth:
-          kind: none
+        auth: { kind: none }
+
+  arbitrum:
+    timeout_sec: 30
+    max_retries: 3
+    sample_tx_id: "0x8f1f497285dcf54624cba2c3dd46d13e25fc83466033c139e77e4dce12a1e484"
+    providers:
+      ankr:
+        rpc_url: "https://rpc.ankr.com/arbitrum/{api_key}"
+        auth: { kind: path, placeholder: "{api_key}", token: { env: ANKR_API_KEY } }
+
+  base:
+    timeout_sec: 30
+    max_retries: 3
+    sample_tx_id: "0xa11eaa1236e80f26ddc7aca164f2ba4c6c2726405cb12b1aa8f52c520bad99e1"
+    providers:
+      ankr:
+        rpc_url: "https://rpc.ankr.com/base/{api_key}"
+        auth: { kind: path, placeholder: "{api_key}", token: { env: ANKR_API_KEY } }
+
+  bnb:
+    timeout_sec: 30
+    max_retries: 3
+    sample_tx_id: "0x90514fff1563dc9876bc9a02a7b1d4dd2ce44b8d11ea0490aa8d427166eba349"
+    providers:
+      ankr:
+        rpc_url: "https://rpc.ankr.com/bsc/{api_key}"
+        auth: { kind: path, placeholder: "{api_key}", token: { env: ANKR_API_KEY } }
+
+  polygon:
+    timeout_sec: 30
+    max_retries: 3
+    sample_tx_id: "0x7b231f0f5bf36782a48db9b1d89e4613bd00618f03c3c0fba922aa59288e4d38"
+    providers:
+      ankr:
+        rpc_url: "https://rpc.ankr.com/polygon/{api_key}"
+        auth: { kind: path, placeholder: "{api_key}", token: { env: ANKR_API_KEY } }
+
   starknet:
     timeout_sec: 30
     max_retries: 3
+    sample_tx_id: "0x07a7645a2672354006c5209ce40d6060c3aa14d581ccdfd3825f5af73b3959c5"
     providers:
-      public:
-        rpc_url: "https://starknet-rpc.publicnode.com"
-        auth:
-          kind: none
+      infura:
+        rpc_url: "https://starknet-mainnet.infura.io/v3/{api_key}"
+        auth: { kind: path, placeholder: "{api_key}", token: { env: INFURA_API_KEY } }

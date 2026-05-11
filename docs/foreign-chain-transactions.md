@@ -379,6 +379,8 @@ foreign_chains:
   solana:
     timeout_sec: 30
     max_retries: 3
+    # Well-known finalized transaction used to validate each provider on startup.
+    sample_tx_id: "5j7s6NiJS3JAkvgkoc18WVAsiSaci2pxB2A6ueCJP4tprA2TFg9wSyTLeYouxPBJEMzJinENTkpA52YStRW5Dia7"
     providers:
       alchemy:
         rpc_url: "https://solana-mainnet.g.alchemy.com/v2/"
@@ -415,6 +417,64 @@ Auth variants are explicitly modeled because providers differ in how they expect
 to be supplied (e.g., bearer tokens, custom headers, query params, or URL path tokens), and some
 providers require no auth at all.
 
+## Provider Startup Validation (Sample Transaction Lookup)
+
+Misconfigured providers (wrong URL, missing or rotated API key, wrong network, response shape that
+the extractors cannot parse) often look healthy until the first real verification request fails.
+To surface these problems before the node registers a chain on-chain, every chain config includes a
+`sample_tx_id` and every configured provider is probed against it on startup.
+
+### Behavior
+
+For each `(chain, provider)` pair in the local config, before `register_foreign_chain_config` is
+submitted for that chain, the node:
+
+1. Issues the same RPC method(s) a real request would invoke (e.g. `eth_getTransactionReceipt`
+   for Ethereum, `getrawtransaction` for Bitcoin, `starknet_getTransactionReceipt` for Starknet)
+   against the provider's `rpc_url`, using its configured auth.
+2. Verifies the response decodes into the chain's internal representation. Decoding failures
+   (wrong response shape, tx not found on this network, missing fields) are surfaced as probe
+   failures.
+
+Finality is intentionally **not** checked during probing: the sample tx is expected to be ancient
+and finalized everywhere, so a finality mismatch would point at an unusual provider state rather
+than a misconfiguration. The probe focuses on connectivity, auth, and response shape.
+
+A provider passes only if both steps succeed within the chain's configured `timeout_sec`.
+
+### Failure Handling
+
+* If **any** provider for a chain fails validation, the node logs a structured error
+  (`chain`, `provider_name`, `rpc_url`, failing step, error) and **skips registering that chain**
+  with the contract. Other chains are unaffected.
+* The node continues startup. Because `get_supported_foreign_chains()` is the intersection of all
+  participants' registered chains, a single node skipping a chain transparently removes it from
+  the network-supported set until the operator fixes the provider and the node re-registers.
+* Validation is **not** retried in a tight loop during startup — operators are expected to fix the
+  configuration and restart. Periodic re-validation is out of scope for this design and tracked
+  separately.
+
+### Why Per-Chain, Not Per-Provider
+
+Sample transactions are chain-wide invariants (a Solana mainnet tx is valid against every Solana
+mainnet RPC provider), so co-locating `sample_tx_id` with the chain block avoids drift between
+providers and keeps the config minimal. If an operator points two providers at different networks
+(e.g. mainnet vs. devnet) by mistake, the sample-tx probe is exactly the check that catches it:
+the devnet provider will not know the mainnet tx and will fail validation.
+
+### Sample Transaction Selection
+
+The sample tx should be:
+
+* **Old and finalized** — far past any reorg window, so the probe is stable.
+* **Non-trivial** — contains at least one instruction / log / output, so extractors have something
+  to operate on.
+* **Public** — known to every reputable provider for that chain (avoid txs that archive-only nodes
+  might have pruned).
+
+Operators are responsible for picking and rotating the sample tx as needed; the node treats it as
+an opaque chain-specific identifier.
+
 ## Risks
 
 * **RPC trust and correctness**: Verification relies on centralized RPC providers. A malicious
@@ -426,4 +486,7 @@ providers require no auth at all.
 * **Finality semantics**: Finality definitions differ across chains; mapping them correctly is critical.
 * **Rollout coordination**: A chain is only considered supported once **every** active participant has registered it; a single lagging operator can delay enabling a new chain.
 * **Config drift**: Nodes missing required provider keys will fail startup validation.
+* **Sample tx staleness**: If a chosen `sample_tx_id` is pruned by some providers (e.g. non-archive
+  nodes drop old txs), startup validation will reject otherwise-healthy providers. Operators must
+  pick samples retained by all configured providers and rotate them if retention windows change.
 * **Extractor correctness**: Bugs or ambiguous specifications in extractors could produce incorrect values.

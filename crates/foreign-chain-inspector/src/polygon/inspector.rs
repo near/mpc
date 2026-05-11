@@ -7,6 +7,7 @@ use crate::{
 pub struct Polygon;
 
 impl EvmChain for Polygon {
+    const NAME: &'static str = "Polygon";
     type BlockHash = PolygonBlockHash;
     type TransactionHash = PolygonTransactionHash;
 }

@@ -3,7 +3,10 @@ use std::hash::Hash;
 
 use jsonrpsee::core::client::ClientT;
 
-use crate::{EthereumFinality, ForeignChainInspectionError, ForeignChainInspector};
+use crate::{
+    EthereumFinality, ForeignChainInspectionError, ForeignChainInspector, ProbeError,
+    parse_evm_style_tx_hash,
+};
 
 use foreign_chain_rpc_interfaces::evm::{
     BlockNumberOrTag, FinalityTag, GetBlockByNumberArgs, GetBlockByNumberResponse,
@@ -20,6 +23,9 @@ const GET_BLOCK_BY_NUMBER_METHOD: &str = "eth_getBlockByNumber";
 /// different chains remain type-incompatible at the call site, while sharing the
 /// single [`EvmInspector`] implementation.
 pub trait EvmChain {
+    /// Human-readable name used in error messages (e.g., the sample-tx probe error). Each concrete
+    /// chain marker provides its own value so operator-facing errors can name the failing chain.
+    const NAME: &'static str;
     type BlockHash: From<[u8; 32]> + Into<[u8; 32]> + Clone + Debug + PartialEq + Eq + Hash;
     type TransactionHash: From<[u8; 32]> + Into<[u8; 32]> + Clone + Debug + PartialEq + Eq + Hash;
 }
@@ -87,6 +93,22 @@ where
             client,
             _chain: std::marker::PhantomData,
         }
+    }
+
+    /// Startup probe: fetch a configured sample transaction's receipt and verify the provider
+    /// returns a decodable response. Finality is intentionally not checked — see
+    /// `docs/foreign-chain-transactions.md`. `null` (tx not found) surfaces as an RPC decode
+    /// error, which is the failure mode we want operators to notice.
+    pub async fn probe_sample_tx(&self, tx_id: &str) -> Result<(), ProbeError> {
+        let bytes = parse_evm_style_tx_hash(tx_id, Chain::NAME)?;
+        let args = GetTransactionReceiptARgs {
+            transaction_hash: H256(bytes),
+        };
+        let _: GetTransactionReceiptResponse = self
+            .client
+            .request(GET_TRANSACTION_RECEIPT_METHOD, &args)
+            .await?;
+        Ok(())
     }
 
     /// Checks that the receipt's block has reached the requested finality level — i.e. that the
