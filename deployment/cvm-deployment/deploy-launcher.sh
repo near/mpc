@@ -1,8 +1,20 @@
 #!/bin/bash
 
-# Deploys a new launcher_test_app VM to dstack-vmm using a templated Docker Compose file.
-# Loads environment variables from a .env file, generates app-compose.json, and runs deployment.
+# Deploys a new launcher_test_app VM to dstack-vmm using the launcher Docker
+# Compose template at crates/contract/assets/launcher_docker_compose.yaml.template.
+# The template's {{LAUNCHER_IMAGE_HASH}} and {{DEFAULT_IMAGE_DIGEST_HASH}}
+# placeholders are filled in from the LAUNCHER_MANIFEST_DIGEST and
+# MPC_MANIFEST_DIGEST env vars; the rendered file's SHA256 must match an
+# entry in the contract's allowed_launcher_compose_hashes for attestation
+# to succeed.
+#
+# Loads environment variables from a .env file, generates app-compose.json,
+# and runs deployment.
 # Based on: https://github.com/Dstack-TEE/dstack/blob/be9d0476a63e937eda4c13659547a25088393394/kms/dstack-app/deploy-to-vmm.sh
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+DEFAULT_COMPOSE_TEMPLATE="$REPO_ROOT/crates/contract/assets/launcher_docker_compose.yaml.template"
 
 check_ports_in_use() {
     PORT_VARS="
@@ -131,7 +143,8 @@ required_env_vars=(
   "SEALING_KEY_TYPE"
   "DISK"
   "USER_CONFIG_FILE_PATH"
-  "DOCKER_COMPOSE_FILE_PATH"
+  "LAUNCHER_MANIFEST_DIGEST"
+  "MPC_MANIFEST_DIGEST"
   "APP_NAME"
   "OS_IMAGE"
 )
@@ -146,9 +159,13 @@ for var in "${required_env_vars[@]}"; do
   fi
 done
 
+# Allow overriding the compose template (rarely needed — the contract template
+# is the source of truth for what compose hash the contract will accept).
+COMPOSE_TEMPLATE="${COMPOSE_TEMPLATE:-$DEFAULT_COMPOSE_TEMPLATE}"
+
 required_files=(
   "USER_CONFIG_FILE_PATH"
-  "DOCKER_COMPOSE_FILE_PATH"
+  "COMPOSE_TEMPLATE"
 )
 
 for var in "${required_files[@]}"; do
@@ -173,14 +190,24 @@ fi
 CLI="$pythonExec $basePath/vmm/src/vmm-cli.py --url $VMM_RPC"
 
 
+# Render the contract launcher compose template with the launcher and MPC
+# manifest digests. The rendered file's SHA256 must match an entry in the
+# contract's allowed_launcher_compose_hashes for attestation to succeed.
 COMPOSE_TMP=$(mktemp)
 
-cp "$DOCKER_COMPOSE_FILE_PATH" "$COMPOSE_TMP"
+launcher_hex="${LAUNCHER_MANIFEST_DIGEST#sha256:}"
+mpc_hex="${MPC_MANIFEST_DIGEST#sha256:}"
 
-subvar() {
-  sed -i "s|\${$1}|${!1}|g" "$COMPOSE_TMP"
-}
+sed \
+  -e "s|{{LAUNCHER_IMAGE_HASH}}|${launcher_hex}|" \
+  -e "s|{{DEFAULT_IMAGE_DIGEST_HASH}}|${mpc_hex}|" \
+  "$COMPOSE_TEMPLATE" > "$COMPOSE_TMP"
 
+if grep -q '{{' "$COMPOSE_TMP"; then
+  echo "Error: unfilled placeholders remain in rendered compose file:"
+  grep '{{' "$COMPOSE_TMP"
+  exit 1
+fi
 
 echo "Docker compose file:"
 cat "$COMPOSE_TMP"

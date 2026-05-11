@@ -537,7 +537,7 @@ Including
 
 * Preparing a configuration file based on [user-config.toml](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/user-config.toml)
 
-* Creating a docker compose file for the launcher based on [launcher\_docker\_compose.yaml](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/launcher_docker_compose.yaml).
+* Rendering the launcher docker compose template [launcher\_docker\_compose.yaml.template](https://github.com/near/mpc/blob/main/crates/contract/assets/launcher_docker_compose.yaml.template) with the launcher and MPC node manifest digests approved by the contract.
 * Configuring and starting your CVM with the MPC node.
 * Accessing mpc docker logs.
 * Retrieve keys from the CVM.
@@ -658,36 +658,41 @@ For a self-hosted local PCCS, see [Appendix: Self-hosting a local PCCS](#appendi
 
 ### Preparing a Docker Compose File
 
-To launch the launcher in the TEE environment, use the Docker Compose file from the [NEAR MPC repository](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/launcher_docker_compose.yaml).
+The launcher Docker Compose file is rendered from a [template](https://github.com/near/mpc/blob/main/crates/contract/assets/launcher_docker_compose.yaml.template) by substituting two manifest digests: the launcher image and the MPC node image. Both digests must be voted into the contract — otherwise the SHA256 of the rendered file will not match an entry in `allowed_launcher_compose_hashes` and the node's attestation will be rejected.
 
-Update the `DEFAULT_IMAGE_DIGEST` field in `launcher_docker_compose.yaml` with the latest MPC Docker image manifest digest retrieved from the contract.
+**1. Query the contract for the approved digests.**
 
-For details on how to verify this digest, see the section [MPC Node Image Upgrade](#mpc-node-image-upgrade).
-
-Example digest value:
+The latest approved digest is first in each vector.
 
 ```bash
-DEFAULT_IMAGE_DIGEST=sha256:331cfec941671ac343c52847e255eb36a280da65535d2a1e4d002c4c64686e19
+# MPC node digest -> goes into DEFAULT_IMAGE_DIGEST in the rendered compose
+near contract call-function as-read-only \
+  v1.signer-prod.testnet allowed_docker_image_hashes \
+  json-args '{}' network-config testnet now
+
+# Launcher digest -> goes into the launcher `image` line in the rendered compose
+near contract call-function as-read-only \
+  v1.signer-prod.testnet allowed_launcher_image_hashes \
+  json-args '{}' network-config testnet now
 ```
 
-You can retrieve the allowed MPC Docker image manifest digest directly from the contract using the NEAR CLI. The latest allowed digest will appear first in the returned vector:
+For details on how to verify each digest before trusting it, see [MPC Node Image Upgrade](#mpc-node-image-upgrade) and [Launcher image voting](#launcher-image-voting).
+
+**2. Render the template.**
 
 ```bash
-near contract call-function as-transaction \
-  v1.signer-prod.testnet \
-  allowed_docker_image_hashes \
-  json-args '{}' \
-  prepaid-gas '100.0 Tgas' \
-  attached-deposit '0 NEAR' \
-  sign-as <your-account-id> \
-  network-config testnet \
-  sign-with-keychain \
-  send
+# Set both digests (hex only, no sha256: prefix)
+export MPC_IMAGE_HASH=<mpc-node digest from step 1>
+export LAUNCHER_IMAGE_HASH=<launcher digest from step 1>
+
+sed \
+  -e "s|{{LAUNCHER_IMAGE_HASH}}|${LAUNCHER_IMAGE_HASH}|" \
+  -e "s|{{DEFAULT_IMAGE_DIGEST_HASH}}|${MPC_IMAGE_HASH}|" \
+  crates/contract/assets/launcher_docker_compose.yaml.template \
+  > launcher_docker_compose.yaml
 ```
 
-The transaction output will include the latest MPC Docker image manifest digest.
-
-**Note:** The [launcher\_docker\_compose.yaml](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/launcher_docker_compose.yaml) is measured, and the measurements are part of the remote attestation. Make sure not to change any other fields or values (including whitespaces).
+> **Note:** The rendered file is measured, and its SHA256 is part of the remote attestation. Do not modify the rendered file further (including whitespace) — only the two digest substitutions should differ from the template.
 
 ### Required Ports and Port Collisions
 

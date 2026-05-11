@@ -30,15 +30,20 @@ Collect the new Manifest digest from Docker hub:
 sha256:<NEW>
 ```
 
-## 2) Update the launcher compose files used for deployment/docs
+## 2) Update the launcher compose assets used for deployment/docs
 
-These are what operators actually run.
+For the TEE flow, operators render the contract template at deploy time
+using the `LAUNCHER_MANIFEST_DIGEST` and `MPC_MANIFEST_DIGEST` env vars —
+there is no checked-in TEE compose file to bump. Make sure the new
+launcher digest matches the contract template's expected structure:
 
-- `deployment/cvm-deployment/launcher_docker_compose.yaml` (TEE)
+- `crates/contract/assets/launcher_docker_compose.yaml.template`
+
+The non-TEE flow still pins digests in a checked-in compose file:
+
 - `deployment/cvm-deployment/launcher_docker_compose_nontee.yaml` (non-TEE)
 
-Keep the launcher image digest (and related env like `DEFAULT_IMAGE_DIGEST`)
-consistent with the intended release.
+Update the digests there to match the intended release.
 
 ---
 
