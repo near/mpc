@@ -48,9 +48,24 @@ where
         finality: EthereumFinality,
         extractors: Vec<EvmExtractor>,
     ) -> Result<Vec<EvmExtractedValue<Chain>>, ForeignChainInspectionError> {
-        fan_out_and_match(self.clients.iter().map(|client| {
-            extract_with_client::<Client, Chain>(client, transaction.clone(), finality, &extractors)
-        }))
+        let (first_client, rest_clients) = self.clients.split_last();
+
+        fan_out_and_match(
+            extract_with_client::<Client, Chain>(
+                first_client,
+                transaction.clone(),
+                finality,
+                &extractors,
+            ),
+            rest_clients.iter().map(|client| {
+                extract_with_client::<Client, Chain>(
+                    client,
+                    transaction.clone(),
+                    finality,
+                    &extractors,
+                )
+            }),
+        )
         .await
     }
 }

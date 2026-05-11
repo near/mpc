@@ -35,10 +35,13 @@ where
         finality: StarknetFinality,
         extractors: Vec<StarknetExtractor>,
     ) -> Result<Vec<StarknetExtractedValue>, ForeignChainInspectionError> {
+        let (first_client, rest_clients) = self.clients.split_last();
+
         fan_out_and_match(
-            self.clients.iter().map(|client| {
-                extract_with_client(client, transaction, finality.clone(), &extractors)
-            }),
+            extract_with_client(first_client, transaction, finality.clone(), &extractors),
+            rest_clients
+                .iter()
+                .map(|client| extract_with_client(client, transaction, finality.clone(), &extractors)),
         )
         .await
     }

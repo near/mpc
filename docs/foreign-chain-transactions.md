@@ -11,7 +11,7 @@ This feature lets the MPC network sign payloads only after verifying a specific 
 
 ## Scope
 
-* In scope: contract-level API for verify+sign requests, node-side verification via configured RPC providers, deterministic provider selection, and extensible per-chain-family extractors.
+* In scope: contract-level API for verify+sign requests, node-side verification via configured RPC providers, cross-provider consensus on extracted values, and extensible per-chain-family extractors.
 * Out of scope: on-chain light clients / cryptographic proofs, multi-round MPC consensus on verification results.
 
 ## Overview
@@ -33,7 +33,7 @@ This design intentionally keeps responses small and on-chain-friendly by enforci
 
 Not all extractors can be satisfied by a single RPC method call.
 
-* **Provider selection**: The request does **not** specify an RPC URL. Nodes deterministically select an allowed provider from the on-chain foreign-chain configurations.
+* **Provider selection**: The request does **not** specify an RPC URL. Each node queries **every** RPC provider it has configured for the target chain in parallel and only proceeds if all providers returned equal extracted values (see "Cross-Provider Consensus" below).
 * **Extractor-driven calls**: Each extractor implicitly defines which RPC method(s) it requires. Some extractors require more than one call. For the initial set:
 
   * **BlockHash (Ethereum)**: `eth_getTransactionReceipt` for `blockHash`.
@@ -314,19 +314,20 @@ Relevant contract methods:
 * `get_supported_foreign_chains() -> SupportedForeignChains` — view method. Returns the set of chains that appear in **every** active participant's registered configuration.
 * `get_foreign_chain_support_by_node() -> ForeignChainSupportByNode` — view method. Returns each participant's registered set of supported chains.
 
-## Deterministic Provider Selection
+## Cross-Provider Consensus
 
-Each node selects a provider using a deterministic hash of the provider identity (RPC URL):
+Each node queries every RPC provider it has configured for the target chain in parallel and
+requires all of them to return equal extracted values before the node will sign the request:
 
-```
-hash = sha256(participant_id || request_id || provider_rpc_url)
-```
+* All configured providers for the chain are invoked concurrently.
+* If any provider returns an error, the verification fails.
+* If all providers succeed but their extracted values disagree, the verification fails with
+  an `InspectorResponseMismatch` error.
+* Only when every provider returns equal extracted values does the node produce its partial
+  signature.
 
-Providers are sorted by this hash to build a deterministic ordering:
-
-* **Primary provider** = first in the ordering.
-
-This ensures different nodes query different providers for the same request while preserving determinism.
+This trades availability (a single misbehaving or rate-limited provider fails the request)
+for integrity (a single malicious or buggy provider cannot influence the extracted value).
 
 ## Failure and Timeout Behavior
 

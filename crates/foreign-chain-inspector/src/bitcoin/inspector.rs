@@ -32,14 +32,24 @@ where
         block_confirmations_threshold: BlockConfirmations,
         extractors: Vec<BitcoinExtractor>,
     ) -> Result<Vec<BitcoinExtractedValue>, ForeignChainInspectionError> {
-        fan_out_and_match(self.clients.iter().map(|client| {
+        let (first_client, rest_clients) = self.clients.split_last();
+
+        fan_out_and_match(
             extract_with_client(
-                client,
+                first_client,
                 transaction,
                 block_confirmations_threshold,
                 &extractors,
-            )
-        }))
+            ),
+            rest_clients.iter().map(|client| {
+                extract_with_client(
+                    client,
+                    transaction,
+                    block_confirmations_threshold,
+                    &extractors,
+                )
+            }),
+        )
         .await
     }
 }

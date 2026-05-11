@@ -86,19 +86,28 @@ pub enum ForeignChainInspectionError {
     InspectorResponseMismatch,
 }
 
+/// Runs `first_future` and `rest_futures` in parallel and returns the resolved value
+/// of `first_future` only if every other future resolved to an equal value.
+///
+/// Returns [`ForeignChainInspectionError::InspectorResponseMismatch`] if any pair of
+/// resolved values differs. Short-circuits on the first underlying error.
+///
+/// The non-empty input is encoded in the signature (one mandatory future plus zero or
+/// more additional futures) so the function never needs to reason about an empty input.
 pub(crate) async fn fan_out_and_match<T, Fut>(
-    extract_futures: impl IntoIterator<Item = Fut>,
+    first_future: Fut,
+    rest_futures: impl IntoIterator<Item = Fut>,
 ) -> Result<Vec<T>, ForeignChainInspectionError>
 where
     Fut: Future<Output = Result<Vec<T>, ForeignChainInspectionError>>,
     T: PartialEq,
 {
-    let mut results = futures::future::try_join_all(extract_futures)
-        .await?
-        .into_iter();
-    // Inspector clients are constructed from a NonEmptyVec, so this iterator is never empty.
-    let first = results.next().expect("at least one client");
-    for other in results {
+    let (first, rest) = futures::future::try_join(
+        first_future,
+        futures::future::try_join_all(rest_futures),
+    )
+    .await?;
+    for other in rest {
         if other != first {
             return Err(ForeignChainInspectionError::InspectorResponseMismatch);
         }
@@ -130,4 +139,91 @@ pub fn build_http_client(
         .build(&base_url)?;
 
     Ok(client)
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::*;
+    use assert_matches::assert_matches;
+    use std::pin::Pin;
+
+    type TestFuture =
+        Pin<Box<dyn Future<Output = Result<Vec<u8>, ForeignChainInspectionError>> + Send>>;
+
+    fn ok(value: Vec<u8>) -> TestFuture {
+        Box::pin(async move { Ok(value) })
+    }
+
+    fn err() -> TestFuture {
+        Box::pin(async { Err(ForeignChainInspectionError::TransactionFailed) })
+    }
+
+    #[tokio::test]
+    async fn fan_out_and_match__should_return_first_when_all_match() {
+        // Given
+        let first = ok(vec![1, 2, 3]);
+        let rest = vec![ok(vec![1, 2, 3]), ok(vec![1, 2, 3])];
+
+        // When
+        let result = fan_out_and_match(first, rest).await;
+
+        // Then
+        assert_matches!(result, Ok(values) if values == vec![1, 2, 3]);
+    }
+
+    #[tokio::test]
+    async fn fan_out_and_match__should_return_first_when_only_one_future_provided() {
+        // Given
+        let first = ok(vec![42]);
+        let rest: Vec<_> = Vec::new();
+
+        // When
+        let result = fan_out_and_match(first, rest).await;
+
+        // Then
+        assert_matches!(result, Ok(values) if values == vec![42]);
+    }
+
+    #[tokio::test]
+    async fn fan_out_and_match__should_return_mismatch_when_first_differs_from_rest() {
+        // Given
+        let first = ok(vec![1, 2, 3]);
+        let rest = vec![ok(vec![1, 2, 3]), ok(vec![9, 9, 9])];
+
+        // When
+        let result = fan_out_and_match(first, rest).await;
+
+        // Then
+        assert_matches!(
+            result,
+            Err(ForeignChainInspectionError::InspectorResponseMismatch)
+        );
+    }
+
+    #[tokio::test]
+    async fn fan_out_and_match__should_short_circuit_on_first_error_in_rest() {
+        // Given
+        let first = ok(vec![1, 2, 3]);
+        let rest = vec![err(), err()];
+
+        // When
+        let result = fan_out_and_match(first, rest).await;
+
+        // Then
+        assert_matches!(result, Err(ForeignChainInspectionError::TransactionFailed));
+    }
+
+    #[tokio::test]
+    async fn fan_out_and_match__should_propagate_error_from_first_future() {
+        // Given
+        let first = err();
+        let rest = vec![ok(vec![1, 2, 3])];
+
+        // When
+        let result = fan_out_and_match(first, rest).await;
+
+        // Then
+        assert_matches!(result, Err(ForeignChainInspectionError::TransactionFailed));
+    }
 }
