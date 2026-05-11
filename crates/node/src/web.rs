@@ -448,7 +448,7 @@ mod tests {
     }
 
     #[test]
-    fn node_config_response_json__does_not_leak_foreign_chain_info() {
+    fn node_config_response_json__should_not_leak_foreign_chain_info() {
         // Given
         let config = test_config();
 
