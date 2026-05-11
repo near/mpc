@@ -80,7 +80,7 @@ pub enum CheckBlockResult {
     /// The block is optimistically included in the chain, and it is on the canonical chain,
     /// but it is not yet part of the final chain. It is also recent enough.
     /// Note that if two chains tie for canonical height, the first one seen is considered the
-    /// canonical chain (c.f. [`RecentBlocksTracker::update_canonical_head`]).
+    /// canonical chain (c.f. `RecentBlocksTracker::update_canonical_head`).
     OptimisticAndCanonical,
     /// The block is optimistically included in the chain, but it is not on the canonical chain.
     /// It is also recent enough.
