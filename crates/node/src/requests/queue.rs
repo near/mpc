@@ -553,9 +553,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                         "ignoring non-canonical request",
                     );
                 }
-                CheckBlockResult::NotIncluded
-                | CheckBlockResult::OlderThanRecentWindow
-                | CheckBlockResult::Unknown => {
+                CheckBlockResult::OlderThanRecentWindow | CheckBlockResult::Unknown => {
                     // note: We will not receive "OlderThanRecentWindow" if the `RecentBlocksTracker`
                     // has the same recency window as the queue.
                     // Since we add signature requests to the queue after adding the block to the
@@ -567,7 +565,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                         request_id = %request.request.get_id(),
                         block_height = request.block_height,
                         reason = ?block_classification,
-                        "discarding request because it was not included, expired, or the tracker removed the block"
+                        "discarding request because it expired or the tracker removed the block"
                     );
                     // Increment failed signature count.
                     // This signature probably ended up in a block that was never included in chain.
