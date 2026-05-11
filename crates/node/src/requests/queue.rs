@@ -1,8 +1,9 @@
 use super::debug::{CompletedRequest, CompletedRequests};
+use super::recent_blocks_tracker::AtomicBlockStatus;
 use crate::indexer::types::ChainRespondArgs;
 use crate::primitives::ParticipantId;
 use crate::requests::metrics;
-use crate::requests::recent_blocks_tracker::{CheckBlockResult, RecentBlocksTracker};
+use crate::requests::recent_blocks_tracker::RecentBlocksTracker;
 use crate::types::{self, Request, RequestId, RequestsUpdate};
 use k256::sha2::Sha256;
 use near_indexer_primitives::types::NumBlocks;
@@ -128,8 +129,9 @@ impl Debug for BufferedBlockData {
 pub(super) struct QueuedRequest<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> {
     pub request: RequestType,
 
-    /// The block hash the request was received in.
-    block_hash: CryptoHash,
+    /// Finality status of the block the request was included
+    status: Weak<AtomicBlockStatus>,
+
     pub block_height: u64,
 
     /// A pre-computed order of participants that we consider for leader selection.
@@ -196,8 +198,8 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
     pub fn new(
         clock: &near_time::Clock,
         request: RequestType,
-        block_hash: CryptoHash,
         block_height: u64,
+        status: Weak<AtomicBlockStatus>,
         all_participants: &[ParticipantId],
         time_indexed: near_time::Instant,
     ) -> Self {
@@ -207,8 +209,8 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
 
         Self {
             request,
-            block_hash,
             block_height,
+            status,
             leader_selection_order,
             computation_progress: Arc::new(Mutex::new(ComputationProgress::default())),
             next_check_due: clock.now(),
@@ -380,8 +382,8 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 .or_insert(QueuedRequest::new(
                     &self.clock,
                     request.clone(),
-                    block.hash,
                     block.height,
+                    add_result.block_ref.clone(),
                     &self.all_participants,
                     self.clock.now(),
                 ));
@@ -434,24 +436,21 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
 
         let mut requests_to_remove = Vec::new();
         for (id, request) in &mut self.requests {
+            let _span = tracing::debug_span!(
+                target: "request",
+                "process_request",
+                request_type = %RequestType::get_type(),
+                request_id = %request.request.get_id(),
+                block_height = request.block_height,
+            )
+            .entered();
             if request.next_check_due > now {
-                tracing::debug!(
-                    target: "request",
-                    request_id = %request.request.get_id(),
-                    block_height = request.block_height,
-                    "skipping request because it's not time yet"
-                );
+                tracing::debug!("skipping request because it's not time yet");
                 continue;
             }
             request.next_check_due = now + CHECK_EACH_REQUEST_INTERVAL;
             if request.active_attempt.strong_count() > 0 {
-                // There's a current attempt to generate the response, so don't do anything.
-                tracing::debug!(
-                    target: "request",
-                    request_id = %request.request.get_id(),
-                    block_height = request.block_height,
-                    "skipping request because there's already an active attempt",
-                );
+                tracing::debug!("skipping request because there's already an active attempt",);
                 continue;
             }
             // check it against the network height
@@ -462,13 +461,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             {
                 // this request expired for at least one participant in the network. We can already
                 // remove it from the queue.
-                tracing::debug!(
-                    target: "request",
-                    request_type = %RequestType::get_type(),
-                    request_id = %request.request.get_id(),
-                    block_height = request.block_height,
-                    "discarding expired request"
-                );
+                tracing::debug!("discarding expired request");
                 // Increment metric for timeout (only for signature requests)
                 // Note that this is not necessarily a good signal for measuring signature request
                 // timeouts. It may be that our node indexer lags behind other indexers in the
@@ -482,102 +475,60 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 requests_to_remove.push(*id);
                 continue;
             }
-            let block_classification = self.recent_blocks.classify_block(request.block_hash);
-            match block_classification {
-                CheckBlockResult::Final | CheckBlockResult::OptimisticAndCanonical => {
-                    if let Some(leader) = request.current_leader(&eligible_leaders) {
-                        tracing::debug!(
-                            target: "request",
-                            request_type = %RequestType::get_type(),
-                            request_id = %request.request.get_id(),
-                            block_height = request.block_height,
-                            leader = %leader,
-                            "processing request"
-                        );
-                        let mut progress = request.computation_progress.lock().unwrap();
-                        progress.selected_leader = Some(leader);
-                        if leader == self.my_participant_id {
-                            {
-                                if progress.attempts >= MAX_ATTEMPTS_PER_REQUEST_AS_LEADER {
-                                    tracing::debug!(
-                                        target: "request",
-                                        request_type = %RequestType::get_type(),
-                                        request_id = %request.request.get_id(),
-                                        block_height = request.block_height,
-                                        attempt_id = progress.attempts,
-                                        "discarding request because it has been attempted too many times",
-                                    );
-                                    // Increment metric for max retries exceeded (only for signature requests)
-                                    if matches!(
-                                        RequestType::get_type(),
-                                        types::RequestType::Signature
-                                    ) {
-                                        metrics::MPC_CLUSTER_FAILED_SIGNATURES_COUNT
-                                            .with_label_values(&["max_tries_exceeded"])
-                                            .inc();
-                                    }
-                                    requests_to_remove.push(*id);
-                                    continue;
+            let Some(status) = request.status.upgrade() else {
+                tracing::debug!("discarding request because the tracker removed the block, indicating that it sat on a dead fork.");
+                if matches!(RequestType::get_type(), types::RequestType::Signature) {
+                    metrics::MPC_CLUSTER_FAILED_SIGNATURES_COUNT
+                        .with_label_values(&["block_not_found"])
+                        .inc();
+                }
+                requests_to_remove.push(*id);
+                continue;
+            };
+            if status.is_canonical() {
+                if let Some(leader) = request.current_leader(&eligible_leaders) {
+                    tracing::debug!( leader = %leader, "processing request");
+                    let mut progress = request.computation_progress.lock().unwrap();
+                    progress.selected_leader = Some(leader);
+                    if leader == self.my_participant_id {
+                        {
+                            if progress.attempts >= MAX_ATTEMPTS_PER_REQUEST_AS_LEADER {
+                                tracing::debug!(
+                                    attempt_id = progress.attempts,
+                                    "discarding request because it has been attempted too many times",
+                                );
+                                // Increment metric for max retries exceeded (only for signature requests)
+                                if matches!(RequestType::get_type(), types::RequestType::Signature)
+                                {
+                                    metrics::MPC_CLUSTER_FAILED_SIGNATURES_COUNT
+                                        .with_label_values(&["max_tries_exceeded"])
+                                        .inc();
                                 }
-                                if progress.last_response_submission.is_some_and(|t| {
-                                    now < t + MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE
-                                }) {
-                                    tracing::debug!(
-                                        target: "request",
-                                        request_type = %RequestType::get_type(),
-                                        request_id = %request.request.get_id(),
-                                        block_height = request.block_height,
-                                        "skipping request because the last response was submitted too recently",
-                                    );
-                                    continue;
-                                }
-                                progress.attempts += 1;
+                                requests_to_remove.push(*id);
+                                continue;
                             }
-                            let attempt = Arc::new(GenerationAttempt {
-                                request: request.request.clone(),
-                                computation_progress: request.computation_progress.clone(),
-                            });
-                            request.active_attempt = Arc::downgrade(&attempt);
-                            result.push(attempt);
+                            if progress.last_response_submission.is_some_and(|t| {
+                                now < t + MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE
+                            }) {
+                                tracing::debug!(
+                                    "skipping request because the last response was submitted too recently"
+                                );
+                                continue;
+                            }
+                            progress.attempts += 1;
                         }
+                        let attempt = Arc::new(GenerationAttempt {
+                            request: request.request.clone(),
+                            computation_progress: request.computation_progress.clone(),
+                        });
+                        request.active_attempt = Arc::downgrade(&attempt);
+                        result.push(attempt);
                     }
                 }
-                CheckBlockResult::OptimisticButNotCanonical => {
-                    // Don't act on it yet. If it becomes canonical later, we'll try to generate
-                    // the request.
-                    tracing::debug!(
-                        target: "request",
-                        request_type = %RequestType::get_type(),
-                        request_id= %request.request.get_id(),
-                        block_height= request.block_height,
-                        "ignoring non-canonical request",
-                    );
-                }
-                CheckBlockResult::Unknown => {
-                    // Since we add signature requests to the queue after adding the block to the
-                    // tracker, receiving `Unknown` means that the tracker removed the block, most
-                    // likely due to the block being expired.
-                    tracing::debug!(
-                        target: "request",
-                        request_type = %RequestType::get_type(),
-                        request_id = %request.request.get_id(),
-                        block_height = request.block_height,
-                        reason = ?block_classification,
-                        "discarding request because it expired or the tracker removed the block"
-                    );
-                    // Increment failed signature count.
-                    // This signature probably ended up in a block that was never included in chain.
-                    // This is not a good signal for timed out signature responses, which is why we
-                    // add the label "block_not_found".
-                    if matches!(RequestType::get_type(), types::RequestType::Signature) {
-                        metrics::MPC_CLUSTER_FAILED_SIGNATURES_COUNT
-                            .with_label_values(&["block_not_found"])
-                            .inc();
-                    }
-
-                    // This request is definitely not useful anymore, so discard it.
-                    requests_to_remove.push(*id);
-                }
+            } else {
+                // Don't act on it yet. If it becomes canonical later, we'll try to generate
+                // the request.
+                tracing::debug!("ignoring non-canonical request");
             }
         }
         for id in requests_to_remove {
