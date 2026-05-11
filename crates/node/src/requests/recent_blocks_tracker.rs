@@ -1164,7 +1164,7 @@ pub mod tests {
         assert_eq!(tester.check(&b4_fork), CheckBlockResult::Unknown);
         assert!(
             weak_b3_fork.upgrade().is_none(),
-            "dead-fork BlockNode b3_fork leaked — prune_dead_children did not detach"
+            "dead-fork BlockNode b3_fork leaked — dead-fork subtree not detached during prune"
         );
         assert!(
             weak_b4_fork.upgrade().is_none(),
