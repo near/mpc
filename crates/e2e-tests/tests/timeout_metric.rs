@@ -20,16 +20,35 @@ async fn timeout_metric__should_increment_when_signature_times_out() {
             c.threshold = 2;
         })
         .await;
-
-    // when — kill node 0, then submit a request no one can answer
-    cluster.kill_nodes(&[0]).expect("failed to kill node 0");
-
     let domain = running
         .domains
         .domains
         .iter()
         .find(|d| matches!(d.purpose, DomainPurpose::Sign))
         .expect("cluster must have a signable domain");
+
+    let payload = match domain.curve {
+        Curve::Secp256k1 => common::generate_ecdsa_payload(&mut rng),
+        Curve::Edwards25519 => common::generate_eddsa_payload(&mut rng),
+        c => panic!("unsupported curve in test: {c:?}"),
+    };
+
+    let outcome = cluster
+        .send_sign_request(domain.id, payload, cluster.default_user_account())
+        .await
+        .expect("expected success");
+
+    // sanity check
+    assert!(
+        outcome.is_success(),
+        "sign request for domain {:?} failed: {:?}",
+        domain.id,
+        outcome.failure_message()
+    );
+
+    // when — kill node 0, then submit a request no one can answer
+    cluster.kill_nodes(&[0]).expect("failed to kill node 0");
+
     let payload = match domain.curve {
         Curve::Secp256k1 => common::generate_ecdsa_payload(&mut rng),
         Curve::Edwards25519 => common::generate_eddsa_payload(&mut rng),
@@ -40,17 +59,27 @@ async fn timeout_metric__should_increment_when_signature_times_out() {
     // outcome (it will fail), only that the surviving node observes
     // fail_on_timeout. `tokio::join!` lets the indexer keep advancing while
     // the request is in flight.
-    let (_request_outcome, metric_result) = tokio::join!(
-        cluster.send_sign_request(domain.id, payload, cluster.default_user_account()),
-        common::wait_metric_on_nodes(
-            &cluster,
-            &[1],
-            metrics::TIMEOUTS_INDEXED,
-            |v| v >= 1,
-            CLUSTER_WAIT_TIMEOUT,
-        ),
+    let outcome = cluster
+        .send_sign_request(domain.id, payload, cluster.default_user_account())
+        .await
+        .expect("expected success");
+
+    // sanity check
+    assert!(
+        outcome.is_success(),
+        "sign request for domain {:?} failed: {:?}",
+        domain.id,
+        outcome.failure_message()
     );
 
-    // then
-    metric_result.expect("mpc_num_timeouts_indexed did not reach 1 on node 1");
+    // Then: expect metric to kick in
+    common::wait_metric_on_nodes(
+        &cluster,
+        &[1],
+        metrics::TIMEOUTS_INDEXED,
+        |v| v == 1,
+        CLUSTER_WAIT_TIMEOUT,
+    )
+    .await
+    .expect("mpc_num_timeouts_indexed did not reach 1 on node 1");
 }
