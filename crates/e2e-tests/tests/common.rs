@@ -33,6 +33,7 @@ pub const FOREIGN_TX_VALIDATION_PORT_SEED: u16 = 16;
 pub const MULTI_DOMAIN_PORT_SEED: u16 = 17;
 pub const CONTRACT_UPGRADE_COMPATIBILITY_MAINNET_PORT_SEED: u16 = 18;
 pub const CONTRACT_UPGRADE_COMPATIBILITY_TESTNET_PORT_SEED: u16 = 19;
+pub const TIMEOUT_METRIC_PORT_SEED: u16 = 20;
 
 /// Start a cluster, wait for Running state and presignatures to buffer.
 ///
