@@ -8,7 +8,7 @@ pub type CryptoHash = [u8; 32];
 
 /// The index into calling the YieldResume feature of NEAR. This will allow to resume
 /// a yield call after the contract has been called back via this index.
-#[derive(Debug, Clone, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)

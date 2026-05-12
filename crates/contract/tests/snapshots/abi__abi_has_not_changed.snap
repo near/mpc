@@ -275,6 +275,7 @@ expression: abi
       },
       {
         "name": "get_pending_ckd_request",
+        "doc": " See [`MpcContract::get_pending_request`] — same semantics for CKD.",
         "kind": "view",
         "params": {
           "serialization_type": "json",
@@ -284,25 +285,35 @@ expression: abi
               "type_schema": {
                 "$ref": "#/definitions/CKDRequest"
               }
+            },
+            {
+              "name": "request_id",
+              "type_schema": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "integer",
+                  "format": "uint8",
+                  "minimum": 0.0
+                },
+                "maxItems": 32,
+                "minItems": 32
+              }
             }
           ]
         },
         "result": {
           "serialization_type": "json",
           "type_schema": {
-            "anyOf": [
-              {
-                "$ref": "#/definitions/YieldIndex"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "type": "boolean"
           }
         }
       },
       {
         "name": "get_pending_request",
+        "doc": " Presence check for a pending signature request, exposed as a view call.\n\n Returns `true` iff a yield for `request_id` (new map, post-#3184) or\n `request` (legacy map, pre-upgrade) is still outstanding. Callers\n thread the `request_id` they obtained from the `MPC_REQUEST_ID:` log;\n when absent (old node, or legacy yield) the legacy fallback path is\n taken. The pre-#3184 method also named `get_pending_request` returned\n `Option<YieldIndex>` with a load-bearing-only-for-presence `Some(_)`\n shape; under the new layout we can't synthesise a meaningful\n `YieldIndex` for queries that aren't keyed by id, so the return type\n is now plainly `bool`.",
         "kind": "view",
         "params": {
           "serialization_type": "json",
@@ -312,25 +323,35 @@ expression: abi
               "type_schema": {
                 "$ref": "#/definitions/SignatureRequest"
               }
+            },
+            {
+              "name": "request_id",
+              "type_schema": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "integer",
+                  "format": "uint8",
+                  "minimum": 0.0
+                },
+                "maxItems": 32,
+                "minItems": 32
+              }
             }
           ]
         },
         "result": {
           "serialization_type": "json",
           "type_schema": {
-            "anyOf": [
-              {
-                "$ref": "#/definitions/YieldIndex"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "type": "boolean"
           }
         }
       },
       {
         "name": "get_pending_verify_foreign_tx_request",
+        "doc": " See [`MpcContract::get_pending_request`] — same semantics for foreign-tx verification.",
         "kind": "view",
         "params": {
           "serialization_type": "json",
@@ -340,20 +361,29 @@ expression: abi
               "type_schema": {
                 "$ref": "#/definitions/VerifyForeignTransactionRequest"
               }
+            },
+            {
+              "name": "request_id",
+              "type_schema": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "integer",
+                  "format": "uint8",
+                  "minimum": 0.0
+                },
+                "maxItems": 32,
+                "minItems": 32
+              }
             }
           ]
         },
         "result": {
           "serialization_type": "json",
           "type_schema": {
-            "anyOf": [
-              {
-                "$ref": "#/definitions/YieldIndex"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "type": "boolean"
           }
         }
       },
@@ -865,6 +895,7 @@ expression: abi
       },
       {
         "name": "respond",
+        "doc": " Resolve a pending signature yield with `response`.\n\n `request_id` is the contract-minted yield id surfaced to the node via\n the `MPC_REQUEST_ID:` log on the originating `sign` receipt. When\n `Some`, the call resolves that specific yield, so duplicate\n submissions of the same request key no longer overwrite each other\n (#3184). When `None`, the call falls back to the legacy single-yield\n map keyed by [`SignatureRequest`] — used both by nodes that don't\n yet know about the id channel and to resolve yields created before\n the unique-id rework shipped.\n\n The `Option<CryptoHash>` shape on `request_id` is intentionally kept\n permanent even after the legacy map is dropped: it preserves the\n option of accepting calls from future clients that haven't seen a\n `MPC_REQUEST_ID:` log (e.g. cross-shard / offline-built responses)\n and lets us evolve the resolution policy without another wire\n break.",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -880,6 +911,22 @@ expression: abi
               "type_schema": {
                 "$ref": "#/definitions/SignatureResponse"
               }
+            },
+            {
+              "name": "request_id",
+              "type_schema": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "integer",
+                  "format": "uint8",
+                  "minimum": 0.0
+                },
+                "maxItems": 32,
+                "minItems": 32
+              }
             }
           ]
         },
@@ -892,6 +939,7 @@ expression: abi
       },
       {
         "name": "respond_ckd",
+        "doc": " Resolve a pending CKD yield. See [`MpcContract::respond`] for the\n semantics of `request_id`.",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -907,6 +955,22 @@ expression: abi
               "type_schema": {
                 "$ref": "#/definitions/CKDResponse"
               }
+            },
+            {
+              "name": "request_id",
+              "type_schema": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "integer",
+                  "format": "uint8",
+                  "minimum": 0.0
+                },
+                "maxItems": 32,
+                "minItems": 32
+              }
             }
           ]
         },
@@ -919,6 +983,7 @@ expression: abi
       },
       {
         "name": "respond_verify_foreign_tx",
+        "doc": " Resolve a pending foreign-tx verification yield. See\n [`MpcContract::respond`] for the semantics of `request_id`.",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -934,6 +999,22 @@ expression: abi
               "type_schema": {
                 "$ref": "#/definitions/VerifyForeignTransactionResponse"
               }
+            },
+            {
+              "name": "request_id",
+              "type_schema": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "integer",
+                  "format": "uint8",
+                  "minimum": 0.0
+                },
+                "maxItems": 32,
+                "minItems": 32
+              }
             }
           ]
         },
@@ -946,7 +1027,7 @@ expression: abi
       },
       {
         "name": "return_ck_and_clean_state_on_success",
-        "doc": " Upon success, removes the confidential key request from state and returns it.\n If the ckd request times out, removes the ckd request from state and panics to fail the\n original transaction",
+        "doc": " CKD counterpart to [`Self::return_signature_and_clean_state_on_success`].",
         "kind": "call",
         "modifiers": [
           "private"
@@ -955,9 +1036,22 @@ expression: abi
           "serialization_type": "json",
           "args": [
             {
-              "name": "request",
+              "name": "_request",
               "type_schema": {
                 "$ref": "#/definitions/CKDRequest"
+              }
+            },
+            {
+              "name": "request_id",
+              "type_schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "uint8",
+                  "minimum": 0.0
+                },
+                "maxItems": 32,
+                "minItems": 32
               }
             }
           ]
@@ -979,7 +1073,7 @@ expression: abi
       },
       {
         "name": "return_signature_and_clean_state_on_success",
-        "doc": " Upon success, removes the signature from state and returns it.\n If the signature request times out, removes the signature request from state and panics to\n fail the original transaction",
+        "doc": " On resume: returns the signature.\n On timeout: drops this yield's entry from the by-id map (the\n `request_id` was baked into the callback args at yield-creation\n time, so we know exactly which entry to remove) and panics to fail\n the original transaction.",
         "kind": "call",
         "modifiers": [
           "private"
@@ -988,9 +1082,22 @@ expression: abi
           "serialization_type": "json",
           "args": [
             {
-              "name": "request",
+              "name": "_request",
               "type_schema": {
                 "$ref": "#/definitions/SignatureRequest"
+              }
+            },
+            {
+              "name": "request_id",
+              "type_schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "uint8",
+                  "minimum": 0.0
+                },
+                "maxItems": 32,
+                "minItems": 32
               }
             }
           ]
@@ -1012,7 +1119,7 @@ expression: abi
       },
       {
         "name": "return_verify_foreign_tx_and_clean_state_on_success",
-        "doc": " Upon success, removes the verify foreign tx request from state and returns it.\n If the verify foreign tx request times out, removes the verify foreign tx request from state and panics to fail the\n original transaction",
+        "doc": " foreign-tx counterpart to\n [`Self::return_signature_and_clean_state_on_success`].",
         "kind": "call",
         "modifiers": [
           "private"
@@ -1021,9 +1128,22 @@ expression: abi
           "serialization_type": "json",
           "args": [
             {
-              "name": "request",
+              "name": "_request",
               "type_schema": {
                 "$ref": "#/definitions/VerifyForeignTransactionRequest"
+              }
+            },
+            {
+              "name": "request_id",
+              "type_schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "uint8",
+                  "minimum": 0.0
+                },
+                "maxItems": 32,
+                "minItems": 32
               }
             }
           ]
@@ -4136,25 +4256,6 @@ expression: abi
             },
             "signature": {
               "$ref": "#/definitions/SignatureResponse"
-            }
-          }
-        },
-        "YieldIndex": {
-          "description": "The index into calling the YieldResume feature of NEAR. This will allow to resume a yield call after the contract has been called back via this index.",
-          "type": "object",
-          "required": [
-            "data_id"
-          ],
-          "properties": {
-            "data_id": {
-              "type": "array",
-              "items": {
-                "type": "integer",
-                "format": "uint8",
-                "minimum": 0.0
-              },
-              "maxItems": 32,
-              "minItems": 32
             }
           }
         }

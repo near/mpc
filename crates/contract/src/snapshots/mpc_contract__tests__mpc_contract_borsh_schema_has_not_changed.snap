@@ -597,6 +597,24 @@ BorshSchemaContainer {
                 ],
             ),
         },
+        "LegacyPendingRequests": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "signature_requests",
+                        "LookupMap",
+                    ),
+                    (
+                        "ckd_requests",
+                        "LookupMap",
+                    ),
+                    (
+                        "verify_foreign_tx_requests",
+                        "LookupMap",
+                    ),
+                ],
+            ),
+        },
         "LookupMap": Struct {
             fields: NamedFields(
                 [
@@ -668,16 +686,24 @@ BorshSchemaContainer {
                         "ProtocolContractState",
                     ),
                     (
-                        "pending_signature_requests",
+                        "pending_signature_requests_by_id",
                         "LookupMap",
                     ),
                     (
-                        "pending_ckd_requests",
+                        "pending_ckd_requests_by_id",
                         "LookupMap",
                     ),
                     (
-                        "pending_verify_foreign_tx_requests",
+                        "pending_verify_foreign_tx_requests_by_id",
                         "LookupMap",
+                    ),
+                    (
+                        "next_pending_request_id",
+                        "u64",
+                    ),
+                    (
+                        "legacy_pending_requests",
+                        "LegacyPendingRequests",
                     ),
                     (
                         "proposed_updates",
@@ -702,10 +728,6 @@ BorshSchemaContainer {
                     (
                         "node_migrations",
                         "NodeMigrations",
-                    ),
-                    (
-                        "stale_data",
-                        "StaleData",
                     ),
                     (
                         "metrics",
@@ -1096,9 +1118,6 @@ BorshSchemaContainer {
                     "[u8; 32]",
                 ],
             ),
-        },
-        "StaleData": Struct {
-            fields: Empty,
         },
         "String": Sequence {
             length_width: 4,

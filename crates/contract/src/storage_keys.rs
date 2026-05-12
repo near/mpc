@@ -24,4 +24,18 @@ pub enum StorageKey {
     PendingSignatureRequestsV3,
     StoredAttestations,
     SupportedForeignChainsByNode,
+    /// Pending signature yields keyed by a contract-minted `request_id`
+    /// (#3184). The id is allocated from a monotonic counter *before* the
+    /// `promise_yield_create` call, baked into the yield's `callback_args`,
+    /// and emitted via the `MPC_REQUEST_ID:` log so the node can route
+    /// `respond` to the specific yield. Value type is
+    /// `(SignatureRequest, YieldIndex)` because the runtime-allocated
+    /// `data_id` is only known after `promise_yield_create` and we need to
+    /// keep it around for `promise_yield_resume`. Replaces
+    /// [`PendingSignatureRequestsV3`] as the source of truth for
+    /// post-upgrade requests; the V3 map is kept read-only as the legacy
+    /// fallback until pre-upgrade yields drain.
+    PendingSignatureRequestsByIdV4,
+    PendingCKDRequestsByIdV3,
+    PendingVerifyForeignTxRequestsByIdV2,
 }

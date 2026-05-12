@@ -1,4 +1,4 @@
-use crate::types::{CKDRequest, SignatureRequest, VerifyForeignTxRequest};
+use crate::types::{CKDRequest, IndexedRequest, SignatureRequest, VerifyForeignTxRequest};
 use anyhow::Context;
 use k256::{
     ecdsa::RecoveryId,
@@ -7,6 +7,7 @@ use k256::{
 };
 use mpc_primitives::domain::DomainId;
 use near_indexer_primitives::types::Gas;
+use near_indexer_primitives::CryptoHash;
 use near_mpc_contract_interface::method_names::{
     CONCLUDE_NODE_MIGRATION, RESPOND, RESPOND_CKD, RESPOND_VERIFY_FOREIGN_TX,
     START_KEYGEN_INSTANCE, START_RESHARE_INSTANCE, SUBMIT_PARTICIPANT_INFO, VERIFY_TEE,
@@ -102,23 +103,35 @@ pub trait ChainRespondArgs {}
  * chain signatures contract. It takes both the details of the
  * original request and the completed signature, then verifies
  * that the signature matches the requested key and payload.
+ *
+ * `request_id` carries the yield's contract-assigned `data_id` (parsed by
+ * the indexer from the `MPC_REQUEST_ID:` log on the originating receipt) so
+ * the contract can resolve the specific yield rather than dedup-collide on
+ * the request key (#3184). It is `None` against contract versions that don't
+ * emit the log; the field is then omitted on the wire and the contract falls
+ * back to its legacy single-yield map.
  */
 #[derive(Serialize, Debug, Deserialize, Clone)]
 pub struct ChainSignatureRespondArgs {
     pub request: ChainSignatureRequest,
     response: ChainSignatureResponse,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<CryptoHash>,
 }
 
 impl ChainRespondArgs for ChainSignatureRespondArgs {}
 
 /* These arguments are passed to the `respond_ckd` function of the
  * chain contract. It takes both the details of the
- * original request and the completed ckd.
+ * original request and the completed ckd. See [`ChainSignatureRespondArgs`]
+ * for the `request_id` channel.
  */
 #[derive(Serialize, Debug, Deserialize, Clone)]
 pub struct ChainCKDRespondArgs {
     pub request: ChainCKDRequest,
     response: ChainCKDResponse,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<CryptoHash>,
 }
 
 impl ChainRespondArgs for ChainCKDRespondArgs {}
@@ -127,6 +140,8 @@ impl ChainRespondArgs for ChainCKDRespondArgs {}
 pub struct ChainVerifyForeignTransactionRespondArgs {
     pub request: ChainVerifyForeignTransactionRequest,
     response: ChainVerifyForeignTransactionResponse,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<CryptoHash>,
 }
 
 impl ChainRespondArgs for ChainVerifyForeignTransactionRespondArgs {}
@@ -134,16 +149,22 @@ impl ChainRespondArgs for ChainVerifyForeignTransactionRespondArgs {}
 #[derive(Serialize, Debug)]
 pub struct ChainGetPendingSignatureRequestArgs {
     pub request: ChainSignatureRequest,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<CryptoHash>,
 }
 
 #[derive(Serialize, Debug)]
 pub struct ChainGetPendingCKDRequestArgs {
     pub request: ChainCKDRequest,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<CryptoHash>,
 }
 
 #[derive(Serialize, Debug)]
 pub struct ChainGetPendingVerifyForeignTxRequestArgs {
     pub request: ChainVerifyForeignTransactionRequest,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<CryptoHash>,
 }
 
 #[derive(Serialize, Debug)]
@@ -259,10 +280,11 @@ impl ChainSendTransactionRequest {
 
 impl ChainSignatureRespondArgs {
     pub fn new_ecdsa(
-        request: &SignatureRequest,
+        indexed: &IndexedRequest<SignatureRequest>,
         response: &Signature,
         public_key: &VerifyingKey,
     ) -> anyhow::Result<Self> {
+        let request = &indexed.request;
         let recovery_id = Self::brute_force_recovery_id(
             &public_key.to_element().to_affine(),
             response,
@@ -278,13 +300,15 @@ impl ChainSignatureRespondArgs {
                 request.domain,
             ),
             response: k256_signature_response(response.big_r, response.s, recovery_id)?,
+            request_id: indexed.request_id,
         })
     }
 
     pub fn new_eddsa(
-        request: &SignatureRequest,
+        indexed: &IndexedRequest<SignatureRequest>,
         response: &frost_ed25519::Signature,
     ) -> anyhow::Result<Self> {
+        let request = &indexed.request;
         let response: [u8; 64] = response
             .serialize()?
             .try_into()
@@ -299,6 +323,7 @@ impl ChainSignatureRespondArgs {
             response: dtos::SignatureResponse::Ed25519 {
                 signature: dtos::Ed25519Signature::from(response),
             },
+            request_id: indexed.request_id,
         })
     }
 
@@ -326,7 +351,11 @@ impl ChainSignatureRespondArgs {
 }
 
 impl ChainCKDRespondArgs {
-    pub fn new_ckd(request: &CKDRequest, response: &CKDResponse) -> anyhow::Result<Self> {
+    pub fn new_ckd(
+        indexed: &IndexedRequest<CKDRequest>,
+        response: &CKDResponse,
+    ) -> anyhow::Result<Self> {
+        let request = &indexed.request;
         Ok(ChainCKDRespondArgs {
             request: ChainCKDRequest::new(
                 request.app_public_key.clone(),
@@ -334,13 +363,14 @@ impl ChainCKDRespondArgs {
                 request.domain_id,
             ),
             response: response.clone(),
+            request_id: indexed.request_id,
         })
     }
 }
 
 impl ChainVerifyForeignTransactionRespondArgs {
     pub fn new(
-        request: VerifyForeignTxRequest,
+        indexed: IndexedRequest<VerifyForeignTxRequest>,
         payload_hash: dtos::Hash256,
         signature: Signature,
         public_key: VerifyingKey,
@@ -356,6 +386,10 @@ impl ChainVerifyForeignTransactionRespondArgs {
             s: dtos::K256Scalar::from(signature.s),
             recovery_id,
         };
+        let IndexedRequest {
+            request,
+            request_id,
+        } = indexed;
         Ok(ChainVerifyForeignTransactionRespondArgs {
             request: VerifyForeignTransactionRequest {
                 request: request.request,
@@ -366,6 +400,7 @@ impl ChainVerifyForeignTransactionRespondArgs {
                 payload_hash,
                 signature: dtos::SignatureResponse::Secp256k1(dto_signature),
             },
+            request_id,
         })
     }
 }

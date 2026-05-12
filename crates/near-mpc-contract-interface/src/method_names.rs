@@ -59,6 +59,13 @@ pub const RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS: &str = "return_ck_and_clean_stat
 pub const RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS: &str =
     "return_verify_foreign_tx_and_clean_state_on_success";
 
+/// Log prefix the contract emits in `enqueue_yield_request` carrying the
+/// yield's runtime-allocated `data_id`, hex-encoded (see #3184). This is the
+/// wire-level channel by which the node learns each yield's unique id so it
+/// can route `respond*` back to the specific yield. Defined once here so the
+/// contract emitter and the node parser cannot drift apart on rename.
+pub const MPC_REQUEST_ID_LOG_PREFIX: &str = "MPC_REQUEST_ID:";
+
 // View methods
 pub const STATE: &str = "state";
 pub const CONFIG: &str = "config";
