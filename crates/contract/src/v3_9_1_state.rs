@@ -364,7 +364,8 @@ impl From<MpcContract> for crate::MpcContract {
 
 /// Previous `StaleData` layout — held a [`LookupMap`] of pre-upgrade signature requests.
 /// After the v3.9 migration is fully deployed those requests have been resolved or timed
-/// out, so the field is dropped here and the new `StaleData` is empty.
+/// out, so the field is dropped here. The new contract no longer has a `StaleData` field;
+/// pre-upgrade pending requests are surfaced through `LegacyPendingRequests` instead.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 struct OldStaleData {
     pending_signature_requests_pre_upgrade: LookupMap<SignatureRequest, YieldIndex>,
