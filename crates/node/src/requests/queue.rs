@@ -445,12 +445,18 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             )
             .entered();
             if request.next_check_due > now {
-                tracing::debug!("skipping request because it's not time yet");
+                tracing::debug!(
+                    target: "request",
+                    "skipping request because it's not time yet"
+                );
                 continue;
             }
             request.next_check_due = now + CHECK_EACH_REQUEST_INTERVAL;
             if request.active_attempt.strong_count() > 0 {
-                tracing::debug!("skipping request because there's already an active attempt",);
+                tracing::debug!(
+                    target: "request",
+                    "skipping request because there's already an active attempt",
+                );
                 continue;
             }
             // check it against the network height
@@ -461,7 +467,10 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             {
                 // this request expired for at least one participant in the network. We can already
                 // remove it from the queue.
-                tracing::debug!("discarding expired request");
+                tracing::debug!(
+                    target: "request",
+                    "discarding expired request"
+                );
                 // Increment metric for timeout (only for signature requests)
                 // Note that this is not necessarily a good signal for measuring signature request
                 // timeouts. It may be that our node indexer lags behind other indexers in the
@@ -476,7 +485,10 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 continue;
             }
             let Some(status) = request.status.upgrade() else {
-                tracing::debug!("discarding request because the tracker removed the block, indicating that it sat on a dead fork.");
+                tracing::debug!(
+                    target: "request",
+                    "discarding request because the tracker removed the block, indicating that it sat on a dead fork."
+                );
                 if matches!(RequestType::get_type(), types::RequestType::Signature) {
                     metrics::MPC_CLUSTER_FAILED_SIGNATURES_COUNT
                         .with_label_values(&["block_not_found"])
@@ -487,13 +499,17 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             };
             if status.is_canonical() {
                 if let Some(leader) = request.current_leader(&eligible_leaders) {
-                    tracing::debug!( leader = %leader, "processing request");
+                    tracing::debug!(
+
+                target: "request",
+                        leader = %leader, "processing request");
                     let mut progress = request.computation_progress.lock().unwrap();
                     progress.selected_leader = Some(leader);
                     if leader == self.my_participant_id {
                         {
                             if progress.attempts >= MAX_ATTEMPTS_PER_REQUEST_AS_LEADER {
                                 tracing::debug!(
+                                    target: "request",
                                     attempt_id = progress.attempts,
                                     "discarding request because it has been attempted too many times",
                                 );
@@ -511,6 +527,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                                 now < t + MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE
                             }) {
                                 tracing::debug!(
+                                    target: "request",
                                     "skipping request because the last response was submitted too recently"
                                 );
                                 continue;
@@ -528,7 +545,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             } else {
                 // Don't act on it yet. If it becomes canonical later, we'll try to generate
                 // the request.
-                tracing::debug!("ignoring non-canonical request");
+                tracing::debug!(target: "request", "ignoring non-canonical request");
             }
         }
         for id in requests_to_remove {

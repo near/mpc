@@ -109,6 +109,10 @@ impl AtomicBlockStatus {
     }
 
     fn make_canonical(&self) {
+        if self.is_final() {
+            tracing::error!("received invalid data from indexer. Downgrading from final to canonical is not possible");
+            return;
+        }
         self.0.store(
             BlockStatus::OptimisticAndCanonical.into(),
             Ordering::Relaxed,
@@ -116,6 +120,10 @@ impl AtomicBlockStatus {
     }
 
     fn make_non_canonical(&self) {
+        if self.is_final() {
+            tracing::error!("received invalid data from indexer. Downgrading from final to non-canonical is not possible");
+            return;
+        }
         self.0.store(
             BlockStatus::OptimisticButNotCanonical.into(),
             Ordering::Relaxed,
@@ -133,10 +141,6 @@ pub struct AddBlockResult<T> {
 }
 
 /// Represents a block in the recent blockchain.
-///
-/// Note: We're not using the thread-safe functionality of Mutex here because we only access
-/// it from at most one thread. But these need to work in futures, and RefCell is not Send,
-/// so we use Mutex instead. Same story with AtomicU8 vs Cell<u8>.
 struct BlockNode {
     hash: CryptoHash,
     height: u64,
