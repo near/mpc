@@ -5,6 +5,7 @@
 pub mod config;
 pub mod crypto_shared;
 pub mod errors;
+pub mod foreign_chain_rpc;
 pub mod node_migrations;
 pub mod primitives;
 pub mod state;
@@ -31,6 +32,7 @@ use crate::{
         TryIntoContractType,
     },
     errors::{Error, RequestError},
+    foreign_chain_rpc::{ForeignChainRpcWhitelist, ProviderVotes},
     primitives::{
         ckd::{app_public_key_check, ckd_output_check, CKDRequest},
         domain::AddDomainsVotes,
@@ -150,6 +152,7 @@ pub struct MpcContract {
     stale_data: StaleData,
     // TODO(#2937): Remove via state migration.
     metrics: Metrics,
+    foreign_chain_rpc_whitelist: ForeignChainRpcWhitelist,
 }
 
 /// A container for "orphaned" state that persists across contract migrations.
@@ -1489,6 +1492,25 @@ impl MpcContract {
         self.tee_state.get_allowed_measurements()
     }
 
+    /// Returns the on-chain whitelist of RPC providers, grouped by chain. Each entry
+    /// self-describes its `provider_id`; the same `provider_id` may appear under multiple
+    /// chains with chain-specific connection details.
+    ///
+    /// Initially empty — vote endpoints land in a follow-up PR.
+    pub fn allowed_foreign_chain_providers(
+        &self,
+    ) -> BTreeMap<dtos::ForeignChain, Vec<dtos::ProviderEntry>> {
+        log!("allowed_foreign_chain_providers");
+        self.foreign_chain_rpc_whitelist.allowed_providers()
+    }
+
+    /// Returns the pending vote state for foreign-chain RPC providers, partitioned by
+    /// `(chain, provider_id)` target. Initially empty.
+    pub fn foreign_chain_provider_votes(&self) -> ProviderVotes {
+        log!("foreign_chain_provider_votes");
+        self.foreign_chain_rpc_whitelist.provider_votes()
+    }
+
     /// Returns all accounts that have TEE attestations stored in the contract.
     /// Note: This includes both current protocol participants and accounts that may have
     /// submitted TEE information but are not currently part of the active participant set.
@@ -1711,6 +1733,7 @@ impl MpcContract {
             stale_data: StaleData {},
             metrics: Default::default(),
             node_foreign_chain_support: Default::default(),
+            foreign_chain_rpc_whitelist: Default::default(),
         })
     }
 
@@ -1779,6 +1802,7 @@ impl MpcContract {
             stale_data: StaleData {},
             metrics: Default::default(),
             node_foreign_chain_support: Default::default(),
+            foreign_chain_rpc_whitelist: Default::default(),
         })
     }
 
@@ -3568,6 +3592,7 @@ mod tests {
                 node_migrations: Default::default(),
                 stale_data: StaleData {},
                 metrics: Default::default(),
+                foreign_chain_rpc_whitelist: Default::default(),
             }
         }
     }

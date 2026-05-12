@@ -952,6 +952,141 @@ impl ForeignTxSignPayload {
     }
 }
 
+/// Stable label for an RPC provider entry (e.g. `"alchemy"`, `"ankr"`, `"drpc"`).
+/// Unique within a chain in the on-chain foreign-chain RPC whitelist.
+pub type ProviderId = String;
+
+/// Where the operator's API key/token gets injected into the assembled RPC URL.
+/// Lives on the contract (not in operator yaml) so the operator can't pick a custom
+/// auth shape that lets them inject extra path or query components.
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub enum AuthScheme {
+    /// Token sent in an HTTP header (e.g. `Authorization: Bearer <token>`).
+    Header {
+        name: String,
+        scheme: Option<String>,
+    },
+    /// Token substituted into a `{placeholder}` in the URL path.
+    Path { placeholder: String },
+    /// Token sent as a query parameter (`?<name>=<token>`).
+    Query { name: String },
+    /// Public endpoint, no auth.
+    None,
+}
+
+/// How chain identity is encoded in the RPC URL. Exactly one of the three encodings,
+/// modelled as an enum so a vote can't accidentally produce an "all three" shape.
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub enum ChainRouting {
+    /// Chain identity already encoded in `base_url` (subdomain or path prefix).
+    /// E.g. Alchemy's `eth-mainnet.g.alchemy.com`, Infura's `mainnet.infura.io`, or
+    /// any chain-dedicated endpoint.
+    Embedded,
+    /// Append `segment` after `base_url`'s path. E.g. Ankr Ethereum: `"eth"`.
+    /// `segment` MUST NOT contain `/` (validated when a vote applies).
+    PathSegment { segment: String },
+    /// Merge a single chain-identifying query param into the URL. E.g. dRPC Ethereum:
+    /// `{ name: "network", value: "ethereum" }`.
+    /// When `AuthScheme::Query { name: auth_name }` is used, `name` here MUST differ
+    /// from `auth_name` (validated when a vote applies).
+    QueryParam { name: String, value: String },
+}
+
+/// One entry in the on-chain RPC provider whitelist for a single chain. Voted in by
+/// MPC participants and read by nodes at startup to assemble the actual RPC URL
+/// (`base_url` + `chain_routing` + operator-supplied token via `auth_scheme`).
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct ProviderEntry {
+    pub provider_id: ProviderId,
+    /// Provider's stable base. When `chain_routing == Embedded`, the chain identifier
+    /// is already inside `base_url` (subdomain or path prefix). Otherwise `base_url`
+    /// is chain-agnostic and `chain_routing` carries the chain marker.
+    pub base_url: String,
+    pub auth_scheme: AuthScheme,
+    pub chain_routing: ChainRouting,
+}
+
+/// Payload of a `vote_add_foreign_chain_provider` / `vote_remove_foreign_chain_provider`
+/// call. The vote target is `(chain, provider_id)` — for `Add`, the `provider_id` lives
+/// inside the entry. Two participants voting `Add` with different `entry` shapes for the
+/// same `(chain, provider_id)` target are voting for *different* configurations and
+/// count separately toward threshold.
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub enum ProviderVoteAction {
+    Add {
+        chain: ForeignChain,
+        entry: ProviderEntry,
+    },
+    Remove {
+        chain: ForeignChain,
+        provider_id: ProviderId,
+    },
+}
+
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
