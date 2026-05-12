@@ -4,7 +4,7 @@
 
 Goals:
 
-- Provide a shared, generic verifier serving any Intel TDX-based NEAR contract — `dcap-qvl` bugfixes ship once.
+- Provide shared on-chain TEE attestation verification functionality.
 - Shrink the MPC contract WASM below the NEP-509 limit by breaking attestation verification out into a separate contract.
 
 Design choices that follow from these goals, applied throughout the design below:
