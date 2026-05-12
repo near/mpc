@@ -24,7 +24,7 @@ The MPC contract has two attestation flows:
 - **Initial verification** (`submit_participant_info`): runs `dcap_qvl::verify` plus all post-DCAP checks once per node onboarding. Cold path.
 - **Re-verification** (`verify_tee`, post-reshare cleanup, `clean_invalid_attestations`): re-checks each stored `ValidatedDstackAttestation` against current allowlists using only hash comparisons. This path does **not** invoke `dcap_qvl::verify`.
 
-Only the cold path needs the heavyweight verifier; the hot path stays cheap.
+Both paths live in the attestation flow, not on the signing critical path. Only the initial-verification path needs the heavyweight verifier (full `dcap_qvl::verify` + post-DCAP checks); subsequent re-verifications are partial — hash comparisons against the cached `ValidatedDstackAttestation`.
 
 MPC binds report-data as `sha3_384(tls_pk || account_pk)` (see [`crates/mpc-attestation/src/report_data.rs`][mpc-report-data]). It runs RTMR3 event-log replay, MPC image-hash whitelisting, launcher-compose-hash whitelisting, and app_compose JSON validation as post-DCAP checks. Allowlists are governed by a threshold-of-participants vote.
 
