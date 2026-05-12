@@ -6,7 +6,6 @@ Goals:
 
 - Provide a shared, generic verifier serving any Intel TDX-based NEAR contract — `dcap-qvl` bugfixes ship once.
 - Shrink the MPC contract WASM below the NEP-509 limit by breaking attestation verification out into a separate contract.
-- Roll out incrementally: v1 keeps state migration to zero. Architectural improvements follow in v2 (per-team policy contracts) and v3 (ACL-shaped interfaces, on-chain PCCS caching).
 
 Design choices that follow from these goals, applied throughout the design below:
 
