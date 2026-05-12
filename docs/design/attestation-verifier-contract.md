@@ -7,11 +7,13 @@ Goals:
 - Provide shared on-chain TEE attestation verification functionality.
 - Shrink the MPC contract WASM below the NEP-509 limit.
 
-Design choices that follow from these goals, applied throughout the design below:
+## Design choices
 
-- The verifier is the thinnest possible wrapper around `dcap_qvl::verify()`. Anything team-specific lives outside it.
-- State stays where it's governed: per-team allowlists and stored attestations live in per-team contracts, not in the shared verifier.
-- The hot path doesn't change. Re-verification is hash comparisons today; v1 does not regress that.
+These constraints apply throughout the design below; each is a deliberate trade-off, not a consequence of the goals above.
+
+- **The verifier is the thinnest possible wrapper around `dcap_qvl::verify()`.** Anything team-specific (RTMR3 replay, app-compose validation, allowlist matches) lives outside it. Keeps the shared component minimal and Dstack-agnostic.
+- **State stays where it's governed.** Per-team allowlists and stored attestations live in per-team contracts; the verifier holds no per-team state. Keeps the verifier reusable and avoids tying it to one team's governance.
+- **The hot path doesn't change.** Re-verification of cached attestations is hash comparisons today and stays that way in v1. The async cross-contract call only affects the cold path (initial attestation).
 
 ## Current State
 
