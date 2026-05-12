@@ -444,7 +444,7 @@ impl MpcContract {
         // closures.
         let request_for_args = request.clone();
         self.enqueue_yield_request(
-            method_names::RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS,
+            method_names::RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS_V2,
             move |request_id| serde_json::to_vec(&(&request_for_args, request_id)).unwrap(),
             callback_gas,
             move |this, request_id, yield_index| {
@@ -560,7 +560,7 @@ impl MpcContract {
 
         let request_for_args = request.clone();
         self.enqueue_yield_request(
-            method_names::RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS,
+            method_names::RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS_V2,
             move |request_id| serde_json::to_vec(&(&request_for_args, request_id)).unwrap(),
             callback_gas,
             move |this, request_id, yield_index| {
@@ -607,7 +607,7 @@ impl MpcContract {
         let request = args_into_verify_foreign_tx_request(request);
         let request_for_args = request.clone();
         self.enqueue_yield_request(
-            method_names::RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS,
+            method_names::RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS_V2,
             move |request_id| serde_json::to_vec(&(&request_for_args, request_id)).unwrap(),
             callback_gas,
             move |this, request_id, yield_index| {
@@ -1971,26 +1971,34 @@ impl MpcContract {
 
     /// Presence check for a pending signature request, exposed as a view call.
     ///
-    /// Returns `true` iff a yield for `request_id` (new map, post-#3184) or
-    /// `request` (legacy map, pre-upgrade) is still outstanding. Callers
-    /// thread the `request_id` they obtained from the `MPC_REQUEST_ID:` log;
-    /// when absent (old node, or legacy yield) the legacy fallback path is
-    /// taken. The pre-#3184 method also named `get_pending_request` returned
-    /// `Option<YieldIndex>` with a load-bearing-only-for-presence `Some(_)`
-    /// shape; under the new layout we can't synthesise a meaningful
-    /// `YieldIndex` for queries that aren't keyed by id, so the return type
-    /// is now plainly `bool`.
+    /// Returns `Some(yield_index)` iff a yield for `request_id` (new map,
+    /// post-#3184) or `request` (legacy map, pre-upgrade) is still
+    /// outstanding. Callers thread the `request_id` they obtained from the
+    /// `MPC_REQUEST_ID:` log; when absent (old node, or legacy yield) the
+    /// legacy fallback path is taken.
+    ///
+    /// The shape `Option<YieldIndex>` is preserved deliberately for wire
+    /// compatibility with pre-#3184 nodes that may still be running during
+    /// the rolling upgrade — they call this view with no `request_id`,
+    /// expect the old JSON shape (`null` or `{"data_id": ...}`), and rely
+    /// on it only as a presence check. The returned `YieldIndex` is the
+    /// real data_id either way: the new map stores it alongside the
+    /// request, and the legacy map's value is already a `YieldIndex`.
     pub fn get_pending_request(
         &self,
         request: &SignatureRequest,
         request_id: Option<CryptoHash>,
-    ) -> bool {
+    ) -> Option<YieldIndex> {
         match request_id {
-            Some(id) => self.pending_signature_requests_by_id.contains_key(&id),
+            Some(id) => self
+                .pending_signature_requests_by_id
+                .get(&id)
+                .map(|(_, yi)| yi.clone()),
             None => self
                 .legacy_pending_requests
                 .signature_requests
-                .contains_key(request),
+                .get(request)
+                .cloned(),
         }
     }
 
@@ -1999,13 +2007,17 @@ impl MpcContract {
         &self,
         request: &CKDRequest,
         request_id: Option<CryptoHash>,
-    ) -> bool {
+    ) -> Option<YieldIndex> {
         match request_id {
-            Some(id) => self.pending_ckd_requests_by_id.contains_key(&id),
+            Some(id) => self
+                .pending_ckd_requests_by_id
+                .get(&id)
+                .map(|(_, yi)| yi.clone()),
             None => self
                 .legacy_pending_requests
                 .ckd_requests
-                .contains_key(request),
+                .get(request)
+                .cloned(),
         }
     }
 
@@ -2014,15 +2026,17 @@ impl MpcContract {
         &self,
         request: &VerifyForeignTransactionRequest,
         request_id: Option<CryptoHash>,
-    ) -> bool {
+    ) -> Option<YieldIndex> {
         match request_id {
             Some(id) => self
                 .pending_verify_foreign_tx_requests_by_id
-                .contains_key(&id),
+                .get(&id)
+                .map(|(_, yi)| yi.clone()),
             None => self
                 .legacy_pending_requests
                 .verify_foreign_tx_requests
-                .contains_key(request),
+                .get(request)
+                .cloned(),
         }
     }
 
@@ -2083,13 +2097,90 @@ impl MpcContract {
         env!("CARGO_PKG_VERSION").to_string()
     }
 
-    /// On resume: returns the signature.
-    /// On timeout: drops this yield's entry from the by-id map (the
-    /// `request_id` was baked into the callback args at yield-creation
-    /// time, so we know exactly which entry to remove) and panics to fail
-    /// the original transaction.
+    // ─── Yield-resume callbacks ──────────────────────────────────────────
+    //
+    // The contract exposes two parallel sets of yield-resume callbacks:
+    //
+    // * Methods named `return_*_on_success` — the **pre-#3184** signatures
+    //   (`(request, #[callback_result] result)`). `promise_yield_create`
+    //   bakes the function name and the callback args into the receipt at
+    //   yield-creation time, and yields outstanding at the moment of
+    //   contract upgrade replay those original args verbatim on
+    //   resume/timeout. The runtime invokes the method by name, so these
+    //   must stay alive under their original names with their original
+    //   shapes or every pre-upgrade in-flight signature panics during the
+    //   200-block resume window. They only ever clean
+    //   `legacy_pending_requests`; new yields don't route here.
+    //
+    // * Methods named `return_*_on_success_v2` — the new shape
+    //   (`(request, request_id, #[callback_result] result)`). New `sign` /
+    //   `request_app_private_key` / `verify_foreign_transaction` calls in
+    //   this version of the contract use these names, so `request_id` is
+    //   baked into the yield args and the timeout path can remove the
+    //   matching by-id entry without a reverse index.
+    //
+    // Drop the legacy methods (and `legacy_pending_requests`) one release
+    // after every pre-upgrade yield has had time to time out.
+
+    /// Pre-#3184 callback: takes the request key only and cleans the
+    /// legacy single-yield map on timeout. See the section comment above.
     #[private]
     pub fn return_signature_and_clean_state_on_success(
+        &mut self,
+        request: SignatureRequest,
+        #[callback_result] signature: Result<dtos::SignatureResponse, PromiseError>,
+    ) -> PromiseOrValue<dtos::SignatureResponse> {
+        match signature {
+            Ok(signature) => PromiseOrValue::Value(signature),
+            Err(_) => {
+                self.legacy_pending_requests
+                    .signature_requests
+                    .remove(&request);
+                self.fail_on_timeout_promise()
+            }
+        }
+    }
+
+    /// Pre-#3184 CKD callback; see [`Self::return_signature_and_clean_state_on_success`].
+    #[private]
+    pub fn return_ck_and_clean_state_on_success(
+        &mut self,
+        request: CKDRequest,
+        #[callback_result] ck: Result<CKDResponse, PromiseError>,
+    ) -> PromiseOrValue<CKDResponse> {
+        match ck {
+            Ok(ck) => PromiseOrValue::Value(ck),
+            Err(_) => {
+                self.legacy_pending_requests.ckd_requests.remove(&request);
+                self.fail_on_timeout_promise()
+            }
+        }
+    }
+
+    /// Pre-#3184 foreign-tx callback; see
+    /// [`Self::return_signature_and_clean_state_on_success`].
+    #[private]
+    pub fn return_verify_foreign_tx_and_clean_state_on_success(
+        &mut self,
+        request: VerifyForeignTransactionRequest,
+        #[callback_result] response: Result<VerifyForeignTransactionResponse, PromiseError>,
+    ) -> PromiseOrValue<VerifyForeignTransactionResponse> {
+        match response {
+            Ok(response) => PromiseOrValue::Value(response),
+            Err(_) => {
+                self.legacy_pending_requests
+                    .verify_foreign_tx_requests
+                    .remove(&request);
+                self.fail_on_timeout_promise()
+            }
+        }
+    }
+
+    /// Post-#3184 callback: receives the contract-minted `request_id` in
+    /// its bound args so the timeout path can drop the matching entry
+    /// from the by-id map directly. See the section comment above.
+    #[private]
+    pub fn return_signature_and_clean_state_on_success_v2(
         &mut self,
         _request: SignatureRequest,
         request_id: CryptoHash,
@@ -2102,22 +2193,14 @@ impl MpcContract {
                     &mut self.pending_signature_requests_by_id,
                     &request_id,
                 );
-
-                let fail_on_timeout_gas = Gas::from_tgas(self.config.fail_on_timeout_tera_gas);
-                let promise = Promise::new(env::current_account_id()).function_call(
-                    method_names::FAIL_ON_TIMEOUT.to_string(),
-                    vec![],
-                    NearToken::from_near(0),
-                    fail_on_timeout_gas,
-                );
-                near_sdk::PromiseOrValue::Promise(promise.as_return())
+                self.fail_on_timeout_promise()
             }
         }
     }
 
-    /// CKD counterpart to [`Self::return_signature_and_clean_state_on_success`].
+    /// Post-#3184 CKD callback; see [`Self::return_signature_and_clean_state_on_success_v2`].
     #[private]
-    pub fn return_ck_and_clean_state_on_success(
+    pub fn return_ck_and_clean_state_on_success_v2(
         &mut self,
         _request: CKDRequest,
         request_id: CryptoHash,
@@ -2127,22 +2210,15 @@ impl MpcContract {
             Ok(ck) => PromiseOrValue::Value(ck),
             Err(_) => {
                 pending_requests::remove_by_id(&mut self.pending_ckd_requests_by_id, &request_id);
-                let fail_on_timeout_gas = Gas::from_tgas(self.config.fail_on_timeout_tera_gas);
-                let promise = Promise::new(env::current_account_id()).function_call(
-                    method_names::FAIL_ON_TIMEOUT.to_string(),
-                    vec![],
-                    NearToken::from_near(0),
-                    fail_on_timeout_gas,
-                );
-                near_sdk::PromiseOrValue::Promise(promise.as_return())
+                self.fail_on_timeout_promise()
             }
         }
     }
 
-    /// foreign-tx counterpart to
-    /// [`Self::return_signature_and_clean_state_on_success`].
+    /// Post-#3184 foreign-tx callback; see
+    /// [`Self::return_signature_and_clean_state_on_success_v2`].
     #[private]
-    pub fn return_verify_foreign_tx_and_clean_state_on_success(
+    pub fn return_verify_foreign_tx_and_clean_state_on_success_v2(
         &mut self,
         _request: VerifyForeignTransactionRequest,
         request_id: CryptoHash,
@@ -2155,16 +2231,22 @@ impl MpcContract {
                     &mut self.pending_verify_foreign_tx_requests_by_id,
                     &request_id,
                 );
-                let fail_on_timeout_gas = Gas::from_tgas(self.config.fail_on_timeout_tera_gas);
-                let promise = Promise::new(env::current_account_id()).function_call(
-                    method_names::FAIL_ON_TIMEOUT.to_string(),
-                    vec![],
-                    NearToken::from_near(0),
-                    fail_on_timeout_gas,
-                );
-                near_sdk::PromiseOrValue::Promise(promise.as_return())
+                self.fail_on_timeout_promise()
             }
         }
+    }
+
+    /// Shared cleanup tail: schedule `fail_on_timeout` so the original
+    /// user transaction surfaces a `Timeout` error.
+    fn fail_on_timeout_promise<T>(&self) -> PromiseOrValue<T> {
+        let fail_on_timeout_gas = Gas::from_tgas(self.config.fail_on_timeout_tera_gas);
+        let promise = Promise::new(env::current_account_id()).function_call(
+            method_names::FAIL_ON_TIMEOUT.to_string(),
+            vec![],
+            NearToken::from_near(0),
+            fail_on_timeout_gas,
+        );
+        near_sdk::PromiseOrValue::Promise(promise.as_return())
     }
 
     #[private]
@@ -2791,7 +2873,9 @@ mod tests {
         let request_id = derive_request_id(contract.next_pending_request_id);
         contract.sign(request);
         assert!(
-            contract.get_pending_request(&signature_request, Some(request_id)),
+            contract
+                .get_pending_request(&signature_request, Some(request_id))
+                .is_some(),
             "sign() should have queued the request",
         );
 
@@ -2827,7 +2911,7 @@ mod tests {
             Ok(_) => {
                 assert!(success);
                 contract
-                    .return_signature_and_clean_state_on_success(
+                    .return_signature_and_clean_state_on_success_v2(
                         signature_request.clone(),
                         request_id,
                         Ok(signature_response),
@@ -2835,7 +2919,9 @@ mod tests {
                     .detach();
 
                 assert!(
-                    !contract.get_pending_request(&signature_request, Some(request_id)),
+                    contract
+                        .get_pending_request(&signature_request, Some(request_id))
+                        .is_none(),
                     "respond should have cleared the entry",
                 );
             }
@@ -3064,7 +3150,9 @@ mod tests {
             .signature_requests
             .get(&signature_request)
             .is_none());
-        assert!(!contract.get_pending_request(&signature_request, None));
+        assert!(contract
+            .get_pending_request(&signature_request, None)
+            .is_none());
     }
 
     #[test]
@@ -3088,14 +3176,16 @@ mod tests {
         contract.sign(request);
         // assert_matches! requires Debug, which PromiseOrValue doesn't implement
         assert!(matches!(
-            contract.return_signature_and_clean_state_on_success(
+            contract.return_signature_and_clean_state_on_success_v2(
                 signature_request.clone(),
                 request_id,
                 Err(PromiseError::Failed),
             ),
             PromiseOrValue::Promise(_)
         ));
-        assert!(!contract.get_pending_request(&signature_request, Some(request_id)));
+        assert!(contract
+            .get_pending_request(&signature_request, Some(request_id))
+            .is_none());
     }
 
     #[test]
@@ -3109,10 +3199,12 @@ mod tests {
             "m/44'\''/60'\''/0'\''/0/0",
         );
         let request_id = derive_request_id(99);
-        assert!(!contract.get_pending_request(&signature_request, Some(request_id)));
+        assert!(contract
+            .get_pending_request(&signature_request, Some(request_id))
+            .is_none());
 
         // when
-        let result = contract.return_signature_and_clean_state_on_success(
+        let result = contract.return_signature_and_clean_state_on_success_v2(
             signature_request,
             request_id,
             Err(PromiseError::Failed),
@@ -3143,7 +3235,7 @@ mod tests {
         });
 
         // when
-        let result = contract.return_signature_and_clean_state_on_success(
+        let result = contract.return_signature_and_clean_state_on_success_v2(
             signature_request,
             // request_id is only used on the timeout (Err) branch, so its
             // exact value doesn't matter for this success-path test.
@@ -3179,7 +3271,9 @@ mod tests {
         let request_id = derive_request_id(contract.next_pending_request_id);
         contract.request_app_private_key(request);
         assert!(
-            contract.get_pending_ckd_request(&ckd_request, Some(request_id)),
+            contract
+                .get_pending_ckd_request(&ckd_request, Some(request_id))
+                .is_some(),
             "request_app_private_key() should have queued the request",
         );
 
@@ -3193,14 +3287,16 @@ mod tests {
         match contract.respond_ckd(ckd_request.clone(), response.clone(), Some(request_id)) {
             Ok(_) => {
                 contract
-                    .return_ck_and_clean_state_on_success(
+                    .return_ck_and_clean_state_on_success_v2(
                         ckd_request.clone(),
                         request_id,
                         Ok(response),
                     )
                     .detach();
 
-                assert!(!contract.get_pending_ckd_request(&ckd_request, Some(request_id)));
+                assert!(contract
+                    .get_pending_ckd_request(&ckd_request, Some(request_id))
+                    .is_none());
             }
             Err(_) => panic!("respond_ckd should not fail"),
         }
@@ -3230,7 +3326,9 @@ mod tests {
         let request_id = derive_request_id(contract.next_pending_request_id);
         contract.request_app_private_key(request);
         assert!(
-            contract.get_pending_ckd_request(&ckd_request, Some(request_id)),
+            contract
+                .get_pending_ckd_request(&ckd_request, Some(request_id))
+                .is_some(),
             "request_app_private_key() should have queued the request",
         );
 
@@ -3241,14 +3339,16 @@ mod tests {
         match contract.respond_ckd(ckd_request.clone(), response.clone(), Some(request_id)) {
             Ok(_) => {
                 contract
-                    .return_ck_and_clean_state_on_success(
+                    .return_ck_and_clean_state_on_success_v2(
                         ckd_request.clone(),
                         request_id,
                         Ok(response),
                     )
                     .detach();
 
-                assert!(!contract.get_pending_ckd_request(&ckd_request, Some(request_id)));
+                assert!(contract
+                    .get_pending_ckd_request(&ckd_request, Some(request_id))
+                    .is_none());
             }
             Err(_) => panic!("respond_ckd should not fail"),
         }
@@ -3423,14 +3523,16 @@ mod tests {
         contract.request_app_private_key(request);
         // assert_matches! requires Debug, which PromiseOrValue doesn't implement
         assert!(matches!(
-            contract.return_ck_and_clean_state_on_success(
+            contract.return_ck_and_clean_state_on_success_v2(
                 ckd_request.clone(),
                 request_id,
                 Err(PromiseError::Failed),
             ),
             PromiseOrValue::Promise(_)
         ));
-        assert!(!contract.get_pending_ckd_request(&ckd_request, Some(request_id)));
+        assert!(contract
+            .get_pending_ckd_request(&ckd_request, Some(request_id))
+            .is_none());
     }
 
     #[test]
@@ -3459,7 +3561,9 @@ mod tests {
         let request_id = derive_request_id(contract.next_pending_request_id);
         contract.verify_foreign_transaction(request_args);
         assert!(
-            contract.get_pending_verify_foreign_tx_request(&request, Some(request_id)),
+            contract
+                .get_pending_verify_foreign_tx_request(&request, Some(request_id))
+                .is_some(),
             "verify_foreign_transaction() should have queued the request",
         );
         let payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
@@ -3494,14 +3598,16 @@ mod tests {
         ) {
             Ok(_) => {
                 contract
-                    .return_verify_foreign_tx_and_clean_state_on_success(
+                    .return_verify_foreign_tx_and_clean_state_on_success_v2(
                         request.clone(),
                         request_id,
                         Ok(response),
                     )
                     .detach();
 
-                assert!(!contract.get_pending_verify_foreign_tx_request(&request, Some(request_id)));
+                assert!(contract
+                    .get_pending_verify_foreign_tx_request(&request, Some(request_id))
+                    .is_none());
             }
             Err(_) => panic!("respond_verify_foreign_tx should not fail"),
         }
@@ -3533,14 +3639,16 @@ mod tests {
         // Then
         // assert_matches! requires Debug, which PromiseOrValue doesn't implement
         assert!(matches!(
-            contract.return_verify_foreign_tx_and_clean_state_on_success(
+            contract.return_verify_foreign_tx_and_clean_state_on_success_v2(
                 request.clone(),
                 request_id,
                 Err(PromiseError::Failed),
             ),
             PromiseOrValue::Promise(_)
         ));
-        assert!(!contract.get_pending_verify_foreign_tx_request(&request, Some(request_id)));
+        assert!(contract
+            .get_pending_verify_foreign_tx_request(&request, Some(request_id))
+            .is_none());
     }
 
     #[rstest]
@@ -3902,7 +4010,9 @@ mod tests {
         let request_id = derive_request_id(contract.next_pending_request_id);
         contract.request_app_private_key(request);
         assert!(
-            contract.get_pending_ckd_request(&ckd_request, Some(request_id)),
+            contract
+                .get_pending_ckd_request(&ckd_request, Some(request_id))
+                .is_some(),
             "request_app_private_key() should have queued the request",
         );
 

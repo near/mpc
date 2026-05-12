@@ -16,8 +16,10 @@ use near_indexer_primitives::CryptoHash;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::method_names::{
     REQUEST_APP_PRIVATE_KEY, RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS,
-    RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS,
-    RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS, SIGN, VERIFY_FOREIGN_TRANSACTION,
+    RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS_V2, RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS,
+    RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS_V2,
+    RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS,
+    RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS_V2, SIGN, VERIFY_FOREIGN_TRANSACTION,
 };
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::CKDRequestArgs;
@@ -242,16 +244,22 @@ async fn handle_message(
 
             if let Some(request_id) = try_get_request_completion(&receipt, mpc_contract_id) {
                 if let Some((_, method_name)) = try_extract_function_call_args(&receipt) {
+                    // Match both the pre-#3184 (1-arg) and post-#3184 (2-arg
+                    // `_v2`) callback names. Pre-upgrade yields still resume
+                    // through the old name during the legacy window.
                     match method_name.as_str() {
-                        RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS => {
+                        RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS
+                        | RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS_V2 => {
                             completed_signatures.push(request_id);
                             metrics::MPC_NUM_SIGN_RESPONSES_INDEXED.inc();
                         }
-                        RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS => {
+                        RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS
+                        | RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS_V2 => {
                             completed_ckds.push(request_id);
                             metrics::MPC_NUM_CKD_RESPONSES_INDEXED.inc();
                         }
-                        RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS => {
+                        RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS
+                        | RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS_V2 => {
                             completed_verify_foreign_txs.push(request_id);
                             metrics::MPC_NUM_VERIFY_FOREIGN_TX_RESPONSES_INDEXED.inc();
                         }
@@ -317,16 +325,20 @@ fn try_extract_function_call_args(receipt: &ReceiptView) -> Option<(&FunctionArg
 
 /// Walks the receipt's log lines looking for the contract's
 /// `MPC_REQUEST_ID:<hex>` marker (prefix imported from the contract
-/// interface so emitter and parser cannot drift). Returns the parsed 32-byte
-/// id, or `None` when the log is absent (old contract) or malformed.
+/// interface so emitter and parser cannot drift). Returns the parsed
+/// 32-byte id, or `None` when the log is absent (old contract) or
+/// malformed.
 ///
 /// Today every receipt that emits this prefix emits it exactly once —
 /// `enqueue_yield_request` is the only emitter and it's invoked once per
 /// user-facing entry point. A second matching line would mean either a
 /// future cross-contract path enqueues two yields in the same receipt or
-/// the prefix has been overloaded; either way silently using "the first"
-/// would route both yields to a single id, which is a correctness bug.
-/// Panic on the spot so the regression surfaces.
+/// the prefix has been overloaded; silently picking one would route
+/// responses to the wrong yield. We log loudly and return `None` instead
+/// of panicking — panicking here would crash every MPC indexer
+/// simultaneously the moment a buggy contract appeared on chain, which is
+/// a worse blast radius than dropping a single suspicious receipt and
+/// failing the affected request through the usual timeout path.
 fn try_get_request_id_from_logs(logs: &[String]) -> Option<CryptoHash> {
     let mut found: Option<CryptoHash> = None;
     for line in logs {
@@ -337,15 +349,17 @@ fn try_get_request_id_from_logs(logs: &[String]) -> Option<CryptoHash> {
         match hex::decode_to_slice(hex_str.trim(), &mut buf) {
             Ok(()) => {
                 if let Some(existing) = found {
-                    panic!(
-                        "indexer invariant violated: receipt emitted multiple \
-                         `{prefix}` log lines (first={first}, also saw={raw}). \
-                         The contract's `enqueue_yield_request` is the only \
-                         emitter and must be invoked at most once per receipt.",
+                    tracing::error!(
+                        target: "mpc",
+                        first = %hex::encode(existing),
+                        extra = %line,
                         prefix = method_names::MPC_REQUEST_ID_LOG_PREFIX,
-                        first = hex::encode(existing),
-                        raw = line,
+                        "receipt emitted multiple `{}` log lines; refusing to \
+                         route a response to either id. The affected request \
+                         will fail through the usual yield-resume timeout.",
+                        method_names::MPC_REQUEST_ID_LOG_PREFIX,
                     );
+                    return None;
                 }
                 found = Some(CryptoHash(buf));
             }

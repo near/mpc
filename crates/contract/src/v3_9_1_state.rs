@@ -355,9 +355,16 @@ impl From<MpcContract> for crate::MpcContract {
             pending_verify_foreign_tx_requests_by_id: near_sdk::store::LookupMap::new(
                 crate::storage_keys::StorageKey::PendingVerifyForeignTxRequestsByIdV2,
             ),
-            // The counter starts at zero on every fresh migration — the
-            // request_id only collides if the same contract instance issues
-            // (1 << 64) yields, which is far past any plausible lifetime.
+            // The counter starts at zero on first migration from v3.9.1.
+            // `migrate()` is `#[init(ignore_state)]`, so a re-run after the
+            // contract is already on this layout falls through to reading
+            // `Self` directly (lib.rs `migrate` fall-through) and preserves
+            // the existing counter — it does NOT re-enter this `From` impl.
+            // If a future refactor folds the V3_9_1 → current conversion
+            // into the fall-through path, the counter init must move with
+            // it (or stay here as a one-shot) — don't reset it on every
+            // invocation. Collisions need 2^64 yields, which is comfortably
+            // outside any plausible contract lifetime.
             next_pending_request_id: 0,
             legacy_pending_requests,
             proposed_updates: value.proposed_updates,

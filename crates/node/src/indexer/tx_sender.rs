@@ -171,12 +171,12 @@ async fn observe_tx_result(
 ) -> anyhow::Result<TransactionStatus> {
     match request {
         Respond(respond_args) => {
-            // Confirm the respond call's intended effect on chain. Pre-#3184
-            // this returned an `Option<YieldIndex>`; under the unique-id
-            // layout the view answers `bool` and is queried by `request_id`
-            // for new entries (or by request key for the legacy fallback
-            // path when we don't have an id).
-            let still_pending = indexer_state
+            // Confirm the respond call's intended effect on chain by
+            // checking whether the pending entry is still present. Returns
+            // `Option<YieldIndex>` for wire compatibility with pre-#3184
+            // contracts during the rolling upgrade — we only use it as a
+            // presence check.
+            let pending = indexer_state
                 .view_client
                 .get_pending_request(
                     &indexer_state.mpc_contract_id,
@@ -185,7 +185,7 @@ async fn observe_tx_result(
                 )
                 .await?;
 
-            let transaction_status = if still_pending {
+            let transaction_status = if pending.is_some() {
                 TransactionStatus::Executed
             } else {
                 TransactionStatus::NotExecuted
@@ -194,7 +194,7 @@ async fn observe_tx_result(
             Ok(transaction_status)
         }
         CKDRespond(respond_args) => {
-            let still_pending = indexer_state
+            let pending = indexer_state
                 .view_client
                 .get_pending_ckd_request(
                     &indexer_state.mpc_contract_id,
@@ -203,7 +203,7 @@ async fn observe_tx_result(
                 )
                 .await?;
 
-            let transaction_status = if still_pending {
+            let transaction_status = if pending.is_some() {
                 TransactionStatus::Executed
             } else {
                 TransactionStatus::NotExecuted
@@ -212,7 +212,7 @@ async fn observe_tx_result(
             Ok(transaction_status)
         }
         VerifyForeignTransactionRespond(respond_args) => {
-            let still_pending = indexer_state
+            let pending = indexer_state
                 .view_client
                 .get_pending_verify_foreign_tx_request(
                     &indexer_state.mpc_contract_id,
@@ -221,7 +221,7 @@ async fn observe_tx_result(
                 )
                 .await?;
 
-            let transaction_status = if still_pending {
+            let transaction_status = if pending.is_some() {
                 TransactionStatus::Executed
             } else {
                 TransactionStatus::NotExecuted

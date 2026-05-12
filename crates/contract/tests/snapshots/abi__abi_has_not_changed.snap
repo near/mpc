@@ -307,13 +307,20 @@ expression: abi
         "result": {
           "serialization_type": "json",
           "type_schema": {
-            "type": "boolean"
+            "anyOf": [
+              {
+                "$ref": "#/definitions/YieldIndex"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
       {
         "name": "get_pending_request",
-        "doc": " Presence check for a pending signature request, exposed as a view call.\n\n Returns `true` iff a yield for `request_id` (new map, post-#3184) or\n `request` (legacy map, pre-upgrade) is still outstanding. Callers\n thread the `request_id` they obtained from the `MPC_REQUEST_ID:` log;\n when absent (old node, or legacy yield) the legacy fallback path is\n taken. The pre-#3184 method also named `get_pending_request` returned\n `Option<YieldIndex>` with a load-bearing-only-for-presence `Some(_)`\n shape; under the new layout we can't synthesise a meaningful\n `YieldIndex` for queries that aren't keyed by id, so the return type\n is now plainly `bool`.",
+        "doc": " Presence check for a pending signature request, exposed as a view call.\n\n Returns `Some(yield_index)` iff a yield for `request_id` (new map,\n post-#3184) or `request` (legacy map, pre-upgrade) is still\n outstanding. Callers thread the `request_id` they obtained from the\n `MPC_REQUEST_ID:` log; when absent (old node, or legacy yield) the\n legacy fallback path is taken.\n\n The shape `Option<YieldIndex>` is preserved deliberately for wire\n compatibility with pre-#3184 nodes that may still be running during\n the rolling upgrade — they call this view with no `request_id`,\n expect the old JSON shape (`null` or `{\"data_id\": ...}`), and rely\n on it only as a presence check. The returned `YieldIndex` is the\n real data_id either way: the new map stores it alongside the\n request, and the legacy map's value is already a `YieldIndex`.",
         "kind": "view",
         "params": {
           "serialization_type": "json",
@@ -345,7 +352,14 @@ expression: abi
         "result": {
           "serialization_type": "json",
           "type_schema": {
-            "type": "boolean"
+            "anyOf": [
+              {
+                "$ref": "#/definitions/YieldIndex"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -383,7 +397,14 @@ expression: abi
         "result": {
           "serialization_type": "json",
           "type_schema": {
-            "type": "boolean"
+            "anyOf": [
+              {
+                "$ref": "#/definitions/YieldIndex"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -1027,7 +1048,40 @@ expression: abi
       },
       {
         "name": "return_ck_and_clean_state_on_success",
-        "doc": " CKD counterpart to [`Self::return_signature_and_clean_state_on_success`].",
+        "doc": " Pre-#3184 CKD callback; see [`Self::return_signature_and_clean_state_on_success`].",
+        "kind": "call",
+        "modifiers": [
+          "private"
+        ],
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "request",
+              "type_schema": {
+                "$ref": "#/definitions/CKDRequest"
+              }
+            }
+          ]
+        },
+        "callbacks": [
+          {
+            "serialization_type": "json",
+            "type_schema": {
+              "$ref": "#/definitions/CKDResponse"
+            }
+          }
+        ],
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/PromiseOrValueCKDResponse"
+          }
+        }
+      },
+      {
+        "name": "return_ck_and_clean_state_on_success_v2",
+        "doc": " Post-#3184 CKD callback; see [`Self::return_signature_and_clean_state_on_success_v2`].",
         "kind": "call",
         "modifiers": [
           "private"
@@ -1073,7 +1127,40 @@ expression: abi
       },
       {
         "name": "return_signature_and_clean_state_on_success",
-        "doc": " On resume: returns the signature.\n On timeout: drops this yield's entry from the by-id map (the\n `request_id` was baked into the callback args at yield-creation\n time, so we know exactly which entry to remove) and panics to fail\n the original transaction.",
+        "doc": " Pre-#3184 callback: takes the request key only and cleans the\n legacy single-yield map on timeout. See the section comment above.",
+        "kind": "call",
+        "modifiers": [
+          "private"
+        ],
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "request",
+              "type_schema": {
+                "$ref": "#/definitions/SignatureRequest"
+              }
+            }
+          ]
+        },
+        "callbacks": [
+          {
+            "serialization_type": "json",
+            "type_schema": {
+              "$ref": "#/definitions/SignatureResponse"
+            }
+          }
+        ],
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/PromiseOrValueSignatureResponse"
+          }
+        }
+      },
+      {
+        "name": "return_signature_and_clean_state_on_success_v2",
+        "doc": " Post-#3184 callback: receives the contract-minted `request_id` in\n its bound args so the timeout path can drop the matching entry\n from the by-id map directly. See the section comment above.",
         "kind": "call",
         "modifiers": [
           "private"
@@ -1119,7 +1206,40 @@ expression: abi
       },
       {
         "name": "return_verify_foreign_tx_and_clean_state_on_success",
-        "doc": " foreign-tx counterpart to\n [`Self::return_signature_and_clean_state_on_success`].",
+        "doc": " Pre-#3184 foreign-tx callback; see\n [`Self::return_signature_and_clean_state_on_success`].",
+        "kind": "call",
+        "modifiers": [
+          "private"
+        ],
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "request",
+              "type_schema": {
+                "$ref": "#/definitions/VerifyForeignTransactionRequest"
+              }
+            }
+          ]
+        },
+        "callbacks": [
+          {
+            "serialization_type": "json",
+            "type_schema": {
+              "$ref": "#/definitions/VerifyForeignTransactionResponse"
+            }
+          }
+        ],
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/PromiseOrValueVerifyForeignTransactionResponse"
+          }
+        }
+      },
+      {
+        "name": "return_verify_foreign_tx_and_clean_state_on_success_v2",
+        "doc": " Post-#3184 foreign-tx callback; see\n [`Self::return_signature_and_clean_state_on_success_v2`].",
         "kind": "call",
         "modifiers": [
           "private"
@@ -4256,6 +4376,25 @@ expression: abi
             },
             "signature": {
               "$ref": "#/definitions/SignatureResponse"
+            }
+          }
+        },
+        "YieldIndex": {
+          "description": "The index into calling the YieldResume feature of NEAR. This will allow to resume a yield call after the contract has been called back via this index.",
+          "type": "object",
+          "required": [
+            "data_id"
+          ],
+          "properties": {
+            "data_id": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "maxItems": 32,
+              "minItems": 32
             }
           }
         }

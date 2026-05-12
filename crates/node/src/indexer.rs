@@ -30,7 +30,7 @@ use near_mpc_contract_interface::method_names::{
     GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST,
     GET_SUPPORTED_FOREIGN_CHAINS, GET_TEE_ACCOUNTS, MIGRATION_INFO, STATE,
 };
-use near_mpc_contract_interface::types as dtos;
+use near_mpc_contract_interface::types::{self as dtos, YieldIndex};
 use participants::ContractState;
 use serde::Deserialize;
 use std::{future::Future, sync::Arc, time::Duration};
@@ -103,7 +103,7 @@ impl IndexerViewClient {
         mpc_contract_id: &AccountId,
         chain_signature_request: &ChainSignatureRequest,
         request_id: Option<CryptoHash>,
-    ) -> anyhow::Result<bool> {
+    ) -> anyhow::Result<Option<YieldIndex>> {
         let get_pending_request_args: Vec<u8> =
             serde_json::to_string(&ChainGetPendingSignatureRequestArgs {
                 request: chain_signature_request.clone(),
@@ -132,7 +132,7 @@ impl IndexerViewClient {
 
         match query_response.kind {
             QueryResponseKind::CallResult(call_result) => {
-                serde_json::from_slice::<bool>(&call_result.result)
+                serde_json::from_slice::<Option<YieldIndex>>(&call_result.result)
                     .context("failed to deserialize pending request response")
             }
             _ => {
@@ -146,7 +146,7 @@ impl IndexerViewClient {
         mpc_contract_id: &AccountId,
         chain_ckd_request: &ChainCKDRequest,
         request_id: Option<CryptoHash>,
-    ) -> anyhow::Result<bool> {
+    ) -> anyhow::Result<Option<YieldIndex>> {
         let get_pending_request_args: Vec<u8> =
             serde_json::to_string(&ChainGetPendingCKDRequestArgs {
                 request: chain_ckd_request.clone(),
@@ -175,7 +175,7 @@ impl IndexerViewClient {
 
         match query_response.kind {
             QueryResponseKind::CallResult(call_result) => {
-                serde_json::from_slice::<bool>(&call_result.result)
+                serde_json::from_slice::<Option<YieldIndex>>(&call_result.result)
                     .context("failed to deserialize pending CKD request response")
             }
             _ => {
@@ -189,7 +189,7 @@ impl IndexerViewClient {
         mpc_contract_id: &AccountId,
         chain_verify_foreign_tx_request: &ChainVerifyForeignTransactionRequest,
         request_id: Option<CryptoHash>,
-    ) -> anyhow::Result<bool> {
+    ) -> anyhow::Result<Option<YieldIndex>> {
         let get_pending_request_args: Vec<u8> =
             serde_json::to_string(&ChainGetPendingVerifyForeignTxRequestArgs {
                 request: chain_verify_foreign_tx_request.clone(),
@@ -218,7 +218,7 @@ impl IndexerViewClient {
 
         match query_response.kind {
             QueryResponseKind::CallResult(call_result) => {
-                serde_json::from_slice::<bool>(&call_result.result)
+                serde_json::from_slice::<Option<YieldIndex>>(&call_result.result)
                     .context("failed to deserialize pending verify foreign tx request response")
             }
             _ => {
