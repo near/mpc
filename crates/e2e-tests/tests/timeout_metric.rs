@@ -55,22 +55,13 @@ async fn timeout_metric__should_increment_when_signature_times_out() {
         c => panic!("unsupported curve in test: {c:?}"),
     };
 
-    // Race the request against the metric: we don't care about the request's
-    // outcome (it will fail), only that the surviving node observes
-    // fail_on_timeout. `tokio::join!` lets the indexer keep advancing while
-    // the request is in flight.
     let outcome = cluster
         .send_sign_request(domain.id, payload, cluster.default_user_account())
         .await
         .expect("expected success");
 
     // sanity check
-    assert!(
-        outcome.is_success(),
-        "sign request for domain {:?} failed: {:?}",
-        domain.id,
-        outcome.failure_message()
-    );
+    assert!(outcome.is_failure(), "expected sign request to fail",);
 
     // Then: expect metric to kick in
     common::wait_metric_on_nodes(
