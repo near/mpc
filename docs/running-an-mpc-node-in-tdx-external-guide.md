@@ -540,9 +540,9 @@ For more information, see [local-key-provider-from-phala](https://github.com/Dst
       && rm -rf /var/lib/apt/lists/*
      ```
 
-     The date `20260423T000000Z` matches the canonical-build host. Do not
-     change it — every operator must use the same date so all enclaves
-     produce the same `mr_enclave` the contract expects.
+     Paste this block exactly as shown — the snapshot date
+     `20260423T000000Z` is the specific value that produces the canonical
+     `mr_enclave`. Any change will produce a different one.
 
    - On the `rustup` line, change `--default-toolchain 1.85` to
      `--default-toolchain 1.85.1`. (`1.85` resolves to whatever 1.85.x is
