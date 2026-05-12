@@ -170,7 +170,7 @@ lru = "0.18.0"
 # Re-exported by `jemalloc_pprof` (workspace sibling). Used to embed runtime
 # binary mappings into emitted pprof profiles so `pprof` can symbolicate
 # addresses through ASLR.
-mappings = "0.5"
+mappings = "0.7"
 mockall = "0.14.0"
 named-lock = "0.4.1"
 near-abi = "0.4.4"

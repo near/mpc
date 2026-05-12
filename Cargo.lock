@@ -4932,9 +4932,9 @@ checksum = "96368c0fc161a0a1a20b3952b6fd31ee342fffc87ed9e48ac1ed49fb25686655"
 dependencies = [
  "anyhow",
  "libc",
- "mappings",
+ "mappings 0.5.1",
  "once_cell",
- "pprof_util",
+ "pprof_util 0.4.1",
  "tempfile",
  "tikv-jemalloc-ctl",
  "tokio",
@@ -5440,7 +5440,20 @@ dependencies = [
  "anyhow",
  "libc",
  "once_cell",
- "pprof_util",
+ "pprof_util 0.4.1",
+ "tracing",
+]
+
+[[package]]
+name = "mappings"
+version = "0.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8bab1e61a4b76757edb59cd81fcaa7f3ba9018d43b527d9abfad877b4c6c60f2"
+dependencies = [
+ "anyhow",
+ "libc",
+ "once_cell",
+ "pprof_util 0.8.2",
  "tracing",
 ]
 
@@ -5781,7 +5794,7 @@ dependencies = [
  "k256",
  "launcher-interface",
  "lru 0.18.0",
- "mappings",
+ "mappings 0.7.2",
  "mockall",
  "mpc-attestation",
  "mpc-contract",
@@ -5804,7 +5817,7 @@ dependencies = [
  "node-types",
  "num_enum",
  "pprof",
- "pprof_util",
+ "pprof_util 0.4.1",
  "prometheus",
  "rand 0.8.6",
  "regex",
@@ -8806,6 +8819,19 @@ dependencies = [
  "num",
  "paste",
  "prost 0.11.9",
+]
+
+[[package]]
+name = "pprof_util"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eea0cc524de808a6d98d192a3d99fe95617031ad4a52ec0a0f987ef4432e8fe1"
+dependencies = [
+ "anyhow",
+ "flate2",
+ "num",
+ "paste",
+ "prost 0.14.3",
 ]
 
 [[package]]
