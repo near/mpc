@@ -524,8 +524,8 @@ For more information, see [local-key-provider-from-phala](https://github.com/Dst
          && rm -rf /var/lib/apt/lists/*
      ```
 
-     with this snapshot-pinned version (also overrides
-     `/etc/apt/sources.list` to point at a fixed Ubuntu archive date):
+     with this snapshot-pinned version, which points apt at a fixed
+     Ubuntu archive date by rewriting `/etc/apt/sources.list`:
 
      ```dockerfile
      RUN { \
