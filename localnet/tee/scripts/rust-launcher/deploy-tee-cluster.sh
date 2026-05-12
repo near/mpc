@@ -853,6 +853,13 @@ render_node_files_range() {
     export PORTS_TOML
     PORTS_TOML="$(ports_to_toml "$PORTS")"
 
+    # envsubst doesn't understand bash's ${VAR:?msg} fail-fast syntax — only
+    # plain $VAR / ${VAR} — so validate required template inputs here, before
+    # the substitution, where bash's :?msg form does work.
+    if [ "$MODE" = "testnet" ]; then
+        : "${TIER3_PUBLIC_ADDR:?TIER3_PUBLIC_ADDR must be set before rendering the testnet template}"
+        : "${EXTERNAL_STORAGE_FALLBACK_THRESHOLD:?EXTERNAL_STORAGE_FALLBACK_THRESHOLD must be set before rendering the testnet template}"
+    fi
     envsubst <"$ENV_TPL" >"$env_out"
     envsubst <"$CONF_TPL" >"$conf_out"
 
