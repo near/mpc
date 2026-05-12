@@ -5,7 +5,7 @@
 Goals:
 
 - Provide shared on-chain TEE attestation verification functionality.
-- Shrink the MPC contract WASM below the NEP-509 limit by breaking attestation verification out into a separate contract.
+- Shrink the MPC contract WASM below the NEP-509 limit.
 
 Design choices that follow from these goals, applied throughout the design below:
 
