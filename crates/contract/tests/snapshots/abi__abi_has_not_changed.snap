@@ -946,7 +946,7 @@ expression: abi
       },
       {
         "name": "return_ck_and_clean_state_on_success",
-        "doc": " Upon success, removes the confidential key request from state and returns it.\n If the ckd request times out, removes the ckd request from state and panics to fail the\n original transaction",
+        "doc": " Same shape as `return_signature_and_clean_state_on_success` but for CKD\n requests. See that method for the chain-advance protocol.",
         "kind": "call",
         "modifiers": [
           "private"
@@ -966,7 +966,7 @@ expression: abi
           {
             "serialization_type": "json",
             "type_schema": {
-              "$ref": "#/definitions/CKDResponse"
+              "$ref": "#/definitions/ResumedPayload_for_CKDResponse"
             }
           }
         ],
@@ -979,7 +979,7 @@ expression: abi
       },
       {
         "name": "return_signature_and_clean_state_on_success",
-        "doc": " Upon success, removes the signature from state and returns it.\n If the signature request times out, removes the signature request from state and panics to\n fail the original transaction",
+        "doc": " Resumed when the head yield for a `SignatureRequest` chain receives its\n response (via `respond`) or times out. Advances the chain — resuming the\n next link if one exists — and returns the response to *this* caller, or\n routes to `fail_on_timeout` on failure.",
         "kind": "call",
         "modifiers": [
           "private"
@@ -999,7 +999,7 @@ expression: abi
           {
             "serialization_type": "json",
             "type_schema": {
-              "$ref": "#/definitions/SignatureResponse"
+              "$ref": "#/definitions/ResumedPayload_for_SignatureResponse"
             }
           }
         ],
@@ -1012,7 +1012,7 @@ expression: abi
       },
       {
         "name": "return_verify_foreign_tx_and_clean_state_on_success",
-        "doc": " Upon success, removes the verify foreign tx request from state and returns it.\n If the verify foreign tx request times out, removes the verify foreign tx request from state and panics to fail the\n original transaction",
+        "doc": " Same shape as `return_signature_and_clean_state_on_success` but for\n verify-foreign-tx requests. See that method for the chain-advance protocol.",
         "kind": "call",
         "modifiers": [
           "private"
@@ -1032,7 +1032,7 @@ expression: abi
           {
             "serialization_type": "json",
             "type_schema": {
-              "$ref": "#/definitions/VerifyForeignTransactionResponse"
+              "$ref": "#/definitions/ResumedPayload_for_VerifyForeignTransactionResponse"
             }
           }
         ],
@@ -3492,6 +3492,75 @@ expression: abi
               "$ref": "#/definitions/KeyEvent"
             }
           }
+        },
+        "ResumedPayload_for_CKDResponse": {
+          "description": "What `respond*` writes into `promise_yield_resume` and what each callback then deserializes via `#[callback_result]`. Wrapping the response lets a failing link propagate `Failure` to subsequent links instead of forcing each duplicate caller to wait for its own yield to time out.\n\nThis is contract-internal: only our own callbacks ever decode it.",
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": [
+                "Failure"
+              ]
+            },
+            {
+              "type": "object",
+              "required": [
+                "Success"
+              ],
+              "properties": {
+                "Success": {
+                  "$ref": "#/definitions/CKDResponse"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "ResumedPayload_for_SignatureResponse": {
+          "description": "What `respond*` writes into `promise_yield_resume` and what each callback then deserializes via `#[callback_result]`. Wrapping the response lets a failing link propagate `Failure` to subsequent links instead of forcing each duplicate caller to wait for its own yield to time out.\n\nThis is contract-internal: only our own callbacks ever decode it.",
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": [
+                "Failure"
+              ]
+            },
+            {
+              "type": "object",
+              "required": [
+                "Success"
+              ],
+              "properties": {
+                "Success": {
+                  "$ref": "#/definitions/SignatureResponse"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "ResumedPayload_for_VerifyForeignTransactionResponse": {
+          "description": "What `respond*` writes into `promise_yield_resume` and what each callback then deserializes via `#[callback_result]`. Wrapping the response lets a failing link propagate `Failure` to subsequent links instead of forcing each duplicate caller to wait for its own yield to time out.\n\nThis is contract-internal: only our own callbacks ever decode it.",
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": [
+                "Failure"
+              ]
+            },
+            {
+              "type": "object",
+              "required": [
+                "Success"
+              ],
+              "properties": {
+                "Success": {
+                  "$ref": "#/definitions/VerifyForeignTransactionResponse"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
         },
         "RpcProvider": {
           "type": "object",

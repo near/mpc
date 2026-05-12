@@ -15,10 +15,16 @@ const DEFAULT_CONTRACT_UPGRADE_DEPOSIT_TERA_GAS: u64 = 50;
 const DEFAULT_SIGN_CALL_GAS_ATTACHMENT_REQUIREMENT_TERA_GAS: u64 = 15;
 /// Gas required for a CKD request
 const DEFAULT_CKD_CALL_GAS_ATTACHMENT_REQUIREMENT_TERA_GAS: u64 = 15;
-/// Prepaid gas for a `return_signature_and_clean_state_on_success` call
-const DEFAULT_RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS_CALL_TERA_GAS: u64 = 7;
-/// Prepaid gas for a `return_ck_and_clean_state_on_success` call
-const DEFAULT_RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS_CALL_TERA_GAS: u64 = 7;
+/// Prepaid gas for a `return_signature_and_clean_state_on_success` call.
+///
+/// Increased to give headroom for advancing the per-request FIFO chain and
+/// (when a duplicate is enqueued) resuming the next link's yield.
+const DEFAULT_RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS_CALL_TERA_GAS: u64 = 15;
+/// Prepaid gas for a `return_ck_and_clean_state_on_success` call.
+///
+/// See `DEFAULT_RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS_CALL_TERA_GAS` for
+/// the rationale.
+const DEFAULT_RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS_CALL_TERA_GAS: u64 = 15;
 /// Prepaid gas for a `fail_on_timeout` call
 const DEFAULT_FAIL_ON_TIMEOUT_TERA_GAS: u64 = 2;
 /// Prepaid gas for a `clean_tee_status` call

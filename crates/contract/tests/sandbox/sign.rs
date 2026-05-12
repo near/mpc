@@ -85,7 +85,9 @@ async fn test_contract_request_duplicate_requests_all_schemes() -> anyhow::Resul
     for key in &keys {
         let alice = worker.dev_create_account().await.unwrap();
         let predecessor_id = alice.id();
-        // check that in case of duplicate request, only the most recent will be signed:
+        // A duplicate request must not orphan the original yield: the
+        // contract chains the new yield onto the original, and a single
+        // response from the MPC node fans out to both callers.
         let req = DomainResponseTest::new(&mut rng, key, predecessor_id);
         let status_1 = req
             .submit_request_ensure_included(&alice, &contract)
@@ -106,13 +108,112 @@ async fn test_contract_request_duplicate_requests_all_schemes() -> anyhow::Resul
             .await
             .unwrap();
         req.submit_response(&contract, attested_account).await?;
+        req.verify_execution_outcome(status_1)
+            .await
+            .expect("original signature request should succeed");
         req.verify_execution_outcome(status_2)
             .await
-            .expect("most recent signature request should succeed");
+            .expect("duplicate signature request should succeed");
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_contract_three_duplicates_all_succeed() -> anyhow::Result<()> {
+    let mut rng = rand::rngs::StdRng::from_seed([2u8; 32]);
+    let SandboxTestSetup {
+        worker,
+        contract,
+        mpc_signer_accounts,
+        keys,
+    } = SandboxTestSetup::builder()
+        .with_protocols(ALL_PROTOCOLS)
+        .build()
+        .await;
+    let attested_account = &mpc_signer_accounts[0];
+
+    for key in &keys {
+        let alice = worker.dev_create_account().await.unwrap();
+        let predecessor_id = alice.id();
+        let req = DomainResponseTest::new(&mut rng, key, predecessor_id);
+
+        // Submit three identical requests, each spaced by a few blocks.
+        let status_1 = req
+            .submit_request_ensure_included(&alice, &contract)
+            .await?;
+        worker
+            .fast_forward(NUM_BLOCKS_BETWEEN_REQUESTS)
+            .await
+            .unwrap();
+        let status_2 = req
+            .submit_request_ensure_included(&alice, &contract)
+            .await?;
+        worker
+            .fast_forward(NUM_BLOCKS_BETWEEN_REQUESTS)
+            .await
+            .unwrap();
+        let status_3 = req
+            .submit_request_ensure_included(&alice, &contract)
+            .await?;
+
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        worker
+            .fast_forward(NUM_BLOCKS_BETWEEN_REQUESTS)
+            .await
+            .unwrap();
+
+        req.submit_response(&contract, attested_account).await?;
+
+        for (idx, status) in [status_1, status_2, status_3].into_iter().enumerate() {
+            req.verify_execution_outcome(status)
+                .await
+                .unwrap_or_else(|e| {
+                    panic!("duplicate signature request #{idx} should succeed: {e:?}")
+                });
+        }
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_contract_duplicates_all_time_out_when_no_response() -> anyhow::Result<()> {
+    // No `respond` call ever arrives. Both the original caller and the
+    // duplicate must see the timeout failure (the head yield times out, and
+    // its callback propagates `Failure` down the chain).
+    let mut rng = rand::rngs::StdRng::from_seed([3u8; 32]);
+    let SandboxTestSetup {
+        worker,
+        contract,
+        keys,
+        ..
+    } = SandboxTestSetup::builder()
+        .with_protocols(ALL_PROTOCOLS)
+        .build()
+        .await;
+
+    for key in &keys {
+        let alice = worker.dev_create_account().await.unwrap();
+        let predecessor_id = alice.id();
+        let req = DomainResponseTest::new(&mut rng, key, predecessor_id);
+        let status_1 = req
+            .submit_request_ensure_included(&alice, &contract)
+            .await?;
+        worker
+            .fast_forward(NUM_BLOCKS_BETWEEN_REQUESTS)
+            .await
+            .unwrap();
+        let status_2 = req
+            .submit_request_ensure_included(&alice, &contract)
+            .await?;
+
         worker.fast_forward(SIGNATURE_TIMEOUT_BLOCKS).await.unwrap();
+
         verify_timeout(status_1)
             .await
-            .expect("initial signature request should time out");
+            .expect("original signature request should time out");
+        verify_timeout(status_2)
+            .await
+            .expect("duplicate signature request should time out");
     }
     Ok(())
 }
