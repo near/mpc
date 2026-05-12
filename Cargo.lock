@@ -3677,6 +3677,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "frost-core"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "81ef2787af391c7e8bedc037a3b9ea03dde803fbd93e778e6bb369547800e5cd"
+dependencies = [
+ "byteorder",
+ "const-crc32-nostd",
+ "derive-getters",
+ "document-features",
+ "hex",
+ "itertools 0.14.0",
+ "rand_core 0.6.4",
+ "serde",
+ "serdect",
+ "thiserror 2.0.18",
+ "visibility",
+ "zeroize",
+ "zeroize_derive",
+]
+
+[[package]]
 name = "frost-ed25519"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3684,7 +3705,7 @@ checksum = "f73eb5fa9311d33450c2320199ad1663b5af7a50061d9627d2e0dc776f0acb27"
 dependencies = [
  "curve25519-dalek",
  "document-features",
- "frost-core",
+ "frost-core 2.2.0",
  "frost-rerandomized",
  "rand_core 0.6.4",
  "sha2 0.10.9",
@@ -3698,7 +3719,7 @@ checksum = "4c5eb1ea58c0250b7ce834337f7b19e0417686d14ffc7f626137dea9149762d4"
 dependencies = [
  "derive-getters",
  "document-features",
- "frost-core",
+ "frost-core 2.2.0",
  "hex",
  "rand_core 0.6.4",
 ]
@@ -3710,7 +3731,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4f6974379aee791f2f9e0db47c37d9e4c77ea8a8233e488ae8949ce4c6864e96"
 dependencies = [
  "document-features",
- "frost-core",
+ "frost-core 2.2.0",
  "frost-rerandomized",
  "k256",
  "rand_core 0.6.4",
@@ -11565,7 +11586,7 @@ dependencies = [
  "digest 0.10.7",
  "ecdsa",
  "elliptic-curve",
- "frost-core",
+ "frost-core 3.0.0",
  "frost-ed25519",
  "frost-secp256k1",
  "futures",
