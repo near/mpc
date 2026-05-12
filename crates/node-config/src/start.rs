@@ -108,6 +108,19 @@ pub struct NearInitConfig {
     /// Override the NEAR node network (indexer) listen address (e.g. "0.0.0.0:24568").
     /// Useful when running multiple nodes on the same machine.
     pub network_addr: Option<String>,
+    /// Override the public address advertised for Tier3 state-sync responses
+    /// (e.g. "203.0.113.5:24567"). Required on multi-IP hosts where outbound
+    /// source IP differs from the bound IP — auto-discovery picks the
+    /// outbound IP and DSS times out. Patches into nearcore's
+    /// `network.experimental.tier3_public_addr` config field.
+    pub tier3_public_addr: Option<String>,
+    /// Override how many P2P (DSS) state-sync attempts to make before falling
+    /// back to the external storage bucket. `0` (current default) means
+    /// "go straight to bucket, never use DSS." A moderate value enables
+    /// DSS-first with bucket as a safety net; a very large value effectively
+    /// disables the bucket fallback. Patches into nearcore's
+    /// `state_sync.sync.ExternalStorage.external_storage_fallback_threshold`.
+    pub external_storage_fallback_threshold: Option<u64>,
 }
 
 /// Encryption keys needed at startup.
