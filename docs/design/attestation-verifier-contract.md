@@ -218,7 +218,7 @@ This matches the preference Defuse has expressed for hiding TEEs behind an autho
 **On-chain PCCS caching.** Mirroring [Automata's design][automata-pccs]: a separate `pccs.near` contract stores fresh collateral per FMSPC, governed by an `admin_id` (or permissionless if root-CA validation is replayed on insert). The verifier grows a `verify_quote_via_pccs(quote, pccs_account_id, fmspc, now)` companion that reads collateral by cross-contract call instead of accepting it inline. This removes the obligation for off-chain components to fetch and bundle collateral on every call.
 
 [mpc-repo]: https://github.com/near/mpc
-[defuse-site]: https://near-intents.org
+[defuse-site]: https://near.com
 [proximity-shade-attestation]: https://github.com/NearDeFi/shade-agent-framework/tree/main/shade-attestation
 [mpc-launcher]: ../securing-mpc-with-tee-design-doc.md#launcher
 [mpc-report-data]: https://github.com/near/mpc/blob/main/crates/mpc-attestation/src/report_data.rs
