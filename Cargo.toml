@@ -231,7 +231,7 @@ tikv-jemallocator = { version = "0.5.4", features = [
     "profiling",
     "unprefixed_malloc_on_supported_platforms",
 ] }
-tokio = { version = "1.52.1", features = ["full", "test-util"] }
+tokio = { version = "1.52.2", features = ["full", "test-util"] }
 tokio-metrics = { version = "0.5.0" }
 tokio-rustls = { version = "0.26.4", default-features = false }
 tokio-stream = { version = "0.1" }
