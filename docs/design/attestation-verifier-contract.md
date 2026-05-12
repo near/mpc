@@ -88,7 +88,15 @@ The verifier does only what `dcap_qvl::verify::verify` does. No advisory-ID chec
 
 ### MPC contract changes
 
-`TeeState` (the MPC contract's stored attestations and allowlists) is unchanged in v1. Cross-contract calls into a Global Contract are normal NEAR async Promises; the MPC contract becomes a Promise + callback flow on the cold path:
+`TeeState` (the MPC contract's stored attestations and allowlists) is unchanged in v1. Cross-contract calls into a Global Contract are normal NEAR async Promises; the MPC contract becomes a Promise + callback flow on the cold path.
+
+Beyond the sync → async shift, three things change from today:
+
+- **Reject-if-pending guard.** Today's `submit_participant_info` is one transaction: it either succeeds or reverts entirely. In v1 the call returns before the verifier has answered, so the contract holds a *pending entry* (caller's `account_id` → submitted state) until the callback resolves. To prevent a second submission silently overwriting the first's pending entry and stranding its attached deposit, v1 rejects re-submissions while a prior one is in flight.
+- **Allowlists re-read at callback time.** The MPC contract's allowlists (image hashes, launcher hashes, measurements) can change by governance vote at any time. Today they're read once during the synchronous verification. In v1 they're re-read in the callback, so a vote that lands between submit and callback takes effect immediately — a freshly-revoked measurement causes the submission to be rejected even if the verifier already approved the quote.
+- **Explicit refund-on-failure.** NEAR contracts pay *storage staking* (NEAR locked while state exists) for every entry they write. The caller attaches a deposit to cover the storage staking for the new `stored_attestations` entry; if there's no entry inserted, the deposit is refunded. Today, a failed attestation reverts the whole transaction and the deposit is rolled back automatically. In v1 the submit transaction commits *before* the verifier responds, so the deposit sits with the contract until the callback resolves; on failure, the callback has to refund it explicitly.
+
+Everything else is unchanged: `NodeId` shape, `Sha3_384(tls_pk || account_pk)` binding, post-DCAP checks, `stored_attestations` layout, storage staking, 7-day expiry.
 
 ```
 submit_participant_info(attestation, tls_pk):
