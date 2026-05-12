@@ -31,7 +31,7 @@ MPC binds report-data as `sha3_384(tls_pk || account_pk)` (see [`crates/mpc-atte
 
 [**Proximity**][proximity-shade-attestation]:
 
-- PPID whitelist check (MPC has no equivalent).
+- Device-identity whitelist check using PPID (or `device_id` — Dstack-defined, `sha256(ppid)` in Dstack ≥0.5.6, forward-compatible with non-TDX hardware). MPC plans to add the same check as a defense against forged quotes from compromised hardware.
 - No launcher concept: app images are stateless by design, so the [launcher pattern][mpc-launcher] isn't needed; app-image gating is via the app-compose hash whitelist.
 - Report-data binding is the caller's account ID (vs. MPC's `sha3_384(tls_pk || account_pk)`).
 - Single `owner_id` field gates all governance.
