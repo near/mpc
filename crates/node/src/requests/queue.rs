@@ -500,9 +500,9 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             if status.is_canonical() {
                 if let Some(leader) = request.current_leader(&eligible_leaders) {
                     tracing::debug!(
-
-                target: "request",
-                        leader = %leader, "processing request");
+                        target: "request",
+                        leader = %leader, "processing request",
+                    );
                     let mut progress = request.computation_progress.lock().unwrap();
                     progress.selected_leader = Some(leader);
                     if leader == self.my_participant_id {
