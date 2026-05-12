@@ -45,7 +45,7 @@ MPC binds report-data as `sha3_384(tls_pk || account_pk)` (see [`crates/mpc-atte
 
 ## Short-Term Design (v1)
 
-The MPC team needs the contract shrunk fast, so v1 is deliberately small: extract `dcap_qvl::verify()` into a shared verifier, point the MPC contract at it, change nothing else. Per-team policy contracts, on-chain PCCS caching, and ACL generalization wait for v2 and v3.
+v1 is deliberately small: extract `dcap_qvl::verify()` into a shared verifier, point the MPC contract at it, change nothing else. Per-team policy contracts, on-chain PCCS caching, and ACL generalization wait for v2 and v3.
 
 ```
 ┌──────────────────────────────┐
