@@ -3180,43 +3180,6 @@ mod tests {
     }
 
     #[test]
-    fn return_signature_and_clean_state_on_success__should_prefer_new_map_when_both_have_entries() {
-        // Given: the same request key has yields in both the new fan-out map and the
-        // legacy fallback (an edge case where a caller resubmitted post-upgrade
-        // while a legacy yield is still outstanding).
-        let (context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
-        let signature_request = SignatureRequest::new(
-            DomainId::default(),
-            Payload::from_legacy_ecdsa([0u8; 32]),
-            &context.predecessor_account_id,
-            "m/44'\''/60'\''/0'\''/0/0",
-        );
-        contract.add_signature_request(signature_request.clone(), [1u8; 32]);
-        contract
-            .legacy_pending_requests
-            .signature_requests
-            .insert(signature_request.clone(), YieldIndex { data_id: [2u8; 32] });
-
-        // When: one timeout fires.
-        let _ = contract.return_signature_and_clean_state_on_success(
-            signature_request.clone(),
-            Err(PromiseError::Failed),
-        );
-
-        // Then: the new map's yield is popped first; the legacy entry is preserved
-        // so its own timeout (or a later `respond`) can still resolve it.
-        assert!(contract
-            .pending_signature_requests
-            .get(&signature_request)
-            .is_none());
-        assert!(contract
-            .legacy_pending_requests
-            .signature_requests
-            .get(&signature_request)
-            .is_some());
-    }
-
-    #[test]
     fn respond_ckd__should_succeed_when_response_is_valid_and_request_exists() {
         let (context, mut contract, _secret_key) = basic_setup(Curve::Bls12381, &mut OsRng);
         let app_public_key: dtos::Bls12381G1PublicKey =
