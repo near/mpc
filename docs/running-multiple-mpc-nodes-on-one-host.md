@@ -77,11 +77,12 @@ Key properties:
   distinct host IP.
 - The **SGX sealing-key-provider, PCCS endpoints, and `dstack-vmm`
   itself are shared by every CVM on this host** — they're host-level
-  services, not per-CVM. Each CVM still gets a distinct sealing key:
-  the provider's KDF includes RTMR3, and dstack extends each CVM's
-  per-instance `instance_id` into RTMR3 at boot, so two CVMs running
-  identical software (same image, same compose) still derive
-  different keys.
+  services, not per-CVM. Because MPC's deploy passes
+  `--no-instance-id` to dstack (for consistent TDX measurements
+  across operators), two CVMs running the same launcher image derive
+  the **same** sealing key. Each CVM still has its own dstack-vmm
+  work directory, so on-disk data is isolated per CVM — the keys
+  themselves just aren't per-CVM.
 
 > **Two `dstack-vmm` instances are also a valid alternative.** Run
 > one per CVM (separate working directories, distinct
@@ -128,7 +129,10 @@ this field next to host port / VM port at CVM-creation time.
 
 The two CVMs use the same launcher image but **different**
 `user-config.toml` content. Deltas from the
-[single-node example](./running-an-mpc-node-in-tdx-external-guide.md#prepare-mpc-node-configuration):
+[single-node example](./running-an-mpc-node-in-tdx-external-guide.md#prepare-mpc-node-configuration)
+— each field lives in a different section of `user-config.toml`, so
+follow the [template](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/user-config.toml)
+for the right placement:
 
 | Field | Mainnet | Testnet |
 |---|---|---|
