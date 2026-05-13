@@ -19,12 +19,14 @@ These constraints apply throughout the design below; each is a deliberate trade-
 
 ### MPC contract today
 
-The MPC contract has two attestation flows:
+MPC uses an *enrollment* model: a node attests once at onboarding, the result is cached, and later operations read from the cache. Two attestation flows result:
 
 - **Initial verification** (`submit_participant_info`): runs `dcap_qvl::verify` plus all post-DCAP checks once per node onboarding. Cold path.
 - **Re-verification** (`verify_tee`, post-reshare cleanup, `clean_invalid_attestations`): re-checks each stored `ValidatedDstackAttestation` against current allowlists using only hash comparisons. This path does **not** invoke `dcap_qvl::verify`.
 
 Both paths live in the attestation flow, not on the signing critical path. Only the initial-verification path needs the heavyweight verifier (full `dcap_qvl::verify` + post-DCAP checks); subsequent re-verifications are partial — hash comparisons against the cached `ValidatedDstackAttestation`.
+
+Other teams use different patterns — Proximity, for example, verifies measurements on every request (see "Other teams" below). The shared verifier serves both patterns; the enrollment/per-call split is a policy decision in the consumer contract.
 
 MPC binds report-data as `sha3_384(tls_pk || account_pk)` (see [`crates/mpc-attestation/src/report_data.rs`][mpc-report-data]). It runs RTMR3 event-log replay, MPC image-hash whitelisting, launcher-compose-hash whitelisting, and app_compose JSON validation as post-DCAP checks. Allowlists are governed by a threshold-of-participants vote.
 
@@ -32,6 +34,7 @@ MPC binds report-data as `sha3_384(tls_pk || account_pk)` (see [`crates/mpc-atte
 
 [**Proximity**][proximity-shade-attestation]:
 
+- *Per-call* attestation model: measurements are verified on every request, not cached at enrollment. The shared verifier is invoked on the hot path rather than only at onboarding.
 - Device-identity whitelist check using PPID (or `device_id` — Dstack-defined, `sha256(ppid)` in Dstack ≥0.5.6, forward-compatible with non-TDX hardware). MPC plans to add the same check as a defense against forged quotes from compromised hardware.
 - No launcher concept: app images are stateless by design, so the [launcher pattern][mpc-launcher] isn't needed; app-image gating is via the app-compose hash whitelist.
 - Report-data binding is the caller's account ID (vs. MPC's `sha3_384(tls_pk || account_pk)`).
