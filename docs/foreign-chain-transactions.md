@@ -336,6 +336,9 @@ The per-participant registration model above leaves the network with no shared n
 
 ### Whitelist storage shape (PR 1)
 
+PR 1 ships only the data shape — vote endpoints, pending-vote tracking, and per-chain
+voting thresholds all land in PR 2.
+
 ```rust
 pub type ProviderId = String;
 
@@ -362,32 +365,17 @@ pub struct ProviderEntry {
     pub chain_routing: ChainRouting,
 }
 
-pub enum ProviderVoteAction {
-    Add    { chain: ForeignChain, entry: ProviderEntry },
-    Remove { chain: ForeignChain, provider_id: ProviderId },
-}
-
-pub struct ProviderVotes {
-    /// Pending votes partitioned by target = (chain, provider_id). Within a target each
-    /// participant has one active vote; across targets the rounds are independent so a
-    /// participant can vote `Add` for many providers on the same chain in parallel.
-    pub pending: BTreeMap<(ForeignChain, ProviderId), BTreeMap<AuthenticatedParticipantId, ProviderVoteAction>>,
-}
-
-pub const DEFAULT_PROVIDER_VOTE_THRESHOLD: u64 = 2;
-
 pub struct ForeignChainRpcWhitelist {
-    entries: BTreeMap<ForeignChain, Vec<ProviderEntry>>, // unique-by-provider_id within a chain
-    votes:   ProviderVotes,
-    chain_thresholds: BTreeMap<ForeignChain, u64>,        // empty in PR 1; populated by a future setter endpoint
+    // Inner map keyed by `provider_id` makes uniqueness structural — no manual dedup invariant.
+    entries: BTreeMap<ForeignChain, BTreeMap<ProviderId, ProviderEntry>>,
+    // PR 2 adds: pending votes (per (chain, provider_id) target) + per-chain voting thresholds.
 }
 ```
 
-Read-only views (shipped in PR 1) return the contents as-is, initially empty:
+Read-only view shipped in PR 1 (initially empty):
 
 ```rust
 pub fn allowed_foreign_chain_providers(&self) -> BTreeMap<ForeignChain, Vec<ProviderEntry>>;
-pub fn foreign_chain_provider_votes(&self) -> ProviderVotes;
 ```
 
 ### Example URL assembly

@@ -1,34 +1,25 @@
 //! On-chain whitelist of RPC providers for foreign-chain transaction validation.
 //!
-//! The MPC network agrees, by vote, on which RPC providers each node may use to verify
+//! The MPC network agrees, by vote, on which RPC providers any node may use to verify
 //! foreign-chain transactions. Operators reference providers from this whitelist by
 //! `provider_id` in their local `foreign_chains.yaml`; the full URL is assembled from
 //! `base_url` + `chain_routing` + the operator's token (placed per `auth_scheme`).
 //!
 //! This module ships the *data structures* only — see [`ForeignChainRpcWhitelist`] for the
 //! contract state shape. Vote endpoints (`vote_add_foreign_chain_provider` /
-//! `vote_remove_foreign_chain_provider`) land in a follow-up PR and will mutate the
-//! whitelist's inner `entries` / `votes` fields. Until that PR ships, every chain uses
-//! [`DEFAULT_PROVIDER_VOTE_THRESHOLD`] for its vote threshold.
+//! `vote_remove_foreign_chain_provider`), pending-vote tracking, and per-chain voting
+//! thresholds land in a follow-up PR.
 
 use std::collections::BTreeMap;
 
-use near_mpc_contract_interface::types::{
-    ForeignChain, ProviderEntry, ProviderId, ProviderVoteAction,
-};
+use near_mpc_contract_interface::types::{ForeignChain, ProviderEntry, ProviderId};
 use near_sdk::near;
 
-use crate::primitives::key_state::AuthenticatedParticipantId;
-
-/// Default vote threshold used by every chain until `vote_set_foreign_chain_provider_threshold`
-/// (future PR) lets the network override it per chain. Two votes is the smallest threshold
-/// that still requires more than one party to agree, which is the meaningful security floor.
-pub const DEFAULT_PROVIDER_VOTE_THRESHOLD: u64 = 2;
-
-/// Per-chain set of voted-in providers. Within a chain `provider_id` is unique; uniqueness
-/// is enforced on [`AllowedProviders::add`]. The same `provider_id` (e.g. `"ankr"`) showing
-/// up under different chains is expected — each entry carries chain-specific connection
-/// details (`base_url`, `chain_routing`), so two `"ankr"` entries are per-chain configs,
+/// Per-chain set of voted-in providers. Inner `BTreeMap` is keyed by `provider_id`, so
+/// uniqueness within a chain is enforced structurally by the map (no manual dedup
+/// invariant). The same `provider_id` (e.g. `"ankr"`) showing up under different chains
+/// is expected — each entry carries chain-specific connection details (`base_url`,
+/// `chain_routing`), so two `"ankr"` entries in different chains are per-chain configs,
 /// not duplicates.
 //
 // Borsh-only: `AllowedProviders` is `pub(crate)` and only ever lives in contract state.
@@ -37,7 +28,7 @@ pub const DEFAULT_PROVIDER_VOTE_THRESHOLD: u64 = 2;
 #[near(serializers=[borsh])]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct AllowedProviders {
-    entries: BTreeMap<ForeignChain, Vec<ProviderEntry>>,
+    entries: BTreeMap<ForeignChain, BTreeMap<ProviderId, ProviderEntry>>,
 }
 
 // `add` / `remove` / `get` are exercised by the unit tests in this module and will be wired
@@ -53,13 +44,13 @@ pub(crate) struct AllowedProviders {
 impl AllowedProviders {
     /// Insert a new provider for `chain`. Returns `true` if the provider was added,
     /// `false` if an entry with the same `provider_id` already exists for this chain
-    /// (the existing entry is left untouched).
+    /// (the existing entry is left untouched — the new one is *not* substituted in).
     pub fn add(&mut self, chain: ForeignChain, entry: ProviderEntry) -> bool {
         let bucket = self.entries.entry(chain).or_default();
-        if bucket.iter().any(|e| e.provider_id == entry.provider_id) {
+        if bucket.contains_key(&entry.provider_id) {
             return false;
         }
-        bucket.push(entry);
+        bucket.insert(entry.provider_id.clone(), entry);
         true
     }
 
@@ -69,9 +60,7 @@ impl AllowedProviders {
         let Some(bucket) = self.entries.get_mut(&chain) else {
             return false;
         };
-        let len_before = bucket.len();
-        bucket.retain(|e| &e.provider_id != provider_id);
-        let removed = bucket.len() < len_before;
+        let removed = bucket.remove(provider_id).is_some();
         // Keep the map clean: drop the chain's slot once it goes empty so views don't
         // surface chains with no providers.
         if bucket.is_empty() {
@@ -80,80 +69,37 @@ impl AllowedProviders {
         removed
     }
 
-    /// All providers currently whitelisted for `chain`.
-    pub fn get(&self, chain: ForeignChain) -> &[ProviderEntry] {
-        self.entries.get(&chain).map(Vec::as_slice).unwrap_or(&[])
+    /// All providers currently whitelisted for `chain`, in `provider_id` order
+    /// (BTreeMap iteration order). Empty iterator if the chain has no entries.
+    pub fn get(&self, chain: ForeignChain) -> impl Iterator<Item = &ProviderEntry> {
+        self.entries
+            .get(&chain)
+            .into_iter()
+            .flat_map(|bucket| bucket.values())
     }
 
-    /// Full per-chain view, suitable for returning from a view function.
+    /// Full per-chain view, suitable for returning from a view function. Each chain's
+    /// `Vec` is sorted by `provider_id` (BTreeMap iteration order).
     pub fn snapshot(&self) -> BTreeMap<ForeignChain, Vec<ProviderEntry>> {
-        self.entries.clone()
+        self.entries
+            .iter()
+            .map(|(chain, bucket)| (*chain, bucket.values().cloned().collect()))
+            .collect()
     }
-}
-
-/// Pending votes partitioned by **target** = `(chain, provider_id)`. Within a target,
-/// each participant has at most one active vote — voting again for the same target
-/// overwrites their prior vote. A participant can have active votes across many targets
-/// simultaneously; rounds are independent.
-///
-/// Methods that mutate the vote state (`vote`, `clear_target`, `get_remaining_votes`)
-/// land with the vote endpoint PR.
-//
-// Explicit derives (not `#[near(serializers=[borsh, json])]`) so we can gate
-// `serde::Deserialize` off wasm — the contract never deserializes `ProviderVotes` from
-// JSON, only outputs it via the view function, and excluding the derive from the wasm
-// build saves several KB of serde monomorphizations.
-#[derive(
-    Debug,
-    Clone,
-    Default,
-    PartialEq,
-    Eq,
-    borsh::BorshSerialize,
-    borsh::BorshDeserialize,
-    serde::Serialize,
-)]
-#[cfg_attr(not(target_arch = "wasm32"), derive(serde::Deserialize))]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
-)]
-pub struct ProviderVotes {
-    pub pending: BTreeMap<
-        (ForeignChain, ProviderId),
-        BTreeMap<AuthenticatedParticipantId, ProviderVoteAction>,
-    >,
 }
 
 /// Top-level contract state for the foreign-chain RPC provider whitelist. Held as a
-/// field on `MpcContract`.
+/// field on `MpcContract`. Currently a thin wrapper around [`AllowedProviders`]; the
+/// follow-up PR adds the vote state (pending votes, per-chain voting thresholds).
 #[near(serializers=[borsh])]
 #[derive(Debug, Clone, Default)]
 pub struct ForeignChainRpcWhitelist {
     pub(crate) entries: AllowedProviders,
-    pub(crate) votes: ProviderVotes,
-    /// Per-chain voting threshold. Populated by a future setter endpoint; lookups via
-    /// [`Self::threshold_for`] fall back to [`DEFAULT_PROVIDER_VOTE_THRESHOLD`].
-    pub(crate) chain_thresholds: BTreeMap<ForeignChain, u64>,
 }
 
 impl ForeignChainRpcWhitelist {
-    /// Vote threshold required to add or remove a provider for `chain`. Returns
-    /// [`DEFAULT_PROVIDER_VOTE_THRESHOLD`] when no explicit threshold has been voted in
-    /// for the chain yet.
-    pub fn threshold_for(&self, chain: ForeignChain) -> u64 {
-        self.chain_thresholds
-            .get(&chain)
-            .copied()
-            .unwrap_or(DEFAULT_PROVIDER_VOTE_THRESHOLD)
-    }
-
     pub fn allowed_providers(&self) -> BTreeMap<ForeignChain, Vec<ProviderEntry>> {
         self.entries.snapshot()
-    }
-
-    pub fn provider_votes(&self) -> ProviderVotes {
-        self.votes.clone()
     }
 }
 
@@ -182,11 +128,9 @@ mod tests {
 
         // Then
         assert!(added);
-        assert_eq!(allowed.get(ForeignChain::Ethereum).len(), 1);
-        assert_eq!(
-            allowed.get(ForeignChain::Ethereum)[0].provider_id,
-            "alchemy"
-        );
+        let entries: Vec<&ProviderEntry> = allowed.get(ForeignChain::Ethereum).collect();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].provider_id, "alchemy");
     }
 
     #[test]
@@ -202,12 +146,10 @@ mod tests {
 
         // Then
         assert!(!added);
-        assert_eq!(allowed.get(ForeignChain::Ethereum).len(), 1);
+        let entries: Vec<&ProviderEntry> = allowed.get(ForeignChain::Ethereum).collect();
+        assert_eq!(entries.len(), 1);
         // The original entry is unchanged.
-        assert_eq!(
-            allowed.get(ForeignChain::Ethereum)[0].base_url,
-            "https://alchemy.example.com"
-        );
+        assert_eq!(entries[0].base_url, "https://alchemy.example.com");
     }
 
     #[test]
@@ -222,8 +164,8 @@ mod tests {
         // Then: both are accepted — per-chain entries are not duplicates.
         assert!(eth_added);
         assert!(polygon_added);
-        assert_eq!(allowed.get(ForeignChain::Ethereum).len(), 1);
-        assert_eq!(allowed.get(ForeignChain::Polygon).len(), 1);
+        assert_eq!(allowed.get(ForeignChain::Ethereum).count(), 1);
+        assert_eq!(allowed.get(ForeignChain::Polygon).count(), 1);
     }
 
     #[test]
@@ -238,7 +180,7 @@ mod tests {
 
         // Then
         assert!(removed);
-        let remaining = allowed.get(ForeignChain::Ethereum);
+        let remaining: Vec<&ProviderEntry> = allowed.get(ForeignChain::Ethereum).collect();
         assert_eq!(remaining.len(), 1);
         assert_eq!(remaining[0].provider_id, "ankr");
     }
@@ -257,7 +199,7 @@ mod tests {
         // Then
         assert!(!removed_unknown_id);
         assert!(!removed_unknown_chain);
-        assert_eq!(allowed.get(ForeignChain::Ethereum).len(), 1);
+        assert_eq!(allowed.get(ForeignChain::Ethereum).count(), 1);
     }
 
     #[test]
@@ -272,36 +214,5 @@ mod tests {
         // Then: the chain is no longer present in the snapshot at all.
         assert!(removed);
         assert!(!allowed.snapshot().contains_key(&ForeignChain::Ethereum));
-    }
-
-    #[test]
-    fn whitelist__should_fall_back_to_default_threshold_when_chain_threshold_not_set() {
-        // Given
-        let whitelist = ForeignChainRpcWhitelist::default();
-
-        // When / Then
-        assert_eq!(
-            whitelist.threshold_for(ForeignChain::Ethereum),
-            DEFAULT_PROVIDER_VOTE_THRESHOLD
-        );
-        assert_eq!(
-            whitelist.threshold_for(ForeignChain::Polygon),
-            DEFAULT_PROVIDER_VOTE_THRESHOLD
-        );
-    }
-
-    #[test]
-    fn whitelist__should_return_configured_threshold_when_set() {
-        // Given
-        let mut whitelist = ForeignChainRpcWhitelist::default();
-        whitelist.chain_thresholds.insert(ForeignChain::Ethereum, 5);
-
-        // When / Then
-        assert_eq!(whitelist.threshold_for(ForeignChain::Ethereum), 5);
-        // Other chains still fall back to the default.
-        assert_eq!(
-            whitelist.threshold_for(ForeignChain::Polygon),
-            DEFAULT_PROVIDER_VOTE_THRESHOLD
-        );
     }
 }

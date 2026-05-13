@@ -1057,39 +1057,6 @@ pub struct ProviderEntry {
     pub chain_routing: ChainRouting,
 }
 
-/// Payload of a `vote_add_foreign_chain_provider` / `vote_remove_foreign_chain_provider`
-/// call. The vote target is `(chain, provider_id)` — for `Add`, the `provider_id` lives
-/// inside the entry. Two participants voting `Add` with different `entry` shapes for the
-/// same `(chain, provider_id)` target are voting for *different* configurations and
-/// count separately toward threshold.
-#[derive(
-    Debug,
-    Clone,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    BorshSerialize,
-    BorshDeserialize,
-)]
-#[cfg_attr(not(target_arch = "wasm32"), derive(Deserialize))]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
-)]
-pub enum ProviderVoteAction {
-    Add {
-        chain: ForeignChain,
-        entry: ProviderEntry,
-    },
-    Remove {
-        chain: ForeignChain,
-        provider_id: ProviderId,
-    },
-}
-
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {

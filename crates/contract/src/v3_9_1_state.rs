@@ -882,7 +882,6 @@ mod tests {
 
         // Then the new field is present and empty — proving the `From` impl defaults it.
         assert!(migrated.allowed_foreign_chain_providers().is_empty());
-        assert!(migrated.foreign_chain_provider_votes().pending.is_empty());
     }
 
     #[test]

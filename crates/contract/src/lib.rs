@@ -32,7 +32,7 @@ use crate::{
         TryIntoContractType,
     },
     errors::{Error, RequestError},
-    foreign_chain_rpc::{ForeignChainRpcWhitelist, ProviderVotes},
+    foreign_chain_rpc::ForeignChainRpcWhitelist,
     primitives::{
         ckd::{app_public_key_check, ckd_output_check, CKDRequest},
         domain::AddDomainsVotes,
@@ -1502,13 +1502,6 @@ impl MpcContract {
     ) -> BTreeMap<dtos::ForeignChain, Vec<dtos::ProviderEntry>> {
         log!("allowed_foreign_chain_providers");
         self.foreign_chain_rpc_whitelist.allowed_providers()
-    }
-
-    /// Returns the pending vote state for foreign-chain RPC providers, partitioned by
-    /// `(chain, provider_id)` target. Initially empty.
-    pub fn foreign_chain_provider_votes(&self) -> ProviderVotes {
-        log!("foreign_chain_provider_votes");
-        self.foreign_chain_rpc_whitelist.provider_votes()
     }
 
     /// Returns all accounts that have TEE attestations stored in the contract.
