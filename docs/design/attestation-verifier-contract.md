@@ -72,6 +72,8 @@ The verifier WASM is published as a [NEP-591][nep-591] **Global Contract by Code
 
 A versioned account (e.g., `tee-verifier-v1.near`) issues `UseGlobalContractAction(Global(<code_hash>))` to make itself a callable instance of the verifier. Consumers Promise into that account. When v2 of the verifier ships, a fresh account (e.g., `tee-verifier-v2.near`) issues `UseGlobalContractAction` against the new hash and consumers update their Promise targets explicitly. There is no admin on either the published code or the version account.
 
+Consequently, the verifier has no on-chain configuration to govern. Policy (acceptable measurements, image hashes, launcher hashes, advisory-ID handling) lives in the consumer contract via existing governance flows — for MPC, that's `vote_code_hash` / `vote_add_launcher_hash` / `vote_add_os_measurement` on `mpc-contract`. Verifier-internal parameters (`dcap-qvl` version, Intel root certs, `VerifiedReport` schema) are bound to the published code hash and change only by publishing a new hash and creating a new versioned account.
+
 The verifier exposes one method:
 
 ```rust
