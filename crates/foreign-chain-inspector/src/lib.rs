@@ -37,18 +37,12 @@ pub trait ForeignChainInspector {
 /// inspector returns the same extracted values; any disagreement returns
 /// [`ForeignChainInspectionError::InspectorResponseMismatch`], and the first inner
 /// error encountered is propagated.
-#[derive(Clone)]
-pub struct FanOutInspector<Inspector> {
+#[derive(Clone, derive_more::Constructor)]
+pub struct FanOut<Inspector> {
     inspectors: NonEmptyVec<Inspector>,
 }
 
-impl<Inspector> FanOutInspector<Inspector> {
-    pub fn new(inspectors: NonEmptyVec<Inspector>) -> Self {
-        Self { inspectors }
-    }
-}
-
-impl<Inspector> ForeignChainInspector for FanOutInspector<Inspector>
+impl<Inspector> ForeignChainInspector for FanOut<Inspector>
 where
     Inspector: ForeignChainInspector + Clone + Send + Sync + 'static,
     Inspector::TransactionId: Clone + Send + 'static,
