@@ -48,8 +48,9 @@ jobs:
       - name: Build review prompt
         id: build-prompt
         run: |
+          DELIM="PROMPT_EOF_$(uuidgen)"
           {
-            echo 'REVIEW_PROMPT<<PROMPT_EOF'
+            echo "REVIEW_PROMPT<<$DELIM"
             echo '<pr_context>'
             echo "REPO: ${{ github.repository }}"
             echo "PR NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}"
@@ -63,7 +64,7 @@ jobs:
             echo '<review_instructions>'
             cat .github/prompts/pr-review.prompt.md
             echo '</review_instructions>'
-            echo 'PROMPT_EOF'
+            echo "$DELIM"
           } >> "$GITHUB_ENV"
 
       - name: Run Claude Code Review
