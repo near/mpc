@@ -56,7 +56,7 @@ async fn timeout_metric__should_increment_when_signature_times_out() {
             // case the send below has retry mechanism. C.f.
             // https://github.com/near/mpc/pull/3211#discussion_r3233189801
             CLUSTER_WAIT_TIMEOUT,
-        ) => res.expect(&format!("{} did not reach 1 on node 1", metrics::TIMEOUTS_INDEXED)),
+        ) => res.unwrap_or_else(|_| panic!("{} did not reach 1 on node 1", metrics::TIMEOUTS_INDEXED)),
         _ = cluster.send_sign_request(domain.id, payload, cluster.default_user_account()) =>
             panic!(
                 "sign request future returned before timeout metric — test wiring is wrong \
