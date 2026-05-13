@@ -959,9 +959,10 @@ pub type ProviderId = String;
 /// Where the operator's API key/token gets injected into the assembled RPC URL.
 /// Lives on the contract (not in operator yaml) so the operator can't pick a custom
 /// auth shape that lets them inject extra path or query components.
-#[derive(
-    Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, BorshSerialize, BorshDeserialize,
-)]
+// `Hash` / `Ord` / `PartialOrd` are intentionally omitted — PR 1 doesn't need them
+// (the storage is `BTreeMap<ProviderId, ProviderEntry>` so only the key needs `Ord`).
+// PR 2 can re-add if the batched vote-action shape requires them.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, BorshSerialize, BorshDeserialize)]
 // `Deserialize` is only needed by node-side / external SDK consumers; the contract
 // itself never parses these from JSON args (no entry point takes them in PR 1). Gating
 // it off wasm avoids ~2-7 KB of serde monomorphizations per type in the contract WASM.
@@ -986,9 +987,8 @@ pub enum AuthScheme {
 
 /// How chain identity is encoded in the RPC URL. Exactly one of the three encodings,
 /// modelled as an enum so a vote can't accidentally produce an "all three" shape.
-#[derive(
-    Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, BorshSerialize, BorshDeserialize,
-)]
+// `Hash` / `Ord` / `PartialOrd` deliberately omitted — see the comment on `AuthScheme`.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(not(target_arch = "wasm32"), derive(Deserialize))]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -1012,9 +1012,8 @@ pub enum ChainRouting {
 /// One entry in the on-chain RPC provider whitelist for a single chain. Voted in by
 /// MPC participants and read by nodes at startup to assemble the actual RPC URL
 /// (`base_url` + `chain_routing` + operator-supplied token via `auth_scheme`).
-#[derive(
-    Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, BorshSerialize, BorshDeserialize,
-)]
+// `Hash` / `Ord` / `PartialOrd` deliberately omitted — see the comment on `AuthScheme`.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(not(target_arch = "wasm32"), derive(Deserialize))]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),

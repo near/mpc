@@ -10,7 +10,7 @@
 //! `vote_remove_foreign_chain_provider`), pending-vote tracking, and per-chain voting
 //! thresholds land in a follow-up PR.
 
-use std::collections::BTreeMap;
+use std::collections::{btree_map::Entry, BTreeMap};
 
 use near_mpc_contract_interface::types::{ForeignChain, ProviderEntry, ProviderId};
 use near_sdk::near;
@@ -46,12 +46,17 @@ impl AllowedProviders {
     /// `false` if an entry with the same `provider_id` already exists for this chain
     /// (the existing entry is left untouched — the new one is *not* substituted in).
     pub fn add(&mut self, chain: ForeignChain, entry: ProviderEntry) -> bool {
+        // Use the `Entry` API so the vacant/occupied decision is local — both branches
+        // sit next to each other and the dup case can't be quietly preceded by a stray
+        // bucket mutation.
         let bucket = self.entries.entry(chain).or_default();
-        if bucket.contains_key(&entry.provider_id) {
-            return false;
+        match bucket.entry(entry.provider_id.clone()) {
+            Entry::Vacant(slot) => {
+                slot.insert(entry);
+                true
+            }
+            Entry::Occupied(_) => false,
         }
-        bucket.insert(entry.provider_id.clone(), entry);
-        true
     }
 
     /// Remove the provider with `provider_id` from `chain`. Returns `true` if an entry
@@ -89,8 +94,9 @@ impl AllowedProviders {
 }
 
 /// Top-level contract state for the foreign-chain RPC provider whitelist. Held as a
-/// field on `MpcContract`. Currently a thin wrapper around [`AllowedProviders`]; the
-/// follow-up PR adds the vote state (pending votes, per-chain voting thresholds).
+/// field on `MpcContract`. Currently a thin wrapper around the inner `AllowedProviders`
+/// storage; the follow-up PR adds the vote state (pending votes, per-chain voting
+/// thresholds).
 #[near(serializers=[borsh])]
 #[derive(Debug, Clone, Default)]
 pub struct ForeignChainRpcWhitelist {

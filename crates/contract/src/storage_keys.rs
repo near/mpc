@@ -24,5 +24,4 @@ pub enum StorageKey {
     PendingSignatureRequestsV3,
     StoredAttestations,
     SupportedForeignChainsByNode,
-    ForeignChainRpcWhitelist,
 }
