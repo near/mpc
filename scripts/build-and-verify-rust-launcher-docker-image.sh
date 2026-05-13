@@ -1,40 +1,31 @@
 #! /usr/bin/env bash
+#
+# Builds the Rust launcher Docker image reproducibly and prints its manifest
+# digest. CI uses this to (a) confirm the launcher still builds reproducibly
+# from the current workspace, and (b) surface the digest in the run log so
+# reviewers and operators can compare it against the contract's
+# allowed_launcher_image_hashes when needed.
+#
+# This script intentionally does NOT enforce that the built digest matches
+# any pinned reference. The previous strict equality check (against the
+# hard-coded digest in `launcher_docker_compose.yaml`) was demoted to a
+# warning in #2619 and removed in #3199, because `repro-env` builds the
+# launcher against the full workspace `Cargo.lock` — so any unrelated
+# workspace lockfile change shifts the launcher digest. Enforcing on every
+# PR would mean a digest-bump alongside every dependency change. Tracked in:
+#   https://github.com/near/mpc/issues/2662
+#
+# Once #2662 is resolved (e.g. tee-launcher in its own workspace/lockfile),
+# this script should be restored to an assertion — either against a
+# checked-in allow list or against the contract's allowed_launcher_image_hashes.
 
 set -euo pipefail
 
 ./deployment/build-images.sh --rust-launcher
 
-# Step 1: Get the built Rust launcher image's manifest hash
 temp_dir=$(mktemp -d)
+trap 'rm -rf "$temp_dir"' EXIT
 echo "using $temp_dir"
-skopeo copy --all --dest-compress docker-daemon:mpc-rust-launcher:latest dir:$temp_dir
-built_launcher_hash=$(sha256sum $temp_dir/manifest.json | cut -d' ' -f1)
-echo "Built launcher image hash: $built_launcher_hash"
-
-# Step 2: Extract the launcher and MPC hashes from the Rust launcher deployment compose file
-deployed_launcher_hash=$(grep -o 'nearone/mpc-launcher@sha256:.*' deployment/cvm-deployment/launcher_docker_compose.yaml | grep -o '@sha256:.*' | cut -c 9-)
-deployed_mpc_hash=$(grep 'DEFAULT_IMAGE_DIGEST=sha256:' deployment/cvm-deployment/launcher_docker_compose.yaml | grep -o 'sha256:.*' | cut -c 8-)
-
-# Step 3: Fill the contract template with the deployment hashes and compare
-filled_template=$(sed \
-    -e "s/{{LAUNCHER_IMAGE_HASH}}/${deployed_launcher_hash}/" \
-    -e "s/{{DEFAULT_IMAGE_DIGEST_HASH}}/${deployed_mpc_hash}/" \
-    crates/contract/assets/launcher_docker_compose.yaml.template)
-
-if ! diff <(echo "$filled_template") deployment/cvm-deployment/launcher_docker_compose.yaml > /dev/null; then
-    echo "Template structure verification failed"
-    echo "The Rust launcher contract template (filled with deployment hashes) does not match the deployment compose file."
-    diff <(echo "$filled_template") deployment/cvm-deployment/launcher_docker_compose.yaml || true
-    exit 1
-fi
-echo "Template structure verified: Rust launcher contract template matches deployment compose"
-
-# Step 4: Verify the built launcher image hash matches the deployment compose
-if [ "${deployed_launcher_hash}" == "${built_launcher_hash}" ]; then
-    echo "Rust launcher docker image hash verified"
-else
-    # TODO(#2662): Re-enable after the launcher hash is re-pinned
-    echo "WARNING: Rust launcher docker image hash mismatch (temporarily allowed)"
-    echo "Deployment compose has: ${deployed_launcher_hash}"
-    echo "Built image hash:       ${built_launcher_hash}"
-fi
+skopeo copy --all --dest-compress docker-daemon:mpc-rust-launcher:latest dir:"$temp_dir"
+built_hex="$(sha256sum "$temp_dir/manifest.json" | cut -d' ' -f1)"
+echo "Built launcher image hash: sha256:${built_hex}"

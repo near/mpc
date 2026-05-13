@@ -30,15 +30,33 @@ Collect the new Manifest digest from Docker hub:
 sha256:<NEW>
 ```
 
-## 2) Update the launcher compose files used for deployment/docs
+## 2) Vote the new launcher digest in
 
-These are what operators actually run.
+For the TEE flow, operators render the contract template at deploy time
+using the `LAUNCHER_MANIFEST_DIGEST` and `MPC_MANIFEST_DIGEST` env vars —
+there is no checked-in TEE compose file to bump.
 
-- `deployment/cvm-deployment/launcher_docker_compose.yaml` (TEE)
-- `deployment/cvm-deployment/launcher_docker_compose_nontee.yaml` (non-TEE)
+What you need to do:
 
-Keep the launcher image digest (and related env like `DEFAULT_IMAGE_DIGEST`)
-consistent with the intended release.
+- Vote the new `sha256:<NEW>` digest into the contract's
+  `allowed_launcher_image_hashes`. That's the on-chain gate that controls
+  whether attestation will accept this launcher.
+- `crates/contract/assets/launcher_docker_compose.yaml.template` — only
+  touch this if the **shape** of the compose changes (volumes, env vars,
+  etc.). For digest-only updates, no template change is needed; the
+  digests are substituted in at deploy time.
+
+The non-TEE flow still pins digests in a checked-in compose file (tracked
+separately in [#3221](https://github.com/near/mpc/issues/3221)):
+
+- `deployment/cvm-deployment/launcher_docker_compose_nontee.yaml` —
+  update the digests there to match the intended release.
+
+> CI does **not** assert that the reproducibly-built launcher digest
+> matches any pinned reference — it just prints the digest. See
+> [#2662](https://github.com/near/mpc/issues/2662) for why. When voting
+> in a new digest, double-check the build CI output (the "Built launcher
+> image hash" line) so you know what you're voting in.
 
 ---
 

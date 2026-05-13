@@ -589,7 +589,7 @@ Including
 
 * Preparing a configuration file based on [user-config.toml](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/user-config.toml)
 
-* Creating a docker compose file for the launcher based on [launcher\_docker\_compose.yaml](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/launcher_docker_compose.yaml).
+* Rendering the launcher docker compose template [launcher\_docker\_compose.yaml.template](https://github.com/near/mpc/blob/main/crates/contract/assets/launcher_docker_compose.yaml.template) with the launcher and MPC node manifest digests approved by the contract.
 * Configuring and starting your CVM with the MPC node.
 * Accessing mpc docker logs.
 * Retrieve keys from the CVM.
@@ -712,36 +712,60 @@ For a self-hosted local PCCS, see [Appendix: Self-hosting a local PCCS](#appendi
 
 ### Preparing a Docker Compose File
 
-To launch the launcher in the TEE environment, use the Docker Compose file from the [NEAR MPC repository](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/launcher_docker_compose.yaml).
+The launcher Docker Compose file is **rendered** at deploy time from the
+template at
+[`crates/contract/assets/launcher_docker_compose.yaml.template`](https://github.com/near/mpc/blob/main/crates/contract/assets/launcher_docker_compose.yaml.template)
+by substituting two manifest digests:
 
-Update the `DEFAULT_IMAGE_DIGEST` field in `launcher_docker_compose.yaml` with the latest MPC Docker image manifest digest retrieved from the contract.
+1. The **launcher** image digest (`{{LAUNCHER_IMAGE_HASH}}`)
+2. The **MPC node** image digest (`{{DEFAULT_IMAGE_DIGEST_HASH}}`)
 
-For details on how to verify this digest, see the section [MPC Node Image Upgrade](#mpc-node-image-upgrade).
+Both must be approved by the contract — otherwise the SHA256 of the rendered
+file will not match an entry in `allowed_launcher_compose_hashes` and the
+node's attestation will be rejected.
 
-Example digest value:
+#### Step 1 — discover the currently-allowed digests
 
 ```bash
-DEFAULT_IMAGE_DIGEST=sha256:331cfec941671ac343c52847e255eb36a280da65535d2a1e4d002c4c64686e19
+# Launcher digest -> goes into the launcher `image` line in the rendered compose
+near contract call-function as-read-only \
+  v1.signer-prod.testnet allowed_launcher_image_hashes \
+  json-args '{}' network-config testnet now
+
+# MPC node digest -> goes into DEFAULT_IMAGE_DIGEST in the rendered compose
+near contract call-function as-read-only \
+  v1.signer-prod.testnet allowed_docker_image_hashes \
+  json-args '{}' network-config testnet now
 ```
 
-You can retrieve the allowed MPC Docker image manifest digest directly from the contract using the NEAR CLI. The latest allowed digest will appear first in the returned vector:
+The latest approved digest is first in each returned vector. For details on
+how to verify each digest before trusting it, see
+[MPC Node Image Upgrade](#mpc-node-image-upgrade) and
+[Launcher image voting](#launcher-image-voting).
+
+#### Step 2 — render the template
 
 ```bash
-near contract call-function as-transaction \
-  v1.signer-prod.testnet \
-  allowed_docker_image_hashes \
-  json-args '{}' \
-  prepaid-gas '100.0 Tgas' \
-  attached-deposit '0 NEAR' \
-  sign-as <your-account-id> \
-  network-config testnet \
-  sign-with-keychain \
-  send
+# Hex form only — no 'sha256:' prefix when substituting into the template.
+export LAUNCHER_IMAGE_HASH=<launcher digest from step 1>
+export MPC_IMAGE_HASH=<mpc-node digest from step 1>
+
+sed \
+  -e "s|{{LAUNCHER_IMAGE_HASH}}|${LAUNCHER_IMAGE_HASH}|g" \
+  -e "s|{{DEFAULT_IMAGE_DIGEST_HASH}}|${MPC_IMAGE_HASH}|g" \
+  crates/contract/assets/launcher_docker_compose.yaml.template \
+  > launcher_docker_compose.yaml
 ```
 
-The transaction output will include the latest MPC Docker image manifest digest.
+The `deploy-launcher.sh` helper script does the same substitution when
+given `LAUNCHER_MANIFEST_DIGEST` and `MPC_MANIFEST_DIGEST` env vars (with
+or without the `sha256:` prefix); it's a convenience wrapper for the
+manual `sed` flow above.
 
-**Note:** The [launcher\_docker\_compose.yaml](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/launcher_docker_compose.yaml) is measured, and the measurements are part of the remote attestation. Make sure not to change any other fields or values (including whitespaces).
+> **Note:** The rendered file is measured, and its SHA256 is part of the
+> remote attestation. Do not modify the rendered file further (including
+> whitespace) — only the two digest substitutions should differ from the
+> template.
 
 ### Required Ports and Port Collisions
 
@@ -902,16 +926,9 @@ cargo install --path crates/attestation-cli
 1. **Allowed MPC Docker image manifest digest** — The SHA256 manifest digest of the approved MPC Docker image. You can query it from the contract:
 
    ```bash
-   near contract call-function as-transaction \
-     v1.signer-prod.testnet \
-     allowed_docker_image_hashes \
-     json-args '{}' \
-     prepaid-gas '100.0 Tgas' \
-     attached-deposit '0 NEAR' \
-     sign-as <your-account-id> \
-     network-config testnet \
-     sign-with-keychain \
-     send
+   near contract call-function as-read-only \
+     v1.signer-prod.testnet allowed_docker_image_hashes \
+     json-args '{}' network-config testnet now
    ```
 
    The latest allowed manifest digest will appear first in the returned vector.

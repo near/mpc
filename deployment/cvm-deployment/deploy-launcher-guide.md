@@ -7,7 +7,8 @@ This script automates the deployment of a **Dstack Launcher VM** (`launcher_test
 It:
 
 - Loads deployment parameters from a `.env` file (defaults to `default.env`)
-- Loads Docker Compose file and user\_config files
+- Renders the launcher Docker Compose template (`crates/contract/assets/launcher_docker_compose.yaml.template`) using the `LAUNCHER_MANIFEST_DIGEST` and `MPC_MANIFEST_DIGEST` env vars
+- Loads the rendered compose and user\_config files
 - Generates an `app-compose.json` configuration
 - Deploys and starts CVM  via `vmm-cli`
 
@@ -21,7 +22,7 @@ Also review specific MPC configuration in [running-an-mpc-node-in-tdx-external-g
 - Python 3.6 or higher installed
 - Required Python packages (cryptography, eth_keys, eth_utils)
 - `vmm-cli.py` should be located under $basePath/vmm/src/vmm-cli.py
-- Docker Compose template (`$DOCKER_COMPOSE_FILE_PATH`)
+- Launcher and MPC node manifest digests set via `LAUNCHER_MANIFEST_DIGEST` and `MPC_MANIFEST_DIGEST` (the script renders `crates/contract/assets/launcher_docker_compose.yaml.template` with them)
 - Deployment configuration in `*.env` file
 - user-config.toml file (TOML format)
 - See full CLI documentation here: [vmm-cli-user-guide.md](https://github.com/Dstack-TEE/dstack/blob/master/docs/vmm-cli-user-guide.md)
@@ -33,7 +34,6 @@ Also review specific MPC configuration in [running-an-mpc-node-in-tdx-external-g
 Ensure the following files are present in the working directory before running the script:
 
 - `default.env` – default environment configuration
-- `$DOCKER_COMPOSE_FILE_PATH` – e.g. `launcher_docker_compose.yaml`
 - `$USER_CONFIG_FILE_PATH` – e.g. `user-config.toml`
 
 You can also use the example `.env` files under `tee_deployment/configs/`:
@@ -138,8 +138,10 @@ INTERNAL_MPC_MAIN_PORT=80
 # OS image
 OS_IMAGE=dstack-dev-0.5.2
 
-# Path of the launcher docker_compose_file
-DOCKER_COMPOSE_FILE_PATH=launcher_docker_compose.yaml
+# Launcher and MPC node manifest digests (filled into the launcher compose
+# template at deploy time). These must match digests voted into the contract.
+LAUNCHER_MANIFEST_DIGEST=sha256:<set me>
+MPC_MANIFEST_DIGEST=sha256:<set me>
 # Path of the user_config file
 USER_CONFIG_FILE_PATH=user-config.toml
 

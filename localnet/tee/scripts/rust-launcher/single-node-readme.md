@@ -27,6 +27,9 @@ export MACHINE_IP=<host-ip>
 
 # MPC node manifest digest. Get with: docker pull nearone/mpc-node:<tag> 2>&1 | grep Digest
 export MPC_MANIFEST_DIGEST=sha256:5d1e604dcf3197f8b465c854f8073eaa89b9733f646248d59f86a15b81110ef5
+
+# Launcher manifest digest. Get with: docker pull nearone/mpc-launcher:<tag> 2>&1 | grep Digest
+export LAUNCHER_MANIFEST_DIGEST=sha256:5308ee3fd43459e239a71fec6facb4a1c42bb78f823d64386051db20ae739aec
 ```
 
 ## Optional Variables

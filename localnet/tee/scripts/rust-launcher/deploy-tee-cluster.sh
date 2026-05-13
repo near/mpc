@@ -65,6 +65,7 @@ MPC_ENV="${MPC_ENV:-$NEAR_NETWORK_CONFIG}"
 MACHINE_IP="${MACHINE_IP:-}"
 
 : "${MPC_MANIFEST_DIGEST:?Must set MPC_MANIFEST_DIGEST (e.g. export MPC_MANIFEST_DIGEST=sha256:abc...)}"
+: "${LAUNCHER_MANIFEST_DIGEST:?Must set LAUNCHER_MANIFEST_DIGEST (e.g. export LAUNCHER_MANIFEST_DIGEST=sha256:abc...)}"
 
 # If set, use this funded testnet account instead of faucet to create/top-up the ROOT account.
 # Example: export FUNDER_ACCOUNT=barak_tee_test1.testnet
@@ -172,7 +173,6 @@ VMM_RPC="${VMM_RPC:-http://127.0.0.1:10000}"
 # Repo-relative paths (assumes you're running from repo root)
 REPO_ROOT="$(pwd)"
 TEE_LAUNCHER_DIR="$REPO_ROOT/deployment/cvm-deployment"
-COMPOSE_YAML="$TEE_LAUNCHER_DIR/launcher_docker_compose.yaml"
 ADD_DOMAIN_JSON="$REPO_ROOT/docs/localnet/args/add_domain.json"
 
 MODE="${MODE:-localnet}"  # localnet|testnet
@@ -714,7 +714,6 @@ preflight() {
   need_cmd python3
 
   [ -d "$TEE_LAUNCHER_DIR" ] || { err "Missing launcher dir at $TEE_LAUNCHER_DIR"; exit 1; }
-  [ -f "$COMPOSE_YAML" ] || { err "Missing $COMPOSE_YAML"; exit 1; }
   [ -f "$ADD_DOMAIN_JSON" ] || { err "Missing $ADD_DOMAIN_JSON"; exit 1; }
   [ -f "$ENV_TPL" ] || { err "Missing template $ENV_TPL"; exit 1; }
   [ -f "$CONF_TPL" ] || { err "Missing template $CONF_TPL"; exit 1; }
@@ -805,7 +804,7 @@ render_node_files_range() {
     export VMM_RPC
     export SEALING_KEY_TYPE
     export OS_IMAGE
-    export DOCKER_COMPOSE_FILE_PATH="launcher_docker_compose.yaml"
+    export LAUNCHER_MANIFEST_DIGEST MPC_MANIFEST_DIGEST
     export USER_CONFIG_FILE_PATH="$conf_out"
     export DISK="${DISK:-500G}"
 
@@ -1183,10 +1182,9 @@ extract_code_hash() {
 }
 
 extract_launcher_hash() {
-  local digest
-  digest="$(grep -E 'nearone/mpc-launcher@sha256:' "$COMPOSE_YAML" | head -n1 | sed -E 's/.*sha256:([0-9a-f]{64}).*/\1/')"
+  local digest="${LAUNCHER_MANIFEST_DIGEST#sha256:}"
   if [[ ! "$digest" =~ ^[0-9a-f]{64}$ ]]; then
-    err "Could not extract launcher image hash from $COMPOSE_YAML"
+    err "LAUNCHER_MANIFEST_DIGEST is not a valid sha256 digest: ${LAUNCHER_MANIFEST_DIGEST:-<unset>}"
     exit 1
   fi
   echo "$digest"
