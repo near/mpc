@@ -254,17 +254,6 @@ expression: abi
         ]
       },
       {
-        "name": "foreign_chain_provider_votes",
-        "doc": " Returns the pending vote state for foreign-chain RPC providers, partitioned by\n `(chain, provider_id)` target. Initially empty.",
-        "kind": "view",
-        "result": {
-          "serialization_type": "json",
-          "type_schema": {
-            "$ref": "#/definitions/ProviderVotes"
-          }
-        }
-      },
-      {
         "name": "get_attestation",
         "kind": "view",
         "params": {
@@ -3451,77 +3440,6 @@ expression: abi
             },
             "provider_id": {
               "type": "string"
-            }
-          }
-        },
-        "ProviderVoteAction": {
-          "description": "Payload of a `vote_add_foreign_chain_provider` / `vote_remove_foreign_chain_provider` call. The vote target is `(chain, provider_id)` — for `Add`, the `provider_id` lives inside the entry. Two participants voting `Add` with different `entry` shapes for the same `(chain, provider_id)` target are voting for *different* configurations and count separately toward threshold.",
-          "oneOf": [
-            {
-              "type": "object",
-              "required": [
-                "Add"
-              ],
-              "properties": {
-                "Add": {
-                  "type": "object",
-                  "required": [
-                    "chain",
-                    "entry"
-                  ],
-                  "properties": {
-                    "chain": {
-                      "$ref": "#/definitions/ForeignChain"
-                    },
-                    "entry": {
-                      "$ref": "#/definitions/ProviderEntry"
-                    }
-                  }
-                }
-              },
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "required": [
-                "Remove"
-              ],
-              "properties": {
-                "Remove": {
-                  "type": "object",
-                  "required": [
-                    "chain",
-                    "provider_id"
-                  ],
-                  "properties": {
-                    "chain": {
-                      "$ref": "#/definitions/ForeignChain"
-                    },
-                    "provider_id": {
-                      "type": "string"
-                    }
-                  }
-                }
-              },
-              "additionalProperties": false
-            }
-          ]
-        },
-        "ProviderVotes": {
-          "description": "Pending votes partitioned by **target** = `(chain, provider_id)`. Within a target, each participant has at most one active vote — voting again for the same target overwrites their prior vote. A participant can have active votes across many targets simultaneously; rounds are independent.\n\nMethods that mutate the vote state (`vote`, `clear_target`, `get_remaining_votes`) land with the vote endpoint PR.",
-          "type": "object",
-          "required": [
-            "pending"
-          ],
-          "properties": {
-            "pending": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "object",
-                "additionalProperties": {
-                  "$ref": "#/definitions/ProviderVoteAction"
-                }
-              }
             }
           }
         },
