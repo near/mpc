@@ -19,7 +19,7 @@ use crate::storage::{
 };
 use crate::tracking::{self, AutoAbortTaskCollection};
 use crate::types::SignatureRequest;
-use crate::types::{CKDRequest, RequestsUpdate, VerifyForeignTxRequest};
+use crate::types::{CKDRequest, IndexedRequest, RequestsUpdate, VerifyForeignTxRequest};
 use crate::web::{DebugRequest, DebugRequestKind};
 use mpc_node_config::ConfigFile;
 
@@ -195,20 +195,21 @@ where
     ) {
         let mut tasks = AutoAbortTaskCollection::new();
         let mut pending_signatures =
-            PendingRequests::<SignatureRequest, ChainSignatureRespondArgs>::new(
+            PendingRequests::<IndexedRequest<SignatureRequest>, ChainSignatureRespondArgs>::new(
                 Clock::real(),
                 self.client.all_participant_ids(),
                 self.client.my_participant_id(),
                 self.client.clone(),
             );
-        let mut pending_ckds = PendingRequests::<CKDRequest, ChainCKDRespondArgs>::new(
-            Clock::real(),
-            self.client.all_participant_ids(),
-            self.client.my_participant_id(),
-            self.client.clone(),
-        );
+        let mut pending_ckds =
+            PendingRequests::<IndexedRequest<CKDRequest>, ChainCKDRespondArgs>::new(
+                Clock::real(),
+                self.client.all_participant_ids(),
+                self.client.my_participant_id(),
+                self.client.clone(),
+            );
         let mut pending_verify_foreign_txs = PendingRequests::<
-            VerifyForeignTxRequest,
+            IndexedRequest<VerifyForeignTxRequest>,
             ChainVerifyForeignTransactionRespondArgs,
         >::new(
             Clock::real(),
@@ -230,7 +231,7 @@ where
                     };
 
                     self.client.update_indexer_height(block_update.block.height);
-                    let signature_requests : RequestsUpdate<SignatureRequest> = RequestsUpdate::from_chain(
+                    let signature_requests : RequestsUpdate<IndexedRequest<SignatureRequest>> = RequestsUpdate::from_chain(
                         &block_update.block,
                         block_update.signature_requests,
                         block_update.completed_signatures,
@@ -238,31 +239,31 @@ where
 
                     // TODO(#3031): add batch request and unify stores
                     for request in &signature_requests.requests {
-                        self.sign_request_store.add(request);
+                        self.sign_request_store.add(&request.request);
                     }
 
                     // TODO(#3032): remove completed & finalized requests from store
                     pending_signatures.notify_new_block(signature_requests);
 
-                    let ckd_requests: RequestsUpdate<CKDRequest> = RequestsUpdate::from_chain(
+                    let ckd_requests: RequestsUpdate<IndexedRequest<CKDRequest>> = RequestsUpdate::from_chain(
                         &block_update.block,
                         block_update.ckd_requests,
                         block_update.completed_ckds
                     );
                     for request in &ckd_requests.requests {
-                        self.ckd_request_store.add(request);
+                        self.ckd_request_store.add(&request.request);
                     }
 
                     pending_ckds.notify_new_block(ckd_requests);
 
-                    let verify_foreign_tx_requests : RequestsUpdate<VerifyForeignTxRequest> = RequestsUpdate::from_chain(
+                    let verify_foreign_tx_requests : RequestsUpdate<IndexedRequest<VerifyForeignTxRequest>> = RequestsUpdate::from_chain(
                         &block_update.block,
                         block_update.verify_foreign_tx_requests,
                         block_update.completed_verify_foreign_txs
                     );
 
                     for request in &verify_foreign_tx_requests.requests {
-                        self.verify_foreign_tx_request_store.add(request);
+                        self.verify_foreign_tx_request_store.add(&request.request);
                     }
                     pending_verify_foreign_txs.notify_new_block(verify_foreign_tx_requests);
                 }
@@ -301,7 +302,7 @@ where
                 tasks.spawn_checked(
                     &format!(
                         "leader for signature request {:?}",
-                        signature_attempt.request.id
+                        signature_attempt.request.request.id
                     ),
                     async move {
                         // Only issue a MPC signature computation if we haven't computed it
@@ -322,14 +323,14 @@ where
 
                                 let response = match this
                                     .domain_to_protocol
-                                    .get(&signature_attempt.request.domain)
+                                    .get(&signature_attempt.request.request.domain)
                                 {
                                     Some(Protocol::CaitSith) => {
                                         let (signature, public_key) = timeout(
                                             Duration::from_secs(this.config.signature.timeout_sec),
-                                            this.ecdsa_signature_provider
-                                                .clone()
-                                                .make_signature(signature_attempt.request.id),
+                                            this.ecdsa_signature_provider.clone().make_signature(
+                                                signature_attempt.request.request.id,
+                                            ),
                                         )
                                         .await??;
 
@@ -344,9 +345,9 @@ where
                                     Some(Protocol::Frost) => {
                                         let (signature, _) = timeout(
                                             Duration::from_secs(this.config.signature.timeout_sec),
-                                            this.eddsa_signature_provider
-                                                .clone()
-                                                .make_signature(signature_attempt.request.id),
+                                            this.eddsa_signature_provider.clone().make_signature(
+                                                signature_attempt.request.request.id,
+                                            ),
                                         )
                                         .await??;
 
@@ -360,7 +361,7 @@ where
                                     Some(Protocol::ConfidentialKeyDerivation) => {
                                         Err(anyhow::anyhow!(
                                             "Incorrect protocol for domain: {:?}",
-                                            signature_attempt.request.domain.clone()
+                                            signature_attempt.request.request.domain.clone()
                                         ))
                                     }
                                     Some(Protocol::DamgardEtAl) => {
@@ -368,7 +369,9 @@ where
                                             Duration::from_secs(this.config.signature.timeout_sec),
                                             this.robust_ecdsa_signature_provider
                                                 .clone()
-                                                .make_signature(signature_attempt.request.id),
+                                                .make_signature(
+                                                    signature_attempt.request.request.id,
+                                                ),
                                         )
                                         .await??;
 
@@ -382,7 +385,7 @@ where
                                     }
                                     None => Err(anyhow::anyhow!(
                                         "Signature scheme is not found for domain: {:?}",
-                                        signature_attempt.request.domain.clone()
+                                        signature_attempt.request.request.domain.clone()
                                     )),
                                 }?;
 
@@ -420,7 +423,10 @@ where
                 let this = self.clone();
                 let chain_txn_sender_ckd = chain_txn_sender.clone();
                 tasks.spawn_checked(
-                    &format!("leader for ckd request {:?}", ckd_attempt.request.id),
+                    &format!(
+                        "leader for ckd request {:?}",
+                        ckd_attempt.request.request.id
+                    ),
                     async move {
                         // Only issue an MPC ckd computation if we haven't computed it
                         // in a previous attempt.
@@ -440,14 +446,14 @@ where
 
                                 let response = match this
                                     .domain_to_protocol
-                                    .get(&ckd_attempt.request.domain_id)
+                                    .get(&ckd_attempt.request.request.domain_id)
                                 {
                                     Some(Protocol::ConfidentialKeyDerivation) => {
                                         let response = timeout(
                                             Duration::from_secs(this.config.ckd.timeout_sec),
                                             this.ckd_provider
                                                 .clone()
-                                                .make_signature(ckd_attempt.request.id),
+                                                .make_signature(ckd_attempt.request.request.id),
                                         )
                                         .await??;
 
@@ -465,11 +471,11 @@ where
                                     | Some(Protocol::DamgardEtAl)
                                     | Some(Protocol::Frost) => Err(anyhow::anyhow!(
                                         "Signature scheme is not allowed for domain: {:?}",
-                                        ckd_attempt.request.domain_id.clone()
+                                        ckd_attempt.request.request.domain_id.clone()
                                     )),
                                     None => Err(anyhow::anyhow!(
                                         "Signature scheme is not found for domain: {:?}",
-                                        ckd_attempt.request.domain_id.clone()
+                                        ckd_attempt.request.request.domain_id.clone()
                                     )),
                                 }?;
 
@@ -510,7 +516,7 @@ where
                 tasks.spawn_checked(
                     &format!(
                         "leader for verify_foreign_tx request {:?}",
-                        verify_foreign_tx_attempt.request.id
+                        verify_foreign_tx_attempt.request.request.id
                     ),
                     async move {
                         // Only issue an MPC verify_foreign_tx computation if we haven't computed it
@@ -531,13 +537,13 @@ where
 
                                 let response = match this
                                     .domain_to_protocol
-                                    .get(&verify_foreign_tx_attempt.request.domain_id)
+                                    .get(&verify_foreign_tx_attempt.request.request.domain_id)
                                 {
                                     Some(Protocol::CaitSith) => {
                                         let response = timeout(
                                             Duration::from_secs(this.config.signature.timeout_sec),
                                             this.verify_foreign_tx_provider.clone().make_signature(
-                                                verify_foreign_tx_attempt.request.id,
+                                                verify_foreign_tx_attempt.request.request.id,
                                             ),
                                         )
                                         .await??;
@@ -557,11 +563,11 @@ where
                                     | Some(Protocol::DamgardEtAl)
                                     | Some(Protocol::Frost) => Err(anyhow::anyhow!(
                                         "Signature scheme is not allowed for domain: {:?}",
-                                        verify_foreign_tx_attempt.request.domain_id.clone()
+                                        verify_foreign_tx_attempt.request.request.domain_id.clone()
                                     )),
                                     None => Err(anyhow::anyhow!(
                                         "Signature scheme is not found for domain: {:?}",
-                                        verify_foreign_tx_attempt.request.domain_id.clone()
+                                        verify_foreign_tx_attempt.request.request.domain_id.clone()
                                     )),
                                 }?;
 

@@ -20,6 +20,7 @@ use near_async::{
 };
 use near_client::{client_actor::ClientActor, RpcHandlerActor, Status, ViewClientActor};
 use near_indexer::near_primitives::transaction::SignedTransaction;
+use near_indexer_primitives::CryptoHash;
 use near_indexer_primitives::{
     types::{BlockReference, Finality},
     views::{BlockView, QueryRequest, QueryResponseKind},
@@ -101,10 +102,12 @@ impl IndexerViewClient {
         &self,
         mpc_contract_id: &AccountId,
         chain_signature_request: &ChainSignatureRequest,
+        request_id: Option<CryptoHash>,
     ) -> anyhow::Result<Option<YieldIndex>> {
         let get_pending_request_args: Vec<u8> =
             serde_json::to_string(&ChainGetPendingSignatureRequestArgs {
                 request: chain_signature_request.clone(),
+                request_id,
             })
             .unwrap()
             .into_bytes();
@@ -142,10 +145,12 @@ impl IndexerViewClient {
         &self,
         mpc_contract_id: &AccountId,
         chain_ckd_request: &ChainCKDRequest,
+        request_id: Option<CryptoHash>,
     ) -> anyhow::Result<Option<YieldIndex>> {
         let get_pending_request_args: Vec<u8> =
             serde_json::to_string(&ChainGetPendingCKDRequestArgs {
                 request: chain_ckd_request.clone(),
+                request_id,
             })
             .unwrap()
             .into_bytes();
@@ -183,10 +188,12 @@ impl IndexerViewClient {
         &self,
         mpc_contract_id: &AccountId,
         chain_verify_foreign_tx_request: &ChainVerifyForeignTransactionRequest,
+        request_id: Option<CryptoHash>,
     ) -> anyhow::Result<Option<YieldIndex>> {
         let get_pending_request_args: Vec<u8> =
             serde_json::to_string(&ChainGetPendingVerifyForeignTxRequestArgs {
                 request: chain_verify_foreign_tx_request.clone(),
+                request_id,
             })
             .unwrap()
             .into_bytes();

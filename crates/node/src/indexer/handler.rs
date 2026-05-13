@@ -13,10 +13,13 @@ use near_indexer_primitives::views::{
     ActionView, ExecutionOutcomeWithIdView, ExecutionStatusView, ReceiptEnumView, ReceiptView,
 };
 use near_indexer_primitives::CryptoHash;
+use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::method_names::{
     REQUEST_APP_PRIVATE_KEY, RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS,
-    RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS,
-    RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS, SIGN, VERIFY_FOREIGN_TRANSACTION,
+    RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS_V2, RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS,
+    RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS_V2,
+    RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS,
+    RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS_V2, SIGN, VERIFY_FOREIGN_TRANSACTION,
 };
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::CKDRequestArgs;
@@ -64,6 +67,12 @@ pub struct SignatureRequestFromChain {
     pub receipt_id: CryptoHash,
     pub request: SignArgs,
     pub predecessor_id: AccountId,
+    /// The yield's runtime-allocated `data_id`, parsed from a
+    /// `MPC_REQUEST_ID:<hex>` log on the sign receipt. `None` against contract
+    /// versions predating the unique-id rework (#3184); in that case the node
+    /// falls back to the legacy `respond(request, response)` shape, so this
+    /// field is the upgrade-handshake hint, not a hard requirement.
+    pub request_id: Option<CryptoHash>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -71,6 +80,7 @@ pub struct CKDRequestFromChain {
     pub ckd_id: CKDId,
     pub receipt_id: CryptoHash,
     pub request: CKDArgs,
+    pub request_id: Option<CryptoHash>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -78,6 +88,7 @@ pub struct VerifyForeignTxRequestFromChain {
     pub verify_foreign_tx_id: VerifyForeignTxId,
     pub receipt_id: CryptoHash,
     pub request: VerifyForeignTransactionRequestArgs,
+    pub request_id: Option<CryptoHash>,
 }
 
 #[derive(Clone)]
@@ -174,6 +185,12 @@ async fn handle_message(
                 try_extract_next_receipt_id(&execution_outcome, mpc_contract_id)
             {
                 if let Some((args, method_name)) = try_extract_function_call_args(&receipt) {
+                    // The contract emits `MPC_REQUEST_ID:<hex>` on every yield
+                    // create so the node can route `respond` to the specific
+                    // yield (#3184). Old contracts don't emit it, in which
+                    // case we leave `request_id = None` and the node sends
+                    // the legacy two-arg respond shape.
+                    let request_id = try_get_request_id_from_logs(&execution_outcome.outcome.logs);
                     match method_name.as_str() {
                         SIGN => {
                             if let Some((signature_id, sign_args)) =
@@ -184,6 +201,7 @@ async fn handle_message(
                                     receipt_id: receipt.receipt_id,
                                     request: sign_args,
                                     predecessor_id: receipt.predecessor_id.clone(),
+                                    request_id,
                                 });
                                 metrics::MPC_NUM_SIGN_REQUESTS_INDEXED.inc();
                             }
@@ -196,6 +214,7 @@ async fn handle_message(
                                     ckd_id,
                                     receipt_id: receipt.receipt_id,
                                     request: ckd_args,
+                                    request_id,
                                 });
                                 metrics::MPC_NUM_CKD_REQUESTS_INDEXED.inc();
                             }
@@ -213,6 +232,7 @@ async fn handle_message(
                                     verify_foreign_tx_id,
                                     receipt_id: receipt.receipt_id,
                                     request: verify_foreign_tx_args,
+                                    request_id,
                                 });
                                 metrics::MPC_NUM_VERIFY_FOREIGN_TX_REQUESTS_INDEXED.inc();
                             }
@@ -224,16 +244,22 @@ async fn handle_message(
 
             if let Some(request_id) = try_get_request_completion(&receipt, mpc_contract_id) {
                 if let Some((_, method_name)) = try_extract_function_call_args(&receipt) {
+                    // Match both the pre-#3184 (1-arg) and post-#3184 (2-arg
+                    // `_v2`) callback names. Pre-upgrade yields still resume
+                    // through the old name during the legacy window.
                     match method_name.as_str() {
-                        RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS => {
+                        RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS
+                        | RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS_V2 => {
                             completed_signatures.push(request_id);
                             metrics::MPC_NUM_SIGN_RESPONSES_INDEXED.inc();
                         }
-                        RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS => {
+                        RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS
+                        | RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS_V2 => {
                             completed_ckds.push(request_id);
                             metrics::MPC_NUM_CKD_RESPONSES_INDEXED.inc();
                         }
-                        RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS => {
+                        RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS
+                        | RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS_V2 => {
                             completed_verify_foreign_txs.push(request_id);
                             metrics::MPC_NUM_VERIFY_FOREIGN_TX_RESPONSES_INDEXED.inc();
                         }
@@ -295,6 +321,59 @@ fn try_extract_function_call_args(receipt: &ReceiptView) -> Option<(&FunctionArg
     tracing::debug!(target: "mpc", "found `{}` function call", method_name);
 
     Some((args, method_name))
+}
+
+/// Walks the receipt's log lines looking for the contract's
+/// `MPC_REQUEST_ID:<hex>` marker (prefix imported from the contract
+/// interface so emitter and parser cannot drift). Returns the parsed
+/// 32-byte id, or `None` when the log is absent (old contract) or
+/// malformed.
+///
+/// Today every receipt that emits this prefix emits it exactly once —
+/// `enqueue_yield_request` is the only emitter and it's invoked once per
+/// user-facing entry point. A second matching line would mean either a
+/// future cross-contract path enqueues two yields in the same receipt or
+/// the prefix has been overloaded; silently picking one would route
+/// responses to the wrong yield. We log loudly and return `None` instead
+/// of panicking — panicking here would crash every MPC indexer
+/// simultaneously the moment a buggy contract appeared on chain, which is
+/// a worse blast radius than dropping a single suspicious receipt and
+/// failing the affected request through the usual timeout path.
+fn try_get_request_id_from_logs(logs: &[String]) -> Option<CryptoHash> {
+    let mut found: Option<CryptoHash> = None;
+    for line in logs {
+        let Some(hex_str) = line.strip_prefix(method_names::MPC_REQUEST_ID_LOG_PREFIX) else {
+            continue;
+        };
+        let mut buf = [0u8; 32];
+        match hex::decode_to_slice(hex_str.trim(), &mut buf) {
+            Ok(()) => {
+                if let Some(existing) = found {
+                    tracing::error!(
+                        target: "mpc",
+                        first = %hex::encode(existing),
+                        extra = %line,
+                        prefix = method_names::MPC_REQUEST_ID_LOG_PREFIX,
+                        "receipt emitted multiple `{}` log lines; refusing to \
+                         route a response to either id. The affected request \
+                         will fail through the usual yield-resume timeout.",
+                        method_names::MPC_REQUEST_ID_LOG_PREFIX,
+                    );
+                    return None;
+                }
+                found = Some(CryptoHash(buf));
+            }
+            Err(err) => {
+                tracing::warn!(
+                    target: "mpc",
+                    %err,
+                    raw = %line,
+                    "ignoring malformed MPC_REQUEST_ID log line"
+                );
+            }
+        }
+    }
+    found
 }
 
 /// If the executor for `execution_outcome` matches `expected_executor_id`,

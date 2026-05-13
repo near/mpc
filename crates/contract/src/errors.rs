@@ -114,6 +114,8 @@ pub enum InvalidParameters {
     CallerNotSigner,
     #[error("Requested foreign chain, {requested:?}, is not supported.")]
     ForeignChainNotSupported { requested: ForeignChain },
+    #[error("The request_id supplied to respond is registered under a different request key.")]
+    RequestMismatch,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]

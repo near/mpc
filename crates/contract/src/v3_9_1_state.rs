@@ -332,18 +332,47 @@ impl From<MpcContract> for crate::MpcContract {
 
         value.foreign_chain_policy_votes.proposal_by_account.clear();
 
+        // The old pending-request maps move verbatim into the new
+        // `legacy_pending_requests` slot: same storage keys, same
+        // `LookupMap<RequestKey, YieldIndex>` shape, just rehomed to the
+        // unique-id-aware contract layout. Post-upgrade `respond` calls
+        // without a `request_id` fall back to this map so in-flight yields
+        // can still resolve.
+        let legacy_pending_requests = crate::pending_requests::LegacyPendingRequests {
+            signature_requests: value.pending_signature_requests,
+            ckd_requests: value.pending_ckd_requests,
+            verify_foreign_tx_requests: value.pending_verify_foreign_tx_requests,
+        };
+
         Self {
             protocol_state: ProtocolContractState::Running(running.into()),
-            pending_signature_requests: value.pending_signature_requests,
-            pending_ckd_requests: value.pending_ckd_requests,
-            pending_verify_foreign_tx_requests: value.pending_verify_foreign_tx_requests,
+            pending_signature_requests_by_id: near_sdk::store::LookupMap::new(
+                crate::storage_keys::StorageKey::PendingSignatureRequestsByIdV4,
+            ),
+            pending_ckd_requests_by_id: near_sdk::store::LookupMap::new(
+                crate::storage_keys::StorageKey::PendingCKDRequestsByIdV3,
+            ),
+            pending_verify_foreign_tx_requests_by_id: near_sdk::store::LookupMap::new(
+                crate::storage_keys::StorageKey::PendingVerifyForeignTxRequestsByIdV2,
+            ),
+            // The counter starts at zero on first migration from v3.9.1.
+            // `migrate()` is `#[init(ignore_state)]`, so a re-run after the
+            // contract is already on this layout falls through to reading
+            // `Self` directly (lib.rs `migrate` fall-through) and preserves
+            // the existing counter — it does NOT re-enter this `From` impl.
+            // If a future refactor folds the V3_9_1 → current conversion
+            // into the fall-through path, the counter init must move with
+            // it (or stay here as a one-shot) — don't reset it on every
+            // invocation. Collisions need 2^64 yields, which is comfortably
+            // outside any plausible contract lifetime.
+            next_pending_request_id: 0,
+            legacy_pending_requests,
             proposed_updates: value.proposed_updates,
             node_foreign_chain_support: value.node_foreign_chain_configurations.into(),
             config: value.config,
             tee_state: value.tee_state.into(),
             accept_requests: value.accept_requests,
             node_migrations: value.node_migrations,
-            stale_data: crate::StaleData {},
             metrics: value.metrics,
         }
     }

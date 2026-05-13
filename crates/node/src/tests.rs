@@ -309,6 +309,7 @@ pub async fn request_signature_and_await_response(
             path: "m/44'/60'/0'/0/0".to_string(),
             payload,
         },
+        request_id: Some(CryptoHash(rand::random())),
     };
     tracing::info!(
         "Sending signature request from user {}, payload {:?}",
@@ -411,6 +412,7 @@ async fn do_request_ckd_and_await_response(
             domain_id: domain.id,
             app_id: [1u8; 32].into(),
         },
+        request_id: Some(CryptoHash(rand::random())),
     };
     tracing::info!(
         "Sending ckd request from user {}, app_id {:?}, app_public_key {:?}",
@@ -495,6 +497,7 @@ pub async fn request_verify_foreign_tx_and_await_response(
             domain_id: domain.id.0.into(),
             payload_version: ForeignTxPayloadVersion::V1,
         },
+        request_id: Some(CryptoHash(rand::random())),
     };
     tracing::info!(
         "Sending verify foreign tx request from user {}, request {:?}",

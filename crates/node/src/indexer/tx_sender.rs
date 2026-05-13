@@ -171,49 +171,60 @@ async fn observe_tx_result(
 ) -> anyhow::Result<TransactionStatus> {
     match request {
         Respond(respond_args) => {
-            // Confirm whether the respond call succeeded by checking whether the
-            // pending signature request still exists in the contract state
-            let pending_request_response = indexer_state
+            // Confirm the respond call's intended effect on chain by
+            // checking whether the pending entry is still present. Returns
+            // `Option<YieldIndex>` for wire compatibility with pre-#3184
+            // contracts during the rolling upgrade — we only use it as a
+            // presence check.
+            let pending = indexer_state
                 .view_client
-                .get_pending_request(&indexer_state.mpc_contract_id, &respond_args.request)
+                .get_pending_request(
+                    &indexer_state.mpc_contract_id,
+                    &respond_args.request,
+                    respond_args.request_id,
+                )
                 .await?;
 
-            let transaction_status = match pending_request_response {
-                Some(_) => TransactionStatus::Executed,
-                None => TransactionStatus::NotExecuted,
+            let transaction_status = if pending.is_some() {
+                TransactionStatus::Executed
+            } else {
+                TransactionStatus::NotExecuted
             };
 
             Ok(transaction_status)
         }
         CKDRespond(respond_args) => {
-            // Confirm whether the respond call succeeded by checking whether the
-            // pending ckd request still exists in the contract state
-            let pending_request_response = indexer_state
+            let pending = indexer_state
                 .view_client
-                .get_pending_ckd_request(&indexer_state.mpc_contract_id, &respond_args.request)
+                .get_pending_ckd_request(
+                    &indexer_state.mpc_contract_id,
+                    &respond_args.request,
+                    respond_args.request_id,
+                )
                 .await?;
 
-            let transaction_status = match pending_request_response {
-                Some(_) => TransactionStatus::Executed,
-                None => TransactionStatus::NotExecuted,
+            let transaction_status = if pending.is_some() {
+                TransactionStatus::Executed
+            } else {
+                TransactionStatus::NotExecuted
             };
 
             Ok(transaction_status)
         }
         VerifyForeignTransactionRespond(respond_args) => {
-            // Confirm whether the respond call succeeded by checking whether the
-            // pending verify foreign tx request still exists in the contract state
-            let pending_request_response = indexer_state
+            let pending = indexer_state
                 .view_client
                 .get_pending_verify_foreign_tx_request(
                     &indexer_state.mpc_contract_id,
                     &respond_args.request,
+                    respond_args.request_id,
                 )
                 .await?;
 
-            let transaction_status = match pending_request_response {
-                Some(_) => TransactionStatus::Executed,
-                None => TransactionStatus::NotExecuted,
+            let transaction_status = if pending.is_some() {
+                TransactionStatus::Executed
+            } else {
+                TransactionStatus::NotExecuted
             };
 
             Ok(transaction_status)

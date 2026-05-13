@@ -10,10 +10,7 @@ use k256::{
 };
 use mpc_contract::{
     errors,
-    primitives::{
-        ckd::CKDRequest,
-        signature::{SignatureRequest, YieldIndex},
-    },
+    primitives::{ckd::CKDRequest, signature::SignatureRequest},
 };
 use near_account_id::AccountId;
 use near_mpc_bounded_collections::BoundedVec;
@@ -177,6 +174,11 @@ impl SignRequestTest {
 pub struct SignResponseArgs {
     pub request: SignatureRequest,
     pub response: SignatureRequestResponse,
+    /// Contract-minted `request_id` extracted from the `MPC_REQUEST_ID:`
+    /// log on the originating sign receipt. `None` makes the contract
+    /// resolve through the legacy fallback map; tests that drive the new
+    /// path set this from the receipt log.
+    pub request_id: Option<[u8; 32]>,
 }
 
 impl SignResponseArgs {
@@ -236,7 +238,11 @@ impl CKDRequestTest {
         };
 
         CKDRequestTest {
-            response: CKDResponseArgs { request, response },
+            response: CKDResponseArgs {
+                request,
+                response,
+                request_id: None,
+            },
             args,
         }
     }
@@ -256,7 +262,11 @@ impl CKDRequestTest {
         };
 
         CKDRequestTest {
-            response: CKDResponseArgs { request, response },
+            response: CKDResponseArgs {
+                request,
+                response,
+                request_id: None,
+            },
             args,
         }
     }
@@ -284,6 +294,8 @@ impl CKDRequestTest {
 pub struct CKDResponseArgs {
     pub request: CKDRequest,
     pub response: CKDResponse,
+    /// See [`SignResponseArgs::request_id`].
+    pub request_id: Option<[u8; 32]>,
 }
 
 async fn submit_request(
@@ -319,12 +331,19 @@ async fn submit_ckd_request(
     submit_request(account, contract, REQUEST_APP_PRIVATE_KEY, request).await
 }
 
-async fn submit_response(
+async fn submit_response<R: Serialize>(
     contract: &Contract,
     attested_account: &Account,
     method: &str,
-    args: impl Serialize,
+    request: &R,
+    response: impl Serialize,
+    request_id: Option<[u8; 32]>,
 ) -> anyhow::Result<()> {
+    let args = serde_json::json!({
+        "request": request,
+        "response": response,
+        "request_id": request_id,
+    });
     let respond = attested_account
         .call(contract.id(), method)
         .args_json(args)
@@ -341,7 +360,15 @@ pub async fn submit_signature_response(
     contract: &Contract,
     attested_account: &Account,
 ) -> anyhow::Result<()> {
-    submit_response(contract, attested_account, RESPOND, response).await
+    submit_response(
+        contract,
+        attested_account,
+        RESPOND,
+        &response.request,
+        &response.response,
+        response.request_id,
+    )
+    .await
 }
 
 pub async fn submit_ckd_response(
@@ -349,7 +376,15 @@ pub async fn submit_ckd_response(
     contract: &Contract,
     attested_account: &Account,
 ) -> anyhow::Result<()> {
-    submit_response(contract, attested_account, RESPOND_CKD, response).await
+    submit_response(
+        contract,
+        attested_account,
+        RESPOND_CKD,
+        &response.request,
+        &response.response,
+        response.request_id,
+    )
+    .await
 }
 
 pub async fn submit_ckd_response_measure_gas(
@@ -369,11 +404,20 @@ pub async fn submit_ckd_response_measure_gas(
 }
 
 trait ContractQueueRequest: serde::Serialize + Sync {
-    async fn is_in_queue(&self, contract: &Contract) -> Option<YieldIndex>;
+    /// Returns `true` while a yield for `self` is still queued. Since
+    /// #3184 the contract's new map is keyed by `request_id` rather than
+    /// request key, so for entries created post-upgrade this view only
+    /// answers honestly when the caller threads `request_id` through —
+    /// see the `request_id` field on the wire-format args. These helpers
+    /// don't have a `request_id` here (they're polling before the
+    /// corresponding sign() resolves), so they hit the legacy-fallback
+    /// path and effectively check the legacy map. Concrete tests that
+    /// need to poll the new map should query by id directly.
+    async fn is_in_queue(&self, contract: &Contract) -> bool;
 }
 
 impl ContractQueueRequest for CKDRequest {
-    async fn is_in_queue(&self, contract: &Contract) -> Option<YieldIndex> {
+    async fn is_in_queue(&self, contract: &Contract) -> bool {
         contract
             .view(GET_PENDING_CKD_REQUEST)
             .args_json(serde_json::json!({ "request": self }))
@@ -385,7 +429,7 @@ impl ContractQueueRequest for CKDRequest {
 }
 
 impl ContractQueueRequest for SignatureRequest {
-    async fn is_in_queue(&self, contract: &Contract) -> Option<YieldIndex> {
+    async fn is_in_queue(&self, contract: &Contract) -> bool {
         contract
             .view(GET_PENDING_REQUEST)
             .args_json(serde_json::json!({ "request": self }))
@@ -405,7 +449,7 @@ async fn await_request_in_contract_queue<T: ContractQueueRequest>(
     let start = std::time::Instant::now();
 
     loop {
-        if request.is_in_queue(contract).await.is_some() {
+        if request.is_in_queue(contract).await {
             return Ok(());
         }
 
@@ -625,7 +669,11 @@ fn gen_ed25519_sign_test(
         .with_domain_id(domain_id.0)
         .build();
     SignRequestTest {
-        response: SignResponseArgs { request, response },
+        response: SignResponseArgs {
+            request,
+            response,
+            request_id: None,
+        },
         args,
     }
 }
@@ -649,7 +697,11 @@ pub fn gen_secp_256k1_sign_test(
         .with_domain_id(domain_id.0)
         .build();
     SignRequestTest {
-        response: SignResponseArgs { request, response },
+        response: SignResponseArgs {
+            request,
+            response,
+            request_id: None,
+        },
         args,
     }
 }

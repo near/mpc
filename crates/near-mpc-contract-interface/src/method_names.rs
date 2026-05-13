@@ -53,11 +53,35 @@ pub const CLEAN_INVALID_ATTESTATIONS: &str = "clean_invalid_attestations";
 pub const CLEAN_FOREIGN_CHAIN_DATA: &str = "clean_foreign_chain_data";
 
 // Callbacks (used in promise_yield_create and indexed by the node)
+//
+// Pre-#3184 callback names. Pre-upgrade yields persist these strings in
+// `promise_yield_create`'s `function_name` field, so the contract must
+// keep methods under exactly these names with their original 1-arg
+// signatures alive until all pre-upgrade yields have drained (the
+// 200-block yield-resume timeout window). Drop them in the next release
+// alongside `legacy_pending_requests`.
 pub const RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS: &str =
     "return_signature_and_clean_state_on_success";
 pub const RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS: &str = "return_ck_and_clean_state_on_success";
 pub const RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS: &str =
     "return_verify_foreign_tx_and_clean_state_on_success";
+
+// Post-#3184 callbacks. These take an extra `request_id: CryptoHash`
+// arg so the timeout path can clean the by-id map directly. New yields
+// (those created by this contract) use these names; pre-upgrade yields
+// keep resolving against the original methods above.
+pub const RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS_V2: &str =
+    "return_signature_and_clean_state_on_success_v2";
+pub const RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS_V2: &str = "return_ck_and_clean_state_on_success_v2";
+pub const RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS_V2: &str =
+    "return_verify_foreign_tx_and_clean_state_on_success_v2";
+
+/// Log prefix the contract emits in `enqueue_yield_request` carrying the
+/// yield's runtime-allocated `data_id`, hex-encoded (see #3184). This is the
+/// wire-level channel by which the node learns each yield's unique id so it
+/// can route `respond*` back to the specific yield. Defined once here so the
+/// contract emitter and the node parser cannot drift apart on rename.
+pub const MPC_REQUEST_ID_LOG_PREFIX: &str = "MPC_REQUEST_ID:";
 
 // View methods
 pub const STATE: &str = "state";
