@@ -37,6 +37,7 @@ MPC binds report-data as `sha3_384(tls_pk || account_pk)` (see [`crates/mpc-atte
 - *Per-call* attestation model: measurements are verified on every request, not cached at enrollment. The shared verifier is invoked on the hot path rather than only at onboarding.
 - Device-identity whitelist check using PPID (or `device_id` — Dstack-defined, `sha256(ppid)` in Dstack ≥0.5.6, forward-compatible with non-TDX hardware). MPC plans to add the same check as a defense against forged quotes from compromised hardware.
 - No launcher concept: app images are stateless by design, so the [launcher pattern][mpc-launcher] isn't needed; app-image gating is via the app-compose hash whitelist.
+- No constraints on app-compose contents: the contract only checks that the attested `app_compose` hash matches an approved hash, so users can configure fields like `public_logs` freely. MPC, by contrast, enforces specific fields (e.g. `kms_enabled == false`) as part of post-DCAP validation.
 - Report-data binding is the caller's account ID (vs. MPC's `sha3_384(tls_pk || account_pk)`).
 - Single `owner_id` field gates all governance.
 
