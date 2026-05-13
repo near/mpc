@@ -85,26 +85,54 @@ command -v jq >/dev/null 2>&1 || {
 # ----- contract call -----------------------------------------------------
 
 # `near contract call-function as-read-only` prints the JSON return value
-# between two banner lines. Pull just the JSON.
+# between two banner lines. Pull just the JSON. The CLI sometimes exits
+# non-zero even when the call succeeds (observed: empty array result on
+# mainnet returns exit 1), so we don't trust the exit code — we trust the
+# JSON. If parsing fails, then it's a real error.
 near_call_ro() {
-  local method="$1"
-  near contract call-function as-read-only "$CONTRACT" "$method" \
-    json-args '{}' network-config "$NETWORK" now 2>&1 \
+  local method="$1" out json
+  out=$(near contract call-function as-read-only "$CONTRACT" "$method" \
+          json-args '{}' network-config "$NETWORK" now 2>&1 || true)
+  json=$(printf '%s\n' "$out" \
     | sed -n '/^Function execution return value/,/^Here is your console/{
         /^Function/d
         /^Here is your console/d
         p
-      }'
+      }')
+  if ! echo "$json" | jq empty >/dev/null 2>&1; then
+    echo "Error: failed to parse JSON from contract view '$method' on '$CONTRACT' (network '$NETWORK')." >&2
+    echo "Raw CLI output follows:" >&2
+    printf '%s\n' "$out" >&2
+    exit 5
+  fi
+  printf '%s\n' "$json"
 }
 
 # Returns hex strings (no sha256: prefix); prefix to match Docker digest form.
+# Empty arrays render as "(none — no digests voted in)" so the caller can tell
+# the difference between "contract has no allowlist yet" and "fetch failed."
 format_digest_list() {
   local raw="$1" mode="$2"  # mode: "all" or "latest"
+  local count
+  count=$(echo "$raw" | jq 'length')
+  if [[ "$count" -eq 0 ]]; then
+    echo "(none — no digests voted in on this contract)"
+    return
+  fi
   if [[ "$mode" == "latest" ]]; then
     echo "$raw" | jq -r '.[0]' | sed 's/^/sha256:/'
   else
     echo "$raw" | jq -r '.[]'  | sed 's/^/sha256:/'
   fi
+}
+
+# Prints the latest digest with `sha256:` prefix, or empty if the list is empty.
+latest_digest() {
+  local raw="$1"
+  local count
+  count=$(echo "$raw" | jq 'length')
+  [[ "$count" -eq 0 ]] && return
+  echo "$raw" | jq -r '.[0]' | sed 's/^/sha256:/'
 }
 
 launcher_raw="$(near_call_ro allowed_launcher_image_hashes)"
@@ -114,13 +142,18 @@ mode="latest"; [[ "$LIST_ALL" -eq 1 ]] && mode="all"
 
 launcher_formatted="$(format_digest_list "$launcher_raw" "$mode")"
 mpc_formatted="$(format_digest_list "$mpc_raw" "$mode")"
+latest_launcher="$(latest_digest "$launcher_raw")"
+latest_mpc="$(latest_digest "$mpc_raw")"
 
 # ----- output ------------------------------------------------------------
 
 if [[ "$EXPORT_FORMAT" -eq 1 ]]; then
   # Always export only the latest, even with --all (env vars are scalar).
-  latest_launcher="$(echo "$launcher_raw" | jq -r '.[0]' | sed 's/^/sha256:/')"
-  latest_mpc="$(echo "$mpc_raw"           | jq -r '.[0]' | sed 's/^/sha256:/')"
+  if [[ -z "$latest_launcher" || -z "$latest_mpc" ]]; then
+    echo "Error: contract '${CONTRACT}' on '${NETWORK}' has no allowed digests voted in;" >&2
+    echo "       nothing to export. Vote a digest in first or pick a contract that has one." >&2
+    exit 4
+  fi
   echo "export LAUNCHER_MANIFEST_DIGEST=${latest_launcher}"
   echo "export MPC_MANIFEST_DIGEST=${latest_mpc}"
   exit 0
@@ -135,14 +168,19 @@ $(echo "$launcher_formatted" | sed 's/^/  /')
 
 Allowed MPC node image digest(s) (latest first):
 $(echo "$mpc_formatted" | sed 's/^/  /')
+EOF
+
+if [[ -n "$latest_launcher" && -n "$latest_mpc" ]]; then
+  cat <<EOF
 
 To use the latest with the render script:
 
-  export LAUNCHER_MANIFEST_DIGEST=$(echo "$launcher_raw" | jq -r '.[0]' | sed 's/^/sha256:/')
-  export MPC_MANIFEST_DIGEST=$(echo "$mpc_raw" | jq -r '.[0]' | sed 's/^/sha256:/')
+  export LAUNCHER_MANIFEST_DIGEST=${latest_launcher}
+  export MPC_MANIFEST_DIGEST=${latest_mpc}
   ./scripts/render-launcher-compose.sh --tee --out launcher_docker_compose.yaml
 
 Or have this script emit the exports for eval:
 
   eval "\$(./scripts/fetch-allowed-launcher-hashes.sh --network ${NETWORK} --export)"
 EOF
+fi
