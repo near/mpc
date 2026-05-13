@@ -10,11 +10,11 @@ use std::sync::{Arc, Mutex, Weak};
 /// Tracks the topology of the recent blocks, using the blocks given by the indexer.
 ///
 /// This class provides two important functionalities:
-///  - For any given block, it classifies it into one of the categories in `BlockStatus`.
-///    See the documentation of that enum for the classifications.
 ///  - Converts a stream of optimistic blocks from the indexer into a stream of finalized
 ///    blocks. The content of each block in the finalized stream is specified via the `T`
 ///    type parameter.
+///  - For each block added via `add_block`, it returns a `Weak<AtomicBlockStatus>` that can be
+///    used to observe that block's current `BlockStatus`.
 ///
 /// We have certain expectations of the order of blocks that come from the indexer.
 /// First, let's define a partial order for blocks. For any two blocks A and B:
