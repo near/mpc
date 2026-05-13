@@ -968,10 +968,13 @@ pub type ProviderId = String;
     PartialOrd,
     Hash,
     Serialize,
-    Deserialize,
     BorshSerialize,
     BorshDeserialize,
 )]
+// `Deserialize` is only needed by node-side / external SDK consumers; the contract
+// itself never parses these from JSON args (no entry point takes them in PR 1). Gating
+// it off wasm avoids ~2-7 KB of serde monomorphizations per type in the contract WASM.
+#[cfg_attr(not(target_arch = "wasm32"), derive(Deserialize))]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
@@ -1001,10 +1004,10 @@ pub enum AuthScheme {
     PartialOrd,
     Hash,
     Serialize,
-    Deserialize,
     BorshSerialize,
     BorshDeserialize,
 )]
+#[cfg_attr(not(target_arch = "wasm32"), derive(Deserialize))]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
@@ -1036,10 +1039,10 @@ pub enum ChainRouting {
     PartialOrd,
     Hash,
     Serialize,
-    Deserialize,
     BorshSerialize,
     BorshDeserialize,
 )]
+#[cfg_attr(not(target_arch = "wasm32"), derive(Deserialize))]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
@@ -1068,10 +1071,10 @@ pub struct ProviderEntry {
     PartialOrd,
     Hash,
     Serialize,
-    Deserialize,
     BorshSerialize,
     BorshDeserialize,
 )]
+#[cfg_attr(not(target_arch = "wasm32"), derive(Deserialize))]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)

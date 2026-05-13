@@ -30,7 +30,11 @@ pub const DEFAULT_PROVIDER_VOTE_THRESHOLD: u64 = 2;
 /// up under different chains is expected — each entry carries chain-specific connection
 /// details (`base_url`, `chain_routing`), so two `"ankr"` entries are per-chain configs,
 /// not duplicates.
-#[near(serializers=[borsh, json])]
+//
+// Borsh-only: `AllowedProviders` is `pub(crate)` and only ever lives in contract state.
+// The view function returns `self.entries.snapshot()` — a `BTreeMap<ForeignChain, …>`,
+// not `AllowedProviders` itself — so no JSON serializer is needed here.
+#[near(serializers=[borsh])]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct AllowedProviders {
     entries: BTreeMap<ForeignChain, Vec<ProviderEntry>>,
@@ -94,8 +98,26 @@ impl AllowedProviders {
 ///
 /// Methods that mutate the vote state (`vote`, `clear_target`, `get_remaining_votes`)
 /// land with the vote endpoint PR.
-#[near(serializers=[borsh, json])]
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+//
+// Explicit derives (not `#[near(serializers=[borsh, json])]`) so we can gate
+// `serde::Deserialize` off wasm — the contract never deserializes `ProviderVotes` from
+// JSON, only outputs it via the view function, and excluding the derive from the wasm
+// build saves several KB of serde monomorphizations.
+#[derive(
+    Debug,
+    Clone,
+    Default,
+    PartialEq,
+    Eq,
+    borsh::BorshSerialize,
+    borsh::BorshDeserialize,
+    serde::Serialize,
+)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(serde::Deserialize))]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
 pub struct ProviderVotes {
     pub pending: BTreeMap<
         (ForeignChain, ProviderId),
