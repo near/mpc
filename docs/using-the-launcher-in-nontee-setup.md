@@ -30,7 +30,7 @@ This provides maximum parity with production while keeping the setup simple.
 
 ## Files Used
 
-- **Launcher Docker Compose (non-TEE):** `deployment/cvm-deployment/launcher_docker_compose_nontee.yaml`
+- **Launcher Docker Compose template (non-TEE):** `deployment/cvm-deployment/launcher_docker_compose_nontee.yaml.template` — rendered with the launcher and MPC node manifest digests before use.
 
 - **User configuration file:** `user-config.toml` (TOML format, mounted at `/tapp/user_config`)
 
@@ -40,15 +40,23 @@ This provides maximum parity with production while keeping the setup simple.
 
 ### 1. Prepare the non-TEE docker-compose file
 
-Create or use a non-TEE launcher compose file with the following properties:
+Render the non-TEE compose from the template, supplying the launcher and
+MPC node manifest digests:
 
-- Set `PLATFORM=NONTEE`
-- Mount `/var/run/docker.sock`
-- Do **not** mount `/var/run/dstack.sock`
-- Mount the user config file at `/tapp/user_config`
-- Provide persistent volumes for shared state and MPC data
+```bash
+export LAUNCHER_MANIFEST_DIGEST=sha256:<launcher digest>
+export MPC_MANIFEST_DIGEST=sha256:<mpc node digest>
+./scripts/render-launcher-compose.sh --nontee --out launcher_docker_compose_nontee.yaml
+```
 
-See `deployment/cvm-deployment/launcher_docker_compose_nontee.yaml` for an example.
+The template (`deployment/cvm-deployment/launcher_docker_compose_nontee.yaml.template`)
+already encodes the right properties:
+
+- `PLATFORM=NONTEE`
+- Mounts `/var/run/docker.sock`
+- Does **not** mount `/var/run/dstack.sock`
+- Mounts the user config file at `/tapp/user_config`
+- Persistent volumes for shared state and MPC data
 
 ---
 
