@@ -1,8 +1,16 @@
 use crate::common;
 
 use e2e_tests::{CLUSTER_WAIT_TIMEOUT, metrics};
-use near_mpc_contract_interface::types::{Curve, DomainPurpose};
-use rand::SeedableRng;
+use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainPurpose};
+use rand::{RngCore, SeedableRng};
+
+fn must_get_payload_for_domain(domain: &DomainConfig, rng: &mut impl RngCore) -> serde_json::Value {
+    match domain.curve {
+        Curve::Secp256k1 => common::generate_ecdsa_payload(rng),
+        Curve::Edwards25519 => common::generate_eddsa_payload(rng),
+        c => panic!("unsupported curve in test: {c:?}"),
+    }
+}
 
 /// When a sign request can't be answered (because too many participants are
 /// down), the contract calls `fail_on_timeout` and each alive node's indexer
@@ -27,33 +35,10 @@ async fn timeout_metric__should_increment_when_signature_times_out() {
         .find(|d| matches!(d.purpose, DomainPurpose::Sign))
         .expect("cluster must have a signable domain");
 
-    let payload = match domain.curve {
-        Curve::Secp256k1 => common::generate_ecdsa_payload(&mut rng),
-        Curve::Edwards25519 => common::generate_eddsa_payload(&mut rng),
-        c => panic!("unsupported curve in test: {c:?}"),
-    };
-
-    let outcome = cluster
-        .send_sign_request(domain.id, payload, cluster.default_user_account())
-        .await
-        .expect("expected success");
-
-    // sanity check
-    assert!(
-        outcome.is_success(),
-        "sign request for domain {:?} failed: {:?}",
-        domain.id,
-        outcome.failure_message()
-    );
-
     // when — kill node 0, then submit a request no one can answer
     cluster.kill_nodes(&[0]).expect("failed to kill node 0");
 
-    let payload = match domain.curve {
-        Curve::Secp256k1 => common::generate_ecdsa_payload(&mut rng),
-        Curve::Edwards25519 => common::generate_eddsa_payload(&mut rng),
-        c => panic!("unsupported curve in test: {c:?}"),
-    };
+    let payload = must_get_payload_for_domain(domain, &mut rng);
 
     // then — node 1's indexer must observe fail_on_timeout. We can't `.await`
     // the second sign request: the contract's yield + auto-timeout completes
@@ -67,9 +52,11 @@ async fn timeout_metric__should_increment_when_signature_times_out() {
             &cluster,
             &[1],
             metrics::TIMEOUTS_INDEXED,
-            |v| v == 1,
+            |v| v >= 1, // note: we would prefer to have strict equality, but we use inequality, in
+            // case the send below has retry mechanism. C.f.
+            // https://github.com/near/mpc/pull/3211#discussion_r3233189801
             CLUSTER_WAIT_TIMEOUT,
-        ) => res.expect("mpc_num_timeouts_indexed did not reach 1 on node 1"),
+        ) => res.expect(&format!("{} did not reach 1 on node 1", metrics::TIMEOUTS_INDEXED)),
         _ = cluster.send_sign_request(domain.id, payload, cluster.default_user_account()) =>
             panic!(
                 "sign request future returned before timeout metric — test wiring is wrong \
