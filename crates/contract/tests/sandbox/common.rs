@@ -46,6 +46,8 @@ use std::collections::BTreeSet;
 use std::time::Duration;
 use tokio_util::time::FutureExt as _;
 
+use super::utils::contract_build;
+
 pub async fn create_account_given_id(
     worker: &Worker<Sandbox>,
     account_id: AccountId,
@@ -222,10 +224,7 @@ impl SandboxTestSetupBuilder {
 
     pub async fn build(self) -> SandboxTestSetup {
         let (worker, contract) = if self.with_sandbox_test_methods {
-            init_with_wasm(
-                super::utils::contract_build::current_contract_with_sandbox_test_methods(),
-            )
-            .await
+            init_with_wasm(contract_build::current_contract_with_sandbox_test_methods()).await
         } else {
             init().await
         };
