@@ -72,20 +72,17 @@ pub struct RecentBlocksTracker<T: Clone + 'static> {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum CheckBlockResult {
-    /// The block is older than the recent window of blocks we keep.
-    OlderThanRecentWindow,
-    /// The block is within the recent window, and also finalized by the blockchain
-    /// (it is an ancestor (including self) of the latest final block).
-    RecentAndFinal,
+    /// The block is finalized by the blockchain.
+    /// It is an ancestor (including self) of the latest final block.
+    Final,
     /// The block is optimistically included in the chain, and it is on the canonical chain,
-    /// but it is not yet part of the final chain. It is also recent enough.
+    /// but it is not yet part of the final chain.
     /// Note that if two chains tie for canonical height, the first one seen is considered the
     /// canonical chain (c.f. `RecentBlocksTracker::update_canonical_head`).
     OptimisticAndCanonical,
     /// The block is optimistically included in the chain, but it is not on the canonical chain.
-    /// It is also recent enough.
     OptimisticButNotCanonical,
-    /// We may have not seen the block and removed it, or we may never have seen it.
+    /// We may have seen the block and removed it, or we may never have seen it.
     Unknown,
 }
 
@@ -566,18 +563,8 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
     pub fn classify_block(&self, block_hash: CryptoHash) -> CheckBlockResult {
         match self.hash_to_node.get(&block_hash) {
             Some(node) => {
-                if self
-                    .maximum_height_available
-                    .saturating_sub(self.window_size)
-                    .add(1)
-                    > node.height
-                {
-                    // this can happen if the block in question is expired, but has not yet been
-                    // removed because it is the last final block
-                    return CheckBlockResult::OlderThanRecentWindow;
-                }
                 if node.is_final.load(Ordering::Relaxed) {
-                    return CheckBlockResult::RecentAndFinal;
+                    return CheckBlockResult::Final;
                 }
                 // Note: blocks on a dead fork (height ≤ final_head.height,
                 // not on the final chain) are no longer reachable here —
@@ -856,8 +843,8 @@ pub mod tests {
         // At this point, the tracker should keep blocks 12, 13, 14, 15.
         assert_eq!(tester.check(&b10), CheckBlockResult::Unknown);
         assert_eq!(tester.check(&b11), CheckBlockResult::Unknown);
-        assert_eq!(tester.check(&b12), CheckBlockResult::RecentAndFinal);
-        assert_eq!(tester.check(&b13), CheckBlockResult::RecentAndFinal);
+        assert_eq!(tester.check(&b12), CheckBlockResult::Final);
+        assert_eq!(tester.check(&b13), CheckBlockResult::Final);
         assert_eq!(tester.check(&b14), CheckBlockResult::OptimisticAndCanonical);
         assert_eq!(tester.check(&b15), CheckBlockResult::OptimisticAndCanonical);
         assert_eq!(tester.check(&b16), CheckBlockResult::Unknown);
@@ -899,7 +886,7 @@ pub mod tests {
         assert_eq!(t.check(&b10), CheckBlockResult::Unknown);
         // The tracker kept the block internally as it is the last final block, but it is still
         // outside of the window.
-        assert_eq!(t.check(&b11), CheckBlockResult::OlderThanRecentWindow);
+        assert_eq!(t.check(&b11), CheckBlockResult::Final);
         assert_eq!(t.check(&b12), CheckBlockResult::OptimisticAndCanonical);
         assert_eq!(t.check(&b13), CheckBlockResult::OptimisticButNotCanonical);
         assert_eq!(t.check(&b14), CheckBlockResult::OptimisticButNotCanonical);
@@ -919,7 +906,7 @@ pub mod tests {
         //      └─[16]     81v6keTjdkVp8RgTdWQE2vx7E7nof7NxtZNaYFh3oVpG "16"
         t.print();
 
-        assert_eq!(t.check(&b13), CheckBlockResult::OlderThanRecentWindow);
+        assert_eq!(t.check(&b13), CheckBlockResult::OptimisticButNotCanonical);
         assert_eq!(t.check(&b14), CheckBlockResult::OptimisticAndCanonical);
         assert_eq!(t.check(&b16), CheckBlockResult::OptimisticButNotCanonical);
         assert_eq!(t.check(&b18), CheckBlockResult::OptimisticAndCanonical);
@@ -943,7 +930,7 @@ pub mod tests {
         assert_eq!(t.check(&b15), CheckBlockResult::Unknown);
         assert_eq!(t.check(&b16), CheckBlockResult::Unknown);
         assert_eq!(t.check(&b17), CheckBlockResult::Unknown);
-        assert_eq!(t.check(&b18), CheckBlockResult::RecentAndFinal);
+        assert_eq!(t.check(&b18), CheckBlockResult::Final);
         assert_eq!(t.check(&b19), CheckBlockResult::OptimisticAndCanonical);
         assert_eq!(t.check(&b20), CheckBlockResult::OptimisticAndCanonical);
     }
@@ -998,13 +985,13 @@ pub mod tests {
         //        ├─[9]     6E2vqjZLbuUY2y6VK571Ai3pk43EUHXuNxibJuBGh44T "b110"
         //        └─[10]     Cq9uMZqNZr6zuF7nT6yfGms1ptaVVu5dAdiRJ6pqCTN8 "b111"
         t.print();
-        assert_eq!(t.check(&b0), CheckBlockResult::OlderThanRecentWindow);
+        assert_eq!(t.check(&b0), CheckBlockResult::OptimisticAndCanonical);
         assert_eq!(t.check(&b00), CheckBlockResult::OptimisticButNotCanonical);
         assert_eq!(t.check(&b000), CheckBlockResult::OptimisticButNotCanonical);
         assert_eq!(t.check(&b01), CheckBlockResult::OptimisticAndCanonical);
         assert_eq!(t.check(&b010), CheckBlockResult::OptimisticButNotCanonical);
         assert_eq!(t.check(&b011), CheckBlockResult::OptimisticAndCanonical);
-        assert_eq!(t.check(&b1), CheckBlockResult::OlderThanRecentWindow);
+        assert_eq!(t.check(&b1), CheckBlockResult::OptimisticButNotCanonical);
         assert_eq!(t.check(&b10), CheckBlockResult::OptimisticButNotCanonical);
         assert_eq!(t.check(&b100), CheckBlockResult::OptimisticButNotCanonical);
         assert_eq!(t.check(&b11), CheckBlockResult::OptimisticButNotCanonical);
@@ -1048,7 +1035,7 @@ pub mod tests {
         assert_eq!(t.check(&b011), CheckBlockResult::Unknown);
         // b1 was removed by window-prune (too old, newer final blocks).
         assert_eq!(t.check(&b1), CheckBlockResult::Unknown);
-        assert_eq!(t.check(&b10), CheckBlockResult::RecentAndFinal);
+        assert_eq!(t.check(&b10), CheckBlockResult::Final);
         assert_eq!(t.check(&b100), CheckBlockResult::OptimisticButNotCanonical);
         assert_eq!(t.check(&b11), CheckBlockResult::OptimisticButNotCanonical);
         assert_eq!(t.check(&b110), CheckBlockResult::OptimisticButNotCanonical);
@@ -1077,7 +1064,7 @@ pub mod tests {
         assert_eq!(t.check(&b001), CheckBlockResult::Unknown);
         assert_eq!(t.check(&b010), CheckBlockResult::Unknown);
         assert_eq!(t.check(&b011), CheckBlockResult::Unknown);
-        assert_eq!(t.check(&b10200), CheckBlockResult::RecentAndFinal);
+        assert_eq!(t.check(&b10200), CheckBlockResult::Final);
         assert_eq!(t.check(&b102000), CheckBlockResult::OptimisticAndCanonical);
         assert_eq!(t.check(&b1020000), CheckBlockResult::OptimisticAndCanonical);
         assert_eq!(t.check(&b110), CheckBlockResult::Unknown);
@@ -1184,8 +1171,8 @@ pub mod tests {
         tester.add(&b4_fork, "4f");
 
         // Sanity checks
-        assert_eq!(tester.check(&b1), CheckBlockResult::RecentAndFinal);
-        assert_eq!(tester.check(&b2), CheckBlockResult::RecentAndFinal);
+        assert_eq!(tester.check(&b1), CheckBlockResult::Final);
+        assert_eq!(tester.check(&b2), CheckBlockResult::Final);
 
         let weak_b3_fork = Arc::downgrade(
             tester
@@ -1241,8 +1228,8 @@ pub mod tests {
         // b1 should have been removed:
         assert_eq!(tester.check(&b1), CheckBlockResult::Unknown);
         // b2, b3 should now be final
-        assert_eq!(tester.check(&b2), CheckBlockResult::RecentAndFinal);
-        assert_eq!(tester.check(&b3), CheckBlockResult::RecentAndFinal);
+        assert_eq!(tester.check(&b2), CheckBlockResult::Final);
+        assert_eq!(tester.check(&b3), CheckBlockResult::Final);
         // b4, b5 should be optimistic and canonical
         assert_eq!(tester.check(&b4), CheckBlockResult::OptimisticAndCanonical);
         assert_eq!(tester.check(&b5), CheckBlockResult::OptimisticAndCanonical);
