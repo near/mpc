@@ -3603,6 +3603,7 @@ dependencies = [
  "http 1.4.0",
  "httpmock",
  "jsonrpsee",
+ "mockall",
  "mpc-primitives",
  "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
