@@ -30,8 +30,7 @@ In addition to the standard [hardware requirements](./running-an-mpc-node-in-tdx
 - **2× the single-node hardware** ([single-node minimums](./running-an-mpc-node-in-tdx-external-guide.md#hardware-requirements)
   apply per CVM): ≥ 128 GB memory, ≥ 16 cores, ≥ 1 TB SSD/NVMe disk.
 - **Firewall opened on both IPs** for the [required ports](./running-an-mpc-node-in-tdx-external-guide.md#required-ports)
-  (80, 8080, 24567). The two nodes must not share these ports on the
-  same host IP.
+  (80, 8080, 24567).
 - *(Optional)* a DNS A record per IP. Recommended if you want to
   re-IP later without rotating operator-side configuration.
 
