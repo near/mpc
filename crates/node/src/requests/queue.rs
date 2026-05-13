@@ -484,7 +484,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             }
             let block_classification = self.recent_blocks.classify_block(request.block_hash);
             match block_classification {
-                CheckBlockResult::RecentAndFinal | CheckBlockResult::OptimisticAndCanonical => {
+                CheckBlockResult::Final | CheckBlockResult::OptimisticAndCanonical => {
                     if let Some(leader) = request.current_leader(&eligible_leaders) {
                         tracing::debug!(
                             target: "request",
@@ -553,9 +553,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                         "ignoring non-canonical request",
                     );
                 }
-                CheckBlockResult::OlderThanRecentWindow | CheckBlockResult::Unknown => {
-                    // note: We will not receive "OlderThanRecentWindow" if the `RecentBlocksTracker`
-                    // has the same recency window as the queue.
+                CheckBlockResult::Unknown => {
                     // Since we add signature requests to the queue after adding the block to the
                     // tracker, receiving `Unknown` means that the tracker removed the block, most
                     // likely due to the block being expired.
