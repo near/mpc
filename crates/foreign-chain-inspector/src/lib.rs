@@ -85,7 +85,8 @@ where
         let mut iter = responses.into_iter();
         let first = iter
             .next()
-            .expect("FanOutInspector is built from a NonEmptyVec, so there is always one response");
+            .expect("inspectors is a `NonEmptyVec`, so there is at least one response");
+
         for other in iter {
             if other != first {
                 return Err(ForeignChainInspectionError::InspectorResponseMismatch);
