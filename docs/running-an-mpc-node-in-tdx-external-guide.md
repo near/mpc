@@ -1265,9 +1265,8 @@ docker image. Let's assume you want to vote for a docker image with tag
 corresponding to the commit hash `828f816be36aed6f0d2438e0131b3e9d7d0931ad`.
 Notice that the suffix of the image tag is the short version of the git hash.
 
-* The manifest digest is shown on DockerHub and in the reproducible build script
-  output. To verify it, build the image yourself from the same commit and compare
-  the manifest digest.
+* The manifest digest is shown on DockerHub. To verify it, build the image
+  yourself from the same commit and compare the manifest digest.
 
 * Download the MPC code from this repository:
 
@@ -1277,18 +1276,16 @@ cd mpc/
 git checkout 828f816be36aed6f0d2438e0131b3e9d7d0931ad
 ```
 
-* Compile it using the reproduce build script. For this you need to install
-  `repro-env`, `docker-buildx`, and `skopeo`, and have the `docker` daemon
-  running.
+* Build the image and compute its manifest digest. You need `nix` (with
+  flakes enabled) installed locally; no docker daemon required.
 
 ```bash
-$ ./deployment/build-images.sh --node
-...
-commit hash: 828f816be36aed6f0d2438e0131b3e9d7d0931ad
-SOURCE_DATE_EPOCH used: 0
-node binary hash: 86c8f7d8913d6fe37a6992bba165d15a3a1d88fbf6cdff605e4827d5183721bc
-node manifest digest: sha256:331cfec941671ac343c52847e255eb36a280da65535d2a1e4d002c4c64686e19
+$ nix build .#node-image-manifest-digest && cat result
+sha256:331cfec941671ac343c52847e255eb36a280da65535d2a1e4d002c4c64686e19
 ```
+
+  See [reproducible-builds.md](reproducible-builds.md) for the full set of
+  available derivations (binaries, images, and digests).
 
 The `node manifest digest` is what you vote for. When submitting the `code_hash` value in the voting command, strip the `sha256:` prefix and provide only the hex digest. The launcher pulls the image directly by this digest — Docker verifies the content matches during the pull.
 
@@ -1352,7 +1349,7 @@ For full design details, see the [CVM Upgrades section in the TEE design doc](se
 
 The following steps allow you to inspect the code used to build the launcher image and verify its manifest digest before voting.
 
-* The launcher manifest digest is shown on DockerHub and in the reproducible build script output. To verify it, build the launcher yourself from the same commit and compare the manifest digest.
+* The launcher manifest digest is shown on DockerHub. To verify it, build the launcher image yourself from the same commit and compare the manifest digest.
 
 * Download the MPC code from this repository:
 
@@ -1362,14 +1359,16 @@ cd mpc/
 git checkout <commit-hash>
 ```
 
-* Compile it using the reproducible build script. For this you need to install `repro-env`, `docker-buildx`, and `skopeo`, and have the `docker` daemon running.
+* Build the image and compute its manifest digest. You need `nix` (with
+  flakes enabled) installed locally; no docker daemon required.
 
 ```bash
-$ ./deployment/build-images.sh --rust-launcher
-...
-rust launcher binary hash: <hex>
-rust launcher manifest digest: sha256:<hex>
+$ nix build .#rust-launcher-image-manifest-digest && cat result
+sha256:<hex>
 ```
+
+  See [reproducible-builds.md](reproducible-builds.md) for the full set of
+  available derivations.
 
 The `rust launcher manifest digest` is what you vote for. When submitting the `launcher_hash` value in the voting command, strip the `sha256:` prefix and provide only the hex digest.
 

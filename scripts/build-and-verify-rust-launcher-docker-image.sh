@@ -2,13 +2,12 @@
 
 set -euo pipefail
 
-./deployment/build-images.sh --rust-launcher
-
-# Step 1: Get the built Rust launcher image's manifest hash
-temp_dir=$(mktemp -d)
-echo "using $temp_dir"
-skopeo copy --all --dest-compress docker-daemon:mpc-rust-launcher:latest dir:$temp_dir
-built_launcher_hash=$(sha256sum $temp_dir/manifest.json | cut -d' ' -f1)
+# Step 1: Build the Rust launcher image and compute its manifest digest. The
+# `*-manifest-digest` derivation runs skopeo entirely inside the Nix sandbox,
+# so the digest is deterministic across builders and the only output is a
+# `sha256:HEX` line.
+nix build .#rust-launcher-image-manifest-digest --out-link result-rust-launcher-digest -L
+built_launcher_hash=$(cut -d':' -f2 result-rust-launcher-digest)
 echo "Built launcher image hash: $built_launcher_hash"
 
 # Step 2: Extract the launcher and MPC hashes from the Rust launcher deployment compose file

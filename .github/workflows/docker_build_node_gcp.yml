@@ -13,7 +13,7 @@ on:
 jobs:
   build-and-push-images:
     name: "Build and push Docker node gcp image with commit hash"
-    runs-on: warp-ubuntu-2404-x64-16x
+    runs-on: warp-ubuntu-2404-x64-32x
     permissions:
       contents: read
 
@@ -23,27 +23,35 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Login to Docker Hub
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Allow unprivileged user namespaces (needed by repro-env/podman on Ubuntu 24.04)
-        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-
-      - name: Install repro-env
-        run: |
-          wget 'https://github.com/kpcyrd/repro-env/releases/download/v0.4.3/repro-env'
-          echo '2a00b21ac5e990e0c6a0ccbf3b91e34a073660d1f4553b5f3cda2b09cc4d4d8a  repro-env' | sha256sum -c -
-          sudo install -m755 repro-env -t /usr/bin
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@21a544727d0c62386e78b4befe52d19ad12692e3 # v17
 
       - name: Install skopeo
         run: |
           sudo apt-get update
           sudo apt-get install -y skopeo
 
+      - name: Login to Docker Hub
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Build and push node gcp image
+        env:
+          IMAGE_NAME: mpc-node-gcp
         run: |
-          export NODE_GCP_IMAGE_NAME=mpc-node-gcp
-          ./deployment/build-images.sh --node-gcp --push
+          set -euo pipefail
+
+          branch="${GITHUB_REF_NAME//\//-}"
+          short_sha=$(git rev-parse --short HEAD)
+          tag="${branch}-${short_sha}"
+          echo "Pushing as tag: ${tag}"
+
+          archive=$(nix build --no-link --print-out-paths .#node-gcp-image)
+          digest_file=$(nix build --no-link --print-out-paths .#node-gcp-image-manifest-digest)
+          echo "Manifest digest: $(cat "$digest_file")"
+
+          skopeo copy --preserve-digests \
+            "docker-archive:${archive}" \
+            "docker://docker.io/nearone/${IMAGE_NAME}:${tag}"

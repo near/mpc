@@ -5,7 +5,8 @@ Brain dump right now, might clean this up for reproducibility.
 # Step 1: Build docker images
 
 ```shell
-deployment/build-images.sh --node
+# Produces an OCI tarball at result/. Load it into the local docker daemon:
+nix build .#node-image && docker load < result
 ```
 
 # Step 2: Start localnet
