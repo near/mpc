@@ -20,8 +20,8 @@ const GET_BLOCK_BY_NUMBER_METHOD: &str = "eth_getBlockByNumber";
 /// different chains remain type-incompatible at the call site, while sharing the
 /// single [`EvmInspector`] implementation.
 pub trait EvmChain {
-    type BlockHash: From<[u8; 32]> + Into<[u8; 32]> + Clone + Debug + PartialEq + Eq + Hash;
-    type TransactionHash: From<[u8; 32]> + Into<[u8; 32]> + Clone + Debug + PartialEq + Eq + Hash;
+    type BlockHash: From<[u8; 32]> + Into<[u8; 32]> + Clone + Debug + PartialEq + Eq + Hash + Send;
+    type TransactionHash: From<[u8; 32]> + Into<[u8; 32]> + Clone + Debug + PartialEq + Eq + Hash + Send;
 }
 
 pub struct EvmInspector<Client, Chain> {
