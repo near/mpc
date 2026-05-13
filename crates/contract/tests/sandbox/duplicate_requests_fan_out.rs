@@ -48,6 +48,9 @@ const NUM_BLOCKS_BETWEEN_REQUESTS: u64 = 2;
 /// `add_signature_request__should_panic_when_pending_queue_is_full`.
 #[tokio::test]
 async fn respond__should_drain_saturated_fan_out_queue() -> anyhow::Result<()> {
+    // Given: a sandbox-running contract exposing every supported protocol, plus a
+    // deployed parallel contract that can fan a chosen request out N times via
+    // cross-contract calls.
     let SandboxTestSetup {
         worker,
         contract,
@@ -62,6 +65,11 @@ async fn respond__should_drain_saturated_fan_out_queue() -> anyhow::Result<()> {
     let parallel = worker.dev_deploy(parallel_contract()).await?;
     let parallel_id: AccountId = parallel.id().clone();
 
+    // When: for each protocol / key pair, stack `MAX_PENDING_REQUEST_FAN_OUT` identical
+    // requests in the contract's fan-out queue and submit a single matching `respond`
+    // to drain it. The batch-tx handles returned by each scheme are collected for the
+    // Then phase to await.
+    let mut batch_statuses = Vec::new();
     for key in &keys {
         let domain_id = key.domain_config.id;
         // Per-scheme disambiguator threaded through every protocol: into the message hash
@@ -69,7 +77,7 @@ async fn respond__should_drain_saturated_fan_out_queue() -> anyhow::Result<()> {
         // colliding when multiple domains are exercised in the same fixture.
         let scheme_tag = format!("fanout-{:?}-{}", key.domain_config.protocol, domain_id.0);
 
-        match (&key.domain_config.protocol, &key.domain_secret_key) {
+        let statuses = match (&key.domain_config.protocol, &key.domain_secret_key) {
             (Protocol::CaitSith | Protocol::DamgardEtAl, SharedSecretKey::Secp256k1(sk)) => {
                 let (payload, request, response) =
                     create_response_secp256k1(domain_id, &parallel_id, &scheme_tag, "", sk);
@@ -87,7 +95,7 @@ async fn respond__should_drain_saturated_fan_out_queue() -> anyhow::Result<()> {
                     &response_args,
                     &sign_args,
                 )
-                .await?;
+                .await?
             }
             (Protocol::Frost, SharedSecretKey::Ed25519(sk)) => {
                 let (payload, request, response) =
@@ -106,7 +114,7 @@ async fn respond__should_drain_saturated_fan_out_queue() -> anyhow::Result<()> {
                     &response_args,
                     &sign_args,
                 )
-                .await?;
+                .await?
             }
             (Protocol::ConfidentialKeyDerivation, SharedSecretKey::Bls12381(sk)) => {
                 let app_pk = make_app_public_key(domain_id.0 + 1);
@@ -126,19 +134,25 @@ async fn respond__should_drain_saturated_fan_out_queue() -> anyhow::Result<()> {
                     &response_args,
                     &ckd_args,
                 )
-                .await?;
+                .await?
             }
             (protocol, _) => panic!("unexpected protocol/key pairing: {protocol:?}"),
-        }
+        };
+        batch_statuses.extend(statuses);
     }
 
+    // Then: every queued user-side promise resolves. `handle_results` on the parallel
+    // contract panics if any of its child sign / CKD promises returns `Err`, so a batch
+    // tx completing with the expected `count` is per-scheme proof that the queued
+    // yields were all resumed by `respond`.
+    await_batch_statuses(batch_statuses).await?;
     Ok(())
 }
 
-/// Drives the sign-flavored fan-out exercise: stack `DUPLICATE_REQUEST_FAN_OUT`
+/// Drives the sign-flavored fan-out exercise: stack `MAX_PENDING_REQUEST_FAN_OUT`
 /// identical `sign()` calls via the parallel contract, wait for the queue to reach that
-/// length, submit the single matching `respond()`, and assert every batch transaction
-/// observed all its sign promises resolve.
+/// length, then submit the single matching `respond()`. Returns the batch transaction
+/// handles for the caller to await as the Then phase.
 async fn run_sign_fan_out(
     worker: &near_workspaces::Worker<near_workspaces::network::Sandbox>,
     contract: &near_workspaces::Contract,
@@ -146,7 +160,7 @@ async fn run_sign_fan_out(
     attested: &near_workspaces::Account,
     response_args: &SignResponseArgs,
     sign_args: &SignRequestArgs,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Vec<(TransactionStatus, u64)>> {
     let statuses = submit_duplicate_sign_batches(
         worker,
         contract,
@@ -162,8 +176,7 @@ async fn run_sign_fan_out(
     )
     .await?;
     submit_signature_response(response_args, contract, attested).await?;
-    await_batch_statuses(statuses).await?;
-    Ok(())
+    Ok(statuses)
 }
 
 /// Splits a total fan-out of `total_calls` into batch transactions, each calling the
@@ -237,21 +250,6 @@ async fn wait_for_pending_signature_queue(
     }
 }
 
-/// Awaits every batch tx and asserts its `handle_results` callback observed all `k`
-/// promises succeed. This is the per-scheme proof that the response fanned out to
-/// every queued yield — if a single yield were dropped, the corresponding sign()
-/// promise would never resolve and the batch tx would never complete.
-async fn await_batch_statuses(statuses: Vec<(TransactionStatus, u64)>) -> anyhow::Result<()> {
-    for (status, expected_completed) in statuses {
-        let completed: u64 = status.await?.into_result()?.json()?;
-        assert_eq!(
-            completed, expected_completed,
-            "expected handle_results to observe {expected_completed} completed calls"
-        );
-    }
-    Ok(())
-}
-
 /// CKD counterpart to [`run_sign_fan_out`].
 async fn run_ckd_fan_out(
     worker: &near_workspaces::Worker<near_workspaces::network::Sandbox>,
@@ -260,7 +258,7 @@ async fn run_ckd_fan_out(
     attested: &near_workspaces::Account,
     response_args: &CKDResponseArgs,
     ckd_args: &CKDRequestArgs,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Vec<(TransactionStatus, u64)>> {
     let statuses = submit_duplicate_ckd_batches(
         worker,
         contract,
@@ -276,8 +274,7 @@ async fn run_ckd_fan_out(
     )
     .await?;
     submit_ckd_response(response_args, contract, attested).await?;
-    await_batch_statuses(statuses).await?;
-    Ok(())
+    Ok(statuses)
 }
 
 /// CKD counterpart to [`submit_duplicate_sign_batches`]; the lower per-batch ceiling
@@ -351,4 +348,19 @@ fn make_app_public_key(seed: u64) -> Bls12381G1PublicKey {
     let scalar = blstrs::Scalar::from(seed);
     let point = blstrs::G1Projective::generator() * scalar;
     Bls12381G1PublicKey::from(&point)
+}
+
+/// Awaits every batch tx and asserts its `handle_results` callback observed all `k`
+/// promises succeed. `handle_results` panics if any child sign / CKD promise returns
+/// `Err`, so a batch tx completing cleanly with the expected `count` is per-scheme
+/// proof that every queued yield was resumed by `respond`.
+async fn await_batch_statuses(statuses: Vec<(TransactionStatus, u64)>) -> anyhow::Result<()> {
+    for (status, expected_completed) in statuses {
+        let completed: u64 = status.await?.into_result()?.json()?;
+        assert_eq!(
+            completed, expected_completed,
+            "expected handle_results to observe {expected_completed} completed calls"
+        );
+    }
+    Ok(())
 }
