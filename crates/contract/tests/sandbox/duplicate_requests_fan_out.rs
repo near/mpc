@@ -3,6 +3,8 @@
 //! Items are declared in order of occurrence: every function (or type) is defined
 //! before any helper it transitively depends on.
 
+#![allow(non_snake_case)] // Tests use the `<sut>__should_<assertion>` form mandated by CLAUDE.md.
+
 use crate::sandbox::{
     common::SandboxTestSetup,
     utils::{
@@ -16,6 +18,7 @@ use crate::sandbox::{
     },
 };
 use elliptic_curve::Group;
+use mpc_contract::MAX_PENDING_REQUEST_FAN_OUT;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
     Bls12381G1PublicKey, CKDAppPublicKey, CKDRequestArgs, Protocol, SignRequestArgs,
@@ -24,14 +27,6 @@ use near_workspaces::operations::TransactionStatus;
 use serde::Serialize;
 use std::time::Duration;
 use threshold_signatures::blstrs;
-
-/// Total number of identical sign / CKD requests stacked per scheme before a single
-/// response is submitted. Matches `MAX_PENDING_REQUEST_FAN_OUT` so a passing run is the
-/// empirical proof that `respond()` can drain a fully-saturated queue inside its 300 TGas
-/// budget — i.e. that the cap chosen in the contract is actually reachable on a real
-/// runtime. The panic-on-cap path is separately covered by the unit test
-/// `add_signature_request__should_panic_when_pending_queue_is_full`.
-const DUPLICATE_REQUEST_FAN_OUT: u64 = 128;
 
 /// Sign-flavored schemes attach 15 TGas per cross-contract `sign()` call. Ten calls
 /// (≈150 TGas) fit comfortably under the per-receipt 300 TGas ceiling.
@@ -45,8 +40,14 @@ const CKD_CALLS_PER_BATCH: u64 = 5;
 /// batch's parent receipt has time to land before the next one is sent.
 const NUM_BLOCKS_BETWEEN_REQUESTS: u64 = 2;
 
+/// Saturates the fan-out queue to its declared cap and asserts a single `respond` drains
+/// every queued yield. A passing run is the empirical proof that `respond` can drain a
+/// fully-saturated queue inside its 300 TGas budget — i.e. that
+/// [`MAX_PENDING_REQUEST_FAN_OUT`] is reachable on a real runtime. The panic-on-cap path
+/// is separately covered by the unit test
+/// `add_signature_request__should_panic_when_pending_queue_is_full`.
 #[tokio::test]
-async fn test_contract_request_duplicate_requests_fan_out() -> anyhow::Result<()> {
+async fn respond__should_drain_saturated_fan_out_queue() -> anyhow::Result<()> {
     let SandboxTestSetup {
         worker,
         contract,
@@ -63,8 +64,9 @@ async fn test_contract_request_duplicate_requests_fan_out() -> anyhow::Result<()
 
     for key in &keys {
         let domain_id = key.domain_config.id;
-        // The payload string is per-scheme so the test can run with multiple domains
-        // in one fixture without colliding request keys; the actual bytes are arbitrary.
+        // Per-scheme disambiguator threaded through every protocol: into the message hash
+        // for sign paths and into the CKD derivation path. Keeps request keys from
+        // colliding when multiple domains are exercised in the same fixture.
         let scheme_tag = format!("fanout-{:?}-{}", key.domain_config.protocol, domain_id.0);
 
         match (&key.domain_config.protocol, &key.domain_secret_key) {
@@ -109,10 +111,10 @@ async fn test_contract_request_duplicate_requests_fan_out() -> anyhow::Result<()
             (Protocol::ConfidentialKeyDerivation, SharedSecretKey::Bls12381(sk)) => {
                 let app_pk = make_app_public_key(domain_id.0 + 1);
                 let (request, response) =
-                    create_response_ckd(&parallel_id, &app_pk, &domain_id, sk, "");
+                    create_response_ckd(&parallel_id, &app_pk, &domain_id, sk, &scheme_tag);
                 let response_args = CKDResponseArgs { request, response };
                 let ckd_args = CKDRequestArgs {
-                    derivation_path: String::new(),
+                    derivation_path: scheme_tag,
                     domain_id,
                     app_public_key: CKDAppPublicKey::AppPublicKey(app_pk),
                 };
@@ -150,13 +152,13 @@ async fn run_sign_fan_out(
         contract,
         parallel,
         sign_args,
-        DUPLICATE_REQUEST_FAN_OUT,
+        u64::from(MAX_PENDING_REQUEST_FAN_OUT),
     )
     .await?;
     wait_for_pending_signature_queue(
         contract,
         &response_args.request,
-        DUPLICATE_REQUEST_FAN_OUT as u32,
+        u32::from(MAX_PENDING_REQUEST_FAN_OUT),
     )
     .await?;
     submit_signature_response(response_args, contract, attested).await?;
@@ -264,13 +266,13 @@ async fn run_ckd_fan_out(
         contract,
         parallel,
         ckd_args,
-        DUPLICATE_REQUEST_FAN_OUT,
+        u64::from(MAX_PENDING_REQUEST_FAN_OUT),
     )
     .await?;
     wait_for_pending_ckd_queue(
         contract,
         &response_args.request,
-        DUPLICATE_REQUEST_FAN_OUT as u32,
+        u32::from(MAX_PENDING_REQUEST_FAN_OUT),
     )
     .await?;
     submit_ckd_response(response_args, contract, attested).await?;
@@ -342,6 +344,9 @@ async fn wait_for_pending_ckd_queue(
 /// Generates a Bls12-381 G1 app public key from an arbitrary scalar so the test can
 /// produce a `CKDRequestArgs` to fan out. The value is opaque — what matters is that
 /// the test holds it and can feed the matching `request` into `create_response_ckd`.
+///
+/// Callers should pass a non-zero `seed` (e.g. `domain_id.0 + 1`) so the scalar avoids
+/// mapping to the curve's identity element.
 fn make_app_public_key(seed: u64) -> Bls12381G1PublicKey {
     let scalar = blstrs::Scalar::from(seed);
     let point = blstrs::G1Projective::generator() * scalar;

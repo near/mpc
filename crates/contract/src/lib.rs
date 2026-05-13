@@ -23,6 +23,11 @@ mod pending_requests;
 #[cfg(feature = "sandbox-test-methods")]
 mod sandbox_test_methods;
 
+/// Re-export of the fan-out cap so sandbox tests can lock against the same source of
+/// truth as the contract rather than duplicating the literal.
+#[cfg(feature = "sandbox-test-methods")]
+pub use crate::pending_requests::MAX_PENDING_REQUEST_FAN_OUT;
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     time::Duration,

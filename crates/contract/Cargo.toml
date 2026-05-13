@@ -113,7 +113,11 @@ digest = { workspace = true }
 ecdsa = { workspace = true }
 futures = { workspace = true }
 insta = { workspace = true }
-mpc-contract = { workspace = true, features = ["compat", "test-utils"] }
+mpc-contract = { workspace = true, features = [
+    "compat",
+    "sandbox-test-methods",
+    "test-utils",
+] }
 near-abi = { workspace = true }
 near-mpc-sdk = { workspace = true }
 near-workspaces = { workspace = true }

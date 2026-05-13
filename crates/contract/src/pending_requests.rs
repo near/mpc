@@ -53,7 +53,7 @@ use crate::{
 /// `test_contract_request_duplicate_requests_fan_out`, which fills the queue to this
 /// cap across all four signature schemes and confirms `respond*` drains it inside its
 /// 300 TGas budget.
-pub(crate) const MAX_PENDING_REQUEST_FAN_OUT: u8 = 128;
+pub const MAX_PENDING_REQUEST_FAN_OUT: u8 = 128;
 
 /// In-flight requests inherited from the previous on-chain schema.
 ///
