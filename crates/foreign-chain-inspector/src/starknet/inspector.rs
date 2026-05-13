@@ -9,6 +9,7 @@ use near_mpc_contract_interface::types::{StarknetFelt, StarknetLog};
 
 const GET_TRANSACTION_RECEIPT_METHOD: &str = "starknet_getTransactionReceipt";
 
+#[derive(Clone)]
 pub struct StarknetInspector<Client> {
     client: Client,
 }

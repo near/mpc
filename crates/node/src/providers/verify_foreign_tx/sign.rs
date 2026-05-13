@@ -8,8 +8,6 @@ use foreign_chain_inspector::hyperevm::inspector::HyperEvmExtractor;
 use foreign_chain_inspector::polygon::inspector::PolygonExtractor;
 use foreign_chain_inspector::starknet::inspector::{StarknetExtractor, StarknetFinality};
 use foreign_chain_inspector::{EthereumFinality, ForeignChainInspector};
-use rand::seq::SliceRandom;
-use rand::SeedableRng;
 use threshold_signatures::{ecdsa::Signature, frost_secp256k1::VerifyingKey};
 use tokio_util::time::FutureExt;
 
@@ -21,7 +19,6 @@ use crate::{
     network::NetworkTaskChannel, primitives::UniqueId,
     providers::verify_foreign_tx::VerifyForeignTxProvider, types::SignatureId,
 };
-use near_indexer_primitives::CryptoHash;
 use near_mpc_bounded_collections::BoundedVec;
 use near_mpc_contract_interface::types::{self as dtos, ECDSA_PAYLOAD_SIZE_BYTES};
 use near_mpc_contract_interface::types::{Payload, Tweak};
@@ -72,17 +69,9 @@ where
             participants,
         )?;
 
-        let my_participant_index = channel
-            .participants()
-            .iter()
-            .position(|&p| p == channel.my_participant_id())
-            .context("my participant ID not found in participants list")?;
-
         let response_payload = self
             .execute_foreign_chain_request(
-                id,
                 &foreign_tx_request.request,
-                my_participant_index,
                 foreign_tx_request.payload_version,
             )
             .await?;
@@ -110,18 +99,9 @@ where
         .await??;
         metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_LOOKUP_SUCCEEDED.inc();
 
-        let participants = channel.participants();
-        let my_participant_id = channel.my_participant_id();
-        let my_participant_index = participants
-            .iter()
-            .position(|&p| p == my_participant_id)
-            .context("my participant ID not found in participants list")?;
-
         let response_payload = self
             .execute_foreign_chain_request(
-                id,
                 &foreign_tx_request.request,
-                my_participant_index,
                 foreign_tx_request.payload_version,
             )
             .await?;
@@ -135,9 +115,7 @@ where
 
     async fn execute_foreign_chain_request(
         &self,
-        request_id: SignatureId,
         request: &dtos::ForeignChainRpcRequest,
-        my_participant_index: usize,
         payload_version: dtos::ForeignTxPayloadVersion,
     ) -> anyhow::Result<dtos::ForeignTxSignPayload> {
         chain_is_supported(&self.foreign_chain_policy_reader, request).await?;
@@ -150,9 +128,11 @@ where
                 bail!("ForeignChainRpcRequest::Solana is unsupported")
             }
             dtos::ForeignChainRpcRequest::Bitcoin(request) => {
-                let inspector =
-                    select_inspector(&self.inspectors.bitcoin, &request_id, my_participant_index)
-                        .context("no inspector configured for bitcoin")?;
+                let inspector = self
+                    .inspectors
+                    .bitcoin
+                    .as_ref()
+                    .context("no inspector configured for bitcoin")?;
                 let transaction_id = request.tx_id.0.into();
                 let block_confirmations = request.confirmations.0.into();
                 let extractors: Vec<BitcoinExtractor> = request
@@ -169,12 +149,11 @@ where
                 extracted_values.into_iter().map(Into::into).collect()
             }
             dtos::ForeignChainRpcRequest::Abstract(request) => {
-                let inspector = select_inspector(
-                    &self.inspectors.abstract_chain,
-                    &request_id,
-                    my_participant_index,
-                )
-                .context("no inspector configured for abstract")?;
+                let inspector = self
+                    .inspectors
+                    .abstract_chain
+                    .as_ref()
+                    .context("no inspector configured for abstract")?;
 
                 let transaction_id = request.tx_id.0.into();
                 let finality: EthereumFinality = request.finality.clone().try_into()?;
@@ -192,9 +171,11 @@ where
                 values.into_iter().map(Into::into).collect()
             }
             dtos::ForeignChainRpcRequest::Bnb(request) => {
-                let inspector =
-                    select_inspector(&self.inspectors.bnb, &request_id, my_participant_index)
-                        .context("no inspector configured for BNB")?;
+                let inspector = self
+                    .inspectors
+                    .bnb
+                    .as_ref()
+                    .context("no inspector configured for BNB")?;
 
                 let transaction_id = request.tx_id.0.into();
                 let finality: EthereumFinality = request.finality.clone().try_into()?;
@@ -212,9 +193,11 @@ where
                 values.into_iter().map(Into::into).collect()
             }
             dtos::ForeignChainRpcRequest::Base(request) => {
-                let inspector =
-                    select_inspector(&self.inspectors.base, &request_id, my_participant_index)
-                        .context("no inspector configured for Base")?;
+                let inspector = self
+                    .inspectors
+                    .base
+                    .as_ref()
+                    .context("no inspector configured for Base")?;
 
                 let transaction_id = request.tx_id.0.into();
                 let finality: EthereumFinality = request.finality.clone().try_into()?;
@@ -232,9 +215,11 @@ where
                 values.into_iter().map(Into::into).collect()
             }
             dtos::ForeignChainRpcRequest::Arbitrum(request) => {
-                let inspector =
-                    select_inspector(&self.inspectors.arbitrum, &request_id, my_participant_index)
-                        .context("no inspector configured for Arbitrum")?;
+                let inspector = self
+                    .inspectors
+                    .arbitrum
+                    .as_ref()
+                    .context("no inspector configured for Arbitrum")?;
 
                 let transaction_id = request.tx_id.0.into();
                 let finality: EthereumFinality = request.finality.clone().try_into()?;
@@ -252,12 +237,11 @@ where
                 values.into_iter().map(Into::into).collect()
             }
             dtos::ForeignChainRpcRequest::HyperEvm(request) => {
-                let inspector = select_inspector(
-                    &self.inspectors.hyper_evm,
-                    &request_id,
-                    my_participant_index,
-                )
-                .context("no inspector configured for HyperEVM")?;
+                let inspector = self
+                    .inspectors
+                    .hyper_evm
+                    .as_ref()
+                    .context("no inspector configured for HyperEVM")?;
 
                 let transaction_id = request.tx_id.0.into();
                 let finality: EthereumFinality = request.finality.clone().try_into()?;
@@ -275,9 +259,11 @@ where
                 values.into_iter().map(Into::into).collect()
             }
             dtos::ForeignChainRpcRequest::Polygon(request) => {
-                let inspector =
-                    select_inspector(&self.inspectors.polygon, &request_id, my_participant_index)
-                        .context("no inspector configured for Polygon")?;
+                let inspector = self
+                    .inspectors
+                    .polygon
+                    .as_ref()
+                    .context("no inspector configured for Polygon")?;
 
                 let transaction_id = request.tx_id.0.into();
                 let finality: EthereumFinality = request.finality.clone().try_into()?;
@@ -295,9 +281,11 @@ where
                 values.into_iter().map(Into::into).collect()
             }
             dtos::ForeignChainRpcRequest::Starknet(request) => {
-                let inspector =
-                    select_inspector(&self.inspectors.starknet, &request_id, my_participant_index)
-                        .context("no inspector configured for Starknet")?;
+                let inspector = self
+                    .inspectors
+                    .starknet
+                    .as_ref()
+                    .context("no inspector configured for Starknet")?;
 
                 let transaction_id = request.tx_id.0 .0.into();
                 let finality: StarknetFinality = request.finality.clone().try_into()?;
@@ -361,36 +349,6 @@ async fn chain_is_supported(
     }
 }
 
-/// Selects a pre-built inspector for a chain using deterministic provider-selection logic.
-fn select_inspector<'a, T>(
-    inspectors: &'a [T],
-    request_id: &CryptoHash,
-    my_participant_index: usize,
-) -> Option<&'a T> {
-    select_provider(inspectors.len(), request_id, my_participant_index)
-        .and_then(|index| inspectors.get(index))
-}
-
-/// Deterministically selects a provider index based on the request ID and the node's
-/// position within the participant set.
-///
-/// Uses the request ID as a seed to create a deterministic permutation of provider indices,
-/// then selects the index at position `my_participant_index % num_providers`. This ensures
-/// that RPC selection is balanced.
-fn select_provider(
-    num_providers: usize,
-    request_id: &CryptoHash,
-    my_participant_index: usize,
-) -> Option<usize> {
-    if num_providers == 0 {
-        return None;
-    }
-    let mut indices: Vec<usize> = (0..num_providers).collect();
-    let mut rng = rand::rngs::StdRng::from_seed(request_id.0);
-    indices.shuffle(&mut rng);
-    Some(indices[my_participant_index % num_providers])
-}
-
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
@@ -417,70 +375,6 @@ mod tests {
             .expect_get_supported_chains()
             .returning(move || Box::pin(std::future::ready(Ok(policy.clone()))));
         reader
-    }
-
-    #[test]
-    fn select_provider__returns_none_for_zero_providers() {
-        let request_id = CryptoHash([0; 32]);
-        assert_eq!(select_provider(0, &request_id, 0), None);
-    }
-
-    #[test]
-    fn select_provider__returns_some_for_single_provider() {
-        let request_id = CryptoHash([1; 32]);
-        assert_eq!(select_provider(1, &request_id, 0), Some(0));
-        assert_eq!(select_provider(1, &request_id, 1), Some(0));
-        assert_eq!(select_provider(1, &request_id, 5), Some(0));
-    }
-
-    #[test]
-    fn select_provider__is_deterministic_for_same_inputs() {
-        let request_id = CryptoHash([42; 32]);
-        let result1 = select_provider(3, &request_id, 1);
-        let result2 = select_provider(3, &request_id, 1);
-        assert_eq!(result1, result2);
-    }
-
-    #[test]
-    fn select_provider__different_participants_get_different_providers_when_enough_providers() {
-        let request_id = CryptoHash([7; 32]);
-        let num_providers = 3;
-        let selections: Vec<usize> = (0..num_providers)
-            .map(|i| select_provider(num_providers, &request_id, i).unwrap())
-            .collect();
-        // With 3 participants and 3 providers, each should get a unique provider
-        let mut sorted = selections.clone();
-        sorted.sort();
-        sorted.dedup();
-        assert_eq!(sorted.len(), num_providers);
-    }
-
-    #[test]
-    fn select_provider__different_requests_produce_different_permutations() {
-        let request_a = CryptoHash([1; 32]);
-        let request_b = CryptoHash([2; 32]);
-        let num_providers = 5;
-        let selections_a: Vec<usize> = (0..num_providers)
-            .map(|i| select_provider(num_providers, &request_a, i).unwrap())
-            .collect();
-        let selections_b: Vec<usize> = (0..num_providers)
-            .map(|i| select_provider(num_providers, &request_b, i).unwrap())
-            .collect();
-        // Different request IDs should (almost certainly) produce different permutations
-        assert_ne!(selections_a, selections_b);
-    }
-
-    #[test]
-    fn select_provider__wraps_around_when_more_participants_than_providers() {
-        let request_id = CryptoHash([99; 32]);
-        let num_providers = 3;
-        // Participant indices beyond num_providers should wrap around
-        for i in 0..num_providers {
-            assert_eq!(
-                select_provider(num_providers, &request_id, i),
-                select_provider(num_providers, &request_id, i + num_providers),
-            );
-        }
     }
 
     #[tokio::test]

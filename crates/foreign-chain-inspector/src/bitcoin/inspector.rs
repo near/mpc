@@ -10,6 +10,7 @@ use foreign_chain_rpc_interfaces::bitcoin::{
 const GET_RAW_TRANSACTION_METHOD: &str = "getrawtransaction";
 const VERBOSE_RESPONSE: bool = true;
 
+#[derive(Clone)]
 pub struct BitcoinInspector<Client> {
     client: Client,
 }

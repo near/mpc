@@ -24,6 +24,7 @@ pub trait EvmChain {
     type TransactionHash: From<[u8; 32]> + Into<[u8; 32]> + Clone + Debug + PartialEq + Eq + Hash + Send;
 }
 
+#[derive(Clone)]
 pub struct EvmInspector<Client, Chain> {
     client: Client,
     _chain: std::marker::PhantomData<Chain>,
