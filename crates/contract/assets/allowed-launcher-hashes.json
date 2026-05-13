@@ -1,8 +1,0 @@
-{
-  "_comment": "Launcher image manifest digests that CI accepts as a reproducible build target. Update this in the same PR that votes a new digest into the contract's allowed_launcher_image_hashes. CI fails if a reproducibly-built launcher image's manifest digest is not listed here. Format: sha256:<64 lowercase hex chars>.",
-  "allowed_launcher_image_digests": [
-    "sha256:e28cb0425db06255fe5fc7aadb79534ac63c94c7a721f75c1af1e934d2eb0701",
-    "sha256:5308ee3fd43459e239a71fec6facb4a1c42bb78f823d64386051db20ae739aec",
-    "sha256:b27bd03d1fa3636a899a9e846bbb6e4dbad28953e660e087b0f3de44745308f4"
-  ]
-}

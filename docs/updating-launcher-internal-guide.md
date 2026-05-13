@@ -30,20 +30,17 @@ Collect the new Manifest digest from Docker hub:
 sha256:<NEW>
 ```
 
-## 2) Update the launcher hash allowlist
+## 2) Vote the new launcher digest in
 
 For both TEE and non-TEE, operators render the contract template at deploy
 time using the `LAUNCHER_MANIFEST_DIGEST` and `MPC_MANIFEST_DIGEST` env vars
 — there are no checked-in deployment compose files to bump.
 
-What you need to update:
+What you need to do:
 
-- `crates/contract/assets/allowed-launcher-hashes.json` — add the new
-  `sha256:<NEW>` launcher digest to `allowed_launcher_image_digests`. CI's
-  `build-and-verify-rust-launcher-docker-image.sh` fails if a
-  reproducibly-built launcher image's manifest digest is not in this list.
-  Vote the same digest into the contract's `allowed_launcher_image_hashes`
-  in the same PR.
+- Vote the new `sha256:<NEW>` digest into the contract's
+  `allowed_launcher_image_hashes`. That's the on-chain gate that controls
+  whether attestation will accept this launcher.
 - `crates/contract/assets/launcher_docker_compose.yaml.template` (TEE) and
   `crates/contract/assets/launcher_docker_compose_nontee.yaml.template`
   (non-TEE) — only touch these if the **shape** of the compose changes
@@ -54,6 +51,12 @@ What you need to update:
   ```bash
   UPDATE_SNAPSHOT=1 ./scripts/check-launcher-template-snapshot.sh
   ```
+
+> CI does **not** assert that the reproducibly-built launcher digest
+> matches any pinned reference — it just prints the digest. See
+> [#2662](https://github.com/near/mpc/issues/2662) for why. When voting in
+> a new digest, double-check the build CI output (the "Built launcher
+> image hash" line) so you know what you're voting in.
 
 ---
 
