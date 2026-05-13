@@ -336,8 +336,11 @@ The per-participant registration model above leaves the network with no shared n
 
 ### Whitelist storage shape (PR 1)
 
-PR 1 ships only the data shape — vote endpoints, pending-vote tracking, and per-chain
-voting thresholds all land in PR 2.
+PR 1 ships only the data shape — vote endpoints, pending-vote tracking, per-chain voting
+thresholds, and the view function that surfaces the whitelist all land in PR 2 (the view
+is deferred because there's nothing to read while voting is absent, and keeping the
+serde-JSON serializer monomorphizations out of the contract WASM gives PR 1 meaningful
+size headroom).
 
 ```rust
 pub type ProviderId = String;
@@ -370,12 +373,6 @@ pub struct ForeignChainRpcWhitelist {
     entries: BTreeMap<ForeignChain, BTreeMap<ProviderId, ProviderEntry>>,
     // PR 2 adds: pending votes (per proposed batch of actions) + per-chain voting thresholds.
 }
-```
-
-Read-only view shipped in PR 1 (initially empty):
-
-```rust
-pub fn allowed_foreign_chain_providers(&self) -> BTreeMap<ForeignChain, Vec<ProviderEntry>>;
 ```
 
 ### Example URL assembly

@@ -6,9 +6,8 @@
 //! `base_url` + `chain_routing` + the operator's token (placed per `auth_scheme`).
 //!
 //! This module ships the *data structures* only — see [`ForeignChainRpcWhitelist`] for the
-//! contract state shape. Vote endpoints (`vote_add_foreign_chain_provider` /
-//! `vote_remove_foreign_chain_provider`), pending-vote tracking, and per-chain voting
-//! thresholds land in a follow-up PR.
+//! contract state shape. The vote endpoint, the view function reading the whitelist,
+//! pending-vote tracking, and per-chain voting thresholds all land in a follow-up PR.
 
 use std::collections::{btree_map::Entry, BTreeMap};
 
@@ -23,22 +22,24 @@ use near_sdk::near;
 /// not duplicates.
 //
 // Borsh-only: `AllowedProviders` is `pub(crate)` and only ever lives in contract state.
-// The view function returns `self.entries.snapshot()` — a `BTreeMap<ForeignChain, …>`,
-// not `AllowedProviders` itself — so no JSON serializer is needed here.
+// There is no view function returning it in PR 1 — that ships in the follow-up PR
+// alongside the vote endpoint that actually populates the whitelist. Keeping the type
+// borsh-only here trims the contract WASM size by skipping the serde JSON-serializer
+// monomorphizations that would otherwise be emitted for a perpetually-empty view.
 #[near(serializers=[borsh])]
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct AllowedProviders {
     entries: BTreeMap<ForeignChain, BTreeMap<ProviderId, ProviderEntry>>,
 }
 
-// `add` / `remove` / `get` are exercised by the unit tests in this module and will be wired
-// to the vote endpoints in the follow-up PR. In the test build the dead_code lint doesn't
-// fire (tests call them), so scope the expect to non-test builds only.
+// `add` / `remove` / `get` are exercised by the unit tests in this module and will be
+// wired to the vote endpoint (and to the corresponding view fn) in the follow-up PR.
+// Until then they are dead in non-test builds, so scope the expect accordingly.
 #[cfg_attr(
     not(test),
     expect(
         dead_code,
-        reason = "used by tests now; wired to vote endpoints in the follow-up PR"
+        reason = "used by tests now; wired to vote endpoint + view fn in the follow-up PR"
     )
 )]
 impl AllowedProviders {
@@ -61,7 +62,11 @@ impl AllowedProviders {
 
     /// Remove the provider with `provider_id` from `chain`. Returns `true` if an entry
     /// was removed.
-    pub fn remove(&mut self, chain: ForeignChain, provider_id: &ProviderId) -> bool {
+    ///
+    /// `provider_id: &str` rather than `&ProviderId` (`= &String`) so callers can pass
+    /// string literals directly without an intermediate `.to_string()`; `BTreeMap<String, _>`
+    /// accepts `&str` via `Borrow<str>`.
+    pub fn remove(&mut self, chain: ForeignChain, provider_id: &str) -> bool {
         let Some(bucket) = self.entries.get_mut(&chain) else {
             return false;
         };
@@ -82,31 +87,16 @@ impl AllowedProviders {
             .into_iter()
             .flat_map(|bucket| bucket.values())
     }
-
-    /// Full per-chain view, suitable for returning from a view function. Each chain's
-    /// `Vec` is sorted by `provider_id` (BTreeMap iteration order).
-    pub fn snapshot(&self) -> BTreeMap<ForeignChain, Vec<ProviderEntry>> {
-        self.entries
-            .iter()
-            .map(|(chain, bucket)| (*chain, bucket.values().cloned().collect()))
-            .collect()
-    }
 }
 
 /// Top-level contract state for the foreign-chain RPC provider whitelist. Held as a
 /// field on `MpcContract`. Currently a thin wrapper around the inner `AllowedProviders`
 /// storage; the follow-up PR adds the vote state (pending votes, per-chain voting
-/// thresholds).
+/// thresholds) and the view function that surfaces the whitelist to off-chain callers.
 #[near(serializers=[borsh])]
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub struct ForeignChainRpcWhitelist {
     pub(crate) entries: AllowedProviders,
-}
-
-impl ForeignChainRpcWhitelist {
-    pub fn allowed_providers(&self) -> BTreeMap<ForeignChain, Vec<ProviderEntry>> {
-        self.entries.snapshot()
-    }
 }
 
 #[cfg(test)]
@@ -182,7 +172,7 @@ mod tests {
         allowed.add(ForeignChain::Ethereum, entry("ankr"));
 
         // When
-        let removed = allowed.remove(ForeignChain::Ethereum, &"alchemy".to_string());
+        let removed = allowed.remove(ForeignChain::Ethereum, "alchemy");
 
         // Then
         assert!(removed);
@@ -198,9 +188,8 @@ mod tests {
         allowed.add(ForeignChain::Ethereum, entry("alchemy"));
 
         // When
-        let removed_unknown_id =
-            allowed.remove(ForeignChain::Ethereum, &"does-not-exist".to_string());
-        let removed_unknown_chain = allowed.remove(ForeignChain::Polygon, &"alchemy".to_string());
+        let removed_unknown_id = allowed.remove(ForeignChain::Ethereum, "does-not-exist");
+        let removed_unknown_chain = allowed.remove(ForeignChain::Polygon, "alchemy");
 
         // Then
         assert!(!removed_unknown_id);
@@ -215,10 +204,10 @@ mod tests {
         allowed.add(ForeignChain::Ethereum, entry("alchemy"));
 
         // When
-        let removed = allowed.remove(ForeignChain::Ethereum, &"alchemy".to_string());
+        let removed = allowed.remove(ForeignChain::Ethereum, "alchemy");
 
-        // Then: the chain is no longer present in the snapshot at all.
+        // Then: the chain has no entries.
         assert!(removed);
-        assert!(!allowed.snapshot().contains_key(&ForeignChain::Ethereum));
+        assert_eq!(allowed.get(ForeignChain::Ethereum).count(), 0);
     }
 }

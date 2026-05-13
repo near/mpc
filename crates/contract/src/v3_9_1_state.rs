@@ -837,52 +837,11 @@ mod tests {
         }
     }
 
-    /// Build a minimal but borsh-valid `v3_9_1_state::MpcContract` for migration tests.
-    /// Uses a one-participant Running state and `Default` / empty values for the rest of
-    /// the fields so the test focuses on what the `From` impl preserves vs default-inits.
-    fn minimal_old_mpc_contract() -> MpcContract {
-        let participants = old_participants(1, vec![("alice.near", 0, old_ed25519_near_pk(2))]);
-        let running = old_running_state(participants, 2);
-        MpcContract {
-            protocol_state: OldProtocolContractState::Running(running),
-            pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV3),
-            pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV2),
-            pending_verify_foreign_tx_requests: LookupMap::new(
-                StorageKey::PendingVerifyForeignTxRequests,
-            ),
-            proposed_updates: ProposedUpdates::default(),
-            foreign_chain_policy: ForeignChainPolicy {
-                chains: BTreeMap::new(),
-            },
-            foreign_chain_policy_votes: ForeignChainPolicyVotes {
-                proposal_by_account: IterableMap::new(StorageKey::_ForeignChainPolicyVotes),
-            },
-            node_foreign_chain_configurations: NodeForeignChainConfigurations::default(),
-            config: Config::default(),
-            tee_state: OldTeeState::default(),
-            accept_requests: true,
-            node_migrations: NodeMigrations::default(),
-            stale_data: OldStaleData {
-                pending_signature_requests_pre_upgrade: LookupMap::new(
-                    StorageKey::_DeprecatedPendingRequests,
-                ),
-            },
-            metrics: dtos::Metrics::default(),
-        }
-    }
-
-    #[test]
-    fn mpc_contract_migration__should_default_initialize_foreign_chain_rpc_whitelist() {
-        // Given a v3.9.1 contract state without the new whitelist field.
-        testing_env!(VMContextBuilder::new().build());
-        let old = minimal_old_mpc_contract();
-
-        // When migrating to the current MpcContract layout.
-        let migrated: crate::MpcContract = old.into();
-
-        // Then the new field is present and empty — proving the `From` impl defaults it.
-        assert!(migrated.allowed_foreign_chain_providers().is_empty());
-    }
+    // The `MpcContract` migration assigns `foreign_chain_rpc_whitelist: Default::default()`
+    // in its `From` impl; if anyone removes that line the contract fails to compile
+    // ("missing field" in the struct literal), and the borsh schema snapshot test
+    // (`mpc_contract_borsh_schema_has_not_changed`) catches any layout drift, so a
+    // dedicated migration test for that single line would be redundant.
 
     #[test]
     fn running_state_migration__should_copy_global_threshold_into_each_domain() {

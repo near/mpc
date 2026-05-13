@@ -962,11 +962,13 @@ pub type ProviderId = String;
 // `Hash` / `Ord` / `PartialOrd` are intentionally omitted — PR 1 doesn't need them
 // (the storage is `BTreeMap<ProviderId, ProviderEntry>` so only the key needs `Ord`).
 // PR 2 can re-add if the batched vote-action shape requires them.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, BorshSerialize, BorshDeserialize)]
-// `Deserialize` is only needed by node-side / external SDK consumers; the contract
-// itself never parses these from JSON args (no entry point takes them in PR 1). Gating
-// it off wasm avoids ~2-7 KB of serde monomorphizations per type in the contract WASM.
-#[cfg_attr(not(target_arch = "wasm32"), derive(Deserialize))]
+#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
+// `Serialize` and `Deserialize` are only needed by node-side / external SDK consumers;
+// the contract itself never parses these from JSON args nor returns them from a view fn
+// in PR 1 (the view fn lands in the follow-up PR alongside the vote endpoint). Gating
+// the serde derives off wasm avoids several KB of monomorphizations per type in the
+// contract WASM.
+#[cfg_attr(not(target_arch = "wasm32"), derive(Serialize, Deserialize))]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
@@ -988,8 +990,8 @@ pub enum AuthScheme {
 /// How chain identity is encoded in the RPC URL. Exactly one of the three encodings,
 /// modelled as an enum so a vote can't accidentally produce an "all three" shape.
 // `Hash` / `Ord` / `PartialOrd` deliberately omitted — see the comment on `AuthScheme`.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, BorshSerialize, BorshDeserialize)]
-#[cfg_attr(not(target_arch = "wasm32"), derive(Deserialize))]
+#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(Serialize, Deserialize))]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
@@ -1013,8 +1015,8 @@ pub enum ChainRouting {
 /// MPC participants and read by nodes at startup to assemble the actual RPC URL
 /// (`base_url` + `chain_routing` + operator-supplied token via `auth_scheme`).
 // `Hash` / `Ord` / `PartialOrd` deliberately omitted — see the comment on `AuthScheme`.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, BorshSerialize, BorshDeserialize)]
-#[cfg_attr(not(target_arch = "wasm32"), derive(Deserialize))]
+#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(Serialize, Deserialize))]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)

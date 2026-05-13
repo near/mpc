@@ -1492,18 +1492,6 @@ impl MpcContract {
         self.tee_state.get_allowed_measurements()
     }
 
-    /// Returns the on-chain whitelist of RPC providers, grouped by chain. Each entry
-    /// self-describes its `provider_id`; the same `provider_id` may appear under multiple
-    /// chains with chain-specific connection details.
-    ///
-    /// Initially empty — vote endpoints land in a follow-up PR.
-    pub fn allowed_foreign_chain_providers(
-        &self,
-    ) -> BTreeMap<dtos::ForeignChain, Vec<dtos::ProviderEntry>> {
-        log!("allowed_foreign_chain_providers");
-        self.foreign_chain_rpc_whitelist.allowed_providers()
-    }
-
     /// Returns all accounts that have TEE attestations stored in the contract.
     /// Note: This includes both current protocol participants and accounts that may have
     /// submitted TEE information but are not currently part of the active participant set.

@@ -81,7 +81,6 @@ pub const LAUNCHER_HASH_VOTES: &str = "launcher_hash_votes";
 pub const CODE_HASH_VOTES: &str = "code_hash_votes";
 pub const OS_MEASUREMENT_VOTES: &str = "os_measurement_votes";
 pub const ALLOWED_OS_MEASUREMENTS: &str = "allowed_os_measurements";
-pub const ALLOWED_FOREIGN_CHAIN_PROVIDERS: &str = "allowed_foreign_chain_providers";
 pub const MIGRATION_INFO: &str = "migration_info";
 
 // Deprecated methods
