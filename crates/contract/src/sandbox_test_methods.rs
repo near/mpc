@@ -25,18 +25,28 @@ impl MpcContract {
     /// legacy single-yield map is not consulted: post-upgrade pushes drain it into the
     /// head of the new queue, so the new map's length is authoritative for the test's
     /// purposes.
+    ///
+    /// The queue is hard-capped at [`crate::pending_requests::MAX_PENDING_REQUEST_FAN_OUT`]
+    /// (a `u8`), so the `try_from` is constrained to succeed today; the `expect` is a
+    /// tripwire in case the cap ever grows past `u32::MAX`.
     pub fn pending_signature_queue_len(&self, request: SignatureRequest) -> u32 {
-        self.pending_signature_requests
+        let len = self
+            .pending_signature_requests
             .get(&request)
-            .map(|q| q.len() as u32)
-            .unwrap_or(0)
+            .map(Vec::len)
+            .unwrap_or(0);
+        u32::try_from(len)
+            .expect("queue length must fit in u32 — bounded by MAX_PENDING_REQUEST_FAN_OUT")
     }
 
     /// CKD counterpart to [`Self::pending_signature_queue_len`]; same rationale.
     pub fn pending_ckd_queue_len(&self, request: CKDRequest) -> u32 {
-        self.pending_ckd_requests
+        let len = self
+            .pending_ckd_requests
             .get(&request)
-            .map(|q| q.len() as u32)
-            .unwrap_or(0)
+            .map(Vec::len)
+            .unwrap_or(0);
+        u32::try_from(len)
+            .expect("queue length must fit in u32 — bounded by MAX_PENDING_REQUEST_FAN_OUT")
     }
 }
