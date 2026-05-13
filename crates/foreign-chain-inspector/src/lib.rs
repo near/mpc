@@ -69,10 +69,12 @@ where
     ) -> Result<Vec<Self::ExtractedValue>, ForeignChainInspectionError> {
         let mut join_set = tokio::task::JoinSet::new();
 
-        for inspector in self.inspectors.iter().cloned() {
+        for inspector in self.inspectors.iter() {
             let tx_id = tx_id.clone();
             let finality = finality.clone();
             let extractors = extractors.clone();
+
+            let inspector = inspector.clone();
             join_set.spawn(async move { inspector.extract(tx_id, finality, extractors).await });
         }
 
