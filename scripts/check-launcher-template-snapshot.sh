@@ -19,8 +19,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-RENDER="$REPO_ROOT/scripts/render-launcher-compose.sh"
-SNAPSHOT="$REPO_ROOT/crates/contract/assets/templates-tee-vs-nontee.diff.snap"
+RENDER="$SCRIPT_DIR/render-launcher-compose.sh"
+SNAPSHOT="$SCRIPT_DIR/launcher-templates-tee-vs-nontee.diff.snap"
 
 [ -x "$RENDER" ] || { echo "Missing render script: $RENDER" >&2; exit 3; }
 [ -f "$SNAPSHOT" ] || { echo "Missing snapshot: $SNAPSHOT" >&2; exit 3; }

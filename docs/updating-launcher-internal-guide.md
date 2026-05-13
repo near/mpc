@@ -42,7 +42,7 @@ What you need to do:
   `allowed_launcher_image_hashes`. That's the on-chain gate that controls
   whether attestation will accept this launcher.
 - `crates/contract/assets/launcher_docker_compose.yaml.template` (TEE) and
-  `crates/contract/assets/launcher_docker_compose_nontee.yaml.template`
+  `deployment/cvm-deployment/launcher_docker_compose_nontee.yaml.template`
   (non-TEE) — only touch these if the **shape** of the compose changes
   (volumes, env vars, etc.). For digest-only updates, no template change is
   needed; the digests are substituted in at deploy time.

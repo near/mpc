@@ -4,7 +4,7 @@
 #
 # Renders the launcher Docker Compose template at
 #   crates/contract/assets/launcher_docker_compose.yaml.template          (TEE)
-#   crates/contract/assets/launcher_docker_compose_nontee.yaml.template   (non-TEE)
+#   deployment/cvm-deployment/launcher_docker_compose_nontee.yaml.template  (non-TEE)
 # by substituting the launcher and MPC node manifest digests, which must be
 # supplied via environment variables.
 #
@@ -42,8 +42,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# The TEE template lives under crates/contract/assets/ because the contract
+# `include_str!`s it into its WASM to derive the allowed compose hashes
+# (see crates/contract/src/tee/proposal.rs). The non-TEE template is purely
+# a deployment artifact — the contract never reads it — so it lives under
+# deployment/.
 TEE_TEMPLATE="$REPO_ROOT/crates/contract/assets/launcher_docker_compose.yaml.template"
-NONTEE_TEMPLATE="$REPO_ROOT/crates/contract/assets/launcher_docker_compose_nontee.yaml.template"
+NONTEE_TEMPLATE="$REPO_ROOT/deployment/cvm-deployment/launcher_docker_compose_nontee.yaml.template"
 
 MODE="tee"
 OUT=""

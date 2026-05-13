@@ -30,7 +30,7 @@ This provides maximum parity with production while keeping the setup simple.
 
 ## Files Used
 
-- **Launcher Docker Compose template (non-TEE):** `crates/contract/assets/launcher_docker_compose_nontee.yaml.template` — rendered with the launcher and MPC node manifest digests before use.
+- **Launcher Docker Compose template (non-TEE):** `deployment/cvm-deployment/launcher_docker_compose_nontee.yaml.template` — rendered with the launcher and MPC node manifest digests before use.
 
 - **User configuration file:** `user-config.toml` (TOML format, mounted at `/tapp/user_config`)
 
@@ -49,7 +49,7 @@ export MPC_MANIFEST_DIGEST=sha256:<mpc node digest>
 ./scripts/render-launcher-compose.sh --nontee --out launcher_docker_compose_nontee.yaml
 ```
 
-The template (`crates/contract/assets/launcher_docker_compose_nontee.yaml.template`)
+The template (`deployment/cvm-deployment/launcher_docker_compose_nontee.yaml.template`)
 already encodes the right properties:
 
 - `PLATFORM=NONTEE`
