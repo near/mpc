@@ -48,7 +48,8 @@ on the public internet on the canonical port `:24567`.
 |   public IP_M (e.g. 203.0.113.10)   public IP_T (e.g. .11)  |
 |         ^                                  ^                |
 |         |                                  |                |
-|   hostfwd :24567 -> CVM_M           hostfwd :24567 -> CVM_T |
+|   hostfwd :80, :8080,                hostfwd :80, :8080,    |
+|     :24567 -> CVM_M                    :24567 -> CVM_T      |
 |         |                                  |                |
 |   +-----------+                      +-----------+          |
 |   |  qemu CVM |                      |  qemu CVM |          |
