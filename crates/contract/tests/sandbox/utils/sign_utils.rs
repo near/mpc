@@ -418,7 +418,7 @@ async fn await_request_in_contract_queue<T: ContractQueueRequest>(
 }
 
 /// Derives a confidential key following https://github.com/near/threshold-signatures/blob/main/docs/confidential_key_derivation.md
-fn create_response_ckd(
+pub fn create_response_ckd(
     account_id: &AccountId,
     app_public_key: &dtos::Bls12381G1PublicKey,
     domain_id: &DomainId,
@@ -523,7 +523,7 @@ pub async fn make_and_submit_requests(
     (pending_sign_requests, pending_ckd_requests)
 }
 
-fn create_response_secp256k1(
+pub fn create_response_secp256k1(
     domain_id: DomainId,
     predecessor_id: &AccountId,
     msg: &str,
@@ -548,7 +548,7 @@ fn create_response_secp256k1(
     )
 }
 
-fn create_response_ed25519(
+pub fn create_response_ed25519(
     domain_id: DomainId,
     predecessor_id: &AccountId,
     msg: &str,
