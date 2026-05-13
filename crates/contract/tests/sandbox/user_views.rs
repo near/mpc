@@ -65,4 +65,3 @@ async fn test_derived_public_key() -> anyhow::Result<()> {
     assert_eq!(pk.curve_type(), CurveType::SECP256K1);
     Ok(())
 }
-
