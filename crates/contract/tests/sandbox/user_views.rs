@@ -92,4 +92,3 @@ async fn allowed_foreign_chain_providers_view__should_start_empty() -> anyhow::R
     );
     Ok(())
 }
-

@@ -960,16 +960,7 @@ pub type ProviderId = String;
 /// Lives on the contract (not in operator yaml) so the operator can't pick a custom
 /// auth shape that lets them inject extra path or query components.
 #[derive(
-    Debug,
-    Clone,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    BorshSerialize,
-    BorshDeserialize,
+    Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, BorshSerialize, BorshDeserialize,
 )]
 // `Deserialize` is only needed by node-side / external SDK consumers; the contract
 // itself never parses these from JSON args (no entry point takes them in PR 1). Gating
@@ -996,16 +987,7 @@ pub enum AuthScheme {
 /// How chain identity is encoded in the RPC URL. Exactly one of the three encodings,
 /// modelled as an enum so a vote can't accidentally produce an "all three" shape.
 #[derive(
-    Debug,
-    Clone,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    BorshSerialize,
-    BorshDeserialize,
+    Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, BorshSerialize, BorshDeserialize,
 )]
 #[cfg_attr(not(target_arch = "wasm32"), derive(Deserialize))]
 #[cfg_attr(
@@ -1031,16 +1013,7 @@ pub enum ChainRouting {
 /// MPC participants and read by nodes at startup to assemble the actual RPC URL
 /// (`base_url` + `chain_routing` + operator-supplied token via `auth_scheme`).
 #[derive(
-    Debug,
-    Clone,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    BorshSerialize,
-    BorshDeserialize,
+    Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, BorshSerialize, BorshDeserialize,
 )]
 #[cfg_attr(not(target_arch = "wasm32"), derive(Deserialize))]
 #[cfg_attr(
