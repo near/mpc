@@ -505,7 +505,59 @@ For more information, see [local-key-provider-from-phala](https://github.com/Dst
 
 1. Follow the [canonical/tdx setup](#1-tdx-bare-metal-server-setup) if not already completed — especially step 9.1–2 (establishing an SGX PCCS: Provisioning Certification Caching Service).
 
-2. Deploy an instance of `gramine-sealing-key-provider` on the host machine.
+2. **Patch `Dockerfile.key-provider` to pin transitive deps.** This is a
+   temporary build-reproducibility patch; the structural fix is tracked in
+   [#3153](https://github.com/near/mpc/issues/3153). The upstream
+   Dockerfile leaves apt dependencies and the Rust toolchain version
+   under-pinned, so a fresh build on a different date produces a different
+   `mr_enclave` and your CVM fails attestation. After completing the
+   v0.5.8 dstack checkout from
+   [§2 *Dstack Setup and Configuration*](#2-dstack-setup-and-configuration),
+   edit `/opt/mpc/dstack/key-provider-build/Dockerfile.key-provider`:
+
+   - Replace the original apt block, which reads:
+
+     ```dockerfile
+     RUN apt-get update && apt-get install -y \
+         git=1:2.34.1-1ubuntu1.17 \
+         build-essential=12.9ubuntu3 \
+         && rm -rf /var/lib/apt/lists/*
+     ```
+
+     with this snapshot-pinned version, which points apt at a fixed
+     Ubuntu archive date by rewriting `/etc/apt/sources.list`:
+
+     ```dockerfile
+     RUN { \
+           echo 'deb https://snapshot.ubuntu.com/ubuntu/20260423T000000Z jammy main universe restricted multiverse'; \
+           echo 'deb https://snapshot.ubuntu.com/ubuntu/20260423T000000Z jammy-updates main universe restricted multiverse'; \
+           echo 'deb https://snapshot.ubuntu.com/ubuntu/20260423T000000Z jammy-security main universe restricted multiverse'; \
+         } > /etc/apt/sources.list \
+      && rm -rf /etc/apt/sources.list.d/* \
+      && apt-get update && apt-get install -y \
+           git=1:2.34.1-1ubuntu1.17 \
+           build-essential=12.9ubuntu3 \
+      && rm -rf /var/lib/apt/lists/*
+     ```
+
+     Paste this block exactly as shown — the snapshot date
+     `20260423T000000Z` is the specific value that produces the canonical
+     `mr_enclave`. Any change will produce a different one.
+
+   - On the `rustup` line, change `--default-toolchain 1.85` to
+     `--default-toolchain 1.85.1`. (`1.85` resolves to whatever 1.85.x is
+     current when rustup runs; pinning the exact patch version makes the
+     build deterministic.)
+
+   After running `./run.sh` in the next step, the `mr_enclave` you see in
+   step 4 should match `6b5ed02e…`. If it doesn't, the patch wasn't
+   applied correctly — re-check both edits.
+
+   <!-- TODO(#3153): remove this manual patch once the structural fix lands. -->
+   <!-- Requires snapshot.ubuntu.com to be reachable from the build host. -->
+
+
+3. Deploy an instance of `gramine-sealing-key-provider` on the host machine.
    * On the TDX server, run the script [run.sh](https://github.com/Dstack-TEE/dstack/blob/master/key-provider-build/run.sh)
    > **Prerequisite:** Docker must be installed.
 
@@ -513,7 +565,7 @@ For more information, see [local-key-provider-from-phala](https://github.com/Dst
     cd /opt/mpc/dstack/key-provider-build
     ./run.sh
     ```
-3. To find the `mr_enclave` value of the SGX key provider, run:
+4. To find the `mr_enclave` value of the SGX key provider, run:
 
    ```bash
    docker logs gramine-sealing-key-provider 2>&1 | grep mr_enclave | head -n 1
@@ -627,6 +679,8 @@ Adjust the variables as per your environment.
 * `my_near_account_id` — use the NEAR account ID created in the previous step
 * `mpc_contract_id` — **v1.signer-prod.testnet** for testnet, **v1.signer** for mainnet
 * `port_mappings` — port forwarding rules for the MPC container. These should be a subset of the port forwarding for the CVM defined in [Port Mapping](#using-the-web-interface)
+* `tier3_public_addr` *(optional)* — `IP:24567` the node advertises for Tier3 state-sync responses. Applied at first init only; changing later requires a CVM redeploy via the [Node Migration](./node-migration-guide.md) flow.
+* `external_storage_fallback_threshold` *(optional)* — DSS attempts per state part before falling back to the external storage bucket. `0` = bucket-only. Same first-init-only constraint as `tier3_public_addr`.
 * A fresh set of boot nodes can be selected using Testnet/Mainnet RPC endpoints. Copy at least 4-5 nodes from curl results into `near_boot_nodes`.
   **Important:** Boot nodes must not contain duplicate addresses or peer IDs. Duplicates will cause the node to crash on startup. The command below deduplicates automatically:
 

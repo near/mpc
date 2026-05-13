@@ -201,6 +201,8 @@ impl InitConfigArgs {
             download_genesis_records_url: self.download_genesis_records_url,
             rpc_addr: None,
             network_addr: None,
+            tier3_public_addr: None,
+            external_storage_fallback_threshold: None,
         }
     }
 }
