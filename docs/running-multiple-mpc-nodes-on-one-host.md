@@ -79,9 +79,9 @@ Key properties:
   services, not per-CVM. Because MPC's deploy passes
   `--no-instance-id` to dstack (for consistent TDX measurements
   across operators), two CVMs running the same launcher image derive
-  the **same** sealing key. Each CVM still has its own dstack-vmm
-  work directory, so on-disk data is isolated per CVM — the keys
-  themselves just aren't per-CVM.
+  the **same** sealing key. Each CVM still has its own
+  per-CVM working directory under the shared `dstack-vmm`, so on-disk
+  data is isolated per CVM — the keys themselves just aren't per-CVM.
 
 > **Two `dstack-vmm` instances are also a valid alternative.** Run
 > one per CVM (separate working directories, distinct
