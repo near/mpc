@@ -727,12 +727,17 @@ node's attestation will be rejected.
 #### Step 1 — discover the currently-allowed digests
 
 ```bash
-# Launcher digest -> goes into the launcher `image` line in the rendered compose
+./scripts/fetch-allowed-launcher-hashes.sh --network testnet
+```
+
+This is read-only — it just prints the latest allowed launcher and MPC
+node digests from the contract. Nothing is written, no env is exported,
+no signing required. The underlying calls are:
+
+```bash
 near contract call-function as-read-only \
   v1.signer-prod.testnet allowed_launcher_image_hashes \
   json-args '{}' network-config testnet now
-
-# MPC node digest -> goes into DEFAULT_IMAGE_DIGEST in the rendered compose
 near contract call-function as-read-only \
   v1.signer-prod.testnet allowed_docker_image_hashes \
   json-args '{}' network-config testnet now
@@ -745,22 +750,29 @@ how to verify each digest before trusting it, see
 
 #### Step 2 — render the template
 
-```bash
-# Hex form only — no 'sha256:' prefix when substituting into the template.
-export LAUNCHER_IMAGE_HASH=<launcher digest from step 1>
-export MPC_IMAGE_HASH=<mpc-node digest from step 1>
+Set both digests in the environment and render with the helper script:
 
+```bash
+export LAUNCHER_MANIFEST_DIGEST=sha256:<launcher digest from step 1>
+export MPC_MANIFEST_DIGEST=sha256:<mpc-node digest from step 1>
+
+./scripts/render-launcher-compose.sh --tee --out launcher_docker_compose.yaml
+```
+
+The render script validates each digest format, fails if any `{{...}}`
+placeholder remains, and writes the result to the path given by `--out`.
+`deploy-launcher.sh` calls this same render internally, so an operator
+using the helper flow does not need to invoke it directly.
+
+If you prefer to do the substitution by hand:
+
+```bash
 sed \
-  -e "s|{{LAUNCHER_IMAGE_HASH}}|${LAUNCHER_IMAGE_HASH}|g" \
-  -e "s|{{DEFAULT_IMAGE_DIGEST_HASH}}|${MPC_IMAGE_HASH}|g" \
+  -e "s|{{LAUNCHER_IMAGE_HASH}}|${LAUNCHER_MANIFEST_DIGEST#sha256:}|g" \
+  -e "s|{{DEFAULT_IMAGE_DIGEST_HASH}}|${MPC_MANIFEST_DIGEST#sha256:}|g" \
   crates/contract/assets/launcher_docker_compose.yaml.template \
   > launcher_docker_compose.yaml
 ```
-
-The `deploy-launcher.sh` helper script does the same substitution when
-given `LAUNCHER_MANIFEST_DIGEST` and `MPC_MANIFEST_DIGEST` env vars (with
-or without the `sha256:` prefix); it's a convenience wrapper for the
-manual `sed` flow above.
 
 > **Note:** The rendered file is measured, and its SHA256 is part of the
 > remote attestation. Do not modify the rendered file further (including

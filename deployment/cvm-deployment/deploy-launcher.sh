@@ -14,7 +14,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-COMPOSE_TEMPLATE="$REPO_ROOT/crates/contract/assets/launcher_docker_compose.yaml.template"
+RENDER_SCRIPT="$REPO_ROOT/scripts/render-launcher-compose.sh"
 
 check_ports_in_use() {
     PORT_VARS="
@@ -159,27 +159,18 @@ for var in "${required_env_vars[@]}"; do
   fi
 done
 
-required_files=(
-  "USER_CONFIG_FILE_PATH"
-  "COMPOSE_TEMPLATE"
-)
-
-for var in "${required_files[@]}"; do
-  if [ ! -f "${!var}" ]; then
-    echo "Error: $var points to a non-existent file: ${!var}"
-    exit 1
-  fi
-done
-
-digest_re='^sha256:[0-9a-f]{64}$'
-if ! [[ "$LAUNCHER_MANIFEST_DIGEST" =~ $digest_re ]]; then
-  echo "Error: LAUNCHER_MANIFEST_DIGEST is not a valid sha256:<64 hex> digest."
+if [ ! -x "$RENDER_SCRIPT" ]; then
+  echo "Error: render script not found or not executable: $RENDER_SCRIPT"
   exit 1
 fi
-if ! [[ "$MPC_MANIFEST_DIGEST" =~ $digest_re ]]; then
-  echo "Error: MPC_MANIFEST_DIGEST is not a valid sha256:<64 hex> digest."
+
+if [ ! -f "$USER_CONFIG_FILE_PATH" ]; then
+  echo "Error: USER_CONFIG_FILE_PATH points to a non-existent file: $USER_CONFIG_FILE_PATH"
   exit 1
 fi
+
+# The render script validates digest format and fails on unfilled
+# placeholders, so we don't repeat those checks here.
 
 
 
@@ -200,12 +191,7 @@ CLI="$pythonExec $basePath/vmm/src/vmm-cli.py --url $VMM_RPC"
 # rendered file's SHA256 must match an entry in the contract's
 # allowed_launcher_compose_hashes for attestation to succeed.
 COMPOSE_TMP=$(mktemp)
-launcher_hex="${LAUNCHER_MANIFEST_DIGEST#sha256:}"
-mpc_hex="${MPC_MANIFEST_DIGEST#sha256:}"
-sed \
-  -e "s|{{LAUNCHER_IMAGE_HASH}}|${launcher_hex}|g" \
-  -e "s|{{DEFAULT_IMAGE_DIGEST_HASH}}|${mpc_hex}|g" \
-  "$COMPOSE_TEMPLATE" > "$COMPOSE_TMP"
+"$RENDER_SCRIPT" --tee --out "$COMPOSE_TMP"
 
 if grep -q '{{' "$COMPOSE_TMP"; then
   echo "Error: unfilled placeholders remain in rendered compose file:"
