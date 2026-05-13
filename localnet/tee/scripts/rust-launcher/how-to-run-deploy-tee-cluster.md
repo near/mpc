@@ -239,6 +239,24 @@ export FORCE_RECOLLECT=1
 export FORCE_REINIT_ARGS=1
 ```
 
+### DSS state sync (testnet only)
+
+For `MODE=testnet`, the script enables DSS-first state sync by default
+(localnet disables state sync entirely, so these have no effect there):
+
+- `TIER3_PUBLIC_ADDR` is auto-derived per-node as `${ip}:${STATE_SYNC_PORT}` —
+  not user-overridable.
+- `EXTERNAL_STORAGE_FALLBACK_THRESHOLD` defaults to `100`. Override to
+  change behavior:
+
+```bash
+# Bucket-only (DSS never runs):
+export EXTERNAL_STORAGE_FALLBACK_THRESHOLD=0
+
+# More P2P retries before falling back to the bucket:
+export EXTERNAL_STORAGE_FALLBACK_THRESHOLD=1000
+```
+
 ---
 
 ## Running the Script (Fresh Run)

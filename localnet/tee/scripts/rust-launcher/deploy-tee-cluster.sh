@@ -815,7 +815,15 @@ render_node_files_range() {
     export EXTERNAL_MPC_LOCAL_DEBUG_PORT="127.0.0.1:${local_dbg_port}"
     export EXTERNAL_MPC_DECENTRALIZED_STATE_SYNC="${ip}:${STATE_SYNC_PORT}"
     export EXTERNAL_MPC_MAIN_PORT="${ip}:${MAIN_PORT}"
-        local future_port
+
+    # DSS state-sync fields are only meaningful for testnet; localnet
+    # disables state sync entirely (apply_near_config_patches's localnet
+    # branch sets state_sync_enabled = false).
+    if [ "$MODE" = "testnet" ]; then
+        export TIER3_PUBLIC_ADDR="${ip}:${STATE_SYNC_PORT}"
+        export EXTERNAL_STORAGE_FALLBACK_THRESHOLD="${EXTERNAL_STORAGE_FALLBACK_THRESHOLD:-100}"
+    fi
+    local future_port
     future_port="$(future_port_for_i "$i")"
 
     export EXTERNAL_MPC_FUTURE_PORT="${ip}:${future_port}"
@@ -845,6 +853,13 @@ render_node_files_range() {
     export PORTS_TOML
     PORTS_TOML="$(ports_to_toml "$PORTS")"
 
+    # envsubst doesn't understand bash's ${VAR:?msg} fail-fast syntax — only
+    # plain $VAR / ${VAR} — so validate required template inputs here, before
+    # the substitution, where bash's :?msg form does work.
+    if [ "$MODE" = "testnet" ]; then
+        : "${TIER3_PUBLIC_ADDR:?TIER3_PUBLIC_ADDR must be set before rendering the testnet template}"
+        : "${EXTERNAL_STORAGE_FALLBACK_THRESHOLD:?EXTERNAL_STORAGE_FALLBACK_THRESHOLD must be set before rendering the testnet template}"
+    fi
     envsubst <"$ENV_TPL" >"$env_out"
     envsubst <"$CONF_TPL" >"$conf_out"
 
