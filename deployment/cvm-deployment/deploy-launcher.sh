@@ -1,8 +1,23 @@
 #!/bin/bash
 
-# Deploys a new launcher_test_app VM to dstack-vmm using a templated Docker Compose file.
-# Loads environment variables from a .env file, generates app-compose.json, and runs deployment.
+# Deploys a new launcher_test_app VM to dstack-vmm.
+#
+# The launcher Docker Compose is rendered at deploy time from
+#   crates/contract/assets/launcher_docker_compose.yaml.template
+# using the LAUNCHER_MANIFEST_DIGEST and MPC_MANIFEST_DIGEST env vars.
+# The rendered file's SHA256 must match an entry in the contract's
+# allowed_launcher_compose_hashes for attestation to succeed.
+#
+# Discover the currently-allowed digests with:
+#   ./scripts/fetch-allowed-launcher-hashes.sh --network testnet
+#
+# Loads environment variables from a .env file, generates app-compose.json,
+# and runs deployment.
 # Based on: https://github.com/Dstack-TEE/dstack/blob/be9d0476a63e937eda4c13659547a25088393394/kms/dstack-app/deploy-to-vmm.sh
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+RENDER_SCRIPT="$REPO_ROOT/scripts/render-launcher-compose.sh"
 
 check_ports_in_use() {
     PORT_VARS="
@@ -131,7 +146,8 @@ required_env_vars=(
   "SEALING_KEY_TYPE"
   "DISK"
   "USER_CONFIG_FILE_PATH"
-  "DOCKER_COMPOSE_FILE_PATH"
+  "LAUNCHER_MANIFEST_DIGEST"
+  "MPC_MANIFEST_DIGEST"
   "APP_NAME"
   "OS_IMAGE"
 )
@@ -148,7 +164,6 @@ done
 
 required_files=(
   "USER_CONFIG_FILE_PATH"
-  "DOCKER_COMPOSE_FILE_PATH"
 )
 
 for var in "${required_files[@]}"; do
@@ -157,6 +172,11 @@ for var in "${required_files[@]}"; do
     exit 1
   fi
 done
+
+if [ ! -x "$RENDER_SCRIPT" ]; then
+  echo "Error: render script not found or not executable: $RENDER_SCRIPT"
+  exit 1
+fi
 
 
 
@@ -173,14 +193,11 @@ fi
 CLI="$pythonExec $basePath/vmm/src/vmm-cli.py --url $VMM_RPC"
 
 
+# Render the launcher compose template with the supplied digests. The
+# rendered file's SHA256 must match an entry in the contract's
+# allowed_launcher_compose_hashes for attestation to succeed.
 COMPOSE_TMP=$(mktemp)
-
-cp "$DOCKER_COMPOSE_FILE_PATH" "$COMPOSE_TMP"
-
-subvar() {
-  sed -i "s|\${$1}|${!1}|g" "$COMPOSE_TMP"
-}
-
+"$RENDER_SCRIPT" --tee --out "$COMPOSE_TMP"
 
 echo "Docker compose file:"
 cat "$COMPOSE_TMP"

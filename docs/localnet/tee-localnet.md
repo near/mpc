@@ -72,7 +72,7 @@ There are additional ports defined in frodo/sam.env, but you may change those to
 Those are the recommended configuration settings:
 you will need the following files:
 
-* [launcher_docker_compose.yaml](../../deployment/cvm-deployment/launcher_docker_compose.yaml)
+* [launcher_docker_compose.yaml.template](../../crates/contract/assets/launcher_docker_compose.yaml.template) — rendered with the launcher and MPC node manifest digests before deployment (see below)
 * [frodo.toml](../../deployment/localnet/tee/frodo.toml) / [sam.toml](../../deployment/localnet/tee/sam.toml)
 * [frodo.env](../../deployment/localnet/tee/frodo.env)/ [sam.env](../../deployment/localnet/tee/sam.env)    - if you use the deployment script
 
@@ -84,18 +84,16 @@ mkdir -p "/tmp/$USER"
 ```
 
 
-Configuration fields in `launcher_docker_compose.yaml`
+Set the launcher and MPC node manifest digests in the env file
+(`LAUNCHER_MANIFEST_DIGEST` and `MPC_MANIFEST_DIGEST`). `deploy-launcher.sh`
+renders the contract template at deploy time, substituting these digests
+into the `image:` and `DEFAULT_IMAGE_DIGEST` fields.
 
-Update to use the correct launcher image: (note - this must match the launcher template defined in the MPC contract)
+Example values:
 
-```yaml
-image: nearone/mpc-launcher@sha256:bab4577e61bebcbcbed9fff22dd5fa741ded51465671638873af8a43e8f7373b
-```
-
-Update to use the correct MPC node image hash:
-
-```yaml
-DEFAULT_IMAGE_DIGEST=sha256:abc
+```bash
+LAUNCHER_MANIFEST_DIGEST=sha256:bab4577e61bebcbcbed9fff22dd5fa741ded51465671638873af8a43e8f7373b
+MPC_MANIFEST_DIGEST=sha256:abc...
 ```
 
 
@@ -107,11 +105,11 @@ export MACHINE_IP=$(curl -4 -s ifconfig.me)  # or use known IP for the machine
 
 #### Environment File (`frodo/sam.toml`, `frodo/sam.env`)
 
-The `image` field in `frodo.toml` / `sam.toml` must point to the same repository whose manifest digest is set as `DEFAULT_IMAGE_DIGEST` in the docker-compose file above.
+The `image_reference` field in `frodo.toml` / `sam.toml` must point to the same repository whose manifest digest is set as `MPC_MANIFEST_DIGEST` in the env file.
 
-For example, if the compose file has:
-```yaml
-DEFAULT_IMAGE_DIGEST=sha256:5d1e604dcf3197f8b465c854f8073eaa89b9733f646248d59f86a15b81110ef5
+For example, if the env has:
+```bash
+MPC_MANIFEST_DIGEST=sha256:5d1e604dcf3197f8b465c854f8073eaa89b9733f646248d59f86a15b81110ef5
 ```
 
 Then the TOML files should have:
@@ -289,10 +287,10 @@ for example:
 export CODE_HASH=7c0ee6d08f253f7f890883ce4d64c387aab0d1a192a8a827f7db8cdf55a6a3b8
 ```
 
-Note: this hash should be the same as the one used in the  **launcher_docker_compose.yaml**
+Note: this hash should be the same as the `MPC_MANIFEST_DIGEST` set in the env file.
 
 ```text
-DEFAULT_IMAGE_DIGEST=sha256:7c0ee6d08f253f7f890883ce4d64c387aab0d1a192a8a827f7db8cdf55a6a3b8
+MPC_MANIFEST_DIGEST=sha256:7c0ee6d08f253f7f890883ce4d64c387aab0d1a192a8a827f7db8cdf55a6a3b8
 ```
 
 ```bash
@@ -313,10 +311,10 @@ near contract call-function as-transaction mpc-contract.test.near vote_code_hash
 ### Vote for Launcher Image Hash
 
 A launcher image hash must also be voted in so that compose hashes can be derived.
-Extract the launcher hash from `deployment/cvm-deployment/launcher_docker_compose.yaml`:
+Use the hex form of the same digest you set as `LAUNCHER_MANIFEST_DIGEST` in the env file:
 
 ```bash
-export LAUNCHER_HASH=$(grep -E 'nearone/mpc-launcher@sha256:' deployment/cvm-deployment/launcher_docker_compose.yaml | head -n1 | sed -E 's/.*sha256:([0-9a-f]{64}).*/\1/')
+export LAUNCHER_HASH="${LAUNCHER_MANIFEST_DIGEST#sha256:}"
 ```
 
 ```bash

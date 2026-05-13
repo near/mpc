@@ -404,10 +404,10 @@ near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  allowed_docker
 ## Step 8: Vote Launcher Image Hash on Contract
 
 The launcher image hash must also be voted in for compose hashes to be derived and attestation to work.
-Extract it from the compose file:
+Use the hex form of the same digest you set as `LAUNCHER_MANIFEST_DIGEST` in the env file:
 
 ```bash
-export LAUNCHER_HASH=$(grep -E 'nearone/mpc-launcher@sha256:' deployment/cvm-deployment/launcher_docker_compose.yaml | head -n1 | sed -E 's/.*sha256:([0-9a-f]{64}).*/\1/')
+export LAUNCHER_HASH="${LAUNCHER_MANIFEST_DIGEST#sha256:}"
 ```
 
 ### Frodo votes

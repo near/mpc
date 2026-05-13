@@ -14,10 +14,19 @@
 # a few times to consolidate ~30 NEAR onto it.
 export FUNDER_ACCOUNT="<your-funder>.testnet"
 
-# Manifest digest of the mpc-node image to deploy and vote in. Must match
-# the DEFAULT_IMAGE_DIGEST in deployment/cvm-deployment/launcher_docker_compose.yaml.
-# Get with: docker pull nearone/mpc-node:<tag> 2>&1 | grep Digest
+# Manifest digest of the mpc-node image to deploy and vote in.
+# Discover the currently-allowed digest with:
+#   ./scripts/fetch-allowed-launcher-hashes.sh --network testnet
+# Or compute from a freshly pulled image:
+#   docker pull nearone/mpc-node:<tag> 2>&1 | grep Digest
 export MPC_MANIFEST_DIGEST="sha256:<digest>"
+
+# Manifest digest of the mpc-launcher image to deploy and vote in.
+# Discover the currently-allowed digest with:
+#   ./scripts/fetch-allowed-launcher-hashes.sh --network testnet
+# Or compute from a freshly pulled image:
+#   docker pull nearone/mpc-launcher:<tag> 2>&1 | grep Digest
+export LAUNCHER_MANIFEST_DIGEST="sha256:<digest>"
 
 # --- Cluster sizing ---
 
@@ -49,7 +58,7 @@ export ROOT_INITIAL_BALANCE="20 NEAR"
 # (CONTRACT_INITIAL_BALANCE and NODE_INITIAL_BALANCE use the script's
 # defaults — 16 NEAR contract, 1 NEAR per node.)
 
-# --- Image reference (no tag — manifest digest comes from the launcher compose) ---
+# --- Image reference (no tag — manifest digest is voted in separately) ---
 
 export MPC_IMAGE=nearone/mpc-node
 

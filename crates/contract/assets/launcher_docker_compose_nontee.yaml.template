@@ -1,12 +1,12 @@
 services:
   launcher:
-    image: nearone/mpc-launcher@sha256:b27bd03d1fa3636a899a9e846bbb6e4dbad28953e660e087b0f3de44745308f4
+    image: nearone/mpc-launcher@sha256:{{LAUNCHER_IMAGE_HASH}}
     container_name: "${RUST_LAUNCHER_IMAGE_NAME}"
 
     environment:
       - PLATFORM=NONTEE
       - DOCKER_CONTENT_TRUST=1
-      - DEFAULT_IMAGE_DIGEST=sha256:5d1e604dcf3197f8b465c854f8073eaa89b9733f646248d59f86a15b81110ef5
+      - DEFAULT_IMAGE_DIGEST=sha256:{{DEFAULT_IMAGE_DIGEST_HASH}}
 
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

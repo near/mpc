@@ -30,15 +30,30 @@ Collect the new Manifest digest from Docker hub:
 sha256:<NEW>
 ```
 
-## 2) Update the launcher compose files used for deployment/docs
+## 2) Update the launcher hash allowlist
 
-These are what operators actually run.
+For both TEE and non-TEE, operators render the contract template at deploy
+time using the `LAUNCHER_MANIFEST_DIGEST` and `MPC_MANIFEST_DIGEST` env vars
+— there are no checked-in deployment compose files to bump.
 
-- `deployment/cvm-deployment/launcher_docker_compose.yaml` (TEE)
-- `deployment/cvm-deployment/launcher_docker_compose_nontee.yaml` (non-TEE)
+What you need to update:
 
-Keep the launcher image digest (and related env like `DEFAULT_IMAGE_DIGEST`)
-consistent with the intended release.
+- `crates/contract/assets/allowed-launcher-hashes.json` — add the new
+  `sha256:<NEW>` launcher digest to `allowed_launcher_image_digests`. CI's
+  `build-and-verify-rust-launcher-docker-image.sh` fails if a
+  reproducibly-built launcher image's manifest digest is not in this list.
+  Vote the same digest into the contract's `allowed_launcher_image_hashes`
+  in the same PR.
+- `crates/contract/assets/launcher_docker_compose.yaml.template` (TEE) and
+  `crates/contract/assets/launcher_docker_compose_nontee.yaml.template`
+  (non-TEE) — only touch these if the **shape** of the compose changes
+  (volumes, env vars, etc.). For digest-only updates, no template change is
+  needed; the digests are substituted in at deploy time.
+- If you do change either template's shape, regenerate the snapshot:
+
+  ```bash
+  UPDATE_SNAPSHOT=1 ./scripts/check-launcher-template-snapshot.sh
+  ```
 
 ---
 

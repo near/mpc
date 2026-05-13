@@ -27,9 +27,14 @@ if $USE_RUST_LAUNCHER; then
   # Use the locally built image instead of pulling from Docker Hub.
   # This ensures the runtime test uses the same image that was just built. See #2704.
   docker tag mpc-rust-launcher:latest nearone/mpc-launcher:ci-local
-  # Create a temporary compose in the same directory (so relative volume mounts work)
-  sed 's|nearone/mpc-launcher@sha256:[a-f0-9]*|nearone/mpc-launcher:ci-local|' \
-    launcher_docker_compose_nontee.yaml > launcher_docker_compose_nontee_local.yaml
+  # Render the non-TEE compose template with dummy digests (CI never reaches
+  # the digest in the image: line — the ci-local tag below replaces it) and
+  # rewrite the image reference to point at the locally built image.
+  dummy_hex=$(printf '%.0s0' {1..64})
+  LAUNCHER_MANIFEST_DIGEST="sha256:${dummy_hex}" \
+    MPC_MANIFEST_DIGEST="sha256:${dummy_hex}" \
+    "$REPO_ROOT/scripts/render-launcher-compose.sh" --nontee --out launcher_docker_compose_nontee_local.yaml
+  sed -i "s|nearone/mpc-launcher@sha256:[a-f0-9]*|nearone/mpc-launcher:ci-local|" launcher_docker_compose_nontee_local.yaml
   export RUST_LAUNCHER_IMAGE_NAME
   docker compose -f launcher_docker_compose_nontee_local.yaml up -d
   sleep 10
