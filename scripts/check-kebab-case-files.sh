@@ -27,8 +27,6 @@ EXEMPT_FILES=(
     Makefile.md
     README.md
     RELEASES.md
-    launcher_docker_compose.yaml
-    launcher_docker_compose_nontee.yaml
     launcher_image_compose.yaml
 )
 
