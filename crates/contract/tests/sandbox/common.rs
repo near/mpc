@@ -97,8 +97,11 @@ pub async fn gen_accounts(worker: &Worker<Sandbox>, amount: usize) -> (Vec<Accou
 }
 
 pub async fn init() -> (Worker<Sandbox>, Contract) {
+    init_with_wasm(current_contract()).await
+}
+
+pub async fn init_with_wasm(wasm: &[u8]) -> (Worker<Sandbox>, Contract) {
     let worker = near_workspaces::sandbox().await.unwrap();
-    let wasm = &current_contract();
     let contract = worker.dev_deploy(wasm).await.unwrap();
     (worker, contract)
 }
@@ -167,6 +170,7 @@ impl SandboxTestSetup {
             foreign_tx: false,
             number_of_participants: PARTICIPANT_LEN,
             init_config: None,
+            with_sandbox_test_methods: false,
         }
     }
 
@@ -184,6 +188,7 @@ pub struct SandboxTestSetupBuilder {
     foreign_tx: bool,
     number_of_participants: usize,
     init_config: Option<dtos::InitConfig>,
+    with_sandbox_test_methods: bool,
 }
 
 impl SandboxTestSetupBuilder {
@@ -207,8 +212,23 @@ impl SandboxTestSetupBuilder {
         self
     }
 
+    /// Deploys the wasm built with `--features sandbox-test-methods`, exposing the
+    /// introspection view methods in `crate::sandbox_test_methods` (e.g. fan-out queue
+    /// length).
+    pub fn with_sandbox_test_methods(mut self) -> Self {
+        self.with_sandbox_test_methods = true;
+        self
+    }
+
     pub async fn build(self) -> SandboxTestSetup {
-        let (worker, contract) = init().await;
+        let (worker, contract) = if self.with_sandbox_test_methods {
+            init_with_wasm(
+                super::utils::contract_build::current_contract_with_sandbox_test_methods(),
+            )
+            .await
+        } else {
+            init().await
+        };
         let (accounts, participants) = gen_accounts(&worker, self.number_of_participants).await;
         let threshold_parameters = make_threshold_params(&participants);
 

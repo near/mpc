@@ -20,6 +20,8 @@ pub mod v3_9_1_state;
 mod bench;
 mod dto_mapping;
 mod pending_requests;
+#[cfg(feature = "sandbox-test-methods")]
+mod sandbox_test_methods;
 
 use std::{
     collections::{BTreeMap, BTreeSet},

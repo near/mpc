@@ -13,6 +13,7 @@ use crate::sandbox::{
     },
 };
 use anyhow::Context;
+use elliptic_curve::Group;
 use mpc_contract::{
     errors,
     primitives::{
@@ -22,12 +23,13 @@ use mpc_contract::{
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::method_names;
-use near_mpc_contract_interface::types::{Bls12381G1PublicKey, DomainId, Protocol};
+use near_mpc_contract_interface::types::{
+    Bls12381G1PublicKey, CKDAppPublicKey, CKDRequestArgs, Protocol, SignRequestArgs,
+};
 use near_workspaces::operations::TransactionStatus;
 use near_workspaces::types::NearToken;
 use rand::SeedableRng;
 use serde::Serialize;
-use std::collections::BTreeMap;
 use std::time::Duration;
 use threshold_signatures::blstrs;
 
@@ -76,12 +78,12 @@ async fn test_contract_request_all_schemes() -> anyhow::Result<()> {
 }
 
 /// Total number of identical sign / CKD requests stacked per scheme before a single
-/// response is submitted. The contract caps each fan-out queue at
-/// `MAX_PENDING_REQUEST_FAN_OUT = 128`; the panic-on-cap path is already covered by the
-/// unit test `add_signature_request__should_panic_when_pending_queue_is_full`. This test
-/// exists to prove the fan-out path works end-to-end in a sandbox, not to stress the cap.
-/// Dial down if a particular scheme runs into sandbox gas / promise limits.
-const DUPLICATE_REQUEST_FAN_OUT: u64 = 10;
+/// response is submitted. Matches `MAX_PENDING_REQUEST_FAN_OUT` so a passing run is the
+/// empirical proof that `respond()` can drain a fully-saturated queue inside its 300 TGas
+/// budget — i.e. that the cap chosen in the contract is actually reachable on a real
+/// runtime. The panic-on-cap path is separately covered by the unit test
+/// `add_signature_request__should_panic_when_pending_queue_is_full`.
+const DUPLICATE_REQUEST_FAN_OUT: u64 = 128;
 
 /// Sign-flavored schemes attach 15 TGas per cross-contract `sign()` call. Ten calls
 /// (≈150 TGas) fit comfortably under the per-receipt 300 TGas ceiling.
@@ -91,96 +93,30 @@ const SIGN_CALLS_PER_BATCH: u64 = 10;
 /// (≈150 TGas) leave equivalent headroom.
 const CKD_CALLS_PER_BATCH: u64 = 5;
 
-/// Seed passed to `make_parallel_sign_calls`. The contract applies its own per-scheme
-/// offset (e.g. `+1_000_000` for EdDSA) before hashing the payload; the test mirrors
-/// the same offsets when computing the expected `SignatureRequest`.
-const PARALLEL_CONTRACT_SEED: u64 = 42;
-
-/// Mirrors the four `*_calls_by_domain` parameters of
-/// `test_parallel_contract::make_parallel_sign_calls`. Exactly one of the four is
-/// populated per call so each batch tx exercises one scheme.
+/// Wire shape for `test_parallel_contract::make_duplicate_sign_calls`. The contract just
+/// fans the supplied `request` out `count` times; the test owns the payload.
 #[derive(Serialize)]
-struct ParallelSignArgs<'a> {
+struct MakeDuplicateSignCallsArgs<'a> {
     target_contract: &'a AccountId,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    ecdsa_calls_by_domain: Option<BTreeMap<u64, u64>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    eddsa_calls_by_domain: Option<BTreeMap<u64, u64>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    ckd_calls_by_domain: Option<BTreeMap<u64, u64>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    robust_ecdsa_calls_by_domain: Option<BTreeMap<u64, u64>>,
-    seed: u64,
-    unique_payloads: bool,
+    request: &'a SignRequestArgs,
+    count: u64,
 }
 
-impl<'a> ParallelSignArgs<'a> {
-    fn new(target_contract: &'a AccountId) -> Self {
-        Self {
-            target_contract,
-            ecdsa_calls_by_domain: None,
-            eddsa_calls_by_domain: None,
-            ckd_calls_by_domain: None,
-            robust_ecdsa_calls_by_domain: None,
-            seed: PARALLEL_CONTRACT_SEED,
-            unique_payloads: false,
-        }
-    }
+/// CKD counterpart to [`MakeDuplicateSignCallsArgs`].
+#[derive(Serialize)]
+struct MakeDuplicateCkdCallsArgs<'a> {
+    target_contract: &'a AccountId,
+    request: &'a CKDRequestArgs,
+    count: u64,
 }
 
-#[derive(Clone, Copy)]
-enum SignScheme {
-    EcdsaCaitSith,
-    EcdsaDamgardEtAl,
-    Eddsa,
-}
-
-impl SignScheme {
-    /// Per-scheme seed offset applied inside `make_parallel_sign_calls` before hashing
-    /// the payload. The test reproduces these offsets to know which 32-byte payload
-    /// the parallel contract is going to submit.
-    fn seed_offset(self) -> u64 {
-        match self {
-            SignScheme::EcdsaCaitSith => 0,
-            SignScheme::Eddsa => 1_000_000,
-            SignScheme::EcdsaDamgardEtAl => 2_000_000,
-        }
-    }
-
-    fn populate_args(self, args: &mut ParallelSignArgs<'_>, domain_id: DomainId, calls: u64) {
-        let entry = BTreeMap::from([(domain_id.0, calls)]);
-        match self {
-            SignScheme::EcdsaCaitSith => args.ecdsa_calls_by_domain = Some(entry),
-            SignScheme::Eddsa => args.eddsa_calls_by_domain = Some(entry),
-            SignScheme::EcdsaDamgardEtAl => args.robust_ecdsa_calls_by_domain = Some(entry),
-        }
-    }
-}
-
-/// `test_parallel_contract::generate_app_public_key`, reproduced so the test can compute
-/// the expected app public key without depending on the contract crate at the source
-/// level.
-fn parallel_app_public_key(seed: u64) -> Bls12381G1PublicKey {
-    use elliptic_curve::Group;
-    let x = blstrs::Scalar::from(seed);
-    let big_x = blstrs::G1Projective::generator() * x;
-    Bls12381G1PublicKey::from(&big_x)
-}
-
-/// Submits one batch transaction calling the parallel contract's
-/// `make_parallel_sign_calls`. Returns the `TransactionStatus` so callers can await
-/// final completion after the matching `respond` is submitted.
-async fn submit_parallel_batch(
-    parallel: &near_workspaces::Contract,
-    args: &ParallelSignArgs<'_>,
-) -> anyhow::Result<TransactionStatus> {
-    let status = parallel
-        .call("make_parallel_sign_calls")
-        .args_json(args)
-        .max_gas()
-        .transact_async()
-        .await?;
-    Ok(status)
+/// Generates a Bls12-381 G1 app public key from an arbitrary scalar so the test can
+/// produce a `CKDRequestArgs` to fan out. The value is opaque — what matters is that
+/// the test holds it and can feed the matching `request` into `create_response_ckd`.
+fn make_app_public_key(seed: u64) -> Bls12381G1PublicKey {
+    let scalar = blstrs::Scalar::from(seed);
+    let point = blstrs::G1Projective::generator() * scalar;
+    Bls12381G1PublicKey::from(&point)
 }
 
 #[tokio::test]
@@ -192,6 +128,7 @@ async fn test_contract_request_duplicate_requests_fan_out() -> anyhow::Result<()
         keys,
     } = SandboxTestSetup::builder()
         .with_protocols(ALL_PROTOCOLS)
+        .with_sandbox_test_methods()
         .build()
         .await;
     let attested = &mpc_signer_accounts[0];
@@ -200,55 +137,66 @@ async fn test_contract_request_duplicate_requests_fan_out() -> anyhow::Result<()
 
     for key in &keys {
         let domain_id = key.domain_config.id;
+        // The payload string is per-scheme so the test can run with multiple domains
+        // in one fixture without colliding request keys; the actual bytes are arbitrary.
+        let scheme_tag = format!("fanout-{:?}-{}", key.domain_config.protocol, domain_id.0);
 
         match (&key.domain_config.protocol, &key.domain_secret_key) {
-            (Protocol::CaitSith, SharedSecretKey::Secp256k1(sk)) => {
-                exercise_sign_fan_out(
+            (Protocol::CaitSith | Protocol::DamgardEtAl, SharedSecretKey::Secp256k1(sk)) => {
+                let (payload, request, response) =
+                    create_response_secp256k1(domain_id, &parallel_id, &scheme_tag, "", sk);
+                let response_args = SignResponseArgs { request, response };
+                let sign_args = SignRequestArgs {
+                    payload,
+                    path: String::new(),
+                    domain_id,
+                };
+                run_sign_fan_out(
                     &worker,
                     &contract,
                     &parallel,
-                    &parallel_id,
                     attested,
-                    domain_id,
-                    SignScheme::EcdsaCaitSith,
-                    sk,
-                )
-                .await?;
-            }
-            (Protocol::DamgardEtAl, SharedSecretKey::Secp256k1(sk)) => {
-                exercise_sign_fan_out(
-                    &worker,
-                    &contract,
-                    &parallel,
-                    &parallel_id,
-                    attested,
-                    domain_id,
-                    SignScheme::EcdsaDamgardEtAl,
-                    sk,
+                    &response_args,
+                    &sign_args,
                 )
                 .await?;
             }
             (Protocol::Frost, SharedSecretKey::Ed25519(sk)) => {
-                exercise_eddsa_fan_out(
+                let (payload, request, response) =
+                    create_response_ed25519(domain_id, &parallel_id, &scheme_tag, "", sk);
+                let response_args = SignResponseArgs { request, response };
+                let sign_args = SignRequestArgs {
+                    payload,
+                    path: String::new(),
+                    domain_id,
+                };
+                run_sign_fan_out(
                     &worker,
                     &contract,
                     &parallel,
-                    &parallel_id,
                     attested,
-                    domain_id,
-                    sk,
+                    &response_args,
+                    &sign_args,
                 )
                 .await?;
             }
             (Protocol::ConfidentialKeyDerivation, SharedSecretKey::Bls12381(sk)) => {
-                exercise_ckd_fan_out(
+                let app_pk = make_app_public_key(domain_id.0 + 1);
+                let (request, response) =
+                    create_response_ckd(&parallel_id, &app_pk, &domain_id, sk, "");
+                let response_args = CKDResponseArgs { request, response };
+                let ckd_args = CKDRequestArgs {
+                    derivation_path: String::new(),
+                    domain_id,
+                    app_public_key: CKDAppPublicKey::AppPublicKey(app_pk),
+                };
+                run_ckd_fan_out(
                     &worker,
                     &contract,
                     &parallel,
-                    &parallel_id,
                     attested,
-                    domain_id,
-                    sk,
+                    &response_args,
+                    &ckd_args,
                 )
                 .await?;
             }
@@ -259,134 +207,90 @@ async fn test_contract_request_duplicate_requests_fan_out() -> anyhow::Result<()
     Ok(())
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "test helper; threading context through a struct would obscure call sites"
-)]
-async fn exercise_sign_fan_out(
+/// Drives the sign-flavored fan-out exercise: stack `DUPLICATE_REQUEST_FAN_OUT` identical
+/// `sign()` calls via the parallel contract, wait for the queue to reach that length,
+/// submit the single matching `respond()`, and assert every batch transaction observed
+/// all its sign promises resolve.
+async fn run_sign_fan_out(
     worker: &near_workspaces::Worker<near_workspaces::network::Sandbox>,
     contract: &near_workspaces::Contract,
     parallel: &near_workspaces::Contract,
-    parallel_id: &AccountId,
     attested: &near_workspaces::Account,
-    domain_id: DomainId,
-    scheme: SignScheme,
-    sk: &threshold_signatures::ecdsa::KeygenOutput,
+    response_args: &SignResponseArgs,
+    sign_args: &SignRequestArgs,
 ) -> anyhow::Result<()> {
-    let scheme_seed = PARALLEL_CONTRACT_SEED + scheme.seed_offset();
-    let msg = format!("{scheme_seed}");
-    let (_, request, response) = create_response_secp256k1(domain_id, parallel_id, &msg, "", sk);
-    let response_args = SignResponseArgs {
-        request: request.clone(),
-        response,
-    };
-
-    let statuses = submit_sign_batches(
+    let statuses = submit_duplicate_sign_batches(
         worker,
         contract,
         parallel,
-        scheme,
-        domain_id,
+        sign_args,
         DUPLICATE_REQUEST_FAN_OUT,
     )
     .await?;
-    wait_for_pending_signature_queue(contract, &request).await?;
-    settle_yields(worker).await?;
-    submit_signature_response(&response_args, contract, attested).await?;
+    wait_for_pending_signature_queue(
+        contract,
+        &response_args.request,
+        DUPLICATE_REQUEST_FAN_OUT as u32,
+    )
+    .await?;
+    submit_signature_response(response_args, contract, attested).await?;
     await_batch_statuses(statuses).await?;
     Ok(())
 }
 
-async fn exercise_eddsa_fan_out(
+/// CKD counterpart to [`run_sign_fan_out`].
+async fn run_ckd_fan_out(
     worker: &near_workspaces::Worker<near_workspaces::network::Sandbox>,
     contract: &near_workspaces::Contract,
     parallel: &near_workspaces::Contract,
-    parallel_id: &AccountId,
     attested: &near_workspaces::Account,
-    domain_id: DomainId,
-    sk: &threshold_signatures::frost::eddsa::KeygenOutput,
+    response_args: &CKDResponseArgs,
+    ckd_args: &CKDRequestArgs,
 ) -> anyhow::Result<()> {
-    let scheme = SignScheme::Eddsa;
-    let scheme_seed = PARALLEL_CONTRACT_SEED + scheme.seed_offset();
-    let msg = format!("{scheme_seed}");
-    let (_, request, response) = create_response_ed25519(domain_id, parallel_id, &msg, "", sk);
-    let response_args = SignResponseArgs {
-        request: request.clone(),
-        response,
-    };
-
-    let statuses = submit_sign_batches(
+    let statuses = submit_duplicate_ckd_batches(
         worker,
         contract,
         parallel,
-        scheme,
-        domain_id,
+        ckd_args,
         DUPLICATE_REQUEST_FAN_OUT,
     )
     .await?;
-    wait_for_pending_signature_queue(contract, &request).await?;
-    settle_yields(worker).await?;
-    submit_signature_response(&response_args, contract, attested).await?;
+    wait_for_pending_ckd_queue(
+        contract,
+        &response_args.request,
+        DUPLICATE_REQUEST_FAN_OUT as u32,
+    )
+    .await?;
+    submit_ckd_response(response_args, contract, attested).await?;
     await_batch_statuses(statuses).await?;
     Ok(())
 }
 
-async fn exercise_ckd_fan_out(
+/// Splits a total fan-out of `total_calls` into batch transactions, each calling the
+/// parallel contract's `make_duplicate_sign_calls` to enqueue up to `SIGN_CALLS_PER_BATCH`
+/// duplicates of `sign_args`. Batching is required because each child `sign()` call
+/// reserves ~15 TGas of the parent receipt's 300 TGas budget.
+async fn submit_duplicate_sign_batches(
     worker: &near_workspaces::Worker<near_workspaces::network::Sandbox>,
     contract: &near_workspaces::Contract,
     parallel: &near_workspaces::Contract,
-    parallel_id: &AccountId,
-    attested: &near_workspaces::Account,
-    domain_id: DomainId,
-    sk: &threshold_signatures::confidential_key_derivation::KeygenOutput,
-) -> anyhow::Result<()> {
-    // Matches `build_ckd_calls` in test_parallel_contract: key_seed = seed + 2 when
-    // unique_payloads = false.
-    let app_pk = parallel_app_public_key(PARALLEL_CONTRACT_SEED + 2);
-    let (request, response) = create_response_ckd(parallel_id, &app_pk, &domain_id, sk, "");
-    let response_args = CKDResponseArgs {
-        request: request.clone(),
-        response,
-    };
-
-    let statuses = submit_ckd_batches(worker, contract, parallel, domain_id).await?;
-    wait_for_pending_ckd_queue(contract, &request).await?;
-    settle_yields(worker).await?;
-    submit_ckd_response(&response_args, contract, attested).await?;
-    await_batch_statuses(statuses).await?;
-    Ok(())
-}
-
-/// Once the first yield in a fan-out queue is visible to the view layer, the
-/// remaining children may still be sitting in pending receipts. Block-fast-forward
-/// plus a real sleep is the same pattern the legacy duplicate test used
-/// (`TODO(#1306): remove the need to sleep`) — it gives every batch's parent receipt
-/// time to emit its K `sign()` children and for those children to push their yields
-/// into `pending_signature_requests` before `respond()` drains the queue.
-async fn settle_yields(
-    worker: &near_workspaces::Worker<near_workspaces::network::Sandbox>,
-) -> anyhow::Result<()> {
-    worker.fast_forward(NUM_BLOCKS_BETWEEN_REQUESTS).await?;
-    tokio::time::sleep(Duration::from_secs(3)).await;
-    worker.fast_forward(NUM_BLOCKS_BETWEEN_REQUESTS).await?;
-    Ok(())
-}
-
-async fn submit_sign_batches(
-    worker: &near_workspaces::Worker<near_workspaces::network::Sandbox>,
-    contract: &near_workspaces::Contract,
-    parallel: &near_workspaces::Contract,
-    scheme: SignScheme,
-    domain_id: DomainId,
+    sign_args: &SignRequestArgs,
     total_calls: u64,
 ) -> anyhow::Result<Vec<(TransactionStatus, u64)>> {
     let mut statuses = Vec::new();
     let mut remaining = total_calls;
     while remaining > 0 {
         let k = remaining.min(SIGN_CALLS_PER_BATCH);
-        let mut args = ParallelSignArgs::new(contract.id());
-        scheme.populate_args(&mut args, domain_id, k);
-        let status = submit_parallel_batch(parallel, &args).await?;
+        let status = parallel
+            .call("make_duplicate_sign_calls")
+            .args_json(MakeDuplicateSignCallsArgs {
+                target_contract: contract.id(),
+                request: sign_args,
+                count: k,
+            })
+            .max_gas()
+            .transact_async()
+            .await?;
         statuses.push((status, k));
         remaining -= k;
         worker.fast_forward(NUM_BLOCKS_BETWEEN_REQUESTS).await?;
@@ -394,19 +298,29 @@ async fn submit_sign_batches(
     Ok(statuses)
 }
 
-async fn submit_ckd_batches(
+/// CKD counterpart to [`submit_duplicate_sign_batches`]; the lower per-batch ceiling
+/// reflects CKD's ~30 TGas per child call.
+async fn submit_duplicate_ckd_batches(
     worker: &near_workspaces::Worker<near_workspaces::network::Sandbox>,
     contract: &near_workspaces::Contract,
     parallel: &near_workspaces::Contract,
-    domain_id: DomainId,
+    ckd_args: &CKDRequestArgs,
+    total_calls: u64,
 ) -> anyhow::Result<Vec<(TransactionStatus, u64)>> {
     let mut statuses = Vec::new();
-    let mut remaining = DUPLICATE_REQUEST_FAN_OUT;
+    let mut remaining = total_calls;
     while remaining > 0 {
         let k = remaining.min(CKD_CALLS_PER_BATCH);
-        let mut args = ParallelSignArgs::new(contract.id());
-        args.ckd_calls_by_domain = Some(BTreeMap::from([(domain_id.0, k)]));
-        let status = submit_parallel_batch(parallel, &args).await?;
+        let status = parallel
+            .call("make_duplicate_ckd_calls")
+            .args_json(MakeDuplicateCkdCallsArgs {
+                target_contract: contract.id(),
+                request: ckd_args,
+                count: k,
+            })
+            .max_gas()
+            .transact_async()
+            .await?;
         statuses.push((status, k));
         remaining -= k;
         worker.fast_forward(NUM_BLOCKS_BETWEEN_REQUESTS).await?;
@@ -414,43 +328,54 @@ async fn submit_ckd_batches(
     Ok(statuses)
 }
 
+/// Polls the contract's `pending_signature_queue_len` view until the queue holds
+/// `expected_len` yields. Calling `respond` before all submitted batches have created
+/// their yields would leave the late arrivals stranded, so this turns an otherwise
+/// timing-dependent invariant into an explicit assertion. Requires the contract to be
+/// built with `--features sandbox-test-methods` (see
+/// [`SandboxTestSetupBuilder::with_sandbox_test_methods`]).
 async fn wait_for_pending_signature_queue(
     contract: &near_workspaces::Contract,
     request: &mpc_contract::primitives::signature::SignatureRequest,
+    expected_len: u32,
 ) -> anyhow::Result<()> {
-    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
     loop {
-        let pending: Option<mpc_contract::primitives::signature::YieldIndex> = contract
-            .view(method_names::GET_PENDING_REQUEST)
+        let len: u32 = contract
+            .view("pending_signature_queue_len")
             .args_json(serde_json::json!({ "request": request }))
             .await?
             .json()?;
-        if pending.is_some() {
+        if len >= expected_len {
             return Ok(());
         }
         if std::time::Instant::now() >= deadline {
-            anyhow::bail!("timed out waiting for signature request to appear in queue");
+            anyhow::bail!(
+                "timed out waiting for signature queue to reach {expected_len} (saw {len})"
+            );
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }
 
+/// CKD counterpart to [`wait_for_pending_signature_queue`]; same rationale.
 async fn wait_for_pending_ckd_queue(
     contract: &near_workspaces::Contract,
     request: &mpc_contract::primitives::ckd::CKDRequest,
+    expected_len: u32,
 ) -> anyhow::Result<()> {
-    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
     loop {
-        let pending: Option<mpc_contract::primitives::signature::YieldIndex> = contract
-            .view(method_names::GET_PENDING_CKD_REQUEST)
+        let len: u32 = contract
+            .view("pending_ckd_queue_len")
             .args_json(serde_json::json!({ "request": request }))
             .await?
             .json()?;
-        if pending.is_some() {
+        if len >= expected_len {
             return Ok(());
         }
         if std::time::Instant::now() >= deadline {
-            anyhow::bail!("timed out waiting for CKD request to appear in queue");
+            anyhow::bail!("timed out waiting for CKD queue to reach {expected_len} (saw {len})");
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }

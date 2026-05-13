@@ -1,8 +1,3 @@
-#![expect(
-    clippy::too_many_arguments,
-    reason = "make_parallel_sign_calls takes four per-scheme call maps plus seed and unique_payloads; refactoring to a single args struct is a deferred cleanup"
-)]
-
 use elliptic_curve::group::Group;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
@@ -29,6 +24,16 @@ pub fn generate_app_public_key(seed: u64) -> CKDAppPublicKey {
     CKDAppPublicKey::AppPublicKey(Bls12381G1PublicKey::from(&big_x))
 }
 
+/// Gas attached to each cross-contract `sign` / `verify_foreign_transaction` call this
+/// contract fans out.
+const SIGN_CALL_TGAS: u64 = 15;
+
+/// Gas attached to each cross-contract `request_app_private_key` call.
+const CKD_CALL_TGAS: u64 = 30;
+
+/// Gas attached to the `handle_results` self-callback.
+const HANDLE_RESULTS_TGAS: u64 = 10;
+
 #[near(contract_state)]
 #[derive(Default)]
 pub struct TestContract;
@@ -43,13 +48,11 @@ impl TestContract {
         ckd_calls_by_domain: Option<BTreeMap<u64, u64>>,
         robust_ecdsa_calls_by_domain: Option<BTreeMap<u64, u64>>,
         seed: u64,
-        unique_payloads: bool,
     ) -> Promise {
         fn build_signature_calls<F>(
             target_contract: &AccountId,
             domain_map: &BTreeMap<u64, u64>,
             seed: u64,
-            unique_payloads: bool,
             payload_builder: &F,
         ) -> Vec<Promise>
         where
@@ -60,27 +63,16 @@ impl TestContract {
                 .flat_map(|(domain_id, num_calls)| {
                     (0..*num_calls).map(move |i| {
                         let mut hasher = Sha256::new();
-                        let payload_input = if unique_payloads {
-                            format!("{seed}-{i}")
-                        } else {
-                            format!("{seed}")
-                        };
-                        hasher.update(payload_input.as_str());
+                        hasher.update(format!("{seed}-{i}").as_str());
                         let payload_bytes: [u8; 32] = hasher.finalize().into();
 
-                        let args = SignArgs {
-                            request: SignRequestArgs {
+                        sign_promise(
+                            target_contract,
+                            SignRequestArgs {
                                 payload: payload_builder(payload_bytes),
                                 path: "".to_string(),
                                 domain_id: DomainId(*domain_id),
                             },
-                        };
-
-                        Promise::new(target_contract.clone()).function_call(
-                            method_names::SIGN.to_string(),
-                            serde_json::to_vec(&args).unwrap(),
-                            NearToken::from_yoctonear(1),
-                            Gas::from_tgas(15),
                         )
                     })
                 })
@@ -90,30 +82,18 @@ impl TestContract {
             target_contract: &AccountId,
             domain_map: &BTreeMap<u64, u64>,
             seed: u64,
-            unique_payloads: bool,
         ) -> Vec<Promise> {
             domain_map
                 .iter()
                 .flat_map(|(domain_id, num_calls)| {
                     (0..*num_calls).map(move |i| {
-                        let key_seed = if unique_payloads {
-                            seed + i + 2
-                        } else {
-                            seed + 2
-                        };
-                        let args = CKDArgs {
-                            request: CKDRequestArgs {
+                        ckd_promise(
+                            target_contract,
+                            CKDRequestArgs {
                                 derivation_path: "".to_string(),
                                 domain_id: DomainId(*domain_id),
-                                app_public_key: generate_app_public_key(key_seed),
+                                app_public_key: generate_app_public_key(seed + i + 2),
                             },
-                        };
-
-                        Promise::new(target_contract.clone()).function_call(
-                            method_names::REQUEST_APP_PRIVATE_KEY.to_string(),
-                            serde_json::to_vec(&args).unwrap(),
-                            NearToken::from_yoctonear(1),
-                            Gas::from_tgas(30),
                         )
                     })
                 })
@@ -126,7 +106,6 @@ impl TestContract {
                 &target_contract,
                 &ecdsa_calls_by_domain,
                 seed,
-                unique_payloads,
                 &|bytes| Payload::Ecdsa(bytes.into()),
             ));
         };
@@ -136,7 +115,6 @@ impl TestContract {
                 &target_contract,
                 &eddsa_calls_by_domain,
                 seed + 1_000_000, // tweak seed offset to avoid collision if needed
-                unique_payloads,
                 &|bytes| Payload::Eddsa(bytes.into()),
             ));
         };
@@ -145,7 +123,6 @@ impl TestContract {
                 &target_contract,
                 &ckd_calls_by_domain,
                 seed,
-                unique_payloads,
             ));
         };
         if let Some(robust_ecdsa_calls_by_domain) = robust_ecdsa_calls_by_domain {
@@ -153,25 +130,40 @@ impl TestContract {
                 &target_contract,
                 &robust_ecdsa_calls_by_domain,
                 seed + 2_000_000,
-                unique_payloads,
                 &|bytes| Payload::Ecdsa(bytes.into()),
             ));
         };
 
-        // Combine the calls using promise::and
-        promises.reverse();
-        let mut combined_promise = promises.pop().unwrap();
-        while !promises.is_empty() {
-            combined_promise = combined_promise.and(promises.pop().unwrap());
-        }
+        join_with_handle_results(promises)
+    }
 
-        // Attach a callback to log the final results
-        combined_promise.then(Promise::new(env::current_account_id()).function_call(
-            "handle_results".to_string(),
-            vec![],
-            NearToken::from_near(0),
-            Gas::from_tgas(10),
-        ))
+    /// Emits `count` identical `sign` cross-contract calls for `request` and resolves
+    /// via `handle_results`. Used by tests exercising the duplicate-request fan-out
+    /// path: the caller picks the payload (so it knows which response to produce) and
+    /// the contract just clones it `count` times.
+    pub fn make_duplicate_sign_calls(
+        &self,
+        target_contract: AccountId,
+        request: SignRequestArgs,
+        count: u64,
+    ) -> Promise {
+        let promises = (0..count)
+            .map(|_| sign_promise(&target_contract, request.clone()))
+            .collect();
+        join_with_handle_results(promises)
+    }
+
+    /// CKD counterpart to [`Self::make_duplicate_sign_calls`].
+    pub fn make_duplicate_ckd_calls(
+        &self,
+        target_contract: AccountId,
+        request: CKDRequestArgs,
+        count: u64,
+    ) -> Promise {
+        let promises = (0..count)
+            .map(|_| ckd_promise(&target_contract, request.clone()))
+            .collect();
+        join_with_handle_results(promises)
     }
 
     #[private]
@@ -185,4 +177,42 @@ impl TestContract {
         }
         num_calls
     }
+}
+
+fn sign_promise(target_contract: &AccountId, request: SignRequestArgs) -> Promise {
+    let args = SignArgs { request };
+    Promise::new(target_contract.clone()).function_call(
+        method_names::SIGN.to_string(),
+        serde_json::to_vec(&args).unwrap(),
+        NearToken::from_yoctonear(1),
+        Gas::from_tgas(SIGN_CALL_TGAS),
+    )
+}
+
+fn ckd_promise(target_contract: &AccountId, request: CKDRequestArgs) -> Promise {
+    let args = CKDArgs { request };
+    Promise::new(target_contract.clone()).function_call(
+        method_names::REQUEST_APP_PRIVATE_KEY.to_string(),
+        serde_json::to_vec(&args).unwrap(),
+        NearToken::from_yoctonear(1),
+        Gas::from_tgas(CKD_CALL_TGAS),
+    )
+}
+
+/// Combines the given child promises via `Promise::and`, chains `handle_results` as
+/// the resolution callback, and returns the resulting promise. `handle_results`
+/// observes every child's resolution and panics if any of them failed, so a parent
+/// transaction that completes with `Ok` is proof that every queued call resolved.
+fn join_with_handle_results(mut promises: Vec<Promise>) -> Promise {
+    promises.reverse();
+    let mut combined_promise = promises.pop().unwrap();
+    while !promises.is_empty() {
+        combined_promise = combined_promise.and(promises.pop().unwrap());
+    }
+    combined_promise.then(Promise::new(env::current_account_id()).function_call(
+        "handle_results".to_string(),
+        vec![],
+        NearToken::from_near(0),
+        Gas::from_tgas(HANDLE_RESULTS_TGAS),
+    ))
 }

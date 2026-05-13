@@ -42,9 +42,17 @@ use crate::{
 
 /// Maximum number of concurrent yield-resume promises that can be queued for a single
 /// request key (i.e. the number of duplicate submissions whose responses fan out from
-/// one MPC reply). This is a somewhat arbitrary bound, set high enough so that we should
-/// never hit it in practice (famous last words...), while still providing a ceiling to
-/// keep the theoretical number of resumed promises bounded.
+/// one MPC reply).
+///
+/// The ceiling is needed because `respond*` drains the entire queue in one call: every
+/// queued yield triggers a host-side `promise_yield_resume`, paid for out of the
+/// responder's 300 TGas budget. Without a cap, an attacker could enqueue enough
+/// duplicates to make `respond*` run out of gas and strand every queued caller.
+///
+/// 128 is validated empirically by the sandbox test
+/// `test_contract_request_duplicate_requests_fan_out`, which fills the queue to this
+/// cap across all four signature schemes and confirms `respond*` drains it inside its
+/// 300 TGas budget.
 pub(crate) const MAX_PENDING_REQUEST_FAN_OUT: u8 = 128;
 
 /// In-flight requests inherited from the previous on-chain schema.
