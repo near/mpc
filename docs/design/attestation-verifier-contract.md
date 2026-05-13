@@ -85,9 +85,10 @@ pub fn verify_quote(
     &self,
     quote: Vec<u8>,
     collateral: Collateral,
-    now_seconds: u64,
 ) -> Result<VerifiedReport, VerificationError>;
 ```
+
+The current timestamp is read inside the method via `env::block_timestamp_ms() / 1000`, matching how `mpc-contract`'s `tee_state::current_time_seconds()` sources `now` today.
 
 `Collateral` and `VerifiedReport` are Borsh-stable wire types matching `dcap_qvl::verify::QuoteCollateralV3` and `dcap_qvl::verify::VerifiedReport` respectively, exposed via a new `tee-verifier-interface` crate so callers can decode the response without depending on `dcap-qvl` directly. The returned `VerifiedReport` carries the parsed quote (RTMRs, MRTD, report_data, advisory IDs, TCB statuses); each consumer's downstream policy then decides what counts as acceptable for its application.
 
