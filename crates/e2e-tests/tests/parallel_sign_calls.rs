@@ -98,6 +98,7 @@ async fn mpc_cluster_should_successfully_process_parallel_requests() {
                 "eddsa_calls_by_domain": { "2": EDDSA_CALLS },
                 "ckd_calls_by_domain": { "3": CKD_CALLS },
                 "seed": 42u64,
+                "unique_payloads": true,
             }),
         )
         .await

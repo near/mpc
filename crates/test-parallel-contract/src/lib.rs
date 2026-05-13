@@ -1,3 +1,8 @@
+#![expect(
+    clippy::too_many_arguments,
+    reason = "make_parallel_sign_calls takes four per-scheme call maps plus seed and unique_payloads; refactoring to a single args struct is a deferred cleanup"
+)]
+
 use elliptic_curve::group::Group;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
@@ -38,11 +43,13 @@ impl TestContract {
         ckd_calls_by_domain: Option<BTreeMap<u64, u64>>,
         robust_ecdsa_calls_by_domain: Option<BTreeMap<u64, u64>>,
         seed: u64,
+        unique_payloads: bool,
     ) -> Promise {
         fn build_signature_calls<F>(
             target_contract: &AccountId,
             domain_map: &BTreeMap<u64, u64>,
             seed: u64,
+            unique_payloads: bool,
             payload_builder: &F,
         ) -> Vec<Promise>
         where
@@ -53,7 +60,12 @@ impl TestContract {
                 .flat_map(|(domain_id, num_calls)| {
                     (0..*num_calls).map(move |i| {
                         let mut hasher = Sha256::new();
-                        hasher.update(format!("{seed}-{i}").as_str());
+                        let payload_input = if unique_payloads {
+                            format!("{seed}-{i}")
+                        } else {
+                            format!("{seed}")
+                        };
+                        hasher.update(payload_input.as_str());
                         let payload_bytes: [u8; 32] = hasher.finalize().into();
 
                         let args = SignArgs {
@@ -78,16 +90,22 @@ impl TestContract {
             target_contract: &AccountId,
             domain_map: &BTreeMap<u64, u64>,
             seed: u64,
+            unique_payloads: bool,
         ) -> Vec<Promise> {
             domain_map
                 .iter()
                 .flat_map(|(domain_id, num_calls)| {
                     (0..*num_calls).map(move |i| {
+                        let key_seed = if unique_payloads {
+                            seed + i + 2
+                        } else {
+                            seed + 2
+                        };
                         let args = CKDArgs {
                             request: CKDRequestArgs {
                                 derivation_path: "".to_string(),
                                 domain_id: DomainId(*domain_id),
-                                app_public_key: generate_app_public_key(seed + i + 2),
+                                app_public_key: generate_app_public_key(key_seed),
                             },
                         };
 
@@ -108,6 +126,7 @@ impl TestContract {
                 &target_contract,
                 &ecdsa_calls_by_domain,
                 seed,
+                unique_payloads,
                 &|bytes| Payload::Ecdsa(bytes.into()),
             ));
         };
@@ -117,6 +136,7 @@ impl TestContract {
                 &target_contract,
                 &eddsa_calls_by_domain,
                 seed + 1_000_000, // tweak seed offset to avoid collision if needed
+                unique_payloads,
                 &|bytes| Payload::Eddsa(bytes.into()),
             ));
         };
@@ -125,6 +145,7 @@ impl TestContract {
                 &target_contract,
                 &ckd_calls_by_domain,
                 seed,
+                unique_payloads,
             ));
         };
         if let Some(robust_ecdsa_calls_by_domain) = robust_ecdsa_calls_by_domain {
@@ -132,6 +153,7 @@ impl TestContract {
                 &target_contract,
                 &robust_ecdsa_calls_by_domain,
                 seed + 2_000_000,
+                unique_payloads,
                 &|bytes| Payload::Ecdsa(bytes.into()),
             ));
         };

@@ -98,6 +98,7 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
                         eddsa_calls_by_domain,
                         ckd_calls_by_domain,
                         seed: rand::random(),
+                        unique_payloads: true,
                     })
                     .unwrap(),
                     PARALLEL_SIGN_TGAS,
@@ -186,6 +187,7 @@ struct ParallelSignArgsV2 {
     eddsa_calls_by_domain: BTreeMap<u64, u64>,
     ckd_calls_by_domain: BTreeMap<u64, u64>,
     seed: u64,
+    unique_payloads: bool,
 }
 
 fn make_payload(protocol: Protocol) -> Payload {
