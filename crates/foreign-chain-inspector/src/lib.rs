@@ -28,7 +28,7 @@ pub trait ForeignChainInspector {
         tx_id: Self::TransactionId,
         finality: Self::Finality,
         extractors: Vec<Self::Extractor>,
-    ) -> impl Future<Output = Result<Vec<Self::ExtractedValue>, ForeignChainInspectionError>> + Send;
+    ) -> impl Future<Output = Result<Vec<Self::ExtractedValue>, ForeignChainInspectionError>> + Send + Sync;
 }
 
 #[derive(Clone)]
@@ -38,11 +38,11 @@ struct FanOutInspector<Inspector> {
 
 impl<Inspector> ForeignChainInspector for FanOutInspector<Inspector>
 where
-    Inspector: ForeignChainInspector + Clone + Send + Sync + 'static,
-    Inspector::TransactionId: Clone + Send + 'static,
-    Inspector::Finality: Clone + Send + 'static,
-    Inspector::Extractor: Clone + Send + 'static,
-    Inspector::ExtractedValue: Send + 'static + PartialEq,
+    Inspector: ForeignChainInspector + Clone + Send + Sync + Sync + 'static,
+    Inspector::TransactionId: Clone + Send + Sync + 'static,
+    Inspector::Finality: Clone + Send + Sync + 'static,
+    Inspector::Extractor: Clone + Send + Sync + 'static,
+    Inspector::ExtractedValue: Send + Sync + 'static + PartialEq,
 {
     type TransactionId = Inspector::TransactionId;
     type Finality = Inspector::Finality;
@@ -72,7 +72,7 @@ where
 
         responses
             .iter()
-            .all(|other_response| first_response == other_response);
+            .all(|other_response| first_response == *other_response);
 
         todo!()
     }
@@ -132,6 +132,51 @@ pub enum ForeignChainInspectionError {
     EventLogFailedBorshSerialization(std::io::Error),
     #[error("inspector clients returned mismatching extracted values")]
     InspectorResponseMismatch,
+}
+
+impl PartialEq for ForeignChainInspectionError {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::ClientError(l0), Self::ClientError(r0)) => {
+                todo!()
+                // l0 == r0
+            }
+            (
+                Self::NotEnoughBlockConfirmations {
+                    expected: l_expected,
+                    got: l_got,
+                },
+                Self::NotEnoughBlockConfirmations {
+                    expected: r_expected,
+                    got: r_got,
+                },
+            ) => l_expected == r_expected && l_got == r_got,
+            (
+                Self::NonCanonicalBlock {
+                    block_number: l_block_number,
+                    receipt_hash: l_receipt_hash,
+                    canonical_hash: l_canonical_hash,
+                },
+                Self::NonCanonicalBlock {
+                    block_number: r_block_number,
+                    receipt_hash: r_receipt_hash,
+                    canonical_hash: r_canonical_hash,
+                },
+            ) => {
+                l_block_number == r_block_number
+                    && l_receipt_hash == r_receipt_hash
+                    && l_canonical_hash == r_canonical_hash
+            }
+            (
+                Self::EventLogFailedBorshSerialization(l0),
+                Self::EventLogFailedBorshSerialization(r0),
+            ) => {
+                todo!()
+                // l0 == r0
+            }
+            _ => core::mem::discriminant(self) == core::mem::discriminant(other),
+        }
+    }
 }
 
 /// Builds an HTTP client with the specified authentication method.

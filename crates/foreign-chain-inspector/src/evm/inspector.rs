@@ -31,8 +31,8 @@ pub struct EvmInspector<Client, Chain> {
 
 impl<Client, Chain> ForeignChainInspector for EvmInspector<Client, Chain>
 where
-    Client: ClientT + Send,
-    Chain: EvmChain + Send,
+    Client: ClientT + Send + Sync,
+    Chain: EvmChain + Send + Sync,
 {
     type TransactionId = Chain::TransactionHash;
     type Finality = EthereumFinality;
@@ -79,7 +79,7 @@ where
 
 impl<Client, Chain> EvmInspector<Client, Chain>
 where
-    Client: ClientT + Send,
+    Client: ClientT + Send + Sync,
     Chain: EvmChain,
 {
     pub fn new(client: Client) -> Self {

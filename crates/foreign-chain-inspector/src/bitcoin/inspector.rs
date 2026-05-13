@@ -16,7 +16,7 @@ pub struct BitcoinInspector<Client> {
 
 impl<Client> ForeignChainInspector for BitcoinInspector<Client>
 where
-    Client: ClientT + Send,
+    Client: ClientT + Send + Sync,
 {
     type TransactionId = BitcoinTransactionHash;
     type Finality = BlockConfirmations;
@@ -62,7 +62,7 @@ where
 
 impl<Client> BitcoinInspector<Client>
 where
-    Client: ClientT + Send,
+    Client: ClientT + Send + Sync,
 {
     pub fn new(client: Client) -> Self {
         Self { client }
