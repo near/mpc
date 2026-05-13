@@ -53,7 +53,7 @@ struct ForeignChainRpcWhitelist {
     // multiple chains is expected: each chain entry carries chain-specific connection
     // details, so they are per-chain configs, not duplicates.
     entries: BTreeMap<ForeignChain, BTreeMap<ProviderId, ProviderEntry>>,
-    // PR 2 adds: pending votes (per (chain, provider_id) target) + per-chain voting thresholds.
+    // PR 2 adds: pending votes (per proposed batch of actions) + per-chain voting thresholds.
 }
 
 struct ProviderEntry {
@@ -93,7 +93,7 @@ Nodes submit their per-chain provider set on-chain so the network knows which ch
 Landing in stacked PRs under [#3208](https://github.com/near/mpc/issues/3208):
 
 - **PR 1** ([#3216](https://github.com/near/mpc/pull/3216)): on-chain data shape and storage field (`ForeignChainRpcWhitelist`, `ProviderEntry`, `AuthScheme`, `ChainRouting`, `ProviderId`), `MpcContract` field + storage key, and a read-only view (`allowed_foreign_chain_providers()`). No vote endpoints, no node-side wiring.
-- **PR 2**: vote endpoints (`vote_add_foreign_chain_provider` / `vote_remove_foreign_chain_provider`), pending-vote tracking, per-chain voting thresholds, `clean_non_participant_votes` extension.
+- **PR 2**: a single batched vote endpoint `vote_update_foreign_chain_providers(actions: Vec<ProviderVoteAction>)` that applies the batch atomically once threshold is reached, pending-vote tracking, per-chain voting thresholds, `clean_non_participant_votes` extension. Single batched endpoint instead of separate add/remove rounds because bootstrap is the operational worst case (N chains × M providers individual rounds is intractable to coordinate); batching collapses it to one vote per operator.
 - **PR 3**: node-side wiring — operator-yaml schema change (`provider_id` + `token` only), indexer task streaming the whitelist into a `watch::Receiver`, coordinator startup pipeline (resolve → chain-identity probe → sample-tx probe → register), per-inspector chain-identity probe.
 
 Per-chain quorum policy (`RpcPolicy.quorum_threshold` — the number of providers a node must independently agree with on a verification result, distinct from the per-chain voting threshold for add/remove) is a follow-up under the same milestone.

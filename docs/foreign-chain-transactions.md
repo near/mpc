@@ -326,7 +326,7 @@ The per-participant registration model above leaves the network with no shared n
 
 | Concern                                | Today                                                                                       | After this change                                                                                                                                                                              |
 |----------------------------------------|---------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Source of truth for "trusted provider" | Implicit consensus across operator yamls (everyone independently set the same URLs)         | Explicit on-chain `foreign_chain_rpc_whitelist`, mutated by `vote_add_foreign_chain_provider` / `vote_remove_foreign_chain_provider`                                                            |
+| Source of truth for "trusted provider" | Implicit consensus across operator yamls (everyone independently set the same URLs)         | Explicit on-chain `foreign_chain_rpc_whitelist`, mutated by a single `vote_update_foreign_chain_providers(actions: Vec<ProviderVoteAction>)` endpoint that votes on a batch of add/remove actions applied atomically once threshold is reached                                                            |
 | Where the RPC URL lives                | Operator's `foreign_chains.yaml`, as a full string with auth placeholders                   | Contract `ProviderEntry`: `base_url` + `auth_scheme` + `chain_routing` enum (`Embedded` / `PathSegment` / `QueryParam` — exactly one). Node assembles the final URL at startup.                  |
 | Where the operator's API key lives     | Operator's yaml, via `TokenConfig::env`                                                     | Operator's yaml, via `TokenConfig::env` *(unchanged)*                                                                                                                                          |
 | What the operator picks                | Full URL, auth scheme, token reference                                                      | `provider_id` (label) + token reference                                                                                                                                                        |
@@ -368,7 +368,7 @@ pub struct ProviderEntry {
 pub struct ForeignChainRpcWhitelist {
     // Inner map keyed by `provider_id` makes uniqueness structural — no manual dedup invariant.
     entries: BTreeMap<ForeignChain, BTreeMap<ProviderId, ProviderEntry>>,
-    // PR 2 adds: pending votes (per (chain, provider_id) target) + per-chain voting thresholds.
+    // PR 2 adds: pending votes (per proposed batch of actions) + per-chain voting thresholds.
 }
 ```
 
@@ -392,11 +392,28 @@ The node assembles the final URL deterministically: start from `base_url`, apply
 
 ### Vote semantics (PR 2)
 
-- **Multi-vote across targets, one vote per target.** A vote target is `(chain, provider_id)`. Within a target a participant has at most one active vote — voting again overwrites their prior vote on *that* target. Across targets the rounds are independent: voting `Add(Ethereum, alchemy)` does not displace a pending `Add(Ethereum, ankr)` from the same participant. This diverges intentionally from the TEE single-vote-per-category model — whitelists are sets, not single values.
-- **Per-chain threshold.** Each chain's threshold lives in `chain_thresholds: BTreeMap<ForeignChain, u64>`. Until a future `vote_set_foreign_chain_provider_threshold` endpoint populates it, lookups fall back to the hardcoded constant `DEFAULT_PROVIDER_VOTE_THRESHOLD = 2`. Both `Add` and `Remove` use the same per-chain threshold.
-- **Threshold checked synchronously on every vote.** No periodic sweep — every `vote_*` call counts votes for the matching action under its target and triggers the apply if threshold is reached.
-- **Per-target clear on apply.** When an action reaches threshold and applies, only the matching target's pending map is wiped. Other targets' rounds continue undisturbed.
-- **Vote withdraw.** No explicit withdraw endpoint; flipping stance (voting `Remove` after `Add` or vice versa) overwrites the vote on that target. A vote is also cleared by being removed from the participant set (resharing → `clean_non_participant_votes`) or by the target's round resolving.
+The vote endpoint takes a **batch** of actions, not one action at a time:
+
+```rust
+pub enum ProviderVoteAction {
+    Add    { chain: ForeignChain, entry: ProviderEntry },
+    Remove { chain: ForeignChain, provider_id: ProviderId },
+}
+
+#[handle_result]
+pub fn vote_update_foreign_chain_providers(
+    &mut self,
+    actions: Vec<ProviderVoteAction>,
+) -> Result<(), Error>;
+```
+
+- **Vote target = the full batch.** A participant votes on an ordered `Vec<ProviderVoteAction>`; two participants only count toward the same proposal if their batches are byte-identical (same actions in the same order). This keeps bootstrap tractable: a single vote can land "add Alchemy/Ankr/dRPC for Ethereum + Polygon + Arbitrum" in one shot, rather than coordinating N×M individual rounds.
+- **One active vote per participant.** Casting a new `vote_update_foreign_chain_providers` call overwrites the participant's previous batch (the prior batch loses one vote). Re-casting an identical batch is idempotent.
+- **Apply atomically, in order.** Once threshold is reached for a given batch, the contract applies its `actions` in order: each `Add` inserts (no-op if `provider_id` already present in the chain bucket), each `Remove` deletes. Apply is all-or-nothing in the sense that either every action in the batch runs in one transaction or none does — there's no partial-apply state to recover from.
+- **Per-chain threshold.** `chain_thresholds: BTreeMap<ForeignChain, u64>`; until a future setter endpoint populates it, lookups fall back to `DEFAULT_PROVIDER_VOTE_THRESHOLD = 2`. A batch that touches multiple chains needs every per-chain threshold satisfied — the highest applicable threshold wins. (PR 2 will pin down the exact rule; mixing chains in one batch may be restricted to keep this simple.)
+- **Threshold checked synchronously on every vote.** No periodic sweep — every `vote_update_foreign_chain_providers` call counts how many participants currently hold the same batch and triggers apply when threshold is reached.
+- **Clear on apply.** When a batch applies, the *entire pending vote map* is cleared: other in-flight proposals must be re-cast. This is the simplest semantic, accepted in exchange for keeping the data structure uniform. Bootstrap-style mass changes happen rarely, so the re-cast cost is acceptable.
+- **Vote withdraw.** No explicit withdraw endpoint; recasting with a different batch overwrites your active vote. A vote is also cleared by being removed from the participant set (resharing → `clean_non_participant_votes`) or by any batch resolving.
 
 ### Design rationale
 
@@ -422,7 +439,7 @@ The "same" provider needs different connection config per chain:
 - **Ankr**: `chain_routing = PathSegment` value differs (`"eth"` vs `"eth_sepolia"`); `base_url` is shared.
 - **dRPC**: `chain_routing = QueryParam` value differs (`"ethereum"` vs `"sepolia"`); `base_url` is shared.
 
-There is no shared "Alchemy" record reused across chains — each `(chain, provider)` pair is a distinct vote with distinct connection details. The fact that two entries share `provider_id: "alchemy"` is the natural cross-chain marker, not duplication.
+There is no shared "Alchemy" record reused across chains — each `(chain, provider_id)` pair has its own `ProviderEntry` with chain-specific connection details. The fact that two entries share `provider_id: "alchemy"` is the natural cross-chain marker, not duplication.
 
 #### Why testnets get separate `ForeignChain` enum variants, not an `environment` field
 
@@ -432,13 +449,17 @@ An `environment: Testnet | Mainnet` field would have to be re-checked everywhere
 
 Removing a compromised provider quickly matters more than tolerating one hostile participant blocking removal indefinitely; node-side falls back to other surviving providers so removal isn't fatal to chain availability. The unanimous-remove precedent (`vote_remove_launcher_hash`) exists because removing a launcher invalidates attestations — that argument doesn't apply to RPC providers.
 
+#### Why a single batched endpoint instead of separate add/remove endpoints
+
+Bootstrap is the operational worst case: enabling N chains with M providers each is N×M individual rounds if every action is its own vote, and every round needs threshold participants to vote *the same value*. For a realistic launch (5 chains × 5 providers, 13 operators) that's 325 individual votes to coordinate. Batching all the add/remove actions into one `Vec<ProviderVoteAction>` collapses that to one vote per operator. Same diff-based vote model (operators audit a concrete list of actions before voting), just with a sensibly-sized unit of agreement.
+
 #### Why per-chain threshold rather than the global protocol threshold
 
-Mainnet Ethereum and a testnet have very different security postures; the global protocol threshold is too blunt. Until the setter endpoint ships, every chain uses the hardcoded fallback `DEFAULT_PROVIDER_VOTE_THRESHOLD = 2`. The setter endpoint is intentionally deferred — the data structure ships in PR 1 so PR 2's vote endpoints already read per-chain.
+Mainnet Ethereum and a testnet have very different security postures; the global protocol threshold is too blunt. Until the setter endpoint ships, every chain uses the hardcoded fallback `DEFAULT_PROVIDER_VOTE_THRESHOLD = 2`. The setter endpoint is intentionally deferred — the data structure ships in PR 1 so PR 2's vote endpoint already reads per-chain.
 
 #### Why the chain-identity probe in addition to per-chain keying (PR 3)
 
-The per-chain map key prevents *lookup* confusion: when the node resolves the operator's `ethereum:` section, only `entries[Ethereum]` is consulted, never `entries[Sepolia]`. What it doesn't prevent is a participant voting `(Ethereum, ProviderEntry { provider_id: "ankr", chain_routing: PathSegment { segment: "eth_sepolia" }, … })` — the contract just checks URL shape and routing/auth collisions, not whether `"eth_sepolia"` actually corresponds to Ethereum mainnet. Threshold voter review is the first line of defense; the chain-identity probe is the structural one.
+The per-chain map key prevents *lookup* confusion: when the node resolves the operator's `ethereum:` section, only `entries[Ethereum]` is consulted, never `entries[Sepolia]`. What it doesn't prevent is a batched vote that includes an action like `Add { chain: Ethereum, entry: ProviderEntry { provider_id: "ankr", chain_routing: PathSegment { segment: "eth_sepolia" }, … } }` — the contract just checks URL shape and routing/auth collisions, not whether `"eth_sepolia"` actually corresponds to Ethereum mainnet. Threshold voter review is the first line of defense; the chain-identity probe is the structural one.
 
 At startup, each resolved provider gets its self-identifying RPC called (`eth_chainId` for EVM, `getGenesisHash` for Solana, `starknet_chainId` for Starknet, a checkpointed block hash for Bitcoin) and the response is compared against a per-`ForeignChain` constant hardcoded in the inspector. A provider whose RPC reports the wrong network is dropped before any traffic flows. Because the expected value is in the TEE-attested binary, a malicious vote with the wrong URL can't bypass it.
 
