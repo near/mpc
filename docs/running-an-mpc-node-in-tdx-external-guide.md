@@ -681,6 +681,8 @@ format = "plain"
 filter = "mpc=debug,info"
 ```
 
+The snippet above shows only the fields you are likely to change. Required fields not shown (e.g. `near_responder_account_id`, `number_of_responder_keys`, `web_ui`, and the `indexer` / `triple` / `presignature` / `signature` / `ckd` blocks) are inherited from the [`user-config.toml`](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/user-config.toml) template — always start from that file and edit the highlighted fields rather than building a config from this snippet alone.
+
 Adjust the variables as per your environment.
 
 * `image_reference` — the Docker image reference. The actual image version is determined by the manifest digest from the contract (stored in the approved hashes file), not by a tag. A tag may be appended for readability (e.g., `"nearone/mpc-node:3.8.1"`) but is ignored during pull.
@@ -832,6 +834,7 @@ Use the following custom settings for MPC:
    Public 80:80 (main node to node communication port)
    Public 24567:24567 (required for decentralized state sync)
    Public 8080:8080 (required for collecting debug and telemetry information)
+   Public 8079:8079 (required for the node-migration HTTP endpoint)
    Local 3030:3030: (use public if you want the debug metrics to be available on the internet)
    Local <dstack_agent_port>:8090: (required for access CVM information and container logs)
 

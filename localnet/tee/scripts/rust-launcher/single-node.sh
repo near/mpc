@@ -206,7 +206,12 @@ render_env_and_conf() {
   export MPC_ACCOUNT_ID="$NODE_ACCOUNT"
   export MPC_CONTRACT_ID="$CONTRACT_ACCOUNT"
   export MPC_SECRET_STORE_KEY="${MPC_SECRET_STORE_KEY:-00000000000000000000000000000000}"
-  export PORTS="${PORTS:-8080:8080,24566:24566,${MIGRATION_PORT}:${MIGRATION_PORT}}"
+  # The launcher PORTS map is CVM->container. vmm-cli (in deploy-launcher.sh)
+  # forwards host:$MIGRATION_PORT -> CVM:$INTERNAL_MIGRATION_PORT, so the
+  # launcher must publish container:$INTERNAL_MIGRATION_PORT on the same CVM
+  # port. Mapping ${MIGRATION_PORT}:${MIGRATION_PORT} would land on a closed
+  # container port when the two differ.
+  export PORTS="${PORTS:-8080:8080,24566:24566,${INTERNAL_MIGRATION_PORT:-13001}:${INTERNAL_MIGRATION_PORT:-13001}}"
   export PORTS_TOML
   PORTS_TOML="$(ports_to_toml "$PORTS")"
 

@@ -156,7 +156,13 @@ LOCAL_DEBUG_BASE=3031
 
 STATE_SYNC_PORT=24567
 MAIN_PORT=80
-MIGRATION_BASE_PORT="${MIGRATION_BASE_PORT:-13001}"   # host-side per-node migration port base
+# Per-node base port. In cvm-deployment (testnet/mainnet) the same
+# EXTERNAL_MPC_MIGRATION_PORT slot carries the migration HTTP endpoint on
+# :8079; here in the localnet rust-launcher path it is repurposed as the
+# per-node TLS/P2P forward — the contract's participant URLs point to
+# https://<ip>:$(migration_port_for_i $i), so the MPC node's TLS listener
+# binds on this port (not on $MAIN_PORT=80).
+MIGRATION_BASE_PORT="${MIGRATION_BASE_PORT:-13001}"
 migration_port_for_i() { echo $((MIGRATION_BASE_PORT + $1)); }
 
 INTERNAL_PUBLIC_DEBUG_PORT=8080
