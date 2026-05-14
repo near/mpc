@@ -28,6 +28,7 @@ members = [
     "crates/tee-authority",
     "crates/tee-context",
     "crates/tee-launcher",
+    "crates/tee-verifier-interface",
     "crates/test-migration-contract",
     "crates/test-parallel-contract",
     "crates/test-port-allocator",
