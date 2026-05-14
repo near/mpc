@@ -637,11 +637,13 @@ impl<T: Clone + Debug> Debug for RecentBlocksTracker<T> {
 
 #[cfg(test)]
 pub mod tests {
+    use crate::requests::recent_blocks_tracker::AtomicBlockStatus;
+
     use super::{BlockEntropy, BlockStatus, BlockViewLite, RecentBlocksTracker};
     use near_indexer::near_primitives::hash::hash;
     use near_indexer_primitives::CryptoHash;
     use std::collections::HashSet;
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
     use std::sync::{Arc, Mutex};
 
     pub struct TestBlock {
@@ -1285,5 +1287,18 @@ pub mod tests {
         tester.add(&b2, "2");
         tester.add(&b3, "3");
         assert_eq!(tester.tracker.minimum_height_to_keep(), Some(1))
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn atomic_block_status__should_not_downgrade_from_final() {
+        // Given
+        let s = AtomicBlockStatus(AtomicU8::new(BlockStatus::Final.into()));
+
+        // When / Then
+        s.make_canonical();
+        assert!(s.is_final());
+        s.make_non_canonical();
+        assert!(s.is_final());
     }
 }
