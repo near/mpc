@@ -205,19 +205,13 @@ impl MpcContract {
     fn add_signature_request(&mut self, request: SignatureRequest, data_id: CryptoHash) {
         pending_requests::push_pending_yield(
             &mut self.pending_signature_requests,
-            &mut self.legacy_pending_requests.signature_requests,
             request,
             data_id,
         );
     }
 
     fn add_ckd_request(&mut self, request: CKDRequest, data_id: CryptoHash) {
-        pending_requests::push_pending_yield(
-            &mut self.pending_ckd_requests,
-            &mut self.legacy_pending_requests.ckd_requests,
-            request,
-            data_id,
-        );
+        pending_requests::push_pending_yield(&mut self.pending_ckd_requests, request, data_id);
     }
 
     fn add_verify_foreign_tx_request(
@@ -227,7 +221,6 @@ impl MpcContract {
     ) {
         pending_requests::push_pending_yield(
             &mut self.pending_verify_foreign_tx_requests,
-            &mut self.legacy_pending_requests.verify_foreign_tx_requests,
             request,
             data_id,
         );
@@ -2649,6 +2642,27 @@ mod tests {
         node_id.account_id.clone()
     }
 
+    /// Builds the valid secp256k1 signature for `payload` under the domain key derived
+    /// from `(predecessor, path)`. Shared between `test_signature_common` and
+    /// `sign__should_queue_duplicate_requests_and_drain_all_on_respond` because both
+    /// need an honestly-produced response to feed into `respond`.
+    fn secp256k1_signature_for_test(
+        secret_key: &k256::Scalar,
+        predecessor: &AccountId,
+        path: &str,
+        payload: &Payload,
+    ) -> dtos::K256Signature {
+        let derivation_path = derive_tweak(predecessor, path);
+        let secret_key_ec: elliptic_curve::SecretKey<Secp256k1> =
+            elliptic_curve::SecretKey::from_bytes(&secret_key.to_bytes()).unwrap();
+        let derived_secret_key = derive_secret_key(&secret_key_ec, &derivation_path);
+        let signing_key = SigningKey::from_bytes(&derived_secret_key.to_bytes()).unwrap();
+        let (signature, recovery_id) = signing_key
+            .sign_prehash_recoverable(payload.as_ecdsa().unwrap())
+            .unwrap();
+        dtos::K256Signature::from_ecdsa_recoverable(&signature, recovery_id)
+    }
+
     fn test_signature_common(success: bool, legacy_v1_api: bool, protocol: Protocol) {
         let (context, mut contract, secret_key) =
             basic_setup_with_protocol(protocol, DomainPurpose::Sign, &mut OsRng);
@@ -2683,24 +2697,17 @@ mod tests {
         contract.sign(request);
         contract.get_pending_request(&signature_request).unwrap();
 
-        // simulate signature and response to the signing request
-        let derivation_path = derive_tweak(&context.predecessor_account_id, &key_path);
-        let secret_key_ec: elliptic_curve::SecretKey<Secp256k1> =
-            elliptic_curve::SecretKey::from_bytes(&secret_key.to_bytes()).unwrap();
-        let derived_secret_key = derive_secret_key(&secret_key_ec, &derivation_path);
-        let secret_key = SigningKey::from_bytes(&derived_secret_key.to_bytes()).unwrap();
-        let (signature, recovery_id) = secret_key
-            .sign_prehash_recoverable(payload.as_ecdsa().unwrap())
-            .unwrap();
-
+        let valid_signature = secp256k1_signature_for_test(
+            &secret_key,
+            &context.predecessor_account_id,
+            &key_path,
+            &payload,
+        );
         let signature_response = if success {
-            dtos::SignatureResponse::Secp256k1(dtos::K256Signature::from_ecdsa_recoverable(
-                &signature,
-                recovery_id,
-            ))
+            dtos::SignatureResponse::Secp256k1(valid_signature)
         } else {
             // submit an incorrect signature to make the respond call fail
-            let mut bad_sig = dtos::K256Signature::from_ecdsa_recoverable(&signature, recovery_id);
+            let mut bad_sig = valid_signature;
             bad_sig.s = dtos::K256Scalar::from([2; 32]);
             dtos::SignatureResponse::Secp256k1(bad_sig)
         };
@@ -2832,7 +2839,7 @@ mod tests {
             unreachable!();
         };
         let payload = Payload::from_legacy_ecdsa([7u8; 32]);
-        let path = "m/44'\''/60'\''/0'\''/0/0".to_string();
+        let path = "duplicate_requests_test".to_string();
         let signature_request = SignatureRequest::new(
             DomainId::default(),
             payload.clone(),
@@ -2860,17 +2867,12 @@ mod tests {
         );
 
         // When: a single valid response is delivered.
-        let derivation_path = derive_tweak(&context.predecessor_account_id, &path);
-        let secret_key_ec: elliptic_curve::SecretKey<Secp256k1> =
-            elliptic_curve::SecretKey::from_bytes(&secret_key.to_bytes()).unwrap();
-        let derived_secret_key = derive_secret_key(&secret_key_ec, &derivation_path);
-        let signing_key = SigningKey::from_bytes(&derived_secret_key.to_bytes()).unwrap();
-        let (signature, recovery_id) = signing_key
-            .sign_prehash_recoverable(payload.as_ecdsa().unwrap())
-            .unwrap();
-        let signature_response = dtos::SignatureResponse::Secp256k1(
-            dtos::K256Signature::from_ecdsa_recoverable(&signature, recovery_id),
-        );
+        let signature_response = dtos::SignatureResponse::Secp256k1(secp256k1_signature_for_test(
+            &secret_key,
+            &context.predecessor_account_id,
+            &path,
+            &payload,
+        ));
 
         with_active_participant_and_attested_context(&contract);
         contract
@@ -2968,63 +2970,6 @@ mod tests {
             .pending_verify_foreign_tx_requests
             .get(&request)
             .is_none());
-    }
-
-    #[test]
-    fn add_signature_request__should_migrate_legacy_yield_into_new_queue_on_first_push() {
-        // Given: a contract carrying a pre-upgrade single-yield entry for some request
-        // key (the legacy caller hasn't been responded to or timed out yet).
-        let (context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
-        let signature_request = SignatureRequest::new(
-            DomainId::default(),
-            Payload::from_legacy_ecdsa([5u8; 32]),
-            &context.predecessor_account_id,
-            "m/44'\''/60'\''/0'\''/0/0",
-        );
-        let legacy_data_id = [0xaa; 32];
-        contract.legacy_pending_requests.signature_requests.insert(
-            signature_request.clone(),
-            YieldIndex {
-                data_id: legacy_data_id,
-            },
-        );
-
-        // When: a post-upgrade duplicate is submitted for the same request key.
-        let new_data_id = [0xbb; 32];
-        contract.add_signature_request(signature_request.clone(), new_data_id);
-
-        // Then: the legacy entry has been drained...
-        assert!(
-            contract
-                .legacy_pending_requests
-                .signature_requests
-                .get(&signature_request)
-                .is_none(),
-            "legacy entry must be removed on first post-upgrade push",
-        );
-
-        // ...and prepended to the head of the new queue so it still times out first.
-        let queue = contract
-            .pending_signature_requests
-            .get(&signature_request)
-            .cloned()
-            .expect("new map must hold the migrated + new yield");
-        assert_eq!(queue.len(), 2);
-        assert_eq!(queue[0].data_id, legacy_data_id);
-        assert_eq!(queue[1].data_id, new_data_id);
-
-        // And: a subsequent push appends without touching the (now empty) legacy map.
-        let third_data_id = [0xcc; 32];
-        contract.add_signature_request(signature_request.clone(), third_data_id);
-        let queue = contract
-            .pending_signature_requests
-            .get(&signature_request)
-            .cloned()
-            .unwrap();
-        assert_eq!(queue.len(), 3);
-        assert_eq!(queue[0].data_id, legacy_data_id);
-        assert_eq!(queue[1].data_id, new_data_id);
-        assert_eq!(queue[2].data_id, third_data_id);
     }
 
     #[test]

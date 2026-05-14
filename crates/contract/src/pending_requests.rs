@@ -13,26 +13,27 @@
 //! Callers in `lib.rs` go through these helpers rather than touching the maps
 //! directly, so the legacy-fallback policy lives in one place.
 //!
-//! ## Single-map invariant during the legacy window
+//! ## Legacy-window policy
 //!
-//! A request key `K` can in principle exist in both the new fan-out map and the
-//! [`LegacyPendingRequests`] map at the same time: a caller might submit `K`
-//! before the upgrade (entry in legacy map) and re-submit the identical `K`
-//! after the upgrade (entry in new map). The two helpers below ([`pop_one_yield_for`],
-//! [`resolve_yields_for`]) only consult one map at a time, so a dual-presence
-//! state would mis-route resumes and timeouts and silently drop responses.
+//! During the legacy window a request key `K` can exist in both the new
+//! fan-out map and the [`LegacyPendingRequests`] map at the same time: a
+//! caller might submit `K` before the upgrade (entry in legacy map) and
+//! re-submit the identical `K` after the upgrade (entry in new map). The
+//! helpers below handle this without ever migrating entries between maps:
 //!
-//! To prevent that, [`push_pending_yield`] migrates any legacy entry for `K`
-//! into the head of the new queue on the first post-upgrade push. From that
-//! point on the fan-out map is the single source of truth for `K`, and the
-//! other helpers stay simple.
+//! * [`push_pending_yield`] only writes to the new map.
+//! * [`resolve_yields_for`] drains both maps when a response arrives, so every
+//!   pre- and post-upgrade caller for `K` is resumed by a single `respond*`.
+//! * [`pop_one_yield_for`] consults the legacy map first on timeout, because a
+//!   legacy entry is pre-upgrade and therefore older than any yield in the new
+//!   queue — popping it first preserves FIFO timeout semantics.
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_contract_interface::types::VerifyForeignTransactionRequest;
 use near_sdk::{env, store::LookupMap, CryptoHash};
 
 use crate::{
-    errors::{Error, InvalidParameters},
+    errors::{Error, InvalidParameters, RequestError},
     primitives::{
         ckd::CKDRequest,
         signature::{SignatureRequest, YieldIndex},
@@ -92,51 +93,36 @@ impl LegacyPendingRequests {
 
 /// Append a yield index to the pending-request fan-out queue for `request`.
 ///
-/// On the first post-upgrade push for `request`, any pre-existing entry in
-/// `legacy_map` is migrated into the head of the new queue. The legacy yield
-/// was created before the new yield and therefore times out first, so
-/// prepending it preserves the FIFO ordering that [`pop_oldest_pending_yield`]
-/// relies on. After migration, `legacy_map` no longer holds `request` and the
-/// fan-out map is the single source of truth — see the module-level docs.
+/// Always writes to the new fan-out map; the legacy single-yield map is untouched.
+/// During the legacy window the same key may already exist in the legacy map — that
+/// entry is preserved and drained together with this queue when a response arrives
+/// (see [`resolve_yields_for`]) or popped first on timeout (see [`pop_one_yield_for`]).
 ///
-/// Panics with `InvalidParameters::PendingRequestQueueFull` if the resulting
-/// queue would exceed `MAX_PENDING_REQUEST_FAN_OUT`.
+/// Panics with `RequestError::PendingRequestQueueFull` if the resulting queue would
+/// exceed `MAX_PENDING_REQUEST_FAN_OUT`.
 pub(crate) fn push_pending_yield<K>(
     new_map: &mut LookupMap<K, Vec<YieldIndex>>,
-    legacy_map: &mut LookupMap<K, YieldIndex>,
     request: K,
     data_id: CryptoHash,
 ) where
     K: BorshSerialize + BorshDeserialize + Clone + Ord,
 {
-    let new_yield = YieldIndex { data_id };
-
-    if let Some(queue) = new_map.get_mut(&request) {
-        // The new-map entry was created on an earlier push, which already
-        // drained any legacy entry for `request`. The legacy map cannot still
-        // hold `request`, so there is nothing to migrate here.
-        if queue.len() >= usize::from(MAX_PENDING_REQUEST_FAN_OUT) {
-            env::panic_str(
-                &InvalidParameters::PendingRequestQueueFull {
-                    limit: MAX_PENDING_REQUEST_FAN_OUT,
-                }
-                .to_string(),
-            );
-        }
-        queue.push(new_yield);
-    } else {
-        let queue = match legacy_map.remove(&request) {
-            Some(legacy_yield) => vec![legacy_yield, new_yield],
-            None => vec![new_yield],
-        };
-        new_map.insert(request, queue);
+    let queue = new_map.entry(request).or_default();
+    if queue.len() >= usize::from(MAX_PENDING_REQUEST_FAN_OUT) {
+        env::panic_str(
+            &RequestError::PendingRequestQueueFull {
+                limit: MAX_PENDING_REQUEST_FAN_OUT,
+            }
+            .to_string(),
+        );
     }
+    queue.push(YieldIndex { data_id });
 }
 
 /// Remove the oldest queued yield from the pending-request fan-out for `request`.
-/// If the queue empties, the map entry itself is removed. Returns `true` if a yield
-/// was popped, `false` if the request was absent (e.g. `respond*` already drained it
-/// before the timeout fired, or the request originated from the legacy map).
+/// If the queue empties (or was already empty), the map entry itself is removed.
+/// Returns `true` if a yield was popped, `false` if the request was absent or the
+/// stored queue had no entries to pop.
 ///
 /// Yields are removed in FIFO order because they were appended in submission order
 /// and time out in that same order — so the timing-out yield is always the head.
@@ -144,30 +130,27 @@ fn pop_oldest_pending_yield<K>(map: &mut LookupMap<K, Vec<YieldIndex>>, request:
 where
     K: BorshSerialize + BorshDeserialize + Clone + Ord,
 {
-    let became_empty = match map.get_mut(request) {
-        Some(queue) if !queue.is_empty() => {
-            queue.remove(0);
-            queue.is_empty()
-        }
-        _ => return false,
+    let Some(queue) = map.get_mut(request) else {
+        return false;
     };
-    if became_empty {
+    if queue.is_empty() {
+        map.remove(request);
+        return false;
+    }
+    queue.remove(0);
+    if queue.is_empty() {
         map.remove(request);
     }
     true
 }
 
-/// Resume every yield queued for `request` with `response_bytes`, draining whichever
-/// map currently holds the request. The new fan-out map is checked first; on miss,
-/// falls back to the single-yield legacy map (covering pre-upgrade requests that were
-/// never re-submitted post-upgrade). Returns `Err(RequestNotFound)` if neither map has
-/// an entry.
+/// Resume every yield queued for `request` with `response_bytes`, draining both the
+/// new fan-out map and the legacy single-yield map in one pass. Returns
+/// `Err(RequestNotFound)` only if neither map held an entry.
 ///
-/// The single-map invariant established by [`push_pending_yield`] guarantees that
-/// `request` cannot be present in both maps at the same time, so the early return on
-/// new-map hit is correct.
-///
-/// Resuming a yield that has already timed out is a no-op at the SDK level.
+/// Both maps are always drained, so a post-upgrade `respond*` cleans up any pre-upgrade
+/// duplicate that was still pending. Resuming a yield that has already timed out is a
+/// no-op at the SDK level.
 pub(crate) fn resolve_yields_for<K>(
     new_map: &mut LookupMap<K, Vec<YieldIndex>>,
     legacy_map: &mut LookupMap<K, YieldIndex>,
@@ -177,27 +160,30 @@ pub(crate) fn resolve_yields_for<K>(
 where
     K: BorshSerialize + BorshDeserialize + Clone + Ord,
 {
-    if let Some(yield_indices) = new_map.remove(request) {
-        for YieldIndex { data_id } in yield_indices {
+    let resumed = new_map
+        .remove(request)
+        .unwrap_or_default()
+        .into_iter()
+        .chain(legacy_map.remove(request))
+        .map(|YieldIndex { data_id }| {
             env::promise_yield_resume(&data_id, response_bytes.clone());
-        }
-        Ok(())
-    } else if let Some(YieldIndex { data_id }) = legacy_map.remove(request) {
-        // Legacy entries never accepted duplicates, so there is at most one yield.
-        env::promise_yield_resume(&data_id, response_bytes);
+        })
+        .count();
+
+    if resumed > 0 {
         Ok(())
     } else {
         Err(InvalidParameters::RequestNotFound.into())
     }
 }
 
-/// Account for one timed-out yield against `request`: pop the oldest entry from
-/// the new fan-out queue if one is present, otherwise remove the legacy single-yield
-/// entry. A no-op if neither map has the request (e.g. `respond*` already drained it).
+/// Account for one timed-out yield against `request`: pop the legacy single-yield
+/// entry if one is present, otherwise pop the oldest yield from the new fan-out queue.
+/// A no-op if neither map has the request (e.g. `respond*` already drained it).
 ///
-/// The single-map invariant established by [`push_pending_yield`] guarantees that
-/// `request` is in at most one map, so the order in which the maps are consulted
-/// does not change which yield is accounted for.
+/// The legacy entry is consulted first because a pre-upgrade yield was created before
+/// any post-upgrade yield for the same key — popping legacy first preserves
+/// oldest-first FIFO timeout semantics across the legacy window.
 pub(crate) fn pop_one_yield_for<K>(
     new_map: &mut LookupMap<K, Vec<YieldIndex>>,
     legacy_map: &mut LookupMap<K, YieldIndex>,
@@ -205,7 +191,7 @@ pub(crate) fn pop_one_yield_for<K>(
 ) where
     K: BorshSerialize + BorshDeserialize + Clone + Ord,
 {
-    if !pop_oldest_pending_yield(new_map, request) {
-        legacy_map.remove(request);
+    if legacy_map.remove(request).is_none() {
+        pop_oldest_pending_yield(new_map, request);
     }
 }
