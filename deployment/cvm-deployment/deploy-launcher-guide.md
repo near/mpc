@@ -8,7 +8,7 @@ It:
 
 - Loads deployment parameters from a `.env` file (defaults to `default.env`)
 - Renders the launcher Docker Compose template (`crates/contract/assets/launcher_docker_compose.yaml.template`) using the `LAUNCHER_MANIFEST_DIGEST` and `MPC_MANIFEST_DIGEST` env vars
-- Loads the rendered compose and user\_config files
+- Loads the rendered compose and `user_config` files
 - Generates an `app-compose.json` configuration
 - Deploys and starts CVM  via `vmm-cli`
 
@@ -36,7 +36,7 @@ Ensure the following files are present in the working directory before running t
 - `default.env` – default environment configuration
 - `$USER_CONFIG_FILE_PATH` – e.g. `user-config.toml`
 
-You can also use the example `.env` files under `tee_deployment/configs/`:
+You can also use the example `.env` files under `configs/`:
 
 - `configs/kms.env`
 - `configs/sgx.env`
@@ -55,7 +55,7 @@ You can also use the example `.env` files under `tee_deployment/configs/`:
 
    ```bash
    ./deploy-launcher.sh \
-     --env-file tee_deployment/configs/sgx.env \
+     --env-file configs/sgx.env \
      --base-path /project \
      --python-exec /project/.venv/bin/python
    ```
@@ -63,7 +63,7 @@ You can also use the example `.env` files under `tee_deployment/configs/`:
    Or use just the `.env` override:
 
    ```bash
-   ./deploy-launcher.sh --env-file tee_deployment/configs/sgx.env
+   ./deploy-launcher.sh --env-file configs/sgx.env
    ```
 
    Or use all defaults (`default.env`, default paths):
@@ -81,7 +81,7 @@ You can also use the example `.env` files under `tee_deployment/configs/`:
 | Option                | Description                                                               |
 | --------------------- | ------------------------------------------------------------------------- |
 | `--env-file`, `-e`    | Path to a `.env` file with deployment parameters (default: `default.env`) |
-| `--base-path`, `-b`   | Path to the parent directory containing the vmm folder . For example, if your Dstack installation is in /project/meta-dstack/dstack/vmm, then you should set --base-path /project/meta-dstack/dstack/  |
+| `--base-path`, `-b`   | Path to the parent directory containing the `vmm` folder. For example, if your Dstack installation is in `/project/meta-dstack/dstack/vmm`, set `--base-path /project/meta-dstack/dstack/`. |
 | `--python-exec`, `-p` | Path to the Python executable to use (default: under base path)           |
 
 ---
@@ -90,10 +90,10 @@ You can also use the example `.env` files under `tee_deployment/configs/`:
 
 ```bash
 # Use KMS config from configs directory
-./deploy-launcher.sh --env-file tee_deployment/configs/kms.env
+./deploy-launcher.sh --env-file configs/kms.env
 
 # Use SGX config
-./deploy-launcher.sh --env-file tee_deployment/configs/sgx.env
+./deploy-launcher.sh --env-file configs/sgx.env
 
 # Override Python path only
 ./deploy-launcher.sh --python-exec python3
@@ -114,8 +114,8 @@ Make sure to create and fill in a `.env` file. Example (`default.env`):
 APP_NAME=launcher_test_app
 VMM_RPC=http://127.0.0.1:16000
 
-# Sealing key type (KMS for deployment, SGX for production)
-SEALING_KEY_TYPE=KMS
+# Sealing key type (SGX for production; KMS only for dev/testing)
+SEALING_KEY_TYPE=SGX
 
 # Port on the host machine to connect to the dstack guest agent
 EXTERNAL_DSTACK_AGENT_PORT=127.0.0.1:9206
@@ -128,15 +128,17 @@ EXTERNAL_MPC_PUBLIC_DEBUG_PORT=0.0.0.0:8080
 EXTERNAL_MPC_LOCAL_DEBUG_PORT=127.0.0.1:3030
 EXTERNAL_MPC_DECENTRALIZED_STATE_SYNC=0.0.0.0:24567
 EXTERNAL_MPC_MAIN_PORT=0.0.0.0:80
+EXTERNAL_MPC_MIGRATION_PORT=0.0.0.0:8079
 
 # Internal MPC ports (inside CVM)
 INTERNAL_MPC_PUBLIC_DEBUG_PORT=8080
 INTERNAL_MPC_LOCAL_DEBUG_PORT=3030
 INTERNAL_MPC_DECENTRALIZED_STATE_SYNC=24567
 INTERNAL_MPC_MAIN_PORT=80
+INTERNAL_MPC_MIGRATION_PORT=8079
 
 # OS image
-OS_IMAGE=dstack-dev-0.5.2
+OS_IMAGE=dstack-dev-0.5.8
 
 # Launcher and MPC node manifest digests (filled into the launcher compose
 # template at deploy time). These must match digests voted into the contract.
@@ -144,13 +146,14 @@ OS_IMAGE=dstack-dev-0.5.2
 # before running deploy-launcher.sh, which refuses to run otherwise.
 LAUNCHER_MANIFEST_DIGEST=sha256:<your launcher digest>
 MPC_MANIFEST_DIGEST=sha256:<your mpc node digest>
+
 # Path of the user_config file
 USER_CONFIG_FILE_PATH=user-config.toml
 
-# Resource configuration (defaults shown):
-VCPU=8      # do not change since this is measured in the contract
-MEMORY=64G  # do not change since this is measured in the contract
-DISK=128G   # can change
+# CVM disk size. VCPU and MEMORY are NOT settable here — they're hardcoded
+# in deploy-launcher.sh (8 vCPU / 64G) because those values are measured
+# into the TDX attestation.
+DISK=500G
 ```
 
 ---
