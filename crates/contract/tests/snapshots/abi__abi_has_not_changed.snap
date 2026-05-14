@@ -2226,7 +2226,8 @@ expression: abi
             "Abstract",
             "Starknet",
             "Polygon",
-            "HyperEvm"
+            "HyperEvm",
+            "Ton"
           ]
         },
         "ForeignChainConfiguration": {
@@ -2354,6 +2355,18 @@ expression: abi
               "properties": {
                 "HyperEvm": {
                   "$ref": "#/definitions/EvmRpcRequest"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Ton"
+              ],
+              "properties": {
+                "Ton": {
+                  "$ref": "#/definitions/TonRpcRequest"
                 }
               },
               "additionalProperties": false
@@ -3927,6 +3940,84 @@ expression: abi
               }
             }
           }
+        },
+        "TonAddress": {
+          "type": "object",
+          "required": [
+            "hash",
+            "workchain"
+          ],
+          "properties": {
+            "hash": {
+              "$ref": "#/definitions/Hash256"
+            },
+            "workchain": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        },
+        "TonExtractor": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "Log"
+              ],
+              "properties": {
+                "Log": {
+                  "type": "object",
+                  "required": [
+                    "message_index"
+                  ],
+                  "properties": {
+                    "message_index": {
+                      "type": "integer",
+                      "format": "uint64",
+                      "minimum": 0.0
+                    }
+                  }
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "TonFinality": {
+          "type": "string",
+          "enum": [
+            "MasterchainIncluded"
+          ]
+        },
+        "TonRpcRequest": {
+          "type": "object",
+          "required": [
+            "account",
+            "extractors",
+            "finality",
+            "tx_id"
+          ],
+          "properties": {
+            "account": {
+              "$ref": "#/definitions/TonAddress"
+            },
+            "extractors": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/TonExtractor"
+              }
+            },
+            "finality": {
+              "$ref": "#/definitions/TonFinality"
+            },
+            "tx_id": {
+              "$ref": "#/definitions/TonTxId"
+            }
+          }
+        },
+        "TonTxId": {
+          "type": "string",
+          "pattern": "^(?:[0-9A-Fa-f]{2})*$"
         },
         "Tweak": {
           "type": "array",
