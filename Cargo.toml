@@ -28,6 +28,7 @@ members = [
     "crates/tee-authority",
     "crates/tee-context",
     "crates/tee-launcher",
+    "crates/tee-verifier",
     "crates/tee-verifier-interface",
     "crates/test-migration-contract",
     "crates/test-parallel-contract",
@@ -67,6 +68,7 @@ near-mpc-sdk = { path = "crates/near-mpc-sdk", version = "0.0.1" }
 near-mpc-signature-verifier = { path = "crates/near-mpc-signature-verifier", version = "0.0.1" }
 node-types = { path = "crates/node-types" }
 tee-authority = { path = "crates/tee-authority" }
+tee-verifier-interface = { path = "crates/tee-verifier-interface" }
 test-port-allocator = { path = "crates/test-port-allocator" }
 test-utils = { path = "crates/test-utils" }
 threshold-signatures = { path = "crates/threshold-signatures" }
