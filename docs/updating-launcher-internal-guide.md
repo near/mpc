@@ -34,7 +34,6 @@ sha256:<NEW>
 
 These are what operators actually run.
 
-- `deployment/cvm-deployment/launcher_docker_compose.yaml` (TEE)
 - `deployment/cvm-deployment/launcher_docker_compose_nontee.yaml` (non-TEE)
 
 Keep the launcher image digest (and related env like `DEFAULT_IMAGE_DIGEST`)

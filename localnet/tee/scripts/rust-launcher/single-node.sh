@@ -98,6 +98,7 @@ VALIDATOR_KEY="$(jq -r .secret_key ~/.near/mpc-localnet/validator_key.json)"
 : "${BASE_PATH:?Set BASE_PATH (dstack base path)}"
 : "${MACHINE_IP:?Set MACHINE_IP (host IP reachable from the CVM)}"
 : "${MPC_MANIFEST_DIGEST:?Set MPC_MANIFEST_DIGEST (e.g. sha256:abc...)}"
+: "${LAUNCHER_MANIFEST_DIGEST:?Set LAUNCHER_MANIFEST_DIGEST (e.g. sha256:abc...)}"
 
 # NODE_IP usually equals MACHINE_IP for single-node
 NODE_IP="${NODE_IP:-$MACHINE_IP}"
@@ -179,7 +180,7 @@ render_env_and_conf() {
 
   export APP_NAME="${APP_NAME:-mpc-localnet-one-node-$(date +%s)}"
   export VMM_RPC OS_IMAGE SEALING_KEY_TYPE DISK
-  export DOCKER_COMPOSE_FILE_PATH="launcher_docker_compose.yaml"
+  export LAUNCHER_MANIFEST_DIGEST MPC_MANIFEST_DIGEST
   export USER_CONFIG_FILE_PATH="$CONF_OUT"
 
   export EXTERNAL_SSH_PORT="127.0.0.1:${SSH_PORT}"

@@ -26,7 +26,10 @@ export BASE_PATH=/path/to/meta-dstack/dstack
 export MACHINE_IP=<host-ip>
 
 # MPC node manifest digest. Get with: docker pull nearone/mpc-node:<tag> 2>&1 | grep Digest
-export MPC_MANIFEST_DIGEST=sha256:5d1e604dcf3197f8b465c854f8073eaa89b9733f646248d59f86a15b81110ef5
+export MPC_MANIFEST_DIGEST=sha256:eb4e3b75d439b77689534df6a69b542e779989f10b681ac43787a58e7c4aefdb
+
+# Launcher manifest digest. Get with: docker pull nearone/mpc-launcher:<tag> 2>&1 | grep Digest
+export LAUNCHER_MANIFEST_DIGEST=sha256:e28cb0425db06255fe5fc7aadb79534ac63c94c7a721f75c1af1e934d2eb0701
 ```
 
 ## Optional Variables

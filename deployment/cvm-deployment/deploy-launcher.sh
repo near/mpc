@@ -1,8 +1,20 @@
 #!/bin/bash
 
-# Deploys a new launcher_test_app VM to dstack-vmm using a templated Docker Compose file.
-# Loads environment variables from a .env file, generates app-compose.json, and runs deployment.
+# Deploys a new launcher_test_app VM to dstack-vmm.
+#
+# The launcher Docker Compose is rendered at deploy time from
+#   crates/contract/assets/launcher_docker_compose.yaml.template
+# using the LAUNCHER_MANIFEST_DIGEST and MPC_MANIFEST_DIGEST env vars.
+# The rendered file's SHA256 must match an entry in the contract's
+# allowed_launcher_compose_hashes for attestation to succeed.
+#
+# Loads environment variables from a .env file, generates app-compose.json,
+# and runs deployment.
 # Based on: https://github.com/Dstack-TEE/dstack/blob/be9d0476a63e937eda4c13659547a25088393394/kms/dstack-app/deploy-to-vmm.sh
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+COMPOSE_TEMPLATE="$REPO_ROOT/crates/contract/assets/launcher_docker_compose.yaml.template"
 
 check_ports_in_use() {
     PORT_VARS="
@@ -131,12 +143,9 @@ required_env_vars=(
   "SEALING_KEY_TYPE"
   "DISK"
   "USER_CONFIG_FILE_PATH"
-  "DOCKER_COMPOSE_FILE_PATH"
   "APP_NAME"
   "OS_IMAGE"
 )
-
-echo $VMM_RPC
 
 for var in "${required_env_vars[@]}"; do
   if [ -z "${!var}" ]; then
@@ -146,9 +155,37 @@ for var in "${required_env_vars[@]}"; do
   fi
 done
 
+# The launcher and MPC node manifest digests are shipped commented out in
+# the example .env files so deploying with an unedited file fails fast.
+# Give an actionable error pointing the operator at the on-chain discovery
+# commands and the exact lines they need to uncomment.
+if [ -z "${LAUNCHER_MANIFEST_DIGEST:-}" ] || [ -z "${MPC_MANIFEST_DIGEST:-}" ]; then
+  echo "Error: LAUNCHER_MANIFEST_DIGEST and/or MPC_MANIFEST_DIGEST is not set in $ENV_FILE."
+  echo
+  echo "Discover the currently-allowed digests against the contract you're"
+  echo "deploying against. Replace <CONTRACT> and <NETWORK> below; common pairs:"
+  echo "  testnet:      v1.signer-prod.testnet  +  testnet"
+  echo "  localnet:     mpc-contract.test.near  +  mpc-localnet"
+  echo
+  echo "  # MPC node digest — LATEST = FIRST element of the returned vector:"
+  echo "  near contract call-function as-read-only <CONTRACT> \\"
+  echo "    allowed_docker_image_hashes  json-args '{}' network-config <NETWORK> now"
+  echo
+  echo "  # Launcher digest — LATEST = LAST element (entries are in insertion order):"
+  echo "  near contract call-function as-read-only <CONTRACT> \\"
+  echo "    allowed_launcher_image_hashes json-args '{}' network-config <NETWORK> now"
+  echo
+  echo "Then uncomment and set BOTH lines in $ENV_FILE:"
+  echo "  LAUNCHER_MANIFEST_DIGEST=sha256:<launcher digest>"
+  echo "  MPC_MANIFEST_DIGEST=sha256:<mpc node digest>"
+  echo
+  echo "and re-run this script."
+  exit 1
+fi
+
 required_files=(
   "USER_CONFIG_FILE_PATH"
-  "DOCKER_COMPOSE_FILE_PATH"
+  "COMPOSE_TEMPLATE"
 )
 
 for var in "${required_files[@]}"; do
@@ -157,6 +194,16 @@ for var in "${required_files[@]}"; do
     exit 1
   fi
 done
+
+digest_re='^sha256:[0-9a-f]{64}$'
+if ! [[ "$LAUNCHER_MANIFEST_DIGEST" =~ $digest_re ]]; then
+  echo "Error: LAUNCHER_MANIFEST_DIGEST is not a valid sha256:<64 hex> digest."
+  exit 1
+fi
+if ! [[ "$MPC_MANIFEST_DIGEST" =~ $digest_re ]]; then
+  echo "Error: MPC_MANIFEST_DIGEST is not a valid sha256:<64 hex> digest."
+  exit 1
+fi
 
 
 
@@ -173,14 +220,29 @@ fi
 CLI="$pythonExec $basePath/vmm/src/vmm-cli.py --url $VMM_RPC"
 
 
+# Render the launcher compose template with the supplied digests. The
+# rendered file's SHA256 must match an entry in the contract's
+# allowed_launcher_compose_hashes for attestation to succeed.
 COMPOSE_TMP=$(mktemp)
-
-cp "$DOCKER_COMPOSE_FILE_PATH" "$COMPOSE_TMP"
-
-subvar() {
-  sed -i "s|\${$1}|${!1}|g" "$COMPOSE_TMP"
-}
-
+trap 'rm -f "$COMPOSE_TMP"' EXIT
+launcher_hex="${LAUNCHER_MANIFEST_DIGEST#sha256:}"
+mpc_hex="${MPC_MANIFEST_DIGEST#sha256:}"
+if ! sed \
+  -e "s|{{LAUNCHER_IMAGE_HASH}}|${launcher_hex}|g" \
+  -e "s|{{DEFAULT_IMAGE_DIGEST_HASH}}|${mpc_hex}|g" \
+  "$COMPOSE_TEMPLATE" > "$COMPOSE_TMP"; then
+  echo "Error: sed failed rendering compose template from $COMPOSE_TEMPLATE"
+  exit 1
+fi
+if [ ! -s "$COMPOSE_TMP" ]; then
+  echo "Error: rendered compose file is empty (template unreadable or disk full?)"
+  exit 1
+fi
+if grep -q '{{' "$COMPOSE_TMP"; then
+  echo "Error: unfilled placeholders remain in rendered compose file:"
+  grep '{{' "$COMPOSE_TMP"
+  exit 1
+fi
 
 echo "Docker compose file:"
 cat "$COMPOSE_TMP"
@@ -213,8 +275,7 @@ $CLI compose \
 echo "app-compose.json"
 cat .app-compose.json
 
-# Remove the temporary file as it is no longer needed
-rm "$COMPOSE_TMP"
+# COMPOSE_TMP is cleaned up by the EXIT trap above.
 
 
 echo -e "Deploying $APP_NAME to dstack-vmm..."
