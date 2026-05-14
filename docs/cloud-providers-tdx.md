@@ -2,7 +2,7 @@
 
 _Last updated: August 31, 2025_
 
-This document lists cloud providers that currently support bare metal servers compatible with Intel TDX.
+This document lists cloud providers that currently offer bare metal servers compatible with Intel TDX.
 
 > **Disclaimer**: The pricing information provided here is for reference only. It is based on publicly available sources at the time of writing. Prices are estimates, subject to change by the providers, and are not controlled or guaranteed by NEAR.
 
