@@ -1,7 +1,7 @@
 use derive_more::Into;
 use near_indexer_primitives::types::BlockHeight;
 use near_indexer_primitives::CryptoHash;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::ops::Add;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -116,127 +116,6 @@ struct BlockNode {
 }
 
 impl BlockNode {
-    /// Walk the subtree of this node and identify nodes to prune, as well as nodes that become
-    /// orphaned:
-    ///  1. **Dead fork** (`!is_final && height ≤ final_head.height`):
-    ///     This block is **not** final and it is **older** than the most recent final height.
-    ///     This means one of the following must be true:
-    ///     1. This block is actually supposed to be final, but for some reason, the indexer
-    ///        missed it. For example:
-    ///        ```text
-    ///              self (N)
-    ///                 │
-    ///          missed final_block (N+1)
-    ///                 │
-    ///          Final block (N+2)
-    ///        ```
-    ///        According to our assumptions about the indexer stream, this is **not** possible:
-    ///        > _if A < B and B < C, and both A and C are given, then B must also be given._
-    ///        > _In other words there should not be any gaps._
-    ///     2. This block sits on a dead fork:
-    ///         ```text
-    ///                  Common Head
-    ///                       /   \
-    ///                     ...    ...
-    ///                     /       \
-    ///              self (N)        \
-    ///                  │            \
-    ///                (N+1)           \
-    ///                /   \       Final block (N+2)
-    ///               /     \
-    ///            (N+3)     \
-    ///                       \
-    ///                      (N+4)
-    ///         ```
-    ///     In this case, we can remove the entire subtree.
-    ///
-    ///  2. **Outside window** (`height < min_height_to_keep`):
-    ///     This block is too old. We drop it and recurse into children.
-    ///     ```text
-    ///           self (N < min_height_to_keep)
-    ///              │
-    ///             ...
-    ///              │
-    ///       ------------------- cutoff height >= min_height_to_keep
-    ///              │
-    ///             ...
-    ///     ```
-    ///  3. **In-window and not on a dead fork**:
-    ///     We can stop the recursion and append this node `new_roots`.
-    ///     ```text
-    ///             ...
-    ///              │
-    ///       ------------------- cutoff height >= min_height_to_keep
-    ///              │
-    ///       self (N >= min_height_to_keep)
-    ///             ...
-    ///     ```
-    fn partition_subtree(
-        &self,
-        min_height_to_keep: u64,
-        final_head_height: Option<u64>,
-        new_roots: &mut Vec<CryptoHash>,
-        blocks_to_prune: &mut Vec<CryptoHash>,
-    ) {
-        if final_head_height.is_some_and(|fh| self.height <= fh)
-            && !self.is_final.load(Ordering::Relaxed)
-        {
-            // This block sits on a dead subtree. It has nothing to contribute.
-            // Its children must be removed and we can terminate the recursion.
-            self.collect_subtree_hashes(blocks_to_prune);
-            return;
-        }
-        if self.height < min_height_to_keep {
-            // This block is too old for us to be useful, we will prune it.
-            blocks_to_prune.push(self.hash);
-            let children = self.children.lock().expect("lock must not be poisoned");
-            for child in children.iter() {
-                child.partition_subtree(
-                    min_height_to_keep,
-                    final_head_height,
-                    new_roots,
-                    blocks_to_prune,
-                );
-            }
-        } else {
-            // This block is right below the cut-off line and will need to be kept.
-            // It will become a new root.
-            new_roots.push(self.hash);
-            // However, its children might sit on dead forks, so we need check for that.
-            let Some(fh) = final_head_height else {
-                return;
-            };
-            if self.height < fh {
-                self.prune_dead_children(fh, blocks_to_prune);
-            }
-        }
-    }
-
-    /// This block is kept, but it may have descendants that sit on dead forks
-    fn prune_dead_children(&self, final_head_height: u64, blocks_to_prune: &mut Vec<CryptoHash>) {
-        let mut children = self.children.lock().unwrap();
-        children.retain(|child| {
-            if child.height <= final_head_height && !child.is_final.load(Ordering::Relaxed) {
-                child.collect_subtree_hashes(blocks_to_prune);
-                false
-            } else {
-                if child.height < final_head_height {
-                    child.prune_dead_children(final_head_height, blocks_to_prune);
-                }
-                true
-            }
-        });
-    }
-
-    /// Walk this subtree and collect every node's hash on it.
-    fn collect_subtree_hashes(&self, blocks_to_prune: &mut Vec<CryptoHash>) {
-        blocks_to_prune.push(self.hash);
-        let children = self.children.lock().expect("lock must not be poisoned");
-        for child in children.iter() {
-            child.collect_subtree_hashes(blocks_to_prune);
-        }
-    }
-
     fn get_parent(&self) -> Option<Arc<BlockNode>> {
         self.parent.as_ref().and_then(Weak::upgrade)
     }
@@ -468,13 +347,74 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
         )
     }
 
-    /// Remove blocks that are no longer needed:
-    ///  - **Recency Window prune:** Drop nodes below `minimum_height_to_keep`,
-    ///    their children become new roots
-    ///  - **Dead-fork prune.** Drop non-final nodes at heights ≤
-    ///    `final_head.height` along with their entire subtree (a descendant
-    ///    of a dead fork can never become final, by the BFT-finality safety
-    ///    theorem).
+    /// Remove blocks that are no longer needed. A single DFS from each root
+    /// classifies every visited node into one of three cases:
+    ///
+    ///  1. **Dead fork** (`!is_final && height ≤ final_head.height`):
+    ///     This block is **not** final and it is **older** than the most recent
+    ///     final height. This means one of the following must be true:
+    ///     1. This block is actually supposed to be final, but for some reason
+    ///        the indexer missed it. For example:
+    ///        ```text
+    ///              self (N)
+    ///                 │
+    ///          missed final_block (N+1)
+    ///                 │
+    ///          Final block (N+2)
+    ///        ```
+    ///        According to our assumptions about the indexer stream, this is
+    ///        **not** possible:
+    ///        > _if A < B and B < C, and both A and C are given, then B must also be given._
+    ///        > _In other words there should not be any gaps._
+    ///     2. This block sits on a dead fork:
+    ///        ```text
+    ///                 Common Head
+    ///                      /   \
+    ///                    ...    ...
+    ///                    /       \
+    ///             self (N)        \
+    ///                 │            \
+    ///               (N+1)           \
+    ///               /   \       Final block (N+2)
+    ///              /     \
+    ///           (N+3)     \
+    ///                      \
+    ///                     (N+4)
+    ///        ```
+    ///     In this case, we stop the DFS at this node — the entire subtree is
+    ///     dead by BFT-finality transitivity (a descendant of a dead fork can
+    ///     never become final). Cutting the dead Arc edges from each kept
+    ///     parent's `children` list during the walk severs the subtree so
+    ///     dropping the map entries below actually frees it.
+    ///
+    ///  2. **Outside window** (`height < min_height_to_keep`):
+    ///     This block is too old. We don't add it to the live set, but we DO
+    ///     recurse into its children — some of them may be in-window and
+    ///     should be kept (and promoted to roots).
+    ///     ```text
+    ///           self (N < min_height_to_keep)
+    ///              │
+    ///             ...
+    ///              │
+    ///       ─────────────────── cutoff height ≥ min_height_to_keep
+    ///              │
+    ///             ...
+    ///     ```
+    ///
+    ///  3. **In-window and not on a dead fork**:
+    ///     Add the node to the live set and recurse into children.
+    ///     ```text
+    ///             ...
+    ///              │
+    ///       ─────────────────── cutoff height ≥ min_height_to_keep
+    ///              │
+    ///       self (N ≥ min_height_to_keep)
+    ///             ...
+    ///     ```
+    ///
+    /// After the DFS, the live set drives the in-place retain on
+    /// `hash_to_node` and `node_to_content`, and `root_children` is rebuilt as
+    /// the live nodes whose parent isn't live.
     ///
     /// **Example:**
     /// If block 8 is finalized, we can remove the subtrees at (5), (6) and (7):
@@ -518,45 +458,40 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
     ///             ..
     ///  ```
     fn prune_old_blocks(&mut self) {
-        let Some(min_height_to_keep) = self.minimum_height_to_keep() else {
+        let Some(min_height) = self.minimum_height_to_keep() else {
             return;
         };
-        let final_head_height = self.final_head.as_ref().map(|n| n.height);
+        let Some(fh_node) = &self.final_head else {
+            return;
+        };
+        let fh = fh_node.height;
+        let dead_fork = |n: &BlockNode| n.height <= fh && !n.is_final.load(Ordering::Relaxed);
 
-        let mut new_roots = Vec::new();
-        let mut blocks_to_prune = Vec::new();
-
-        for root in self.root_children.iter() {
-            root.partition_subtree(
-                min_height_to_keep,
-                final_head_height,
-                &mut new_roots,
-                &mut blocks_to_prune,
-            );
+        // DFS from each root, skipping dead-fork subtrees (propagates transitivity)
+        // and severing dead-fork Arcs from live parents' `children` lists. Survivors
+        // are nodes reached without crossing a dead fork and in the recency window.
+        let mut live = HashSet::new();
+        let mut stack: Vec<Arc<BlockNode>> = self.root_children.clone();
+        while let Some(n) = stack.pop() {
+            if dead_fork(&n) {
+                continue;
+            }
+            if n.height >= min_height {
+                live.insert(n.hash);
+            }
+            let mut children = n.children.lock().expect("children Mutex not poisoned");
+            children.retain(|c| !dead_fork(c));
+            stack.extend(children.iter().cloned());
         }
 
-        self.root_children = new_roots
-            .iter()
-            .filter_map(|hash| {
-                self.hash_to_node.get(hash).cloned().or_else(|| {
-                    // note: this should NEVER happen. Right now, it's a guaranteed dead code path.
-                    // However, to protect against future refactors of `partition_subtree`, or some
-                    // odd behavior, we simply print an error. Missing a root child is not something
-                    // that requires us to crash the node.
-                    tracing::error!(
-                        "Error: missing node for root hash {:?}. RecentBlocksTracker: {:?}",
-                        hash,
-                        self
-                    );
-                    None
-                })
-            })
+        self.hash_to_node.retain(|h, _| live.contains(h));
+        self.node_to_content.retain(|h, _| live.contains(h));
+        self.root_children = self
+            .hash_to_node
+            .values()
+            .filter(|n| n.get_parent().is_none_or(|p| !live.contains(&p.hash)))
+            .cloned()
             .collect();
-
-        for hash in blocks_to_prune {
-            self.hash_to_node.remove(&hash);
-            self.node_to_content.remove(&hash);
-        }
     }
 
     /// Classifies a block into one of the categories in `CheckBlockResult`.
@@ -568,8 +503,7 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
                 }
                 // Note: blocks on a dead fork (height ≤ final_head.height,
                 // not on the final chain) are no longer reachable here —
-                // they're discarded from the tree by `prune_old_blocks`
-                // (case 1 of `partition_subtree`).
+                // they're discarded from the tree by `prune_old_blocks`.
                 if node.canonical.load(Ordering::Relaxed) {
                     return CheckBlockResult::OptimisticAndCanonical;
                 }
@@ -1217,7 +1151,7 @@ pub mod tests {
         assert_eq!(tester.check(&b4_fork), CheckBlockResult::Unknown);
         assert!(
             weak_b3_fork.upgrade().is_none(),
-            "dead-fork BlockNode b3_fork leaked — prune_dead_children did not detach"
+            "dead-fork BlockNode b3_fork leaked — dead-fork subtree not detached during prune"
         );
         assert!(
             weak_b4_fork.upgrade().is_none(),
