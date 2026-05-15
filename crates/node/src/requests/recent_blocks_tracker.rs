@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex, Weak};
 ///    blocks. The content of each block in the finalized stream is specified via the `T`
 ///    type parameter.
 ///  - For each block added via `add_block`, it returns a `Weak<AtomicBlockStatus>` that can be
-///    used to observe that block's current `BlockStatus`.
+///    used to observe that block's current `BlockStatus` (non-canonical, canonical or final).
 ///
 /// We have certain expectations of the order of blocks that come from the indexer.
 /// First, let's define a partial order for blocks. For any two blocks A and B:
@@ -43,19 +43,18 @@ use std::sync::{Arc, Mutex, Weak};
 ///  - We keep track of the canonical chain as well as the final chain.
 ///
 /// Despite the assumptions we make on the indexer's behavior, this class guarantees not to panic
-/// even if the indexer violates these assumptions in arbitrary ways. In particular, if the indexer
-/// feeds blocks such that the canonical chain ends up on a fork that a later final-block advance
-/// discards, the next `add_block` re-elects `canonical_head` over the remaining tree rather than
-/// holding a stale reference. As a side effect, downstream consumers (e.g. the request queue) will
-/// not be invited to act on requests that sit on a permanently-dead fork: the block_ref handed out
-/// by `add_block` upgrades to `None` as soon as the finality advance condemns the fork.
+/// even if the indexer violates these assumptions in arbitrary ways.
 ///
-/// **Cleanup overview.** Two cleanup paths run after every `add_block`:
+/// Note that the `RecentBlocksTracker` is removing blocks aggressively. A block is removed if one
+/// of the following conditions is met:
+///  - The block sits on a dead fork and can't ever be finalized;
+///  - The block is outside of the recency window `RecentBlocksTracker::window_size`
 ///
+/// Cleanup takes place after every `add_block` in two methods:
 ///  - `maybe_update_final_head` owns **dead-fork cleanup**. When a new final block is established,
 ///    every subtree that can't be part of the final chain — non-final siblings of the final chain
 ///    at any height, and any `root_children` subtree not on the final chain with height ≤ the new
-///    final-head height — is dropped entirely. This is the "Dead-fork prune at X" annotation in
+///    final-head height — is dropped. This is the "Dead-fork prune at X" annotation in
 ///    the picture below.
 ///  - `prune_old_blocks` owns **recency-window prune**. Any node below `min_height_to_keep` is
 ///    dropped; its in-window descendants become new roots. This is the "Recency window prune"
@@ -91,22 +90,14 @@ use std::sync::{Arc, Mutex, Weak};
 ///  │   │       │       │   │  ┆       │
 ///  ..  ..      ..      ..  .. ┆       ..
 /// ```
-///
-/// Note: The use of Arc is a little unfortunate. Logically we only need Rc, but this code needs
-/// to work in futures, and Rc is not Send. So we use Arc instead.
 pub struct RecentBlocksTracker<T: Clone + 'static> {
     window_size: u64,
     /// By "root", we mean the blocks whose parents we don't know or are older than the window.
     /// The children of the root are the earliest blocks we are keeping who do not have any order
     /// with each other.
     root_children: Vec<Arc<BlockNode>>,
-    /// The head of the canonical chain. Held as `Weak` so that when finality
-    /// cleanup sweeps a subtree containing the current canonical head, the
-    /// `BlockNode` drops naturally and the next `add_block` re-elects from the
-    /// remaining tree instead of clinging to a dangling node. `Weak::new()` at
-    /// construction time (which never upgrades) stands in for "no canonical
-    /// head yet" — the same `None`-on-upgrade behavior we already get when the
-    /// target is dropped, so the two cases collapse cleanly at every call site.
+    /// The head of the canonical chain. This is the chain of the highest-height block we've seen.
+    /// This may be None if we have no block at all.
     canonical_head: Weak<BlockNode>,
     /// The head of the final chain. This is determined by recovering information from the
     /// last_final_block fields of the block headers given to us. This may be None if we have not
@@ -187,7 +178,7 @@ pub struct AddBlockResult<T> {
     /// The list of newly finalized blocks, in ascending height order. Each entry is a tuple of
     /// the block height and the data passed to us when adding the block.
     /// It is guaranteed that the new final blocks returned from multiple calls to add_block are
-    /// contiguous, thus forming the stream of finalized blocks.
+    // contiguous, thus forming the stream of finalized blocks.
     pub new_final_blocks: Vec<(u64, T)>,
     pub block_ref: Weak<AtomicBlockStatus>,
 }
@@ -212,6 +203,20 @@ struct BlockNode {
 impl BlockNode {
     fn get_parent(&self) -> Option<Arc<BlockNode>> {
         self.parent.as_ref().and_then(Weak::upgrade)
+    }
+
+    fn keep_only_child(
+        &self,
+        child_to_retain: &Arc<BlockNode>,
+        subtrees_to_remove: &mut VecDeque<Arc<BlockNode>>,
+    ) {
+        let mut children = self.children.lock().expect("lock must not be poisoned");
+        for child in children.iter() {
+            if child.hash != child_to_retain.hash {
+                subtrees_to_remove.push_back(child.clone());
+            }
+        }
+        *children = vec![child_to_retain.clone()];
     }
 
     fn debug_print(
@@ -345,18 +350,17 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
             .filter_map(|node| Some((node.height, self.node_to_content.get(&node.hash)?.clone())))
             .collect();
         match self.canonical_head.upgrade() {
+            None => {
+                // Either the first block ever, or the previous canonical head
+                // was removed by the finality cleanup above.
+                // We identify the highest tracked node and update the canonical head.
+                if let Some(head) = self.highest_tracked_node() {
+                    self.update_canonical_head(&head);
+                }
+            }
             Some(canonical_head) => {
                 if block.height > canonical_head.height {
                     self.update_canonical_head(&node);
-                }
-            }
-            None => {
-                // Either the first block ever, or the previous canonical head
-                // was swept away by the finality cleanup above. Either way,
-                // re-elect from the kept tree (which already contains the
-                // just-added node, so it's a candidate).
-                if let Some(head) = self.highest_tracked_node() {
-                    self.update_canonical_head(&head);
                 }
             }
         }
@@ -384,19 +388,15 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
         let mut node = final_head_node.clone();
         let mut subtrees_to_remove: VecDeque<Arc<BlockNode>> = VecDeque::new();
         loop {
-            // We only keep the last final child
-            if let Some(final_child) = new_final_blocks.last() {
-                let mut children = node.children.lock().expect("lock must not be poisoned");
-                for child in children.iter() {
-                    if child.hash != final_child.hash {
-                        subtrees_to_remove.push_back(child.clone());
-                    }
-                }
-                *children = vec![final_child.clone()];
+            // The node we previously visited is the only final child of `node`.
+            if let Some(final_child_of_node) = new_final_blocks.last() {
+                node.keep_only_child(final_child_of_node, &mut subtrees_to_remove);
             }
+            // If this node is already labeled final, we can exit the loop.
             if node.status.is_final() {
                 break;
             }
+            // Else, this is a new final node and we visit its parent next.
             node.status.make_final();
             new_final_blocks.push(node.clone());
             let Some(parent) = node.get_parent() else {
@@ -404,6 +404,7 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
             };
             node = parent;
         }
+        // we update the final head if applicable
         if self
             .final_head
             .as_ref()
@@ -411,20 +412,35 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
         {
             self.final_head = Some(final_head_node.clone());
         }
-
-        // We ensure to clean up nodes on other trees that won't be included anymore.
+        // Lastly, we clean up any dead subtrees that live on other branches.
         let new_final_height = final_head_node.height;
+        self.update_roots(new_final_height, &mut subtrees_to_remove);
+        self.remove_subtrees(subtrees_to_remove);
+
+        new_final_blocks.reverse();
+        new_final_blocks
+    }
+
+    /// Any root children that sit on dead branches get removed from `self.root_children` and addd
+    /// to `subtrees_to_remove`
+    fn update_roots(
+        &mut self,
+        new_final_height: u64,
+        subtrees_to_remove: &mut VecDeque<Arc<BlockNode>>,
+    ) {
         let mut new_root_children = Vec::new();
         for node in self.root_children.iter() {
-            if node.status.is_final() || node.height > new_final_height {
-                new_root_children.push(node.clone());
-            } else {
+            if !node.status.is_final() && node.height <= new_final_height {
                 // the entire subtree can be removed
                 subtrees_to_remove.push_back(node.clone());
+            } else {
+                new_root_children.push(node.clone());
             }
         }
         self.root_children = new_root_children;
-        // now remove subtrees
+    }
+
+    fn remove_subtrees(&mut self, mut subtrees_to_remove: VecDeque<Arc<BlockNode>>) {
         while let Some(node) = subtrees_to_remove.pop_front() {
             subtrees_to_remove.extend(
                 node.children
@@ -435,8 +451,6 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
             self.hash_to_node.remove(&node.hash);
             self.node_to_content.remove(&node.hash);
         }
-        new_final_blocks.reverse();
-        new_final_blocks
     }
 
     /// Updates the canonical chain to the chain of the given block.
