@@ -96,6 +96,15 @@ use std::sync::{Arc, Mutex, Weak};
 ///  │   │       │       │   │  ┆       │
 ///  ..  ..      ..      ..  .. ┆       ..
 /// ```
+/// Hash index, shared between the tracker (one strong `Arc`) and every live node
+/// (one `Weak` each). Nodes use `Weak` so that dropping the tracker doesn't keep
+/// the map alive. The `Mutex` is required for `Send + Sync` but is effectively
+/// uncontended: the tracker is `&mut self` for all mutating paths, and nodes only
+/// acquire the lock from inside their own `Drop::drop` to remove themselves.
+type HashIndexInner<T> = Mutex<HashMap<CryptoHash, Weak<BlockNode<T>>>>;
+type HashIndex<T> = Arc<HashIndexInner<T>>;
+type WeakHashIndex<T> = Weak<HashIndexInner<T>>;
+
 pub struct RecentBlocksTracker<T: Clone + 'static> {
     window_size: u64,
     /// By "root", we mean the blocks whose parents we don't know or are older than the window.
@@ -116,10 +125,10 @@ pub struct RecentBlocksTracker<T: Clone + 'static> {
     /// The maximum height of any block we have been given via `add_block`.
     maximum_height_available: BlockHeight,
     /// Non-owning lookup index. Strong ownership is in `root_children` and each
-    /// `BlockNode::children` — never here. Reassigning a parent's `children` cascades
-    /// the deallocation of dropped subtrees through `Drop`; stale `Weak` entries in
-    /// this map are filtered out lazily by `get_node`.
-    hash_to_node: HashMap<CryptoHash, Weak<BlockNode<T>>>,
+    /// `BlockNode::children` — never here. Every node carries a `Weak<...>` back-reference
+    /// to this map and removes its own entry from `Drop`, so the map stays exactly in
+    /// lockstep with live nodes — no stale `Weak` entries ever.
+    hash_to_node: HashIndex<T>,
 }
 
 #[repr(u8)]
@@ -212,6 +221,23 @@ struct BlockNode<T> {
     /// Per-block payload. Moved into the node so it dies with the node — no separate
     /// `node_to_content` map to keep in sync.
     content: T,
+    /// Back-reference to the tracker's hash index. `Drop::drop` uses this to remove
+    /// `self.hash` from the index, keeping it in lockstep with live nodes. `Weak` so
+    /// that a `BlockNode` drop after the tracker itself is gone is a safe no-op.
+    hash_index: WeakHashIndex<T>,
+}
+
+impl<T> Drop for BlockNode<T> {
+    fn drop(&mut self) {
+        // The Mutex is effectively uncontended (see `HashIndex` docstring). `Drop`
+        // must not panic, so we tolerate Mutex poisoning silently — at worst we
+        // leak a single stale entry, which is bounded.
+        if let Some(index) = self.hash_index.upgrade() {
+            if let Ok(mut map) = index.lock() {
+                map.remove(&self.hash);
+            }
+        }
+    }
 }
 
 impl<T> BlockNode<T> {
@@ -314,15 +340,20 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
             canonical_head: Weak::new(),
             final_head: Weak::new(),
             maximum_height_available: 0,
-            hash_to_node: HashMap::new(),
+            hash_to_node: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
     /// Looks up a live node by hash. Filters out stale `Weak` entries lazily — if a node
-    /// has been dropped by cleanup, `Weak::upgrade` returns `None` even if the map still
-    /// has the entry.
+    /// has been dropped by cleanup, `Weak::upgrade` returns `None`. With self-removing
+    /// `Drop` on `BlockNode`, the map never holds stale entries, but the upgrade
+    /// remains as a defensive belt-and-suspenders check.
     fn get_node(&self, hash: &CryptoHash) -> Option<Arc<BlockNode<T>>> {
-        self.hash_to_node.get(hash).and_then(Weak::upgrade)
+        self.hash_to_node
+            .lock()
+            .expect("lock must not be poisoned")
+            .get(hash)
+            .and_then(Weak::upgrade)
     }
 
     /// Adds a block to the tracker. This is expected to be called for EVERY block given by the
@@ -348,8 +379,12 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
             parent: parent.as_ref().map(Arc::downgrade),
             children: Mutex::new(Vec::new()),
             content,
+            hash_index: Arc::downgrade(&self.hash_to_node),
         });
-        self.hash_to_node.insert(block.hash, Arc::downgrade(&node));
+        self.hash_to_node
+            .lock()
+            .expect("lock must not be poisoned")
+            .insert(block.hash, Arc::downgrade(&node));
         if let Some(parent) = parent {
             parent.children.lock().unwrap().push(node.clone());
         } else {
@@ -737,6 +772,8 @@ pub mod tests {
         pub fn check(&self, block: &Arc<TestBlock>) -> Option<BlockStatus> {
             self.tracker
                 .hash_to_node
+                .lock()
+                .unwrap()
                 .get(&block.hash)
                 .and_then(std::sync::Weak::upgrade)
                 .map(|node| BlockStatus::from(node.status.0.load(Ordering::Relaxed)))
@@ -1051,12 +1088,16 @@ pub mod tests {
         let weak_b1 = tester
             .tracker
             .hash_to_node
+            .lock()
+            .unwrap()
             .get(&b1.hash)
             .expect("b1 present before prune")
             .clone();
         let weak_b2 = tester
             .tracker
             .hash_to_node
+            .lock()
+            .unwrap()
             .get(&b2.hash)
             .expect("b2 present before prune")
             .clone();
@@ -1124,12 +1165,16 @@ pub mod tests {
         let weak_b3_fork = tester
             .tracker
             .hash_to_node
+            .lock()
+            .unwrap()
             .get(&b3_fork.hash)
             .expect("b3_fork present before prune")
             .clone();
         let weak_b4_fork = tester
             .tracker
             .hash_to_node
+            .lock()
+            .unwrap()
             .get(&b4_fork.hash)
             .expect("b4_fork present before prune")
             .clone();
@@ -1178,6 +1223,35 @@ pub mod tests {
         // b4, b5 should be optimistic and canonical
         assert_eq!(tester.check(&b4), Some(BlockStatus::OptimisticAndCanonical));
         assert_eq!(tester.check(&b5), Some(BlockStatus::OptimisticAndCanonical));
+    }
+
+    /// Regression test for the leak Copilot flagged on PR #3251: every block ever inserted
+    /// used to add a `Weak` entry to `hash_to_node` that nothing removed. With `BlockNode`'s
+    /// self-removing `Drop`, the map stays in lockstep with live nodes — its size is bounded
+    /// by the window, not by the total blocks ever observed.
+    #[test]
+    #[expect(non_snake_case)]
+    fn hash_to_node__should_stay_bounded_by_window_size() {
+        // Given: a tracker with a small window.
+        let window_size: u64 = 4;
+        let mut tester = Tester::new(window_size);
+
+        // When: we add a long linear chain — far more blocks than the window holds.
+        let mut block = tester.block(1);
+        tester.add(&block, "1");
+        for h in 2..=50 {
+            block = block.child();
+            tester.add(&block, &format!("{}", h));
+        }
+
+        // Then: the map size is bounded by the window. Pre-fix this would be ~50.
+        let map_size = tester.tracker.hash_to_node.lock().unwrap().len();
+        assert!(
+            map_size <= (window_size as usize) + 2,
+            "hash_to_node leaked stale entries: size {} for window {}",
+            map_size,
+            window_size,
+        );
     }
 
     /// Tests that `minimum_height_to_keep` returns `Some` in case we have a final block height.
