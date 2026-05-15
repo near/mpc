@@ -5141,10 +5141,10 @@ mod tests {
         assert!(contract.pending_attestations.contains_key(&account_id));
     }
 
-    /// TODO(C2b follow-up): re-architect this test to exercise the
-    /// callback path. The "missing MPC hash allowlist" rejection now
-    /// fires inside `on_attestation_verified` (the post-DCAP checks
-    /// run there against fresh allowlists), not synchronously inside
+    /// TODO: re-architect this test to exercise the callback path.
+    /// The "missing MPC hash allowlist" rejection now fires inside
+    /// `on_attestation_verified` (the post-DCAP checks run there
+    /// against fresh allowlists), not synchronously inside
     /// `submit_participant_info`. The unit-test environment doesn't
     /// run the cross-contract Promise, so this test can no longer
     /// observe the error end-to-end. The replacement should invoke
@@ -5156,9 +5156,9 @@ mod tests {
         let _ = ();
     }
 
-    /// TODO(C2b follow-up): re-architect this test to exercise the
-    /// callback path. The TLS-key mismatch rejection (via
-    /// `verify_report_data` inside the post-DCAP checks) now fires in
+    /// TODO: re-architect this test to exercise the callback path.
+    /// The TLS-key mismatch rejection (via `verify_report_data`
+    /// inside the post-DCAP checks) now fires in
     /// `on_attestation_verified`, not synchronously in
     /// `submit_participant_info`. Replacement test should invoke the
     /// callback directly with a mocked `Ok(verified_report)` whose

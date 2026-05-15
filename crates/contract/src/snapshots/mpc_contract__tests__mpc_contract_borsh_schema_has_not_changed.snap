@@ -680,6 +680,10 @@ BorshSchemaContainer {
                         "LookupMap",
                     ),
                     (
+                        "pending_attestations",
+                        "IterableMap",
+                    ),
+                    (
                         "proposed_updates",
                         "ProposedUpdates",
                     ),
