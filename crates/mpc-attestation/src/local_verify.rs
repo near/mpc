@@ -59,6 +59,17 @@ pub fn local_verify(
     )
 }
 
+/// Runs the `dcap_qvl::verify::verify` cryptographic call against a
+/// `DstackAttestation` and returns the result as the wire-mirror
+/// `VerifiedReport`. Useful for tests that need a real, well-formed
+/// `VerifiedReport` (e.g. exercising the post-DCAP path on its own).
+pub fn dstack_to_verified_report(
+    dstack: &crate::attestation::DstackAttestation,
+    timestamp_seconds: u64,
+) -> Result<tee_verifier_interface::VerifiedReport, VerificationError> {
+    local_dcap_verify(dstack, timestamp_seconds)
+}
+
 fn local_dcap_verify(
     dstack: &crate::attestation::DstackAttestation,
     timestamp_seconds: u64,

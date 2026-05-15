@@ -115,6 +115,7 @@ digest = { workspace = true }
 ecdsa = { workspace = true }
 futures = { workspace = true }
 insta = { workspace = true }
+mpc-attestation = { workspace = true, features = ["local-verify"] }
 mpc-contract = { workspace = true, features = ["compat", "test-utils"] }
 near-abi = { workspace = true }
 near-mpc-sdk = { workspace = true }
