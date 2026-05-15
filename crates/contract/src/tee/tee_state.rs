@@ -138,28 +138,19 @@ impl TeeState {
         current_time_milliseconds / 1_000
     }
 
-    /// Adds a participant attestation for the given node iff the attestation succeeds verification.
-    pub(crate) fn add_participant(
+    /// Inserts an already-verified attestation into `stored_attestations`.
+    ///
+    /// The verification body that used to live here moved into the
+    /// `submit_participant_info` callback path: for `Dstack` attestations
+    /// it now runs in `MpcContract::on_attestation_verified` (after the
+    /// `tee-verifier.near` Promise resolves); for `Mock` attestations it
+    /// runs synchronously inline. Both call this function with the
+    /// resulting `VerifiedAttestation`.
+    pub(crate) fn finish_add_participant(
         &mut self,
         node_id: NodeId,
-        attestation: Attestation,
-        tee_upgrade_deadline_duration: Duration,
-    ) -> Result<ParticipantInsertion, AttestationSubmissionError> {
-        let expected_report_data: ReportData = ReportDataV1::new(
-            *node_id.tls_public_key.as_bytes(),
-            *node_id.account_public_key.as_bytes(),
-        )
-        .into();
-
-        let accepted_measurements = self.get_accepted_measurements();
-        let verified_attestation = attestation.verify(
-            expected_report_data.into(),
-            Self::current_time_seconds(),
-            &self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration),
-            &self.get_allowed_launcher_compose_hashes(),
-            &accepted_measurements,
-        )?;
-
+        verified_attestation: VerifiedAttestation,
+    ) -> ParticipantInsertion {
         let tls_pk = node_id.tls_public_key.clone();
 
         let insertion = self.stored_attestations.insert(
@@ -170,10 +161,10 @@ impl TeeState {
             },
         );
 
-        Ok(match insertion {
+        match insertion {
             Some(_previous_attestation) => ParticipantInsertion::UpdatedExistingParticipant,
             None => ParticipantInsertion::NewlyInsertedParticipant,
-        })
+        }
     }
 
     /// reverifies stored participant attestations.
@@ -360,7 +351,9 @@ impl TeeState {
     /// Returns accepted measurements for attestation verification.
     /// Returns the on-chain list as-is (empty list means no measurements are accepted,
     /// consistent with docker image hashes and launcher hashes).
-    fn get_accepted_measurements(&self) -> Vec<mpc_attestation::attestation::ExpectedMeasurements> {
+    pub(crate) fn get_accepted_measurements(
+        &self,
+    ) -> Vec<mpc_attestation::attestation::ExpectedMeasurements> {
         self.allowed_measurements.to_attestation_measurements()
     }
 

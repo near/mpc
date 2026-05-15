@@ -37,6 +37,7 @@ container_build_command = [
 crate-type = ["cdylib", "lib"]
 
 [features]
+default = ["mainnet"]
 test-utils = ["rand", "threshold-signatures", "near-mpc-contract-interface/blstrs"]
 # WASM-compatible benchmark endpoints for sandbox gas testing
 bench-contract-methods = []
@@ -44,6 +45,10 @@ bench-contract-methods = []
 # TODO(#381): Remove once the node no longer depends on the contract crate.
 compat = []
 dev-utils = ["rand", "threshold-signatures", "near-mpc-contract-interface/blstrs"]
+# Selects the verifier account ID baked into `VERIFIER_ACCOUNT_ID`.
+# Default-on so `cargo near build` targets mainnet; sandbox tests
+# disable default features to fall through to the testnet account.
+mainnet = []
 abi = [
     "borsh/unstable__schema",
     "near-mpc-contract-interface/abi",
@@ -58,6 +63,7 @@ __abi-generate = ["abi", "near-sdk/__abi-generate"]
 
 [dependencies]
 assert_matches = { workspace = true }
+attestation-types = { workspace = true }
 blstrs = { workspace = true }
 borsh = { workspace = true }
 curve25519-dalek = { workspace = true }
@@ -73,6 +79,7 @@ k256 = { workspace = true, features = [
 ] }
 mpc-attestation = { workspace = true }
 mpc-primitives = { workspace = true }
+tee-verifier-interface = { workspace = true }
 near-account-id = { workspace = true, features = ["serde"] }
 near-mpc-bounded-collections = { workspace = true }
 near-mpc-contract-interface = { workspace = true, features = [

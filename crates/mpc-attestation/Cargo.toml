@@ -5,12 +5,22 @@ license = { workspace = true }
 edition = { workspace = true }
 
 [features]
-abi = ["borsh/unstable__schema", "mpc-primitives/abi", "attestation/borsh-schema"]
-dstack-conversions = ["attestation/dstack-conversions"]
-test-utils = ["attestation/test-utils"]
+abi = [
+    "borsh/unstable__schema",
+    "mpc-primitives/abi",
+    "attestation-types/borsh-schema",
+]
+dstack-conversions = ["attestation-types/dstack-conversions"]
+test-utils = ["attestation-types/test-utils"]
+# Re-exports `collateral_from_dcap` / `collateral_to_dcap` from the
+# `attestation` crate. Off-chain consumers (`tee-authority`,
+# `attestation-cli`) enable this; on-chain consumers (`mpc-contract`)
+# do not, so they don't transitively pull `dcap-qvl`.
+local-verify = ["dep:attestation"]
 
 [dependencies]
-attestation = { workspace = true }
+attestation = { workspace = true, optional = true }
+attestation-types = { workspace = true }
 borsh = { workspace = true }
 derive_more = { workspace = true }
 hex = { workspace = true }
@@ -21,11 +31,14 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 sha3 = { workspace = true }
+tee-verifier-interface = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
+attestation = { workspace = true }
 dcap-qvl = { workspace = true }
 test-utils = { workspace = true }
+tee-verifier-interface = { workspace = true }
 
 [lints]
 workspace = true

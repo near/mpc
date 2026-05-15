@@ -337,6 +337,9 @@ impl From<MpcContract> for crate::MpcContract {
             pending_signature_requests: value.pending_signature_requests,
             pending_ckd_requests: value.pending_ckd_requests,
             pending_verify_foreign_tx_requests: value.pending_verify_foreign_tx_requests,
+            pending_attestations: near_sdk::store::IterableMap::new(
+                crate::storage_keys::StorageKey::PendingAttestations,
+            ),
             proposed_updates: value.proposed_updates,
             node_foreign_chain_support: value.node_foreign_chain_configurations.into(),
             config: value.config,

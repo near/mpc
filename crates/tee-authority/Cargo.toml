@@ -9,13 +9,14 @@ external-services-tests = []
 
 [dependencies]
 anyhow = { workspace = true }
+attestation = { workspace = true }
 backon = { workspace = true }
 dcap-qvl = { workspace = true, features = ["report"] }
 derive_more = { workspace = true }
 dstack-sdk = { workspace = true }
 hex = { workspace = true }
 launcher-interface = { workspace = true }
-mpc-attestation = { workspace = true, features = ["dstack-conversions"] }
+mpc-attestation = { workspace = true, features = ["dstack-conversions", "local-verify"] }
 near-mpc-bounded-collections = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
@@ -31,6 +32,7 @@ x509-parser = { workspace = true }
 assert_matches = { workspace = true }
 hex = { workspace = true }
 rstest = { workspace = true }
+tee-verifier-interface = { workspace = true }
 test-utils = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 
