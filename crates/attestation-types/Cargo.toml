@@ -1,33 +1,30 @@
 [package]
-name = "attestation"
+name = "attestation-types"
 version = { workspace = true }
 license = { workspace = true }
 edition = { workspace = true }
+repository = "https://github.com/near/mpc"
 
 [features]
-borsh-schema = ["borsh/unstable__schema", "attestation-types/borsh-schema"]
-dstack-conversions = ["attestation-types/dstack-conversions"]
+borsh-schema = ["borsh/unstable__schema", "tee-verifier-interface/borsh-schema"]
+dstack-conversions = ["dep:dstack-sdk-types"]
 test-utils = []
 
 [dependencies]
-attestation-types = { workspace = true }
 borsh = { workspace = true }
-dcap-qvl = { workspace = true }
 derive_more = { workspace = true }
+dstack-sdk-types = { workspace = true, optional = true }
 hex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_with = { workspace = true }
+sha2 = { workspace = true }
 tee-verifier-interface = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
-assert_matches = { workspace = true }
 dstack-sdk-types = { workspace = true }
-test-utils = { workspace = true }
-
-[[test]]
-name = "collateral"
-required-features = ["test-utils"]
+rstest = { workspace = true }
 
 [lints]
 workspace = true

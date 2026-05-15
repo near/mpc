@@ -70,10 +70,12 @@ impl From<&crate::tcb_info::TcbInfo> for Measurements {
     }
 }
 
-impl TryFrom<dcap_qvl::verify::VerifiedReport> for Measurements {
+impl TryFrom<tee_verifier_interface::VerifiedReport> for Measurements {
     type Error = MeasurementsError;
 
-    fn try_from(verified_report: dcap_qvl::verify::VerifiedReport) -> Result<Self, Self::Error> {
+    fn try_from(
+        verified_report: tee_verifier_interface::VerifiedReport,
+    ) -> Result<Self, Self::Error> {
         let td10 = verified_report
             .report
             .as_td10()
