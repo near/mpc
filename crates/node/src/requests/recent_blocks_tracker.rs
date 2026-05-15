@@ -100,23 +100,26 @@ pub struct RecentBlocksTracker<T: Clone + 'static> {
     window_size: u64,
     /// By "root", we mean the blocks whose parents we don't know or are older than the window.
     /// The children of the root are the earliest blocks we are keeping who do not have any order
-    /// with each other.
-    root_children: Vec<Arc<BlockNode>>,
+    /// with each other. Sole strong-Arc owner for root nodes; descendants are owned via each
+    /// parent's `children` field. Dropping an Arc from here (or from any `children` Vec)
+    /// deallocates the node and cascades through its subtree.
+    root_children: Vec<Arc<BlockNode<T>>>,
     /// The head of the canonical chain. This is the chain of the highest-height block we've seen.
-    /// This may be None if we have no block at all.
-    canonical_head: Weak<BlockNode>,
-    /// The head of the final chain. This is determined by recovering information from the
-    /// last_final_block fields of the block headers given to us. This may be None if we have not
-    /// seen any final blocks yet.
-    final_head: Option<Arc<BlockNode>>,
+    /// `Weak` so that finality cleanup (which sweeps dead-fork canonical heads) can drop the node;
+    /// `upgrade()` returning `None` signals "previous head was swept; re-elect."
+    canonical_head: Weak<BlockNode<T>>,
+    /// The head of the final chain. Determined by recovering information from the
+    /// `last_final_block` fields of the block headers given to us. `Weak` so that the head pointer
+    /// does not itself keep the node alive — the tree (via `root_children` → parent.children) owns
+    /// every live node.
+    final_head: Weak<BlockNode<T>>,
     /// The maximum height of any block we have been given via `add_block`.
     maximum_height_available: BlockHeight,
-    /// Maps block hashes to their nodes in the tree.
-    hash_to_node: HashMap<CryptoHash, Arc<BlockNode>>,
-    /// Maps block hashes to their content; this is to provide the stream of finalized blocks.
-    /// Technically, instead of a hashmap we could put this in the node, but that would clutter
-    /// the code by requiring the T type parameter everywhere.
-    node_to_content: HashMap<CryptoHash, T>,
+    /// Non-owning lookup index. Strong ownership is in `root_children` and each
+    /// `BlockNode::children` — never here. Reassigning a parent's `children` cascades
+    /// the deallocation of dropped subtrees through `Drop`; stale `Weak` entries in
+    /// this map are filtered out lazily by `get_node`.
+    hash_to_node: HashMap<CryptoHash, Weak<BlockNode<T>>>,
 }
 
 #[repr(u8)]
@@ -190,7 +193,7 @@ pub struct AddBlockResult<T> {
 }
 
 /// Represents a block in the recent blockchain.
-struct BlockNode {
+struct BlockNode<T> {
     hash: CryptoHash,
     height: u64,
     /// Indicates the finality status of this block. Held as `Arc` so that a `Weak` reference
@@ -200,28 +203,28 @@ struct BlockNode {
     /// The parent block, if we're aware of it. This may be None if we have never
     /// heard of the parent.
     /// The Weak becomes a dangling pointer when the parent is pruned.
-    parent: Option<Weak<BlockNode>>,
+    parent: Option<Weak<BlockNode<T>>>,
     /// The children blocks; there can be multiple if there are forks. The children are
-    /// kept in no specific order.
-    children: Mutex<Vec<Arc<BlockNode>>>,
+    /// kept in no specific order. **This is the sole strong-Arc holder for descendant nodes**
+    /// (along with `RecentBlocksTracker::root_children` for tops of the tree); reassigning
+    /// or dropping entries here cascades the deallocation through `Drop`.
+    children: Mutex<Vec<Arc<BlockNode<T>>>>,
+    /// Per-block payload. Moved into the node so it dies with the node — no separate
+    /// `node_to_content` map to keep in sync.
+    content: T,
 }
 
-impl BlockNode {
-    fn get_parent(&self) -> Option<Arc<BlockNode>> {
+impl<T> BlockNode<T> {
+    fn get_parent(&self) -> Option<Arc<BlockNode<T>>> {
         self.parent.as_ref().and_then(Weak::upgrade)
     }
 
-    fn keep_only_child(
-        &self,
-        child_to_retain: &Arc<BlockNode>,
-        subtrees_to_remove: &mut VecDeque<Arc<BlockNode>>,
-    ) {
+    /// Retain only `child_to_retain` in this node's children, dropping every other Arc.
+    /// Because `hash_to_node` only holds `Weak` references, the dropped Arcs hit
+    /// strong-count 0 here and deallocate immediately, cascading through their own
+    /// `children` Vec via `Drop`. No worklist needed.
+    fn keep_only_child(&self, child_to_retain: &Arc<BlockNode<T>>) {
         let mut children = self.children.lock().expect("lock must not be poisoned");
-        for child in children.iter() {
-            if !Arc::ptr_eq(child, child_to_retain) {
-                subtrees_to_remove.push_back(child.clone());
-            }
-        }
         *children = vec![child_to_retain.clone()];
     }
 
@@ -231,7 +234,7 @@ impl BlockNode {
         indents: &mut Vec<u8>,
         final_head: Option<CryptoHash>,
         canonical_head: Option<CryptoHash>,
-        content_printer: &impl Fn(&CryptoHash, &mut std::fmt::Formatter<'_>) -> std::fmt::Result,
+        content_printer: &impl Fn(&T, &mut std::fmt::Formatter<'_>) -> std::fmt::Result,
     ) -> std::fmt::Result {
         if Some(self.hash) == final_head {
             write!(f, "FH ")?;
@@ -260,7 +263,7 @@ impl BlockNode {
             if self.status.is_final() { "F" } else { " " },
             format!("{:?}", self.hash),
         )?;
-        content_printer(&self.hash, f)?;
+        content_printer(&self.content, f)?;
         writeln!(f)?;
         let children = self.children.lock().unwrap();
         for (i, child) in children.iter().enumerate() {
@@ -309,11 +312,17 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
             window_size,
             root_children: Vec::new(),
             canonical_head: Weak::new(),
-            final_head: None,
+            final_head: Weak::new(),
             maximum_height_available: 0,
             hash_to_node: HashMap::new(),
-            node_to_content: HashMap::new(),
         }
+    }
+
+    /// Looks up a live node by hash. Filters out stale `Weak` entries lazily — if a node
+    /// has been dropped by cleanup, `Weak::upgrade` returns `None` even if the map still
+    /// has the entry.
+    fn get_node(&self, hash: &CryptoHash) -> Option<Arc<BlockNode<T>>> {
+        self.hash_to_node.get(hash).and_then(Weak::upgrade)
     }
 
     /// Adds a block to the tracker. This is expected to be called for EVERY block given by the
@@ -324,23 +333,23 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
         block: &BlockViewLite,
         content: T,
     ) -> anyhow::Result<AddBlockResult<T>> {
-        if self.hash_to_node.contains_key(&block.hash) {
+        if self.get_node(&block.hash).is_some() {
             anyhow::bail!("Block already exists in the tracker");
         }
         let status = Arc::new(AtomicBlockStatus(AtomicU8::new(u8::from(
             BlockStatus::OptimisticButNotCanonical,
         ))));
         let block_ref = Arc::downgrade(&status);
-        let parent = self.hash_to_node.get(&block.prev_hash).cloned();
+        let parent = self.get_node(&block.prev_hash);
         let node = Arc::new(BlockNode {
             hash: block.hash,
             height: block.height,
             status,
             parent: parent.as_ref().map(Arc::downgrade),
             children: Mutex::new(Vec::new()),
+            content,
         });
-        self.hash_to_node.insert(block.hash, node.clone());
-        self.node_to_content.insert(block.hash, content);
+        self.hash_to_node.insert(block.hash, Arc::downgrade(&node));
         if let Some(parent) = parent {
             parent.children.lock().unwrap().push(node.clone());
         } else {
@@ -348,12 +357,12 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
         }
 
         let new_final_blocks = self.maybe_update_final_head(block.last_final_block);
-        // We must do this lookup before calling prune_old_blocks or else we may no longer have
-        // some of the blocks. Note: filter_map should not really filter anything out, but we're
-        // doing this defensively to not crash just in case we have a bug.
+        // `new_final_blocks` holds strong Arcs to the newly-finalized nodes, so the
+        // content clones below stay valid even if a subsequent cleanup drops the node
+        // from the tree.
         let new_final_blocks = new_final_blocks
             .into_iter()
-            .filter_map(|node| Some((node.height, self.node_to_content.get(&node.hash)?.clone())))
+            .map(|node| (node.height, node.content.clone()))
             .collect();
         match self.canonical_head.upgrade() {
             None => {
@@ -380,23 +389,26 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
         })
     }
 
-    /// Advance the final head, mark its ancestors as final, and drop every
-    /// subtree that BFT-safety guarantees can no longer be on the final chain.
-    /// See `RecentBlocksTracker` for the picture of which subtrees this catches.
+    /// Advance the final head, mark its ancestors as final, and drop every subtree that
+    /// BFT-safety guarantees can no longer be on the final chain. Dead subtrees deallocate
+    /// automatically via `Drop` cascade — `keep_only_child` replaces the parent's children
+    /// list, and `update_roots` rebuilds `root_children` keeping only live branches.
     ///
     /// Returns the newly finalized blocks in ascending height order.
-    fn maybe_update_final_head(&mut self, potential_final_head: CryptoHash) -> Vec<Arc<BlockNode>> {
-        let final_head_node = self.hash_to_node.get(&potential_final_head).cloned();
-        let Some(final_head_node) = final_head_node else {
+    fn maybe_update_final_head(
+        &mut self,
+        potential_final_head: CryptoHash,
+    ) -> Vec<Arc<BlockNode<T>>> {
+        let Some(final_head_node) = self.get_node(&potential_final_head) else {
             return Vec::new();
         };
-        let mut new_final_blocks: Vec<Arc<BlockNode>> = Vec::new();
+        let mut new_final_blocks: Vec<Arc<BlockNode<T>>> = Vec::new();
         let mut node = final_head_node.clone();
-        let mut subtrees_to_remove: VecDeque<Arc<BlockNode>> = VecDeque::new();
         loop {
             // The node we previously visited is the only final child of `node`.
+            // Dropping its non-final siblings here cascades their subtrees.
             if let Some(final_child_of_node) = new_final_blocks.last() {
-                node.keep_only_child(final_child_of_node, &mut subtrees_to_remove);
+                node.keep_only_child(final_child_of_node);
             }
             // If this node is already labeled final, we can exit the loop.
             if node.status.is_final() {
@@ -410,59 +422,28 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
             };
             node = parent;
         }
-        // we update the final head if applicable
+        // We update the final head if applicable.
         if self
             .final_head
-            .as_ref()
+            .upgrade()
             .is_none_or(|prev_final_head| prev_final_head.height < final_head_node.height)
         {
-            self.final_head = Some(final_head_node.clone());
+            self.final_head = Arc::downgrade(&final_head_node);
         }
-        // Lastly, we clean up any dead subtrees that live on other branches.
+        // Drop dead root branches (non-final roots at height ≤ new final height).
+        // `Vec::retain` releases the dropped Arcs, which cascade through their subtrees.
         let new_final_height = final_head_node.height;
-        self.update_roots(new_final_height, &mut subtrees_to_remove);
-        self.remove_subtrees(subtrees_to_remove);
+        self.root_children
+            .retain(|r| r.status.is_final() || r.height > new_final_height);
 
         new_final_blocks.reverse();
         new_final_blocks
     }
 
-    /// Any root children that sit on dead branches get removed from `self.root_children` and added
-    /// to `subtrees_to_remove`
-    fn update_roots(
-        &mut self,
-        new_final_height: u64,
-        subtrees_to_remove: &mut VecDeque<Arc<BlockNode>>,
-    ) {
-        let mut new_root_children = Vec::new();
-        for node in self.root_children.iter() {
-            if !node.status.is_final() && node.height <= new_final_height {
-                // the entire subtree can be removed
-                subtrees_to_remove.push_back(node.clone());
-            } else {
-                new_root_children.push(node.clone());
-            }
-        }
-        self.root_children = new_root_children;
-    }
-
-    fn remove_subtrees(&mut self, mut subtrees_to_remove: VecDeque<Arc<BlockNode>>) {
-        while let Some(node) = subtrees_to_remove.pop_front() {
-            subtrees_to_remove.extend(
-                node.children
-                    .lock()
-                    .expect("lock must not be poisoned")
-                    .clone(),
-            );
-            self.hash_to_node.remove(&node.hash);
-            self.node_to_content.remove(&node.hash);
-        }
-    }
-
     /// Updates the canonical chain to the chain of the given block.
     /// Nodes on the existing canonical chain that are not in the new canonical chain
     /// will be marked as no longer canonical.
-    fn update_canonical_head(&mut self, new_canonical_head: &Arc<BlockNode>) {
+    fn update_canonical_head(&mut self, new_canonical_head: &Arc<BlockNode<T>>) {
         let mut node = Some(new_canonical_head.clone());
 
         while let Some(current_node) = node {
@@ -491,9 +472,9 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
     /// BFS over the kept tree, returning the highest-height node (insertion order and
     /// BFS order breaks ties). Used to re-elect the canonical head after finality
     /// cleanup sweeps the previous one.
-    fn highest_tracked_node(&self) -> Option<Arc<BlockNode>> {
-        let mut queue: VecDeque<Arc<BlockNode>> = self.root_children.iter().cloned().collect();
-        let mut best: Option<Arc<BlockNode>> = None;
+    fn highest_tracked_node(&self) -> Option<Arc<BlockNode<T>>> {
+        let mut queue: VecDeque<Arc<BlockNode<T>>> = self.root_children.iter().cloned().collect();
+        let mut best: Option<Arc<BlockNode<T>>> = None;
         while let Some(node) = queue.pop_front() {
             if best.as_ref().is_none_or(|b| b.height < node.height) {
                 best = Some(node.clone());
@@ -509,9 +490,7 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
     /// we ensure that the final head is not pruned. Otherwise, not only would the logic be very
     /// messy, but also we would not be able to provide a contiguous stream of finalized blocks.
     fn minimum_height_to_keep(&self) -> Option<u64> {
-        let Some(final_head) = &self.final_head else {
-            return None;
-        };
+        let final_head = self.final_head.upgrade()?;
         Some(
             self.maximum_height_available
                 .saturating_sub(self.window_size)
@@ -520,28 +499,26 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
         )
     }
 
-    /// Recency-window prune. Drops every node below `min_height_to_keep` and
-    /// promotes the first in-window descendant on each branch to a new root.
-    /// See `RecentBlocksTracker` for the picture; dead-fork cleanup happens in
-    /// `maybe_update_final_head`, not here.
+    /// Recency-window prune. Drops every node below `min_height_to_keep` and promotes the
+    /// first in-window descendant on each branch to a new root. The dropped roots cascade
+    /// their subtrees via `Drop`; descendants we promote into `new_roots` survive because
+    /// we cloned their Arc before letting the parent drop.
     fn prune_old_blocks(&mut self) {
         let Some(min_height_to_keep) = self.minimum_height_to_keep() else {
             return;
         };
-        let mut queue: VecDeque<Arc<BlockNode>> = std::mem::take(&mut self.root_children).into();
+        let mut queue: VecDeque<Arc<BlockNode<T>>> =
+            std::mem::take(&mut self.root_children).into();
         let mut new_roots = Vec::new();
         while let Some(node) = queue.pop_front() {
             if node.height >= min_height_to_keep {
                 new_roots.push(node);
                 continue;
             }
-            self.hash_to_node.remove(&node.hash);
-            self.node_to_content.remove(&node.hash);
-            // Drain into the queue so the parent stops holding strong refs to
-            // its children — once `hash_to_node` no longer holds the parent,
-            // the parent can drop as soon as we move past this iteration.
-            let mut children = node.children.lock().expect("lock must not be poisoned");
-            queue.extend(children.drain(..));
+            // Promote in-window children into the worklist; once we drop our Arc to
+            // `node` at the end of this iteration, only its un-cloned descendants die.
+            let children = node.children.lock().expect("lock must not be poisoned");
+            queue.extend(children.iter().cloned());
         }
         self.root_children = new_roots;
     }
@@ -558,7 +535,7 @@ impl<T: Clone + Debug> Debug for RecentBlocksTracker<T> {
             self.maximum_height_available,
             self.minimum_height_to_keep().unwrap_or(0)
         )?;
-        let final_head = self.final_head.as_ref().map(|n| n.hash);
+        let final_head = self.final_head.upgrade().map(|n| n.hash);
         let canonical_head = self.canonical_head.upgrade().map(|n| n.hash);
 
         for (i, child) in self.root_children.iter().enumerate() {
@@ -571,13 +548,7 @@ impl<T: Clone + Debug> Debug for RecentBlocksTracker<T> {
                 }],
                 final_head,
                 canonical_head,
-                &|hash, f| {
-                    if let Some(content) = self.node_to_content.get(hash) {
-                        write!(f, "{:?}", content)
-                    } else {
-                        write!(f, "")
-                    }
-                },
+                &|content, f| write!(f, "{:?}", content),
             )?;
         }
         Ok(())
@@ -767,6 +738,7 @@ pub mod tests {
             self.tracker
                 .hash_to_node
                 .get(&block.hash)
+                .and_then(std::sync::Weak::upgrade)
                 .map(|node| BlockStatus::from(node.status.0.load(Ordering::Relaxed)))
         }
 
@@ -1076,20 +1048,18 @@ pub mod tests {
         //   b1.children = [Arc(b2)]
         //   b2.parent   = Some(Arc(b1))
         // Without breaking the cycle, neither can be freed.
-        let weak_b1 = Arc::downgrade(
-            tester
-                .tracker
-                .hash_to_node
-                .get(&b1.hash)
-                .expect("b1 present before prune"),
-        );
-        let weak_b2 = Arc::downgrade(
-            tester
-                .tracker
-                .hash_to_node
-                .get(&b2.hash)
-                .expect("b2 present before prune"),
-        );
+        let weak_b1 = tester
+            .tracker
+            .hash_to_node
+            .get(&b1.hash)
+            .expect("b1 present before prune")
+            .clone();
+        let weak_b2 = tester
+            .tracker
+            .hash_to_node
+            .get(&b2.hash)
+            .expect("b2 present before prune")
+            .clone();
 
         // When the finality jump triggers a multi-node prune
         tester.add(&b6, "6");
@@ -1151,20 +1121,18 @@ pub mod tests {
         assert_eq!(tester.check(&b1), Some(BlockStatus::Final));
         assert_eq!(tester.check(&b2), Some(BlockStatus::Final));
 
-        let weak_b3_fork = Arc::downgrade(
-            tester
-                .tracker
-                .hash_to_node
-                .get(&b3_fork.hash)
-                .expect("b3_fork present before prune"),
-        );
-        let weak_b4_fork = Arc::downgrade(
-            tester
-                .tracker
-                .hash_to_node
-                .get(&b4_fork.hash)
-                .expect("b4_fork present before prune"),
-        );
+        let weak_b3_fork = tester
+            .tracker
+            .hash_to_node
+            .get(&b3_fork.hash)
+            .expect("b3_fork present before prune")
+            .clone();
+        let weak_b4_fork = tester
+            .tracker
+            .hash_to_node
+            .get(&b4_fork.hash)
+            .expect("b4_fork present before prune")
+            .clone();
 
         // When: b5 is added, advancing final_head to b3
         //   (b1, F)
