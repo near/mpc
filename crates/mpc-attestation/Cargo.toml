@@ -23,8 +23,8 @@ local-verify = ["dep:attestation", "dep:dcap-qvl"]
 [dependencies]
 attestation = { workspace = true, optional = true }
 attestation-types = { workspace = true }
-dcap-qvl = { workspace = true, optional = true }
 borsh = { workspace = true }
+dcap-qvl = { workspace = true, optional = true }
 derive_more = { workspace = true }
 hex = { workspace = true }
 include-measurements = { workspace = true }
@@ -40,8 +40,8 @@ tee-verifier-interface = { workspace = true }
 assert_matches = { workspace = true }
 attestation = { workspace = true }
 dcap-qvl = { workspace = true }
-test-utils = { workspace = true }
 tee-verifier-interface = { workspace = true }
+test-utils = { workspace = true }
 
 [lints]
 workspace = true

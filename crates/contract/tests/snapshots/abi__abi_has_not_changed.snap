@@ -566,6 +566,433 @@ expression: abi
         }
       },
       {
+        "name": "on_attestation_verified",
+        "doc": " Callback invoked by the cross-contract Promise scheduled from\n `submit_participant_info` for `Dstack` attestations. Runs the\n post-DCAP checks against the `VerifiedReport` returned by\n `tee-verifier.near` (or, on `PromiseError::Failed`, refunds the\n caller's deposit and clears the pending entry).\n\n Allowlists are read *fresh* from `self.tee_state` here — not\n from a snapshot taken at submit time. A governance vote that\n lands while the verifier round-trip is in flight therefore\n takes effect immediately.",
+        "kind": "call",
+        "modifiers": [
+          "private"
+        ],
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "account_id",
+              "type_schema": {
+                "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "callbacks": [
+          {
+            "serialization_type": "borsh",
+            "type_schema": {
+              "declaration": "VerifiedReport",
+              "definitions": {
+                "EnclaveReport": {
+                  "Struct": [
+                    [
+                      "cpu_svn",
+                      "[u8; 16]"
+                    ],
+                    [
+                      "misc_select",
+                      "u32"
+                    ],
+                    [
+                      "reserved1",
+                      "[u8; 28]"
+                    ],
+                    [
+                      "attributes",
+                      "[u8; 16]"
+                    ],
+                    [
+                      "mr_enclave",
+                      "[u8; 32]"
+                    ],
+                    [
+                      "reserved2",
+                      "[u8; 32]"
+                    ],
+                    [
+                      "mr_signer",
+                      "[u8; 32]"
+                    ],
+                    [
+                      "reserved3",
+                      "[u8; 96]"
+                    ],
+                    [
+                      "isv_prod_id",
+                      "u16"
+                    ],
+                    [
+                      "isv_svn",
+                      "u16"
+                    ],
+                    [
+                      "reserved4",
+                      "[u8; 60]"
+                    ],
+                    [
+                      "report_data",
+                      "[u8; 64]"
+                    ]
+                  ]
+                },
+                "Report": {
+                  "Enum": {
+                    "tag_width": 1,
+                    "variants": [
+                      [
+                        0,
+                        "SgxEnclave",
+                        "Report__SgxEnclave"
+                      ],
+                      [
+                        1,
+                        "TD10",
+                        "Report__TD10"
+                      ],
+                      [
+                        2,
+                        "TD15",
+                        "Report__TD15"
+                      ]
+                    ]
+                  }
+                },
+                "Report__SgxEnclave": {
+                  "Struct": [
+                    "EnclaveReport"
+                  ]
+                },
+                "Report__TD10": {
+                  "Struct": [
+                    "TDReport10"
+                  ]
+                },
+                "Report__TD15": {
+                  "Struct": [
+                    "TDReport15"
+                  ]
+                },
+                "String": {
+                  "Sequence": {
+                    "length_width": 4,
+                    "length_range": {
+                      "start": 0,
+                      "end": 4294967295
+                    },
+                    "elements": "u8"
+                  }
+                },
+                "TDReport10": {
+                  "Struct": [
+                    [
+                      "tee_tcb_svn",
+                      "[u8; 16]"
+                    ],
+                    [
+                      "mr_seam",
+                      "[u8; 48]"
+                    ],
+                    [
+                      "mr_signer_seam",
+                      "[u8; 48]"
+                    ],
+                    [
+                      "seam_attributes",
+                      "[u8; 8]"
+                    ],
+                    [
+                      "td_attributes",
+                      "[u8; 8]"
+                    ],
+                    [
+                      "xfam",
+                      "[u8; 8]"
+                    ],
+                    [
+                      "mr_td",
+                      "[u8; 48]"
+                    ],
+                    [
+                      "mr_config_id",
+                      "[u8; 48]"
+                    ],
+                    [
+                      "mr_owner",
+                      "[u8; 48]"
+                    ],
+                    [
+                      "mr_owner_config",
+                      "[u8; 48]"
+                    ],
+                    [
+                      "rt_mr0",
+                      "[u8; 48]"
+                    ],
+                    [
+                      "rt_mr1",
+                      "[u8; 48]"
+                    ],
+                    [
+                      "rt_mr2",
+                      "[u8; 48]"
+                    ],
+                    [
+                      "rt_mr3",
+                      "[u8; 48]"
+                    ],
+                    [
+                      "report_data",
+                      "[u8; 64]"
+                    ]
+                  ]
+                },
+                "TDReport15": {
+                  "Struct": [
+                    [
+                      "base",
+                      "TDReport10"
+                    ],
+                    [
+                      "tee_tcb_svn2",
+                      "[u8; 16]"
+                    ],
+                    [
+                      "mr_service_td",
+                      "[u8; 48]"
+                    ]
+                  ]
+                },
+                "TcbStatus": {
+                  "Enum": {
+                    "tag_width": 1,
+                    "variants": [
+                      [
+                        0,
+                        "UpToDate",
+                        "TcbStatus__UpToDate"
+                      ],
+                      [
+                        1,
+                        "OutOfDateConfigurationNeeded",
+                        "TcbStatus__OutOfDateConfigurationNeeded"
+                      ],
+                      [
+                        2,
+                        "OutOfDate",
+                        "TcbStatus__OutOfDate"
+                      ],
+                      [
+                        3,
+                        "ConfigurationAndSWHardeningNeeded",
+                        "TcbStatus__ConfigurationAndSWHardeningNeeded"
+                      ],
+                      [
+                        4,
+                        "ConfigurationNeeded",
+                        "TcbStatus__ConfigurationNeeded"
+                      ],
+                      [
+                        5,
+                        "SWHardeningNeeded",
+                        "TcbStatus__SWHardeningNeeded"
+                      ],
+                      [
+                        6,
+                        "Revoked",
+                        "TcbStatus__Revoked"
+                      ]
+                    ]
+                  }
+                },
+                "TcbStatusWithAdvisory": {
+                  "Struct": [
+                    [
+                      "status",
+                      "TcbStatus"
+                    ],
+                    [
+                      "advisory_ids",
+                      "Vec<String>"
+                    ]
+                  ]
+                },
+                "TcbStatus__ConfigurationAndSWHardeningNeeded": {
+                  "Struct": null
+                },
+                "TcbStatus__ConfigurationNeeded": {
+                  "Struct": null
+                },
+                "TcbStatus__OutOfDate": {
+                  "Struct": null
+                },
+                "TcbStatus__OutOfDateConfigurationNeeded": {
+                  "Struct": null
+                },
+                "TcbStatus__Revoked": {
+                  "Struct": null
+                },
+                "TcbStatus__SWHardeningNeeded": {
+                  "Struct": null
+                },
+                "TcbStatus__UpToDate": {
+                  "Struct": null
+                },
+                "Vec<String>": {
+                  "Sequence": {
+                    "length_width": 4,
+                    "length_range": {
+                      "start": 0,
+                      "end": 4294967295
+                    },
+                    "elements": "String"
+                  }
+                },
+                "Vec<u8>": {
+                  "Sequence": {
+                    "length_width": 4,
+                    "length_range": {
+                      "start": 0,
+                      "end": 4294967295
+                    },
+                    "elements": "u8"
+                  }
+                },
+                "VerifiedReport": {
+                  "Struct": [
+                    [
+                      "status",
+                      "String"
+                    ],
+                    [
+                      "advisory_ids",
+                      "Vec<String>"
+                    ],
+                    [
+                      "report",
+                      "Report"
+                    ],
+                    [
+                      "ppid",
+                      "Vec<u8>"
+                    ],
+                    [
+                      "qe_status",
+                      "TcbStatusWithAdvisory"
+                    ],
+                    [
+                      "platform_status",
+                      "TcbStatusWithAdvisory"
+                    ]
+                  ]
+                },
+                "[u8; 16]": {
+                  "Sequence": {
+                    "length_width": 0,
+                    "length_range": {
+                      "start": 16,
+                      "end": 16
+                    },
+                    "elements": "u8"
+                  }
+                },
+                "[u8; 28]": {
+                  "Sequence": {
+                    "length_width": 0,
+                    "length_range": {
+                      "start": 28,
+                      "end": 28
+                    },
+                    "elements": "u8"
+                  }
+                },
+                "[u8; 32]": {
+                  "Sequence": {
+                    "length_width": 0,
+                    "length_range": {
+                      "start": 32,
+                      "end": 32
+                    },
+                    "elements": "u8"
+                  }
+                },
+                "[u8; 48]": {
+                  "Sequence": {
+                    "length_width": 0,
+                    "length_range": {
+                      "start": 48,
+                      "end": 48
+                    },
+                    "elements": "u8"
+                  }
+                },
+                "[u8; 60]": {
+                  "Sequence": {
+                    "length_width": 0,
+                    "length_range": {
+                      "start": 60,
+                      "end": 60
+                    },
+                    "elements": "u8"
+                  }
+                },
+                "[u8; 64]": {
+                  "Sequence": {
+                    "length_width": 0,
+                    "length_range": {
+                      "start": 64,
+                      "end": 64
+                    },
+                    "elements": "u8"
+                  }
+                },
+                "[u8; 8]": {
+                  "Sequence": {
+                    "length_width": 0,
+                    "length_range": {
+                      "start": 8,
+                      "end": 8
+                    },
+                    "elements": "u8"
+                  }
+                },
+                "[u8; 96]": {
+                  "Sequence": {
+                    "length_width": 0,
+                    "length_range": {
+                      "start": 96,
+                      "end": 96
+                    },
+                    "elements": "u8"
+                  }
+                },
+                "u16": {
+                  "Primitive": 2
+                },
+                "u32": {
+                  "Primitive": 4
+                },
+                "u8": {
+                  "Primitive": 1
+                }
+              }
+            }
+          }
+        ],
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
         "name": "os_measurement_votes",
         "doc": " Returns the current OS measurement votes, showing each participant's vote.",
         "kind": "view",
@@ -1140,7 +1567,7 @@ expression: abi
       },
       {
         "name": "submit_participant_info",
-        "doc": " (Prospective) Participants can submit their tee participant information through this\n endpoint.",
+        "doc": " (Prospective) Participants can submit their tee participant information through this\n endpoint.\n\n For `Attestation::Mock` (test/dev), validation runs synchronously\n and the call returns `PromiseOrValue::Value(())` immediately.\n\n For `Attestation::Dstack` (production), the heavy `dcap_qvl::verify`\n call is delegated to `tee-verifier.near` via a cross-contract\n Promise; the post-DCAP checks resume in\n [`Self::on_attestation_verified`] when the callback fires. A\n `PendingAttestation` entry is stashed under the caller's\n `account_id` until the callback resolves. Re-submissions while\n a prior one is in flight are rejected to avoid silently\n overwriting and stranding the original's attached deposit.",
         "kind": "call",
         "modifiers": [
           "payable"
@@ -1165,7 +1592,7 @@ expression: abi
         "result": {
           "serialization_type": "json",
           "type_schema": {
-            "type": "null"
+            "$ref": "#/definitions/PromiseOrValueNull"
           }
         }
       },
@@ -3115,6 +3542,9 @@ expression: abi
               "$ref": "#/definitions/Bls12381G1PublicKey"
             }
           }
+        },
+        "PromiseOrValueNull": {
+          "type": "null"
         },
         "PromiseOrValueSignatureResponse": {
           "oneOf": [

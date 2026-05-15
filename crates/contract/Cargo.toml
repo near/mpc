@@ -79,7 +79,6 @@ k256 = { workspace = true, features = [
 ] }
 mpc-attestation = { workspace = true }
 mpc-primitives = { workspace = true }
-tee-verifier-interface = { workspace = true }
 near-account-id = { workspace = true, features = ["serde"] }
 near-mpc-bounded-collections = { workspace = true }
 near-mpc-contract-interface = { workspace = true, features = [
@@ -93,6 +92,7 @@ rand = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
+tee-verifier-interface = { workspace = true }
 thiserror = { workspace = true }
 threshold-signatures = { workspace = true, optional = true }
 
