@@ -16,7 +16,13 @@ use std::sync::{Arc, Mutex, Weak};
 ///  - For each block added via `add_block`, it returns a `Weak<AtomicBlockStatus>` that can be
 ///    used to observe that block's current `BlockStatus` (non-canonical, canonical or final).
 ///
-/// We have certain expectations of the order of blocks that come from the indexer.
+/// This class provides the following invariants (provided the requirements listed below are met):
+///  - A block that is final will never be reverted to non-final;
+///  - Any block that is currently tracked has the potential to become final. In other words,
+///    the tracker removes non-final blocks of height less or equal to the latest final height.
+///
+/// In order to guarantee above invariants, we have certain expectations of the order of blocks
+/// that come from the indexer.
 /// First, let's define a partial order for blocks. For any two blocks A and B:
 ///  - If A is a strict ancestor of B then A < B;
 ///  - If B is a strict ancestor of A then B < A;
