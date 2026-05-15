@@ -959,15 +959,7 @@ pub type ProviderId = String;
 /// Where the operator's API key/token gets injected into the assembled RPC URL.
 /// Lives on the contract (not in operator yaml) so the operator can't pick a custom
 /// auth shape that lets them inject extra path or query components.
-// `Hash` / `Ord` / `PartialOrd` are intentionally omitted — PR 1 doesn't need them
-// (the storage is `BTreeMap<ProviderId, ProviderEntry>` so only the key needs `Ord`).
-// PR 2 can re-add if the batched vote-action shape requires them.
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
-// `Serialize` and `Deserialize` are only needed by node-side / external SDK consumers;
-// the contract itself never parses these from JSON args nor returns them from a view fn
-// in PR 1 (the view fn lands in the follow-up PR alongside the vote endpoint). Gating
-// the serde derives off wasm avoids several KB of monomorphizations per type in the
-// contract WASM.
 #[cfg_attr(not(target_arch = "wasm32"), derive(Serialize, Deserialize))]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -989,7 +981,6 @@ pub enum AuthScheme {
 
 /// How chain identity is encoded in the RPC URL. Exactly one of the three encodings,
 /// modelled as an enum so a vote can't accidentally produce an "all three" shape.
-// `Hash` / `Ord` / `PartialOrd` deliberately omitted — see the comment on `AuthScheme`.
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(not(target_arch = "wasm32"), derive(Serialize, Deserialize))]
 #[cfg_attr(
@@ -1014,7 +1005,6 @@ pub enum ChainRouting {
 /// One entry in the on-chain RPC provider whitelist for a single chain. Voted in by
 /// MPC participants and read by nodes at startup to assemble the actual RPC URL
 /// (`base_url` + `chain_routing` + operator-supplied token via `auth_scheme`).
-// `Hash` / `Ord` / `PartialOrd` deliberately omitted — see the comment on `AuthScheme`.
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(not(target_arch = "wasm32"), derive(Serialize, Deserialize))]
 #[cfg_attr(

@@ -837,12 +837,6 @@ mod tests {
         }
     }
 
-    // The `MpcContract` migration assigns `foreign_chain_rpc_whitelist: Default::default()`
-    // in its `From` impl; if anyone removes that line the contract fails to compile
-    // ("missing field" in the struct literal), and the borsh schema snapshot test
-    // (`mpc_contract_borsh_schema_has_not_changed`) catches any layout drift, so a
-    // dedicated migration test for that single line would be redundant.
-
     #[test]
     fn running_state_migration__should_copy_global_threshold_into_each_domain() {
         // Given a legacy running state with two domains and a global threshold
