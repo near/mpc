@@ -184,7 +184,7 @@ pub struct AddBlockResult<T> {
     /// The list of newly finalized blocks, in ascending height order. Each entry is a tuple of
     /// the block height and the data passed to us when adding the block.
     /// It is guaranteed that the new final blocks returned from multiple calls to add_block are
-    // contiguous, thus forming the stream of finalized blocks.
+    /// contiguous, thus forming the stream of finalized blocks.
     pub new_final_blocks: Vec<(u64, T)>,
     pub block_ref: Weak<AtomicBlockStatus>,
 }
@@ -427,7 +427,7 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
         new_final_blocks
     }
 
-    /// Any root children that sit on dead branches get removed from `self.root_children` and addd
+    /// Any root children that sit on dead branches get removed from `self.root_children` and add
     /// to `subtrees_to_remove`
     fn update_roots(
         &mut self,
@@ -488,8 +488,8 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
         self.canonical_head = Arc::downgrade(new_canonical_head);
     }
 
-    /// BFS over the kept tree, returning the highest-height node (BFS order
-    /// breaks ties). Used to re-elect the canonical head after finality
+    /// BFS over the kept tree, returning the highest-height node (insertion order and
+    /// BFS order breaks ties). Used to re-elect the canonical head after finality
     /// cleanup sweeps the previous one.
     fn highest_tracked_node(&self) -> Option<Arc<BlockNode>> {
         let mut queue: VecDeque<Arc<BlockNode>> = self.root_children.iter().cloned().collect();
