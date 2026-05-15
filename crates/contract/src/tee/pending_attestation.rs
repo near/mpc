@@ -2,8 +2,8 @@
 //! and the `on_attestation_verified` callback that resolves after the
 //! `tee-verifier.near` Promise returns.
 //!
-//! `submit_participant_info` ([`crate::lib::submit_participant_info`])
-//! cannot do the cryptographic quote verification on-chain — that work
+//! `submit_participant_info` cannot do the cryptographic quote
+//! verification on-chain — that work
 //! lives in the `tee-verifier` contract, reached over a cross-contract
 //! Promise. The Promise call returns asynchronously; the contract has
 //! to remember which `account_id`'s submission is pending so the
