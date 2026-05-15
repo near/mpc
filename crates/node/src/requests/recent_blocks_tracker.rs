@@ -218,7 +218,7 @@ impl BlockNode {
     ) {
         let mut children = self.children.lock().expect("lock must not be poisoned");
         for child in children.iter() {
-            if child.hash != child_to_retain.hash {
+            if !Arc::ptr_eq(child, child_to_retain) {
                 subtrees_to_remove.push_back(child.clone());
             }
         }
@@ -427,7 +427,7 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
         new_final_blocks
     }
 
-    /// Any root children that sit on dead branches get removed from `self.root_children` and add
+    /// Any root children that sit on dead branches get removed from `self.root_children` and added
     /// to `subtrees_to_remove`
     fn update_roots(
         &mut self,
