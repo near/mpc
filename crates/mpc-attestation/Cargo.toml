@@ -5,13 +5,26 @@ license = { workspace = true }
 edition = { workspace = true }
 
 [features]
-abi = ["borsh/unstable__schema", "mpc-primitives/abi", "attestation/borsh-schema"]
-dstack-conversions = ["attestation/dstack-conversions"]
-test-utils = ["attestation/test-utils"]
+abi = [
+    "borsh/unstable__schema",
+    "mpc-primitives/abi",
+    "attestation-types/borsh-schema",
+]
+dstack-conversions = ["attestation-types/dstack-conversions"]
+test-utils = ["attestation-types/test-utils"]
+# Enables the off-chain `local_verify` convenience helper that runs the
+# full `dcap_qvl::verify::verify` + post-DCAP path in one call. Pulls in
+# the `attestation` crate (and `dcap-qvl` via it). Off-chain consumers
+# (`tee-authority`, `attestation-cli`, `mpc-node`) enable this; on-chain
+# consumers (`mpc-contract`) do not, so they don't transitively pull
+# `dcap-qvl` into their WASM.
+local-verify = ["dep:attestation", "dep:dcap-qvl"]
 
 [dependencies]
-attestation = { workspace = true }
+attestation = { workspace = true, optional = true }
+attestation-types = { workspace = true }
 borsh = { workspace = true }
+dcap-qvl = { workspace = true, optional = true }
 derive_more = { workspace = true }
 hex = { workspace = true }
 include-measurements = { workspace = true }
@@ -21,10 +34,13 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 sha3 = { workspace = true }
+tee-verifier-interface = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
+attestation = { workspace = true }
 dcap-qvl = { workspace = true }
+tee-verifier-interface = { workspace = true }
 test-utils = { workspace = true }
 
 [lints]

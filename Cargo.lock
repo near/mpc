@@ -980,7 +980,7 @@ name = "attestation-cli"
 version = "3.9.0"
 dependencies = [
  "anyhow",
- "attestation",
+ "attestation-types",
  "bs58 0.5.1",
  "clap",
  "mpc-attestation",
@@ -5678,6 +5678,7 @@ version = "3.9.0"
 dependencies = [
  "assert_matches",
  "attestation",
+ "attestation-types",
  "borsh",
  "dcap-qvl",
  "derive_more 2.1.1",
@@ -5689,6 +5690,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "sha3 0.10.8",
+ "tee-verifier-interface",
  "test-utils",
 ]
 
@@ -5698,6 +5700,7 @@ version = "3.9.0"
 dependencies = [
  "anyhow",
  "assert_matches",
+ "attestation-types",
  "blstrs",
  "borsh",
  "cargo-near-build",
@@ -5732,6 +5735,7 @@ dependencies = [
  "serde_with",
  "sha2 0.10.9",
  "signature",
+ "tee-verifier-interface",
  "test-utils",
  "thiserror 2.0.18",
  "threshold-signatures",

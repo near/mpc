@@ -10,8 +10,10 @@ use crate::{
     },
 };
 use borsh::{BorshDeserialize, BorshSerialize};
+use mpc_attestation::attestation::{self, VerifiedAttestation};
+#[cfg(test)]
 use mpc_attestation::{
-    attestation::{self, Attestation, VerifiedAttestation},
+    attestation::Attestation,
     report_data::{ReportData, ReportDataV1},
 };
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash};
@@ -95,6 +97,44 @@ impl Default for TeeState {
     }
 }
 
+/// Zero-valued `VerifiedReport` used by test paths that call
+/// `Attestation::finish_verify` on a `Mock` attestation (which ignores
+/// the report contents). Only compiled when the test-only / dev-only
+/// `add_participant` helper is included.
+#[cfg(test)]
+fn test_dummy_verified_report() -> tee_verifier_interface::VerifiedReport {
+    tee_verifier_interface::VerifiedReport {
+        status: String::new(),
+        advisory_ids: Vec::new(),
+        report: tee_verifier_interface::Report::TD10(tee_verifier_interface::TDReport10 {
+            tee_tcb_svn: [0; 16],
+            mr_seam: [0; 48],
+            mr_signer_seam: [0; 48],
+            seam_attributes: [0; 8],
+            td_attributes: [0; 8],
+            xfam: [0; 8],
+            mr_td: [0; 48],
+            mr_config_id: [0; 48],
+            mr_owner: [0; 48],
+            mr_owner_config: [0; 48],
+            rt_mr0: [0; 48],
+            rt_mr1: [0; 48],
+            rt_mr2: [0; 48],
+            rt_mr3: [0; 48],
+            report_data: [0; 64],
+        }),
+        ppid: Vec::new(),
+        qe_status: tee_verifier_interface::TcbStatusWithAdvisory {
+            status: tee_verifier_interface::TcbStatus::UpToDate,
+            advisory_ids: Vec::new(),
+        },
+        platform_status: tee_verifier_interface::TcbStatusWithAdvisory {
+            status: tee_verifier_interface::TcbStatus::UpToDate,
+            advisory_ids: Vec::new(),
+        },
+    }
+}
+
 impl TeeState {
     /// Creates a [`TeeState`] with an initial set of participants that will receive a valid mocked attestation.
     pub(crate) fn with_mocked_participant_attestations(participants: &Participants) -> Self {
@@ -138,28 +178,54 @@ impl TeeState {
         current_time_milliseconds / 1_000
     }
 
-    /// Adds a participant attestation for the given node iff the attestation succeeds verification.
+    /// Test-only convenience that wraps `Attestation::finish_verify` +
+    /// `finish_add_participant` in one call. The pre-PR-C2b production
+    /// API; kept here so the existing test suites don't have to be
+    /// rewritten to construct a `VerifiedAttestation` themselves.
+    ///
+    /// Tests pass `Attestation::Mock` here (no `dcap-qvl` round-trip),
+    /// which is the path that stays synchronous in production too.
+    /// `Attestation::Dstack` is not supported on this path because
+    /// production code goes through the Promise + callback flow in
+    /// `MpcContract::submit_participant_info` / `on_attestation_verified`.
+    #[cfg(test)]
     pub(crate) fn add_participant(
         &mut self,
         node_id: NodeId,
         attestation: Attestation,
         tee_upgrade_deadline_duration: Duration,
-    ) -> Result<ParticipantInsertion, AttestationSubmissionError> {
+    ) -> Result<ParticipantInsertion, mpc_attestation::attestation::VerificationError> {
         let expected_report_data: ReportData = ReportDataV1::new(
             *node_id.tls_public_key.as_bytes(),
             *node_id.account_public_key.as_bytes(),
         )
         .into();
 
-        let accepted_measurements = self.get_accepted_measurements();
-        let verified_attestation = attestation.verify(
+        let dummy_report = test_dummy_verified_report();
+        let verified = attestation.finish_verify(
+            &dummy_report,
             expected_report_data.into(),
-            Self::current_time_seconds(),
             &self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration),
             &self.get_allowed_launcher_compose_hashes(),
-            &accepted_measurements,
+            &self.get_accepted_measurements(),
+            Self::current_time_seconds(),
         )?;
+        Ok(self.finish_add_participant(node_id, verified))
+    }
 
+    /// Inserts an already-verified attestation into `stored_attestations`.
+    ///
+    /// The verification body that used to live here moved into the
+    /// `submit_participant_info` callback path: for `Dstack` attestations
+    /// it now runs in `MpcContract::on_attestation_verified` (after the
+    /// `tee-verifier.near` Promise resolves); for `Mock` attestations it
+    /// runs synchronously inline. Both call this function with the
+    /// resulting `VerifiedAttestation`.
+    pub(crate) fn finish_add_participant(
+        &mut self,
+        node_id: NodeId,
+        verified_attestation: VerifiedAttestation,
+    ) -> ParticipantInsertion {
         let tls_pk = node_id.tls_public_key.clone();
 
         let insertion = self.stored_attestations.insert(
@@ -170,10 +236,10 @@ impl TeeState {
             },
         );
 
-        Ok(match insertion {
+        match insertion {
             Some(_previous_attestation) => ParticipantInsertion::UpdatedExistingParticipant,
             None => ParticipantInsertion::NewlyInsertedParticipant,
-        })
+        }
     }
 
     /// reverifies stored participant attestations.
@@ -360,7 +426,9 @@ impl TeeState {
     /// Returns accepted measurements for attestation verification.
     /// Returns the on-chain list as-is (empty list means no measurements are accepted,
     /// consistent with docker image hashes and launcher hashes).
-    fn get_accepted_measurements(&self) -> Vec<mpc_attestation::attestation::ExpectedMeasurements> {
+    pub(crate) fn get_accepted_measurements(
+        &self,
+    ) -> Vec<mpc_attestation::attestation::ExpectedMeasurements> {
         self.allowed_measurements.to_attestation_measurements()
     }
 
@@ -1319,7 +1387,7 @@ mod tests {
 
         assert_matches!(
             add_participant_result,
-            Err(AttestationSubmissionError::InvalidAttestation(_))
+            Err(mpc_attestation::attestation::VerificationError::InvalidMockAttestation)
         )
     }
 

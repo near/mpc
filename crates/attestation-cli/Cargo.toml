@@ -10,10 +10,10 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = { workspace = true }
-attestation = { workspace = true }
+attestation-types = { workspace = true }
 bs58 = { workspace = true }
 clap = { workspace = true }
-mpc-attestation = { workspace = true }
+mpc-attestation = { workspace = true, features = ["local-verify"] }
 mpc-primitives = { workspace = true }
 node-types = { workspace = true }
 reqwest = { workspace = true }

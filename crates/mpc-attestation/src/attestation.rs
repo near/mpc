@@ -1,19 +1,27 @@
 use alloc::vec::Vec;
-pub use attestation::attestation::{DstackAttestation, VerificationError};
-pub use attestation::measurements::{ExpectedMeasurements, Measurements};
-use attestation::{
+
+pub use attestation_types::dstack_attestation::DstackAttestation;
+pub use attestation_types::measurements::{ExpectedMeasurements, Measurements};
+pub use attestation_types::verify_post_dcap::VerificationError;
+
+use attestation_types::{
     app_compose::AppCompose,
-    attestation::{DstackVerify as _, GetSingleEvent as _, OrErr as _},
+    collateral::Collateral,
+    quote::QuoteBytes,
     report_data::ReportData,
+    verify_post_dcap::{
+        GetSingleEvent as _, OrErr as _, verify_any_measurements, verify_app_compose,
+        verify_report_data, verify_rtmr3, verify_tcb_status,
+    },
 };
 
-use include_measurements::include_measurements;
-use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash};
-
 use borsh::{BorshDeserialize, BorshSerialize};
+use include_measurements::include_measurements;
 use launcher_interface::MPC_IMAGE_HASH_EVENT;
+use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
+use tee_verifier_interface::VerifiedReport;
 
 use crate::alloc::format;
 use crate::alloc::string::ToString;
@@ -132,17 +140,51 @@ pub fn default_measurements() -> &'static [ExpectedMeasurements] {
 }
 
 impl Attestation {
-    pub fn verify(
+    /// Extracts the cryptographic inputs the verifier contract needs
+    /// (`quote` and `collateral`) from a `Dstack` attestation. Returns
+    /// `None` for `Mock` attestations, which take the synchronous
+    /// in-contract validation path and never round-trip the verifier.
+    ///
+    /// Called by `mpc-contract::submit_participant_info` *before*
+    /// scheduling the Promise into `tee-verifier.near`. The remaining
+    /// pieces of the attestation (`tcb_info`, the variant itself) are
+    /// kept around and consumed by [`Attestation::finish_verify`] when
+    /// the Promise callback fires.
+    pub fn extract_dcap_inputs(&self) -> Option<(QuoteBytes, Collateral)> {
+        match self {
+            Self::Dstack(dstack) => Some((dstack.quote.clone(), dstack.collateral.clone())),
+            Self::Mock(_) => None,
+        }
+    }
+
+    /// Runs the post-DCAP checks against an already-verified report.
+    ///
+    /// For `Dstack` attestations, this is everything the old combined
+    /// `verify` method did *after* `dcap_qvl::verify::verify` returned:
+    /// MPC image hash extraction, launcher compose hash computation,
+    /// the post-DCAP helpers (TCB status, report_data binding, RTMR3
+    /// replay, app_compose validation, measurement matching), and
+    /// finally building the `ValidatedDstackAttestation` with the 7-day
+    /// expiry.
+    ///
+    /// For `Mock` attestations, ignores `verified_report` and runs the
+    /// `verify_mock_attestation` body.
+    pub fn finish_verify(
         &self,
+        verified_report: &VerifiedReport,
         expected_report_data: ReportData,
-        current_timestamp_seconds: u64,
         allowed_mpc_docker_image_hashes: &[NodeImageHash],
         allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
         accepted_measurements: &[ExpectedMeasurements],
+        current_timestamp_seconds: u64,
     ) -> Result<VerifiedAttestation, VerificationError> {
         match self {
             Self::Dstack(dstack_attestation) => {
-                // Makes MPC related attestation verification first
+                let report_data = verified_report
+                    .report
+                    .as_td10()
+                    .ok_or(VerificationError::ReportNotTd10)?;
+
                 let mpc_image_hash: NodeImageHash = {
                     let mpc_image_hash_payload = &dstack_attestation
                         .tcb_info
@@ -184,9 +226,13 @@ impl Attestation {
                     allowed_launcher_docker_compose_hashes,
                 )?;
 
-                let measurements = dstack_attestation.verify(
-                    expected_report_data,
-                    current_timestamp_seconds,
+                verify_tcb_status(verified_report)?;
+                verify_report_data(&expected_report_data, report_data)?;
+                verify_rtmr3(report_data, &dstack_attestation.tcb_info)?;
+                verify_app_compose(&dstack_attestation.tcb_info)?;
+                let measurements = verify_any_measurements(
+                    report_data,
+                    &dstack_attestation.tcb_info,
                     accepted_measurements,
                 )?;
 
@@ -201,7 +247,6 @@ impl Attestation {
                 }))
             }
             Self::Mock(mock_attestation) => {
-                // Override attestation verification for this case
                 let () = verify_mock_attestation(
                     mock_attestation,
                     allowed_mpc_docker_image_hashes,

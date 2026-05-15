@@ -6,6 +6,11 @@ use dstack_sdk_types::dstack::{EventLog as DstackEventLog, TcbInfo as DstackTcbI
 use serde::{Deserialize, Serialize};
 use serde_with::{FromInto, hex::Hex, serde_as};
 
+// `BorshSchema` derive expands to `T::declaration().to_string()`, which is
+// only in scope under no_std when `alloc::string::ToString` is imported.
+#[cfg(feature = "borsh-schema")]
+use alloc::string::ToString as _;
+
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum ParsingError {
     #[error("wrong lenght: {0}")]
@@ -16,6 +21,7 @@ pub enum ParsingError {
 
 #[serde_as]
 #[derive(Debug, Clone, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(feature = "borsh-schema", derive(borsh::BorshSchema))]
 pub struct TcbInfo {
     pub mrtd: HexBytes<48>,
     pub rtmr0: HexBytes<48>,
@@ -32,6 +38,7 @@ pub struct TcbInfo {
 
 #[serde_as]
 #[derive(Debug, Clone, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(feature = "borsh-schema", derive(borsh::BorshSchema))]
 pub struct EventLog {
     pub imr: u32,
     pub event_type: u32,
@@ -57,6 +64,7 @@ pub struct EventLog {
     derive_more::AsRef,
     derive_more::Deref,
 )]
+#[cfg_attr(feature = "borsh-schema", derive(borsh::BorshSchema))]
 #[serde(transparent)]
 pub struct HexBytes<const N: usize>(#[serde_as(as = "Hex")] [u8; N]);
 

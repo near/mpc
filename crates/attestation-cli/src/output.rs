@@ -1,4 +1,4 @@
-use attestation::attestation::VerificationError;
+use attestation_types::verify_post_dcap::VerificationError;
 use node_types::http_server::StaticWebData;
 use time::OffsetDateTime;
 

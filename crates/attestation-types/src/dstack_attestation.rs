@@ -15,7 +15,13 @@ use alloc::{format, string::String};
 
 use crate::{collateral::Collateral, quote::QuoteBytes, tcb_info::TcbInfo};
 
+// `BorshSchema` derive expands to `T::declaration().to_string()`, which is
+// only in scope under no_std when `alloc::string::ToString` is imported.
+#[cfg(feature = "borsh-schema")]
+use alloc::string::ToString as _;
+
 #[derive(Clone, Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[cfg_attr(feature = "borsh-schema", derive(borsh::BorshSchema))]
 pub struct DstackAttestation {
     pub quote: QuoteBytes,
     pub collateral: Collateral,

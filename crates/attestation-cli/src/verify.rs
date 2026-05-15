@@ -1,10 +1,10 @@
 use std::path::Path;
 
 use anyhow::Context;
-use attestation::{
-    attestation::VerificationError,
+use attestation_types::{
     measurements::{ExpectedMeasurements, Measurements},
     tcb_info::TcbInfo,
+    verify_post_dcap::VerificationError,
 };
 use mpc_attestation::attestation::{ValidatedDstackAttestation, VerifiedAttestation};
 use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash};
@@ -65,8 +65,12 @@ pub fn verify_at_timestamp(
         VerificationError::Custom(format!("failed to load expected measurements: {e}"))
     })?;
 
-    // Single verify call — same verification logic as the contract and node
-    let verified = attestation.verify(
+    // Off-chain local verification: dcap-qvl + post-DCAP in one call.
+    // (The on-chain `mpc-contract` does this in two steps over a
+    // cross-contract Promise; see `mpc-contract`'s
+    // `submit_participant_info` / `on_attestation_verified`.)
+    let verified = mpc_attestation::local_verify::local_verify(
+        attestation,
         report_data.into(),
         timestamp_seconds,
         &cli.allowed_image_hashes,

@@ -219,8 +219,13 @@ impl TestSetup {
     ) -> Result<(), mpc_contract::errors::Error> {
         let context = create_context_for_participant(&node_id.account_id);
         testing_env!(context);
+        // Mock attestations take the synchronous path and return
+        // `PromiseOrValue::Value(())`; Dstack returns a Promise. This
+        // test harness only deals with the success/error shape, so
+        // we discard the wrapper.
         self.contract
             .submit_participant_info(attestation, node_id.tls_public_key.clone())
+            .map(|_| ())
     }
 
     /// Switches testing context to a given participant at a specific timestamp
