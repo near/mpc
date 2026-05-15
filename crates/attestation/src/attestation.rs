@@ -1,90 +1,78 @@
 //! Local off-chain TEE attestation verification.
 //!
-//! Carries the `DstackAttestation` struct and its [`DstackAttestation::verify`]
-//! method, which is the *only* place the heavy `dcap_qvl::verify::verify`
-//! cryptographic call is made. After that call, the parsed report is
-//! converted to the [`tee_verifier_interface::VerifiedReport`] mirror and
-//! the post-DCAP checks are run via the free functions in
+//! Adds the [`DstackVerify::verify`] trait method to the wasm-friendly
+//! `DstackAttestation` struct that lives in `attestation-types`. The
+//! `verify` implementation is the *only* place the heavy
+//! `dcap_qvl::verify::verify` cryptographic call is made. After that
+//! call, the parsed report is converted to the
+//! [`tee_verifier_interface::VerifiedReport`] mirror and the post-DCAP
+//! checks are run via the free functions in
 //! [`attestation_types::verify_post_dcap`] — same code path the
 //! `tee-verifier` contract uses on its callback side.
 //!
 //! Consumers that don't need to run `dcap-qvl` locally should depend on
 //! `attestation-types` directly, not this crate.
 
-use alloc::{
-    format,
-    string::{String, ToString},
-};
-use borsh::{BorshDeserialize, BorshSerialize};
-use core::fmt;
-use derive_more::Constructor;
-use serde::{Deserialize, Serialize};
+use alloc::string::ToString;
 
 use attestation_types::{
     measurements::ExpectedMeasurements,
     report_data::ReportData,
-    tcb_info::TcbInfo,
     verify_post_dcap::{
         verify_any_measurements, verify_app_compose, verify_report_data, verify_rtmr3,
         verify_tcb_status,
     },
 };
 
-// Re-export the post-DCAP helper traits and the error type at the historical
-// `attestation::attestation::*` paths so existing consumers (e.g.
-// `mpc-attestation`) keep working without import-path churn.
+// Re-export the post-DCAP helper traits, the error type, and
+// `DstackAttestation` itself at the historical
+// `attestation::attestation::*` paths so existing consumers
+// (e.g. `mpc-attestation`) keep working without import-path churn.
+// `DstackAttestation` now lives in `attestation-types`; the
+// `dcap_qvl::verify::verify` entry point is provided as an inherent
+// extension via the [`DstackVerify`] trait below (Rust forbids inherent
+// impls on foreign types, so a trait is the only way to add the method
+// from this crate).
+pub use attestation_types::dstack_attestation::DstackAttestation;
 pub use attestation_types::verify_post_dcap::{GetSingleEvent, OrErr, VerificationError};
 
-use crate::{collateral::Collateral, quote::QuoteBytes};
-
-#[derive(Clone, Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
-pub struct DstackAttestation {
-    pub quote: QuoteBytes,
-    pub collateral: Collateral,
-    pub tcb_info: TcbInfo,
-}
-
-impl fmt::Debug for DstackAttestation {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        const MAX_BYTES: usize = 2048;
-
-        fn truncate_debug<T: fmt::Debug>(value: &T, max_bytes: usize) -> String {
-            let debug_str = format!("{:?}", value);
-            if debug_str.len() <= max_bytes {
-                debug_str
-            } else {
-                format!(
-                    "{}... (truncated {} bytes)",
-                    &debug_str[..max_bytes],
-                    debug_str.len() - max_bytes
-                )
-            }
-        }
-
-        f.debug_struct("DstackAttestation")
-            .field("quote", &truncate_debug(&self.quote, MAX_BYTES))
-            .field("collateral", &truncate_debug(&self.collateral, MAX_BYTES))
-            .field("tcb_info", &truncate_debug(&self.tcb_info, MAX_BYTES))
-            .finish()
-    }
-}
-
-impl DstackAttestation {
-    /// Checks whether this attestation is valid with respect to expected values of:
+/// Local `dcap_qvl::verify::verify` entry point on `DstackAttestation`.
+///
+/// Implemented for `attestation_types::dstack_attestation::DstackAttestation`
+/// in this crate, which is the only crate that depends on `dcap-qvl`.
+/// Defined as a trait because inherent impls on foreign types are not
+/// allowed in Rust.
+pub trait DstackVerify {
+    /// Checks whether this attestation is valid with respect to expected
+    /// values of:
     /// - `expected_report_data`: must be measured correctly in RTMR3
     /// - `timestamp_seconds`: current UNIX time in seconds
-    /// - `accepted_measurements`: set of accepted RTMRs and key-provider event digest.
-    ///   If any element in the set is valid, the function accepts the attestation as valid.
+    /// - `accepted_measurements`: set of accepted RTMRs and key-provider
+    ///   event digest. If any element in the set is valid, the function
+    ///   accepts the attestation as valid.
     ///
     /// On success, returns the matched measurements.
-    pub fn verify(
+    fn verify(
+        &self,
+        expected_report_data: ReportData,
+        timestamp_seconds: u64,
+        accepted_measurements: &[ExpectedMeasurements],
+    ) -> Result<ExpectedMeasurements, VerificationError>;
+}
+
+impl DstackVerify for DstackAttestation {
+    fn verify(
         &self,
         expected_report_data: ReportData,
         timestamp_seconds: u64,
         accepted_measurements: &[ExpectedMeasurements],
     ) -> Result<ExpectedMeasurements, VerificationError> {
+        // The local-verify path constructs a fresh `QuoteCollateralV3` from
+        // the wasm-friendly mirror by cloning. The cost is negligible
+        // (a handful of String / Vec<u8> clones) and only paid off-chain.
+        let collateral = crate::collateral_to_dcap(self.collateral.clone());
         let verification_result =
-            dcap_qvl::verify::verify(&self.quote, &self.collateral, timestamp_seconds)
+            dcap_qvl::verify::verify(&self.quote, &collateral, timestamp_seconds)
                 .map_err(|e| VerificationError::DcapVerification(e.to_string()))?;
 
         let verified_report = to_mirror_verified_report(verification_result);

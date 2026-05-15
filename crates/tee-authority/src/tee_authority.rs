@@ -495,7 +495,7 @@ impl TeeAuthority {
                     url: endpoint.url.clone(),
                     timeout: PCCS_REQUEST_TIMEOUT,
                 })?
-                .map(Collateral::from)
+                .map(mpc_attestation::collateral_from_dcap)
                 .map_err(|e| PccsEndpointError::Fetch {
                     url: endpoint.url.clone(),
                     source: anyhow::anyhow!(e),
@@ -922,7 +922,7 @@ mod tests {
     /// inspected — it just needs to be a valid value that round-trips through
     /// the fetch path.
     fn dummy_collateral(tag: &str) -> Collateral {
-        dcap_qvl::QuoteCollateralV3 {
+        mpc_attestation::collateral_from_dcap(dcap_qvl::QuoteCollateralV3 {
             pck_crl_issuer_chain: tag.into(),
             root_ca_crl: Vec::new(),
             pck_crl: Vec::new(),
@@ -933,8 +933,7 @@ mod tests {
             qe_identity: String::new(),
             qe_identity_signature: Vec::new(),
             pck_certificate_chain: None,
-        }
-        .into()
+        })
     }
 
     fn endpoints(list: &[&str]) -> NonEmptyVec<PccsEndpointConfig> {
@@ -1131,7 +1130,7 @@ mod tests {
     /// that exercise the JSON path get a fresh-enough CRL by virtue of
     /// the [`test_now`] choice.
     fn collateral_with_issue_dates(tcb_info_iso: &str, qe_identity_iso: &str) -> Collateral {
-        dcap_qvl::QuoteCollateralV3 {
+        mpc_attestation::collateral_from_dcap(dcap_qvl::QuoteCollateralV3 {
             pck_crl_issuer_chain: String::new(),
             root_ca_crl: Vec::new(),
             pck_crl: fixture_pck_crl(),
@@ -1142,8 +1141,7 @@ mod tests {
             qe_identity: format!(r#"{{"issueDate":"{qe_identity_iso}"}}"#),
             qe_identity_signature: Vec::new(),
             pck_certificate_chain: None,
-        }
-        .into()
+        })
     }
 
     /// Format an `OffsetDateTime` as RFC3339 (UTC) the way Intel PCS would
@@ -1369,7 +1367,7 @@ mod tests {
                     root_ca_crl,
                     pck_crl,
                     pck_certificate_chain,
-                }: dcap_qvl::QuoteCollateralV3 = collateral.into();
+                } = mpc_attestation::collateral_to_dcap(collateral);
 
                 assert!(!tcb_info_issuer_chain.is_empty());
                 assert!(!tcb_info.is_empty());

@@ -7,7 +7,7 @@
 
 use mpc_attestation::{
     attestation::{Attestation, DstackAttestation, MockAttestation},
-    collateral::{Collateral, QuoteCollateralV3},
+    collateral::Collateral,
     tcb_info::{EventLog, TcbInfo},
 };
 
@@ -86,8 +86,7 @@ impl IntoContractInterfaceType<near_mpc_contract_interface::types::DstackAttesta
 
 impl IntoContractInterfaceType<near_mpc_contract_interface::types::Collateral> for Collateral {
     fn into_contract_interface_type(self) -> near_mpc_contract_interface::types::Collateral {
-        // Collateral is a newtype wrapper around QuoteCollateralV3
-        let QuoteCollateralV3 {
+        let Collateral {
             pck_crl_issuer_chain,
             root_ca_crl,
             pck_crl,
@@ -98,7 +97,7 @@ impl IntoContractInterfaceType<near_mpc_contract_interface::types::Collateral> f
             qe_identity,
             qe_identity_signature,
             pck_certificate_chain,
-        } = self.into();
+        } = self;
 
         near_mpc_contract_interface::types::Collateral {
             pck_crl_issuer_chain,

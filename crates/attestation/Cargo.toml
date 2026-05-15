@@ -5,24 +5,19 @@ license = { workspace = true }
 edition = { workspace = true }
 
 [features]
-borsh-schema = ["borsh/unstable__schema", "attestation-types/borsh-schema"]
+borsh-schema = ["attestation-types/borsh-schema"]
 dstack-conversions = ["attestation-types/dstack-conversions"]
-test-utils = []
+test-utils = ["attestation-types/test-utils"]
 
 [dependencies]
 attestation-types = { workspace = true }
-borsh = { workspace = true }
 dcap-qvl = { workspace = true }
-derive_more = { workspace = true }
-hex = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
 tee-verifier-interface = { workspace = true }
-thiserror = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
 dstack-sdk-types = { workspace = true }
+serde_json = { workspace = true }
 test-utils = { workspace = true }
 
 [[test]]
