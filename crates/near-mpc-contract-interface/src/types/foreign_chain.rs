@@ -1029,6 +1029,31 @@ pub struct ProviderEntry {
     pub chain_routing: ChainRouting,
 }
 
+#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(Serialize, Deserialize))]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub enum ProviderVoteAction {
+    Add {
+        chain: ForeignChain,
+        entry: ProviderEntry,
+    },
+    Remove {
+        chain: ForeignChain,
+        provider_id: ProviderId,
+    },
+}
+
+impl ProviderVoteAction {
+    pub fn chain(&self) -> ForeignChain {
+        match self {
+            Self::Add { chain, .. } | Self::Remove { chain, .. } => *chain,
+        }
+    }
+}
+
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {

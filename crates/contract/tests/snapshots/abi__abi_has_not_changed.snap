@@ -1518,6 +1518,324 @@ expression: abi
             "type": "boolean"
           }
         }
+      },
+      {
+        "name": "vote_update_foreign_chain_providers",
+        "doc": " Vote to update the on-chain RPC provider whitelist. The contract splits `actions`\n by chain and applies each chain independently once its per-chain threshold of\n participants holds the same `Vec` for it.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "borsh",
+          "args": [
+            {
+              "name": "actions",
+              "type_schema": {
+                "declaration": "Vec<ProviderVoteAction>",
+                "definitions": {
+                  "()": {
+                    "Primitive": 0
+                  },
+                  "AuthScheme": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "Header",
+                          "AuthScheme__Header"
+                        ],
+                        [
+                          1,
+                          "Path",
+                          "AuthScheme__Path"
+                        ],
+                        [
+                          2,
+                          "Query",
+                          "AuthScheme__Query"
+                        ],
+                        [
+                          3,
+                          "None",
+                          "AuthScheme__None"
+                        ]
+                      ]
+                    }
+                  },
+                  "AuthScheme__Header": {
+                    "Struct": [
+                      [
+                        "name",
+                        "String"
+                      ],
+                      [
+                        "scheme",
+                        "Option<String>"
+                      ]
+                    ]
+                  },
+                  "AuthScheme__None": {
+                    "Struct": null
+                  },
+                  "AuthScheme__Path": {
+                    "Struct": [
+                      [
+                        "placeholder",
+                        "String"
+                      ]
+                    ]
+                  },
+                  "AuthScheme__Query": {
+                    "Struct": [
+                      [
+                        "name",
+                        "String"
+                      ]
+                    ]
+                  },
+                  "ChainRouting": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "Embedded",
+                          "ChainRouting__Embedded"
+                        ],
+                        [
+                          1,
+                          "PathSegment",
+                          "ChainRouting__PathSegment"
+                        ],
+                        [
+                          2,
+                          "QueryParam",
+                          "ChainRouting__QueryParam"
+                        ]
+                      ]
+                    }
+                  },
+                  "ChainRouting__Embedded": {
+                    "Struct": null
+                  },
+                  "ChainRouting__PathSegment": {
+                    "Struct": [
+                      [
+                        "segment",
+                        "String"
+                      ]
+                    ]
+                  },
+                  "ChainRouting__QueryParam": {
+                    "Struct": [
+                      [
+                        "name",
+                        "String"
+                      ],
+                      [
+                        "value",
+                        "String"
+                      ]
+                    ]
+                  },
+                  "ForeignChain": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "Solana",
+                          "ForeignChain__Solana"
+                        ],
+                        [
+                          1,
+                          "Bitcoin",
+                          "ForeignChain__Bitcoin"
+                        ],
+                        [
+                          2,
+                          "Ethereum",
+                          "ForeignChain__Ethereum"
+                        ],
+                        [
+                          3,
+                          "Base",
+                          "ForeignChain__Base"
+                        ],
+                        [
+                          4,
+                          "Bnb",
+                          "ForeignChain__Bnb"
+                        ],
+                        [
+                          5,
+                          "Arbitrum",
+                          "ForeignChain__Arbitrum"
+                        ],
+                        [
+                          6,
+                          "Abstract",
+                          "ForeignChain__Abstract"
+                        ],
+                        [
+                          7,
+                          "Starknet",
+                          "ForeignChain__Starknet"
+                        ],
+                        [
+                          8,
+                          "Polygon",
+                          "ForeignChain__Polygon"
+                        ],
+                        [
+                          9,
+                          "HyperEvm",
+                          "ForeignChain__HyperEvm"
+                        ]
+                      ]
+                    }
+                  },
+                  "ForeignChain__Abstract": {
+                    "Struct": null
+                  },
+                  "ForeignChain__Arbitrum": {
+                    "Struct": null
+                  },
+                  "ForeignChain__Base": {
+                    "Struct": null
+                  },
+                  "ForeignChain__Bitcoin": {
+                    "Struct": null
+                  },
+                  "ForeignChain__Bnb": {
+                    "Struct": null
+                  },
+                  "ForeignChain__Ethereum": {
+                    "Struct": null
+                  },
+                  "ForeignChain__HyperEvm": {
+                    "Struct": null
+                  },
+                  "ForeignChain__Polygon": {
+                    "Struct": null
+                  },
+                  "ForeignChain__Solana": {
+                    "Struct": null
+                  },
+                  "ForeignChain__Starknet": {
+                    "Struct": null
+                  },
+                  "Option<String>": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "None",
+                          "()"
+                        ],
+                        [
+                          1,
+                          "Some",
+                          "String"
+                        ]
+                      ]
+                    }
+                  },
+                  "ProviderEntry": {
+                    "Struct": [
+                      [
+                        "provider_id",
+                        "String"
+                      ],
+                      [
+                        "base_url",
+                        "String"
+                      ],
+                      [
+                        "auth_scheme",
+                        "AuthScheme"
+                      ],
+                      [
+                        "chain_routing",
+                        "ChainRouting"
+                      ]
+                    ]
+                  },
+                  "ProviderVoteAction": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "Add",
+                          "ProviderVoteAction__Add"
+                        ],
+                        [
+                          1,
+                          "Remove",
+                          "ProviderVoteAction__Remove"
+                        ]
+                      ]
+                    }
+                  },
+                  "ProviderVoteAction__Add": {
+                    "Struct": [
+                      [
+                        "chain",
+                        "ForeignChain"
+                      ],
+                      [
+                        "entry",
+                        "ProviderEntry"
+                      ]
+                    ]
+                  },
+                  "ProviderVoteAction__Remove": {
+                    "Struct": [
+                      [
+                        "chain",
+                        "ForeignChain"
+                      ],
+                      [
+                        "provider_id",
+                        "String"
+                      ]
+                    ]
+                  },
+                  "String": {
+                    "Sequence": {
+                      "length_width": 4,
+                      "length_range": {
+                        "start": 0,
+                        "end": 4294967295
+                      },
+                      "elements": "u8"
+                    }
+                  },
+                  "Vec<ProviderVoteAction>": {
+                    "Sequence": {
+                      "length_width": 4,
+                      "length_range": {
+                        "start": 0,
+                        "end": 4294967295
+                      },
+                      "elements": "ProviderVoteAction"
+                    }
+                  },
+                  "u8": {
+                    "Primitive": 1
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
       }
     ],
     "root_schema": {

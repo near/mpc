@@ -1492,6 +1492,33 @@ impl MpcContract {
         self.tee_state.get_allowed_measurements()
     }
 
+    /// Vote to update the on-chain RPC provider whitelist. The contract splits `actions`
+    /// by chain and applies each chain independently once its per-chain threshold of
+    /// participants holds the same `Vec` for it.
+    #[handle_result]
+    pub fn vote_update_foreign_chain_providers(
+        &mut self,
+        #[serializer(borsh)] actions: Vec<dtos::ProviderVoteAction>,
+    ) -> Result<(), Error> {
+        log!(
+            "vote_update_foreign_chain_providers: signer={}, n_actions={}",
+            env::signer_account_id(),
+            actions.len(),
+        );
+        self.voter_or_panic();
+
+        let threshold_parameters = match self.protocol_state.threshold_parameters() {
+            Ok(threshold_parameters) => threshold_parameters,
+            Err(ContractNotInitialized) => env::panic_str(
+                "Contract is not initialized. Cannot vote for foreign chain providers before initialization.",
+            ),
+        };
+
+        let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
+        self.foreign_chain_rpc_whitelist.vote(participant, actions);
+        Ok(())
+    }
+
     /// Returns all accounts that have TEE attestations stored in the contract.
     /// Note: This includes both current protocol participants and accounts that may have
     /// submitted TEE information but are not currently part of the active participant set.
@@ -1602,6 +1629,9 @@ impl MpcContract {
         };
 
         self.tee_state.clean_non_participant_votes(participants);
+        self.foreign_chain_rpc_whitelist
+            .votes
+            .retain_only(participants);
         Ok(())
     }
 
