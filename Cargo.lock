@@ -968,16 +968,11 @@ version = "3.9.0"
 dependencies = [
  "assert_matches",
  "attestation-types",
- "borsh",
  "dcap-qvl",
- "derive_more 2.1.1",
  "dstack-sdk-types",
- "hex",
- "serde",
  "serde_json",
  "tee-verifier-interface",
  "test-utils",
- "thiserror 2.0.18",
 ]
 
 [[package]]

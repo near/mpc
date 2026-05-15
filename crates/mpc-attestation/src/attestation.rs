@@ -3,7 +3,7 @@ pub use attestation::attestation::{DstackAttestation, VerificationError};
 pub use attestation::measurements::{ExpectedMeasurements, Measurements};
 use attestation::{
     app_compose::AppCompose,
-    attestation::{GetSingleEvent as _, OrErr as _},
+    attestation::{DstackVerify as _, GetSingleEvent as _, OrErr as _},
     report_data::ReportData,
 };
 

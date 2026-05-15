@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use assert_matches::assert_matches;
 use attestation::collateral::{Collateral, CollateralError};
-use dcap_qvl::QuoteCollateralV3;
+use attestation::{collateral_from_dcap, collateral_to_dcap};
 use serde_json::json;
 use test_utils::attestation::collateral;
 
@@ -70,16 +70,16 @@ fn test_hex_signature_lengths() {
 }
 
 #[test]
-fn test_derive_traits() {
+fn test_collateral_dcap_round_trip() {
     let json_value = collateral();
     let collateral = Collateral::try_from_json(json_value.clone()).unwrap();
 
-    // Test From trait (should work through derive_more)
-    let quote_collateral_v3: QuoteCollateralV3 = collateral.into();
+    // mirror -> dcap_qvl type
+    let quote_collateral_v3 = collateral_to_dcap(collateral);
     assert!(quote_collateral_v3.tcb_info.contains("\"id\":\"TDX\""));
 
-    // Test creating from QuoteCollateralV3
-    let new_collateral = Collateral::from(quote_collateral_v3);
+    // dcap_qvl type -> mirror
+    let new_collateral = collateral_from_dcap(quote_collateral_v3);
     assert!(new_collateral.tcb_info.contains("\"id\":\"TDX\""));
 }
 
