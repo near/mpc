@@ -2973,6 +2973,76 @@ mod tests {
     }
 
     #[test]
+    fn respond__should_resolve_legacy_yield() {
+        // Given: a contract carrying a pre-upgrade single-yield entry for some request
+        // key (the legacy caller hasn't been responded to or timed out yet).
+        let (context, mut contract, secret_key) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
+            unreachable!()
+        };
+        let path: String = "respond_should_resolve_legacy_yield".to_string();
+
+        let payload = Payload::from_legacy_ecdsa([5u8; 32]);
+        let signature_request = SignatureRequest::new(
+            DomainId::default(),
+            payload.clone(),
+            &context.predecessor_account_id,
+            &path,
+        );
+        let legacy_data_id = [0xaa; 32];
+        contract.legacy_pending_requests.signature_requests.insert(
+            signature_request.clone(),
+            YieldIndex {
+                data_id: legacy_data_id,
+            },
+        );
+
+        // When: a post-upgrade duplicate is submitted for the same request key.
+        let new_data_id = [0xbb; 32];
+        contract.add_signature_request(signature_request.clone(), new_data_id);
+
+        // And: a subsequent push appends without touching the (now empty) legacy map.
+        let third_data_id = [0xcc; 32];
+        contract.add_signature_request(signature_request.clone(), third_data_id);
+
+        let found_legacy_id = contract
+            .legacy_pending_requests
+            .signature_requests
+            .get(&signature_request)
+            .cloned()
+            .unwrap();
+
+        assert_eq!(found_legacy_id.data_id, legacy_data_id);
+        let queue = contract
+            .pending_signature_requests
+            .get(&signature_request)
+            .cloned()
+            .unwrap();
+
+        assert_eq!(queue.len(), 2);
+        assert_eq!(queue[0].data_id, new_data_id);
+        assert_eq!(queue[1].data_id, third_data_id);
+
+        // When: a single valid response is delivered.
+        let signature_response = dtos::SignatureResponse::Secp256k1(secp256k1_signature_for_test(
+            &secret_key,
+            &context.predecessor_account_id,
+            &path,
+            &payload,
+        ));
+
+        with_active_participant_and_attested_context(&contract);
+        contract
+            .respond(signature_request.clone(), signature_response)
+            .expect("respond should succeed");
+
+        // Then: the entire queue is drained — both queued yields received the response.
+        assert!(contract
+            .pending_signature_requests
+            .get(&signature_request)
+            .is_none());
+    }
+    #[test]
     fn add_signature_request__should_panic_when_pending_queue_is_full() {
         // Given: a contract with a queue already at the fan-out cap for some request key.
         let (context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
