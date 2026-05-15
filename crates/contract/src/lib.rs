@@ -886,8 +886,8 @@ impl MpcContract {
             mpc_attestation::report_data::ReportData::V1(v1).into()
         };
 
-        match &proposed_participant_attestation {
-            mpc_attestation::attestation::Attestation::Mock(_) => {
+        match proposed_participant_attestation {
+            mpc_attestation::attestation::Attestation::Mock(mock) => {
                 // Synchronous path: no Promise round-trip. Run the
                 // mock-only verification against the contract's
                 // current allowlists, insert, and refund inline.
@@ -901,7 +901,7 @@ impl MpcContract {
 
                 // `finish_verify` ignores the `verified_report` arg for
                 // `Mock` attestations; pass a dummy report.
-                let verified = proposed_participant_attestation
+                let verified = mpc_attestation::attestation::Attestation::Mock(mock)
                     .finish_verify(
                         &dummy_verified_report(),
                         report_data,
@@ -923,7 +923,7 @@ impl MpcContract {
                 )?;
                 Ok(PromiseOrValue::Value(()))
             }
-            mpc_attestation::attestation::Attestation::Dstack(_) => {
+            mpc_attestation::attestation::Attestation::Dstack(dstack) => {
                 // Async path: extract the dcap-qvl inputs, stash the
                 // remaining context, schedule the verifier Promise.
                 if self.pending_attestations.contains_key(&account_id) {
@@ -936,16 +936,15 @@ impl MpcContract {
                     .into());
                 }
 
-                let (quote, collateral) = proposed_participant_attestation
-                    .extract_dcap_inputs()
-                    .expect("Dstack arm always yields dcap inputs");
+                let quote = dstack.quote.clone();
+                let collateral = dstack.collateral.clone();
 
                 self.pending_attestations.insert(
                     account_id.clone(),
                     PendingAttestation {
                         node_id,
                         report_data,
-                        attestation: proposed_participant_attestation,
+                        attestation: dstack,
                         attached_deposit: env::attached_deposit(),
                         initial_storage_usage,
                     },
@@ -1031,8 +1030,9 @@ impl MpcContract {
                 let allowed_launcher_hashes = self.tee_state.get_allowed_launcher_compose_hashes();
                 let accepted_measurements = self.tee_state.get_accepted_measurements();
 
-                let validated = pending
-                    .attestation
+                let attestation =
+                    mpc_attestation::attestation::Attestation::Dstack(pending.attestation);
+                let validated = attestation
                     .finish_verify(
                         &verified_report,
                         pending.report_data,

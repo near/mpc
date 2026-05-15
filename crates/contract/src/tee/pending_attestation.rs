@@ -14,8 +14,7 @@
 //! `PromiseError`). Each entry holds the inputs the callback needs to
 //! complete verification and apply the storage-deposit refund.
 
-use attestation_types::report_data::ReportData;
-use mpc_attestation::attestation::Attestation;
+use attestation_types::{dstack_attestation::DstackAttestation, report_data::ReportData};
 use near_sdk::{near, NearToken, StorageUsage};
 
 use crate::tee::tee_state::NodeId;
@@ -33,10 +32,12 @@ pub struct PendingAttestation {
     /// against this value during post-DCAP verification.
     pub report_data: ReportData,
 
-    /// The full attestation payload submitted. Carries the `tcb_info`
-    /// (used by the callback for RTMR3 replay + app_compose validation)
-    /// alongside the `quote` / `collateral` already sent to the verifier.
-    pub attestation: Attestation,
+    /// The `Dstack` attestation payload submitted. Carries the
+    /// `tcb_info` the callback needs for RTMR3 replay + app_compose
+    /// validation. Only `Dstack` attestations reach this struct;
+    /// `Mock` attestations stay on the synchronous path and never
+    /// produce a pending entry.
+    pub attestation: DstackAttestation,
 
     /// Amount the caller attached to `submit_participant_info`. The
     /// callback either consumes it against the storage-staking cost of
