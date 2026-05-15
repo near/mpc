@@ -1,11 +1,15 @@
-use crate::{
-    app_compose::AppCompose,
-    collateral::Collateral,
-    measurements::{ExpectedMeasurements, MeasurementsError},
-    quote::QuoteBytes,
-    report_data::ReportData,
-    tcb_info::{EventLog, TcbInfo},
-};
+//! Local off-chain TEE attestation verification.
+//!
+//! Carries the `DstackAttestation` struct and its [`DstackAttestation::verify`]
+//! method, which is the *only* place the heavy `dcap_qvl::verify::verify`
+//! cryptographic call is made. After that call, the parsed report is
+//! converted to the [`tee_verifier_interface::VerifiedReport`] mirror and
+//! the post-DCAP checks are run via the free functions in
+//! [`attestation_types::verify_post_dcap`] — same code path the
+//! `tee-verifier` contract uses on its callback side.
+//!
+//! Consumers that don't need to run `dcap-qvl` locally should depend on
+//! `attestation-types` directly, not this crate.
 
 use alloc::{
     format,
@@ -13,79 +17,31 @@ use alloc::{
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use core::fmt;
-use dcap_qvl::verify::VerifiedReport;
 use derive_more::Constructor;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest as _, Sha256, Sha384};
 
-/// Expected TCB status for a successfully verified TEE quote.
-const EXPECTED_QUOTE_STATUS: &str = "UpToDate";
+use attestation_types::{
+    measurements::ExpectedMeasurements,
+    report_data::ReportData,
+    tcb_info::TcbInfo,
+    verify_post_dcap::{
+        verify_any_measurements, verify_app_compose, verify_report_data, verify_rtmr3,
+        verify_tcb_status,
+    },
+};
 
-// DSTACK_EVENT_TYPE is defined in https://github.com/Dstack-TEE/dstack/blob/cfa4cc4e8a4f525d537883b1a0ba5d9fbfd87f1e/tdx-attest/src/lib.rs#L28
-// It is the same for all events
-const DSTACK_EVENT_TYPE: u32 = 134217729;
+// Re-export the post-DCAP helper traits and the error type at the historical
+// `attestation::attestation::*` paths so existing consumers (e.g.
+// `mpc-attestation`) keep working without import-path churn.
+pub use attestation_types::verify_post_dcap::{GetSingleEvent, OrErr, VerificationError};
 
-const COMPOSE_HASH_EVENT: &str = "compose-hash";
-pub(crate) const KEY_PROVIDER_EVENT: &str = "key-provider";
-
-const RTMR3_INDEX: u32 = 3;
+use crate::{collateral::Collateral, quote::QuoteBytes};
 
 #[derive(Clone, Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 pub struct DstackAttestation {
     pub quote: QuoteBytes,
     pub collateral: Collateral,
     pub tcb_info: TcbInfo,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
-pub enum VerificationError {
-    #[error("could not parse embedded measurements: {0}")]
-    EmbeddedMeasurementsParsing(MeasurementsError),
-    #[error("dcap verification failed: {0}")]
-    DcapVerification(String),
-    #[error("verification report is not TD10")]
-    ReportNotTd10,
-    #[error("TCB status `{0}` is not up to date")]
-    TcbStatusNotUpToDate(String),
-    #[error("ouststanding advisories reported: {0}")]
-    NonEmptyAdvisoryIds(String),
-    #[error("wrong {name} hash (found {found} expected {expected})")]
-    WrongHash {
-        name: &'static str,
-        found: String,
-        expected: String,
-    },
-    #[error("invalid event type {0}")]
-    InvalidEventType(u32),
-    #[error("failed to decode event digest `{0}`")]
-    EventDecoding(String),
-    #[error("failed to parse app compose JSON: {0}")]
-    AppComposeParsing(String),
-    #[error("no {0} event in event log")]
-    MissingEvent(&'static str),
-    #[error("duplicate {0} events in event log")]
-    DuplicateEvent(&'static str),
-    #[error("invalid app compose config: `{0}`")]
-    InvalidAppComposeConfig(String),
-    #[error("app-compose event payload had an unexpected size of {0}")]
-    AppComposeEventPayloadWrongSize(usize),
-    #[error("app-compose event payload `{0}` is not a hex string")]
-    AppComposeEventPayloadNotHex(String),
-    #[error(
-        "the attestation certificate with timestap {attestation_time} has expired since {expiry_time}"
-    )]
-    ExpiredCertificate {
-        attestation_time: u64,
-        expiry_time: u64,
-    },
-    #[error("the mock attestation is invalid per definition")]
-    InvalidMockAttestation,
-    #[error("the allowed measurements list is empty")]
-    EmptyMeasurementsList,
-    #[error("the attestation's measurements are not in the allowed set")]
-    MeasurementsNotAllowed,
-    #[error("custom error: `{0}`")]
-    Custom(String),
 }
 
 impl fmt::Debug for DstackAttestation {
@@ -114,13 +70,11 @@ impl fmt::Debug for DstackAttestation {
 }
 
 impl DstackAttestation {
-    /// Checks whether this attestation is valid
-    /// with respect to expected values of:
-    /// - report_data: must be measured correctly in RTMR3
-    /// - timestamp_seconds: current UNIX time in seconds
-    /// - accepted_measurements: set of accepted RTMRs and key-provider event digest.
-    ///   If any element in the set is valid, the function accepts the attestation as
-    ///   valid.
+    /// Checks whether this attestation is valid with respect to expected values of:
+    /// - `expected_report_data`: must be measured correctly in RTMR3
+    /// - `timestamp_seconds`: current UNIX time in seconds
+    /// - `accepted_measurements`: set of accepted RTMRs and key-provider event digest.
+    ///   If any element in the set is valid, the function accepts the attestation as valid.
     ///
     /// On success, returns the matched measurements.
     pub fn verify(
@@ -133,382 +87,124 @@ impl DstackAttestation {
             dcap_qvl::verify::verify(&self.quote, &self.collateral, timestamp_seconds)
                 .map_err(|e| VerificationError::DcapVerification(e.to_string()))?;
 
-        let report_data = verification_result
+        let verified_report = to_mirror_verified_report(verification_result);
+
+        let report_data = verified_report
             .report
             .as_td10()
             .ok_or(VerificationError::ReportNotTd10)?;
 
-        // Verify all attestation components
-        self.verify_tcb_status(&verification_result)?;
-        self.verify_report_data(&expected_report_data, report_data)?;
+        verify_tcb_status(&verified_report)?;
+        verify_report_data(&expected_report_data, report_data)?;
+        verify_rtmr3(report_data, &self.tcb_info)?;
+        verify_app_compose(&self.tcb_info)?;
 
-        self.verify_rtmr3(report_data, &self.tcb_info)?;
-        self.verify_app_compose(&self.tcb_info)?;
-
-        self.verify_any_measurements(report_data, &self.tcb_info, accepted_measurements)
+        verify_any_measurements(report_data, &self.tcb_info, accepted_measurements)
     }
+}
 
-    /// Replays RTMR3 from the event log by hashing all relevant events together and verifies all
-    /// digests are correct
-    fn verify_event_log_rtmr3(
-        event_log: &[EventLog],
-        expected_digest: [u8; 48],
-    ) -> Result<(), VerificationError> {
-        let mut digest = [0u8; 48];
+/// Converts `dcap_qvl::verify::VerifiedReport` (serde-only upstream type) into
+/// the Borsh-stable [`tee_verifier_interface::VerifiedReport`] mirror that
+/// the post-DCAP helpers operate on.
+///
+/// Duplicated in `crates/tee-verifier/src/conversions.rs` for the on-chain
+/// verifier; kept here as well to avoid pulling the full `attestation`
+/// crate into the verifier-contract dep graph.
+fn to_mirror_verified_report(
+    value: dcap_qvl::verify::VerifiedReport,
+) -> tee_verifier_interface::VerifiedReport {
+    tee_verifier_interface::VerifiedReport {
+        status: value.status,
+        advisory_ids: value.advisory_ids,
+        report: to_mirror_report(value.report),
+        ppid: value.ppid,
+        qe_status: to_mirror_tcb_status_with_advisory(value.qe_status),
+        platform_status: to_mirror_tcb_status_with_advisory(value.platform_status),
+    }
+}
 
-        let filtered_events = event_log.iter().filter(|e| e.imr == RTMR3_INDEX);
-
-        for event in filtered_events {
-            // In Dstack, all events measured in RTMR3 are of type DSTACK_EVENT_TYPE
-            if event.event_type != DSTACK_EVENT_TYPE {
-                return Err(VerificationError::InvalidEventType(event.event_type));
-            }
-            let mut hasher = Sha384::new();
-            hasher.update(digest);
-            let payload_bytes = match hex::decode(&event.event_payload) {
-                Ok(bytes) => bytes,
-                Err(_) => {
-                    return Err(VerificationError::EventDecoding(hex::encode(*event.digest)));
-                }
-            };
-            let expected_event_digest =
-                Self::event_digest(event.event_type, &event.event, &payload_bytes);
-            compare_hashes(
-                "event_digest",
-                event.digest.as_slice(),
-                &expected_event_digest,
-            )?;
-
-            hasher.update(event.digest.as_slice());
-
-            digest = hasher.finalize().into();
+fn to_mirror_report(value: dcap_qvl::quote::Report) -> tee_verifier_interface::Report {
+    match value {
+        dcap_qvl::quote::Report::SgxEnclave(r) => {
+            tee_verifier_interface::Report::SgxEnclave(to_mirror_enclave_report(r))
         }
-
-        compare_hashes("event_log", &digest, &expected_digest)
+        dcap_qvl::quote::Report::TD10(r) => tee_verifier_interface::Report::TD10(to_mirror_td10(r)),
+        dcap_qvl::quote::Report::TD15(r) => tee_verifier_interface::Report::TD15(to_mirror_td15(r)),
     }
+}
 
-    fn validate_app_compose_payload(
-        expected_event_payload_hex: &str,
-        app_compose: &str,
-    ) -> Result<(), VerificationError> {
-        let expected_payload = match hex::decode(expected_event_payload_hex) {
-            Ok(bytes) => match <[u8; 32]>::try_from(bytes.as_slice()) {
-                Ok(expected_bytes) => expected_bytes,
-                Err(_) => {
-                    return Err(VerificationError::AppComposeEventPayloadWrongSize(
-                        bytes.len(),
-                    ));
-                }
-            },
-            Err(_) => {
-                return Err(VerificationError::AppComposeEventPayloadNotHex(
-                    expected_event_payload_hex.to_string(),
-                ));
-            }
-        };
-
-        let app_compose_hash: [u8; 32] = Sha256::digest(app_compose.as_bytes()).into();
-
-        compare_hashes("app_compose_payload", &app_compose_hash, &expected_payload)
+fn to_mirror_td10(value: dcap_qvl::quote::TDReport10) -> tee_verifier_interface::TDReport10 {
+    tee_verifier_interface::TDReport10 {
+        tee_tcb_svn: value.tee_tcb_svn,
+        mr_seam: value.mr_seam,
+        mr_signer_seam: value.mr_signer_seam,
+        seam_attributes: value.seam_attributes,
+        td_attributes: value.td_attributes,
+        xfam: value.xfam,
+        mr_td: value.mr_td,
+        mr_config_id: value.mr_config_id,
+        mr_owner: value.mr_owner,
+        mr_owner_config: value.mr_owner_config,
+        rt_mr0: value.rt_mr0,
+        rt_mr1: value.rt_mr1,
+        rt_mr2: value.rt_mr2,
+        rt_mr3: value.rt_mr3,
+        report_data: value.report_data,
     }
+}
 
-    /// Verifies TCB status and security advisories.
-    fn verify_tcb_status(
-        &self,
-        verification_result: &VerifiedReport,
-    ) -> Result<(), VerificationError> {
-        // The "UpToDate" TCB status indicates that the measured platform components (CPU
-        // microcode, firmware, etc.) match the latest known good values published by Intel
-        // and do not require any updates or mitigations.
-        let status_is_up_to_date = verification_result.status == EXPECTED_QUOTE_STATUS;
-
-        // Advisory IDs indicate known security vulnerabilities or issues with the TEE.
-        // For a quote to be considered secure, there should be no outstanding advisories.
-        let no_security_advisories = verification_result.advisory_ids.is_empty();
-
-        status_is_up_to_date.or_err(|| {
-            VerificationError::TcbStatusNotUpToDate(verification_result.status.clone())
-        })?;
-
-        no_security_advisories.or_err(|| {
-            VerificationError::NonEmptyAdvisoryIds(verification_result.advisory_ids.join(", "))
-        })?;
-
-        Ok(())
+fn to_mirror_td15(value: dcap_qvl::quote::TDReport15) -> tee_verifier_interface::TDReport15 {
+    tee_verifier_interface::TDReport15 {
+        base: to_mirror_td10(value.base),
+        tee_tcb_svn2: value.tee_tcb_svn2,
+        mr_service_td: value.mr_service_td,
     }
+}
 
-    /// Verifies report data matches expected values.
-    fn verify_report_data(
-        &self,
-        expected: &ReportData,
-        actual: &dcap_qvl::quote::TDReport10,
-    ) -> Result<(), VerificationError> {
-        // Check if sha384(tls_public_key) matches the hash in report_data. This check effectively
-        // proves that tls_public_key was included in the quote's report_data by an app running
-        // inside a TDX enclave.
-        compare_hashes("report_data", &actual.report_data, &expected.to_bytes())
+fn to_mirror_enclave_report(
+    value: dcap_qvl::quote::EnclaveReport,
+) -> tee_verifier_interface::EnclaveReport {
+    tee_verifier_interface::EnclaveReport {
+        cpu_svn: value.cpu_svn,
+        misc_select: value.misc_select,
+        reserved1: value.reserved1,
+        attributes: value.attributes,
+        mr_enclave: value.mr_enclave,
+        reserved2: value.reserved2,
+        mr_signer: value.mr_signer,
+        reserved3: value.reserved3,
+        isv_prod_id: value.isv_prod_id,
+        isv_svn: value.isv_svn,
+        reserved4: value.reserved4,
+        report_data: value.report_data,
     }
+}
 
-    /// Try to verify static RTMRs and key_provider_digest against multiple expected measurement sets.
-    /// On success, returns the matched measurements.
-    fn verify_any_measurements(
-        &self,
-        report_data: &dcap_qvl::quote::TDReport10,
-        tcb_info: &TcbInfo,
-        accepted_measurements: &[ExpectedMeasurements],
-    ) -> Result<ExpectedMeasurements, VerificationError> {
-        for expected in accepted_measurements {
-            if self
-                .verify_static_rtmrs(report_data, tcb_info, expected)
-                .is_ok()
-                && self
-                    .verify_key_provider_digest(tcb_info, &expected.key_provider_event_digest)
-                    .is_ok()
-            {
-                return Ok(*expected); // found a valid match
-            }
+fn to_mirror_tcb_status(value: dcap_qvl::tcb_info::TcbStatus) -> tee_verifier_interface::TcbStatus {
+    match value {
+        dcap_qvl::tcb_info::TcbStatus::UpToDate => tee_verifier_interface::TcbStatus::UpToDate,
+        dcap_qvl::tcb_info::TcbStatus::OutOfDateConfigurationNeeded => {
+            tee_verifier_interface::TcbStatus::OutOfDateConfigurationNeeded
         }
-
-        Err(VerificationError::WrongHash {
-            name: "expected_measurements",
-            expected: "one of the embedded TCB info sets (prod or dev)".into(),
-            found: "none matched".into(),
-        })
-    }
-    /// Verifies static RTMRs match expected values.
-    fn verify_static_rtmrs(
-        &self,
-        report_data: &dcap_qvl::quote::TDReport10,
-        tcb_info: &TcbInfo,
-        expected_measurements: &ExpectedMeasurements,
-    ) -> Result<(), VerificationError> {
-        // Check if the RTMRs match the expected values. To learn more about RTMRs and
-        // their significance, refer to the TDX documentation:
-        // - https://phala.network/posts/understanding-tdx-attestation-reports-a-developers-guide
-        // - https://www.kernel.org/doc/Documentation/x86/tdx.rst
-        compare_hashes(
-            "rtmr0_report_data",
-            &report_data.rt_mr0,
-            &expected_measurements.rtmrs.rtmr0,
-        )?;
-        compare_hashes(
-            "rtmr1_report_data",
-            &report_data.rt_mr1,
-            &expected_measurements.rtmrs.rtmr1,
-        )?;
-        compare_hashes(
-            "rtmr2_report_data",
-            &report_data.rt_mr2,
-            &expected_measurements.rtmrs.rtmr2,
-        )?;
-        compare_hashes(
-            "mrtd_report_data",
-            &report_data.mr_td,
-            &expected_measurements.rtmrs.mrtd,
-        )?;
-
-        compare_hashes(
-            "rtmr0_tcb_info",
-            tcb_info.rtmr0.as_slice(),
-            &expected_measurements.rtmrs.rtmr0,
-        )?;
-        compare_hashes(
-            "rtmr1_tcb_info",
-            tcb_info.rtmr1.as_slice(),
-            &expected_measurements.rtmrs.rtmr1,
-        )?;
-        compare_hashes(
-            "rtmr2_tcb_info",
-            tcb_info.rtmr2.as_slice(),
-            &expected_measurements.rtmrs.rtmr2,
-        )?;
-        compare_hashes(
-            "mtrd_tcb_info",
-            tcb_info.mrtd.as_slice(),
-            &expected_measurements.rtmrs.mrtd,
-        )
-    }
-
-    /// Verifies RTMR3 by replaying event log.
-    fn verify_rtmr3(
-        &self,
-        report_data: &dcap_qvl::quote::TDReport10,
-        tcb_info: &TcbInfo,
-    ) -> Result<(), VerificationError> {
-        compare_hashes("rtmr3", tcb_info.rtmr3.as_slice(), &report_data.rt_mr3)?;
-
-        Self::verify_event_log_rtmr3(&tcb_info.event_log, report_data.rt_mr3)
-    }
-
-    /// Verifies app compose configuration and hash. The compose-hash is measured into RTMR3, and
-    /// since it's (roughly) a hash of the unmeasured docker_compose_file, this is sufficient to
-    /// prove its validity.
-    fn verify_app_compose(&self, tcb_info: &TcbInfo) -> Result<(), VerificationError> {
-        let app_compose: AppCompose = serde_json::from_str(&tcb_info.app_compose)
-            .map_err(|e| VerificationError::AppComposeParsing(e.to_string()))?;
-
-        Self::validate_app_compose_config(&app_compose).or_err(|| {
-            VerificationError::InvalidAppComposeConfig(tcb_info.app_compose.to_string())
-        })?;
-
-        let app_compose_event = tcb_info.get_single_event(COMPOSE_HASH_EVENT)?;
-
-        compare_hex_hashes(
-            "app_compose_event_hash",
-            &app_compose_event.event_payload,
-            &hex::encode(*tcb_info.compose_hash),
-        )?;
-
-        Self::validate_app_compose_payload(&app_compose_event.event_payload, &tcb_info.app_compose)
-    }
-
-    /// Validates app compose configuration against expected security requirements.
-    fn validate_app_compose_config(app_compose: &AppCompose) -> bool {
-        app_compose.manifest_version == 2
-            && app_compose.runner == "docker-compose"
-            && !app_compose.kms_enabled
-            && app_compose.gateway_enabled == Some(false)
-            && app_compose.public_logs
-            && app_compose.public_sysinfo
-            && app_compose.local_key_provider_enabled
-            && app_compose.allowed_envs.is_empty()
-            && app_compose.no_instance_id
-            && app_compose.pre_launch_script.is_none()
-    }
-
-    /// Verifies local key-provider event digest matches the expected digest.
-    fn verify_key_provider_digest(
-        &self,
-        tcb_info: &TcbInfo,
-        expected_digest: &[u8; 48],
-    ) -> Result<(), VerificationError> {
-        let key_provider_event = tcb_info.get_single_event(KEY_PROVIDER_EVENT)?;
-
-        compare_hashes(
-            "key_provider",
-            key_provider_event.digest.as_slice(),
-            expected_digest,
-        )
-    }
-
-    // Implementation taken to match Dstack's https://github.com/Dstack-TEE/dstack/blob/cfa4cc4e8a4f525d537883b1a0ba5d9fbfd87f1e/cc-eventlog/src/lib.rs#L54
-    fn event_digest(event_type: u32, event: &str, payload: &[u8]) -> [u8; 48] {
-        let mut hasher = Sha384::new();
-        hasher.update(event_type.to_ne_bytes());
-        hasher.update(b":");
-        hasher.update(event.as_bytes());
-        hasher.update(b":");
-        hasher.update(payload);
-        hasher.finalize().into()
-    }
-}
-
-fn compare_hashes(
-    name: &'static str,
-    found: &[u8],
-    expected: &[u8],
-) -> Result<(), VerificationError> {
-    (found == expected).or_err(|| VerificationError::WrongHash {
-        name,
-        found: hex::encode(found),
-        expected: hex::encode(expected),
-    })
-}
-
-fn compare_hex_hashes<S: ToString + Eq>(
-    name: &'static str,
-    found: S,
-    expected: S,
-) -> Result<(), VerificationError> {
-    (found == expected).or_err(|| VerificationError::WrongHash {
-        name,
-        found: found.to_string(),
-        expected: expected.to_string(),
-    })
-}
-
-pub trait OrErr {
-    fn or_err<Error>(self, err: impl FnOnce() -> Error) -> Result<(), Error>;
-}
-
-impl OrErr for bool {
-    fn or_err<Error>(self, err: impl FnOnce() -> Error) -> Result<(), Error> {
-        self.then_some(()).ok_or_else(err)
-    }
-}
-
-pub trait GetSingleEvent {
-    fn get_single_event(&self, event_name: &'static str) -> Result<&EventLog, VerificationError>;
-}
-
-impl GetSingleEvent for TcbInfo {
-    fn get_single_event(&self, event_name: &'static str) -> Result<&EventLog, VerificationError> {
-        let mut events = self
-            .event_log
-            .iter()
-            .filter(|event| event.event == event_name && event.imr == RTMR3_INDEX);
-
-        let Some(event) = events.next() else {
-            return Err(VerificationError::MissingEvent(event_name));
-        };
-
-        if events.next().is_some() {
-            Err(VerificationError::DuplicateEvent(event_name))
-        } else {
-            Ok(event)
+        dcap_qvl::tcb_info::TcbStatus::OutOfDate => tee_verifier_interface::TcbStatus::OutOfDate,
+        dcap_qvl::tcb_info::TcbStatus::ConfigurationAndSWHardeningNeeded => {
+            tee_verifier_interface::TcbStatus::ConfigurationAndSWHardeningNeeded
         }
+        dcap_qvl::tcb_info::TcbStatus::ConfigurationNeeded => {
+            tee_verifier_interface::TcbStatus::ConfigurationNeeded
+        }
+        dcap_qvl::tcb_info::TcbStatus::SWHardeningNeeded => {
+            tee_verifier_interface::TcbStatus::SWHardeningNeeded
+        }
+        dcap_qvl::tcb_info::TcbStatus::Revoked => tee_verifier_interface::TcbStatus::Revoked,
     }
 }
 
-#[cfg(test)]
-#[expect(non_snake_case)]
-mod tests {
-    use super::*;
-
-    use alloc::{string::ToString, vec::Vec};
-
-    #[test]
-    fn validate_app_compose_config__succeeds_on_valid_app_compose() {
-        // Given
-        let app_compose = valid_app_compose();
-        // When
-        let result = DstackAttestation::validate_app_compose_config(&app_compose);
-
-        // Then
-        assert!(result)
-    }
-
-    #[test]
-    fn validate_app_compose_config__allows_insecure_time() {
-        // Given
-        let app_compose = AppCompose {
-            secure_time: Some(false),
-            ..valid_app_compose()
-        };
-        // When
-        let result = DstackAttestation::validate_app_compose_config(&app_compose);
-
-        // Then
-        assert!(result)
-    }
-
-    fn valid_app_compose() -> AppCompose {
-        AppCompose {
-            manifest_version: 2,
-            name: "".to_string(),
-            runner: "docker-compose".to_string(),
-            docker_compose_file: "".to_string().into(),
-            kms_enabled: false,
-            tproxy_enabled: None,
-            gateway_enabled: Some(false),
-            public_logs: true,
-            public_sysinfo: true,
-            local_key_provider_enabled: true,
-            key_provider_id: None,
-            allowed_envs: Vec::new(),
-            no_instance_id: true,
-            secure_time: None,
-            pre_launch_script: None,
-        }
+fn to_mirror_tcb_status_with_advisory(
+    value: dcap_qvl::tcb_info::TcbStatusWithAdvisory,
+) -> tee_verifier_interface::TcbStatusWithAdvisory {
+    tee_verifier_interface::TcbStatusWithAdvisory {
+        status: to_mirror_tcb_status(value.status),
+        advisory_ids: value.advisory_ids,
     }
 }

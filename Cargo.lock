@@ -967,16 +967,15 @@ name = "attestation"
 version = "3.9.0"
 dependencies = [
  "assert_matches",
+ "attestation-types",
  "borsh",
  "dcap-qvl",
  "derive_more 2.1.1",
  "dstack-sdk-types",
  "hex",
- "rstest",
  "serde",
  "serde_json",
- "serde_with",
- "sha2 0.10.9",
+ "tee-verifier-interface",
  "test-utils",
  "thiserror 2.0.18",
 ]
@@ -1001,6 +1000,23 @@ dependencies = [
  "time",
  "tokio",
  "url",
+]
+
+[[package]]
+name = "attestation-types"
+version = "3.9.0"
+dependencies = [
+ "borsh",
+ "derive_more 2.1.1",
+ "dstack-sdk-types",
+ "hex",
+ "rstest",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "sha2 0.10.9",
+ "tee-verifier-interface",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

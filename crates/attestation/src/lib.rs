@@ -2,10 +2,12 @@
 
 extern crate alloc;
 
-pub mod app_compose;
 pub mod attestation;
 pub mod collateral;
-pub mod measurements;
 pub mod quote;
-pub mod report_data;
-pub mod tcb_info;
+
+// DTOs and post-DCAP helpers live in `attestation-types`. Re-exported here
+// so existing consumers can keep using paths like `attestation::tcb_info`
+// without churn. The `attestation` crate adds only the `dcap_qvl::verify`
+// entry point (`DstackAttestation::verify`) on top.
+pub use attestation_types::{app_compose, measurements, report_data, tcb_info, verify_post_dcap};
