@@ -1,15 +1,12 @@
 use std::path::Path;
 
 use anyhow::Context;
-use attestation::attestation::DstackVerify as _;
 use attestation_types::{
     measurements::{ExpectedMeasurements, Measurements},
     tcb_info::TcbInfo,
     verify_post_dcap::VerificationError,
 };
-use mpc_attestation::attestation::{
-    Attestation, ValidatedDstackAttestation, VerifiedAttestation,
-};
+use mpc_attestation::attestation::{ValidatedDstackAttestation, VerifiedAttestation};
 use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash};
 use node_types::http_server::StaticWebData;
 use sha2::{Digest, Sha256};
@@ -68,32 +65,17 @@ pub fn verify_at_timestamp(
         VerificationError::Custom(format!("failed to load expected measurements: {e}"))
     })?;
 
-    // Two-step verification: dcap-qvl crypto check first, then the
-    // post-DCAP checks against the resulting `VerifiedReport`.
-    // Mirrors the split that the on-chain `mpc-contract` uses now
-    // (cross-contract Promise → `on_attestation_verified` callback).
-    let verified_report = match attestation {
-        Attestation::Dstack(dstack) => {
-            let _matched = dstack.verify(
-                report_data.clone().into(),
-                timestamp_seconds,
-                &measurements,
-            )?;
-            local_dcap_to_mirror(dstack, timestamp_seconds)?
-        }
-        Attestation::Mock(_) => {
-            // `finish_verify` ignores the report for `Mock`.
-            zero_verified_report()
-        }
-    };
-
-    let verified = attestation.finish_verify(
-        &verified_report,
+    // Off-chain local verification: dcap-qvl + post-DCAP in one call.
+    // (The on-chain `mpc-contract` does this in two steps over a
+    // cross-contract Promise; see `mpc-contract`'s
+    // `submit_participant_info` / `on_attestation_verified`.)
+    let verified = mpc_attestation::local_verify::local_verify(
+        attestation,
         report_data.into(),
+        timestamp_seconds,
         &cli.allowed_image_hashes,
         &[allowed_compose_hash],
         &measurements,
-        timestamp_seconds,
     )?;
 
     // Extract results from the verified attestation

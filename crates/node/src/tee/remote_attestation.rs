@@ -102,15 +102,15 @@ fn validate_remote_attestation(
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs();
-    attestation
-        .verify(
-            expected_report_data.into(),
-            now,
-            allowed_docker_image_hashes,
-            allowed_launcher_compose_hashes,
-            mpc_attestation::attestation::default_measurements(),
-        )
-        .map(|_| ())
+    mpc_attestation::local_verify::local_verify(
+        attestation,
+        expected_report_data.into(),
+        now,
+        allowed_docker_image_hashes,
+        allowed_launcher_compose_hashes,
+        mpc_attestation::attestation::default_measurements(),
+    )
+    .map(|_| ())
 }
 
 pub async fn validate_and_submit_remote_attestation(

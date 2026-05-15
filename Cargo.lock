@@ -980,7 +980,7 @@ name = "attestation-cli"
 version = "3.9.0"
 dependencies = [
  "anyhow",
- "attestation",
+ "attestation-types",
  "bs58 0.5.1",
  "clap",
  "mpc-attestation",
@@ -11355,7 +11355,6 @@ version = "3.9.0"
 dependencies = [
  "anyhow",
  "assert_matches",
- "attestation",
  "backon",
  "dcap-qvl",
  "derive_more 2.1.1",
@@ -11368,7 +11367,6 @@ dependencies = [
  "rstest",
  "serde",
  "serde_json",
- "tee-verifier-interface",
  "test-utils",
  "thiserror 2.0.18",
  "time",

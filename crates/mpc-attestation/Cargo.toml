@@ -12,15 +12,18 @@ abi = [
 ]
 dstack-conversions = ["attestation-types/dstack-conversions"]
 test-utils = ["attestation-types/test-utils"]
-# Re-exports `collateral_from_dcap` / `collateral_to_dcap` from the
-# `attestation` crate. Off-chain consumers (`tee-authority`,
-# `attestation-cli`) enable this; on-chain consumers (`mpc-contract`)
-# do not, so they don't transitively pull `dcap-qvl`.
-local-verify = ["dep:attestation"]
+# Enables the off-chain `local_verify` convenience helper that runs the
+# full `dcap_qvl::verify::verify` + post-DCAP path in one call. Pulls in
+# the `attestation` crate (and `dcap-qvl` via it). Off-chain consumers
+# (`tee-authority`, `attestation-cli`, `mpc-node`) enable this; on-chain
+# consumers (`mpc-contract`) do not, so they don't transitively pull
+# `dcap-qvl` into their WASM.
+local-verify = ["dep:attestation", "dep:dcap-qvl"]
 
 [dependencies]
 attestation = { workspace = true, optional = true }
 attestation-types = { workspace = true }
+dcap-qvl = { workspace = true, optional = true }
 borsh = { workspace = true }
 derive_more = { workspace = true }
 hex = { workspace = true }

@@ -15,3 +15,6 @@ pub use attestation_types::{collateral, quote, tcb_info};
 /// tests) enable this feature.
 #[cfg(feature = "local-verify")]
 pub use ::attestation::{collateral_from_dcap, collateral_to_dcap};
+
+#[cfg(feature = "local-verify")]
+pub mod local_verify;

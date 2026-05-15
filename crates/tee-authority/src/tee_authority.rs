@@ -768,58 +768,18 @@ mod tests {
             .await
             .unwrap();
         let timestamp_s = 0u64;
-        // `LocalTeeAuthorityConfig` yields `Mock` attestations, whose
-        // `finish_verify` path ignores the `VerifiedReport` argument.
-        let dummy_report = dummy_verified_report();
         assert_eq!(
-            attestation
-                .finish_verify(
-                    &dummy_report,
-                    report_data.into(),
-                    &[],
-                    &[],
-                    &[],
-                    timestamp_s,
-                )
-                .is_ok(),
+            mpc_attestation::local_verify::local_verify(
+                &attestation,
+                report_data.into(),
+                timestamp_s,
+                &[],
+                &[],
+                &[],
+            )
+            .is_ok(),
             quote_verification_result
         );
-    }
-
-    /// Test-only zero-valued `VerifiedReport`. Used by tests that
-    /// exercise `Attestation::Mock` paths in `finish_verify`, which
-    /// ignore the report contents.
-    fn dummy_verified_report() -> tee_verifier_interface::VerifiedReport {
-        tee_verifier_interface::VerifiedReport {
-            status: alloc::string::String::new(),
-            advisory_ids: alloc::vec::Vec::new(),
-            report: tee_verifier_interface::Report::TD10(tee_verifier_interface::TDReport10 {
-                tee_tcb_svn: [0; 16],
-                mr_seam: [0; 48],
-                mr_signer_seam: [0; 48],
-                seam_attributes: [0; 8],
-                td_attributes: [0; 8],
-                xfam: [0; 8],
-                mr_td: [0; 48],
-                mr_config_id: [0; 48],
-                mr_owner: [0; 48],
-                mr_owner_config: [0; 48],
-                rt_mr0: [0; 48],
-                rt_mr1: [0; 48],
-                rt_mr2: [0; 48],
-                rt_mr3: [0; 48],
-                report_data: [0; 64],
-            }),
-            ppid: alloc::vec::Vec::new(),
-            qe_status: tee_verifier_interface::TcbStatusWithAdvisory {
-                status: tee_verifier_interface::TcbStatus::UpToDate,
-                advisory_ids: alloc::vec::Vec::new(),
-            },
-            platform_status: tee_verifier_interface::TcbStatusWithAdvisory {
-                status: tee_verifier_interface::TcbStatus::UpToDate,
-                advisory_ids: alloc::vec::Vec::new(),
-            },
-        }
     }
 
     #[tokio::test]
