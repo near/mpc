@@ -3,7 +3,7 @@
 #![expect(deprecated, reason = "ForeignChainConfiguration is being deprecated")]
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use near_mpc_bounded_collections::{BoundedVec, NonEmptyBTreeSet};
+use near_mpc_bounded_collections::{EmptyBoundedVec, NonEmptyBTreeSet};
 use serde::{Deserialize, Serialize};
 use serde_with::{hex::Hex, serde_as};
 use sha2::Digest;
@@ -12,27 +12,24 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::types::SignatureResponse;
 use crate::types::primitives::{AccountId, DomainId};
 
-/// Minimum number of data bytes in a TON Cell; minimum is 0 bits.
-/// i.e. [0/8⌉ = 0 bytes.
-///
-/// See <https://docs.ton.org/foundations/serialization/cells#standard-cell-representation-and-its-hash>.
-pub const TON_CELL_MIN_DATA_BYTES: usize = 0;
-
 /// Maximum number of data bytes in a TON Cell: up to 1023 data bits,
 /// i.e. ⌈1023/8⌉ = 128 bytes.
 ///
 /// See <https://docs.ton.org/foundations/serialization/cells#standard-cell-representation-and-its-hash>.
 pub const TON_CELL_MAX_DATA_BYTES: usize = 128;
 
-/// Minimum number of references a TON Cell may hold.
-///
-/// See <https://docs.ton.org/foundations/serialization/cells#standard-cell-representation-and-its-hash>.
-pub const TON_CELL_MIN_REFS: usize = 0;
-
 /// Maximum number of references a TON Cell may hold.
 ///
 /// See <https://docs.ton.org/foundations/serialization/cells#standard-cell-representation-and-its-hash>.
 pub const TON_CELL_MAX_REFS: usize = 4;
+
+/// Data bytes of a TON Cell: between 0 and [`TON_CELL_MAX_DATA_BYTES`] bytes (inclusive).
+///
+/// Byte-aligned — non-byte-aligned cell bodies are not representable here.
+pub type TonCellData = EmptyBoundedVec<u8, TON_CELL_MAX_DATA_BYTES>;
+
+/// References of a TON Cell: between 0 and [`TON_CELL_MAX_REFS`] entries (inclusive).
+pub type TonCellRefs = EmptyBoundedVec<Vec<u8>, TON_CELL_MAX_REFS>;
 
 #[derive(
     Debug,
@@ -400,8 +397,8 @@ pub enum TonExtractor {
 /// A TON outbound log message as observed on-chain.
 pub struct TonLog {
     pub from_address: TonAddress,
-    pub body_bits: BoundedVec<u8, TON_CELL_MIN_DATA_BYTES, TON_CELL_MAX_DATA_BYTES>,
-    pub body_refs: BoundedVec<Vec<u8>, TON_CELL_MIN_REFS, TON_CELL_MAX_REFS>,
+    pub body_bits: TonCellData,
+    pub body_refs: TonCellRefs,
 }
 
 #[derive(
