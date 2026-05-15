@@ -11400,6 +11400,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "tee-verifier"
+version = "3.9.0"
+dependencies = [
+ "borsh",
+ "dcap-qvl",
+ "getrandom 0.2.17",
+ "hex",
+ "near-sdk",
+ "tee-verifier-interface",
+ "test-utils",
+]
+
+[[package]]
 name = "tee-verifier-interface"
 version = "3.9.0"
 dependencies = [
