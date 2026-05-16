@@ -23,7 +23,8 @@ use mpc_contract::{
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
     Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
-    SupportedForeignChains,
+    SupportedForeignChains, TonAddress, TonExtractedValue, TonExtractor, TonFinality, TonLog,
+    TonRpcRequest, TonTxId,
 };
 use near_mpc_contract_interface::{
     method_names,
@@ -782,6 +783,19 @@ pub fn starknet_extracted_values() -> Vec<ExtractedValue> {
     )]
 }
 
+pub fn bogus_ton_log_extracted_value() -> Vec<ExtractedValue> {
+    vec![ExtractedValue::TonExtractedValue(TonExtractedValue::Log(
+        TonLog {
+            from_address: TonAddress {
+                workchain: 0,
+                hash: Hash256([1; 32]),
+            },
+            body_bits: vec![].try_into().unwrap(),
+            body_refs: vec![].try_into().unwrap(),
+        },
+    ))]
+}
+
 pub fn bnb_evm_request() -> ForeignChainRpcRequest {
     ForeignChainRpcRequest::Bnb(EvmRpcRequest {
         tx_id: EvmTxId([0xbb; 32]),
@@ -819,6 +833,18 @@ pub fn polygon_evm_request() -> ForeignChainRpcRequest {
         tx_id: EvmTxId([0xbb; 32]),
         extractors: vec![EvmExtractor::BlockHash],
         finality: EvmFinality::Finalized,
+    })
+}
+
+pub fn ton_request() -> ForeignChainRpcRequest {
+    ForeignChainRpcRequest::Ton(TonRpcRequest {
+        tx_id: TonTxId([0xbb; 32]),
+        extractors: vec![TonExtractor::Log { message_index: 0 }],
+        finality: TonFinality::MasterchainIncluded,
+        account: TonAddress {
+            workchain: 0,
+            hash: Hash256([1; 32]),
+        },
     })
 }
 

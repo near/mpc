@@ -3,7 +3,7 @@
 #![expect(deprecated, reason = "ForeignChainConfiguration is being deprecated")]
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use near_mpc_bounded_collections::NonEmptyBTreeSet;
+use near_mpc_bounded_collections::{EmptyBoundedVec, NonEmptyBTreeSet};
 use serde::{Deserialize, Serialize};
 use serde_with::{hex::Hex, serde_as};
 use sha2::Digest;
@@ -11,6 +11,25 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::types::SignatureResponse;
 use crate::types::primitives::{AccountId, DomainId};
+
+/// Maximum number of data bytes in a TON Cell: up to 1023 data bits,
+/// i.e. ⌈1023/8⌉ = 128 bytes.
+///
+/// See <https://docs.ton.org/foundations/serialization/cells#standard-cell-representation-and-its-hash>.
+pub const TON_CELL_MAX_DATA_BYTES: usize = 128;
+
+/// Maximum number of references a TON Cell may hold.
+///
+/// See <https://docs.ton.org/foundations/serialization/cells#standard-cell-representation-and-its-hash>.
+pub const TON_CELL_MAX_REFS: usize = 4;
+
+/// Data bytes of a TON Cell: between 0 and [`TON_CELL_MAX_DATA_BYTES`] bytes (inclusive).
+///
+/// Byte-aligned — non-byte-aligned cell bodies are not representable here.
+pub type TonCellData = EmptyBoundedVec<u8, TON_CELL_MAX_DATA_BYTES>;
+
+/// References of a TON Cell: between 0 and [`TON_CELL_MAX_REFS`] entries (inclusive).
+pub type TonCellRefs = EmptyBoundedVec<Vec<u8>, TON_CELL_MAX_REFS>;
 
 #[derive(
     Debug,
@@ -153,6 +172,7 @@ pub enum ForeignChainRpcRequest {
     Arbitrum(EvmRpcRequest),
     Polygon(EvmRpcRequest),
     HyperEvm(EvmRpcRequest),
+    Ton(TonRpcRequest),
 }
 
 impl ForeignChainRpcRequest {
@@ -168,6 +188,7 @@ impl ForeignChainRpcRequest {
             Self::Arbitrum(_) => ForeignChain::Arbitrum,
             Self::Polygon(_) => ForeignChain::Polygon,
             Self::HyperEvm(_) => ForeignChain::HyperEvm,
+            Self::Ton(_) => ForeignChain::Ton,
         }
     }
 }
@@ -239,6 +260,167 @@ pub struct BitcoinRpcRequest {
     pub tx_id: BitcoinTxId,
     pub confirmations: BlockConfirmations,
     pub extractors: Vec<BitcoinExtractor>,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct TonRpcRequest {
+    pub tx_id: TonTxId,
+    pub account: TonAddress,
+    pub finality: TonFinality,
+    pub extractors: Vec<TonExtractor>,
+}
+
+#[serde_as]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::Into,
+    derive_more::From,
+    derive_more::AsRef,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct TonTxId(#[serde_as(as = "Hex")] pub [u8; 32]);
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct TonAddress {
+    pub workchain: i32,
+    pub hash: Hash256,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+#[non_exhaustive]
+pub enum TonFinality {
+    MasterchainIncluded,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+#[non_exhaustive]
+#[repr(u8)]
+#[borsh(use_discriminant = true)]
+pub enum TonExtractor {
+    Log { message_index: u64 } = 1,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+/// A TON outbound log message as observed on-chain.
+pub struct TonLog {
+    pub from_address: TonAddress,
+    pub body_bits: TonCellData,
+    pub body_refs: TonCellRefs,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+#[non_exhaustive]
+pub enum TonExtractedValue {
+    Log(TonLog),
 }
 
 #[derive(
@@ -508,6 +690,7 @@ pub enum ExtractedValue {
     BitcoinExtractedValue(BitcoinExtractedValue),
     EvmExtractedValue(EvmExtractedValue),
     StarknetExtractedValue(StarknetExtractedValue),
+    TonExtractedValue(TonExtractedValue),
 }
 
 #[derive(
@@ -607,6 +790,7 @@ pub enum ForeignChain {
     Starknet,
     Polygon,
     HyperEvm,
+    Ton,
 }
 
 #[derive(
@@ -1131,6 +1315,18 @@ mod tests {
         }),
         ForeignChain::Polygon,
     )]
+    #[case::ton(
+        ForeignChainRpcRequest::Ton(TonRpcRequest {
+            tx_id: TonTxId([0; 32]),
+            account: TonAddress {
+                workchain: 0,
+                hash: Hash256([0; 32]),
+            },
+            finality: TonFinality::MasterchainIncluded,
+            extractors: vec![],
+        }),
+        ForeignChain::Ton,
+    )]
     fn foreign_chain_rpc_request_chain__should_return_correct_chain(
         #[case] request: ForeignChainRpcRequest,
         #[case] expected_chain: ForeignChain,
@@ -1203,5 +1399,39 @@ mod tests {
     fn foreign_tx_payload_version__rejects_unknown_version(#[case] input: u8) {
         serde_json::from_value::<ForeignTxPayloadVersion>(serde_json::json!(input)).unwrap_err();
         borsh::from_slice::<ForeignTxPayloadVersion>(&[input]).unwrap_err();
+    }
+
+    #[test]
+    fn foreign_tx_sign_payload_v1_ton__should_have_consistent_hash() {
+        // Given
+        let payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
+            request: ForeignChainRpcRequest::Ton(TonRpcRequest {
+                tx_id: TonTxId([0x99; 32]),
+                account: TonAddress {
+                    workchain: 0,
+                    hash: Hash256([0xaa; 32]),
+                },
+                finality: TonFinality::MasterchainIncluded,
+                extractors: vec![TonExtractor::Log { message_index: 0 }],
+            }),
+            values: vec![ExtractedValue::TonExtractedValue(TonExtractedValue::Log(
+                TonLog {
+                    from_address: TonAddress {
+                        workchain: 0,
+                        hash: Hash256([0xaa; 32]),
+                    },
+                    body_bits: vec![0xde, 0xad, 0xbe, 0xef].try_into().unwrap(),
+                    body_refs: vec![vec![0x01, 0x02, 0x03], vec![0x04, 0x05]]
+                        .try_into()
+                        .unwrap(),
+                },
+            ))],
+        });
+
+        // When
+        let hash = payload.compute_msg_hash().unwrap();
+
+        // Then
+        insta::assert_json_snapshot!(hex::encode(hash.0));
     }
 }
