@@ -40,6 +40,11 @@ crate-type = ["cdylib", "lib"]
 test-utils = ["rand", "threshold-signatures", "near-mpc-contract-interface/blstrs"]
 # WASM-compatible benchmark endpoints for sandbox gas testing
 bench-contract-methods = []
+# Sandbox-only view methods that expose internal contract state for tests that need to
+# assert invariants that aren't visible through the production API surface (e.g. the
+# length of a fan-out queue). Distinct from `bench-contract-methods` because these are
+# behavioral hooks, not gas-measurement hooks.
+sandbox-test-methods = []
 # Exposes constructors for DTO-to-internal type conversion in the node.
 # TODO(#381): Remove once the node no longer depends on the contract crate.
 compat = []
@@ -108,7 +113,11 @@ digest = { workspace = true }
 ecdsa = { workspace = true }
 futures = { workspace = true }
 insta = { workspace = true }
-mpc-contract = { workspace = true, features = ["compat", "test-utils"] }
+mpc-contract = { workspace = true, features = [
+    "compat",
+    "sandbox-test-methods",
+    "test-utils",
+] }
 near-abi = { workspace = true }
 near-mpc-sdk = { workspace = true }
 near-workspaces = { workspace = true }

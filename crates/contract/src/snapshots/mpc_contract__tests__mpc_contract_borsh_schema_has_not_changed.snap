@@ -597,6 +597,24 @@ BorshSchemaContainer {
                 ],
             ),
         },
+        "LegacyPendingRequests": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "signature_requests",
+                        "LookupMap",
+                    ),
+                    (
+                        "ckd_requests",
+                        "LookupMap",
+                    ),
+                    (
+                        "verify_foreign_tx_requests",
+                        "LookupMap",
+                    ),
+                ],
+            ),
+        },
         "LookupMap": Struct {
             fields: NamedFields(
                 [
@@ -704,8 +722,8 @@ BorshSchemaContainer {
                         "NodeMigrations",
                     ),
                     (
-                        "stale_data",
-                        "StaleData",
+                        "legacy_pending_requests",
+                        "LegacyPendingRequests",
                     ),
                     (
                         "metrics",
@@ -1096,9 +1114,6 @@ BorshSchemaContainer {
                     "[u8; 32]",
                 ],
             ),
-        },
-        "StaleData": Struct {
-            fields: Empty,
         },
         "String": Sequence {
             length_width: 4,

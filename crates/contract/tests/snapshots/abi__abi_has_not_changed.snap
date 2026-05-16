@@ -275,6 +275,7 @@ expression: abi
       },
       {
         "name": "get_pending_ckd_request",
+        "doc": " Presence check for a pending CKD request, exposed as a view call.\n\n See [`Self::get_pending_request`] for the contract: the returned `YieldIndex`\n is an arbitrary representative of a fan-out queue, not \"the\" yield. Only the\n `Some`/`None` distinction is meaningful.",
         "kind": "view",
         "params": {
           "serialization_type": "json",
@@ -303,6 +304,7 @@ expression: abi
       },
       {
         "name": "get_pending_request",
+        "doc": " Presence check for a pending signature request, exposed as a view call.\n\n **The returned `YieldIndex` is an arbitrary representative, not \"the\" yield\n for this request.** Since the duplicate-request fan-out feature (PR #3187),\n a single request key can have N queued yields; this method returns the head of the\n queue. Callers that need to act on the full set are wrong to use this. The\n only correct interpretation is presence: `Some(_)` vs `None`.\n\n The `Option<YieldIndex>` shape is retained for JSON wire compatibility with\n out-of-tree consumers; the in-tree caller (`tx_sender::compute_transaction_status`)\n only matches on presence. Prefer a `bool`-shaped accessor if one is added.\n\n Falls back to the legacy single-yield map for in-flight requests inherited\n from before the fan-out upgrade.",
         "kind": "view",
         "params": {
           "serialization_type": "json",
@@ -331,6 +333,7 @@ expression: abi
       },
       {
         "name": "get_pending_verify_foreign_tx_request",
+        "doc": " Presence check for a pending foreign-tx verification request, exposed as a\n view call.\n\n See [`Self::get_pending_request`] for the contract: the returned `YieldIndex`\n is an arbitrary representative of a fan-out queue, not \"the\" yield. Only the\n `Some`/`None` distinction is meaningful.",
         "kind": "view",
         "params": {
           "serialization_type": "json",
@@ -946,7 +949,7 @@ expression: abi
       },
       {
         "name": "return_ck_and_clean_state_on_success",
-        "doc": " Upon success, removes the confidential key request from state and returns it.\n If the ckd request times out, removes the ckd request from state and panics to fail the\n original transaction",
+        "doc": " Yield-resume callback for a single queued CKD request.\n\n On success, returns the confidential key to the original caller. On timeout,\n pops this yield's slot (the head of the FIFO fan-out queue) from the\n pending-request map — falling back to the legacy single-yield map for\n pre-fan-out entries — and fires `fail_on_timeout` to fail the original\n transaction. Sibling yields queued under the same request key remain pending\n and are cleaned up by their own timeouts (or drained together by a subsequent\n `respond_ckd`).",
         "kind": "call",
         "modifiers": [
           "private"
@@ -979,7 +982,7 @@ expression: abi
       },
       {
         "name": "return_signature_and_clean_state_on_success",
-        "doc": " Upon success, removes the signature from state and returns it.\n If the signature request times out, removes the signature request from state and panics to\n fail the original transaction",
+        "doc": " Yield-resume callback for a single queued `sign` request.\n\n On success, returns the signature to the original caller. On timeout, pops this\n yield's slot (the head of the FIFO fan-out queue) from the pending-request map\n — falling back to the legacy single-yield map for pre-fan-out entries — and\n fires `fail_on_timeout` to fail the original transaction. Sibling yields queued\n under the same request key remain pending and are cleaned up by their own\n timeouts (or drained together by a subsequent `respond`).",
         "kind": "call",
         "modifiers": [
           "private"
@@ -1012,7 +1015,7 @@ expression: abi
       },
       {
         "name": "return_verify_foreign_tx_and_clean_state_on_success",
-        "doc": " Upon success, removes the verify foreign tx request from state and returns it.\n If the verify foreign tx request times out, removes the verify foreign tx request from state and panics to fail the\n original transaction",
+        "doc": " Yield-resume callback for a single queued foreign-tx verification request.\n\n On success, returns the verification response to the original caller. On\n timeout, pops this yield's slot (the head of the FIFO fan-out queue) from the\n pending-request map — falling back to the legacy single-yield map for\n pre-fan-out entries — and fires `fail_on_timeout` to fail the original\n transaction. Sibling yields queued under the same request key remain pending\n and are cleaned up by their own timeouts (or drained together by a subsequent\n `respond_verify_foreign_tx`).",
         "kind": "call",
         "modifiers": [
           "private"

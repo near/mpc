@@ -28,6 +28,8 @@ pub enum TeeError {
 pub enum RequestError {
     #[error("Request has timed out.")]
     Timeout,
+    #[error("Pending-request queue is full for this request key (limit: {limit}). Try again once an in-flight response or timeout has cleared room.")]
+    PendingRequestQueueFull { limit: u8 },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

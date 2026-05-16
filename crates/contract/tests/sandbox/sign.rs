@@ -22,7 +22,6 @@ use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::Protocol;
 use near_workspaces::types::NearToken;
 use rand::SeedableRng;
-use std::time::Duration;
 
 const SIGNATURE_TIMEOUT_BLOCKS: u64 = 200;
 const NUM_BLOCKS_BETWEEN_REQUESTS: u64 = 2;
@@ -64,55 +63,6 @@ async fn test_contract_request_all_schemes() -> anyhow::Result<()> {
                     .unwrap();
             }
         }
-    }
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_contract_request_duplicate_requests_all_schemes() -> anyhow::Result<()> {
-    let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
-    let SandboxTestSetup {
-        worker,
-        contract,
-        mpc_signer_accounts,
-        keys,
-    } = SandboxTestSetup::builder()
-        .with_protocols(ALL_PROTOCOLS)
-        .build()
-        .await;
-    let attested_account = &mpc_signer_accounts[0];
-
-    for key in &keys {
-        let alice = worker.dev_create_account().await.unwrap();
-        let predecessor_id = alice.id();
-        // check that in case of duplicate request, only the most recent will be signed:
-        let req = DomainResponseTest::new(&mut rng, key, predecessor_id);
-        let status_1 = req
-            .submit_request_ensure_included(&alice, &contract)
-            .await?;
-        worker
-            .fast_forward(NUM_BLOCKS_BETWEEN_REQUESTS)
-            .await
-            .unwrap();
-        let status_2 = req
-            .submit_request_ensure_included(&alice, &contract)
-            .await?;
-
-        // unfortunately, we still can't completely get rid of this sleep
-        // TODO(#1306): remove the need to sleep
-        tokio::time::sleep(Duration::from_secs(3)).await;
-        worker
-            .fast_forward(NUM_BLOCKS_BETWEEN_REQUESTS)
-            .await
-            .unwrap();
-        req.submit_response(&contract, attested_account).await?;
-        req.verify_execution_outcome(status_2)
-            .await
-            .expect("most recent signature request should succeed");
-        worker.fast_forward(SIGNATURE_TIMEOUT_BLOCKS).await.unwrap();
-        verify_timeout(status_1)
-            .await
-            .expect("initial signature request should time out");
     }
     Ok(())
 }
