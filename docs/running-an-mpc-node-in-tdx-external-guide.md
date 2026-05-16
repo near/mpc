@@ -49,6 +49,8 @@ Note \- we currently only support bare metal and do not support virtualized TDX 
 
 For a list of supported cloud providers offering bare metal servers with Intel TDX, see [Cloud Providers Supporting Bare Metal Servers with Intel TDX](./cloud-providers-tdx.md).
 
+> **Sharing one host between mainnet and testnet?** See [Running multiple MPC nodes on one host](./running-multiple-mpc-nodes-on-one-host.md) for the additional setup (one `dstack-vmm` hosting both CVMs, with each CVM bound to a distinct host IP at port-forward time).
+
 ### General
 
 * Firewall:allow ingress port 80 (MPC), 24567 (near) and port 8080 (web)
@@ -679,7 +681,7 @@ Adjust the variables as per your environment.
 * `my_near_account_id` — use the NEAR account ID created in the previous step
 * `mpc_contract_id` — **v1.signer-prod.testnet** for testnet, **v1.signer** for mainnet
 * `port_mappings` — port forwarding rules for the MPC container. These should be a subset of the port forwarding for the CVM defined in [Port Mapping](#using-the-web-interface)
-* `tier3_public_addr` *(optional)* — `IP:24567` the node advertises for Tier3 state-sync responses. Applied at first init only; changing later requires a CVM redeploy via the [Node Migration](./node-migration-guide.md) flow.
+* `tier3_public_addr` *(optional for single-node; required when running [multiple nodes on one host](./running-multiple-mpc-nodes-on-one-host.md))* — `IP:24567` the node advertises for Tier3 state-sync responses. Applied at first init only; changing later requires a CVM redeploy via the [Node Migration](./node-migration-guide.md) flow.
 * `external_storage_fallback_threshold` *(optional)* — DSS attempts per state part before falling back to the external storage bucket. `0` = bucket-only. Same first-init-only constraint as `tier3_public_addr`.
 * A fresh set of boot nodes can be selected using Testnet/Mainnet RPC endpoints. Copy at least 4-5 nodes from curl results into `near_boot_nodes`.
   **Important:** Boot nodes must not contain duplicate addresses or peer IDs. Duplicates will cause the node to crash on startup. The command below deduplicates automatically:
@@ -774,17 +776,17 @@ sed \
 > whitespace) — only the two digest substitutions should differ from the
 > template.
 
-### Required Ports and Port Collisions
+### Required Ports and IP Allocation
 
-MPC nodes use a fixed set of ports for communication and telemetry.
-This creates a limitation when trying to run both **mainnet** and **testnet** nodes on the same physical server, since both sets of nodes attempt to bind to the same ports.
+MPC nodes bind a fixed set of ports (listed below). Two supported
+deployment shapes:
 
----
-
-* **Single network per machine**: By default, running both mainnet and testnet on the same machine is not supported because of port collisions.
-* **Workaround with multiple IPs**: It is possible to run multiple nodes (e.g., one mainnet and one testnet) on the same host if the server is configured with **multiple external IP addresses**.
-  * Each node binds to the required ports (see below) on a separate IP.
-  * Additional IP/port routing on the local machine may be required.
+* **One node per host**: the host's primary public IP carries all
+  port forwards.
+* **Multiple nodes on one host** (mainnet + testnet): each CVM is
+  bound to its own public IP on the same host via dstack's
+  per-port-mapping `host_address`. See [Running multiple MPC nodes
+  on one host](./running-multiple-mpc-nodes-on-one-host.md).
 
 ---
 
@@ -819,12 +821,14 @@ Use the following custom settings for MPC:
 3. Pre script \- empty.
 4. user-config \- provided above
 5. KMS=disable, Local Keyprovier=enabled, Tproxy=disable, public logs=enabled,public sysinfo=enabled,pin NUMA=disabled
-6. Port mapping: (taken from the list above)
-   Public 80:80 (main node to node communication port)
-   Public 24567:24567 (required for decentralized state sync)
-   Public 8080:8080 (required for collecting debug and telemetry information)
-   Local 3030:3030: (use public with you want the debug metrics to be available on the internet)
-   Local <dstack_agent_port>:8090: (required for access CVM information and container logs)
+6. Port mapping (format: `<host_address>:<host_port>` → `<vm_port>`):
+   Public 0.0.0.0:80 → 80 (main node to node communication port)
+   Public 0.0.0.0:24567 → 24567 (required for decentralized state sync)
+   Public 0.0.0.0:8080 → 8080 (required for collecting debug and telemetry information)
+   Local 127.0.0.1:3030 → 3030 (use a public host address if you want the debug metrics available on the internet)
+   Local 127.0.0.1:<dstack_agent_port> → 8090 (required for access CVM information and container logs)
+
+   The **host address** is the IP qemu binds each forward to. Single-node deployments use `0.0.0.0` to bind on every host interface. **Multi-node deployments** (mainnet + testnet on one host) use a specific public IP per CVM — see [Running multiple MPC nodes on one host](./running-multiple-mpc-nodes-on-one-host.md).
 
 7. Key Provider ID: (The MrEnclave for the sgx local key provider) 6b5ed02e549a1c30aaa8e3171a045f1f449b0017353ef595e78e39c348c98d01
 
