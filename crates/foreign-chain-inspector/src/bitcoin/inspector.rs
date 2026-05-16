@@ -10,13 +10,14 @@ use foreign_chain_rpc_interfaces::bitcoin::{
 const GET_RAW_TRANSACTION_METHOD: &str = "getrawtransaction";
 const VERBOSE_RESPONSE: bool = true;
 
+#[derive(Clone)]
 pub struct BitcoinInspector<Client> {
     client: Client,
 }
 
 impl<Client> ForeignChainInspector for BitcoinInspector<Client>
 where
-    Client: ClientT + Send,
+    Client: ClientT + Send + Sync,
 {
     type TransactionId = BitcoinTransactionHash;
     type Finality = BlockConfirmations;
@@ -62,7 +63,7 @@ where
 
 impl<Client> BitcoinInspector<Client>
 where
-    Client: ClientT + Send,
+    Client: ClientT + Send + Sync,
 {
     pub fn new(client: Client) -> Self {
         Self { client }

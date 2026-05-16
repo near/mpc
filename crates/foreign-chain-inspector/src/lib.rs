@@ -2,6 +2,7 @@ use derive_more::{Deref, Display, From};
 use ethereum_types::{H256, U64};
 use http::{HeaderMap, HeaderName, HeaderValue};
 use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
+use near_mpc_bounded_collections::NonEmptyVec;
 use thiserror::Error;
 
 pub use jsonrpsee::http_client;
@@ -27,7 +28,68 @@ pub trait ForeignChainInspector {
         tx_id: Self::TransactionId,
         finality: Self::Finality,
         extractors: Vec<Self::Extractor>,
-    ) -> impl Future<Output = Result<Vec<Self::ExtractedValue>, ForeignChainInspectionError>>;
+    ) -> impl Future<Output = Result<Vec<Self::ExtractedValue>, ForeignChainInspectionError>> + Send;
+}
+
+/// Combines multiple inspectors that target the same chain into a single inspector.
+///
+/// All inner inspectors are queried concurrently. The fan-out succeeds only if every
+/// inspector returns the same extracted values; any disagreement returns
+/// [`ForeignChainInspectionError::InspectorResponseMismatch`], and the first inner
+/// error encountered is propagated.
+#[derive(Clone, derive_more::Constructor)]
+pub struct FanOut<Inspector> {
+    inspectors: NonEmptyVec<Inspector>,
+}
+
+impl<Inspector> ForeignChainInspector for FanOut<Inspector>
+where
+    Inspector: ForeignChainInspector + Clone + Send + Sync + 'static,
+    Inspector::TransactionId: Clone + Send + 'static,
+    Inspector::Finality: Clone + Send + 'static,
+    Inspector::Extractor: Clone + Send + 'static,
+    Inspector::ExtractedValue: Send + 'static + PartialEq,
+{
+    type TransactionId = Inspector::TransactionId;
+    type Finality = Inspector::Finality;
+    type Extractor = Inspector::Extractor;
+    type ExtractedValue = Inspector::ExtractedValue;
+
+    async fn extract(
+        &self,
+        tx_id: Self::TransactionId,
+        finality: Self::Finality,
+        extractors: Vec<Self::Extractor>,
+    ) -> Result<Vec<Self::ExtractedValue>, ForeignChainInspectionError> {
+        let mut join_set = tokio::task::JoinSet::new();
+
+        for inspector in self.inspectors.iter() {
+            let tx_id = tx_id.clone();
+            let finality = finality.clone();
+            let extractors = extractors.clone();
+
+            let inspector = inspector.clone();
+            join_set.spawn(async move { inspector.extract(tx_id, finality, extractors).await });
+        }
+
+        let responses: Vec<Vec<Self::ExtractedValue>> = join_set
+            .join_all()
+            .await
+            .into_iter()
+            .collect::<Result<_, _>>()?;
+
+        let mut iter = responses.into_iter();
+        let first = iter
+            .next()
+            .expect("inspectors is a `NonEmptyVec`, so there is at least one response");
+
+        for other in iter {
+            if other != first {
+                return Err(ForeignChainInspectionError::InspectorResponseMismatch);
+            }
+        }
+        Ok(first)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -82,6 +144,8 @@ pub enum ForeignChainInspectionError {
     LogIndexOutOfBounds,
     #[error("failed to borsh serialize log event")]
     EventLogFailedBorshSerialization(std::io::Error),
+    #[error("inspector clients returned mismatching extracted values")]
+    InspectorResponseMismatch,
 }
 
 /// Builds an HTTP client with the specified authentication method.

@@ -11,12 +11,15 @@ foreign-chain-rpc-interfaces = { workspace = true }
 http = { workspace = true }
 jsonrpsee = { workspace = true }
 mpc-primitives = { workspace = true }
+near-mpc-bounded-collections = { workspace = true }
 near-mpc-contract-interface = { workspace = true }
 thiserror = { workspace = true }
+tokio = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
 httpmock = { workspace = true }
+mockall = { workspace = true }
 rstest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

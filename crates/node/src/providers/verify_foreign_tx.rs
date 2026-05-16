@@ -16,7 +16,8 @@ use foreign_chain_inspector::http_client::HttpClient;
 use foreign_chain_inspector::hyperevm::inspector::HyperEvmInspector;
 use foreign_chain_inspector::polygon::inspector::PolygonInspector;
 use foreign_chain_inspector::starknet::inspector::StarknetInspector;
-use mpc_node_config::{ConfigFile, ForeignChainsConfig};
+use foreign_chain_inspector::FanOut;
+use mpc_node_config::{ConfigFile, ForeignChainConfig, ForeignChainsConfig};
 use near_mpc_contract_interface::types as dtos;
 use std::sync::Arc;
 use threshold_signatures::ecdsa::{KeygenOutput, Signature};
@@ -29,46 +30,43 @@ use threshold_signatures::ReconstructionLowerBound;
 /// Built once at startup so that request handling only needs to select an index
 /// instead of re-parsing config and constructing clients on every call.
 pub(crate) struct ForeignChainInspectors<Client> {
-    pub bitcoin: Vec<BitcoinInspector<Client>>,
-    pub abstract_chain: Vec<AbstractInspector<Client>>,
-    pub bnb: Vec<BnbInspector<Client>>,
-    pub starknet: Vec<StarknetInspector<Client>>,
-    pub base: Vec<BaseInspector<Client>>,
-    pub arbitrum: Vec<ArbitrumInspector<Client>>,
-    pub hyper_evm: Vec<HyperEvmInspector<Client>>,
-    pub polygon: Vec<PolygonInspector<Client>>,
+    pub bitcoin: Option<FanOut<BitcoinInspector<Client>>>,
+    pub abstract_chain: Option<FanOut<AbstractInspector<Client>>>,
+    pub bnb: Option<FanOut<BnbInspector<Client>>>,
+    pub starknet: Option<FanOut<StarknetInspector<Client>>>,
+    pub base: Option<FanOut<BaseInspector<Client>>>,
+    pub arbitrum: Option<FanOut<ArbitrumInspector<Client>>>,
+    pub hyper_evm: Option<FanOut<HyperEvmInspector<Client>>>,
+    pub polygon: Option<FanOut<PolygonInspector<Client>>>,
 }
 
 impl ForeignChainInspectors<HttpClient> {
     fn build(config: &ForeignChainsConfig) -> anyhow::Result<Self> {
-        // using a macro because the chain config and inspector types differ per chain
-        macro_rules! build_inspectors {
-            ($chain_config:expr, $Inspector:ident) => {
-                match $chain_config {
-                    Some(c) => c
-                        .providers
-                        .values()
-                        .map(|p| {
-                            let mut url = p.rpc_url.clone();
-                            let rpc_auth = auth_config_to_rpc_auth(p.auth.clone(), &mut url)?;
-                            let client = foreign_chain_inspector::build_http_client(url, rpc_auth)?;
-                            Ok($Inspector::new(client))
-                        })
-                        .collect::<anyhow::Result<Vec<_>>>()?,
-                    None => vec![],
-                }
+        fn build_fanout<I>(
+            chain_config: Option<&ForeignChainConfig>,
+            new_inspector: impl Fn(HttpClient) -> I,
+        ) -> anyhow::Result<Option<FanOut<I>>> {
+            let Some(c) = chain_config else {
+                return Ok(None);
             };
+            let inspectors = c.providers.try_map_to_vec(|_, p| {
+                let mut url = p.rpc_url.clone();
+                let rpc_auth = auth_config_to_rpc_auth(p.auth.clone(), &mut url)?;
+                let client = foreign_chain_inspector::build_http_client(url, rpc_auth)?;
+                Ok::<_, anyhow::Error>(new_inspector(client))
+            })?;
+            Ok(Some(FanOut::new(inspectors)))
         }
 
         Ok(Self {
-            bitcoin: build_inspectors!(&config.bitcoin, BitcoinInspector),
-            abstract_chain: build_inspectors!(&config.abstract_chain, AbstractInspector),
-            base: build_inspectors!(&config.base, BaseInspector),
-            bnb: build_inspectors!(&config.bnb, BnbInspector),
-            starknet: build_inspectors!(&config.starknet, StarknetInspector),
-            arbitrum: build_inspectors!(&config.arbitrum, ArbitrumInspector),
-            hyper_evm: build_inspectors!(&config.hyper_evm, HyperEvmInspector),
-            polygon: build_inspectors!(&config.polygon, PolygonInspector),
+            bitcoin: build_fanout(config.bitcoin.as_ref(), BitcoinInspector::new)?,
+            abstract_chain: build_fanout(config.abstract_chain.as_ref(), AbstractInspector::new)?,
+            base: build_fanout(config.base.as_ref(), BaseInspector::new)?,
+            bnb: build_fanout(config.bnb.as_ref(), BnbInspector::new)?,
+            starknet: build_fanout(config.starknet.as_ref(), StarknetInspector::new)?,
+            arbitrum: build_fanout(config.arbitrum.as_ref(), ArbitrumInspector::new)?,
+            hyper_evm: build_fanout(config.hyper_evm.as_ref(), HyperEvmInspector::new)?,
+            polygon: build_fanout(config.polygon.as_ref(), PolygonInspector::new)?,
         })
     }
 }

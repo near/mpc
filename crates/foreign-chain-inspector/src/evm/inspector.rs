@@ -20,10 +20,18 @@ const GET_BLOCK_BY_NUMBER_METHOD: &str = "eth_getBlockByNumber";
 /// different chains remain type-incompatible at the call site, while sharing the
 /// single [`EvmInspector`] implementation.
 pub trait EvmChain {
-    type BlockHash: From<[u8; 32]> + Into<[u8; 32]> + Clone + Debug + PartialEq + Eq + Hash;
-    type TransactionHash: From<[u8; 32]> + Into<[u8; 32]> + Clone + Debug + PartialEq + Eq + Hash;
+    type BlockHash: From<[u8; 32]> + Into<[u8; 32]> + Clone + Debug + PartialEq + Eq + Hash + Send;
+    type TransactionHash: From<[u8; 32]>
+        + Into<[u8; 32]>
+        + Clone
+        + Debug
+        + PartialEq
+        + Eq
+        + Hash
+        + Send;
 }
 
+#[derive(Clone)]
 pub struct EvmInspector<Client, Chain> {
     client: Client,
     _chain: std::marker::PhantomData<Chain>,
@@ -31,8 +39,8 @@ pub struct EvmInspector<Client, Chain> {
 
 impl<Client, Chain> ForeignChainInspector for EvmInspector<Client, Chain>
 where
-    Client: ClientT + Send,
-    Chain: EvmChain + Send,
+    Client: ClientT + Send + Sync,
+    Chain: EvmChain + Send + Sync,
 {
     type TransactionId = Chain::TransactionHash;
     type Finality = EthereumFinality;
@@ -79,7 +87,7 @@ where
 
 impl<Client, Chain> EvmInspector<Client, Chain>
 where
-    Client: ClientT + Send,
+    Client: ClientT + Send + Sync,
     Chain: EvmChain,
 {
     pub fn new(client: Client) -> Self {
