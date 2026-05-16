@@ -659,11 +659,19 @@ url = "https://pccs.phala.network/"
 [[mpc_node_config.pccs_endpoints]]
 url = "https://api.trustedservices.intel.com/"
 
+# NEAR node bootstrap. Applied on first init only — see the field notes below.
+[mpc_node_config.near_init]
+chain_id = "$CHAIN_ID"            # "testnet" or "mainnet"
+boot_nodes = "$BOOT_NODES"        # comma-separated; see the curl snippet below
+# tier3_public_addr = "$IP:24567"
+# external_storage_fallback_threshold = 0
+
 [mpc_node_config.node]
 my_near_account_id = "$MY_MPC_NEAR_ACCOUNT_ID"
-mpc_contract_id = "$CONTRACT_ID"  # v1.signer-prod.testnet for Testnet or v1.signer for Mainnet
-near_rpc = "https://rpc.testnet.near.org"
-near_boot_nodes = "$BOOT_NODES"
+migration_web_ui = "0.0.0.0:8079"  # required; matches the port-forward above
+
+[mpc_node_config.node.indexer]
+mpc_contract_id = "$CONTRACT_ID"  # v1.signer-prod.testnet for Testnet, v1.signer for Mainnet
 
 [mpc_node_config.secrets]
 secret_store_key_hex = "$SECRET_STORE_KEY"
@@ -673,15 +681,18 @@ format = "plain"
 filter = "mpc=debug,info"
 ```
 
+The snippet above shows only the fields you are likely to change. Required fields not shown (e.g. `near_responder_account_id`, `number_of_responder_keys`, `web_ui`, and the `indexer` / `triple` / `presignature` / `signature` / `ckd` blocks) are inherited from the [`user-config.toml`](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/user-config.toml) template — always start from that file and edit the highlighted fields rather than building a config from this snippet alone.
+
 Adjust the variables as per your environment.
 
-\* \`image_reference\` — the Docker image reference. The actual image version is determined by the manifest digest from the contract (stored in the approved hashes file), not by a tag. A tag may be appended for readability (e.g., `"nearone/mpc-node:3.8.1"`) but is ignored during pull.
+* `image_reference` — the Docker image reference. The actual image version is determined by the manifest digest from the contract (stored in the approved hashes file), not by a tag. A tag may be appended for readability (e.g., `"nearone/mpc-node:3.8.1"`) but is ignored during pull.
 * `my_near_account_id` — use the NEAR account ID created in the previous step
 * `mpc_contract_id` — **v1.signer-prod.testnet** for testnet, **v1.signer** for mainnet
-* `port_mappings` — port forwarding rules for the MPC container. These should be a subset of the port forwarding for the CVM defined in [Port Mapping](#using-the-web-interface)
-* `tier3_public_addr` *(optional)* — `IP:24567` the node advertises for Tier3 state-sync responses. Applied at first init only; changing later requires a CVM redeploy via the [Node Migration](./node-migration-guide.md) flow.
-* `external_storage_fallback_threshold` *(optional)* — DSS attempts per state part before falling back to the external storage bucket. `0` = bucket-only. Same first-init-only constraint as `tier3_public_addr`.
-* A fresh set of boot nodes can be selected using Testnet/Mainnet RPC endpoints. Copy at least 4-5 nodes from curl results into `near_boot_nodes`.
+* `migration_web_ui` — bind address for the migration HTTP endpoint, used by the [Node Migration](./node-migration-guide.md) flow. Required. Keep at `0.0.0.0:8079` to match the port-forward and the `--mpc-node-address …:8079` form the migration guide uses.
+* `port_mappings` — port forwarding rules for the MPC container. These should be a subset of the port forwarding for the CVM defined in the [Using the Web Interface](#using-the-web-interface) section.
+* `tier3_public_addr` *(optional, under `[mpc_node_config.near_init]`)* — `IP:24567` the node advertises for Tier3 state-sync responses. Applied at first init only; changing later requires a CVM redeploy via the [Node Migration](./node-migration-guide.md) flow.
+* `external_storage_fallback_threshold` *(optional, under `[mpc_node_config.near_init]`)* — DSS attempts per state part before falling back to the external storage bucket. `0` = bucket-only. Same first-init-only constraint as `tier3_public_addr`.
+* A fresh set of boot nodes can be selected using Testnet/Mainnet RPC endpoints. Copy at least 4-5 nodes from curl results into `boot_nodes`.
   **Important:** Boot nodes must not contain duplicate addresses or peer IDs. Duplicates will cause the node to crash on startup. The command below deduplicates automatically:
 
 ```bash
@@ -818,12 +829,13 @@ Use the following custom settings for MPC:
     vCPU number=8 , Memory \= 64GB, disk \= 500 GB
 3. Pre script \- empty.
 4. user-config \- provided above
-5. KMS=disable, Local Keyprovier=enabled, Tproxy=disable, public logs=enabled,public sysinfo=enabled,pin NUMA=disabled
+5. KMS=disable, Local Keyprovider=enabled, Tproxy=disable, public logs=enabled, public sysinfo=enabled, pin NUMA=disabled
 6. Port mapping: (taken from the list above)
    Public 80:80 (main node to node communication port)
    Public 24567:24567 (required for decentralized state sync)
    Public 8080:8080 (required for collecting debug and telemetry information)
-   Local 3030:3030: (use public with you want the debug metrics to be available on the internet)
+   Public 8079:8079 (required for the node-migration HTTP endpoint)
+   Local 3030:3030: (use public if you want the debug metrics to be available on the internet)
    Local <dstack_agent_port>:8090: (required for access CVM information and container logs)
 
 7. Key Provider ID: (The MrEnclave for the sgx local key provider) 6b5ed02e549a1c30aaa8e3171a045f1f449b0017353ef595e78e39c348c98d01
@@ -1622,7 +1634,7 @@ export VMM_URL=http://127.0.0.1:11100 # change to your port
 export VMM_CLI_PATH="meta-dstack/dstack/vmm/src/vmm-cli.py" # change to your meta-dstack location
 ```
 
-Then you can use `$VMM_CLI` for all commands:
+Then you can use `$VMM_CLI_PATH` and `$VMM_URL` for all commands:
 
 ```bash
 # 1. Enumerate and find your VM ID
@@ -1644,16 +1656,16 @@ If not done in the previous step, stop and start the CVM.
 
 The new MPC docker binary should be automatically pulled from docker hub, verified and launched, and a remote attestation will be sent to the contract.
 
-You can see in the MPC node's logs (TBD) [#910](https://github.com/near/mpc/issues/910)that the image was updated, and that node has synced again. (TBD, [#910](https://github.com/near/mpc/issues/910) add logs).
+You can see in the MPC node's logs that the image was updated, and that the node has synced again. **TBD — sample logs to be added; tracked in [#910](https://github.com/near/mpc/issues/910).**
 
-## Trouble shooting
+## Troubleshooting
 
 TBD [#912](https://github.com/near/mpc/issues/912)
-Reviewers \- please add here more scenarios (with or without solutions)
+Reviewers — please add here more scenarios (with or without solutions)
 
 * do we have logs that indicate the node version/hash?
 * How to see what MPC node hash is expected by the launcher (docker-compose v.s file on disk)
-* Recovery \- how to erase the indexer state (e.g data folder)
+* Recovery — how to erase the indexer state (e.g data folder)
 * …..
 
 ## Transition phase {#transition-phase}

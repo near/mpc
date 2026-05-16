@@ -61,7 +61,7 @@ my_near_account_id = "test_image.near"
 near_responder_account_id = "test_image.near"
 number_of_responder_keys = 1
 web_ui = "0.0.0.0:8080"
-migration_web_ui = "0.0.0.0:8078"
+migration_web_ui = "0.0.0.0:8079"
 cores = 4
 
 [mpc_node_config.node.indexer]

@@ -13,7 +13,7 @@ In non-TEE mode:
 - No dstack socket or attestation is used
 - RTMR extensions are skipped
 - Image hash validation and upgrade logic remain unchanged
-- The MPC container is launched with DSTACK_ENDPOINT set to dstack.sock
+- The MPC container is launched **without** `DSTACK_ENDPOINT` and without the dstack socket mount
 
 This provides maximum parity with production while keeping the setup simple.
 
@@ -101,10 +101,6 @@ Example:
 ```bash
 docker inspect mpc-node
 ```
-
----
-
-
 
 ---
 
