@@ -190,6 +190,34 @@ async fn fetch_debug_migration_info(
     Ok(info)
 }
 
+/// Poll a node's `/debug/migrations` endpoint with `INDEXER_SYNC_TIMEOUT`,
+/// re-running `check` against the typed `ContractMigrationInfo` until it
+/// returns `Ok` (or the timeout elapses). `description` is interpolated
+/// into the timeout error.
+async fn wait_for_debug_migration<F>(
+    web_addr: &str,
+    description: &str,
+    check: F,
+) -> anyhow::Result<()>
+where
+    F: Fn(&ContractMigrationInfo) -> anyhow::Result<()>,
+{
+    let http_client = reqwest::Client::new();
+    (|| async {
+        let info = fetch_debug_migration_info(&http_client, web_addr).await?;
+        check(&info)
+    })
+    .retry(
+        ConstantBuilder::default()
+            .with_delay(common::POLL_INTERVAL)
+            .with_max_times(
+                (INDEXER_SYNC_TIMEOUT.as_millis() / common::POLL_INTERVAL.as_millis()) as usize,
+            ),
+    )
+    .await
+    .with_context(|| format!("timed out waiting for {description}"))
+}
+
 fn running_state_matches_participant_key(
     state: &ProtocolContractState,
     account_id: &str,
@@ -261,28 +289,22 @@ async fn register_backup_service_and_wait(
     let source_account: AccountId = source_account_id
         .parse()
         .with_context(|| format!("invalid source account id: {source_account_id}"))?;
-    let http_client = reqwest::Client::new();
-    (|| async {
-        let info = fetch_debug_migration_info(&http_client, &source_web_addr).await?;
-        let actual = info
-            .get(&source_account)
-            .and_then(|(backup, _)| backup.as_ref())
-            .map(|b| &b.public_key);
-        anyhow::ensure!(
-            actual == Some(&backup_public_key),
-            "source debug endpoint backup_service_info.public_key={actual:?}, expected {backup_public_key:?}"
-        );
-        Ok(())
-    })
-    .retry(
-        ConstantBuilder::default()
-            .with_delay(common::POLL_INTERVAL)
-            .with_max_times(
-                (INDEXER_SYNC_TIMEOUT.as_millis() / common::POLL_INTERVAL.as_millis()) as usize,
-            ),
+    wait_for_debug_migration(
+        &source_web_addr,
+        "source node debug endpoint to show backup registration",
+        |info| {
+            let actual = info
+                .get(&source_account)
+                .and_then(|(backup, _)| backup.as_ref())
+                .map(|b| &b.public_key);
+            anyhow::ensure!(
+                actual == Some(&backup_public_key),
+                "source debug endpoint backup_service_info.public_key={actual:?}, expected {backup_public_key:?}"
+            );
+            Ok(())
+        },
     )
-    .await
-    .context("timed out waiting for node debug endpoint to show backup registration")?;
+    .await?;
 
     Ok(())
 }
@@ -367,6 +389,17 @@ async fn start_migration_and_wait(
     // `MigrationInfo.active_migration` flips mid-PUT, fires the
     // migration web-server's per-connection cancellation token, and
     // tears down the in-flight TLS stream.
+    //
+    // Note: we check destination_node_info.tls_public_key because it's
+    // populated by indexing the same start_node_migration block that
+    // flips active_migration to true.
+    //
+    // There's still a residual race window between this confirmation and
+    // PUT keyshares completing: any other migration-info-affecting block
+    // landing in that window would re-fire the cancellation token. This
+    // test only runs one migration at a time, so the assumption holds —
+    // but if it's ever extended to run alongside other migration activity,
+    // this assumption breaks silently.
     let target_web_addr = match &cluster.nodes[target_idx] {
         MpcNodeState::Running(n) => n.web_address(),
         _ => bail!("target node not running"),
@@ -374,28 +407,22 @@ async fn start_migration_and_wait(
     let source_account: AccountId = source_account_id
         .parse()
         .with_context(|| format!("invalid source account id: {source_account_id}"))?;
-    let http_client = reqwest::Client::new();
-    (|| async {
-        let info = fetch_debug_migration_info(&http_client, &target_web_addr).await?;
-        let actual = info
-            .get(&source_account)
-            .and_then(|(_, destination)| destination.as_ref())
-            .map(|d| &d.destination_node_info.tls_public_key);
-        anyhow::ensure!(
-            actual == Some(&target_p2p_key),
-            "target debug endpoint destination_node_info.tls_public_key={actual:?}, expected {target_p2p_key:?}"
-        );
-        Ok(())
-    })
-    .retry(
-        ConstantBuilder::default()
-            .with_delay(common::POLL_INTERVAL)
-            .with_max_times(
-                (INDEXER_SYNC_TIMEOUT.as_millis() / common::POLL_INTERVAL.as_millis()) as usize,
-            ),
+    wait_for_debug_migration(
+        &target_web_addr,
+        "target node to index node migration",
+        |info| {
+            let actual = info
+                .get(&source_account)
+                .and_then(|(_, destination)| destination.as_ref())
+                .map(|d| &d.destination_node_info.tls_public_key);
+            anyhow::ensure!(
+                actual == Some(&target_p2p_key),
+                "target debug endpoint destination_node_info.tls_public_key={actual:?}, expected {target_p2p_key:?}"
+            );
+            Ok(())
+        },
     )
-    .await
-    .context("timed out waiting for target node to index node migration")?;
+    .await?;
 
     Ok(())
 }
