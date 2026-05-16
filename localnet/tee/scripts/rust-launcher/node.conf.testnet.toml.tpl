@@ -33,6 +33,9 @@ web_ui = "0.0.0.0:8080"
 migration_web_ui = "0.0.0.0:8078"
 cores = 4
 
+# NOTE: no `port_override` here. The single-host testnet flow uses per-node
+# future ports (13001+i) for n2n traffic instead of the production convention
+# of advertising port 80 (see deployment/testnet/frodo.toml).
 [mpc_node_config.node.indexer]
 validate_genesis = false
 sync_mode = "Latest"
