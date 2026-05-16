@@ -1,0 +1,19 @@
+[package]
+name = "tee-verifier-interface"
+version = { workspace = true }
+license = { workspace = true }
+edition = { workspace = true }
+repository = "https://github.com/near/mpc"
+
+[features]
+borsh-schema = ["borsh/unstable__schema"]
+
+[dependencies]
+borsh = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+rstest = { workspace = true }
+
+[lints]
+workspace = true
