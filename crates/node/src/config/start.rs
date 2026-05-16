@@ -172,14 +172,14 @@ fn apply_near_config_patches(
 
     // Override listen addresses when running multiple nodes on one machine.
     if let Some(rpc_addr) = &near_init.rpc_addr {
-        config["rpc"]["addr"] = serde_json::Value::String(rpc_addr.clone());
+        config["rpc"]["addr"] = serde_json::Value::String(rpc_addr.to_string());
     }
     if let Some(network_addr) = &near_init.network_addr {
-        config["network"]["addr"] = serde_json::Value::String(network_addr.clone());
+        config["network"]["addr"] = serde_json::Value::String(network_addr.to_string());
     }
     if let Some(tier3) = &near_init.tier3_public_addr {
         config["network"]["experimental"]["tier3_public_addr"] =
-            serde_json::Value::String(tier3.clone());
+            serde_json::Value::String(tier3.to_string());
     }
 }
 
@@ -252,8 +252,8 @@ mod tests {
         // Given
         let mut config = empty_config_json();
         let mut init = near_init(ChainId::Testnet);
-        init.network_addr = Some("51.68.219.13:24567".to_string());
-        init.rpc_addr = Some("0.0.0.0:13030".to_string());
+        init.network_addr = Some("51.68.219.13:24567".parse().unwrap());
+        init.rpc_addr = Some("0.0.0.0:13030".parse().unwrap());
 
         // When
         apply_near_config_patches(&mut config, &init, "v1.signer-prod.testnet");
@@ -338,7 +338,7 @@ mod tests {
         // Given
         let mut config = empty_config_json();
         let mut init = near_init(ChainId::Testnet);
-        init.tier3_public_addr = Some("46.105.87.136:24567".to_string());
+        init.tier3_public_addr = Some("46.105.87.136:24567".parse().unwrap());
 
         // When
         apply_near_config_patches(&mut config, &init, "v1.signer-prod.testnet");

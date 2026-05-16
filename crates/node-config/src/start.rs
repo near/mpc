@@ -4,6 +4,7 @@ use clap::ValueEnum;
 use launcher_interface::types::PccsEndpointConfig;
 use near_mpc_bounded_collections::NonEmptyVec;
 use serde::{Deserialize, Serialize};
+use std::net::SocketAddr;
 use std::path::PathBuf;
 
 /// Configuration for starting the MPC node. This is the canonical type used
@@ -104,16 +105,16 @@ pub struct NearInitConfig {
     pub download_genesis_records_url: Option<String>,
     /// Override the NEAR node RPC listen address (e.g. "0.0.0.0:3031").
     /// Useful when running multiple nodes on the same machine.
-    pub rpc_addr: Option<String>,
+    pub rpc_addr: Option<SocketAddr>,
     /// Override the NEAR node network (indexer) listen address (e.g. "0.0.0.0:24568").
     /// Useful when running multiple nodes on the same machine.
-    pub network_addr: Option<String>,
+    pub network_addr: Option<SocketAddr>,
     /// Override the public address advertised for Tier3 state-sync responses
     /// (e.g. "203.0.113.5:24567"). Required on multi-IP hosts where outbound
     /// source IP differs from the bound IP — auto-discovery picks the
     /// outbound IP and DSS times out. Patches into nearcore's
     /// `network.experimental.tier3_public_addr` config field.
-    pub tier3_public_addr: Option<String>,
+    pub tier3_public_addr: Option<SocketAddr>,
     /// Override how many P2P (DSS) state-sync attempts to make before falling
     /// back to the external storage bucket. `0` (current default) means
     /// "go straight to bucket, never use DSS." A moderate value enables
@@ -323,5 +324,91 @@ mod tests {
             tls: None,
         }];
         assert_eq!(entries, expected);
+    }
+
+    /// Helper: parse `NearInitConfig` from a TOML fragment that only sets
+    /// `chain_id` and the field under test. Reduces noise in the address
+    /// validation tests.
+    fn parse_near_init_with_addr_field(field: &str, value: &str) -> Result<NearInitConfig, String> {
+        let toml_input =
+            format!("chain_id = \"testnet\"\ndownload_genesis = false\n{field} = \"{value}\"\n");
+        toml::from_str(&toml_input).map_err(|e| e.to_string())
+    }
+
+    #[test]
+    fn near_init_config__should_accept_valid_rpc_addr() {
+        // Given a syntactically valid socket address
+        // When
+        let parsed = parse_near_init_with_addr_field("rpc_addr", "0.0.0.0:3031");
+
+        // Then
+        let parsed = parsed.expect("expected valid rpc_addr to parse");
+        assert_eq!(parsed.rpc_addr, Some("0.0.0.0:3031".parse().unwrap()));
+    }
+
+    #[test]
+    fn near_init_config__should_accept_valid_network_addr() {
+        // Given
+        let parsed = parse_near_init_with_addr_field("network_addr", "51.68.219.13:24567");
+
+        // Then
+        let parsed = parsed.expect("expected valid network_addr to parse");
+        assert_eq!(
+            parsed.network_addr,
+            Some("51.68.219.13:24567".parse().unwrap())
+        );
+    }
+
+    #[test]
+    fn near_init_config__should_accept_valid_tier3_public_addr() {
+        // Given
+        let parsed = parse_near_init_with_addr_field("tier3_public_addr", "203.0.113.5:24567");
+
+        // Then
+        let parsed = parsed.expect("expected valid tier3_public_addr to parse");
+        assert_eq!(
+            parsed.tier3_public_addr,
+            Some("203.0.113.5:24567".parse().unwrap())
+        );
+    }
+
+    #[test]
+    fn near_init_config__should_reject_addr_without_port() {
+        // Given — common typo: IP only, no port
+        let result = parse_near_init_with_addr_field("tier3_public_addr", "203.0.113.5");
+
+        // Then — error should name the offending field
+        let err = result.expect_err("expected parse to fail on missing port");
+        assert!(
+            err.contains("tier3_public_addr"),
+            "error should name the offending field, got: {err}"
+        );
+    }
+
+    #[test]
+    fn near_init_config__should_reject_addr_with_non_numeric_port() {
+        // Given
+        let result = parse_near_init_with_addr_field("rpc_addr", "0.0.0.0:notaport");
+
+        // Then
+        let err = result.expect_err("expected parse to fail on non-numeric port");
+        assert!(
+            err.contains("rpc_addr"),
+            "error should name the offending field, got: {err}"
+        );
+    }
+
+    #[test]
+    fn near_init_config__should_accept_missing_optional_addr_fields() {
+        // Given — none of the optional address fields set
+        let toml_input = "chain_id = \"testnet\"\ndownload_genesis = false\n";
+
+        // When
+        let parsed: NearInitConfig = toml::from_str(toml_input).expect("expected default to parse");
+
+        // Then — all three address fields default to None
+        assert_eq!(parsed.rpc_addr, None);
+        assert_eq!(parsed.network_addr, None);
+        assert_eq!(parsed.tier3_public_addr, None);
     }
 }
