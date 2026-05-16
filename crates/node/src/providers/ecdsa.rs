@@ -23,6 +23,7 @@ use mpc_node_config::ConfigFile;
 use crate::types::SignatureId;
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_primitives::domain::DomainId;
+use near_mpc_contract_interface::types::ReconstructionThreshold;
 use near_time::Clock;
 use std::sync::Arc;
 use threshold_signatures::ecdsa::KeygenOutput;
@@ -44,6 +45,7 @@ pub struct EcdsaSignatureProvider {
 pub(super) struct PerDomainData {
     pub keyshare: KeygenOutput,
     pub presignature_store: Arc<PresignatureStorage>,
+    pub reconstruction_threshold: ReconstructionThreshold,
 }
 
 impl EcdsaSignatureProvider {
@@ -54,7 +56,7 @@ impl EcdsaSignatureProvider {
         clock: Clock,
         db: Arc<SecretDB>,
         sign_request_store: Arc<SignRequestStorage>,
-        keyshares: HashMap<DomainId, KeygenOutput>,
+        keyshares: HashMap<DomainId, (KeygenOutput, ReconstructionThreshold)>,
     ) -> anyhow::Result<Self> {
         let active_participants_query = {
             let network_client = client.clone();
@@ -69,7 +71,7 @@ impl EcdsaSignatureProvider {
         )?);
 
         let mut per_domain_data = HashMap::new();
-        for (domain_id, keyshare) in keyshares {
+        for (domain_id, (keyshare, reconstruction_threshold)) in keyshares {
             let presignature_store = Arc::new(PresignatureStorage::new(
                 clock.clone(),
                 db.clone(),
@@ -82,6 +84,7 @@ impl EcdsaSignatureProvider {
                 PerDomainData {
                     keyshare,
                     presignature_store,
+                    reconstruction_threshold,
                 },
             );
         }
@@ -232,8 +235,19 @@ impl SignatureProvider for EcdsaSignatureProvider {
     }
 
     async fn spawn_background_tasks(self: Arc<Self>) -> anyhow::Result<()> {
-        let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
-        let threshold = ReconstructionLowerBound::from(threshold);
+        // Triples are shared across all CaitSith domains, so the contract is
+        // expected to keep their `reconstruction_threshold`s aligned (all
+        // CaitSith domains use the same `t`). We pick any one as the source —
+        // a future per-domain triple pool would relax this. With no CaitSith
+        // keyshares yet, there's nothing to presign for, so the value of
+        // `triple_threshold` is irrelevant.
+        let triple_threshold = self
+            .per_domain_data
+            .values()
+            .next()
+            .map(|d| d.reconstruction_threshold.inner())
+            .unwrap_or(self.mpc_config.participants.threshold);
+        let triple_threshold = ReconstructionLowerBound::from(usize::try_from(triple_threshold)?);
 
         let generate_triples = tracking::spawn(
             "generate triples",
@@ -242,7 +256,7 @@ impl SignatureProvider for EcdsaSignatureProvider {
                 self.mpc_config.clone(),
                 self.config.triple.clone().into(),
                 self.triple_store.clone(),
-                threshold,
+                triple_threshold,
             ),
         );
 
@@ -250,7 +264,10 @@ impl SignatureProvider for EcdsaSignatureProvider {
             .per_domain_data
             .iter()
             .map(|(domain_id, data)| {
-                tracking::spawn(
+                let threshold = ReconstructionLowerBound::from(usize::try_from(
+                    data.reconstruction_threshold.inner(),
+                )?);
+                Ok::<_, anyhow::Error>(tracking::spawn(
                     &format!("generate presignatures for domain {}", domain_id.0),
                     Self::run_background_presignature_generation(
                         self.client.clone(),
@@ -261,9 +278,9 @@ impl SignatureProvider for EcdsaSignatureProvider {
                         data.presignature_store.clone(),
                         data.keyshare.clone(),
                     ),
-                )
+                ))
             })
-            .collect::<Vec<_>>();
+            .collect::<anyhow::Result<Vec<_>>>()?;
 
         generate_triples.await?;
         for task in generate_presignatures {

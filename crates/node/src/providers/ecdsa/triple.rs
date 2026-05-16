@@ -192,9 +192,19 @@ impl EcdsaSignatureProvider {
                 "Unsupported batch size for triple generation"
             ));
         }
-        let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
+        // CaitSith domains share the triple pool, so they must agree on `t`.
+        // Pick any one's `reconstruction_threshold`; with no CaitSith keys
+        // present we couldn't have been asked to participate in triple gen.
+        let triple_threshold = self
+            .per_domain_data
+            .values()
+            .next()
+            .map(|d| d.reconstruction_threshold.inner())
+            .ok_or_else(|| {
+                anyhow::anyhow!("Triple generation requested but no CaitSith keyshares present")
+            })?;
         FollowerManyTripleGenerationComputation::<SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE> {
-            threshold: ReconstructionLowerBound::from(threshold),
+            threshold: ReconstructionLowerBound::from(usize::try_from(triple_threshold)?),
             out_triple_id_start: start,
             out_triple_store: self.triple_store.clone(),
         }

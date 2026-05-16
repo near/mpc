@@ -29,8 +29,10 @@ impl CKDProvider {
     ) -> anyhow::Result<((ElementG1, ElementG1), VerifyingKey)> {
         let ckd_request = self.ckd_request_store.get(id).await?;
 
-        let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
-        let threshold = ReconstructionLowerBound::from(threshold);
+        let domain_data = self.domain_data(ckd_request.domain_id)?;
+        let threshold = ReconstructionLowerBound::from(usize::try_from(
+            domain_data.reconstruction_threshold.inner(),
+        )?);
         let running_participants: Vec<_> = self
             .mpc_config
             .participants
@@ -51,10 +53,7 @@ impl CKDProvider {
             .client
             .new_channel_for_task(CKDTaskId::Ckd { id }, participants)?;
 
-        let Some(keygen_output) = self.keyshares.get(&ckd_request.domain_id).cloned() else {
-            anyhow::bail!("No keyshare for domain {:?}", ckd_request.domain_id);
-        };
-
+        let keygen_output = domain_data.keyshare.clone();
         let public_key = keygen_output.public_key;
         let participants = channel.participants().to_vec();
         let result = CKDComputation {
@@ -95,12 +94,10 @@ impl CKDProvider {
         .await??;
         metrics::MPC_NUM_PASSIVE_CKD_REQUESTS_LOOKUP_SUCCEEDED.inc();
 
-        let Some(keygen_output) = self.keyshares.get(&ckd_request.domain_id) else {
-            anyhow::bail!("No keyshare for domain {:?}", ckd_request.domain_id);
-        };
+        let domain_data = self.domain_data(ckd_request.domain_id)?;
         let participants = channel.participants().to_vec();
         CKDComputation {
-            keygen_output: keygen_output.clone(),
+            keygen_output: domain_data.keyshare.clone(),
             app_public_key: ckd_request.app_public_key,
             app_id: ckd_request.app_id,
         }

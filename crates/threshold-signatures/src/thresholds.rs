@@ -36,8 +36,22 @@ impl TryFrom<MaxMalicious> for ReconstructionLowerBound {
     }
 }
 
+/// Maximum tolerable malicious participants is `ReconstructionLowerBound - 1`.
+/// Errors when the lower bound is `0`, which would imply no honest reconstruction.
+impl TryFrom<ReconstructionLowerBound> for MaxMalicious {
+    type Error = ThresholdError;
+
+    fn try_from(lb: ReconstructionLowerBound) -> Result<Self, Self::Error> {
+        lb.0.checked_sub(1)
+            .map(Self)
+            .ok_or(ThresholdError::IntegerUnderflow)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum ThresholdError {
     #[error("integer overflow")]
     IntegerOverflow,
+    #[error("integer underflow")]
+    IntegerUnderflow,
 }

@@ -34,11 +34,11 @@ use futures::FutureExt;
 use mpc_node_config::ConfigFile;
 use mpc_primitives::domain::{Curve, DomainId, Protocol};
 use mpc_primitives::EpochId;
+use near_mpc_contract_interface::types::{DomainConfig, ReconstructionThreshold};
 use near_time::Clock;
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
-use threshold_signatures::ReconstructionLowerBound;
 use threshold_signatures::{confidential_key_derivation, ecdsa, frost::eddsa};
 use tokio::select;
 use tokio::sync::mpsc::unbounded_channel;
@@ -292,15 +292,12 @@ where
         let (sender, receiver) = new_tls_mesh_network(&mpc_config, p2p_key).await?;
         let (network_client, channel_receiver, _handle) =
             run_network_client(Arc::new(sender), Box::new(receiver));
-        let threshold: usize = mpc_config.participants.threshold.try_into()?;
-        let threshold = ReconstructionLowerBound::from(threshold);
         if mpc_config.is_leader_for_key_event() {
             keygen_leader(
                 network_client,
                 keyshare_storage,
                 key_event_receiver,
                 chain_txn_sender,
-                threshold,
             )
             .await?;
         } else {
@@ -309,7 +306,6 @@ where
                 keyshare_storage,
                 key_event_receiver,
                 chain_txn_sender,
-                threshold,
             )
             .await?;
         }
@@ -533,51 +529,59 @@ where
 
                 let mut ecdsa_keyshares: HashMap<
                     mpc_primitives::domain::DomainId,
-                    ecdsa::KeygenOutput,
+                    (ecdsa::KeygenOutput, ReconstructionThreshold),
                 > = HashMap::new();
                 let mut robust_ecdsa_keyshares: HashMap<
                     mpc_primitives::domain::DomainId,
-                    ecdsa::KeygenOutput,
+                    (ecdsa::KeygenOutput, ReconstructionThreshold),
                 > = HashMap::new();
                 let mut eddsa_keyshares: HashMap<
                     mpc_primitives::domain::DomainId,
-                    eddsa::KeygenOutput,
+                    (eddsa::KeygenOutput, ReconstructionThreshold),
                 > = HashMap::new();
                 let mut ckd_keyshares: HashMap<
                     mpc_primitives::domain::DomainId,
-                    confidential_key_derivation::KeygenOutput,
+                    (
+                        confidential_key_derivation::KeygenOutput,
+                        ReconstructionThreshold,
+                    ),
                 > = HashMap::new();
-                let domain_to_protocol: HashMap<DomainId, Protocol> = running_state
-                    .domains
+                let domain_index: HashMap<DomainId, &DomainConfig> =
+                    running_state.domains.iter().map(|d| (d.id, d)).collect();
+                let domain_to_protocol: HashMap<DomainId, Protocol> = domain_index
                     .iter()
-                    .map(|d| (d.id, d.protocol))
+                    .map(|(id, d)| (*id, d.protocol))
                     .collect();
 
                 for keyshare in keyshares {
                     let domain_id = keyshare.key_id.domain_id;
-                    let Some(protocol) = domain_to_protocol.get(&domain_id).copied() else {
+                    let Some(domain) = domain_index.get(&domain_id).copied() else {
                         anyhow::bail!(
                             "Keyshare references domain {domain_id:?} which is not in the contract registry",
                         );
                     };
+                    let protocol = domain.protocol;
+                    let reconstruction_threshold = domain.reconstruction_threshold;
                     let expected_curve = Curve::from(protocol);
                     match (expected_curve, keyshare.data) {
                         (Curve::Secp256k1, KeyshareData::Secp256k1(data)) => match protocol {
                             Protocol::CaitSith => {
-                                ecdsa_keyshares.insert(domain_id, data);
+                                ecdsa_keyshares
+                                    .insert(domain_id, (data, reconstruction_threshold));
                             }
                             Protocol::DamgardEtAl => {
-                                robust_ecdsa_keyshares.insert(domain_id, data);
+                                robust_ecdsa_keyshares
+                                    .insert(domain_id, (data, reconstruction_threshold));
                             }
                             other => anyhow::bail!(
                                 "Unexpected protocol {other:?} for Secp256k1 keyshare on domain {domain_id:?}",
                             ),
                         },
                         (Curve::Edwards25519, KeyshareData::Ed25519(data)) => {
-                            eddsa_keyshares.insert(domain_id, data);
+                            eddsa_keyshares.insert(domain_id, (data, reconstruction_threshold));
                         }
                         (Curve::Bls12381, KeyshareData::Bls12381(data)) => {
-                            ckd_keyshares.insert(domain_id, data);
+                            ckd_keyshares.insert(domain_id, (data, reconstruction_threshold));
                         }
                         (expected, data) => anyhow::bail!(
                             "Keyshare data does not match the domain protocol's expected curve: domain_id={:?}, protocol={:?}, expected_curve={:?}, data_kind={:?}",
@@ -718,12 +722,16 @@ where
             None
         };
 
-        let new_threshold: usize = mpc_config.participants.threshold.try_into()?;
+        let previous_domains: HashMap<DomainId, ReconstructionThreshold> = current_running_state
+            .domains
+            .iter()
+            .map(|d| (d.id, d.reconstruction_threshold))
+            .collect();
         let args = Arc::new(ResharingArgs {
             previous_keyset,
             existing_keyshares,
-            new_threshold: ReconstructionLowerBound::from(new_threshold),
             old_participants: current_running_state.participants,
+            previous_domains,
         });
 
         if mpc_config.is_leader_for_key_event() {
