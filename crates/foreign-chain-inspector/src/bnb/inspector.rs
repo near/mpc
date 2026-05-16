@@ -7,6 +7,7 @@ use crate::{
 pub struct Bnb;
 
 impl EvmChain for Bnb {
+    const NAME: &'static str = "BNB";
     type BlockHash = BnbBlockHash;
     type TransactionHash = BnbTransactionHash;
 }

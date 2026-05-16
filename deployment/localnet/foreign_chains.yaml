@@ -1,0 +1,396 @@
+# Foreign-chain RPC providers for localnet.
+#
+# All (chain, provider) combos below were probed once with the chain's
+# canonical RPC method (`eth_getTransactionReceipt` / `getrawtransaction` /
+# `starknet_getTransactionReceipt` / `getTransaction`) and returned a valid
+# non-null result.
+#
+# API keys are referenced via `{ env: <VAR_NAME> }`. Populate those vars
+# from deployment/localnet/.env before starting the node — e.g.
+#   set -a; source deployment/localnet/.env; set +a
+# The .env file is gitignored.
+#
+# Sample tx ids come from the manual rpc tests under
+# crates/foreign-chain-inspector/tests/*_rpc_manual.rs. Chains without a
+# manual-test sample (ethereum/starknet/solana) intentionally omit
+# `sample_tx_id`, so the startup probe will skip them — the provider URLs are
+# still used to serve real requests at runtime.
+#
+# URL patterns mirror docs/localnet/mpc-configs/config.yaml.template where
+# that file has an entry; ethereum/solana/hyper_evm follow the same per-
+# provider conventions extrapolated from the template's other chains.
+#
+# Providers excluded by configuration:
+#   - alchemy / helius              not available (phone / login)
+#   - chainstack / quicknode        node-specific URL not provided
+#   - getblock / onfinality         per-chain key, target chain not specified
+#
+# Provider+chain combos excluded by probe failure (and why):
+#   - ethereum / nownodes           HTTP 404 "you do not have access to this node"
+#   - bnb / blockdaemon             HTTP 404 "protocol not supported"
+#   - bnb / nownodes                HTTP 404 "no access"
+#   - base / nownodes               HTTP 404 "no access"
+#   - base / infura                 HTTP 200 result=null (sample tx not in Infura's Base archive — works for newer txs)
+#   - solana / ankr                 HTTP 403 "API key is not allowed to access blockchain"
+#   - solana / drpc                 dRPC free tier rejects `getTransaction` ("upgrade to paid tier")
+#   - starknet / drpc               dRPC free tier does not expose `starknet_getTransactionReceipt`
+#   - starknet / tatum              HTTP 404 (no Starknet endpoint on Tatum gateway)
+#   - base / drpc                   dRPC free tier flaps with HTTP 408 timeout on Base receipt queries
+#                                   (passed once, failed once on consecutive runs — too unreliable for the probe)
+
+foreign_chains:
+
+  bitcoin:
+    timeout_sec: 30
+    max_retries: 3
+    sample_tx_id: "58ee376171bcc4e2cc040c13848d420b5eaf2f634872055b0a08c1fc2ec6453c"
+    providers:
+      ankr:
+        rpc_url: "https://rpc.ankr.com/btc/{api_key}"
+        auth:
+          kind: path
+          placeholder: "{api_key}"
+          token:
+            env: ANKR_API_KEY
+      blockdaemon:
+        rpc_url: "https://svc.blockdaemon.com/bitcoin/mainnet/native"
+        auth:
+          kind: header
+          name: Authorization
+          scheme: Bearer
+          token:
+            env: BLOCKDAEMON_API_KEY
+      drpc:
+        rpc_url: "https://lb.drpc.org/ogrpc?network=bitcoin"
+        auth:
+          kind: query
+          name: dkey
+          token:
+            env: DRPC_API_KEY
+      nownodes:
+        rpc_url: "https://btc.nownodes.io/"
+        auth:
+          kind: header
+          name: api-key
+          token:
+            env: NOWNODES_API_KEY
+      tatum:
+        rpc_url: "https://bitcoin-mainnet.gateway.tatum.io/"
+        auth:
+          kind: header
+          name: x-api-key
+          token:
+            env: TATUM_API_KEY
+
+  ethereum:
+    timeout_sec: 30
+    max_retries: 3
+    # Recent finalized tx from block 0x17e9723 (25,073,955), picked via
+    # eth_getBlockByNumber("finalized") on Ankr.
+    sample_tx_id: "0x596b624cfd6ed5723cf60422a199d10f2b5be8c87c07db8e2643c259414d960a"
+    providers:
+      ankr:
+        rpc_url: "https://rpc.ankr.com/eth/{api_key}"
+        auth:
+          kind: path
+          placeholder: "{api_key}"
+          token:
+            env: ANKR_API_KEY
+      blockdaemon:
+        rpc_url: "https://svc.blockdaemon.com/ethereum/mainnet/native"
+        auth:
+          kind: header
+          name: Authorization
+          scheme: Bearer
+          token:
+            env: BLOCKDAEMON_API_KEY
+      blockpi:
+        rpc_url: "https://ethereum.blockpi.network/v1/rpc/{api_key}"
+        auth:
+          kind: path
+          placeholder: "{api_key}"
+          token:
+            env: BLOCKPI_API_KEY
+      drpc:
+        rpc_url: "https://lb.drpc.org/ogrpc?network=ethereum"
+        auth:
+          kind: query
+          name: dkey
+          token:
+            env: DRPC_API_KEY
+      dwellir:
+        rpc_url: "https://api-ethereum-mainnet.n.dwellir.com/{api_key}"
+        auth:
+          kind: path
+          placeholder: "{api_key}"
+          token:
+            env: DWELLIR_API_KEY
+      infura:
+        rpc_url: "https://mainnet.infura.io/v3/{api_key}"
+        auth:
+          kind: path
+          placeholder: "{api_key}"
+          token:
+            env: INFURA_API_KEY
+      tatum:
+        rpc_url: "https://ethereum-mainnet.gateway.tatum.io/"
+        auth:
+          kind: header
+          name: x-api-key
+          token:
+            env: TATUM_API_KEY
+
+  bnb:
+    timeout_sec: 30
+    max_retries: 3
+    sample_tx_id: "0x90514fff1563dc9876bc9a02a7b1d4dd2ce44b8d11ea0490aa8d427166eba349"
+    providers:
+      ankr:
+        rpc_url: "https://rpc.ankr.com/bsc/{api_key}"
+        auth:
+          kind: path
+          placeholder: "{api_key}"
+          token:
+            env: ANKR_API_KEY
+      drpc:
+        rpc_url: "https://lb.drpc.org/ogrpc?network=bsc"
+        auth:
+          kind: query
+          name: dkey
+          token:
+            env: DRPC_API_KEY
+      dwellir:
+        rpc_url: "https://api-bsc-mainnet-full.n.dwellir.com/{api_key}"
+        auth:
+          kind: path
+          placeholder: "{api_key}"
+          token:
+            env: DWELLIR_API_KEY
+      infura:
+        rpc_url: "https://bsc-mainnet.infura.io/v3/{api_key}"
+        auth:
+          kind: path
+          placeholder: "{api_key}"
+          token:
+            env: INFURA_API_KEY
+      tatum:
+        rpc_url: "https://bsc-mainnet.gateway.tatum.io/"
+        auth:
+          kind: header
+          name: x-api-key
+          token:
+            env: TATUM_API_KEY
+
+  polygon:
+    timeout_sec: 30
+    max_retries: 3
+    sample_tx_id: "0x7b231f0f5bf36782a48db9b1d89e4613bd00618f03c3c0fba922aa59288e4d38"
+    providers:
+      ankr:
+        rpc_url: "https://rpc.ankr.com/polygon/{api_key}"
+        auth:
+          kind: path
+          placeholder: "{api_key}"
+          token:
+            env: ANKR_API_KEY
+      blockdaemon:
+        rpc_url: "https://svc.blockdaemon.com/polygon/mainnet/native/http-rpc"
+        auth:
+          kind: header
+          name: Authorization
+          scheme: Bearer
+          token:
+            env: BLOCKDAEMON_API_KEY
+      drpc:
+        rpc_url: "https://lb.drpc.org/ogrpc?network=polygon"
+        auth:
+          kind: query
+          name: dkey
+          token:
+            env: DRPC_API_KEY
+      dwellir:
+        rpc_url: "https://api-polygon-mainnet-full.n.dwellir.com/{api_key}"
+        auth:
+          kind: path
+          placeholder: "{api_key}"
+          token:
+            env: DWELLIR_API_KEY
+      infura:
+        rpc_url: "https://polygon-mainnet.infura.io/v3/{api_key}"
+        auth:
+          kind: path
+          placeholder: "{api_key}"
+          token:
+            env: INFURA_API_KEY
+      nownodes:
+        rpc_url: "https://matic.nownodes.io/"
+        auth:
+          kind: header
+          name: api-key
+          token:
+            env: NOWNODES_API_KEY
+      tatum:
+        rpc_url: "https://polygon-mainnet.gateway.tatum.io/"
+        auth:
+          kind: header
+          name: x-api-key
+          token:
+            env: TATUM_API_KEY
+
+  arbitrum:
+    timeout_sec: 30
+    max_retries: 3
+    sample_tx_id: "0x8f1f497285dcf54624cba2c3dd46d13e25fc83466033c139e77e4dce12a1e484"
+    providers:
+      ankr:
+        rpc_url: "https://rpc.ankr.com/arbitrum/{api_key}"
+        auth:
+          kind: path
+          placeholder: "{api_key}"
+          token:
+            env: ANKR_API_KEY
+      blockdaemon:
+        rpc_url: "https://svc.blockdaemon.com/arbitrum/mainnet-one/native/http-rpc"
+        auth:
+          kind: header
+          name: Authorization
+          scheme: Bearer
+          token:
+            env: BLOCKDAEMON_API_KEY
+      drpc:
+        rpc_url: "https://lb.drpc.org/ogrpc?network=arbitrum"
+        auth:
+          kind: query
+          name: dkey
+          token:
+            env: DRPC_API_KEY
+      dwellir:
+        rpc_url: "https://api-arbitrum-mainnet-archive.n.dwellir.com/{api_key}"
+        auth:
+          kind: path
+          placeholder: "{api_key}"
+          token:
+            env: DWELLIR_API_KEY
+      infura:
+        rpc_url: "https://arbitrum-mainnet.infura.io/v3/{api_key}"
+        auth:
+          kind: path
+          placeholder: "{api_key}"
+          token:
+            env: INFURA_API_KEY
+      nownodes:
+        rpc_url: "https://arbitrum.nownodes.io/"
+        auth:
+          kind: header
+          name: api-key
+          token:
+            env: NOWNODES_API_KEY
+      tatum:
+        rpc_url: "https://arb-one-mainnet.gateway.tatum.io/"
+        auth:
+          kind: header
+          name: x-api-key
+          token:
+            env: TATUM_API_KEY
+
+  base:
+    timeout_sec: 30
+    max_retries: 3
+    sample_tx_id: "0xa11eaa1236e80f26ddc7aca164f2ba4c6c2726405cb12b1aa8f52c520bad99e1"
+    providers:
+      ankr:
+        rpc_url: "https://rpc.ankr.com/base/{api_key}"
+        auth:
+          kind: path
+          placeholder: "{api_key}"
+          token:
+            env: ANKR_API_KEY
+      blockdaemon:
+        rpc_url: "https://svc.blockdaemon.com/base/mainnet/native/http-rpc"
+        auth:
+          kind: header
+          name: Authorization
+          scheme: Bearer
+          token:
+            env: BLOCKDAEMON_API_KEY
+      dwellir:
+        rpc_url: "https://api-base-mainnet-archive.n.dwellir.com/{api_key}"
+        auth:
+          kind: path
+          placeholder: "{api_key}"
+          token:
+            env: DWELLIR_API_KEY
+      tatum:
+        rpc_url: "https://base-mainnet.gateway.tatum.io/"
+        auth:
+          kind: header
+          name: x-api-key
+          token:
+            env: TATUM_API_KEY
+
+  hyper_evm:
+    timeout_sec: 30
+    max_retries: 3
+    sample_tx_id: "0x4d94e2c9c33c533f125bd28a788e80ee24c108356e8fa8a7878f642cf94dcf4a"
+    providers:
+      drpc:
+        rpc_url: "https://lb.drpc.org/ogrpc?network=hyperliquid"
+        auth:
+          kind: query
+          name: dkey
+          token:
+            env: DRPC_API_KEY
+
+  solana:
+    timeout_sec: 30
+    max_retries: 3
+    # Recent finalized tx from slot 419089975, picked via getBlock on
+    # Blockdaemon. NOTE: Solana is not yet wired into foreign_chain_probe.rs,
+    # so this is documentation-only today — kept here so the value is on
+    # hand once a Solana probe branch lands.
+    sample_tx_id: "4KgPsECUGeSgtKmQ2P8YAF7LwsQ61YW3S5nAh8yWcBrBt2g9CjwLwjEH8cneHxugrvoiNSY7RTtEYp7zfWQUza6E"
+    providers:
+      blockdaemon:
+        rpc_url: "https://svc.blockdaemon.com/solana/mainnet/native"
+        auth:
+          kind: header
+          name: Authorization
+          scheme: Bearer
+          token:
+            env: BLOCKDAEMON_API_KEY
+      nownodes:
+        rpc_url: "https://sol.nownodes.io/"
+        auth:
+          kind: header
+          name: api-key
+          token:
+            env: NOWNODES_API_KEY
+      tatum:
+        rpc_url: "https://solana-mainnet.gateway.tatum.io/"
+        auth:
+          kind: header
+          name: x-api-key
+          token:
+            env: TATUM_API_KEY
+
+  starknet:
+    timeout_sec: 30
+    max_retries: 3
+    # Recent tx from block 9686011, picked via
+    # starknet_getBlockWithTxHashes("latest") on Infura.
+    sample_tx_id: "0x7a7645a2672354006c5209ce40d6060c3aa14d581ccdfd3825f5af73b3959c5"
+    providers:
+      dwellir:
+        rpc_url: "https://api-starknet-mainnet.n.dwellir.com/{api_key}"
+        auth:
+          kind: path
+          placeholder: "{api_key}"
+          token:
+            env: DWELLIR_API_KEY
+      infura:
+        rpc_url: "https://starknet-mainnet.infura.io/v3/{api_key}"
+        auth:
+          kind: path
+          placeholder: "{api_key}"
+          token:
+            env: INFURA_API_KEY

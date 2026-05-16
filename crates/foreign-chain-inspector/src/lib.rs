@@ -53,6 +53,32 @@ pub enum EthereumFinality {
     Latest,
 }
 
+/// Error returned by `probe_sample_tx` startup probes (see
+/// `docs/foreign-chain-transactions.md`). Probes intentionally surface only the failures an
+/// operator can fix: a malformed sample tx in config, or an RPC layer that can't fetch and
+/// decode it. Finality and extractor checks are not part of probing.
+#[derive(Error, Debug)]
+pub enum ProbeError {
+    #[error("sample tx id `{0}` is not a valid {1} transaction identifier")]
+    InvalidTxId(String, &'static str),
+    #[error("RPC call failed during sample tx probe")]
+    Rpc(#[from] jsonrpsee::core::client::error::Error),
+}
+
+/// Parses a 32-byte hex tx id with an optional `0x` prefix into a fixed-size array. Used by EVM
+/// and Starknet probes which share the same tx-hash shape but have distinct chain-name labels.
+pub(crate) fn parse_evm_style_tx_hash(
+    tx_id: &str,
+    chain_label: &'static str,
+) -> Result<[u8; 32], ProbeError> {
+    let hex_str = tx_id.strip_prefix("0x").unwrap_or(tx_id);
+    let bytes = hex::decode(hex_str)
+        .map_err(|_| ProbeError::InvalidTxId(tx_id.to_string(), chain_label))?;
+    bytes
+        .try_into()
+        .map_err(|_| ProbeError::InvalidTxId(tx_id.to_string(), chain_label))
+}
+
 #[derive(Error, Debug)]
 pub enum ForeignChainInspectionError {
     #[error("inner network client failed to fetch")]
@@ -108,4 +134,65 @@ pub fn build_http_client(
         .build(&base_url)?;
 
     Ok(client)
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::{ProbeError, parse_evm_style_tx_hash};
+    use assert_matches::assert_matches;
+
+    #[test]
+    fn parse_evm_style_tx_hash__should_accept_0x_prefixed_32_byte_hex() {
+        // Given
+        let tx_id = "0x1111111111111111111111111111111111111111111111111111111111111111";
+
+        // When
+        let parsed = parse_evm_style_tx_hash(tx_id, "Test").expect("should parse");
+
+        // Then
+        assert_eq!(parsed, [0x11u8; 32]);
+    }
+
+    #[test]
+    fn parse_evm_style_tx_hash__should_accept_unprefixed_32_byte_hex() {
+        // Given
+        let tx_id = "1111111111111111111111111111111111111111111111111111111111111111";
+
+        // When
+        let parsed = parse_evm_style_tx_hash(tx_id, "Test").expect("should parse");
+
+        // Then
+        assert_eq!(parsed, [0x11u8; 32]);
+    }
+
+    #[test]
+    fn parse_evm_style_tx_hash__should_reject_wrong_length() {
+        // Given a tx id that's only 31 bytes long
+        let tx_id = "0x11111111111111111111111111111111111111111111111111111111111111";
+
+        // When
+        let result = parse_evm_style_tx_hash(tx_id, "Test");
+
+        // Then
+        assert_matches!(
+            result,
+            Err(ProbeError::InvalidTxId(ref got, "Test")) if got == tx_id
+        );
+    }
+
+    #[test]
+    fn parse_evm_style_tx_hash__should_reject_non_hex_characters() {
+        // Given a hex string with non-hex characters
+        let tx_id = "0xZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ";
+
+        // When
+        let result = parse_evm_style_tx_hash(tx_id, "Test");
+
+        // Then
+        assert_matches!(
+            result,
+            Err(ProbeError::InvalidTxId(ref got, "Test")) if got == tx_id
+        );
+    }
 }

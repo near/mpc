@@ -7,6 +7,7 @@ use crate::{
 pub struct Base;
 
 impl EvmChain for Base {
+    const NAME: &'static str = "Base";
     type BlockHash = BaseBlockHash;
     type TransactionHash = BaseTransactionHash;
 }

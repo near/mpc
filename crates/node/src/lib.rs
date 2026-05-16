@@ -28,6 +28,7 @@ pub mod cli;
 pub mod config;
 mod coordinator;
 mod db;
+mod foreign_chain_probe;
 mod indexer;
 mod key_events;
 pub mod keyshare;

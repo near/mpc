@@ -1,5 +1,7 @@
 use crate::starknet::{StarknetExtractedValue, StarknetTransactionHash};
-use crate::{ForeignChainInspectionError, ForeignChainInspector};
+use crate::{
+    ForeignChainInspectionError, ForeignChainInspector, ProbeError, parse_evm_style_tx_hash,
+};
 use foreign_chain_rpc_interfaces::starknet::{
     GetTransactionReceiptArgs, GetTransactionReceiptResponse, H256, StarknetExecutionStatus,
     StarknetFinalityStatus,
@@ -73,6 +75,21 @@ where
 {
     pub fn new(client: Client) -> Self {
         Self { client }
+    }
+
+    /// Startup probe: fetch a configured sample transaction's receipt and verify the provider
+    /// returns a decodable response. Finality and extractors are intentionally not exercised —
+    /// see `docs/foreign-chain-transactions.md`.
+    pub async fn probe_sample_tx(&self, tx_id: &str) -> Result<(), ProbeError> {
+        let bytes = parse_evm_style_tx_hash(tx_id, "Starknet")?;
+        let args = GetTransactionReceiptArgs {
+            transaction_hash: H256(bytes),
+        };
+        let _: GetTransactionReceiptResponse = self
+            .client
+            .request(GET_TRANSACTION_RECEIPT_METHOD, &args)
+            .await?;
+        Ok(())
     }
 }
 

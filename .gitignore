@@ -22,6 +22,8 @@ result
 result-*
 
 .envrc
+.env
+**/.env
 
 # Agents
 .claude

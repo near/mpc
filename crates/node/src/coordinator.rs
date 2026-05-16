@@ -377,8 +377,15 @@ where
             return Ok(MpcJobResult::HaltUntilInterrupted);
         };
 
-        // Register locally supported foreign chains with the contract.
-        let foreign_chain_configuration = config_file.foreign_chains.configured_chains();
+        // Register locally supported foreign chains with the contract. Before registering, probe
+        // each (chain, provider) that has a configured `sample_tx_id` so misconfigured providers
+        // surface as a logged warning and the chain is excluded from this node's registered set
+        // (see docs/foreign-chain-transactions.md).
+        let chains_to_skip =
+            crate::foreign_chain_probe::chains_with_failed_probe(&config_file.foreign_chains).await;
+        let foreign_chain_configuration = config_file
+            .foreign_chains
+            .configured_chains_excluding(&chains_to_skip);
         if let Err(err) = chain_txn_sender
             .send(ChainSendTransactionRequest::RegisterForeignChainConfig(
                 ChainRegisterForeignChainConfigArgs {

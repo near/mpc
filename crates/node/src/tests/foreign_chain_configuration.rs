@@ -43,6 +43,7 @@ async fn foreign_chain_configuration_auto_registered_to_contract_on_startup__sho
         solana: Some(ForeignChainConfig {
             timeout_sec: NonZeroU64::new(30).unwrap(),
             max_retries: NonZeroU64::new(3).unwrap(),
+            sample_tx_id: None,
             providers,
         }),
         bitcoin: None,

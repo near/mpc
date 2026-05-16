@@ -7,6 +7,7 @@ use crate::{
 pub struct Arbitrum;
 
 impl EvmChain for Arbitrum {
+    const NAME: &'static str = "Arbitrum";
     type BlockHash = ArbitrumBlockHash;
     type TransactionHash = ArbitrumTransactionHash;
 }

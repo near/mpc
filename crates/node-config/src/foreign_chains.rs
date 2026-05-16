@@ -44,6 +44,11 @@ pub struct ForeignChainsConfig {
 pub struct ForeignChainConfig {
     pub timeout_sec: NonZeroU64,
     pub max_retries: NonZeroU64,
+    /// Optional well-known finalized transaction used to probe every configured provider on
+    /// startup. If set, each provider must successfully look up this transaction or the chain is
+    /// excluded from the on-chain registration. See `docs/foreign-chain-transactions.md`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sample_tx_id: Option<String>,
     pub providers: NonEmptyBTreeMap<RpcProviderName, ForeignChainProviderConfig>,
 }
 
@@ -87,8 +92,20 @@ impl ForeignChainsConfig {
 
     #[expect(deprecated, reason = "https://github.com/near/mpc/issues/3079")]
     pub fn configured_chains(&self) -> dtos::ForeignChainConfiguration {
+        self.configured_chains_excluding(&BTreeSet::new())
+    }
+
+    /// Same as [`Self::configured_chains`] but omits any chain in `exclude`. Used by the node's
+    /// startup probe to drop chains whose providers failed a sample-tx lookup so they aren't
+    /// registered with the contract this run.
+    #[expect(deprecated, reason = "https://github.com/near/mpc/issues/3079")]
+    pub fn configured_chains_excluding(
+        &self,
+        exclude: &BTreeSet<dtos::ForeignChain>,
+    ) -> dtos::ForeignChainConfiguration {
         self.all_configured_chains()
             .into_iter()
+            .filter(|(_, foreign_chain_identifier)| !exclude.contains(foreign_chain_identifier))
             .map(|(config, foreign_chain_identifier)| {
                 let rpc_providers =
                     config
@@ -154,6 +171,55 @@ impl ForeignChainsConfig {
 #[expect(non_snake_case)]
 mod tests {
     use crate::ConfigFile;
+
+    /// Localnet config template at `docs/localnet/mpc-configs/config.yaml.template`. Loaded with
+    /// `include_str!` so this test breaks at compile time if the template moves, and at runtime
+    /// if the template's contents stop parsing/validating against `ConfigFile`.
+    const LOCALNET_TEMPLATE: &str =
+        include_str!("../../../docs/localnet/mpc-configs/config.yaml.template");
+
+    /// Render the localnet template the way `scripts/launch-localnet.sh` does (envsubst on a
+    /// handful of placeholders), but keep the rest of the file (including foreign-chain provider
+    /// definitions) untouched.
+    fn render_localnet_template() -> String {
+        LOCALNET_TEMPLATE
+            .replace("$NEAR_ACCOUNT_NAME", "mpc-node-1.test.near")
+            .replace("$WEB_UI_PORT", "8081")
+            .replace("$MIGRATION_PORT", "9081")
+            .replace("$PPROF_PORT", "34001")
+    }
+
+    #[test]
+    fn localnet_template__should_parse_and_validate() {
+        // Given the checked-in localnet config template
+        let rendered = render_localnet_template();
+
+        // When parsed and validated as a node ConfigFile
+        let config: ConfigFile = serde_yaml::from_str(&rendered)
+            .expect("localnet template should deserialize into ConfigFile");
+        config
+            .validate()
+            .expect("localnet template should pass ConfigFile::validate()");
+
+        // Then every chain block we expect to exercise the probe is present and carries a
+        // sample_tx_id. Drift in the template (a chain removed, sample_tx_id deleted) should fail
+        // this test rather than silently disabling the probe.
+        let fc = &config.foreign_chains;
+        for (name, chain_cfg) in [
+            ("bitcoin", fc.bitcoin.as_ref()),
+            ("arbitrum", fc.arbitrum.as_ref()),
+            ("base", fc.base.as_ref()),
+            ("bnb", fc.bnb.as_ref()),
+            ("polygon", fc.polygon.as_ref()),
+            ("starknet", fc.starknet.as_ref()),
+        ] {
+            let cfg = chain_cfg.unwrap_or_else(|| panic!("{name} should be configured"));
+            assert!(
+                cfg.sample_tx_id.is_some(),
+                "{name} should carry a sample_tx_id so the startup probe is exercised"
+            );
+        }
+    }
 
     #[test]
     fn config_parsing__should_succeed_when_foreign_chains_are_unset() {
@@ -558,6 +624,128 @@ foreign_chains:
         );
         assert!(
             !configured.contains_key(&near_mpc_contract_interface::types::ForeignChain::Bitcoin)
+        );
+    }
+
+    #[test]
+    fn config_parsing__should_succeed_when_sample_tx_id_is_present() {
+        // Given
+        let yaml = r#"
+my_near_account_id: test.near
+near_responder_account_id: test.near
+number_of_responder_keys: 1
+web_ui:
+  host: localhost
+  port: 8080
+migration_web_ui:
+  host: localhost
+  port: 8081
+pprof_bind_address: 127.0.0.1:34001
+indexer:
+  validate_genesis: false
+  sync_mode: Latest
+  finality: optimistic
+  concurrency: 1
+  mpc_contract_id: mpc-contract.test.near
+triple:
+  concurrency: 1
+  desired_triples_to_buffer: 1
+  timeout_sec: 60
+  parallel_triple_generation_stagger_time_sec: 1
+presignature:
+  concurrency: 1
+  desired_presignatures_to_buffer: 1
+  timeout_sec: 60
+signature:
+  timeout_sec: 60
+ckd:
+  timeout_sec: 60
+foreign_chains:
+  bitcoin:
+    timeout_sec: 30
+    max_retries: 3
+    sample_tx_id: "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"
+    providers:
+      public:
+        rpc_url: "https://blockstream.info/api"
+        auth:
+          kind: none
+"#;
+
+        // When
+        let config: ConfigFile =
+            serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
+
+        // Then
+        config.validate().expect("config should be valid");
+        assert_eq!(
+            config
+                .foreign_chains
+                .bitcoin
+                .as_ref()
+                .and_then(|c| c.sample_tx_id.as_deref()),
+            Some("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        );
+    }
+
+    #[test]
+    fn config_parsing__should_succeed_when_sample_tx_id_is_absent() {
+        // Given
+        let yaml = r#"
+my_near_account_id: test.near
+near_responder_account_id: test.near
+number_of_responder_keys: 1
+web_ui:
+  host: localhost
+  port: 8080
+migration_web_ui:
+  host: localhost
+  port: 8081
+pprof_bind_address: 127.0.0.1:34001
+indexer:
+  validate_genesis: false
+  sync_mode: Latest
+  finality: optimistic
+  concurrency: 1
+  mpc_contract_id: mpc-contract.test.near
+triple:
+  concurrency: 1
+  desired_triples_to_buffer: 1
+  timeout_sec: 60
+  parallel_triple_generation_stagger_time_sec: 1
+presignature:
+  concurrency: 1
+  desired_presignatures_to_buffer: 1
+  timeout_sec: 60
+signature:
+  timeout_sec: 60
+ckd:
+  timeout_sec: 60
+foreign_chains:
+  bitcoin:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      public:
+        rpc_url: "https://blockstream.info/api"
+        auth:
+          kind: none
+"#;
+
+        // When
+        let config: ConfigFile =
+            serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
+
+        // Then
+        config.validate().expect("config should be valid");
+        assert!(
+            config
+                .foreign_chains
+                .bitcoin
+                .as_ref()
+                .expect("bitcoin should be configured")
+                .sample_tx_id
+                .is_none()
         );
     }
 

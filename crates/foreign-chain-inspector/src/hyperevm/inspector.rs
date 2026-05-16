@@ -7,6 +7,7 @@ use crate::{
 pub struct HyperEvm;
 
 impl EvmChain for HyperEvm {
+    const NAME: &'static str = "HyperEVM";
     type BlockHash = HyperEvmBlockHash;
     type TransactionHash = HyperEvmTransactionHash;
 }
