@@ -1416,6 +1416,8 @@ After voting has finished, the MPC node will detect the new approved manifest di
 
 Restart the CVM (see [CVM management](#cvm-management)). The launcher will pull the new image by manifest digest automatically, verify it, and re-attest to the contract.
 
+> You can see the image update and re-sync in the node logs — TBD [#910](https://github.com/near/mpc/issues/910).
+
 ## Launcher / CVM Upgrade
 
 Launcher or CVM upgrades are less frequent than MPC node upgrades. Unlike MPC node upgrades, changing the launcher image or OS measurements affects the sealing key derivation, which means existing encrypted key shares **cannot** be decrypted by the new CVM. This requires deploying a new CVM and migrating key shares from the old one.
