@@ -1148,7 +1148,7 @@ If the node’s key has not been added to the account, this operation will fail.
 
 #### Verifying the attestation was accepted
 
-The MPC node emits no success line for a successful submission — confirm it on-chain instead.
+The MPC node emits no explicit "submitted" log line. Once the verification poll observes the attestation on-chain it logs `INFO mpc_node::indexer::tx_sender: node found dstack attestation on chain attestation_age=... attestation_is_fresh=true`, but the authoritative check is on-chain.
 
 First, list every TEE-attested node by calling `get_tee_accounts` (no args) and confirm your `account_id` and `tls_public_key` are present:
 
@@ -1160,7 +1160,7 @@ near contract call-function as-read-only \
 
 Example response (truncated):
 
-```json
+```jsonc
 [
   {
     "account_id": "n1-multichain.testnet",
@@ -1723,11 +1723,11 @@ ERROR periodic_attestation_submission: mpc_node::tee::remote_attestation:
   cause=attestation submission was not executed backoff_duration=60s
 ```
 
-This line **doesn't tell you why** — `cause` is always `attestation submission was not executed`. The actual failure shows up in one of three places.
+This line **doesn't tell you why** — `cause` is one of `attestation submission was not executed` (most common), `attestation submission has unknown response`, or `failed to submit transaction` (lower-level RPC send failure). None of these carry the underlying reason. The actual failure shows up in one of three places.
 
 #### 1. Client-side pre-flight WARN — in the node logs
 
-Before submitting, the node validates the attestation against the contract's allowed-image / launcher / measurement lists. Failures are logged as a non-blocking warning (the node still submits, and the contract will reject for the same reason):
+Before submitting, the node runs a partial pre-flight check against the contract's allowed-image and allowed-launcher-compose lists (boot measurements are checked against a compiled-in default, so measurement-related rejections only appear on-chain — see section 3). Failures are logged as a non-blocking warning (the node still submits, and the contract will reject for the same reason):
 
 ```
 WARN periodic_attestation_submission: mpc_node::tee::remote_attestation:
@@ -1739,7 +1739,6 @@ Common messages:
 - **`custom error: 'the allowed mpc image hashes list is empty'`** — the contract has no allowed image hashes voted in yet. Vote yours in (see [Voting for the MPC image hash](#voting-for-the-mpc-image-hash)).
 - **`custom error: 'MPC image hash 0x... is not in the allowed hashes list'`** — your image hash isn't voted in. Same fix.
 - **`custom error: 'the allowed mpc launcher compose hashes list is empty'`** / **`'MPC launcher compose hash 0x... is not in the allowed hashes list'`** — same, for the launcher compose hash (see [Launcher image voting](#launcher-image-voting)).
-- **`the allowed measurements list is empty`** / **`the attestation's measurements are not in the allowed set`** — boot measurements (MRTD / RTMR0–2) not in the contract's allowed set (see [OS measurement voting](#os-measurement-voting)).
 - **`the attestation certificate with timestap ... has expired since ...`** — the quote's certificate chain has expired. The node regenerates on the next tick; if it keeps failing, your PCCS endpoints are stale (see [Customizing PCCS endpoints](#customizing-pccs-endpoints-optional)).
 
 #### 2. NEAR runtime / pre-execution errors — in the node logs
@@ -1767,8 +1766,10 @@ Invalid TEE Remote Attestation: TeeQuoteStatus is invalid:
   the submitted attestation failed verification, reason: Custom("...")
 ```
 
-The `reason` is the same `VerificationError` the client-side WARN reports (see section 1) — for example `Custom("the allowed mpc image hashes list is empty")` or `MeasurementsNotAllowed`. Two contract-only errors don't have a client-side counterpart:
+The `reason` is the same `VerificationError` the client-side WARN reports (see section 1) — for example `Custom("the allowed mpc image hashes list is empty")`. Errors that **only** surface on-chain (because they're checked against the contract's allowed-measurements list, the contract's deposit logic, or the contract's caller assertion):
 
+- **`MeasurementsNotAllowed`** — your boot measurements (MRTD / RTMR0–2) are not in the contract's allowed set. Vote them in (see [OS measurement voting](#os-measurement-voting)).
+- **`EmptyMeasurementsList`** — the contract has no allowed measurements yet; the first set must be voted in before any node can attest.
 - **`Attached deposit is lower than required. Attached: X, required: Y`** — first-time joiners must attach enough yoctoNEAR for storage; the node attaches `0`, so call `submit_participant_info` manually with `--deposit` once. Exact amount tracked in [#903](https://github.com/near/mpc/issues/903).
 - **`Caller is not the signer account`** — the access key used to sign does not match the node's `my_near_account_id`.
 
