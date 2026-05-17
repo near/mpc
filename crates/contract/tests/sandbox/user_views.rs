@@ -1,6 +1,6 @@
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
-    AuthScheme, ChainRouting, ForeignChain, Protocol, ProviderEntry, ProviderVoteAction,
+    AuthScheme, ChainRouting, ChainVote, ForeignChain, Protocol, ProviderEntry,
 };
 use near_sdk::borsh;
 use near_sdk::{CurveType, PublicKey};
@@ -82,20 +82,22 @@ async fn vote_update_foreign_chain_providers__should_succeed_for_authenticated_v
         .build()
         .await;
 
-    let actions = vec![ProviderVoteAction::Add {
+    let votes = vec![ChainVote {
         chain: ForeignChain::Ethereum,
-        entry: ProviderEntry {
+        providers: vec![ProviderEntry {
             provider_id: "alchemy".to_string(),
             base_url: "https://eth-mainnet.g.alchemy.com/v2/".to_string(),
             auth_scheme: AuthScheme::None,
             chain_routing: ChainRouting::Embedded,
-        },
+        }],
+        threshold: 1,
     }];
 
-    // Entry-point args are borsh-encoded — see the entry point's doc comment for why.
-    let args = borsh::to_vec(&actions)?;
-    // Default per-chain threshold is 2 — two distinct signers casting the same batch.
-    for account in mpc_signer_accounts.iter().take(2) {
+    // Entry-point args are borsh-encoded.
+    let args = borsh::to_vec(&votes)?;
+    // Gating matches the protocol signing threshold (`self.threshold()?.value()` in
+    // the contract). Sandbox setup uses 10 participants with a 60% threshold = 6.
+    for account in mpc_signer_accounts.iter().take(6) {
         let result = account
             .call(
                 contract.id(),

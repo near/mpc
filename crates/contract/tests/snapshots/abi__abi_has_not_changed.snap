@@ -1521,15 +1521,15 @@ expression: abi
       },
       {
         "name": "vote_update_foreign_chain_providers",
-        "doc": " Vote to update the on-chain RPC provider whitelist. The contract splits `actions`\n by chain and applies each chain independently once its per-chain threshold of\n participants holds the same `Vec` for it.",
+        "doc": " Vote on per-chain RPC provider whitelist state. Each `ChainVote` carries the\n proposed full provider list and the RPC response quorum for that chain. The\n chain's stored state is replaced wholesale once the protocol's signing threshold\n of participants has voted the same `(providers, threshold)` pair (same gate as\n `verify_tee` and `vote_add_os_measurement`).",
         "kind": "call",
         "params": {
           "serialization_type": "borsh",
           "args": [
             {
-              "name": "actions",
+              "name": "votes",
               "type_schema": {
-                "declaration": "Vec<ProviderVoteAction>",
+                "declaration": "Vec<ChainVote>",
                 "definitions": {
                   "()": {
                     "Primitive": 0
@@ -1634,6 +1634,22 @@ expression: abi
                       [
                         "value",
                         "String"
+                      ]
+                    ]
+                  },
+                  "ChainVote": {
+                    "Struct": [
+                      [
+                        "chain",
+                        "ForeignChain"
+                      ],
+                      [
+                        "providers",
+                        "Vec<ProviderEntry>"
+                      ],
+                      [
+                        "threshold",
+                        "u64"
                       ]
                     ]
                   },
@@ -1761,47 +1777,6 @@ expression: abi
                       ]
                     ]
                   },
-                  "ProviderVoteAction": {
-                    "Enum": {
-                      "tag_width": 1,
-                      "variants": [
-                        [
-                          0,
-                          "Add",
-                          "ProviderVoteAction__Add"
-                        ],
-                        [
-                          1,
-                          "Remove",
-                          "ProviderVoteAction__Remove"
-                        ]
-                      ]
-                    }
-                  },
-                  "ProviderVoteAction__Add": {
-                    "Struct": [
-                      [
-                        "chain",
-                        "ForeignChain"
-                      ],
-                      [
-                        "entry",
-                        "ProviderEntry"
-                      ]
-                    ]
-                  },
-                  "ProviderVoteAction__Remove": {
-                    "Struct": [
-                      [
-                        "chain",
-                        "ForeignChain"
-                      ],
-                      [
-                        "provider_id",
-                        "String"
-                      ]
-                    ]
-                  },
                   "String": {
                     "Sequence": {
                       "length_width": 4,
@@ -1812,15 +1787,28 @@ expression: abi
                       "elements": "u8"
                     }
                   },
-                  "Vec<ProviderVoteAction>": {
+                  "Vec<ChainVote>": {
                     "Sequence": {
                       "length_width": 4,
                       "length_range": {
                         "start": 0,
                         "end": 4294967295
                       },
-                      "elements": "ProviderVoteAction"
+                      "elements": "ChainVote"
                     }
+                  },
+                  "Vec<ProviderEntry>": {
+                    "Sequence": {
+                      "length_width": 4,
+                      "length_range": {
+                        "start": 0,
+                        "end": 4294967295
+                      },
+                      "elements": "ProviderEntry"
+                    }
+                  },
+                  "u64": {
+                    "Primitive": 8
                   },
                   "u8": {
                     "Primitive": 1

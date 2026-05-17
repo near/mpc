@@ -1,21 +1,15 @@
 ---
 source: crates/contract/src/lib.rs
-assertion_line: 5719
+assertion_line: 5717
 expression: schema
 ---
 BorshSchemaContainer {
     declaration: "MpcContract",
     definitions: {
-        "((AuthenticatedParticipantId, ForeignChain), Vec<ProviderVoteAction>)": Tuple {
+        "((AuthenticatedParticipantId, ForeignChain), ChainEntry)": Tuple {
             elements: [
                 "(AuthenticatedParticipantId, ForeignChain)",
-                "Vec<ProviderVoteAction>",
-            ],
-        },
-        "((ForeignChain, String), ProviderEntry)": Tuple {
-            elements: [
-                "(ForeignChain, String)",
-                "ProviderEntry",
+                "ChainEntry",
             ],
         },
         "()": Primitive(
@@ -64,16 +58,10 @@ BorshSchemaContainer {
                 "Vec<DomainConfig>",
             ],
         },
-        "(ForeignChain, String)": Tuple {
+        "(ForeignChain, ChainEntry)": Tuple {
             elements: [
                 "ForeignChain",
-                "String",
-            ],
-        },
-        "(ForeignChain, u64)": Tuple {
-            elements: [
-                "ForeignChain",
-                "u64",
+                "ChainEntry",
             ],
         },
         "AccountId": Struct {
@@ -156,7 +144,7 @@ BorshSchemaContainer {
                 [
                     (
                         "entries",
-                        "BTreeMap<(ForeignChain, String), ProviderEntry>",
+                        "BTreeMap<ForeignChain, ChainEntry>",
                     ),
                 ],
             ),
@@ -244,15 +232,10 @@ BorshSchemaContainer {
                 ],
             ),
         },
-        "BTreeMap<(AuthenticatedParticipantId, ForeignChain), Vec<ProviderVoteAction>>": Sequence {
+        "BTreeMap<(AuthenticatedParticipantId, ForeignChain), ChainEntry>": Sequence {
             length_width: 4,
             length_range: 0..=4294967295,
-            elements: "((AuthenticatedParticipantId, ForeignChain), Vec<ProviderVoteAction>)",
-        },
-        "BTreeMap<(ForeignChain, String), ProviderEntry>": Sequence {
-            length_width: 4,
-            length_range: 0..=4294967295,
-            elements: "((ForeignChain, String), ProviderEntry)",
+            elements: "((AuthenticatedParticipantId, ForeignChain), ChainEntry)",
         },
         "BTreeMap<AuthenticatedAccountId, ThresholdParameters>": Sequence {
             length_width: 4,
@@ -279,10 +262,10 @@ BorshSchemaContainer {
             length_range: 0..=4294967295,
             elements: "(AuthenticatedParticipantId, Vec<DomainConfig>)",
         },
-        "BTreeMap<ForeignChain, u64>": Sequence {
+        "BTreeMap<ForeignChain, ChainEntry>": Sequence {
             length_width: 4,
             length_range: 0..=4294967295,
-            elements: "(ForeignChain, u64)",
+            elements: "(ForeignChain, ChainEntry)",
         },
         "BTreeSet<AuthenticatedParticipantId>": Sequence {
             length_width: 4,
@@ -293,6 +276,20 @@ BorshSchemaContainer {
             fields: UnnamedFields(
                 [
                     "[u8; 96]",
+                ],
+            ),
+        },
+        "ChainEntry": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "providers",
+                        "Vec<ProviderEntry>",
+                    ),
+                    (
+                        "threshold",
+                        "u64",
+                    ),
                 ],
             ),
         },
@@ -628,10 +625,6 @@ BorshSchemaContainer {
                     (
                         "votes",
                         "ProviderVotes",
-                    ),
-                    (
-                        "chain_thresholds",
-                        "BTreeMap<ForeignChain, u64>",
                     ),
                 ],
             ),
@@ -1248,55 +1241,12 @@ BorshSchemaContainer {
                 ],
             ),
         },
-        "ProviderVoteAction": Enum {
-            tag_width: 1,
-            variants: [
-                (
-                    0,
-                    "Add",
-                    "ProviderVoteAction__Add",
-                ),
-                (
-                    1,
-                    "Remove",
-                    "ProviderVoteAction__Remove",
-                ),
-            ],
-        },
-        "ProviderVoteAction__Add": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "chain",
-                        "ForeignChain",
-                    ),
-                    (
-                        "entry",
-                        "ProviderEntry",
-                    ),
-                ],
-            ),
-        },
-        "ProviderVoteAction__Remove": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "chain",
-                        "ForeignChain",
-                    ),
-                    (
-                        "provider_id",
-                        "String",
-                    ),
-                ],
-            ),
-        },
         "ProviderVotes": Struct {
             fields: NamedFields(
                 [
                     (
                         "pending",
-                        "BTreeMap<(AuthenticatedParticipantId, ForeignChain), Vec<ProviderVoteAction>>",
+                        "BTreeMap<(AuthenticatedParticipantId, ForeignChain), ChainEntry>",
                     ),
                 ],
             ),
@@ -1591,10 +1541,10 @@ BorshSchemaContainer {
             length_range: 0..=4294967295,
             elements: "LauncherDockerComposeHash",
         },
-        "Vec<ProviderVoteAction>": Sequence {
+        "Vec<ProviderEntry>": Sequence {
             length_width: 4,
             length_range: 0..=4294967295,
-            elements: "ProviderVoteAction",
+            elements: "ProviderEntry",
         },
         "Vec<u8>": Sequence {
             length_width: 4,

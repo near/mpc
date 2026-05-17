@@ -1492,18 +1492,20 @@ impl MpcContract {
         self.tee_state.get_allowed_measurements()
     }
 
-    /// Vote to update the on-chain RPC provider whitelist. The contract splits `actions`
-    /// by chain and applies each chain independently once its per-chain threshold of
-    /// participants holds the same `Vec` for it.
+    /// Vote on per-chain RPC provider whitelist state. Each `ChainVote` carries the
+    /// proposed full provider list and the RPC response quorum for that chain. The
+    /// chain's stored state is replaced wholesale once the protocol's signing threshold
+    /// of participants has voted the same `(providers, threshold)` pair (same gate as
+    /// `verify_tee` and `vote_add_os_measurement`).
     #[handle_result]
     pub fn vote_update_foreign_chain_providers(
         &mut self,
-        #[serializer(borsh)] actions: Vec<dtos::ProviderVoteAction>,
+        #[serializer(borsh)] votes: Vec<dtos::ChainVote>,
     ) -> Result<(), Error> {
         log!(
-            "vote_update_foreign_chain_providers: signer={}, n_actions={}",
+            "vote_update_foreign_chain_providers: signer={}, n_votes={}",
             env::signer_account_id(),
-            actions.len(),
+            votes.len(),
         );
         self.voter_or_panic();
 
@@ -1515,7 +1517,14 @@ impl MpcContract {
         };
 
         let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
-        self.foreign_chain_rpc_whitelist.vote(participant, actions);
+        let threshold = self.threshold()?.value();
+        let applied = self
+            .foreign_chain_rpc_whitelist
+            .vote(participant, votes, threshold)?;
+        log!(
+            "vote_update_foreign_chain_providers: applied chains={:?}",
+            applied,
+        );
         Ok(())
     }
 

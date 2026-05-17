@@ -1029,29 +1029,21 @@ pub struct ProviderEntry {
     pub chain_routing: ChainRouting,
 }
 
+/// One per-chain vote: the proposed full whitelist for `chain` plus the RPC response
+/// quorum nodes should use when fanning out queries to those providers. Voting itself
+/// is unanimous — see `vote_update_foreign_chain_providers`.
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(not(target_arch = "wasm32"), derive(Serialize, Deserialize))]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
-pub enum ProviderVoteAction {
-    Add {
-        chain: ForeignChain,
-        entry: ProviderEntry,
-    },
-    Remove {
-        chain: ForeignChain,
-        provider_id: ProviderId,
-    },
-}
-
-impl ProviderVoteAction {
-    pub fn chain(&self) -> ForeignChain {
-        match self {
-            Self::Add { chain, .. } | Self::Remove { chain, .. } => *chain,
-        }
-    }
+pub struct ChainVote {
+    pub chain: ForeignChain,
+    pub providers: Vec<ProviderEntry>,
+    /// RPC response quorum: when a node queries the providers above, at least this
+    /// many must return the same value for the response to be accepted.
+    pub threshold: u64,
 }
 
 #[cfg(test)]
