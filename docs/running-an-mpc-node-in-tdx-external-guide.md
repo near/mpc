@@ -1305,16 +1305,17 @@ INFO mpc_node::coordinator: Starting key resharing.
 INFO mpc_node::coordinator: Resharing process is: Some(ResharingContractState { ... })
 ```
 
-**During resharing.** Each domain runs its own attempt. Per-attempt progress lines:
+**During resharing.** Each domain runs its own attempt. Per-attempt progress lines (in order):
 
 ```
+INFO mpc_node::key_events: Key resharing attempt KeyEventId { epoch_id: EpochId(1), domain_id: DomainId(0), attempt_id: AttemptId(0) }: starting key resharing.
 INFO mpc_node::providers::<scheme>::key_resharing: Key resharing completed
-INFO mpc_node::key_events: Key resharing attempt <KeyEventId>: committing keyshare.
-INFO mpc_node::key_events: Key resharing attempt <KeyEventId>: sending vote_reshared transaction.
-INFO mpc_node::key_events: Key resharing attempt <KeyEventId> completed successfully.
+INFO mpc_node::key_events: Key resharing attempt KeyEventId { ... }: committing keyshare.
+INFO mpc_node::key_events: Key resharing attempt KeyEventId { ... }: sending vote_reshared transaction.
+INFO mpc_node::key_events: Key resharing attempt KeyEventId { ... } completed successfully.
 ```
 
-Where `<scheme>` is `ecdsa`, `eddsa`, or `ckd`.
+Where `<scheme>` is `ecdsa`, `eddsa`, or `ckd`. The `epoch_id` is the resharing's new epoch; `domain_id` identifies which keyspace (each gets its own attempt).
 
 **When resharing finishes.** Once the contract leaves the Resharing state, each node logs:
 
@@ -1335,7 +1336,7 @@ The response should show `Running` (not `Resharing`) and a new `keyset.epoch_id`
 **If resharing fails.** An attempt that times out or errors logs:
 
 ```
-ERROR mpc_node::key_events: Key resharing attempt <KeyEventId> failed: <err>; sending vote_abort_key_event_instance
+ERROR mpc_node::key_events: Key resharing attempt KeyEventId { ... } failed: <err>; sending vote_abort_key_event_instance
 ```
 
 The contract will retry with a fresh attempt; repeated failures need investigation.
