@@ -1365,11 +1365,15 @@ The `node manifest digest` is what you vote for. When submitting the `code_hash`
 Each participant submits a vote for the new MPC Docker image **manifest digest**.
 A **threshold** number of participant votes is required for the vote to pass.
 
+Set `MANIFEST_DIGEST` to the SHA-256 hex digest (without the `sha256:` prefix), then send the vote:
+
 ```bash
+MANIFEST_DIGEST=331cfec941671ac343c52847e255eb36a280da65535d2a1e4d002c4c64686e19
+
 near contract call-function as-transaction \
   v1.signer-prod.testnet \
   vote_code_hash \
-  json-args '{"code_hash": "<MANIFEST_DIGEST>"}' \
+  json-args "{\"code_hash\": \"$MANIFEST_DIGEST\"}" \
   prepaid-gas '100.0 Tgas' \
   attached-deposit '0 NEAR' \
   sign-as <your-account-id> \
@@ -1378,23 +1382,41 @@ near contract call-function as-transaction \
   send
 ```
 
-The **MANIFEST_DIGEST** argument must be provided as an SHA-256 hex digest (without the `sha256:` prefix).
+> **Note:** There is no `vote_remove_code_hash`. Once a successor hash is voted in, the previous hash remains valid for a 7-day grace period (set by `tee_upgrade_deadline_duration_seconds`, default 7 days) and then auto-expires — so unlike launcher and OS-measurement voting there is no explicit remove command.
 
-For example, for the manifest digest `sha256:331cfec9...`:
+#### Query allowed MPC image hashes
 
 ```bash
-MANIFEST_DIGEST=331cfec941671ac343c52847e255eb36a280da65535d2a1e4d002c4c64686e19
+near contract call-function as-read-only \
+  v1.signer-prod.testnet \
+  allowed_docker_image_hashes \
+  json-args '{}' \
+  network-config testnet \
+  now
 ```
 
-TBD [#908](https://github.com/near/mpc/issues/908) Add here voting procedure.
+Returns the list of currently-accepted image hashes, most recent first.
+
+#### Query MPC image hash votes
+
+```bash
+near contract call-function as-read-only \
+  v1.signer-prod.testnet \
+  code_hash_votes \
+  json-args '{}' \
+  network-config testnet \
+  now
+```
+
+Shows per-participant votes so you can see how many more are needed to reach threshold.
 
 ### Update the MPC node
 
 After voting has finished, the MPC node will detect the new approved manifest digest on the contract and save it to a secure location inside the CVM.
 
-Following the digest update, upgrade the MPC node:
-1. (Optional) Confirm the manifest digest shown on DockerHub for the image tag matches the hash you voted for.
-2. Restart the CVM. The launcher will pull the new image by manifest digest automatically.
+Restart the CVM (see [CVM management](#cvm-management)). The launcher will pull the new image by manifest digest automatically, verify it, and re-attest to the contract.
+
+> You can see the image update and re-sync in the node logs — TBD [#910](https://github.com/near/mpc/issues/910).
 
 ## Launcher / CVM Upgrade
 
@@ -1569,82 +1591,50 @@ For the migration procedure, see the [node migration guide](node-migration-guide
 
 After all operators have migrated to the new CVM, participants should vote to remove the old launcher manifest digest using `vote_remove_launcher_hash` and/or old OS measurements using `vote_remove_os_measurement`. This requires **all** participants to vote, ensuring no node is still running with the old configuration.
 
-## Updating the CVM `user-config.toml` with new image information
+## CVM management
 
-If the image repository changes, update the `image` field in `user-config.toml`:
+Common operations on a deployed CVM: **stop**, **start**, and **update `user-config.toml`**.
 
-**Example:**
+You usually don't need to edit `user-config.toml` after initial deployment. However, a future MPC release may introduce new `user-config.toml` fields; if so, the release notes will call it out.
 
-```toml
-[launcher_config]
-image_reference = "nearone/mpc-node"
-```
+### Via Web UI
 
-The image version is determined by the manifest digest from the contract (not by a tag). You do not need to update the config for routine image upgrades — just vote for the new manifest digest and restart the CVM.
-
----
-
-### Steps
-
-1. **Stop the CVM**
-2. **Update `user-config.toml`** with the new values
-3. **Start the CVM**
-
----
-
-### Options for performing the update
-
-#### Manually Via Web UI
-
-* Stop the CVM from the WebUI.
-* Press the **update** button
-* Update The config file and press **Upgrade**
-* Start the CVM
-
+| Operation | Action |
+|-----------|--------|
+| Stop the CVM | Press **Stop** |
+| Start the CVM | Press **Start** |
+| Update `user-config.toml` | Stop the CVM → press **update** → upload the new file → press **Upgrade** → start the CVM |
 
 ![](./attachments/cvm_options.png)
 
 ![](./attachments/config_upgrade.png)
 
+### Via Command Line
 
-
-#### Via Command Line
-
-* See the [VMM CLI user guide](https://github.com/Dstack-TEE/dstack/blob/master/docs/vmm-cli-user-guide.md).
-* The CLI script is located at:
-  `meta-dstack/dstack/vmm/src/vmm-cli.py`
+See the [VMM CLI user guide](https://github.com/Dstack-TEE/dstack/blob/master/docs/vmm-cli-user-guide.md). The CLI script is at `meta-dstack/dstack/vmm/src/vmm-cli.py`.
 
 First, define environment variables (once per shell session):
 
 ```bash
-
 export VMM_URL=http://127.0.0.1:11100 # change to your port
 export VMM_CLI_PATH="meta-dstack/dstack/vmm/src/vmm-cli.py" # change to your meta-dstack location
 ```
 
-Then you can use `$VMM_CLI` for all commands:
+Then:
 
 ```bash
-# 1. Enumerate and find your VM ID
+# Enumerate and find your VM ID
 python $VMM_CLI_PATH --url $VMM_URL lsvm
 
-# 2. Gracefully stop the VM
+# Stop the CVM
 python $VMM_CLI_PATH --url $VMM_URL stop <vm-id>
 
-# 3. Update user-config
-python $VMM_CLI_PATH --url $VMM_URL update-user-config <vm-id> ./new-user-config.txt
+# Update user-config (only if needed)
+python $VMM_CLI_PATH --url $VMM_URL update-user-config <vm-id> ./new-user-config.toml
 
-# 4. Start the VM
+# Start the CVM
 python $VMM_CLI_PATH --url $VMM_URL start <vm-id>
 ```
-
-#### Restart the CVM
-
-If not done in the previous step, stop and start the CVM.
-
-The new MPC docker binary should be automatically pulled from docker hub, verified and launched, and a remote attestation will be sent to the contract.
-
-You can see in the MPC node's logs (TBD) [#910](https://github.com/near/mpc/issues/910)that the image was updated, and that node has synced again. (TBD, [#910](https://github.com/near/mpc/issues/910) add logs).
 
 ## Trouble shooting
 
