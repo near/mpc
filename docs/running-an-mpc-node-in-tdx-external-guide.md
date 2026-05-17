@@ -1296,9 +1296,49 @@ To generate a voting command, follow these steps:
    ```
 
 After all participants have voted, the contract will move to a resharing phase.
-You can see this in the node logs (TBD) [#906](https://github.com/near/mpc/issues/906)
 
-And when the resharing has finished look for… (TBD) [#906](https://github.com/near/mpc/issues/906)
+**When resharing starts.** Each node detects the contract state change and logs:
+
+```
+INFO mpc_node::coordinator: A resharing started.
+INFO mpc_node::coordinator: Starting key resharing.
+INFO mpc_node::coordinator: Resharing process is: Some(ResharingContractState { ... })
+```
+
+**During resharing.** Each domain runs its own attempt. Per-attempt progress lines:
+
+```
+INFO mpc_node::providers::<scheme>::key_resharing: Key resharing completed
+INFO mpc_node::key_events: Key resharing attempt <KeyEventId>: committing keyshare.
+INFO mpc_node::key_events: Key resharing attempt <KeyEventId>: sending vote_reshared transaction.
+INFO mpc_node::key_events: Key resharing attempt <KeyEventId> completed successfully.
+```
+
+Where `<scheme>` is `ecdsa`, `eddsa`, or `ckd`.
+
+**When resharing finishes.** Once the contract leaves the Resharing state, each node logs:
+
+```
+INFO mpc_node::coordinator: Concluded resharing state.
+```
+
+You can also confirm on-chain:
+
+```bash
+near contract call-function as-read-only \
+  v1.signer-prod.testnet state \
+  json-args {} network-config testnet now
+```
+
+The response should show `Running` (not `Resharing`) and a new `keyset.epoch_id`.
+
+**If resharing fails.** An attempt that times out or errors logs:
+
+```
+ERROR mpc_node::key_events: Key resharing attempt <KeyEventId> failed: <err>; sending vote_abort_key_event_instance
+```
+
+The contract will retry with a fresh attempt; repeated failures need investigation.
 
 ## Upgrades
 
