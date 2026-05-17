@@ -1143,10 +1143,67 @@ Once the MPC node is fully synced, it will call `submit_participant_info` to sub
 
 If the node’s key has not been added to the account, this operation will fail. In that case, the node will retry the operation in a loop.
 
-> **Note:** This behavior is not yet implemented. See issue [#1069](https://github.com/near/mpc/issues/1069).
-> **TBD [#1079]:** Add screenshot/logs/cURL example for detecting when the MPC node has submitted attestation information.
 > **Note:** Calling this method will incur a cost (TBD, XXX NEAR). Ensure this amount is available in your account.
 > _(TBD [#903](https://github.com/near/mpc/issues/903) – confirm exact cost)_
+
+#### Verifying the attestation was accepted
+
+The MPC node emits no explicit "submitted" log line. Once the verification poll observes the attestation on-chain it logs `INFO mpc_node::indexer::tx_sender: node found dstack attestation on chain attestation_age=... attestation_is_fresh=true`, but the authoritative check is on-chain.
+
+First, list every TEE-attested node by calling `get_tee_accounts` (no args) and confirm your `account_id` and `tls_public_key` are present:
+
+```bash
+near contract call-function as-read-only \
+  v1.signer-prod.testnet get_tee_accounts \
+  json-args '{}' network-config testnet now
+```
+
+Example response (truncated):
+
+```jsonc
+[
+  {
+    "account_id": "n1-multichain.testnet",
+    "account_public_key": "ed25519:3DWAWiStjQsaHwqVR91u8viuRPf2qtYpQzQHw16y5V9s",
+    "tls_public_key": "ed25519:14q1d9LYaVUWRuyJieGGiAjAMj3KxNJeNuLS6CjUojp9"
+  }
+  // ...
+]
+```
+
+To inspect the stored `VerifiedAttestation` for your node, call `get_attestation` with your node's TLS public key (the P2P key retrieved in [Retrieve the node account key and P2P key](#retrieve-the-node-account-key-and-p2p-key)):
+
+```bash
+near contract call-function as-read-only \
+  v1.signer-prod.testnet get_attestation \
+  json-args '{"tls_public_key":"ed25519:<your-tls-key>"}' \
+  network-config testnet now
+```
+
+The response shape tells you what the contract accepted:
+
+- `{ "Dstack": { ... } }` — a real TEE attestation. This is what a production operator should see.
+- `{ "Mock": "Valid" }` — a mock attestation. Acceptable on testnet during the [transition phase](#transition-phase), but means the node is **not** running in a TEE. Many existing testnet entries are in this state.
+- `null` — the node has not yet submitted, or the submission is failing — see [`submit_participant_info` failures](#submit_participant_info-failures) below.
+
+Example `Dstack` response from `v1.signer-prod.testnet` for an existing participant:
+
+```json
+{
+  "Dstack": {
+    "expiry_timestamp_seconds": 1779618069,
+    "launcher_compose_hash": "efb095f3e9adfeb04d637813a838fa666778b9915d752cfd796ae2a254fe705f",
+    "measurements": {
+      "key_provider_event_digest": "61ce56b6be756a9e45af7715b13c15040a4e6090cc740be24e2cc02e33b4fb53ae4e3c945c9af83e2a26c6d5efa414a8",
+      "mrtd": "f06dfda6dce1cf904d4e2bab1dc370634cf95cefa2ceb2de2eee127c9382698090d7a4a13e14c536ec6c9c3c8fa87077",
+      "rtmr0": "e673be2f70beefb70b48a6109eed4715d7270d4683b3bf356fa25fafbf1aa76e39e9127e6e688ccda98bdab1d4d47f46",
+      "rtmr1": "b598fde9491427341bc4683b75d10d3e36770af3a36a6954d8b6b7b22aa66358f13e1f172e51b7d6e6710d99a8d8532f",
+      "rtmr2": "c812d42bfff1c75382e91a37c867ab117b97eb5e8d6797488928ea38e5fd38b5ed2f87d9613d392507f1c3af94657c93"
+    },
+    "mpc_image_hash": "51ed33bb2d62c7aa8ba1a56d37550e415cf29d6a2c656ef35fa89c1ab9c0604d"
+  }
+}
+```
 
 ### Voting: (vote_new_parameters)
 
@@ -1655,6 +1712,68 @@ Reviewers \- please add here more scenarios (with or without solutions)
 * How to see what MPC node hash is expected by the launcher (docker-compose v.s file on disk)
 * Recovery \- how to erase the indexer state (e.g data folder)
 * …..
+
+### `submit_participant_info` failures
+
+When the contract rejects a submission the node retries on a backoff and logs a generic line every attempt:
+
+```
+ERROR periodic_attestation_submission: mpc_node::tee::remote_attestation:
+  failed to submit attestation
+  cause=attestation submission was not executed backoff_duration=60s
+```
+
+This line **doesn't tell you why** — `cause` is one of `attestation submission was not executed` (most common), `attestation submission has unknown response`, or `failed to submit transaction` (lower-level RPC send failure). None of these carry the underlying reason. The actual failure shows up in one of three places.
+
+#### 1. Client-side pre-flight WARN — in the node logs
+
+Before submitting, the node runs a partial pre-flight check against the contract's allowed-image and allowed-launcher-compose lists (boot measurements are checked against a compiled-in default, so measurement-related rejections only appear on-chain — see section 3). Failures are logged as a non-blocking warning (the node still submits, and the contract will reject for the same reason):
+
+```
+WARN periodic_attestation_submission: mpc_node::tee::remote_attestation:
+  Attestation is not valid: custom error: `the allowed mpc image hashes list is empty`
+```
+
+Common messages:
+
+- ``custom error: `the allowed mpc image hashes list is empty` `` — the contract has no allowed image hashes voted in yet. Vote yours in (see [Voting for the MPC image hash](#voting-for-the-mpc-image-hash)).
+- ``custom error: `MPC image hash 0x... is not in the allowed hashes list` `` — your image hash isn't voted in. Same fix.
+- ``custom error: `the allowed mpc launcher compose hashes list is empty` `` / ``custom error: `MPC launcher compose hash 0x... is not in the allowed hashes list` `` — same, for the launcher compose hash (see [Launcher image voting](#launcher-image-voting)).
+- **`the attestation certificate with timestap ... has expired since ...`** — the quote's certificate chain has expired. The node regenerates on the next tick; if it keeps failing, your PCCS endpoints are stale (see [Customizing PCCS endpoints](#customizing-pccs-endpoints-optional)).
+
+#### 2. NEAR runtime / pre-execution errors — in the node logs
+
+For errors caught before the transaction executes (account balance, nonce, access key, etc.) the node logs them separately from `tx_sender`:
+
+```
+ERROR mpc_node::indexer::tx_sender: Failed to forward transaction
+  SubmitParticipantInfo(...) err=unexpected ProcessTxResponse:
+  InvalidTx(LackBalanceForState { signer_id: ..., amount: ... })
+```
+
+The error after `err=` is the NEAR runtime error. Common ones:
+
+- **`InvalidTx(LackBalanceForState { signer_id, amount })`** — the node's account doesn't have enough NEAR to cover the storage-staking threshold the contract is about to write. Top up the account by at least `amount` yoctoNEAR.
+- **`InvalidTx(InvalidAccessKey(...))`** — the node's access key was not added to the account, was removed, or doesn't grant the `submit_participant_info` method.
+- **`InvalidTx(InvalidNonce { .. })` / `InvalidTx(Expired)`** — clock or block-hash drift; usually transient.
+
+#### 3. Contract-rejection errors — only visible on the explorer / RPC
+
+If the transaction reaches execution and the contract panics, the node logs only the generic retry line above; the actual message lives in the transaction receipt. Find the tx on `https://testnet.nearblocks.io/address/<your-account>` and open the failed `submit_participant_info` call — the error appears under the action's status / logs. The contract wraps the attestation-side error like this:
+
+```
+Invalid TEE Remote Attestation: TeeQuoteStatus is invalid:
+  the submitted attestation failed verification, reason: Custom("...")
+```
+
+The `reason` is the same `VerificationError` the client-side WARN reports (see section 1) — for example `Custom("the allowed mpc image hashes list is empty")`. Errors that **only** surface on-chain (because they're checked against the contract's allowed-measurements list, the contract's deposit logic, or the contract's caller assertion):
+
+- **`MeasurementsNotAllowed`** — your boot measurements (MRTD / RTMR0–2) are not in the contract's allowed set. Vote them in (see [OS measurement voting](#os-measurement-voting)).
+- **`EmptyMeasurementsList`** — the contract has no allowed measurements yet; the first set must be voted in before any node can attest.
+- **`Attached deposit is lower than required. Attached: X, required: Y`** — first-time joiners must attach enough yoctoNEAR for storage; the node attaches `0`, so call `submit_participant_info` manually with `--deposit` once. Exact amount tracked in [#903](https://github.com/near/mpc/issues/903).
+- **`Caller is not the signer account.`** — the access key used to sign does not match the node's `my_near_account_id`.
+
+If you see no error logs at all but `get_attestation` still returns `null`, the node has not yet generated a quote. Check `mpc_tee_attestation_attempts_total` on the `/metrics` endpoint.
 
 ## Transition phase {#transition-phase}
 
