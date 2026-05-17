@@ -1155,7 +1155,7 @@ First, list every TEE-attested node by calling `get_tee_accounts` (no args) and 
 ```bash
 near contract call-function as-read-only \
   v1.signer-prod.testnet get_tee_accounts \
-  json-args {} network-config testnet now
+  json-args '{}' network-config testnet now
 ```
 
 Example response (truncated):
@@ -1736,9 +1736,9 @@ WARN periodic_attestation_submission: mpc_node::tee::remote_attestation:
 
 Common messages:
 
-- **`custom error: 'the allowed mpc image hashes list is empty'`** — the contract has no allowed image hashes voted in yet. Vote yours in (see [Voting for the MPC image hash](#voting-for-the-mpc-image-hash)).
-- **`custom error: 'MPC image hash 0x... is not in the allowed hashes list'`** — your image hash isn't voted in. Same fix.
-- **`custom error: 'the allowed mpc launcher compose hashes list is empty'`** / **`'MPC launcher compose hash 0x... is not in the allowed hashes list'`** — same, for the launcher compose hash (see [Launcher image voting](#launcher-image-voting)).
+- ``custom error: `the allowed mpc image hashes list is empty` `` — the contract has no allowed image hashes voted in yet. Vote yours in (see [Voting for the MPC image hash](#voting-for-the-mpc-image-hash)).
+- ``custom error: `MPC image hash 0x... is not in the allowed hashes list` `` — your image hash isn't voted in. Same fix.
+- ``custom error: `the allowed mpc launcher compose hashes list is empty` `` / ``custom error: `MPC launcher compose hash 0x... is not in the allowed hashes list` `` — same, for the launcher compose hash (see [Launcher image voting](#launcher-image-voting)).
 - **`the attestation certificate with timestap ... has expired since ...`** — the quote's certificate chain has expired. The node regenerates on the next tick; if it keeps failing, your PCCS endpoints are stale (see [Customizing PCCS endpoints](#customizing-pccs-endpoints-optional)).
 
 #### 2. NEAR runtime / pre-execution errors — in the node logs
@@ -1759,7 +1759,7 @@ The error after `err=` is the NEAR runtime error. Common ones:
 
 #### 3. Contract-rejection errors — only visible on the explorer / RPC
 
-If the transaction reaches execution and the contract panics, the node logs only the generic retry line above; the actual message lives in the transaction receipt. Find the tx on https://testnet.nearblocks.io/address/&lt;your-account&gt; and open the failed `submit_participant_info` call — the error appears under the action's status / logs. The contract wraps the attestation-side error like this:
+If the transaction reaches execution and the contract panics, the node logs only the generic retry line above; the actual message lives in the transaction receipt. Find the tx on `https://testnet.nearblocks.io/address/<your-account>` and open the failed `submit_participant_info` call — the error appears under the action's status / logs. The contract wraps the attestation-side error like this:
 
 ```
 Invalid TEE Remote Attestation: TeeQuoteStatus is invalid:
@@ -1771,7 +1771,7 @@ The `reason` is the same `VerificationError` the client-side WARN reports (see s
 - **`MeasurementsNotAllowed`** — your boot measurements (MRTD / RTMR0–2) are not in the contract's allowed set. Vote them in (see [OS measurement voting](#os-measurement-voting)).
 - **`EmptyMeasurementsList`** — the contract has no allowed measurements yet; the first set must be voted in before any node can attest.
 - **`Attached deposit is lower than required. Attached: X, required: Y`** — first-time joiners must attach enough yoctoNEAR for storage; the node attaches `0`, so call `submit_participant_info` manually with `--deposit` once. Exact amount tracked in [#903](https://github.com/near/mpc/issues/903).
-- **`Caller is not the signer account`** — the access key used to sign does not match the node's `my_near_account_id`.
+- **`Caller is not the signer account.`** — the access key used to sign does not match the node's `my_near_account_id`.
 
 If you see no error logs at all but `get_attestation` still returns `null`, the node has not yet generated a quote. Check `mpc_tee_attestation_attempts_total` on the `/metrics` endpoint.
 
