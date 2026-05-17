@@ -1,5 +1,6 @@
 ---
 source: crates/contract/src/lib.rs
+assertion_line: 5683
 expression: schema
 ---
 BorshSchemaContainer {
@@ -43,6 +44,18 @@ BorshSchemaContainer {
             elements: [
                 "AuthenticatedParticipantId",
                 "Vec<DomainConfig>",
+            ],
+        },
+        "(ForeignChain, BTreeMap<ProviderId, ProviderEntry>)": Tuple {
+            elements: [
+                "ForeignChain",
+                "BTreeMap<ProviderId, ProviderEntry>",
+            ],
+        },
+        "(ProviderId, ProviderEntry)": Tuple {
+            elements: [
+                "ProviderId",
+                "ProviderEntry",
             ],
         },
         "AccountId": Struct {
@@ -120,10 +133,82 @@ BorshSchemaContainer {
                 ],
             ),
         },
+        "AllowedProviders": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "entries",
+                        "BTreeMap<ForeignChain, BTreeMap<ProviderId, ProviderEntry>>",
+                    ),
+                ],
+            ),
+        },
         "AttemptId": Struct {
             fields: UnnamedFields(
                 [
                     "u64",
+                ],
+            ),
+        },
+        "AuthScheme": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "Header",
+                    "AuthScheme__Header",
+                ),
+                (
+                    1,
+                    "Path",
+                    "AuthScheme__Path",
+                ),
+                (
+                    2,
+                    "Query",
+                    "AuthScheme__Query",
+                ),
+                (
+                    3,
+                    "None",
+                    "AuthScheme__None",
+                ),
+            ],
+        },
+        "AuthScheme__Header": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "name",
+                        "String",
+                    ),
+                    (
+                        "scheme",
+                        "Option<String>",
+                    ),
+                ],
+            ),
+        },
+        "AuthScheme__None": Struct {
+            fields: Empty,
+        },
+        "AuthScheme__Path": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "placeholder",
+                        "String",
+                    ),
+                ],
+            ),
+        },
+        "AuthScheme__Query": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "name",
+                        "String",
+                    ),
                 ],
             ),
         },
@@ -166,6 +251,16 @@ BorshSchemaContainer {
             length_range: 0..=4294967295,
             elements: "(AuthenticatedParticipantId, Vec<DomainConfig>)",
         },
+        "BTreeMap<ForeignChain, BTreeMap<ProviderId, ProviderEntry>>": Sequence {
+            length_width: 4,
+            length_range: 0..=4294967295,
+            elements: "(ForeignChain, BTreeMap<ProviderId, ProviderEntry>)",
+        },
+        "BTreeMap<ProviderId, ProviderEntry>": Sequence {
+            length_width: 4,
+            length_range: 0..=4294967295,
+            elements: "(ProviderId, ProviderEntry)",
+        },
         "BTreeSet<AuthenticatedParticipantId>": Sequence {
             length_width: 4,
             length_range: 0..=4294967295,
@@ -175,6 +270,53 @@ BorshSchemaContainer {
             fields: UnnamedFields(
                 [
                     "[u8; 96]",
+                ],
+            ),
+        },
+        "ChainRouting": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "Embedded",
+                    "ChainRouting__Embedded",
+                ),
+                (
+                    1,
+                    "PathSegment",
+                    "ChainRouting__PathSegment",
+                ),
+                (
+                    2,
+                    "QueryParam",
+                    "ChainRouting__QueryParam",
+                ),
+            ],
+        },
+        "ChainRouting__Embedded": Struct {
+            fields: Empty,
+        },
+        "ChainRouting__PathSegment": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "segment",
+                        "String",
+                    ),
+                ],
+            ),
+        },
+        "ChainRouting__QueryParam": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "name",
+                        "String",
+                    ),
+                    (
+                        "value",
+                        "String",
+                    ),
                 ],
             ),
         },
@@ -397,6 +539,101 @@ BorshSchemaContainer {
                     "u64",
                 ],
             ),
+        },
+        "ForeignChain": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "Solana",
+                    "ForeignChain__Solana",
+                ),
+                (
+                    1,
+                    "Bitcoin",
+                    "ForeignChain__Bitcoin",
+                ),
+                (
+                    2,
+                    "Ethereum",
+                    "ForeignChain__Ethereum",
+                ),
+                (
+                    3,
+                    "Base",
+                    "ForeignChain__Base",
+                ),
+                (
+                    4,
+                    "Bnb",
+                    "ForeignChain__Bnb",
+                ),
+                (
+                    5,
+                    "Arbitrum",
+                    "ForeignChain__Arbitrum",
+                ),
+                (
+                    6,
+                    "Abstract",
+                    "ForeignChain__Abstract",
+                ),
+                (
+                    7,
+                    "Starknet",
+                    "ForeignChain__Starknet",
+                ),
+                (
+                    8,
+                    "Polygon",
+                    "ForeignChain__Polygon",
+                ),
+                (
+                    9,
+                    "HyperEvm",
+                    "ForeignChain__HyperEvm",
+                ),
+            ],
+        },
+        "ForeignChainRpcWhitelist": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "entries",
+                        "AllowedProviders",
+                    ),
+                ],
+            ),
+        },
+        "ForeignChain__Abstract": Struct {
+            fields: Empty,
+        },
+        "ForeignChain__Arbitrum": Struct {
+            fields: Empty,
+        },
+        "ForeignChain__Base": Struct {
+            fields: Empty,
+        },
+        "ForeignChain__Bitcoin": Struct {
+            fields: Empty,
+        },
+        "ForeignChain__Bnb": Struct {
+            fields: Empty,
+        },
+        "ForeignChain__Ethereum": Struct {
+            fields: Empty,
+        },
+        "ForeignChain__HyperEvm": Struct {
+            fields: Empty,
+        },
+        "ForeignChain__Polygon": Struct {
+            fields: Empty,
+        },
+        "ForeignChain__Solana": Struct {
+            fields: Empty,
+        },
+        "ForeignChain__Starknet": Struct {
+            fields: Empty,
         },
         "HashSet<AuthenticatedAccountId>": Sequence {
             length_width: 4,
@@ -711,6 +948,10 @@ BorshSchemaContainer {
                         "metrics",
                         "Metrics",
                     ),
+                    (
+                        "foreign_chain_rpc_whitelist",
+                        "ForeignChainRpcWhitelist",
+                    ),
                 ],
             ),
         },
@@ -797,6 +1038,21 @@ BorshSchemaContainer {
                     1,
                     "Some",
                     "PublicKeyExtended",
+                ),
+            ],
+        },
+        "Option<String>": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "None",
+                    "()",
+                ),
+                (
+                    1,
+                    "Some",
+                    "String",
                 ),
             ],
         },
@@ -938,6 +1194,35 @@ BorshSchemaContainer {
         },
         "Protocol__Frost": Struct {
             fields: Empty,
+        },
+        "ProviderEntry": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "provider_id",
+                        "ProviderId",
+                    ),
+                    (
+                        "base_url",
+                        "String",
+                    ),
+                    (
+                        "auth_scheme",
+                        "AuthScheme",
+                    ),
+                    (
+                        "chain_routing",
+                        "ChainRouting",
+                    ),
+                ],
+            ),
+        },
+        "ProviderId": Struct {
+            fields: UnnamedFields(
+                [
+                    "String",
+                ],
+            ),
         },
         "PublicKey": Struct {
             fields: NamedFields(

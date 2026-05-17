@@ -345,6 +345,9 @@ impl From<MpcContract> for crate::MpcContract {
             node_migrations: value.node_migrations,
             stale_data: crate::StaleData {},
             metrics: value.metrics,
+            // New field introduced post-v3.9.1; legacy state has nothing to migrate, so it
+            // default-initializes to an empty whitelist.
+            foreign_chain_rpc_whitelist: Default::default(),
         }
     }
 }
