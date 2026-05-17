@@ -48,21 +48,47 @@ struct MpcContractState {
 }
 
 struct ForeignChainRpcWhitelist {
-    // Inner map is keyed by `provider_id`, so uniqueness within a chain is structural —
-    // no manual dedup invariant. The same `provider_id` (e.g. "ankr") appearing under
-    // multiple chains is expected: each chain entry carries chain-specific connection
-    // details, so they are per-chain configs, not duplicates.
-    entries: BTreeMap<ForeignChain, BTreeMap<ProviderId, ProviderEntry>>,
+    entries: AllowedProviders,
+    votes: ProviderVotes,
+}
+
+struct AllowedProviders {
+    // Each chain stores its full whitelist + the RPC response quorum nodes should
+    // use when fanning out queries to those providers.
+    entries: BTreeMap<ForeignChain, ChainEntry>,
+}
+
+struct ChainEntry {
+    providers: Vec<ProviderEntry>,
+    // RPC response quorum: when a node fans out a query to the N providers above,
+    // at least this many must return the same value for the response to be accepted.
+    threshold: u64,
+}
+
+struct ProviderVotes {
+    // Pending per-chain proposals, keyed by `(participant, chain)`. The slot holds the
+    // exact `ChainEntry` the participant is proposing for that chain. The chain's state
+    // is replaced wholesale once the protocol's signing threshold of participants holds
+    // the same canonical `(providers, threshold)` pair.
+    pending: BTreeMap<(AuthenticatedParticipantId, ForeignChain), ChainEntry>,
 }
 
 struct ProviderEntry {
-    provider_id: ProviderId,
+    provider_id: ProviderId, // newtype around String — typed boundary so a base_url
+                             // can't be passed where a provider_id is expected.
     // Provider's stable base. When `chain_routing == Embedded`, the chain identifier is
     // already encoded in `base_url` (subdomain or path prefix). Otherwise `base_url` is
     // chain-agnostic and `chain_routing` carries the chain marker.
     base_url: String,
-    auth_scheme: AuthScheme, // Header / Path / Query / None — where the operator's token gets injected
+    auth_scheme: AuthScheme,   // Header / Path / Query / None — where the operator's token gets injected
     chain_routing: ChainRouting, // Embedded / PathSegment / QueryParam — exactly one
+}
+
+// The vote-input DTO submitted by participants.
+struct ChainVote {
+    chain: ForeignChain,
+    providers: Vec<ProviderEntry>, // full proposed list for `chain` (snapshot, not a diff)
+    threshold: u64,                // proposed RPC response quorum for `chain`
 }
 ```
 
@@ -83,6 +109,8 @@ Since the nodes are running in a Trusted Execution Environment (TEE), this funct
 
 When a foreign TX verification request is processed by a set of nodes, every node individually queries its locally-configured RPC providers for that chain. A node considers the foreign TX verified iff at least a per-chain quorum number of providers agreed.
 
+The quorum value comes from on-chain `ChainEntry.threshold`, voted in as part of the same `ChainVote` that voted the chain's provider list — so participants agree on both "which providers are trusted" and "how many of them must concur" in one round.
+
 ### Nodes submit the configured foreign chains on-chain
 
 Nodes submit their per-chain provider set on-chain so the network knows which chains they support. Functionality for this was added on the contract side in [#2784](https://github.com/near/mpc/pull/2784) and is kept — the whitelist is a new layer on top, not a replacement.
@@ -92,5 +120,5 @@ Nodes submit their per-chain provider set on-chain so the network knows which ch
 Landing in stacked PRs under [#3208](https://github.com/near/mpc/issues/3208):
 
 - **PR 1** ([#3216](https://github.com/near/mpc/pull/3216)): on-chain data shape and storage field (`ForeignChainRpcWhitelist`, `ProviderEntry`, `AuthScheme`, `ChainRouting`, `ProviderId`), `MpcContract` field + storage key, and the `AllowedProviders` data-structure helpers (add/remove/get). No vote endpoints, no view function, no node-side wiring.
-- **PR 2**: contract-side voting on the whitelist — entry point, pending-vote tracking, apply path. Concrete API shape is being iterated on; see the PR for the final design.
+- **PR 2** ([#3249](https://github.com/near/mpc/pull/3249)): contract-side voting on the whitelist. Adds `vote_update_foreign_chain_providers(votes: Vec<ChainVote>)`, the `ProviderVotes` pending-vote storage, canonicalization (`providers` sorted by `provider_id`; duplicate chain or `provider_id` in a batch rejected with `InvalidParameters::MalformedPayload`), and the `clean_tee_status` extension that drops votes from non-participants. Voting is **full-snapshot**: each `ChainVote` proposes the chain's complete state (provider list + RPC response quorum), and the chain's stored `ChainEntry` is replaced wholesale once the protocol's signing threshold of participants holds the same canonical `(providers, threshold)` pair (same gate as `vote_add_os_measurement`). Drops the original Add/Remove-ops design for two reasons: (1) snapshot semantics canonicalize trivially (sort the proposed list), avoiding the order-of-apply ambiguity Add/Remove batches introduced, and (2) bundling the RPC response quorum into `ChainVote.threshold` collapses what was originally going to be two separate vote endpoints (whitelist + quorum) into one.
 - **PR 3**: node-side wiring — operator-yaml schema change (`provider_id` + `token` only), indexer task streaming the whitelist into a `watch::Receiver`, coordinator startup pipeline (resolve → chain-identity probe → sample-tx probe → register), per-inspector chain-identity probe.

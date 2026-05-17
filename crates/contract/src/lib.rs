@@ -1492,6 +1492,42 @@ impl MpcContract {
         self.tee_state.get_allowed_measurements()
     }
 
+    /// Vote on per-chain RPC provider whitelist state. Each `ChainVote` carries the
+    /// proposed full provider list and the RPC response quorum for that chain. The
+    /// chain's stored state is replaced wholesale once the protocol's signing threshold
+    /// of participants has voted the same `(providers, threshold)` pair (same gate as
+    /// `verify_tee` and `vote_add_os_measurement`).
+    #[handle_result]
+    pub fn vote_update_foreign_chain_providers(
+        &mut self,
+        #[serializer(borsh)] votes: Vec<dtos::ChainVote>,
+    ) -> Result<(), Error> {
+        log!(
+            "vote_update_foreign_chain_providers: signer={}, n_votes={}",
+            env::signer_account_id(),
+            votes.len(),
+        );
+        self.voter_or_panic();
+
+        let threshold_parameters = match self.protocol_state.threshold_parameters() {
+            Ok(threshold_parameters) => threshold_parameters,
+            Err(ContractNotInitialized) => env::panic_str(
+                "Contract is not initialized. Cannot vote for foreign chain providers before initialization.",
+            ),
+        };
+
+        let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
+        let threshold = self.threshold()?.value();
+        let applied = self
+            .foreign_chain_rpc_whitelist
+            .vote(participant, votes, threshold)?;
+        log!(
+            "vote_update_foreign_chain_providers: applied chains={:?}",
+            applied,
+        );
+        Ok(())
+    }
+
     /// Returns all accounts that have TEE attestations stored in the contract.
     /// Note: This includes both current protocol participants and accounts that may have
     /// submitted TEE information but are not currently part of the active participant set.
@@ -1602,6 +1638,9 @@ impl MpcContract {
         };
 
         self.tee_state.clean_non_participant_votes(participants);
+        self.foreign_chain_rpc_whitelist
+            .votes
+            .retain_only(participants);
         Ok(())
     }
 

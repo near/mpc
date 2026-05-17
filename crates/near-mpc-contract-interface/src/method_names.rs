@@ -28,6 +28,7 @@ pub const VOTE_CANCEL_KEYGEN: &str = "vote_cancel_keygen";
 pub const VOTE_CANCEL_RESHARING: &str = "vote_cancel_resharing";
 pub const VOTE_ABORT_KEY_EVENT_INSTANCE: &str = "vote_abort_key_event_instance";
 pub const VOTE_UPDATE: &str = "vote_update";
+pub const VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS: &str = "vote_update_foreign_chain_providers";
 pub const REMOVE_UPDATE_VOTE: &str = "remove_update_vote";
 pub const REMOVE_NON_PARTICIPANT_UPDATE_VOTES: &str = "remove_non_participant_update_votes";
 
