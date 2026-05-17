@@ -35,7 +35,7 @@ impl AllowedProviders {
 
     /// Remove the provider with `provider_id` from `chain`. Returns `true` if an entry
     /// was removed.
-    pub fn remove(&mut self, chain: ForeignChain, provider_id: &str) -> bool {
+    pub fn remove(&mut self, chain: ForeignChain, provider_id: &ProviderId) -> bool {
         let Some(bucket) = self.entries.get_mut(&chain) else {
             return false;
         };
@@ -69,11 +69,15 @@ mod tests {
 
     fn entry(provider_id: &str) -> ProviderEntry {
         ProviderEntry {
-            provider_id: provider_id.to_string(),
+            provider_id: ProviderId(provider_id.to_string()),
             base_url: format!("https://{provider_id}.example.com"),
             auth_scheme: AuthScheme::None,
             chain_routing: ChainRouting::Embedded,
         }
+    }
+
+    fn pid(s: &str) -> ProviderId {
+        ProviderId(s.to_string())
     }
 
     #[test]
@@ -88,7 +92,7 @@ mod tests {
         assert!(added);
         let entries: Vec<&ProviderEntry> = allowed.get(ForeignChain::Ethereum).collect();
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].provider_id, "alchemy");
+        assert_eq!(entries[0].provider_id, pid("alchemy"));
     }
 
     #[test]
@@ -134,13 +138,13 @@ mod tests {
         allowed.add(ForeignChain::Ethereum, entry("ankr"));
 
         // When
-        let removed = allowed.remove(ForeignChain::Ethereum, "alchemy");
+        let removed = allowed.remove(ForeignChain::Ethereum, &pid("alchemy"));
 
         // Then
         assert!(removed);
         let remaining: Vec<&ProviderEntry> = allowed.get(ForeignChain::Ethereum).collect();
         assert_eq!(remaining.len(), 1);
-        assert_eq!(remaining[0].provider_id, "ankr");
+        assert_eq!(remaining[0].provider_id, pid("ankr"));
     }
 
     #[test]
@@ -150,8 +154,8 @@ mod tests {
         allowed.add(ForeignChain::Ethereum, entry("alchemy"));
 
         // When
-        let removed_unknown_id = allowed.remove(ForeignChain::Ethereum, "does-not-exist");
-        let removed_unknown_chain = allowed.remove(ForeignChain::Polygon, "alchemy");
+        let removed_unknown_id = allowed.remove(ForeignChain::Ethereum, &pid("does-not-exist"));
+        let removed_unknown_chain = allowed.remove(ForeignChain::Polygon, &pid("alchemy"));
 
         // Then
         assert!(!removed_unknown_id);
@@ -166,7 +170,7 @@ mod tests {
         allowed.add(ForeignChain::Ethereum, entry("alchemy"));
 
         // When
-        let removed = allowed.remove(ForeignChain::Ethereum, "alchemy");
+        let removed = allowed.remove(ForeignChain::Ethereum, &pid("alchemy"));
 
         // Then: the chain has no entries.
         assert!(removed);

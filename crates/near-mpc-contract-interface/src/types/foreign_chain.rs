@@ -954,7 +954,13 @@ impl ForeignTxSignPayload {
 
 /// Stable label for an RPC provider entry (e.g. `"alchemy"`, `"ankr"`, `"drpc"`).
 /// Unique within a chain in the on-chain foreign-chain RPC whitelist.
-pub type ProviderId = String;
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(Serialize, Deserialize))]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct ProviderId(pub String);
 
 /// Where the operator's API key/token gets injected into the assembled RPC URL.
 /// Lives on the contract (not in operator yaml) so the operator can't pick a custom
@@ -965,6 +971,7 @@ pub type ProviderId = String;
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
+#[non_exhaustive]
 pub enum AuthScheme {
     /// Token sent in an HTTP header (e.g. `Authorization: Bearer <token>`).
     Header {
@@ -987,6 +994,7 @@ pub enum AuthScheme {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
+#[non_exhaustive]
 pub enum ChainRouting {
     /// Chain identity already encoded in `base_url` (subdomain or path prefix).
     /// E.g. Alchemy's `eth-mainnet.g.alchemy.com`, Infura's `mainnet.infura.io`, or

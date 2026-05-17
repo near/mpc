@@ -1,6 +1,6 @@
 ---
 source: crates/contract/src/lib.rs
-assertion_line: 5695
+assertion_line: 5683
 expression: schema
 ---
 BorshSchemaContainer {
@@ -46,15 +46,15 @@ BorshSchemaContainer {
                 "Vec<DomainConfig>",
             ],
         },
-        "(ForeignChain, BTreeMap<String, ProviderEntry>)": Tuple {
+        "(ForeignChain, BTreeMap<ProviderId, ProviderEntry>)": Tuple {
             elements: [
                 "ForeignChain",
-                "BTreeMap<String, ProviderEntry>",
+                "BTreeMap<ProviderId, ProviderEntry>",
             ],
         },
-        "(String, ProviderEntry)": Tuple {
+        "(ProviderId, ProviderEntry)": Tuple {
             elements: [
-                "String",
+                "ProviderId",
                 "ProviderEntry",
             ],
         },
@@ -138,7 +138,7 @@ BorshSchemaContainer {
                 [
                     (
                         "entries",
-                        "BTreeMap<ForeignChain, BTreeMap<String, ProviderEntry>>",
+                        "BTreeMap<ForeignChain, BTreeMap<ProviderId, ProviderEntry>>",
                     ),
                 ],
             ),
@@ -251,15 +251,15 @@ BorshSchemaContainer {
             length_range: 0..=4294967295,
             elements: "(AuthenticatedParticipantId, Vec<DomainConfig>)",
         },
-        "BTreeMap<ForeignChain, BTreeMap<String, ProviderEntry>>": Sequence {
+        "BTreeMap<ForeignChain, BTreeMap<ProviderId, ProviderEntry>>": Sequence {
             length_width: 4,
             length_range: 0..=4294967295,
-            elements: "(ForeignChain, BTreeMap<String, ProviderEntry>)",
+            elements: "(ForeignChain, BTreeMap<ProviderId, ProviderEntry>)",
         },
-        "BTreeMap<String, ProviderEntry>": Sequence {
+        "BTreeMap<ProviderId, ProviderEntry>": Sequence {
             length_width: 4,
             length_range: 0..=4294967295,
-            elements: "(String, ProviderEntry)",
+            elements: "(ProviderId, ProviderEntry)",
         },
         "BTreeSet<AuthenticatedParticipantId>": Sequence {
             length_width: 4,
@@ -1200,7 +1200,7 @@ BorshSchemaContainer {
                 [
                     (
                         "provider_id",
-                        "String",
+                        "ProviderId",
                     ),
                     (
                         "base_url",
@@ -1214,6 +1214,13 @@ BorshSchemaContainer {
                         "chain_routing",
                         "ChainRouting",
                     ),
+                ],
+            ),
+        },
+        "ProviderId": Struct {
+            fields: UnnamedFields(
+                [
+                    "String",
                 ],
             ),
         },
