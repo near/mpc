@@ -1382,7 +1382,7 @@ near contract call-function as-transaction \
   send
 ```
 
-> **Note:** There is no `vote_remove_code_hash`. Once a successor hash is voted in, the previous hash remains valid for a 7-day grace period (set by `tee_upgrade_deadline_duration_seconds`, default 7 days) and then auto-expires — so unlike launcher and OS-measurement voting there is no explicit remove command.
+> **Note:** There is no `vote_remove_code_hash`. Once a successor hash is voted in, the previous hash remains valid for a 7-day grace period and then auto-expires — so unlike launcher and OS-measurement voting there is no explicit remove command.
 
 #### Query allowed MPC image hashes
 
