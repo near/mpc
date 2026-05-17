@@ -1323,7 +1323,7 @@ Where `<scheme>` is `ecdsa`, `eddsa`, or `ckd`. The `epoch_id` is the resharing'
 INFO mpc_node::coordinator: Concluded resharing state.
 ```
 
-You can also confirm on-chain:
+You can also confirm on-chain (replace `v1.signer-prod.testnet` / `testnet` with `v1.signer` / `mainnet` on mainnet):
 
 ```bash
 near contract call-function as-read-only \
