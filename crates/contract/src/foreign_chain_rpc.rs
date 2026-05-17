@@ -153,13 +153,13 @@ fn canonicalize(mut providers: Vec<ProviderEntry>, threshold: u64) -> Result<Cha
 mod tests {
     use super::*;
     use crate::primitives::{key_state::AuthenticatedParticipantId, test_utils::gen_participants};
-    use near_mpc_contract_interface::types::{AuthScheme, ChainRouting};
+    use near_mpc_contract_interface::types::{AuthScheme, ChainRouting, ProviderId};
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
 
     fn provider(id: &str) -> ProviderEntry {
         ProviderEntry {
-            provider_id: id.to_string(),
+            provider_id: ProviderId(id.to_string()),
             base_url: format!("https://{id}.example.com"),
             auth_scheme: AuthScheme::None,
             chain_routing: ChainRouting::Embedded,
@@ -225,7 +225,10 @@ mod tests {
         // Then
         let stored = wl.entries.get(ForeignChain::Ethereum).unwrap();
         assert_eq!(stored.providers.len(), 1);
-        assert_eq!(stored.providers[0].provider_id, "alchemy");
+        assert_eq!(
+            stored.providers[0].provider_id,
+            ProviderId("alchemy".to_string())
+        );
         assert_eq!(stored.threshold, 1);
         assert!(wl.votes.pending.is_empty());
     }
@@ -369,7 +372,10 @@ mod tests {
         // Then: full snapshot replaced — only drpc remains.
         let stored = wl.entries.get(ForeignChain::Ethereum).unwrap();
         assert_eq!(stored.providers.len(), 1);
-        assert_eq!(stored.providers[0].provider_id, "drpc");
+        assert_eq!(
+            stored.providers[0].provider_id,
+            ProviderId("drpc".to_string())
+        );
     }
 
     #[test]

@@ -1761,7 +1761,7 @@ expression: abi
                     "Struct": [
                       [
                         "provider_id",
-                        "String"
+                        "ProviderId"
                       ],
                       [
                         "base_url",
@@ -1775,6 +1775,11 @@ expression: abi
                         "chain_routing",
                         "ChainRouting"
                       ]
+                    ]
+                  },
+                  "ProviderId": {
+                    "Struct": [
+                      "String"
                     ]
                   },
                   "String": {

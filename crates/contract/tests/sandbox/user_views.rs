@@ -1,6 +1,6 @@
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
-    AuthScheme, ChainRouting, ChainVote, ForeignChain, Protocol, ProviderEntry,
+    AuthScheme, ChainRouting, ChainVote, ForeignChain, Protocol, ProviderEntry, ProviderId,
 };
 use near_sdk::borsh;
 use near_sdk::{CurveType, PublicKey};
@@ -85,7 +85,7 @@ async fn vote_update_foreign_chain_providers__should_succeed_for_authenticated_v
     let votes = vec![ChainVote {
         chain: ForeignChain::Ethereum,
         providers: vec![ProviderEntry {
-            provider_id: "alchemy".to_string(),
+            provider_id: ProviderId("alchemy".to_string()),
             base_url: "https://eth-mainnet.g.alchemy.com/v2/".to_string(),
             auth_scheme: AuthScheme::None,
             chain_routing: ChainRouting::Embedded,

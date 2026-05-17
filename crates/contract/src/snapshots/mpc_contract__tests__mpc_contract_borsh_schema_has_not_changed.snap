@@ -1,6 +1,6 @@
 ---
 source: crates/contract/src/lib.rs
-assertion_line: 5717
+assertion_line: 5722
 expression: schema
 ---
 BorshSchemaContainer {
@@ -1224,7 +1224,7 @@ BorshSchemaContainer {
                 [
                     (
                         "provider_id",
-                        "String",
+                        "ProviderId",
                     ),
                     (
                         "base_url",
@@ -1238,6 +1238,13 @@ BorshSchemaContainer {
                         "chain_routing",
                         "ChainRouting",
                     ),
+                ],
+            ),
+        },
+        "ProviderId": Struct {
+            fields: UnnamedFields(
+                [
+                    "String",
                 ],
             ),
         },
