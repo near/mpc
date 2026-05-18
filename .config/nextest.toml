@@ -1,8 +1,10 @@
 # Limit sandbox test parallelism to avoid resource contention and flaky timeouts.
 # Each sandbox test spins up its own NEAR sandbox instance, so running too many
-# concurrently causes request timeouts on CI.
+# concurrently causes request timeouts on CI. Lowered from 16 to 10 alongside
+# PR #3249's larger contract WASM + extra migrate() try-read; can revert toward
+# 16 once `pr1_state` is retired and the contract slims back down.
 [test-groups.contract-sandbox]
-max-threads = 16
+max-threads = 10
 
 [profile.ci-contract]
 [[profile.ci-contract.overrides]]
