@@ -193,22 +193,29 @@ mod tests {
 
         // When
         let p0 = auth_as(&participants, 0);
-        wl.vote(
-            p0,
-            vec![chain_vote(ForeignChain::Ethereum, &["alchemy"], 1)],
-            2,
-        )
-        .unwrap();
+        let applied_p0 = wl
+            .vote(
+                p0,
+                vec![chain_vote(ForeignChain::Ethereum, &["alchemy"], 1)],
+                2,
+            )
+            .unwrap();
+        assert!(
+            applied_p0.is_empty(),
+            "first vote can't reach threshold alone"
+        );
         assert!(wl.entries.get(ForeignChain::Ethereum).is_none());
         assert_eq!(wl.votes.pending.len(), 1);
 
         let p1 = auth_as(&participants, 1);
-        wl.vote(
-            p1,
-            vec![chain_vote(ForeignChain::Ethereum, &["alchemy"], 1)],
-            2,
-        )
-        .unwrap();
+        let applied_p1 = wl
+            .vote(
+                p1,
+                vec![chain_vote(ForeignChain::Ethereum, &["alchemy"], 1)],
+                2,
+            )
+            .unwrap();
+        assert_eq!(applied_p1, vec![ForeignChain::Ethereum]);
 
         // Then
         let stored = wl.entries.get(ForeignChain::Ethereum).unwrap();
