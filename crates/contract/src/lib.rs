@@ -1842,7 +1842,7 @@ impl MpcContract {
     /// only correct interpretation is presence: `Some(_)` vs `None`.
     ///
     /// The `Option<YieldIndex>` shape is retained for JSON wire compatibility with
-    /// out-of-tree consumers; the in-tree caller (`tx_sender::compute_transaction_status`)
+    /// out-of-tree consumers; the in-tree caller (`tx_sender::observe_tx_result`)
     /// only matches on presence. Prefer a `bool`-shaped accessor if one is added.
     ///
     /// Falls back to the legacy single-yield map for in-flight requests inherited
