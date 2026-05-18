@@ -5,7 +5,9 @@
 
 use std::collections::BTreeMap;
 
-use near_mpc_contract_interface::types::{ChainVote, ForeignChain, ProviderEntry};
+use near_mpc_contract_interface::types::{
+    AuthScheme, ChainRouting, ChainVote, ForeignChain, ProviderEntry,
+};
 use near_sdk::near;
 
 use crate::errors::{Error, InvalidParameters};
@@ -116,7 +118,9 @@ impl ForeignChainRpcWhitelist {
 }
 
 /// Sort by `provider_id` for order-independent equality at threshold-check time.
-/// Errors on a duplicate `provider_id` within the vote.
+/// Errors on a duplicate `provider_id` within the vote, a `PathSegment` containing a
+/// literal `/`, or a `QueryParam` whose name collides with the entry's `AuthScheme::Query`
+/// name (per the constraints documented on `ChainRouting`).
 fn canonicalize(mut providers: Vec<ProviderEntry>, threshold: u64) -> Result<ChainEntry, Error> {
     providers.sort_by(|a, b| a.provider_id.cmp(&b.provider_id));
     if providers
@@ -129,6 +133,36 @@ fn canonicalize(mut providers: Vec<ProviderEntry>, threshold: u64) -> Result<Cha
                     .to_string(),
         }
         .into());
+    }
+    for p in &providers {
+        if let ChainRouting::PathSegment { segment } = &p.chain_routing {
+            if segment.contains('/') {
+                return Err(InvalidParameters::MalformedPayload {
+                    reason: format!(
+                        "ChainRouting::PathSegment.segment for provider_id {:?} must not contain '/'",
+                        p.provider_id.0
+                    ),
+                }
+                .into());
+            }
+        }
+        if let (
+            ChainRouting::QueryParam {
+                name: routing_name, ..
+            },
+            AuthScheme::Query { name: auth_name },
+        ) = (&p.chain_routing, &p.auth_scheme)
+        {
+            if routing_name == auth_name {
+                return Err(InvalidParameters::MalformedPayload {
+                    reason: format!(
+                        "ChainRouting::QueryParam.name collides with AuthScheme::Query.name {:?} for provider_id {:?}",
+                        auth_name, p.provider_id.0
+                    ),
+                }
+                .into());
+            }
+        }
     }
     Ok(ChainEntry {
         providers,
