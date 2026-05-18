@@ -96,7 +96,7 @@ use std::sync::{Arc, Mutex, Weak};
 ///  │   │       │       │   │  ┆       │
 ///  ..  ..      ..      ..  .. ┆       ..
 /// ```
-pub struct RecentBlocksTracker<T: Clone + 'static> {
+pub struct RecentBlocksTracker {
     window_size: u64,
     /// By "root", we mean the blocks whose parents we don't know or are older than the window.
     /// The children of the root are the earliest blocks we are keeping who do not have any order
@@ -113,10 +113,6 @@ pub struct RecentBlocksTracker<T: Clone + 'static> {
     maximum_height_available: BlockHeight,
     /// Maps block hashes to their nodes in the tree.
     hash_to_node: HashMap<CryptoHash, Arc<BlockNode>>,
-    /// Maps block hashes to their content; this is to provide the stream of finalized blocks.
-    /// Technically, instead of a hashmap we could put this in the node, but that would clutter
-    /// the code by requiring the T type parameter everywhere.
-    node_to_content: HashMap<CryptoHash, T>,
 }
 
 #[repr(u8)]
@@ -180,12 +176,12 @@ impl AtomicBlockStatus {
     }
 }
 
-pub struct AddBlockResult<T> {
+pub struct AddBlockResult {
     /// The list of newly finalized blocks, in ascending height order. Each entry is a tuple of
     /// the block height and the data passed to us when adding the block.
     /// It is guaranteed that the new final blocks returned from multiple calls to add_block are
     /// contiguous, thus forming the stream of finalized blocks.
-    pub new_final_blocks: Vec<(u64, T)>,
+    pub new_final_blocks: Vec<(u64, CryptoHash)>,
     pub block_ref: Weak<AtomicBlockStatus>,
 }
 
@@ -231,7 +227,6 @@ impl BlockNode {
         indents: &mut Vec<u8>,
         final_head: Option<CryptoHash>,
         canonical_head: Option<CryptoHash>,
-        content_printer: &impl Fn(&CryptoHash, &mut std::fmt::Formatter<'_>) -> std::fmt::Result,
     ) -> std::fmt::Result {
         if Some(self.hash) == final_head {
             write!(f, "FH ")?;
@@ -260,16 +255,15 @@ impl BlockNode {
             if self.status.is_final() { "F" } else { " " },
             format!("{:?}", self.hash),
         )?;
-        content_printer(&self.hash, f)?;
         writeln!(f)?;
         let children = self.children.lock().unwrap();
         for (i, child) in children.iter().enumerate() {
             if children.len() == 1 {
-                child.debug_print(f, indents, final_head, canonical_head, content_printer)?;
+                child.debug_print(f, indents, final_head, canonical_head)?;
             } else {
                 let indent = if i + 1 == children.len() { 2 } else { 3 };
                 indents.push(indent);
-                child.debug_print(f, indents, final_head, canonical_head, content_printer)?;
+                child.debug_print(f, indents, final_head, canonical_head)?;
                 indents.pop();
             }
         }
@@ -303,7 +297,7 @@ pub struct BlockViewLite {
     pub timestamp_nanosec: u64,
 }
 
-impl<T: Clone + Debug> RecentBlocksTracker<T> {
+impl RecentBlocksTracker {
     pub fn new(window_size: u64) -> Self {
         Self {
             window_size,
@@ -312,18 +306,13 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
             final_head: None,
             maximum_height_available: 0,
             hash_to_node: HashMap::new(),
-            node_to_content: HashMap::new(),
         }
     }
 
     /// Adds a block to the tracker. This is expected to be called for EVERY block given by the
     /// indexer (whether or not it is interesting). The content is whatever content that we want
     /// to buffer for the stream of final blocks.
-    pub fn add_block(
-        &mut self,
-        block: &BlockViewLite,
-        content: T,
-    ) -> anyhow::Result<AddBlockResult<T>> {
+    pub fn add_block(&mut self, block: &BlockViewLite) -> anyhow::Result<AddBlockResult> {
         if self.hash_to_node.contains_key(&block.hash) {
             anyhow::bail!("Block already exists in the tracker");
         }
@@ -340,7 +329,6 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
             children: Mutex::new(Vec::new()),
         });
         self.hash_to_node.insert(block.hash, node.clone());
-        self.node_to_content.insert(block.hash, content);
         if let Some(parent) = parent {
             parent.children.lock().unwrap().push(node.clone());
         } else {
@@ -353,7 +341,7 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
         // doing this defensively to not crash just in case we have a bug.
         let new_final_blocks = new_final_blocks
             .into_iter()
-            .filter_map(|node| Some((node.height, self.node_to_content.get(&node.hash)?.clone())))
+            .map(|node| (node.height, node.hash))
             .collect();
         match self.canonical_head.upgrade() {
             None => {
@@ -458,7 +446,6 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
                     .drain(..),
             );
             self.hash_to_node.remove(&node.hash);
-            self.node_to_content.remove(&node.hash);
         }
     }
 
@@ -539,7 +526,6 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
                 continue;
             }
             self.hash_to_node.remove(&node.hash);
-            self.node_to_content.remove(&node.hash);
             // Drain into the queue so the parent stops holding strong refs to
             // its children — once `hash_to_node` no longer holds the parent,
             // the parent can drop as soon as we move past this iteration.
@@ -550,7 +536,7 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
     }
 }
 
-impl<T: Clone + Debug> Debug for RecentBlocksTracker<T> {
+impl Debug for RecentBlocksTracker {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(
             f,
@@ -574,13 +560,6 @@ impl<T: Clone + Debug> Debug for RecentBlocksTracker<T> {
                 }],
                 final_head,
                 canonical_head,
-                &|hash, f| {
-                    if let Some(content) = self.node_to_content.get(hash) {
-                        write!(f, "{:?}", content)
-                    } else {
-                        write!(f, "")
-                    }
-                },
             )?;
         }
         Ok(())
@@ -594,7 +573,7 @@ pub mod tests {
     use super::{BlockEntropy, BlockStatus, BlockViewLite, RecentBlocksTracker};
     use near_indexer::near_primitives::hash::hash;
     use near_indexer_primitives::CryptoHash;
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
     use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
     use std::sync::{Arc, Mutex};
 
@@ -736,8 +715,9 @@ pub mod tests {
 
     pub struct Tester {
         maker: Arc<TestBlockMaker>,
-        tracker: RecentBlocksTracker<String>,
+        tracker: RecentBlocksTracker,
         parents_of_added_blocks: HashSet<CryptoHash>,
+        content: HashMap<CryptoHash, String>,
     }
 
     impl From<u8> for BlockStatus {
@@ -759,6 +739,7 @@ pub mod tests {
                 maker,
                 tracker,
                 parents_of_added_blocks: HashSet::new(),
+                content: HashMap::new(),
             }
         }
 
@@ -778,17 +759,15 @@ pub mod tests {
                 !self.parents_of_added_blocks.contains(&block.hash),
                 "Cannot retroactively add the parent of an already added block"
             );
-            let result = self
-                .tracker
-                .add_block(&block.to_block_view(), name.to_string())
-                .unwrap();
+            let result = self.tracker.add_block(&block.to_block_view()).unwrap();
+            self.content.insert(block.hash, name.to_string());
             if let Some(parent) = block.parent.clone() {
                 self.parents_of_added_blocks.insert(parent.hash);
             }
             result
                 .new_final_blocks
                 .iter()
-                .map(|(_, name)| name.clone())
+                .map(|(_, hash)| self.content.get(hash).unwrap().clone())
                 .collect::<Vec<_>>()
                 .join(",")
         }

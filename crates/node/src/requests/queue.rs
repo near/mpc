@@ -1,5 +1,5 @@
 use super::debug::{CompletedRequest, CompletedRequests};
-use super::recent_blocks_tracker::AtomicBlockStatus;
+use super::recent_blocks_tracker::{AtomicBlockStatus, BlockStatus};
 use crate::indexer::types::ChainRespondArgs;
 use crate::primitives::ParticipantId;
 use crate::requests::metrics;
@@ -70,7 +70,7 @@ pub struct PendingRequests<RequestType: Request, ChainRespondArgsType: ChainResp
     /// See `RecentBlocksTracker`; allows us to decide what to do with each request in
     /// the queue, as well as provide us a stream of finalized blocks from which we determine
     /// which requests has been responded to.
-    recent_blocks: RecentBlocksTracker<BufferedBlockData>,
+    recent_blocks: RecentBlocksTracker,
 
     /// Provides information about connectivity and indexer heights.
     pub(super) network_api: Arc<dyn NetworkAPIForRequests>,
@@ -124,12 +124,54 @@ impl Debug for BufferedBlockData {
     }
 }
 
+struct ResponseStatuses(Vec<Weak<AtomicBlockStatus>>);
+
+impl ResponseStatuses {
+    fn new() -> Self {
+        Self(Vec::new())
+    }
+
+    fn status(&self) -> ResponseStatus {
+        if self.0.is_empty() {
+            return ResponseStatus::None;
+        }
+        let mut result = ResponseStatus::RemovedByTracker;
+        for status in self.0.iter().filter_map(Weak::upgrade) {
+            if status.is_final() {
+                return ResponseStatus::Final;
+            }
+            if status.is_canonical() {
+                // We have a response on the canonical chain; wait for it to be finalized.
+                return ResponseStatus::PendingOptimistic;
+            }
+            result = ResponseStatus::PendingNonCanonical;
+        }
+        result
+    }
+
+    fn add(&mut self, status: Weak<AtomicBlockStatus>) {
+        self.0.push(status);
+    }
+}
+
+enum ResponseStatus {
+    None,
+    PendingNonCanonical,
+    PendingOptimistic,
+    Final,
+    RemovedByTracker,
+}
+
 /// The state of a single request in the queue.
 pub(super) struct QueuedRequest<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> {
     pub request: RequestType,
 
     /// Finality status of the block the request was included
     status: Weak<AtomicBlockStatus>,
+    /// Finality status of the blocks the response was included
+    /// note that we move these here, such that we no longer require the `add_block_result` from
+    /// `RecentBlocksTracker`
+    response_statuses: ResponseStatuses,
 
     pub block_height: u64,
 
@@ -239,6 +281,7 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
             request,
             block_height,
             status,
+            response_statuses: ResponseStatuses::new(),
             leader_selection_order,
             computation_progress: Arc::new(Mutex::new(ComputationProgress::default())),
             next_check_due: clock.now(),
@@ -304,6 +347,10 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
     fn is_older_than(&self, cutoff_block: u64) -> bool {
         cutoff_block > self.block_height
     }
+
+    fn add_response(&mut self, status: Weak<AtomicBlockStatus>) {
+        self.response_statuses.add(status)
+    }
 }
 
 impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
@@ -321,6 +368,16 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
         }
         if self.has_active_attempt() {
             return RequestStatusResult::Wait("active attempt ongoing");
+        }
+        // check if we already have a response:
+        match self.response_statuses.status() {
+            ResponseStatus::None | ResponseStatus::RemovedByTracker => {}
+            ResponseStatus::PendingOptimistic | ResponseStatus::PendingNonCanonical => {
+                return RequestStatusResult::Wait("response submitted, waiting to finalize");
+            }
+            ResponseStatus::Final => {
+                // TODO: remove it from queue
+            }
         }
         // check it against the network height
         if self.is_older_than(cutoff_block) {
@@ -417,14 +474,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             requests,
             completed_requests,
         } = requests;
-        let add_result = match self.recent_blocks.add_block(
-            &block,
-            BufferedBlockData {
-                requests: requests.iter().map(|r| r.get_id()).collect(),
-                completed_requests,
-                timestamp_received: self.clock.now(),
-            },
-        ) {
+        let add_result = match self.recent_blocks.add_block(&block) {
             Ok(add_result) => add_result,
             Err(err) => {
                 // block already exists.
@@ -472,39 +522,39 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
         };
 
         mpc_pending_queue_blocks_indexed.inc();
-        for (final_block_height, buffered_block_data) in add_result.new_final_blocks {
-            mpc_pending_queue_finalized_blocks_indexed.inc();
-            mpc_pending_queue_responses_indexed
-                .inc_by(buffered_block_data.completed_requests.len() as u64);
+        //for (final_block_height, buffered_block_data) in add_result.new_final_blocks {
+        //    mpc_pending_queue_finalized_blocks_indexed.inc();
+        //    mpc_pending_queue_responses_indexed
+        //        .inc_by(buffered_block_data.completed_requests.len() as u64);
 
-            for request_id in &buffered_block_data.completed_requests {
-                tracing::debug!(target: "request", "Removing completed request {:?}", request_id);
-                if let Some(request) = self.requests.remove(request_id) {
-                    mpc_pending_queue_matching_responses_indexed.inc();
+        //    for request_id in &buffered_block_data.completed_requests {
+        //        tracing::debug!(target: "request", "Removing completed request {:?}", request_id);
+        //        if let Some(request) = self.requests.remove(request_id) {
+        //            mpc_pending_queue_matching_responses_indexed.inc();
 
-                    let response_latency_blocks = final_block_height - request.block_height;
-                    let response_latency_duration = buffered_block_data
-                        .timestamp_received
-                        .signed_duration_since(request.time_indexed);
+        //            let response_latency_blocks = final_block_height - request.block_height;
+        //            let response_latency_duration = buffered_block_data
+        //                .timestamp_received
+        //                .signed_duration_since(request.time_indexed);
 
-                    request_response_latency_blocks.observe(response_latency_blocks as f64);
+        //            request_response_latency_blocks.observe(response_latency_blocks as f64);
 
-                    request_response_latency_seconds
-                        .observe(response_latency_duration.as_seconds_f64());
+        //            request_response_latency_seconds
+        //                .observe(response_latency_duration.as_seconds_f64());
 
-                    self.recently_completed_requests
-                        .add_completed_request(CompletedRequest {
-                            indexed_block_height: request.block_height,
-                            request: request.request,
-                            progress: request.computation_progress,
-                            completion_delay: Some((
-                                response_latency_blocks,
-                                response_latency_duration,
-                            )),
-                        });
-                }
-            }
-        }
+        //            self.recently_completed_requests
+        //                .add_completed_request(CompletedRequest {
+        //                    indexed_block_height: request.block_height,
+        //                    request: request.request,
+        //                    progress: request.computation_progress,
+        //                    completion_delay: Some((
+        //                        response_latency_blocks,
+        //                        response_latency_duration,
+        //                    )),
+        //                });
+        //        }
+        //    }
+        //}
         mpc_pending_requests_queue_requests_indexed.inc_by(requests.len() as u64);
         for request in requests {
             self.requests
@@ -517,6 +567,11 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                     &self.all_participants,
                     self.clock.now(),
                 ));
+        }
+        for response in completed_requests {
+            self.requests.entry(response).and_modify(|queued_request| {
+                queued_request.add_response(add_result.block_ref.clone())
+            });
         }
     }
 
