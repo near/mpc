@@ -19,7 +19,7 @@ use dtos::{
     RunningContractState,
 };
 use mpc_contract::primitives::{
-    test_utils::infer_purpose_from_curve,
+    test_utils::infer_purpose_from_protocol,
     thresholds::{Threshold, ThresholdParameters},
 };
 use near_mpc_contract_interface::types::ReconstructionThreshold;
@@ -169,7 +169,7 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
                 id: next_domain_id.into(),
                 protocol: *protocol,
                 reconstruction_threshold,
-                purpose: infer_purpose_from_curve(curve),
+                purpose: infer_purpose_from_protocol(*protocol),
             }],
         )
         .await

@@ -14,7 +14,7 @@ use mpc_contract::{
     primitives::{
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantId, ParticipantInfo, Participants},
-        test_utils::{bogus_ed25519_public_key, infer_purpose_from_curve},
+        test_utils::{bogus_ed25519_public_key, infer_purpose_from_protocol},
         thresholds::{Threshold, ThresholdParameters},
     },
     tee::tee_state::NodeId,
@@ -244,7 +244,7 @@ impl SandboxTestSetupBuilder {
         for protocol in &self.protocols {
             let curve = Curve::from(*protocol);
             let (pk, sk) = make_key_for_domain(curve);
-            let purpose = infer_purpose_from_curve(curve);
+            let purpose = infer_purpose_from_protocol(*protocol);
             let domain_id = DomainId(domain_configs.len() as u64);
 
             let reconstruction_threshold = match *protocol {

@@ -154,18 +154,12 @@ fn resolve_protocol(
     curve: Option<Curve>,
 ) -> Result<Protocol, DomainConfigDecodeError> {
     match (protocol, curve) {
-        (Some(p), Some(c)) => {
-            let expected = Curve::from(p);
-            if c == expected {
-                Ok(p)
-            } else {
-                Err(DomainConfigDecodeError::InconsistentCurveProtocol {
-                    curve: c,
-                    protocol: p,
-                    expected,
-                })
-            }
-        }
+        (Some(p), Some(c)) if c == Curve::from(p) => Ok(p),
+        (Some(p), Some(c)) => Err(DomainConfigDecodeError::InconsistentCurveProtocol {
+            curve: c,
+            protocol: p,
+            expected: Curve::from(p),
+        }),
         (Some(p), None) => Ok(p),
         (None, Some(c)) => Ok(infer_protocol(c)),
         (None, None) => Err(DomainConfigDecodeError::MissingProtocolAndCurve),

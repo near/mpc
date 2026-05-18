@@ -2367,7 +2367,7 @@ mod tests {
     use crate::primitives::participants::{ParticipantId, ParticipantInfo, Participants};
     use crate::primitives::test_utils::{
         bogus_ed25519_near_public_key, bogus_ed25519_public_key, gen_account_id, gen_participant,
-        gen_participants, infer_purpose_from_curve, NUM_PROTOCOLS,
+        gen_participants, infer_purpose_from_protocol, NUM_PROTOCOLS,
     };
     use crate::state::key_event::tests::Environment;
     use crate::state::key_event::KeyEvent;
@@ -2530,7 +2530,7 @@ mod tests {
             Curve::Edwards25519 => Protocol::Frost,
             Curve::Bls12381 => Protocol::ConfidentialKeyDerivation,
         };
-        basic_setup_with_protocol(protocol, infer_purpose_from_curve(curve), rng)
+        basic_setup_with_protocol(protocol, infer_purpose_from_protocol(protocol), rng)
     }
 
     fn basic_setup_with_protocol(

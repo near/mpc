@@ -236,7 +236,7 @@ pub mod tests {
     };
     use crate::primitives::key_state::AuthenticatedParticipantId;
     use crate::primitives::test_utils::{
-        gen_participant, gen_participants, infer_purpose_from_curve,
+        gen_participant, gen_participants, infer_purpose_from_protocol,
     };
     use near_mpc_contract_interface::types::ReconstructionThreshold;
     use near_sdk::test_utils::VMContextBuilder;
@@ -421,11 +421,15 @@ pub mod tests {
     }
 
     #[rstest]
-    #[case(Curve::Secp256k1, DomainPurpose::Sign)]
-    #[case(Curve::Edwards25519, DomainPurpose::Sign)]
-    #[case(Curve::Bls12381, DomainPurpose::CKD)]
-    fn test_infer_purpose_from_curve(#[case] curve: Curve, #[case] expected: DomainPurpose) {
-        assert_eq!(infer_purpose_from_curve(curve), expected);
+    #[case(Protocol::CaitSith, DomainPurpose::Sign)]
+    #[case(Protocol::Frost, DomainPurpose::Sign)]
+    #[case(Protocol::DamgardEtAl, DomainPurpose::Sign)]
+    #[case(Protocol::ConfidentialKeyDerivation, DomainPurpose::CKD)]
+    fn test_infer_purpose_from_protocol(
+        #[case] protocol: Protocol,
+        #[case] expected: DomainPurpose,
+    ) {
+        assert_eq!(infer_purpose_from_protocol(protocol), expected);
     }
 
     #[rstest]

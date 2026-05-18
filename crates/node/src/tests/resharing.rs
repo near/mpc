@@ -16,10 +16,10 @@ use serial_test::serial;
 
 use super::DEFAULT_BLOCK_TIME;
 
-fn infer_purpose_from_curve(curve: Curve) -> DomainPurpose {
-    match curve {
-        Curve::Bls12381 => DomainPurpose::CKD,
-        _ => DomainPurpose::Sign,
+fn infer_purpose_from_protocol(protocol: Protocol) -> DomainPurpose {
+    match protocol {
+        Protocol::ConfidentialKeyDerivation => DomainPurpose::CKD,
+        Protocol::CaitSith | Protocol::Frost | Protocol::DamgardEtAl => DomainPurpose::Sign,
     }
 }
 
@@ -37,7 +37,6 @@ async fn test_key_resharing_simple(
     #[case] protocol: Protocol,
     #[case] threshold: usize,
 ) {
-    let curve = Curve::from(protocol);
     let num_participants: usize = threshold + 1;
     const TXN_DELAY_BLOCKS: u64 = 1;
     let temp_dir = tempfile::tempdir().unwrap();
@@ -61,7 +60,7 @@ async fn test_key_resharing_simple(
         id: DomainId(0),
         protocol,
         reconstruction_threshold: ReconstructionThreshold::new(3),
-        purpose: infer_purpose_from_curve(curve),
+        purpose: infer_purpose_from_protocol(protocol),
     };
 
     {

@@ -481,7 +481,7 @@ pub async fn request_verify_foreign_tx_and_await_response(
     assert_matches!(
         Curve::from(domain.protocol),
         Curve::Secp256k1,
-        "`request_ckd_and_await_response` must be called with a compatible domain",
+        "`request_verify_foreign_tx_and_await_response` must be called with a compatible domain",
     );
     let request = VerifyForeignTxRequestFromChain {
         verify_foreign_tx_id: CryptoHash(rand::random()),
