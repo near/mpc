@@ -15,6 +15,7 @@ pub mod update;
 #[cfg(feature = "dev-utils")]
 pub mod utils;
 
+pub mod pr1_state;
 pub mod v3_9_1_state;
 
 #[cfg(feature = "bench-contract-methods")]
@@ -1835,6 +1836,17 @@ impl MpcContract {
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => {
                 log!("failed to deserialize state into v3.9.1 state: {:?}", err);
+            }
+        };
+
+        // PR 1 (#3216) shipped `foreign_chain_rpc_whitelist` with a nested-map layout
+        // that PR 2 reshaped. Guards against an environment where PR 1 was deployed
+        // standalone before PR 2 lands.
+        match try_state_read::<pr1_state::MpcContract>() {
+            Ok(Some(state)) => return Ok(state.into()),
+            Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
+            Err(err) => {
+                log!("failed to deserialize state into PR 1 state: {:?}", err);
             }
         };
 
