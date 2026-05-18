@@ -1030,8 +1030,7 @@ pub struct ProviderEntry {
 }
 
 /// One per-chain vote: the proposed full whitelist for `chain` plus the RPC response
-/// quorum nodes should use when fanning out queries to those providers. Voting itself
-/// is unanimous — see `vote_update_foreign_chain_providers`.
+/// quorum nodes should use when fanning out queries to those providers.
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(not(target_arch = "wasm32"), derive(Serialize, Deserialize))]
 #[cfg_attr(

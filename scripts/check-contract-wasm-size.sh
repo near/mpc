@@ -12,7 +12,7 @@ set -euo pipefail
 WASM_PATH="${1:-target/near/mpc_contract/mpc_contract.wasm}"
 
 # NEAR max_transaction_size = 1572864; keep some headroom.
-# Raised from 1490000 to fit the on-chain RPC provider whitelist voting
+# Raised from 1495000 to fit the on-chain RPC provider whitelist voting
 # machinery (issue #3215). This should be reverted back once we have a mid-long
 # term solution for our wasm deployment limit.
 HARD_LIMIT=1540000
