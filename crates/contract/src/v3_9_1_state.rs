@@ -332,18 +332,31 @@ impl From<MpcContract> for crate::MpcContract {
 
         value.foreign_chain_policy_votes.proposal_by_account.clear();
 
+        // Pending-request maps changed value type from `YieldIndex` to `Vec<YieldIndex>`
+        // (duplicate-request fan-out feature) and were rehomed under new storage
+        // keys. The old maps remain readable via `LegacyPendingRequests`, whose
+        // fields are rooted at the previous storage keys with the previous singular
+        // value type — so requests that were already yielded before the upgrade
+        // can still be answered through `respond*` until they time out. This
+        // mirrors the V2→V3 sig-request map upgrade pattern.
+        //
+        // The previous-contract `stale_data` field on `value` is dropped: it
+        // either points at maps already drained by PR #2940 or holds no entries
+        // that the new contract needs to surface.
         Self {
             protocol_state: ProtocolContractState::Running(running.into()),
-            pending_signature_requests: value.pending_signature_requests,
-            pending_ckd_requests: value.pending_ckd_requests,
-            pending_verify_foreign_tx_requests: value.pending_verify_foreign_tx_requests,
+            pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV4),
+            pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV3),
+            pending_verify_foreign_tx_requests: LookupMap::new(
+                StorageKey::PendingVerifyForeignTxRequestsV2,
+            ),
             proposed_updates: value.proposed_updates,
             node_foreign_chain_support: value.node_foreign_chain_configurations.into(),
             config: value.config,
             tee_state: value.tee_state.into(),
             accept_requests: value.accept_requests,
             node_migrations: value.node_migrations,
-            stale_data: crate::StaleData {},
+            legacy_pending_requests: crate::pending_requests::LegacyPendingRequests::new(),
             metrics: value.metrics,
         }
     }
@@ -351,7 +364,8 @@ impl From<MpcContract> for crate::MpcContract {
 
 /// Previous `StaleData` layout — held a [`LookupMap`] of pre-upgrade signature requests.
 /// After the v3.9 migration is fully deployed those requests have been resolved or timed
-/// out, so the field is dropped here and the new `StaleData` is empty.
+/// out, so the field is dropped here. The new contract no longer has a `StaleData` field;
+/// pre-upgrade pending requests are surfaced through `LegacyPendingRequests` instead.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 struct OldStaleData {
     pending_signature_requests_pre_upgrade: LookupMap<SignatureRequest, YieldIndex>,
