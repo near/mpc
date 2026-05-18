@@ -21,10 +21,9 @@ impl MpcContract {
     /// Returns the number of yields queued under `request` in the fan-out map.
     ///
     /// Used by the duplicate-request sandbox test to poll until the full fan-out queue
-    /// has landed before calling `respond`, replacing a previous wall-clock sleep. The
-    /// legacy single-yield map is not consulted: post-upgrade pushes drain it into the
-    /// head of the new queue, so the new map's length is authoritative for the test's
-    /// purposes.
+    /// has landed before calling `respond`, replacing a previous wall-clock sleep.
+    /// The legacy single-yield map is not consulted; for sandbox tests starting from
+    /// fresh state the new map's length is authoritative.
     ///
     /// The queue is hard-capped at [`crate::pending_requests::MAX_PENDING_REQUEST_FAN_OUT`]
     /// (a `u8`), so the `try_from` is constrained to succeed today; the `expect` is a
