@@ -19,6 +19,11 @@ on:
     - cron: "5 0 * * 0"
 
 jobs:
+  # Downstream gates use `if: ${{ always() && needs.changes.outputs.code_changed != 'false' }}`.
+  # The `always()` overrides GitHub's implicit `success()` on `needs`, so a
+  # failed detector doesn't silently skip dependents (skipped checks satisfy
+  # required-check rules and could let a PR merge with zero CI signal). Only
+  # an explicit `'false'` (docs-only PR) skips the job.
   changes:
     name: "Detect non-docs changes"
     permissions:
@@ -29,7 +34,7 @@ jobs:
   docker-tee-build:
     name: "Build MPC Node TEE Docker image"
     needs: changes
-    if: needs.changes.outputs.code_changed == 'true'
+    if: ${{ always() && needs.changes.outputs.code_changed != 'false' }}
     runs-on: warp-ubuntu-2404-x64-16x
     timeout-minutes: 60
     permissions:
@@ -63,7 +68,7 @@ jobs:
   docker-rust-launcher-build-and-verify:
     name: "Build Rust Launcher Docker image and verify"
     needs: changes
-    if: needs.changes.outputs.code_changed == 'true'
+    if: ${{ always() && needs.changes.outputs.code_changed != 'false' }}
     runs-on: warp-ubuntu-2404-x64-8x
     timeout-minutes: 60
     permissions:
@@ -102,7 +107,7 @@ jobs:
   mpc-unittests:
     name: "Cargo test: ${{ matrix.group }}"
     needs: changes
-    if: needs.changes.outputs.code_changed == 'true'
+    if: ${{ always() && needs.changes.outputs.code_changed != 'false' }}
     runs-on: ${{ matrix.runner || 'warp-ubuntu-2404-x64-16x' }}
     timeout-minutes: 60
     permissions:
@@ -147,7 +152,7 @@ jobs:
   mpc-contract-reproducible-build:
     name: "MPC contract reproducible build"
     needs: changes
-    if: needs.changes.outputs.code_changed == 'true'
+    if: ${{ always() && needs.changes.outputs.code_changed != 'false' }}
     runs-on: warp-ubuntu-2404-x64-16x
     timeout-minutes: 60
     permissions:
@@ -179,7 +184,7 @@ jobs:
   nix-build-mpc-node:
     name: "Nix build mpc-node"
     needs: changes
-    if: needs.changes.outputs.code_changed == 'true'
+    if: ${{ always() && needs.changes.outputs.code_changed != 'false' }}
     permissions:
       contents: read
     uses: ./.github/workflows/nix-build-mpc-node.yml
@@ -187,7 +192,7 @@ jobs:
   fast-ci-checks:
     name: "Fast CI checks"
     needs: changes
-    if: needs.changes.outputs.code_changed == 'true'
+    if: ${{ always() && needs.changes.outputs.code_changed != 'false' }}
     runs-on: warp-ubuntu-2404-x64-8x
     permissions:
       contents: read
@@ -217,7 +222,7 @@ jobs:
   mpc-e2e-tests:
     name: "MPC E2E tests"
     needs: changes
-    if: needs.changes.outputs.code_changed == 'true'
+    if: ${{ always() && needs.changes.outputs.code_changed != 'false' }}
     runs-on: warp-ubuntu-2404-x64-32x
     timeout-minutes: 60
     permissions:
@@ -271,7 +276,7 @@ jobs:
   ci-extra:
     name: "Extra CI checks"
     needs: changes
-    if: needs.changes.outputs.code_changed == 'true'
+    if: ${{ always() && needs.changes.outputs.code_changed != 'false' }}
     runs-on: warp-ubuntu-2404-x64-2x
     permissions:
       contents: read
