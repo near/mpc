@@ -1,0 +1,41 @@
+# Reusable workflow: detects whether a PR changes.
+#
+# Currently it returns a single `code_changed` boolean used to skip the full CI
+# suite on docs-only PRs. Later this can grow into per-area filters (e.g.
+# `node_changed`, `contract_changed`) so each test job runs only when its
+# sources actually changed.
+
+name: Changes
+
+on:
+  workflow_call:
+    outputs:
+      code_changed:
+        description: "'true' if any non-docs file changed in the PR; 'true' on non-PR events"
+        value: ${{ jobs.detect.outputs.code_changed }}
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      code_changed: ${{ steps.filter.outputs.code || 'true' }}
+    steps:
+      - name: Checkout repository
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+      - name: Detect changed paths
+        if: github.event_name == 'pull_request'
+        id: filter
+        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        with:
+          # Match everything, excluding .md and docs/ folder.
+          filters: |
+            code:
+              - '**'
+              - '!**.md'
+              - '!docs/**'
