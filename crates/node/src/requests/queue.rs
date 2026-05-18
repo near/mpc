@@ -11,7 +11,6 @@ use near_indexer_primitives::CryptoHash;
 use near_time::Duration;
 use sha3::Digest;
 use std::collections::{HashMap, HashSet};
-use std::fmt::Debug;
 use std::sync::{Arc, Mutex, Weak};
 use time::ext::InstantExt as _;
 
@@ -67,10 +66,9 @@ pub struct PendingRequests<RequestType: Request, ChainRespondArgsType: ChainResp
     /// from this map. This is the "queue".
     pub(super) requests: HashMap<RequestId, QueuedRequest<RequestType, ChainRespondArgsType>>,
 
-    /// See `RecentBlocksTracker`; allows us to decide what to do with each request in
-    /// the queue, as well as provide us a stream of finalized blocks from which we determine
-    /// which requests has been responded to.
-    recent_blocks: RecentBlocksTracker<BufferedBlockData>,
+    /// See [`RecentBlocksTracker`]. Provides the per-block [`AtomicBlockStatus`] handles that
+    /// each [`QueuedRequest`] uses to classify its own and its responses' blocks on every tick.
+    recent_blocks: RecentBlocksTracker,
 
     /// Provides information about connectivity and indexer heights.
     pub(super) network_api: Arc<dyn NetworkAPIForRequests>,
@@ -79,57 +77,77 @@ pub struct PendingRequests<RequestType: Request, ChainRespondArgsType: ChainResp
     pub(super) recently_completed_requests: CompletedRequests<RequestType, ChainRespondArgsType>,
 }
 
-/// Block data to be buffered until the block is final.
+/// All [`IndexedRespondTx`]s observed for one queued request, across the chain's forks.
+/// [`Self::status`] folds them into a single [`ResolutionStatus`] on every tick.
+struct IndexedRespondTxs(Vec<IndexedRespondTx>);
+
+/// An on-chain `respond` transaction observed in an indexed block.
 #[derive(Clone)]
-struct BufferedBlockData {
-    requests: Vec<RequestId>,
-    completed_requests: Vec<RequestId>,
-    timestamp_received: near_time::Instant,
+struct IndexedRespondTx {
+    /// Weak ref to the block's atomic status; lets us observe canonical/final changes the
+    /// tracker makes after we recorded the response.
+    block_status: Weak<AtomicBlockStatus>,
+    /// Wall-clock time at which our node observed the block containing the response.
+    received_at: near_time::Instant,
+    // TODO(#3318): We could share the `block_height` throug the same weak pointer as
+    // `block_status`, however, that's a larger refactor and this change will only truly make sense
+    // once we start improving the metrics with #3318, so we defer it to later and accept to hold a
+    // u64 for each response.
+    block_height: u64,
 }
 
-fn ellipsified_shortened_hash_list(hashes: &[CryptoHash]) -> String {
-    let mut result = String::new();
-    for (i, hash) in hashes.iter().take(3).enumerate() {
-        let hash = format!("{:?}", hash);
-        result.push_str(&hash[..6]);
-        if i < hashes.len() - 1 {
-            result.push_str(", ");
+impl IndexedRespondTxs {
+    fn new() -> Self {
+        Self(Vec::new())
+    }
+
+    fn status(&self) -> ResolutionStatus {
+        if self.0.is_empty() {
+            return ResolutionStatus::None;
         }
+        let mut result = ResolutionStatus::RemovedByTracker;
+        for (status, received_at, block_height) in self.0.iter().filter_map(|tx| {
+            Weak::upgrade(&tx.block_status).map(|status| (status, tx.received_at, tx.block_height))
+        }) {
+            if status.is_final() {
+                return ResolutionStatus::Final {
+                    received_at,
+                    block_height,
+                };
+            }
+            if status.is_canonical() {
+                return ResolutionStatus::PendingOptimistic;
+            }
+            result = ResolutionStatus::PendingNonCanonical;
+        }
+        result
     }
-    if hashes.len() > 3 {
-        result.push_str("...");
+
+    fn add(&mut self, indexed_respond_tx: IndexedRespondTx) {
+        self.0.push(indexed_respond_tx);
     }
-    result
 }
 
-impl Debug for BufferedBlockData {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if !self.requests.is_empty() {
-            write!(
-                f,
-                "{} reqs: {}",
-                self.requests.len(),
-                ellipsified_shortened_hash_list(&self.requests)
-            )?;
-        }
-        if !self.completed_requests.is_empty() {
-            write!(
-                f,
-                "{} completed: {}",
-                self.completed_requests.len(),
-                ellipsified_shortened_hash_list(&self.completed_requests)
-            )?;
-        }
-        Ok(())
-    }
+enum ResolutionStatus {
+    None,
+    PendingNonCanonical,
+    PendingOptimistic,
+    Final {
+        received_at: near_time::Instant,
+        block_height: u64,
+    },
+    RemovedByTracker,
 }
 
 /// The state of a single request in the queue.
 pub(super) struct QueuedRequest<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> {
     pub request: RequestType,
 
-    /// Finality status of the block the request was included
+    /// Finality status of the block the request was included in.
     status: Weak<AtomicBlockStatus>,
+    /// Respond transactions for this request observed in indexed blocks, used to detect
+    /// on-chain resolution without consulting the tracker's add-block stream.
+    indexed_respond_txs: IndexedRespondTxs,
 
     pub block_height: u64,
 
@@ -239,6 +257,7 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
             request,
             block_height,
             status,
+            indexed_respond_txs: IndexedRespondTxs::new(),
             leader_selection_order,
             computation_progress: Arc::new(Mutex::new(ComputationProgress::default())),
             next_check_due: clock.now(),
@@ -304,6 +323,10 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
     fn is_older_than(&self, cutoff_block: u64) -> bool {
         cutoff_block > self.block_height
     }
+
+    fn add_indexed_respond_tx(&mut self, indexed_respond_tx: IndexedRespondTx) {
+        self.indexed_respond_txs.add(indexed_respond_tx)
+    }
 }
 
 impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
@@ -315,60 +338,97 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
         eligible_leaders: &HashSet<ParticipantId>,
         cutoff_block: u64,
         now: near_time::Instant,
-    ) -> RequestStatusResult<RequestType, ChainRespondArgsType> {
+    ) -> RequestStatus<RequestType, ChainRespondArgsType> {
         if !self.update_next_check_due(now) {
-            return RequestStatusResult::Wait("check not due");
+            return RequestStatus::Wait("check not due");
         }
         if self.has_active_attempt() {
-            return RequestStatusResult::Wait("active attempt ongoing");
+            return RequestStatus::Wait("active attempt ongoing");
+        }
+        // Classify any observed respond txs before doing other timeout/leader work below.
+        match self.indexed_respond_txs.status() {
+            ResolutionStatus::None
+            | ResolutionStatus::RemovedByTracker
+            | ResolutionStatus::PendingNonCanonical => {
+                // We don't short-circuit on non-canonical responses, because:
+                // - the request itself may also be on a non-canonical chain and will be removed
+                //   by the checks below (until #3193 is fixed);
+                // - the response may not make it to canonical, and we may want to re-attempt.
+                //
+                // This is wrong in the case where ALL of the following hold:
+                // - the response is on a non-canonical chain;
+                // - the response is eventually finalized;
+                // - the request fails the `cutoff` check below.
+                //
+                // In that case this method returns `RequestStatus::Drop`, indicating a timeout
+                // failure, while in reality the request was successfully resolved.
+                //
+                // That is fine for queue accounting — `RequestStatus` is consumed by `Queue`
+                // itself — but it makes the value a poor proxy for end-to-end signature
+                // success rate. See #3229.
+            }
+            ResolutionStatus::PendingOptimistic => {
+                return RequestStatus::Wait("response submitted, waiting to finalize");
+            }
+            ResolutionStatus::Final {
+                received_at,
+                block_height,
+            } => {
+                return RequestStatus::Resolve {
+                    received_at,
+                    block_height,
+                };
+            }
         }
         // check it against the network height
         if self.is_older_than(cutoff_block) {
             // This request is definitely not useful anymore, so discard it.
-            return RequestStatusResult::Remove(RemovalReason::RequestTimedOut);
+            return RequestStatus::Drop(DropReason::RequestTimedOut);
         }
         let Some(status) = self.status.upgrade() else {
-            return RequestStatusResult::Remove(RemovalReason::BlockNotFound);
+            return RequestStatus::Drop(DropReason::BlockNotFound);
         };
         if !status.is_canonical() {
-            return RequestStatusResult::Wait("request is not on canonical chain");
+            return RequestStatus::Wait("request is not on canonical chain");
         }
         let Some(leader) = self.current_leader(eligible_leaders) else {
-            return RequestStatusResult::Wait("no eligible leaders for this request");
+            return RequestStatus::Wait("no eligible leaders for this request");
         };
         let mut progress = self.computation_progress.lock().unwrap();
         progress.selected_leader = Some(leader);
         if leader == my_participant_id {
             match progress.update_computation_progress(now) {
                 ComputationProgressStatus::MaxAttemptsExceeded => {
-                    RequestStatusResult::Remove(RemovalReason::MaxAttemptsExceeded)
+                    RequestStatus::Drop(DropReason::MaxAttemptsExceeded)
                 }
-                ComputationProgressStatus::Pending => {
-                    RequestStatusResult::Wait("pending computation")
-                }
+                ComputationProgressStatus::Pending => RequestStatus::Wait("pending computation"),
                 ComputationProgressStatus::NewAttempt => {
                     let attempt = Arc::new(GenerationAttempt {
                         request: self.request.clone(),
                         computation_progress: self.computation_progress.clone(),
                     });
                     self.active_attempt = Arc::downgrade(&attempt);
-                    RequestStatusResult::Attempt(attempt)
+                    RequestStatus::Attempt(attempt)
                 }
             }
         } else {
-            RequestStatusResult::Wait("we are not leader")
+            RequestStatus::Wait("we are not leader")
         }
     }
 }
 
-enum RequestStatusResult<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> {
-    Remove(RemovalReason),
+enum RequestStatus<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> {
+    Drop(DropReason),
     Wait(&'static str),
     Attempt(Arc<GenerationAttempt<RequestType, ChainRespondArgsType>>),
+    Resolve {
+        received_at: near_time::Instant,
+        block_height: u64,
+    },
 }
 
 #[derive(derive_more::Display)]
-enum RemovalReason {
+enum DropReason {
     #[display("max attempts exceeded")]
     MaxAttemptsExceeded,
     #[display("tracker does not have block")]
@@ -377,13 +437,13 @@ enum RemovalReason {
     RequestTimedOut,
 }
 
-impl RemovalReason {
+impl DropReason {
     /// Label used for the `MPC_CLUSTER_FAILED_SIGNATURES_COUNT` metric.
     fn metric_label(&self) -> &'static str {
         match self {
-            RemovalReason::MaxAttemptsExceeded => "max_tries_exceeded",
-            RemovalReason::BlockNotFound => "block_not_found",
-            RemovalReason::RequestTimedOut => "timeout",
+            DropReason::MaxAttemptsExceeded => "max_tries_exceeded",
+            DropReason::BlockNotFound => "block_not_found",
+            DropReason::RequestTimedOut => "timeout",
         }
     }
 }
@@ -397,12 +457,24 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
         my_participant_id: ParticipantId,
         network_api: Arc<dyn NetworkAPIForRequests>,
     ) -> Self {
+        let finalized_blocks_indexed = match RequestType::get_type() {
+            types::RequestType::CKD => &metrics::MPC_PENDING_CKDS_QUEUE_FINALIZED_BLOCKS_INDEXED,
+            types::RequestType::Signature => {
+                &metrics::MPC_PENDING_SIGNATURES_QUEUE_FINALIZED_BLOCKS_INDEXED
+            }
+            types::RequestType::VerifyForeignTx => {
+                &metrics::MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_FINALIZED_BLOCKS_INDEXED_TOTAL
+            }
+        };
         Self {
             clock,
             all_participants,
             my_participant_id,
             requests: HashMap::new(),
-            recent_blocks: RecentBlocksTracker::new(REQUEST_EXPIRATION_BLOCKS),
+            recent_blocks: RecentBlocksTracker::new(
+                REQUEST_EXPIRATION_BLOCKS,
+                finalized_blocks_indexed,
+            ),
             network_api,
             recently_completed_requests: CompletedRequests::default(),
         }
@@ -412,20 +484,38 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
     /// These are the requests successfully submitted in the block, and the
     /// completed_requests are the requests whose responses are included in the block.
     pub(crate) fn notify_new_block(&mut self, requests: RequestsUpdate<RequestType>) {
+        let (
+            mpc_pending_queue_blocks_indexed,
+            mpc_pending_queue_responses_indexed,
+            mpc_pending_queue_matching_responses_indexed,
+            mpc_pending_requests_queue_requests_indexed,
+        ) = match RequestType::get_type() {
+            types::RequestType::CKD => (
+                &metrics::MPC_PENDING_CKDS_QUEUE_BLOCKS_INDEXED,
+                &metrics::MPC_PENDING_CKDS_QUEUE_RESPONSES_INDEXED,
+                &metrics::MPC_PENDING_CKDS_QUEUE_MATCHING_RESPONSES_INDEXED,
+                &metrics::MPC_PENDING_CKDS_QUEUE_REQUESTS_INDEXED,
+            ),
+            types::RequestType::Signature => (
+                &metrics::MPC_PENDING_SIGNATURES_QUEUE_BLOCKS_INDEXED,
+                &metrics::MPC_PENDING_SIGNATURES_QUEUE_RESPONSES_INDEXED,
+                &metrics::MPC_PENDING_SIGNATURES_QUEUE_MATCHING_RESPONSES_INDEXED,
+                &metrics::MPC_PENDING_SIGNATURES_QUEUE_REQUESTS_INDEXED,
+            ),
+            types::RequestType::VerifyForeignTx => (
+                &metrics::MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_BLOCKS_INDEXED_TOTAL,
+                &metrics::MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_RESPONSES_INDEXED_TOTAL,
+                &metrics::MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_MATCHING_RESPONSES_INDEXED_TOTAL,
+                &metrics::MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_REQUESTS_INDEXED_TOTAL,
+            ),
+        };
         let RequestsUpdate::<RequestType> {
             block,
             requests,
             completed_requests,
         } = requests;
-        let add_result = match self.recent_blocks.add_block(
-            &block,
-            BufferedBlockData {
-                requests: requests.iter().map(|r| r.get_id()).collect(),
-                completed_requests,
-                timestamp_received: self.clock.now(),
-            },
-        ) {
-            Ok(add_result) => add_result,
+        let block_ref = match self.recent_blocks.add_block(&block) {
+            Ok(add_result) => add_result.block_ref,
             Err(err) => {
                 // block already exists.
                 tracing::warn!(target: "request", "Ignoring block {:?} at height {}: {:?}", block.hash, block.height, err);
@@ -433,79 +523,11 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             }
         };
 
-        let (
-            mpc_pending_queue_blocks_indexed,
-            mpc_pending_queue_finalized_blocks_indexed,
-            mpc_pending_queue_responses_indexed,
-            mpc_pending_queue_matching_responses_indexed,
-            request_response_latency_blocks,
-            request_response_latency_seconds,
-            mpc_pending_requests_queue_requests_indexed,
-        ) = match RequestType::get_type() {
-            types::RequestType::CKD => (
-                &metrics::MPC_PENDING_CKDS_QUEUE_BLOCKS_INDEXED,
-                &metrics::MPC_PENDING_CKDS_QUEUE_FINALIZED_BLOCKS_INDEXED,
-                &metrics::MPC_PENDING_CKDS_QUEUE_RESPONSES_INDEXED,
-                &metrics::MPC_PENDING_CKDS_QUEUE_MATCHING_RESPONSES_INDEXED,
-                &metrics::CKD_REQUEST_RESPONSE_LATENCY_BLOCKS,
-                &metrics::CKD_REQUEST_RESPONSE_LATENCY_SECONDS,
-                &metrics::MPC_PENDING_CKDS_QUEUE_REQUESTS_INDEXED,
-            ),
-            types::RequestType::Signature => (
-                &metrics::MPC_PENDING_SIGNATURES_QUEUE_BLOCKS_INDEXED,
-                &metrics::MPC_PENDING_SIGNATURES_QUEUE_FINALIZED_BLOCKS_INDEXED,
-                &metrics::MPC_PENDING_SIGNATURES_QUEUE_RESPONSES_INDEXED,
-                &metrics::MPC_PENDING_SIGNATURES_QUEUE_MATCHING_RESPONSES_INDEXED,
-                &metrics::SIGNATURE_REQUEST_RESPONSE_LATENCY_BLOCKS,
-                &metrics::SIGNATURE_REQUEST_RESPONSE_LATENCY_SECONDS,
-                &metrics::MPC_PENDING_SIGNATURES_QUEUE_REQUESTS_INDEXED,
-            ),
-            types::RequestType::VerifyForeignTx => (
-                &metrics::MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_BLOCKS_INDEXED_TOTAL,
-                &metrics::MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_FINALIZED_BLOCKS_INDEXED_TOTAL,
-                &metrics::MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_RESPONSES_INDEXED_TOTAL,
-                &metrics::MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_MATCHING_RESPONSES_INDEXED_TOTAL,
-                &metrics::VERIFY_FOREIGN_TXS_REQUEST_RESPONSE_LATENCY_BLOCKS,
-                &metrics::VERIFY_FOREIGN_TXS_REQUEST_RESPONSE_LATENCY_SECONDS,
-                &metrics::MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_REQUESTS_INDEXED_TOTAL,
-            ),
-        };
-
+        // TODO(#3316): remove this per-queue counter when the tracker is shared across queues.
         mpc_pending_queue_blocks_indexed.inc();
-        for (final_block_height, buffered_block_data) in add_result.new_final_blocks {
-            mpc_pending_queue_finalized_blocks_indexed.inc();
-            mpc_pending_queue_responses_indexed
-                .inc_by(buffered_block_data.completed_requests.len() as u64);
 
-            for request_id in &buffered_block_data.completed_requests {
-                tracing::debug!(target: "request", "Removing completed request {:?}", request_id);
-                if let Some(request) = self.requests.remove(request_id) {
-                    mpc_pending_queue_matching_responses_indexed.inc();
-
-                    let response_latency_blocks = final_block_height - request.block_height;
-                    let response_latency_duration = buffered_block_data
-                        .timestamp_received
-                        .signed_duration_since(request.time_indexed);
-
-                    request_response_latency_blocks.observe(response_latency_blocks as f64);
-
-                    request_response_latency_seconds
-                        .observe(response_latency_duration.as_seconds_f64());
-
-                    self.recently_completed_requests
-                        .add_completed_request(CompletedRequest {
-                            indexed_block_height: request.block_height,
-                            request: request.request,
-                            progress: request.computation_progress,
-                            completion_delay: Some((
-                                response_latency_blocks,
-                                response_latency_duration,
-                            )),
-                        });
-                }
-            }
-        }
         mpc_pending_requests_queue_requests_indexed.inc_by(requests.len() as u64);
+        let now = self.clock.now();
         for request in requests {
             self.requests
                 .entry(request.get_id())
@@ -513,10 +535,24 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                     &self.clock,
                     request.clone(),
                     block.height,
-                    add_result.block_ref.clone(),
+                    block_ref.clone(),
                     &self.all_participants,
-                    self.clock.now(),
+                    now,
                 ));
+        }
+        mpc_pending_queue_responses_indexed.inc_by(completed_requests.len() as u64);
+        let indexed_respond_tx = IndexedRespondTx {
+            block_status: block_ref.clone(),
+            received_at: now,
+            block_height: block.height,
+        };
+        for request_id in completed_requests {
+            self.requests
+                .entry(request_id)
+                .and_modify(|queued_request| {
+                    queued_request.add_indexed_respond_tx(indexed_respond_tx.clone());
+                    mpc_pending_queue_matching_responses_indexed.inc();
+                });
         }
     }
 
@@ -557,6 +593,27 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
     pub fn get_requests_to_attempt(
         &mut self,
     ) -> Vec<Arc<GenerationAttempt<RequestType, ChainRespondArgsType>>> {
+        let (
+            mpc_pending_queue_finalized_responses,
+            request_response_latency_blocks,
+            request_response_latency_seconds,
+        ) = match RequestType::get_type() {
+            types::RequestType::CKD => (
+                &metrics::MPC_PENDING_CKDS_QUEUE_FINALIZED_RESPONSES_INDEXED,
+                &metrics::CKD_REQUEST_RESPONSE_LATENCY_BLOCKS,
+                &metrics::CKD_REQUEST_RESPONSE_LATENCY_SECONDS,
+            ),
+            types::RequestType::Signature => (
+                &metrics::MPC_PENDING_SIGNATURES_QUEUE_FINALIZED_RESPONSES_INDEXED,
+                &metrics::SIGNATURE_REQUEST_RESPONSE_LATENCY_BLOCKS,
+                &metrics::SIGNATURE_REQUEST_RESPONSE_LATENCY_SECONDS,
+            ),
+            types::RequestType::VerifyForeignTx => (
+                &metrics::MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_FINALIZED_RESPONSES_INDEXED_TOTAL,
+                &metrics::VERIFY_FOREIGN_TXS_REQUEST_RESPONSE_LATENCY_BLOCKS,
+                &metrics::VERIFY_FOREIGN_TXS_REQUEST_RESPONSE_LATENCY_SECONDS,
+            ),
+        };
         let now = self.clock.now();
 
         let (eligible_leaders, maximum_height) = self.eligible_leaders_and_maximum_height();
@@ -579,7 +636,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             )
             .entered();
             match request.process(self.my_participant_id, &eligible_leaders, cutoff_block, now) {
-                RequestStatusResult::Remove(reason) => {
+                RequestStatus::Drop(reason) => {
                     tracing::debug!(target: "request", reason = %reason, "removing request");
                     if matches!(RequestType::get_type(), types::RequestType::Signature) {
                         metrics::MPC_CLUSTER_FAILED_SIGNATURES_COUNT
@@ -588,11 +645,37 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                     }
                     requests_to_remove.push(*id);
                 }
-                RequestStatusResult::Wait(reason) => {
+                RequestStatus::Wait(reason) => {
                     tracing::debug!(target: "request", reason, "skipping request");
                 }
-                RequestStatusResult::Attempt(attempt) => {
+                RequestStatus::Attempt(attempt) => {
                     result.push(attempt);
+                }
+                RequestStatus::Resolve {
+                    received_at,
+                    block_height,
+                } => {
+                    mpc_pending_queue_finalized_responses.inc();
+                    let response_latency_blocks = block_height - request.block_height;
+                    let response_latency_duration =
+                        received_at.signed_duration_since(request.time_indexed);
+
+                    request_response_latency_blocks.observe(response_latency_blocks as f64);
+
+                    request_response_latency_seconds
+                        .observe(response_latency_duration.as_seconds_f64());
+
+                    self.recently_completed_requests
+                        .add_completed_request(CompletedRequest {
+                            indexed_block_height: request.block_height,
+                            request: request.request.clone(),
+                            progress: request.computation_progress.clone(),
+                            completion_delay: Some((
+                                response_latency_blocks,
+                                response_latency_duration,
+                            )),
+                        });
+                    requests_to_remove.push(*id);
                 }
             }
         }
@@ -803,7 +886,7 @@ mod tests {
             request
         }
 
-        fn add_response(&mut self, hash: CryptoHash) {
+        fn add_indexed_respond_tx(&mut self, hash: CryptoHash) {
             self.responses_to_submit.push(hash);
         }
 
@@ -907,41 +990,84 @@ mod tests {
         let to_attempt3 = pending_requests.get_requests_to_attempt();
         assert_eq!(to_attempt3.len(), 1);
         assert_eq!(to_attempt3[0].request.id, req2.id);
+    }
 
-        // When: this attempt submits a response, but it is not yet recorded on the blockchain.
-        to_attempt3[0]
+    #[test_log::test]
+    #[expect(non_snake_case)]
+    fn test_pending_requests__should_wait_for_response_to_finalize() {
+        // Given: a leader request that has been attempted once and dropped.
+        let (mut pending_requests, mut setup) = TestSetup::new();
+        let req = setup.add_request_leader();
+        pending_requests.notify_new_block(setup.update());
+        let to_attempt1 = pending_requests.get_requests_to_attempt();
+        assert_eq!(to_attempt1.len(), 1);
+        assert_eq!(to_attempt1[0].request.id, req.id);
+
+        // When: the attempt records that a response has been submitted to the chain,
+        // but the chain has not yet acknowledged it.
+        to_attempt1[0]
             .computation_progress
             .lock()
             .unwrap()
             .last_response_submission = Some(setup.clock.now());
-        drop(to_attempt3);
-        // Then: we should re-attempt after `MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE`
+        drop(to_attempt1);
+
+        // Then: no retry within `MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE`,
+        // because we're still waiting for the chain to ack the submission.
         setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
         assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
+        // Then: retry once that window elapses, because the chain still doesn't show our response.
         setup.advance_clock(MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE);
-        let to_attempt4 = pending_requests.get_requests_to_attempt();
-        assert_eq!(to_attempt4.len(), 1);
-        assert_eq!(to_attempt4[0].request.id, req2.id);
+        let to_attempt2 = pending_requests.get_requests_to_attempt();
+        assert_eq!(to_attempt2.len(), 1);
+        assert_eq!(to_attempt2[0].request.id, req.id);
 
-        // When: this attempt submits a response and it is recorded on the blockain, but the block
-        // is not yet finalized
-        drop(to_attempt4);
-        setup.add_response(req2.id);
-        let requests = setup.update();
-        pending_requests.notify_new_block(requests);
-        // Then: we should re-attempt the response
-        setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
-        assert_eq!(pending_requests.get_requests_to_attempt().len(), 1);
+        // When: the response now lands on the canonical chain, but is not yet final.
+        drop(to_attempt2);
+        setup.add_indexed_respond_tx(req.id);
+        pending_requests.notify_new_block(setup.update());
 
-        // When: the latest submitted response becomes final
-        let requests = setup.update();
-        pending_requests.notify_new_block(requests);
-        let requests = setup.update();
-        pending_requests.notify_new_block(requests);
-
-        // Then: we should not have any requests to attempt
+        // Then: we do NOT re-attempt — the response is on the canonical chain, so we wait for
+        // it to finalize.
         setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
         assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
+
+        // When: enough subsequent blocks arrive to finalize the response.
+        pending_requests.notify_new_block(setup.update());
+        pending_requests.notify_new_block(setup.update());
+
+        // Then: we still don't re-attempt — the request is resolved.
+        setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
+        assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
+    }
+
+    #[test_log::test]
+    #[expect(non_snake_case)]
+    fn test_pending_requests__should_reattempt_when_response_is_non_canonical() {
+        // Given: a request queue with one leader request, attempted once and dropped.
+        let (mut pending_requests, mut setup) = TestSetup::new();
+        let req = setup.add_request_leader();
+        pending_requests.notify_new_block(setup.update());
+        let to_attempt1 = pending_requests.get_requests_to_attempt();
+        assert_eq!(to_attempt1.len(), 1);
+        assert_eq!(to_attempt1[0].request.id, req.id);
+        drop(to_attempt1);
+
+        // When: a response lands in a canonical block.
+        setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
+        setup.add_indexed_respond_tx(req.id);
+        pending_requests.notify_new_block(setup.update());
+
+        // And: the chain forks and the new fork becomes canonical, leaving the response block
+        // (and the response it carries) on the non-canonical branch.
+        pending_requests.notify_new_block(setup.update_canonical_fork());
+
+        // Then: the queue should re-attempt the request — a non-canonical response does NOT
+        // short-circuit `process()`, so the request flows through the normal leader path.
+        setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
+        let to_attempt2 = pending_requests.get_requests_to_attempt();
+        assert_eq!(to_attempt2.len(), 1);
+        assert_eq!(to_attempt2[0].request.id, req.id);
     }
 
     #[test_log::test]
@@ -1093,8 +1219,8 @@ mod tests {
         // Node 0 actually manages to complete req1 and req4 somehow. Node 1 should not retry
         // these anymore.
         drop(to_attempt2);
-        setup.add_response(req1.id);
-        setup.add_response(req4.id);
+        setup.add_indexed_respond_tx(req1.id);
+        setup.add_indexed_respond_tx(req4.id);
         let requests = setup.update();
 
         pending_requests.notify_new_block(requests);
@@ -1121,7 +1247,7 @@ mod tests {
         // When: we are lagging behind
         setup.advance_clock(Duration::microseconds(2432123));
         // When: we have a response in the subsequent block
-        setup.add_response(req1.id);
+        setup.add_indexed_respond_tx(req1.id);
         let requests = setup.update();
         pending_requests.notify_new_block(requests);
         setup.advance_clock(Duration::seconds(1));
@@ -1129,6 +1255,9 @@ mod tests {
         pending_requests.notify_new_block(setup.update());
         pending_requests.notify_new_block(setup.update());
         setup.advance_clock(Duration::seconds(1));
+        // Poll so the queue notices the response is final and records latency into
+        // `recently_completed_requests` via the `Resolve` arm.
+        let _ = pending_requests.get_requests_to_attempt();
 
         // Then: we expect to see the time delay reflected in the debug message
         let debug = format!("{:?}", pending_requests);

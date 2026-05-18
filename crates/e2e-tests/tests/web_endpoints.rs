@@ -112,7 +112,10 @@ async fn test_web_endpoints() {
             &client,
             i,
             &format!("http://{web_addr}/debug/blocks"),
-            &["Recent blocks:", "reqs:"],
+            // `/debug/blocks` only renders the block-tree structure now; the per-block
+            // "reqs:" / "completed:" lines were dropped together with BufferedBlockData,
+            // since the queue no longer needs the reverse block→requests index.
+            &["Recent blocks:"],
         )
         .await
         .expect("debug/blocks endpoint failed");

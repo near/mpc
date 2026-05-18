@@ -11,8 +11,7 @@ use std::sync::{Arc, Mutex, Weak};
 ///
 /// This class provides two important functionalities:
 ///  - Converts a stream of optimistic blocks from the indexer into a stream of finalized
-///    blocks. The content of each block in the finalized stream is specified via the `T`
-///    type parameter.
+///    blocks.
 ///  - For each block added via `add_block`, it returns a `Weak<AtomicBlockStatus>` that can be
 ///    used to observe that block's current `BlockStatus` (non-canonical, canonical or final).
 ///
@@ -96,7 +95,7 @@ use std::sync::{Arc, Mutex, Weak};
 ///  │   │       │       │   │  ┆       │
 ///  ..  ..      ..      ..  .. ┆       ..
 /// ```
-pub struct RecentBlocksTracker<T: Clone + 'static> {
+pub struct RecentBlocksTracker {
     window_size: u64,
     /// By "root", we mean the blocks whose parents we don't know or are older than the window.
     /// The children of the root are the earliest blocks we are keeping who do not have any order
@@ -113,10 +112,10 @@ pub struct RecentBlocksTracker<T: Clone + 'static> {
     maximum_height_available: BlockHeight,
     /// Maps block hashes to their nodes in the tree.
     hash_to_node: HashMap<CryptoHash, Arc<BlockNode>>,
-    /// Maps block hashes to their content; this is to provide the stream of finalized blocks.
-    /// Technically, instead of a hashmap we could put this in the node, but that would clutter
-    /// the code by requiring the T type parameter everywhere.
-    node_to_content: HashMap<CryptoHash, T>,
+    /// Counter incremented inside `add_block` whenever blocks transition to final.
+    /// The caller selects which prometheus counter to wire here (per request-type).
+    /// TODO(#3316): remove this argument
+    finalized_blocks_indexed: &'static prometheus::IntCounter,
 }
 
 #[repr(u8)]
@@ -180,13 +179,19 @@ impl AtomicBlockStatus {
     }
 }
 
-pub struct AddBlockResult<T> {
-    /// The list of newly finalized blocks, in ascending height order. Each entry is a tuple of
-    /// the block height and the data passed to us when adding the block.
-    /// It is guaranteed that the new final blocks returned from multiple calls to add_block are
-    /// contiguous, thus forming the stream of finalized blocks.
-    pub new_final_blocks: Vec<(u64, T)>,
+pub struct AddBlockResult {
     pub block_ref: Weak<AtomicBlockStatus>,
+    /// Newly-finalized blocks captured before `prune_old_blocks` runs. Populated only in
+    /// test builds for assertion convenience — production paths read the counter that
+    /// `add_block` increments instead. Carrying the list this way avoids any production
+    /// allocation overhead while still letting tests reconstruct the finalized-name
+    /// string after pruning may have dropped strong refs to ancestors.
+    // TODO(#3320): drop this cfg(test) field. The test helper should observe finality by
+    // holding a strong `Arc<AtomicBlockStatus>` (upgraded from `block_ref` at `add_block`
+    // time), which survives even after `prune_old_blocks` drops the `BlockNode`.
+    // https://github.com/near/mpc/issues/3320
+    #[cfg(test)]
+    pub new_final_blocks: Vec<(BlockHeight, CryptoHash)>,
 }
 
 /// Represents a block in the recent blockchain.
@@ -231,7 +236,6 @@ impl BlockNode {
         indents: &mut Vec<u8>,
         final_head: Option<CryptoHash>,
         canonical_head: Option<CryptoHash>,
-        content_printer: &impl Fn(&CryptoHash, &mut std::fmt::Formatter<'_>) -> std::fmt::Result,
     ) -> std::fmt::Result {
         if Some(self.hash) == final_head {
             write!(f, "FH ")?;
@@ -260,16 +264,15 @@ impl BlockNode {
             if self.status.is_final() { "F" } else { " " },
             format!("{:?}", self.hash),
         )?;
-        content_printer(&self.hash, f)?;
         writeln!(f)?;
         let children = self.children.lock().unwrap();
         for (i, child) in children.iter().enumerate() {
             if children.len() == 1 {
-                child.debug_print(f, indents, final_head, canonical_head, content_printer)?;
+                child.debug_print(f, indents, final_head, canonical_head)?;
             } else {
                 let indent = if i + 1 == children.len() { 2 } else { 3 };
                 indents.push(indent);
-                child.debug_print(f, indents, final_head, canonical_head, content_printer)?;
+                child.debug_print(f, indents, final_head, canonical_head)?;
                 indents.pop();
             }
         }
@@ -303,8 +306,13 @@ pub struct BlockViewLite {
     pub timestamp_nanosec: u64,
 }
 
-impl<T: Clone + Debug> RecentBlocksTracker<T> {
-    pub fn new(window_size: u64) -> Self {
+impl RecentBlocksTracker {
+    pub fn new(
+        window_size: u64,
+        // TODO(#3316): remove this argument once we have one shared `RecentBlocksTracker`
+        // instance across queues.
+        finalized_blocks_indexed: &'static prometheus::IntCounter,
+    ) -> Self {
         Self {
             window_size,
             root_children: Vec::new(),
@@ -312,18 +320,13 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
             final_head: None,
             maximum_height_available: 0,
             hash_to_node: HashMap::new(),
-            node_to_content: HashMap::new(),
+            finalized_blocks_indexed,
         }
     }
 
     /// Adds a block to the tracker. This is expected to be called for EVERY block given by the
-    /// indexer (whether or not it is interesting). The content is whatever content that we want
-    /// to buffer for the stream of final blocks.
-    pub fn add_block(
-        &mut self,
-        block: &BlockViewLite,
-        content: T,
-    ) -> anyhow::Result<AddBlockResult<T>> {
+    /// indexer (whether or not it is interesting).
+    pub fn add_block(&mut self, block: &BlockViewLite) -> anyhow::Result<AddBlockResult> {
         if self.hash_to_node.contains_key(&block.hash) {
             anyhow::bail!("Block already exists in the tracker");
         }
@@ -340,7 +343,6 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
             children: Mutex::new(Vec::new()),
         });
         self.hash_to_node.insert(block.hash, node.clone());
-        self.node_to_content.insert(block.hash, content);
         if let Some(parent) = parent {
             parent.children.lock().unwrap().push(node.clone());
         } else {
@@ -348,12 +350,21 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
         }
 
         let new_final_blocks = self.maybe_update_final_head(block.last_final_block);
-        // We must do this lookup before calling prune_old_blocks or else we may no longer have
-        // some of the blocks. Note: filter_map should not really filter anything out, but we're
-        // doing this defensively to not crash just in case we have a bug.
-        let new_final_blocks = new_final_blocks
-            .into_iter()
-            .filter_map(|node| Some((node.height, self.node_to_content.get(&node.hash)?.clone())))
+        // TODO(#3316): collapse the per-queue counter into a single shared metric on the
+        // tracker itself.
+        self.finalized_blocks_indexed
+            .inc_by(new_final_blocks.len() as u64);
+        // Capture the (height, hash) of every newly-final block before pruning may drop
+        // strong refs to ancestors that fell outside the recency window. Tests use this
+        // to reconstruct a finalized-name string from their own content map.
+        // TODO(#3320): drop this capture together with the cfg(test) field on
+        // AddBlockResult; the test helper should observe finality via a strong
+        // Arc<AtomicBlockStatus> upgraded at add_block time.
+        // https://github.com/near/mpc/issues/3320
+        #[cfg(test)]
+        let new_final_blocks_for_test: Vec<(BlockHeight, CryptoHash)> = new_final_blocks
+            .iter()
+            .map(|n| (n.height, n.hash))
             .collect();
         match self.canonical_head.upgrade() {
             None => {
@@ -375,8 +386,9 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
         }
         self.prune_old_blocks();
         Ok(AddBlockResult {
-            new_final_blocks,
             block_ref,
+            #[cfg(test)]
+            new_final_blocks: new_final_blocks_for_test,
         })
     }
 
@@ -458,7 +470,6 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
                     .drain(..),
             );
             self.hash_to_node.remove(&node.hash);
-            self.node_to_content.remove(&node.hash);
         }
     }
 
@@ -539,7 +550,6 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
                 continue;
             }
             self.hash_to_node.remove(&node.hash);
-            self.node_to_content.remove(&node.hash);
             // Drain into the queue so the parent stops holding strong refs to
             // its children — once `hash_to_node` no longer holds the parent,
             // the parent can drop as soon as we move past this iteration.
@@ -550,7 +560,7 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
     }
 }
 
-impl<T: Clone + Debug> Debug for RecentBlocksTracker<T> {
+impl Debug for RecentBlocksTracker {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(
             f,
@@ -574,13 +584,6 @@ impl<T: Clone + Debug> Debug for RecentBlocksTracker<T> {
                 }],
                 final_head,
                 canonical_head,
-                &|hash, f| {
-                    if let Some(content) = self.node_to_content.get(hash) {
-                        write!(f, "{:?}", content)
-                    } else {
-                        write!(f, "")
-                    }
-                },
             )?;
         }
         Ok(())
@@ -594,7 +597,7 @@ pub mod tests {
     use super::{BlockEntropy, BlockStatus, BlockViewLite, RecentBlocksTracker};
     use near_indexer::near_primitives::hash::hash;
     use near_indexer_primitives::CryptoHash;
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
     use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
     use std::sync::{Arc, Mutex};
 
@@ -736,8 +739,9 @@ pub mod tests {
 
     pub struct Tester {
         maker: Arc<TestBlockMaker>,
-        tracker: RecentBlocksTracker<String>,
+        tracker: RecentBlocksTracker,
         parents_of_added_blocks: HashSet<CryptoHash>,
+        content: HashMap<CryptoHash, String>,
     }
 
     impl From<u8> for BlockStatus {
@@ -754,11 +758,17 @@ pub mod tests {
     impl Tester {
         pub fn new(heights_to_keep: u64) -> Self {
             let maker = TestBlockMaker::new();
-            let tracker = RecentBlocksTracker::new(heights_to_keep);
+            // Tests don't assert on the finalized-blocks counter; reuse the CKD prod counter
+            // as a no-op sink so the tracker signature is satisfied.
+            let tracker = RecentBlocksTracker::new(
+                heights_to_keep,
+                &crate::requests::metrics::MPC_PENDING_CKDS_QUEUE_FINALIZED_BLOCKS_INDEXED,
+            );
             Self {
                 maker,
                 tracker,
                 parents_of_added_blocks: HashSet::new(),
+                content: HashMap::new(),
             }
         }
 
@@ -778,17 +788,15 @@ pub mod tests {
                 !self.parents_of_added_blocks.contains(&block.hash),
                 "Cannot retroactively add the parent of an already added block"
             );
-            let result = self
-                .tracker
-                .add_block(&block.to_block_view(), name.to_string())
-                .unwrap();
+            let result = self.tracker.add_block(&block.to_block_view()).unwrap();
+            self.content.insert(block.hash, name.to_string());
             if let Some(parent) = block.parent.clone() {
                 self.parents_of_added_blocks.insert(parent.hash);
             }
             result
                 .new_final_blocks
                 .iter()
-                .map(|(_, name)| name.clone())
+                .map(|(_, hash)| self.content.get(hash).unwrap().clone())
                 .collect::<Vec<_>>()
                 .join(",")
         }
