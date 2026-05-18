@@ -35,7 +35,10 @@ use crate::{
 // Fields are read by `From<MpcContract>` even though rustc can't see that
 // (the derive-generated `deserialize_reader` writes them, the conversion reads them);
 // silence the warning.
-#[expect(dead_code, reason = "fields consumed by From<MpcContract> conversion below")]
+#[expect(
+    dead_code,
+    reason = "fields consumed by From<MpcContract> conversion below"
+)]
 #[derive(BorshDeserialize)]
 pub struct MpcContract {
     pub(crate) protocol_state: ProtocolContractState,
@@ -55,7 +58,10 @@ pub struct MpcContract {
 }
 
 /// PR 1's whitelist field shape: a single nested `BTreeMap`, no vote storage.
-#[expect(dead_code, reason = "field consumed by the parent borsh-deserialize then discarded — PR 1 guarantees the map is empty")]
+#[expect(
+    dead_code,
+    reason = "field consumed by the parent borsh-deserialize then discarded — PR 1 guarantees the map is empty"
+)]
 #[derive(BorshDeserialize)]
 pub struct ForeignChainRpcWhitelistPr1 {
     pub(crate) entries:

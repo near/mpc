@@ -15,8 +15,8 @@ pub mod update;
 #[cfg(feature = "dev-utils")]
 pub mod utils;
 
-pub mod v3_9_1_state;
 pub mod pr1_state;
+pub mod v3_9_1_state;
 
 #[cfg(feature = "bench-contract-methods")]
 mod bench;
