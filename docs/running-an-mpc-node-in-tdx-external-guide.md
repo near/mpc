@@ -663,25 +663,34 @@ url = "https://api.trustedservices.intel.com/"
 [mpc_node_config.near_init]
 chain_id = "$CHAIN_ID"            # "testnet" or "mainnet"
 boot_nodes = "$BOOT_NODES"        # comma-separated; see the curl snippet below
+download_genesis = true
+download_config = "rpc"
 # tier3_public_addr = "$IP:24567"
 # external_storage_fallback_threshold = 0
 
+[mpc_node_config.secrets]
+secret_store_key_hex = "$SECRET_STORE_KEY"
+backup_encryption_key_hex = "$BACKUP_ENCRYPTION_KEY"
+
 [mpc_node_config.node]
 my_near_account_id = "$MY_MPC_NEAR_ACCOUNT_ID"
+near_responder_account_id = "$MY_MPC_NEAR_ACCOUNT_ID"
 migration_web_ui = "0.0.0.0:8079"  # required; matches the port-forward above
 
 [mpc_node_config.node.indexer]
-mpc_contract_id = "$CONTRACT_ID"  # v1.signer-prod.testnet for Testnet, v1.signer for Mainnet
-
-[mpc_node_config.secrets]
-secret_store_key_hex = "$SECRET_STORE_KEY"
+mpc_contract_id = "$CONTRACT_ID"  # v1.signer-prod.testnet for testnet, v1.signer for mainnet
+validate_genesis = false
+sync_mode = "Latest"
+finality = "optimistic"
+concurrency = 1
+port_override = 80                # MPC P2P convention
 
 [mpc_node_config.log]
 format = "plain"
 filter = "mpc=debug,info"
 ```
 
-The snippet above shows only the fields you are likely to change. Required fields not shown (e.g. `near_responder_account_id`, `number_of_responder_keys`, `web_ui`, and the `indexer` / `triple` / `presignature` / `signature` / `ckd` blocks) are inherited from the [`user-config.toml`](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/user-config.toml) template — always start from that file and edit the highlighted fields rather than building a config from this snippet alone.
+The snippet above shows only the fields you are likely to change. Required fields not shown (e.g. `number_of_responder_keys`, `web_ui`, and the `triple` / `presignature` / `signature` / `ckd` / `foreign_chains` blocks) and inline `# mainnet: …` swap hints are inherited from the [`user-config.toml`](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/user-config.toml) template — always start from that file and edit the highlighted fields rather than building a config from this snippet alone.
 
 Adjust the variables as per your environment.
 
@@ -692,7 +701,7 @@ Adjust the variables as per your environment.
 * `port_mappings` — port forwarding rules for the MPC container. These should be a subset of the port forwarding for the CVM defined in the [Using the Web Interface](#using-the-web-interface) section.
 * `tier3_public_addr` *(optional, under `[mpc_node_config.near_init]`)* — `IP:24567` the node advertises for Tier3 state-sync responses. Applied at first init only; changing later requires a CVM redeploy via the [Node Migration](./node-migration-guide.md) flow.
 * `external_storage_fallback_threshold` *(optional, under `[mpc_node_config.near_init]`)* — DSS attempts per state part before falling back to the external storage bucket. `0` = bucket-only. Same first-init-only constraint as `tier3_public_addr`.
-* A fresh set of boot nodes can be selected using Testnet/Mainnet RPC endpoints. Copy at least 4-5 nodes from curl results into `boot_nodes`.
+* `near_init.boot_nodes` — comma-separated NEAR boot-node list. The testnet template at `deployment/cvm-deployment/user-config.toml` already ships with a working testnet boot-node list, so testnet operators usually don't need to fetch a fresh one. For **mainnet** (or to refresh testnet), select boot nodes from the Testnet/Mainnet RPC endpoints and copy at least 4-5 of them into this field.
   **Important:** Boot nodes must not contain duplicate addresses or peer IDs. Duplicates will cause the node to crash on startup. The command below deduplicates automatically:
 
 ```bash
@@ -1583,7 +1592,7 @@ After all operators have migrated to the new CVM, participants should vote to re
 
 ## Updating the CVM `user-config.toml` with new image information
 
-If the image repository changes, update the `image` field in `user-config.toml`:
+If the image repository changes, update the `image_reference` field in `user-config.toml`:
 
 **Example:**
 
