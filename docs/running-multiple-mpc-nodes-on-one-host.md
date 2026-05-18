@@ -5,6 +5,16 @@ Covers the case where you want to run **two MPC nodes on the same
 bare-metal TDX host** — typically a mainnet node and a testnet node
 sharing one machine.
 
+> ⚠️ This guide explains how to **technically** support two MPC
+> nodes on one TDX host. **However**, co-locating mainnet and
+> testnet couples their availability: a single failure (hardware,
+> network outage, maintenance reboot, security incident, host-level
+> compromise) takes both nodes offline simultaneously. Neither
+> cluster breaks — the MPC threshold tolerates losing one
+> participant — but your operator contribution to *both* networks
+> drops at the same time. Decide whether that's acceptable before
+> proceeding.
+
 ## When you'd use this
 
 Two reasons operators consider this:
