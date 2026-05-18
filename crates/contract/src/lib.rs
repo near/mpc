@@ -2554,7 +2554,6 @@ mod tests {
         };
         let domains = vec![DomainConfig {
             id: domain_id,
-            curve,
             protocol,
             reconstruction_threshold,
             purpose,
@@ -3303,7 +3302,7 @@ mod tests {
             NearToken::from_yoctonear(1),
         );
         assert_eq!(config.id, DomainId::default());
-        assert_eq!(config.curve, Curve::Secp256k1);
+        assert_eq!(Curve::from(config.protocol), Curve::Secp256k1);
         assert_eq!(config.purpose, DomainPurpose::Sign);
         assert_eq!(predecessor.as_str(), "contract_account.near");
     }
@@ -5023,7 +5022,6 @@ mod tests {
         let domain_id = DomainId::default();
         let domains = vec![DomainConfig {
             id: domain_id,
-            curve: Curve::Secp256k1,
             protocol: Protocol::CaitSith,
             reconstruction_threshold: ReconstructionThreshold::new(2),
             purpose: DomainPurpose::Sign,

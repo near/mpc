@@ -59,7 +59,6 @@ async fn test_key_resharing_simple(
 
     let domain = DomainConfig {
         id: DomainId(0),
-        curve,
         protocol,
         reconstruction_threshold: ReconstructionThreshold::new(3),
         purpose: infer_purpose_from_curve(curve),
@@ -87,7 +86,7 @@ async fn test_key_resharing_simple(
         .expect("must not exceed timeout");
 
     // Sanity check.
-    match domain.curve {
+    match Curve::from(domain.protocol) {
         Curve::Secp256k1 | Curve::Edwards25519 => {
             assert!(request_signature_and_await_response(
                 &mut setup.indexer,
@@ -131,7 +130,7 @@ async fn test_key_resharing_simple(
         .await
         .expect("Timeout waiting for resharing to complete");
 
-    match domain.curve {
+    match Curve::from(domain.protocol) {
         Curve::Secp256k1 | Curve::Edwards25519 => {
             assert!(request_signature_and_await_response(
                 &mut setup.indexer,
@@ -183,7 +182,6 @@ async fn test_key_resharing_multistage() {
 
     let domain = DomainConfig {
         id: DomainId(0),
-        curve: Curve::Secp256k1,
         protocol: Protocol::CaitSith,
         reconstruction_threshold: ReconstructionThreshold::new(3),
         purpose: DomainPurpose::Sign,
@@ -390,7 +388,6 @@ async fn test_signature_requests_in_resharing_are_processed() {
 
     let domain = DomainConfig {
         id: DomainId(0),
-        curve: Curve::Secp256k1,
         protocol: Protocol::CaitSith,
         reconstruction_threshold: ReconstructionThreshold::new(3),
         purpose: DomainPurpose::Sign,

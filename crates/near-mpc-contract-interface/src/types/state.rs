@@ -101,10 +101,9 @@ pub enum DomainPurpose {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
-#[serde(from = "DomainConfigCompat")]
+#[serde(try_from = "DomainConfigCompat")]
 pub struct DomainConfig {
     pub id: DomainId,
-    pub curve: Curve,
     pub protocol: Protocol,
     pub reconstruction_threshold: ReconstructionThreshold,
     pub purpose: DomainPurpose,
@@ -115,35 +114,52 @@ pub struct DomainConfig {
 // always emits `protocol` and `reconstruction_threshold`, so the
 // `DomainConfig` struct can derive `Deserialize` directly and the following
 // items become dead code:
-//   - `DomainConfigCompat` and its `From<DomainConfigCompat>` impl
-//   - `infer_protocol`
+//   - `DomainConfigCompat` and its `TryFrom<DomainConfigCompat>` impl
+//   - `infer_protocol`, `resolve_protocol`
 //   - `RawDomainConfig`, `RawDomainRegistry`, `RawAddDomainsVotes`
 //   - `RunningContractStateCompat`, `KeyEventCompat`,
 //     `InitializingContractStateCompat` (and their `serde(from = …)` attrs)
-/// Standalone-deserialization compat: `protocol` is optional (inferred from
-/// `curve` for legacy JSON); `reconstruction_threshold` is required.
-/// Legacy `state()` reads back-fill the threshold one level up via
-/// `RawDomainConfig`, not here.
+/// Standalone-deserialization compat: legacy JSON carried only `curve`;
+/// new JSON carries only `protocol`. At least one must be present.
+/// `reconstruction_threshold` is required here — legacy `state()` reads
+/// back-fill it one level up via `RawDomainConfig`.
 #[derive(Deserialize)]
 struct DomainConfigCompat {
     id: DomainId,
-    curve: Curve,
+    curve: Option<Curve>,
     protocol: Option<Protocol>,
     reconstruction_threshold: ReconstructionThreshold,
     purpose: DomainPurpose,
 }
 
-impl From<DomainConfigCompat> for DomainConfig {
-    fn from(c: DomainConfigCompat) -> Self {
-        Self {
+impl TryFrom<DomainConfigCompat> for DomainConfig {
+    type Error = MissingProtocolAndCurve;
+    fn try_from(c: DomainConfigCompat) -> Result<Self, Self::Error> {
+        Ok(Self {
             id: c.id,
-            curve: c.curve,
-            protocol: c.protocol.unwrap_or_else(|| infer_protocol(c.curve)),
+            protocol: resolve_protocol(c.protocol, c.curve)?,
             reconstruction_threshold: c.reconstruction_threshold,
             purpose: c.purpose,
-        }
+        })
     }
 }
+
+/// Pick `protocol` if present; otherwise fall back to the legacy 1:1
+/// mapping from `curve`. Both being absent is a malformed payload.
+fn resolve_protocol(
+    protocol: Option<Protocol>,
+    curve: Option<Curve>,
+) -> Result<Protocol, MissingProtocolAndCurve> {
+    match (protocol, curve) {
+        (Some(p), _) => Ok(p),
+        (None, Some(c)) => Ok(infer_protocol(c)),
+        (None, None) => Err(MissingProtocolAndCurve),
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("DomainConfig JSON must include either `protocol` or `curve`")]
+pub struct MissingProtocolAndCurve;
 
 /// Legacy curves map 1:1 to protocols (DamgardEtAl never appeared in old JSON).
 fn infer_protocol(curve: Curve) -> Protocol {
@@ -159,21 +175,23 @@ fn infer_protocol(curve: Curve) -> Protocol {
 #[derive(Deserialize)]
 struct RawDomainConfig {
     id: DomainId,
-    curve: Curve,
+    curve: Option<Curve>,
     protocol: Option<Protocol>,
     reconstruction_threshold: Option<ReconstructionThreshold>,
     purpose: DomainPurpose,
 }
 
 impl RawDomainConfig {
-    fn into_domain_config(self, fallback: ReconstructionThreshold) -> DomainConfig {
-        DomainConfig {
+    fn into_domain_config(
+        self,
+        fallback: ReconstructionThreshold,
+    ) -> Result<DomainConfig, MissingProtocolAndCurve> {
+        Ok(DomainConfig {
             id: self.id,
-            curve: self.curve,
-            protocol: self.protocol.unwrap_or_else(|| infer_protocol(self.curve)),
+            protocol: resolve_protocol(self.protocol, self.curve)?,
             reconstruction_threshold: self.reconstruction_threshold.unwrap_or(fallback),
             purpose: self.purpose,
-        }
+        })
     }
 }
 
@@ -258,7 +276,7 @@ pub struct KeyEventInstance {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-#[serde(from = "KeyEventCompat")]
+#[serde(try_from = "KeyEventCompat")]
 pub struct KeyEvent {
     pub epoch_id: EpochId,
     pub domain: DomainConfig,
@@ -278,16 +296,17 @@ struct KeyEventCompat {
     next_attempt_id: AttemptId,
 }
 
-impl From<KeyEventCompat> for KeyEvent {
-    fn from(c: KeyEventCompat) -> Self {
+impl TryFrom<KeyEventCompat> for KeyEvent {
+    type Error = MissingProtocolAndCurve;
+    fn try_from(c: KeyEventCompat) -> Result<Self, Self::Error> {
         let fallback = ReconstructionThreshold::from(c.parameters.threshold);
-        Self {
+        Ok(Self {
             epoch_id: c.epoch_id,
-            domain: c.domain.into_domain_config(fallback),
+            domain: c.domain.into_domain_config(fallback)?,
             parameters: c.parameters,
             instance: c.instance,
             next_attempt_id: c.next_attempt_id,
-        }
+        })
     }
 }
 
@@ -301,7 +320,7 @@ impl From<KeyEventCompat> for KeyEvent {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-#[serde(from = "InitializingContractStateCompat")]
+#[serde(try_from = "InitializingContractStateCompat")]
 pub struct InitializingContractState {
     pub domains: DomainRegistry,
     pub epoch_id: EpochId,
@@ -322,24 +341,26 @@ struct InitializingContractStateCompat {
     cancel_votes: BTreeSet<AuthenticatedParticipantId>,
 }
 
-impl From<InitializingContractStateCompat> for InitializingContractState {
-    fn from(c: InitializingContractStateCompat) -> Self {
+impl TryFrom<InitializingContractStateCompat> for InitializingContractState {
+    type Error = MissingProtocolAndCurve;
+    fn try_from(c: InitializingContractStateCompat) -> Result<Self, Self::Error> {
         let fallback = ReconstructionThreshold::from(c.generating_key.parameters.threshold);
-        Self {
+        let domains = c
+            .domains
+            .domains
+            .into_iter()
+            .map(|d| d.into_domain_config(fallback))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self {
             domains: DomainRegistry {
-                domains: c
-                    .domains
-                    .domains
-                    .into_iter()
-                    .map(|d| d.into_domain_config(fallback))
-                    .collect(),
+                domains,
                 next_domain_id: c.domains.next_domain_id,
             },
             epoch_id: c.epoch_id,
             generated_keys: c.generated_keys,
             generating_key: c.generating_key,
             cancel_votes: c.cancel_votes,
-        }
+        })
     }
 }
 
@@ -349,7 +370,7 @@ impl From<InitializingContractStateCompat> for InitializingContractState {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-#[serde(from = "RunningContractStateCompat")]
+#[serde(try_from = "RunningContractStateCompat")]
 pub struct RunningContractState {
     pub domains: DomainRegistry,
     pub keyset: Keyset,
@@ -383,39 +404,41 @@ struct RawAddDomainsVotes {
     proposal_by_account: BTreeMap<AuthenticatedParticipantId, Vec<RawDomainConfig>>,
 }
 
-impl From<RunningContractStateCompat> for RunningContractState {
-    fn from(c: RunningContractStateCompat) -> Self {
+impl TryFrom<RunningContractStateCompat> for RunningContractState {
+    type Error = MissingProtocolAndCurve;
+    fn try_from(c: RunningContractStateCompat) -> Result<Self, Self::Error> {
         let fallback = ReconstructionThreshold::from(c.parameters.threshold);
-        Self {
-            domains: DomainRegistry {
-                domains: c
-                    .domains
-                    .domains
+        let domains = c
+            .domains
+            .domains
+            .into_iter()
+            .map(|d| d.into_domain_config(fallback))
+            .collect::<Result<Vec<_>, _>>()?;
+        let proposal_by_account = c
+            .add_domains_votes
+            .proposal_by_account
+            .into_iter()
+            .map(|(k, v)| {
+                let proposal = v
                     .into_iter()
                     .map(|d| d.into_domain_config(fallback))
-                    .collect(),
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok::<_, MissingProtocolAndCurve>((k, proposal))
+            })
+            .collect::<Result<BTreeMap<_, _>, _>>()?;
+        Ok(Self {
+            domains: DomainRegistry {
+                domains,
                 next_domain_id: c.domains.next_domain_id,
             },
             keyset: c.keyset,
             parameters: c.parameters,
             parameters_votes: c.parameters_votes,
             add_domains_votes: AddDomainsVotes {
-                proposal_by_account: c
-                    .add_domains_votes
-                    .proposal_by_account
-                    .into_iter()
-                    .map(|(k, v)| {
-                        (
-                            k,
-                            v.into_iter()
-                                .map(|d| d.into_domain_config(fallback))
-                                .collect(),
-                        )
-                    })
-                    .collect(),
+                proposal_by_account,
             },
             previously_cancelled_resharing_epoch_id: c.previously_cancelled_resharing_epoch_id,
-        }
+        })
     }
 }
 
@@ -472,7 +495,11 @@ pub fn protocol_state_to_string(contract_state: &ProtocolContractState) -> Strin
             output.push_str(&format!("  Epoch: {}\n", state.generating_key.epoch_id));
             output.push_str("  Domains:\n");
             for (i, domain) in state.domains.domains.iter().enumerate() {
-                output.push_str(&format!("    Domain {}: {:?}, ", domain.id, domain.curve));
+                output.push_str(&format!(
+                    "    Domain {}: {:?}, ",
+                    domain.id,
+                    Curve::from(domain.protocol),
+                ));
                 #[expect(clippy::comparison_chain)]
                 if i < state.generated_keys.len() {
                     output.push_str(&format!(
@@ -512,7 +539,9 @@ pub fn protocol_state_to_string(contract_state: &ProtocolContractState) -> Strin
             {
                 output.push_str(&format!(
                     "    Domain {}: {:?}, key from attempt {}\n",
-                    domain.id, domain.curve, key.attempt
+                    domain.id,
+                    Curve::from(domain.protocol),
+                    key.attempt
                 ));
             }
             output.push_str("  Parameters:\n");
@@ -534,7 +563,9 @@ pub fn protocol_state_to_string(contract_state: &ProtocolContractState) -> Strin
             {
                 output.push_str(&format!(
                     "    Domain {}: {:?}, original key from attempt {}, ",
-                    domain.id, domain.curve, state.previous_running_state.keyset.domains[i].attempt
+                    domain.id,
+                    Curve::from(domain.protocol),
+                    state.previous_running_state.keyset.domains[i].attempt
                 ));
 
                 #[expect(clippy::comparison_chain)]
@@ -624,15 +655,19 @@ mod tests {
     #[expect(non_snake_case)]
     fn running_state_compat__should_backfill_missing_reconstruction_threshold() {
         // Given legacy `state()` JSON with no per-domain reconstruction_threshold
+        // and only `curve` for each domain (no `protocol`).
         let json = legacy_running_state_json();
 
         // When deserializing into the new RunningContractState DTO
         let state: RunningContractState = serde_json::from_value(json).unwrap();
 
-        // Then each domain inherits the global threshold (5)
+        // Then each domain inherits the global threshold (5) and gets its
+        // protocol inferred from the legacy `curve` field.
         let expected = ReconstructionThreshold::new(5);
         assert_eq!(state.parameters.threshold, Threshold::new(5));
         assert_eq!(state.domains.domains.len(), 2);
+        assert_eq!(state.domains.domains[0].protocol, Protocol::CaitSith);
+        assert_eq!(state.domains.domains[1].protocol, Protocol::Frost);
         for domain in &state.domains.domains {
             assert_eq!(domain.reconstruction_threshold, expected);
         }
@@ -642,7 +677,7 @@ mod tests {
     #[expect(non_snake_case)]
     fn domain_config__should_require_reconstruction_threshold_directly() {
         // Given JSON missing reconstruction_threshold (e.g. an old vote_add_domains payload)
-        let bad = r#"{"id":0,"curve":"Secp256k1","purpose":"Sign"}"#;
+        let bad = r#"{"id":0,"protocol":"CaitSith","purpose":"Sign"}"#;
 
         // When deserializing as a standalone DomainConfig
         let result: Result<DomainConfig, _> = serde_json::from_str(bad);
@@ -651,6 +686,22 @@ mod tests {
         assert!(
             result.is_err(),
             "Standalone DomainConfig must require reconstruction_threshold"
+        );
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn domain_config__should_reject_json_missing_both_protocol_and_curve() {
+        // Given JSON that omits both `protocol` and `curve`
+        let bad = r#"{"id":0,"reconstruction_threshold":2,"purpose":"Sign"}"#;
+
+        // When deserializing as a standalone DomainConfig
+        let result: Result<DomainConfig, _> = serde_json::from_str(bad);
+
+        // Then it is rejected
+        assert!(
+            result.is_err(),
+            "DomainConfig must require either `protocol` or `curve`"
         );
     }
 }

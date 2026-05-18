@@ -38,21 +38,18 @@ async fn test_basic_multidomain() {
     let mut domains = vec![
         DomainConfig {
             id: DomainId(0),
-            curve: Curve::Secp256k1,
             protocol: Protocol::CaitSith,
             reconstruction_threshold: ReconstructionThreshold::new(3),
             purpose: DomainPurpose::Sign,
         },
         DomainConfig {
             id: DomainId(1),
-            curve: Curve::Edwards25519,
             protocol: Protocol::Frost,
             reconstruction_threshold: ReconstructionThreshold::new(3),
             purpose: DomainPurpose::Sign,
         },
         DomainConfig {
             id: DomainId(2),
-            curve: Curve::Bls12381,
             protocol: Protocol::ConfidentialKeyDerivation,
             reconstruction_threshold: ReconstructionThreshold::new(3),
             purpose: DomainPurpose::CKD,
@@ -82,7 +79,7 @@ async fn test_basic_multidomain() {
 
     tracing::info!("requesting signature");
     for domain in &domains {
-        match domain.curve {
+        match Curve::from(domain.protocol) {
             Curve::Secp256k1 | Curve::Edwards25519 => {
                 assert!(request_signature_and_await_response(
                     &mut setup.indexer,
@@ -108,21 +105,18 @@ async fn test_basic_multidomain() {
     let new_domains = vec![
         DomainConfig {
             id: DomainId(3),
-            curve: Curve::Edwards25519,
             protocol: Protocol::Frost,
             reconstruction_threshold: ReconstructionThreshold::new(3),
             purpose: DomainPurpose::Sign,
         },
         DomainConfig {
             id: DomainId(4),
-            curve: Curve::Secp256k1,
             protocol: Protocol::CaitSith,
             reconstruction_threshold: ReconstructionThreshold::new(3),
             purpose: DomainPurpose::Sign,
         },
         DomainConfig {
             id: DomainId(5),
-            curve: Curve::Bls12381,
             protocol: Protocol::ConfidentialKeyDerivation,
             reconstruction_threshold: ReconstructionThreshold::new(3),
             purpose: DomainPurpose::CKD,
@@ -153,7 +147,7 @@ async fn test_basic_multidomain() {
         .expect("must not exceed timeout");
 
     for domain in &domains {
-        match domain.curve {
+        match Curve::from(domain.protocol) {
             Curve::Secp256k1 | Curve::Edwards25519 => {
                 assert!(request_signature_and_await_response(
                     &mut setup.indexer,
@@ -200,7 +194,7 @@ async fn test_basic_multidomain() {
         .expect("must not exceed timeout");
 
     for domain in &domains {
-        match domain.curve {
+        match Curve::from(domain.protocol) {
             Curve::Secp256k1 | Curve::Edwards25519 => {
                 assert!(request_signature_and_await_response(
                     &mut setup.indexer,

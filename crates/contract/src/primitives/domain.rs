@@ -22,19 +22,8 @@ pub fn is_valid_protocol_for_purpose(purpose: DomainPurpose, protocol: Protocol)
     )
 }
 
-/// Validates that a `DomainConfig` is internally consistent:
-///   - `curve` matches the curve derived from `protocol`, and
-///   - `protocol` is allowed for the requested `purpose`.
-pub fn validate_domain_consistency(domain: &DomainConfig) -> Result<(), Error> {
-    let expected = Curve::from(domain.protocol);
-    if domain.curve != expected {
-        return Err(DomainError::InconsistentCurveProtocol {
-            curve: domain.curve,
-            protocol: domain.protocol,
-            expected,
-        }
-        .into());
-    }
+/// Validates that `protocol` is allowed for the requested `purpose`.
+pub fn validate_domain_purpose(domain: &DomainConfig) -> Result<(), Error> {
     if !is_valid_protocol_for_purpose(domain.purpose, domain.protocol) {
         return Err(DomainError::InvalidProtocolPurposeCombination {
             protocol: domain.protocol,
@@ -116,7 +105,7 @@ impl DomainRegistry {
     pub fn add_domains(&self, domains: Vec<DomainConfig>) -> Result<DomainRegistry, Error> {
         let mut new_registry = self.clone();
         for domain in domains {
-            validate_domain_consistency(&domain)?;
+            validate_domain_purpose(&domain)?;
             let expected_id = domain.id;
             let new_domain_id = new_registry.add_domain(domain);
             if new_domain_id != expected_id {
@@ -145,13 +134,14 @@ impl DomainRegistry {
         self.domains.iter().find(|domain| domain.id == id)
     }
 
-    /// Returns the most recently added domain for the given protocol,
-    /// or None if no such domain exists.
+    /// Returns the most recently added domain for the given curve, or None
+    /// if no such domain exists. The curve is derived from each domain's
+    /// `protocol`.
     pub fn most_recent_domain_for_curve(&self, curve: Curve) -> Option<DomainId> {
         self.domains
             .iter()
             .rev()
-            .find(|domain| domain.curve == curve)
+            .find(|domain| Curve::from(domain.protocol) == curve)
             .map(|domain| domain.id)
     }
 
@@ -168,7 +158,7 @@ impl DomainRegistry {
             next_domain_id,
         };
         for domain in &registry.domains {
-            validate_domain_consistency(domain)?;
+            validate_domain_purpose(domain)?;
         }
         for (left, right) in registry.domains.iter().zip(registry.domains.iter().skip(1)) {
             if left.id.0 >= right.id.0 {
@@ -240,7 +230,7 @@ impl AddDomainsVotes {
 #[cfg(test)]
 pub mod tests {
     use super::{
-        is_valid_protocol_for_purpose, validate_domain_consistency, AddDomainsVotes, Curve,
+        is_valid_protocol_for_purpose, validate_domain_purpose, AddDomainsVotes, Curve,
         DomainConfig, DomainId, DomainPurpose, DomainRegistry, Participants, Protocol,
     };
     use crate::primitives::key_state::AuthenticatedParticipantId;
@@ -258,14 +248,12 @@ pub mod tests {
         let domains1 = vec![
             DomainConfig {
                 id: DomainId(0),
-                curve: Curve::Secp256k1,
                 protocol: Protocol::CaitSith,
                 reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(1),
-                curve: Curve::Edwards25519,
                 protocol: Protocol::Frost,
                 reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
@@ -277,14 +265,12 @@ pub mod tests {
         let domains2 = vec![
             DomainConfig {
                 id: DomainId(2),
-                curve: Curve::Bls12381,
                 protocol: Protocol::ConfidentialKeyDerivation,
                 reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::CKD,
             },
             DomainConfig {
                 id: DomainId(3),
-                curve: Curve::Secp256k1,
                 protocol: Protocol::DamgardEtAl,
                 reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
@@ -297,7 +283,6 @@ pub mod tests {
         // This fails because the domain ID does not start from next_domain_id.
         let domains3 = vec![DomainConfig {
             id: DomainId(5),
-            curve: Curve::Secp256k1,
             protocol: Protocol::CaitSith,
             reconstruction_threshold: ReconstructionThreshold::new(2),
             purpose: DomainPurpose::Sign,
@@ -308,14 +293,12 @@ pub mod tests {
         let domains4 = vec![
             DomainConfig {
                 id: DomainId(5),
-                curve: Curve::Secp256k1,
                 protocol: Protocol::CaitSith,
                 reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(4),
-                curve: Curve::Secp256k1,
                 protocol: Protocol::CaitSith,
                 reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
@@ -329,28 +312,24 @@ pub mod tests {
         let expected = vec![
             DomainConfig {
                 id: DomainId(0),
-                curve: Curve::Secp256k1,
                 protocol: Protocol::CaitSith,
                 reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(2),
-                curve: Curve::Edwards25519,
                 protocol: Protocol::Frost,
                 reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(3),
-                curve: Curve::Bls12381,
                 protocol: Protocol::ConfidentialKeyDerivation,
                 reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::CKD,
             },
             DomainConfig {
                 id: DomainId(4),
-                curve: Curve::Secp256k1,
                 protocol: Protocol::DamgardEtAl,
                 reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
@@ -376,21 +355,18 @@ pub mod tests {
             vec![
                 DomainConfig {
                     id: DomainId(0),
-                    curve: Curve::Secp256k1,
                     protocol: Protocol::CaitSith,
                     reconstruction_threshold: ReconstructionThreshold::new(2),
                     purpose: DomainPurpose::Sign,
                 },
                 DomainConfig {
                     id: DomainId(2),
-                    curve: Curve::Edwards25519,
                     protocol: Protocol::Frost,
                     reconstruction_threshold: ReconstructionThreshold::new(2),
                     purpose: DomainPurpose::Sign,
                 },
                 DomainConfig {
                     id: DomainId(3),
-                    curve: Curve::Secp256k1,
                     protocol: Protocol::CaitSith,
                     reconstruction_threshold: ReconstructionThreshold::new(2),
                     purpose: DomainPurpose::Sign,
@@ -409,29 +385,37 @@ pub mod tests {
         );
     }
 
+    /// Both legacy (`curve` only) and current (`protocol` only) wire shapes
+    /// must round-trip through the compat shim into a `DomainConfig` whose
+    /// `protocol` resolves to the expected value.
     #[rstest]
     #[case(
         r#"{"id":3,"curve":"Secp256k1","reconstruction_threshold":2,"purpose":"Sign"}"#,
-        Curve::Secp256k1,
+        Protocol::CaitSith,
         DomainPurpose::Sign
     )]
     #[case(
         r#"{"id":1,"curve":"Bls12381","reconstruction_threshold":2,"purpose":"CKD"}"#,
-        Curve::Bls12381,
+        Protocol::ConfidentialKeyDerivation,
         DomainPurpose::CKD
     )]
     #[case(
         r#"{"id":1,"curve":"Edwards25519","reconstruction_threshold":2,"purpose":"Sign"}"#,
-        Curve::Edwards25519,
+        Protocol::Frost,
+        DomainPurpose::Sign
+    )]
+    #[case(
+        r#"{"id":2,"protocol":"DamgardEtAl","reconstruction_threshold":2,"purpose":"Sign"}"#,
+        Protocol::DamgardEtAl,
         DomainPurpose::Sign
     )]
     fn test_deserialize_domain_config(
         #[case] json: &str,
-        #[case] expected_curve: Curve,
+        #[case] expected_protocol: Protocol,
         #[case] expected_purpose: DomainPurpose,
     ) {
         let config: DomainConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(config.curve, expected_curve);
+        assert_eq!(config.protocol, expected_protocol);
         assert_eq!(config.purpose, expected_purpose);
     }
 
@@ -465,50 +449,27 @@ pub mod tests {
     }
 
     #[rstest]
-    // Canonical pairings (curve consistent with protocol AND protocol allowed for purpose)
-    #[case(Curve::Secp256k1, Protocol::CaitSith, DomainPurpose::Sign, true)]
-    #[case(Curve::Secp256k1, Protocol::CaitSith, DomainPurpose::ForeignTx, true)]
-    #[case(Curve::Secp256k1, Protocol::DamgardEtAl, DomainPurpose::Sign, true)]
-    #[case(Curve::Edwards25519, Protocol::Frost, DomainPurpose::Sign, true)]
-    #[case(
-        Curve::Bls12381,
-        Protocol::ConfidentialKeyDerivation,
-        DomainPurpose::CKD,
-        true
-    )]
-    // Curve/protocol mismatches
-    #[case(Curve::Secp256k1, Protocol::Frost, DomainPurpose::Sign, false)]
-    #[case(Curve::Edwards25519, Protocol::CaitSith, DomainPurpose::Sign, false)]
-    #[case(Curve::Bls12381, Protocol::DamgardEtAl, DomainPurpose::Sign, false)]
-    // Protocol/purpose mismatches (curve/protocol consistent, but protocol not allowed for purpose)
-    #[case(
-        Curve::Secp256k1,
-        Protocol::DamgardEtAl,
-        DomainPurpose::ForeignTx,
-        false
-    )]
-    #[case(Curve::Edwards25519, Protocol::Frost, DomainPurpose::ForeignTx, false)]
-    #[case(
-        Curve::Bls12381,
-        Protocol::ConfidentialKeyDerivation,
-        DomainPurpose::Sign,
-        false
-    )]
-    #[case(Curve::Secp256k1, Protocol::CaitSith, DomainPurpose::CKD, false)]
-    fn test_domain_consistency(
-        #[case] curve: Curve,
+    #[case(Protocol::CaitSith, DomainPurpose::Sign, true)]
+    #[case(Protocol::CaitSith, DomainPurpose::ForeignTx, true)]
+    #[case(Protocol::DamgardEtAl, DomainPurpose::Sign, true)]
+    #[case(Protocol::Frost, DomainPurpose::Sign, true)]
+    #[case(Protocol::ConfidentialKeyDerivation, DomainPurpose::CKD, true)]
+    #[case(Protocol::DamgardEtAl, DomainPurpose::ForeignTx, false)]
+    #[case(Protocol::Frost, DomainPurpose::ForeignTx, false)]
+    #[case(Protocol::ConfidentialKeyDerivation, DomainPurpose::Sign, false)]
+    #[case(Protocol::CaitSith, DomainPurpose::CKD, false)]
+    fn test_validate_domain_purpose(
         #[case] protocol: Protocol,
         #[case] purpose: DomainPurpose,
         #[case] expected_ok: bool,
     ) {
         let domain = DomainConfig {
             id: DomainId(0),
-            curve,
             protocol,
             reconstruction_threshold: ReconstructionThreshold::new(2),
             purpose,
         };
-        assert_eq!(validate_domain_consistency(&domain).is_ok(), expected_ok);
+        assert_eq!(validate_domain_purpose(&domain).is_ok(), expected_ok);
     }
 
     fn setup_participants(n: usize) -> (Participants, Vec<AuthenticatedParticipantId>) {
@@ -532,7 +493,6 @@ pub mod tests {
     fn sample_proposal() -> Vec<DomainConfig> {
         vec![DomainConfig {
             id: DomainId(0),
-            curve: Curve::Secp256k1,
             protocol: Protocol::CaitSith,
             reconstruction_threshold: ReconstructionThreshold::new(2),
             purpose: DomainPurpose::Sign,
@@ -612,14 +572,12 @@ pub mod tests {
         let (participants, auth_ids) = setup_participants(3);
         let proposal_a = vec![DomainConfig {
             id: DomainId(0),
-            curve: Curve::Secp256k1,
             protocol: Protocol::CaitSith,
             reconstruction_threshold: ReconstructionThreshold::new(2),
             purpose: DomainPurpose::Sign,
         }];
         let proposal_b = vec![DomainConfig {
             id: DomainId(0),
-            curve: Curve::Edwards25519,
             protocol: Protocol::Frost,
             reconstruction_threshold: ReconstructionThreshold::new(2),
             purpose: DomainPurpose::Sign,

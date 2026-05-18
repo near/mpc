@@ -6,7 +6,7 @@ use crate::tests::{
     DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
 };
 use crate::tracking::AutoAbortTask;
-use mpc_primitives::domain::{Curve, DomainId};
+use mpc_primitives::domain::DomainId;
 use near_mpc_contract_interface::types::{
     DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
 };
@@ -35,7 +35,6 @@ async fn test_basic_cluster() {
 
     let signature_domain_ecdsa = DomainConfig {
         id: DomainId(0),
-        curve: Curve::Secp256k1,
         protocol: Protocol::CaitSith,
         reconstruction_threshold: ReconstructionThreshold::new(3),
         purpose: DomainPurpose::Sign,
@@ -43,7 +42,6 @@ async fn test_basic_cluster() {
 
     let signature_domain_eddsa = DomainConfig {
         id: DomainId(1),
-        curve: Curve::Edwards25519,
         protocol: Protocol::Frost,
         reconstruction_threshold: ReconstructionThreshold::new(3),
         purpose: DomainPurpose::Sign,
@@ -51,7 +49,6 @@ async fn test_basic_cluster() {
 
     let ckd_domain = DomainConfig {
         id: DomainId(2),
-        curve: Curve::Bls12381,
         protocol: Protocol::ConfidentialKeyDerivation,
         reconstruction_threshold: ReconstructionThreshold::new(3),
         purpose: DomainPurpose::CKD,

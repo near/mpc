@@ -36,13 +36,11 @@ pub fn gen_domain_registry(num_domains: usize) -> DomainRegistry {
     let mut domains = Vec::new();
     for i in 0..num_domains {
         let protocol = ALL_PROTOCOLS[i % ALL_PROTOCOLS.len()];
-        let curve = Curve::from(protocol);
         domains.push(DomainConfig {
             id: DomainId(i as u64 * 2),
-            curve,
             protocol,
             reconstruction_threshold: DEFAULT_TEST_RECONSTRUCTION_THRESHOLD,
-            purpose: infer_purpose_from_curve(curve),
+            purpose: infer_purpose_from_curve(Curve::from(protocol)),
         });
     }
     DomainRegistry::from_raw_validated(domains, num_domains as u64 * 2).unwrap()
@@ -53,13 +51,11 @@ pub fn gen_domains_to_add(registry: &DomainRegistry, num_domains: usize) -> Vec<
     let mut new_domains = Vec::new();
     for i in 0..num_domains {
         let protocol = ALL_PROTOCOLS[i % ALL_PROTOCOLS.len()];
-        let curve = Curve::from(protocol);
         new_domains.push(DomainConfig {
             id: DomainId(registry.next_domain_id() + i as u64),
-            curve,
             protocol,
             reconstruction_threshold: DEFAULT_TEST_RECONSTRUCTION_THRESHOLD,
-            purpose: infer_purpose_from_curve(curve),
+            purpose: infer_purpose_from_curve(Curve::from(protocol)),
         });
     }
     new_domains

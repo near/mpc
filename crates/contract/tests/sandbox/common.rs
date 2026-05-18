@@ -256,7 +256,6 @@ impl SandboxTestSetupBuilder {
             let key: PublicKeyExtended = pk.try_into().unwrap();
             let config = DomainConfig {
                 id: domain_id,
-                curve,
                 protocol: *protocol,
                 reconstruction_threshold,
                 purpose,
@@ -282,7 +281,6 @@ impl SandboxTestSetupBuilder {
             let key: PublicKeyExtended = pk.try_into().unwrap();
             let config = DomainConfig {
                 id: domain_id,
-                curve: Curve::Secp256k1,
                 protocol: Protocol::CaitSith,
                 reconstruction_threshold: ReconstructionThreshold::new(cluster_threshold),
                 purpose: DomainPurpose::ForeignTx,
@@ -538,7 +536,7 @@ pub async fn call_contract_key_generation<const N: usize>(
         start_keygen_instance(contract, accounts, key_event_id)
             .await
             .unwrap();
-        let (public_key, shared_secret_key) = make_key_for_domain(domain.curve);
+        let (public_key, shared_secret_key) = make_key_for_domain(Curve::from(domain.protocol));
 
         domain_keys.push(DomainKey {
             domain_config: domain.clone(),
@@ -605,21 +603,18 @@ pub async fn execute_key_generation_and_add_random_state(
     let domains_to_add = [
         DomainConfig {
             id: 0.into(),
-            curve: Curve::Edwards25519,
             protocol: Protocol::Frost,
             reconstruction_threshold: ReconstructionThreshold::new(6),
             purpose: DomainPurpose::Sign,
         },
         DomainConfig {
             id: 1.into(),
-            curve: Curve::Secp256k1,
             protocol: Protocol::CaitSith,
             reconstruction_threshold: ReconstructionThreshold::new(6),
             purpose: DomainPurpose::Sign,
         },
         DomainConfig {
             id: 2.into(),
-            curve: Curve::Edwards25519,
             protocol: Protocol::Frost,
             reconstruction_threshold: ReconstructionThreshold::new(6),
             purpose: DomainPurpose::Sign,
@@ -889,6 +884,34 @@ impl From<&ThresholdParameters> for OldThresholdParameters {
                 participants,
             },
             threshold: params.threshold(),
+        }
+    }
+}
+
+/// Mirrors the pre-curve-removal JSON wire shape of `DomainConfig`. Used by
+/// sandbox tests that deploy a production contract binary whose
+/// `vote_add_domains` deserializer still requires `curve`. The current
+/// contract accepts both shapes via the DTO compat shim, so this helper is
+/// safe against the current contract too. Remove this type (and every
+/// `OldDomainConfig::from(...)` call site) after the 3.10 release is the
+/// production contract on Mainnet and Testnet.
+#[derive(Serialize)]
+pub struct OldDomainConfig {
+    pub id: DomainId,
+    pub curve: Curve,
+    pub protocol: Protocol,
+    pub reconstruction_threshold: ReconstructionThreshold,
+    pub purpose: DomainPurpose,
+}
+
+impl From<&DomainConfig> for OldDomainConfig {
+    fn from(domain: &DomainConfig) -> Self {
+        OldDomainConfig {
+            id: domain.id,
+            curve: Curve::from(domain.protocol),
+            protocol: domain.protocol,
+            reconstruction_threshold: domain.reconstruction_threshold,
+            purpose: domain.purpose,
         }
     }
 }

@@ -272,35 +272,6 @@ BorshSchemaContainer {
                 ],
             ),
         },
-        "Curve": Enum {
-            tag_width: 1,
-            variants: [
-                (
-                    0,
-                    "Secp256k1",
-                    "Curve__Secp256k1",
-                ),
-                (
-                    1,
-                    "Edwards25519",
-                    "Curve__Edwards25519",
-                ),
-                (
-                    2,
-                    "Bls12381",
-                    "Curve__Bls12381",
-                ),
-            ],
-        },
-        "Curve__Bls12381": Struct {
-            fields: Empty,
-        },
-        "Curve__Edwards25519": Struct {
-            fields: Empty,
-        },
-        "Curve__Secp256k1": Struct {
-            fields: Empty,
-        },
         "DockerImageHash": Struct {
             fields: UnnamedFields(
                 [
@@ -314,10 +285,6 @@ BorshSchemaContainer {
                     (
                         "id",
                         "DomainId",
-                    ),
-                    (
-                        "curve",
-                        "Curve",
                     ),
                     (
                         "protocol",

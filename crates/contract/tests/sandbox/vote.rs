@@ -44,7 +44,6 @@ async fn test_keygen() -> anyhow::Result<()> {
     };
     let epoch_id = init_running.keyset.epoch_id;
     let domain_id = init_running.domains.next_domain_id;
-    let curve = Curve::Edwards25519;
     let protocol = Protocol::Frost;
 
     // vote to add the domain and verify we enter initializing state
@@ -53,7 +52,6 @@ async fn test_keygen() -> anyhow::Result<()> {
         &mpc_signer_accounts,
         &[DomainConfig {
             id: domain_id.into(),
-            curve,
             protocol,
             reconstruction_threshold: ReconstructionThreshold::new(6),
             purpose: DomainPurpose::Sign,
@@ -68,7 +66,6 @@ async fn test_keygen() -> anyhow::Result<()> {
     assert_eq!(init.domains.next_domain_id, domain_id + 1);
     let expected_domain = dtos::DomainConfig {
         id: dtos::DomainId(domain_id),
-        curve,
         protocol,
         reconstruction_threshold: ReconstructionThreshold::new(6),
         purpose: dtos::DomainPurpose::Sign,
@@ -170,7 +167,6 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
             &mpc_signer_accounts,
             &[DomainConfig {
                 id: next_domain_id.into(),
-                curve,
                 protocol: *protocol,
                 reconstruction_threshold,
                 purpose: infer_purpose_from_curve(curve),
@@ -190,7 +186,6 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
         };
         let expected_domain = dtos::DomainConfig {
             id: dtos::DomainId(next_domain_id),
-            curve,
             protocol: *protocol,
             reconstruction_threshold,
             purpose: expected_purpose,

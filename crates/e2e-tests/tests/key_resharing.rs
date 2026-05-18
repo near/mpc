@@ -2,7 +2,7 @@ use crate::common;
 
 use anyhow::{Context, bail};
 use e2e_tests::CLUSTER_WAIT_TIMEOUT;
-use mpc_primitives::domain::{Curve, DomainId};
+use mpc_primitives::domain::DomainId;
 use near_mpc_contract_interface::types::{
     DomainConfig, DomainPurpose, Protocol, ProtocolContractState, ReconstructionThreshold,
 };
@@ -135,28 +135,24 @@ async fn test_multi_domain() {
         .add_domains_and_wait(vec![
             DomainConfig {
                 id: DomainId(3),
-                curve: Curve::Secp256k1,
                 protocol: Protocol::CaitSith,
                 reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(4),
-                curve: Curve::Edwards25519,
                 protocol: Protocol::Frost,
                 reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(5),
-                curve: Curve::Secp256k1,
                 protocol: Protocol::CaitSith,
                 reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(6),
-                curve: Curve::Edwards25519,
                 protocol: Protocol::Frost,
                 reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
@@ -180,7 +176,6 @@ async fn test_multi_domain() {
     cluster
         .start_add_domains(vec![DomainConfig {
             id: DomainId(7),
-            curve: Curve::Secp256k1,
             protocol: Protocol::CaitSith,
             reconstruction_threshold: ReconstructionThreshold::new(3),
             purpose: DomainPurpose::Sign,
