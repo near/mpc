@@ -210,6 +210,7 @@ fn canonicalize(mut providers: Vec<ProviderEntry>, threshold: u64) -> Result<Cha
 mod tests {
     use super::*;
     use crate::primitives::{key_state::AuthenticatedParticipantId, test_utils::gen_participants};
+    use assert_matches::assert_matches;
     use near_mpc_contract_interface::types::{AuthScheme, ChainRouting, ProviderId};
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
@@ -705,14 +706,14 @@ mod tests {
         // Then: applied, stored entry preserves the routing + auth shapes.
         let stored = wl.entries.get(ForeignChain::Ethereum).unwrap();
         assert_eq!(stored.providers.len(), 1);
-        assert!(matches!(
+        assert_matches!(
             stored.providers[0].chain_routing,
-            ChainRouting::QueryParam { ref name, .. } if name == "network",
-        ));
-        assert!(matches!(
+            ChainRouting::QueryParam { ref name, .. } if name == "network"
+        );
+        assert_matches!(
             stored.providers[0].auth_scheme,
-            AuthScheme::Query { ref name } if name == "dkey",
-        ));
+            AuthScheme::Query { ref name } if name == "dkey"
+        );
     }
 
     #[test]
