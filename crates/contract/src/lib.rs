@@ -1509,6 +1509,16 @@ impl MpcContract {
         Ok(())
     }
 
+    /// On-chain RPC provider whitelist keyed by `ForeignChain`. Nodes read this at
+    /// startup to validate their local `foreign_chains.yaml`. Borsh-encoded result.
+    #[result_serializer(borsh)]
+    pub fn allowed_foreign_chain_providers(
+        &self,
+    ) -> std::collections::BTreeMap<dtos::ForeignChain, foreign_chain_rpc::ChainEntry> {
+        log!("allowed_foreign_chain_providers");
+        self.foreign_chain_rpc_whitelist.entries.snapshot()
+    }
+
     /// Returns all accounts that have TEE attestations stored in the contract.
     /// Note: This includes both current protocol participants and accounts that may have
     /// submitted TEE information but are not currently part of the active participant set.
@@ -1619,9 +1629,6 @@ impl MpcContract {
         };
 
         self.tee_state.clean_non_participant_votes(participants);
-        self.foreign_chain_rpc_whitelist
-            .votes
-            .retain_only(participants);
         Ok(())
     }
 
@@ -1683,6 +1690,10 @@ impl MpcContract {
                 .foreign_chain_support_by_node
                 .remove(account);
         }
+
+        self.foreign_chain_rpc_whitelist
+            .votes
+            .retain_only(participants);
 
         Ok(())
     }

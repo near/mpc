@@ -75,6 +75,7 @@ pub const GET_TEE_ACCOUNTS: &str = "get_tee_accounts";
 pub const GET_ATTESTATION: &str = "get_attestation";
 pub const GET_SUPPORTED_FOREIGN_CHAINS: &str = "get_supported_foreign_chains";
 pub const GET_FOREIGN_CHAIN_SUPPORT_BY_NODE: &str = "get_foreign_chain_support_by_node";
+pub const ALLOWED_FOREIGN_CHAIN_PROVIDERS: &str = "allowed_foreign_chain_providers";
 pub const ALLOWED_DOCKER_IMAGE_HASHES: &str = "allowed_docker_image_hashes";
 pub const ALLOWED_LAUNCHER_COMPOSE_HASHES: &str = "allowed_launcher_compose_hashes";
 pub const ALLOWED_LAUNCHER_IMAGE_HASHES: &str = "allowed_launcher_image_hashes";

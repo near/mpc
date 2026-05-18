@@ -1,3 +1,4 @@
+use mpc_contract::foreign_chain_rpc::ChainEntry;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
     AuthScheme, ChainRouting, ChainVote, ForeignChain, Protocol, ProviderEntry, ProviderId,
@@ -5,6 +6,7 @@ use near_mpc_contract_interface::types::{
 use near_sdk::borsh;
 use near_sdk::{CurveType, PublicKey};
 use serde_json::json;
+use std::collections::BTreeMap;
 use std::str::FromStr;
 
 use crate::sandbox::common::SandboxTestSetup;
@@ -71,7 +73,7 @@ async fn test_derived_public_key() -> anyhow::Result<()> {
 
 #[tokio::test]
 #[expect(non_snake_case)]
-async fn vote_update_foreign_chain_providers__should_succeed_for_authenticated_voters(
+async fn vote_update_foreign_chain_providers__should_apply_chain_state_after_threshold(
 ) -> anyhow::Result<()> {
     let SandboxTestSetup {
         contract,
@@ -79,17 +81,19 @@ async fn vote_update_foreign_chain_providers__should_succeed_for_authenticated_v
         ..
     } = SandboxTestSetup::builder()
         .with_protocols(&[Protocol::CaitSith])
+        .with_sandbox_test_methods()
         .build()
         .await;
 
+    let proposed_entry = ProviderEntry {
+        provider_id: ProviderId("alchemy".to_string()),
+        base_url: "https://eth-mainnet.g.alchemy.com/v2/".to_string(),
+        auth_scheme: AuthScheme::None,
+        chain_routing: ChainRouting::Embedded,
+    };
     let votes = vec![ChainVote {
         chain: ForeignChain::Ethereum,
-        providers: vec![ProviderEntry {
-            provider_id: ProviderId("alchemy".to_string()),
-            base_url: "https://eth-mainnet.g.alchemy.com/v2/".to_string(),
-            auth_scheme: AuthScheme::None,
-            chain_routing: ChainRouting::Embedded,
-        }],
+        providers: vec![proposed_entry.clone()],
         threshold: 1,
     }];
 
@@ -97,7 +101,7 @@ async fn vote_update_foreign_chain_providers__should_succeed_for_authenticated_v
     let args = borsh::to_vec(&votes)?;
     // Gating matches the protocol signing threshold (`self.threshold()?.value()` in
     // the contract). Sandbox setup uses 10 participants with a 60% threshold = 6.
-    for account in mpc_signer_accounts.iter().take(6) {
+    for (i, account) in mpc_signer_accounts.iter().take(6).enumerate() {
         let result = account
             .call(
                 contract.id(),
@@ -108,8 +112,34 @@ async fn vote_update_foreign_chain_providers__should_succeed_for_authenticated_v
             .await?;
         assert!(
             result.is_success(),
-            "vote_update_foreign_chain_providers failed: {result:?}",
+            "vote_update_foreign_chain_providers (vote {}) failed: {result:?}",
+            i + 1,
         );
     }
+
+    // Then: chain entry is applied (result is borsh-encoded — see the view fn's doc).
+    let whitelist: BTreeMap<ForeignChain, ChainEntry> = contract
+        .view(method_names::ALLOWED_FOREIGN_CHAIN_PROVIDERS)
+        .args_json(json!({}))
+        .await?
+        .borsh()?;
+    let stored = whitelist
+        .get(&ForeignChain::Ethereum)
+        .expect("Ethereum entry should be present after 6 matching votes");
+    assert_eq!(stored.providers.len(), 1);
+    assert_eq!(stored.providers[0], proposed_entry);
+    assert_eq!(stored.threshold, 1);
+
+    // And: pending votes for the chain are cleared (sandbox-test-methods view).
+    let pending_count: u32 = contract
+        .view("foreign_chain_pending_vote_count")
+        .args_json(json!({ "chain": ForeignChain::Ethereum }))
+        .await?
+        .json()?;
+    assert_eq!(
+        pending_count, 0,
+        "pending votes should be cleared after apply",
+    );
+
     Ok(())
 }

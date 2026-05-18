@@ -37,6 +37,12 @@ impl AllowedProviders {
     pub fn get(&self, chain: ForeignChain) -> Option<&ChainEntry> {
         self.entries.get(&chain)
     }
+
+    /// Snapshot of the whole whitelist. Cloned so the caller can ship it across the
+    /// contract boundary without holding a borrow on `self`.
+    pub fn snapshot(&self) -> BTreeMap<ForeignChain, ChainEntry> {
+        self.entries.clone()
+    }
 }
 
 // Flat `(participant, chain)` key (rather than a nested map) halves the BTreeMap
