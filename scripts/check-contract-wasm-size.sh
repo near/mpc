@@ -13,10 +13,7 @@ WASM_PATH="${1:-target/near/mpc_contract/mpc_contract.wasm}"
 
 # NEAR max_transaction_size = 1572864; keep some headroom.
 # Raised from 1495000 to fit the on-chain RPC provider whitelist voting
-# machinery + the PR-1 → PR-2 state migration shim (issue #3215). Revert toward
-# the previous baseline once a mid-long-term WASM-size reduction lands and the
-# `pr1_state` migration can be retired (i.e., once any environment that ever
-# deployed PR 1's binary has been upgraded past PR 2).
+# machinery (issue #3215).
 HARD_LIMIT=1545000
 
 
