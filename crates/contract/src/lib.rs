@@ -5,6 +5,7 @@
 pub mod config;
 pub mod crypto_shared;
 pub mod errors;
+pub mod foreign_chain_rpc;
 pub mod node_migrations;
 pub mod primitives;
 pub mod state;
@@ -39,6 +40,7 @@ use crate::{
         TryIntoContractType,
     },
     errors::{Error, RequestError},
+    foreign_chain_rpc::ForeignChainRpcWhitelist,
     pending_requests::LegacyPendingRequests,
     primitives::{
         ckd::{app_public_key_check, ckd_output_check, CKDRequest},
@@ -158,6 +160,7 @@ pub struct MpcContract {
     legacy_pending_requests: LegacyPendingRequests,
     // TODO(#2937): Remove via state migration.
     metrics: Metrics,
+    foreign_chain_rpc_whitelist: ForeignChainRpcWhitelist,
 }
 
 #[near(serializers=[borsh])]
@@ -1689,6 +1692,7 @@ impl MpcContract {
             legacy_pending_requests: LegacyPendingRequests::new(),
             metrics: Default::default(),
             node_foreign_chain_support: Default::default(),
+            foreign_chain_rpc_whitelist: Default::default(),
         })
     }
 
@@ -1757,6 +1761,7 @@ impl MpcContract {
             legacy_pending_requests: LegacyPendingRequests::new(),
             metrics: Default::default(),
             node_foreign_chain_support: Default::default(),
+            foreign_chain_rpc_whitelist: Default::default(),
         })
     }
 
@@ -4008,6 +4013,7 @@ mod tests {
                 node_migrations: Default::default(),
                 legacy_pending_requests: LegacyPendingRequests::new(),
                 metrics: Default::default(),
+                foreign_chain_rpc_whitelist: Default::default(),
             }
         }
     }
