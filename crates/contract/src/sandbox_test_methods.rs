@@ -11,7 +11,6 @@
 use crate::primitives::ckd::CKDRequest;
 use crate::primitives::signature::SignatureRequest;
 use crate::MpcContract;
-use near_mpc_contract_interface::types::ForeignChain;
 use near_sdk::near;
 
 // Import the generated extension trait from near
@@ -48,18 +47,5 @@ impl MpcContract {
             .unwrap_or(0);
         u32::try_from(len)
             .expect("queue length must fit in u32 — bounded by MAX_PENDING_REQUEST_FAN_OUT")
-    }
-
-    /// Number of pending `ProviderVotes` rows for `chain`. Used by sandbox tests to
-    /// verify that `clear_chain` ran after the apply threshold was reached.
-    pub fn foreign_chain_pending_vote_count(&self, chain: ForeignChain) -> u32 {
-        let count = self
-            .foreign_chain_rpc_whitelist
-            .votes
-            .pending
-            .keys()
-            .filter(|(_, c)| *c == chain)
-            .count();
-        u32::try_from(count).expect("pending vote count must fit in u32")
     }
 }

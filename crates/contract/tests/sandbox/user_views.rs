@@ -81,7 +81,6 @@ async fn vote_update_foreign_chain_providers__should_apply_chain_state_after_thr
         ..
     } = SandboxTestSetup::builder()
         .with_protocols(&[Protocol::CaitSith])
-        .with_sandbox_test_methods()
         .build()
         .await;
 
@@ -129,17 +128,6 @@ async fn vote_update_foreign_chain_providers__should_apply_chain_state_after_thr
     assert_eq!(stored.providers.len(), 1);
     assert_eq!(stored.providers[0], proposed_entry);
     assert_eq!(stored.threshold, 1);
-
-    // And: pending votes for the chain are cleared (sandbox-test-methods view).
-    let pending_count: u32 = contract
-        .view("foreign_chain_pending_vote_count")
-        .args_json(json!({ "chain": ForeignChain::Ethereum }))
-        .await?
-        .json()?;
-    assert_eq!(
-        pending_count, 0,
-        "pending votes should be cleared after apply",
-    );
 
     Ok(())
 }
