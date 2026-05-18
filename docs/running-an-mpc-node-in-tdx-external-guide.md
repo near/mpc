@@ -505,7 +505,59 @@ For more information, see [local-key-provider-from-phala](https://github.com/Dst
 
 1. Follow the [canonical/tdx setup](#1-tdx-bare-metal-server-setup) if not already completed — especially step 9.1–2 (establishing an SGX PCCS: Provisioning Certification Caching Service).
 
-2. Deploy an instance of `gramine-sealing-key-provider` on the host machine.
+2. **Patch `Dockerfile.key-provider` to pin transitive deps.** This is a
+   temporary build-reproducibility patch; the structural fix is tracked in
+   [#3153](https://github.com/near/mpc/issues/3153). The upstream
+   Dockerfile leaves apt dependencies and the Rust toolchain version
+   under-pinned, so a fresh build on a different date produces a different
+   `mr_enclave` and your CVM fails attestation. After completing the
+   v0.5.8 dstack checkout from
+   [§2 *Dstack Setup and Configuration*](#2-dstack-setup-and-configuration),
+   edit `/opt/mpc/dstack/key-provider-build/Dockerfile.key-provider`:
+
+   - Replace the original apt block, which reads:
+
+     ```dockerfile
+     RUN apt-get update && apt-get install -y \
+         git=1:2.34.1-1ubuntu1.17 \
+         build-essential=12.9ubuntu3 \
+         && rm -rf /var/lib/apt/lists/*
+     ```
+
+     with this snapshot-pinned version, which points apt at a fixed
+     Ubuntu archive date by rewriting `/etc/apt/sources.list`:
+
+     ```dockerfile
+     RUN { \
+           echo 'deb https://snapshot.ubuntu.com/ubuntu/20260423T000000Z jammy main universe restricted multiverse'; \
+           echo 'deb https://snapshot.ubuntu.com/ubuntu/20260423T000000Z jammy-updates main universe restricted multiverse'; \
+           echo 'deb https://snapshot.ubuntu.com/ubuntu/20260423T000000Z jammy-security main universe restricted multiverse'; \
+         } > /etc/apt/sources.list \
+      && rm -rf /etc/apt/sources.list.d/* \
+      && apt-get update && apt-get install -y \
+           git=1:2.34.1-1ubuntu1.17 \
+           build-essential=12.9ubuntu3 \
+      && rm -rf /var/lib/apt/lists/*
+     ```
+
+     Paste this block exactly as shown — the snapshot date
+     `20260423T000000Z` is the specific value that produces the canonical
+     `mr_enclave`. Any change will produce a different one.
+
+   - On the `rustup` line, change `--default-toolchain 1.85` to
+     `--default-toolchain 1.85.1`. (`1.85` resolves to whatever 1.85.x is
+     current when rustup runs; pinning the exact patch version makes the
+     build deterministic.)
+
+   After running `./run.sh` in the next step, the `mr_enclave` you see in
+   step 4 should match `6b5ed02e…`. If it doesn't, the patch wasn't
+   applied correctly — re-check both edits.
+
+   <!-- TODO(#3153): remove this manual patch once the structural fix lands. -->
+   <!-- Requires snapshot.ubuntu.com to be reachable from the build host. -->
+
+
+3. Deploy an instance of `gramine-sealing-key-provider` on the host machine.
    * On the TDX server, run the script [run.sh](https://github.com/Dstack-TEE/dstack/blob/master/key-provider-build/run.sh)
    > **Prerequisite:** Docker must be installed.
 
@@ -513,7 +565,7 @@ For more information, see [local-key-provider-from-phala](https://github.com/Dst
     cd /opt/mpc/dstack/key-provider-build
     ./run.sh
     ```
-3. To find the `mr_enclave` value of the SGX key provider, run:
+4. To find the `mr_enclave` value of the SGX key provider, run:
 
    ```bash
    docker logs gramine-sealing-key-provider 2>&1 | grep mr_enclave | head -n 1
@@ -537,7 +589,7 @@ Including
 
 * Preparing a configuration file based on [user-config.toml](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/user-config.toml)
 
-* Creating a docker compose file for the launcher based on [launcher\_docker\_compose.yaml](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/launcher_docker_compose.yaml).
+* Rendering the launcher docker compose template [launcher\_docker\_compose.yaml.template](https://github.com/near/mpc/blob/main/crates/contract/assets/launcher_docker_compose.yaml.template) with the launcher and MPC node manifest digests approved by the contract.
 * Configuring and starting your CVM with the MPC node.
 * Accessing mpc docker logs.
 * Retrieve keys from the CVM.
@@ -627,6 +679,8 @@ Adjust the variables as per your environment.
 * `my_near_account_id` — use the NEAR account ID created in the previous step
 * `mpc_contract_id` — **v1.signer-prod.testnet** for testnet, **v1.signer** for mainnet
 * `port_mappings` — port forwarding rules for the MPC container. These should be a subset of the port forwarding for the CVM defined in [Port Mapping](#using-the-web-interface)
+* `tier3_public_addr` *(optional)* — `IP:24567` the node advertises for Tier3 state-sync responses. Applied at first init only; changing later requires a CVM redeploy via the [Node Migration](./node-migration-guide.md) flow.
+* `external_storage_fallback_threshold` *(optional)* — DSS attempts per state part before falling back to the external storage bucket. `0` = bucket-only. Same first-init-only constraint as `tier3_public_addr`.
 * A fresh set of boot nodes can be selected using Testnet/Mainnet RPC endpoints. Copy at least 4-5 nodes from curl results into `near_boot_nodes`.
   **Important:** Boot nodes must not contain duplicate addresses or peer IDs. Duplicates will cause the node to crash on startup. The command below deduplicates automatically:
 
@@ -658,36 +712,67 @@ For a self-hosted local PCCS, see [Appendix: Self-hosting a local PCCS](#appendi
 
 ### Preparing a Docker Compose File
 
-To launch the launcher in the TEE environment, use the Docker Compose file from the [NEAR MPC repository](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/launcher_docker_compose.yaml).
+The launcher Docker Compose file is **rendered** at deploy time from the
+template at
+[`crates/contract/assets/launcher_docker_compose.yaml.template`](https://github.com/near/mpc/blob/main/crates/contract/assets/launcher_docker_compose.yaml.template)
+by substituting two manifest digests:
 
-Update the `DEFAULT_IMAGE_DIGEST` field in `launcher_docker_compose.yaml` with the latest MPC Docker image manifest digest retrieved from the contract.
+1. The **launcher** image digest (`{{LAUNCHER_IMAGE_HASH}}`)
+2. The **MPC node** image digest (`{{DEFAULT_IMAGE_DIGEST_HASH}}`)
 
-For details on how to verify this digest, see the section [MPC Node Image Upgrade](#mpc-node-image-upgrade).
+Both must be approved by the contract — otherwise the SHA256 of the rendered
+file will not match an entry in `allowed_launcher_compose_hashes` and the
+node's attestation will be rejected.
 
-Example digest value:
+#### Step 1 — discover the currently-allowed digests
 
 ```bash
-DEFAULT_IMAGE_DIGEST=sha256:331cfec941671ac343c52847e255eb36a280da65535d2a1e4d002c4c64686e19
+# MPC node digest — LATEST = FIRST element of the returned vector
+# (goes into DEFAULT_IMAGE_DIGEST in the rendered compose)
+near contract call-function as-read-only \
+  v1.signer-prod.testnet allowed_docker_image_hashes \
+  json-args '{}' network-config testnet now
+
+# Launcher digest — LATEST = LAST element (entries are returned in
+# insertion order, oldest first)
+# (goes into the launcher `image` line in the rendered compose)
+near contract call-function as-read-only \
+  v1.signer-prod.testnet allowed_launcher_image_hashes \
+  json-args '{}' network-config testnet now
 ```
 
-You can retrieve the allowed MPC Docker image manifest digest directly from the contract using the NEAR CLI. The latest allowed digest will appear first in the returned vector:
+For details on how to verify each digest before trusting it, see
+[MPC Node Image Upgrade](#mpc-node-image-upgrade) and
+[Launcher image voting](#launcher-image-voting).
+
+#### Step 2 — render the template
+
+> **If you plan to deploy via `deploy-launcher.sh`** (the script path
+> below): skip this step. Instead, uncomment and set the
+> `LAUNCHER_MANIFEST_DIGEST` and `MPC_MANIFEST_DIGEST` lines in your
+> `.env` file. The script renders the template internally; you do not
+> need to produce a `launcher_docker_compose.yaml` here.
+
+The manual render (needed if you deploy via the Dstack Web interface):
 
 ```bash
-near contract call-function as-transaction \
-  v1.signer-prod.testnet \
-  allowed_docker_image_hashes \
-  json-args '{}' \
-  prepaid-gas '100.0 Tgas' \
-  attached-deposit '0 NEAR' \
-  sign-as <your-account-id> \
-  network-config testnet \
-  sign-with-keychain \
-  send
+# Paste either form — with or without 'sha256:' prefix. The substitutions
+# below strip the prefix if present, so the rendered file always has
+# exactly one 'sha256:' per digest line.
+export LAUNCHER_IMAGE_HASH=<launcher digest from step 1>
+export MPC_IMAGE_HASH=<mpc-node digest from step 1>
+
+sed \
+  -e "s|{{LAUNCHER_IMAGE_HASH}}|${LAUNCHER_IMAGE_HASH#sha256:}|g" \
+  -e "s|{{DEFAULT_IMAGE_DIGEST_HASH}}|${MPC_IMAGE_HASH#sha256:}|g" \
+  crates/contract/assets/launcher_docker_compose.yaml.template \
+  > launcher_docker_compose.yaml
 ```
 
-The transaction output will include the latest MPC Docker image manifest digest.
-
-**Note:** The [launcher\_docker\_compose.yaml](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/launcher_docker_compose.yaml) is measured, and the measurements are part of the remote attestation. Make sure not to change any other fields or values (including whitespaces).
+> **Note:** The rendered file is measured, and its SHA256 is part of the
+> remote attestation. Do not modify the rendered file further (including
+> whitespace) — only the two digest substitutions should differ from the
+> template.
 
 ### Required Ports and Port Collisions
 
@@ -747,9 +832,47 @@ Use the following custom settings for MPC:
 
 #### Using the script
 
-Use the script [deploy-launcher.sh](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/deploy-launcher.sh) described in
-[deploy-launcher-guide.md](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/deploy-launcher-guide.md)
-to configure and start your VM.
+The [`deploy-launcher.sh`](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/deploy-launcher.sh) helper in `deployment/cvm-deployment/` handles both the template render and the dstack-vmm deploy. End-to-end flow:
+
+1. **Pick or create an `.env` file** for the deploy. Either copy one of the
+   examples under `deployment/cvm-deployment/configs/` (e.g.
+   [`configs/sgx.env`](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/configs/sgx.env))
+   or use the default
+   [`default.env`](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/default.env).
+
+2. **Uncomment and set the two digest lines** in the `.env` file, using
+   the values discovered in Step 1 above:
+
+   ```env
+   LAUNCHER_MANIFEST_DIGEST=sha256:<launcher digest>
+   MPC_MANIFEST_DIGEST=sha256:<mpc node digest>
+   ```
+
+   These are shipped commented out by default. If left commented, the
+   script refuses to run and prints the on-chain discovery commands —
+   you can't accidentally deploy without setting them.
+
+3. **Place your `user-config.toml`** at the path
+   `USER_CONFIG_FILE_PATH=` points to (default: `user-config.toml` in
+   the same directory as `deploy-launcher.sh`).
+
+4. **Run the script**:
+
+   ```bash
+   cd deployment/cvm-deployment
+   ./deploy-launcher.sh \
+     --env-file <your-env-file> \
+     --base-path /path/to/meta-dstack/dstack
+   ```
+
+   The script will:
+   - Source the env file and validate that both digests are set + well-formed (`sha256:<64 hex>`).
+   - Render the contract template inline with the two digests. The result lives in a tempfile — there is **no persistent** `launcher_docker_compose.yaml` on disk afterwards. (If you need one for `attestation-cli` later, see the [manual render snippet](#step-2--render-the-template) above.)
+   - Generate `app-compose.json`.
+   - Prompt for confirmation, then deploy the CVM via `vmm-cli`.
+
+Full flag reference and `.env` field-by-field documentation:
+[deploy-launcher-guide.md](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/deploy-launcher-guide.md).
 
 ### Accessing MPC (or Launcher) Docker Logs
 
@@ -848,21 +971,16 @@ cargo install --path crates/attestation-cli
 1. **Allowed MPC Docker image manifest digest** — The SHA256 manifest digest of the approved MPC Docker image. You can query it from the contract:
 
    ```bash
-   near contract call-function as-transaction \
-     v1.signer-prod.testnet \
-     allowed_docker_image_hashes \
-     json-args '{}' \
-     prepaid-gas '100.0 Tgas' \
-     attached-deposit '0 NEAR' \
-     sign-as <your-account-id> \
-     network-config testnet \
-     sign-with-keychain \
-     send
+   near contract call-function as-read-only \
+     v1.signer-prod.testnet allowed_docker_image_hashes \
+     json-args '{}' network-config testnet now
    ```
 
    The latest allowed manifest digest will appear first in the returned vector.
 
-2. **Launcher docker-compose file** — The same `launcher_docker_compose.yaml` you prepared in the [Preparing a Docker Compose File](#preparing-a-docker-compose-file) section. The CLI computes its SHA256 hash and compares it against the hash attested by the node.
+2. **Launcher docker-compose file** — A `launcher_docker_compose.yaml` rendered from the contract template. The CLI computes its SHA256 hash and compares it against the hash attested by the node.
+
+   If you deployed via `deploy-launcher.sh` (script path), the rendered compose was used in a tempfile and removed on exit — you don't have a persistent copy. Materialize one now by running the manual render block from [Preparing a Docker Compose File → Step 2](#step-2--render-the-template) (the `sed …` snippet) with the same `LAUNCHER_MANIFEST_DIGEST` and `MPC_MANIFEST_DIGEST` you deployed with. The output `launcher_docker_compose.yaml` is what the CLI needs below.
 
 #### Run the verification
 
@@ -1625,8 +1743,9 @@ echo | openssl s_client -showcerts -connect 127.0.0.1:8081 \
 
 ### Configure the MPC node
 
-In `user-config.toml`, pin the **root CA** (not the leaf — the server
-presents the leaf, which chains to the root):
+In `user-config.toml`, add the **root CA** as a trust anchor (default
+public-CA roots remain active). The server presents the leaf, which
+chains to this root:
 
 ```toml
 [[mpc_node_config.pccs_endpoints]]
@@ -1648,3 +1767,7 @@ Disables all TLS certificate validation (cert chain *and* hostname).
 The startup log emits a clearly-labeled WARN when this mode is active.
 Acceptable for local-host bring-up before you've provisioned a proper
 cert; not recommended for any persistent setup.
+
+The code does **not** enforce loopback-only — `insecure` disables TLS
+for any URL configured. It is the operator's responsibility to use this
+value correctly. The startup WARN is the only guardrail.
