@@ -87,7 +87,8 @@ impl DomainRegistry {
     /// Append `domain` at `next_domain_id`, returning its assigned DomainId.
     /// The caller's `domain.id` is ignored; the registry assigns the id
     /// monotonically. The caller is responsible for any validation
-    /// (curve/protocol consistency, etc.); this helper does no checks.
+    /// (protocol/purpose compatibility, threshold bounds, etc.); this
+    /// helper does no checks.
     fn add_domain(&mut self, domain: DomainConfig) -> DomainId {
         let assigned = DomainConfig {
             id: DomainId(self.next_domain_id),

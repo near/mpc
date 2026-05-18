@@ -133,7 +133,7 @@ struct DomainConfigCompat {
 }
 
 impl TryFrom<DomainConfigCompat> for DomainConfig {
-    type Error = MissingProtocolAndCurve;
+    type Error = DomainConfigDecodeError;
     fn try_from(c: DomainConfigCompat) -> Result<Self, Self::Error> {
         Ok(Self {
             id: c.id,
@@ -144,22 +144,48 @@ impl TryFrom<DomainConfigCompat> for DomainConfig {
     }
 }
 
-/// Pick `protocol` if present; otherwise fall back to the legacy 1:1
-/// mapping from `curve`. Both being absent is a malformed payload.
+/// Resolve the domain's protocol from the (optional) `protocol` and `curve`
+/// fields. At least one must be present. When both are present they must be
+/// consistent (`Curve::from(protocol) == curve`); silently picking `protocol`
+/// and discarding a mismatched `curve` would drop a useful integrity check
+/// that the pre-removal `validate_domain_consistency` performed.
 fn resolve_protocol(
     protocol: Option<Protocol>,
     curve: Option<Curve>,
-) -> Result<Protocol, MissingProtocolAndCurve> {
+) -> Result<Protocol, DomainConfigDecodeError> {
     match (protocol, curve) {
-        (Some(p), _) => Ok(p),
+        (Some(p), Some(c)) => {
+            let expected = Curve::from(p);
+            if c == expected {
+                Ok(p)
+            } else {
+                Err(DomainConfigDecodeError::InconsistentCurveProtocol {
+                    curve: c,
+                    protocol: p,
+                    expected,
+                })
+            }
+        }
+        (Some(p), None) => Ok(p),
         (None, Some(c)) => Ok(infer_protocol(c)),
-        (None, None) => Err(MissingProtocolAndCurve),
+        (None, None) => Err(DomainConfigDecodeError::MissingProtocolAndCurve),
     }
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("DomainConfig JSON must include either `protocol` or `curve`")]
-pub struct MissingProtocolAndCurve;
+pub(crate) enum DomainConfigDecodeError {
+    #[error("DomainConfig JSON must include either `protocol` or `curve`")]
+    MissingProtocolAndCurve,
+    #[error(
+        "Inconsistent curve/protocol pair: curve {curve:?} does not match \
+         protocol {protocol:?} (expected {expected:?})"
+    )]
+    InconsistentCurveProtocol {
+        curve: Curve,
+        protocol: Protocol,
+        expected: Curve,
+    },
+}
 
 /// Legacy curves map 1:1 to protocols (DamgardEtAl never appeared in old JSON).
 fn infer_protocol(curve: Curve) -> Protocol {
@@ -185,7 +211,7 @@ impl RawDomainConfig {
     fn into_domain_config(
         self,
         fallback: ReconstructionThreshold,
-    ) -> Result<DomainConfig, MissingProtocolAndCurve> {
+    ) -> Result<DomainConfig, DomainConfigDecodeError> {
         Ok(DomainConfig {
             id: self.id,
             protocol: resolve_protocol(self.protocol, self.curve)?,
@@ -297,7 +323,7 @@ struct KeyEventCompat {
 }
 
 impl TryFrom<KeyEventCompat> for KeyEvent {
-    type Error = MissingProtocolAndCurve;
+    type Error = DomainConfigDecodeError;
     fn try_from(c: KeyEventCompat) -> Result<Self, Self::Error> {
         let fallback = ReconstructionThreshold::from(c.parameters.threshold);
         Ok(Self {
@@ -342,7 +368,7 @@ struct InitializingContractStateCompat {
 }
 
 impl TryFrom<InitializingContractStateCompat> for InitializingContractState {
-    type Error = MissingProtocolAndCurve;
+    type Error = DomainConfigDecodeError;
     fn try_from(c: InitializingContractStateCompat) -> Result<Self, Self::Error> {
         let fallback = ReconstructionThreshold::from(c.generating_key.parameters.threshold);
         let domains = c
@@ -405,7 +431,7 @@ struct RawAddDomainsVotes {
 }
 
 impl TryFrom<RunningContractStateCompat> for RunningContractState {
-    type Error = MissingProtocolAndCurve;
+    type Error = DomainConfigDecodeError;
     fn try_from(c: RunningContractStateCompat) -> Result<Self, Self::Error> {
         let fallback = ReconstructionThreshold::from(c.parameters.threshold);
         let domains = c
@@ -423,7 +449,7 @@ impl TryFrom<RunningContractStateCompat> for RunningContractState {
                     .into_iter()
                     .map(|d| d.into_domain_config(fallback))
                     .collect::<Result<Vec<_>, _>>()?;
-                Ok::<_, MissingProtocolAndCurve>((k, proposal))
+                Ok::<_, DomainConfigDecodeError>((k, proposal))
             })
             .collect::<Result<BTreeMap<_, _>, _>>()?;
         Ok(Self {
@@ -703,5 +729,37 @@ mod tests {
             result.is_err(),
             "DomainConfig must require either `protocol` or `curve`"
         );
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn domain_config__should_reject_inconsistent_curve_protocol_pair() {
+        // Given JSON whose `curve` does not match the curve derived from `protocol`
+        let bad = r#"{"id":0,"curve":"Edwards25519","protocol":"CaitSith","reconstruction_threshold":2,"purpose":"Sign"}"#;
+
+        // When deserializing as a standalone DomainConfig
+        let result: Result<DomainConfig, _> = serde_json::from_str(bad);
+
+        // Then it is rejected — protocol/curve disagreement must not be
+        // silently dropped on the floor.
+        let err = result.expect_err("inconsistent curve/protocol must be rejected");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("Inconsistent curve/protocol pair"),
+            "unexpected error message: {msg}"
+        );
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn domain_config__should_accept_consistent_curve_protocol_pair() {
+        // Given JSON where `curve` matches `Curve::from(protocol)`
+        let good = r#"{"id":0,"curve":"Secp256k1","protocol":"CaitSith","reconstruction_threshold":2,"purpose":"Sign"}"#;
+
+        // When deserializing as a standalone DomainConfig
+        let config: DomainConfig = serde_json::from_str(good).unwrap();
+
+        // Then it is accepted with the expected protocol
+        assert_eq!(config.protocol, Protocol::CaitSith);
     }
 }
