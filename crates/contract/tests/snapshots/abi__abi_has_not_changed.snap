@@ -1,5 +1,6 @@
 ---
 source: crates/contract/tests/abi.rs
+assertion_line: 47
 expression: abi
 ---
 {
@@ -31,7 +32,7 @@ expression: abi
       },
       {
         "name": "allowed_foreign_chain_providers",
-        "doc": " Returns the on-chain RPC provider whitelist, keyed by `ForeignChain`. Nodes call\n this at startup to validate their local `foreign_chains.yaml` against the network's\n approved providers.\n\n Result is borsh-encoded (rather than JSON) to keep contract WASM under the\n transaction-size cap — `ChainEntry` and the nested `ProviderEntry` / `AuthScheme` /\n `ChainRouting` types gate `serde::Serialize` off wasm32 for the same reason.",
+        "doc": " On-chain RPC provider whitelist keyed by `ForeignChain`. Nodes read this at\n startup to validate their local `foreign_chains.yaml`. Borsh-encoded result.",
         "kind": "view",
         "result": {
           "serialization_type": "borsh",
