@@ -10,14 +10,21 @@ use super::{
     mpc_contract::get_state,
     transactions::execute_async_transactions,
 };
+use crate::sandbox::common::OldDomainConfig;
 
 pub async fn vote_add_domains(
     contract: &Contract,
     accounts: &[Account],
     domains: &[DomainConfig],
 ) -> anyhow::Result<()> {
+    // Serialize with the legacy `curve`-bearing shape so the call works against
+    // both production binaries (which still require `curve`) and the current
+    // contract (which accepts both shapes via the DTO compat shim). Drop this
+    // conversion after the 3.10 release is the production contract on Mainnet
+    // and Testnet.
+    let old_domains: Vec<OldDomainConfig> = domains.iter().map(OldDomainConfig::from).collect();
     let args = json!({
-        "domains": domains,
+        "domains": old_domains,
     });
     execute_async_transactions(
         accounts,

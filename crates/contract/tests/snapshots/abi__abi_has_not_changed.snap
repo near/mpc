@@ -1991,16 +1991,12 @@ expression: abi
           "description": "Configuration for a signature domain.",
           "type": "object",
           "required": [
-            "curve",
             "id",
             "protocol",
             "purpose",
             "reconstruction_threshold"
           ],
           "properties": {
-            "curve": {
-              "$ref": "#/definitions/Curve"
-            },
             "id": {
               "$ref": "#/definitions/DomainId"
             },

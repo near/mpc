@@ -3,7 +3,7 @@ use crate::primitives::domain::MIN_RECONSTRUCTION_THRESHOLD;
 use crate::primitives::key_state::{EpochId, Keyset};
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
-use near_mpc_contract_interface::types::{Curve, DomainId, DomainPurpose, ForeignChain, Protocol};
+use near_mpc_contract_interface::types::{DomainId, DomainPurpose, ForeignChain, Protocol};
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum NodeMigrationError {
@@ -196,12 +196,6 @@ pub enum DomainError {
     InvalidDomains,
     #[error("Domains from keyset do not match the provided domains")]
     DomainsMismatch,
-    #[error("Inconsistent curve/protocol pair: curve {curve:?} does not match protocol {protocol:?} (expected {expected:?})")]
-    InconsistentCurveProtocol {
-        curve: Curve,
-        protocol: Protocol,
-        expected: Curve,
-    },
     #[error("Invalid protocol-purpose combination: protocol {protocol:?} is not compatible with purpose {purpose:?}")]
     InvalidProtocolPurposeCombination {
         protocol: Protocol,

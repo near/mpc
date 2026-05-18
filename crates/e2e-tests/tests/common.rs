@@ -322,7 +322,7 @@ pub async fn send_sign_request(
         .domains
         .domains
         .iter()
-        .find(|d| d.curve == Curve::Secp256k1 && d.purpose == DomainPurpose::Sign)
+        .find(|d| Curve::from(d.protocol) == Curve::Secp256k1 && d.purpose == DomainPurpose::Sign)
         .expect("no Secp256k1 Sign domain in running state");
     let outcome = cluster
         .send_sign_request(domain.id, generate_ecdsa_payload(rng), account_id)

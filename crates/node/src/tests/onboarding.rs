@@ -16,7 +16,7 @@ use crate::tests::{
 use crate::tracking::AutoAbortTask;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::state::ProtocolContractState;
-use mpc_primitives::domain::{Curve, DomainId};
+use mpc_primitives::domain::DomainId;
 use near_mpc_contract_interface::types::{
     BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey, Protocol, ReconstructionThreshold,
 };
@@ -105,7 +105,6 @@ async fn test_onboarding() {
 
     let domain = DomainConfig {
         id: DomainId(0),
-        curve: Curve::Secp256k1,
         protocol: Protocol::CaitSith,
         reconstruction_threshold: ReconstructionThreshold::new(2),
         purpose: DomainPurpose::Sign,
