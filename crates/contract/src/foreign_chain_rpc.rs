@@ -1,11 +1,7 @@
 //! On-chain whitelist of RPC providers for foreign-chain transaction validation.
-//!
-//! Each per-chain `ChainVote` proposes the chain's complete state — its full provider
-//! list and the RPC response quorum nodes should use when querying. The chain's stored
-//! state is replaced wholesale once the protocol's signing threshold of participants has
-//! cast the same `(providers, threshold)` pair. The whitelist is not exposed via a view
-//! fn — node-side code reads contract state directly via `view_state` borsh blobs, and a
-//! JSON view fn would push WASM past the transaction-size cap.
+//! Each `ChainVote` is a per-chain snapshot (provider list + RPC response quorum); the
+//! chain's state is replaced once the protocol's signing threshold of participants
+//! holds the same proposal.
 
 use std::collections::BTreeMap;
 
@@ -75,15 +71,9 @@ pub struct ForeignChainRpcWhitelist {
 }
 
 impl ForeignChainRpcWhitelist {
-    /// Record `participant`'s votes and apply any chain whose count of participants
-    /// holding the same canonical `(providers, threshold)` pair reaches `threshold`
-    /// (the protocol's signing threshold, supplied by the caller — same gate as
-    /// `verify_tee` and `vote_add_os_measurement`). Chains the participant didn't touch
-    /// in `votes` keep their prior slot. Returns the chains whose threshold was reached
-    /// and applied this call; chains still pending are absent from the returned `Vec`.
-    /// Returns `InvalidParameters::MalformedPayload` on an empty batch, a duplicate
-    /// `chain` within the batch, or a duplicate `provider_id` within any single
-    /// `ChainVote.providers`.
+    /// Record `participant`'s votes; replace each chain's state once `threshold`
+    /// participants hold the same canonical `(providers, threshold)` pair. Returns
+    /// the chains applied this call.
     pub fn vote(
         &mut self,
         participant: AuthenticatedParticipantId,
@@ -125,10 +115,8 @@ impl ForeignChainRpcWhitelist {
     }
 }
 
-/// Sort providers by `provider_id` so two participants who submitted the same logical
-/// set in different orders compare equal at threshold-check time. Returns an error on a
-/// duplicate `provider_id` within a single per-chain vote — same provider listed twice
-/// for the same chain is unambiguously malformed.
+/// Sort by `provider_id` for order-independent equality at threshold-check time.
+/// Errors on a duplicate `provider_id` within the vote.
 fn canonicalize(mut providers: Vec<ProviderEntry>, threshold: u64) -> Result<ChainEntry, Error> {
     providers.sort_by(|a, b| a.provider_id.cmp(&b.provider_id));
     if providers

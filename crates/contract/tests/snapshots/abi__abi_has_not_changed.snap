@@ -1521,7 +1521,7 @@ expression: abi
       },
       {
         "name": "vote_update_foreign_chain_providers",
-        "doc": " Vote on per-chain RPC provider whitelist state. Each `ChainVote` carries the\n proposed full provider list and the RPC response quorum for that chain. The\n chain's stored state is replaced wholesale once the protocol's signing threshold\n of participants has voted the same `(providers, threshold)` pair (same gate as\n `verify_tee` and `vote_add_os_measurement`).",
+        "doc": " Vote on per-chain RPC provider whitelist state. Each `ChainVote` carries the\n proposed full provider list and the RPC response quorum for that chain. The\n chain's stored state is replaced once the protocol's signing threshold of\n participants has voted the same `(providers, threshold)` pair.",
         "kind": "call",
         "params": {
           "serialization_type": "borsh",

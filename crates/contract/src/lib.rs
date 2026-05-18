@@ -1494,9 +1494,8 @@ impl MpcContract {
 
     /// Vote on per-chain RPC provider whitelist state. Each `ChainVote` carries the
     /// proposed full provider list and the RPC response quorum for that chain. The
-    /// chain's stored state is replaced wholesale once the protocol's signing threshold
-    /// of participants has voted the same `(providers, threshold)` pair (same gate as
-    /// `verify_tee` and `vote_add_os_measurement`).
+    /// chain's stored state is replaced once the protocol's signing threshold of
+    /// participants has voted the same `(providers, threshold)` pair.
     #[handle_result]
     pub fn vote_update_foreign_chain_providers(
         &mut self,
