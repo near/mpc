@@ -388,6 +388,9 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
     fn maybe_update_final_head(&mut self, potential_final_head: CryptoHash) -> Vec<Arc<BlockNode>> {
         let final_head_node = self.hash_to_node.get(&potential_final_head).cloned();
         let Some(final_head_node) = final_head_node else {
+            // We don't track the new final head. Hence, there are no parents whose finality we
+            // could update and there are no blocks that we track that become newly finalized.
+            // This is expectd to happen when the indexer is starting up.
             return Vec::new();
         };
         let mut new_final_blocks: Vec<Arc<BlockNode>> = Vec::new();
@@ -452,7 +455,7 @@ impl<T: Clone + Debug> RecentBlocksTracker<T> {
                 node.children
                     .lock()
                     .expect("lock must not be poisoned")
-                    .clone(),
+                    .drain(..),
             );
             self.hash_to_node.remove(&node.hash);
             self.node_to_content.remove(&node.hash);
