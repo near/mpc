@@ -1486,18 +1486,22 @@ impl MpcContract {
         );
         self.voter_or_panic();
 
-        let threshold_parameters = match self.protocol_state.threshold_parameters() {
-            Ok(threshold_parameters) => threshold_parameters,
-            Err(ContractNotInitialized) => env::panic_str(
-                "Contract is not initialized. Cannot vote for foreign chain providers before initialization.",
-            ),
-        };
+        let threshold_parameters = self
+            .protocol_state
+            .threshold_parameters()
+            .unwrap_or_else(|ContractNotInitialized| {
+                env::panic_str(
+                    "Contract is not initialized. Cannot vote for foreign chain providers before initialization. \
+                     This should be unreachable — voter_or_panic() above already errors on NotInitialized.",
+                )
+            });
 
-        let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
+        let participants = threshold_parameters.participants();
+        let participant = AuthenticatedParticipantId::new(participants)?;
         let threshold = self.threshold()?.value();
-        let applied = self
-            .foreign_chain_rpc_whitelist
-            .vote(participant, votes, threshold)?;
+        let applied =
+            self.foreign_chain_rpc_whitelist
+                .vote(participant, votes, threshold, participants)?;
         log!(
             "vote_update_foreign_chain_providers: applied chains={:?}",
             applied,
