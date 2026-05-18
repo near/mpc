@@ -399,7 +399,7 @@ async fn do_request_ckd_and_await_response(
     app_public_key: near_mpc_contract_interface::types::CKDAppPublicKey,
 ) -> Option<std::time::Duration> {
     assert_matches!(
-        domain.curve,
+        Curve::from(domain.protocol),
         Curve::Bls12381,
         "`request_ckd_and_await_response` must be called with a compatible domain",
     );
@@ -479,9 +479,9 @@ pub async fn request_verify_foreign_tx_and_await_response(
     timeout_sec: std::time::Duration,
 ) -> Option<std::time::Duration> {
     assert_matches!(
-        domain.curve,
+        Curve::from(domain.protocol),
         Curve::Secp256k1,
-        "`request_ckd_and_await_response` must be called with a compatible domain",
+        "`request_verify_foreign_tx_and_await_response` must be called with a compatible domain",
     );
     let request = VerifyForeignTxRequestFromChain {
         verify_foreign_tx_id: CryptoHash(rand::random()),

@@ -7,7 +7,8 @@
 //! [`ContractInitFormat`]: crate::cluster::ContractInitFormat
 
 use near_mpc_contract_interface::types::{
-    AccountId as ContractAccountId, Ed25519PublicKey, ParticipantId, Threshold, ThresholdParameters,
+    AccountId as ContractAccountId, Curve, DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey,
+    ParticipantId, Protocol, ReconstructionThreshold, Threshold, ThresholdParameters,
 };
 
 /// Pre-3.10 mirror of `ThresholdParameters` whose `ParticipantInfo` emits
@@ -55,6 +56,32 @@ impl From<&ThresholdParameters> for LegacyThresholdParameters {
                 next_id: params.participants.next_id,
                 participants,
             },
+        }
+    }
+}
+
+/// Pre-curve-removal mirror of `DomainConfig` that still emits the `curve`
+/// field. Required when calling `vote_add_domains` against a production
+/// contract whose deserializer still requires it; the current contract
+/// accepts both shapes via the DTO compat shim. Remove after the 3.10
+/// release is the production contract on Mainnet and Testnet.
+#[derive(serde::Serialize)]
+pub struct LegacyDomainConfig {
+    pub id: DomainId,
+    pub curve: Curve,
+    pub protocol: Protocol,
+    pub reconstruction_threshold: ReconstructionThreshold,
+    pub purpose: DomainPurpose,
+}
+
+impl From<&DomainConfig> for LegacyDomainConfig {
+    fn from(domain: &DomainConfig) -> Self {
+        Self {
+            id: domain.id,
+            curve: Curve::from(domain.protocol),
+            protocol: domain.protocol,
+            reconstruction_threshold: domain.reconstruction_threshold,
+            purpose: domain.purpose,
         }
     }
 }

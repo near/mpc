@@ -1,3 +1,4 @@
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 
@@ -401,8 +402,8 @@ impl MpcNodeSetup {
                 download_genesis: false,
                 download_genesis_url: None,
                 download_genesis_records_url: None,
-                rpc_addr: Some(format!("0.0.0.0:{}", self.ports.near_rpc)),
-                network_addr: Some(format!("0.0.0.0:{}", self.ports.near_network)),
+                rpc_addr: Some(SocketAddr::from(([0, 0, 0, 0], self.ports.near_rpc))),
+                network_addr: Some(SocketAddr::from(([0, 0, 0, 0], self.ports.near_network))),
                 tier3_public_addr: None,
                 external_storage_fallback_threshold: None,
             }),

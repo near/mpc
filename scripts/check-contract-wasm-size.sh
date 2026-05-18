@@ -17,6 +17,7 @@ WASM_PATH="${1:-target/near/mpc_contract/mpc_contract.wasm}"
 # term solution for our wasm deployment limit.
 HARD_LIMIT=1540000
 
+
 if [[ ! -f "$WASM_PATH" ]]; then
     echo "❌ WASM file not found: $WASM_PATH"
     exit 1

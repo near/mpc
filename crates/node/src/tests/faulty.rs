@@ -5,7 +5,7 @@ use crate::tests::{
     DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
 };
 use crate::tracking::AutoAbortTask;
-use mpc_primitives::domain::{Curve, DomainId};
+use mpc_primitives::domain::DomainId;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
     DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
@@ -39,7 +39,6 @@ async fn test_faulty_cluster() {
 
     let domain = DomainConfig {
         id: DomainId(0),
-        curve: Curve::Secp256k1,
         protocol: Protocol::CaitSith,
         reconstruction_threshold: ReconstructionThreshold::new(3),
         purpose: DomainPurpose::Sign,
@@ -176,7 +175,6 @@ async fn test_indexer_stuck() {
 
     let domain = DomainConfig {
         id: DomainId(0),
-        curve: Curve::Secp256k1,
         protocol: Protocol::CaitSith,
         reconstruction_threshold: ReconstructionThreshold::new(3),
         purpose: DomainPurpose::Sign,

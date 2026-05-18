@@ -9,7 +9,7 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use dtos::{
-    Curve, DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, ParticipantId, Protocol,
+    DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, ParticipantId, Protocol,
     ReconstructionThreshold, Threshold,
 };
 use mpc_attestation::attestation::VerifiedAttestation;
@@ -89,20 +89,20 @@ struct OldAddDomainsVotes {
 /// Caller supplies the global threshold; legacy state had no per-domain value.
 /// V2Secp256k1 (DamgardEtAl) was never deployed to production, so no
 /// protocol-specific adjustment is required here — every legacy domain
-/// inherits the global threshold uniformly.
+/// inherits the global threshold uniformly. The legacy `curve` is dropped:
+/// `Curve` is derivable from `Protocol` and no longer stored.
 fn migrate_domain_config(
     old: OldDomainConfig,
     reconstruction_threshold: ReconstructionThreshold,
 ) -> DomainConfig {
-    let (curve, protocol) = match old.curve {
-        OldCurve::Secp256k1 => (Curve::Secp256k1, Protocol::CaitSith),
-        OldCurve::Edwards25519 => (Curve::Edwards25519, Protocol::Frost),
-        OldCurve::Bls12381 => (Curve::Bls12381, Protocol::ConfidentialKeyDerivation),
-        OldCurve::V2Secp256k1 => (Curve::Secp256k1, Protocol::DamgardEtAl),
+    let protocol = match old.curve {
+        OldCurve::Secp256k1 => Protocol::CaitSith,
+        OldCurve::Edwards25519 => Protocol::Frost,
+        OldCurve::Bls12381 => Protocol::ConfidentialKeyDerivation,
+        OldCurve::V2Secp256k1 => Protocol::DamgardEtAl,
     };
     DomainConfig {
         id: old.id,
-        curve,
         protocol,
         reconstruction_threshold,
         purpose: old.purpose,
@@ -812,24 +812,16 @@ mod tests {
     fn domain_config_migration__should_derive_protocol_from_curve_and_inherit_threshold() {
         // Given OldDomainConfigs covering every legacy curve, including V2Secp256k1
         let cases = [
-            (OldCurve::Secp256k1, Curve::Secp256k1, Protocol::CaitSith),
-            (OldCurve::Edwards25519, Curve::Edwards25519, Protocol::Frost),
-            (
-                OldCurve::Bls12381,
-                Curve::Bls12381,
-                Protocol::ConfidentialKeyDerivation,
-            ),
-            (
-                OldCurve::V2Secp256k1,
-                Curve::Secp256k1,
-                Protocol::DamgardEtAl,
-            ),
+            (OldCurve::Secp256k1, Protocol::CaitSith),
+            (OldCurve::Edwards25519, Protocol::Frost),
+            (OldCurve::Bls12381, Protocol::ConfidentialKeyDerivation),
+            (OldCurve::V2Secp256k1, Protocol::DamgardEtAl),
         ];
 
         let global_threshold = ReconstructionThreshold::new(7);
-        for (i, (old_curve, expected_curve, expected_protocol)) in cases.into_iter().enumerate() {
-            let purpose = match expected_curve {
-                Curve::Bls12381 => DomainPurpose::CKD,
+        for (i, (old_curve, expected_protocol)) in cases.into_iter().enumerate() {
+            let purpose = match expected_protocol {
+                Protocol::ConfidentialKeyDerivation => DomainPurpose::CKD,
                 _ => DomainPurpose::Sign,
             };
             let old = OldDomainConfig {
@@ -843,8 +835,8 @@ mod tests {
             let decoded: OldDomainConfig = borsh::from_slice(&bytes).unwrap();
             let migrated = migrate_domain_config(decoded, global_threshold);
 
-            // Then curve, protocol, and per-domain reconstruction threshold are set
-            assert_eq!(migrated.curve, expected_curve);
+            // Then protocol and per-domain reconstruction threshold are set;
+            // curve is no longer stored — derived via `Curve::from(protocol)`.
             assert_eq!(migrated.protocol, expected_protocol);
             assert_eq!(migrated.id, DomainId(i as u64));
             assert_eq!(migrated.reconstruction_threshold, global_threshold);

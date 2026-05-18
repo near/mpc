@@ -5,7 +5,7 @@ use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainPurpose};
 use rand::{RngCore, SeedableRng};
 
 fn must_get_payload_for_domain(domain: &DomainConfig, rng: &mut impl RngCore) -> serde_json::Value {
-    match domain.curve {
+    match Curve::from(domain.protocol) {
         Curve::Secp256k1 => common::generate_ecdsa_payload(rng),
         Curve::Edwards25519 => common::generate_eddsa_payload(rng),
         c => panic!("unsupported curve in test: {c:?}"),

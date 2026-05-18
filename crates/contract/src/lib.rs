@@ -1895,7 +1895,7 @@ impl MpcContract {
     /// only correct interpretation is presence: `Some(_)` vs `None`.
     ///
     /// The `Option<YieldIndex>` shape is retained for JSON wire compatibility with
-    /// out-of-tree consumers; the in-tree caller (`tx_sender::compute_transaction_status`)
+    /// out-of-tree consumers; the in-tree caller (`tx_sender::observe_tx_result`)
     /// only matches on presence. Prefer a `bool`-shaped accessor if one is added.
     ///
     /// Falls back to the legacy single-yield map for in-flight requests inherited
@@ -2425,7 +2425,7 @@ mod tests {
     use crate::primitives::participants::{ParticipantId, ParticipantInfo, Participants};
     use crate::primitives::test_utils::{
         bogus_ed25519_near_public_key, bogus_ed25519_public_key, gen_account_id, gen_participant,
-        gen_participants, infer_purpose_from_curve, NUM_PROTOCOLS,
+        gen_participants, infer_purpose_from_protocol, NUM_PROTOCOLS,
     };
     use crate::state::key_event::tests::Environment;
     use crate::state::key_event::KeyEvent;
@@ -2588,7 +2588,7 @@ mod tests {
             Curve::Edwards25519 => Protocol::Frost,
             Curve::Bls12381 => Protocol::ConfidentialKeyDerivation,
         };
-        basic_setup_with_protocol(protocol, infer_purpose_from_curve(curve), rng)
+        basic_setup_with_protocol(protocol, infer_purpose_from_protocol(protocol), rng)
     }
 
     fn basic_setup_with_protocol(
@@ -2612,7 +2612,6 @@ mod tests {
         };
         let domains = vec![DomainConfig {
             id: domain_id,
-            curve,
             protocol,
             reconstruction_threshold,
             purpose,
@@ -3361,7 +3360,7 @@ mod tests {
             NearToken::from_yoctonear(1),
         );
         assert_eq!(config.id, DomainId::default());
-        assert_eq!(config.curve, Curve::Secp256k1);
+        assert_eq!(Curve::from(config.protocol), Curve::Secp256k1);
         assert_eq!(config.purpose, DomainPurpose::Sign);
         assert_eq!(predecessor.as_str(), "contract_account.near");
     }
@@ -5082,7 +5081,6 @@ mod tests {
         let domain_id = DomainId::default();
         let domains = vec![DomainConfig {
             id: domain_id,
-            curve: Curve::Secp256k1,
             protocol: Protocol::CaitSith,
             reconstruction_threshold: ReconstructionThreshold::new(2),
             purpose: DomainPurpose::Sign,

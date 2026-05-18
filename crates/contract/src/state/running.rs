@@ -178,7 +178,7 @@ impl RunningContractState {
         }
         let num_participants = self.parameters.participants().len() as u64;
         for domain in &domains {
-            crate::primitives::domain::validate_domain_consistency(domain)?;
+            crate::primitives::domain::validate_domain_purpose(domain)?;
             crate::primitives::domain::validate_domain_threshold(domain, num_participants)?;
         }
         let participant = AuthenticatedParticipantId::new(self.parameters.participants())?;
@@ -220,7 +220,7 @@ pub mod running_tests {
     use crate::state::key_event::tests::Environment;
     use crate::state::test_utils::{gen_running_state, gen_valid_params_proposal};
     use near_mpc_contract_interface::types::{
-        Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
+        DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
     };
 
     fn test_running_for(num_domains: usize) {
@@ -367,7 +367,6 @@ pub mod running_tests {
 
         let invalid_domain = vec![DomainConfig {
             id: DomainId(next_id),
-            curve: Curve::from(protocol),
             protocol,
             reconstruction_threshold: ReconstructionThreshold::new(2),
             purpose,
@@ -388,7 +387,6 @@ pub mod running_tests {
         let next_id = state.domains.next_domain_id();
         vec![DomainConfig {
             id: DomainId(next_id),
-            curve: Curve::Secp256k1,
             protocol: Protocol::CaitSith,
             reconstruction_threshold: ReconstructionThreshold::new(threshold),
             purpose: DomainPurpose::Sign,
@@ -461,7 +459,6 @@ pub mod running_tests {
         let next_id = state.domains.next_domain_id();
         let proposal = vec![DomainConfig {
             id: DomainId(next_id),
-            curve: Curve::Secp256k1,
             protocol: Protocol::DamgardEtAl,
             reconstruction_threshold: ReconstructionThreshold::new(n),
             purpose: DomainPurpose::Sign,
