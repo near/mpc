@@ -6,21 +6,12 @@
 use std::collections::BTreeMap;
 
 use near_mpc_contract_interface::types::{
-    AuthScheme, ChainRouting, ChainVote, ForeignChain, ProviderEntry,
+    AuthScheme, ChainEntry, ChainRouting, ChainVote, ForeignChain, ProviderEntry,
 };
 use near_sdk::near;
 
 use crate::errors::{Error, InvalidParameters};
 use crate::primitives::{key_state::AuthenticatedParticipantId, participants::Participants};
-
-/// Stored state for one chain: the canonical (sorted) provider list and the RPC
-/// response quorum to use when querying.
-#[near(serializers=[borsh])]
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct ChainEntry {
-    pub providers: Vec<ProviderEntry>,
-    pub threshold: u64,
-}
 
 #[near(serializers=[borsh])]
 #[derive(Debug, Default, PartialEq, Eq)]

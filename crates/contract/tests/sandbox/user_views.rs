@@ -1,7 +1,7 @@
-use mpc_contract::foreign_chain_rpc::ChainEntry;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
-    AuthScheme, ChainRouting, ChainVote, ForeignChain, Protocol, ProviderEntry, ProviderId,
+    AuthScheme, ChainEntry, ChainRouting, ChainVote, ForeignChain, Protocol, ProviderEntry,
+    ProviderId,
 };
 use near_sdk::borsh;
 use near_sdk::{CurveType, PublicKey};

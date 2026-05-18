@@ -1029,6 +1029,20 @@ pub struct ProviderEntry {
     pub chain_routing: ChainRouting,
 }
 
+/// Stored state for one chain in the on-chain whitelist: the canonical (sorted)
+/// provider list and the RPC response quorum nodes should use when querying.
+/// Returned by the `allowed_foreign_chain_providers` view fn.
+#[derive(Debug, Clone, Default, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(Serialize, Deserialize))]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct ChainEntry {
+    pub providers: Vec<ProviderEntry>,
+    pub threshold: u64,
+}
+
 /// One per-chain vote: the proposed full whitelist for `chain` plus the RPC response
 /// quorum nodes should use when fanning out queries to those providers.
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]

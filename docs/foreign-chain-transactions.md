@@ -339,9 +339,8 @@ The per-participant registration model above leaves the network with no shared n
 PR 1 shipped the DTOs and a nested map of providers; PR 2 refactored the storage to the
 snapshot-friendly shape below (one `ChainEntry` per chain, holding both the canonical
 provider list and the RPC response quorum) and added the pending-vote storage. The
-whitelist is not exposed via a JSON view fn — node-side code reads contract state
-directly via `view_state` borsh blobs, and a serde-JSON view fn would push WASM past the
-per-tx size cap.
+whitelist is exposed via the borsh `allowed_foreign_chain_providers` view fn; serde-JSON
+was avoided because the closure would push WASM past the per-tx size cap.
 
 ```rust
 pub struct ProviderId(pub String); // newtype around String — typed boundary so a
