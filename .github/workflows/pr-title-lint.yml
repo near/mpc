@@ -53,8 +53,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           FILES=$(gh pr diff "$PR_NUMBER" --name-only)
+          DELIM="PROMPT_EOF_$(uuidgen)"
           {
-            echo 'TITLE_CHECK_PROMPT<<PROMPT_EOF'
+            echo "TITLE_CHECK_PROMPT<<$DELIM"
             printf 'PR TITLE: %s\n' "$PR_TITLE"
             printf 'PR NUMBER: %s\n' "$PR_NUMBER"
             echo ""
@@ -62,7 +63,7 @@ jobs:
             echo "$FILES"
             echo ""
             cat .github/prompts/pr-title-check.prompt.md
-            echo 'PROMPT_EOF'
+            echo "$DELIM"
           } >> "$GITHUB_ENV"
 
       - name: Validate title type matches changes

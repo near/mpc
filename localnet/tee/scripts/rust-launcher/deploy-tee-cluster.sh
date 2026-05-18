@@ -65,6 +65,7 @@ MPC_ENV="${MPC_ENV:-$NEAR_NETWORK_CONFIG}"
 MACHINE_IP="${MACHINE_IP:-}"
 
 : "${MPC_MANIFEST_DIGEST:?Must set MPC_MANIFEST_DIGEST (e.g. export MPC_MANIFEST_DIGEST=sha256:abc...)}"
+: "${LAUNCHER_MANIFEST_DIGEST:?Must set LAUNCHER_MANIFEST_DIGEST (e.g. export LAUNCHER_MANIFEST_DIGEST=sha256:abc...)}"
 
 # If set, use this funded testnet account instead of faucet to create/top-up the ROOT account.
 # Example: export FUNDER_ACCOUNT=barak_tee_test1.testnet
@@ -172,7 +173,6 @@ VMM_RPC="${VMM_RPC:-http://127.0.0.1:10000}"
 # Repo-relative paths (assumes you're running from repo root)
 REPO_ROOT="$(pwd)"
 TEE_LAUNCHER_DIR="$REPO_ROOT/deployment/cvm-deployment"
-COMPOSE_YAML="$TEE_LAUNCHER_DIR/launcher_docker_compose.yaml"
 ADD_DOMAIN_JSON="$REPO_ROOT/docs/localnet/args/add_domain.json"
 
 MODE="${MODE:-localnet}"  # localnet|testnet
@@ -714,10 +714,16 @@ preflight() {
   need_cmd python3
 
   [ -d "$TEE_LAUNCHER_DIR" ] || { err "Missing launcher dir at $TEE_LAUNCHER_DIR"; exit 1; }
-  [ -f "$COMPOSE_YAML" ] || { err "Missing $COMPOSE_YAML"; exit 1; }
   [ -f "$ADD_DOMAIN_JSON" ] || { err "Missing $ADD_DOMAIN_JSON"; exit 1; }
   [ -f "$ENV_TPL" ] || { err "Missing template $ENV_TPL"; exit 1; }
   [ -f "$CONF_TPL" ] || { err "Missing template $CONF_TPL"; exit 1; }
+  # The contract compose template — consumed by deploy-launcher.sh's sed
+  # render. Check it here so a missing template fails preflight rather than
+  # after account/contract setup has already run.
+  [ -f "$REPO_ROOT/crates/contract/assets/launcher_docker_compose.yaml.template" ] || {
+    err "Missing launcher compose template at $REPO_ROOT/crates/contract/assets/launcher_docker_compose.yaml.template"
+    exit 1
+  }
 
   log "Using IP range: ${IP_PREFIX}${IP_START_OCTET} .. ${IP_PREFIX}$((IP_START_OCTET + N - 1))"
   log "Ports per node: main=$MAIN_PORT future_base=$FUTURE_BASE_PORT (per-node) state_sync=$STATE_SYNC_PORT public_data_base=$PUBLIC_DATA_BASE"
@@ -805,7 +811,7 @@ render_node_files_range() {
     export VMM_RPC
     export SEALING_KEY_TYPE
     export OS_IMAGE
-    export DOCKER_COMPOSE_FILE_PATH="launcher_docker_compose.yaml"
+    export LAUNCHER_MANIFEST_DIGEST MPC_MANIFEST_DIGEST
     export USER_CONFIG_FILE_PATH="$conf_out"
     export DISK="${DISK:-500G}"
 
@@ -815,7 +821,15 @@ render_node_files_range() {
     export EXTERNAL_MPC_LOCAL_DEBUG_PORT="127.0.0.1:${local_dbg_port}"
     export EXTERNAL_MPC_DECENTRALIZED_STATE_SYNC="${ip}:${STATE_SYNC_PORT}"
     export EXTERNAL_MPC_MAIN_PORT="${ip}:${MAIN_PORT}"
-        local future_port
+
+    # DSS state-sync fields are only meaningful for testnet; localnet
+    # disables state sync entirely (apply_near_config_patches's localnet
+    # branch sets state_sync_enabled = false).
+    if [ "$MODE" = "testnet" ]; then
+        export TIER3_PUBLIC_ADDR="${ip}:${STATE_SYNC_PORT}"
+        export EXTERNAL_STORAGE_FALLBACK_THRESHOLD="${EXTERNAL_STORAGE_FALLBACK_THRESHOLD:-100}"
+    fi
+    local future_port
     future_port="$(future_port_for_i "$i")"
 
     export EXTERNAL_MPC_FUTURE_PORT="${ip}:${future_port}"
@@ -845,6 +859,13 @@ render_node_files_range() {
     export PORTS_TOML
     PORTS_TOML="$(ports_to_toml "$PORTS")"
 
+    # envsubst doesn't understand bash's ${VAR:?msg} fail-fast syntax — only
+    # plain $VAR / ${VAR} — so validate required template inputs here, before
+    # the substitution, where bash's :?msg form does work.
+    if [ "$MODE" = "testnet" ]; then
+        : "${TIER3_PUBLIC_ADDR:?TIER3_PUBLIC_ADDR must be set before rendering the testnet template}"
+        : "${EXTERNAL_STORAGE_FALLBACK_THRESHOLD:?EXTERNAL_STORAGE_FALLBACK_THRESHOLD must be set before rendering the testnet template}"
+    fi
     envsubst <"$ENV_TPL" >"$env_out"
     envsubst <"$CONF_TPL" >"$conf_out"
 
@@ -1168,10 +1189,9 @@ extract_code_hash() {
 }
 
 extract_launcher_hash() {
-  local digest
-  digest="$(grep -E 'nearone/mpc-launcher@sha256:' "$COMPOSE_YAML" | head -n1 | sed -E 's/.*sha256:([0-9a-f]{64}).*/\1/')"
+  local digest="${LAUNCHER_MANIFEST_DIGEST#sha256:}"
   if [[ ! "$digest" =~ ^[0-9a-f]{64}$ ]]; then
-    err "Could not extract launcher image hash from $COMPOSE_YAML"
+    err "LAUNCHER_MANIFEST_DIGEST is not a valid sha256 digest: ${LAUNCHER_MANIFEST_DIGEST:-<unset>}"
     exit 1
   fi
   echo "$digest"
