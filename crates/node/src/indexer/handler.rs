@@ -14,7 +14,7 @@ use near_indexer_primitives::views::{
 };
 use near_indexer_primitives::CryptoHash;
 use near_mpc_contract_interface::method_names::{
-    REQUEST_APP_PRIVATE_KEY, RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS,
+    FAIL_ON_TIMEOUT, REQUEST_APP_PRIVATE_KEY, RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS,
     RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS,
     RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS, SIGN, VERIFY_FOREIGN_TRANSACTION,
 };
@@ -236,6 +236,9 @@ async fn handle_message(
                         RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS => {
                             completed_verify_foreign_txs.push(request_id);
                             metrics::MPC_NUM_VERIFY_FOREIGN_TX_RESPONSES_INDEXED.inc();
+                        }
+                        FAIL_ON_TIMEOUT => {
+                            metrics::MPC_NUM_TIMEOUTS_INDEXED.inc();
                         }
                         _ => {}
                     }

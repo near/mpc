@@ -429,7 +429,35 @@ impl RunLoadtestCmd {
                     eprintln!("{:?}", e);
                 }
             }
-            println!("Success Rate: {}%", (succeeded * 100) / txs.len());
+            // Per-stage breakdown plus an honest end-to-end rate. The
+            // end-to-end denominator is total submit attempts (n_rpc_requests),
+            // which is what the issue cares about — submit-side drops
+            // (e.g. `NotEnoughBalance`) count against the success rate too.
+            let pct = |num: usize, denom: usize| -> String {
+                if denom == 0 {
+                    "n/a".to_string()
+                } else {
+                    format!("{:.1}%", (num as f64 / denom as f64) * 100.0)
+                }
+            };
+            println!(
+                "Submitted on-chain: {}/{} ({})",
+                txs.len(),
+                n_rpc_requests,
+                pct(txs.len(), n_rpc_requests),
+            );
+            println!(
+                "Signed on-chain:    {}/{} ({})",
+                succeeded,
+                txs.len(),
+                pct(succeeded, txs.len()),
+            );
+            println!(
+                "End-to-end success: {}/{} ({})",
+                succeeded,
+                n_rpc_requests,
+                pct(succeeded, n_rpc_requests),
+            );
         });
         let cancel: tokio_util::sync::CancellationToken =
             tokio_util::sync::CancellationToken::new();
