@@ -246,7 +246,7 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
             .collect::<Vec<_>>();
 
         for task in generate_presignatures {
-            task.await??;
+            task.await?;
         }
 
         Ok(())
