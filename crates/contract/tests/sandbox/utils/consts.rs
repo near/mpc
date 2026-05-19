@@ -39,10 +39,13 @@ pub const GAS_FOR_VOTE_UPDATE: Gas = Gas::from_tgas(290);
 pub const GAS_FOR_VOTE_BEFORE_THRESHOLD: Gas = Gas::from_tgas(5);
 /// Maximum gas expected for the threshold vote that triggers the contract update.
 /// This vote is more expensive because it deploys the new contract code and executes
-/// the migration function. Raised from 185 to 190 TGas to accommodate the larger
-/// WASM and additional `pr_3216_state` try-read step added by the foreign-chain RPC
-/// providers feature (issue #3215); revert toward 185 once `pr_3216_state` is retired.
-pub const MAX_GAS_FOR_THRESHOLD_VOTE: Gas = Gas::from_tgas(190);
+/// the migration function. Raised from 185 → 190 → 200 TGas as the foreign-chain
+/// RPC providers feature (issue #3215) grew the WASM: first to add the whitelist +
+/// `pr_3216_state` try-read step, then again when the `Votes<V>` + `IterableMap` +
+/// `NonEmptyBTreeMap` reshape (PR 3249) pushed the binary slightly larger. Revert
+/// toward 185 once `pr_3216_state` is retired and `Votes<V>` monomorphization
+/// overhead has been amortized across other consumers.
+pub const MAX_GAS_FOR_THRESHOLD_VOTE: Gas = Gas::from_tgas(200);
 
 /* --- Deposit constants --- */
 /// This is the current deposit required for a contract deploy. This is subject to change but make
