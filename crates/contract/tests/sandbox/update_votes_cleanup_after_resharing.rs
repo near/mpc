@@ -18,7 +18,7 @@ use near_account_id::AccountId;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::{
-    Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
+    DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
 };
 use near_workspaces::Account;
 use serde_json::json;
@@ -169,7 +169,6 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
     };
     let domains_to_add = vec![DomainConfig {
         id: DomainId(next_domain_id),
-        curve: Curve::Edwards25519,
         protocol: Protocol::Frost,
         reconstruction_threshold: ReconstructionThreshold::new(6),
         purpose: DomainPurpose::Sign,

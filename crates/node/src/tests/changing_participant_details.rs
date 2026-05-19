@@ -7,7 +7,7 @@ use crate::tests::{
 };
 use crate::tests::{make_key_storage_config, DEFAULT_BLOCK_TIME};
 use crate::tracking::AutoAbortTask;
-use mpc_primitives::domain::{Curve, DomainId};
+use mpc_primitives::domain::DomainId;
 use near_mpc_contract_interface::types::{
     DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
 };
@@ -50,7 +50,6 @@ async fn test_changing_participant_set_test_keyshare_import() {
 
     let domain = DomainConfig {
         id: DomainId(0),
-        curve: Curve::Secp256k1,
         protocol: Protocol::CaitSith,
         reconstruction_threshold: ReconstructionThreshold::new(2),
         purpose: DomainPurpose::Sign,

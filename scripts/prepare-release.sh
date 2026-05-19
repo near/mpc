@@ -115,11 +115,15 @@ git-cliff --prepend CHANGELOG.md --unreleased -t "$VERSION"
 
 # --- Bump workspace version in Cargo.toml ---
 
+# `grep -P` (PCRE) and `sed -i` without a suffix are GNU-only; use POSIX
+# forms so this works on both Linux and macOS (BSD userland).
+
 CARGO_TOML="${REPO_ROOT}/Cargo.toml"
-OLD_VERSION=$(grep -Po '(?<=^version = ")[0-9]+\.[0-9]+\.[0-9]+(?=")' "$CARGO_TOML")
+OLD_VERSION=$(awk -F'"' '/^version = "[0-9]+\.[0-9]+\.[0-9]+"/ {print $2; exit}' "$CARGO_TOML")
+[[ -n "$OLD_VERSION" ]] || die "Could not find a workspace 'version = \"X.Y.Z\"' line in $CARGO_TOML."
 
 echo "==> Bumping workspace version: ${OLD_VERSION} -> ${VERSION}"
-sed -i "0,/^version = \"${OLD_VERSION}\"/s//version = \"${VERSION}\"/" "$CARGO_TOML"
+sed -i.bak -E "s/^version = \"[0-9]+\.[0-9]+\.[0-9]+\"/version = \"${VERSION}\"/" "$CARGO_TOML" && rm "${CARGO_TOML}.bak"
 
 # --- Verify contract ABI has changed ---
 

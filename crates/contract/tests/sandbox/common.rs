@@ -14,7 +14,7 @@ use mpc_contract::{
     primitives::{
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantId, ParticipantInfo, Participants},
-        test_utils::{bogus_ed25519_public_key, infer_purpose_from_curve},
+        test_utils::{bogus_ed25519_public_key, infer_purpose_from_protocol},
         thresholds::{Threshold, ThresholdParameters},
     },
     tee::tee_state::NodeId,
@@ -45,6 +45,8 @@ use signature::hazmat::PrehashSigner;
 use std::collections::BTreeSet;
 use std::time::Duration;
 use tokio_util::time::FutureExt as _;
+
+use super::utils::contract_build;
 
 pub async fn create_account_given_id(
     worker: &Worker<Sandbox>,
@@ -97,8 +99,11 @@ pub async fn gen_accounts(worker: &Worker<Sandbox>, amount: usize) -> (Vec<Accou
 }
 
 pub async fn init() -> (Worker<Sandbox>, Contract) {
+    init_with_wasm(current_contract()).await
+}
+
+pub async fn init_with_wasm(wasm: &[u8]) -> (Worker<Sandbox>, Contract) {
     let worker = near_workspaces::sandbox().await.unwrap();
-    let wasm = &current_contract();
     let contract = worker.dev_deploy(wasm).await.unwrap();
     (worker, contract)
 }
@@ -167,6 +172,7 @@ impl SandboxTestSetup {
             foreign_tx: false,
             number_of_participants: PARTICIPANT_LEN,
             init_config: None,
+            with_sandbox_test_methods: false,
         }
     }
 
@@ -184,6 +190,7 @@ pub struct SandboxTestSetupBuilder {
     foreign_tx: bool,
     number_of_participants: usize,
     init_config: Option<dtos::InitConfig>,
+    with_sandbox_test_methods: bool,
 }
 
 impl SandboxTestSetupBuilder {
@@ -207,8 +214,20 @@ impl SandboxTestSetupBuilder {
         self
     }
 
+    /// Deploys the wasm built with `--features sandbox-test-methods`, exposing the
+    /// introspection view methods in `crate::sandbox_test_methods` (e.g. fan-out queue
+    /// length).
+    pub fn with_sandbox_test_methods(mut self) -> Self {
+        self.with_sandbox_test_methods = true;
+        self
+    }
+
     pub async fn build(self) -> SandboxTestSetup {
-        let (worker, contract) = init().await;
+        let (worker, contract) = if self.with_sandbox_test_methods {
+            init_with_wasm(contract_build::current_contract_with_sandbox_test_methods()).await
+        } else {
+            init().await
+        };
         let (accounts, participants) = gen_accounts(&worker, self.number_of_participants).await;
         let threshold_parameters = make_threshold_params(&participants);
 
@@ -225,7 +244,7 @@ impl SandboxTestSetupBuilder {
         for protocol in &self.protocols {
             let curve = Curve::from(*protocol);
             let (pk, sk) = make_key_for_domain(curve);
-            let purpose = infer_purpose_from_curve(curve);
+            let purpose = infer_purpose_from_protocol(*protocol);
             let domain_id = DomainId(domain_configs.len() as u64);
 
             let reconstruction_threshold = match *protocol {
@@ -237,7 +256,6 @@ impl SandboxTestSetupBuilder {
             let key: PublicKeyExtended = pk.try_into().unwrap();
             let config = DomainConfig {
                 id: domain_id,
-                curve,
                 protocol: *protocol,
                 reconstruction_threshold,
                 purpose,
@@ -263,7 +281,6 @@ impl SandboxTestSetupBuilder {
             let key: PublicKeyExtended = pk.try_into().unwrap();
             let config = DomainConfig {
                 id: domain_id,
-                curve: Curve::Secp256k1,
                 protocol: Protocol::CaitSith,
                 reconstruction_threshold: ReconstructionThreshold::new(cluster_threshold),
                 purpose: DomainPurpose::ForeignTx,
@@ -519,7 +536,7 @@ pub async fn call_contract_key_generation<const N: usize>(
         start_keygen_instance(contract, accounts, key_event_id)
             .await
             .unwrap();
-        let (public_key, shared_secret_key) = make_key_for_domain(domain.curve);
+        let (public_key, shared_secret_key) = make_key_for_domain(Curve::from(domain.protocol));
 
         domain_keys.push(DomainKey {
             domain_config: domain.clone(),
@@ -586,21 +603,18 @@ pub async fn execute_key_generation_and_add_random_state(
     let domains_to_add = [
         DomainConfig {
             id: 0.into(),
-            curve: Curve::Edwards25519,
             protocol: Protocol::Frost,
             reconstruction_threshold: ReconstructionThreshold::new(6),
             purpose: DomainPurpose::Sign,
         },
         DomainConfig {
             id: 1.into(),
-            curve: Curve::Secp256k1,
             protocol: Protocol::CaitSith,
             reconstruction_threshold: ReconstructionThreshold::new(6),
             purpose: DomainPurpose::Sign,
         },
         DomainConfig {
             id: 2.into(),
-            curve: Curve::Edwards25519,
             protocol: Protocol::Frost,
             reconstruction_threshold: ReconstructionThreshold::new(6),
             purpose: DomainPurpose::Sign,
@@ -870,6 +884,34 @@ impl From<&ThresholdParameters> for OldThresholdParameters {
                 participants,
             },
             threshold: params.threshold(),
+        }
+    }
+}
+
+/// Mirrors the pre-curve-removal JSON wire shape of `DomainConfig`. Used by
+/// sandbox tests that deploy a production contract binary whose
+/// `vote_add_domains` deserializer still requires `curve`. The current
+/// contract accepts both shapes via the DTO compat shim, so this helper is
+/// safe against the current contract too. Remove this type (and every
+/// `OldDomainConfig::from(...)` call site) after the 3.10 release is the
+/// production contract on Mainnet and Testnet.
+#[derive(Serialize)]
+pub struct OldDomainConfig {
+    pub id: DomainId,
+    pub curve: Curve,
+    pub protocol: Protocol,
+    pub reconstruction_threshold: ReconstructionThreshold,
+    pub purpose: DomainPurpose,
+}
+
+impl From<&DomainConfig> for OldDomainConfig {
+    fn from(domain: &DomainConfig) -> Self {
+        OldDomainConfig {
+            id: domain.id,
+            curve: Curve::from(domain.protocol),
+            protocol: domain.protocol,
+            reconstruction_threshold: domain.reconstruction_threshold,
+            purpose: domain.purpose,
         }
     }
 }

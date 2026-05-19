@@ -9,7 +9,7 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use dtos::{
-    Curve, DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, ParticipantId, Protocol,
+    DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, ParticipantId, Protocol,
     ReconstructionThreshold, Threshold,
 };
 use mpc_attestation::attestation::VerifiedAttestation;
@@ -89,20 +89,20 @@ struct OldAddDomainsVotes {
 /// Caller supplies the global threshold; legacy state had no per-domain value.
 /// V2Secp256k1 (DamgardEtAl) was never deployed to production, so no
 /// protocol-specific adjustment is required here — every legacy domain
-/// inherits the global threshold uniformly.
+/// inherits the global threshold uniformly. The legacy `curve` is dropped:
+/// `Curve` is derivable from `Protocol` and no longer stored.
 fn migrate_domain_config(
     old: OldDomainConfig,
     reconstruction_threshold: ReconstructionThreshold,
 ) -> DomainConfig {
-    let (curve, protocol) = match old.curve {
-        OldCurve::Secp256k1 => (Curve::Secp256k1, Protocol::CaitSith),
-        OldCurve::Edwards25519 => (Curve::Edwards25519, Protocol::Frost),
-        OldCurve::Bls12381 => (Curve::Bls12381, Protocol::ConfidentialKeyDerivation),
-        OldCurve::V2Secp256k1 => (Curve::Secp256k1, Protocol::DamgardEtAl),
+    let protocol = match old.curve {
+        OldCurve::Secp256k1 => Protocol::CaitSith,
+        OldCurve::Edwards25519 => Protocol::Frost,
+        OldCurve::Bls12381 => Protocol::ConfidentialKeyDerivation,
+        OldCurve::V2Secp256k1 => Protocol::DamgardEtAl,
     };
     DomainConfig {
         id: old.id,
-        curve,
         protocol,
         reconstruction_threshold,
         purpose: old.purpose,
@@ -332,26 +332,43 @@ impl From<MpcContract> for crate::MpcContract {
 
         value.foreign_chain_policy_votes.proposal_by_account.clear();
 
+        // Pending-request maps changed value type from `YieldIndex` to `Vec<YieldIndex>`
+        // (duplicate-request fan-out feature) and were rehomed under new storage
+        // keys. The old maps remain readable via `LegacyPendingRequests`, whose
+        // fields are rooted at the previous storage keys with the previous singular
+        // value type — so requests that were already yielded before the upgrade
+        // can still be answered through `respond*` until they time out. This
+        // mirrors the V2→V3 sig-request map upgrade pattern.
+        //
+        // The previous-contract `stale_data` field on `value` is dropped: it
+        // either points at maps already drained by PR #2940 or holds no entries
+        // that the new contract needs to surface.
         Self {
             protocol_state: ProtocolContractState::Running(running.into()),
-            pending_signature_requests: value.pending_signature_requests,
-            pending_ckd_requests: value.pending_ckd_requests,
-            pending_verify_foreign_tx_requests: value.pending_verify_foreign_tx_requests,
+            pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV4),
+            pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV3),
+            pending_verify_foreign_tx_requests: LookupMap::new(
+                StorageKey::PendingVerifyForeignTxRequestsV2,
+            ),
             proposed_updates: value.proposed_updates,
             node_foreign_chain_support: value.node_foreign_chain_configurations.into(),
             config: value.config,
             tee_state: value.tee_state.into(),
             accept_requests: value.accept_requests,
             node_migrations: value.node_migrations,
-            stale_data: crate::StaleData {},
+            legacy_pending_requests: crate::pending_requests::LegacyPendingRequests::new(),
             metrics: value.metrics,
+            // New field introduced post-v3.9.1; legacy state has nothing to migrate, so it
+            // default-initializes to an empty whitelist.
+            foreign_chain_rpc_whitelist: Default::default(),
         }
     }
 }
 
 /// Previous `StaleData` layout — held a [`LookupMap`] of pre-upgrade signature requests.
 /// After the v3.9 migration is fully deployed those requests have been resolved or timed
-/// out, so the field is dropped here and the new `StaleData` is empty.
+/// out, so the field is dropped here. The new contract no longer has a `StaleData` field;
+/// pre-upgrade pending requests are surfaced through `LegacyPendingRequests` instead.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 struct OldStaleData {
     pending_signature_requests_pre_upgrade: LookupMap<SignatureRequest, YieldIndex>,
@@ -795,24 +812,16 @@ mod tests {
     fn domain_config_migration__should_derive_protocol_from_curve_and_inherit_threshold() {
         // Given OldDomainConfigs covering every legacy curve, including V2Secp256k1
         let cases = [
-            (OldCurve::Secp256k1, Curve::Secp256k1, Protocol::CaitSith),
-            (OldCurve::Edwards25519, Curve::Edwards25519, Protocol::Frost),
-            (
-                OldCurve::Bls12381,
-                Curve::Bls12381,
-                Protocol::ConfidentialKeyDerivation,
-            ),
-            (
-                OldCurve::V2Secp256k1,
-                Curve::Secp256k1,
-                Protocol::DamgardEtAl,
-            ),
+            (OldCurve::Secp256k1, Protocol::CaitSith),
+            (OldCurve::Edwards25519, Protocol::Frost),
+            (OldCurve::Bls12381, Protocol::ConfidentialKeyDerivation),
+            (OldCurve::V2Secp256k1, Protocol::DamgardEtAl),
         ];
 
         let global_threshold = ReconstructionThreshold::new(7);
-        for (i, (old_curve, expected_curve, expected_protocol)) in cases.into_iter().enumerate() {
-            let purpose = match expected_curve {
-                Curve::Bls12381 => DomainPurpose::CKD,
+        for (i, (old_curve, expected_protocol)) in cases.into_iter().enumerate() {
+            let purpose = match expected_protocol {
+                Protocol::ConfidentialKeyDerivation => DomainPurpose::CKD,
                 _ => DomainPurpose::Sign,
             };
             let old = OldDomainConfig {
@@ -826,8 +835,8 @@ mod tests {
             let decoded: OldDomainConfig = borsh::from_slice(&bytes).unwrap();
             let migrated = migrate_domain_config(decoded, global_threshold);
 
-            // Then curve, protocol, and per-domain reconstruction threshold are set
-            assert_eq!(migrated.curve, expected_curve);
+            // Then protocol and per-domain reconstruction threshold are set;
+            // curve is no longer stored — derived via `Curve::from(protocol)`.
             assert_eq!(migrated.protocol, expected_protocol);
             assert_eq!(migrated.id, DomainId(i as u64));
             assert_eq!(migrated.reconstruction_threshold, global_threshold);

@@ -162,6 +162,14 @@ pub static MPC_NUM_VERIFY_FOREIGN_TX_RESPONSES_INDEXED: LazyLock<prometheus::Int
         .unwrap()
     });
 
+pub static MPC_NUM_TIMEOUTS_INDEXED: LazyLock<prometheus::IntCounter> = LazyLock::new(|| {
+    prometheus::register_int_counter!(
+        "mpc_num_fail_on_timeout_indexed",
+        "Number of calls to fail_on_timeout seen by the indexer."
+    )
+    .unwrap()
+});
+
 pub static MPC_NUM_SIGNATURE_COMPUTATIONS_LED: LazyLock<prometheus::IntCounterVec> =
     LazyLock::new(|| {
         prometheus::register_int_counter_vec!(

@@ -37,6 +37,7 @@ export N=2                                      # number of nodes
 export MAX_NODES_TO_FUND=$N                     # avoid over-provisioning ROOT
 export BASE_PATH=/path/to/meta-dstack/dstack
 export MPC_MANIFEST_DIGEST=sha256:<digest>      # mpc-node image manifest to vote in
+export LAUNCHER_MANIFEST_DIGEST=sha256:<digest> # mpc-launcher image manifest to vote in
 export MODE=testnet
 export NEAR_NETWORK_CONFIG=testnet
 export HOST_PROFILE=alice                       # alice|bob (controls IP_PREFIX)
@@ -132,13 +133,10 @@ The script is **resume-safe** and can continue from any phase.
   cluster size on the alice/bob hardware is **~5 nodes per server**;
   beyond that you'll exhaust host resources. The script doesn't
   orchestrate multi-host deploys.
-- **Launcher image**: `deployment/cvm-deployment/launcher_docker_compose.yaml`
-  must reference a launcher image **built after PR #3026** (the one
-  that renamed the user-config TOML field `image` → `image_reference`).
-  An older launcher image will crash inside the CVM with
-  `TOML parse error: missing field 'image'`. Update the launcher
-  digest in that file before running this script if the operator
-  hasn't done so already — it's tracked separately from this PR.
+- **Launcher image**: `LAUNCHER_MANIFEST_DIGEST` must point at a launcher
+  image **built after PR #3026** (the one that renamed the user-config
+  TOML field `image` → `image_reference`). An older launcher image will
+  crash inside the CVM with `TOML parse error: missing field 'image'`.
 
 ### Localnet-only
 
@@ -178,7 +176,7 @@ source localnet/tee/scripts/rust-launcher/set-localnet-env.sh
 source localnet/tee/scripts/rust-launcher/set-testnet-env.sh
 ```
 
-Edit the values (especially `FUNDER_ACCOUNT`, `MPC_MANIFEST_DIGEST`,
+Edit the values (especially `FUNDER_ACCOUNT`, `MPC_MANIFEST_DIGEST`, `LAUNCHER_MANIFEST_DIGEST`,
 `MPC_NETWORK_BASE_NAME`) before sourcing.
 
 ### Required (localnet)
@@ -194,9 +192,15 @@ export MPC_IMAGE=nearone/mpc-node
 # For non-Docker Hub registries, include the registry prefix:
 #   export MPC_IMAGE=ghcr.io/nearone/mpc-node
 
-# Manifest digest of the MPC node image (for DEFAULT_IMAGE_DIGEST and voting)
+# Manifest digest of the MPC node image (filled into the launcher compose
+# template and voted in as the allowed code hash).
 # Get with: docker pull nearone/mpc-node:<tag> 2>&1 | grep Digest
-export MPC_MANIFEST_DIGEST=sha256:5d1e604dcf3197f8b465c854f8073eaa89b9733f646248d59f86a15b81110ef5
+export MPC_MANIFEST_DIGEST=sha256:eb4e3b75d439b77689534df6a69b542e779989f10b681ac43787a58e7c4aefdb
+
+# Manifest digest of the launcher image (filled into the launcher compose
+# template and voted in as the allowed launcher hash).
+# Get with: docker pull nearone/mpc-launcher:<tag> 2>&1 | grep Digest
+export LAUNCHER_MANIFEST_DIGEST=sha256:e28cb0425db06255fe5fc7aadb79534ac63c94c7a721f75c1af1e934d2eb0701
 
 # NEAR localnet
 export NEAR_NETWORK_CONFIG=mpc-localnet

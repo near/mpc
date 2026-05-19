@@ -216,7 +216,7 @@ For the new node, add this to the `.env` file (replace `<value>` with the actual
 
 
 3. **Start the node and retrieve the new keys from the new node**: (P2P (TLS) key, NEAR account key)
-4. **add the node's near_signer_public_key to your account as an restricted access key**
+4. **Add the node's `near_signer_public_key` to your account as a restricted access key**
 
 
 See more details on extracting key from the node and adding the keys to your account, in the [running an MPC node in TDX external guide](https://github.com/near/mpc/blob/main/docs/running-an-mpc-node-in-tdx-external-guide.md#add-the-node-account-key-to-your-account)
@@ -232,19 +232,15 @@ export P2P_KEY=$(curl -s http://<IP>:8080/public_data | jq -r ".near_p2p_public_
 ### Check that the new node's attestation is registered on the contract
 
 ```bash
-near contract call-function as-transaction \
+near contract call-function as-read-only \
   $MPC_CONTRACT_ACCOUNT_ID \
   get_tee_accounts \
   json-args {} \
-  prepaid-gas '300.0 Tgas' \
-  attached-deposit '0 NEAR' \
-  sign-as $SIGNER_ACCOUNT_ID \
   network-config $NEAR_NETWORK \
-  sign-with-keychain \
-  send
+  now
 ```
 
-**note** - If the new node's attestation was submitted successfully, you should see 2 attestations registered on the contract - one for the old node and one for the new node.
+**Note:** If the new node's attestation was submitted successfully, you should see 2 attestations registered on the contract — one for the old node and one for the new node.
 
 Output should look like this:
 

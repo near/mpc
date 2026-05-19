@@ -20,7 +20,7 @@ use mpc_contract::{
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
-    Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
+    DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
 };
 use near_sdk::Gas;
 use near_workspaces::{Account, Contract};
@@ -273,7 +273,6 @@ async fn setup_test_env_with_state(n_participants: usize, running_state: bool) -
         let domain_id = DomainId(0);
         let domain = DomainConfig {
             id: domain_id,
-            curve: Curve::Secp256k1,
             protocol: Protocol::CaitSith,
             reconstruction_threshold: ReconstructionThreshold::new(2),
             purpose: DomainPurpose::Sign,
