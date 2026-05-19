@@ -24,11 +24,6 @@ impl AllowedProviders {
         self.entries.insert(chain, entry);
     }
 
-    #[cfg(test)]
-    pub fn get(&self, chain: ForeignChain) -> Option<&ChainEntry> {
-        self.entries.get(&chain)
-    }
-
     /// Snapshot of the whole whitelist. Cloned so the caller can ship it across the
     /// contract boundary without holding a borrow on `self`.
     pub fn snapshot(&self) -> BTreeMap<ForeignChain, ChainEntry> {
@@ -252,6 +247,10 @@ mod tests {
         }
     }
 
+    fn stored_entry(wl: &ForeignChainRpcWhitelist, chain: ForeignChain) -> Option<ChainEntry> {
+        wl.entries.snapshot().get(&chain).cloned()
+    }
+
     #[test]
     fn vote__should_apply_chain_when_all_participants_match() {
         // Given
@@ -272,7 +271,7 @@ mod tests {
             applied_p0.is_empty(),
             "first vote can't reach threshold alone"
         );
-        assert!(wl.entries.get(ForeignChain::Ethereum).is_none());
+        assert!(stored_entry(&wl, ForeignChain::Ethereum).is_none());
         assert_eq!(wl.votes.pending.len(), 1);
 
         let p1 = auth_as(&participants, 1);
@@ -287,7 +286,7 @@ mod tests {
         assert_eq!(applied_p1, vec![ForeignChain::Ethereum]);
 
         // Then
-        let stored = wl.entries.get(ForeignChain::Ethereum).unwrap();
+        let stored = stored_entry(&wl, ForeignChain::Ethereum).unwrap();
         assert_eq!(stored.providers.len(), 1);
         assert_eq!(
             stored.providers[0].provider_id,
@@ -323,7 +322,7 @@ mod tests {
         .unwrap();
 
         // Then
-        let stored = wl.entries.get(ForeignChain::Ethereum).unwrap();
+        let stored = stored_entry(&wl, ForeignChain::Ethereum).unwrap();
         assert_eq!(stored.providers.len(), 2);
     }
 
@@ -365,8 +364,8 @@ mod tests {
 
         // Then: Ethereum applied; Polygon did not (different providers proposed).
         assert_eq!(applied_p1, vec![ForeignChain::Ethereum]);
-        assert!(wl.entries.get(ForeignChain::Ethereum).is_some());
-        assert!(wl.entries.get(ForeignChain::Polygon).is_none());
+        assert!(stored_entry(&wl, ForeignChain::Ethereum).is_some());
+        assert!(stored_entry(&wl, ForeignChain::Polygon).is_none());
         for (_, chain) in wl.votes.pending.keys() {
             assert_eq!(*chain, ForeignChain::Polygon);
         }
@@ -490,7 +489,7 @@ mod tests {
         .unwrap();
 
         // Then: full snapshot replaced — only drpc remains.
-        let stored = wl.entries.get(ForeignChain::Ethereum).unwrap();
+        let stored = stored_entry(&wl, ForeignChain::Ethereum).unwrap();
         assert_eq!(stored.providers.len(), 1);
         assert_eq!(
             stored.providers[0].provider_id,
@@ -701,7 +700,7 @@ mod tests {
         .unwrap();
 
         // Then: applied, stored entry preserves the routing + auth shapes.
-        let stored = wl.entries.get(ForeignChain::Ethereum).unwrap();
+        let stored = stored_entry(&wl, ForeignChain::Ethereum).unwrap();
         assert_eq!(stored.providers.len(), 1);
         assert_matches!(
             stored.providers[0].chain_routing,
@@ -735,7 +734,7 @@ mod tests {
             &participants,
         )
         .unwrap();
-        assert!(wl.entries.get(ForeignChain::Ethereum).is_none());
+        assert!(stored_entry(&wl, ForeignChain::Ethereum).is_none());
 
         // When: the participant set shrinks to drop p0 and p1, but
         // `retain_only` is NOT called (simulating a missed `clean_tee_status`).
@@ -755,7 +754,7 @@ mod tests {
         // filtered out of count_for_chain — only p2's vote (count = 1) is
         // counted against threshold = 3.
         assert!(applied.is_empty());
-        assert!(wl.entries.get(ForeignChain::Ethereum).is_none());
+        assert!(stored_entry(&wl, ForeignChain::Ethereum).is_none());
     }
 
     #[test]
