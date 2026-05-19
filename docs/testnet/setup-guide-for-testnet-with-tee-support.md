@@ -140,6 +140,8 @@ near account create-account sponsor-by-faucet-service $SAM_ACCOUNT autogenerate-
 
 ### Update Bootnodes and IPs
 
+> See [Running multiple MPC nodes on one host](../running-multiple-mpc-nodes-on-one-host.md) for the general framing of why each node needs its own host IP.
+
 Run this command to get the current testnet bootnodes.
 **Important:** Boot nodes must not contain duplicate addresses or peer IDs, as duplicates will cause the node to crash on startup. The command below deduplicates automatically:
 
