@@ -48,6 +48,12 @@ expression: abi
                   "ChainEntry"
                 ]
               },
+              "(ProviderId, ProviderConfig)": {
+                "Tuple": [
+                  "ProviderId",
+                  "ProviderConfig"
+                ]
+              },
               "AuthScheme": {
                 "Enum": {
                   "tag_width": 1,
@@ -116,21 +122,21 @@ expression: abi
                   "elements": "(ForeignChain, ChainEntry)"
                 }
               },
-              "BoundedVec<ProviderEntry, 1, 18446744073709551615>": {
+              "BTreeMap<ProviderId, ProviderConfig>": {
                 "Sequence": {
                   "length_width": 4,
                   "length_range": {
-                    "start": 1,
-                    "end": 18446744073709551615
+                    "start": 0,
+                    "end": 4294967295
                   },
-                  "elements": "ProviderEntry"
+                  "elements": "(ProviderId, ProviderConfig)"
                 }
               },
               "ChainEntry": {
                 "Struct": [
                   [
                     "providers",
-                    "BoundedVec<ProviderEntry, 1, 18446744073709551615>"
+                    "NonEmptyBTreeMap<ProviderId, ProviderConfig>"
                   ],
                   [
                     "quorum",
@@ -270,6 +276,16 @@ expression: abi
               "ForeignChain__Starknet": {
                 "Struct": null
               },
+              "NonEmptyBTreeMap<ProviderId, ProviderConfig>": {
+                "Sequence": {
+                  "length_width": 4,
+                  "length_range": {
+                    "start": 1,
+                    "end": 4294967295
+                  },
+                  "elements": "(ProviderId, ProviderConfig)"
+                }
+              },
               "Option<String>": {
                 "Enum": {
                   "tag_width": 1,
@@ -287,12 +303,8 @@ expression: abi
                   ]
                 }
               },
-              "ProviderEntry": {
+              "ProviderConfig": {
                 "Struct": [
-                  [
-                    "provider_id",
-                    "ProviderId"
-                  ],
                   [
                     "base_url",
                     "String"
@@ -1826,7 +1838,7 @@ expression: abi
       },
       {
         "name": "vote_update_foreign_chain_providers",
-        "doc": " Vote on per-chain RPC provider whitelist state. Each `ChainVote` carries the\n proposed full provider list and the RPC response quorum for that chain. The\n chain's stored state is replaced once the protocol's signing threshold of\n participants has voted the same `(providers, threshold)` pair.",
+        "doc": " Vote on per-chain RPC provider whitelist state. The input is keyed by\n `ForeignChain`; each `ChainEntry` value carries the proposed full provider list\n and the RPC response quorum for that chain. The chain's stored state is replaced\n once the protocol's signing threshold of participants has voted the same\n `(providers, quorum)` pair. `NonEmptyBTreeMap` enforces a non-empty batch and\n at-most-one entry per chain at borsh-deserialize time.",
         "kind": "call",
         "params": {
           "serialization_type": "borsh",
@@ -1834,10 +1846,22 @@ expression: abi
             {
               "name": "votes",
               "type_schema": {
-                "declaration": "Vec<ChainVote>",
+                "declaration": "NonEmptyBTreeMap<ForeignChain, ChainEntry>",
                 "definitions": {
                   "()": {
                     "Primitive": 0
+                  },
+                  "(ForeignChain, ChainEntry)": {
+                    "Tuple": [
+                      "ForeignChain",
+                      "ChainEntry"
+                    ]
+                  },
+                  "(ProviderId, ProviderConfig)": {
+                    "Tuple": [
+                      "ProviderId",
+                      "ProviderConfig"
+                    ]
                   },
                   "AuthScheme": {
                     "Enum": {
@@ -1897,6 +1921,38 @@ expression: abi
                       ]
                     ]
                   },
+                  "BTreeMap<ForeignChain, ChainEntry>": {
+                    "Sequence": {
+                      "length_width": 4,
+                      "length_range": {
+                        "start": 0,
+                        "end": 4294967295
+                      },
+                      "elements": "(ForeignChain, ChainEntry)"
+                    }
+                  },
+                  "BTreeMap<ProviderId, ProviderConfig>": {
+                    "Sequence": {
+                      "length_width": 4,
+                      "length_range": {
+                        "start": 0,
+                        "end": 4294967295
+                      },
+                      "elements": "(ProviderId, ProviderConfig)"
+                    }
+                  },
+                  "ChainEntry": {
+                    "Struct": [
+                      [
+                        "providers",
+                        "NonEmptyBTreeMap<ProviderId, ProviderConfig>"
+                      ],
+                      [
+                        "quorum",
+                        "u64"
+                      ]
+                    ]
+                  },
                   "ChainRouting": {
                     "Enum": {
                       "tag_width": 1,
@@ -1939,22 +1995,6 @@ expression: abi
                       [
                         "value",
                         "String"
-                      ]
-                    ]
-                  },
-                  "ChainVote": {
-                    "Struct": [
-                      [
-                        "chain",
-                        "ForeignChain"
-                      ],
-                      [
-                        "providers",
-                        "Vec<ProviderEntry>"
-                      ],
-                      [
-                        "quorum",
-                        "u64"
                       ]
                     ]
                   },
@@ -2045,6 +2085,26 @@ expression: abi
                   "ForeignChain__Starknet": {
                     "Struct": null
                   },
+                  "NonEmptyBTreeMap<ForeignChain, ChainEntry>": {
+                    "Sequence": {
+                      "length_width": 4,
+                      "length_range": {
+                        "start": 1,
+                        "end": 4294967295
+                      },
+                      "elements": "(ForeignChain, ChainEntry)"
+                    }
+                  },
+                  "NonEmptyBTreeMap<ProviderId, ProviderConfig>": {
+                    "Sequence": {
+                      "length_width": 4,
+                      "length_range": {
+                        "start": 1,
+                        "end": 4294967295
+                      },
+                      "elements": "(ProviderId, ProviderConfig)"
+                    }
+                  },
                   "Option<String>": {
                     "Enum": {
                       "tag_width": 1,
@@ -2062,12 +2122,8 @@ expression: abi
                       ]
                     }
                   },
-                  "ProviderEntry": {
+                  "ProviderConfig": {
                     "Struct": [
-                      [
-                        "provider_id",
-                        "ProviderId"
-                      ],
                       [
                         "base_url",
                         "String"
@@ -2095,26 +2151,6 @@ expression: abi
                         "end": 4294967295
                       },
                       "elements": "u8"
-                    }
-                  },
-                  "Vec<ChainVote>": {
-                    "Sequence": {
-                      "length_width": 4,
-                      "length_range": {
-                        "start": 0,
-                        "end": 4294967295
-                      },
-                      "elements": "ChainVote"
-                    }
-                  },
-                  "Vec<ProviderEntry>": {
-                    "Sequence": {
-                      "length_width": 4,
-                      "length_range": {
-                        "start": 0,
-                        "end": 4294967295
-                      },
-                      "elements": "ProviderEntry"
                     }
                   },
                   "u64": {

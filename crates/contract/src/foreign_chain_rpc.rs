@@ -1,7 +1,7 @@
 //! On-chain whitelist of RPC providers for foreign-chain transaction validation.
-//! Each `ChainVote` is a per-chain snapshot (provider list + RPC response quorum); the
-//! chain's state is replaced once the protocol's signing threshold of participants
-//! holds the same proposal.
+//! Each entry in a vote batch is a per-chain snapshot (provider list + RPC response
+//! quorum); the chain's state is replaced once the protocol's signing threshold of
+//! participants holds the same proposal.
 //!
 //! Pending votes are stored hash-only via [`Votes<V>`][crate::primitives::votes::Votes],
 //! which is backed by lazy-loaded `IterableMap`s. The applied state lives in
@@ -12,10 +12,8 @@
 
 use std::collections::BTreeMap;
 
-use near_mpc_bounded_collections::NonEmptyVec;
-use near_mpc_contract_interface::types::{
-    AuthScheme, ChainEntry, ChainRouting, ChainVote, ForeignChain, ProviderEntry,
-};
+use near_mpc_bounded_collections::NonEmptyBTreeMap;
+use near_mpc_contract_interface::types::{AuthScheme, ChainEntry, ChainRouting, ForeignChain};
 use near_sdk::near;
 use near_sdk::store::IterableMap;
 
@@ -91,38 +89,25 @@ impl ForeignChainRpcWhitelist {
     /// Record `participant`'s votes; replace each chain's state once
     /// `protocol_threshold` participants hold the same canonical `(providers, quorum)`
     /// pair. `protocol_threshold` is the protocol's signing threshold (the same one
-    /// that gates threshold signatures), not to be confused with `ChainVote.quorum`,
+    /// that gates threshold signatures), not to be confused with `ChainEntry.quorum`,
     /// which is the RPC response quorum nodes use when querying the listed providers.
+    ///
+    /// The input batch is a `NonEmptyBTreeMap<ForeignChain, ChainEntry>`, so two
+    /// invariants are enforced at borsh-deserialize time and don't need to be re-checked
+    /// here: the batch is non-empty, and each chain appears at most once.
+    ///
     /// Returns the chains applied this call.
     pub fn vote(
         &mut self,
         participant: AuthenticatedParticipantId,
-        votes: Vec<ChainVote>,
+        votes: NonEmptyBTreeMap<ForeignChain, ChainEntry>,
         protocol_threshold: u64,
         participants: &Participants,
     ) -> Result<Vec<ForeignChain>, Error> {
-        if votes.is_empty() {
-            return Err(InvalidParameters::MalformedPayload {
-                reason: "vote batch must be non-empty".to_string(),
-            }
-            .into());
-        }
-        let mut chains_in_batch: Vec<ForeignChain> = Vec::with_capacity(votes.len());
         let mut applied: Vec<ForeignChain> = Vec::new();
-        for ChainVote {
-            chain,
-            providers,
-            quorum,
-        } in votes
-        {
-            if chains_in_batch.contains(&chain) {
-                return Err(InvalidParameters::MalformedPayload {
-                    reason: format!("duplicate chain {chain:?} in vote batch"),
-                }
-                .into());
-            }
-            chains_in_batch.push(chain);
-            let entry = canonicalize(providers, quorum)?;
+        let votes: BTreeMap<ForeignChain, ChainEntry> = votes.into();
+        for (chain, entry) in votes {
+            let entry = canonicalize(entry)?;
             let hash = ProposalHash::from(entry.clone());
             // Scope the borrow on `self.votes.pending.vote` so we can mutate
             // `self.entries`/`self.votes.pending` after `count`.
@@ -148,21 +133,20 @@ impl ForeignChainRpcWhitelist {
     }
 }
 
-/// Sort by `provider_id` for order-independent equality at protocol-threshold-check time.
-/// `quorum` is the RPC response quorum (`ChainVote.quorum`), not the protocol signing
-/// threshold. Errors on: empty `providers`, `quorum == 0` or exceeding `providers.len()`,
-/// duplicate `provider_id` within the vote, `PathSegment` containing a literal `/`,
-/// or `QueryParam` whose name collides with the entry's `AuthScheme::Query` name.
-fn canonicalize(mut providers: Vec<ProviderEntry>, quorum: u64) -> Result<ChainEntry, Error> {
-    if providers.is_empty() {
-        return Err(InvalidParameters::MalformedPayload {
-            reason: "ChainVote.providers must not be empty".to_string(),
-        }
-        .into());
-    }
+/// Validate an entry. `entry.providers` is a `NonEmptyBTreeMap<ProviderId, ProviderConfig>`
+/// at the type level (enforced at borsh-deserialize), which gives us three things for
+/// free: non-empty, no duplicate `provider_id`, and ordered iteration — so the
+/// canonical hash matches across voters without an explicit sort.
+///
+/// `quorum` is the RPC response quorum (`ChainEntry.quorum`), not the protocol signing
+/// threshold. Errors on: `quorum == 0` or exceeding `providers.len()`, `PathSegment`
+/// containing a literal `/`, or `QueryParam` whose name collides with the entry's
+/// `AuthScheme::Query` name.
+fn canonicalize(entry: ChainEntry) -> Result<ChainEntry, Error> {
+    let ChainEntry { providers, quorum } = entry;
     if quorum == 0 {
         return Err(InvalidParameters::MalformedPayload {
-            reason: "ChainVote.quorum must be >= 1".to_string(),
+            reason: "ChainEntry.quorum must be >= 1".to_string(),
         }
         .into());
     }
@@ -176,30 +160,18 @@ fn canonicalize(mut providers: Vec<ProviderEntry>, quorum: u64) -> Result<ChainE
     if quorum > providers_len {
         return Err(InvalidParameters::MalformedPayload {
             reason: format!(
-                "ChainVote.quorum ({quorum}) exceeds providers.len() ({providers_len}) — RPC response quorum is unreachable",
+                "ChainEntry.quorum ({quorum}) exceeds providers.len() ({providers_len}) — RPC response quorum is unreachable",
             ),
         }
         .into());
     }
-    providers.sort_by(|a, b| a.provider_id.cmp(&b.provider_id));
-    if providers
-        .windows(2)
-        .any(|w| w[0].provider_id == w[1].provider_id)
-    {
-        return Err(InvalidParameters::MalformedPayload {
-            reason:
-                "duplicate provider_id within a single ChainVote — each provider may appear at most once per chain"
-                    .to_string(),
-        }
-        .into());
-    }
-    for p in &providers {
-        if let ChainRouting::PathSegment { segment } = &p.chain_routing {
+    for (id, config) in providers.iter() {
+        if let ChainRouting::PathSegment { segment } = &config.chain_routing {
             if segment.contains('/') {
                 return Err(InvalidParameters::MalformedPayload {
                     reason: format!(
                         "ChainRouting::PathSegment.segment for provider_id {:?} must not contain '/'",
-                        p.provider_id.0
+                        id.0
                     ),
                 }
                 .into());
@@ -210,20 +182,19 @@ fn canonicalize(mut providers: Vec<ProviderEntry>, quorum: u64) -> Result<ChainE
                 name: routing_name, ..
             },
             AuthScheme::Query { name: auth_name },
-        ) = (&p.chain_routing, &p.auth_scheme)
+        ) = (&config.chain_routing, &config.auth_scheme)
         {
             if routing_name == auth_name {
                 return Err(InvalidParameters::MalformedPayload {
                     reason: format!(
                         "ChainRouting::QueryParam.name collides with AuthScheme::Query.name {:?} for provider_id {:?}",
-                        auth_name, p.provider_id.0
+                        auth_name, id.0
                     ),
                 }
                 .into());
             }
         }
     }
-    let providers = NonEmptyVec::try_from(providers).expect("providers non-empty (checked above)");
     Ok(ChainEntry { providers, quorum })
 }
 
@@ -233,25 +204,49 @@ mod tests {
     use super::*;
     use crate::primitives::{key_state::AuthenticatedParticipantId, test_utils::gen_participants};
     use assert_matches::assert_matches;
-    use near_mpc_contract_interface::types::{AuthScheme, ChainRouting, ProviderId};
+    use near_mpc_contract_interface::types::{
+        AuthScheme, ChainRouting, ProviderConfig, ProviderId,
+    };
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
 
-    fn provider(id: &str) -> ProviderEntry {
-        ProviderEntry {
-            provider_id: ProviderId(id.to_string()),
-            base_url: format!("https://{id}.example.com"),
-            auth_scheme: AuthScheme::None,
-            chain_routing: ChainRouting::Embedded,
+    fn provider(id: &str) -> (ProviderId, ProviderConfig) {
+        (
+            ProviderId(id.to_string()),
+            ProviderConfig {
+                base_url: format!("https://{id}.example.com"),
+                auth_scheme: AuthScheme::None,
+                chain_routing: ChainRouting::Embedded,
+            },
+        )
+    }
+
+    /// Build a `ChainEntry` from a list of provider id stubs and a quorum.
+    fn chain_entry(ids: &[&str], quorum: u64) -> ChainEntry {
+        let providers: BTreeMap<ProviderId, ProviderConfig> =
+            ids.iter().map(|id| provider(id)).collect();
+        ChainEntry {
+            providers: NonEmptyBTreeMap::try_from(providers)
+                .expect("test setup: providers must be non-empty"),
+            quorum,
         }
     }
 
-    fn chain_vote(chain: ForeignChain, ids: &[&str], quorum: u64) -> ChainVote {
-        ChainVote {
-            chain,
-            providers: ids.iter().map(|id| provider(id)).collect(),
-            quorum,
-        }
+    /// Build a single-chain vote batch wrapped in `NonEmptyBTreeMap`.
+    fn single_chain_votes(
+        chain: ForeignChain,
+        ids: &[&str],
+        quorum: u64,
+    ) -> NonEmptyBTreeMap<ForeignChain, ChainEntry> {
+        NonEmptyBTreeMap::new(chain, chain_entry(ids, quorum))
+    }
+
+    /// Build a multi-chain vote batch wrapped in `NonEmptyBTreeMap`.
+    fn votes_from(
+        entries: impl IntoIterator<Item = (ForeignChain, ChainEntry)>,
+    ) -> NonEmptyBTreeMap<ForeignChain, ChainEntry> {
+        let map: BTreeMap<_, _> = entries.into_iter().collect();
+        NonEmptyBTreeMap::try_from(map).expect("test setup: batch must be non-empty")
     }
 
     /// Build `n` participants and pre-authenticate each one. The pattern intentionally
@@ -321,7 +316,7 @@ mod tests {
         let applied_p0 = wl
             .vote(
                 auth_ids[0].clone(),
-                vec![chain_vote(ForeignChain::Ethereum, &["alchemy"], 1)],
+                single_chain_votes(ForeignChain::Ethereum, &["alchemy"], 1),
                 2,
                 &participants,
             )
@@ -336,7 +331,7 @@ mod tests {
         let applied_p1 = wl
             .vote(
                 auth_ids[1].clone(),
-                vec![chain_vote(ForeignChain::Ethereum, &["alchemy"], 1)],
+                single_chain_votes(ForeignChain::Ethereum, &["alchemy"], 1),
                 2,
                 &participants,
             )
@@ -346,10 +341,9 @@ mod tests {
         // Then
         let stored = stored_entry(&wl, ForeignChain::Ethereum).unwrap();
         assert_eq!(stored.providers.len(), 1);
-        assert_eq!(
-            stored.providers.first().provider_id,
-            ProviderId("alchemy".to_string())
-        );
+        assert!(stored
+            .providers
+            .contains_key(&ProviderId("alchemy".to_string())));
         assert_eq!(stored.quorum, 1);
         assert_eq!(pending_voter_count(&wl), 0);
     }
@@ -364,14 +358,14 @@ mod tests {
         // When
         wl.vote(
             auth_ids[0].clone(),
-            vec![chain_vote(ForeignChain::Ethereum, &["alchemy", "ankr"], 1)],
+            single_chain_votes(ForeignChain::Ethereum, &["alchemy", "ankr"], 1),
             2,
             &participants,
         )
         .unwrap();
         wl.vote(
             auth_ids[1].clone(),
-            vec![chain_vote(ForeignChain::Ethereum, &["ankr", "alchemy"], 1)],
+            single_chain_votes(ForeignChain::Ethereum, &["ankr", "alchemy"], 1),
             2,
             &participants,
         )
@@ -392,10 +386,10 @@ mod tests {
         let applied_p0 = wl
             .vote(
                 auth_ids[0].clone(),
-                vec![
-                    chain_vote(ForeignChain::Ethereum, &["alchemy"], 1),
-                    chain_vote(ForeignChain::Polygon, &["ankr"], 1),
-                ],
+                votes_from([
+                    (ForeignChain::Ethereum, chain_entry(&["alchemy"], 1)),
+                    (ForeignChain::Polygon, chain_entry(&["ankr"], 1)),
+                ]),
                 2,
                 &participants,
             )
@@ -407,10 +401,10 @@ mod tests {
         let applied_p1 = wl
             .vote(
                 auth_ids[1].clone(),
-                vec![
-                    chain_vote(ForeignChain::Ethereum, &["alchemy"], 1),
-                    chain_vote(ForeignChain::Polygon, &["infura"], 1),
-                ],
+                votes_from([
+                    (ForeignChain::Ethereum, chain_entry(&["alchemy"], 1)),
+                    (ForeignChain::Polygon, chain_entry(&["infura"], 1)),
+                ]),
                 2,
                 &participants,
             )
@@ -436,7 +430,7 @@ mod tests {
         let p0 = auth_ids[0].clone();
         wl.vote(
             p0.clone(),
-            vec![chain_vote(ForeignChain::Polygon, &["ankr"], 1)],
+            single_chain_votes(ForeignChain::Polygon, &["ankr"], 1),
             2,
             &participants,
         )
@@ -445,7 +439,7 @@ mod tests {
         // When
         wl.vote(
             p0.clone(),
-            vec![chain_vote(ForeignChain::Ethereum, &["alchemy"], 1)],
+            single_chain_votes(ForeignChain::Ethereum, &["alchemy"], 1),
             2,
             &participants,
         )
@@ -464,7 +458,7 @@ mod tests {
         let p0 = auth_ids[0].clone();
         wl.vote(
             p0.clone(),
-            vec![chain_vote(ForeignChain::Polygon, &["alchemy"], 1)],
+            single_chain_votes(ForeignChain::Polygon, &["alchemy"], 1),
             2,
             &participants,
         )
@@ -474,7 +468,7 @@ mod tests {
         // (providers=[ankr, drpc], response quorum=2).
         wl.vote(
             p0.clone(),
-            vec![chain_vote(ForeignChain::Polygon, &["ankr", "drpc"], 2)],
+            single_chain_votes(ForeignChain::Polygon, &["ankr", "drpc"], 2),
             2,
             &participants,
         )
@@ -492,7 +486,7 @@ mod tests {
             .count();
         assert_eq!(voters_for_p0_polygon, 1);
 
-        let expected_entry = canonicalize(vec![provider("ankr"), provider("drpc")], 2).unwrap();
+        let expected_entry = canonicalize(chain_entry(&["ankr", "drpc"], 2)).unwrap();
         let expected_hash = ProposalHash::from(expected_entry);
         let actual_hash = pending_proposal_hash_for(&wl, &(p0, ForeignChain::Polygon))
             .expect("expected pending row for (p0, Polygon)");
@@ -506,14 +500,14 @@ mod tests {
         let mut wl = ForeignChainRpcWhitelist::default();
         wl.vote(
             auth_ids[0].clone(),
-            vec![chain_vote(ForeignChain::Ethereum, &["alchemy", "ankr"], 1)],
+            single_chain_votes(ForeignChain::Ethereum, &["alchemy", "ankr"], 1),
             2,
             &participants,
         )
         .unwrap();
         wl.vote(
             auth_ids[1].clone(),
-            vec![chain_vote(ForeignChain::Ethereum, &["alchemy", "ankr"], 1)],
+            single_chain_votes(ForeignChain::Ethereum, &["alchemy", "ankr"], 1),
             2,
             &participants,
         )
@@ -522,14 +516,14 @@ mod tests {
         // When: both vote a new state [drpc] (alchemy + ankr both removed in one move).
         wl.vote(
             auth_ids[0].clone(),
-            vec![chain_vote(ForeignChain::Ethereum, &["drpc"], 1)],
+            single_chain_votes(ForeignChain::Ethereum, &["drpc"], 1),
             2,
             &participants,
         )
         .unwrap();
         wl.vote(
             auth_ids[1].clone(),
-            vec![chain_vote(ForeignChain::Ethereum, &["drpc"], 1)],
+            single_chain_votes(ForeignChain::Ethereum, &["drpc"], 1),
             2,
             &participants,
         )
@@ -538,58 +532,22 @@ mod tests {
         // Then: full snapshot replaced — only drpc remains.
         let stored = stored_entry(&wl, ForeignChain::Ethereum).unwrap();
         assert_eq!(stored.providers.len(), 1);
-        assert_eq!(
-            stored.providers.first().provider_id,
-            ProviderId("drpc".to_string())
-        );
+        assert!(stored
+            .providers
+            .contains_key(&ProviderId("drpc".to_string())));
     }
 
-    #[test]
-    fn vote__should_return_err_on_empty_batch() {
-        let (participants, auth_ids) = setup(2);
-        let mut wl = ForeignChainRpcWhitelist::default();
-        let err = wl
-            .vote(auth_ids[0].clone(), vec![], 2, &participants)
-            .unwrap_err();
-        assert_malformed(err, "non-empty");
-    }
-
-    #[test]
-    fn vote__should_return_err_on_duplicate_chain_in_batch() {
-        let (participants, auth_ids) = setup(2);
-        let mut wl = ForeignChainRpcWhitelist::default();
-        let err = wl
-            .vote(
-                auth_ids[0].clone(),
-                vec![
-                    chain_vote(ForeignChain::Ethereum, &["alchemy"], 1),
-                    chain_vote(ForeignChain::Ethereum, &["ankr"], 1),
-                ],
-                2,
-                &participants,
-            )
-            .unwrap_err();
-        assert_malformed(err, "duplicate chain");
-    }
-
-    #[test]
-    fn vote__should_return_err_on_empty_providers() {
-        let (participants, auth_ids) = setup(2);
-        let mut wl = ForeignChainRpcWhitelist::default();
-        let err = wl
-            .vote(
-                auth_ids[0].clone(),
-                vec![ChainVote {
-                    chain: ForeignChain::Ethereum,
-                    providers: vec![],
-                    quorum: 1,
-                }],
-                2,
-                &participants,
-            )
-            .unwrap_err();
-        assert_malformed(err, "providers must not be empty");
-    }
+    // Several "should_return_err_on_*" tests retired as their preconditions became
+    // unrepresentable at the type level after the entry-point input switched to
+    // `NonEmptyBTreeMap<ForeignChain, ChainEntry>` and `ChainEntry.providers` to
+    // `NonEmptyBTreeMap<ProviderId, ProviderConfig>`:
+    //
+    // - `empty_batch` — outer `NonEmptyBTreeMap` rejects at borsh-deserialize.
+    // - `duplicate_chain_in_batch` — outer `BTreeMap` key uniqueness.
+    // - `empty_providers` — inner `NonEmptyBTreeMap` rejects at borsh-deserialize.
+    // - `duplicate_provider_in_chain_entry` — inner `BTreeMap<ProviderId, _>` key
+    //   uniqueness; duplicate provider ids in client input either deserialize-error
+    //   or get deduplicated before reaching the contract.
 
     #[test]
     fn vote__should_return_err_on_zero_quorum() {
@@ -598,7 +556,7 @@ mod tests {
         let err = wl
             .vote(
                 auth_ids[0].clone(),
-                vec![chain_vote(ForeignChain::Ethereum, &["alchemy"], 0)],
+                single_chain_votes(ForeignChain::Ethereum, &["alchemy"], 0),
                 2,
                 &participants,
             )
@@ -613,7 +571,7 @@ mod tests {
         let err = wl
             .vote(
                 auth_ids[0].clone(),
-                vec![chain_vote(ForeignChain::Ethereum, &["alchemy", "ankr"], 3)],
+                single_chain_votes(ForeignChain::Ethereum, &["alchemy", "ankr"], 3),
                 2,
                 &participants,
             )
@@ -622,44 +580,29 @@ mod tests {
     }
 
     #[test]
-    fn vote__should_return_err_on_duplicate_provider_in_chain_vote() {
-        let (participants, auth_ids) = setup(2);
-        let mut wl = ForeignChainRpcWhitelist::default();
-        let err = wl
-            .vote(
-                auth_ids[0].clone(),
-                vec![chain_vote(
-                    ForeignChain::Ethereum,
-                    &["alchemy", "alchemy"],
-                    1,
-                )],
-                2,
-                &participants,
-            )
-            .unwrap_err();
-        assert_malformed(err, "duplicate provider_id");
-    }
-
-    #[test]
     fn vote__should_return_err_on_path_segment_with_slash() {
         let (participants, auth_ids) = setup(2);
         let mut wl = ForeignChainRpcWhitelist::default();
-        let bad = ProviderEntry {
-            provider_id: ProviderId("ankr".to_string()),
-            base_url: "https://rpc.ankr.com".to_string(),
-            auth_scheme: AuthScheme::None,
-            chain_routing: ChainRouting::PathSegment {
-                segment: "eth/sepolia".to_string(),
+        let bad = (
+            ProviderId("ankr".to_string()),
+            ProviderConfig {
+                base_url: "https://rpc.ankr.com".to_string(),
+                auth_scheme: AuthScheme::None,
+                chain_routing: ChainRouting::PathSegment {
+                    segment: "eth/sepolia".to_string(),
+                },
             },
-        };
+        );
         let err = wl
             .vote(
                 auth_ids[0].clone(),
-                vec![ChainVote {
-                    chain: ForeignChain::Ethereum,
-                    providers: vec![bad],
-                    quorum: 1,
-                }],
+                NonEmptyBTreeMap::new(
+                    ForeignChain::Ethereum,
+                    ChainEntry {
+                        providers: NonEmptyBTreeMap::new(bad.0, bad.1),
+                        quorum: 1,
+                    },
+                ),
                 2,
                 &participants,
             )
@@ -671,25 +614,29 @@ mod tests {
     fn vote__should_return_err_on_query_param_name_colliding_with_auth_query() {
         let (participants, auth_ids) = setup(2);
         let mut wl = ForeignChainRpcWhitelist::default();
-        let bad = ProviderEntry {
-            provider_id: ProviderId("drpc".to_string()),
-            base_url: "https://lb.drpc.org/ogrpc".to_string(),
-            auth_scheme: AuthScheme::Query {
-                name: "key".to_string(),
+        let bad = (
+            ProviderId("drpc".to_string()),
+            ProviderConfig {
+                base_url: "https://lb.drpc.org/ogrpc".to_string(),
+                auth_scheme: AuthScheme::Query {
+                    name: "key".to_string(),
+                },
+                chain_routing: ChainRouting::QueryParam {
+                    name: "key".to_string(),
+                    value: "ethereum".to_string(),
+                },
             },
-            chain_routing: ChainRouting::QueryParam {
-                name: "key".to_string(),
-                value: "ethereum".to_string(),
-            },
-        };
+        );
         let err = wl
             .vote(
                 auth_ids[0].clone(),
-                vec![ChainVote {
-                    chain: ForeignChain::Ethereum,
-                    providers: vec![bad],
-                    quorum: 1,
-                }],
+                NonEmptyBTreeMap::new(
+                    ForeignChain::Ethereum,
+                    ChainEntry {
+                        providers: NonEmptyBTreeMap::new(bad.0, bad.1),
+                        quorum: 1,
+                    },
+                ),
                 2,
                 &participants,
             )
@@ -702,51 +649,48 @@ mod tests {
         // Given
         let (participants, auth_ids) = setup(2);
         let mut wl = ForeignChainRpcWhitelist::default();
-        let drpc = || ProviderEntry {
-            provider_id: ProviderId("drpc".to_string()),
-            base_url: "https://lb.drpc.org/ogrpc".to_string(),
-            auth_scheme: AuthScheme::Query {
-                name: "dkey".to_string(),
-            },
-            chain_routing: ChainRouting::QueryParam {
-                name: "network".to_string(),
-                value: "ethereum".to_string(),
-            },
+        let drpc = || {
+            (
+                ProviderId("drpc".to_string()),
+                ProviderConfig {
+                    base_url: "https://lb.drpc.org/ogrpc".to_string(),
+                    auth_scheme: AuthScheme::Query {
+                        name: "dkey".to_string(),
+                    },
+                    chain_routing: ChainRouting::QueryParam {
+                        name: "network".to_string(),
+                        value: "ethereum".to_string(),
+                    },
+                },
+            )
         };
 
         // When: two participants vote the same well-formed entry.
-        wl.vote(
-            auth_ids[0].clone(),
-            vec![ChainVote {
-                chain: ForeignChain::Ethereum,
-                providers: vec![drpc()],
-                quorum: 1,
-            }],
-            2,
-            &participants,
-        )
-        .unwrap();
-        wl.vote(
-            auth_ids[1].clone(),
-            vec![ChainVote {
-                chain: ForeignChain::Ethereum,
-                providers: vec![drpc()],
-                quorum: 1,
-            }],
-            2,
-            &participants,
-        )
-        .unwrap();
+        let drpc_votes = || {
+            let (id, config) = drpc();
+            NonEmptyBTreeMap::new(
+                ForeignChain::Ethereum,
+                ChainEntry {
+                    providers: NonEmptyBTreeMap::new(id, config),
+                    quorum: 1,
+                },
+            )
+        };
+        wl.vote(auth_ids[0].clone(), drpc_votes(), 2, &participants)
+            .unwrap();
+        wl.vote(auth_ids[1].clone(), drpc_votes(), 2, &participants)
+            .unwrap();
 
         // Then: applied, stored entry preserves the routing + auth shapes.
         let stored = stored_entry(&wl, ForeignChain::Ethereum).unwrap();
         assert_eq!(stored.providers.len(), 1);
+        let (_, stored_drpc) = stored.providers.iter().next().unwrap();
         assert_matches!(
-            stored.providers.first().chain_routing,
+            stored_drpc.chain_routing,
             ChainRouting::QueryParam { ref name, .. } if name == "network"
         );
         assert_matches!(
-            stored.providers.first().auth_scheme,
+            stored_drpc.auth_scheme,
             AuthScheme::Query { ref name } if name == "dkey"
         );
     }
@@ -759,14 +703,14 @@ mod tests {
         let mut wl = ForeignChainRpcWhitelist::default();
         wl.vote(
             auth_ids[0].clone(),
-            vec![chain_vote(ForeignChain::Ethereum, &["alchemy"], 1)],
+            single_chain_votes(ForeignChain::Ethereum, &["alchemy"], 1),
             3,
             &participants,
         )
         .unwrap();
         wl.vote(
             auth_ids[1].clone(),
-            vec![chain_vote(ForeignChain::Ethereum, &["alchemy"], 1)],
+            single_chain_votes(ForeignChain::Ethereum, &["alchemy"], 1),
             3,
             &participants,
         )
@@ -780,7 +724,7 @@ mod tests {
         let applied = wl
             .vote(
                 auth_ids[2].clone(),
-                vec![chain_vote(ForeignChain::Ethereum, &["alchemy"], 1)],
+                single_chain_votes(ForeignChain::Ethereum, &["alchemy"], 1),
                 3,
                 &smaller,
             )
@@ -802,14 +746,14 @@ mod tests {
         let p1 = auth_ids[1].clone();
         wl.vote(
             p0.clone(),
-            vec![chain_vote(ForeignChain::Ethereum, &["alchemy"], 1)],
+            single_chain_votes(ForeignChain::Ethereum, &["alchemy"], 1),
             3,
             &participants,
         )
         .unwrap();
         wl.vote(
             p1.clone(),
-            vec![chain_vote(ForeignChain::Polygon, &["ankr"], 1)],
+            single_chain_votes(ForeignChain::Polygon, &["ankr"], 1),
             3,
             &participants,
         )

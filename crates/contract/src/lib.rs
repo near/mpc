@@ -15,7 +15,7 @@ pub mod update;
 #[cfg(feature = "dev-utils")]
 pub mod utils;
 
-pub mod pr1_state;
+pub mod pr_3216_state;
 pub mod v3_9_1_state;
 
 #[cfg(feature = "bench-contract-methods")]
@@ -1471,14 +1471,19 @@ impl MpcContract {
         self.tee_state.get_allowed_measurements()
     }
 
-    /// Vote on per-chain RPC provider whitelist state. Each `ChainVote` carries the
-    /// proposed full provider list and the RPC response quorum for that chain. The
-    /// chain's stored state is replaced once the protocol's signing threshold of
-    /// participants has voted the same `(providers, threshold)` pair.
+    /// Vote on per-chain RPC provider whitelist state. The input is keyed by
+    /// `ForeignChain`; each `ChainEntry` value carries the proposed full provider list
+    /// and the RPC response quorum for that chain. The chain's stored state is replaced
+    /// once the protocol's signing threshold of participants has voted the same
+    /// `(providers, quorum)` pair. `NonEmptyBTreeMap` enforces a non-empty batch and
+    /// at-most-one entry per chain at borsh-deserialize time.
     #[handle_result]
     pub fn vote_update_foreign_chain_providers(
         &mut self,
-        #[serializer(borsh)] votes: Vec<dtos::ChainVote>,
+        #[serializer(borsh)] votes: near_mpc_bounded_collections::NonEmptyBTreeMap<
+            dtos::ForeignChain,
+            dtos::ChainEntry,
+        >,
     ) -> Result<(), Error> {
         log!(
             "vote_update_foreign_chain_providers: signer={}, n_votes={}",
@@ -1842,14 +1847,14 @@ impl MpcContract {
             }
         };
 
-        // PR 1 (#3216) shipped `foreign_chain_rpc_whitelist` with a nested-map layout
-        // that PR 2 reshaped. Guards against an environment where PR 1 was deployed
-        // standalone before PR 2 lands.
-        match try_state_read::<pr1_state::MpcContract>() {
+        // PR 3216 shipped `foreign_chain_rpc_whitelist` with a nested-map layout
+        // that PR 3249 reshaped. Guards against an environment where PR 3216 was
+        // deployed standalone before PR 3249 lands.
+        match try_state_read::<pr_3216_state::MpcContract>() {
             Ok(Some(state)) => return Ok(state.into()),
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => {
-                log!("failed to deserialize state into PR 1 state: {:?}", err);
+                log!("failed to deserialize state into PR 3216 state: {:?}", err);
             }
         };
 

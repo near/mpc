@@ -1,7 +1,7 @@
+use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
-    AuthScheme, ChainEntry, ChainRouting, ChainVote, ForeignChain, Protocol, ProviderEntry,
-    ProviderId,
+    AuthScheme, ChainEntry, ChainRouting, ForeignChain, Protocol, ProviderConfig, ProviderId,
 };
 use near_sdk::borsh;
 use near_sdk::{CurveType, PublicKey};
@@ -84,17 +84,19 @@ async fn vote_update_foreign_chain_providers__should_apply_chain_state_after_thr
         .build()
         .await;
 
-    let proposed_entry = ProviderEntry {
-        provider_id: ProviderId("alchemy".to_string()),
+    let proposed_id = ProviderId("alchemy".to_string());
+    let proposed_config = ProviderConfig {
         base_url: "https://eth-mainnet.g.alchemy.com/v2/".to_string(),
         auth_scheme: AuthScheme::None,
         chain_routing: ChainRouting::Embedded,
     };
-    let votes = vec![ChainVote {
-        chain: ForeignChain::Ethereum,
-        providers: vec![proposed_entry.clone()],
-        quorum: 1,
-    }];
+    let votes = NonEmptyBTreeMap::new(
+        ForeignChain::Ethereum,
+        ChainEntry {
+            providers: NonEmptyBTreeMap::new(proposed_id.clone(), proposed_config.clone()),
+            quorum: 1,
+        },
+    );
 
     // Entry-point args are borsh-encoded.
     let args = borsh::to_vec(&votes)?;
@@ -126,7 +128,7 @@ async fn vote_update_foreign_chain_providers__should_apply_chain_state_after_thr
         .get(&ForeignChain::Ethereum)
         .expect("Ethereum entry should be present after 6 matching votes");
     assert_eq!(stored.providers.len(), 1);
-    assert_eq!(stored.providers[0], proposed_entry);
+    assert_eq!(stored.providers.get(&proposed_id), Some(&proposed_config));
     assert_eq!(stored.quorum, 1);
 
     Ok(())

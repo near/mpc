@@ -3,7 +3,7 @@
 #![expect(deprecated, reason = "ForeignChainConfiguration is being deprecated")]
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use near_mpc_bounded_collections::{NonEmptyBTreeSet, NonEmptyVec};
+use near_mpc_bounded_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet};
 use serde::{Deserialize, Serialize};
 use serde_with::{hex::Hex, serde_as};
 use sha2::Digest;
@@ -1010,8 +1010,8 @@ pub enum ChainRouting {
     QueryParam { name: String, value: String },
 }
 
-/// One entry in the on-chain RPC provider whitelist for a single chain. Voted in by
-/// MPC participants and read by nodes at startup to assemble the actual RPC URL
+/// One provider's per-chain configuration, stored as a value in `ChainEntry.providers`
+/// (keyed by `ProviderId`). Read by nodes at startup to assemble the actual RPC URL
 /// (`base_url` + `chain_routing` + operator-supplied token via `auth_scheme`).
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(not(target_arch = "wasm32"), derive(Serialize, Deserialize))]
@@ -1019,8 +1019,7 @@ pub enum ChainRouting {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
-pub struct ProviderEntry {
-    pub provider_id: ProviderId,
+pub struct ProviderConfig {
     /// Provider's stable base. When `chain_routing == Embedded`, the chain identifier
     /// is already inside `base_url` (subdomain or path prefix). Otherwise `base_url`
     /// is chain-agnostic and `chain_routing` carries the chain marker.
@@ -1029,9 +1028,13 @@ pub struct ProviderEntry {
     pub chain_routing: ChainRouting,
 }
 
-/// Stored state for one chain in the on-chain whitelist: the canonical (sorted)
-/// non-empty provider list and the RPC response quorum nodes should use when querying.
-/// Returned by the `allowed_foreign_chain_providers` view fn.
+/// Stored state for one chain in the on-chain whitelist: a non-empty map from
+/// `ProviderId` to that provider's per-chain configuration, plus the RPC response
+/// quorum nodes should use when querying. Returned by the
+/// `allowed_foreign_chain_providers` view fn. `NonEmptyBTreeMap` enforces a non-empty
+/// provider set and at-most-one entry per `ProviderId` at borsh-deserialize time,
+/// and the map iterates in `ProviderId` order — so the canonical hash matches across
+/// voters without an explicit sort step.
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(not(target_arch = "wasm32"), derive(Serialize, Deserialize))]
 #[cfg_attr(
@@ -1039,23 +1042,7 @@ pub struct ProviderEntry {
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct ChainEntry {
-    pub providers: NonEmptyVec<ProviderEntry>,
-    /// RPC response quorum: when a node queries the providers above, at least this
-    /// many must return the same value for the response to be accepted.
-    pub quorum: u64,
-}
-
-/// One per-chain vote: the proposed full whitelist for `chain` plus the RPC response
-/// quorum nodes should use when fanning out queries to those providers.
-#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
-#[cfg_attr(not(target_arch = "wasm32"), derive(Serialize, Deserialize))]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
-)]
-pub struct ChainVote {
-    pub chain: ForeignChain,
-    pub providers: Vec<ProviderEntry>,
+    pub providers: NonEmptyBTreeMap<ProviderId, ProviderConfig>,
     /// RPC response quorum: when a node queries the providers above, at least this
     /// many must return the same value for the response to be accepted.
     pub quorum: u64,

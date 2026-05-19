@@ -1,15 +1,17 @@
-//! State-migration shim from PR 1 (#3216, `feat: implement foreign chain RPC providers
-//! in contract`) to PR 2 (this PR).
+//! State-migration shim from PR 3216 (`feat: implement foreign chain RPC providers
+//! in contract`) to PR 3249 (this PR, which reshapes the whitelist storage and adds
+//! the vote endpoint).
 //!
-//! PR 1 shipped `ForeignChainRpcWhitelist { entries: BTreeMap<ForeignChain, BTreeMap<ProviderId, ProviderEntry>> }`
-//! with no vote endpoint, so the whitelist is guaranteed empty in any PR-1-only
-//! deployment. PR 2 reshapes that field to `{ entries: BTreeMap<ForeignChain, ChainEntry>,
+//! PR 3216 shipped `ForeignChainRpcWhitelist { entries: BTreeMap<ForeignChain, BTreeMap<ProviderId, ProviderEntry>> }`
+//! with no vote endpoint, so the whitelist is guaranteed empty in any deployment of
+//! that revision. PR 3249 reshapes that field to `{ entries: IterableMap<ForeignChain, ChainEntry>,
 //! votes: ProviderVotes }`. The two layouts are borsh-incompatible (different field
 //! count + different inner map shape), so this module reads the old shape and converts.
 //!
-//! Reachable only if PR 1's binary lands in some environment ahead of PR 2. If the
-//! team ships PR 1's main snapshot and PR 2's together, the legacy → PR 2 path via
-//! `v3_9_1_state` handles everything and this code is unused. Kept as a guard.
+//! Reachable only if PR 3216's binary lands in some environment ahead of PR 3249.
+//! If the team ships PR 3216's main snapshot and PR 3249's together, the
+//! legacy → PR 3249 path via `v3_9_1_state` handles everything and this code is
+//! unused. Kept as a guard.
 
 use borsh::BorshDeserialize;
 use near_mpc_contract_interface::types as dtos;
@@ -29,7 +31,7 @@ use crate::{
     Config, SupportedForeignChainsByNode,
 };
 
-/// PR 1's `MpcContract` layout. Identical to current `MpcContract` except the
+/// PR 3216's `MpcContract` layout. Identical to current `MpcContract` except the
 /// trailing `foreign_chain_rpc_whitelist` field uses the pre-reshape type below.
 //
 // Fields are read by `From<MpcContract>` even though rustc can't see that
@@ -54,25 +56,43 @@ pub struct MpcContract {
     pub(crate) node_migrations: NodeMigrations,
     pub(crate) legacy_pending_requests: LegacyPendingRequests,
     pub(crate) metrics: dtos::Metrics,
-    pub(crate) foreign_chain_rpc_whitelist: ForeignChainRpcWhitelistPr1,
+    pub(crate) foreign_chain_rpc_whitelist: ForeignChainRpcWhitelistPr3216,
 }
 
-/// PR 1's whitelist field shape: a single nested `BTreeMap`, no vote storage.
+/// PR 3216's whitelist field shape: a single nested `BTreeMap`, no vote storage.
 #[expect(
     dead_code,
-    reason = "field consumed by the parent borsh-deserialize then discarded — PR 1 guarantees the map is empty"
+    reason = "field consumed by the parent borsh-deserialize then discarded — PR 3216 guarantees the map is empty"
 )]
 #[derive(BorshDeserialize)]
-pub struct ForeignChainRpcWhitelistPr1 {
+pub struct ForeignChainRpcWhitelistPr3216 {
     pub(crate) entries:
-        BTreeMap<dtos::ForeignChain, BTreeMap<dtos::ProviderId, dtos::ProviderEntry>>,
+        BTreeMap<dtos::ForeignChain, BTreeMap<dtos::ProviderId, Pr3216ProviderEntry>>,
+}
+
+/// Local shadow of PR 3216's `ProviderEntry` borsh shape. PR 3249 renamed the public
+/// DTO to `ProviderConfig` and dropped the `provider_id` field (it became the map key),
+/// so the public DTO no longer matches PR 3216's on-disk bytes. PR 3216 guarantees
+/// the outer map is empty, so this inner type is never actually deserialized — but the
+/// parent `BTreeMap<ProviderId, _>` still needs a concrete `V: BorshDeserialize` to
+/// satisfy the type bound on the derive.
+#[expect(
+    dead_code,
+    reason = "fields needed for borsh layout compatibility; never read because PR 3216 map is empty"
+)]
+#[derive(BorshDeserialize)]
+pub struct Pr3216ProviderEntry {
+    pub(crate) provider_id: dtos::ProviderId,
+    pub(crate) base_url: String,
+    pub(crate) auth_scheme: dtos::AuthScheme,
+    pub(crate) chain_routing: dtos::ChainRouting,
 }
 
 impl From<MpcContract> for crate::MpcContract {
     fn from(old: MpcContract) -> Self {
-        // PR 1 had no vote endpoint, so `old.foreign_chain_rpc_whitelist.entries` is
-        // guaranteed empty. Drop it and default-initialize PR 2's reshaped whitelist
-        // (empty `entries`, empty `votes.pending`).
+        // PR 3216 had no vote endpoint, so `old.foreign_chain_rpc_whitelist.entries`
+        // is guaranteed empty. Drop it and default-initialize PR 3249's reshaped
+        // whitelist (empty `entries`, empty `votes.pending`).
         crate::MpcContract {
             protocol_state: old.protocol_state,
             pending_signature_requests: old.pending_signature_requests,

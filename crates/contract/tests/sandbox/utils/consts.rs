@@ -40,8 +40,8 @@ pub const GAS_FOR_VOTE_BEFORE_THRESHOLD: Gas = Gas::from_tgas(5);
 /// Maximum gas expected for the threshold vote that triggers the contract update.
 /// This vote is more expensive because it deploys the new contract code and executes
 /// the migration function. Raised from 185 to 190 TGas to accommodate the larger
-/// WASM and additional `pr1_state` try-read step added by the foreign-chain RPC
-/// providers feature (issue #3215); revert toward 185 once `pr1_state` is retired.
+/// WASM and additional `pr_3216_state` try-read step added by the foreign-chain RPC
+/// providers feature (issue #3215); revert toward 185 once `pr_3216_state` is retired.
 pub const MAX_GAS_FOR_THRESHOLD_VOTE: Gas = Gas::from_tgas(190);
 
 /* --- Deposit constants --- */
