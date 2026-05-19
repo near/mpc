@@ -27,7 +27,12 @@ pub const GAS_FOR_INIT: Gas = Gas::from_tgas(300);
 /// TODO(#1571): Gas cost for voting on contract updates. Reduced somewhat after
 /// optimization (#1617) by avoiding full contract code deserialization; there’s likely still
 /// room for further optimization.
-pub const GAS_FOR_VOTE_UPDATE: Gas = Gas::from_tgas(260);
+/// Bumped 260 → 290 TGas after the `Votes<V>` + `IterableMap` migration grew the
+/// reproducible WASM. The threshold vote spawns `deploy_contract(code)` whose
+/// action cost scales with code size; the prior 260 TGas budget was failing with
+/// `Exceeded the prepaid gas` once `burnt + promises_gas` crossed the limit
+/// (`test_propose_update_contract_many` in particular).
+pub const GAS_FOR_VOTE_UPDATE: Gas = Gas::from_tgas(290);
 /// Gas required for votes cast before the threshold is reached (votes 1 through N-1).
 /// These votes are cheap because they only record the vote without triggering the actual
 /// contract update deployment and migration.
