@@ -191,8 +191,6 @@ jobs:
 
   fast-ci-checks:
     name: "Fast CI checks"
-    needs: changes
-    if: ${{ always() && needs.changes.outputs.code_changed != 'false' }}
     runs-on: warp-ubuntu-2404-x64-8x
     permissions:
       contents: read
