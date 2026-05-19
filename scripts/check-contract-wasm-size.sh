@@ -13,8 +13,9 @@ WASM_PATH="${1:-target/near/mpc_contract/mpc_contract.wasm}"
 
 # NEAR max_transaction_size = 1572864; keep some headroom.
 # Raised from 1495000 to fit the on-chain RPC provider whitelist voting
-# machinery (issue #3215).
-HARD_LIMIT=1545000
+# machinery (issue #3215), then bumped again to fit the `Votes<V>` +
+# `IterableMap` migration which adds generic-monomorphization overhead.
+HARD_LIMIT=1570000
 
 
 if [[ ! -f "$WASM_PATH" ]]; then

@@ -5,7 +5,7 @@
 //!
 //! Pending votes are stored hash-only via [`Votes<V>`][crate::primitives::votes::Votes],
 //! which is backed by lazy-loaded `IterableMap`s. The applied state lives in
-//! [`AllowedProviders`] (also `IterableMap`-backed) and retains the full `ChainEntry`
+//! `AllowedProviders` (also `IterableMap`-backed) and retains the full `ChainEntry`
 //! content. The tipping voter always brings the proposal in as a call argument, so the
 //! applied state is reconstructable from the call that crosses threshold — pending
 //! state can stay hash-only without losing data on apply.
