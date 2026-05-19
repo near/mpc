@@ -11,8 +11,7 @@ use std::sync::{Arc, Mutex, Weak};
 ///
 /// This class provides two important functionalities:
 ///  - Converts a stream of optimistic blocks from the indexer into a stream of finalized
-///    blocks. The content of each block in the finalized stream is specified via the `T`
-///    type parameter.
+///    blocks.
 ///  - For each block added via `add_block`, it returns a `Weak<AtomicBlockStatus>` that can be
 ///    used to observe that block's current `BlockStatus` (non-canonical, canonical or final).
 ///
@@ -310,8 +309,7 @@ impl RecentBlocksTracker {
     }
 
     /// Adds a block to the tracker. This is expected to be called for EVERY block given by the
-    /// indexer (whether or not it is interesting). The content is whatever content that we want
-    /// to buffer for the stream of final blocks.
+    /// indexer (whether or not it is interesting).
     pub fn add_block(&mut self, block: &BlockViewLite) -> anyhow::Result<AddBlockResult> {
         if self.hash_to_node.contains_key(&block.hash) {
             anyhow::bail!("Block already exists in the tracker");

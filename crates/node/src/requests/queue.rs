@@ -474,8 +474,9 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             requests,
             completed_requests,
         } = requests;
-        let add_result = match self.recent_blocks.add_block(&block) {
-            Ok(add_result) => add_result,
+        // todo: move clock to recent blocks tracker
+        let block_ref = match self.recent_blocks.add_block(&block) {
+            Ok(add_result) => add_result.block_ref,
             Err(err) => {
                 // block already exists.
                 tracing::warn!(target: "request", "Ignoring block {:?} at height {}: {:?}", block.hash, block.height, err);
@@ -485,7 +486,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
 
         let (
             mpc_pending_queue_blocks_indexed,
-            mpc_pending_queue_finalized_blocks_indexed,
+            //mpc_pending_queue_finalized_blocks_indexed, (move this to RecentBlocksTracker)
             mpc_pending_queue_responses_indexed,
             mpc_pending_queue_matching_responses_indexed,
             request_response_latency_blocks,
@@ -494,7 +495,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
         ) = match RequestType::get_type() {
             types::RequestType::CKD => (
                 &metrics::MPC_PENDING_CKDS_QUEUE_BLOCKS_INDEXED,
-                &metrics::MPC_PENDING_CKDS_QUEUE_FINALIZED_BLOCKS_INDEXED,
+                // &metrics::MPC_PENDING_CKDS_QUEUE_FINALIZED_BLOCKS_INDEXED,
                 &metrics::MPC_PENDING_CKDS_QUEUE_RESPONSES_INDEXED,
                 &metrics::MPC_PENDING_CKDS_QUEUE_MATCHING_RESPONSES_INDEXED,
                 &metrics::CKD_REQUEST_RESPONSE_LATENCY_BLOCKS,
@@ -503,7 +504,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             ),
             types::RequestType::Signature => (
                 &metrics::MPC_PENDING_SIGNATURES_QUEUE_BLOCKS_INDEXED,
-                &metrics::MPC_PENDING_SIGNATURES_QUEUE_FINALIZED_BLOCKS_INDEXED,
+                // &metrics::MPC_PENDING_SIGNATURES_QUEUE_FINALIZED_BLOCKS_INDEXED,
                 &metrics::MPC_PENDING_SIGNATURES_QUEUE_RESPONSES_INDEXED,
                 &metrics::MPC_PENDING_SIGNATURES_QUEUE_MATCHING_RESPONSES_INDEXED,
                 &metrics::SIGNATURE_REQUEST_RESPONSE_LATENCY_BLOCKS,
@@ -512,7 +513,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             ),
             types::RequestType::VerifyForeignTx => (
                 &metrics::MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_BLOCKS_INDEXED_TOTAL,
-                &metrics::MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_FINALIZED_BLOCKS_INDEXED_TOTAL,
+                //&metrics::MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_FINALIZED_BLOCKS_INDEXED_TOTAL,
                 &metrics::MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_RESPONSES_INDEXED_TOTAL,
                 &metrics::MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_MATCHING_RESPONSES_INDEXED_TOTAL,
                 &metrics::VERIFY_FOREIGN_TXS_REQUEST_RESPONSE_LATENCY_BLOCKS,
@@ -563,15 +564,15 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                     &self.clock,
                     request.clone(),
                     block.height,
-                    add_result.block_ref.clone(),
+                    block_ref.clone(),
                     &self.all_participants,
                     self.clock.now(),
                 ));
         }
         for response in completed_requests {
-            self.requests.entry(response).and_modify(|queued_request| {
-                queued_request.add_response(add_result.block_ref.clone())
-            });
+            self.requests
+                .entry(response)
+                .and_modify(|queued_request| queued_request.add_response(block_ref.clone()));
         }
     }
 
