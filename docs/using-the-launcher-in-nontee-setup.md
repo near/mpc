@@ -54,7 +54,9 @@ See `deployment/cvm-deployment/launcher_docker_compose_nontee.yaml` for an examp
 
 ### 2. Prepare the user configuration file
 
-Create a `user-config.toml` file (TOML format) with `[launcher_config]` and `[mpc_node_config]` sections. See `deployment/cvm-deployment/user-config.toml` for an example. The `[launcher_config]` section uses an `image_reference` field for the Docker image reference (e.g., `image_reference = "nearone/mpc-node"`).
+Create a `user-config.toml` file (TOML format) with `[launcher_config]` and `[mpc_node_config]` sections. The `[launcher_config]` section uses an `image_reference` field for the Docker image reference (e.g., `image_reference = "nearone/mpc-node"`).
+
+For the non-TEE / local-dev launcher path, use **`deployment/cvm-deployment/ci-config.toml`** as the starting point — it boots cheaply on a small machine using mainnet's embedded genesis. The sibling **`deployment/cvm-deployment/user-config.toml`** is a real testnet operator template with `chain_id = "testnet"` and `download_genesis = true`, which downloads the multi-GB testnet genesis at startup and OOMs small CI/dev runners (see #2720).
 
 This file is read by the launcher and passed into the MPC container.
 
