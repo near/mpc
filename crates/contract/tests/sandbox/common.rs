@@ -13,7 +13,7 @@ use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
-        participants::{ParticipantId, ParticipantInfo, Participants},
+        participants::{ParticipantInfo, Participants},
         test_utils::{bogus_ed25519_public_key, infer_purpose_from_protocol},
         thresholds::{Threshold, ThresholdParameters},
     },
@@ -39,7 +39,6 @@ use near_mpc_sdk::foreign_chain::{ExtractedValue, ForeignChainRpcRequest, Hash25
 use near_workspaces::{network::Sandbox, result::ExecutionSuccess, Contract};
 use near_workspaces::{result::Execution, Account, Worker};
 use rand_core::CryptoRngCore;
-use serde::Serialize;
 use serde_json::json;
 use signature::hazmat::PrehashSigner;
 use std::collections::BTreeSet;
@@ -588,7 +587,7 @@ pub async fn execute_key_generation_and_add_random_state(
         ThresholdParameters::new(participants, Threshold::new(threshold.0 + 1)).unwrap();
     let dummy_proposal = json!({
         "prospective_epoch_id": 1,
-        "proposal": OldThresholdParameters::from(&dummy_threshold_parameters),
+        "proposal": &dummy_threshold_parameters,
     });
     accounts[0]
         .call(contract.id(), method_names::VOTE_NEW_PARAMETERS)
@@ -834,84 +833,4 @@ pub fn polygon_evm_request() -> ForeignChainRpcRequest {
         extractors: vec![EvmExtractor::BlockHash],
         finality: EvmFinality::Finalized,
     })
-}
-
-/// Mirrors the pre-3.10 JSON wire shape of `ThresholdParameters` so that tests
-/// which deploy a production contract binary (whose DTO still expects
-/// `sign_pk`) can feed it threshold-parameter arguments. The current DTO
-/// accepts both field names via `#[serde(alias = "sign_pk")]`, so this helper
-/// is safe against the current contract too. Remove this type (and every
-/// `OldThresholdParameters::from(...)` call site) once 3.10.0 is the
-/// production contract on Mainnet and Testnet.
-#[derive(Serialize)]
-pub struct OldThresholdParameters {
-    participants: OldParticipants,
-    threshold: Threshold,
-}
-
-#[derive(Serialize)]
-struct OldParticipants {
-    next_id: ParticipantId,
-    participants: Vec<(AccountId, ParticipantId, OldParticipantInfo)>,
-}
-
-#[derive(Serialize)]
-struct OldParticipantInfo {
-    url: String,
-    sign_pk: dtos::Ed25519PublicKey,
-}
-
-impl From<&ThresholdParameters> for OldThresholdParameters {
-    fn from(params: &ThresholdParameters) -> Self {
-        let participants = params
-            .participants()
-            .participants()
-            .iter()
-            .map(|(account_id, id, info)| {
-                (
-                    account_id.clone(),
-                    *id,
-                    OldParticipantInfo {
-                        url: info.url.clone(),
-                        sign_pk: info.tls_public_key.clone(),
-                    },
-                )
-            })
-            .collect();
-        OldThresholdParameters {
-            participants: OldParticipants {
-                next_id: params.participants().next_id(),
-                participants,
-            },
-            threshold: params.threshold(),
-        }
-    }
-}
-
-/// Mirrors the pre-curve-removal JSON wire shape of `DomainConfig`. Used by
-/// sandbox tests that deploy a production contract binary whose
-/// `vote_add_domains` deserializer still requires `curve`. The current
-/// contract accepts both shapes via the DTO compat shim, so this helper is
-/// safe against the current contract too. Remove this type (and every
-/// `OldDomainConfig::from(...)` call site) after the 3.10 release is the
-/// production contract on Mainnet and Testnet.
-#[derive(Serialize)]
-pub struct OldDomainConfig {
-    pub id: DomainId,
-    pub curve: Curve,
-    pub protocol: Protocol,
-    pub reconstruction_threshold: ReconstructionThreshold,
-    pub purpose: DomainPurpose,
-}
-
-impl From<&DomainConfig> for OldDomainConfig {
-    fn from(domain: &DomainConfig) -> Self {
-        OldDomainConfig {
-            id: domain.id,
-            curve: Curve::from(domain.protocol),
-            protocol: domain.protocol,
-            reconstruction_threshold: domain.reconstruction_threshold,
-            purpose: domain.purpose,
-        }
-    }
 }
