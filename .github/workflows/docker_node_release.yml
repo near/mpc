@@ -32,15 +32,16 @@ on:
         required: true
         type: string
     secrets:
-      DOCKERHUB_USERNAME:
+      DOCKERHUB_USER:
         required: true
-      DOCKERHUB_TOKEN:
+      DOCKERHUB_PAT:
         required: true
 
 jobs:
   retag-node-image:
     name: "Retag node image for release"
     runs-on: warp-ubuntu-2404-x64-2x
+    environment: production
     permissions:
       contents: read
 
@@ -48,8 +49,8 @@ jobs:
       - name: Login to Docker Hub
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ secrets.DOCKERHUB_USER }}
+          password: ${{ secrets.DOCKERHUB_PAT }}
 
       - name: Install skopeo
         run: |

@@ -19,6 +19,7 @@ jobs:
   docker-image-build:
     name: "Build and push Legacy MPC Docker image"
     runs-on: warp-ubuntu-2404-x64-8x
+    environment: production
     permissions:
       contents: read
 
@@ -46,8 +47,8 @@ jobs:
       - name: Login to Docker Hub
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ secrets.DOCKERHUB_USER }}
+          password: ${{ secrets.DOCKERHUB_PAT }}
 
       - name: Build and push MPC Node Docker image to Docker Hub
         uses: Warpbuilds/build-push-action@ec038a9f4b87a7c7ccb50ac7a26a90d46a610a81 # v6.0.9
