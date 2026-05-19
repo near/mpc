@@ -3,7 +3,7 @@
 #![expect(deprecated, reason = "ForeignChainConfiguration is being deprecated")]
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use near_mpc_bounded_collections::NonEmptyBTreeSet;
+use near_mpc_bounded_collections::{NonEmptyBTreeSet, NonEmptyVec};
 use serde::{Deserialize, Serialize};
 use serde_with::{hex::Hex, serde_as};
 use sha2::Digest;
@@ -1030,17 +1030,19 @@ pub struct ProviderEntry {
 }
 
 /// Stored state for one chain in the on-chain whitelist: the canonical (sorted)
-/// provider list and the RPC response quorum nodes should use when querying.
+/// non-empty provider list and the RPC response quorum nodes should use when querying.
 /// Returned by the `allowed_foreign_chain_providers` view fn.
-#[derive(Debug, Clone, Default, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(not(target_arch = "wasm32"), derive(Serialize, Deserialize))]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct ChainEntry {
-    pub providers: Vec<ProviderEntry>,
-    pub threshold: u64,
+    pub providers: NonEmptyVec<ProviderEntry>,
+    /// RPC response quorum: when a node queries the providers above, at least this
+    /// many must return the same value for the response to be accepted.
+    pub quorum: u64,
 }
 
 /// One per-chain vote: the proposed full whitelist for `chain` plus the RPC response
@@ -1056,7 +1058,7 @@ pub struct ChainVote {
     pub providers: Vec<ProviderEntry>,
     /// RPC response quorum: when a node queries the providers above, at least this
     /// many must return the same value for the response to be accepted.
-    pub threshold: u64,
+    pub quorum: u64,
 }
 
 #[cfg(test)]

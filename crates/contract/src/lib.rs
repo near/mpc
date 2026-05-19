@@ -1499,10 +1499,13 @@ impl MpcContract {
 
         let participants = threshold_parameters.participants();
         let participant = AuthenticatedParticipantId::new(participants)?;
-        let threshold = self.threshold()?.value();
-        let applied =
-            self.foreign_chain_rpc_whitelist
-                .vote(participant, votes, threshold, participants)?;
+        let protocol_threshold = self.threshold()?.value();
+        let applied = self.foreign_chain_rpc_whitelist.vote(
+            participant,
+            votes,
+            protocol_threshold,
+            participants,
+        )?;
         log!(
             "vote_update_foreign_chain_providers: applied chains={:?}",
             applied,

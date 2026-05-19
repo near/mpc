@@ -2,21 +2,46 @@
 //! Each `ChainVote` is a per-chain snapshot (provider list + RPC response quorum); the
 //! chain's state is replaced once the protocol's signing threshold of participants
 //! holds the same proposal.
+//!
+//! Pending votes are stored hash-only via [`Votes<V>`][crate::primitives::votes::Votes],
+//! which is backed by lazy-loaded `IterableMap`s. The applied state lives in
+//! [`AllowedProviders`] (also `IterableMap`-backed) and retains the full `ChainEntry`
+//! content. The tipping voter always brings the proposal in as a call argument, so the
+//! applied state is reconstructable from the call that crosses threshold — pending
+//! state can stay hash-only without losing data on apply.
 
 use std::collections::BTreeMap;
 
+use near_mpc_bounded_collections::NonEmptyVec;
 use near_mpc_contract_interface::types::{
     AuthScheme, ChainEntry, ChainRouting, ChainVote, ForeignChain, ProviderEntry,
 };
 use near_sdk::near;
+use near_sdk::store::IterableMap;
 
-use crate::errors::{Error, InvalidParameters};
+use crate::errors::{ConversionError, Error, InvalidParameters};
+use crate::primitives::votes::{ProposalHash, ProposalHashEncoding, Votes};
 use crate::primitives::{key_state::AuthenticatedParticipantId, participants::Participants};
+use crate::storage_keys::StorageKey;
+
+impl ProposalHashEncoding for ChainEntry {
+    fn bytes_for_hash(&self) -> Vec<u8> {
+        borsh::to_vec(self).expect("borsh serialization of ChainEntry must succeed")
+    }
+}
 
 #[near(serializers=[borsh])]
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug)]
 pub(crate) struct AllowedProviders {
-    entries: BTreeMap<ForeignChain, ChainEntry>,
+    entries: IterableMap<ForeignChain, ChainEntry>,
+}
+
+impl Default for AllowedProviders {
+    fn default() -> Self {
+        Self {
+            entries: IterableMap::new(StorageKey::AllowedForeignChainProvidersV1),
+        }
+    }
 }
 
 impl AllowedProviders {
@@ -24,49 +49,34 @@ impl AllowedProviders {
         self.entries.insert(chain, entry);
     }
 
-    /// Snapshot of the whole whitelist. Cloned so the caller can ship it across the
-    /// contract boundary without holding a borrow on `self`.
+    /// Snapshot of the whole whitelist. Collected so the caller can ship it across
+    /// the contract boundary without holding a borrow on `self`.
     pub fn snapshot(&self) -> BTreeMap<ForeignChain, ChainEntry> {
-        self.entries.clone()
+        self.entries.iter().map(|(c, e)| (*c, e.clone())).collect()
     }
 }
 
-// Flat `(participant, chain)` key (rather than a nested map) halves the BTreeMap
-// monomorphizations the contract WASM has to pay for.
 #[near(serializers=[borsh])]
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct ProviderVotes {
-    pub pending: BTreeMap<(AuthenticatedParticipantId, ForeignChain), ChainEntry>,
+    pub pending: Votes<(AuthenticatedParticipantId, ForeignChain)>,
+}
+
+impl Default for ProviderVotes {
+    fn default() -> Self {
+        Self {
+            pending: Votes::new(
+                StorageKey::ForeignChainProviderVotesByVoterV1,
+                StorageKey::ForeignChainProviderVotesByProposalV1,
+            ),
+        }
+    }
 }
 
 impl ProviderVotes {
-    /// Count pending votes matching `target` for `chain`, filtering out any row whose
-    /// participant is no longer in `current`. The filter guards against `clean_tee_status`
-    /// not having run after a resharing — stale rows can sit in `pending` until that
-    /// sweep, and we don't want them counting toward the gate.
-    fn count_for_chain(
-        &self,
-        chain: ForeignChain,
-        target: &ChainEntry,
-        current: &Participants,
-    ) -> u64 {
-        self.pending
-            .iter()
-            .filter(|((p, c), entry)| {
-                *c == chain
-                    && *entry == target
-                    && current.is_participant_given_participant_id(&p.get())
-            })
-            .count() as u64
-    }
-
-    fn clear_chain(&mut self, chain: ForeignChain) {
-        self.pending.retain(|(_, c), _| *c != chain);
-    }
-
     pub fn retain_only(&mut self, current: &Participants) {
         self.pending
-            .retain(|(p, _), _| current.is_participant_given_participant_id(&p.get()));
+            .retain_votes(|(p, _)| current.is_participant_given_participant_id(&p.get()));
     }
 }
 
@@ -78,14 +88,17 @@ pub struct ForeignChainRpcWhitelist {
 }
 
 impl ForeignChainRpcWhitelist {
-    /// Record `participant`'s votes; replace each chain's state once `threshold`
-    /// participants hold the same canonical `(providers, threshold)` pair. Returns
-    /// the chains applied this call.
+    /// Record `participant`'s votes; replace each chain's state once
+    /// `protocol_threshold` participants hold the same canonical `(providers, quorum)`
+    /// pair. `protocol_threshold` is the protocol's signing threshold (the same one
+    /// that gates threshold signatures), not to be confused with `ChainVote.quorum`,
+    /// which is the RPC response quorum nodes use when querying the listed providers.
+    /// Returns the chains applied this call.
     pub fn vote(
         &mut self,
         participant: AuthenticatedParticipantId,
         votes: Vec<ChainVote>,
-        threshold: u64,
+        protocol_threshold: u64,
         participants: &Participants,
     ) -> Result<Vec<ForeignChain>, Error> {
         if votes.is_empty() {
@@ -99,7 +112,7 @@ impl ForeignChainRpcWhitelist {
         for ChainVote {
             chain,
             providers,
-            threshold: response_quorum,
+            quorum,
         } in votes
         {
             if chains_in_batch.contains(&chain) {
@@ -109,13 +122,25 @@ impl ForeignChainRpcWhitelist {
                 .into());
             }
             chains_in_batch.push(chain);
-            let entry = canonicalize(providers, response_quorum)?;
-            self.votes
-                .pending
-                .insert((participant.clone(), chain), entry.clone());
-            if self.votes.count_for_chain(chain, &entry, participants) >= threshold {
+            let entry = canonicalize(providers, quorum)?;
+            let hash = ProposalHash::from(entry.clone());
+            // Scope the borrow on `self.votes.pending.vote` so we can mutate
+            // `self.entries`/`self.votes.pending` after `count`.
+            let count_usize = {
+                let voter_set = self.votes.pending.vote((participant.clone(), chain), hash);
+                voter_set.count_for(|(p, c)| {
+                    *c == chain && participants.is_participant_given_participant_id(&p.get())
+                })
+            };
+            let count =
+                u64::try_from(count_usize).map_err(|e| ConversionError::DataConversion {
+                    reason: format!("vote count {count_usize} does not fit in u64: {e}"),
+                })?;
+            if count >= protocol_threshold {
                 self.entries.replace(chain, entry);
-                self.votes.clear_chain(chain);
+                // Drop ALL pending rows for this chain regardless of which proposal
+                // they held — matches the previous `clear_chain` semantics.
+                self.votes.pending.retain_votes(|(_, c)| *c != chain);
                 applied.push(chain);
             }
         }
@@ -123,28 +148,35 @@ impl ForeignChainRpcWhitelist {
     }
 }
 
-/// Sort by `provider_id` for order-independent equality at threshold-check time.
-/// Errors on: empty `providers`, `threshold == 0` or exceeding `providers.len()`,
+/// Sort by `provider_id` for order-independent equality at protocol-threshold-check time.
+/// `quorum` is the RPC response quorum (`ChainVote.quorum`), not the protocol signing
+/// threshold. Errors on: empty `providers`, `quorum == 0` or exceeding `providers.len()`,
 /// duplicate `provider_id` within the vote, `PathSegment` containing a literal `/`,
 /// or `QueryParam` whose name collides with the entry's `AuthScheme::Query` name.
-fn canonicalize(mut providers: Vec<ProviderEntry>, threshold: u64) -> Result<ChainEntry, Error> {
+fn canonicalize(mut providers: Vec<ProviderEntry>, quorum: u64) -> Result<ChainEntry, Error> {
     if providers.is_empty() {
         return Err(InvalidParameters::MalformedPayload {
             reason: "ChainVote.providers must not be empty".to_string(),
         }
         .into());
     }
-    if threshold == 0 {
+    if quorum == 0 {
         return Err(InvalidParameters::MalformedPayload {
-            reason: "ChainVote.threshold must be >= 1".to_string(),
+            reason: "ChainVote.quorum must be >= 1".to_string(),
         }
         .into());
     }
-    let providers_len = providers.len() as u64;
-    if threshold > providers_len {
+    let providers_len =
+        u64::try_from(providers.len()).map_err(|e| ConversionError::DataConversion {
+            reason: format!(
+                "providers.len() {} does not fit in u64: {e}",
+                providers.len()
+            ),
+        })?;
+    if quorum > providers_len {
         return Err(InvalidParameters::MalformedPayload {
             reason: format!(
-                "ChainVote.threshold ({threshold}) exceeds providers.len() ({providers_len}) — RPC response quorum is unreachable",
+                "ChainVote.quorum ({quorum}) exceeds providers.len() ({providers_len}) — RPC response quorum is unreachable",
             ),
         }
         .into());
@@ -191,10 +223,8 @@ fn canonicalize(mut providers: Vec<ProviderEntry>, threshold: u64) -> Result<Cha
             }
         }
     }
-    Ok(ChainEntry {
-        providers,
-        threshold,
-    })
+    let providers = NonEmptyVec::try_from(providers).expect("providers non-empty (checked above)");
+    Ok(ChainEntry { providers, quorum })
 }
 
 #[cfg(test)]
@@ -216,23 +246,28 @@ mod tests {
         }
     }
 
-    fn chain_vote(chain: ForeignChain, ids: &[&str], threshold: u64) -> ChainVote {
+    fn chain_vote(chain: ForeignChain, ids: &[&str], quorum: u64) -> ChainVote {
         ChainVote {
             chain,
             providers: ids.iter().map(|id| provider(id)).collect(),
-            threshold,
+            quorum,
         }
     }
 
-    fn auth_as(
-        participants: &crate::primitives::participants::Participants,
-        participant_index: usize,
-    ) -> AuthenticatedParticipantId {
-        let (account_id, _, _) = &participants.participants()[participant_index];
-        let mut ctx = VMContextBuilder::new();
-        ctx.signer_account_id(account_id.clone());
-        testing_env!(ctx.build());
-        AuthenticatedParticipantId::new(participants).unwrap()
+    /// Build `n` participants and pre-authenticate each one. The pattern intentionally
+    /// runs all `testing_env!` resets *before* any storage-backed state is touched —
+    /// later vote ops can then write to the mocked storage without an env reset
+    /// wiping prior writes.
+    fn setup(n: usize) -> (Participants, Vec<AuthenticatedParticipantId>) {
+        let participants = gen_participants(n);
+        let mut auth_ids = Vec::with_capacity(n);
+        for (account_id, _, _) in participants.participants() {
+            let mut ctx = VMContextBuilder::new();
+            ctx.signer_account_id(account_id.clone());
+            testing_env!(ctx.build());
+            auth_ids.push(AuthenticatedParticipantId::new(&participants).unwrap());
+        }
+        (participants, auth_ids)
     }
 
     fn assert_malformed(err: Error, reason_substring: &str) {
@@ -251,17 +286,41 @@ mod tests {
         wl.entries.snapshot().get(&chain).cloned()
     }
 
+    /// Total voters with a pending vote across all chains/proposals.
+    fn pending_voter_count(wl: &ForeignChainRpcWhitelist) -> usize {
+        wl.votes.pending.all().values().map(|s| s.len()).sum()
+    }
+
+    /// Does `voter` currently hold any pending vote at all?
+    fn has_pending_vote(
+        wl: &ForeignChainRpcWhitelist,
+        voter: &(AuthenticatedParticipantId, ForeignChain),
+    ) -> bool {
+        wl.votes.pending.all().values().any(|s| s.contains(voter))
+    }
+
+    /// The `ProposalHash` that `voter` is currently holding (if any).
+    fn pending_proposal_hash_for(
+        wl: &ForeignChainRpcWhitelist,
+        voter: &(AuthenticatedParticipantId, ForeignChain),
+    ) -> Option<ProposalHash> {
+        wl.votes
+            .pending
+            .all()
+            .into_iter()
+            .find_map(|(h, set)| set.contains(voter).then_some(h))
+    }
+
     #[test]
     fn vote__should_apply_chain_when_all_participants_match() {
         // Given
-        let participants = gen_participants(2);
+        let (participants, auth_ids) = setup(2);
         let mut wl = ForeignChainRpcWhitelist::default();
 
         // When
-        let p0 = auth_as(&participants, 0);
         let applied_p0 = wl
             .vote(
-                p0,
+                auth_ids[0].clone(),
                 vec![chain_vote(ForeignChain::Ethereum, &["alchemy"], 1)],
                 2,
                 &participants,
@@ -272,12 +331,11 @@ mod tests {
             "first vote can't reach threshold alone"
         );
         assert!(stored_entry(&wl, ForeignChain::Ethereum).is_none());
-        assert_eq!(wl.votes.pending.len(), 1);
+        assert_eq!(pending_voter_count(&wl), 1);
 
-        let p1 = auth_as(&participants, 1);
         let applied_p1 = wl
             .vote(
-                p1,
+                auth_ids[1].clone(),
                 vec![chain_vote(ForeignChain::Ethereum, &["alchemy"], 1)],
                 2,
                 &participants,
@@ -289,32 +347,30 @@ mod tests {
         let stored = stored_entry(&wl, ForeignChain::Ethereum).unwrap();
         assert_eq!(stored.providers.len(), 1);
         assert_eq!(
-            stored.providers[0].provider_id,
+            stored.providers.first().provider_id,
             ProviderId("alchemy".to_string())
         );
-        assert_eq!(stored.threshold, 1);
-        assert!(wl.votes.pending.is_empty());
+        assert_eq!(stored.quorum, 1);
+        assert_eq!(pending_voter_count(&wl), 0);
     }
 
     #[test]
     fn vote__should_canonicalize_provider_order_for_threshold_comparison() {
         // Two participants submit the same logical set in different orders.
         // Given
-        let participants = gen_participants(2);
+        let (participants, auth_ids) = setup(2);
         let mut wl = ForeignChainRpcWhitelist::default();
 
         // When
-        let p0 = auth_as(&participants, 0);
         wl.vote(
-            p0,
+            auth_ids[0].clone(),
             vec![chain_vote(ForeignChain::Ethereum, &["alchemy", "ankr"], 1)],
             2,
             &participants,
         )
         .unwrap();
-        let p1 = auth_as(&participants, 1);
         wl.vote(
-            p1,
+            auth_ids[1].clone(),
             vec![chain_vote(ForeignChain::Ethereum, &["ankr", "alchemy"], 1)],
             2,
             &participants,
@@ -329,14 +385,13 @@ mod tests {
     #[test]
     fn vote__should_apply_chains_independently() {
         // Given
-        let participants = gen_participants(2);
+        let (participants, auth_ids) = setup(2);
         let mut wl = ForeignChainRpcWhitelist::default();
 
         // When: both participants agree on Ethereum, disagree on Polygon.
-        let p0 = auth_as(&participants, 0);
         let applied_p0 = wl
             .vote(
-                p0,
+                auth_ids[0].clone(),
                 vec![
                     chain_vote(ForeignChain::Ethereum, &["alchemy"], 1),
                     chain_vote(ForeignChain::Polygon, &["ankr"], 1),
@@ -349,10 +404,9 @@ mod tests {
             applied_p0.is_empty(),
             "first vote can't reach threshold alone"
         );
-        let p1 = auth_as(&participants, 1);
         let applied_p1 = wl
             .vote(
-                p1,
+                auth_ids[1].clone(),
                 vec![
                     chain_vote(ForeignChain::Ethereum, &["alchemy"], 1),
                     chain_vote(ForeignChain::Polygon, &["infura"], 1),
@@ -366,17 +420,20 @@ mod tests {
         assert_eq!(applied_p1, vec![ForeignChain::Ethereum]);
         assert!(stored_entry(&wl, ForeignChain::Ethereum).is_some());
         assert!(stored_entry(&wl, ForeignChain::Polygon).is_none());
-        for (_, chain) in wl.votes.pending.keys() {
-            assert_eq!(*chain, ForeignChain::Polygon);
+        // Pending should only contain Polygon votes (Ethereum was cleared on apply).
+        for voter_set in wl.votes.pending.all().values() {
+            for (_, chain) in voter_set {
+                assert_eq!(*chain, ForeignChain::Polygon);
+            }
         }
     }
 
     #[test]
     fn vote__should_overwrite_only_mentioned_chain_slots_on_recast() {
         // Given
-        let participants = gen_participants(2);
+        let (participants, auth_ids) = setup(2);
         let mut wl = ForeignChainRpcWhitelist::default();
-        let p0 = auth_as(&participants, 0);
+        let p0 = auth_ids[0].clone();
         wl.vote(
             p0.clone(),
             vec![chain_vote(ForeignChain::Polygon, &["ankr"], 1)],
@@ -395,19 +452,16 @@ mod tests {
         .unwrap();
 
         // Then
-        assert!(wl
-            .votes
-            .pending
-            .contains_key(&(p0.clone(), ForeignChain::Polygon)));
-        assert!(wl.votes.pending.contains_key(&(p0, ForeignChain::Ethereum)));
+        assert!(has_pending_vote(&wl, &(p0.clone(), ForeignChain::Polygon)));
+        assert!(has_pending_vote(&wl, &(p0, ForeignChain::Ethereum)));
     }
 
     #[test]
     fn vote__should_overwrite_same_chain_slot_with_latest_proposal() {
         // Given: p0 has voted Polygon with providers=[alchemy], response quorum=1.
-        let participants = gen_participants(2);
+        let (participants, auth_ids) = setup(2);
         let mut wl = ForeignChainRpcWhitelist::default();
-        let p0 = auth_as(&participants, 0);
+        let p0 = auth_ids[0].clone();
         wl.vote(
             p0.clone(),
             vec![chain_vote(ForeignChain::Polygon, &["alchemy"], 1)],
@@ -426,44 +480,39 @@ mod tests {
         )
         .unwrap();
 
-        // Then: only one pending row for (p0, Polygon), holding the second proposal.
-        assert_eq!(
-            wl.votes
-                .pending
-                .keys()
-                .filter(|(p, c)| *p == p0 && *c == ForeignChain::Polygon)
-                .count(),
-            1,
-        );
-        let slot = wl.votes.pending.get(&(p0, ForeignChain::Polygon)).unwrap();
-        assert_eq!(slot.providers.len(), 2);
-        assert_eq!(
-            slot.providers[0].provider_id,
-            ProviderId("ankr".to_string())
-        );
-        assert_eq!(
-            slot.providers[1].provider_id,
-            ProviderId("drpc".to_string())
-        );
-        assert_eq!(slot.threshold, 2);
+        // Then: exactly one pending row for (p0, Polygon), holding the SECOND proposal.
+        // Since pending votes are hash-only, verify by comparing the stored
+        // ProposalHash against the hash of the freshly-canonicalized expected entry.
+        let voters_for_p0_polygon = wl
+            .votes
+            .pending
+            .all()
+            .into_iter()
+            .filter(|(_, set)| set.contains(&(p0.clone(), ForeignChain::Polygon)))
+            .count();
+        assert_eq!(voters_for_p0_polygon, 1);
+
+        let expected_entry = canonicalize(vec![provider("ankr"), provider("drpc")], 2).unwrap();
+        let expected_hash = ProposalHash::from(expected_entry);
+        let actual_hash = pending_proposal_hash_for(&wl, &(p0, ForeignChain::Polygon))
+            .expect("expected pending row for (p0, Polygon)");
+        assert_eq!(actual_hash, expected_hash);
     }
 
     #[test]
     fn vote__should_replace_full_chain_state_on_apply() {
         // Given: chain currently holds [alchemy, ankr].
-        let participants = gen_participants(2);
+        let (participants, auth_ids) = setup(2);
         let mut wl = ForeignChainRpcWhitelist::default();
-        let p0 = auth_as(&participants, 0);
         wl.vote(
-            p0,
+            auth_ids[0].clone(),
             vec![chain_vote(ForeignChain::Ethereum, &["alchemy", "ankr"], 1)],
             2,
             &participants,
         )
         .unwrap();
-        let p1 = auth_as(&participants, 1);
         wl.vote(
-            p1,
+            auth_ids[1].clone(),
             vec![chain_vote(ForeignChain::Ethereum, &["alchemy", "ankr"], 1)],
             2,
             &participants,
@@ -471,17 +520,15 @@ mod tests {
         .unwrap();
 
         // When: both vote a new state [drpc] (alchemy + ankr both removed in one move).
-        let p0 = auth_as(&participants, 0);
         wl.vote(
-            p0,
+            auth_ids[0].clone(),
             vec![chain_vote(ForeignChain::Ethereum, &["drpc"], 1)],
             2,
             &participants,
         )
         .unwrap();
-        let p1 = auth_as(&participants, 1);
         wl.vote(
-            p1,
+            auth_ids[1].clone(),
             vec![chain_vote(ForeignChain::Ethereum, &["drpc"], 1)],
             2,
             &participants,
@@ -492,28 +539,28 @@ mod tests {
         let stored = stored_entry(&wl, ForeignChain::Ethereum).unwrap();
         assert_eq!(stored.providers.len(), 1);
         assert_eq!(
-            stored.providers[0].provider_id,
+            stored.providers.first().provider_id,
             ProviderId("drpc".to_string())
         );
     }
 
     #[test]
     fn vote__should_return_err_on_empty_batch() {
-        let participants = gen_participants(2);
+        let (participants, auth_ids) = setup(2);
         let mut wl = ForeignChainRpcWhitelist::default();
-        let p0 = auth_as(&participants, 0);
-        let err = wl.vote(p0, vec![], 2, &participants).unwrap_err();
+        let err = wl
+            .vote(auth_ids[0].clone(), vec![], 2, &participants)
+            .unwrap_err();
         assert_malformed(err, "non-empty");
     }
 
     #[test]
     fn vote__should_return_err_on_duplicate_chain_in_batch() {
-        let participants = gen_participants(2);
+        let (participants, auth_ids) = setup(2);
         let mut wl = ForeignChainRpcWhitelist::default();
-        let p0 = auth_as(&participants, 0);
         let err = wl
             .vote(
-                p0,
+                auth_ids[0].clone(),
                 vec![
                     chain_vote(ForeignChain::Ethereum, &["alchemy"], 1),
                     chain_vote(ForeignChain::Ethereum, &["ankr"], 1),
@@ -527,16 +574,15 @@ mod tests {
 
     #[test]
     fn vote__should_return_err_on_empty_providers() {
-        let participants = gen_participants(2);
+        let (participants, auth_ids) = setup(2);
         let mut wl = ForeignChainRpcWhitelist::default();
-        let p0 = auth_as(&participants, 0);
         let err = wl
             .vote(
-                p0,
+                auth_ids[0].clone(),
                 vec![ChainVote {
                     chain: ForeignChain::Ethereum,
                     providers: vec![],
-                    threshold: 1,
+                    quorum: 1,
                 }],
                 2,
                 &participants,
@@ -546,29 +592,27 @@ mod tests {
     }
 
     #[test]
-    fn vote__should_return_err_on_zero_threshold() {
-        let participants = gen_participants(2);
+    fn vote__should_return_err_on_zero_quorum() {
+        let (participants, auth_ids) = setup(2);
         let mut wl = ForeignChainRpcWhitelist::default();
-        let p0 = auth_as(&participants, 0);
         let err = wl
             .vote(
-                p0,
+                auth_ids[0].clone(),
                 vec![chain_vote(ForeignChain::Ethereum, &["alchemy"], 0)],
                 2,
                 &participants,
             )
             .unwrap_err();
-        assert_malformed(err, "threshold must be >= 1");
+        assert_malformed(err, "quorum must be >= 1");
     }
 
     #[test]
-    fn vote__should_return_err_on_threshold_exceeding_providers_len() {
-        let participants = gen_participants(2);
+    fn vote__should_return_err_on_quorum_exceeding_providers_len() {
+        let (participants, auth_ids) = setup(2);
         let mut wl = ForeignChainRpcWhitelist::default();
-        let p0 = auth_as(&participants, 0);
         let err = wl
             .vote(
-                p0,
+                auth_ids[0].clone(),
                 vec![chain_vote(ForeignChain::Ethereum, &["alchemy", "ankr"], 3)],
                 2,
                 &participants,
@@ -579,12 +623,11 @@ mod tests {
 
     #[test]
     fn vote__should_return_err_on_duplicate_provider_in_chain_vote() {
-        let participants = gen_participants(2);
+        let (participants, auth_ids) = setup(2);
         let mut wl = ForeignChainRpcWhitelist::default();
-        let p0 = auth_as(&participants, 0);
         let err = wl
             .vote(
-                p0,
+                auth_ids[0].clone(),
                 vec![chain_vote(
                     ForeignChain::Ethereum,
                     &["alchemy", "alchemy"],
@@ -599,9 +642,8 @@ mod tests {
 
     #[test]
     fn vote__should_return_err_on_path_segment_with_slash() {
-        let participants = gen_participants(2);
+        let (participants, auth_ids) = setup(2);
         let mut wl = ForeignChainRpcWhitelist::default();
-        let p0 = auth_as(&participants, 0);
         let bad = ProviderEntry {
             provider_id: ProviderId("ankr".to_string()),
             base_url: "https://rpc.ankr.com".to_string(),
@@ -612,11 +654,11 @@ mod tests {
         };
         let err = wl
             .vote(
-                p0,
+                auth_ids[0].clone(),
                 vec![ChainVote {
                     chain: ForeignChain::Ethereum,
                     providers: vec![bad],
-                    threshold: 1,
+                    quorum: 1,
                 }],
                 2,
                 &participants,
@@ -627,9 +669,8 @@ mod tests {
 
     #[test]
     fn vote__should_return_err_on_query_param_name_colliding_with_auth_query() {
-        let participants = gen_participants(2);
+        let (participants, auth_ids) = setup(2);
         let mut wl = ForeignChainRpcWhitelist::default();
-        let p0 = auth_as(&participants, 0);
         let bad = ProviderEntry {
             provider_id: ProviderId("drpc".to_string()),
             base_url: "https://lb.drpc.org/ogrpc".to_string(),
@@ -643,11 +684,11 @@ mod tests {
         };
         let err = wl
             .vote(
-                p0,
+                auth_ids[0].clone(),
                 vec![ChainVote {
                     chain: ForeignChain::Ethereum,
                     providers: vec![bad],
-                    threshold: 1,
+                    quorum: 1,
                 }],
                 2,
                 &participants,
@@ -659,7 +700,7 @@ mod tests {
     #[test]
     fn vote__should_accept_non_colliding_query_param_and_auth_query() {
         // Given
-        let participants = gen_participants(2);
+        let (participants, auth_ids) = setup(2);
         let mut wl = ForeignChainRpcWhitelist::default();
         let drpc = || ProviderEntry {
             provider_id: ProviderId("drpc".to_string()),
@@ -674,25 +715,23 @@ mod tests {
         };
 
         // When: two participants vote the same well-formed entry.
-        let p0 = auth_as(&participants, 0);
         wl.vote(
-            p0,
+            auth_ids[0].clone(),
             vec![ChainVote {
                 chain: ForeignChain::Ethereum,
                 providers: vec![drpc()],
-                threshold: 1,
+                quorum: 1,
             }],
             2,
             &participants,
         )
         .unwrap();
-        let p1 = auth_as(&participants, 1);
         wl.vote(
-            p1,
+            auth_ids[1].clone(),
             vec![ChainVote {
                 chain: ForeignChain::Ethereum,
                 providers: vec![drpc()],
-                threshold: 1,
+                quorum: 1,
             }],
             2,
             &participants,
@@ -703,11 +742,11 @@ mod tests {
         let stored = stored_entry(&wl, ForeignChain::Ethereum).unwrap();
         assert_eq!(stored.providers.len(), 1);
         assert_matches!(
-            stored.providers[0].chain_routing,
+            stored.providers.first().chain_routing,
             ChainRouting::QueryParam { ref name, .. } if name == "network"
         );
         assert_matches!(
-            stored.providers[0].auth_scheme,
+            stored.providers.first().auth_scheme,
             AuthScheme::Query { ref name } if name == "dkey"
         );
     }
@@ -716,19 +755,17 @@ mod tests {
     fn vote__should_not_count_stale_non_participant_votes() {
         // Given: 3 participants; p0 and p1 each vote the same proposal — chain
         // hasn't applied yet (count = 2, threshold = 3).
-        let participants = gen_participants(3);
+        let (participants, auth_ids) = setup(3);
         let mut wl = ForeignChainRpcWhitelist::default();
-        let p0 = auth_as(&participants, 0);
         wl.vote(
-            p0,
+            auth_ids[0].clone(),
             vec![chain_vote(ForeignChain::Ethereum, &["alchemy"], 1)],
             3,
             &participants,
         )
         .unwrap();
-        let p1 = auth_as(&participants, 1);
         wl.vote(
-            p1,
+            auth_ids[1].clone(),
             vec![chain_vote(ForeignChain::Ethereum, &["alchemy"], 1)],
             3,
             &participants,
@@ -740,10 +777,9 @@ mod tests {
         // `retain_only` is NOT called (simulating a missed `clean_tee_status`).
         // p2 (still a participant in the smaller set) casts the same vote.
         let smaller = participants.subset(2..3);
-        let p2 = auth_as(&participants, 2);
         let applied = wl
             .vote(
-                p2,
+                auth_ids[2].clone(),
                 vec![chain_vote(ForeignChain::Ethereum, &["alchemy"], 1)],
                 3,
                 &smaller,
@@ -751,8 +787,8 @@ mod tests {
             .unwrap();
 
         // Then: chain still does NOT apply because p0/p1's stale rows are
-        // filtered out of count_for_chain — only p2's vote (count = 1) is
-        // counted against threshold = 3.
+        // filtered out of the count_for predicate — only p2's vote (count = 1)
+        // is counted against threshold = 3.
         assert!(applied.is_empty());
         assert!(stored_entry(&wl, ForeignChain::Ethereum).is_none());
     }
@@ -760,10 +796,10 @@ mod tests {
     #[test]
     fn clean_non_participant_votes__should_drop_stale_votes() {
         // Given
-        let participants = gen_participants(3);
+        let (participants, auth_ids) = setup(3);
         let mut wl = ForeignChainRpcWhitelist::default();
-        let p0 = auth_as(&participants, 0);
-        let p1 = auth_as(&participants, 1);
+        let p0 = auth_ids[0].clone();
+        let p1 = auth_ids[1].clone();
         wl.vote(
             p0.clone(),
             vec![chain_vote(ForeignChain::Ethereum, &["alchemy"], 1)],
@@ -784,7 +820,7 @@ mod tests {
         wl.votes.retain_only(&smaller);
 
         // Then
-        assert!(!wl.votes.pending.contains_key(&(p0, ForeignChain::Ethereum)));
-        assert!(wl.votes.pending.contains_key(&(p1, ForeignChain::Polygon)));
+        assert!(!has_pending_vote(&wl, &(p0, ForeignChain::Ethereum)));
+        assert!(has_pending_vote(&wl, &(p1, ForeignChain::Polygon)));
     }
 }

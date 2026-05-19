@@ -93,7 +93,7 @@ async fn vote_update_foreign_chain_providers__should_apply_chain_state_after_thr
     let votes = vec![ChainVote {
         chain: ForeignChain::Ethereum,
         providers: vec![proposed_entry.clone()],
-        threshold: 1,
+        quorum: 1,
     }];
 
     // Entry-point args are borsh-encoded.
@@ -127,7 +127,7 @@ async fn vote_update_foreign_chain_providers__should_apply_chain_state_after_thr
         .expect("Ethereum entry should be present after 6 matching votes");
     assert_eq!(stored.providers.len(), 1);
     assert_eq!(stored.providers[0], proposed_entry);
-    assert_eq!(stored.threshold, 1);
+    assert_eq!(stored.quorum, 1);
 
     Ok(())
 }

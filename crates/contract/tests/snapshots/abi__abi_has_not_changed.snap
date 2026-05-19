@@ -116,14 +116,24 @@ expression: abi
                   "elements": "(ForeignChain, ChainEntry)"
                 }
               },
+              "BoundedVec<ProviderEntry, 1, 18446744073709551615>": {
+                "Sequence": {
+                  "length_width": 4,
+                  "length_range": {
+                    "start": 1,
+                    "end": 18446744073709551615
+                  },
+                  "elements": "ProviderEntry"
+                }
+              },
               "ChainEntry": {
                 "Struct": [
                   [
                     "providers",
-                    "Vec<ProviderEntry>"
+                    "BoundedVec<ProviderEntry, 1, 18446744073709551615>"
                   ],
                   [
-                    "threshold",
+                    "quorum",
                     "u64"
                   ]
                 ]
@@ -310,16 +320,6 @@ expression: abi
                     "end": 4294967295
                   },
                   "elements": "u8"
-                }
-              },
-              "Vec<ProviderEntry>": {
-                "Sequence": {
-                  "length_width": 4,
-                  "length_range": {
-                    "start": 0,
-                    "end": 4294967295
-                  },
-                  "elements": "ProviderEntry"
                 }
               },
               "u64": {
@@ -1953,7 +1953,7 @@ expression: abi
                         "Vec<ProviderEntry>"
                       ],
                       [
-                        "threshold",
+                        "quorum",
                         "u64"
                       ]
                     ]
