@@ -42,37 +42,40 @@ jobs:
   retag-launcher:
     name: "Retag mpc-launcher"
     needs: release-info
+    environment: production
     uses: ./.github/workflows/docker_launcher_release.yml
     with:
       source-tag: "main-${{ needs.release-info.outputs.short-sha }}"
       release-tag: ${{ needs.release-info.outputs.version }}
     secrets:
-      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      DOCKERHUB_USER: ${{ secrets.DOCKERHUB_USER }}
+      DOCKERHUB_PAT: ${{ secrets.DOCKERHUB_PAT }}
 
   retag-node:
     name: "Retag mpc-node"
     needs: release-info
+    environment: production
     uses: ./.github/workflows/docker_node_release.yml
     with:
       source-tag: "main-${{ needs.release-info.outputs.short-sha }}"
       release-tag: ${{ needs.release-info.outputs.version }}
       repository: mpc-node
     secrets:
-      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      DOCKERHUB_USER: ${{ secrets.DOCKERHUB_USER }}
+      DOCKERHUB_PAT: ${{ secrets.DOCKERHUB_PAT }}
 
   retag-node-gcp:
     name: "Retag mpc-node-gcp"
     needs: release-info
+    environment: production
     uses: ./.github/workflows/docker_node_release.yml
     with:
       source-tag: "main-${{ needs.release-info.outputs.short-sha }}"
       release-tag: ${{ needs.release-info.outputs.version }}
       repository: mpc-node-gcp
     secrets:
-      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      DOCKERHUB_USER: ${{ secrets.DOCKERHUB_USER }}
+      DOCKERHUB_PAT: ${{ secrets.DOCKERHUB_PAT }}
 
   collect-digests:
     name: "Collect Docker image digests"
@@ -109,6 +112,7 @@ jobs:
   build-contract:
     name: "Build contract"
     needs: release-info
+    environment: production
     runs-on: warp-ubuntu-2404-x64-16x
 
     outputs:
