@@ -24,8 +24,6 @@ pub use mpc_primitives::ParticipantId;
 )]
 pub struct ParticipantInfo {
     pub url: String,
-    // Accepts "sign_pk" for compat with pre-3.10.0 contracts. Remove after 3.10.0 deployment.
-    #[serde(alias = "sign_pk")]
     pub tls_public_key: Ed25519PublicKey,
 }
 
@@ -95,25 +93,6 @@ mod tests {
                         tls_public_key: test_key(),
                     },
                 )],
-            }
-        );
-    }
-
-    #[test]
-    #[expect(non_snake_case)]
-    fn participant_info_deserialize__should_accept_legacy_sign_pk_alias() {
-        // Given a JSON payload using the legacy "sign_pk" field name
-        let json = format!(r#"{{"url":"https://alice.com","sign_pk":"{TEST_KEY_STR}"}}"#,);
-
-        // When deserializing into the renamed DTO
-        let deserialized: ParticipantInfo = serde_json::from_str(&json).unwrap();
-
-        // Then the alias is honored and populates tls_public_key
-        assert_eq!(
-            deserialized,
-            ParticipantInfo {
-                url: "https://alice.com".to_string(),
-                tls_public_key: test_key(),
             }
         );
     }
