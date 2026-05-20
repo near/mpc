@@ -5793,6 +5793,7 @@ dependencies = [
  "humantime",
  "hyper 0.14.32",
  "inferno 0.12.6",
+ "insta",
  "itertools 0.14.0",
  "jemalloc_pprof",
  "k256",

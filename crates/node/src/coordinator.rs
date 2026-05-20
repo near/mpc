@@ -33,7 +33,7 @@ use futures::future::BoxFuture;
 use futures::FutureExt;
 use mpc_node_config::ConfigFile;
 use mpc_primitives::domain::{Curve, DomainId, Protocol};
-use mpc_primitives::EpochId;
+use mpc_primitives::{EpochId, ReconstructionThreshold};
 use near_time::Clock;
 use std::collections::HashMap;
 use std::future::Future;
@@ -348,11 +348,18 @@ where
                 epoch_id: current_epoch_id,
                 participants: current_participants_config,
             };
+            // TODO(#3164): once each domain may declare its own
+            // `reconstruction_threshold`, collect the distinct `t`s across all
+            // CaitSith domains here instead of just the network-wide threshold.
+            let triple_thresholds = vec![ReconstructionThreshold::new(
+                running_state.participants.threshold,
+            )];
             delete_stale_triples_and_presignatures(
                 &secret_db,
                 current_epoch_data,
                 my_participant_id,
                 all_domains,
+                triple_thresholds,
             )?;
         }
         let mut running_participants = running_state.participants.clone();

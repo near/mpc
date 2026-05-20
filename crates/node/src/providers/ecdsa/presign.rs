@@ -13,6 +13,7 @@ use crate::tracking::AutoAbortTaskCollection;
 use crate::{metrics, tracking};
 use mpc_node_config::PresignatureConfig;
 use mpc_primitives::domain::DomainId;
+use mpc_primitives::ReconstructionThreshold;
 use near_time::Clock;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, AtomicUsize};
@@ -42,7 +43,8 @@ impl PresignatureStorage {
             clock,
             db,
             crate::db::DBCol::Presignature,
-            Some(domain_id),
+            domain_id.0.to_be_bytes().to_vec(),
+            None,
             my_participant_id,
             |participants, presignature| {
                 presignature.is_subset_of_active_participants(participants)
@@ -174,11 +176,16 @@ impl EcdsaSignatureProvider {
         id.validate_owned_by(channel.sender().get_leader())?;
         let domain_data = self.domain_data(domain_id)?;
 
-        let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
+        // Triple store to consume from is keyed by the presign's `t`, which
+        // equals the number of presign participants (same as triple
+        // participants — the leader pairs them).
+        let threshold_usize: usize = channel.participants().len();
+        let threshold = ReconstructionThreshold::new(threshold_usize.try_into()?);
+        let triple_store = self.triple_store_for_t(threshold)?;
         FollowerPresignComputation {
-            threshold: ReconstructionLowerBound::from(threshold),
+            threshold: ReconstructionLowerBound::from(threshold_usize),
             keygen_out: domain_data.keyshare,
-            triple_store: self.triple_store.clone(),
+            triple_store,
             paired_triple_id,
             out_presignature_store: domain_data.presignature_store,
             out_presignature_id: id,
