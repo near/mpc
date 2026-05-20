@@ -70,7 +70,7 @@ pub(super) async fn run_background_presignature_generation(
     domain_id: DomainId,
     presignature_store: Arc<PresignatureStorage>,
     keygen_out: KeygenOutput,
-) {
+) -> ! {
     let in_flight_generations = InFlightGenerationTracker::new();
     let progress_tracker = Arc::new(PresignatureGenerationProgressTracker {
         desired_presignatures_to_buffer: config.desired_presignatures_to_buffer,
@@ -87,20 +87,11 @@ pub(super) async fn run_background_presignature_generation(
         .map(|p| p.id)
         .collect();
 
-    let (num_signers, robust_ecdsa_threshold) = match compute_thresholds(
+    let (num_signers, robust_ecdsa_threshold) = compute_thresholds(
         mpc_config.participants.threshold,
         running_participants.len(),
-    ) {
-        Ok(values) => values,
-        Err(err) => {
-            tracing::error!(
-                "Aborting robust-ecdsa presignature generation for domain {:?}: invalid threshold configuration: {}",
-                domain_id,
-                err
-            );
-            return;
-        }
-    };
+    )
+    .expect("invalid governance threshold for robust-ECDSA");
 
     loop {
         progress_tracker.update_progress();
