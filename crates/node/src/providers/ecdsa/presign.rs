@@ -71,7 +71,7 @@ impl EcdsaSignatureProvider {
         domain_id: DomainId,
         presignature_store: Arc<PresignatureStorage>,
         keygen_out: KeygenOutput,
-    ) {
+    ) -> ! {
         let in_flight_generations = InFlightGenerationTracker::new();
         let progress_tracker = Arc::new(PresignatureGenerationProgressTracker {
             desired_presignatures_to_buffer: config.desired_presignatures_to_buffer,

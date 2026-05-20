@@ -70,7 +70,7 @@ impl EcdsaSignatureProvider {
         config: Arc<TripleConfig>,
         triple_store: Arc<TripleStorage>,
         threshold: ReconstructionLowerBound,
-    ) {
+    ) -> ! {
         let in_flight_generations = InFlightGenerationTracker::new();
         let parallelism_limiter = Arc::new(tokio::sync::Semaphore::new(config.concurrency));
         let mut tasks = AutoAbortTaskCollection::new();
