@@ -1484,7 +1484,7 @@ impl MpcContract {
             dtos::ChainEntry,
         >,
     ) -> Result<Vec<dtos::ForeignChain>, Error> {
-        let batch_hash = env::sha256_array(&borsh::to_vec(&votes).unwrap());
+        let batch_hash = env::sha256_array(borsh::to_vec(&votes).unwrap());
         log!(
             "vote_update_foreign_chain_providers: signer={}, n_votes={}, batch_hash={}",
             env::signer_account_id(),
@@ -1501,7 +1501,7 @@ impl MpcContract {
         let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
         let applied =
             self.foreign_chain_rpc_whitelist
-                .vote(participant, votes, &threshold_parameters)?;
+                .vote(participant, votes, threshold_parameters)?;
         log!(
             "vote_update_foreign_chain_providers: applied chains={:?}",
             applied,
