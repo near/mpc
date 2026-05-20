@@ -152,13 +152,24 @@ impl TeeState {
         .into();
 
         let accepted_measurements = self.get_accepted_measurements();
-        let verified_attestation = attestation.verify(
+        let (verified_attestation, advisory_ids) = attestation.verify(
             expected_report_data.into(),
             Self::current_time_seconds(),
             &self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration),
             &self.get_allowed_launcher_compose_hashes(),
             &accepted_measurements,
         )?;
+
+        // Informational advisory IDs (e.g. `INTEL-DOC-10000` after the platform's
+        // Extended Servicing Updates date) may accompany an `UpToDate` TCB status
+        // since Intel's 2026 PCS change. They are not a security failure, but we
+        // log them so operators can see the platform's lifecycle phase in receipts.
+        if !advisory_ids.is_empty() {
+            env::log_str(&format!(
+                "attestation accepted with informational advisory IDs: {}",
+                advisory_ids.join(", ")
+            ));
+        }
 
         let tls_pk = node_id.tls_public_key.clone();
 

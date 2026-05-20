@@ -21,10 +21,6 @@ pub fn print_failure(static_data: &StaticWebData, err: &VerificationError) {
             println!("TCB Status:      {status}");
             println!("Expected Status: UpToDate");
         }
-        VerificationError::NonEmptyAdvisoryIds(ids) => {
-            println!("Reason:          Outstanding security advisories");
-            println!("Advisory IDs:    {ids}");
-        }
         VerificationError::WrongHash {
             name,
             found,
@@ -79,6 +75,9 @@ fn print_verification_details(result: &VerificationResult) {
         format_timestamp(result.expiry_timestamp_seconds),
         result.expiry_timestamp_seconds
     );
+    if !result.advisory_ids.is_empty() {
+        println!("Advisory IDs:           {}", result.advisory_ids.join(", "));
+    }
 }
 
 fn format_timestamp(unix_secs: u64) -> String {

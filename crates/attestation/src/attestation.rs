@@ -10,6 +10,7 @@ use crate::{
 use alloc::{
     format,
     string::{String, ToString},
+    vec::Vec,
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use core::fmt;
@@ -47,8 +48,6 @@ pub enum VerificationError {
     ReportNotTd10,
     #[error("TCB status `{0}` is not up to date")]
     TcbStatusNotUpToDate(String),
-    #[error("ouststanding advisories reported: {0}")]
-    NonEmptyAdvisoryIds(String),
     #[error("wrong {name} hash (found {found} expected {expected})")]
     WrongHash {
         name: &'static str,
@@ -122,13 +121,18 @@ impl DstackAttestation {
     ///   If any element in the set is valid, the function accepts the attestation as
     ///   valid.
     ///
-    /// On success, returns the matched measurements.
+    /// On success, returns the matched measurements together with any advisory IDs
+    /// surfaced alongside an `UpToDate` TCB status. Such advisories are informational
+    /// lifecycle markers (e.g. `INTEL-DOC-10000`, signaling the platform has passed
+    /// its Extended Servicing Updates date) — they are returned so the caller can log
+    /// them, but they are not a security failure on their own (security is gated by
+    /// `tcbStatus`).
     pub fn verify(
         &self,
         expected_report_data: ReportData,
         timestamp_seconds: u64,
         accepted_measurements: &[ExpectedMeasurements],
-    ) -> Result<ExpectedMeasurements, VerificationError> {
+    ) -> Result<(ExpectedMeasurements, Vec<String>), VerificationError> {
         let verification_result =
             dcap_qvl::verify::verify(&self.quote, &self.collateral, timestamp_seconds)
                 .map_err(|e| VerificationError::DcapVerification(e.to_string()))?;
@@ -139,13 +143,15 @@ impl DstackAttestation {
             .ok_or(VerificationError::ReportNotTd10)?;
 
         // Verify all attestation components
-        self.verify_tcb_status(&verification_result)?;
+        let advisory_ids = Self::check_tcb_status(&verification_result)?;
         self.verify_report_data(&expected_report_data, report_data)?;
 
         self.verify_rtmr3(report_data, &self.tcb_info)?;
         self.verify_app_compose(&self.tcb_info)?;
 
-        self.verify_any_measurements(report_data, &self.tcb_info, accepted_measurements)
+        let measurements =
+            self.verify_any_measurements(report_data, &self.tcb_info, accepted_measurements)?;
+        Ok((measurements, advisory_ids))
     }
 
     /// Replays RTMR3 from the event log by hashing all relevant events together and verifies all
@@ -212,29 +218,28 @@ impl DstackAttestation {
         compare_hashes("app_compose_payload", &app_compose_hash, &expected_payload)
     }
 
-    /// Verifies TCB status and security advisories.
-    fn verify_tcb_status(
-        &self,
+    /// Verifies the TCB status and returns any advisory IDs reported alongside it.
+    ///
+    /// The "UpToDate" TCB status indicates that the measured platform components (CPU
+    /// microcode, firmware, etc.) match the latest known good values published by Intel
+    /// and do not require any updates or mitigations — this is the sole security gate.
+    ///
+    /// Intel's PCS surfaces `advisory_ids` for two distinct purposes:
+    ///   1. `INTEL-SA-NNNNN`: real Security Advisories. Intel only attaches these to
+    ///      a non-UpToDate TCB status, so they are implicitly rejected by the status
+    ///      check below.
+    ///   2. `INTEL-DOC-NNNNN`: informational lifecycle markers (e.g. `INTEL-DOC-10000`
+    ///      after a product's Extended Servicing Updates date). These may appear with
+    ///      `UpToDate` and do not indicate a vulnerability; they are returned so the
+    ///      caller can log/expose them.
+    fn check_tcb_status(
         verification_result: &VerifiedReport,
-    ) -> Result<(), VerificationError> {
-        // The "UpToDate" TCB status indicates that the measured platform components (CPU
-        // microcode, firmware, etc.) match the latest known good values published by Intel
-        // and do not require any updates or mitigations.
-        let status_is_up_to_date = verification_result.status == EXPECTED_QUOTE_STATUS;
-
-        // Advisory IDs indicate known security vulnerabilities or issues with the TEE.
-        // For a quote to be considered secure, there should be no outstanding advisories.
-        let no_security_advisories = verification_result.advisory_ids.is_empty();
-
-        status_is_up_to_date.or_err(|| {
+    ) -> Result<Vec<String>, VerificationError> {
+        (verification_result.status == EXPECTED_QUOTE_STATUS).or_err(|| {
             VerificationError::TcbStatusNotUpToDate(verification_result.status.clone())
         })?;
 
-        no_security_advisories.or_err(|| {
-            VerificationError::NonEmptyAdvisoryIds(verification_result.advisory_ids.join(", "))
-        })?;
-
-        Ok(())
+        Ok(verification_result.advisory_ids.clone())
     }
 
     /// Verifies report data matches expected values.
@@ -465,7 +470,101 @@ impl GetSingleEvent for TcbInfo {
 mod tests {
     use super::*;
 
-    use alloc::{string::ToString, vec::Vec};
+    use alloc::{string::ToString, vec, vec::Vec};
+    use dcap_qvl::{
+        quote::{EnclaveReport, Report},
+        tcb_info::{TcbStatus, TcbStatusWithAdvisory},
+    };
+
+    #[test]
+    fn check_tcb_status__should_accept_uptodate_with_empty_advisories() {
+        // Given
+        let report = verified_report("UpToDate", vec![]);
+
+        // When
+        let result = DstackAttestation::check_tcb_status(&report);
+
+        // Then
+        assert_eq!(result, Ok(vec![]));
+    }
+
+    #[test]
+    fn check_tcb_status__should_accept_uptodate_with_informational_advisories() {
+        // Regression test for #3281: after Intel's 2026 PCS change, `UpToDate` may
+        // ship with informational advisory IDs (e.g. `INTEL-DOC-10000` post-ESU).
+        // These must not cause the quote to be rejected; they should be returned
+        // so the caller can surface them.
+
+        // Given
+        let advisories = vec!["INTEL-DOC-10000".to_string()];
+        let report = verified_report("UpToDate", advisories.clone());
+
+        // When
+        let result = DstackAttestation::check_tcb_status(&report);
+
+        // Then
+        assert_eq!(result, Ok(advisories));
+    }
+
+    #[test]
+    fn check_tcb_status__should_reject_non_uptodate_status() {
+        // Given
+        let report = verified_report("OutOfDate", vec![]);
+
+        // When
+        let result = DstackAttestation::check_tcb_status(&report);
+
+        // Then
+        assert_eq!(
+            result,
+            Err(VerificationError::TcbStatusNotUpToDate(
+                "OutOfDate".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn check_tcb_status__should_reject_non_uptodate_status_with_advisories() {
+        // Given
+        let report = verified_report("OutOfDate", vec!["INTEL-SA-00001".to_string()]);
+
+        // When
+        let result = DstackAttestation::check_tcb_status(&report);
+
+        // Then
+        assert_eq!(
+            result,
+            Err(VerificationError::TcbStatusNotUpToDate(
+                "OutOfDate".to_string()
+            ))
+        );
+    }
+
+    fn verified_report(status: &str, advisory_ids: Vec<String>) -> VerifiedReport {
+        VerifiedReport {
+            status: status.to_string(),
+            advisory_ids,
+            // `check_tcb_status` does not read any of the fields below; we provide
+            // arbitrary zeroed values to satisfy the struct's type.
+            report: Report::SgxEnclave(EnclaveReport {
+                cpu_svn: [0u8; 16],
+                misc_select: 0,
+                reserved1: [0u8; 28],
+                attributes: [0u8; 16],
+                mr_enclave: [0u8; 32],
+                reserved2: [0u8; 32],
+                mr_signer: [0u8; 32],
+                reserved3: [0u8; 96],
+                isv_prod_id: 0,
+                isv_svn: 0,
+                reserved4: [0u8; 60],
+                report_data: [0u8; 64],
+            }),
+            ppid: Vec::new(),
+            qe_status: TcbStatusWithAdvisory::new(TcbStatus::UpToDate, Vec::new()),
+            platform_status: TcbStatusWithAdvisory::new(TcbStatus::UpToDate, Vec::new()),
+        }
+    }
 
     #[test]
     fn validate_app_compose_config__succeeds_on_valid_app_compose() {

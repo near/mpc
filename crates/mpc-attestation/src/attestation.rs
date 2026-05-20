@@ -132,6 +132,13 @@ pub fn default_measurements() -> &'static [ExpectedMeasurements] {
 }
 
 impl Attestation {
+    /// Verifies the attestation.
+    ///
+    /// On success, returns the [`VerifiedAttestation`] along with any advisory IDs
+    /// that Intel's PCS surfaced alongside an `UpToDate` TCB status (e.g.
+    /// `INTEL-DOC-10000` after the platform's Extended Servicing Updates date).
+    /// These are informational lifecycle markers, not security failures; callers
+    /// are expected to log/expose them but should not act on them.
     pub fn verify(
         &self,
         expected_report_data: ReportData,
@@ -139,7 +146,7 @@ impl Attestation {
         allowed_mpc_docker_image_hashes: &[NodeImageHash],
         allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
         accepted_measurements: &[ExpectedMeasurements],
-    ) -> Result<VerifiedAttestation, VerificationError> {
+    ) -> Result<(VerifiedAttestation, Vec<alloc::string::String>), VerificationError> {
         match self {
             Self::Dstack(dstack_attestation) => {
                 // Makes MPC related attestation verification first
@@ -184,7 +191,7 @@ impl Attestation {
                     allowed_launcher_docker_compose_hashes,
                 )?;
 
-                let measurements = dstack_attestation.verify(
+                let (measurements, advisory_ids) = dstack_attestation.verify(
                     expected_report_data,
                     current_timestamp_seconds,
                     accepted_measurements,
@@ -193,12 +200,15 @@ impl Attestation {
                 // TODO(#1639): extract timestamp from certificate itself
                 let expiration_timestamp_seconds =
                     current_timestamp_seconds + DEFAULT_EXPIRATION_DURATION_SECONDS;
-                Ok(VerifiedAttestation::Dstack(ValidatedDstackAttestation {
-                    mpc_image_hash,
-                    launcher_compose_hash,
-                    expiry_timestamp_seconds: expiration_timestamp_seconds,
-                    measurements,
-                }))
+                Ok((
+                    VerifiedAttestation::Dstack(ValidatedDstackAttestation {
+                        mpc_image_hash,
+                        launcher_compose_hash,
+                        expiry_timestamp_seconds: expiration_timestamp_seconds,
+                        measurements,
+                    }),
+                    advisory_ids,
+                ))
             }
             Self::Mock(mock_attestation) => {
                 // Override attestation verification for this case
@@ -210,7 +220,10 @@ impl Attestation {
                     current_timestamp_seconds,
                 )?;
 
-                Ok(VerifiedAttestation::Mock(mock_attestation.clone()))
+                Ok((
+                    VerifiedAttestation::Mock(mock_attestation.clone()),
+                    Vec::new(),
+                ))
             }
         }
     }
