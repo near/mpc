@@ -6,7 +6,9 @@ use attestation::{
     measurements::{ExpectedMeasurements, Measurements},
     tcb_info::TcbInfo,
 };
-use mpc_attestation::attestation::{ValidatedDstackAttestation, VerifiedAttestation};
+use mpc_attestation::attestation::{
+    AcceptedAttestation, ValidatedDstackAttestation, VerifiedAttestation,
+};
 use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash};
 use node_types::http_server::StaticWebData;
 use sha2::{Digest, Sha256};
@@ -69,7 +71,10 @@ pub fn verify_at_timestamp(
     })?;
 
     // Single verify call — same verification logic as the contract and node
-    let (verified, advisory_ids) = attestation.verify(
+    let AcceptedAttestation {
+        attestation: verified_attestation,
+        advisory_ids,
+    } = attestation.verify(
         report_data.into(),
         timestamp_seconds,
         &cli.allowed_image_hashes,
@@ -78,7 +83,7 @@ pub fn verify_at_timestamp(
     )?;
 
     // Extract results from the verified attestation
-    match verified {
+    match verified_attestation {
         VerifiedAttestation::Dstack(ValidatedDstackAttestation {
             mpc_image_hash,
             launcher_compose_hash,

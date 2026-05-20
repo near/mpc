@@ -11,7 +11,7 @@ use crate::{
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_attestation::{
-    attestation::{self, Attestation, VerifiedAttestation},
+    attestation::{self, AcceptedAttestation, Attestation, VerifiedAttestation},
     report_data::{ReportData, ReportDataV1},
 };
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash};
@@ -152,7 +152,10 @@ impl TeeState {
         .into();
 
         let accepted_measurements = self.get_accepted_measurements();
-        let (verified_attestation, advisory_ids) = attestation.verify(
+        let AcceptedAttestation {
+            attestation: verified_attestation,
+            advisory_ids,
+        } = attestation.verify(
             expected_report_data.into(),
             Self::current_time_seconds(),
             &self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration),
@@ -160,16 +163,7 @@ impl TeeState {
             &accepted_measurements,
         )?;
 
-        // Informational advisory IDs (e.g. `INTEL-DOC-10000` after the platform's
-        // Extended Servicing Updates date) may accompany an `UpToDate` TCB status
-        // since Intel's 2026 PCS change. They are not a security failure, but we
-        // log them so operators can see the platform's lifecycle phase in receipts.
-        if !advisory_ids.is_empty() {
-            env::log_str(&format!(
-                "attestation accepted with informational advisory IDs: {}",
-                advisory_ids.join(", ")
-            ));
-        }
+        log_informational_advisory_ids(&advisory_ids);
 
         let tls_pk = node_id.tls_public_key.clone();
 
@@ -468,6 +462,31 @@ impl TeeState {
 
         Ok(())
     }
+}
+
+/// Maximum number of advisory IDs to inline in the attestation-acceptance log.
+/// PCS collateral is externally controlled, so we cap the rendered list to keep
+/// receipt size predictable; the full count is always reported.
+const MAX_LOGGED_ADVISORY_IDS: usize = 8;
+
+fn log_informational_advisory_ids(advisory_ids: &[String]) {
+    if advisory_ids.is_empty() {
+        return;
+    }
+    let total = advisory_ids.len();
+    let shown = advisory_ids
+        .iter()
+        .take(MAX_LOGGED_ADVISORY_IDS)
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join(", ");
+    let suffix = match total.checked_sub(MAX_LOGGED_ADVISORY_IDS) {
+        Some(extra) if extra > 0 => format!(" (+{extra} more)"),
+        _ => String::new(),
+    };
+    env::log_str(&format!(
+        "attestation accepted with {total} informational advisory ID(s): {shown}{suffix}",
+    ));
 }
 
 #[derive(Debug)]

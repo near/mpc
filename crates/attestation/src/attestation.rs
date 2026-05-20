@@ -14,7 +14,6 @@ use alloc::{
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use core::fmt;
-use dcap_qvl::verify::VerifiedReport;
 use derive_more::Constructor;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256, Sha384};
@@ -36,6 +35,14 @@ pub struct DstackAttestation {
     pub quote: QuoteBytes,
     pub collateral: Collateral,
     pub tcb_info: TcbInfo,
+}
+
+/// Result of a successful [`DstackAttestation::verify`] call.
+#[derive(Clone, Debug)]
+pub struct AcceptedDstack {
+    pub measurements: ExpectedMeasurements,
+    /// See [`DstackAttestation::check_tcb_status`] for the meaning of these IDs.
+    pub advisory_ids: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
@@ -121,18 +128,14 @@ impl DstackAttestation {
     ///   If any element in the set is valid, the function accepts the attestation as
     ///   valid.
     ///
-    /// On success, returns the matched measurements together with any advisory IDs
-    /// surfaced alongside an `UpToDate` TCB status. Such advisories are informational
-    /// lifecycle markers (e.g. `INTEL-DOC-10000`, signaling the platform has passed
-    /// its Extended Servicing Updates date) — they are returned so the caller can log
-    /// them, but they are not a security failure on their own (security is gated by
-    /// `tcbStatus`).
+    /// On success, returns the matched measurements along with any advisory IDs
+    /// surfaced by Intel's PCS — see [`Self::check_tcb_status`].
     pub fn verify(
         &self,
         expected_report_data: ReportData,
         timestamp_seconds: u64,
         accepted_measurements: &[ExpectedMeasurements],
-    ) -> Result<(ExpectedMeasurements, Vec<String>), VerificationError> {
+    ) -> Result<AcceptedDstack, VerificationError> {
         let verification_result =
             dcap_qvl::verify::verify(&self.quote, &self.collateral, timestamp_seconds)
                 .map_err(|e| VerificationError::DcapVerification(e.to_string()))?;
@@ -143,7 +146,10 @@ impl DstackAttestation {
             .ok_or(VerificationError::ReportNotTd10)?;
 
         // Verify all attestation components
-        let advisory_ids = Self::check_tcb_status(&verification_result)?;
+        let advisory_ids = Self::check_tcb_status(
+            &verification_result.status,
+            &verification_result.advisory_ids,
+        )?;
         self.verify_report_data(&expected_report_data, report_data)?;
 
         self.verify_rtmr3(report_data, &self.tcb_info)?;
@@ -151,7 +157,10 @@ impl DstackAttestation {
 
         let measurements =
             self.verify_any_measurements(report_data, &self.tcb_info, accepted_measurements)?;
-        Ok((measurements, advisory_ids))
+        Ok(AcceptedDstack {
+            measurements,
+            advisory_ids,
+        })
     }
 
     /// Replays RTMR3 from the event log by hashing all relevant events together and verifies all
@@ -233,13 +242,13 @@ impl DstackAttestation {
     ///      `UpToDate` and do not indicate a vulnerability; they are returned so the
     ///      caller can log/expose them.
     fn check_tcb_status(
-        verification_result: &VerifiedReport,
+        status: &str,
+        advisory_ids: &[String],
     ) -> Result<Vec<String>, VerificationError> {
-        (verification_result.status == EXPECTED_QUOTE_STATUS).or_err(|| {
-            VerificationError::TcbStatusNotUpToDate(verification_result.status.clone())
-        })?;
+        (status == EXPECTED_QUOTE_STATUS)
+            .or_err(|| VerificationError::TcbStatusNotUpToDate(status.to_string()))?;
 
-        Ok(verification_result.advisory_ids.clone())
+        Ok(advisory_ids.to_vec())
     }
 
     /// Verifies report data matches expected values.
@@ -471,18 +480,11 @@ mod tests {
     use super::*;
 
     use alloc::{string::ToString, vec, vec::Vec};
-    use dcap_qvl::{
-        quote::{EnclaveReport, Report},
-        tcb_info::{TcbStatus, TcbStatusWithAdvisory},
-    };
 
     #[test]
     fn check_tcb_status__should_accept_uptodate_with_empty_advisories() {
-        // Given
-        let report = verified_report("UpToDate", vec![]);
-
         // When
-        let result = DstackAttestation::check_tcb_status(&report);
+        let result = DstackAttestation::check_tcb_status("UpToDate", &[]);
 
         // Then
         assert_eq!(result, Ok(vec![]));
@@ -497,10 +499,9 @@ mod tests {
 
         // Given
         let advisories = vec!["INTEL-DOC-10000".to_string()];
-        let report = verified_report("UpToDate", advisories.clone());
 
         // When
-        let result = DstackAttestation::check_tcb_status(&report);
+        let result = DstackAttestation::check_tcb_status("UpToDate", &advisories);
 
         // Then
         assert_eq!(result, Ok(advisories));
@@ -508,11 +509,8 @@ mod tests {
 
     #[test]
     fn check_tcb_status__should_reject_non_uptodate_status() {
-        // Given
-        let report = verified_report("OutOfDate", vec![]);
-
         // When
-        let result = DstackAttestation::check_tcb_status(&report);
+        let result = DstackAttestation::check_tcb_status("OutOfDate", &[]);
 
         // Then
         assert_eq!(
@@ -525,11 +523,9 @@ mod tests {
 
     #[test]
     fn check_tcb_status__should_reject_non_uptodate_status_with_advisories() {
-        // Given
-        let report = verified_report("OutOfDate", vec!["INTEL-SA-00001".to_string()]);
-
         // When
-        let result = DstackAttestation::check_tcb_status(&report);
+        let result =
+            DstackAttestation::check_tcb_status("OutOfDate", &["INTEL-SA-00001".to_string()]);
 
         // Then
         assert_eq!(
@@ -538,32 +534,6 @@ mod tests {
                 "OutOfDate".to_string()
             ))
         );
-    }
-
-    fn verified_report(status: &str, advisory_ids: Vec<String>) -> VerifiedReport {
-        VerifiedReport {
-            status: status.to_string(),
-            advisory_ids,
-            // `check_tcb_status` does not read any of the fields below; we provide
-            // arbitrary zeroed values to satisfy the struct's type.
-            report: Report::SgxEnclave(EnclaveReport {
-                cpu_svn: [0u8; 16],
-                misc_select: 0,
-                reserved1: [0u8; 28],
-                attributes: [0u8; 16],
-                mr_enclave: [0u8; 32],
-                reserved2: [0u8; 32],
-                mr_signer: [0u8; 32],
-                reserved3: [0u8; 96],
-                isv_prod_id: 0,
-                isv_svn: 0,
-                reserved4: [0u8; 60],
-                report_data: [0u8; 64],
-            }),
-            ppid: Vec::new(),
-            qe_status: TcbStatusWithAdvisory::new(TcbStatus::UpToDate, Vec::new()),
-            platform_status: TcbStatusWithAdvisory::new(TcbStatus::UpToDate, Vec::new()),
-        }
     }
 
     #[test]
