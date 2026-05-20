@@ -1,6 +1,5 @@
 ---
 source: crates/contract/tests/abi.rs
-assertion_line: 47
 expression: abi
 ---
 {
@@ -2167,7 +2166,10 @@ expression: abi
         "result": {
           "serialization_type": "json",
           "type_schema": {
-            "type": "null"
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ForeignChain"
+            }
           }
         }
       }

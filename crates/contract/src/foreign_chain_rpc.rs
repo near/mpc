@@ -13,14 +13,24 @@
 use std::collections::BTreeMap;
 
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
-use near_mpc_contract_interface::types::{AuthScheme, ChainEntry, ChainRouting, ForeignChain};
+use near_mpc_contract_interface::types::{ChainEntry, ChainEntryValidationError, ForeignChain};
 use near_sdk::near;
 use near_sdk::store::IterableMap;
 
 use crate::errors::{ConversionError, Error, InvalidParameters};
+use crate::primitives::thresholds::ThresholdParameters;
 use crate::primitives::votes::{ProposalHash, ProposalHashEncoding, Votes};
 use crate::primitives::{key_state::AuthenticatedParticipantId, participants::Participants};
 use crate::storage_keys::StorageKey;
+
+impl From<ChainEntryValidationError> for Error {
+    fn from(err: ChainEntryValidationError) -> Self {
+        InvalidParameters::MalformedPayload {
+            reason: err.to_string(),
+        }
+        .into()
+    }
+}
 
 impl ProposalHashEncoding for ChainEntry {
     fn bytes_for_hash(&self) -> Vec<u8> {
@@ -72,9 +82,43 @@ impl Default for ProviderVotes {
 }
 
 impl ProviderVotes {
-    pub fn retain_only(&mut self, current: &Participants) {
+    pub fn retain(&mut self, current: &Participants) {
         self.pending
             .retain_votes(|(p, _)| current.is_participant_given_participant_id(&p.get()));
+    }
+
+    /// Records `participant`'s vote for `(chain, hash)`. Returns `true` when `chain`
+    /// crosses the signing threshold (stale rows from dropped participants don't count);
+    /// on `true`, pending rows for `chain` are cleared and the caller must apply the
+    /// new state.
+    pub fn vote(
+        &mut self,
+        chain: ForeignChain,
+        hash: ProposalHash,
+        participant: AuthenticatedParticipantId,
+        threshold_parameters: &ThresholdParameters,
+    ) -> Result<bool, Error> {
+        let protocol_threshold = threshold_parameters.threshold().value();
+        let participants = threshold_parameters.participants();
+        // Scope the borrow on `self.pending.vote` so we can mutate `self.pending`
+        // after `count_for`.
+        let count_usize = {
+            let voter_set = self.pending.vote((participant, chain), hash);
+            voter_set.count_for(|(p, c)| {
+                *c == chain && participants.is_participant_given_participant_id(&p.get())
+            })
+        };
+        let count = u64::try_from(count_usize).map_err(|e| ConversionError::DataConversion {
+            reason: format!("vote count {count_usize} does not fit in u64: {e}"),
+        })?;
+        if count >= protocol_threshold {
+            // Drop ALL pending rows for this chain regardless of which proposal
+            // they held — matches the previous `clear_chain` semantics.
+            self.pending.retain_votes(|(_, c)| *c != chain);
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 }
 
@@ -101,101 +145,23 @@ impl ForeignChainRpcWhitelist {
         &mut self,
         participant: AuthenticatedParticipantId,
         votes: NonEmptyBTreeMap<ForeignChain, ChainEntry>,
-        protocol_threshold: u64,
-        participants: &Participants,
+        threshold_parameters: &ThresholdParameters,
     ) -> Result<Vec<ForeignChain>, Error> {
         let mut applied: Vec<ForeignChain> = Vec::new();
         let votes: BTreeMap<ForeignChain, ChainEntry> = votes.into();
         for (chain, entry) in votes {
-            let entry = canonicalize(entry)?;
+            entry.validate()?;
             let hash = ProposalHash::from(entry.clone());
-            // Scope the borrow on `self.votes.pending.vote` so we can mutate
-            // `self.entries`/`self.votes.pending` after `count`.
-            let count_usize = {
-                let voter_set = self.votes.pending.vote((participant.clone(), chain), hash);
-                voter_set.count_for(|(p, c)| {
-                    *c == chain && participants.is_participant_given_participant_id(&p.get())
-                })
-            };
-            let count =
-                u64::try_from(count_usize).map_err(|e| ConversionError::DataConversion {
-                    reason: format!("vote count {count_usize} does not fit in u64: {e}"),
-                })?;
-            if count >= protocol_threshold {
+            if self
+                .votes
+                .vote(chain, hash, participant.clone(), threshold_parameters)?
+            {
                 self.entries.replace(chain, entry);
-                // Drop ALL pending rows for this chain regardless of which proposal
-                // they held — matches the previous `clear_chain` semantics.
-                self.votes.pending.retain_votes(|(_, c)| *c != chain);
                 applied.push(chain);
             }
         }
         Ok(applied)
     }
-}
-
-/// Validate an entry. `entry.providers` is a `NonEmptyBTreeMap<ProviderId, ProviderConfig>`
-/// at the type level (enforced at borsh-deserialize), which gives us three things for
-/// free: non-empty, no duplicate `provider_id`, and ordered iteration — so the
-/// canonical hash matches across voters without an explicit sort.
-///
-/// `quorum` is the RPC response quorum (`ChainEntry.quorum`), not the protocol signing
-/// threshold. Errors on: `quorum == 0` or exceeding `providers.len()`, `PathSegment`
-/// containing a literal `/`, or `QueryParam` whose name collides with the entry's
-/// `AuthScheme::Query` name.
-fn canonicalize(entry: ChainEntry) -> Result<ChainEntry, Error> {
-    let ChainEntry { providers, quorum } = entry;
-    if quorum == 0 {
-        return Err(InvalidParameters::MalformedPayload {
-            reason: "ChainEntry.quorum must be >= 1".to_string(),
-        }
-        .into());
-    }
-    let providers_len =
-        u64::try_from(providers.len()).map_err(|e| ConversionError::DataConversion {
-            reason: format!(
-                "providers.len() {} does not fit in u64: {e}",
-                providers.len()
-            ),
-        })?;
-    if quorum > providers_len {
-        return Err(InvalidParameters::MalformedPayload {
-            reason: format!(
-                "ChainEntry.quorum ({quorum}) exceeds providers.len() ({providers_len}) — RPC response quorum is unreachable",
-            ),
-        }
-        .into());
-    }
-    for (id, config) in providers.iter() {
-        if let ChainRouting::PathSegment { segment } = &config.chain_routing {
-            if segment.contains('/') {
-                return Err(InvalidParameters::MalformedPayload {
-                    reason: format!(
-                        "ChainRouting::PathSegment.segment for provider_id {:?} must not contain '/'",
-                        id.0
-                    ),
-                }
-                .into());
-            }
-        }
-        if let (
-            ChainRouting::QueryParam {
-                name: routing_name, ..
-            },
-            AuthScheme::Query { name: auth_name },
-        ) = (&config.chain_routing, &config.auth_scheme)
-        {
-            if routing_name == auth_name {
-                return Err(InvalidParameters::MalformedPayload {
-                    reason: format!(
-                        "ChainRouting::QueryParam.name collides with AuthScheme::Query.name {:?} for provider_id {:?}",
-                        auth_name, id.0
-                    ),
-                }
-                .into());
-            }
-        }
-    }
-    Ok(ChainEntry { providers, quorum })
 }
 
 #[cfg(test)]
@@ -204,11 +170,20 @@ mod tests {
     use super::*;
     use crate::primitives::{key_state::AuthenticatedParticipantId, test_utils::gen_participants};
     use assert_matches::assert_matches;
+    use mpc_primitives::Threshold;
     use near_mpc_contract_interface::types::{
         AuthScheme, ChainRouting, ProviderConfig, ProviderId,
     };
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
+
+    /// Build a `ThresholdParameters` for tests, bypassing the relative-threshold
+    /// validation so tests can express edge-case combinations (e.g. the stale-votes
+    /// test deliberately uses a threshold > current participant count to assert
+    /// the count_for predicate filters out non-participant rows).
+    fn tp(participants: &Participants, n: u64) -> ThresholdParameters {
+        ThresholdParameters::new_unvalidated(participants.clone(), Threshold::new(n))
+    }
 
     fn provider(id: &str) -> (ProviderId, ProviderConfig) {
         (
@@ -317,8 +292,7 @@ mod tests {
             .vote(
                 auth_ids[0].clone(),
                 single_chain_votes(ForeignChain::Ethereum, &["alchemy"], 1),
-                2,
-                &participants,
+                &tp(&participants, 2),
             )
             .unwrap();
         assert!(
@@ -332,8 +306,7 @@ mod tests {
             .vote(
                 auth_ids[1].clone(),
                 single_chain_votes(ForeignChain::Ethereum, &["alchemy"], 1),
-                2,
-                &participants,
+                &tp(&participants, 2),
             )
             .unwrap();
         assert_eq!(applied_p1, vec![ForeignChain::Ethereum]);
@@ -359,15 +332,13 @@ mod tests {
         wl.vote(
             auth_ids[0].clone(),
             single_chain_votes(ForeignChain::Ethereum, &["alchemy", "ankr"], 1),
-            2,
-            &participants,
+            &tp(&participants, 2),
         )
         .unwrap();
         wl.vote(
             auth_ids[1].clone(),
             single_chain_votes(ForeignChain::Ethereum, &["ankr", "alchemy"], 1),
-            2,
-            &participants,
+            &tp(&participants, 2),
         )
         .unwrap();
 
@@ -390,8 +361,7 @@ mod tests {
                     (ForeignChain::Ethereum, chain_entry(&["alchemy"], 1)),
                     (ForeignChain::Polygon, chain_entry(&["ankr"], 1)),
                 ]),
-                2,
-                &participants,
+                &tp(&participants, 2),
             )
             .unwrap();
         assert!(
@@ -405,8 +375,7 @@ mod tests {
                     (ForeignChain::Ethereum, chain_entry(&["alchemy"], 1)),
                     (ForeignChain::Polygon, chain_entry(&["infura"], 1)),
                 ]),
-                2,
-                &participants,
+                &tp(&participants, 2),
             )
             .unwrap();
 
@@ -431,8 +400,7 @@ mod tests {
         wl.vote(
             p0.clone(),
             single_chain_votes(ForeignChain::Polygon, &["ankr"], 1),
-            2,
-            &participants,
+            &tp(&participants, 2),
         )
         .unwrap();
 
@@ -440,8 +408,7 @@ mod tests {
         wl.vote(
             p0.clone(),
             single_chain_votes(ForeignChain::Ethereum, &["alchemy"], 1),
-            2,
-            &participants,
+            &tp(&participants, 2),
         )
         .unwrap();
 
@@ -459,8 +426,7 @@ mod tests {
         wl.vote(
             p0.clone(),
             single_chain_votes(ForeignChain::Polygon, &["alchemy"], 1),
-            2,
-            &participants,
+            &tp(&participants, 2),
         )
         .unwrap();
 
@@ -469,8 +435,7 @@ mod tests {
         wl.vote(
             p0.clone(),
             single_chain_votes(ForeignChain::Polygon, &["ankr", "drpc"], 2),
-            2,
-            &participants,
+            &tp(&participants, 2),
         )
         .unwrap();
 
@@ -486,7 +451,8 @@ mod tests {
             .count();
         assert_eq!(voters_for_p0_polygon, 1);
 
-        let expected_entry = canonicalize(chain_entry(&["ankr", "drpc"], 2)).unwrap();
+        let expected_entry = chain_entry(&["ankr", "drpc"], 2);
+        expected_entry.validate().unwrap();
         let expected_hash = ProposalHash::from(expected_entry);
         let actual_hash = pending_proposal_hash_for(&wl, &(p0, ForeignChain::Polygon))
             .expect("expected pending row for (p0, Polygon)");
@@ -501,15 +467,13 @@ mod tests {
         wl.vote(
             auth_ids[0].clone(),
             single_chain_votes(ForeignChain::Ethereum, &["alchemy", "ankr"], 1),
-            2,
-            &participants,
+            &tp(&participants, 2),
         )
         .unwrap();
         wl.vote(
             auth_ids[1].clone(),
             single_chain_votes(ForeignChain::Ethereum, &["alchemy", "ankr"], 1),
-            2,
-            &participants,
+            &tp(&participants, 2),
         )
         .unwrap();
 
@@ -517,15 +481,13 @@ mod tests {
         wl.vote(
             auth_ids[0].clone(),
             single_chain_votes(ForeignChain::Ethereum, &["drpc"], 1),
-            2,
-            &participants,
+            &tp(&participants, 2),
         )
         .unwrap();
         wl.vote(
             auth_ids[1].clone(),
             single_chain_votes(ForeignChain::Ethereum, &["drpc"], 1),
-            2,
-            &participants,
+            &tp(&participants, 2),
         )
         .unwrap();
 
@@ -557,8 +519,7 @@ mod tests {
             .vote(
                 auth_ids[0].clone(),
                 single_chain_votes(ForeignChain::Ethereum, &["alchemy"], 0),
-                2,
-                &participants,
+                &tp(&participants, 2),
             )
             .unwrap_err();
         assert_malformed(err, "quorum must be >= 1");
@@ -572,8 +533,7 @@ mod tests {
             .vote(
                 auth_ids[0].clone(),
                 single_chain_votes(ForeignChain::Ethereum, &["alchemy", "ankr"], 3),
-                2,
-                &participants,
+                &tp(&participants, 2),
             )
             .unwrap_err();
         assert_malformed(err, "exceeds providers.len()");
@@ -603,8 +563,7 @@ mod tests {
                         quorum: 1,
                     },
                 ),
-                2,
-                &participants,
+                &tp(&participants, 2),
             )
             .unwrap_err();
         assert_malformed(err, "PathSegment");
@@ -637,8 +596,7 @@ mod tests {
                         quorum: 1,
                     },
                 ),
-                2,
-                &participants,
+                &tp(&participants, 2),
             )
             .unwrap_err();
         assert_malformed(err, "QueryParam.name collides");
@@ -676,9 +634,9 @@ mod tests {
                 },
             )
         };
-        wl.vote(auth_ids[0].clone(), drpc_votes(), 2, &participants)
+        wl.vote(auth_ids[0].clone(), drpc_votes(), &tp(&participants, 2))
             .unwrap();
-        wl.vote(auth_ids[1].clone(), drpc_votes(), 2, &participants)
+        wl.vote(auth_ids[1].clone(), drpc_votes(), &tp(&participants, 2))
             .unwrap();
 
         // Then: applied, stored entry preserves the routing + auth shapes.
@@ -704,29 +662,26 @@ mod tests {
         wl.vote(
             auth_ids[0].clone(),
             single_chain_votes(ForeignChain::Ethereum, &["alchemy"], 1),
-            3,
-            &participants,
+            &tp(&participants, 3),
         )
         .unwrap();
         wl.vote(
             auth_ids[1].clone(),
             single_chain_votes(ForeignChain::Ethereum, &["alchemy"], 1),
-            3,
-            &participants,
+            &tp(&participants, 3),
         )
         .unwrap();
         assert!(stored_entry(&wl, ForeignChain::Ethereum).is_none());
 
         // When: the participant set shrinks to drop p0 and p1, but
-        // `retain_only` is NOT called (simulating a missed `clean_tee_status`).
+        // `retain` is NOT called (simulating a missed `clean_tee_status`).
         // p2 (still a participant in the smaller set) casts the same vote.
         let smaller = participants.subset(2..3);
         let applied = wl
             .vote(
                 auth_ids[2].clone(),
                 single_chain_votes(ForeignChain::Ethereum, &["alchemy"], 1),
-                3,
-                &smaller,
+                &tp(&smaller, 3),
             )
             .unwrap();
 
@@ -747,21 +702,19 @@ mod tests {
         wl.vote(
             p0.clone(),
             single_chain_votes(ForeignChain::Ethereum, &["alchemy"], 1),
-            3,
-            &participants,
+            &tp(&participants, 3),
         )
         .unwrap();
         wl.vote(
             p1.clone(),
             single_chain_votes(ForeignChain::Polygon, &["ankr"], 1),
-            3,
-            &participants,
+            &tp(&participants, 3),
         )
         .unwrap();
 
         // When
         let smaller = participants.subset(1..3);
-        wl.votes.retain_only(&smaller);
+        wl.votes.retain(&smaller);
 
         // Then
         assert!(!has_pending_vote(&wl, &(p0, ForeignChain::Ethereum)));

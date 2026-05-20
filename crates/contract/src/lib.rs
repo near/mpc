@@ -15,7 +15,7 @@ pub mod update;
 #[cfg(feature = "dev-utils")]
 pub mod utils;
 
-pub mod pr_3216_state;
+pub mod v3_10_0_state;
 pub mod v3_9_1_state;
 
 #[cfg(feature = "bench-contract-methods")]
@@ -1484,38 +1484,30 @@ impl MpcContract {
             dtos::ForeignChain,
             dtos::ChainEntry,
         >,
-    ) -> Result<(), Error> {
+    ) -> Result<Vec<dtos::ForeignChain>, Error> {
+        let batch_hash = env::sha256_array(&borsh::to_vec(&votes).unwrap());
         log!(
-            "vote_update_foreign_chain_providers: signer={}, n_votes={}",
+            "vote_update_foreign_chain_providers: signer={}, n_votes={}, batch_hash={}",
             env::signer_account_id(),
             votes.len(),
+            hex::encode(batch_hash),
         );
         self.voter_or_panic();
 
         let threshold_parameters = self
             .protocol_state
             .threshold_parameters()
-            .unwrap_or_else(|ContractNotInitialized| {
-                env::panic_str(
-                    "Contract is not initialized. Cannot vote for foreign chain providers before initialization. \
-                     This should be unreachable — voter_or_panic() above already errors on NotInitialized.",
-                )
-            });
+            .expect("voter_or_panic() above already errors on NotInitialized");
 
-        let participants = threshold_parameters.participants();
-        let participant = AuthenticatedParticipantId::new(participants)?;
-        let protocol_threshold = self.threshold()?.value();
-        let applied = self.foreign_chain_rpc_whitelist.vote(
-            participant,
-            votes,
-            protocol_threshold,
-            participants,
-        )?;
+        let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
+        let applied =
+            self.foreign_chain_rpc_whitelist
+                .vote(participant, votes, &threshold_parameters)?;
         log!(
             "vote_update_foreign_chain_providers: applied chains={:?}",
             applied,
         );
-        Ok(())
+        Ok(applied)
     }
 
     /// On-chain RPC provider whitelist keyed by `ForeignChain`. Nodes read this at
@@ -1700,9 +1692,7 @@ impl MpcContract {
                 .remove(account);
         }
 
-        self.foreign_chain_rpc_whitelist
-            .votes
-            .retain_only(participants);
+        self.foreign_chain_rpc_whitelist.votes.retain(participants);
 
         Ok(())
     }
@@ -1847,14 +1837,14 @@ impl MpcContract {
             }
         };
 
-        // PR 3216 shipped `foreign_chain_rpc_whitelist` with a nested-map layout
-        // that PR 3249 reshaped. Guards against an environment where PR 3216 was
-        // deployed standalone before PR 3249 lands.
-        match try_state_read::<pr_3216_state::MpcContract>() {
+        // Release 3.10.0 shipped `foreign_chain_rpc_whitelist` with a nested-map
+        // layout that this revision reshapes. Migrates clusters running 3.10.0 to
+        // the current shape.
+        match try_state_read::<v3_10_0_state::MpcContract>() {
             Ok(Some(state)) => return Ok(state.into()),
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => {
-                log!("failed to deserialize state into PR 3216 state: {:?}", err);
+                log!("failed to deserialize state into 3.10.0 state: {:?}", err);
             }
         };
 
@@ -2468,7 +2458,7 @@ mod tests {
         Attestation as MpcAttestation, MockAttestation as MpcMockAttestation,
     };
     use mpc_primitives::hash::DockerImageHash;
-    use near_mpc_bounded_collections::NonEmptyBTreeSet;
+    use near_mpc_bounded_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet};
     use near_mpc_contract_interface::types::BackupServiceInfo;
     use near_mpc_contract_interface::types::CKDAppPublicKey;
     use near_mpc_contract_interface::types::DestinationNodeInfo;
@@ -6413,5 +6403,64 @@ mod tests {
 
         // Then
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn vote_update_foreign_chain_providers__should_apply_chain_and_return_it_when_threshold_reached(
+    ) {
+        // Given: a running contract with 4 participants and signing threshold 3.
+        let (_context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let participant_account_ids: Vec<AccountId> = contract
+            .protocol_state
+            .threshold_parameters()
+            .unwrap()
+            .participants()
+            .participants()
+            .iter()
+            .map(|(account_id, _, _)| account_id.clone())
+            .collect();
+        assert_eq!(participant_account_ids.len(), 4);
+
+        let chain = dtos::ForeignChain::Ethereum;
+        let entry = dtos::ChainEntry {
+            providers: NonEmptyBTreeMap::new(
+                dtos::ProviderId("alchemy".to_string()),
+                dtos::ProviderConfig {
+                    base_url: "https://alchemy.example.com".to_string(),
+                    auth_scheme: dtos::AuthScheme::None,
+                    chain_routing: dtos::ChainRouting::Embedded,
+                },
+            ),
+            quorum: 1,
+        };
+        let batch = NonEmptyBTreeMap::new(chain, entry.clone());
+
+        let vote_as = |contract: &mut MpcContract, account_id: &AccountId| {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build());
+            contract
+                .vote_update_foreign_chain_providers(batch.clone())
+                .expect("vote should succeed")
+        };
+
+        // When: first two participants vote (count = 2, below threshold 3).
+        let applied_p0 = vote_as(&mut contract, &participant_account_ids[0]);
+        let applied_p1 = vote_as(&mut contract, &participant_account_ids[1]);
+
+        // Then: nothing applied yet.
+        assert!(applied_p0.is_empty(), "1st vote should not apply");
+        assert!(applied_p1.is_empty(), "2nd vote should not apply");
+        assert!(contract.allowed_foreign_chain_providers().is_empty());
+
+        // When: third participant votes (crosses threshold).
+        let applied_p2 = vote_as(&mut contract, &participant_account_ids[2]);
+
+        // Then: the chain is reported as applied this call and is now stored.
+        assert_eq!(applied_p2, vec![chain]);
+        let stored = contract.allowed_foreign_chain_providers();
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored.get(&chain), Some(&entry));
     }
 }
