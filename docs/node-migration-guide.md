@@ -353,9 +353,31 @@ Look for your account in the output. Once the migration is complete, there shoul
 
 After verifying the migration was successful:
 
-1. **Stop the old node** on the old host
-2. **Keep the backup** of keyshares (the contents of `$BACKUP_HOME_DIR`, including the `key` file and the `permanent_keys/` directory with `epoch_<...>_with_<...>_domains` files) for a reasonable period (in case you need to migrate again)
-3. **Securely delete** the old node's data once you're confident the new node is functioning correctly
+1. **Stop the old node** on the old host.
+
+2. **Revoke the OLD node's signer key on your account.** The OLD CVM's `near_signer_public_key` (the function-call access key you added in Step 5 — either for *this* migration's predecessor, or for an earlier one) is no longer needed once the OLD CVM is decommissioned. Leaving it authorized is a hygiene gap: a forever-authorized but effectively keyless entry on your account, with `unlimited` allowance on the MPC contract.
+
+   List your account's keys to find the OLD signer's public key (it'll be a function-call key targeting `$MPC_CONTRACT_ACCOUNT_ID`, distinct from the one you just added for the NEW node in Step 5):
+
+   ```bash
+   near account list-keys $SIGNER_ACCOUNT_ID \
+     network-config $NEAR_NETWORK now
+   ```
+
+   Then revoke it:
+
+   ```bash
+   near account delete-keys $SIGNER_ACCOUNT_ID \
+     public-keys <OLD_NODE_SIGNER_PUBLIC_KEY> \
+     network-config $NEAR_NETWORK \
+     sign-with-keychain send
+   ```
+
+   **Do not** revoke the `backup-cli`'s registered key (the one from Step 2, registered via `register_backup_service`). That's the backup service registration, not a per-CVM credential, and is reused across migrations.
+
+3. **Keep the backup** of keyshares (the contents of `$BACKUP_HOME_DIR`, including the `key` file and the `permanent_keys/` directory with `epoch_<...>_with_<...>_domains` files) for a reasonable period (in case you need to migrate again).
+
+4. **Securely delete** the old node's data once you're confident the new node is functioning correctly.
 
 ## Troubleshooting
 
