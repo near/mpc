@@ -41,7 +41,7 @@ pub struct DstackAttestation {
 #[derive(Clone, Debug)]
 pub struct AcceptedDstack {
     pub measurements: ExpectedMeasurements,
-    /// See [`DstackAttestation::check_tcb_status`] for the meaning of these IDs.
+    /// See `DstackAttestation::check_tcb_status` for the meaning of these IDs.
     pub advisory_ids: Vec<String>,
 }
 
@@ -129,7 +129,7 @@ impl DstackAttestation {
     ///   valid.
     ///
     /// On success, returns the matched measurements along with any advisory IDs
-    /// surfaced by Intel's PCS — see [`Self::check_tcb_status`].
+    /// surfaced by Intel's PCS — see `Self::check_tcb_status`.
     pub fn verify(
         &self,
         expected_report_data: ReportData,
