@@ -1,7 +1,7 @@
 use crate::sandbox::{
     common::{
         call_contract_key_generation, execute_key_generation_and_add_random_state, gen_accounts,
-        init, propose_and_vote_contract_binary, submit_attestations, OldThresholdParameters,
+        init, propose_and_vote_contract_binary, submit_attestations,
     },
     utils::{
         consts::PARTICIPANT_LEN,
@@ -58,7 +58,7 @@ async fn init_old_contract(
     contract
         .call(method_names::INIT)
         .args_json(serde_json::json!({
-            "parameters": OldThresholdParameters::from(&threshold_parameters),
+            "parameters": &threshold_parameters,
         }))
         .transact()
         .await?
@@ -163,6 +163,8 @@ async fn propose_upgrade_from_production_to_current_binary(
     let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN)
         .await
         .unwrap();
+
+    submit_attestations(&contract, &accounts, &participants).await;
 
     // Add state so migration logic is exercised
     execute_key_generation_and_add_random_state(
