@@ -12,7 +12,6 @@ use near_time::Duration;
 use sha3::Digest;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
-use std::ops::Add;
 use std::sync::{Arc, Mutex, Weak};
 use time::ext::InstantExt as _;
 
@@ -192,6 +191,35 @@ impl<ChainRespondArgsType: ChainRespondArgs> Default for ComputationProgress<Cha
     }
 }
 
+enum ComputationProgressStatus {
+    NewAttempt,
+    Pending,
+    MaxAttemptsExceeded,
+}
+
+impl<ChainRespondArgsType: ChainRespondArgs> ComputationProgress<ChainRespondArgsType> {
+    /// If [`Self::attempts`] is less than [`MAX_ATTEMPTS_PER_REQUEST_AS_LEADER`], then increments
+    /// [`Self::attempts`] by one and returns [`ComputationProgressStatus::NewAttempt`].
+    /// Otherwise returns [`ComputationProgressStatus::MaxAttemptsExceeded`] or
+    /// [`ComputationProgressStatus::Pending`].
+    fn update_computation_progress(
+        &mut self,
+        now: near_time::Instant,
+    ) -> ComputationProgressStatus {
+        if self.attempts >= MAX_ATTEMPTS_PER_REQUEST_AS_LEADER {
+            ComputationProgressStatus::MaxAttemptsExceeded
+        } else if self
+            .last_response_submission
+            .is_some_and(|t| now < t + MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE)
+        {
+            ComputationProgressStatus::Pending
+        } else {
+            self.attempts += 1;
+            ComputationProgressStatus::NewAttempt
+        }
+    }
+}
+
 impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
     QueuedRequest<RequestType, ChainRespondArgsType>
 {
@@ -255,6 +283,108 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
             }
         }
         None
+    }
+
+    /// Returns true if this request is due for another check (i.e. [`Self::next_check_due`] is
+    /// at or before `now`), and in that case bumps [`Self::next_check_due`] by
+    /// [`CHECK_EACH_REQUEST_INTERVAL`].
+    fn update_next_check_due(&mut self, now: near_time::Instant) -> bool {
+        if self.next_check_due <= now {
+            self.next_check_due = now + CHECK_EACH_REQUEST_INTERVAL;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn has_active_attempt(&self) -> bool {
+        self.active_attempt.strong_count() > 0
+    }
+
+    fn is_older_than(&self, cutoff_block: u64) -> bool {
+        cutoff_block > self.block_height
+    }
+}
+
+impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
+    QueuedRequest<RequestType, ChainRespondArgsType>
+{
+    fn process(
+        &mut self,
+        my_participant_id: ParticipantId,
+        eligible_leaders: &HashSet<ParticipantId>,
+        cutoff_block: u64,
+        now: near_time::Instant,
+    ) -> RequestStatusResult<RequestType, ChainRespondArgsType> {
+        if !self.update_next_check_due(now) {
+            return RequestStatusResult::Wait("check not due");
+        }
+        if self.has_active_attempt() {
+            return RequestStatusResult::Wait("active attempt ongoing");
+        }
+        // check it against the network height
+        if self.is_older_than(cutoff_block) {
+            // This request is definitely not useful anymore, so discard it.
+            return RequestStatusResult::Remove(RemovalReason::RequestTimedOut);
+        }
+        let Some(status) = self.status.upgrade() else {
+            return RequestStatusResult::Remove(RemovalReason::BlockNotFound);
+        };
+        if !status.is_canonical() {
+            return RequestStatusResult::Wait("request is not on canonical chain");
+        }
+        let Some(leader) = self.current_leader(eligible_leaders) else {
+            return RequestStatusResult::Wait("no eligible leaders for this request");
+        };
+        let mut progress = self.computation_progress.lock().unwrap();
+        progress.selected_leader = Some(leader);
+        if leader == my_participant_id {
+            match progress.update_computation_progress(now) {
+                ComputationProgressStatus::MaxAttemptsExceeded => {
+                    RequestStatusResult::Remove(RemovalReason::MaxAttemptsExceeded)
+                }
+                ComputationProgressStatus::Pending => {
+                    RequestStatusResult::Wait("pending computation")
+                }
+                ComputationProgressStatus::NewAttempt => {
+                    let attempt = Arc::new(GenerationAttempt {
+                        request: self.request.clone(),
+                        computation_progress: self.computation_progress.clone(),
+                    });
+                    self.active_attempt = Arc::downgrade(&attempt);
+                    RequestStatusResult::Attempt(attempt)
+                }
+            }
+        } else {
+            RequestStatusResult::Wait("we are not leader")
+        }
+    }
+}
+
+enum RequestStatusResult<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> {
+    Remove(RemovalReason),
+    Wait(&'static str),
+    Attempt(Arc<GenerationAttempt<RequestType, ChainRespondArgsType>>),
+}
+
+#[derive(derive_more::Display)]
+enum RemovalReason {
+    #[display("max attempts exceeded")]
+    MaxAttemptsExceeded,
+    #[display("tracker does not have block")]
+    BlockNotFound,
+    #[display("request timed out for at least one participant")]
+    RequestTimedOut,
+}
+
+impl RemovalReason {
+    /// Label used for the `MPC_CLUSTER_FAILED_SIGNATURES_COUNT` metric.
+    fn metric_label(&self) -> &'static str {
+        match self {
+            RemovalReason::MaxAttemptsExceeded => "max_tries_exceeded",
+            RemovalReason::BlockNotFound => "block_not_found",
+            RemovalReason::RequestTimedOut => "timeout",
+        }
     }
 }
 
@@ -435,6 +565,10 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
         let mut result = Vec::new();
 
         let mut requests_to_remove = Vec::new();
+
+        // any request strictly older than `cutoff_block` will be considered expired
+        let cutoff_block = maximum_height.saturating_sub(REQUEST_EXPIRATION_BLOCKS) + 1;
+
         for (id, request) in &mut self.requests {
             let _span = tracing::debug_span!(
                 target: "request",
@@ -444,108 +578,22 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 block_height = request.block_height,
             )
             .entered();
-            if request.next_check_due > now {
-                tracing::debug!(
-                    target: "request",
-                    "skipping request because it's not time yet"
-                );
-                continue;
-            }
-            request.next_check_due = now + CHECK_EACH_REQUEST_INTERVAL;
-            if request.active_attempt.strong_count() > 0 {
-                tracing::debug!(
-                    target: "request",
-                    "skipping request because there's already an active attempt",
-                );
-                continue;
-            }
-            // check it against the network height
-            if maximum_height
-                .saturating_sub(REQUEST_EXPIRATION_BLOCKS)
-                .add(1)
-                > request.block_height
-            {
-                // this request expired for at least one participant in the network. We can already
-                // remove it from the queue.
-                tracing::debug!(
-                    target: "request",
-                    "discarding expired request"
-                );
-                // Increment metric for timeout (only for signature requests)
-                // Note that this is not necessarily a good signal for measuring signature request
-                // timeouts. It may be that our node indexer lags behind other indexers in the
-                // network and we simply haven't seen the signature response yet.
-                if matches!(RequestType::get_type(), types::RequestType::Signature) {
-                    metrics::MPC_CLUSTER_FAILED_SIGNATURES_COUNT
-                        .with_label_values(&["timeout"])
-                        .inc();
-                }
-                // This request is definitely not useful anymore, so discard it.
-                requests_to_remove.push(*id);
-                continue;
-            }
-            let Some(status) = request.status.upgrade() else {
-                tracing::debug!(
-                    target: "request",
-                    "discarding request because the tracker removed the block, indicating that it sat on a dead fork."
-                );
-                if matches!(RequestType::get_type(), types::RequestType::Signature) {
-                    metrics::MPC_CLUSTER_FAILED_SIGNATURES_COUNT
-                        .with_label_values(&["block_not_found"])
-                        .inc();
-                }
-                requests_to_remove.push(*id);
-                continue;
-            };
-            if status.is_canonical() {
-                if let Some(leader) = request.current_leader(&eligible_leaders) {
-                    tracing::debug!(
-                        target: "request",
-                        leader = %leader, "processing request",
-                    );
-                    let mut progress = request.computation_progress.lock().unwrap();
-                    progress.selected_leader = Some(leader);
-                    if leader == self.my_participant_id {
-                        {
-                            if progress.attempts >= MAX_ATTEMPTS_PER_REQUEST_AS_LEADER {
-                                tracing::debug!(
-                                    target: "request",
-                                    attempt_id = progress.attempts,
-                                    "discarding request because it has been attempted too many times",
-                                );
-                                // Increment metric for max retries exceeded (only for signature requests)
-                                if matches!(RequestType::get_type(), types::RequestType::Signature)
-                                {
-                                    metrics::MPC_CLUSTER_FAILED_SIGNATURES_COUNT
-                                        .with_label_values(&["max_tries_exceeded"])
-                                        .inc();
-                                }
-                                requests_to_remove.push(*id);
-                                continue;
-                            }
-                            if progress.last_response_submission.is_some_and(|t| {
-                                now < t + MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE
-                            }) {
-                                tracing::debug!(
-                                    target: "request",
-                                    "skipping request because the last response was submitted too recently"
-                                );
-                                continue;
-                            }
-                            progress.attempts += 1;
-                        }
-                        let attempt = Arc::new(GenerationAttempt {
-                            request: request.request.clone(),
-                            computation_progress: request.computation_progress.clone(),
-                        });
-                        request.active_attempt = Arc::downgrade(&attempt);
-                        result.push(attempt);
+            match request.process(self.my_participant_id, &eligible_leaders, cutoff_block, now) {
+                RequestStatusResult::Remove(reason) => {
+                    tracing::debug!(target: "request", reason = %reason, "removing request");
+                    if matches!(RequestType::get_type(), types::RequestType::Signature) {
+                        metrics::MPC_CLUSTER_FAILED_SIGNATURES_COUNT
+                            .with_label_values(&[reason.metric_label()])
+                            .inc();
                     }
+                    requests_to_remove.push(*id);
                 }
-            } else {
-                // Don't act on it yet. If it becomes canonical later, we'll try to generate
-                // the request.
-                tracing::debug!(target: "request", "ignoring non-canonical request");
+                RequestStatusResult::Wait(reason) => {
+                    tracing::debug!(target: "request", reason, "skipping request");
+                }
+                RequestStatusResult::Attempt(attempt) => {
+                    result.push(attempt);
+                }
             }
         }
         for id in requests_to_remove {
