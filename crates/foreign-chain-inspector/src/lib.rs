@@ -1,3 +1,5 @@
+use std::hash::Hash;
+
 use derive_more::{Deref, Display, From};
 use ethereum_types::{H256, U64};
 use http::{HeaderMap, HeaderName, HeaderValue};
@@ -33,10 +35,25 @@ pub trait ForeignChainInspector {
 
 /// Combines multiple inspectors that target the same chain into a single inspector.
 ///
-/// All inner inspectors are queried concurrently. The fan-out succeeds only if every
-/// inspector returns the same extracted values; any disagreement returns
-/// [`ForeignChainInspectionError::InspectorResponseMismatch`], and the first inner
-/// error encountered is propagated.
+/// All inner inspectors are queried concurrently. The fan-out treats every
+/// non-transient outcome (success or non-transient error, see
+/// [`ForeignChainInspectionError::is_transient`]) as a substantive verdict that must
+/// agree across inspectors. Transient errors (network issues, finality not yet reached,
+/// etc.) are tolerated so that a single unavailable RPC does not take the whole node
+/// out of signing.
+///
+/// Outcomes:
+/// * All substantive verdicts are `Ok` with the same extracted values → returns those values.
+/// * All substantive verdicts are non-transient errors of the same variant → returns one of
+///   them (e.g. all inspectors agree the transaction failed).
+/// * Substantive verdicts disagree (`Ok` vs. non-transient error, two different non-transient
+///   error variants, or two different success values) → returns
+///   [`ForeignChainInspectionError::InspectorResponseMismatch`].
+/// * Every inspector returned a transient error → the first such error is propagated.
+///
+/// Variant-level comparison is used for non-transient errors, so inspectors that all report
+/// the same failure mode (e.g. `NonCanonicalBlock`) are considered to agree even if the
+/// inner fields differ.
 #[derive(Clone, derive_more::Constructor)]
 pub struct FanOut<Inspector> {
     inspectors: NonEmptyVec<Inspector>,
@@ -48,7 +65,7 @@ where
     Inspector::TransactionId: Clone + Send + 'static,
     Inspector::Finality: Clone + Send + 'static,
     Inspector::Extractor: Clone + Send + 'static,
-    Inspector::ExtractedValue: Send + 'static + PartialEq,
+    Inspector::ExtractedValue: Send + 'static + PartialEq + Eq + Hash + std::fmt::Debug,
 {
     type TransactionId = Inspector::TransactionId;
     type Finality = Inspector::Finality;
@@ -62,33 +79,90 @@ where
         extractors: Vec<Self::Extractor>,
     ) -> Result<Vec<Self::ExtractedValue>, ForeignChainInspectionError> {
         let mut join_set = tokio::task::JoinSet::new();
-
-        for inspector in self.inspectors.iter() {
+        for (idx, inspector) in self.inspectors.iter().enumerate() {
             let tx_id = tx_id.clone();
             let finality = finality.clone();
             let extractors = extractors.clone();
-
             let inspector = inspector.clone();
-            join_set.spawn(async move { inspector.extract(tx_id, finality, extractors).await });
+            join_set
+                .spawn(async move { (idx, inspector.extract(tx_id, finality, extractors).await) });
         }
 
-        let responses: Vec<Vec<Self::ExtractedValue>> = join_set
-            .join_all()
-            .await
-            .into_iter()
-            .collect::<Result<_, _>>()?;
+        let mut successes: Vec<(usize, Vec<Self::ExtractedValue>)> = Vec::new();
+        let mut non_transient_errors: Vec<(usize, ForeignChainInspectionError)> = Vec::new();
+        let mut first_transient_error: Option<ForeignChainInspectionError> = None;
 
-        let mut iter = responses.into_iter();
-        let first = iter
-            .next()
-            .expect("inspectors is a `NonEmptyVec`, so there is at least one response");
-
-        for other in iter {
-            if other != first {
-                return Err(ForeignChainInspectionError::InspectorResponseMismatch);
+        for (idx, result) in join_set.join_all().await {
+            match result {
+                Ok(values) => successes.push((idx, values)),
+                Err(err) if err.is_transient() => {
+                    tracing::warn!(
+                        inspector_index = idx,
+                        error = %err,
+                        "fan-out inspector failed (transient)",
+                    );
+                    first_transient_error.get_or_insert(err);
+                }
+                Err(err) => {
+                    tracing::error!(
+                        inspector_index = idx,
+                        error = %err,
+                        "fan-out inspector failed (non-transient)",
+                    );
+                    non_transient_errors.push((idx, err));
+                }
             }
         }
-        Ok(first)
+
+        let inspectors_split_between_success_and_failure =
+            !successes.is_empty() && !non_transient_errors.is_empty();
+
+        if inspectors_split_between_success_and_failure {
+            tracing::error!(
+                successes = ?successes,
+                non_transient_errors = ?non_transient_errors,
+                "fan-out: inspectors split between success and non-transient failure",
+            );
+            return Err(ForeignChainInspectionError::InspectorResponseMismatch);
+        }
+
+        if !successes.is_empty() {
+            let first_values = &successes[0].1;
+            let all_successes_agree = successes.iter().all(|(_, v)| v == first_values);
+            if !all_successes_agree {
+                tracing::error!(
+                    responses = ?successes,
+                    "fan-out: inspectors returned mismatching extracted values",
+                );
+                return Err(ForeignChainInspectionError::InspectorResponseMismatch);
+            }
+            let (_, first) = successes.into_iter().next().expect("checked non-empty");
+            return Ok(first);
+        }
+
+        if !non_transient_errors.is_empty() {
+            let first_variant = std::mem::discriminant(&non_transient_errors[0].1);
+            let all_failures_have_same_variant = non_transient_errors
+                .iter()
+                .all(|(_, e)| std::mem::discriminant(e) == first_variant);
+            if !all_failures_have_same_variant {
+                tracing::error!(
+                    errors = ?non_transient_errors,
+                    "fan-out: inspectors disagreed on non-transient failure mode",
+                );
+                return Err(ForeignChainInspectionError::InspectorResponseMismatch);
+            }
+            let (_, first) = non_transient_errors
+                .into_iter()
+                .next()
+                .expect("checked non-empty");
+            return Err(first);
+        }
+
+        Err(first_transient_error.expect(
+            "inspectors is a `NonEmptyVec`, so with no successes and no non-transient errors, \
+             at least one transient error must have been recorded",
+        ))
     }
 }
 
@@ -146,6 +220,15 @@ pub enum ForeignChainInspectionError {
     EventLogFailedBorshSerialization(std::io::Error),
     #[error("inspector clients returned mismatching extracted values")]
     InspectorResponseMismatch,
+}
+
+impl ForeignChainInspectionError {
+    pub fn is_transient(&self) -> bool {
+        matches!(
+            self,
+            Self::ClientError(_) | Self::NotFinalized | Self::NotEnoughBlockConfirmations { .. }
+        )
+    }
 }
 
 /// Builds an HTTP client with the specified authentication method.

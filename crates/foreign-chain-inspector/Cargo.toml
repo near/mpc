@@ -15,6 +15,7 @@ near-mpc-bounded-collections = { workspace = true }
 near-mpc-contract-interface = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
