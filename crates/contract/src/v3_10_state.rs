@@ -2,14 +2,15 @@
 //!
 //! Release `3.10.0` shipped `ForeignChainRpcWhitelist { entries: BTreeMap<ForeignChain,
 //! BTreeMap<ProviderId, ProviderEntry>> }` with no vote endpoint, so the whitelist is
-//! guaranteed empty in any deployment of that revision. The current state reshapes that
-//! field to `{ entries: IterableMap<ForeignChain, ChainEntry>, votes: ProviderVotes }`.
-//! The two layouts are borsh-incompatible (different field count + different inner map
-//! shape), so this module reads the `3.10.0` shape and converts.
+//! guaranteed empty in any deployment of that revision. The current revision reshapes
+//! that field to `{ entries: IterableMap<ForeignChain, ChainEntry>, votes: ProviderVotes }`
+//! and adds the vote endpoint. The two layouts are borsh-incompatible (different field
+//! count + different inner map shape), so this module reads the `3.10.0` shape and
+//! converts.
 
 use borsh::BorshDeserialize;
 use near_mpc_contract_interface::types as dtos;
-use near_sdk::store::LookupMap;
+use near_sdk::{env, store::LookupMap};
 use std::collections::BTreeMap;
 
 use crate::{
@@ -63,12 +64,12 @@ pub struct OldForeignChainRpcWhitelist {
     pub(crate) entries: BTreeMap<dtos::ForeignChain, BTreeMap<dtos::ProviderId, OldProviderEntry>>,
 }
 
-/// Local shadow of `3.10.0`'s `ProviderEntry` borsh shape. The current state renamed the
-/// public DTO to `ProviderConfig` and dropped the `provider_id` field (it became the map
-/// key), so the public DTO no longer matches `3.10.0`'s on-disk bytes. `3.10.0` guarantees
-/// the outer map is empty, so this inner type is never actually deserialized — but the
-/// parent `BTreeMap<ProviderId, _>` still needs a concrete `V: BorshDeserialize` to
-/// satisfy the type bound on the derive.
+/// Local shadow of `3.10.0`'s `ProviderEntry` borsh shape. The current revision renamed
+/// the public DTO to `ProviderConfig` and dropped the `provider_id` field (it became the
+/// map key), so the public DTO no longer matches `3.10.0`'s on-disk bytes. `3.10.0`
+/// guarantees the outer map is empty, so this inner type is never actually deserialized
+/// — but the parent `BTreeMap<ProviderId, _>` still needs a concrete `V: BorshDeserialize`
+/// to satisfy the type bound on the derive.
 #[expect(
     dead_code,
     reason = "fields needed for borsh layout compatibility; never read because 3.10.0 map is empty"
@@ -83,6 +84,10 @@ pub struct OldProviderEntry {
 
 impl From<MpcContract> for crate::MpcContract {
     fn from(old: MpcContract) -> Self {
+        if !matches!(old.protocol_state, ProtocolContractState::Running(_)) {
+            env::panic_str("Contract must be in running state when migrating.");
+        }
+
         // `3.10.0` had no vote endpoint, so `old.foreign_chain_rpc_whitelist.entries`
         // is guaranteed empty. Drop it and default-initialize the current reshaped
         // whitelist (empty `entries`, empty `votes.pending`).
@@ -97,6 +102,8 @@ impl From<MpcContract> for crate::MpcContract {
             tee_state: old.tee_state,
             accept_requests: old.accept_requests,
             node_migrations: old.node_migrations,
+            // TODO(#3279): drop `legacy_pending_requests` from `crate::MpcContract` and
+            // stop carrying it across migration.
             legacy_pending_requests: old.legacy_pending_requests,
             metrics: old.metrics,
             foreign_chain_rpc_whitelist: Default::default(),

@@ -143,7 +143,7 @@ frost-ed25519 = { version = "2.2.0", default-features = false }
 frost-secp256k1 = { version = "2.2.0", default-features = false }
 futures = "0.3.32"
 futures-lite = "2.6.1"
-gcloud-sdk = { version = "0.29.0", default-features = false, features = [
+gcloud-sdk = { version = "0.30.0", default-features = false, features = [
     "google-cloud-secretmanager-v1",
     "tls-webpki-roots",
 ] }

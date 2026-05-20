@@ -49,6 +49,8 @@ Note \- we currently only support bare metal and do not support virtualized TDX 
 
 For a list of supported cloud providers offering bare metal servers with Intel TDX, see [Cloud Providers Supporting Bare Metal Servers with Intel TDX](./cloud-providers-tdx.md).
 
+> **Sharing one host between mainnet and testnet?** See [Running multiple MPC nodes on one host](./running-multiple-mpc-nodes-on-one-host.md) for the additional setup (one `dstack-vmm` hosting both CVMs, with each CVM bound to a distinct host IP at port-forward time). Note: this setup is discouraged as it couples mainnet and testnet availability — a single failure takes both nodes offline.
+
 ### General
 
 * Firewall:allow ingress port 80 (MPC), 24567 (near) and port 8080 (web)
@@ -663,25 +665,34 @@ url = "https://api.trustedservices.intel.com/"
 [mpc_node_config.near_init]
 chain_id = "$CHAIN_ID"            # "testnet" or "mainnet"
 boot_nodes = "$BOOT_NODES"        # comma-separated; see the curl snippet below
+download_genesis = true
+download_config = "rpc"
 # tier3_public_addr = "$IP:24567"
 # external_storage_fallback_threshold = 0
 
+[mpc_node_config.secrets]
+secret_store_key_hex = "$SECRET_STORE_KEY"
+backup_encryption_key_hex = "$BACKUP_ENCRYPTION_KEY"
+
 [mpc_node_config.node]
 my_near_account_id = "$MY_MPC_NEAR_ACCOUNT_ID"
+near_responder_account_id = "$MY_MPC_NEAR_ACCOUNT_ID"
 migration_web_ui = "0.0.0.0:8079"  # required; matches the port-forward above
 
 [mpc_node_config.node.indexer]
-mpc_contract_id = "$CONTRACT_ID"  # v1.signer-prod.testnet for Testnet, v1.signer for Mainnet
-
-[mpc_node_config.secrets]
-secret_store_key_hex = "$SECRET_STORE_KEY"
+mpc_contract_id = "$CONTRACT_ID"  # v1.signer-prod.testnet for testnet, v1.signer for mainnet
+validate_genesis = false
+sync_mode = "Latest"
+finality = "optimistic"
+concurrency = 1
+port_override = 80                # MPC P2P convention
 
 [mpc_node_config.log]
 format = "plain"
 filter = "mpc=debug,info"
 ```
 
-The snippet above shows only the fields you are likely to change. Required fields not shown (e.g. `near_responder_account_id`, `number_of_responder_keys`, `web_ui`, and the `indexer` / `triple` / `presignature` / `signature` / `ckd` blocks) are inherited from the [`user-config.toml`](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/user-config.toml) template — always start from that file and edit the highlighted fields rather than building a config from this snippet alone.
+The snippet above shows only the fields you are likely to change. Required fields not shown (e.g. `number_of_responder_keys`, `web_ui`, and the `triple` / `presignature` / `signature` / `ckd` / `foreign_chains` blocks) and inline `# mainnet: …` swap hints are inherited from the [`user-config.toml`](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/user-config.toml) template — always start from that file and edit the highlighted fields rather than building a config from this snippet alone.
 
 Adjust the variables as per your environment.
 
@@ -690,9 +701,9 @@ Adjust the variables as per your environment.
 * `mpc_contract_id` — **v1.signer-prod.testnet** for testnet, **v1.signer** for mainnet
 * `migration_web_ui` — bind address for the migration HTTP endpoint, used by the [Node Migration](./node-migration-guide.md) flow. Required. Keep at `0.0.0.0:8079` to match the port-forward and the `--mpc-node-address …:8079` form the migration guide uses.
 * `port_mappings` — port forwarding rules for the MPC container. These should be a subset of the port forwarding for the CVM defined in the [Using the Web Interface](#using-the-web-interface) section.
-* `tier3_public_addr` *(optional, under `[mpc_node_config.near_init]`)* — `IP:24567` the node advertises for Tier3 state-sync responses. Applied at first init only; changing later requires a CVM redeploy via the [Node Migration](./node-migration-guide.md) flow.
+* `tier3_public_addr` *(optional for single-node; required when running [multiple nodes on one host](./running-multiple-mpc-nodes-on-one-host.md); lives under `[mpc_node_config.near_init]`)* — `IP:24567` the node advertises for Tier3 state-sync responses. Applied at first init only; changing later requires a CVM redeploy via the [Node Migration](./node-migration-guide.md) flow.
 * `external_storage_fallback_threshold` *(optional, under `[mpc_node_config.near_init]`)* — DSS attempts per state part before falling back to the external storage bucket. `0` = bucket-only. Same first-init-only constraint as `tier3_public_addr`.
-* A fresh set of boot nodes can be selected using Testnet/Mainnet RPC endpoints. Copy at least 4-5 nodes from curl results into `boot_nodes`.
+* `near_init.boot_nodes` — comma-separated NEAR boot-node list. The testnet template at `deployment/cvm-deployment/user-config.toml` already ships with a working testnet boot-node list, so testnet operators usually don't need to fetch a fresh one. For **mainnet** (or to refresh testnet), select boot nodes from the Testnet/Mainnet RPC endpoints and copy at least 4-5 of them into this field.
   **Important:** Boot nodes must not contain duplicate addresses or peer IDs. Duplicates will cause the node to crash on startup. The command below deduplicates automatically:
 
 ```bash
@@ -785,17 +796,17 @@ sed \
 > whitespace) — only the two digest substitutions should differ from the
 > template.
 
-### Required Ports and Port Collisions
+### Required Ports and IP Allocation
 
-MPC nodes use a fixed set of ports for communication and telemetry.
-This creates a limitation when trying to run both **mainnet** and **testnet** nodes on the same physical server, since both sets of nodes attempt to bind to the same ports.
+MPC nodes bind a fixed set of ports (listed below). Two supported
+deployment shapes:
 
----
-
-* **Single network per machine**: By default, running both mainnet and testnet on the same machine is not supported because of port collisions.
-* **Workaround with multiple IPs**: It is possible to run multiple nodes (e.g., one mainnet and one testnet) on the same host if the server is configured with **multiple external IP addresses**.
-  * Each node binds to the required ports (see below) on a separate IP.
-  * Additional IP/port routing on the local machine may be required.
+* **One node per host**: the host's primary public IP carries all
+  port forwards.
+* **Multiple nodes on one host** (mainnet + testnet): each CVM is
+  bound to its own public IP on the same host via dstack's
+  per-port-mapping `host_address`. See [Running multiple MPC nodes
+  on one host](./running-multiple-mpc-nodes-on-one-host.md).
 
 ---
 
@@ -830,13 +841,15 @@ Use the following custom settings for MPC:
 3. Pre script \- empty.
 4. user-config \- provided above
 5. KMS=disable, Local Keyprovider=enabled, Tproxy=disable, public logs=enabled, public sysinfo=enabled, pin NUMA=disabled
-6. Port mapping: (taken from the list above)
-   Public 80:80 (main node to node communication port)
-   Public 24567:24567 (required for decentralized state sync)
-   Public 8080:8080 (required for collecting debug and telemetry information)
-   Public 8079:8079 (required for the node-migration HTTP endpoint)
-   Local 3030:3030: (use public if you want the debug metrics to be available on the internet)
-   Local <dstack_agent_port>:8090: (required for access CVM information and container logs)
+6. Port mapping (format: `<host_address>:<host_port>` → `<vm_port>`):
+   Public 0.0.0.0:80 → 80 (main node to node communication port)
+   Public 0.0.0.0:24567 → 24567 (required for decentralized state sync)
+   Public 0.0.0.0:8080 → 8080 (required for collecting debug and telemetry information)
+   Public 0.0.0.0:8079 → 8079 (required for the node-migration HTTP endpoint)
+   Local 127.0.0.1:3030 → 3030 (use a public host address if you want the debug metrics available on the internet)
+   Local 127.0.0.1:<dstack_agent_port> → 8090 (required for access CVM information and container logs)
+
+   The **host address** is the IP qemu binds each forward to. Single-node deployments use `0.0.0.0` to bind on every host interface. **Multi-node deployments** (mainnet + testnet on one host) use a specific public IP per CVM — see [Running multiple MPC nodes on one host](./running-multiple-mpc-nodes-on-one-host.md).
 
 7. Key Provider ID: (The MrEnclave for the sgx local key provider) 6b5ed02e549a1c30aaa8e3171a045f1f449b0017353ef595e78e39c348c98d01
 
@@ -1308,9 +1321,50 @@ To generate a voting command, follow these steps:
    ```
 
 After all participants have voted, the contract will move to a resharing phase.
-You can see this in the node logs (TBD) [#906](https://github.com/near/mpc/issues/906)
 
-And when the resharing has finished look for… (TBD) [#906](https://github.com/near/mpc/issues/906)
+**When resharing starts.** Each node detects the contract state change and logs:
+
+```
+INFO mpc_node::coordinator: A resharing started.
+INFO mpc_node::coordinator: Starting key resharing.
+INFO mpc_node::coordinator: Resharing process is: Some(ResharingContractState { ... })
+```
+
+**During resharing.** Each domain runs its own attempt. Per-attempt progress lines (in order):
+
+```
+INFO mpc_node::key_events: Key resharing attempt KeyEventId { epoch_id: EpochId(1), domain_id: DomainId(0), attempt_id: AttemptId(0) }: starting key resharing.
+INFO mpc_node::providers::<scheme>::key_resharing: Key resharing completed
+INFO mpc_node::key_events: Key resharing attempt KeyEventId { ... }: committing keyshare.
+INFO mpc_node::key_events: Key resharing attempt KeyEventId { ... }: sending vote_reshared transaction.
+INFO mpc_node::key_events: Key resharing attempt KeyEventId { ... } completed successfully.
+```
+
+Where `<scheme>` is `ecdsa`, `eddsa`, or `ckd`. The `epoch_id` is the resharing's new epoch; `domain_id` identifies which keyspace (each gets its own attempt).
+
+**When resharing finishes.** Once the contract leaves the Resharing state, each node logs:
+
+```
+INFO mpc_node::coordinator: Concluded resharing state.
+```
+
+You can also confirm on-chain (replace `v1.signer-prod.testnet` / `testnet` with `v1.signer` / `mainnet` on mainnet):
+
+```bash
+near contract call-function as-read-only \
+  v1.signer-prod.testnet state \
+  json-args {} network-config testnet now
+```
+
+The response should show `Running` (not `Resharing`) and a new `keyset.epoch_id`.
+
+**If resharing fails.** An attempt that times out or errors logs:
+
+```
+ERROR mpc_node::key_events: Key resharing attempt KeyEventId { ... } failed: <err>; sending vote_abort_key_event_instance
+```
+
+The contract will retry with a fresh attempt; repeated failures need investigation.
 
 ## Upgrades
 
@@ -1377,11 +1431,15 @@ The `node manifest digest` is what you vote for. When submitting the `code_hash`
 Each participant submits a vote for the new MPC Docker image **manifest digest**.
 A **threshold** number of participant votes is required for the vote to pass.
 
+Set `MANIFEST_DIGEST` to the SHA-256 hex digest (without the `sha256:` prefix), then send the vote:
+
 ```bash
+MANIFEST_DIGEST=331cfec941671ac343c52847e255eb36a280da65535d2a1e4d002c4c64686e19
+
 near contract call-function as-transaction \
   v1.signer-prod.testnet \
   vote_code_hash \
-  json-args '{"code_hash": "<MANIFEST_DIGEST>"}' \
+  json-args "{\"code_hash\": \"$MANIFEST_DIGEST\"}" \
   prepaid-gas '100.0 Tgas' \
   attached-deposit '0 NEAR' \
   sign-as <your-account-id> \
@@ -1390,23 +1448,41 @@ near contract call-function as-transaction \
   send
 ```
 
-The **MANIFEST_DIGEST** argument must be provided as an SHA-256 hex digest (without the `sha256:` prefix).
+> **Note:** There is no `vote_remove_code_hash`. Once a successor hash is voted in, the previous hash remains valid for a 7-day grace period and then auto-expires — so unlike launcher and OS-measurement voting there is no explicit remove command.
 
-For example, for the manifest digest `sha256:331cfec9...`:
+#### Query allowed MPC image hashes
 
 ```bash
-MANIFEST_DIGEST=331cfec941671ac343c52847e255eb36a280da65535d2a1e4d002c4c64686e19
+near contract call-function as-read-only \
+  v1.signer-prod.testnet \
+  allowed_docker_image_hashes \
+  json-args '{}' \
+  network-config testnet \
+  now
 ```
 
-TBD [#908](https://github.com/near/mpc/issues/908) Add here voting procedure.
+Returns the list of currently-accepted image hashes, most recent first.
+
+#### Query MPC image hash votes
+
+```bash
+near contract call-function as-read-only \
+  v1.signer-prod.testnet \
+  code_hash_votes \
+  json-args '{}' \
+  network-config testnet \
+  now
+```
+
+Shows per-participant votes so you can see how many more are needed to reach threshold.
 
 ### Update the MPC node
 
 After voting has finished, the MPC node will detect the new approved manifest digest on the contract and save it to a secure location inside the CVM.
 
-Following the digest update, upgrade the MPC node:
-1. (Optional) Confirm the manifest digest shown on DockerHub for the image tag matches the hash you voted for.
-2. Restart the CVM. The launcher will pull the new image by manifest digest automatically.
+Restart the CVM (see [CVM management](#cvm-management)). The launcher will pull the new image by manifest digest automatically, verify it, and re-attest to the contract.
+
+> You can see the image update and re-sync in the node logs — TBD [#910](https://github.com/near/mpc/issues/910).
 
 ## Launcher / CVM Upgrade
 
@@ -1581,82 +1657,50 @@ For the migration procedure, see the [node migration guide](node-migration-guide
 
 After all operators have migrated to the new CVM, participants should vote to remove the old launcher manifest digest using `vote_remove_launcher_hash` and/or old OS measurements using `vote_remove_os_measurement`. This requires **all** participants to vote, ensuring no node is still running with the old configuration.
 
-## Updating the CVM `user-config.toml` with new image information
+## CVM management
 
-If the image repository changes, update the `image` field in `user-config.toml`:
+Common operations on a deployed CVM: **stop**, **start**, and **update `user-config.toml`**.
 
-**Example:**
+You usually don't need to edit `user-config.toml` after initial deployment. However, a future MPC release may introduce new `user-config.toml` fields; if so, the release notes will call it out.
 
-```toml
-[launcher_config]
-image_reference = "nearone/mpc-node"
-```
+### Via Web UI
 
-The image version is determined by the manifest digest from the contract (not by a tag). You do not need to update the config for routine image upgrades — just vote for the new manifest digest and restart the CVM.
-
----
-
-### Steps
-
-1. **Stop the CVM**
-2. **Update `user-config.toml`** with the new values
-3. **Start the CVM**
-
----
-
-### Options for performing the update
-
-#### Manually Via Web UI
-
-* Stop the CVM from the WebUI.
-* Press the **update** button
-* Update The config file and press **Upgrade**
-* Start the CVM
-
+| Operation | Action |
+|-----------|--------|
+| Stop the CVM | Press **Stop** |
+| Start the CVM | Press **Start** |
+| Update `user-config.toml` | Stop the CVM → press **update** → upload the new file → press **Upgrade** → start the CVM |
 
 ![](./attachments/cvm_options.png)
 
 ![](./attachments/config_upgrade.png)
 
+### Via Command Line
 
-
-#### Via Command Line
-
-* See the [VMM CLI user guide](https://github.com/Dstack-TEE/dstack/blob/master/docs/vmm-cli-user-guide.md).
-* The CLI script is located at:
-  `meta-dstack/dstack/vmm/src/vmm-cli.py`
+See the [VMM CLI user guide](https://github.com/Dstack-TEE/dstack/blob/master/docs/vmm-cli-user-guide.md). The CLI script is at `meta-dstack/dstack/vmm/src/vmm-cli.py`.
 
 First, define environment variables (once per shell session):
 
 ```bash
-
 export VMM_URL=http://127.0.0.1:11100 # change to your port
 export VMM_CLI_PATH="meta-dstack/dstack/vmm/src/vmm-cli.py" # change to your meta-dstack location
 ```
 
-Then you can use `$VMM_CLI_PATH` and `$VMM_URL` for all commands:
+Then:
 
 ```bash
-# 1. Enumerate and find your VM ID
+# Enumerate and find your VM ID
 python $VMM_CLI_PATH --url $VMM_URL lsvm
 
-# 2. Gracefully stop the VM
+# Stop the CVM
 python $VMM_CLI_PATH --url $VMM_URL stop <vm-id>
 
-# 3. Update user-config
-python $VMM_CLI_PATH --url $VMM_URL update-user-config <vm-id> ./new-user-config.txt
+# Update user-config (only if needed)
+python $VMM_CLI_PATH --url $VMM_URL update-user-config <vm-id> ./new-user-config.toml
 
-# 4. Start the VM
+# Start the CVM
 python $VMM_CLI_PATH --url $VMM_URL start <vm-id>
 ```
-
-#### Restart the CVM
-
-If not done in the previous step, stop and start the CVM.
-
-The new MPC docker binary should be automatically pulled from docker hub, verified and launched, and a remote attestation will be sent to the contract.
-
-You can see in the MPC node's logs that the image was updated, and that the node has synced again. **TBD — sample logs to be added; tracked in [#910](https://github.com/near/mpc/issues/910).**
 
 ## Troubleshooting
 

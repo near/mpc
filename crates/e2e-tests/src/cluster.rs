@@ -17,7 +17,6 @@ use rand::rngs::StdRng;
 use serde_json::json;
 
 use crate::blockchain::{ClientHandle, DeployedContract, NearBlockchain};
-use crate::legacy_init::{LegacyDomainConfig, LegacyThresholdParameters};
 use crate::mpc_node::{MpcNode, MpcNodeSetup, MpcNodeSetupArgs, NodePorts};
 use crate::near_sandbox::NearSandbox;
 use crate::port_allocator::E2ePortAllocator;
@@ -98,30 +97,16 @@ pub struct MpcClusterConfig {
 
 /// JSON wire format used for the contract's `init` call.
 ///
-/// Whenever a wire-breaking change to an `init` argument lands (e.g. the
-/// `sign_pk` → `tls_public_key` rename in 3.10), a new variant is needed so
-/// the cluster can still target the older production contract.
-///
-/// # Maintaining this enum across upgrades
-///
-/// - **When a new wire-breaking change to `init` lands**: add a new variant
-///   (e.g. `Legacy3_10_X`) that emits the now-old shape, and update the
-///   `init_contract` helper in `cluster.rs` to branch on it.
-/// - **After the breaking change has rolled out to Mainnet/Testnet**: remove
-///   the obsolete variant and any tests that pin to it. The `current_*()`
-///   pointers in `contract-history` will already reference a binary that
-///   speaks the new format, so `Current` is enough.
+/// Scaffold for cross-version compatibility: when a wire-breaking change to
+/// `init` lands, add a `Legacy*` variant emitting the now-old shape and
+/// branch on it in `init_parameters_json` so tests can still target the
+/// previous production contract. After the breaking change has rolled out to
+/// Mainnet/Testnet, drop the obsolete variant.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ContractInitFormat {
-    /// Current `ThresholdParameters` shape (uses `tls_public_key`).
+    /// Current `ThresholdParameters` shape.
     #[default]
     Current,
-    /// Pre-3.10 `ThresholdParameters` shape (uses `sign_pk`). Only the field
-    /// inside `ParticipantInfo` differs; everything else is forward-compatible
-    /// because the 3.9.1 contract ignores unknown JSON fields. Remove this
-    /// variant once `contract_history::current_*()` no longer points at a
-    /// binary that requires the legacy shape.
-    Legacy3_9_1,
 }
 
 impl ContractInitFormat {
@@ -133,7 +118,6 @@ impl ContractInitFormat {
     ) -> serde_json::Result<serde_json::Value> {
         match self {
             Self::Current => serde_json::to_value(params),
-            Self::Legacy3_9_1 => serde_json::to_value(LegacyThresholdParameters::from(params)),
         }
     }
 }
@@ -462,7 +446,7 @@ impl MpcCluster {
     /// `Initializing` state. Does NOT wait for key generation to complete —
     /// use `add_domains_and_wait` for the full flow.
     pub async fn start_add_domains(&self, domains: Vec<DomainConfig>) -> anyhow::Result<()> {
-        let args = vote_add_domains_args(&domains);
+        let args = json!({ "domains": &domains });
         self.call_from_all_nodes_concurrently(method_names::VOTE_ADD_DOMAINS, args)
             .await?;
 
@@ -1183,18 +1167,6 @@ async fn init_contract(
     .context("contract did not reach Running state after init")
 }
 
-/// Builds the JSON payload for a `vote_add_domains` call. Serializes domains
-/// with the legacy `curve`-bearing shape so the call works against both
-/// production binaries (which still require `curve`) and the current contract
-/// (which accepts both via the DTO compat shim). Drop this helper — and
-/// inline plain `DomainConfig` serialization at the call sites — after the
-/// 3.10 release is the production contract on Mainnet and Testnet.
-fn vote_add_domains_args(domains: &[DomainConfig]) -> serde_json::Value {
-    let legacy_domains: Vec<LegacyDomainConfig> =
-        domains.iter().map(LegacyDomainConfig::from).collect();
-    json!({ "domains": legacy_domains })
-}
-
 async fn add_initial_domains(
     blockchain: &NearBlockchain,
     contract: &DeployedContract,
@@ -1203,7 +1175,7 @@ async fn add_initial_domains(
     domains: &[DomainConfig],
 ) -> anyhow::Result<()> {
     tracing::info!(count = domains.len(), "adding domains");
-    let args = vote_add_domains_args(domains);
+    let args = json!({ "domains": domains });
 
     for &i in participant_indices {
         let account = format!("node{i}.{SANDBOX_ROOT_ACCOUNT}");

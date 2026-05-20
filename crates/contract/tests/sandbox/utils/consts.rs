@@ -41,9 +41,9 @@ pub const GAS_FOR_VOTE_BEFORE_THRESHOLD: Gas = Gas::from_tgas(5);
 /// This vote is more expensive because it deploys the new contract code and executes
 /// the migration function. Raised from 185 → 190 → 200 TGas as the foreign-chain
 /// RPC providers feature (issue #3215) grew the WASM: first to add the whitelist +
-/// `v3_10_0_state` try-read step, then again when the `Votes<V>` + `IterableMap` +
+/// `v3_10_state` try-read step, then again when the `Votes<V>` + `IterableMap` +
 /// `NonEmptyBTreeMap` reshape pushed the binary slightly larger. Revert toward 185
-/// once `v3_10_0_state` is retired and `Votes<V>` monomorphization overhead has been
+/// once `v3_10_state` is retired and `Votes<V>` monomorphization overhead has been
 /// amortized across other consumers.
 pub const MAX_GAS_FOR_THRESHOLD_VOTE: Gas = Gas::from_tgas(200);
 
