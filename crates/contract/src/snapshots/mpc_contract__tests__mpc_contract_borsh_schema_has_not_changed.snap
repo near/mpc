@@ -1,6 +1,5 @@
 ---
 source: crates/contract/src/lib.rs
-assertion_line: 5683
 expression: schema
 ---
 BorshSchemaContainer {
@@ -801,24 +800,6 @@ BorshSchemaContainer {
                 ],
             ),
         },
-        "LegacyPendingRequests": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "signature_requests",
-                        "LookupMap",
-                    ),
-                    (
-                        "ckd_requests",
-                        "LookupMap",
-                    ),
-                    (
-                        "verify_foreign_tx_requests",
-                        "LookupMap",
-                    ),
-                ],
-            ),
-        },
         "LookupMap": Struct {
             fields: NamedFields(
                 [
@@ -924,10 +905,6 @@ BorshSchemaContainer {
                     (
                         "node_migrations",
                         "NodeMigrations",
-                    ),
-                    (
-                        "legacy_pending_requests",
-                        "LegacyPendingRequests",
                     ),
                     (
                         "metrics",
