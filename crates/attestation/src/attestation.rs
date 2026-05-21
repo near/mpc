@@ -486,6 +486,32 @@ mod tests {
         verify::VerifiedReport,
     };
 
+    fn verified_report(status: &str, advisory_ids: Vec<String>) -> VerifiedReport {
+        VerifiedReport {
+            status: status.to_string(),
+            advisory_ids,
+            // `verify_tcb_status` does not read any of the fields below; we
+            // provide arbitrary zeroed values to satisfy the struct's type.
+            report: Report::SgxEnclave(EnclaveReport {
+                cpu_svn: [0u8; 16],
+                misc_select: 0,
+                reserved1: [0u8; 28],
+                attributes: [0u8; 16],
+                mr_enclave: [0u8; 32],
+                reserved2: [0u8; 32],
+                mr_signer: [0u8; 32],
+                reserved3: [0u8; 96],
+                isv_prod_id: 0,
+                isv_svn: 0,
+                reserved4: [0u8; 60],
+                report_data: [0u8; 64],
+            }),
+            ppid: Vec::new(),
+            qe_status: TcbStatusWithAdvisory::new(TcbStatus::UpToDate, Vec::new()),
+            platform_status: TcbStatusWithAdvisory::new(TcbStatus::UpToDate, Vec::new()),
+        }
+    }
+
     #[test]
     fn verify_tcb_status__should_accept_uptodate_with_empty_advisories() {
         // Given
@@ -548,32 +574,6 @@ mod tests {
                 "OutOfDate".to_string()
             ))
         );
-    }
-
-    fn verified_report(status: &str, advisory_ids: Vec<String>) -> VerifiedReport {
-        VerifiedReport {
-            status: status.to_string(),
-            advisory_ids,
-            // `verify_tcb_status` does not read any of the fields below; we
-            // provide arbitrary zeroed values to satisfy the struct's type.
-            report: Report::SgxEnclave(EnclaveReport {
-                cpu_svn: [0u8; 16],
-                misc_select: 0,
-                reserved1: [0u8; 28],
-                attributes: [0u8; 16],
-                mr_enclave: [0u8; 32],
-                reserved2: [0u8; 32],
-                mr_signer: [0u8; 32],
-                reserved3: [0u8; 96],
-                isv_prod_id: 0,
-                isv_svn: 0,
-                reserved4: [0u8; 60],
-                report_data: [0u8; 64],
-            }),
-            ppid: Vec::new(),
-            qe_status: TcbStatusWithAdvisory::new(TcbStatus::UpToDate, Vec::new()),
-            platform_status: TcbStatusWithAdvisory::new(TcbStatus::UpToDate, Vec::new()),
-        }
     }
 
     #[test]
