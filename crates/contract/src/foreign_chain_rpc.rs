@@ -57,8 +57,7 @@ impl AllowedProviders {
         self.entries.insert(chain, entry);
     }
 
-    /// Snapshot of the whole whitelist. Collected so the caller can ship it across
-    /// the contract boundary without holding a borrow on `self`.
+    /// Owned clone of the whitelist.
     pub fn snapshot(&self) -> BTreeMap<ForeignChain, ChainEntry> {
         self.entries.iter().map(|(c, e)| (*c, e.clone())).collect()
     }
@@ -498,18 +497,6 @@ mod tests {
             .providers
             .contains_key(&ProviderId("drpc".to_string())));
     }
-
-    // Several "should_return_err_on_*" tests retired as their preconditions became
-    // unrepresentable at the type level after the entry-point input switched to
-    // `NonEmptyBTreeMap<ForeignChain, ChainEntry>` and `ChainEntry.providers` to
-    // `NonEmptyBTreeMap<ProviderId, ProviderConfig>`:
-    //
-    // - `empty_batch` — outer `NonEmptyBTreeMap` rejects at borsh-deserialize.
-    // - `duplicate_chain_in_batch` — outer `BTreeMap` key uniqueness.
-    // - `empty_providers` — inner `NonEmptyBTreeMap` rejects at borsh-deserialize.
-    // - `duplicate_provider_in_chain_entry` — inner `BTreeMap<ProviderId, _>` key
-    //   uniqueness; duplicate provider ids in client input either deserialize-error
-    //   or get deduplicated before reaching the contract.
 
     #[test]
     fn vote__should_return_err_on_zero_quorum() {

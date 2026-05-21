@@ -1484,7 +1484,9 @@ impl MpcContract {
             dtos::ChainEntry,
         >,
     ) -> Result<Vec<dtos::ForeignChain>, Error> {
-        let batch_hash = env::sha256_array(borsh::to_vec(&votes).unwrap());
+        let batch_hash = env::sha256_array(
+            borsh::to_vec(&votes).expect("borsh serialization of votes batch must succeed"),
+        );
         log!(
             "vote_update_foreign_chain_providers: signer={}, n_votes={}, batch_hash={}",
             env::signer_account_id(),
