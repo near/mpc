@@ -4,7 +4,7 @@ This guide provides step-by-step instructions for node operators to migrate thei
 
 ## Overview
 
-Node migration allows you to move your MPC node from one host to another without requiring a full network resharing. This is accomplished using the  `backup-cli` tool to securely backup and restore your node's keyshares.
+Node migration allows you to move your MPC node from one host to another without requiring a full network resharing. This is accomplished using the `backup-cli` tool to securely backup and restore your node's keyshares.
 
 **Important:** This guide covers the **Soft Launch** migration process. For information about the architecture and future Hard Launch implementation, see [migration-service.md](./migration-service.md).
 
@@ -106,7 +106,7 @@ near contract call-function as-transaction \
 
 Copy and run the generated command to register your backup-cli with the contract.
 
-**Note:** The "public key" in the registration corresponds to  the `p2p_private_key` created in Step 1.
+**Note:** The "public key" in the registration corresponds to the `p2p_private_key` created in Step 1.
 
 ### Verify Registration
 ```bash
@@ -118,7 +118,7 @@ near contract call-function as-read-only \
   now
 ```
 
-You should see your account and registered backup_cli  public key listed, something like this:
+You should see your account and registered backup_cli public key listed, something like this:
 
 
 ```json
@@ -147,7 +147,7 @@ For additional security, the backup and restore process encrypts keyshares durin
 export BACKUP_ENCRYPTION_KEY=$(cat $MPC_HOME_DIR/backup_encryption_key.hex)
 ```
 
-Copy this key and set it as the `BACKUP_ENCRYPTION_KEY` environment variable for  the backup-cli when running `get-keyshares`.
+Copy this key and set it as the `BACKUP_ENCRYPTION_KEY` environment variable for the backup-cli when running `get-keyshares`.
 
 
 
@@ -386,6 +386,6 @@ After verifying the migration was successful:
 If backup-cli cannot connect to your node:
 
 - **Verify firewall rules**: Ensure the backup service can reach the node's address
-port 8079  is open and accessible
+port 8079 is open and accessible
 
 
