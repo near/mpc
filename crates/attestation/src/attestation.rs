@@ -39,9 +39,11 @@ pub struct DstackAttestation {
 
 /// Result of a successful [`DstackAttestation::verify`] call.
 #[derive(Clone, Debug)]
-pub struct AcceptedDstack {
+pub struct AcceptedDstackAttestation {
     pub measurements: ExpectedMeasurements,
-    /// See `DstackAttestation::check_tcb_status` for the meaning of these IDs.
+    /// Informational advisory IDs (e.g. `INTEL-DOC-10000` post-ESU) surfaced by
+    /// Intel's PCS alongside an `UpToDate` TCB status. They are not a security
+    /// failure; the policy is documented at issue near/mpc#3281.
     pub advisory_ids: Vec<String>,
 }
 
@@ -128,14 +130,14 @@ impl DstackAttestation {
     ///   If any element in the set is valid, the function accepts the attestation as
     ///   valid.
     ///
-    /// On success, returns the matched measurements along with any advisory IDs
-    /// surfaced by Intel's PCS — see `Self::check_tcb_status`.
+    /// On success, returns the matched measurements along with any informational
+    /// advisory IDs surfaced alongside an `UpToDate` TCB status.
     pub fn verify(
         &self,
         expected_report_data: ReportData,
         timestamp_seconds: u64,
         accepted_measurements: &[ExpectedMeasurements],
-    ) -> Result<AcceptedDstack, VerificationError> {
+    ) -> Result<AcceptedDstackAttestation, VerificationError> {
         let verification_result =
             dcap_qvl::verify::verify(&self.quote, &self.collateral, timestamp_seconds)
                 .map_err(|e| VerificationError::DcapVerification(e.to_string()))?;
@@ -146,7 +148,7 @@ impl DstackAttestation {
             .ok_or(VerificationError::ReportNotTd10)?;
 
         // Verify all attestation components
-        let advisory_ids = Self::check_tcb_status(
+        let advisory_ids = Self::verify_tcb_status(
             &verification_result.status,
             &verification_result.advisory_ids,
         )?;
@@ -157,7 +159,7 @@ impl DstackAttestation {
 
         let measurements =
             self.verify_any_measurements(report_data, &self.tcb_info, accepted_measurements)?;
-        Ok(AcceptedDstack {
+        Ok(AcceptedDstackAttestation {
             measurements,
             advisory_ids,
         })
@@ -241,7 +243,7 @@ impl DstackAttestation {
     ///      after a product's Extended Servicing Updates date). These may appear with
     ///      `UpToDate` and do not indicate a vulnerability; they are returned so the
     ///      caller can log/expose them.
-    fn check_tcb_status(
+    fn verify_tcb_status(
         status: &str,
         advisory_ids: &[String],
     ) -> Result<Vec<String>, VerificationError> {
@@ -482,16 +484,16 @@ mod tests {
     use alloc::{string::ToString, vec, vec::Vec};
 
     #[test]
-    fn check_tcb_status__should_accept_uptodate_with_empty_advisories() {
+    fn verify_tcb_status__should_accept_uptodate_with_empty_advisories() {
         // When
-        let result = DstackAttestation::check_tcb_status("UpToDate", &[]);
+        let result = DstackAttestation::verify_tcb_status("UpToDate", &[]);
 
         // Then
         assert_eq!(result, Ok(vec![]));
     }
 
     #[test]
-    fn check_tcb_status__should_accept_uptodate_with_informational_advisories() {
+    fn verify_tcb_status__should_accept_uptodate_with_informational_advisories() {
         // Regression test for #3281: after Intel's 2026 PCS change, `UpToDate` may
         // ship with informational advisory IDs (e.g. `INTEL-DOC-10000` post-ESU).
         // These must not cause the quote to be rejected; they should be returned
@@ -501,16 +503,16 @@ mod tests {
         let advisories = vec!["INTEL-DOC-10000".to_string()];
 
         // When
-        let result = DstackAttestation::check_tcb_status("UpToDate", &advisories);
+        let result = DstackAttestation::verify_tcb_status("UpToDate", &advisories);
 
         // Then
         assert_eq!(result, Ok(advisories));
     }
 
     #[test]
-    fn check_tcb_status__should_reject_non_uptodate_status() {
+    fn verify_tcb_status__should_reject_non_uptodate_status() {
         // When
-        let result = DstackAttestation::check_tcb_status("OutOfDate", &[]);
+        let result = DstackAttestation::verify_tcb_status("OutOfDate", &[]);
 
         // Then
         assert_eq!(
@@ -522,10 +524,10 @@ mod tests {
     }
 
     #[test]
-    fn check_tcb_status__should_reject_non_uptodate_status_with_advisories() {
+    fn verify_tcb_status__should_reject_non_uptodate_status_with_advisories() {
         // When
         let result =
-            DstackAttestation::check_tcb_status("OutOfDate", &["INTEL-SA-00001".to_string()]);
+            DstackAttestation::verify_tcb_status("OutOfDate", &["INTEL-SA-00001".to_string()]);
 
         // Then
         assert_eq!(

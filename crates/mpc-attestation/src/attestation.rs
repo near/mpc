@@ -1,5 +1,7 @@
 use alloc::vec::Vec;
-pub use attestation::attestation::{AcceptedDstack, DstackAttestation, VerificationError};
+pub use attestation::attestation::{
+    AcceptedDstackAttestation, DstackAttestation, VerificationError,
+};
 pub use attestation::measurements::{ExpectedMeasurements, Measurements};
 use attestation::{
     app_compose::AppCompose,
@@ -42,9 +44,9 @@ pub enum VerifiedAttestation {
 #[derive(Clone, Debug)]
 pub struct AcceptedAttestation {
     pub attestation: VerifiedAttestation,
-    /// Informational advisory IDs surfaced by Intel's PCS — see the
-    /// `check_tcb_status` doc in the `attestation` crate for what they mean
-    /// and why they don't fail verification.
+    /// Informational advisory IDs (e.g. `INTEL-DOC-10000` post-ESU) surfaced by
+    /// Intel's PCS alongside an `UpToDate` TCB status. They are not a security
+    /// failure; the policy is documented at issue near/mpc#3281.
     pub advisory_ids: Vec<String>,
 }
 
@@ -197,7 +199,7 @@ impl Attestation {
                     allowed_launcher_docker_compose_hashes,
                 )?;
 
-                let AcceptedDstack {
+                let AcceptedDstackAttestation {
                     measurements,
                     advisory_ids,
                 } = dstack_attestation.verify(
