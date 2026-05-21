@@ -360,7 +360,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 // We don't return early on non-canonical responses, because:
                 // - the request itself may also be on a non-canonical chain and will be removed
                 //   by the checks below (note: this assumption will no longer hold once
-                //   TODO(#3193) is fixed);
+                //   #3193 is fixed);
                 // - the response may not make it to canonical, and we may want to re-attempt.
                 //
                 // This is wrong in the case where ALL of the following hold:
