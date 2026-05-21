@@ -621,7 +621,18 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
 
         let mut result = Vec::new();
 
-        let mut requests_to_remove = Vec::new();
+        // Tag each removal so the post-loop knows whether to record a `completion_delay`
+        // for the corresponding `CompletedRequest`. Previously the Resolve arm both
+        // added a delay row inside the loop AND let the post-loop add a `None`-delay
+        // row, double-counting every resolved request in `recently_completed_requests`.
+        enum Removal {
+            Dropped,
+            Resolved {
+                latency_blocks: NumBlocks,
+                latency_duration: near_time::Duration,
+            },
+        }
+        let mut requests_to_remove: Vec<(RequestId, Removal)> = Vec::new();
 
         // any request strictly older than `cutoff_block` will be considered expired
         let cutoff_block = maximum_height.saturating_sub(REQUEST_EXPIRATION_BLOCKS) + 1;
@@ -643,7 +654,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                             .with_label_values(&[reason.metric_label()])
                             .inc();
                     }
-                    requests_to_remove.push(*id);
+                    requests_to_remove.push((*id, Removal::Dropped));
                 }
                 RequestStatus::Wait(reason) => {
                     tracing::debug!(target: "request", reason, "skipping request");
@@ -656,37 +667,39 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                     block_height,
                 } => {
                     mpc_pending_queue_finalized_responses.inc();
-                    let response_latency_blocks = block_height - request.block_height;
-                    let response_latency_duration =
+                    let latency_blocks = block_height - request.block_height;
+                    let latency_duration =
                         received_at.signed_duration_since(request.time_indexed);
 
-                    request_response_latency_blocks.observe(response_latency_blocks as f64);
-
+                    request_response_latency_blocks.observe(latency_blocks as f64);
                     request_response_latency_seconds
-                        .observe(response_latency_duration.as_seconds_f64());
+                        .observe(latency_duration.as_seconds_f64());
 
-                    self.recently_completed_requests
-                        .add_completed_request(CompletedRequest {
-                            indexed_block_height: request.block_height,
-                            request: request.request.clone(),
-                            progress: request.computation_progress.clone(),
-                            completion_delay: Some((
-                                response_latency_blocks,
-                                response_latency_duration,
-                            )),
-                        });
-                    requests_to_remove.push(*id);
+                    requests_to_remove.push((
+                        *id,
+                        Removal::Resolved {
+                            latency_blocks,
+                            latency_duration,
+                        },
+                    ));
                 }
             }
         }
-        for id in requests_to_remove {
+        for (id, removal) in requests_to_remove {
             if let Some(request) = self.requests.remove(&id) {
+                let completion_delay = match removal {
+                    Removal::Dropped => None,
+                    Removal::Resolved {
+                        latency_blocks,
+                        latency_duration,
+                    } => Some((latency_blocks, latency_duration)),
+                };
                 self.recently_completed_requests
                     .add_completed_request(CompletedRequest {
                         indexed_block_height: request.block_height,
                         request: request.request,
                         progress: request.computation_progress,
-                        completion_delay: None,
+                        completion_delay,
                     });
             }
         }
@@ -1264,6 +1277,15 @@ mod tests {
         assert!(
             debug.contains("blk        101 ->        102 (+1, 2s432ms)"),
             "{}",
+            debug
+        );
+        // And: the resolved request appears exactly once in `recently_completed_requests`
+        // (regression guard — the Resolve arm used to double-record by both adding a
+        // delay row inside the loop and letting the post-loop add a `None`-delay row.)
+        assert_eq!(
+            debug.matches("[completed]").count(),
+            1,
+            "expected exactly one completed-request row, got duplicates:\n{}",
             debug
         );
     }
