@@ -857,7 +857,9 @@ Use the following custom settings for MPC:
 
 7. Key Provider ID: (The MrEnclave for the sgx local key provider) 6b5ed02e549a1c30aaa8e3171a045f1f449b0017353ef595e78e39c348c98d01
 
-![CVM Web Page](./attachments/VMM_web_page.png)
+![VMM Web Page (1/2)](./attachments/VMM_web_page_deploy_1.png)
+
+![VMM Web Page (2/2)](./attachments/VMM_web_page_deploy_2.png)
 
 #### Using the script
 
