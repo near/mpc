@@ -46,7 +46,8 @@ pub struct AcceptedAttestation {
     pub attestation: VerifiedAttestation,
     /// Informational advisory IDs (e.g. `INTEL-DOC-10000` post-ESU) surfaced by
     /// Intel's PCS alongside an `UpToDate` TCB status. They are not a security
-    /// failure; the policy is documented at issue near/mpc#3281.
+    /// failure — `UpToDate` is the sole security gate; these advisories convey
+    /// platform lifecycle information.
     pub advisory_ids: Vec<String>,
 }
 

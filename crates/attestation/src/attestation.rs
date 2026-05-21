@@ -43,7 +43,8 @@ pub struct AcceptedDstackAttestation {
     pub measurements: ExpectedMeasurements,
     /// Informational advisory IDs (e.g. `INTEL-DOC-10000` post-ESU) surfaced by
     /// Intel's PCS alongside an `UpToDate` TCB status. They are not a security
-    /// failure; the policy is documented at issue near/mpc#3281.
+    /// failure — `UpToDate` is the sole security gate; these advisories convey
+    /// platform lifecycle information.
     pub advisory_ids: Vec<String>,
 }
 
@@ -494,10 +495,10 @@ mod tests {
 
     #[test]
     fn verify_tcb_status__should_accept_uptodate_with_informational_advisories() {
-        // Regression test for #3281: after Intel's 2026 PCS change, `UpToDate` may
-        // ship with informational advisory IDs (e.g. `INTEL-DOC-10000` post-ESU).
-        // These must not cause the quote to be rejected; they should be returned
-        // so the caller can surface them.
+        // After Intel's 2026 PCS change, `UpToDate` may ship with informational
+        // advisory IDs (e.g. `INTEL-DOC-10000` post-ESU). These must not cause
+        // the quote to be rejected; they should be returned so the caller can
+        // surface them.
 
         // Given
         let advisories = vec!["INTEL-DOC-10000".to_string()];
