@@ -385,7 +385,6 @@ After verifying the migration was successful:
 
 If backup-cli cannot connect to your node:
 
-- **Verify firewall rules**: Ensure the backup service can reach the node's address
-port 8079 is open and accessible
+- **Verify firewall rules**: Ensure the backup service can reach the node's address and that port 8079 is open and accessible.
 
 
