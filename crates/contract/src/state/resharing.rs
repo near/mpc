@@ -206,7 +206,7 @@ pub mod tests {
         state::test_utils::gen_resharing_state,
     };
     use near_account_id::AccountId;
-    use near_mpc_contract_interface::types::DomainId;
+    use near_mpc_contract_interface::types::{DomainId, Protocol};
     use rstest::rstest;
     use std::collections::BTreeSet;
 
@@ -464,5 +464,77 @@ pub mod tests {
         let _ = new_state
             .vote_new_parameters(new_state.prospective_epoch_id().next(), &new_params_2)
             .unwrap_err();
+    }
+
+    /// Pins the 3.11 CaitSith threshold invariant across the resharing path:
+    /// after a reshare, all CaitSith domains must share a single
+    /// `reconstruction_threshold`. They may move in lockstep, but must never
+    /// diverge from one another. Today this holds trivially because the
+    /// proposal carries only `ThresholdParameters` and leaves per-domain `t`
+    /// untouched, but once #3169 carries per-domain `t`s through resharing the
+    /// contract will need to keep them uniform — and this test is the tripwire.
+    #[test]
+    #[expect(non_snake_case)]
+    fn resharing__should_keep_all_caitsith_domains_at_one_reconstruction_threshold() {
+        // Given a resharing state covering every protocol twice, so more than
+        // one CaitSith domain is present and the invariant has teeth.
+        let (mut env, mut state) = gen_resharing_state(2 * NUM_PROTOCOLS);
+        let num_caitsith = state
+            .previous_running_state
+            .domains
+            .domains()
+            .iter()
+            .filter(|d| d.protocol == Protocol::CaitSith)
+            .count();
+        assert!(
+            num_caitsith > 1,
+            "fixture must include multiple CaitSith domains for the invariant to be meaningful"
+        );
+
+        // When the resharing concludes for every domain.
+        let candidates: BTreeSet<AccountId> = state
+            .resharing_key
+            .proposed_parameters()
+            .participants()
+            .participants()
+            .iter()
+            .map(|(aid, _, _)| aid.clone())
+            .collect();
+        let mut running_state: Option<RunningContractState> = None;
+        let num_domains = state.previous_running_state.domains.domains().len();
+        for i in 0..num_domains {
+            let leader = find_leader(&state.resharing_key);
+            let key_event_id = KeyEventId {
+                attempt_id: AttemptId::new(),
+                domain_id: state
+                    .previous_running_state
+                    .domains
+                    .get_domain_by_index(i)
+                    .unwrap()
+                    .id,
+                epoch_id: state.prospective_epoch_id(),
+            };
+            env.set_signer(&leader.0);
+            state.start(key_event_id, 0).unwrap();
+            for c in &candidates {
+                env.set_signer(c);
+                running_state = state.vote_reshared(key_event_id).unwrap();
+            }
+        }
+        let running_state = running_state.expect("resharing should complete");
+
+        // Then all CaitSith domains share exactly one `reconstruction_threshold`.
+        let distinct_thresholds: BTreeSet<_> = running_state
+            .domains
+            .domains()
+            .iter()
+            .filter(|d| d.protocol == Protocol::CaitSith)
+            .map(|d| d.reconstruction_threshold)
+            .collect();
+        assert_eq!(
+            distinct_thresholds.len(),
+            1,
+            "all CaitSith domains must share one reconstruction_threshold, found: {distinct_thresholds:?}"
+        );
     }
 }
