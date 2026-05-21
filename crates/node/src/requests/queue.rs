@@ -667,13 +667,12 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                     block_height,
                 } => {
                     mpc_pending_queue_finalized_responses.inc();
-                    let latency_blocks = block_height - request.block_height;
-                    let latency_duration =
-                        received_at.signed_duration_since(request.time_indexed);
+                    // Response block ≥ request block by construction; saturate just in case.
+                    let latency_blocks = block_height.saturating_sub(request.block_height);
+                    let latency_duration = received_at.signed_duration_since(request.time_indexed);
 
                     request_response_latency_blocks.observe(latency_blocks as f64);
-                    request_response_latency_seconds
-                        .observe(latency_duration.as_seconds_f64());
+                    request_response_latency_seconds.observe(latency_duration.as_seconds_f64());
 
                     requests_to_remove.push((
                         *id,
