@@ -18,6 +18,12 @@ impl Zeroize for ScalarWrapper {
     /// See <https://docs.rs/zeroize/latest/zeroize/#what-guarantees-does-this-crate-provide>
     /// for more details
     /// TODO(#238): push this feature upstream
+    // Clippy 1.93's `volatile_composites` / `borrow_as_ptr` lints flag the
+    // composite `write_volatile` and the implicit borrow respectively. The
+    // existing approach is a known best-effort pattern (see issue #238)
+    // pending an upstream fix in `zeroize`; don't change the zeroization
+    // behavior in a routine version bump.
+    #[allow(clippy::volatile_composites, clippy::borrow_as_ptr)]
     fn zeroize(&mut self) {
         unsafe {
             ptr::write_volatile(&mut self.0, blstrs::Scalar::default());
