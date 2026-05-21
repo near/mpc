@@ -78,7 +78,6 @@ pub struct PendingRequests<RequestType: Request, ChainRespondArgsType: ChainResp
 }
 
 /// All [`IndexedRespondTx`]s observed for one queued request, across the chain's forks.
-/// [`Self::status`] folds them into a single [`ResolutionStatus`] on every tick.
 struct IndexedRespondTxs(Vec<IndexedRespondTx>);
 
 /// An on-chain `respond` transaction observed in an indexed block.
@@ -116,6 +115,15 @@ impl IndexedRespondTxs {
                 };
             }
             if status.is_canonical() {
+                // note:
+                // We can't have, simultaneously, a "Final" and a separate "OptimisticAndCanonical"
+                // response transaction.
+                // Reason for this is that we track `return_signature_and_clean_state_on_success`.
+                // This is a method that can only be called by the contract and gets called
+                // _exactly once_ per signature.
+                //
+                // BFT rules thus guarantee that there won't be a different final transaction response,
+                // which makes this early return ok.
                 return ResolutionStatus::PendingOptimistic;
             }
             result = ResolutionStatus::PendingNonCanonical;
@@ -145,8 +153,7 @@ pub(super) struct QueuedRequest<RequestType: Request, ChainRespondArgsType: Chai
 
     /// Finality status of the block the request was included in.
     status: Weak<AtomicBlockStatus>,
-    /// Respond transactions for this request observed in indexed blocks, used to detect
-    /// on-chain resolution without consulting the tracker's add-block stream.
+    /// Respond transactions for this request observed in indexed blocks.
     indexed_respond_txs: IndexedRespondTxs,
 
     pub block_height: u64,
@@ -350,15 +357,16 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             ResolutionStatus::None
             | ResolutionStatus::RemovedByTracker
             | ResolutionStatus::PendingNonCanonical => {
-                // We don't short-circuit on non-canonical responses, because:
+                // We don't return early on non-canonical responses, because:
                 // - the request itself may also be on a non-canonical chain and will be removed
-                //   by the checks below (until #3193 is fixed);
+                //   by the checks below (note: this assumption will no longer hold once
+                //   TODO(#3193) is fixed);
                 // - the response may not make it to canonical, and we may want to re-attempt.
                 //
                 // This is wrong in the case where ALL of the following hold:
                 // - the response is on a non-canonical chain;
-                // - the response is eventually finalized;
                 // - the request fails the `cutoff` check below.
+                // - the response is eventually finalized;
                 //
                 // In that case this method returns `RequestStatus::Drop`, indicating a timeout
                 // failure, while in reality the request was successfully resolved.
