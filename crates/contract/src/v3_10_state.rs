@@ -14,7 +14,6 @@ use near_sdk::{env, store::LookupMap};
 use crate::{
     foreign_chain_rpc::ForeignChainRpcWhitelist,
     node_migrations::NodeMigrations,
-    pending_requests::LegacyPendingRequests,
     primitives::{
         ckd::CKDRequest,
         signature::{SignatureRequest, YieldIndex},
@@ -24,6 +23,17 @@ use crate::{
     update::ProposedUpdates,
     Config, SupportedForeignChainsByNode,
 };
+
+/// In-flight requests inherited from the schema before the duplicate-request fan-out
+/// upgrade. Kept inlined here (rather than imported) so storage written by the 3.10
+/// contract still deserializes during migration. Dropped in the `From` impl below
+/// because the legacy window has closed.
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct LegacyPendingRequests {
+    signature_requests: LookupMap<SignatureRequest, YieldIndex>,
+    ckd_requests: LookupMap<CKDRequest, YieldIndex>,
+    verify_foreign_tx_requests: LookupMap<VerifyForeignTransactionRequest, YieldIndex>,
+}
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct MpcContract {
@@ -59,9 +69,6 @@ impl From<MpcContract> for crate::MpcContract {
             tee_state: value.tee_state,
             accept_requests: value.accept_requests,
             node_migrations: value.node_migrations,
-            // TODO(#3279): drop `legacy_pending_requests` from `crate::MpcContract` and
-            // stop carrying it across migration.
-            legacy_pending_requests: value.legacy_pending_requests,
             metrics: value.metrics,
             foreign_chain_rpc_whitelist: value.foreign_chain_rpc_whitelist,
         }
