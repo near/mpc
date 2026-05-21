@@ -51,6 +51,10 @@ For a list of supported cloud providers offering bare metal servers with Intel T
 
 > **Sharing one host between mainnet and testnet?** See [Running multiple MPC nodes on one host](./running-multiple-mpc-nodes-on-one-host.md) for the additional setup (one `dstack-vmm` hosting both CVMs, with each CVM bound to a distinct host IP at port-forward time). Note: this setup is discouraged as it couples mainnet and testnet availability — a single failure takes both nodes offline.
 
+### Software Requirements
+
+* [`near-cli-rs`](https://github.com/near/near-cli-rs) — install per the upstream README; the `near` binary must be on your `$PATH`.
+
 ### General
 
 * Firewall:allow ingress port 80 (MPC), 24567 (near) and port 8080 (web)
@@ -1092,7 +1096,7 @@ This section shows how to add the MPC node's public key (from the previous secti
 #### Example Command
 
 ```bash
-./target/release/near account add-key $ACCOUNT_ID \
+near account add-key $ACCOUNT_ID \
   grant-function-call-access \
   --allowance unlimited \
   --contract-account-id $MPC_CONTRACT_ID \
@@ -1121,7 +1125,7 @@ NETWORK="testnet"   # or "mainnet"
 METHOD_NAMES="respond,respond_ckd,respond_verify_foreign_tx,vote_pk,start_keygen_instance,vote_reshared,vote_foreign_chain_policy,start_reshare_instance,vote_abort_key_event_instance,verify_tee,submit_participant_info,conclude_node_migration"
 
 # === Add Access Key ===
-./target/release/near account add-key $ACCOUNT_ID \
+near account add-key $ACCOUNT_ID \
   grant-function-call-access \
   --allowance "$ALLOWANCE" \
   --contract-account-id $MPC_CONTRACT_ID \
@@ -1139,7 +1143,7 @@ METHOD_NAMES="respond,respond_ckd,respond_verify_foreign_tx,vote_pk,start_keygen
 After sending the transaction, check that the new key was added:
 
 ```bash
-./target/release/near account list-keys $ACCOUNT_ID \
+near account list-keys $ACCOUNT_ID \
   network-config $NETWORK \
   now
 ```

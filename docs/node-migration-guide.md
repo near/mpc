@@ -353,9 +353,31 @@ Look for your account in the output. Once the migration is complete, there shoul
 
 After verifying the migration was successful:
 
-1. **Stop the old node** on the old host
-2. **Keep the backup** of keyshares (the contents of `$BACKUP_HOME_DIR`, including the `key` file and the `permanent_keys/` directory with `epoch_<...>_with_<...>_domains` files) for a reasonable period (in case you need to migrate again)
-3. **Securely delete** the old node's data once you're confident the new node is functioning correctly
+1. **Stop the old node** on the old host.
+
+2. **Revoke the old node's signer key.** The function-call key you added in Step 5 of the previous migration persists on your account with `unlimited` allowance on the MPC contract until explicitly removed. Use `list-keys` to find the old signer's public key (distinct from the one you just added in Step 5), then `delete-keys`:
+
+   ```bash
+   near account list-keys \
+     $SIGNER_ACCOUNT_ID \
+     network-config $NEAR_NETWORK \
+     now
+
+   near account delete-keys \
+     $SIGNER_ACCOUNT_ID \
+     public-keys <OLD_NODE_SIGNER_PUBLIC_KEY> \
+     network-config $NEAR_NETWORK \
+     sign-with-keychain \
+     send
+   ```
+
+   The `public-keys` argument is a comma-separated list (`<k1>,<k2>,…`), so if more than one stale function-call key has accumulated from earlier migrations, you can revoke them all in a single call.
+
+   Don't revoke the `backup-cli`'s registered key from Step 2 — that's the backup service registration, reused across migrations.
+
+3. **Keep the backup** of keyshares (the contents of `$BACKUP_HOME_DIR`, including the `key` file and the `permanent_keys/` directory with `epoch_<...>_with_<...>_domains` files) for a reasonable period (in case you need to migrate again).
+
+4. **Securely delete** the old node's data once you're confident the new node is functioning correctly.
 
 ## Troubleshooting
 
