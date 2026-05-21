@@ -28,30 +28,26 @@ use crate::{
 
 /// `3.10.0`'s `MpcContract` layout. Identical to the current `MpcContract` except the
 /// trailing `foreign_chain_rpc_whitelist` field uses the pre-reshape type below.
-//
-// Fields are read by `From<MpcContract>` even though rustc can't see that
-// (the derive-generated `deserialize_reader` writes them, the conversion reads them);
-// silence the warning.
-#[expect(
-    dead_code,
-    reason = "fields consumed by From<MpcContract> conversion below"
-)]
 #[derive(BorshDeserialize)]
 pub struct MpcContract {
-    pub(crate) protocol_state: ProtocolContractState,
-    pub(crate) pending_signature_requests: LookupMap<SignatureRequest, Vec<YieldIndex>>,
-    pub(crate) pending_ckd_requests: LookupMap<CKDRequest, Vec<YieldIndex>>,
-    pub(crate) pending_verify_foreign_tx_requests:
+    protocol_state: ProtocolContractState,
+    pending_signature_requests: LookupMap<SignatureRequest, Vec<YieldIndex>>,
+    pending_ckd_requests: LookupMap<CKDRequest, Vec<YieldIndex>>,
+    pending_verify_foreign_tx_requests:
         LookupMap<dtos::VerifyForeignTransactionRequest, Vec<YieldIndex>>,
-    pub(crate) proposed_updates: ProposedUpdates,
-    pub(crate) node_foreign_chain_support: SupportedForeignChainsByNode,
-    pub(crate) config: Config,
-    pub(crate) tee_state: TeeState,
-    pub(crate) accept_requests: bool,
-    pub(crate) node_migrations: NodeMigrations,
-    pub(crate) legacy_pending_requests: LegacyPendingRequests,
-    pub(crate) metrics: dtos::Metrics,
-    pub(crate) foreign_chain_rpc_whitelist: OldForeignChainRpcWhitelist,
+    proposed_updates: ProposedUpdates,
+    node_foreign_chain_support: SupportedForeignChainsByNode,
+    config: Config,
+    tee_state: TeeState,
+    accept_requests: bool,
+    node_migrations: NodeMigrations,
+    legacy_pending_requests: LegacyPendingRequests,
+    metrics: dtos::Metrics,
+    #[expect(
+        dead_code,
+        reason = "consumed by parent borsh-deserialize then discarded — 3.10.0 guarantees the map is empty, so the new whitelist is default-initialized"
+    )]
+    foreign_chain_rpc_whitelist: OldForeignChainRpcWhitelist,
 }
 
 /// `3.10.0`'s whitelist field shape: a single nested `BTreeMap`, no vote storage.
@@ -61,7 +57,7 @@ pub struct MpcContract {
 )]
 #[derive(BorshDeserialize)]
 pub struct OldForeignChainRpcWhitelist {
-    pub(crate) entries: BTreeMap<dtos::ForeignChain, BTreeMap<dtos::ProviderId, OldProviderEntry>>,
+    entries: BTreeMap<dtos::ForeignChain, BTreeMap<dtos::ProviderId, OldProviderEntry>>,
 }
 
 /// Local shadow of `3.10.0`'s `ProviderEntry` borsh shape. The current revision renamed
@@ -76,10 +72,10 @@ pub struct OldForeignChainRpcWhitelist {
 )]
 #[derive(BorshDeserialize)]
 pub struct OldProviderEntry {
-    pub(crate) provider_id: dtos::ProviderId,
-    pub(crate) base_url: String,
-    pub(crate) auth_scheme: dtos::AuthScheme,
-    pub(crate) chain_routing: dtos::ChainRouting,
+    provider_id: dtos::ProviderId,
+    base_url: String,
+    auth_scheme: dtos::AuthScheme,
+    chain_routing: dtos::ChainRouting,
 }
 
 impl From<MpcContract> for crate::MpcContract {
