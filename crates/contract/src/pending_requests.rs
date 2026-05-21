@@ -41,13 +41,13 @@ pub const MAX_PENDING_REQUEST_FAN_OUT: u8 = 128;
 /// Panics with `RequestError::PendingRequestQueueFull` if the resulting queue would
 /// exceed `MAX_PENDING_REQUEST_FAN_OUT`.
 pub(crate) fn push_pending_yield<K>(
-    new_map: &mut LookupMap<K, Vec<YieldIndex>>,
+    requests: &mut LookupMap<K, Vec<YieldIndex>>,
     request: K,
     data_id: CryptoHash,
 ) where
     K: BorshSerialize + BorshDeserialize + Clone + Ord,
 {
-    let queue = new_map.entry(request).or_default();
+    let queue = requests.entry(request).or_default();
     if queue.len() >= usize::from(MAX_PENDING_REQUEST_FAN_OUT) {
         env::panic_str(
             &RequestError::PendingRequestQueueFull {
@@ -64,14 +64,14 @@ pub(crate) fn push_pending_yield<K>(
 ///
 /// Resuming a yield that has already timed out is a no-op at the SDK level.
 pub(crate) fn resolve_yields_for<K>(
-    new_map: &mut LookupMap<K, Vec<YieldIndex>>,
+    requests: &mut LookupMap<K, Vec<YieldIndex>>,
     request: &K,
     response_bytes: Vec<u8>,
 ) -> Result<(), Error>
 where
     K: BorshSerialize + BorshDeserialize + Clone + Ord,
 {
-    let resumed = new_map
+    let resumed = requests
         .remove(request)
         .unwrap_or_default()
         .into_iter()
@@ -94,19 +94,19 @@ where
 /// Yields are removed in FIFO order because they were appended in submission order
 /// and time out in that same order — so the timing-out yield is always the head.
 /// If the queue empties (or was already empty), the map entry itself is removed.
-pub(crate) fn pop_oldest_pending_yield<K>(new_map: &mut LookupMap<K, Vec<YieldIndex>>, request: &K)
+pub(crate) fn pop_oldest_pending_yield<K>(requests: &mut LookupMap<K, Vec<YieldIndex>>, request: &K)
 where
     K: BorshSerialize + BorshDeserialize + Clone + Ord,
 {
-    let Some(queue) = new_map.get_mut(request) else {
+    let Some(queue) = requests.get_mut(request) else {
         return;
     };
     if queue.is_empty() {
-        new_map.remove(request);
+        requests.remove(request);
         return;
     }
     queue.remove(0);
     if queue.is_empty() {
-        new_map.remove(request);
+        requests.remove(request);
     }
 }
