@@ -1,6 +1,5 @@
 ---
 source: crates/contract/src/lib.rs
-assertion_line: 5683
 expression: schema
 ---
 BorshSchemaContainer {
@@ -44,6 +43,12 @@ BorshSchemaContainer {
             elements: [
                 "AuthenticatedParticipantId",
                 "Vec<DomainConfig>",
+            ],
+        },
+        "(DomainId, ReconstructionThreshold)": Tuple {
+            elements: [
+                "DomainId",
+                "ReconstructionThreshold",
             ],
         },
         "(ForeignChain, BTreeMap<ProviderId, ProviderEntry>)": Tuple {
@@ -250,6 +255,11 @@ BorshSchemaContainer {
             length_width: 4,
             length_range: 0..=4294967295,
             elements: "(AuthenticatedParticipantId, Vec<DomainConfig>)",
+        },
+        "BTreeMap<DomainId, ReconstructionThreshold>": Sequence {
+            length_width: 4,
+            length_range: 0..=4294967295,
+            elements: "(DomainId, ReconstructionThreshold)",
         },
         "BTreeMap<ForeignChain, BTreeMap<ProviderId, ProviderEntry>>": Sequence {
             length_width: 4,
@@ -1433,6 +1443,10 @@ BorshSchemaContainer {
                     (
                         "threshold",
                         "Threshold",
+                    ),
+                    (
+                        "per_domain_thresholds",
+                        "BTreeMap<DomainId, ReconstructionThreshold>",
                     ),
                 ],
             ),

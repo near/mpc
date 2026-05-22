@@ -138,10 +138,17 @@ impl ResharingContractState {
                     self.resharing_key.proposed_parameters().clone(),
                 );
             } else {
+                let proposed = self.resharing_key.proposed_parameters();
+                let new_domains = self
+                    .previous_running_state
+                    .domains
+                    .with_overlaid_thresholds(proposed.per_domain_thresholds())?;
+                let mut new_parameters = proposed.clone();
+                new_parameters.clear_per_domain_thresholds();
                 return Ok(Some(RunningContractState::new(
-                    self.previous_running_state.domains.clone(),
+                    new_domains,
                     Keyset::new(self.prospective_epoch_id(), self.reshared_keys.clone()),
-                    self.resharing_key.proposed_parameters().clone(),
+                    new_parameters,
                     self.previous_running_state.add_domains_votes.clone(),
                 )));
             }
@@ -464,5 +471,82 @@ pub mod tests {
         let _ = new_state
             .vote_new_parameters(new_state.prospective_epoch_id().next(), &new_params_2)
             .unwrap_err();
+    }
+
+    #[expect(non_snake_case)]
+    mod per_domain_threshold_overlay {
+        use super::*;
+        use near_mpc_contract_interface::types::ReconstructionThreshold;
+        use std::collections::BTreeMap;
+
+        /// On successful resharing transition, the proposal's
+        /// `per_domain_thresholds` overlay must be applied to the new
+        /// `DomainRegistry`, and the running-state `parameters` overlay
+        /// must be cleared.
+        #[test]
+        fn vote_reshared__final_transition__should_apply_overlay_to_registry() {
+            // Given a resharing state whose proposal carries a per-domain overlay
+            // setting domain 0's threshold to a new value distinct from the
+            // existing one.
+            let (mut env, mut state) = gen_resharing_state(1);
+            let original_threshold =
+                state.previous_running_state.domains.domains()[0].reconstruction_threshold;
+            // Pick a new value that is achievable for the proposed participant
+            // count: the current proposal's threshold is a safe lower-bound.
+            let new_value = state
+                .resharing_key
+                .proposed_parameters()
+                .threshold()
+                .value();
+            assert!(new_value >= 2);
+            let new_threshold = ReconstructionThreshold::new(new_value);
+            assert_ne!(new_threshold, original_threshold);
+            let domain_id = state.previous_running_state.domains.domains()[0].id;
+            let mut overlay = BTreeMap::new();
+            overlay.insert(domain_id, new_threshold);
+            let mut proposal_with_overlay = state.resharing_key.proposed_parameters().clone();
+            proposal_with_overlay =
+                proposal_with_overlay.with_per_domain_thresholds(overlay.clone());
+            state.resharing_key = crate::state::key_event::KeyEvent::new(
+                state.prospective_epoch_id(),
+                state.previous_running_state.domains.domains()[0].clone(),
+                proposal_with_overlay,
+            );
+
+            // When all candidates vote-reshared for the (single) domain
+            let leader = find_leader(&state.resharing_key);
+            env.set_signer(&leader.0);
+            let key_event_id = KeyEventId {
+                attempt_id: AttemptId::new(),
+                domain_id,
+                epoch_id: state.prospective_epoch_id(),
+            };
+            state.start(key_event_id, 0).unwrap();
+            let mut new_running = None;
+            let candidates: Vec<_> = state
+                .resharing_key
+                .proposed_parameters()
+                .participants()
+                .participants()
+                .iter()
+                .map(|(acc, _, _)| acc.clone())
+                .collect();
+            for account in &candidates {
+                env.set_signer(account);
+                new_running = state.vote_reshared(key_event_id).unwrap();
+            }
+
+            // Then the new running state's registry carries the overlay's
+            // threshold and its parameters overlay is cleared.
+            let new_running = new_running.expect("resharing should have transitioned to Running");
+            assert_eq!(
+                new_running.domains.domains()[0].reconstruction_threshold,
+                new_threshold,
+            );
+            assert!(
+                new_running.parameters.per_domain_thresholds().is_empty(),
+                "stored parameters.per_domain_thresholds should be cleared after applying overlay"
+            );
+        }
     }
 }

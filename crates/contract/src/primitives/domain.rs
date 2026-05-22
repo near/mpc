@@ -1,7 +1,9 @@
 use super::key_state::AuthenticatedParticipantId;
 use crate::errors::{DomainError, Error};
 use crate::primitives::participants::Participants;
-use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, DomainPurpose, Protocol};
+use near_mpc_contract_interface::types::{
+    Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
+};
 use near_sdk::{log, near};
 use std::collections::BTreeMap;
 
@@ -176,6 +178,41 @@ impl DomainRegistry {
 
     pub fn next_domain_id(&self) -> u64 {
         self.next_domain_id
+    }
+
+    /// Returns a new registry whose domains have their
+    /// `reconstruction_threshold` rewritten from `overlay`. Domain IDs in
+    /// `overlay` that are not present in the registry are rejected with
+    /// [`DomainError::UnknownDomainInProposal`]. Domains absent from
+    /// `overlay` retain their existing threshold. An empty overlay returns a
+    /// structurally identical clone.
+    pub fn with_overlaid_thresholds(
+        &self,
+        overlay: &BTreeMap<DomainId, ReconstructionThreshold>,
+    ) -> Result<DomainRegistry, Error> {
+        for id in overlay.keys() {
+            if !self.domains.iter().any(|d| d.id == *id) {
+                return Err(DomainError::UnknownDomainInProposal { domain_id: *id }.into());
+            }
+        }
+        let domains = self
+            .domains
+            .iter()
+            .map(|d| {
+                let reconstruction_threshold = overlay
+                    .get(&d.id)
+                    .copied()
+                    .unwrap_or(d.reconstruction_threshold);
+                DomainConfig {
+                    reconstruction_threshold,
+                    ..d.clone()
+                }
+            })
+            .collect();
+        Ok(DomainRegistry {
+            domains,
+            next_domain_id: self.next_domain_id,
+        })
     }
 }
 
@@ -600,5 +637,98 @@ pub mod tests {
         assert_eq!(remaining.proposal_by_account.len(), 2);
         assert_eq!(remaining.proposal_by_account[&auth_ids[0]], proposal_a);
         assert_eq!(remaining.proposal_by_account[&auth_ids[1]], proposal_b);
+    }
+
+    #[expect(non_snake_case)]
+    mod with_overlaid_thresholds {
+        use super::*;
+        use std::collections::BTreeMap;
+
+        fn registry_of(domains: Vec<DomainConfig>) -> DomainRegistry {
+            let next_domain_id = domains.iter().map(|d| d.id.0).max().map_or(0, |m| m + 1);
+            DomainRegistry::from_raw_validated(domains, next_domain_id).unwrap()
+        }
+
+        #[test]
+        fn with_overlaid_thresholds__should_be_identity_when_overlay_is_empty() {
+            // Given a non-empty registry and an empty overlay
+            let registry = registry_of(vec![
+                DomainConfig {
+                    id: DomainId(0),
+                    protocol: Protocol::CaitSith,
+                    reconstruction_threshold: ReconstructionThreshold::new(3),
+                    purpose: DomainPurpose::Sign,
+                },
+                DomainConfig {
+                    id: DomainId(1),
+                    protocol: Protocol::Frost,
+                    reconstruction_threshold: ReconstructionThreshold::new(2),
+                    purpose: DomainPurpose::Sign,
+                },
+            ]);
+            let overlay = BTreeMap::new();
+
+            // When applying the overlay
+            let result = registry.with_overlaid_thresholds(&overlay).unwrap();
+
+            // Then the registry is structurally identical
+            assert_eq!(result, registry);
+        }
+
+        #[test]
+        fn with_overlaid_thresholds__should_apply_per_domain_updates() {
+            // Given a registry with two domains and an overlay targeting one
+            let registry = registry_of(vec![
+                DomainConfig {
+                    id: DomainId(0),
+                    protocol: Protocol::CaitSith,
+                    reconstruction_threshold: ReconstructionThreshold::new(3),
+                    purpose: DomainPurpose::Sign,
+                },
+                DomainConfig {
+                    id: DomainId(1),
+                    protocol: Protocol::Frost,
+                    reconstruction_threshold: ReconstructionThreshold::new(2),
+                    purpose: DomainPurpose::Sign,
+                },
+            ]);
+            let mut overlay = BTreeMap::new();
+            overlay.insert(DomainId(0), ReconstructionThreshold::new(5));
+
+            // When applying the overlay
+            let result = registry.with_overlaid_thresholds(&overlay).unwrap();
+
+            // Then only the targeted domain's threshold changes
+            assert_eq!(
+                result.domains()[0].reconstruction_threshold,
+                ReconstructionThreshold::new(5)
+            );
+            assert_eq!(
+                result.domains()[1].reconstruction_threshold,
+                ReconstructionThreshold::new(2)
+            );
+        }
+
+        #[test]
+        fn with_overlaid_thresholds__should_reject_unknown_domain_id() {
+            // Given a registry with one domain and an overlay referencing a different ID
+            let registry = registry_of(vec![DomainConfig {
+                id: DomainId(0),
+                protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(3),
+                purpose: DomainPurpose::Sign,
+            }]);
+            let mut overlay = BTreeMap::new();
+            overlay.insert(DomainId(42), ReconstructionThreshold::new(5));
+
+            // When applying the overlay
+            let err = registry.with_overlaid_thresholds(&overlay).unwrap_err();
+
+            // Then unknown-domain guard rejects
+            assert!(
+                err.to_string().contains("not in the current registry"),
+                "Expected UnknownDomainInProposal, got: {err}"
+            );
+        }
     }
 }

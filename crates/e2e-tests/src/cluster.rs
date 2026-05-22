@@ -502,6 +502,7 @@ impl MpcCluster {
         let proposal = ThresholdParameters {
             threshold: Threshold(new_threshold as u64),
             participants,
+            per_domain_thresholds: std::collections::BTreeMap::new(),
         };
 
         tracing::info!(?prospective_epoch_id, new_threshold, "voting for resharing");
@@ -1119,6 +1120,7 @@ async fn init_contract(
     let params = ThresholdParameters {
         threshold: Threshold(threshold as u64),
         participants,
+        per_domain_thresholds: std::collections::BTreeMap::new(),
     };
 
     tracing::info!(

@@ -215,6 +215,7 @@ impl IntoContractType<Participants> for dtos::Participants {
 impl IntoContractType<ThresholdParameters> for dtos::ThresholdParameters {
     fn into_contract_type(self) -> ThresholdParameters {
         ThresholdParameters::new_unvalidated(self.participants.into_contract_type(), self.threshold)
+            .with_per_domain_thresholds(self.per_domain_thresholds)
     }
 }
 
@@ -725,6 +726,7 @@ impl IntoInterfaceType<dtos::ThresholdParameters> for &ThresholdParameters {
         dtos::ThresholdParameters {
             participants: self.participants().into_dto_type(),
             threshold: self.threshold(),
+            per_domain_thresholds: self.per_domain_thresholds().clone(),
         }
     }
 }

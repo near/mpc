@@ -1,6 +1,7 @@
 use super::participants::{ParticipantId, ParticipantInfo, Participants};
 use crate::errors::{Error, InvalidCandidateSet, InvalidThreshold};
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types::{DomainId, ReconstructionThreshold};
 use near_sdk::near;
 use std::collections::BTreeMap;
 
@@ -12,24 +13,62 @@ const MIN_THRESHOLD_ABSOLUTE: u64 = 2;
 /// Stores information about the threshold key parameters:
 /// - owners of key shares
 /// - cryptographic threshold
+/// - per-domain reconstruction thresholds (only populated when this struct
+///   carries a resharing proposal; empty otherwise)
 #[near(serializers=[borsh, json])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct ThresholdParameters {
     participants: Participants,
     threshold: Threshold,
+    /// Proposed per-domain `ReconstructionThreshold` updates for this
+    /// resharing. Empty map means "keep current per-domain thresholds";
+    /// populated map must cover every existing domain (validated in
+    /// [`super::super::state::running::RunningContractState::process_new_parameters_proposal`]).
+    /// `skip_serializing_if`+`default` preserve the legacy `state()` wire
+    /// shape when no resharing is in flight.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
 }
 
 impl ThresholdParameters {
     /// Constructs Threshold parameters from `participants` and `threshold` if the
-    /// threshold meets the absolute and relative validation criteria.
+    /// threshold meets the absolute and relative validation criteria. The
+    /// `per_domain_thresholds` map is initialized empty — populate it on
+    /// resharing proposals via [`Self::with_per_domain_thresholds`].
     pub fn new(participants: Participants, threshold: Threshold) -> Result<Self, Error> {
         match Self::validate_threshold(participants.len() as u64, threshold) {
             Ok(_) => Ok(ThresholdParameters {
                 participants,
                 threshold,
+                per_domain_thresholds: BTreeMap::new(),
             }),
             Err(err) => Err(err),
         }
+    }
+
+    /// Builder-style helper: attach a per-domain threshold overlay. Used by
+    /// resharing proposal callers; non-proposal sites leave the map empty.
+    pub fn with_per_domain_thresholds(
+        mut self,
+        per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
+    ) -> Self {
+        self.per_domain_thresholds = per_domain_thresholds;
+        self
+    }
+
+    /// Returns the per-domain threshold overlay. Empty in non-proposal
+    /// contexts and on stored running-state parameters (after resharing
+    /// completes the overlay is consumed into the
+    /// [`super::domain::DomainRegistry`]).
+    pub fn per_domain_thresholds(&self) -> &BTreeMap<DomainId, ReconstructionThreshold> {
+        &self.per_domain_thresholds
+    }
+
+    /// Clears the per-domain overlay. Called when a resharing proposal has
+    /// been applied to the [`super::domain::DomainRegistry`] — the proposal
+    /// map is no longer meaningful as part of the running state's parameters.
+    pub fn clear_per_domain_thresholds(&mut self) {
+        self.per_domain_thresholds.clear();
     }
 
     /// Ensures that the threshold `k` is sensible and meets the absolute and minimum requirements.
@@ -147,6 +186,7 @@ impl ThresholdParameters {
         ThresholdParameters {
             participants,
             threshold,
+            per_domain_thresholds: BTreeMap::new(),
         }
     }
 
@@ -395,10 +435,8 @@ mod tests {
             .insert_with_id(account_id, participant_info, ParticipantId(wrong_id))
             .unwrap();
 
-        let tampered_params = ThresholdParameters {
-            participants: tampered_participants,
-            threshold: params.threshold,
-        };
+        let tampered_params =
+            ThresholdParameters::new_unvalidated(tampered_participants, params.threshold);
 
         assert_eq!(
             params

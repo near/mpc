@@ -348,6 +348,7 @@ impl MpcInitContractCmd {
                 participants: participant_entries,
             },
             threshold: Threshold::new(self.threshold),
+            per_domain_thresholds: std::collections::BTreeMap::new(),
         };
         let args = serde_json::to_vec(&InitV2Args {
             parameters,
@@ -731,9 +732,20 @@ impl MpcVoteNewParametersCmd {
         } else {
             parameters.threshold
         };
+        let per_domain_thresholds: std::collections::BTreeMap<_, _> = self
+            .per_domain_thresholds
+            .iter()
+            .map(|(id, t)| {
+                (
+                    near_mpc_contract_interface::types::DomainId(*id),
+                    near_mpc_contract_interface::types::ReconstructionThreshold::new(*t),
+                )
+            })
+            .collect();
         let proposal = ThresholdParameters {
             participants,
             threshold,
+            per_domain_thresholds,
         };
 
         let from_accounts = get_voter_account_ids(mpc_setup, &self.voters);

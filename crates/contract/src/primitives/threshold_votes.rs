@@ -64,7 +64,9 @@ mod tests {
         participants::Participants,
         test_utils::{gen_participant, gen_threshold_params},
     };
+    use near_mpc_contract_interface::types::{DomainId, ReconstructionThreshold};
     use near_sdk::{test_utils::VMContextBuilder, testing_env};
+    use std::collections::BTreeMap;
 
     #[test]
     fn test_voting_and_removal() {
@@ -98,6 +100,45 @@ mod tests {
         assert_eq!(votes.n_votes(&params2, &participants), 2);
         assert_eq!(votes.n_votes(&params2, params2.participants()), 0);
         assert_eq!(votes.n_votes(&params, &participants), 0);
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn vote__should_tally_distinct_per_domain_overlays_separately() {
+        // Given two voters and two proposals identical except for per_domain_thresholds
+        let mut participants = Participants::default();
+        let (p0, p1) = (gen_participant(0), gen_participant(1));
+        participants.insert(p0.0.clone(), p0.1).unwrap();
+        participants.insert(p1.0.clone(), p1.1).unwrap();
+
+        let mut ctx = VMContextBuilder::new();
+        let auth_p0 = {
+            ctx.signer_account_id(p0.0);
+            testing_env!(ctx.build());
+            AuthenticatedAccountId::new(&participants).unwrap()
+        };
+        let auth_p1 = {
+            ctx.signer_account_id(p1.0);
+            testing_env!(ctx.build());
+            AuthenticatedAccountId::new(&participants).unwrap()
+        };
+
+        let base = gen_threshold_params(30);
+        let mut overlay_a = BTreeMap::new();
+        overlay_a.insert(DomainId(0), ReconstructionThreshold::new(2));
+        let mut overlay_b = BTreeMap::new();
+        overlay_b.insert(DomainId(0), ReconstructionThreshold::new(3));
+        let proposal_a = base.clone().with_per_domain_thresholds(overlay_a);
+        let proposal_b = base.with_per_domain_thresholds(overlay_b);
+
+        // When each voter casts a different overlay
+        let mut votes = ThresholdParametersVotes::default();
+        votes.vote(&proposal_a, auth_p0);
+        votes.vote(&proposal_b, auth_p1);
+
+        // Then the two proposals are tallied independently
+        assert_eq!(votes.n_votes(&proposal_a, &participants), 1);
+        assert_eq!(votes.n_votes(&proposal_b, &participants), 1);
     }
 
     #[test]

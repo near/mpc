@@ -298,6 +298,21 @@ pub struct MpcVoteNewParametersCmd {
     /// The indices of the voters; leave empty to vote from every other participant.
     #[clap(long, value_delimiter = ',')]
     pub voters: Vec<usize>,
+    /// Optional per-domain reconstruction-threshold overlay, given as
+    /// repeated `DOMAIN_ID:THRESHOLD` pairs (e.g.
+    /// `--per-domain-threshold 0:6 --per-domain-threshold 1:5`).
+    /// Omitting it preserves every domain's existing threshold; supplying it
+    /// changes those listed and re-validates the rest against the new
+    /// participant count.
+    #[clap(long = "per-domain-threshold", value_parser = parse_per_domain_threshold)]
+    pub per_domain_thresholds: Vec<(u64, u64)>,
+}
+
+fn parse_per_domain_threshold(s: &str) -> anyhow::Result<(u64, u64)> {
+    let (id, t) = s
+        .split_once(':')
+        .ok_or_else(|| anyhow::anyhow!("expected DOMAIN_ID:THRESHOLD, got `{s}`"))?;
+    Ok((id.parse()?, t.parse()?))
 }
 
 #[derive(clap::Parser)]

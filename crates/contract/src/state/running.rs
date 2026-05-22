@@ -137,14 +137,28 @@ impl RunningContractState {
         // ensure the proposal is valid against the current parameters
         self.parameters.validate_incoming_proposal(proposal)?;
 
-        // TODO(#3169): re-enable once resharing votes carry per-domain `t`
-        // and the node honors per-domain reconstruction thresholds (#3164).
-        // Until both are in place this check would block legitimate
-        // resharings that the node currently signs at the cluster threshold.
-        // let new_num_participants = proposal.participants().len() as u64;
-        // for domain in self.domains.domains() {
-        //     crate::primitives::domain::validate_domain_threshold(domain, new_num_participants)?;
-        // }
+        // Validate effective per-domain thresholds against the proposed new
+        // participant count. Domains not present in the overlay keep their
+        // existing threshold; overlay entries override. An overlay entry
+        // referencing an unknown domain ID is rejected.
+        let new_num_participants = proposal.participants().len() as u64;
+        let overlay = proposal.per_domain_thresholds();
+        for id in overlay.keys() {
+            if self.domains.get_domain_by_domain_id(*id).is_none() {
+                return Err(DomainError::UnknownDomainInProposal { domain_id: *id }.into());
+            }
+        }
+        for domain in self.domains.domains() {
+            let effective_threshold = overlay
+                .get(&domain.id)
+                .copied()
+                .unwrap_or(domain.reconstruction_threshold);
+            let proposed = DomainConfig {
+                reconstruction_threshold: effective_threshold,
+                ..domain.clone()
+            };
+            crate::primitives::domain::validate_domain_threshold(&proposed, new_num_participants)?;
+        }
 
         // ensure the signer is a proposed participant
         let candidate = AuthenticatedAccountId::new(proposal.participants())?;
@@ -471,6 +485,76 @@ pub mod running_tests {
         assert!(
             err.to_string().contains("requires at least"),
             "Expected InsufficientParticipantsForProtocol, got: {err}"
+        );
+    }
+
+    // ----- #3169: per-domain threshold proposals in resharing -----
+
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn process_new_parameters_proposal__should_accept_empty_per_domain_overlay() {
+        // Given a running state where existing thresholds are valid under the
+        // proposed participant count
+        let mut state = gen_running_state(1);
+        let mut env = Environment::new(None, None, None);
+        env.set_signer(&state.parameters.participants().participants()[0].0);
+        let proposal = gen_valid_params_proposal(&state.parameters);
+
+        // When voting with an empty per_domain_thresholds map (legacy shape)
+        let res = state.vote_new_parameters(state.keyset.epoch_id.next(), &proposal);
+
+        // Then the vote is recorded without error
+        assert!(res.is_ok(), "Expected accept with empty overlay: {res:?}");
+    }
+
+    #[test]
+    fn process_new_parameters_proposal__should_reject_overlay_with_unknown_domain_id() {
+        // Given a running state with one domain
+        let mut state = gen_running_state(1);
+        let mut env = Environment::new(None, None, None);
+        env.set_signer(&state.parameters.participants().participants()[0].0);
+        let proposal = gen_valid_params_proposal(&state.parameters);
+
+        // When voting with an overlay referencing a non-existent domain ID
+        let mut overlay = BTreeMap::new();
+        overlay.insert(DomainId(9999), ReconstructionThreshold::new(2));
+        let proposal = proposal.with_per_domain_thresholds(overlay);
+        let err = state
+            .vote_new_parameters(state.keyset.epoch_id.next(), &proposal)
+            .unwrap_err();
+
+        // Then the unknown-domain guard rejects it
+        assert!(
+            err.to_string().contains("not in the current registry"),
+            "Expected UnknownDomainInProposal, got: {err}"
+        );
+    }
+
+    #[test]
+    fn process_new_parameters_proposal__should_apply_overlay_to_threshold_validation() {
+        // Given a running state with one domain whose existing threshold would
+        // remain valid under the new participants, but the overlay swaps it
+        // for an invalid (too-low) value.
+        let mut state = gen_running_state(1);
+        let mut env = Environment::new(None, None, None);
+        env.set_signer(&state.parameters.participants().participants()[0].0);
+        let proposal = gen_valid_params_proposal(&state.parameters);
+
+        // When voting with an overlay that violates the universal lower bound
+        let domain_id = state.domains.domains()[0].id;
+        let mut overlay = BTreeMap::new();
+        overlay.insert(domain_id, ReconstructionThreshold::new(1));
+        let proposal = proposal.with_per_domain_thresholds(overlay);
+        let err = state
+            .vote_new_parameters(state.keyset.epoch_id.next(), &proposal)
+            .unwrap_err();
+
+        // Then the overlay's value (not the stored value) is validated and rejected
+        assert!(
+            err.to_string()
+                .contains("Reconstruction threshold must be at least"),
+            "Expected ReconstructionThresholdTooLow on overlay value, got: {err}"
         );
     }
 }

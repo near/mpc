@@ -238,14 +238,48 @@ pub use near_mpc_crypto_types::{KeyForDomain, Keyset};
 // =============================================================================
 
 /// Threshold parameters for distributed key operations.
+///
+/// `per_domain_thresholds` carries a proposed update for each domain's
+/// [`ReconstructionThreshold`] when this struct flows into
+/// `vote_new_parameters`. An empty map means "keep current per-domain
+/// thresholds"; a populated map must cover every existing domain (validated by
+/// the contract). Outside of resharing proposals the map is empty.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
+#[serde(from = "ThresholdParametersCompat")]
 pub struct ThresholdParameters {
     pub participants: Participants,
     pub threshold: Threshold,
+    // Deserialization goes through `ThresholdParametersCompat` (see
+    // `#[serde(from = …)]` above), which defaults this field for legacy
+    // JSON. The `skip_serializing_if` keeps the legacy wire shape on the
+    // serialize path when no overlay is in flight.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
+}
+
+/// Backwards-compat for the legacy `{ participants, threshold }` JSON shape:
+/// `per_domain_thresholds` is defaulted to an empty map. New JSON includes the
+/// field directly.
+#[derive(Deserialize)]
+struct ThresholdParametersCompat {
+    participants: Participants,
+    threshold: Threshold,
+    #[serde(default)]
+    per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
+}
+
+impl From<ThresholdParametersCompat> for ThresholdParameters {
+    fn from(c: ThresholdParametersCompat) -> Self {
+        Self {
+            participants: c.participants,
+            threshold: c.threshold,
+            per_domain_thresholds: c.per_domain_thresholds,
+        }
+    }
 }
 
 // =============================================================================
