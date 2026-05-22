@@ -88,7 +88,7 @@ struct IndexedRespondTx {
     block_status: Weak<AtomicBlockStatus>,
     /// Wall-clock time at which our node observed the block containing the response.
     received_at: near_time::Instant,
-    // TODO(#3318): We could share the `block_height` throug the same weak pointer as
+    // TODO(#3318): We could share the `block_height` through the same weak pointer as
     // `block_status`, however, that's a larger refactor and this change will only truly make sense
     // once we start improving the metrics with #3318, so we defer it to later and accept to hold a
     // u64 for each response.
