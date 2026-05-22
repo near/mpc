@@ -58,6 +58,7 @@ pub fn spawn_real_indexer(
     protocol_state_sender: watch::Sender<ProtocolContractState>,
     migration_state_sender: watch::Sender<(u64, ContractMigrationInfo)>,
     tls_public_key: VerifyingKey,
+    foreign_chains: mpc_node_config::ForeignChainsConfig,
 ) -> IndexerAPI<impl TransactionSender, RealForeignChainPolicyReader> {
     let (contract_state_sender_oneshot, contract_state_receiver_oneshot) = oneshot::channel();
     let (migration_info_sender_oneshot, migration_info_receiver_oneshot) = oneshot::channel();
@@ -156,6 +157,11 @@ pub fn spawn_real_indexer(
             tokio::spawn(monitor_tee_accounts(
                 tee_accounts_sender,
                 indexer_state.clone(),
+            ));
+
+            tokio::spawn(crate::foreign_chain_whitelist_verifier::run(
+                indexer_state.clone(),
+                foreign_chains.clone(),
             ));
 
             // Returns once the contract state is available.

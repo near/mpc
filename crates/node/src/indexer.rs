@@ -25,9 +25,10 @@ use near_indexer_primitives::{
     views::{BlockView, QueryRequest, QueryResponseKind},
 };
 use near_mpc_contract_interface::method_names::{
-    ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_LAUNCHER_COMPOSE_HASHES, GET_ATTESTATION,
-    GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST,
-    GET_SUPPORTED_FOREIGN_CHAINS, GET_TEE_ACCOUNTS, MIGRATION_INFO, STATE,
+    ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_FOREIGN_CHAIN_PROVIDERS, ALLOWED_LAUNCHER_COMPOSE_HASHES,
+    GET_ATTESTATION, GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST,
+    GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, GET_SUPPORTED_FOREIGN_CHAINS, GET_TEE_ACCOUNTS,
+    MIGRATION_INFO, STATE,
 };
 use near_mpc_contract_interface::types::{self as dtos, YieldIndex};
 use participants::ContractState;
@@ -80,10 +81,18 @@ impl IndexerState {
             stats: Arc::new(Mutex::new(IndexerStats::new())),
         }
     }
+
+    pub(crate) fn view_client(&self) -> &IndexerViewClient {
+        &self.view_client
+    }
+
+    pub(crate) fn mpc_contract_id(&self) -> &AccountId {
+        &self.mpc_contract_id
+    }
 }
 
 #[derive(Clone)]
-struct IndexerViewClient {
+pub(crate) struct IndexerViewClient {
     view_client: MultithreadRuntimeHandle<ViewClientActor>,
 }
 
@@ -268,6 +277,32 @@ impl IndexerViewClient {
             .get_mpc_state(mpc_contract_id.clone(), GET_SUPPORTED_FOREIGN_CHAINS)
             .await?;
         Ok(policy)
+    }
+
+    /// Borsh-decoding view-fn query (`get_mpc_state` is JSON-only).
+    pub(crate) async fn get_allowed_foreign_chain_providers(
+        &self,
+        mpc_contract_id: AccountId,
+    ) -> anyhow::Result<std::collections::BTreeMap<dtos::ForeignChain, dtos::ChainEntry>> {
+        let request = QueryRequest::CallFunction {
+            account_id: mpc_contract_id,
+            method_name: ALLOWED_FOREIGN_CHAIN_PROVIDERS.to_string(),
+            args: vec![].into(),
+        };
+        let query = near_client::Query {
+            block_reference: BlockReference::Finality(Finality::Final),
+            request,
+        };
+
+        let response = self.view_client.send_async(query).await??;
+
+        match response.kind {
+            QueryResponseKind::CallResult(result) => borsh::from_slice::<
+                std::collections::BTreeMap<dtos::ForeignChain, dtos::ChainEntry>,
+            >(&result.result)
+            .context("failed to borsh-decode allowed_foreign_chain_providers response"),
+            _ => anyhow::bail!("got unexpected response querying allowed_foreign_chain_providers"),
+        }
     }
 
     pub(crate) async fn latest_final_block(&self) -> anyhow::Result<BlockView> {

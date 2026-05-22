@@ -178,6 +178,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
         protocol_state_sender,
         migration_state_sender,
         *tls_public_key,
+        node_config.foreign_chains.clone(),
     );
 
     let (shutdown_signal_sender, mut shutdown_signal_receiver) = mpsc::channel(1);
