@@ -3897,7 +3897,7 @@ expression: abi
           "minimum": 0.0
         },
         "ThresholdParameters": {
-          "description": "Threshold parameters for distributed key operations.",
+          "description": "Threshold parameters for distributed key operations.\n\n`per_domain_thresholds` carries a proposed update for each domain's [`ReconstructionThreshold`] when this struct flows into `vote_new_parameters`. An empty map means \"keep current per-domain thresholds\"; a populated map must cover every existing domain (validated by the contract). Outside of resharing proposals the map is empty.",
           "type": "object",
           "required": [
             "participants",
@@ -3906,6 +3906,14 @@ expression: abi
           "properties": {
             "participants": {
               "$ref": "#/definitions/Participants"
+            },
+            "per_domain_thresholds": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
             },
             "threshold": {
               "$ref": "#/definitions/Threshold"
