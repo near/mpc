@@ -47,6 +47,12 @@ enum DiagnosticKind {
         local_name: String,
         contract_name: String,
     },
+    /// The contract whitelist contains a variant this node binary doesn't
+    /// recognize — operator should upgrade.
+    UnknownContractVariant {
+        what: &'static str,
+        value: String,
+    },
 }
 
 /// Variants that reflect "local is a subset of whitelist" rather than a likely
@@ -154,27 +160,57 @@ fn compare_provider(
         });
     }
 
-    if !chain_routing_satisfied(local_url, &contract.chain_routing) {
-        out.push(Diagnostic {
-            chain,
-            provider: Some(name.clone()),
-            kind: DiagnosticKind::ChainRoutingMismatch {
-                local_rpc_url: local_url.to_string(),
-                contract_chain_routing: contract.chain_routing.clone(),
-            },
-        });
+    match chain_routing_satisfied(local_url, &contract.chain_routing) {
+        RoutingCheck::Ok => {}
+        RoutingCheck::Mismatch => {
+            out.push(Diagnostic {
+                chain,
+                provider: Some(name.clone()),
+                kind: DiagnosticKind::ChainRoutingMismatch {
+                    local_rpc_url: local_url.to_string(),
+                    contract_chain_routing: contract.chain_routing.clone(),
+                },
+            });
+        }
+        RoutingCheck::Unknown => {
+            out.push(Diagnostic {
+                chain,
+                provider: Some(name.clone()),
+                kind: DiagnosticKind::UnknownContractVariant {
+                    what: "chain_routing",
+                    value: format!("{:?}", contract.chain_routing),
+                },
+            });
+        }
     }
 
     compare_auth(chain, name, &local.auth, &contract.auth_scheme, out);
 }
 
-fn chain_routing_satisfied(local_url: &str, routing: &ChainRouting) -> bool {
+enum RoutingCheck {
+    Ok,
+    Mismatch,
+    Unknown,
+}
+
+fn chain_routing_satisfied(local_url: &str, routing: &ChainRouting) -> RoutingCheck {
     match routing {
-        ChainRouting::Embedded => true,
-        ChainRouting::PathSegment { segment } => local_url.contains(&format!("/{segment}")),
-        ChainRouting::QueryParam { name, value } => local_url.contains(&format!("{name}={value}")),
-        // Non-exhaustive: unknown variants conservatively pass.
-        _ => true,
+        ChainRouting::Embedded => RoutingCheck::Ok,
+        ChainRouting::PathSegment { segment } => {
+            if local_url.contains(&format!("/{segment}")) {
+                RoutingCheck::Ok
+            } else {
+                RoutingCheck::Mismatch
+            }
+        }
+        ChainRouting::QueryParam { name, value } => {
+            if local_url.contains(&format!("{name}={value}")) {
+                RoutingCheck::Ok
+            } else {
+                RoutingCheck::Mismatch
+            }
+        }
+        _ => RoutingCheck::Unknown,
     }
 }
 
@@ -206,7 +242,27 @@ fn compare_auth(
 ) {
     match (local, contract) {
         (AuthConfig::None, AuthScheme::None) => {}
-        (AuthConfig::Path { .. }, AuthScheme::Path { .. }) => {}
+        (
+            AuthConfig::Path {
+                placeholder: local_p,
+                ..
+            },
+            AuthScheme::Path {
+                placeholder: contract_p,
+            },
+        ) => {
+            if local_p != contract_p {
+                out.push(Diagnostic {
+                    chain,
+                    provider: Some(name.clone()),
+                    kind: DiagnosticKind::AuthSchemeNameMismatch {
+                        variant: "Path",
+                        local_name: local_p.clone(),
+                        contract_name: contract_p.clone(),
+                    },
+                });
+            }
+        }
         (
             AuthConfig::Header { name: local_h, .. },
             AuthScheme::Header {
@@ -254,15 +310,24 @@ fn compare_auth(
 fn log_diagnostic(d: &Diagnostic) {
     let chain = d.chain;
     let provider = d.provider.as_ref().map(|p| p.as_str());
-    if is_informational(&d.kind) {
-        tracing::info!(?chain, provider, kind = ?d.kind, "foreign-chain whitelist verifier");
-    } else {
-        tracing::warn!(?chain, provider, kind = ?d.kind, "foreign-chain whitelist mismatch");
+    match &d.kind {
+        DiagnosticKind::UnknownContractVariant { .. } => {
+            tracing::error!(?chain, provider, kind = ?d.kind, "foreign-chain whitelist contains a variant this node binary doesn't recognize; upgrade the node");
+        }
+        kind if is_informational(kind) => {
+            tracing::info!(?chain, provider, kind = ?d.kind, "foreign-chain whitelist verifier");
+        }
+        _ => {
+            tracing::warn!(?chain, provider, kind = ?d.kind, "foreign-chain whitelist mismatch");
+        }
     }
 }
 
 pub(crate) async fn run(indexer_state: Arc<IndexerState>, local: ForeignChainsConfig) {
     let mut ticker = tokio::time::interval(VERIFY_INTERVAL);
+    // None until the first successful tick; from then on, holds the previous
+    // tick's diagnostics so we can suppress logs while the state is unchanged.
+    let mut previous: Option<Vec<Diagnostic>> = None;
     loop {
         ticker.tick().await;
         let whitelist = match indexer_state
@@ -277,14 +342,23 @@ pub(crate) async fn run(indexer_state: Arc<IndexerState>, local: ForeignChainsCo
             }
         };
         let diagnostics = compare(&local, &whitelist);
-        if diagnostics.is_empty() {
+
+        if previous.as_ref() == Some(&diagnostics) {
             tracing::debug!(
-                "foreign-chain whitelist verifier: local config matches contract whitelist"
+                count = diagnostics.len(),
+                "foreign-chain whitelist verifier: no change since last tick"
             );
-            continue;
-        }
-        for d in &diagnostics {
-            log_diagnostic(d);
+        } else {
+            if diagnostics.is_empty() {
+                tracing::info!(
+                    "foreign-chain whitelist verifier: local config now matches contract whitelist"
+                );
+            } else {
+                for d in &diagnostics {
+                    log_diagnostic(d);
+                }
+            }
+            previous = Some(diagnostics);
         }
     }
 }
@@ -652,6 +726,101 @@ mod tests {
     }
 
     #[test]
+    fn compare__should_emit_path_placeholder_mismatch_when_placeholders_differ() {
+        // Given: local Path placeholder is "{KEY}", contract Path placeholder is "{TOKEN}".
+        let local = ForeignChainsConfig {
+            ethereum: Some(local_chain(&[(
+                "alchemy",
+                local_provider(
+                    "https://api.example.com/v2/{KEY}",
+                    AuthConfig::Path {
+                        placeholder: "{KEY}".to_string(),
+                        token: TokenConfig::Val {
+                            val: "abc".to_string(),
+                        },
+                    },
+                ),
+            )])),
+            ..Default::default()
+        };
+        let whitelist: BTreeMap<dtos::ForeignChain, ChainEntry> = [(
+            dtos::ForeignChain::Ethereum,
+            contract_chain_entry(
+                &[(
+                    "alchemy",
+                    contract_provider(
+                        "https://api.example.com/v2/",
+                        ChainRouting::Embedded,
+                        AuthScheme::Path {
+                            placeholder: "{TOKEN}".to_string(),
+                        },
+                    ),
+                )],
+                1,
+            ),
+        )]
+        .into_iter()
+        .collect();
+
+        // When
+        let diags = compare(&local, &whitelist);
+
+        // Then
+        assert_eq!(diags.len(), 1);
+        assert_matches!(
+            diags[0].kind,
+            DiagnosticKind::AuthSchemeNameMismatch {
+                variant: "Path",
+                ..
+            }
+        );
+    }
+
+    #[test]
+    fn compare__should_accept_matching_path_placeholders() {
+        // Given: both local and contract use the placeholder "{KEY}".
+        let local = ForeignChainsConfig {
+            ethereum: Some(local_chain(&[(
+                "alchemy",
+                local_provider(
+                    "https://api.example.com/v2/{KEY}",
+                    AuthConfig::Path {
+                        placeholder: "{KEY}".to_string(),
+                        token: TokenConfig::Val {
+                            val: "abc".to_string(),
+                        },
+                    },
+                ),
+            )])),
+            ..Default::default()
+        };
+        let whitelist: BTreeMap<dtos::ForeignChain, ChainEntry> = [(
+            dtos::ForeignChain::Ethereum,
+            contract_chain_entry(
+                &[(
+                    "alchemy",
+                    contract_provider(
+                        "https://api.example.com/v2/",
+                        ChainRouting::Embedded,
+                        AuthScheme::Path {
+                            placeholder: "{KEY}".to_string(),
+                        },
+                    ),
+                )],
+                1,
+            ),
+        )]
+        .into_iter()
+        .collect();
+
+        // When
+        let diags = compare(&local, &whitelist);
+
+        // Then
+        assert!(diags.is_empty(), "expected no diagnostics, got: {diags:?}");
+    }
+
+    #[test]
     fn compare__should_emit_subset_informational_when_whitelist_has_unconfigured_chain() {
         // Given: local has no chains; whitelist has Ethereum with one provider.
         let local = ForeignChainsConfig::default();
@@ -683,5 +852,9 @@ mod tests {
         assert!(diags
             .iter()
             .any(|d| d.kind == DiagnosticKind::ProviderNotInLocalConfig));
+        assert!(
+            diags.iter().all(|d| is_informational(&d.kind)),
+            "subset-style diagnostics should all be informational, got: {diags:?}"
+        );
     }
 }

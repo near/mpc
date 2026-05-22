@@ -300,7 +300,19 @@ impl IndexerViewClient {
             QueryResponseKind::CallResult(result) => borsh::from_slice::<
                 std::collections::BTreeMap<dtos::ForeignChain, dtos::ChainEntry>,
             >(&result.result)
-            .context("failed to borsh-decode allowed_foreign_chain_providers response"),
+            .with_context(|| {
+                let preview: String = result
+                    .result
+                    .iter()
+                    .take(32)
+                    .map(|b| format!("{b:02x}"))
+                    .collect();
+                format!(
+                    "failed to borsh-decode allowed_foreign_chain_providers response (len={}, first {} bytes hex: {preview})",
+                    result.result.len(),
+                    result.result.len().min(32),
+                )
+            }),
             _ => anyhow::bail!("got unexpected response querying allowed_foreign_chain_providers"),
         }
     }
