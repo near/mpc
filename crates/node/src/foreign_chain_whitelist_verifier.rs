@@ -293,6 +293,7 @@ pub(crate) async fn run(indexer_state: Arc<IndexerState>, local: ForeignChainsCo
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use assert_matches::assert_matches;
     use mpc_node_config::TokenConfig;
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use std::collections::BTreeMap;
@@ -476,10 +477,7 @@ mod tests {
 
         // Then
         assert_eq!(diags.len(), 1);
-        assert!(matches!(
-            diags[0].kind,
-            DiagnosticKind::BaseUrlMismatch { .. }
-        ));
+        assert_matches!(diags[0].kind, DiagnosticKind::BaseUrlMismatch { .. });
     }
 
     #[test]
@@ -516,10 +514,7 @@ mod tests {
 
         // Then
         assert_eq!(diags.len(), 1);
-        assert!(matches!(
-            diags[0].kind,
-            DiagnosticKind::ChainRoutingMismatch { .. }
-        ));
+        assert_matches!(diags[0].kind, DiagnosticKind::ChainRoutingMismatch { .. });
     }
 
     #[test]
@@ -558,10 +553,7 @@ mod tests {
 
         // Then
         assert_eq!(diags.len(), 1);
-        assert!(matches!(
-            diags[0].kind,
-            DiagnosticKind::ChainRoutingMismatch { .. }
-        ));
+        assert_matches!(diags[0].kind, DiagnosticKind::ChainRoutingMismatch { .. });
     }
 
     #[test]
@@ -599,13 +591,13 @@ mod tests {
 
         // Then
         assert_eq!(diags.len(), 1);
-        assert!(matches!(
+        assert_matches!(
             diags[0].kind,
             DiagnosticKind::AuthSchemeVariantMismatch {
                 local: "None",
                 contract: "Header",
             }
-        ));
+        );
     }
 
     #[test]
@@ -650,13 +642,13 @@ mod tests {
 
         // Then
         assert_eq!(diags.len(), 1);
-        assert!(matches!(
+        assert_matches!(
             diags[0].kind,
             DiagnosticKind::AuthSchemeNameMismatch {
                 variant: "Query",
                 ..
             }
-        ));
+        );
     }
 
     #[test]
