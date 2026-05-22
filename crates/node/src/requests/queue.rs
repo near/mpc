@@ -359,7 +359,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
         // Classify any observed respond txs before doing other timeout/leader work below.
         match self.indexed_respond_txs.status() {
             AggregateResponseStatus::None => {
-                // Note that a respone on the non-canonical chain is treated the same as no
+                // Note that a response on the non-canonical chain is treated the same as no
                 // response at all. We continue with the loop below and check whether or not the
                 // request is still relevant.
             }
