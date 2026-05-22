@@ -13,11 +13,13 @@
 use std::collections::BTreeMap;
 
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
-use near_mpc_contract_interface::types::{ChainEntry, ChainEntryValidationError, ForeignChain};
+use near_mpc_contract_interface::types::{
+    self as dtos, ChainRouting, ForeignChain, ProviderConfig, ProviderId,
+};
 use near_sdk::near;
 use near_sdk::store::IterableMap;
 
-use crate::errors::{ConversionError, Error, InvalidParameters};
+use crate::errors::{ChainEntryValidationError, ConversionError, Error, InvalidParameters};
 use crate::primitives::thresholds::ThresholdParameters;
 use crate::primitives::votes::{ProposalHash, ProposalHashEncoding, Votes};
 use crate::primitives::{key_state::AuthenticatedParticipantId, participants::Participants};
@@ -29,6 +31,75 @@ impl From<ChainEntryValidationError> for Error {
             reason: err.to_string(),
         }
         .into()
+    }
+}
+
+/// Contract-side `ChainEntry`. Mirrors [`dtos::ChainEntry`] in layout but enforces
+/// validation rules at construction. The DTO type is the wire shape; this type is
+/// what the contract stores and reasons about. Conversion is via
+/// [`TryFrom<dtos::ChainEntry>`] (validates) and [`From<ChainEntry> for dtos::ChainEntry`]
+/// (for view-fn return). Borsh layout matches the DTO so storage bytes are
+/// interchangeable and pending-vote hashes agree across voters.
+#[near(serializers=[borsh])]
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct ChainEntry {
+    providers: NonEmptyBTreeMap<ProviderId, ProviderConfig>,
+    quorum: u64,
+}
+
+impl TryFrom<dtos::ChainEntry> for ChainEntry {
+    type Error = ChainEntryValidationError;
+
+    fn try_from(entry: dtos::ChainEntry) -> Result<Self, Self::Error> {
+        let dtos::ChainEntry { providers, quorum } = entry;
+        if quorum == 0 {
+            return Err(ChainEntryValidationError::ZeroQuorum);
+        }
+        let providers_len = u64::try_from(providers.len()).map_err(|e| {
+            ChainEntryValidationError::ProvidersLenOverflow {
+                len: providers.len(),
+                reason: e.to_string(),
+            }
+        })?;
+        if quorum > providers_len {
+            return Err(ChainEntryValidationError::QuorumExceedsProviders {
+                quorum,
+                providers_len,
+            });
+        }
+        for (id, config) in providers.iter() {
+            if let ChainRouting::PathSegment { segment } = &config.chain_routing {
+                if segment.contains('/') {
+                    return Err(ChainEntryValidationError::PathSegmentContainsSlash {
+                        provider_id: id.0.clone(),
+                    });
+                }
+            }
+            if let (
+                ChainRouting::QueryParam {
+                    name: routing_name, ..
+                },
+                dtos::AuthScheme::Query { name: auth_name },
+            ) = (&config.chain_routing, &config.auth_scheme)
+            {
+                if routing_name == auth_name {
+                    return Err(ChainEntryValidationError::QueryParamCollidesWithAuth {
+                        provider_id: id.0.clone(),
+                        name: auth_name.clone(),
+                    });
+                }
+            }
+        }
+        Ok(ChainEntry { providers, quorum })
+    }
+}
+
+impl From<ChainEntry> for dtos::ChainEntry {
+    fn from(entry: ChainEntry) -> Self {
+        dtos::ChainEntry {
+            providers: entry.providers,
+            quorum: entry.quorum,
+        }
     }
 }
 
@@ -57,9 +128,13 @@ impl AllowedProviders {
         self.entries.insert(chain, entry);
     }
 
-    /// Owned clone of the whitelist.
-    pub fn snapshot(&self) -> BTreeMap<ForeignChain, ChainEntry> {
-        self.entries.iter().map(|(c, e)| (*c, e.clone())).collect()
+    /// Owned clone of the whitelist as DTOs; required by `allowed_foreign_chain_providers`,
+    /// which borsh-serializes the result across the contract boundary.
+    pub fn snapshot(&self) -> BTreeMap<ForeignChain, dtos::ChainEntry> {
+        self.entries
+            .iter()
+            .map(|(c, e)| (*c, e.clone().into()))
+            .collect()
     }
 }
 
@@ -143,13 +218,13 @@ impl ForeignChainRpcWhitelist {
     pub fn vote(
         &mut self,
         participant: AuthenticatedParticipantId,
-        votes: NonEmptyBTreeMap<ForeignChain, ChainEntry>,
+        votes: NonEmptyBTreeMap<ForeignChain, dtos::ChainEntry>,
         threshold_parameters: &ThresholdParameters,
     ) -> Result<Vec<ForeignChain>, Error> {
         let mut applied: Vec<ForeignChain> = Vec::new();
-        let votes: BTreeMap<ForeignChain, ChainEntry> = votes.into();
+        let votes: BTreeMap<ForeignChain, dtos::ChainEntry> = votes.into();
         for (chain, entry) in votes {
-            entry.validate()?;
+            let entry: ChainEntry = entry.try_into()?;
             let hash = ProposalHash::from(entry.clone());
             if self
                 .votes
@@ -170,9 +245,7 @@ mod tests {
     use crate::primitives::{key_state::AuthenticatedParticipantId, test_utils::gen_participants};
     use assert_matches::assert_matches;
     use mpc_primitives::Threshold;
-    use near_mpc_contract_interface::types::{
-        AuthScheme, ChainRouting, ProviderConfig, ProviderId,
-    };
+    use near_mpc_contract_interface::types::AuthScheme;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
 
@@ -195,11 +268,11 @@ mod tests {
         )
     }
 
-    /// Build a `ChainEntry` from a list of provider id stubs and a quorum.
-    fn chain_entry(ids: &[&str], quorum: u64) -> ChainEntry {
+    /// Build a `dtos::ChainEntry` from a list of provider id stubs and a quorum.
+    fn chain_entry(ids: &[&str], quorum: u64) -> dtos::ChainEntry {
         let providers: BTreeMap<ProviderId, ProviderConfig> =
             ids.iter().map(|id| provider(id)).collect();
-        ChainEntry {
+        dtos::ChainEntry {
             providers: NonEmptyBTreeMap::try_from(providers)
                 .expect("test setup: providers must be non-empty"),
             quorum,
@@ -211,14 +284,14 @@ mod tests {
         chain: ForeignChain,
         ids: &[&str],
         quorum: u64,
-    ) -> NonEmptyBTreeMap<ForeignChain, ChainEntry> {
+    ) -> NonEmptyBTreeMap<ForeignChain, dtos::ChainEntry> {
         NonEmptyBTreeMap::new(chain, chain_entry(ids, quorum))
     }
 
     /// Build a multi-chain vote batch wrapped in `NonEmptyBTreeMap`.
     fn votes_from(
-        entries: impl IntoIterator<Item = (ForeignChain, ChainEntry)>,
-    ) -> NonEmptyBTreeMap<ForeignChain, ChainEntry> {
+        entries: impl IntoIterator<Item = (ForeignChain, dtos::ChainEntry)>,
+    ) -> NonEmptyBTreeMap<ForeignChain, dtos::ChainEntry> {
         let map: BTreeMap<_, _> = entries.into_iter().collect();
         NonEmptyBTreeMap::try_from(map).expect("test setup: batch must be non-empty")
     }
@@ -251,7 +324,10 @@ mod tests {
         }
     }
 
-    fn stored_entry(wl: &ForeignChainRpcWhitelist, chain: ForeignChain) -> Option<ChainEntry> {
+    fn stored_entry(
+        wl: &ForeignChainRpcWhitelist,
+        chain: ForeignChain,
+    ) -> Option<dtos::ChainEntry> {
         wl.entries.snapshot().get(&chain).cloned()
     }
 
@@ -450,8 +526,7 @@ mod tests {
             .count();
         assert_eq!(voters_for_p0_polygon, 1);
 
-        let expected_entry = chain_entry(&["ankr", "drpc"], 2);
-        expected_entry.validate().unwrap();
+        let expected_entry: ChainEntry = chain_entry(&["ankr", "drpc"], 2).try_into().unwrap();
         let expected_hash = ProposalHash::from(expected_entry);
         let actual_hash = pending_proposal_hash_for(&wl, &(p0, ForeignChain::Polygon))
             .expect("expected pending row for (p0, Polygon)");
@@ -545,7 +620,7 @@ mod tests {
                 auth_ids[0].clone(),
                 NonEmptyBTreeMap::new(
                     ForeignChain::Ethereum,
-                    ChainEntry {
+                    dtos::ChainEntry {
                         providers: NonEmptyBTreeMap::new(bad.0, bad.1),
                         quorum: 1,
                     },
@@ -578,7 +653,7 @@ mod tests {
                 auth_ids[0].clone(),
                 NonEmptyBTreeMap::new(
                     ForeignChain::Ethereum,
-                    ChainEntry {
+                    dtos::ChainEntry {
                         providers: NonEmptyBTreeMap::new(bad.0, bad.1),
                         quorum: 1,
                     },
@@ -615,7 +690,7 @@ mod tests {
             let (id, config) = drpc();
             NonEmptyBTreeMap::new(
                 ForeignChain::Ethereum,
-                ChainEntry {
+                dtos::ChainEntry {
                     providers: NonEmptyBTreeMap::new(id, config),
                     quorum: 1,
                 },
@@ -706,5 +781,107 @@ mod tests {
         // Then
         assert!(!has_pending_vote(&wl, &(p0, ForeignChain::Ethereum)));
         assert!(has_pending_vote(&wl, &(p1, ForeignChain::Polygon)));
+    }
+
+    // Direct tests for `TryFrom<dtos::ChainEntry> for ChainEntry` — the validation
+    // step that gates a vote's payload before it ever reaches `Votes<V>::vote`.
+    // These complement the `vote__should_return_err_on_*` tests above, which cover
+    // the same paths but through the full `ForeignChainRpcWhitelist::vote` entry point.
+
+    #[test]
+    fn validate_chain_entry__should_reject_zero_quorum() {
+        // Given
+        let dto = chain_entry(&["alchemy"], 0);
+
+        // When
+        let err = ChainEntry::try_from(dto).unwrap_err();
+
+        // Then
+        assert_matches!(err, ChainEntryValidationError::ZeroQuorum);
+    }
+
+    #[test]
+    fn validate_chain_entry__should_reject_quorum_exceeding_providers_count() {
+        // Given
+        let dto = chain_entry(&["alchemy"], 2);
+
+        // When
+        let err = ChainEntry::try_from(dto).unwrap_err();
+
+        // Then
+        assert_matches!(
+            err,
+            ChainEntryValidationError::QuorumExceedsProviders {
+                quorum: 2,
+                providers_len: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn validate_chain_entry__should_reject_path_segment_containing_slash() {
+        // Given
+        let dto = dtos::ChainEntry {
+            providers: NonEmptyBTreeMap::new(
+                ProviderId("ankr".to_string()),
+                ProviderConfig {
+                    base_url: "https://rpc.ankr.com".to_string(),
+                    auth_scheme: AuthScheme::None,
+                    chain_routing: ChainRouting::PathSegment {
+                        segment: "eth/sepolia".to_string(),
+                    },
+                },
+            ),
+            quorum: 1,
+        };
+
+        // When
+        let err = ChainEntry::try_from(dto).unwrap_err();
+
+        // Then
+        assert_matches!(
+            err,
+            ChainEntryValidationError::PathSegmentContainsSlash { provider_id } if provider_id == "ankr"
+        );
+    }
+
+    #[test]
+    fn validate_chain_entry__should_reject_query_param_colliding_with_auth_query() {
+        // Given
+        let dto = dtos::ChainEntry {
+            providers: NonEmptyBTreeMap::new(
+                ProviderId("drpc".to_string()),
+                ProviderConfig {
+                    base_url: "https://lb.drpc.org/ogrpc".to_string(),
+                    auth_scheme: AuthScheme::Query {
+                        name: "key".to_string(),
+                    },
+                    chain_routing: ChainRouting::QueryParam {
+                        name: "key".to_string(),
+                        value: "ethereum".to_string(),
+                    },
+                },
+            ),
+            quorum: 1,
+        };
+
+        // When
+        let err = ChainEntry::try_from(dto).unwrap_err();
+
+        // Then
+        assert_matches!(
+            err,
+            ChainEntryValidationError::QueryParamCollidesWithAuth { provider_id, name }
+                if provider_id == "drpc" && name == "key"
+        );
+    }
+
+    #[test]
+    fn validate_chain_entry__should_accept_well_formed_entry() {
+        // Given
+        let dto = chain_entry(&["alchemy", "ankr"], 2);
+
+        // When / Then
+        ChainEntry::try_from(dto).expect("well-formed entry should validate");
     }
 }

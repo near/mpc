@@ -12,10 +12,11 @@ set -euo pipefail
 WASM_PATH="${1:-target/near/mpc_contract/mpc_contract.wasm}"
 
 # NEAR max_transaction_size = 1572864; keep some headroom.
-# Raised from 1495000 to fit the on-chain RPC provider whitelist voting
-# machinery (issue #3215), then bumped again to fit the `Votes<V>` +
-# `IterableMap` migration which adds generic-monomorphization overhead.
-HARD_LIMIT=1570000
+# The on-chain RPC provider whitelist voting machinery (issue #3215) adds
+# ~12 KB over the pre-feature baseline; this limit gives a bit of headroom
+# above the post-feature size without leaving the contract free to creep up
+# to the protocol boundary.
+HARD_LIMIT=1520000
 
 
 if [[ ! -f "$WASM_PATH" ]]; then

@@ -27,25 +27,15 @@ pub const GAS_FOR_INIT: Gas = Gas::from_tgas(300);
 /// TODO(#1571): Gas cost for voting on contract updates. Reduced somewhat after
 /// optimization (#1617) by avoiding full contract code deserialization; there’s likely still
 /// room for further optimization.
-/// Bumped 260 → 290 TGas after the `Votes<V>` + `IterableMap` migration grew the
-/// reproducible WASM. The threshold vote spawns `deploy_contract(code)` whose
-/// action cost scales with code size; the prior 260 TGas budget was failing with
-/// `Exceeded the prepaid gas` once `burnt + promises_gas` crossed the limit
-/// (`test_propose_update_contract_many` in particular).
-pub const GAS_FOR_VOTE_UPDATE: Gas = Gas::from_tgas(290);
+pub const GAS_FOR_VOTE_UPDATE: Gas = Gas::from_tgas(260);
 /// Gas required for votes cast before the threshold is reached (votes 1 through N-1).
 /// These votes are cheap because they only record the vote without triggering the actual
 /// contract update deployment and migration.
 pub const GAS_FOR_VOTE_BEFORE_THRESHOLD: Gas = Gas::from_tgas(5);
 /// Maximum gas expected for the threshold vote that triggers the contract update.
 /// This vote is more expensive because it deploys the new contract code and executes
-/// the migration function. Raised from 185 → 190 → 200 TGas as the foreign-chain
-/// RPC providers feature (issue #3215) grew the WASM: first to add the whitelist +
-/// `v3_10_state` try-read step, then again when the `Votes<V>` + `IterableMap` +
-/// `NonEmptyBTreeMap` reshape pushed the binary slightly larger. Revert toward 185
-/// once `v3_10_state` is retired and `Votes<V>` monomorphization overhead has been
-/// amortized across other consumers.
-pub const MAX_GAS_FOR_THRESHOLD_VOTE: Gas = Gas::from_tgas(200);
+/// the migration function.
+pub const MAX_GAS_FOR_THRESHOLD_VOTE: Gas = Gas::from_tgas(185);
 
 /* --- Deposit constants --- */
 /// This is the current deposit required for a contract deploy. This is subject to change but make
