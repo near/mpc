@@ -352,8 +352,10 @@ impl RecentBlocksTracker {
         let new_final_blocks = self.maybe_update_final_head(block.last_final_block);
         // TODO(#3316): collapse the per-queue counter into a single shared metric on the
         // tracker itself.
-        self.finalized_blocks_indexed_metric
-            .inc_by(new_final_blocks.len() as u64);
+        self.finalized_blocks_indexed_metric.inc_by(
+            u64::try_from(new_final_blocks.len())
+                .expect("usize shuold always fit into a u64 on our targets"),
+        );
         // Capture the (height, hash) of every newly-final block before pruning may drop
         // strong refs to ancestors that fell outside the recency window. Tests use this
         // to reconstruct a finalized-name string from their own content map.
