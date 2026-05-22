@@ -100,35 +100,33 @@ impl IndexedRespondTxs {
         Self(Vec::new())
     }
 
-    fn status(&self) -> ResolutionStatus {
-        if self.0.is_empty() {
-            return ResolutionStatus::None;
-        }
-        let mut result = ResolutionStatus::RemovedByTracker;
+    fn status(&self) -> AggregateResponseStatus {
         for (status, received_at, block_height) in self.0.iter().filter_map(|tx| {
             Weak::upgrade(&tx.block_status).map(|status| (status, tx.received_at, tx.block_height))
         }) {
             if status.is_final() {
-                return ResolutionStatus::Final {
+                return AggregateResponseStatus::Resolved {
                     received_at,
                     block_height,
                 };
             }
             if status.is_canonical() {
-                // note:
-                // We can't have, simultaneously, a "Final" and a separate "OptimisticAndCanonical"
-                // response transaction.
-                // Reason for this is that we track `return_signature_and_clean_state_on_success`.
-                // This is a method that can only be called by the contract and gets called
+                // We return early if the response is on the canonical chain.
+                // This is appropriate, because it is not possible to have, simultaneously:
+                // - a response that is final
+                // - and a response that is not final, but canonical
+                // for the same request.
+                //
+                // Reason for this is that we track `return_signature_and_clean_state_on_success`,
+                // which is a private method on the MPC contract, which gets called
                 // _exactly once_ per signature.
                 //
                 // BFT rules thus guarantee that there won't be a different final transaction response,
                 // which makes this early return ok.
-                return ResolutionStatus::PendingOptimistic;
+                return AggregateResponseStatus::MayBeResolved;
             }
-            result = ResolutionStatus::PendingNonCanonical;
         }
-        result
+        AggregateResponseStatus::None
     }
 
     fn add(&mut self, indexed_respond_tx: IndexedRespondTx) {
@@ -136,15 +134,18 @@ impl IndexedRespondTxs {
     }
 }
 
-enum ResolutionStatus {
+/// Aggregates block status of all blocks in IndexedRespondTxs
+enum AggregateResponseStatus {
+    /// Either there exists no response for this transaction, or the tracker has discarded the
+    /// response, or the response sits on a non-canonical chain
     None,
-    PendingNonCanonical,
-    PendingOptimistic,
-    Final {
+    /// A response sits on the canonical chain. Likely to be resolved.
+    MayBeResolved,
+    /// Indicates that one of the responses is included in a block that was finalized on chain.
+    Resolved {
         received_at: near_time::Instant,
         block_height: u64,
     },
-    RemovedByTracker,
 }
 
 /// The state of a single request in the queue.
@@ -354,31 +355,15 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
         }
         // Classify any observed respond txs before doing other timeout/leader work below.
         match self.indexed_respond_txs.status() {
-            ResolutionStatus::None
-            | ResolutionStatus::RemovedByTracker
-            | ResolutionStatus::PendingNonCanonical => {
-                // We don't return early on non-canonical responses, because:
-                // - the request itself may also be on a non-canonical chain and will be removed
-                //   by the checks below (note: this assumption will no longer hold once
-                //   #3193 is fixed);
-                // - the response may not make it to canonical, and we may want to re-attempt.
-                //
-                // This is wrong in the case where ALL of the following hold:
-                // - the response is on a non-canonical chain;
-                // - the request fails the `cutoff` check below.
-                // - the response is eventually finalized;
-                //
-                // In that case this method returns `RequestStatus::Drop`, indicating a timeout
-                // failure, while in reality the request was successfully resolved.
-                //
-                // That is fine for queue accounting — `RequestStatus` is consumed by `Queue`
-                // itself — but it makes the value a poor proxy for end-to-end signature
-                // success rate. See #3229.
+            AggregateResponseStatus::None => {
+                // Note that a respone on the non-canonical chain is treated the same as no
+                // response at all. We continue with the loop below and check whether or not the
+                // request is still relevant.
             }
-            ResolutionStatus::PendingOptimistic => {
+            AggregateResponseStatus::MayBeResolved => {
                 return RequestStatus::Wait("response submitted, waiting to finalize");
             }
-            ResolutionStatus::Final {
+            AggregateResponseStatus::Resolved {
                 received_at,
                 block_height,
             } => {
