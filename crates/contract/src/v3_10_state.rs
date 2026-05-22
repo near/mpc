@@ -8,14 +8,13 @@
 //! count + different inner map shape), so this module reads the `3.10.0` shape and
 //! converts.
 
-use borsh::BorshDeserialize;
-use near_mpc_contract_interface::types as dtos;
+use borsh::{BorshDeserialize, BorshSerialize};
+use near_mpc_contract_interface::types::{self as dtos, VerifyForeignTransactionRequest};
 use near_sdk::{env, store::LookupMap};
 use std::collections::BTreeMap;
 
 use crate::{
     node_migrations::NodeMigrations,
-    pending_requests::LegacyPendingRequests,
     primitives::{
         ckd::CKDRequest,
         signature::{SignatureRequest, YieldIndex},
@@ -26,9 +25,20 @@ use crate::{
     Config, SupportedForeignChainsByNode,
 };
 
+/// In-flight requests inherited from the schema before the duplicate-request fan-out
+/// upgrade. Kept inlined here (rather than imported) so storage written by the 3.10
+/// contract still deserializes during migration. Dropped in the `From` impl below
+/// because the legacy window has closed.
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct LegacyPendingRequests {
+    signature_requests: LookupMap<SignatureRequest, YieldIndex>,
+    ckd_requests: LookupMap<CKDRequest, YieldIndex>,
+    verify_foreign_tx_requests: LookupMap<VerifyForeignTransactionRequest, YieldIndex>,
+}
+
 /// `3.10.0`'s `MpcContract` layout. Identical to the current `MpcContract` except the
 /// trailing `foreign_chain_rpc_whitelist` field uses the pre-reshape type below.
-#[derive(BorshDeserialize)]
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct MpcContract {
     protocol_state: ProtocolContractState,
     pending_signature_requests: LookupMap<SignatureRequest, Vec<YieldIndex>>,
@@ -43,19 +53,13 @@ pub struct MpcContract {
     node_migrations: NodeMigrations,
     legacy_pending_requests: LegacyPendingRequests,
     metrics: dtos::Metrics,
-    #[expect(
-        dead_code,
-        reason = "consumed by parent borsh-deserialize then discarded — 3.10.0 guarantees the map is empty, so the new whitelist is default-initialized"
-    )]
     foreign_chain_rpc_whitelist: OldForeignChainRpcWhitelist,
 }
 
-/// `3.10.0`'s whitelist field shape: a single nested `BTreeMap`, no vote storage.
-#[expect(
-    dead_code,
-    reason = "field consumed by the parent borsh-deserialize then discarded — 3.10.0 guarantees the map is empty"
-)]
-#[derive(BorshDeserialize)]
+/// `3.10.0`'s whitelist field shape: a single nested `BTreeMap`, no vote storage. The
+/// `From` impl above discards it and default-initializes the current whitelist because
+/// `3.10.0` had no vote endpoint and so the map is guaranteed empty.
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct OldForeignChainRpcWhitelist {
     entries: BTreeMap<dtos::ForeignChain, BTreeMap<dtos::ProviderId, OldProviderEntry>>,
 }
@@ -66,11 +70,7 @@ pub struct OldForeignChainRpcWhitelist {
 /// guarantees the outer map is empty, so this inner type is never actually deserialized
 /// — but the parent `BTreeMap<ProviderId, _>` still needs a concrete `V: BorshDeserialize`
 /// to satisfy the type bound on the derive.
-#[expect(
-    dead_code,
-    reason = "fields needed for borsh layout compatibility; never read because 3.10.0 map is empty"
-)]
-#[derive(BorshDeserialize)]
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct OldProviderEntry {
     provider_id: dtos::ProviderId,
     base_url: String,
@@ -98,9 +98,6 @@ impl From<MpcContract> for crate::MpcContract {
             tee_state: old.tee_state,
             accept_requests: old.accept_requests,
             node_migrations: old.node_migrations,
-            // TODO(#3279): drop `legacy_pending_requests` from `crate::MpcContract` and
-            // stop carrying it across migration.
-            legacy_pending_requests: old.legacy_pending_requests,
             metrics: old.metrics,
             foreign_chain_rpc_whitelist: Default::default(),
         }

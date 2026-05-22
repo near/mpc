@@ -4,7 +4,7 @@ This guide provides step-by-step instructions for node operators to migrate thei
 
 ## Overview
 
-Node migration allows you to move your MPC node from one host to another without requiring a full network resharing. This is accomplished using the  `backup-cli` tool to securely backup and restore your node's keyshares.
+Node migration allows you to move your MPC node from one host to another without requiring a full network resharing. This is accomplished using the `backup-cli` tool to securely backup and restore your node's keyshares.
 
 **Important:** This guide covers the **Soft Launch** migration process. For information about the architecture and future Hard Launch implementation, see [migration-service.md](./migration-service.md).
 
@@ -106,7 +106,7 @@ near contract call-function as-transaction \
 
 Copy and run the generated command to register your backup-cli with the contract.
 
-**Note:** The "public key" in the registration corresponds to  the `p2p_private_key` created in Step 1.
+**Note:** The "public key" in the registration corresponds to the `p2p_private_key` created in Step 1.
 
 ### Verify Registration
 ```bash
@@ -118,7 +118,7 @@ near contract call-function as-read-only \
   now
 ```
 
-You should see your account and registered backup_cli  public key listed, something like this:
+You should see your account and registered backup_cli public key listed, something like this:
 
 
 ```json
@@ -147,7 +147,7 @@ For additional security, the backup and restore process encrypts keyshares durin
 export BACKUP_ENCRYPTION_KEY=$(cat $MPC_HOME_DIR/backup_encryption_key.hex)
 ```
 
-Copy this key and set it as the `BACKUP_ENCRYPTION_KEY` environment variable for  the backup-cli when running `get-keyshares`.
+Copy this key and set it as the `BACKUP_ENCRYPTION_KEY` environment variable for the backup-cli when running `get-keyshares`.
 
 
 
@@ -353,9 +353,31 @@ Look for your account in the output. Once the migration is complete, there shoul
 
 After verifying the migration was successful:
 
-1. **Stop the old node** on the old host
-2. **Keep the backup** of keyshares (the contents of `$BACKUP_HOME_DIR`, including the `key` file and the `permanent_keys/` directory with `epoch_<...>_with_<...>_domains` files) for a reasonable period (in case you need to migrate again)
-3. **Securely delete** the old node's data once you're confident the new node is functioning correctly
+1. **Stop the old node** on the old host.
+
+2. **Revoke the old node's signer key.** The function-call key you added in Step 5 of the previous migration persists on your account with `unlimited` allowance on the MPC contract until explicitly removed. Use `list-keys` to find the old signer's public key (distinct from the one you just added in Step 5), then `delete-keys`:
+
+   ```bash
+   near account list-keys \
+     $SIGNER_ACCOUNT_ID \
+     network-config $NEAR_NETWORK \
+     now
+
+   near account delete-keys \
+     $SIGNER_ACCOUNT_ID \
+     public-keys <OLD_NODE_SIGNER_PUBLIC_KEY> \
+     network-config $NEAR_NETWORK \
+     sign-with-keychain \
+     send
+   ```
+
+   The `public-keys` argument is a comma-separated list (`<k1>,<k2>,…`), so if more than one stale function-call key has accumulated from earlier migrations, you can revoke them all in a single call.
+
+   Don't revoke the `backup-cli`'s registered key from Step 2 — that's the backup service registration, reused across migrations.
+
+3. **Keep the backup** of keyshares (the contents of `$BACKUP_HOME_DIR`, including the `key` file and the `permanent_keys/` directory with `epoch_<...>_with_<...>_domains` files) for a reasonable period (in case you need to migrate again).
+
+4. **Securely delete** the old node's data once you're confident the new node is functioning correctly.
 
 ## Troubleshooting
 
@@ -363,7 +385,6 @@ After verifying the migration was successful:
 
 If backup-cli cannot connect to your node:
 
-- **Verify firewall rules**: Ensure the backup service can reach the node's address
-port 8079  is open and accessible
+- **Verify firewall rules**: Ensure the backup service can reach the node's address and that port 8079 is open and accessible.
 
 

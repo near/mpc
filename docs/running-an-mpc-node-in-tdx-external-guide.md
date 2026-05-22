@@ -1,4 +1,4 @@
-# MPC Node Deployment in TDX \- External Guide
+# MPC Node Deployment in TDX - External Guide
 
 ## Introduction
 
@@ -6,7 +6,7 @@ Chain signatures is a Multi-Party Computation (MPC) service that lets you sign a
 
 This guide walks you through deploying a self-hosted MPC node on a bare-metal server using Intel Trusted Domain Extensions (TDX). The node runs inside a Confidential VM (CVM) for isolation and attestation.
 
-We use Dstack (from Phala) to orchestrate the environment and run the MPC container inside the CVM
+We use Dstack (from Phala) to orchestrate the environment and run the MPC container inside the CVM.
 
 ## Limitations and Restrictions
 
@@ -39,17 +39,21 @@ For a full architecture review of the TEE-based MPC, see: [design doc](securing-
 
 * Have a TDX enabled, bare metal, server.
 
-Note \- we currently only support bare metal and do not support virtualized TDX solutions (such as GCP)
+Note - we currently only support bare metal and do not support virtualized TDX solutions (such as GCP).
 
 * Intel Xeon 5th/6th Generation CPU (TDX Support) and 8 RAM slots filled
   See [Intel TDX HW requirements](https://cc-enabling.trustedservices.intel.com/intel-tdx-enabling-guide/03/hardware_selection/)
-* Memory \- 64GB
-* (v)Cores \- 8
-* Disk space \- 500GB, SSD NVMe or similar performance
+* Memory - 64GB
+* (v)Cores - 8
+* Disk space - 500GB, SSD NVMe or similar performance
 
 For a list of supported cloud providers offering bare metal servers with Intel TDX, see [Cloud Providers Supporting Bare Metal Servers with Intel TDX](./cloud-providers-tdx.md).
 
 > **Sharing one host between mainnet and testnet?** See [Running multiple MPC nodes on one host](./running-multiple-mpc-nodes-on-one-host.md) for the additional setup (one `dstack-vmm` hosting both CVMs, with each CVM bound to a distinct host IP at port-forward time). Note: this setup is discouraged as it couples mainnet and testnet availability — a single failure takes both nodes offline.
+
+### Software Requirements
+
+* [`near-cli-rs`](https://github.com/near/near-cli-rs) — install per the upstream README; the `near` binary must be on your `$PATH`.
 
 ### General
 
@@ -587,16 +591,16 @@ This section will describe how to configure and deploy your MPC node inside a CV
 
 Including
 
-* Creating a Near account for your node
+* Creating a NEAR account for your node
 
 * Preparing a configuration file based on [user-config.toml](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/user-config.toml)
 
-* Rendering the launcher docker compose template [launcher\_docker\_compose.yaml.template](https://github.com/near/mpc/blob/main/crates/contract/assets/launcher_docker_compose.yaml.template) with the launcher and MPC node manifest digests approved by the contract.
+* Rendering the launcher docker compose template [launcher_docker_compose.yaml.template](https://github.com/near/mpc/blob/main/crates/contract/assets/launcher_docker_compose.yaml.template) with the launcher and MPC node manifest digests approved by the contract.
 * Configuring and starting your CVM with the MPC node.
 * Accessing mpc docker logs.
 * Retrieve keys from the CVM.
 * Verify the node's attestation before trusting the keys.
-* Add the node key to your Near account.
+* Add the node key to your NEAR account.
 
 ### Create a NEAR Account for Your Node
 
@@ -632,7 +636,7 @@ near account create-account sponsor-by-faucet-service <ACCOUNT_NAME> use-manuall
 
 For more details, please refer to the NEAR account documentation.
 
-### Prepare MPC node configuration
+### Prepare MPC Node Configuration
 
 Create a `user-config.toml` file based on the [user-config.toml](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/user-config.toml) template.
 
@@ -820,14 +824,14 @@ deployment shapes:
 | **3030** | Debug and telemetry collection                                         |
 | **8079** | Migration port                    |
 
-### Configuring and starting the MPC binary in a CVM
+### Configuring and Starting the MPC Binary in a CVM
 
 There are 2 ways to manage the VM that will run the MPC node.
 
-1\. Using the Web interface
-2\. Using a script.
+1. Using the Web interface
+2. Using a script.
 
-Note \- both methods provide the same functionality. The Web interface provides a more manual approach and control. While the script is useful for automating processes.
+Note - both methods provide the same functionality. The Web interface provides a more manual approach and control. While the script is useful for automating processes.
 
 #### **Using the Web interface**
 
@@ -835,12 +839,18 @@ Follow the [Dstack guide](https://github.com/Dstack-TEE/dstack?tab=readme-ov-fil
 
 Use the following custom settings for MPC:
 
-1. Launcher docker compose file \- provided above.
-2. VM HW setting: (use exactly those settings, since vCPU/Memory are measured )
-    vCPU number=8 , Memory \= 64GB, disk \= 500 GB
-3. Pre script \- empty.
-4. user-config \- provided above
-5. KMS=disable, Local Keyprovider=enabled, Tproxy=disable, public logs=enabled, public sysinfo=enabled, pin NUMA=disabled
+1. Launcher docker compose file - provided above.
+2. VM HW setting (use exactly those settings, since vCPU/Memory are measured):
+    vCPU number=8, Memory = 64GB, disk = 500 GB
+3. Pre script - empty.
+4. user-config - provided above
+5. Toggles:
+   - KMS = disable
+   - Local Keyprovider = enabled
+   - Tproxy = disable
+   - public logs = enabled
+   - public sysinfo = enabled
+   - pin NUMA = disabled
 6. Port mapping (format: `<host_address>:<host_port>` → `<vm_port>`):
    Public 0.0.0.0:80 → 80 (main node to node communication port)
    Public 0.0.0.0:24567 → 24567 (required for decentralized state sync)
@@ -942,18 +952,17 @@ http://localhost:17190
 
 ![CVM Web Page](./attachments/CVM_web_page.png)
 
-### Retrieve public keys from the MPC node
+### Retrieve Public Keys from the MPC Node
 
 There are 2 keys that should be retrieved from node.
 
-* P2P (near\_p2p\_public\_key)- this key is used by the nodes to authenticate with one another. This key needs to be registered on the contract. (see details below)
-* Node Account Key (near\_signer\_public\_key) \- this key is used by the node to issue operations such as "vote\_reshared".
-  This key needs to be added to the Near account that was created in the step above.
+* P2P (`near_p2p_public_key`) - this key is used by the nodes to authenticate with one another. This key needs to be registered on the contract (see details below).
+* Node Account Key (`near_signer_public_key`) - this key is used by the node to issue operations such as `vote_reshared`.
+  This key needs to be added to the NEAR account that was created in the step above.
 
-### Retrieve the node account key and P2P key
+### Retrieve the Node Account Key and P2P Key
 
-In order to retrieve the node account key and the P2P key. On your server
-Call the HTTP end point [http://localhost:8080/public\_data](http://localhost:8080/public_data)  \- and search for near\_signer\_public\_key and near\_p2p\_public\_key
+To retrieve the node account key and the P2P key, call the HTTP endpoint [http://localhost:8080/public_data](http://localhost:8080/public_data) from your server and search for `near_signer_public_key` and `near_p2p_public_key`.
 
 ```json
 {"near_signer_public_key":"ed25519:B2JvaYmgzfXsvCxrqd4nBrBt8jo9ReqUZatG3dAZEBv5","near_p2p_public_key":"ed25519:5SiS1SJiABiM79Yt6uEjMabAT9UguQY9hSyF7xfHLGYt"}
@@ -1092,7 +1101,7 @@ This section shows how to add the MPC node's public key (from the previous secti
 #### Example Command
 
 ```bash
-./target/release/near account add-key $ACCOUNT_ID \
+near account add-key $ACCOUNT_ID \
   grant-function-call-access \
   --allowance unlimited \
   --contract-account-id $MPC_CONTRACT_ID \
@@ -1121,7 +1130,7 @@ NETWORK="testnet"   # or "mainnet"
 METHOD_NAMES="respond,respond_ckd,respond_verify_foreign_tx,vote_pk,start_keygen_instance,vote_reshared,vote_foreign_chain_policy,start_reshare_instance,vote_abort_key_event_instance,verify_tee,submit_participant_info,conclude_node_migration"
 
 # === Add Access Key ===
-./target/release/near account add-key $ACCOUNT_ID \
+near account add-key $ACCOUNT_ID \
   grant-function-call-access \
   --allowance "$ALLOWANCE" \
   --contract-account-id $MPC_CONTRACT_ID \
@@ -1139,7 +1148,7 @@ METHOD_NAMES="respond,respond_ckd,respond_verify_foreign_tx,vote_pk,start_keygen
 After sending the transaction, check that the new key was added:
 
 ```bash
-./target/release/near account list-keys $ACCOUNT_ID \
+near account list-keys $ACCOUNT_ID \
   network-config $NETWORK \
   now
 ```
@@ -1150,7 +1159,7 @@ After the MPC node has been deployed and its NEAR account key successfully added
 
 Once these steps are complete, the operator should request all other operators to vote for adding the new MPC node by calling the **vote_new_parameters** method.
 
-## Wait for NEAR Indexer to Sync
+### Wait for NEAR Indexer to Sync
 
 Wait until the NEAR Indexer has completed state sync. This process can take several hours. You can check the progress in the Docker container logs or via the metrics endpoint:
 
@@ -1196,7 +1205,7 @@ Example response (truncated):
 ]
 ```
 
-To inspect the stored `VerifiedAttestation` for your node, call `get_attestation` with your node's TLS public key (the P2P key retrieved in [Retrieve the node account key and P2P key](#retrieve-the-node-account-key-and-p2p-key)):
+To inspect the stored `VerifiedAttestation` for your node, call `get_attestation` with your node's TLS public key (the P2P key retrieved in [Retrieve the Node Account Key and P2P Key](#retrieve-the-node-account-key-and-p2p-key)):
 
 ```bash
 near contract call-function as-read-only \
@@ -1440,11 +1449,11 @@ This is the most common upgrade. When a new MPC node version is released, operat
 
 **Steps:**
 
-1. Verify the Docker image (see [Image/code inspection](#imagecode-inspection)).
+1. Verify the Docker image (see [Image/Code Inspection](#imagecode-inspection)).
 2. Vote for the new manifest digest in the contract.
 3. Restart the CVM. The launcher will pull the new image by manifest digest automatically.
 
-### Image/code inspection
+### Image/Code Inspection
 
 The following steps allow you to inspect the code that was used to build the
 docker image. Let's assume you want to vote for a docker image with tag
@@ -1483,7 +1492,7 @@ The `node manifest digest` is what you vote for. When submitting the `code_hash`
 
 > **Important:** Each operator is responsible for verifying that the image hashes being voted for correspond to the intended Git commit, and for performing their own due diligence on the code.
 
-### Voting for the MPC image hash
+### Voting for the MPC Image Hash
 
 Each participant submits a vote for the new MPC Docker image **manifest digest**.
 A **threshold** number of participant votes is required for the vote to pass.
@@ -1533,7 +1542,7 @@ near contract call-function as-read-only \
 
 Shows per-participant votes so you can see how many more are needed to reach threshold.
 
-### Update the MPC node
+### Update the MPC Node
 
 After voting has finished, the MPC node will detect the new approved manifest digest on the contract and save it to a secure location inside the CVM.
 
@@ -1555,7 +1564,7 @@ For full design details, see the [CVM Upgrades section in the TEE design doc](se
 4. Operator migrates key shares from the old CVM to the new one using the [migration service](node-migration-guide.md).
 5. After all operators have migrated, participants vote to remove the old launcher manifest digest and/or OS measurements.
 
-### Launcher image voting
+### Launcher Image Voting
 
 #### Launcher image/code inspection
 
@@ -1644,7 +1653,7 @@ near contract call-function as-read-only \
   now
 ```
 
-### OS measurement voting
+### OS Measurement Voting
 
 OS measurements (MRTD, RTMR0-2, key-provider event digest) identify the CVM environment. Participants can vote to approve new measurement sets, enabling OS/Dstack upgrades without contract redeployment.
 
@@ -1704,13 +1713,13 @@ near contract call-function as-read-only \
   now
 ```
 
-### Deploy new CVM and migrate key shares
+### Deploy New CVM and Migrate Key Shares
 
 After the new launcher manifest digest and/or OS measurements are approved, deploy a new CVM with the updated configuration and migrate key shares from the old node. Both old and new configurations are accepted by the contract during the migration period.
 
 For the migration procedure, see the [node migration guide](node-migration-guide.md) and [migration service design](migration-service.md).
 
-### Remove old launcher manifest digest / OS measurements
+### Remove Old Launcher Manifest Digest / OS Measurements
 
 After all operators have migrated to the new CVM, participants should vote to remove the old launcher manifest digest using `vote_remove_launcher_hash` and/or old OS measurements using `vote_remove_os_measurement`. This requires **all** participants to vote, ensuring no node is still running with the old configuration.
 
@@ -1849,7 +1858,7 @@ The two MPC-specific steps below cover what's needed beyond the stock
 install: replacing the unusable shipped TLS cert, and pointing the
 node at the local PCCS with cert pinning.
 
-### Replace the stock TLS certificate
+### Replace the Stock TLS Certificate
 
 The cert that ships with `sgx-dcap-pccs` is X.509 v1, has no Subject
 Alternative Name, and is short-dated. Modern TLS clients — including
@@ -1897,7 +1906,7 @@ openssl x509 -req -in pccs-leaf.csr \
 openssl verify -CAfile pccs-rootCA.crt pccs-leaf.crt    # → OK
 ```
 
-### Install the new cert and restart PCCS
+### Install the New Cert and Restart PCCS
 
 ```bash
 sudo cp pccs-leaf.crt /opt/intel/sgx-dcap-pccs/ssl_key/file.crt
@@ -1916,7 +1925,7 @@ echo | openssl s_client -showcerts -connect 127.0.0.1:8081 \
 #   issuer=CN = PCCS Local Root CA
 ```
 
-### Configure the MPC node
+### Configure the MPC Node
 
 In `user-config.toml`, add the **root CA** as a trust anchor (default
 public-CA roots remain active). The server presents the leaf, which
