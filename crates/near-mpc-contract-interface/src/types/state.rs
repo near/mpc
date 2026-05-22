@@ -257,6 +257,7 @@ pub use near_mpc_crypto_types::{KeyForDomain, Keyset};
 pub struct ThresholdParameters {
     pub participants: Participants,
     pub threshold: Threshold,
+    // The following skip_serializing_if should be deleted after release 3.11.0
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
 }
