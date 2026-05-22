@@ -6290,4 +6290,34 @@ mod tests {
         assert_eq!(stored.len(), 1);
         assert_eq!(stored.get(&chain), Some(&entry));
     }
+
+    #[test]
+    #[should_panic(expected = "not a voter")]
+    fn vote_update_foreign_chain_providers__should_panic_when_caller_is_not_a_participant() {
+        // Given: a running contract whose participant set does NOT contain `non_participant`.
+        let (_context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let non_participant = gen_account_id();
+
+        let batch = NonEmptyBTreeMap::new(
+            dtos::ForeignChain::Ethereum,
+            dtos::ChainEntry {
+                providers: NonEmptyBTreeMap::new(
+                    dtos::ProviderId("alchemy".to_string()),
+                    dtos::ProviderConfig {
+                        base_url: "https://alchemy.example.com".to_string(),
+                        auth_scheme: dtos::AuthScheme::None,
+                        chain_routing: dtos::ChainRouting::Embedded,
+                    },
+                ),
+                quorum: 1,
+            },
+        );
+
+        // When: a non-participant attempts to vote — voter_or_panic should reject.
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(non_participant.clone())
+            .predecessor_account_id(non_participant)
+            .build());
+        let _ = contract.vote_update_foreign_chain_providers(batch);
+    }
 }

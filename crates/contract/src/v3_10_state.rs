@@ -1,12 +1,11 @@
-//! State-migration shim from contract release `3.10.0` to the current state shape.
+//! ## Overview
+//! This module stores the previous contract state—the one you want to migrate from.
+//! The goal is to describe the data layout _exactly_ as it existed before.
 //!
-//! Release `3.10.0` shipped `ForeignChainRpcWhitelist { entries: BTreeMap<ForeignChain,
-//! BTreeMap<ProviderId, ProviderEntry>> }` with no vote endpoint, so the whitelist is
-//! guaranteed empty in any deployment of that revision. The current revision reshapes
-//! that field to `{ entries: IterableMap<ForeignChain, ChainEntry>, votes: ProviderVotes }`
-//! and adds the vote endpoint. The two layouts are borsh-incompatible (different field
-//! count + different inner map shape), so this module reads the `3.10.0` shape and
-//! converts.
+//! ## Guideline
+//! In theory, you could copy-paste every struct from the specific commit you're migrating from.
+//! However, this approach (a) requires manual effort from a developer and (b) increases the binary size.
+//! A better approach: only copy the structures that have changed and import the rest from the existing codebase.
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_contract_interface::types::{self as dtos, VerifyForeignTransactionRequest};
