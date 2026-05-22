@@ -19,6 +19,18 @@ where
     votes_by_proposal: IterableMap<ProposalHash, VoterSet<V>>,
 }
 
+impl<V> std::fmt::Debug for Votes<V>
+where
+    V: BorshSerialize + BorshDeserialize + Ord + std::fmt::Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Votes")
+            .field("proposal_by_voter", &self.proposal_by_voter)
+            .field("votes_by_proposal", &self.votes_by_proposal)
+            .finish()
+    }
+}
+
 impl<V> Votes<V>
 where
     V: BorshSerialize + Ord + BorshDeserialize + Clone,

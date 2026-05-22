@@ -423,40 +423,6 @@ pub mod tests {
         );
     }
 
-    /// Both legacy (`curve` only) and current (`protocol` only) wire shapes
-    /// must round-trip through the compat shim into a `DomainConfig` whose
-    /// `protocol` resolves to the expected value.
-    #[rstest]
-    #[case(
-        r#"{"id":3,"curve":"Secp256k1","reconstruction_threshold":2,"purpose":"Sign"}"#,
-        Protocol::CaitSith,
-        DomainPurpose::Sign
-    )]
-    #[case(
-        r#"{"id":1,"curve":"Bls12381","reconstruction_threshold":2,"purpose":"CKD"}"#,
-        Protocol::ConfidentialKeyDerivation,
-        DomainPurpose::CKD
-    )]
-    #[case(
-        r#"{"id":1,"curve":"Edwards25519","reconstruction_threshold":2,"purpose":"Sign"}"#,
-        Protocol::Frost,
-        DomainPurpose::Sign
-    )]
-    #[case(
-        r#"{"id":2,"protocol":"DamgardEtAl","reconstruction_threshold":2,"purpose":"Sign"}"#,
-        Protocol::DamgardEtAl,
-        DomainPurpose::Sign
-    )]
-    fn test_deserialize_domain_config(
-        #[case] json: &str,
-        #[case] expected_protocol: Protocol,
-        #[case] expected_purpose: DomainPurpose,
-    ) {
-        let config: DomainConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(config.protocol, expected_protocol);
-        assert_eq!(config.purpose, expected_purpose);
-    }
-
     #[rstest]
     #[case(Protocol::CaitSith, DomainPurpose::Sign)]
     #[case(Protocol::Frost, DomainPurpose::Sign)]

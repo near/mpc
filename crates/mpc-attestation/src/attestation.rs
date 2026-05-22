@@ -1,5 +1,7 @@
 use alloc::vec::Vec;
-pub use attestation::attestation::{DstackAttestation, VerificationError};
+pub use attestation::attestation::{
+    AcceptedDstackAttestation, DstackAttestation, VerificationError,
+};
 pub use attestation::measurements::{ExpectedMeasurements, Measurements};
 use attestation::{
     app_compose::AppCompose,
@@ -16,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 
 use crate::alloc::format;
-use crate::alloc::string::ToString;
+use crate::alloc::string::{String, ToString};
 
 // TODO(#1639): extract timestamp from certificate itself
 pub const DEFAULT_EXPIRATION_DURATION_SECONDS: u64 = 60 * 60 * 24 * 7; // 7 days
@@ -36,6 +38,17 @@ pub enum Attestation {
 pub enum VerifiedAttestation {
     Dstack(ValidatedDstackAttestation),
     Mock(MockAttestation),
+}
+
+/// Result of a successful [`Attestation::verify`] call.
+#[derive(Clone, Debug)]
+pub struct AcceptedAttestation {
+    pub attestation: VerifiedAttestation,
+    /// Informational advisory IDs (e.g. `INTEL-DOC-10000` post-ESU) surfaced by
+    /// Intel's PCS alongside an `UpToDate` TCB status. They are not a security
+    /// failure — `UpToDate` is the sole security gate; these advisories convey
+    /// platform lifecycle information.
+    pub advisory_ids: Vec<String>,
 }
 
 #[expect(clippy::large_enum_variant)]
@@ -132,6 +145,9 @@ pub fn default_measurements() -> &'static [ExpectedMeasurements] {
 }
 
 impl Attestation {
+    /// Verifies the attestation.
+    ///
+    /// On success, returns an [`AcceptedAttestation`].
     pub fn verify(
         &self,
         expected_report_data: ReportData,
@@ -139,7 +155,7 @@ impl Attestation {
         allowed_mpc_docker_image_hashes: &[NodeImageHash],
         allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
         accepted_measurements: &[ExpectedMeasurements],
-    ) -> Result<VerifiedAttestation, VerificationError> {
+    ) -> Result<AcceptedAttestation, VerificationError> {
         match self {
             Self::Dstack(dstack_attestation) => {
                 // Makes MPC related attestation verification first
@@ -184,7 +200,10 @@ impl Attestation {
                     allowed_launcher_docker_compose_hashes,
                 )?;
 
-                let measurements = dstack_attestation.verify(
+                let AcceptedDstackAttestation {
+                    measurements,
+                    advisory_ids,
+                } = dstack_attestation.verify(
                     expected_report_data,
                     current_timestamp_seconds,
                     accepted_measurements,
@@ -193,12 +212,15 @@ impl Attestation {
                 // TODO(#1639): extract timestamp from certificate itself
                 let expiration_timestamp_seconds =
                     current_timestamp_seconds + DEFAULT_EXPIRATION_DURATION_SECONDS;
-                Ok(VerifiedAttestation::Dstack(ValidatedDstackAttestation {
-                    mpc_image_hash,
-                    launcher_compose_hash,
-                    expiry_timestamp_seconds: expiration_timestamp_seconds,
-                    measurements,
-                }))
+                Ok(AcceptedAttestation {
+                    attestation: VerifiedAttestation::Dstack(ValidatedDstackAttestation {
+                        mpc_image_hash,
+                        launcher_compose_hash,
+                        expiry_timestamp_seconds: expiration_timestamp_seconds,
+                        measurements,
+                    }),
+                    advisory_ids,
+                })
             }
             Self::Mock(mock_attestation) => {
                 // Override attestation verification for this case
@@ -210,7 +232,10 @@ impl Attestation {
                     current_timestamp_seconds,
                 )?;
 
-                Ok(VerifiedAttestation::Mock(mock_attestation.clone()))
+                Ok(AcceptedAttestation {
+                    attestation: VerifiedAttestation::Mock(mock_attestation.clone()),
+                    advisory_ids: Vec::new(),
+                })
             }
         }
     }
