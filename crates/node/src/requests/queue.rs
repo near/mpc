@@ -453,7 +453,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
         my_participant_id: ParticipantId,
         network_api: Arc<dyn NetworkAPIForRequests>,
     ) -> Self {
-        let finalized_blocks_indexed = match RequestType::get_type() {
+        let finalized_blocks_indexed_metric = match RequestType::get_type() {
             types::RequestType::CKD => &metrics::MPC_PENDING_CKDS_QUEUE_FINALIZED_BLOCKS_INDEXED,
             types::RequestType::Signature => {
                 &metrics::MPC_PENDING_SIGNATURES_QUEUE_FINALIZED_BLOCKS_INDEXED
@@ -469,7 +469,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             requests: HashMap::new(),
             recent_blocks: RecentBlocksTracker::new(
                 REQUEST_EXPIRATION_BLOCKS,
-                finalized_blocks_indexed,
+                finalized_blocks_indexed_metric,
             ),
             network_api,
             recently_completed_requests: CompletedRequests::default(),

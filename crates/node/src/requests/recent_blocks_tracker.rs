@@ -115,7 +115,7 @@ pub struct RecentBlocksTracker {
     /// Counter incremented inside `add_block` whenever blocks transition to final.
     /// The caller selects which prometheus counter to wire here (per request-type).
     /// TODO(#3316): remove this argument
-    finalized_blocks_indexed: &'static prometheus::IntCounter,
+    finalized_blocks_indexed_metric: &'static prometheus::IntCounter,
 }
 
 #[repr(u8)]
@@ -311,7 +311,7 @@ impl RecentBlocksTracker {
         window_size: u64,
         // TODO(#3316): remove this argument once we have one shared `RecentBlocksTracker`
         // instance across queues.
-        finalized_blocks_indexed: &'static prometheus::IntCounter,
+        finalized_blocks_indexed_metric: &'static prometheus::IntCounter,
     ) -> Self {
         Self {
             window_size,
@@ -320,7 +320,7 @@ impl RecentBlocksTracker {
             final_head: None,
             maximum_height_available: 0,
             hash_to_node: HashMap::new(),
-            finalized_blocks_indexed,
+            finalized_blocks_indexed_metric,
         }
     }
 
@@ -352,7 +352,7 @@ impl RecentBlocksTracker {
         let new_final_blocks = self.maybe_update_final_head(block.last_final_block);
         // TODO(#3316): collapse the per-queue counter into a single shared metric on the
         // tracker itself.
-        self.finalized_blocks_indexed
+        self.finalized_blocks_indexed_metric
             .inc_by(new_final_blocks.len() as u64);
         // Capture the (height, hash) of every newly-final block before pruning may drop
         // strong refs to ancestors that fell outside the recency window. Tests use this
