@@ -30,6 +30,320 @@ expression: abi
         }
       },
       {
+        "name": "allowed_foreign_chain_providers",
+        "doc": " On-chain RPC provider whitelist keyed by `ForeignChain`. Nodes read this at\n startup to validate their local `foreign_chains.yaml`. Borsh-encoded result.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "borsh",
+          "type_schema": {
+            "declaration": "BTreeMap<ForeignChain, ChainEntry>",
+            "definitions": {
+              "()": {
+                "Primitive": 0
+              },
+              "(ForeignChain, ChainEntry)": {
+                "Tuple": [
+                  "ForeignChain",
+                  "ChainEntry"
+                ]
+              },
+              "(ProviderId, ProviderConfig)": {
+                "Tuple": [
+                  "ProviderId",
+                  "ProviderConfig"
+                ]
+              },
+              "AuthScheme": {
+                "Enum": {
+                  "tag_width": 1,
+                  "variants": [
+                    [
+                      0,
+                      "Header",
+                      "AuthScheme__Header"
+                    ],
+                    [
+                      1,
+                      "Path",
+                      "AuthScheme__Path"
+                    ],
+                    [
+                      2,
+                      "Query",
+                      "AuthScheme__Query"
+                    ],
+                    [
+                      3,
+                      "None",
+                      "AuthScheme__None"
+                    ]
+                  ]
+                }
+              },
+              "AuthScheme__Header": {
+                "Struct": [
+                  [
+                    "name",
+                    "String"
+                  ],
+                  [
+                    "scheme",
+                    "Option<String>"
+                  ]
+                ]
+              },
+              "AuthScheme__None": {
+                "Struct": null
+              },
+              "AuthScheme__Path": {
+                "Struct": [
+                  [
+                    "placeholder",
+                    "String"
+                  ]
+                ]
+              },
+              "AuthScheme__Query": {
+                "Struct": [
+                  [
+                    "name",
+                    "String"
+                  ]
+                ]
+              },
+              "BTreeMap<ForeignChain, ChainEntry>": {
+                "Sequence": {
+                  "length_width": 4,
+                  "length_range": {
+                    "start": 0,
+                    "end": 4294967295
+                  },
+                  "elements": "(ForeignChain, ChainEntry)"
+                }
+              },
+              "BTreeMap<ProviderId, ProviderConfig>": {
+                "Sequence": {
+                  "length_width": 4,
+                  "length_range": {
+                    "start": 0,
+                    "end": 4294967295
+                  },
+                  "elements": "(ProviderId, ProviderConfig)"
+                }
+              },
+              "ChainEntry": {
+                "Struct": [
+                  [
+                    "providers",
+                    "NonEmptyBTreeMap<ProviderId, ProviderConfig>"
+                  ],
+                  [
+                    "quorum",
+                    "u64"
+                  ]
+                ]
+              },
+              "ChainRouting": {
+                "Enum": {
+                  "tag_width": 1,
+                  "variants": [
+                    [
+                      0,
+                      "Embedded",
+                      "ChainRouting__Embedded"
+                    ],
+                    [
+                      1,
+                      "PathSegment",
+                      "ChainRouting__PathSegment"
+                    ],
+                    [
+                      2,
+                      "QueryParam",
+                      "ChainRouting__QueryParam"
+                    ]
+                  ]
+                }
+              },
+              "ChainRouting__Embedded": {
+                "Struct": null
+              },
+              "ChainRouting__PathSegment": {
+                "Struct": [
+                  [
+                    "segment",
+                    "String"
+                  ]
+                ]
+              },
+              "ChainRouting__QueryParam": {
+                "Struct": [
+                  [
+                    "name",
+                    "String"
+                  ],
+                  [
+                    "value",
+                    "String"
+                  ]
+                ]
+              },
+              "ForeignChain": {
+                "Enum": {
+                  "tag_width": 1,
+                  "variants": [
+                    [
+                      0,
+                      "Solana",
+                      "ForeignChain__Solana"
+                    ],
+                    [
+                      1,
+                      "Bitcoin",
+                      "ForeignChain__Bitcoin"
+                    ],
+                    [
+                      2,
+                      "Ethereum",
+                      "ForeignChain__Ethereum"
+                    ],
+                    [
+                      3,
+                      "Base",
+                      "ForeignChain__Base"
+                    ],
+                    [
+                      4,
+                      "Bnb",
+                      "ForeignChain__Bnb"
+                    ],
+                    [
+                      5,
+                      "Arbitrum",
+                      "ForeignChain__Arbitrum"
+                    ],
+                    [
+                      6,
+                      "Abstract",
+                      "ForeignChain__Abstract"
+                    ],
+                    [
+                      7,
+                      "Starknet",
+                      "ForeignChain__Starknet"
+                    ],
+                    [
+                      8,
+                      "Polygon",
+                      "ForeignChain__Polygon"
+                    ],
+                    [
+                      9,
+                      "HyperEvm",
+                      "ForeignChain__HyperEvm"
+                    ]
+                  ]
+                }
+              },
+              "ForeignChain__Abstract": {
+                "Struct": null
+              },
+              "ForeignChain__Arbitrum": {
+                "Struct": null
+              },
+              "ForeignChain__Base": {
+                "Struct": null
+              },
+              "ForeignChain__Bitcoin": {
+                "Struct": null
+              },
+              "ForeignChain__Bnb": {
+                "Struct": null
+              },
+              "ForeignChain__Ethereum": {
+                "Struct": null
+              },
+              "ForeignChain__HyperEvm": {
+                "Struct": null
+              },
+              "ForeignChain__Polygon": {
+                "Struct": null
+              },
+              "ForeignChain__Solana": {
+                "Struct": null
+              },
+              "ForeignChain__Starknet": {
+                "Struct": null
+              },
+              "NonEmptyBTreeMap<ProviderId, ProviderConfig>": {
+                "Sequence": {
+                  "length_width": 4,
+                  "length_range": {
+                    "start": 1,
+                    "end": 4294967295
+                  },
+                  "elements": "(ProviderId, ProviderConfig)"
+                }
+              },
+              "Option<String>": {
+                "Enum": {
+                  "tag_width": 1,
+                  "variants": [
+                    [
+                      0,
+                      "None",
+                      "()"
+                    ],
+                    [
+                      1,
+                      "Some",
+                      "String"
+                    ]
+                  ]
+                }
+              },
+              "ProviderConfig": {
+                "Struct": [
+                  [
+                    "base_url",
+                    "String"
+                  ],
+                  [
+                    "auth_scheme",
+                    "AuthScheme"
+                  ],
+                  [
+                    "chain_routing",
+                    "ChainRouting"
+                  ]
+                ]
+              },
+              "ProviderId": {
+                "Struct": [
+                  "String"
+                ]
+              },
+              "String": {
+                "Sequence": {
+                  "length_width": 4,
+                  "length_range": {
+                    "start": 0,
+                    "end": 4294967295
+                  },
+                  "elements": "u8"
+                }
+              },
+              "u64": {
+                "Primitive": 8
+              },
+              "u8": {
+                "Primitive": 1
+              }
+            }
+          }
+        }
+      },
+      {
         "name": "allowed_launcher_compose_hashes",
         "kind": "view",
         "result": {
@@ -1518,6 +1832,344 @@ expression: abi
           "serialization_type": "json",
           "type_schema": {
             "type": "boolean"
+          }
+        }
+      },
+      {
+        "name": "vote_update_foreign_chain_providers",
+        "doc": " Vote on per-chain RPC provider whitelist state. The input is keyed by\n `ForeignChain`; each `ChainEntry` value carries the proposed full provider list\n and the RPC response quorum for that chain. The chain's stored state is replaced\n once the protocol's signing threshold of participants has voted the same\n `(providers, quorum)` pair. `NonEmptyBTreeMap` enforces a non-empty batch and\n at-most-one entry per chain at borsh-deserialize time.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "borsh",
+          "args": [
+            {
+              "name": "votes",
+              "type_schema": {
+                "declaration": "NonEmptyBTreeMap<ForeignChain, ChainEntry>",
+                "definitions": {
+                  "()": {
+                    "Primitive": 0
+                  },
+                  "(ForeignChain, ChainEntry)": {
+                    "Tuple": [
+                      "ForeignChain",
+                      "ChainEntry"
+                    ]
+                  },
+                  "(ProviderId, ProviderConfig)": {
+                    "Tuple": [
+                      "ProviderId",
+                      "ProviderConfig"
+                    ]
+                  },
+                  "AuthScheme": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "Header",
+                          "AuthScheme__Header"
+                        ],
+                        [
+                          1,
+                          "Path",
+                          "AuthScheme__Path"
+                        ],
+                        [
+                          2,
+                          "Query",
+                          "AuthScheme__Query"
+                        ],
+                        [
+                          3,
+                          "None",
+                          "AuthScheme__None"
+                        ]
+                      ]
+                    }
+                  },
+                  "AuthScheme__Header": {
+                    "Struct": [
+                      [
+                        "name",
+                        "String"
+                      ],
+                      [
+                        "scheme",
+                        "Option<String>"
+                      ]
+                    ]
+                  },
+                  "AuthScheme__None": {
+                    "Struct": null
+                  },
+                  "AuthScheme__Path": {
+                    "Struct": [
+                      [
+                        "placeholder",
+                        "String"
+                      ]
+                    ]
+                  },
+                  "AuthScheme__Query": {
+                    "Struct": [
+                      [
+                        "name",
+                        "String"
+                      ]
+                    ]
+                  },
+                  "BTreeMap<ForeignChain, ChainEntry>": {
+                    "Sequence": {
+                      "length_width": 4,
+                      "length_range": {
+                        "start": 0,
+                        "end": 4294967295
+                      },
+                      "elements": "(ForeignChain, ChainEntry)"
+                    }
+                  },
+                  "BTreeMap<ProviderId, ProviderConfig>": {
+                    "Sequence": {
+                      "length_width": 4,
+                      "length_range": {
+                        "start": 0,
+                        "end": 4294967295
+                      },
+                      "elements": "(ProviderId, ProviderConfig)"
+                    }
+                  },
+                  "ChainEntry": {
+                    "Struct": [
+                      [
+                        "providers",
+                        "NonEmptyBTreeMap<ProviderId, ProviderConfig>"
+                      ],
+                      [
+                        "quorum",
+                        "u64"
+                      ]
+                    ]
+                  },
+                  "ChainRouting": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "Embedded",
+                          "ChainRouting__Embedded"
+                        ],
+                        [
+                          1,
+                          "PathSegment",
+                          "ChainRouting__PathSegment"
+                        ],
+                        [
+                          2,
+                          "QueryParam",
+                          "ChainRouting__QueryParam"
+                        ]
+                      ]
+                    }
+                  },
+                  "ChainRouting__Embedded": {
+                    "Struct": null
+                  },
+                  "ChainRouting__PathSegment": {
+                    "Struct": [
+                      [
+                        "segment",
+                        "String"
+                      ]
+                    ]
+                  },
+                  "ChainRouting__QueryParam": {
+                    "Struct": [
+                      [
+                        "name",
+                        "String"
+                      ],
+                      [
+                        "value",
+                        "String"
+                      ]
+                    ]
+                  },
+                  "ForeignChain": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "Solana",
+                          "ForeignChain__Solana"
+                        ],
+                        [
+                          1,
+                          "Bitcoin",
+                          "ForeignChain__Bitcoin"
+                        ],
+                        [
+                          2,
+                          "Ethereum",
+                          "ForeignChain__Ethereum"
+                        ],
+                        [
+                          3,
+                          "Base",
+                          "ForeignChain__Base"
+                        ],
+                        [
+                          4,
+                          "Bnb",
+                          "ForeignChain__Bnb"
+                        ],
+                        [
+                          5,
+                          "Arbitrum",
+                          "ForeignChain__Arbitrum"
+                        ],
+                        [
+                          6,
+                          "Abstract",
+                          "ForeignChain__Abstract"
+                        ],
+                        [
+                          7,
+                          "Starknet",
+                          "ForeignChain__Starknet"
+                        ],
+                        [
+                          8,
+                          "Polygon",
+                          "ForeignChain__Polygon"
+                        ],
+                        [
+                          9,
+                          "HyperEvm",
+                          "ForeignChain__HyperEvm"
+                        ]
+                      ]
+                    }
+                  },
+                  "ForeignChain__Abstract": {
+                    "Struct": null
+                  },
+                  "ForeignChain__Arbitrum": {
+                    "Struct": null
+                  },
+                  "ForeignChain__Base": {
+                    "Struct": null
+                  },
+                  "ForeignChain__Bitcoin": {
+                    "Struct": null
+                  },
+                  "ForeignChain__Bnb": {
+                    "Struct": null
+                  },
+                  "ForeignChain__Ethereum": {
+                    "Struct": null
+                  },
+                  "ForeignChain__HyperEvm": {
+                    "Struct": null
+                  },
+                  "ForeignChain__Polygon": {
+                    "Struct": null
+                  },
+                  "ForeignChain__Solana": {
+                    "Struct": null
+                  },
+                  "ForeignChain__Starknet": {
+                    "Struct": null
+                  },
+                  "NonEmptyBTreeMap<ForeignChain, ChainEntry>": {
+                    "Sequence": {
+                      "length_width": 4,
+                      "length_range": {
+                        "start": 1,
+                        "end": 4294967295
+                      },
+                      "elements": "(ForeignChain, ChainEntry)"
+                    }
+                  },
+                  "NonEmptyBTreeMap<ProviderId, ProviderConfig>": {
+                    "Sequence": {
+                      "length_width": 4,
+                      "length_range": {
+                        "start": 1,
+                        "end": 4294967295
+                      },
+                      "elements": "(ProviderId, ProviderConfig)"
+                    }
+                  },
+                  "Option<String>": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "None",
+                          "()"
+                        ],
+                        [
+                          1,
+                          "Some",
+                          "String"
+                        ]
+                      ]
+                    }
+                  },
+                  "ProviderConfig": {
+                    "Struct": [
+                      [
+                        "base_url",
+                        "String"
+                      ],
+                      [
+                        "auth_scheme",
+                        "AuthScheme"
+                      ],
+                      [
+                        "chain_routing",
+                        "ChainRouting"
+                      ]
+                    ]
+                  },
+                  "ProviderId": {
+                    "Struct": [
+                      "String"
+                    ]
+                  },
+                  "String": {
+                    "Sequence": {
+                      "length_width": 4,
+                      "length_range": {
+                        "start": 0,
+                        "end": 4294967295
+                      },
+                      "elements": "u8"
+                    }
+                  },
+                  "u64": {
+                    "Primitive": 8
+                  },
+                  "u8": {
+                    "Primitive": 1
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ForeignChain"
+            }
           }
         }
       }

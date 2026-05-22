@@ -77,6 +77,29 @@ pub enum VoteError {
     VoterPending,
 }
 
+/// Reasons a `ChainEntry` proposal fails validation. `NonEmptyBTreeMap` already
+/// enforces non-empty + unique-`ProviderId` at borsh-deserialize time, so those
+/// cases are absent here.
+#[derive(Debug, Clone, Eq, PartialEq, thiserror::Error)]
+pub enum ChainEntryValidationError {
+    #[error("ChainEntry.quorum must be >= 1")]
+    ZeroQuorum,
+    #[error(
+        "ChainEntry.quorum ({quorum}) exceeds providers.len() ({providers_len}) — RPC response quorum is unreachable"
+    )]
+    QuorumExceedsProviders { quorum: u64, providers_len: u64 },
+    #[error(
+        "ChainRouting::PathSegment.segment for provider_id {provider_id:?} must not contain '/'"
+    )]
+    PathSegmentContainsSlash { provider_id: String },
+    #[error(
+        "ChainRouting::QueryParam.name collides with AuthScheme::Query.name {name:?} for provider_id {provider_id:?}"
+    )]
+    QueryParamCollidesWithAuth { provider_id: String, name: String },
+    #[error("providers.len() {len} does not fit in u64: {reason}")]
+    ProvidersLenOverflow { len: usize, reason: String },
+}
+
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
 pub enum InvalidParameters {
     #[error("Malformed payload: {reason}")]

@@ -1465,6 +1465,57 @@ impl MpcContract {
         self.tee_state.get_allowed_measurements()
     }
 
+    /// Vote on per-chain RPC provider whitelist state. The input is keyed by
+    /// `ForeignChain`; each `ChainEntry` value carries the proposed full provider list
+    /// and the RPC response quorum for that chain. The chain's stored state is replaced
+    /// once the protocol's signing threshold of participants has voted the same
+    /// `(providers, quorum)` pair. `NonEmptyBTreeMap` enforces a non-empty batch and
+    /// at-most-one entry per chain at borsh-deserialize time.
+    #[handle_result]
+    pub fn vote_update_foreign_chain_providers(
+        &mut self,
+        #[serializer(borsh)] votes: near_mpc_bounded_collections::NonEmptyBTreeMap<
+            dtos::ForeignChain,
+            dtos::ChainEntry,
+        >,
+    ) -> Result<Vec<dtos::ForeignChain>, Error> {
+        let batch_hash = env::sha256_array(
+            borsh::to_vec(&votes).expect("borsh serialization of votes batch must succeed"),
+        );
+        log!(
+            "vote_update_foreign_chain_providers: signer={}, n_votes={}, batch_hash={}",
+            env::signer_account_id(),
+            votes.len(),
+            hex::encode(batch_hash),
+        );
+        self.voter_or_panic();
+
+        let threshold_parameters = self
+            .protocol_state
+            .threshold_parameters()
+            .expect("voter_or_panic() above already errors on NotInitialized");
+
+        let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
+        let applied =
+            self.foreign_chain_rpc_whitelist
+                .vote(participant, votes, threshold_parameters)?;
+        log!(
+            "vote_update_foreign_chain_providers: applied chains={:?}",
+            applied,
+        );
+        Ok(applied)
+    }
+
+    /// On-chain RPC provider whitelist keyed by `ForeignChain`. Nodes read this at
+    /// startup to validate their local `foreign_chains.yaml`. Borsh-encoded result.
+    #[result_serializer(borsh)]
+    pub fn allowed_foreign_chain_providers(
+        &self,
+    ) -> std::collections::BTreeMap<dtos::ForeignChain, dtos::ChainEntry> {
+        log!("allowed_foreign_chain_providers");
+        self.foreign_chain_rpc_whitelist.entries.snapshot()
+    }
+
     /// Returns all accounts that have TEE attestations stored in the contract.
     /// Note: This includes both current protocol participants and accounts that may have
     /// submitted TEE information but are not currently part of the active participant set.
@@ -1637,6 +1688,8 @@ impl MpcContract {
                 .remove(account);
         }
 
+        self.foreign_chain_rpc_whitelist.votes.retain(participants);
+
         Ok(())
     }
 }
@@ -1774,7 +1827,7 @@ impl MpcContract {
             Ok(Some(state)) => return Ok(state.into()),
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => {
-                log!("failed to deserialize state into v3.10 state: {:?}", err);
+                log!("failed to deserialize state into 3.10.0 state: {:?}", err);
             }
         };
 
@@ -2361,7 +2414,7 @@ mod tests {
         Attestation as MpcAttestation, MockAttestation as MpcMockAttestation,
     };
     use mpc_primitives::hash::DockerImageHash;
-    use near_mpc_bounded_collections::NonEmptyBTreeSet;
+    use near_mpc_bounded_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet};
     use near_mpc_contract_interface::types::BackupServiceInfo;
     use near_mpc_contract_interface::types::CKDAppPublicKey;
     use near_mpc_contract_interface::types::DestinationNodeInfo;
@@ -6177,5 +6230,94 @@ mod tests {
 
         // Then
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn vote_update_foreign_chain_providers__should_apply_chain_and_return_it_when_threshold_reached(
+    ) {
+        // Given: a running contract with 4 participants and signing threshold 3.
+        let (_context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let participant_account_ids: Vec<AccountId> = contract
+            .protocol_state
+            .threshold_parameters()
+            .unwrap()
+            .participants()
+            .participants()
+            .iter()
+            .map(|(account_id, _, _)| account_id.clone())
+            .collect();
+        assert_eq!(participant_account_ids.len(), 4);
+
+        let chain = dtos::ForeignChain::Ethereum;
+        let entry = dtos::ChainEntry {
+            providers: NonEmptyBTreeMap::new(
+                dtos::ProviderId("alchemy".to_string()),
+                dtos::ProviderConfig {
+                    base_url: "https://alchemy.example.com".to_string(),
+                    auth_scheme: dtos::AuthScheme::None,
+                    chain_routing: dtos::ChainRouting::Embedded,
+                },
+            ),
+            quorum: 1,
+        };
+        let batch = NonEmptyBTreeMap::new(chain, entry.clone());
+
+        let vote_as = |contract: &mut MpcContract, account_id: &AccountId| {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build());
+            contract
+                .vote_update_foreign_chain_providers(batch.clone())
+                .expect("vote should succeed")
+        };
+
+        // When: first two participants vote (count = 2, below threshold 3).
+        let applied_p0 = vote_as(&mut contract, &participant_account_ids[0]);
+        let applied_p1 = vote_as(&mut contract, &participant_account_ids[1]);
+
+        // Then: nothing applied yet.
+        assert!(applied_p0.is_empty(), "1st vote should not apply");
+        assert!(applied_p1.is_empty(), "2nd vote should not apply");
+        assert!(contract.allowed_foreign_chain_providers().is_empty());
+
+        // When: third participant votes (crosses threshold).
+        let applied_p2 = vote_as(&mut contract, &participant_account_ids[2]);
+
+        // Then: the chain is reported as applied this call and is now stored.
+        assert_eq!(applied_p2, vec![chain]);
+        let stored = contract.allowed_foreign_chain_providers();
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored.get(&chain), Some(&entry));
+    }
+
+    #[test]
+    #[should_panic(expected = "not a voter")]
+    fn vote_update_foreign_chain_providers__should_panic_when_caller_is_not_a_participant() {
+        // Given: a running contract whose participant set does NOT contain `non_participant`.
+        let (_context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let non_participant = gen_account_id();
+
+        let batch = NonEmptyBTreeMap::new(
+            dtos::ForeignChain::Ethereum,
+            dtos::ChainEntry {
+                providers: NonEmptyBTreeMap::new(
+                    dtos::ProviderId("alchemy".to_string()),
+                    dtos::ProviderConfig {
+                        base_url: "https://alchemy.example.com".to_string(),
+                        auth_scheme: dtos::AuthScheme::None,
+                        chain_routing: dtos::ChainRouting::Embedded,
+                    },
+                ),
+                quorum: 1,
+            },
+        );
+
+        // When: a non-participant attempts to vote — voter_or_panic should reject.
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(non_participant.clone())
+            .predecessor_account_id(non_participant)
+            .build());
+        let _ = contract.vote_update_foreign_chain_providers(batch);
     }
 }
