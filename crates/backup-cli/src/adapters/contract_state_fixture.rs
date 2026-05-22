@@ -1,7 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use mpc_contract::state::ProtocolContractState;
-use near_mpc_contract_interface::types::Keyset;
+use near_mpc_contract_interface::types::{Keyset, ProtocolContractState};
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 
@@ -58,18 +57,17 @@ pub fn get_keyset_from_contract_state(
     contract_state: &ProtocolContractState,
 ) -> Result<Keyset, Error> {
     match contract_state {
-        ProtocolContractState::NotInitialized | ProtocolContractState::Resharing(_) => Err(
-            Error::IncorrectContractState(contract_state.name().to_string()),
-        ),
+        ProtocolContractState::NotInitialized => {
+            Err(Error::IncorrectContractState("NotInitialized".to_string()))
+        }
+        ProtocolContractState::Resharing(_) => {
+            Err(Error::IncorrectContractState("Resharing".to_string()))
+        }
         ProtocolContractState::Initializing(state) => Ok(Keyset {
             epoch_id: state.epoch_id,
-            domains: state
-                .generated_keys
-                .iter()
-                .map(|k| k.clone().into())
-                .collect(),
+            domains: state.generated_keys.clone(),
         }),
-        ProtocolContractState::Running(state) => Ok(state.keyset.clone().into()),
+        ProtocolContractState::Running(state) => Ok(state.keyset.clone()),
     }
 }
 
@@ -77,7 +75,7 @@ pub fn get_keyset_from_contract_state(
 mod tests {
     use std::path::PathBuf;
 
-    use mpc_contract::primitives::thresholds::Threshold;
+    use near_mpc_contract_interface::types::{ProtocolContractState, Threshold};
 
     use crate::{
         adapters::contract_state_fixture::ContractStateFixture, ports::ContractStateReader,
@@ -94,8 +92,10 @@ mod tests {
         let contract_state = contract_interface.get_contract_state().await.unwrap();
 
         // Then
-        assert_eq!(contract_state.name(), "Running");
-        assert_eq!(contract_state.threshold().unwrap(), Threshold::new(7));
-        assert_eq!(contract_state.domain_registry().unwrap().domains().len(), 2);
+        let ProtocolContractState::Running(state) = &contract_state else {
+            panic!("expected Running state, got {contract_state:?}");
+        };
+        assert_eq!(state.parameters.threshold, Threshold::new(7));
+        assert_eq!(state.domains.domains.len(), 2);
     }
 }
