@@ -78,6 +78,7 @@ pub struct PendingRequests<RequestType: Request, ChainRespondArgsType: ChainResp
 }
 
 /// All [`IndexedRespondTx`]s observed for one queued request, across the chain's forks.
+#[derive(derive_more::Constructor)]
 struct IndexedRespondTxs(Vec<IndexedRespondTx>);
 
 /// An on-chain `respond` transaction observed in an indexed block.
@@ -95,11 +96,13 @@ struct IndexedRespondTx {
     block_height: u64,
 }
 
-impl IndexedRespondTxs {
-    fn new() -> Self {
-        Self(Vec::new())
+impl Default for IndexedRespondTxs {
+    fn default() -> Self {
+        Self::new(Vec::new())
     }
+}
 
+impl IndexedRespondTxs {
     fn status(&self) -> AggregateResponseStatus {
         for (status, received_at, block_height) in self.0.iter().filter_map(|tx| {
             Weak::upgrade(&tx.block_status).map(|status| (status, tx.received_at, tx.block_height))
@@ -265,7 +268,7 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
             request,
             block_height,
             status,
-            indexed_respond_txs: IndexedRespondTxs::new(),
+            indexed_respond_txs: IndexedRespondTxs::default(),
             leader_selection_order,
             computation_progress: Arc::new(Mutex::new(ComputationProgress::default())),
             next_check_due: clock.now(),
