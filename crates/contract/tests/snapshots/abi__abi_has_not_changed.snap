@@ -4549,7 +4549,7 @@ expression: abi
           "minimum": 0.0
         },
         "ThresholdParameters": {
-          "description": "Threshold parameters for distributed key operations.\n\n`per_domain_thresholds` carries a proposed update for each domain's [`ReconstructionThreshold`] when this struct flows into `vote_new_parameters`. An empty map means \"keep current per-domain thresholds\"; a populated map must cover every existing domain (validated by the contract). Outside of resharing proposals the map is empty.",
+          "description": "Threshold parameters for distributed key operations.\n\n`per_domain_thresholds` carries a proposed update for each domain's [`ReconstructionThreshold`] when this struct flows into `vote_new_parameters`. An empty map means \"keep current per-domain thresholds\"; a populated map must cover every existing domain (validated by the contract). Outside of resharing proposals the map is empty.\n\nBackwards-compat for the legacy `{ participants, threshold }` wire shape is intrinsic: `serde(default)` parses old JSON without `per_domain_thresholds` as an empty map, and `skip_serializing_if` omits the field from `state()` output when no overlay is in flight.",
           "type": "object",
           "required": [
             "participants",
