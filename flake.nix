@@ -63,6 +63,9 @@
         mpc-node = pkgs.callPackage ./nix/mpc-node.nix {
           inherit crane prodCFlags;
         };
+        mpc-contract = pkgs.callPackage ./nix/mpc-contract.nix {
+          cargo-near = pkgs.callPackage ./nix/cargo-near.nix { };
+        };
       });
 
       devShells = forAllSystems (
