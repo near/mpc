@@ -87,7 +87,7 @@ use tee::proposal::{CodeHashesVotes, LauncherHashVotes};
 use state::{running::RunningContractState, ProtocolContractState};
 use tee::{
     proposal::{LauncherVoteAction, NodeImageHash},
-    tee_state::{NodeId, ParticipantInsertion, TeeValidationResult},
+    tee_state::{AttestationSubmissionError, NodeId, ParticipantInsertion, TeeValidationResult},
 };
 
 /// Register used to receive data id from `promise_await_data`.
@@ -793,8 +793,14 @@ impl MpcContract {
                 proposed_participant_attestation,
                 tee_upgrade_deadline_duration,
             )
-            .map_err(|err| InvalidParameters::InvalidTeeRemoteAttestation {
-                reason: format!("TeeQuoteStatus is invalid: {err}"),
+            .map_err(|err| {
+                let reason = match &err {
+                    AttestationSubmissionError::InvalidAttestation(_) => {
+                        format!("TeeQuoteStatus is invalid: {err}")
+                    }
+                    AttestationSubmissionError::TlsKeyOwnedByOtherAccount => err.to_string(),
+                };
+                InvalidParameters::InvalidTeeRemoteAttestation { reason }
             })?;
 
         let caller_is_not_participant = self.voter_account().is_err();
@@ -807,7 +813,9 @@ impl MpcContract {
             is_new_attestation || caller_is_not_participant;
 
         if attestation_storage_must_be_paid_by_caller {
-            let storage_used = env::storage_usage() - initial_storage;
+            // `saturating_sub`: if a re-submission shrinks the entry, charge nothing
+            // rather than underflow.
+            let storage_used = env::storage_usage().saturating_sub(initial_storage);
             let cost = env::storage_byte_cost().saturating_mul(storage_used as u128);
             let attached = env::attached_deposit();
 

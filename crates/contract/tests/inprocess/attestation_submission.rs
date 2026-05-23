@@ -276,6 +276,56 @@ fn set_system_time(nano_seconds_since_unix_epoch: u64) {
         .build());
 }
 
+/// **Test that `submit_participant_info` rejects an attempt by one account to overwrite
+/// another account's stored attestation entry**, keyed by TLS public key. Without this
+/// gate, any caller could replace a legit participant's attestation and lock them out of
+/// every attestation-gated method (DoS via cross-participant overwrite).
+#[test]
+fn submit_participant_info__should_reject_overwrite_from_other_account() {
+    // Given: a running contract with two participants who have submitted their
+    // attestations. We will treat `participants_list[0]` as the victim.
+    const PARTICIPANT_COUNT: usize = 2;
+    const THRESHOLD: u64 = 2;
+
+    testing_env!(VMContextBuilder::new()
+        .attached_deposit(NearToken::from_near(1))
+        .build());
+
+    let mut setup = TestSetupBuilder::new()
+        .with_partcipant_count(PARTICIPANT_COUNT)
+        .with_threshold(THRESHOLD)
+        .build();
+
+    let participant_nodes = setup.get_participant_node_ids();
+    let victim_node = participant_nodes[0].clone();
+    let victim_attestation = Attestation::Mock(MockAttestation::Valid);
+    setup.submit_attestation_for_node(&victim_node, victim_attestation);
+
+    let stored_before = setup
+        .contract
+        .get_attestation(victim_node.tls_public_key.clone())
+        .unwrap()
+        .expect("victim attestation should be stored");
+
+    // When: an unrelated account submits an attestation that targets the victim's TLS key.
+    let attacker_node = NodeId {
+        account_id: "attacker.near".parse().unwrap(),
+        tls_public_key: victim_node.tls_public_key.clone(),
+        account_public_key: bogus_ed25519_public_key(),
+    };
+    let attack_result = setup
+        .try_submit_attestation_for_node(&attacker_node, Attestation::Mock(MockAttestation::Valid));
+
+    // Then: the contract rejects the call and the victim's entry is unchanged.
+    assert_matches!(attack_result, Err(_));
+    let stored_after = setup
+        .contract
+        .get_attestation(victim_node.tls_public_key)
+        .unwrap()
+        .expect("victim attestation should still be stored");
+    assert_eq!(stored_before, stored_after);
+}
+
 /// **Test that `clean_tee_status()` is vote-only** — attestations for non-participants
 /// remain in `stored_attestations` after the call. Attestation pruning is handled by the
 /// separate `clean_invalid_attestations` endpoint.
