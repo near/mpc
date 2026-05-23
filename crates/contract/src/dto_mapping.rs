@@ -21,10 +21,9 @@ use crate::{
     crypto_shared::types::PublicKeyExtended,
     errors::{ConversionError, Error},
     primitives::{
-        domain::{AddDomainsVotes, DomainRegistry},
+        domain::DomainRegistry,
         key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, KeyForDomain, Keyset},
         participants::{ParticipantInfo, Participants},
-        threshold_votes::ThresholdParametersVotes,
         thresholds::ThresholdParameters,
     },
     state::{
@@ -729,33 +728,6 @@ impl IntoInterfaceType<dtos::ThresholdParameters> for &ThresholdParameters {
     }
 }
 
-// --- Voting types ---
-
-impl IntoInterfaceType<dtos::ThresholdParametersVotes> for &ThresholdParametersVotes {
-    fn into_dto_type(self) -> dtos::ThresholdParametersVotes {
-        let proposal_by_account = self
-            .proposal_by_account
-            .iter()
-            .map(|(account, params)| (account.into_dto_type(), params.into_dto_type()))
-            .collect();
-        dtos::ThresholdParametersVotes {
-            proposal_by_account,
-        }
-    }
-}
-
-impl IntoInterfaceType<dtos::AddDomainsVotes> for &AddDomainsVotes {
-    fn into_dto_type(self) -> dtos::AddDomainsVotes {
-        dtos::AddDomainsVotes {
-            proposal_by_account: self
-                .proposal_by_account
-                .iter()
-                .map(|(participant, domains)| (participant.into_dto_type(), domains.clone()))
-                .collect(),
-        }
-    }
-}
-
 // --- Key state types ---
 
 impl IntoInterfaceType<dtos::KeyForDomain> for &KeyForDomain {
@@ -831,8 +803,6 @@ impl IntoInterfaceType<dtos::RunningContractState> for &RunningContractState {
             domains: (&self.domains).into_dto_type(),
             keyset: (&self.keyset).into_dto_type(),
             parameters: (&self.parameters).into_dto_type(),
-            parameters_votes: (&self.parameters_votes).into_dto_type(),
-            add_domains_votes: (&self.add_domains_votes).into_dto_type(),
             previously_cancelled_resharing_epoch_id: self.previously_cancelled_resharing_epoch_id,
         }
     }

@@ -1,6 +1,6 @@
 use super::resharing::ResharingContractState;
 use super::InitializingContractState;
-use crate::primitives::domain::AddDomainsVotes;
+use crate::primitives::contract_votes::ContractVotes;
 use crate::primitives::test_utils::{bogus_ed25519_public_key_extended, gen_domains_to_add};
 use crate::primitives::{key_state::AttemptId, test_utils::gen_domain_registry};
 use crate::state::key_event::tests::Environment;
@@ -57,13 +57,14 @@ pub fn gen_valid_params_proposal(params: &ThresholdParameters) -> ThresholdParam
 pub fn gen_resharing_state(num_domains: usize) -> (Environment, ResharingContractState) {
     let mut env = Environment::new(Some(100), None, None);
     let mut running = gen_running_state(num_domains);
+    let mut votes = ContractVotes::default();
     let proposal = gen_valid_params_proposal(&running.parameters);
     let mut resharing_state = None;
     for (account, _, _) in proposal.participants().participants() {
         env.set_signer(account);
         assert!(resharing_state.is_none());
         resharing_state = running
-            .vote_new_parameters(running.keyset.epoch_id.next(), &proposal)
+            .vote_new_parameters(running.keyset.epoch_id.next(), &proposal, &mut votes)
             .unwrap();
     }
     (
@@ -92,12 +93,7 @@ pub fn gen_running_state(num_domains: usize) -> RunningContractState {
     }
     let max_n = 30;
     let threshold_parameters = gen_threshold_params(max_n);
-    RunningContractState::new(
-        domains,
-        Keyset::new(epoch_id, keys),
-        threshold_parameters,
-        AddDomainsVotes::default(),
-    )
+    RunningContractState::new(domains, Keyset::new(epoch_id, keys), threshold_parameters)
 }
 
 /// Randomly generates an InitializingContractState where we already have keys for
@@ -110,13 +106,16 @@ pub fn gen_initializing_state(
 ) -> (Environment, InitializingContractState) {
     let mut env = Environment::new(None, None, None);
     let mut running = gen_running_state(num_generated);
+    let mut votes = ContractVotes::default();
     let domains_to_add = gen_domains_to_add(&running.domains, num_domains - num_generated);
 
     let mut initializing_state = None;
     for (account, _, _) in running.parameters.participants().participants().clone() {
         env.set_signer(&account);
         assert!(initializing_state.is_none());
-        initializing_state = running.vote_add_domains(domains_to_add.clone()).unwrap();
+        initializing_state = running
+            .vote_add_domains(domains_to_add.clone(), &mut votes)
+            .unwrap();
     }
     let initializing_state = initializing_state
         .expect("Enough votes to add domains should transition into initializing");

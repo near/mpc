@@ -8,7 +8,7 @@ use crate::types::participants::Participants;
 use crate::types::primitives::AccountId;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashSet};
 
 use super::primitives::DomainId;
 
@@ -145,26 +145,6 @@ pub struct ThresholdParameters {
 // Voting Types
 // =============================================================================
 
-/// Votes for threshold parameter changes.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
-)]
-pub struct ThresholdParametersVotes {
-    pub proposal_by_account: BTreeMap<AuthenticatedAccountId, ThresholdParameters>,
-}
-
-/// Votes for adding new domains.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
-)]
-pub struct AddDomainsVotes {
-    pub proposal_by_account: BTreeMap<AuthenticatedParticipantId, Vec<DomainConfig>>,
-}
-
 // =============================================================================
 // Key Event Types
 // =============================================================================
@@ -225,8 +205,6 @@ pub struct RunningContractState {
     pub domains: DomainRegistry,
     pub keyset: Keyset,
     pub parameters: ThresholdParameters,
-    pub parameters_votes: ThresholdParametersVotes,
-    pub add_domains_votes: AddDomainsVotes,
     pub previously_cancelled_resharing_epoch_id: Option<EpochId>,
 }
 
