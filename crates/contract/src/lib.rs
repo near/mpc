@@ -41,7 +41,6 @@ use crate::{
     },
     errors::{Error, RequestError},
     foreign_chain_rpc::ForeignChainRpcWhitelist,
-    pending_requests::LegacyPendingRequests,
     primitives::{
         ckd::{app_public_key_check, ckd_output_check, CKDRequest},
         domain::AddDomainsVotes,
@@ -157,7 +156,6 @@ pub struct MpcContract {
     tee_state: TeeState,
     accept_requests: bool,
     node_migrations: NodeMigrations,
-    legacy_pending_requests: LegacyPendingRequests,
     // TODO(#2937): Remove via state migration.
     metrics: Metrics,
     foreign_chain_rpc_whitelist: ForeignChainRpcWhitelist,
@@ -636,7 +634,6 @@ impl MpcContract {
 
         pending_requests::resolve_yields_for(
             &mut self.pending_signature_requests,
-            &mut self.legacy_pending_requests.signature_requests,
             &request,
             serde_json::to_vec(&response).unwrap(),
         )
@@ -675,7 +672,6 @@ impl MpcContract {
 
         pending_requests::resolve_yields_for(
             &mut self.pending_ckd_requests,
-            &mut self.legacy_pending_requests.ckd_requests,
             &request,
             serde_json::to_vec(&response).unwrap(),
         )
@@ -741,7 +737,6 @@ impl MpcContract {
 
         pending_requests::resolve_yields_for(
             &mut self.pending_verify_foreign_tx_requests,
-            &mut self.legacy_pending_requests.verify_foreign_tx_requests,
             &request,
             serde_json::to_vec(&response).unwrap(),
         )
@@ -1470,6 +1465,57 @@ impl MpcContract {
         self.tee_state.get_allowed_measurements()
     }
 
+    /// Vote on per-chain RPC provider whitelist state. The input is keyed by
+    /// `ForeignChain`; each `ChainEntry` value carries the proposed full provider list
+    /// and the RPC response quorum for that chain. The chain's stored state is replaced
+    /// once the protocol's signing threshold of participants has voted the same
+    /// `(providers, quorum)` pair. `NonEmptyBTreeMap` enforces a non-empty batch and
+    /// at-most-one entry per chain at borsh-deserialize time.
+    #[handle_result]
+    pub fn vote_update_foreign_chain_providers(
+        &mut self,
+        #[serializer(borsh)] votes: near_mpc_bounded_collections::NonEmptyBTreeMap<
+            dtos::ForeignChain,
+            dtos::ChainEntry,
+        >,
+    ) -> Result<Vec<dtos::ForeignChain>, Error> {
+        let batch_hash = env::sha256_array(
+            borsh::to_vec(&votes).expect("borsh serialization of votes batch must succeed"),
+        );
+        log!(
+            "vote_update_foreign_chain_providers: signer={}, n_votes={}, batch_hash={}",
+            env::signer_account_id(),
+            votes.len(),
+            hex::encode(batch_hash),
+        );
+        self.voter_or_panic();
+
+        let threshold_parameters = self
+            .protocol_state
+            .threshold_parameters()
+            .expect("voter_or_panic() above already errors on NotInitialized");
+
+        let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
+        let applied =
+            self.foreign_chain_rpc_whitelist
+                .vote(participant, votes, threshold_parameters)?;
+        log!(
+            "vote_update_foreign_chain_providers: applied chains={:?}",
+            applied,
+        );
+        Ok(applied)
+    }
+
+    /// On-chain RPC provider whitelist keyed by `ForeignChain`. Nodes read this at
+    /// startup to validate their local `foreign_chains.yaml`. Borsh-encoded result.
+    #[result_serializer(borsh)]
+    pub fn allowed_foreign_chain_providers(
+        &self,
+    ) -> std::collections::BTreeMap<dtos::ForeignChain, dtos::ChainEntry> {
+        log!("allowed_foreign_chain_providers");
+        self.foreign_chain_rpc_whitelist.entries.snapshot()
+    }
+
     /// Returns all accounts that have TEE attestations stored in the contract.
     /// Note: This includes both current protocol participants and accounts that may have
     /// submitted TEE information but are not currently part of the active participant set.
@@ -1642,6 +1688,8 @@ impl MpcContract {
                 .remove(account);
         }
 
+        self.foreign_chain_rpc_whitelist.votes.retain(participants);
+
         Ok(())
     }
 }
@@ -1689,7 +1737,6 @@ impl MpcContract {
             tee_state,
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
-            legacy_pending_requests: LegacyPendingRequests::new(),
             metrics: Default::default(),
             node_foreign_chain_support: Default::default(),
             foreign_chain_rpc_whitelist: Default::default(),
@@ -1758,7 +1805,6 @@ impl MpcContract {
             tee_state,
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
-            legacy_pending_requests: LegacyPendingRequests::new(),
             metrics: Default::default(),
             node_foreign_chain_support: Default::default(),
             foreign_chain_rpc_whitelist: Default::default(),
@@ -1781,7 +1827,7 @@ impl MpcContract {
             Ok(Some(state)) => return Ok(state.into()),
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => {
-                log!("failed to deserialize state into v3.10 state: {:?}", err);
+                log!("failed to deserialize state into 3.10.0 state: {:?}", err);
             }
         };
 
@@ -1844,19 +1890,10 @@ impl MpcContract {
     /// The `Option<YieldIndex>` shape is retained for JSON wire compatibility with
     /// out-of-tree consumers; the in-tree caller (`tx_sender::observe_tx_result`)
     /// only matches on presence. Prefer a `bool`-shaped accessor if one is added.
-    ///
-    /// Falls back to the legacy single-yield map for in-flight requests inherited
-    /// from before the fan-out upgrade.
     pub fn get_pending_request(&self, request: &SignatureRequest) -> Option<YieldIndex> {
         self.pending_signature_requests
             .get(request)
             .and_then(|q| q.first().cloned())
-            .or_else(|| {
-                self.legacy_pending_requests
-                    .signature_requests
-                    .get(request)
-                    .cloned()
-            })
     }
 
     /// Presence check for a pending CKD request, exposed as a view call.
@@ -1868,12 +1905,6 @@ impl MpcContract {
         self.pending_ckd_requests
             .get(request)
             .and_then(|q| q.first().cloned())
-            .or_else(|| {
-                self.legacy_pending_requests
-                    .ckd_requests
-                    .get(request)
-                    .cloned()
-            })
     }
 
     /// Presence check for a pending foreign-tx verification request, exposed as a
@@ -1889,12 +1920,6 @@ impl MpcContract {
         self.pending_verify_foreign_tx_requests
             .get(request)
             .and_then(|q| q.first().cloned())
-            .or_else(|| {
-                self.legacy_pending_requests
-                    .verify_foreign_tx_requests
-                    .get(request)
-                    .cloned()
-            })
     }
 
     pub fn config(&self) -> dtos::Config {
@@ -1958,10 +1983,9 @@ impl MpcContract {
     ///
     /// On success, returns the signature to the original caller. On timeout, pops this
     /// yield's slot (the head of the FIFO fan-out queue) from the pending-request map
-    /// — falling back to the legacy single-yield map for pre-fan-out entries — and
-    /// fires `fail_on_timeout` to fail the original transaction. Sibling yields queued
-    /// under the same request key remain pending and are cleaned up by their own
-    /// timeouts (or drained together by a subsequent `respond`).
+    /// and fires `fail_on_timeout` to fail the original transaction. Sibling yields
+    /// queued under the same request key remain pending and are cleaned up by their
+    /// own timeouts (or drained together by a subsequent `respond`).
     #[private]
     pub fn return_signature_and_clean_state_on_success(
         &mut self,
@@ -1971,9 +1995,8 @@ impl MpcContract {
         match signature {
             Ok(signature) => PromiseOrValue::Value(signature),
             Err(_) => {
-                pending_requests::pop_one_yield_for(
+                pending_requests::pop_oldest_pending_yield(
                     &mut self.pending_signature_requests,
-                    &mut self.legacy_pending_requests.signature_requests,
                     &request,
                 );
 
@@ -1993,8 +2016,7 @@ impl MpcContract {
     ///
     /// On success, returns the confidential key to the original caller. On timeout,
     /// pops this yield's slot (the head of the FIFO fan-out queue) from the
-    /// pending-request map — falling back to the legacy single-yield map for
-    /// pre-fan-out entries — and fires `fail_on_timeout` to fail the original
+    /// pending-request map and fires `fail_on_timeout` to fail the original
     /// transaction. Sibling yields queued under the same request key remain pending
     /// and are cleaned up by their own timeouts (or drained together by a subsequent
     /// `respond_ckd`).
@@ -2007,9 +2029,8 @@ impl MpcContract {
         match ck {
             Ok(ck) => PromiseOrValue::Value(ck),
             Err(_) => {
-                pending_requests::pop_one_yield_for(
+                pending_requests::pop_oldest_pending_yield(
                     &mut self.pending_ckd_requests,
-                    &mut self.legacy_pending_requests.ckd_requests,
                     &request,
                 );
                 let fail_on_timeout_gas = Gas::from_tgas(self.config.fail_on_timeout_tera_gas);
@@ -2028,8 +2049,7 @@ impl MpcContract {
     ///
     /// On success, returns the verification response to the original caller. On
     /// timeout, pops this yield's slot (the head of the FIFO fan-out queue) from the
-    /// pending-request map — falling back to the legacy single-yield map for
-    /// pre-fan-out entries — and fires `fail_on_timeout` to fail the original
+    /// pending-request map and fires `fail_on_timeout` to fail the original
     /// transaction. Sibling yields queued under the same request key remain pending
     /// and are cleaned up by their own timeouts (or drained together by a subsequent
     /// `respond_verify_foreign_tx`).
@@ -2042,9 +2062,8 @@ impl MpcContract {
         match response {
             Ok(response) => PromiseOrValue::Value(response),
             Err(_) => {
-                pending_requests::pop_one_yield_for(
+                pending_requests::pop_oldest_pending_yield(
                     &mut self.pending_verify_foreign_tx_requests,
-                    &mut self.legacy_pending_requests.verify_foreign_tx_requests,
                     &request,
                 );
                 let fail_on_timeout_gas = Gas::from_tgas(self.config.fail_on_timeout_tera_gas);
@@ -2395,7 +2414,7 @@ mod tests {
         Attestation as MpcAttestation, MockAttestation as MpcMockAttestation,
     };
     use mpc_primitives::hash::DockerImageHash;
-    use near_mpc_bounded_collections::NonEmptyBTreeSet;
+    use near_mpc_bounded_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet};
     use near_mpc_contract_interface::types::BackupServiceInfo;
     use near_mpc_contract_interface::types::CKDAppPublicKey;
     use near_mpc_contract_interface::types::DestinationNodeInfo;
@@ -2977,76 +2996,6 @@ mod tests {
     }
 
     #[test]
-    fn respond__should_resolve_legacy_yield() {
-        // Given: a contract carrying a pre-upgrade single-yield entry for some request
-        // key (the legacy caller hasn't been responded to or timed out yet).
-        let (context, mut contract, secret_key) = basic_setup(Curve::Secp256k1, &mut OsRng);
-        let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
-            unreachable!()
-        };
-        let path: String = "respond_should_resolve_legacy_yield".to_string();
-
-        let payload = Payload::from_legacy_ecdsa([5u8; 32]);
-        let signature_request = SignatureRequest::new(
-            DomainId::default(),
-            payload.clone(),
-            &context.predecessor_account_id,
-            &path,
-        );
-        let legacy_data_id = [0xaa; 32];
-        contract.legacy_pending_requests.signature_requests.insert(
-            signature_request.clone(),
-            YieldIndex {
-                data_id: legacy_data_id,
-            },
-        );
-
-        // When: a post-upgrade duplicate is submitted for the same request key.
-        let new_data_id = [0xbb; 32];
-        contract.add_signature_request(signature_request.clone(), new_data_id);
-
-        // And: a subsequent push appends without touching the (now empty) legacy map.
-        let third_data_id = [0xcc; 32];
-        contract.add_signature_request(signature_request.clone(), third_data_id);
-
-        let found_legacy_id = contract
-            .legacy_pending_requests
-            .signature_requests
-            .get(&signature_request)
-            .cloned()
-            .unwrap();
-
-        assert_eq!(found_legacy_id.data_id, legacy_data_id);
-        let queue = contract
-            .pending_signature_requests
-            .get(&signature_request)
-            .cloned()
-            .unwrap();
-
-        assert_eq!(queue.len(), 2);
-        assert_eq!(queue[0].data_id, new_data_id);
-        assert_eq!(queue[1].data_id, third_data_id);
-
-        // When: a single valid response is delivered.
-        let signature_response = dtos::SignatureResponse::Secp256k1(secp256k1_signature_for_test(
-            &secret_key,
-            &context.predecessor_account_id,
-            &path,
-            &payload,
-        ));
-
-        with_active_participant_and_attested_context(&contract);
-        contract
-            .respond(signature_request.clone(), signature_response)
-            .expect("respond should succeed");
-
-        // Then: the entire queue is drained — both queued yields received the response.
-        assert!(contract
-            .pending_signature_requests
-            .get(&signature_request)
-            .is_none());
-    }
-    #[test]
     fn add_signature_request__should_panic_when_pending_queue_is_full() {
         // Given: a contract with a queue already at the fan-out cap for some request key.
         let (context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
@@ -3141,64 +3090,6 @@ mod tests {
         );
 
         // Then: the entry is gone.
-        assert!(contract
-            .pending_signature_requests
-            .get(&signature_request)
-            .is_none());
-    }
-
-    #[test]
-    fn get_pending_request__should_fall_back_to_legacy_map() {
-        // Given: a contract where an in-flight signature request only exists in the
-        // legacy fallback map (an entry inherited from the previous schema).
-        let (context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
-        let signature_request = SignatureRequest::new(
-            DomainId::default(),
-            Payload::from_legacy_ecdsa([0u8; 32]),
-            &context.predecessor_account_id,
-            "m/44'\''/60'\''/0'\''/0/0",
-        );
-        contract
-            .legacy_pending_requests
-            .signature_requests
-            .insert(signature_request.clone(), YieldIndex { data_id: [9u8; 32] });
-
-        // When / then: the accessor finds it through the fallback.
-        let pending = contract
-            .get_pending_request(&signature_request)
-            .expect("legacy entry should be visible via get_pending_request");
-        assert_eq!(pending.data_id, [9u8; 32]);
-    }
-
-    #[test]
-    fn return_signature_and_clean_state_on_success__should_remove_legacy_entry_on_timeout() {
-        // Given: a legacy in-flight signature request lives only in the legacy map.
-        let (context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
-        let signature_request = SignatureRequest::new(
-            DomainId::default(),
-            Payload::from_legacy_ecdsa([0u8; 32]),
-            &context.predecessor_account_id,
-            "m/44'\''/60'\''/0'\''/0/0",
-        );
-        contract
-            .legacy_pending_requests
-            .signature_requests
-            .insert(signature_request.clone(), YieldIndex { data_id: [7u8; 32] });
-        assert!(contract.get_pending_request(&signature_request).is_some());
-
-        // When: that legacy yield times out.
-        let _ = contract.return_signature_and_clean_state_on_success(
-            signature_request.clone(),
-            Err(PromiseError::Failed),
-        );
-
-        // Then: the legacy entry is cleared (and nothing leaks in the new map).
-        assert!(contract.get_pending_request(&signature_request).is_none());
-        assert!(contract
-            .legacy_pending_requests
-            .signature_requests
-            .get(&signature_request)
-            .is_none());
         assert!(contract
             .pending_signature_requests
             .get(&signature_request)
@@ -4010,7 +3901,6 @@ mod tests {
                 config: Default::default(),
                 tee_state: Default::default(),
                 node_migrations: Default::default(),
-                legacy_pending_requests: LegacyPendingRequests::new(),
                 metrics: Default::default(),
                 foreign_chain_rpc_whitelist: Default::default(),
             }
@@ -6340,5 +6230,94 @@ mod tests {
 
         // Then
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn vote_update_foreign_chain_providers__should_apply_chain_and_return_it_when_threshold_reached(
+    ) {
+        // Given: a running contract with 4 participants and signing threshold 3.
+        let (_context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let participant_account_ids: Vec<AccountId> = contract
+            .protocol_state
+            .threshold_parameters()
+            .unwrap()
+            .participants()
+            .participants()
+            .iter()
+            .map(|(account_id, _, _)| account_id.clone())
+            .collect();
+        assert_eq!(participant_account_ids.len(), 4);
+
+        let chain = dtos::ForeignChain::Ethereum;
+        let entry = dtos::ChainEntry {
+            providers: NonEmptyBTreeMap::new(
+                dtos::ProviderId("alchemy".to_string()),
+                dtos::ProviderConfig {
+                    base_url: "https://alchemy.example.com".to_string(),
+                    auth_scheme: dtos::AuthScheme::None,
+                    chain_routing: dtos::ChainRouting::Embedded,
+                },
+            ),
+            quorum: 1,
+        };
+        let batch = NonEmptyBTreeMap::new(chain, entry.clone());
+
+        let vote_as = |contract: &mut MpcContract, account_id: &AccountId| {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build());
+            contract
+                .vote_update_foreign_chain_providers(batch.clone())
+                .expect("vote should succeed")
+        };
+
+        // When: first two participants vote (count = 2, below threshold 3).
+        let applied_p0 = vote_as(&mut contract, &participant_account_ids[0]);
+        let applied_p1 = vote_as(&mut contract, &participant_account_ids[1]);
+
+        // Then: nothing applied yet.
+        assert!(applied_p0.is_empty(), "1st vote should not apply");
+        assert!(applied_p1.is_empty(), "2nd vote should not apply");
+        assert!(contract.allowed_foreign_chain_providers().is_empty());
+
+        // When: third participant votes (crosses threshold).
+        let applied_p2 = vote_as(&mut contract, &participant_account_ids[2]);
+
+        // Then: the chain is reported as applied this call and is now stored.
+        assert_eq!(applied_p2, vec![chain]);
+        let stored = contract.allowed_foreign_chain_providers();
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored.get(&chain), Some(&entry));
+    }
+
+    #[test]
+    #[should_panic(expected = "not a voter")]
+    fn vote_update_foreign_chain_providers__should_panic_when_caller_is_not_a_participant() {
+        // Given: a running contract whose participant set does NOT contain `non_participant`.
+        let (_context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let non_participant = gen_account_id();
+
+        let batch = NonEmptyBTreeMap::new(
+            dtos::ForeignChain::Ethereum,
+            dtos::ChainEntry {
+                providers: NonEmptyBTreeMap::new(
+                    dtos::ProviderId("alchemy".to_string()),
+                    dtos::ProviderConfig {
+                        base_url: "https://alchemy.example.com".to_string(),
+                        auth_scheme: dtos::AuthScheme::None,
+                        chain_routing: dtos::ChainRouting::Embedded,
+                    },
+                ),
+                quorum: 1,
+            },
+        );
+
+        // When: a non-participant attempts to vote — voter_or_panic should reject.
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(non_participant.clone())
+            .predecessor_account_id(non_participant)
+            .build());
+        let _ = contract.vote_update_foreign_chain_providers(batch);
     }
 }

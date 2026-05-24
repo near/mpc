@@ -10,7 +10,8 @@ use std::sync::{Arc, Mutex};
 
 const NUM_COMPLETED_REQUESTS_TO_KEEP: usize = 100;
 
-/// A completed request, for exporting to /debug/requests.
+/// A completed request, kept for surfacing on the queue's debug
+/// endpoints (`/debug/signatures`, `/debug/ckds`).
 pub(super) struct CompletedRequest<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> {
     pub request: RequestType,
     pub progress: Arc<Mutex<ComputationProgress<ChainRespondArgsType>>>,
@@ -20,8 +21,9 @@ pub(super) struct CompletedRequest<RequestType: Request, ChainRespondArgsType: C
     pub completion_delay: Option<(NumBlocks, near_time::Duration)>,
 }
 
-/// A buffer of completed requests, for exporting to /debug/requests.
-/// Keeps the most recent `NUM_COMPLETED_REQUESTS_TO_KEEP` requests.
+/// A buffer of completed requests, surfaced on the queue's debug
+/// endpoints (`/debug/signatures`, `/debug/ckds`). Keeps the most
+/// recent `NUM_COMPLETED_REQUESTS_TO_KEEP` requests.
 pub(super) struct CompletedRequests<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> {
     /// Min-heap, so that the oldest requests are at the front to be removed.
     requests: BinaryHeap<CompletedRequest<RequestType, ChainRespondArgsType>>,
