@@ -16,10 +16,10 @@ use serial_test::serial;
 
 use super::DEFAULT_BLOCK_TIME;
 
-fn infer_purpose_from_curve(curve: Curve) -> DomainPurpose {
-    match curve {
-        Curve::Bls12381 => DomainPurpose::CKD,
-        _ => DomainPurpose::Sign,
+fn infer_purpose_from_protocol(protocol: Protocol) -> DomainPurpose {
+    match protocol {
+        Protocol::ConfidentialKeyDerivation => DomainPurpose::CKD,
+        Protocol::CaitSith | Protocol::Frost | Protocol::DamgardEtAl => DomainPurpose::Sign,
     }
 }
 
@@ -37,7 +37,6 @@ async fn test_key_resharing_simple(
     #[case] protocol: Protocol,
     #[case] threshold: usize,
 ) {
-    let curve = Curve::from(protocol);
     let num_participants: usize = threshold + 1;
     const TXN_DELAY_BLOCKS: u64 = 1;
     let temp_dir = tempfile::tempdir().unwrap();
@@ -59,10 +58,9 @@ async fn test_key_resharing_simple(
 
     let domain = DomainConfig {
         id: DomainId(0),
-        curve,
         protocol,
         reconstruction_threshold: ReconstructionThreshold::new(3),
-        purpose: infer_purpose_from_curve(curve),
+        purpose: infer_purpose_from_protocol(protocol),
     };
 
     {
@@ -87,7 +85,7 @@ async fn test_key_resharing_simple(
         .expect("must not exceed timeout");
 
     // Sanity check.
-    match domain.curve {
+    match Curve::from(domain.protocol) {
         Curve::Secp256k1 | Curve::Edwards25519 => {
             assert!(request_signature_and_await_response(
                 &mut setup.indexer,
@@ -131,7 +129,7 @@ async fn test_key_resharing_simple(
         .await
         .expect("Timeout waiting for resharing to complete");
 
-    match domain.curve {
+    match Curve::from(domain.protocol) {
         Curve::Secp256k1 | Curve::Edwards25519 => {
             assert!(request_signature_and_await_response(
                 &mut setup.indexer,
@@ -183,7 +181,6 @@ async fn test_key_resharing_multistage() {
 
     let domain = DomainConfig {
         id: DomainId(0),
-        curve: Curve::Secp256k1,
         protocol: Protocol::CaitSith,
         reconstruction_threshold: ReconstructionThreshold::new(3),
         purpose: DomainPurpose::Sign,
@@ -390,7 +387,6 @@ async fn test_signature_requests_in_resharing_are_processed() {
 
     let domain = DomainConfig {
         id: DomainId(0),
-        curve: Curve::Secp256k1,
         protocol: Protocol::CaitSith,
         reconstruction_threshold: ReconstructionThreshold::new(3),
         purpose: DomainPurpose::Sign,

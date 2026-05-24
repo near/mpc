@@ -16,7 +16,7 @@ use crate::tx::IntoReturnValueExt;
 use crate::types::{MpcNetworkSetup, MpcParticipantSetup, NearAccount, ParsedConfig};
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::{SigningKey, VerifyingKey};
-use mpc_primitives::domain::{Curve, DomainId};
+use mpc_primitives::domain::DomainId;
 use near_account_id::AccountId;
 use near_jsonrpc_client::errors::{JsonRpcError, JsonRpcServerError};
 use near_jsonrpc_client::methods;
@@ -615,7 +615,6 @@ impl MpcVoteAddDomainsCmd {
             };
             proposal.push(DomainConfig {
                 id: DomainId(next_domain),
-                curve: Curve::from(*protocol),
                 protocol: *protocol,
                 reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose,

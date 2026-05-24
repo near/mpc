@@ -1,4 +1,4 @@
-# MPC Node Deployment in TDX \- External Guide
+# MPC Node Deployment in TDX - External Guide
 
 ## Introduction
 
@@ -6,7 +6,7 @@ Chain signatures is a Multi-Party Computation (MPC) service that lets you sign a
 
 This guide walks you through deploying a self-hosted MPC node on a bare-metal server using Intel Trusted Domain Extensions (TDX). The node runs inside a Confidential VM (CVM) for isolation and attestation.
 
-We use Dstack (from Phala) to orchestrate the environment and run the MPC container inside the CVM
+We use Dstack (from Phala) to orchestrate the environment and run the MPC container inside the CVM.
 
 ## Limitations and Restrictions
 
@@ -39,15 +39,21 @@ For a full architecture review of the TEE-based MPC, see: [design doc](securing-
 
 * Have a TDX enabled, bare metal, server.
 
-Note \- we currently only support bare metal and do not support virtualized TDX solutions (such as GCP)
+Note - we currently only support bare metal and do not support virtualized TDX solutions (such as GCP).
 
 * Intel Xeon 5th/6th Generation CPU (TDX Support) and 8 RAM slots filled
   See [Intel TDX HW requirements](https://cc-enabling.trustedservices.intel.com/intel-tdx-enabling-guide/03/hardware_selection/)
-* Memory \- 64GB
-* (v)Cores \- 8
-* Disk space \- 500GB, SSD NVMe or similar performance
+* Memory - 64GB
+* (v)Cores - 8
+* Disk space - 500GB, SSD NVMe or similar performance
 
 For a list of supported cloud providers offering bare metal servers with Intel TDX, see [Cloud Providers Supporting Bare Metal Servers with Intel TDX](./cloud-providers-tdx.md).
+
+> **Sharing one host between mainnet and testnet?** See [Running multiple MPC nodes on one host](./running-multiple-mpc-nodes-on-one-host.md) for the additional setup (one `dstack-vmm` hosting both CVMs, with each CVM bound to a distinct host IP at port-forward time). Note: this setup is discouraged as it couples mainnet and testnet availability — a single failure takes both nodes offline.
+
+### Software Requirements
+
+* [`near-cli-rs`](https://github.com/near/near-cli-rs) — install per the upstream README; the `near` binary must be on your `$PATH`.
 
 ### General
 
@@ -505,7 +511,59 @@ For more information, see [local-key-provider-from-phala](https://github.com/Dst
 
 1. Follow the [canonical/tdx setup](#1-tdx-bare-metal-server-setup) if not already completed — especially step 9.1–2 (establishing an SGX PCCS: Provisioning Certification Caching Service).
 
-2. Deploy an instance of `gramine-sealing-key-provider` on the host machine.
+2. **Patch `Dockerfile.key-provider` to pin transitive deps.** This is a
+   temporary build-reproducibility patch; the structural fix is tracked in
+   [#3153](https://github.com/near/mpc/issues/3153). The upstream
+   Dockerfile leaves apt dependencies and the Rust toolchain version
+   under-pinned, so a fresh build on a different date produces a different
+   `mr_enclave` and your CVM fails attestation. After completing the
+   v0.5.8 dstack checkout from
+   [§2 *Dstack Setup and Configuration*](#2-dstack-setup-and-configuration),
+   edit `/opt/mpc/dstack/key-provider-build/Dockerfile.key-provider`:
+
+   - Replace the original apt block, which reads:
+
+     ```dockerfile
+     RUN apt-get update && apt-get install -y \
+         git=1:2.34.1-1ubuntu1.17 \
+         build-essential=12.9ubuntu3 \
+         && rm -rf /var/lib/apt/lists/*
+     ```
+
+     with this snapshot-pinned version, which points apt at a fixed
+     Ubuntu archive date by rewriting `/etc/apt/sources.list`:
+
+     ```dockerfile
+     RUN { \
+           echo 'deb https://snapshot.ubuntu.com/ubuntu/20260423T000000Z jammy main universe restricted multiverse'; \
+           echo 'deb https://snapshot.ubuntu.com/ubuntu/20260423T000000Z jammy-updates main universe restricted multiverse'; \
+           echo 'deb https://snapshot.ubuntu.com/ubuntu/20260423T000000Z jammy-security main universe restricted multiverse'; \
+         } > /etc/apt/sources.list \
+      && rm -rf /etc/apt/sources.list.d/* \
+      && apt-get update && apt-get install -y \
+           git=1:2.34.1-1ubuntu1.17 \
+           build-essential=12.9ubuntu3 \
+      && rm -rf /var/lib/apt/lists/*
+     ```
+
+     Paste this block exactly as shown — the snapshot date
+     `20260423T000000Z` is the specific value that produces the canonical
+     `mr_enclave`. Any change will produce a different one.
+
+   - On the `rustup` line, change `--default-toolchain 1.85` to
+     `--default-toolchain 1.85.1`. (`1.85` resolves to whatever 1.85.x is
+     current when rustup runs; pinning the exact patch version makes the
+     build deterministic.)
+
+   After running `./run.sh` in the next step, the `mr_enclave` you see in
+   step 4 should match `6b5ed02e…`. If it doesn't, the patch wasn't
+   applied correctly — re-check both edits.
+
+   <!-- TODO(#3153): remove this manual patch once the structural fix lands. -->
+   <!-- Requires snapshot.ubuntu.com to be reachable from the build host. -->
+
+
+3. Deploy an instance of `gramine-sealing-key-provider` on the host machine.
    * On the TDX server, run the script [run.sh](https://github.com/Dstack-TEE/dstack/blob/master/key-provider-build/run.sh)
    > **Prerequisite:** Docker must be installed.
 
@@ -513,7 +571,7 @@ For more information, see [local-key-provider-from-phala](https://github.com/Dst
     cd /opt/mpc/dstack/key-provider-build
     ./run.sh
     ```
-3. To find the `mr_enclave` value of the SGX key provider, run:
+4. To find the `mr_enclave` value of the SGX key provider, run:
 
    ```bash
    docker logs gramine-sealing-key-provider 2>&1 | grep mr_enclave | head -n 1
@@ -533,16 +591,16 @@ This section will describe how to configure and deploy your MPC node inside a CV
 
 Including
 
-* Creating a Near account for your node
+* Creating a NEAR account for your node
 
 * Preparing a configuration file based on [user-config.toml](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/user-config.toml)
 
-* Creating a docker compose file for the launcher based on [launcher\_docker\_compose.yaml](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/launcher_docker_compose.yaml).
+* Rendering the launcher docker compose template [launcher_docker_compose.yaml.template](https://github.com/near/mpc/blob/main/crates/contract/assets/launcher_docker_compose.yaml.template) with the launcher and MPC node manifest digests approved by the contract.
 * Configuring and starting your CVM with the MPC node.
 * Accessing mpc docker logs.
 * Retrieve keys from the CVM.
 * Verify the node's attestation before trusting the keys.
-* Add the node key to your Near account.
+* Add the node key to your NEAR account.
 
 ### Create a NEAR Account for Your Node
 
@@ -578,7 +636,7 @@ near account create-account sponsor-by-faucet-service <ACCOUNT_NAME> use-manuall
 
 For more details, please refer to the NEAR account documentation.
 
-### Prepare MPC node configuration
+### Prepare MPC Node Configuration
 
 Create a `user-config.toml` file based on the [user-config.toml](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/user-config.toml) template.
 
@@ -607,27 +665,49 @@ url = "https://pccs.phala.network/"
 [[mpc_node_config.pccs_endpoints]]
 url = "https://api.trustedservices.intel.com/"
 
-[mpc_node_config.node]
-my_near_account_id = "$MY_MPC_NEAR_ACCOUNT_ID"
-mpc_contract_id = "$CONTRACT_ID"  # v1.signer-prod.testnet for Testnet or v1.signer for Mainnet
-near_rpc = "https://rpc.testnet.near.org"
-near_boot_nodes = "$BOOT_NODES"
+# NEAR node bootstrap. Applied on first init only — see the field notes below.
+[mpc_node_config.near_init]
+chain_id = "$CHAIN_ID"            # "testnet" or "mainnet"
+boot_nodes = "$BOOT_NODES"        # comma-separated; see the curl snippet below
+download_genesis = true
+download_config = "rpc"
+# tier3_public_addr = "$IP:24567"
+# external_storage_fallback_threshold = 0
 
 [mpc_node_config.secrets]
 secret_store_key_hex = "$SECRET_STORE_KEY"
+backup_encryption_key_hex = "$BACKUP_ENCRYPTION_KEY"
+
+[mpc_node_config.node]
+my_near_account_id = "$MY_MPC_NEAR_ACCOUNT_ID"
+near_responder_account_id = "$MY_MPC_NEAR_ACCOUNT_ID"
+migration_web_ui = "0.0.0.0:8079"  # required; matches the port-forward above
+
+[mpc_node_config.node.indexer]
+mpc_contract_id = "$CONTRACT_ID"  # v1.signer-prod.testnet for testnet, v1.signer for mainnet
+validate_genesis = false
+sync_mode = "Latest"
+finality = "optimistic"
+concurrency = 1
+port_override = 80                # MPC P2P convention
 
 [mpc_node_config.log]
 format = "plain"
 filter = "mpc=debug,info"
 ```
 
+The snippet above shows only the fields you are likely to change. Required fields not shown (e.g. `number_of_responder_keys`, `web_ui`, and the `triple` / `presignature` / `signature` / `ckd` / `foreign_chains` blocks) and inline `# mainnet: …` swap hints are inherited from the [`user-config.toml`](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/user-config.toml) template — always start from that file and edit the highlighted fields rather than building a config from this snippet alone.
+
 Adjust the variables as per your environment.
 
-\* \`image_reference\` — the Docker image reference. The actual image version is determined by the manifest digest from the contract (stored in the approved hashes file), not by a tag. A tag may be appended for readability (e.g., `"nearone/mpc-node:3.8.1"`) but is ignored during pull.
+* `image_reference` — the Docker image reference. The actual image version is determined by the manifest digest from the contract (stored in the approved hashes file), not by a tag. A tag may be appended for readability (e.g., `"nearone/mpc-node:3.8.1"`) but is ignored during pull.
 * `my_near_account_id` — use the NEAR account ID created in the previous step
 * `mpc_contract_id` — **v1.signer-prod.testnet** for testnet, **v1.signer** for mainnet
-* `port_mappings` — port forwarding rules for the MPC container. These should be a subset of the port forwarding for the CVM defined in [Port Mapping](#using-the-web-interface)
-* A fresh set of boot nodes can be selected using Testnet/Mainnet RPC endpoints. Copy at least 4-5 nodes from curl results into `near_boot_nodes`.
+* `migration_web_ui` — bind address for the migration HTTP endpoint, used by the [Node Migration](./node-migration-guide.md) flow. Required. Keep at `0.0.0.0:8079` to match the port-forward and the `--mpc-node-address …:8079` form the migration guide uses.
+* `port_mappings` — port forwarding rules for the MPC container. These should be a subset of the port forwarding for the CVM defined in the [Using the Web Interface](#using-the-web-interface) section.
+* `tier3_public_addr` *(optional for single-node; required when running [multiple nodes on one host](./running-multiple-mpc-nodes-on-one-host.md); lives under `[mpc_node_config.near_init]`)* — `IP:24567` the node advertises for Tier3 state-sync responses. Applied at first init only; changing later requires a CVM redeploy via the [Node Migration](./node-migration-guide.md) flow.
+* `external_storage_fallback_threshold` *(optional, under `[mpc_node_config.near_init]`)* — DSS attempts per state part before falling back to the external storage bucket. `0` = bucket-only. Same first-init-only constraint as `tier3_public_addr`.
+* `near_init.boot_nodes` — comma-separated NEAR boot-node list. The testnet template at `deployment/cvm-deployment/user-config.toml` already ships with a working testnet boot-node list, so testnet operators usually don't need to fetch a fresh one. For **mainnet** (or to refresh testnet), select boot nodes from the Testnet/Mainnet RPC endpoints and copy at least 4-5 of them into this field.
   **Important:** Boot nodes must not contain duplicate addresses or peer IDs. Duplicates will cause the node to crash on startup. The command below deduplicates automatically:
 
 ```bash
@@ -658,48 +738,79 @@ For a self-hosted local PCCS, see [Appendix: Self-hosting a local PCCS](#appendi
 
 ### Preparing a Docker Compose File
 
-To launch the launcher in the TEE environment, use the Docker Compose file from the [NEAR MPC repository](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/launcher_docker_compose.yaml).
+The launcher Docker Compose file is **rendered** at deploy time from the
+template at
+[`crates/contract/assets/launcher_docker_compose.yaml.template`](https://github.com/near/mpc/blob/main/crates/contract/assets/launcher_docker_compose.yaml.template)
+by substituting two manifest digests:
 
-Update the `DEFAULT_IMAGE_DIGEST` field in `launcher_docker_compose.yaml` with the latest MPC Docker image manifest digest retrieved from the contract.
+1. The **launcher** image digest (`{{LAUNCHER_IMAGE_HASH}}`)
+2. The **MPC node** image digest (`{{DEFAULT_IMAGE_DIGEST_HASH}}`)
 
-For details on how to verify this digest, see the section [MPC Node Image Upgrade](#mpc-node-image-upgrade).
+Both must be approved by the contract — otherwise the SHA256 of the rendered
+file will not match an entry in `allowed_launcher_compose_hashes` and the
+node's attestation will be rejected.
 
-Example digest value:
+#### Step 1 — discover the currently-allowed digests
 
 ```bash
-DEFAULT_IMAGE_DIGEST=sha256:331cfec941671ac343c52847e255eb36a280da65535d2a1e4d002c4c64686e19
+# MPC node digest — LATEST = FIRST element of the returned vector
+# (goes into DEFAULT_IMAGE_DIGEST in the rendered compose)
+near contract call-function as-read-only \
+  v1.signer-prod.testnet allowed_docker_image_hashes \
+  json-args '{}' network-config testnet now
+
+# Launcher digest — LATEST = LAST element (entries are returned in
+# insertion order, oldest first)
+# (goes into the launcher `image` line in the rendered compose)
+near contract call-function as-read-only \
+  v1.signer-prod.testnet allowed_launcher_image_hashes \
+  json-args '{}' network-config testnet now
 ```
 
-You can retrieve the allowed MPC Docker image manifest digest directly from the contract using the NEAR CLI. The latest allowed digest will appear first in the returned vector:
+For details on how to verify each digest before trusting it, see
+[MPC Node Image Upgrade](#mpc-node-image-upgrade) and
+[Launcher image voting](#launcher-image-voting).
+
+#### Step 2 — render the template
+
+> **If you plan to deploy via `deploy-launcher.sh`** (the script path
+> below): skip this step. Instead, uncomment and set the
+> `LAUNCHER_MANIFEST_DIGEST` and `MPC_MANIFEST_DIGEST` lines in your
+> `.env` file. The script renders the template internally; you do not
+> need to produce a `launcher_docker_compose.yaml` here.
+
+The manual render (needed if you deploy via the Dstack Web interface):
 
 ```bash
-near contract call-function as-transaction \
-  v1.signer-prod.testnet \
-  allowed_docker_image_hashes \
-  json-args '{}' \
-  prepaid-gas '100.0 Tgas' \
-  attached-deposit '0 NEAR' \
-  sign-as <your-account-id> \
-  network-config testnet \
-  sign-with-keychain \
-  send
+# Paste either form — with or without 'sha256:' prefix. The substitutions
+# below strip the prefix if present, so the rendered file always has
+# exactly one 'sha256:' per digest line.
+export LAUNCHER_IMAGE_HASH=<launcher digest from step 1>
+export MPC_IMAGE_HASH=<mpc-node digest from step 1>
+
+sed \
+  -e "s|{{LAUNCHER_IMAGE_HASH}}|${LAUNCHER_IMAGE_HASH#sha256:}|g" \
+  -e "s|{{DEFAULT_IMAGE_DIGEST_HASH}}|${MPC_IMAGE_HASH#sha256:}|g" \
+  crates/contract/assets/launcher_docker_compose.yaml.template \
+  > launcher_docker_compose.yaml
 ```
 
-The transaction output will include the latest MPC Docker image manifest digest.
+> **Note:** The rendered file is measured, and its SHA256 is part of the
+> remote attestation. Do not modify the rendered file further (including
+> whitespace) — only the two digest substitutions should differ from the
+> template.
 
-**Note:** The [launcher\_docker\_compose.yaml](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/launcher_docker_compose.yaml) is measured, and the measurements are part of the remote attestation. Make sure not to change any other fields or values (including whitespaces).
+### Required Ports and IP Allocation
 
-### Required Ports and Port Collisions
+MPC nodes bind a fixed set of ports (listed below). Two supported
+deployment shapes:
 
-MPC nodes use a fixed set of ports for communication and telemetry.
-This creates a limitation when trying to run both **mainnet** and **testnet** nodes on the same physical server, since both sets of nodes attempt to bind to the same ports.
-
----
-
-* **Single network per machine**: By default, running both mainnet and testnet on the same machine is not supported because of port collisions.
-* **Workaround with multiple IPs**: It is possible to run multiple nodes (e.g., one mainnet and one testnet) on the same host if the server is configured with **multiple external IP addresses**.
-  * Each node binds to the required ports (see below) on a separate IP.
-  * Additional IP/port routing on the local machine may be required.
+* **One node per host**: the host's primary public IP carries all
+  port forwards.
+* **Multiple nodes on one host** (mainnet + testnet): each CVM is
+  bound to its own public IP on the same host via dstack's
+  per-port-mapping `host_address`. See [Running multiple MPC nodes
+  on one host](./running-multiple-mpc-nodes-on-one-host.md).
 
 ---
 
@@ -713,14 +824,14 @@ This creates a limitation when trying to run both **mainnet** and **testnet** no
 | **3030** | Debug and telemetry collection                                         |
 | **8079** | Migration port                    |
 
-### Configuring and starting the MPC binary in a CVM
+### Configuring and Starting the MPC Binary in a CVM
 
 There are 2 ways to manage the VM that will run the MPC node.
 
-1\. Using the Web interface
-2\. Using a script.
+1. Using the Web interface
+2. Using a script.
 
-Note \- both methods provide the same functionality. The Web interface provides a more manual approach and control. While the script is useful for automating processes.
+Note - both methods provide the same functionality. The Web interface provides a more manual approach and control. While the script is useful for automating processes.
 
 #### **Using the Web interface**
 
@@ -728,28 +839,77 @@ Follow the [Dstack guide](https://github.com/Dstack-TEE/dstack?tab=readme-ov-fil
 
 Use the following custom settings for MPC:
 
-1. Launcher docker compose file \- provided above.
-2. VM HW setting: (use exactly those settings, since vCPU/Memory are measured )
-    vCPU number=8 , Memory \= 64GB, disk \= 500 GB
-3. Pre script \- empty.
-4. user-config \- provided above
-5. KMS=disable, Local Keyprovier=enabled, Tproxy=disable, public logs=enabled,public sysinfo=enabled,pin NUMA=disabled
-6. Port mapping: (taken from the list above)
-   Public 80:80 (main node to node communication port)
-   Public 24567:24567 (required for decentralized state sync)
-   Public 8080:8080 (required for collecting debug and telemetry information)
-   Local 3030:3030: (use public with you want the debug metrics to be available on the internet)
-   Local <dstack_agent_port>:8090: (required for access CVM information and container logs)
+1. Launcher docker compose file - provided above.
+2. VM HW setting (use exactly those settings, since vCPU/Memory are measured):
+    vCPU number=8, Memory = 64GB, disk = 500 GB
+3. Pre script - empty.
+4. user-config - provided above
+5. Toggles:
+   - KMS = disable
+   - Local Keyprovider = enabled
+   - Tproxy = disable
+   - public logs = enabled
+   - public sysinfo = enabled
+   - pin NUMA = disabled
+6. Port mapping (format: `<host_address>:<host_port>` → `<vm_port>`):
+   Public 0.0.0.0:80 → 80 (main node to node communication port)
+   Public 0.0.0.0:24567 → 24567 (required for decentralized state sync)
+   Public 0.0.0.0:8080 → 8080 (required for collecting debug and telemetry information)
+   Public 0.0.0.0:8079 → 8079 (required for the node-migration HTTP endpoint)
+   Local 127.0.0.1:3030 → 3030 (use a public host address if you want the debug metrics available on the internet)
+   Local 127.0.0.1:<dstack_agent_port> → 8090 (required for access CVM information and container logs)
+
+   The **host address** is the IP qemu binds each forward to. Single-node deployments use `0.0.0.0` to bind on every host interface. **Multi-node deployments** (mainnet + testnet on one host) use a specific public IP per CVM — see [Running multiple MPC nodes on one host](./running-multiple-mpc-nodes-on-one-host.md).
 
 7. Key Provider ID: (The MrEnclave for the sgx local key provider) 6b5ed02e549a1c30aaa8e3171a045f1f449b0017353ef595e78e39c348c98d01
 
-![CVM Web Page](./attachments/VMM_web_page.png)
+![VMM Web Page (1/2)](./attachments/VMM_web_page_deploy_1.png)
+
+![VMM Web Page (2/2)](./attachments/VMM_web_page_deploy_2.png)
 
 #### Using the script
 
-Use the script [deploy-launcher.sh](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/deploy-launcher.sh) described in
-[deploy-launcher-guide.md](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/deploy-launcher-guide.md)
-to configure and start your VM.
+The [`deploy-launcher.sh`](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/deploy-launcher.sh) helper in `deployment/cvm-deployment/` handles both the template render and the dstack-vmm deploy. End-to-end flow:
+
+1. **Pick or create an `.env` file** for the deploy. Either copy one of the
+   examples under `deployment/cvm-deployment/configs/` (e.g.
+   [`configs/sgx.env`](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/configs/sgx.env))
+   or use the default
+   [`default.env`](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/default.env).
+
+2. **Uncomment and set the two digest lines** in the `.env` file, using
+   the values discovered in Step 1 above:
+
+   ```env
+   LAUNCHER_MANIFEST_DIGEST=sha256:<launcher digest>
+   MPC_MANIFEST_DIGEST=sha256:<mpc node digest>
+   ```
+
+   These are shipped commented out by default. If left commented, the
+   script refuses to run and prints the on-chain discovery commands —
+   you can't accidentally deploy without setting them.
+
+3. **Place your `user-config.toml`** at the path
+   `USER_CONFIG_FILE_PATH=` points to (default: `user-config.toml` in
+   the same directory as `deploy-launcher.sh`).
+
+4. **Run the script**:
+
+   ```bash
+   cd deployment/cvm-deployment
+   ./deploy-launcher.sh \
+     --env-file <your-env-file> \
+     --base-path /path/to/meta-dstack/dstack
+   ```
+
+   The script will:
+   - Source the env file and validate that both digests are set + well-formed (`sha256:<64 hex>`).
+   - Render the contract template inline with the two digests. The result lives in a tempfile — there is **no persistent** `launcher_docker_compose.yaml` on disk afterwards. (If you need one for `attestation-cli` later, see the [manual render snippet](#step-2--render-the-template) above.)
+   - Generate `app-compose.json`.
+   - Prompt for confirmation, then deploy the CVM via `vmm-cli`.
+
+Full flag reference and `.env` field-by-field documentation:
+[deploy-launcher-guide.md](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/deploy-launcher-guide.md).
 
 ### Accessing MPC (or Launcher) Docker Logs
 
@@ -794,18 +954,17 @@ http://localhost:17190
 
 ![CVM Web Page](./attachments/CVM_web_page.png)
 
-### Retrieve public keys from the MPC node
+### Retrieve Public Keys from the MPC Node
 
 There are 2 keys that should be retrieved from node.
 
-* P2P (near\_p2p\_public\_key)- this key is used by the nodes to authenticate with one another. This key needs to be registered on the contract. (see details below)
-* Node Account Key (near\_signer\_public\_key) \- this key is used by the node to issue operations such as "vote\_reshared".
-  This key needs to be added to the Near account that was created in the step above.
+* P2P (`near_p2p_public_key`) - this key is used by the nodes to authenticate with one another. This key needs to be registered on the contract (see details below).
+* Node Account Key (`near_signer_public_key`) - this key is used by the node to issue operations such as `vote_reshared`.
+  This key needs to be added to the NEAR account that was created in the step above.
 
-### Retrieve the node account key and P2P key
+### Retrieve the Node Account Key and P2P Key
 
-In order to retrieve the node account key and the P2P key. On your server
-Call the HTTP end point [http://localhost:8080/public\_data](http://localhost:8080/public_data)  \- and search for near\_signer\_public\_key and near\_p2p\_public\_key
+To retrieve the node account key and the P2P key, call the HTTP endpoint [http://localhost:8080/public_data](http://localhost:8080/public_data) from your server and search for `near_signer_public_key` and `near_p2p_public_key`.
 
 ```json
 {"near_signer_public_key":"ed25519:B2JvaYmgzfXsvCxrqd4nBrBt8jo9ReqUZatG3dAZEBv5","near_p2p_public_key":"ed25519:5SiS1SJiABiM79Yt6uEjMabAT9UguQY9hSyF7xfHLGYt"}
@@ -848,21 +1007,16 @@ cargo install --path crates/attestation-cli
 1. **Allowed MPC Docker image manifest digest** — The SHA256 manifest digest of the approved MPC Docker image. You can query it from the contract:
 
    ```bash
-   near contract call-function as-transaction \
-     v1.signer-prod.testnet \
-     allowed_docker_image_hashes \
-     json-args '{}' \
-     prepaid-gas '100.0 Tgas' \
-     attached-deposit '0 NEAR' \
-     sign-as <your-account-id> \
-     network-config testnet \
-     sign-with-keychain \
-     send
+   near contract call-function as-read-only \
+     v1.signer-prod.testnet allowed_docker_image_hashes \
+     json-args '{}' network-config testnet now
    ```
 
    The latest allowed manifest digest will appear first in the returned vector.
 
-2. **Launcher docker-compose file** — The same `launcher_docker_compose.yaml` you prepared in the [Preparing a Docker Compose File](#preparing-a-docker-compose-file) section. The CLI computes its SHA256 hash and compares it against the hash attested by the node.
+2. **Launcher docker-compose file** — A `launcher_docker_compose.yaml` rendered from the contract template. The CLI computes its SHA256 hash and compares it against the hash attested by the node.
+
+   If you deployed via `deploy-launcher.sh` (script path), the rendered compose was used in a tempfile and removed on exit — you don't have a persistent copy. Materialize one now by running the manual render block from [Preparing a Docker Compose File → Step 2](#step-2--render-the-template) (the `sed …` snippet) with the same `LAUNCHER_MANIFEST_DIGEST` and `MPC_MANIFEST_DIGEST` you deployed with. The output `launcher_docker_compose.yaml` is what the CLI needs below.
 
 #### Run the verification
 
@@ -949,7 +1103,7 @@ This section shows how to add the MPC node's public key (from the previous secti
 #### Example Command
 
 ```bash
-./target/release/near account add-key $ACCOUNT_ID \
+near account add-key $ACCOUNT_ID \
   grant-function-call-access \
   --allowance unlimited \
   --contract-account-id $MPC_CONTRACT_ID \
@@ -978,7 +1132,7 @@ NETWORK="testnet"   # or "mainnet"
 METHOD_NAMES="respond,respond_ckd,respond_verify_foreign_tx,vote_pk,start_keygen_instance,vote_reshared,vote_foreign_chain_policy,start_reshare_instance,vote_abort_key_event_instance,verify_tee,submit_participant_info,conclude_node_migration"
 
 # === Add Access Key ===
-./target/release/near account add-key $ACCOUNT_ID \
+near account add-key $ACCOUNT_ID \
   grant-function-call-access \
   --allowance "$ALLOWANCE" \
   --contract-account-id $MPC_CONTRACT_ID \
@@ -996,7 +1150,7 @@ METHOD_NAMES="respond,respond_ckd,respond_verify_foreign_tx,vote_pk,start_keygen
 After sending the transaction, check that the new key was added:
 
 ```bash
-./target/release/near account list-keys $ACCOUNT_ID \
+near account list-keys $ACCOUNT_ID \
   network-config $NETWORK \
   now
 ```
@@ -1007,7 +1161,7 @@ After the MPC node has been deployed and its NEAR account key successfully added
 
 Once these steps are complete, the operator should request all other operators to vote for adding the new MPC node by calling the **vote_new_parameters** method.
 
-## Wait for NEAR Indexer to Sync
+### Wait for NEAR Indexer to Sync
 
 Wait until the NEAR Indexer has completed state sync. This process can take several hours. You can check the progress in the Docker container logs or via the metrics endpoint:
 
@@ -1025,10 +1179,67 @@ Once the MPC node is fully synced, it will call `submit_participant_info` to sub
 
 If the node’s key has not been added to the account, this operation will fail. In that case, the node will retry the operation in a loop.
 
-> **Note:** This behavior is not yet implemented. See issue [#1069](https://github.com/near/mpc/issues/1069).
-> **TBD [#1079]:** Add screenshot/logs/cURL example for detecting when the MPC node has submitted attestation information.
 > **Note:** Calling this method will incur a cost (TBD, XXX NEAR). Ensure this amount is available in your account.
 > _(TBD [#903](https://github.com/near/mpc/issues/903) – confirm exact cost)_
+
+#### Verifying the attestation was accepted
+
+The MPC node emits no explicit "submitted" log line. Once the verification poll observes the attestation on-chain it logs `INFO mpc_node::indexer::tx_sender: node found dstack attestation on chain attestation_age=... attestation_is_fresh=true`, but the authoritative check is on-chain.
+
+First, list every TEE-attested node by calling `get_tee_accounts` (no args) and confirm your `account_id` and `tls_public_key` are present:
+
+```bash
+near contract call-function as-read-only \
+  v1.signer-prod.testnet get_tee_accounts \
+  json-args '{}' network-config testnet now
+```
+
+Example response (truncated):
+
+```jsonc
+[
+  {
+    "account_id": "n1-multichain.testnet",
+    "account_public_key": "ed25519:3DWAWiStjQsaHwqVR91u8viuRPf2qtYpQzQHw16y5V9s",
+    "tls_public_key": "ed25519:14q1d9LYaVUWRuyJieGGiAjAMj3KxNJeNuLS6CjUojp9"
+  }
+  // ...
+]
+```
+
+To inspect the stored `VerifiedAttestation` for your node, call `get_attestation` with your node's TLS public key (the P2P key retrieved in [Retrieve the Node Account Key and P2P Key](#retrieve-the-node-account-key-and-p2p-key)):
+
+```bash
+near contract call-function as-read-only \
+  v1.signer-prod.testnet get_attestation \
+  json-args '{"tls_public_key":"ed25519:<your-tls-key>"}' \
+  network-config testnet now
+```
+
+The response shape tells you what the contract accepted:
+
+- `{ "Dstack": { ... } }` — a real TEE attestation. This is what a production operator should see.
+- `{ "Mock": "Valid" }` — a mock attestation. Acceptable on testnet during the [transition phase](#transition-phase), but means the node is **not** running in a TEE. Many existing testnet entries are in this state.
+- `null` — the node has not yet submitted, or the submission is failing — see [`submit_participant_info` failures](#submit_participant_info-failures) below.
+
+Example `Dstack` response from `v1.signer-prod.testnet` for an existing participant:
+
+```json
+{
+  "Dstack": {
+    "expiry_timestamp_seconds": 1779618069,
+    "launcher_compose_hash": "efb095f3e9adfeb04d637813a838fa666778b9915d752cfd796ae2a254fe705f",
+    "measurements": {
+      "key_provider_event_digest": "61ce56b6be756a9e45af7715b13c15040a4e6090cc740be24e2cc02e33b4fb53ae4e3c945c9af83e2a26c6d5efa414a8",
+      "mrtd": "f06dfda6dce1cf904d4e2bab1dc370634cf95cefa2ceb2de2eee127c9382698090d7a4a13e14c536ec6c9c3c8fa87077",
+      "rtmr0": "e673be2f70beefb70b48a6109eed4715d7270d4683b3bf356fa25fafbf1aa76e39e9127e6e688ccda98bdab1d4d47f46",
+      "rtmr1": "b598fde9491427341bc4683b75d10d3e36770af3a36a6954d8b6b7b22aa66358f13e1f172e51b7d6e6710d99a8d8532f",
+      "rtmr2": "c812d42bfff1c75382e91a37c867ab117b97eb5e8d6797488928ea38e5fd38b5ed2f87d9613d392507f1c3af94657c93"
+    },
+    "mpc_image_hash": "51ed33bb2d62c7aa8ba1a56d37550e415cf29d6a2c656ef35fa89c1ab9c0604d"
+  }
+}
+```
 
 ### Voting: (vote_new_parameters)
 
@@ -1178,9 +1389,50 @@ To generate a voting command, follow these steps:
    ```
 
 After all participants have voted, the contract will move to a resharing phase.
-You can see this in the node logs (TBD) [#906](https://github.com/near/mpc/issues/906)
 
-And when the resharing has finished look for… (TBD) [#906](https://github.com/near/mpc/issues/906)
+**When resharing starts.** Each node detects the contract state change and logs:
+
+```
+INFO mpc_node::coordinator: A resharing started.
+INFO mpc_node::coordinator: Starting key resharing.
+INFO mpc_node::coordinator: Resharing process is: Some(ResharingContractState { ... })
+```
+
+**During resharing.** Each domain runs its own attempt. Per-attempt progress lines (in order):
+
+```
+INFO mpc_node::key_events: Key resharing attempt KeyEventId { epoch_id: EpochId(1), domain_id: DomainId(0), attempt_id: AttemptId(0) }: starting key resharing.
+INFO mpc_node::providers::<scheme>::key_resharing: Key resharing completed
+INFO mpc_node::key_events: Key resharing attempt KeyEventId { ... }: committing keyshare.
+INFO mpc_node::key_events: Key resharing attempt KeyEventId { ... }: sending vote_reshared transaction.
+INFO mpc_node::key_events: Key resharing attempt KeyEventId { ... } completed successfully.
+```
+
+Where `<scheme>` is `ecdsa`, `eddsa`, or `ckd`. The `epoch_id` is the resharing's new epoch; `domain_id` identifies which keyspace (each gets its own attempt).
+
+**When resharing finishes.** Once the contract leaves the Resharing state, each node logs:
+
+```
+INFO mpc_node::coordinator: Concluded resharing state.
+```
+
+You can also confirm on-chain (replace `v1.signer-prod.testnet` / `testnet` with `v1.signer` / `mainnet` on mainnet):
+
+```bash
+near contract call-function as-read-only \
+  v1.signer-prod.testnet state \
+  json-args {} network-config testnet now
+```
+
+The response should show `Running` (not `Resharing`) and a new `keyset.epoch_id`.
+
+**If resharing fails.** An attempt that times out or errors logs:
+
+```
+ERROR mpc_node::key_events: Key resharing attempt KeyEventId { ... } failed: <err>; sending vote_abort_key_event_instance
+```
+
+The contract will retry with a fresh attempt; repeated failures need investigation.
 
 ## Upgrades
 
@@ -1199,11 +1451,11 @@ This is the most common upgrade. When a new MPC node version is released, operat
 
 **Steps:**
 
-1. Verify the Docker image (see [Image/code inspection](#imagecode-inspection)).
+1. Verify the Docker image (see [Image/Code Inspection](#imagecode-inspection)).
 2. Vote for the new manifest digest in the contract.
 3. Restart the CVM. The launcher will pull the new image by manifest digest automatically.
 
-### Image/code inspection
+### Image/Code Inspection
 
 The following steps allow you to inspect the code that was used to build the
 docker image. Let's assume you want to vote for a docker image with tag
@@ -1242,16 +1494,20 @@ The `node manifest digest` is what you vote for. When submitting the `code_hash`
 
 > **Important:** Each operator is responsible for verifying that the image hashes being voted for correspond to the intended Git commit, and for performing their own due diligence on the code.
 
-### Voting for the MPC image hash
+### Voting for the MPC Image Hash
 
 Each participant submits a vote for the new MPC Docker image **manifest digest**.
 A **threshold** number of participant votes is required for the vote to pass.
 
+Set `MANIFEST_DIGEST` to the SHA-256 hex digest (without the `sha256:` prefix), then send the vote:
+
 ```bash
+MANIFEST_DIGEST=331cfec941671ac343c52847e255eb36a280da65535d2a1e4d002c4c64686e19
+
 near contract call-function as-transaction \
   v1.signer-prod.testnet \
   vote_code_hash \
-  json-args '{"code_hash": "<MANIFEST_DIGEST>"}' \
+  json-args "{\"code_hash\": \"$MANIFEST_DIGEST\"}" \
   prepaid-gas '100.0 Tgas' \
   attached-deposit '0 NEAR' \
   sign-as <your-account-id> \
@@ -1260,23 +1516,41 @@ near contract call-function as-transaction \
   send
 ```
 
-The **MANIFEST_DIGEST** argument must be provided as an SHA-256 hex digest (without the `sha256:` prefix).
+> **Note:** There is no `vote_remove_code_hash`. Once a successor hash is voted in, the previous hash remains valid for a 7-day grace period and then auto-expires — so unlike launcher and OS-measurement voting there is no explicit remove command.
 
-For example, for the manifest digest `sha256:331cfec9...`:
+#### Query allowed MPC image hashes
 
 ```bash
-MANIFEST_DIGEST=331cfec941671ac343c52847e255eb36a280da65535d2a1e4d002c4c64686e19
+near contract call-function as-read-only \
+  v1.signer-prod.testnet \
+  allowed_docker_image_hashes \
+  json-args '{}' \
+  network-config testnet \
+  now
 ```
 
-TBD [#908](https://github.com/near/mpc/issues/908) Add here voting procedure.
+Returns the list of currently-accepted image hashes, most recent first.
 
-### Update the MPC node
+#### Query MPC image hash votes
+
+```bash
+near contract call-function as-read-only \
+  v1.signer-prod.testnet \
+  code_hash_votes \
+  json-args '{}' \
+  network-config testnet \
+  now
+```
+
+Shows per-participant votes so you can see how many more are needed to reach threshold.
+
+### Update the MPC Node
 
 After voting has finished, the MPC node will detect the new approved manifest digest on the contract and save it to a secure location inside the CVM.
 
-Following the digest update, upgrade the MPC node:
-1. (Optional) Confirm the manifest digest shown on DockerHub for the image tag matches the hash you voted for.
-2. Restart the CVM. The launcher will pull the new image by manifest digest automatically.
+Restart the CVM (see [CVM management](#cvm-management)). The launcher will pull the new image by manifest digest automatically, verify it, and re-attest to the contract.
+
+> You can see the image update and re-sync in the node logs — TBD [#910](https://github.com/near/mpc/issues/910).
 
 ## Launcher / CVM Upgrade
 
@@ -1292,7 +1566,7 @@ For full design details, see the [CVM Upgrades section in the TEE design doc](se
 4. Operator migrates key shares from the old CVM to the new one using the [migration service](node-migration-guide.md).
 5. After all operators have migrated, participants vote to remove the old launcher manifest digest and/or OS measurements.
 
-### Launcher image voting
+### Launcher Image Voting
 
 #### Launcher image/code inspection
 
@@ -1381,7 +1655,7 @@ near contract call-function as-read-only \
   now
 ```
 
-### OS measurement voting
+### OS Measurement Voting
 
 OS measurements (MRTD, RTMR0-2, key-provider event digest) identify the CVM environment. Participants can vote to approve new measurement sets, enabling OS/Dstack upgrades without contract redeployment.
 
@@ -1441,102 +1715,132 @@ near contract call-function as-read-only \
   now
 ```
 
-### Deploy new CVM and migrate key shares
+### Deploy New CVM and Migrate Key Shares
 
 After the new launcher manifest digest and/or OS measurements are approved, deploy a new CVM with the updated configuration and migrate key shares from the old node. Both old and new configurations are accepted by the contract during the migration period.
 
 For the migration procedure, see the [node migration guide](node-migration-guide.md) and [migration service design](migration-service.md).
 
-### Remove old launcher manifest digest / OS measurements
+### Remove Old Launcher Manifest Digest / OS Measurements
 
 After all operators have migrated to the new CVM, participants should vote to remove the old launcher manifest digest using `vote_remove_launcher_hash` and/or old OS measurements using `vote_remove_os_measurement`. This requires **all** participants to vote, ensuring no node is still running with the old configuration.
 
-## Updating the CVM `user-config.toml` with new image information
+## CVM management
 
-If the image repository changes, update the `image` field in `user-config.toml`:
+Common operations on a deployed CVM: **stop**, **start**, and **update `user-config.toml`**.
 
-**Example:**
+You usually don't need to edit `user-config.toml` after initial deployment. However, a future MPC release may introduce new `user-config.toml` fields; if so, the release notes will call it out.
 
-```toml
-[launcher_config]
-image_reference = "nearone/mpc-node"
-```
+### Via Web UI
 
-The image version is determined by the manifest digest from the contract (not by a tag). You do not need to update the config for routine image upgrades — just vote for the new manifest digest and restart the CVM.
-
----
-
-### Steps
-
-1. **Stop the CVM**
-2. **Update `user-config.toml`** with the new values
-3. **Start the CVM**
-
----
-
-### Options for performing the update
-
-#### Manually Via Web UI
-
-* Stop the CVM from the WebUI.
-* Press the **update** button
-* Update The config file and press **Upgrade**
-* Start the CVM
-
+| Operation | Action |
+|-----------|--------|
+| Stop the CVM | Press **Stop** |
+| Start the CVM | Press **Start** |
+| Update `user-config.toml` | Stop the CVM → press **update** → upload the new file → press **Upgrade** → start the CVM |
 
 ![](./attachments/cvm_options.png)
 
 ![](./attachments/config_upgrade.png)
 
+### Via Command Line
 
-
-#### Via Command Line
-
-* See the [VMM CLI user guide](https://github.com/Dstack-TEE/dstack/blob/master/docs/vmm-cli-user-guide.md).
-* The CLI script is located at:
-  `meta-dstack/dstack/vmm/src/vmm-cli.py`
+See the [VMM CLI user guide](https://github.com/Dstack-TEE/dstack/blob/master/docs/vmm-cli-user-guide.md). The CLI script is at `meta-dstack/dstack/vmm/src/vmm-cli.py`.
 
 First, define environment variables (once per shell session):
 
 ```bash
-
 export VMM_URL=http://127.0.0.1:11100 # change to your port
 export VMM_CLI_PATH="meta-dstack/dstack/vmm/src/vmm-cli.py" # change to your meta-dstack location
 ```
 
-Then you can use `$VMM_CLI` for all commands:
+Then:
 
 ```bash
-# 1. Enumerate and find your VM ID
+# Enumerate and find your VM ID
 python $VMM_CLI_PATH --url $VMM_URL lsvm
 
-# 2. Gracefully stop the VM
+# Stop the CVM
 python $VMM_CLI_PATH --url $VMM_URL stop <vm-id>
 
-# 3. Update user-config
-python $VMM_CLI_PATH --url $VMM_URL update-user-config <vm-id> ./new-user-config.txt
+# Update user-config (only if needed)
+python $VMM_CLI_PATH --url $VMM_URL update-user-config <vm-id> ./new-user-config.toml
 
-# 4. Start the VM
+# Start the CVM
 python $VMM_CLI_PATH --url $VMM_URL start <vm-id>
 ```
 
-#### Restart the CVM
-
-If not done in the previous step, stop and start the CVM.
-
-The new MPC docker binary should be automatically pulled from docker hub, verified and launched, and a remote attestation will be sent to the contract.
-
-You can see in the MPC node's logs (TBD) [#910](https://github.com/near/mpc/issues/910)that the image was updated, and that node has synced again. (TBD, [#910](https://github.com/near/mpc/issues/910) add logs).
-
-## Trouble shooting
+## Troubleshooting
 
 TBD [#912](https://github.com/near/mpc/issues/912)
-Reviewers \- please add here more scenarios (with or without solutions)
+Reviewers — please add here more scenarios (with or without solutions)
 
 * do we have logs that indicate the node version/hash?
 * How to see what MPC node hash is expected by the launcher (docker-compose v.s file on disk)
-* Recovery \- how to erase the indexer state (e.g data folder)
+* Recovery — how to erase the indexer state (e.g data folder)
 * …..
+
+### `submit_participant_info` failures
+
+When the contract rejects a submission the node retries on a backoff and logs a generic line every attempt:
+
+```
+ERROR periodic_attestation_submission: mpc_node::tee::remote_attestation:
+  failed to submit attestation
+  cause=attestation submission was not executed backoff_duration=60s
+```
+
+This line **doesn't tell you why** — `cause` is one of `attestation submission was not executed` (most common), `attestation submission has unknown response`, or `failed to submit transaction` (lower-level RPC send failure). None of these carry the underlying reason. The actual failure shows up in one of three places.
+
+#### 1. Client-side pre-flight WARN — in the node logs
+
+Before submitting, the node runs a partial pre-flight check against the contract's allowed-image and allowed-launcher-compose lists (boot measurements are checked against a compiled-in default, so measurement-related rejections only appear on-chain — see section 3). Failures are logged as a non-blocking warning (the node still submits, and the contract will reject for the same reason):
+
+```
+WARN periodic_attestation_submission: mpc_node::tee::remote_attestation:
+  Attestation is not valid: custom error: `the allowed mpc image hashes list is empty`
+```
+
+Common messages:
+
+- ``custom error: `the allowed mpc image hashes list is empty` `` — the contract has no allowed image hashes voted in yet. Vote yours in (see [Voting for the MPC image hash](#voting-for-the-mpc-image-hash)).
+- ``custom error: `MPC image hash 0x... is not in the allowed hashes list` `` — your image hash isn't voted in. Same fix.
+- ``custom error: `the allowed mpc launcher compose hashes list is empty` `` / ``custom error: `MPC launcher compose hash 0x... is not in the allowed hashes list` `` — same, for the launcher compose hash (see [Launcher image voting](#launcher-image-voting)).
+- **`the attestation certificate with timestap ... has expired since ...`** — the quote's certificate chain has expired. The node regenerates on the next tick; if it keeps failing, your PCCS endpoints are stale (see [Customizing PCCS endpoints](#customizing-pccs-endpoints-optional)).
+
+#### 2. NEAR runtime / pre-execution errors — in the node logs
+
+For errors caught before the transaction executes (account balance, nonce, access key, etc.) the node logs them separately from `tx_sender`:
+
+```
+ERROR mpc_node::indexer::tx_sender: Failed to forward transaction
+  SubmitParticipantInfo(...) err=unexpected ProcessTxResponse:
+  InvalidTx(LackBalanceForState { signer_id: ..., amount: ... })
+```
+
+The error after `err=` is the NEAR runtime error. Common ones:
+
+- **`InvalidTx(LackBalanceForState { signer_id, amount })`** — the node's account doesn't have enough NEAR to cover the storage-staking threshold the contract is about to write. Top up the account by at least `amount` yoctoNEAR.
+- **`InvalidTx(InvalidAccessKey(...))`** — the node's access key was not added to the account, was removed, or doesn't grant the `submit_participant_info` method.
+- **`InvalidTx(InvalidNonce { .. })` / `InvalidTx(Expired)`** — clock or block-hash drift; usually transient.
+
+#### 3. Contract-rejection errors — only visible on the explorer / RPC
+
+If the transaction reaches execution and the contract panics, the node logs only the generic retry line above; the actual message lives in the transaction receipt. Find the tx on `https://testnet.nearblocks.io/address/<your-account>` and open the failed `submit_participant_info` call — the error appears under the action's status / logs. The contract wraps the attestation-side error like this:
+
+```
+Invalid TEE Remote Attestation: TeeQuoteStatus is invalid:
+  the submitted attestation failed verification, reason: Custom("...")
+```
+
+The `reason` is the same `VerificationError` the client-side WARN reports (see section 1) — for example `Custom("the allowed mpc image hashes list is empty")`. Errors that **only** surface on-chain (because they're checked against the contract's allowed-measurements list, the contract's deposit logic, or the contract's caller assertion):
+
+- **`MeasurementsNotAllowed`** — your boot measurements (MRTD / RTMR0–2) are not in the contract's allowed set. Vote them in (see [OS measurement voting](#os-measurement-voting)).
+- **`EmptyMeasurementsList`** — the contract has no allowed measurements yet; the first set must be voted in before any node can attest.
+- **`Attached deposit is lower than required. Attached: X, required: Y`** — first-time joiners must attach enough yoctoNEAR for storage; the node attaches `0`, so call `submit_participant_info` manually with `--deposit` once. Exact amount tracked in [#903](https://github.com/near/mpc/issues/903).
+- **`Caller is not the signer account.`** — the access key used to sign does not match the node's `my_near_account_id`.
+
+If you see no error logs at all but `get_attestation` still returns `null`, the node has not yet generated a quote. Check `mpc_tee_attestation_attempts_total` on the `/metrics` endpoint.
 
 ## Transition phase {#transition-phase}
 
@@ -1556,7 +1860,7 @@ The two MPC-specific steps below cover what's needed beyond the stock
 install: replacing the unusable shipped TLS cert, and pointing the
 node at the local PCCS with cert pinning.
 
-### Replace the stock TLS certificate
+### Replace the Stock TLS Certificate
 
 The cert that ships with `sgx-dcap-pccs` is X.509 v1, has no Subject
 Alternative Name, and is short-dated. Modern TLS clients — including
@@ -1604,7 +1908,7 @@ openssl x509 -req -in pccs-leaf.csr \
 openssl verify -CAfile pccs-rootCA.crt pccs-leaf.crt    # → OK
 ```
 
-### Install the new cert and restart PCCS
+### Install the New Cert and Restart PCCS
 
 ```bash
 sudo cp pccs-leaf.crt /opt/intel/sgx-dcap-pccs/ssl_key/file.crt
@@ -1623,10 +1927,11 @@ echo | openssl s_client -showcerts -connect 127.0.0.1:8081 \
 #   issuer=CN = PCCS Local Root CA
 ```
 
-### Configure the MPC node
+### Configure the MPC Node
 
-In `user-config.toml`, pin the **root CA** (not the leaf — the server
-presents the leaf, which chains to the root):
+In `user-config.toml`, add the **root CA** as a trust anchor (default
+public-CA roots remain active). The server presents the leaf, which
+chains to this root:
 
 ```toml
 [[mpc_node_config.pccs_endpoints]]
@@ -1648,3 +1953,7 @@ Disables all TLS certificate validation (cert chain *and* hostname).
 The startup log emits a clearly-labeled WARN when this mode is active.
 Acceptable for local-host bring-up before you've provisioned a proper
 cert; not recommended for any persistent setup.
+
+The code does **not** enforce loopback-only — `insecure` disables TLS
+for any URL configured. It is the operator's responsibility to use this
+value correctly. The startup WARN is the only guardrail.

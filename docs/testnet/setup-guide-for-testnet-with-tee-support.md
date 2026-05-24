@@ -140,6 +140,8 @@ near account create-account sponsor-by-faucet-service $SAM_ACCOUNT autogenerate-
 
 ### Update Bootnodes and IPs
 
+> See [Running multiple MPC nodes on one host](../running-multiple-mpc-nodes-on-one-host.md) for the general framing of why each node needs its own host IP.
+
 Run this command to get the current testnet bootnodes.
 **Important:** Boot nodes must not contain duplicate addresses or peer IDs, as duplicates will cause the node to crash on startup. The command below deduplicates automatically:
 
@@ -404,10 +406,16 @@ near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  allowed_docker
 ## Step 8: Vote Launcher Image Hash on Contract
 
 The launcher image hash must also be voted in for compose hashes to be derived and attestation to work.
-Extract it from the compose file:
+
+The previous steps had you set `LAUNCHER_MANIFEST_DIGEST` in `deployment/testnet/*.env` (uncommented in step 6 before running `deploy-launcher.sh`). The `.env` file is sourced by `deploy-launcher.sh` but not by your interactive shell, so re-export the value here. Either re-source the env file, or set the variable directly:
 
 ```bash
-export LAUNCHER_HASH=$(grep -E 'nearone/mpc-launcher@sha256:' deployment/cvm-deployment/launcher_docker_compose.yaml | head -n1 | sed -E 's/.*sha256:([0-9a-f]{64}).*/\1/')
+# Option A: pull from the env file you already edited
+set -a; source deployment/testnet/frodo.env; set +a   # or sam.env — both should match
+export LAUNCHER_HASH="${LAUNCHER_MANIFEST_DIGEST#sha256:}"
+
+# Option B: paste the same hex you put in the .env
+export LAUNCHER_HASH=<launcher digest (hex, no sha256: prefix)>
 ```
 
 ### Frodo votes

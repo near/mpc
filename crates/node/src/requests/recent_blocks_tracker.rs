@@ -1,22 +1,27 @@
 use derive_more::Into;
 use near_indexer_primitives::types::BlockHeight;
 use near_indexer_primitives::CryptoHash;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fmt::Debug;
 use std::ops::Add;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 
 /// Tracks the topology of the recent blocks, using the blocks given by the indexer.
 ///
 /// This class provides two important functionalities:
-///  - For any given block, it classifies it into one of the categories in `CheckBlockResult`.
-///    See the documentation of that enum for the classifications.
 ///  - Converts a stream of optimistic blocks from the indexer into a stream of finalized
-///    blocks. The content of each block in the finalized stream is specified via the `T`
-///    type parameter.
+///    blocks.
+///  - For each block added via `add_block`, it returns a `Weak<AtomicBlockStatus>` that can be
+///    used to observe that block's current `BlockStatus` (non-canonical, canonical or final).
 ///
-/// We have certain expectations of the order of blocks that come from the indexer.
+/// This class provides the following invariants (provided the requirements listed below are met):
+///  - A block that is final will never be reverted to non-final;
+///  - Any block that is currently tracked has the potential to become final. In other words,
+///    the tracker removes non-final blocks of height less or equal to the latest final height.
+///
+/// In order to guarantee above invariants, we have certain expectations of the order of blocks
+/// that come from the indexer.
 /// First, let's define a partial order for blocks. For any two blocks A and B:
 ///  - If A is a strict ancestor of B then A < B;
 ///  - If B is a strict ancestor of A then B < A;
@@ -33,20 +38,64 @@ use std::sync::{Arc, Mutex, Weak};
 ///    height 12 and then another block of height 10 that belongs to a different fork.
 ///  - The indexer, upon startup, may start giving blocks from any position in the blockchain,
 ///    including giving blocks from multiple forks without giving us any common parents.
+///  - The indexer may skip block heights, meaning a block at height h can have a child at height
+///    h+m, for any m>0.
 ///
 /// Given these expectations, we provide the aforementioned functionalities by tracking the
 /// following:
 ///  - We keep a fixed-sized window of recent blocks, i.e. all blocks with height >= H - W + 1,
-///    where H is the height of the latest block we have *heard of*, and W is the window size.
-///    - "Heard of" means the maximum of what we have seen, as well as what others have told us.
+///    where H is the height of the latest block we have seen, and W is the window size.
 ///  - We keep track of the canonical chain as well as the final chain.
 ///
 /// Despite the assumptions we make on the indexer's behavior, this class guarantees not to panic
 /// even if the indexer violates these assumptions in arbitrary ways.
 ///
-/// Note: The use of Arc is a little unfortunate. Logically we only need Rc, but this code needs
-/// to work in futures, and Rc is not Send. So we use Arc instead.
-pub struct RecentBlocksTracker<T: Clone + 'static> {
+/// Note that the `RecentBlocksTracker` is removing blocks aggressively. A block is removed if one
+/// of the following conditions is met:
+///  - The block sits on a dead fork and can't ever be finalized;
+///  - The block is outside of the recency window `RecentBlocksTracker::window_size`
+///
+/// Cleanup takes place after every `add_block` in two methods:
+///  - `maybe_update_final_head` owns **dead-fork cleanup**. When a new final block is established,
+///    every subtree that can't be part of the final chain — non-final siblings of the final chain
+///    at any height, and any `root_children` subtree not on the final chain with height ≤ the new
+///    final-head height — is dropped. This is the "Dead-fork prune at X" annotation in
+///    the picture below.
+///  - `prune_old_blocks` owns **recency-window prune**. Any node below `min_height_to_keep` is
+///    dropped; its in-window descendants become new roots. This is the "Recency window prune"
+///    annotation below.
+///
+/// **Example.** If block 11 is the latest final block, both cleanups together produce the picture
+/// below. `root_1`, `root_2`, and the `(8)`/`(10)` subtrees are dropped as dead forks; `(4F)` is
+/// dropped by the recency window; `(7F)` becomes the new single root of the kept tree.
+///
+/// ```text
+///  ---------------------------┐
+///     These blocks will       ┆
+///     never be included       ┆
+///                             ┆
+///   root 1   root 2           ┆ root 3
+///   (1)                       ┆              Dead-fork prune at (1)
+///    │        (2)             ┆              Dead-fork prune at (2)
+///   (3)        │              ┆
+///    │         │              ┆ (4F)         Recency window prune node (4F)
+///  ┌─┴─┐       │       ┌──────────┴─┐
+/// ════════════════════════════════════════ ← cutoff (h ≥ min_height_to_keep)
+/// (5)  │       │       │      ┆     │
+///  │   │       │       │      ┆    (7F)      (7F) becomes new root
+///  │   │       │       │   ┌────────┴─┐
+///  │  (6)      │       │   │  ┆       │
+///  │   │       │       │  (8) ┆       │      Dead-fork prune at (8)
+///  │   │       │       │   │  ┆     (9F)
+///  │   │       │      (10) │  ┆       │      Dead-fork prune at (10)
+///  │   │       │       │   │  ┆     (11F)    ← latest final block height
+///  │   │       │       │   │  ┆       │
+///  │   │       │       │   │  ┆     (12)
+///  │   │       │      (13) │  ┆       │
+///  │   │       │       │   │  ┆       │
+///  ..  ..      ..      ..  .. ┆       ..
+/// ```
+pub struct RecentBlocksTracker {
     window_size: u64,
     /// By "root", we mean the blocks whose parents we don't know or are older than the window.
     /// The children of the root are the earliest blocks we are keeping who do not have any order
@@ -54,62 +103,105 @@ pub struct RecentBlocksTracker<T: Clone + 'static> {
     root_children: Vec<Arc<BlockNode>>,
     /// The head of the canonical chain. This is the chain of the highest-height block we've seen.
     /// This may be None if we have no block at all.
-    canonical_head: Option<Arc<BlockNode>>,
+    canonical_head: Weak<BlockNode>,
     /// The head of the final chain. This is determined by recovering information from the
     /// last_final_block fields of the block headers given to us. This may be None if we have not
     /// seen any final blocks yet.
     final_head: Option<Arc<BlockNode>>,
-    /// The maximum height available to us. This is the maximum height of the blocks we have seen,
-    /// or have heard of.
+    /// The maximum height of any block we have been given via `add_block`.
     maximum_height_available: BlockHeight,
     /// Maps block hashes to their nodes in the tree.
     hash_to_node: HashMap<CryptoHash, Arc<BlockNode>>,
-    /// Maps block hashes to their content; this is to provide the stream of finalized blocks.
-    /// Technically, instead of a hashmap we could put this in the node, but that would clutter
-    /// the code by requiring the T type parameter everywhere.
-    node_to_content: HashMap<CryptoHash, T>,
+    /// Counter incremented inside `add_block` whenever blocks transition to final.
+    /// The caller selects which prometheus counter to wire here (per request-type).
+    /// TODO(#3316): remove this argument
+    finalized_blocks_indexed_metric: &'static prometheus::IntCounter,
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum CheckBlockResult {
-    /// The block is older than the recent window of blocks we keep.
-    OlderThanRecentWindow,
-    /// The block is within the recent window, and also finalized by the blockchain
-    /// (it is an ancestor (including self) of the latest final block).
-    RecentAndFinal,
-    /// The block is recent enough, but belongs to a different fork so has no chance
-    /// of being included in any canonical chain from this point on.
-    NotIncluded,
-    /// The block is optimistically included in the chain, and it is on the canonical chain,
-    /// but it is not yet part of the final chain. It is also recent enough.
-    OptimisticAndCanonical,
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlockStatus {
     /// The block is optimistically included in the chain, but it is not on the canonical chain.
-    /// It is also recent enough.
-    OptimisticButNotCanonical,
-    /// We may have not seen the block and removed it, or we may never have seen it.
-    Unknown,
+    OptimisticButNotCanonical = 0,
+    /// The block is optimistically included in the chain, and it is on the canonical chain,
+    /// but it is not yet part of the final chain.
+    /// Note that if two chains tie for canonical height, the first one seen is considered the
+    /// canonical chain (c.f. `RecentBlocksTracker::update_canonical_head`).
+    OptimisticAndCanonical = 1,
+    /// The block is finalized by the blockchain.
+    /// It is an ancestor (including self) of the latest final block.
+    Final = 2,
 }
 
-pub struct AddBlockResult<T> {
-    /// The list of newly finalized blocks, in ascending height order. Each entry is a tuple of
-    /// the block height and the data passed to us when adding the block.
-    /// It is guaranteed that the new final blocks returned from multiple calls to add_block are
-    /// contiguous, thus forming the stream of finalized blocks.
-    pub new_final_blocks: Vec<(u64, T)>,
+impl From<BlockStatus> for u8 {
+    fn from(status: BlockStatus) -> Self {
+        status as u8
+    }
+}
+
+pub struct AtomicBlockStatus(AtomicU8);
+
+impl AtomicBlockStatus {
+    pub fn is_final(&self) -> bool {
+        self.0.load(Ordering::Relaxed) == u8::from(BlockStatus::Final)
+    }
+
+    pub fn is_canonical(&self) -> bool {
+        let status = self.0.load(Ordering::Relaxed);
+        status == u8::from(BlockStatus::OptimisticAndCanonical)
+            || status == u8::from(BlockStatus::Final)
+    }
+
+    fn make_final(&self) {
+        self.0.store(BlockStatus::Final.into(), Ordering::Relaxed);
+    }
+
+    fn make_canonical(&self) {
+        if self.is_final() {
+            tracing::error!("received invalid data from indexer. Downgrading from final to canonical is not possible");
+            return;
+        }
+        self.0.store(
+            BlockStatus::OptimisticAndCanonical.into(),
+            Ordering::Relaxed,
+        );
+    }
+
+    fn make_non_canonical(&self) {
+        if self.is_final() {
+            tracing::error!("received invalid data from indexer. Downgrading from final to non-canonical is not possible");
+            return;
+        }
+        self.0.store(
+            BlockStatus::OptimisticButNotCanonical.into(),
+            Ordering::Relaxed,
+        );
+    }
+}
+
+pub struct AddBlockResult {
+    pub block_ref: Weak<AtomicBlockStatus>,
+    /// Newly-finalized blocks captured before `prune_old_blocks` runs. Populated only in
+    /// test builds for assertion convenience — production paths read the counter that
+    /// `add_block` increments instead. Carrying the list this way avoids any production
+    /// allocation overhead while still letting tests reconstruct the finalized-name
+    /// string after pruning may have dropped strong refs to ancestors.
+    // TODO(#3320): drop this cfg(test) field. The test helper should observe finality by
+    // holding a strong `Arc<AtomicBlockStatus>` (upgraded from `block_ref` at `add_block`
+    // time), which survives even after `prune_old_blocks` drops the `BlockNode`.
+    // https://github.com/near/mpc/issues/3320
+    #[cfg(test)]
+    pub new_final_blocks: Vec<(BlockHeight, CryptoHash)>,
 }
 
 /// Represents a block in the recent blockchain.
-///
-/// Note: We're not using the thread-safe functionality of Mutex here because we only access
-/// it from at most one thread. But these need to work in futures, and RefCell is not Send,
-/// so we use Mutex instead. Same story with AtomicBool vs Cell<bool>.
 struct BlockNode {
     hash: CryptoHash,
     height: u64,
-    /// Whether this block is currently on the canonical chain.
-    canonical: AtomicBool,
-    /// Whether this block is on the final chain. This only ever goes from false to true.
-    is_final: AtomicBool,
+    /// Indicates the finality status of this block. Held as `Arc` so that a `Weak` reference
+    /// can be handed out (via `AddBlockResult::block_ref`) to consumers like `QueuedRequest`,
+    /// which observe status changes and detect pruning when the upgrade fails.
+    status: Arc<AtomicBlockStatus>,
     /// The parent block, if we're aware of it. This may be None if we have never
     /// heard of the parent.
     /// The Weak becomes a dangling pointer when the parent is pruned.
@@ -120,32 +212,22 @@ struct BlockNode {
 }
 
 impl BlockNode {
-    /// Find the closest descendants of this node (including itself), whose height is at least
-    /// `height`. These descendants are appended to `descendants_output`. The nodes from the
-    /// subtree that are lower than the height are appended to `old_nodes`.
-    fn closest_descendants_with_height_at_least(
-        self: &Arc<BlockNode>,
-        height: u64,
-        descendants_output: &mut Vec<Arc<BlockNode>>,
-        old_nodes: &mut Vec<Arc<BlockNode>>,
-    ) {
-        if self.height >= height {
-            descendants_output.push(self.clone());
-        } else {
-            old_nodes.push(self.clone());
-            let children = self.children.lock().unwrap();
-            for child in children.iter() {
-                child.closest_descendants_with_height_at_least(
-                    height,
-                    descendants_output,
-                    old_nodes,
-                );
-            }
-        }
-    }
-
     fn get_parent(&self) -> Option<Arc<BlockNode>> {
         self.parent.as_ref().and_then(Weak::upgrade)
+    }
+
+    fn keep_only_child(
+        &self,
+        child_to_retain: &Arc<BlockNode>,
+        subtrees_to_remove: &mut VecDeque<Arc<BlockNode>>,
+    ) {
+        let mut children = self.children.lock().expect("lock must not be poisoned");
+        for child in children.iter() {
+            if !Arc::ptr_eq(child, child_to_retain) {
+                subtrees_to_remove.push_back(child.clone());
+            }
+        }
+        *children = vec![child_to_retain.clone()];
     }
 
     fn debug_print(
@@ -154,7 +236,6 @@ impl BlockNode {
         indents: &mut Vec<u8>,
         final_head: Option<CryptoHash>,
         canonical_head: Option<CryptoHash>,
-        content_printer: &impl Fn(&CryptoHash, &mut std::fmt::Formatter<'_>) -> std::fmt::Result,
     ) -> std::fmt::Result {
         if Some(self.hash) == final_head {
             write!(f, "FH ")?;
@@ -179,28 +260,19 @@ impl BlockNode {
             f,
             "[{}] {} {} {:<44} ",
             self.height,
-            if self.canonical.load(Ordering::Relaxed) {
-                "C"
-            } else {
-                " "
-            },
-            if self.is_final.load(Ordering::Relaxed) {
-                "F"
-            } else {
-                " "
-            },
+            if self.status.is_canonical() { "C" } else { " " },
+            if self.status.is_final() { "F" } else { " " },
             format!("{:?}", self.hash),
         )?;
-        content_printer(&self.hash, f)?;
         writeln!(f)?;
         let children = self.children.lock().unwrap();
         for (i, child) in children.iter().enumerate() {
             if children.len() == 1 {
-                child.debug_print(f, indents, final_head, canonical_head, content_printer)?;
+                child.debug_print(f, indents, final_head, canonical_head)?;
             } else {
                 let indent = if i + 1 == children.len() { 2 } else { 3 };
                 indents.push(indent);
-                child.debug_print(f, indents, final_head, canonical_head, content_printer)?;
+                child.debug_print(f, indents, final_head, canonical_head)?;
                 indents.pop();
             }
         }
@@ -234,41 +306,43 @@ pub struct BlockViewLite {
     pub timestamp_nanosec: u64,
 }
 
-impl<T: Clone> RecentBlocksTracker<T> {
-    pub fn new(window_size: u64) -> Self {
+impl RecentBlocksTracker {
+    pub fn new(
+        window_size: u64,
+        // TODO(#3316): remove this argument once we have one shared `RecentBlocksTracker`
+        // instance across queues.
+        finalized_blocks_indexed_metric: &'static prometheus::IntCounter,
+    ) -> Self {
         Self {
             window_size,
             root_children: Vec::new(),
-            canonical_head: None,
+            canonical_head: Weak::new(),
             final_head: None,
             maximum_height_available: 0,
             hash_to_node: HashMap::new(),
-            node_to_content: HashMap::new(),
+            finalized_blocks_indexed_metric,
         }
     }
 
     /// Adds a block to the tracker. This is expected to be called for EVERY block given by the
-    /// indexer (whether or not it is interesting). The content is whatever content that we want
-    /// to buffer for the stream of final blocks.
-    pub fn add_block(
-        &mut self,
-        block: &BlockViewLite,
-        content: T,
-    ) -> anyhow::Result<AddBlockResult<T>> {
+    /// indexer (whether or not it is interesting).
+    pub fn add_block(&mut self, block: &BlockViewLite) -> anyhow::Result<AddBlockResult> {
         if self.hash_to_node.contains_key(&block.hash) {
             anyhow::bail!("Block already exists in the tracker");
         }
+        let status = Arc::new(AtomicBlockStatus(AtomicU8::new(u8::from(
+            BlockStatus::OptimisticButNotCanonical,
+        ))));
+        let block_ref = Arc::downgrade(&status);
         let parent = self.hash_to_node.get(&block.prev_hash).cloned();
         let node = Arc::new(BlockNode {
             hash: block.hash,
             height: block.height,
-            canonical: AtomicBool::new(false),
-            is_final: AtomicBool::new(false),
+            status,
             parent: parent.as_ref().map(Arc::downgrade),
             children: Mutex::new(Vec::new()),
         });
         self.hash_to_node.insert(block.hash, node.clone());
-        self.node_to_content.insert(block.hash, content);
         if let Some(parent) = parent {
             parent.children.lock().unwrap().push(node.clone());
         } else {
@@ -276,16 +350,32 @@ impl<T: Clone> RecentBlocksTracker<T> {
         }
 
         let new_final_blocks = self.maybe_update_final_head(block.last_final_block);
-        // We must do this lookup before calling prune_old_blocks or else we may no longer have
-        // some of the blocks. Note: filter_map should not really filter anything out, but we're
-        // doing this defensively to not crash just in case we have a bug.
-        let new_final_blocks = new_final_blocks
-            .into_iter()
-            .filter_map(|node| Some((node.height, self.node_to_content.get(&node.hash)?.clone())))
+        // TODO(#3316): collapse the per-queue counter into a single shared metric on the
+        // tracker itself.
+        self.finalized_blocks_indexed_metric.inc_by(
+            u64::try_from(new_final_blocks.len())
+                .expect("usize shuold always fit into a u64 on our targets"),
+        );
+        // Capture the (height, hash) of every newly-final block before pruning may drop
+        // strong refs to ancestors that fell outside the recency window. Tests use this
+        // to reconstruct a finalized-name string from their own content map.
+        // TODO(#3320): drop this capture together with the cfg(test) field on
+        // AddBlockResult; the test helper should observe finality via a strong
+        // Arc<AtomicBlockStatus> upgraded at add_block time.
+        // https://github.com/near/mpc/issues/3320
+        #[cfg(test)]
+        let new_final_blocks_for_test: Vec<(BlockHeight, CryptoHash)> = new_final_blocks
+            .iter()
+            .map(|n| (n.height, n.hash))
             .collect();
-        match self.canonical_head.as_ref() {
+        match self.canonical_head.upgrade() {
             None => {
-                self.update_canonical_head(&node);
+                // Either the first block ever, or the previous canonical head
+                // was removed by the finality cleanup above.
+                // We identify the highest tracked node and update the canonical head.
+                if let Some(head) = self.highest_tracked_node() {
+                    self.update_canonical_head(&head);
+                }
             }
             Some(canonical_head) => {
                 if block.height > canonical_head.height {
@@ -297,37 +387,92 @@ impl<T: Clone> RecentBlocksTracker<T> {
             self.maximum_height_available = block.height;
         }
         self.prune_old_blocks();
-        Ok(AddBlockResult { new_final_blocks })
+        Ok(AddBlockResult {
+            block_ref,
+            #[cfg(test)]
+            new_final_blocks: new_final_blocks_for_test,
+        })
     }
 
-    /// Update the final head if the new final head received from a block is newer.
-    /// Returns the list of newly finalized blocks in increasing height order.
+    /// Advance the final head, mark its ancestors as final, and drop every
+    /// subtree that BFT-safety guarantees can no longer be on the final chain.
+    /// See `RecentBlocksTracker` for the picture of which subtrees this catches.
+    ///
+    /// Returns the newly finalized blocks in ascending height order.
     fn maybe_update_final_head(&mut self, potential_final_head: CryptoHash) -> Vec<Arc<BlockNode>> {
-        let final_head_node = self.hash_to_node.get(&potential_final_head);
-        let mut new_final_blocks = Vec::new();
-        if let Some(final_head_node) = final_head_node {
-            let mut node = final_head_node.clone();
-            loop {
-                if node.is_final.load(Ordering::Relaxed) {
-                    break;
-                }
-                node.is_final.store(true, Ordering::Relaxed);
-                new_final_blocks.push(node.clone());
-                let Some(parent) = node.get_parent() else {
-                    break;
-                };
-                node = parent;
+        let final_head_node = self.hash_to_node.get(&potential_final_head).cloned();
+        let Some(final_head_node) = final_head_node else {
+            // We don't track the new final head. Hence, there are no parents whose finality we
+            // could update and there are no blocks that we track that become newly finalized.
+            // This is expectd to happen when the indexer is starting up.
+            return Vec::new();
+        };
+        let mut new_final_blocks: Vec<Arc<BlockNode>> = Vec::new();
+        let mut node = final_head_node.clone();
+        let mut subtrees_to_remove: VecDeque<Arc<BlockNode>> = VecDeque::new();
+        loop {
+            // The node we previously visited is the only final child of `node`.
+            if let Some(final_child_of_node) = new_final_blocks.last() {
+                node.keep_only_child(final_child_of_node, &mut subtrees_to_remove);
             }
-            if self
-                .final_head
-                .as_ref()
-                .is_none_or(|prev_final_head| prev_final_head.height < final_head_node.height)
-            {
-                self.final_head = Some(final_head_node.clone());
+            // If this node is already labeled final, we can exit the loop.
+            if node.status.is_final() {
+                break;
             }
+            // Else, this is a new final node and we visit its parent next.
+            node.status.make_final();
+            new_final_blocks.push(node.clone());
+            let Some(parent) = node.get_parent() else {
+                break;
+            };
+            node = parent;
         }
+        // we update the final head if applicable
+        if self
+            .final_head
+            .as_ref()
+            .is_none_or(|prev_final_head| prev_final_head.height < final_head_node.height)
+        {
+            self.final_head = Some(final_head_node.clone());
+        }
+        // Lastly, we clean up any dead subtrees that live on other branches.
+        let new_final_height = final_head_node.height;
+        self.update_roots(new_final_height, &mut subtrees_to_remove);
+        self.remove_subtrees(subtrees_to_remove);
+
         new_final_blocks.reverse();
         new_final_blocks
+    }
+
+    /// Any root children that sit on dead branches get removed from `self.root_children` and added
+    /// to `subtrees_to_remove`
+    fn update_roots(
+        &mut self,
+        new_final_height: u64,
+        subtrees_to_remove: &mut VecDeque<Arc<BlockNode>>,
+    ) {
+        let mut new_root_children = Vec::new();
+        for node in self.root_children.iter() {
+            if !node.status.is_final() && node.height <= new_final_height {
+                // the entire subtree can be removed
+                subtrees_to_remove.push_back(node.clone());
+            } else {
+                new_root_children.push(node.clone());
+            }
+        }
+        self.root_children = new_root_children;
+    }
+
+    fn remove_subtrees(&mut self, mut subtrees_to_remove: VecDeque<Arc<BlockNode>>) {
+        while let Some(node) = subtrees_to_remove.pop_front() {
+            subtrees_to_remove.extend(
+                node.children
+                    .lock()
+                    .expect("lock must not be poisoned")
+                    .drain(..),
+            );
+            self.hash_to_node.remove(&node.hash);
+        }
     }
 
     /// Updates the canonical chain to the chain of the given block.
@@ -337,26 +482,42 @@ impl<T: Clone> RecentBlocksTracker<T> {
         let mut node = Some(new_canonical_head.clone());
 
         while let Some(current_node) = node {
-            if current_node.canonical.load(Ordering::Relaxed) {
+            if current_node.status.is_canonical() {
                 node = Some(current_node);
                 break;
             }
-            current_node.canonical.store(true, Ordering::Relaxed);
+            current_node.status.make_canonical();
             node = current_node.get_parent();
         }
         let common_ancestor = node;
 
-        let mut old_node = self.canonical_head.clone();
+        let mut old_node = self.canonical_head.upgrade();
         while let Some(current_node) = old_node {
             if let Some(common_ancestor) = &common_ancestor {
                 if Arc::ptr_eq(&current_node, common_ancestor) {
                     break;
                 }
             }
-            current_node.canonical.store(false, Ordering::Relaxed);
+            current_node.status.make_non_canonical();
             old_node = current_node.get_parent();
         }
-        self.canonical_head = Some(new_canonical_head.clone());
+        self.canonical_head = Arc::downgrade(new_canonical_head);
+    }
+
+    /// BFS over the kept tree, returning the highest-height node (insertion order and
+    /// BFS order breaks ties). Used to re-elect the canonical head after finality
+    /// cleanup sweeps the previous one.
+    fn highest_tracked_node(&self) -> Option<Arc<BlockNode>> {
+        let mut queue: VecDeque<Arc<BlockNode>> = self.root_children.iter().cloned().collect();
+        let mut best: Option<Arc<BlockNode>> = None;
+        while let Some(node) = queue.pop_front() {
+            if best.as_ref().is_none_or(|b| b.height < node.height) {
+                best = Some(node.clone());
+            }
+            let children = node.children.lock().expect("lock must not be poisoned");
+            queue.extend(children.iter().cloned());
+        }
+        best
     }
 
     /// Calculates the minimum height of blocks that we need to keep.
@@ -375,81 +536,33 @@ impl<T: Clone> RecentBlocksTracker<T> {
         )
     }
 
-    /// Remove old blocks that are neither needed for the `classify_block` query or for providing
-    /// the stream of finalized blocks.
+    /// Recency-window prune. Drops every node below `min_height_to_keep` and
+    /// promotes the first in-window descendant on each branch to a new root.
+    /// See `RecentBlocksTracker` for the picture; dead-fork cleanup happens in
+    /// `maybe_update_final_head`, not here.
     fn prune_old_blocks(&mut self) {
-        let Some(minimum_height_to_keep) = self.minimum_height_to_keep() else {
+        let Some(min_height_to_keep) = self.minimum_height_to_keep() else {
             return;
         };
-        // Note: unwrap_or cannot fail because if we have a minimum height then we have at least one
-        // block. Still, we'll program defensively.
-        if self
-            .root_children
-            .iter()
-            .map(|child| child.height)
-            .min()
-            .unwrap_or(0)
-            >= minimum_height_to_keep
-        {
-            return;
-        }
-
-        let mut new_root_children = Vec::new();
-        let mut old_nodes = Vec::new();
-        for child in &self.root_children {
-            child.closest_descendants_with_height_at_least(
-                minimum_height_to_keep,
-                &mut new_root_children,
-                &mut old_nodes,
-            );
-        }
-        self.root_children = new_root_children;
-        for old_node in old_nodes {
-            self.hash_to_node.remove(&old_node.hash);
-            self.node_to_content.remove(&old_node.hash);
-            *old_node.children.lock().unwrap() = Vec::new();
-        }
-    }
-
-    /// Classifies a block into one of the categories in `CheckBlockResult`.
-    pub fn classify_block(&self, block_hash: CryptoHash) -> CheckBlockResult {
-        match self.hash_to_node.get(&block_hash) {
-            Some(node) => {
-                if self
-                    .maximum_height_available
-                    .saturating_sub(self.window_size)
-                    .add(1)
-                    > node.height
-                {
-                    // this can happen if the block in question is expired, but has not yet been
-                    // removed because it is the last final block
-                    return CheckBlockResult::OlderThanRecentWindow;
-                }
-                if node.is_final.load(Ordering::Relaxed) {
-                    return CheckBlockResult::RecentAndFinal;
-                }
-                if let Some(final_head) = &self.final_head {
-                    // The block is not final, yet, we have a final head of greater height.
-                    // That means, the block was not included.
-                    if node.height <= final_head.height {
-                        return CheckBlockResult::NotIncluded;
-                    }
-                }
-                if node.canonical.load(Ordering::Relaxed) {
-                    return CheckBlockResult::OptimisticAndCanonical;
-                }
-                CheckBlockResult::OptimisticButNotCanonical
+        let mut queue: VecDeque<Arc<BlockNode>> = std::mem::take(&mut self.root_children).into();
+        let mut new_roots = Vec::new();
+        while let Some(node) = queue.pop_front() {
+            if node.height >= min_height_to_keep {
+                new_roots.push(node);
+                continue;
             }
-            None => {
-                // We don't know this block: either it is too old and we removed it, or we have
-                // genuinely never seen it.
-                CheckBlockResult::Unknown
-            }
+            self.hash_to_node.remove(&node.hash);
+            // Drain into the queue so the parent stops holding strong refs to
+            // its children — once `hash_to_node` no longer holds the parent,
+            // the parent can drop as soon as we move past this iteration.
+            let mut children = node.children.lock().expect("lock must not be poisoned");
+            queue.extend(children.drain(..));
         }
+        self.root_children = new_roots;
     }
 }
 
-impl<T: Clone + Debug> Debug for RecentBlocksTracker<T> {
+impl Debug for RecentBlocksTracker {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(
             f,
@@ -461,7 +574,7 @@ impl<T: Clone + Debug> Debug for RecentBlocksTracker<T> {
             self.minimum_height_to_keep().unwrap_or(0)
         )?;
         let final_head = self.final_head.as_ref().map(|n| n.hash);
-        let canonical_head = self.canonical_head.as_ref().map(|n| n.hash);
+        let canonical_head = self.canonical_head.upgrade().map(|n| n.hash);
 
         for (i, child) in self.root_children.iter().enumerate() {
             child.debug_print(
@@ -473,13 +586,6 @@ impl<T: Clone + Debug> Debug for RecentBlocksTracker<T> {
                 }],
                 final_head,
                 canonical_head,
-                &|hash, f| {
-                    if let Some(content) = self.node_to_content.get(hash) {
-                        write!(f, "{:?}", content)
-                    } else {
-                        write!(f, "")
-                    }
-                },
             )?;
         }
         Ok(())
@@ -488,12 +594,13 @@ impl<T: Clone + Debug> Debug for RecentBlocksTracker<T> {
 
 #[cfg(test)]
 pub mod tests {
-    use super::{BlockEntropy, BlockViewLite, RecentBlocksTracker};
-    use crate::requests::recent_blocks_tracker::CheckBlockResult;
+    use crate::requests::recent_blocks_tracker::AtomicBlockStatus;
+
+    use super::{BlockEntropy, BlockStatus, BlockViewLite, RecentBlocksTracker};
     use near_indexer::near_primitives::hash::hash;
     use near_indexer_primitives::CryptoHash;
-    use std::collections::HashSet;
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::collections::{HashMap, HashSet};
+    use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
     use std::sync::{Arc, Mutex};
 
     pub struct TestBlock {
@@ -634,18 +741,36 @@ pub mod tests {
 
     pub struct Tester {
         maker: Arc<TestBlockMaker>,
-        tracker: RecentBlocksTracker<String>,
+        tracker: RecentBlocksTracker,
         parents_of_added_blocks: HashSet<CryptoHash>,
+        content: HashMap<CryptoHash, String>,
+    }
+
+    impl From<u8> for BlockStatus {
+        fn from(v: u8) -> BlockStatus {
+            match v {
+                0 => BlockStatus::OptimisticButNotCanonical,
+                1 => BlockStatus::OptimisticAndCanonical,
+                2 => BlockStatus::Final,
+                _ => unreachable!("unexpected block status"),
+            }
+        }
     }
 
     impl Tester {
         pub fn new(heights_to_keep: u64) -> Self {
             let maker = TestBlockMaker::new();
-            let tracker = RecentBlocksTracker::new(heights_to_keep);
+            // Tests don't assert on the finalized-blocks counter; reuse the CKD prod counter
+            // as a no-op sink so the tracker signature is satisfied.
+            let tracker = RecentBlocksTracker::new(
+                heights_to_keep,
+                &crate::requests::metrics::MPC_PENDING_CKDS_QUEUE_FINALIZED_BLOCKS_INDEXED,
+            );
             Self {
                 maker,
                 tracker,
                 parents_of_added_blocks: HashSet::new(),
+                content: HashMap::new(),
             }
         }
 
@@ -653,8 +778,11 @@ pub mod tests {
             self.maker.block(height)
         }
 
-        pub fn check(&self, block: &Arc<TestBlock>) -> CheckBlockResult {
-            self.tracker.classify_block(block.hash)
+        pub fn check(&self, block: &Arc<TestBlock>) -> Option<BlockStatus> {
+            self.tracker
+                .hash_to_node
+                .get(&block.hash)
+                .map(|node| BlockStatus::from(node.status.0.load(Ordering::Relaxed)))
         }
 
         pub fn add(&mut self, block: &Arc<TestBlock>, name: &str) -> String {
@@ -662,17 +790,15 @@ pub mod tests {
                 !self.parents_of_added_blocks.contains(&block.hash),
                 "Cannot retroactively add the parent of an already added block"
             );
-            let result = self
-                .tracker
-                .add_block(&block.to_block_view(), name.to_string())
-                .unwrap();
+            let result = self.tracker.add_block(&block.to_block_view()).unwrap();
+            self.content.insert(block.hash, name.to_string());
             if let Some(parent) = block.parent.clone() {
                 self.parents_of_added_blocks.insert(parent.hash);
             }
             result
                 .new_final_blocks
                 .iter()
-                .map(|(_, name)| name.clone())
+                .map(|(_, hash)| self.content.get(hash).unwrap().clone())
                 .collect::<Vec<_>>()
                 .join(",")
         }
@@ -706,13 +832,19 @@ pub mod tests {
         tester.print();
 
         // At this point, the tracker should keep blocks 12, 13, 14, 15.
-        assert_eq!(tester.check(&b10), CheckBlockResult::Unknown);
-        assert_eq!(tester.check(&b11), CheckBlockResult::Unknown);
-        assert_eq!(tester.check(&b12), CheckBlockResult::RecentAndFinal);
-        assert_eq!(tester.check(&b13), CheckBlockResult::RecentAndFinal);
-        assert_eq!(tester.check(&b14), CheckBlockResult::OptimisticAndCanonical);
-        assert_eq!(tester.check(&b15), CheckBlockResult::OptimisticAndCanonical);
-        assert_eq!(tester.check(&b16), CheckBlockResult::Unknown);
+        assert_eq!(tester.check(&b10), None);
+        assert_eq!(tester.check(&b11), None);
+        assert_eq!(tester.check(&b12), Some(BlockStatus::Final));
+        assert_eq!(tester.check(&b13), Some(BlockStatus::Final));
+        assert_eq!(
+            tester.check(&b14),
+            Some(BlockStatus::OptimisticAndCanonical)
+        );
+        assert_eq!(
+            tester.check(&b15),
+            Some(BlockStatus::OptimisticAndCanonical)
+        );
+        assert_eq!(tester.check(&b16), None);
     }
 
     #[test]
@@ -748,16 +880,16 @@ pub mod tests {
         t.print();
 
         // This block has been removed by the tracker
-        assert_eq!(t.check(&b10), CheckBlockResult::Unknown);
+        assert_eq!(t.check(&b10), None);
         // The tracker kept the block internally as it is the last final block, but it is still
         // outside of the window.
-        assert_eq!(t.check(&b11), CheckBlockResult::OlderThanRecentWindow);
-        assert_eq!(t.check(&b12), CheckBlockResult::OptimisticAndCanonical);
-        assert_eq!(t.check(&b13), CheckBlockResult::OptimisticButNotCanonical);
-        assert_eq!(t.check(&b14), CheckBlockResult::OptimisticButNotCanonical);
-        assert_eq!(t.check(&b15), CheckBlockResult::OptimisticButNotCanonical);
-        assert_eq!(t.check(&b16), CheckBlockResult::OptimisticAndCanonical);
-        assert_eq!(t.check(&b17), CheckBlockResult::Unknown);
+        assert_eq!(t.check(&b11), Some(BlockStatus::Final));
+        assert_eq!(t.check(&b12), Some(BlockStatus::OptimisticAndCanonical));
+        assert_eq!(t.check(&b13), Some(BlockStatus::OptimisticButNotCanonical));
+        assert_eq!(t.check(&b14), Some(BlockStatus::OptimisticButNotCanonical));
+        assert_eq!(t.check(&b15), Some(BlockStatus::OptimisticButNotCanonical));
+        assert_eq!(t.check(&b16), Some(BlockStatus::OptimisticAndCanonical));
+        assert_eq!(t.check(&b17), None);
 
         let b18 = b14.descendant(18);
         assert_eq!(&t.add(&b18, "18"), "");
@@ -771,10 +903,10 @@ pub mod tests {
         //      └─[16]     81v6keTjdkVp8RgTdWQE2vx7E7nof7NxtZNaYFh3oVpG "16"
         t.print();
 
-        assert_eq!(t.check(&b13), CheckBlockResult::OlderThanRecentWindow);
-        assert_eq!(t.check(&b14), CheckBlockResult::OptimisticAndCanonical);
-        assert_eq!(t.check(&b16), CheckBlockResult::OptimisticButNotCanonical);
-        assert_eq!(t.check(&b18), CheckBlockResult::OptimisticAndCanonical);
+        assert_eq!(t.check(&b13), Some(BlockStatus::OptimisticButNotCanonical));
+        assert_eq!(t.check(&b14), Some(BlockStatus::OptimisticAndCanonical));
+        assert_eq!(t.check(&b16), Some(BlockStatus::OptimisticButNotCanonical));
+        assert_eq!(t.check(&b18), Some(BlockStatus::OptimisticAndCanonical));
 
         let b19 = b18.child();
         let b20 = b19.child();
@@ -788,14 +920,16 @@ pub mod tests {
         //    └─[16]     81v6keTjdkVp8RgTdWQE2vx7E7nof7NxtZNaYFh3oVpG "16"
         t.print();
 
-        // b14 and b15 were removed, they are too old and we have newer, final blocks
-        assert_eq!(t.check(&b14), CheckBlockResult::Unknown);
-        assert_eq!(t.check(&b15), CheckBlockResult::Unknown);
-        assert_eq!(t.check(&b16), CheckBlockResult::NotIncluded);
-        assert_eq!(t.check(&b17), CheckBlockResult::Unknown);
-        assert_eq!(t.check(&b18), CheckBlockResult::RecentAndFinal);
-        assert_eq!(t.check(&b19), CheckBlockResult::OptimisticAndCanonical);
-        assert_eq!(t.check(&b20), CheckBlockResult::OptimisticAndCanonical);
+        // b14, b15 were pruned (too old, newer final blocks).
+        // b16 and the b13/b15 subtree were discarded when b18 became final
+        // (dead-fork drop on finality advance).
+        assert_eq!(t.check(&b14), None);
+        assert_eq!(t.check(&b15), None);
+        assert_eq!(t.check(&b16), None);
+        assert_eq!(t.check(&b17), None);
+        assert_eq!(t.check(&b18), Some(BlockStatus::Final));
+        assert_eq!(t.check(&b19), Some(BlockStatus::OptimisticAndCanonical));
+        assert_eq!(t.check(&b20), Some(BlockStatus::OptimisticAndCanonical));
     }
 
     #[test]
@@ -848,18 +982,18 @@ pub mod tests {
         //        ├─[9]     6E2vqjZLbuUY2y6VK571Ai3pk43EUHXuNxibJuBGh44T "b110"
         //        └─[10]     Cq9uMZqNZr6zuF7nT6yfGms1ptaVVu5dAdiRJ6pqCTN8 "b111"
         t.print();
-        assert_eq!(t.check(&b0), CheckBlockResult::OlderThanRecentWindow);
-        assert_eq!(t.check(&b00), CheckBlockResult::OptimisticButNotCanonical);
-        assert_eq!(t.check(&b000), CheckBlockResult::OptimisticButNotCanonical);
-        assert_eq!(t.check(&b01), CheckBlockResult::OptimisticAndCanonical);
-        assert_eq!(t.check(&b010), CheckBlockResult::OptimisticButNotCanonical);
-        assert_eq!(t.check(&b011), CheckBlockResult::OptimisticAndCanonical);
-        assert_eq!(t.check(&b1), CheckBlockResult::OlderThanRecentWindow);
-        assert_eq!(t.check(&b10), CheckBlockResult::OptimisticButNotCanonical);
-        assert_eq!(t.check(&b100), CheckBlockResult::OptimisticButNotCanonical);
-        assert_eq!(t.check(&b11), CheckBlockResult::OptimisticButNotCanonical);
-        assert_eq!(t.check(&b110), CheckBlockResult::OptimisticButNotCanonical);
-        assert_eq!(t.check(&b111), CheckBlockResult::OptimisticButNotCanonical);
+        assert_eq!(t.check(&b0), Some(BlockStatus::OptimisticAndCanonical));
+        assert_eq!(t.check(&b00), Some(BlockStatus::OptimisticButNotCanonical));
+        assert_eq!(t.check(&b000), Some(BlockStatus::OptimisticButNotCanonical));
+        assert_eq!(t.check(&b01), Some(BlockStatus::OptimisticAndCanonical));
+        assert_eq!(t.check(&b010), Some(BlockStatus::OptimisticButNotCanonical));
+        assert_eq!(t.check(&b011), Some(BlockStatus::OptimisticAndCanonical));
+        assert_eq!(t.check(&b1), Some(BlockStatus::OptimisticButNotCanonical));
+        assert_eq!(t.check(&b10), Some(BlockStatus::OptimisticButNotCanonical));
+        assert_eq!(t.check(&b100), Some(BlockStatus::OptimisticButNotCanonical));
+        assert_eq!(t.check(&b11), Some(BlockStatus::OptimisticButNotCanonical));
+        assert_eq!(t.check(&b110), Some(BlockStatus::OptimisticButNotCanonical));
+        assert_eq!(t.check(&b111), Some(BlockStatus::OptimisticButNotCanonical));
 
         // Now, we test some pathological cases where the data being given is not consistent
         // with Near blockchain's behavior. Still, we want reasonable behavior and no crashes.
@@ -868,41 +1002,35 @@ pub mod tests {
         assert_eq!(t.add(&b102, "b102"), "b1");
         assert_eq!(t.add(&b1020, "b1020"), "b10");
         //    Recent blocks: (Window = 6 to 10, GC limit 6)
-        //    ├─[6]     7wk1ewkZKmCNLRRhCrjFuoYy1K94dis9qAUv7JUKzCkG "b00"
-        //    │ ├─[8]     DTYziqMhQ9i2wbruEfoNiWZNp34dzVYto6FLy3FUZKwt "b000"
-        //    │ └─[9]     DC88XsXQdWZXipUU4vRHQqYo22nwtGVnp3rHptw44mJz "b001"
-        //    ├─[7] C   8FoDbEfMuYmtr7SXRPiscHR4mQ6m5nCyuca43eAopktY "b01"
-        //    │ ├─[9]     8jRJjsyqjoAbyWbjLXTjFNiKTwT8s4xspouvRaZGfh6R "b010"
-        // CH │ └─[10] C   CnbxNBi2SVDZo9z8V8kwrmE3pUkozpDvpCCg9Tq25rY3 "b011"
-        // FH ├─[6]   F 6s7VNQLN9b4SpwUdEq8LqKwBjf8SqUuutACcMtHwULu8 "b10"
-        //    │ ├─[8]     GounuZUfMmxdVequL65iUm7D94sKYg67Q34Z5cjRjZ71 "b100"
-        //    │ ├─[8]     7aXqE7cPZt6FnVcpytqW3oy5y2E17X9Gpgs6C7praap5 "b101"
-        //    │ └─[7]     FK5PX18pxwwtaB6AvYjNkWZ4Jvnn2HeNx4tknkM5g7VP "b102"
-        //    │   [8]     AQif6GckVVDt4L4rUeAN43PNComjsa7fPYAF5NHW7oX8 "b1020"
-        //    └─[7]     2xhND7PwiNZckwCnXFa25wMG1G8JWfKN2Sinmbz3W6xK "b11"
-        //      ├─[9]     6E2vqjZLbuUY2y6VK571Ai3pk43EUHXuNxibJuBGh44T "b110"
-        //      └─[10]     Cq9uMZqNZr6zuF7nT6yfGms1ptaVVu5dAdiRJ6pqCTN8 "b111"
-        //
-        // Note above: the canonical head is not a descendant of final head. This can't happen in
-        // the real blockchain, but here we fed in a pathological scenario.
+        // FH └─[6] C F 6s7VNQLN9b4SpwUdEq8LqKwBjf8SqUuutACcMtHwULu8 "b10"
+        // CH   ├─[8] C   GounuZUfMmxdVequL65iUm7D94sKYg67Q34Z5cjRjZ71 "b100"
+        //      ├─[8]     7aXqE7cPZt6FnVcpytqW3oy5y2E17X9Gpgs6C7praap5 "b101"
+        //      └─[7]     FK5PX18pxwwtaB6AvYjNkWZ4Jvnn2HeNx4tknkM5g7VP "b102"
+        //        [8]     AQif6GckVVDt4L4rUeAN43PNComjsa7fPYAF5NHW7oX8 "b1020"
         t.print();
-        // b0 was removed, becasue it was not included and is older than recent window
-        assert_eq!(t.check(&b0), CheckBlockResult::Unknown);
-        assert_eq!(t.check(&b00), CheckBlockResult::NotIncluded);
-        // Note: b000 has no chance of being included in the canonical chain due to b10 being final.
-        // However, checking that case is not worth the complexity. In practice, the check we use of
-        // checking the height against the final head's height is likely good enough.
-        assert_eq!(t.check(&b000), CheckBlockResult::OptimisticButNotCanonical);
-        assert_eq!(t.check(&b01), CheckBlockResult::OptimisticAndCanonical);
-        assert_eq!(t.check(&b010), CheckBlockResult::OptimisticButNotCanonical);
-        assert_eq!(t.check(&b011), CheckBlockResult::OptimisticAndCanonical);
-        // b1 was removed, because it is too old and we have newer final blocks
-        assert_eq!(t.check(&b1), CheckBlockResult::Unknown);
-        assert_eq!(t.check(&b10), CheckBlockResult::RecentAndFinal);
-        assert_eq!(t.check(&b100), CheckBlockResult::OptimisticButNotCanonical);
-        assert_eq!(t.check(&b11), CheckBlockResult::OptimisticButNotCanonical);
-        assert_eq!(t.check(&b110), CheckBlockResult::OptimisticButNotCanonical);
-        assert_eq!(t.check(&b111), CheckBlockResult::OptimisticButNotCanonical);
+        // b0 was removed (older than recent window).
+        assert_eq!(t.check(&b0), None);
+        // b00, b000, b01, b010, b011 were discarded along with the b0 subtree
+        // when finality first advanced (to b1 via add(b102)) — they're on a
+        // permanently-dead fork and got dropped from the tree.
+        assert_eq!(t.check(&b00), None);
+        assert_eq!(t.check(&b000), None);
+        assert_eq!(t.check(&b01), None);
+        assert_eq!(t.check(&b010), None);
+        assert_eq!(t.check(&b011), None);
+        // b1 was removed by window-prune (too old, newer final blocks).
+        assert_eq!(t.check(&b1), None);
+        assert_eq!(t.check(&b10), Some(BlockStatus::Final));
+        // b011 was canonical before add(b102), but its subtree was swept by the
+        // finality advance; canonical_head re-elected to the first-seen block
+        // at the new tree's max height — b100 (h=8, inserted before b101/b1020).
+        assert_eq!(t.check(&b100), Some(BlockStatus::OptimisticAndCanonical));
+        // b11 (sibling of final-chain b10 under b1) and its subtree are
+        // discarded by add(b1020)'s finality advance to b10 — by BFT safety
+        // every non-final-chain sibling of a final block is on a dead fork.
+        assert_eq!(t.check(&b11), None);
+        assert_eq!(t.check(&b110), None);
+        assert_eq!(t.check(&b111), None);
 
         let b10200 = b1020.descendant(11);
         let b102000 = b10200.descendant(12);
@@ -912,23 +1040,25 @@ pub mod tests {
         assert_eq!(&t.add(&b1020000, "b1020000"), "b102,b1020,b10200");
 
         //    Recent blocks: (Window = 9 to 13, GC limit 9)
-        //    ├─[9]     DC88XsXQdWZXipUU4vRHQqYo22nwtGVnp3rHptw44mJz "b001"
-        //    ├─[9]     8jRJjsyqjoAbyWbjLXTjFNiKTwT8s4xspouvRaZGfh6R "b010"
-        //    ├─[10]     CnbxNBi2SVDZo9z8V8kwrmE3pUkozpDvpCCg9Tq25rY3 "b011"
-        // FH ├─[11] C F NW4CWxr6ptWa9tsV2gMhGPdE7ecNWfCrnJDfJwx9yv9 "b10200"
-        //    │ [12] C   4Vwtcagaq6fi5j82suG4j8HiaU3SMbqotrZzT3bjqwcP "b102000"
-        // CH │ [13] C   GktyudcCf3dBkWCdjq9dFssY7KZRRZQJ1TZH3ZMw8LWk "b1020000"
-        //    ├─[9]     6E2vqjZLbuUY2y6VK571Ai3pk43EUHXuNxibJuBGh44T "b110"
-        //    └─[10]     Cq9uMZqNZr6zuF7nT6yfGms1ptaVVu5dAdiRJ6pqCTN8 "b111"
+        // FH └─[11] C F NW4CWxr6ptWa9tsV2gMhGPdE7ecNWfCrnJDfJwx9yv9 "b10200"
+        //      [12] C   4Vwtcagaq6fi5j82suG4j8HiaU3SMbqotrZzT3bjqwcP "b102000"
+        // CH   [13] C   GktyudcCf3dBkWCdjq9dFssY7KZRRZQJ1TZH3ZMw8LWk "b1020000"
         t.print();
-        assert_eq!(t.check(&b001), CheckBlockResult::NotIncluded);
-        assert_eq!(t.check(&b010), CheckBlockResult::NotIncluded);
-        assert_eq!(t.check(&b011), CheckBlockResult::NotIncluded);
-        assert_eq!(t.check(&b10200), CheckBlockResult::RecentAndFinal);
-        assert_eq!(t.check(&b102000), CheckBlockResult::OptimisticAndCanonical);
-        assert_eq!(t.check(&b1020000), CheckBlockResult::OptimisticAndCanonical);
-        assert_eq!(t.check(&b110), CheckBlockResult::NotIncluded);
-        assert_eq!(t.check(&b111), CheckBlockResult::NotIncluded);
+        // b001, b010, b011 were already discarded with the b0 subtree (add(b102)).
+        // b11, b110, b111 were discarded with the b11 subtree (add(b1020)).
+        // b100, b101 are discarded by add(b1020000)'s finality advance to b10200
+        // (siblings of b102 under final-chain b10).
+        assert_eq!(t.check(&b001), None);
+        assert_eq!(t.check(&b010), None);
+        assert_eq!(t.check(&b011), None);
+        assert_eq!(t.check(&b10200), Some(BlockStatus::Final));
+        assert_eq!(t.check(&b102000), Some(BlockStatus::OptimisticAndCanonical));
+        assert_eq!(
+            t.check(&b1020000),
+            Some(BlockStatus::OptimisticAndCanonical)
+        );
+        assert_eq!(t.check(&b110), None);
+        assert_eq!(t.check(&b111), None);
     }
 
     #[test]
@@ -986,5 +1116,141 @@ pub mod tests {
             weak_b2.upgrade().is_none(),
             "pruned BlockNode b2 leaked — parent<->children Arc cycle not broken"
         );
+    }
+
+    /// Tests that a subtree that won't be included (b3_fork) is removed, even if that subtree is a
+    /// descendant of a block that is included and recent (b2, F)
+    /// ```text
+    ///   (b1, F)
+    ///    │
+    /// ═══════════════════════ ← cutoff (h ≥ 2). Remove blocks older than this.
+    ///    │
+    ///   (b2, F)               ← new root
+    ///    ├──────────┐
+    ///   (b3, F)  (b3_fork)    ← b3_fork subtree should be pruned
+    ///    │          │
+    ///   (b4)     (b4_fork)    ← should be pruned as part of b3_fork prune
+    ///    │
+    ///   (b5)                  ← This block makes 3F final.
+    /// ```
+    #[test]
+    #[expect(non_snake_case)]
+    fn prune_old_blocks__should_drop_dead_fork_descendants_of_kept_nodes() {
+        let mut tester = Tester::new(4);
+        let b1 = tester.block(1);
+        let b2 = b1.child();
+        let b3 = b2.child();
+        let b4 = b3.child();
+        let b5 = b4.child();
+        let b3_fork = b2.descendant(3);
+        let b4_fork = b3_fork.child();
+
+        // Given: a fork
+        // (b1, F)
+        //    │
+        // (b2, F)
+        //    ├──────────┐
+        //   (b3)     (b3_fork)
+        //    │         │
+        //   (b4)     (b4_fork)
+        tester.add(&b1, "1");
+        tester.add(&b2, "2");
+        tester.add(&b3, "3");
+        tester.add(&b3_fork, "3f");
+        tester.add(&b4, "4");
+        tester.add(&b4_fork, "4f");
+
+        // Sanity checks
+        assert_eq!(tester.check(&b1), Some(BlockStatus::Final));
+        assert_eq!(tester.check(&b2), Some(BlockStatus::Final));
+
+        let weak_b3_fork = Arc::downgrade(
+            tester
+                .tracker
+                .hash_to_node
+                .get(&b3_fork.hash)
+                .expect("b3_fork present before prune"),
+        );
+        let weak_b4_fork = Arc::downgrade(
+            tester
+                .tracker
+                .hash_to_node
+                .get(&b4_fork.hash)
+                .expect("b4_fork present before prune"),
+        );
+
+        // When: b5 is added, advancing final_head to b3
+        //   (b1, F)
+        //    │
+        // ═══════════════════════ ← cutoff (h ≥ 2). Remove blocks older than this.
+        //    │
+        //   (b2, F)               ← new root
+        //    ├──────────┐
+        //   (b3, F)  (b3_fork)    ← b3_fork subtree should be pruned
+        //    │          │
+        //   (b4)     (b4_fork)    ← should be pruned as part of b3_fork prune
+        //    │
+        //   (b5)                  ← This block makes 3F final.
+        tester.add(&b5, "5");
+
+        // Then: We expect b3_fork subtree to be pruned and b2 to become the new root
+        //   (b2, F)               ← new root
+        //    │
+        //   (b3, F)
+        //    │
+        //   (b4)
+        //    │
+        //   (b5)
+
+        //   Check that b3_fork was removed:
+        assert_eq!(tester.check(&b3_fork), None);
+        assert_eq!(tester.check(&b4_fork), None);
+        assert!(
+            weak_b3_fork.upgrade().is_none(),
+            "dead-fork BlockNode b3_fork leaked — prune_dead_children did not detach"
+        );
+        assert!(
+            weak_b4_fork.upgrade().is_none(),
+            "dead-fork BlockNode b4_fork leaked — descendant of detached dead-fork not freed"
+        );
+
+        // Additional sanity checks:
+        // b1 should have been removed:
+        assert_eq!(tester.check(&b1), None);
+        // b2, b3 should now be final
+        assert_eq!(tester.check(&b2), Some(BlockStatus::Final));
+        assert_eq!(tester.check(&b3), Some(BlockStatus::Final));
+        // b4, b5 should be optimistic and canonical
+        assert_eq!(tester.check(&b4), Some(BlockStatus::OptimisticAndCanonical));
+        assert_eq!(tester.check(&b5), Some(BlockStatus::OptimisticAndCanonical));
+    }
+
+    /// Tests that `minimum_height_to_keep` returns `Some` in case we have a final block height.
+    /// This is a test to protect against regressions: We only run the cleanup loop in case
+    /// `minimum_height_to_keep` returns Some.
+    #[test]
+    #[expect(non_snake_case)]
+    fn minimum_height_to_keep__should_return_some_if_final_block_exists() {
+        let mut tester = Tester::new(4);
+        let b1 = tester.block(1);
+        let b2 = b1.child();
+        let b3 = b2.child();
+        tester.add(&b1, "1");
+        tester.add(&b2, "2");
+        tester.add(&b3, "3");
+        assert_eq!(tester.tracker.minimum_height_to_keep(), Some(1))
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn atomic_block_status__should_not_downgrade_from_final() {
+        // Given
+        let s = AtomicBlockStatus(AtomicU8::new(BlockStatus::Final.into()));
+
+        // When / Then
+        s.make_canonical();
+        assert!(s.is_final());
+        s.make_non_canonical();
+        assert!(s.is_final());
     }
 }

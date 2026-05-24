@@ -1,7 +1,7 @@
 use crate::sandbox::{
     common::{
         call_contract_key_generation, execute_key_generation_and_add_random_state, gen_accounts,
-        init, propose_and_vote_contract_binary, submit_attestations, OldThresholdParameters,
+        init, propose_and_vote_contract_binary, submit_attestations,
     },
     utils::{
         consts::PARTICIPANT_LEN,
@@ -22,7 +22,7 @@ use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use near_mpc_contract_interface::types::{
-    CKDResponse, Curve, DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
+    CKDResponse, DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
 };
 use near_mpc_sdk::sign::SignatureRequestResponse;
 use near_workspaces::{network::Sandbox, Account, Contract, Worker};
@@ -58,7 +58,7 @@ async fn init_old_contract(
     contract
         .call(method_names::INIT)
         .args_json(serde_json::json!({
-            "parameters": OldThresholdParameters::from(&threshold_parameters),
+            "parameters": &threshold_parameters,
         }))
         .transact()
         .await?
@@ -163,6 +163,8 @@ async fn propose_upgrade_from_production_to_current_binary(
     let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN)
         .await
         .unwrap();
+
+    submit_attestations(&contract, &accounts, &participants).await;
 
     // Add state so migration logic is exercised
     execute_key_generation_and_add_random_state(
@@ -366,14 +368,12 @@ async fn upgrade_allows_new_request_types(
     let domains_to_add = [
         DomainConfig {
             id: first_available_domain_id.into(),
-            curve: Curve::Bls12381,
             protocol: Protocol::ConfidentialKeyDerivation,
             reconstruction_threshold: ReconstructionThreshold::new(6),
             purpose: DomainPurpose::CKD,
         },
         DomainConfig {
             id: (first_available_domain_id + 1).into(),
-            curve: Curve::Edwards25519,
             protocol: Protocol::Frost,
             reconstruction_threshold: ReconstructionThreshold::new(6),
             purpose: DomainPurpose::Sign,

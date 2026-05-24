@@ -6,7 +6,7 @@
 
 use crate::common;
 
-use e2e_tests::{CLUSTER_WAIT_TIMEOUT, ContractInitFormat};
+use e2e_tests::CLUSTER_WAIT_TIMEOUT;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use rand::SeedableRng;
 use rstest::rstest;
@@ -48,7 +48,6 @@ async fn contract_upgrade_compatibility__current_node_runs_against_production_co
     let current_contract_wasm = common::must_load_contract_wasm();
     let (cluster, running) = common::must_setup_cluster(port_seed, |c| {
         c.contract_wasm = production_wasm;
-        c.init_format = ContractInitFormat::Legacy3_9_1;
     })
     .await;
 

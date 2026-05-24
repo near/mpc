@@ -28,6 +28,7 @@ pub const VOTE_CANCEL_KEYGEN: &str = "vote_cancel_keygen";
 pub const VOTE_CANCEL_RESHARING: &str = "vote_cancel_resharing";
 pub const VOTE_ABORT_KEY_EVENT_INSTANCE: &str = "vote_abort_key_event_instance";
 pub const VOTE_UPDATE: &str = "vote_update";
+pub const VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS: &str = "vote_update_foreign_chain_providers";
 pub const REMOVE_UPDATE_VOTE: &str = "remove_update_vote";
 pub const REMOVE_NON_PARTICIPANT_UPDATE_VOTES: &str = "remove_non_participant_update_votes";
 
@@ -74,6 +75,7 @@ pub const GET_TEE_ACCOUNTS: &str = "get_tee_accounts";
 pub const GET_ATTESTATION: &str = "get_attestation";
 pub const GET_SUPPORTED_FOREIGN_CHAINS: &str = "get_supported_foreign_chains";
 pub const GET_FOREIGN_CHAIN_SUPPORT_BY_NODE: &str = "get_foreign_chain_support_by_node";
+pub const ALLOWED_FOREIGN_CHAIN_PROVIDERS: &str = "allowed_foreign_chain_providers";
 pub const ALLOWED_DOCKER_IMAGE_HASHES: &str = "allowed_docker_image_hashes";
 pub const ALLOWED_LAUNCHER_COMPOSE_HASHES: &str = "allowed_launcher_compose_hashes";
 pub const ALLOWED_LAUNCHER_IMAGE_HASHES: &str = "allowed_launcher_image_hashes";

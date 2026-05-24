@@ -13,8 +13,8 @@ use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
-        participants::{ParticipantId, ParticipantInfo, Participants},
-        test_utils::{bogus_ed25519_public_key, infer_purpose_from_curve},
+        participants::{ParticipantInfo, Participants},
+        test_utils::{bogus_ed25519_public_key, infer_purpose_from_protocol},
         thresholds::{Threshold, ThresholdParameters},
     },
     tee::tee_state::NodeId,
@@ -39,12 +39,13 @@ use near_mpc_sdk::foreign_chain::{ExtractedValue, ForeignChainRpcRequest, Hash25
 use near_workspaces::{network::Sandbox, result::ExecutionSuccess, Contract};
 use near_workspaces::{result::Execution, Account, Worker};
 use rand_core::CryptoRngCore;
-use serde::Serialize;
 use serde_json::json;
 use signature::hazmat::PrehashSigner;
 use std::collections::BTreeSet;
 use std::time::Duration;
 use tokio_util::time::FutureExt as _;
+
+use super::utils::contract_build;
 
 pub async fn create_account_given_id(
     worker: &Worker<Sandbox>,
@@ -97,8 +98,11 @@ pub async fn gen_accounts(worker: &Worker<Sandbox>, amount: usize) -> (Vec<Accou
 }
 
 pub async fn init() -> (Worker<Sandbox>, Contract) {
+    init_with_wasm(current_contract()).await
+}
+
+pub async fn init_with_wasm(wasm: &[u8]) -> (Worker<Sandbox>, Contract) {
     let worker = near_workspaces::sandbox().await.unwrap();
-    let wasm = &current_contract();
     let contract = worker.dev_deploy(wasm).await.unwrap();
     (worker, contract)
 }
@@ -167,6 +171,7 @@ impl SandboxTestSetup {
             foreign_tx: false,
             number_of_participants: PARTICIPANT_LEN,
             init_config: None,
+            with_sandbox_test_methods: false,
         }
     }
 
@@ -184,6 +189,7 @@ pub struct SandboxTestSetupBuilder {
     foreign_tx: bool,
     number_of_participants: usize,
     init_config: Option<dtos::InitConfig>,
+    with_sandbox_test_methods: bool,
 }
 
 impl SandboxTestSetupBuilder {
@@ -207,8 +213,20 @@ impl SandboxTestSetupBuilder {
         self
     }
 
+    /// Deploys the wasm built with `--features sandbox-test-methods`, exposing the
+    /// introspection view methods in `crate::sandbox_test_methods` (e.g. fan-out queue
+    /// length).
+    pub fn with_sandbox_test_methods(mut self) -> Self {
+        self.with_sandbox_test_methods = true;
+        self
+    }
+
     pub async fn build(self) -> SandboxTestSetup {
-        let (worker, contract) = init().await;
+        let (worker, contract) = if self.with_sandbox_test_methods {
+            init_with_wasm(contract_build::current_contract_with_sandbox_test_methods()).await
+        } else {
+            init().await
+        };
         let (accounts, participants) = gen_accounts(&worker, self.number_of_participants).await;
         let threshold_parameters = make_threshold_params(&participants);
 
@@ -225,7 +243,7 @@ impl SandboxTestSetupBuilder {
         for protocol in &self.protocols {
             let curve = Curve::from(*protocol);
             let (pk, sk) = make_key_for_domain(curve);
-            let purpose = infer_purpose_from_curve(curve);
+            let purpose = infer_purpose_from_protocol(*protocol);
             let domain_id = DomainId(domain_configs.len() as u64);
 
             let reconstruction_threshold = match *protocol {
@@ -237,7 +255,6 @@ impl SandboxTestSetupBuilder {
             let key: PublicKeyExtended = pk.try_into().unwrap();
             let config = DomainConfig {
                 id: domain_id,
-                curve,
                 protocol: *protocol,
                 reconstruction_threshold,
                 purpose,
@@ -263,7 +280,6 @@ impl SandboxTestSetupBuilder {
             let key: PublicKeyExtended = pk.try_into().unwrap();
             let config = DomainConfig {
                 id: domain_id,
-                curve: Curve::Secp256k1,
                 protocol: Protocol::CaitSith,
                 reconstruction_threshold: ReconstructionThreshold::new(cluster_threshold),
                 purpose: DomainPurpose::ForeignTx,
@@ -519,7 +535,7 @@ pub async fn call_contract_key_generation<const N: usize>(
         start_keygen_instance(contract, accounts, key_event_id)
             .await
             .unwrap();
-        let (public_key, shared_secret_key) = make_key_for_domain(domain.curve);
+        let (public_key, shared_secret_key) = make_key_for_domain(Curve::from(domain.protocol));
 
         domain_keys.push(DomainKey {
             domain_config: domain.clone(),
@@ -571,7 +587,7 @@ pub async fn execute_key_generation_and_add_random_state(
         ThresholdParameters::new(participants, Threshold::new(threshold.0 + 1)).unwrap();
     let dummy_proposal = json!({
         "prospective_epoch_id": 1,
-        "proposal": OldThresholdParameters::from(&dummy_threshold_parameters),
+        "proposal": &dummy_threshold_parameters,
     });
     accounts[0]
         .call(contract.id(), method_names::VOTE_NEW_PARAMETERS)
@@ -586,21 +602,18 @@ pub async fn execute_key_generation_and_add_random_state(
     let domains_to_add = [
         DomainConfig {
             id: 0.into(),
-            curve: Curve::Edwards25519,
             protocol: Protocol::Frost,
             reconstruction_threshold: ReconstructionThreshold::new(6),
             purpose: DomainPurpose::Sign,
         },
         DomainConfig {
             id: 1.into(),
-            curve: Curve::Secp256k1,
             protocol: Protocol::CaitSith,
             reconstruction_threshold: ReconstructionThreshold::new(6),
             purpose: DomainPurpose::Sign,
         },
         DomainConfig {
             id: 2.into(),
-            curve: Curve::Edwards25519,
             protocol: Protocol::Frost,
             reconstruction_threshold: ReconstructionThreshold::new(6),
             purpose: DomainPurpose::Sign,
@@ -820,56 +833,4 @@ pub fn polygon_evm_request() -> ForeignChainRpcRequest {
         extractors: vec![EvmExtractor::BlockHash],
         finality: EvmFinality::Finalized,
     })
-}
-
-/// Mirrors the pre-3.10 JSON wire shape of `ThresholdParameters` so that tests
-/// which deploy a production contract binary (whose DTO still expects
-/// `sign_pk`) can feed it threshold-parameter arguments. The current DTO
-/// accepts both field names via `#[serde(alias = "sign_pk")]`, so this helper
-/// is safe against the current contract too. Remove this type (and every
-/// `OldThresholdParameters::from(...)` call site) once 3.10.0 is the
-/// production contract on Mainnet and Testnet.
-#[derive(Serialize)]
-pub struct OldThresholdParameters {
-    participants: OldParticipants,
-    threshold: Threshold,
-}
-
-#[derive(Serialize)]
-struct OldParticipants {
-    next_id: ParticipantId,
-    participants: Vec<(AccountId, ParticipantId, OldParticipantInfo)>,
-}
-
-#[derive(Serialize)]
-struct OldParticipantInfo {
-    url: String,
-    sign_pk: dtos::Ed25519PublicKey,
-}
-
-impl From<&ThresholdParameters> for OldThresholdParameters {
-    fn from(params: &ThresholdParameters) -> Self {
-        let participants = params
-            .participants()
-            .participants()
-            .iter()
-            .map(|(account_id, id, info)| {
-                (
-                    account_id.clone(),
-                    *id,
-                    OldParticipantInfo {
-                        url: info.url.clone(),
-                        sign_pk: info.tls_public_key.clone(),
-                    },
-                )
-            })
-            .collect();
-        OldThresholdParameters {
-            participants: OldParticipants {
-                next_id: params.participants().next_id(),
-                participants,
-            },
-            threshold: params.threshold(),
-        }
-    }
 }

@@ -314,6 +314,193 @@ Relevant contract methods:
 * `get_supported_foreign_chains() -> SupportedForeignChains` — view method. Returns the set of chains that appear in **every** active participant's registered configuration.
 * `get_foreign_chain_support_by_node() -> ForeignChainSupportByNode` — view method. Returns each participant's registered set of supported chains.
 
+## On-chain RPC Provider Whitelist
+
+> Tracked under issue [#3208](https://github.com/near/mpc/issues/3208). Landing in stacked PRs:
+> PR 1 (contract storage types) → PR 2 (vote endpoints) → PR 3 (node-side wiring + chain-identity probe).
+> The text below describes the end-state design; sections call out per-PR scope where relevant.
+
+The per-participant registration model above leaves the network with no shared notion of *which RPC providers it trusts* — a TEE-attested node binary still pulls URLs from its own config file. To close that gap the contract carries a per-chain whitelist of providers, voted in by participants. Operators reference providers from the whitelist by `provider_id` in their local `foreign_chains.yaml`; the node assembles the final URL from `base_url` + `chain_routing` + the operator-supplied token (placed per `auth_scheme`).
+
+### What changes vs the per-participant model
+
+| Concern                                | Today                                                                                       | After this change                                                                                                                                                                              |
+|----------------------------------------|---------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Source of truth for "trusted provider" | Implicit consensus across operator yamls (everyone independently set the same URLs)         | Explicit on-chain `foreign_chain_rpc_whitelist`, mutated by `vote_update_foreign_chain_providers(votes: Vec<ChainVote>)` — each `ChainVote` is a full per-chain snapshot (provider list + RPC response quorum). The chain's stored state is replaced when the protocol's signing threshold of participants holds the same canonical proposal.                                                            |
+| Where the RPC URL lives                | Operator's `foreign_chains.yaml`, as a full string with auth placeholders                   | Contract `ProviderEntry`: `base_url` + `auth_scheme` + `chain_routing` enum (`Embedded` / `PathSegment` / `QueryParam` — exactly one). Node assembles the final URL at startup.                  |
+| Where the operator's API key lives     | Operator's yaml, via `TokenConfig::env`                                                     | Operator's yaml, via `TokenConfig::env` *(unchanged)*                                                                                                                                          |
+| What the operator picks                | Full URL, auth scheme, token reference                                                      | `provider_id` (label) + token reference                                                                                                                                                        |
+| Adding a new provider                  | Every operator updates their yaml; the network effectively supports a chain once enough do  | Threshold of participants vote in `(chain, ProviderEntry)`; operators reference it by `provider_id` only                                                                                       |
+| Removing a compromised provider        | Every operator manually edits their yaml; coordination problem                              | Threshold of participants vote remove; nodes pick up the change via the indexer and drop the provider on next reconfigure                                                                       |
+| Testnet vs mainnet separation          | Implicit — operator decides what URL goes under which chain                                 | Per-`ForeignChain` map slot, plus a startup *chain-identity probe* that calls the chain's self-identifying RPC and asserts the response matches a constant hardcoded in the inspector — catches both lookup-level (wrong bucket) and content-level (wrong URL voted into the right bucket) confusion. |
+
+### Whitelist storage shape
+
+PR 1 shipped the DTOs and a nested map of providers; PR 2 refactored the storage to the
+snapshot-friendly shape below (one `ChainEntry` per chain, holding both the canonical
+provider list and the RPC response quorum) and added the pending-vote storage. The
+whitelist is exposed via the borsh `allowed_foreign_chain_providers` view fn; serde-JSON
+was avoided because the closure would push WASM past the per-tx size cap.
+
+```rust
+pub struct ProviderId(pub String); // newtype around String — typed boundary so a
+                                   // base_url can't be passed where a provider_id
+                                   // is expected.
+
+#[non_exhaustive]
+pub enum AuthScheme {
+    Header { name: String, scheme: Option<String> },
+    Path   { placeholder: String },
+    Query  { name: String },
+    None,
+}
+
+#[non_exhaustive]
+pub enum ChainRouting {
+    /// Chain identity is already in `base_url` (subdomain or path prefix). Alchemy / Infura.
+    Embedded,
+    /// Append `segment` to `base_url`'s path. Ankr Ethereum: `PathSegment { segment: "eth" }`.
+    PathSegment { segment: String },
+    /// Merge a single chain-identifying query param. dRPC Ethereum: `{ name: "network", value: "ethereum" }`.
+    QueryParam { name: String, value: String },
+}
+
+pub struct ProviderEntry {
+    pub provider_id: ProviderId,
+    pub base_url: String,
+    pub auth_scheme: AuthScheme,
+    pub chain_routing: ChainRouting,
+}
+
+/// Per-chain stored state: the canonical (sorted) provider list and the RPC response
+/// quorum nodes should use when querying.
+pub struct ChainEntry {
+    pub providers: Vec<ProviderEntry>,
+    pub threshold: u64,
+}
+
+pub struct AllowedProviders {
+    entries: BTreeMap<ForeignChain, ChainEntry>,
+}
+
+pub struct ProviderVotes {
+    // Pending per-chain proposals. The slot holds the exact `ChainEntry` the
+    // participant is proposing for that chain. Replaced wholesale on apply.
+    pending: BTreeMap<(AuthenticatedParticipantId, ForeignChain), ChainEntry>,
+}
+
+pub struct ForeignChainRpcWhitelist {
+    entries: AllowedProviders,
+    votes: ProviderVotes,
+}
+```
+
+### Example URL assembly
+
+The node assembles the final URL deterministically: start from `base_url`, apply `chain_routing` (no-op for `Embedded`, append segment for `PathSegment`, merge param for `QueryParam`), then apply `auth_scheme` to inject the token.
+
+| Vote                  | base_url                                | chain_routing                                  | auth_scheme       | Assembled URL                                              |
+|-----------------------|------------------------------------------|------------------------------------------------|-------------------|------------------------------------------------------------|
+| `(Ethereum, alchemy)` | `https://eth-mainnet.g.alchemy.com/v2/`  | `Embedded`                                     | `Path("")`        | `https://eth-mainnet.g.alchemy.com/v2/TOKEN`               |
+| `(Ethereum, ankr)`    | `https://rpc.ankr.com`                   | `PathSegment { segment: "eth" }`               | `Path("")`        | `https://rpc.ankr.com/eth/TOKEN`                           |
+| `(Sepolia, ankr)`     | `https://rpc.ankr.com`                   | `PathSegment { segment: "eth_sepolia" }`       | `Path("")`        | `https://rpc.ankr.com/eth_sepolia/TOKEN`                   |
+| `(Ethereum, drpc)`    | `https://lb.drpc.org/ogrpc`              | `QueryParam { name: "network", value: "ethereum" }` | `Query("dkey")` | `https://lb.drpc.org/ogrpc?network=ethereum&dkey=TOKEN`  |
+| `(Ethereum, infura)`  | `https://mainnet.infura.io/v3/`          | `Embedded`                                     | `Path("")`        | `https://mainnet.infura.io/v3/TOKEN`                       |
+
+### Vote semantics
+
+The vote endpoint takes a **batch of per-chain snapshots**, one `ChainVote` per chain
+the caller wants to update. Each `ChainVote` proposes the chain's complete state
+(provider list + RPC response quorum), not a diff:
+
+```rust
+pub struct ChainVote {
+    pub chain: ForeignChain,
+    pub providers: Vec<ProviderEntry>,
+    /// RPC response quorum nodes apply when fanning out queries to those providers.
+    pub threshold: u64,
+}
+
+#[handle_result]
+pub fn vote_update_foreign_chain_providers(
+    &mut self,
+    #[serializer(borsh)] votes: Vec<ChainVote>,
+) -> Result<(), Error>;
+```
+
+Borsh args (not JSON) because serde::Deserialize for the nested `ChainVote`/`ProviderEntry`/`AuthScheme`/`ChainRouting` closure would push the contract past the per-tx WASM size cap.
+
+- **Vote target = the per-chain snapshot.** For each `ChainVote` in the batch, the participant is voting on the chain's *full* proposed state — providers and RPC response quorum together. Two participants count toward the same proposal for a chain when their canonical `(providers, threshold)` pairs are byte-identical.
+- **Canonicalization.** Within each `ChainVote`, the contract sorts `providers` by `provider_id` before comparison, so two participants who submitted the same logical set in different orders still count as the same proposal. A duplicate `provider_id` inside a single `ChainVote`, or a duplicate `chain` across the batch, is rejected with `InvalidParameters::MalformedPayload`.
+- **One active vote per participant per chain.** Votes are keyed by `(participant, chain)`. Recasting for a chain overwrites that participant's slot for *only that chain*; chains the participant didn't touch in the new call keep their prior slot.
+- **Gated on the protocol signing threshold.** A chain applies when the count of participants holding the same canonical `(providers, threshold)` pair reaches `self.threshold()?.value()` — the same threshold used by `verify_tee` and `vote_add_os_measurement`. There is no separate per-chain *voting* threshold; the per-chain numeric on `ChainVote.threshold` is the *RPC response quorum* (a runtime concept consumed by nodes), not a voting parameter.
+- **Apply = full snapshot replacement.** When threshold is reached for a chain, `AllowedProviders.entries[chain]` is set to the proposed `ChainEntry` — the old provider list is discarded wholesale. The chain's pending votes are cleared (`clear_chain`) so the next round starts fresh. Other chains' pending votes are untouched.
+- **Threshold checked synchronously on every call.** No periodic sweep.
+- **Vote withdraw.** No explicit withdraw endpoint. Recasting overwrites your slot for the chains you touch. A vote is also cleared by being removed from the participant set (`clean_tee_status` → `ProviderVotes::retain_only`) or by the chain applying.
+- **Return value.** `vote()` returns the chains whose threshold was reached and applied on this call; the entry point logs them as `applied chains={:?}`. Chains still pending are absent from the log.
+
+### Design rationale
+
+#### Why move the connection config on chain
+
+Threat model: an operator runs a TEE-attested node binary, but the binary trusts its config file at startup — including the RPC URLs. A malicious or compromised operator can therefore swap one chain's RPC for a fake server returning forged receipts, and TEE attestation doesn't help — it attests the binary, not its config. Putting URL components on chain and validating the operator's local config against the whitelist closes that gap: the operator can no longer point the node at an arbitrary URL, only at one the network has voted to trust for that chain.
+
+#### Why the URL is split into structured pieces
+
+Providers use three mutually-exclusive conventions to identify which chain a request targets:
+
+- **Subdomain / path prefix** (Alchemy, Infura): `https://eth-mainnet.g.alchemy.com/v2/…`
+- **Path segment** (Ankr): `https://rpc.ankr.com/eth/…`
+- **Query param** (dRPC): `https://lb.drpc.org/ogrpc?network=ethereum&…`
+
+If `base_url` were a single string *and* the operator chose the auth scheme, the operator could declare e.g. `auth: { kind: Query, name: "network", token_env: KEY }` against a `base_url` ending in `…?network=ethereum&`. The assembled URL becomes `…?network=ethereum&network=sepolia` — most servers take the last value, redirecting the call to Sepolia. Modelling chain identity as a `ChainRouting` enum (`Embedded` | `PathSegment` | `QueryParam`) and putting `auth_scheme` on chain removes that syntactic surface. The operator only supplies a token *value*; they have no way to inject extra path components or query keys.
+
+#### Why each `(chain, provider_id)` gets its own `ProviderEntry`
+
+The "same" provider needs different connection config per chain:
+
+- **Alchemy**: `base_url` differs by chain (`eth-mainnet.g.alchemy.com` vs `eth-sepolia.g.alchemy.com`); `chain_routing = Embedded`.
+- **Ankr**: `chain_routing = PathSegment` value differs (`"eth"` vs `"eth_sepolia"`); `base_url` is shared.
+- **dRPC**: `chain_routing = QueryParam` value differs (`"ethereum"` vs `"sepolia"`); `base_url` is shared.
+
+There is no shared "Alchemy" record reused across chains — each `(chain, provider_id)` pair has its own `ProviderEntry` with chain-specific connection details. The fact that two entries share `provider_id: "alchemy"` is the natural cross-chain marker, not duplication.
+
+#### Why testnets get separate `ForeignChain` enum variants, not an `environment` field
+
+An `environment: Testnet | Mainnet` field would have to be re-checked everywhere `ForeignChain` is used and threaded through every signing flow. A separate enum variant carries the same information through the type system at no extra cost: the MPC contract already keys everything on `ForeignChain`, so `Sepolia` / `Goerli` / `Holesky` slot in as new variants. Adding the variants themselves is out of scope for this change; the whitelist design just doesn't *prevent* them.
+
+#### Why threshold (not unanimous) for both add and remove
+
+Removing a compromised provider quickly matters more than tolerating one hostile participant blocking removal indefinitely; node-side falls back to other surviving providers so removal isn't fatal to chain availability. The unanimous-remove precedent (`vote_remove_launcher_hash`) exists because removing a launcher invalidates attestations — that argument doesn't apply to RPC providers.
+
+#### Why per-chain snapshots rather than separate add/remove endpoints
+
+Two reasons together drove the snapshot model over an Add/Remove diff-ops endpoint:
+
+1. **Bootstrap coordination cost.** Enabling N chains with M providers each is N×M individual rounds if every action is its own vote, and every round needs threshold participants to vote *the same value*. For a realistic launch (5 chains × 5 providers, 13 operators) that's 325 individual votes to coordinate. A per-call batch — multiple chains in one `Vec<ChainVote>` — collapses that to roughly one vote per operator. Per-chain rather than per-action because each chain is the natural unit of agreement: operators audit "here's the trusted set for Ethereum" together with "here's the response quorum for Ethereum" in one decision.
+2. **Canonicalization.** Diff-ops batches (`Vec<Add | Remove>`) introduce order ambiguity at threshold-check time — `[Add A, Remove B]` and `[Remove B, Add A]` produce the same end state, but as raw `Vec`s they don't compare equal, so two participants would never count toward the same proposal unless they happened to submit in identical order. Snapshot semantics sidestep this: the contract sorts `providers` by `provider_id` and equality is on the sorted list, so two participants who submitted the same logical set in different orders contribute to the same proposal.
+
+#### Why protocol signing threshold (not unanimous, not a separate per-chain knob)
+
+Voting uses the protocol's existing signing threshold (`self.threshold()?.value()`), the same gate as `verify_tee` and `vote_add_os_measurement`. An earlier design proposed a separate per-chain *voting* threshold so mainnet and testnet could be voted in under different agreement requirements; that was dropped because (a) there's no setter that could safely populate it without itself being voted in, leaving a hardcoded default that's strictly weaker than the protocol threshold, and (b) the per-chain numeric on `ChainVote.threshold` already covers the *runtime* security knob — how many of N whitelisted providers must agree for a node to accept a response — which is what operators actually need to tune per chain.
+
+#### Why the chain-identity probe in addition to per-chain keying (PR 3)
+
+The per-chain map key prevents *lookup* confusion: when the node resolves the operator's `ethereum:` section, only `entries[Ethereum]` is consulted, never `entries[Sepolia]`. What it doesn't prevent is a `ChainVote { chain: Ethereum, providers: [ProviderEntry { provider_id: "ankr", chain_routing: PathSegment { segment: "eth_sepolia" }, … }, …], threshold: _ }` getting voted in — the contract just stores what threshold consensus produces; it can't tell whether `"eth_sepolia"` actually corresponds to Ethereum mainnet. Threshold voter review is the first line of defense; the chain-identity probe is the structural one.
+
+At startup, each resolved provider gets its self-identifying RPC called (`eth_chainId` for EVM, `getGenesisHash` for Solana, `starknet_chainId` for Starknet, a checkpointed block hash for Bitcoin) and the response is compared against a per-`ForeignChain` constant hardcoded in the inspector. A provider whose RPC reports the wrong network is dropped before any traffic flows. Because the expected value is in the TEE-attested binary, a malicious vote with the wrong URL can't bypass it.
+
+#### Why drop-and-log on local-config mismatch, not hard-crash
+
+If an operator's `foreign_chains.yaml` references a `provider_id` not on the whitelist for that chain (e.g. just removed by a vote), the node logs a warning and excludes that provider from registration; the chain is still served by surviving providers. A chain falls off the registration set only when zero providers survive. Hard-crashing would let a single hostile vote-removal participant take a node offline by removing a provider that node depends on.
+
+### Out of scope / deferred
+
+- **Per-chain quorum policy** (`RpcPolicy.quorum_threshold` from the precursor design doc). This is the number of providers a node must independently agree with on a verification result — distinct from the per-chain voting threshold for add/remove. A follow-up under the same milestone.
+- **Hostname templating** for Alchemy / Infura. Chain identity for subdomain-encoded providers stays inside `base_url` rather than being structurally extracted; symmetric extraction was rejected as over-engineering with no concrete attack benefit.
+- **Moving `sample_tx_id` on chain.** Stays in operator config for now; promoting it (so the whole network probes the same tx) is a candidate follow-up if operators start disagreeing on which tx to probe.
+- **Adding testnet `ForeignChain` variants** (`Sepolia`, `Goerli`, `Holesky`). The whitelist design doesn't need them and doesn't prevent them.
+
 ## Deterministic Provider Selection
 
 Each node selects a provider using a deterministic hash of the provider identity (RPC URL):
@@ -402,6 +589,13 @@ foreign_chains:
           placeholder: "{api_key}"
           token:
             env: ANKR_API_KEY
+      helius:
+        rpc_url: "https://mainnet.helius-rpc.com/"
+        auth:
+          kind: query
+          name: api-key
+          token:
+            env: HELIUS_API_KEY
       public:
         rpc_url: "https://rpc.public.example.com"
         auth:

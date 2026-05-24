@@ -13,9 +13,15 @@ export BASE_PATH=/mnt/data/barak/dstack_latest/meta-dstack/dstack
 export VMM_RPC=http://127.0.0.1:10000
 
 export MPC_IMAGE=nearone/mpc-node
-# Manifest digest of the MPC node image (for DEFAULT_IMAGE_DIGEST and voting).
+# Manifest digest of the MPC node image (filled into the launcher compose
+# template and voted in as the allowed code hash).
 # Get with: docker pull nearone/mpc-node:<tag> 2>&1 | grep Digest
-export MPC_MANIFEST_DIGEST=sha256:5d1e604dcf3197f8b465c854f8073eaa89b9733f646248d59f86a15b81110ef5
+export MPC_MANIFEST_DIGEST=sha256:eb4e3b75d439b77689534df6a69b542e779989f10b681ac43787a58e7c4aefdb
+
+# Manifest digest of the launcher image (filled into the launcher compose
+# template and voted in as the allowed launcher hash).
+# Get with: docker pull nearone/mpc-launcher:<tag> 2>&1 | grep Digest
+export LAUNCHER_MANIFEST_DIGEST=sha256:8940a8169c02df46e9afd7489e8721cc813567088b06720b51d06277aab0420d
 
 export NEAR_NETWORK_CONFIG=mpc-localnet
 export NEAR_RPC_URL=http://127.0.0.1:3030

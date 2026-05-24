@@ -112,7 +112,7 @@ async fn test_web_endpoints() {
             &client,
             i,
             &format!("http://{web_addr}/debug/blocks"),
-            &["Recent blocks:", "reqs:"],
+            &["Recent blocks:"],
         )
         .await
         .expect("debug/blocks endpoint failed");

@@ -15,7 +15,7 @@ use near_mpc_contract_interface::types::{
     Attestation, InitConfig, MockAttestation, Protocol, ProtocolContractState,
     ReconstructionThreshold,
 };
-use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, DomainPurpose};
+use near_mpc_contract_interface::types::{DomainConfig, DomainId, DomainPurpose};
 
 use assert_matches::assert_matches;
 use near_account_id::AccountId;
@@ -106,7 +106,6 @@ impl TestSetupBuilder {
 
         let domains = vec![DomainConfig {
             id: DomainId::default(),
-            curve: Curve::Secp256k1,
             protocol: Protocol::CaitSith,
             reconstruction_threshold: ReconstructionThreshold::new(2),
             purpose: DomainPurpose::Sign,
@@ -160,7 +159,6 @@ impl TestSetupBuilder {
                         .contract
                         .vote_add_domains(vec![DomainConfig {
                             id: DomainId(1),
-                            curve: Curve::Edwards25519,
                             protocol: Protocol::Frost,
                             reconstruction_threshold: ReconstructionThreshold::new(2),
                             purpose: DomainPurpose::Sign,

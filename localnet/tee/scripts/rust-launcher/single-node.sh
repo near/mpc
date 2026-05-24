@@ -98,6 +98,7 @@ VALIDATOR_KEY="$(jq -r .secret_key ~/.near/mpc-localnet/validator_key.json)"
 : "${BASE_PATH:?Set BASE_PATH (dstack base path)}"
 : "${MACHINE_IP:?Set MACHINE_IP (host IP reachable from the CVM)}"
 : "${MPC_MANIFEST_DIGEST:?Set MPC_MANIFEST_DIGEST (e.g. sha256:abc...)}"
+: "${LAUNCHER_MANIFEST_DIGEST:?Set LAUNCHER_MANIFEST_DIGEST (e.g. sha256:abc...)}"
 
 # NODE_IP usually equals MACHINE_IP for single-node
 NODE_IP="${NODE_IP:-$MACHINE_IP}"
@@ -115,7 +116,7 @@ NEAR_P2P_PORT="${NEAR_P2P_PORT:-24566}"
 PUBLIC_DATA_PORT="${PUBLIC_DATA_PORT:-$(find_free_port)}"
 STATE_SYNC_PORT="${STATE_SYNC_PORT:-$(find_free_port)}"
 MAIN_PORT="${MAIN_PORT:-$(find_free_port)}"
-FUTURE_PORT="${FUTURE_PORT:-$(find_free_port)}"
+MIGRATION_PORT="${MIGRATION_PORT:-$(find_free_port)}"
 
 # Host-local ports
 SSH_PORT="${SSH_PORT:-$(find_free_port)}"
@@ -179,7 +180,7 @@ render_env_and_conf() {
 
   export APP_NAME="${APP_NAME:-mpc-localnet-one-node-$(date +%s)}"
   export VMM_RPC OS_IMAGE SEALING_KEY_TYPE DISK
-  export DOCKER_COMPOSE_FILE_PATH="launcher_docker_compose.yaml"
+  export LAUNCHER_MANIFEST_DIGEST MPC_MANIFEST_DIGEST
   export USER_CONFIG_FILE_PATH="$CONF_OUT"
 
   export EXTERNAL_SSH_PORT="127.0.0.1:${SSH_PORT}"
@@ -193,19 +194,24 @@ render_env_and_conf() {
   export EXTERNAL_MPC_PUBLIC_DEBUG_PORT="${NODE_IP}:${PUBLIC_DATA_PORT}"
   export EXTERNAL_MPC_DECENTRALIZED_STATE_SYNC="${NODE_IP}:${STATE_SYNC_PORT}"
   export EXTERNAL_MPC_MAIN_PORT="${NODE_IP}:${MAIN_PORT}"
-  export EXTERNAL_MPC_FUTURE_PORT="${NODE_IP}:${FUTURE_PORT}"
+  export EXTERNAL_MPC_MIGRATION_PORT="${NODE_IP}:${MIGRATION_PORT}"
 
   export INTERNAL_MPC_PUBLIC_DEBUG_PORT="${INTERNAL_PUBLIC_DEBUG_PORT:-8080}"
   export INTERNAL_MPC_DECENTRALIZED_STATE_SYNC="${INTERNAL_STATE_SYNC_PORT:-24567}"
   export INTERNAL_MPC_MAIN_PORT="${INTERNAL_MAIN_PORT:-80}"
-  export INTERNAL_MPC_FUTURE_PORT="${INTERNAL_FUTURE_PORT:-13001}"
+  export INTERNAL_MPC_MIGRATION_PORT="${INTERNAL_MIGRATION_PORT:-13001}"
 
   export MPC_ENV="${MPC_ENV:-mpc-localnet}"
   export MPC_IMAGE="nearone/mpc-node"
   export MPC_ACCOUNT_ID="$NODE_ACCOUNT"
   export MPC_CONTRACT_ID="$CONTRACT_ACCOUNT"
   export MPC_SECRET_STORE_KEY="${MPC_SECRET_STORE_KEY:-00000000000000000000000000000000}"
-  export PORTS="${PORTS:-8080:8080,24566:24566,${FUTURE_PORT}:${FUTURE_PORT}}"
+  # The launcher PORTS map is CVM->container. vmm-cli (in deploy-launcher.sh)
+  # forwards host:$MIGRATION_PORT -> CVM:$INTERNAL_MIGRATION_PORT, so the
+  # launcher must publish container:$INTERNAL_MIGRATION_PORT on the same CVM
+  # port. Mapping ${MIGRATION_PORT}:${MIGRATION_PORT} would land on a closed
+  # container port when the two differ.
+  export PORTS="${PORTS:-8080:8080,24566:24566,${INTERNAL_MIGRATION_PORT:-13001}:${INTERNAL_MIGRATION_PORT:-13001}}"
   export PORTS_TOML
   PORTS_TOML="$(ports_to_toml "$PORTS")"
 

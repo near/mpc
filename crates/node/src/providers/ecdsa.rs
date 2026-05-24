@@ -265,9 +265,10 @@ impl SignatureProvider for EcdsaSignatureProvider {
             })
             .collect::<Vec<_>>();
 
-        generate_triples.await?;
-        for task in generate_presignatures {
-            task.await?;
+        let Err(join_error) = generate_triples.await;
+        tracing::error!("ecdsa background triple generation task ended unexpectedly: {join_error}");
+        for Err(join_error) in futures::future::join_all(generate_presignatures).await {
+            tracing::error!("ecdsa background presignature task ended unexpectedly: {join_error}");
         }
 
         Ok(())

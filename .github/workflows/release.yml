@@ -46,9 +46,6 @@ jobs:
     with:
       source-tag: "main-${{ needs.release-info.outputs.short-sha }}"
       release-tag: ${{ needs.release-info.outputs.version }}
-    secrets:
-      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
 
   retag-node:
     name: "Retag mpc-node"
@@ -58,9 +55,6 @@ jobs:
       source-tag: "main-${{ needs.release-info.outputs.short-sha }}"
       release-tag: ${{ needs.release-info.outputs.version }}
       repository: mpc-node
-    secrets:
-      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
 
   retag-node-gcp:
     name: "Retag mpc-node-gcp"
@@ -70,9 +64,6 @@ jobs:
       source-tag: "main-${{ needs.release-info.outputs.short-sha }}"
       release-tag: ${{ needs.release-info.outputs.version }}
       repository: mpc-node-gcp
-    secrets:
-      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
 
   collect-digests:
     name: "Collect Docker image digests"
@@ -109,6 +100,7 @@ jobs:
   build-contract:
     name: "Build contract"
     needs: release-info
+    environment: production
     runs-on: warp-ubuntu-2404-x64-16x
 
     outputs:
