@@ -2,6 +2,7 @@
 
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
+    errors::{Error, InvalidParameters},
     primitives::{
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantId, ParticipantInfo},
@@ -274,6 +275,70 @@ fn set_system_time(nano_seconds_since_unix_epoch: u64) {
     testing_env!(VMContextBuilder::new()
         .block_timestamp(nano_seconds_since_unix_epoch)
         .build());
+}
+
+/// **Test that `submit_participant_info` rejects an attempt by one account to overwrite
+/// another account's stored attestation entry**, keyed by TLS public key. Without this
+/// gate, any caller could replace a legit participant's attestation and lock them out of
+/// every attestation-gated method (DoS via cross-participant overwrite).
+#[test]
+fn submit_participant_info__should_reject_overwrite_from_other_account() {
+    // Given: a running contract with two participants who have submitted their
+    // attestations. We will treat `participants_list[0]` as the victim.
+    const PARTICIPANT_COUNT: usize = 2;
+    const THRESHOLD: u64 = 2;
+
+    testing_env!(VMContextBuilder::new()
+        .attached_deposit(NearToken::from_near(1))
+        .build());
+
+    let mut setup = TestSetupBuilder::new()
+        .with_partcipant_count(PARTICIPANT_COUNT)
+        .with_threshold(THRESHOLD)
+        .build();
+
+    let participant_nodes = setup.get_participant_node_ids();
+    let victim_node = participant_nodes[0].clone();
+    let victim_attestation = Attestation::Mock(MockAttestation::Valid);
+    setup.submit_attestation_for_node(&victim_node, victim_attestation);
+
+    let stored_before = setup
+        .contract
+        .get_attestation(victim_node.tls_public_key.clone())
+        .unwrap()
+        .expect("victim attestation should be stored");
+
+    // When: an unrelated account submits an attestation that targets the victim's TLS key.
+    // The attacker context attaches a deposit large enough to cover any storage charge,
+    // so the call can only fail due to the ownership check — not `InsufficientDeposit`.
+    let attacker_node = NodeId {
+        account_id: "attacker.near".parse().unwrap(),
+        tls_public_key: victim_node.tls_public_key.clone(),
+        account_public_key: bogus_ed25519_public_key(),
+    };
+    testing_env!(VMContextBuilder::new()
+        .signer_account_id(attacker_node.account_id.clone())
+        .predecessor_account_id(attacker_node.account_id.clone())
+        .attached_deposit(NearToken::from_near(1))
+        .build());
+    let attack_result = setup.contract.submit_participant_info(
+        Attestation::Mock(MockAttestation::Valid),
+        attacker_node.tls_public_key.clone(),
+    );
+
+    // Then: the contract rejects the call with the TLS-ownership error and the victim's
+    // entry is unchanged.
+    assert_matches!(
+        &attack_result,
+        Err(Error::InvalidParameters(InvalidParameters::InvalidTeeRemoteAttestation { reason }))
+            if reason.contains("TLS public key is already registered")
+    );
+    let stored_after = setup
+        .contract
+        .get_attestation(victim_node.tls_public_key)
+        .unwrap()
+        .expect("victim attestation should still be stored");
+    assert_eq!(stored_before, stored_after);
 }
 
 /// **Test that `clean_tee_status()` is vote-only** — attestations for non-participants
