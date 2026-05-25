@@ -132,7 +132,7 @@ async fn do_sign_coordinator_v1(
     commitments_map.insert(me.to_identifier()?, commitments);
 
     // --- Round 2
-    // * Send collected commitments for each party signature share
+    // * Receive others' commitments, then send the signing package.
 
     // Step 2.1
     let commit_waitpoint = chan.next_waitpoint();
@@ -222,7 +222,7 @@ async fn do_sign_coordinator_v2(
         .map_err(|e| ProtocolError::AssertionFailed(e.to_string()))?;
     signature_shares.insert(me.to_identifier()?, signature_share);
 
-    // Step 1.3 (implicit step 1.2)
+    // Step 1.3 (step 1.2 is performed by the other participants)
     let sign_waitpoint = chan.next_waitpoint();
     for (from, signature_share) in
         recv_from_others(&chan, sign_waitpoint, &participants, me).await?

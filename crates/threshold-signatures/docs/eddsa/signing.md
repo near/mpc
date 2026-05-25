@@ -10,7 +10,7 @@ of detecting which party deviated from the protocol.
 
 ### Note:  We denote $\mathcal{P}$ the set of participants included the DKG and the threshold $t = \mathsf{MaxMalicious}+1$
 
-### Note: We introduce two signing versions both formally proven secure in the original paper. The first version performs the entirity of FROST protocol during the signing. It relies heavily on the coordinator and thus takes 3 non-symmetric rounds to complete. The second version has been implemented later on, it splits the FROST scheme into a presigning round and a signing round. This relies less on  the coordinator in the presigning phase by treating all participants symmetrically. It thus completes in two rounds.
+### Note: We introduce two signing versions both formally proven secure in the original paper. The first version performs the entirety of FROST protocol during the signing. It relies heavily on the coordinator and thus takes 3 non-symmetric rounds to complete. The second version has been implemented later on, it splits the FROST scheme into a presigning round and a signing round. This relies less on the coordinator in the presigning phase by treating all participants symmetrically. It thus completes in two rounds.
 
 ## Implementation Version 1: Signing
 
@@ -51,7 +51,7 @@ $$
 
 1.2 $\star$ Each $P_i$ sends $(A_i, B_i)$ **only to the coordinator**.
 
-### Round 2 (Coordinator)
+#### Round 2 (Coordinator)
 
 2.1 $\bullet$ The coordinator waits to receive $(A_j, B_j)$ from every party $P_j$.
 
@@ -111,13 +111,13 @@ $$
 
 **Output:** the signature $(R, s)$.
 
-*Note: We do not make use of the cheater detection feature which requires additional computation and potentially and extra round of communicating the cheater to the rest of the participant.*
+*Note: We do not make use of the cheater detection feature which requires additional computation and potentially an extra round of communicating the cheater to the rest of the participants.*
 
 
 ## Implementation Version 2: Presigning
 
 In this phase, a set of parties $\mathcal{P}_1 \subseteq \mathcal{P}$
-of size $N_1 > t$ wishes to generate an EdDSA presignature. Following the
+of size $N_1 \geq t$ wishes to generate an EdDSA presignature. Following the
 [RFC9591](https://datatracker.ietf.org/doc/html/rfc9591) we will use
 domain separated hash functions $H_3$.
 
@@ -155,6 +155,8 @@ $$
 
 1.4 $P_i$ collects all terms into a set $\mathit{commits}\gets \set{(j, A_j, B_j)\colon \forall j \in \set{1.. N_1}}$.
 
+**Output:** The private nonces $(a_i, b_i)$ and the public commitments $\mathit{commits}$.
+
 
 ## Implementation Version 2: Signing
 
@@ -168,6 +170,7 @@ The inputs to this phase are:
 1. The secret key share $x_i$.
 2. The public key $X$
 3. The message $m$
+4. The presignature output from the Presigning phase: the private nonces $(a_i, b_i)$ and the commitments map $\mathit{commits}$.
 
 
 ### Round 1
@@ -218,5 +221,5 @@ $$
 
 
 
-*Note: We do not make use of the cheater detection feature which requires additional computation and potentially and extra round of communicating the cheater to the rest of the participant.*
+*Note: We do not make use of the cheater detection feature which requires additional computation and potentially an extra round of communicating the cheater to the rest of the participants.*
 
