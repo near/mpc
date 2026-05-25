@@ -352,8 +352,12 @@ fn do_sign_participant_v2(
         ));
     }
 
-    let key_package =
-        construct_key_package(threshold, me, keygen_output.private_share, &keygen_output.public_key)?;
+    let key_package = construct_key_package(
+        threshold,
+        me,
+        keygen_output.private_share,
+        &keygen_output.public_key,
+    )?;
     // Ensures the values are zeroized on drop
     let key_package = Zeroizing::new(key_package);
 
