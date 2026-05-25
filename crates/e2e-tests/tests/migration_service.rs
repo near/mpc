@@ -568,3 +568,119 @@ async fn migration_service__should_migrate_nodes_via_backup_cli() {
         tracing::info!(source_idx, target_idx, "migration completed successfully");
     }
 }
+
+/// Exercises back-migration (A → B → A) against the investigation tracked at
+/// near/mpc#2121. After a forward A → B, we kill A and restart it (preserving
+/// its keyshares on disk — the operator scenario the issue describes), then
+/// run B → A.
+///
+/// **Empirical finding (2026-05-24):** this scenario **succeeds** in the Rust
+/// E2E harness, which mocks TEE attestation to `{"Mock": "Valid"}` (see
+/// `crates/e2e-tests/README.md:170`). That outcome is itself evidence: P1
+/// alone — the `execute_onboarding` early-return when keyshares are already
+/// on disk — is **not** sufficient to cause the production symptom. The
+/// leading remaining hypothesis is P2 (stale on-chain TEE attestation
+/// rejected by `conclude_node_migration`'s `reverify_participants` check),
+/// which this harness cannot reproduce because attestations are mocked
+/// always-valid. See `back_migration_bug_investigation.md` for context.
+///
+/// Setup: 2 participants (A0, A1) + 1 migration target (B0). A1 stays a
+/// participant throughout so threshold (2) holds during both migrations.
+#[tokio::test]
+#[expect(non_snake_case)]
+async fn migration_service__should_handle_back_migration_a_to_b_to_a() {
+    let backup_cli = must_get_backup_cli_path();
+
+    // Given: 2 participants (A0, A1) + 1 migration target (B0 at index 2).
+    let (mut cluster, running) =
+        common::must_setup_cluster(common::MIGRATION_BACK_PORT_SEED, |c| {
+            c.num_nodes = 2;
+            c.threshold = 2;
+            c.migration_targets = vec![0];
+        })
+        .await;
+
+    let (a_idx, b_idx) = (0usize, 2usize);
+    assert_eq!(
+        cluster.nodes[a_idx].account_id().to_string(),
+        cluster.nodes[b_idx].account_id().to_string(),
+        "migration target must share the source account"
+    );
+    assert_ne!(
+        cluster.nodes[a_idx].p2p_public_key_str(),
+        cluster.nodes[b_idx].p2p_public_key_str(),
+        "migration target must have a different p2p key"
+    );
+
+    // Sanity: cluster is healthy before any migration.
+    let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+    common::send_sign_request(&cluster, &running, &mut rng, cluster.default_user_account())
+        .await
+        .expect("sign request failed before forward migration");
+
+    // When: forward migration A0 → B0.
+    let backup_service_fwd = BackupService::must_get_new(backup_cli.clone());
+    backup_service_fwd.must_generate_keys();
+    register_backup_service_and_wait(&cluster, a_idx, &backup_service_fwd)
+        .await
+        .expect("forward: register_backup_service_and_wait failed");
+    get_keyshares_from_source(&cluster, a_idx, &backup_service_fwd)
+        .await
+        .expect("forward: get_keyshares_from_source failed");
+    start_migration_and_wait(&cluster, a_idx, b_idx)
+        .await
+        .expect("forward: start_migration_and_wait failed");
+    put_keyshares_to_target(&cluster, b_idx, &backup_service_fwd)
+        .await
+        .expect("forward: put_keyshares_to_target failed");
+    wait_for_migration_completion(&cluster, a_idx, b_idx)
+        .await
+        .expect("forward: wait_for_migration_completion failed");
+
+    // Then: forward worked — B0 is the active participant, sign still succeeds
+    // (B0 + A1).
+    common::send_sign_request(&cluster, &running, &mut rng, cluster.default_user_account())
+        .await
+        .expect("sign request failed after forward migration");
+
+    // Simulate operator decommissioning the old node and bringing it back
+    // online later for the back-migration. `kill_nodes` + `start_nodes`
+    // preserves the node's home dir (keyshares stay on disk) — that disk
+    // state is the trigger for the suspected P1 early-return.
+    cluster
+        .kill_nodes(&[a_idx])
+        .expect("failed to kill A0 before back-migration");
+    cluster
+        .start_nodes(&[a_idx])
+        .expect("failed to restart A0 for back-migration");
+    cluster
+        .wait_for_node_healthy(a_idx)
+        .await
+        .expect("A0 did not become healthy after restart");
+
+    // When: back-migration B0 → A0. Same scaffold with swapped indices: now
+    // B0 (idx 2) is the source and A0 (idx 0) is the target.
+    let backup_service_back = BackupService::must_get_new(backup_cli.clone());
+    backup_service_back.must_generate_keys();
+    register_backup_service_and_wait(&cluster, b_idx, &backup_service_back)
+        .await
+        .expect("back: register_backup_service_and_wait failed");
+    get_keyshares_from_source(&cluster, b_idx, &backup_service_back)
+        .await
+        .expect("back: get_keyshares_from_source failed");
+    start_migration_and_wait(&cluster, b_idx, a_idx)
+        .await
+        .expect("back: start_migration_and_wait failed");
+    put_keyshares_to_target(&cluster, a_idx, &backup_service_back)
+        .await
+        .expect("back: put_keyshares_to_target failed");
+
+    wait_for_migration_completion(&cluster, b_idx, a_idx)
+        .await
+        .expect("back-migration did not finalize");
+
+    // Then: A0 + A1 are the participants again and the cluster still signs.
+    common::send_sign_request(&cluster, &running, &mut rng, cluster.default_user_account())
+        .await
+        .expect("sign request failed after back-migration");
+}
