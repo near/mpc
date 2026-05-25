@@ -119,16 +119,15 @@ where
 
         if inspectors_split_between_success_and_failure {
             tracing::error!(
-                successes = ?successes,
-                non_transient_errors = ?non_transient_errors,
+                ?successes,
+                ?non_transient_errors,
                 "fan-out: inspectors split between success and non-transient failure",
             );
             return Err(ForeignChainInspectionError::InspectorResponseMismatch);
         }
 
-        if !successes.is_empty() {
-            let first_values = &successes[0].1;
-            let all_successes_agree = successes.iter().all(|(_, v)| v == first_values);
+        if let Some(first_values) = successes.first() {
+            let all_successes_agree = successes.iter().all(|(_, v)| v == &first_values.1);
             if !all_successes_agree {
                 tracing::error!(
                     responses = ?successes,
@@ -137,11 +136,12 @@ where
                 return Err(ForeignChainInspectionError::InspectorResponseMismatch);
             }
             let (_, first) = successes.into_iter().next().expect("checked non-empty");
+
             return Ok(first);
         }
 
-        if !non_transient_errors.is_empty() {
-            let first_variant = std::mem::discriminant(&non_transient_errors[0].1);
+        if let Some(first_non_transient_error) = non_transient_errors.first() {
+            let first_variant = std::mem::discriminant(&first_non_transient_error.1);
             let all_failures_have_same_variant = non_transient_errors
                 .iter()
                 .all(|(_, e)| std::mem::discriminant(e) == first_variant);
