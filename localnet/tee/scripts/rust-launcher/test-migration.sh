@@ -419,9 +419,12 @@ do_get_keyshares() {
 # operator's; target params come from the target's /public_data.
 #
 # The URL we publish here becomes the contract participant URL after
-# conclude_node_migration. With `port_override = 80` in the toml, the MPC
-# node ignores the URL port and binds P2P on 80 regardless — we publish 80
-# explicitly for clarity and to match init_args.
+# conclude_node_migration. With `port_override = 80` in the toml (see
+# `node.conf.localnet.toml.tpl` under `[mpc_node_config.node.indexer]`),
+# the MPC node ignores the URL port and binds P2P on 80 regardless — we
+# publish 80 explicitly for clarity and to match `init_args` in
+# `deploy-tee-cluster.sh`. If `port_override` is ever changed in the
+# toml, the literal `${MAIN_PORT}` below must move with it.
 do_start_node_migration() {
   local source_idx="$1" target_idx="$2"
   local source_acct ip keys_json signer_pk tls_pk
@@ -599,7 +602,7 @@ cmd_status() {
   log "migration_info:"
   near_call_ro migration_info '{}' | extract_json_ro | jq . || true
   log "get_tee_accounts:"
-  near_call_tx get_tee_accounts '{}' "$(node_account_for_i 0)" | extract_json_tx | jq . || true
+  near_call_ro get_tee_accounts '{}' | extract_json_ro | jq . || true
   log "state (truncated):"
   near_call_ro state '{}' | extract_json_ro | jq '{state_keys: keys, participants: .Running.parameters.participants.participants}' || true
 }

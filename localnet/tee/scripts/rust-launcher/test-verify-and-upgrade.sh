@@ -108,7 +108,7 @@ verify_cluster() {
     att_output="$(near_call_ro get_attestation "{\"tls_public_key\": \"${tls_keys[$i]}\"}")"
     if echo "$att_output" | grep -q '"Dstack"'; then
       local mpc_hash
-      mpc_hash="$(echo "$att_output" | extract_json_tx_ro | jq -r '.Dstack.mpc_image_hash')"
+      mpc_hash="$(echo "$att_output" | extract_json_ro | jq -r '.Dstack.mpc_image_hash')"
       pass "node$i attestation: Dstack (mpc_hash=${mpc_hash:0:16}...)"
     elif echo "$att_output" | grep -q '"Mock"'; then
       fail "node$i attestation: Mock (expected Dstack)"
@@ -151,7 +151,7 @@ verify_cluster() {
   local hashes_output
   hashes_output="$(near_call_ro allowed_docker_image_hashes '{}')"
   local hashes_json
-  hashes_json="$(echo "$hashes_output" | extract_json_tx_ro)"
+  hashes_json="$(echo "$hashes_output" | extract_json_ro)"
   local hash_count
   hash_count="$(echo "$hashes_json" | jq 'length')"
   pass "Allowed MPC image hashes: $hash_count"
@@ -199,7 +199,7 @@ upgrade_cluster() {
 
   # Check if already approved
   local current_hashes
-  current_hashes="$(near_call_ro allowed_docker_image_hashes '{}' | extract_json_tx_ro)"
+  current_hashes="$(near_call_ro allowed_docker_image_hashes '{}' | extract_json_ro)"
   if echo "$current_hashes" | jq -e --arg h "$new_hash" '.[] | select(. == $h)' >/dev/null 2>&1; then
     warn "Hash $new_hash is already approved — skipping vote"
   else
@@ -227,7 +227,7 @@ upgrade_cluster() {
 
     # Verify vote succeeded
     local updated_hashes
-    updated_hashes="$(near_call_ro allowed_docker_image_hashes '{}' | extract_json_tx_ro)"
+    updated_hashes="$(near_call_ro allowed_docker_image_hashes '{}' | extract_json_ro)"
     if echo "$updated_hashes" | jq -e --arg h "$new_hash" '.[] | select(. == $h)' >/dev/null 2>&1; then
       pass "New hash approved on-chain: $new_hash"
     else
@@ -341,7 +341,7 @@ upgrade_cluster() {
     local att_output
     att_output="$(near_call_ro get_attestation "{\"tls_public_key\": \"$key\"}")"
     local mpc_hash
-    mpc_hash="$(echo "$att_output" | extract_json_tx_ro | jq -r '.Dstack.mpc_image_hash // empty')"
+    mpc_hash="$(echo "$att_output" | extract_json_ro | jq -r '.Dstack.mpc_image_hash // empty')"
     if [ "$mpc_hash" = "$new_hash" ]; then
       pass "node$i attestation confirms new image hash"
     else

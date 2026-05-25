@@ -73,7 +73,11 @@ ports_to_toml() {
 }
 
 # ---- dstack vmm-cli wrapper ----------------------------------------------
-# Constructed lazily so callers that don't need vmm-cli can skip BASE_PATH.
+# $CLI is resolved at source-time, so callers that intend to use it MUST set
+# BASE_PATH (and optionally VMM_RPC) BEFORE sourcing common.sh. Callers that
+# don't need vmm-cli (e.g. single-node.sh, which uses inline python3
+# invocations) can source common.sh before BASE_PATH is set — $CLI just
+# stays unset, and any later use will trip `set -u` with a clear message.
 if [ -n "${BASE_PATH:-}" ]; then
   CLI="python3 $BASE_PATH/vmm/src/vmm-cli.py --url ${VMM_RPC:-http://127.0.0.1:10000}"
 fi
