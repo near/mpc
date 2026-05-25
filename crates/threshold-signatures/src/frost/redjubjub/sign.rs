@@ -285,7 +285,7 @@ mod test {
         frost::redjubjub::{
             sign::sign, test::run_sign_with_presign, PresignOutput, SignatureOption,
         },
-        test_utils::{one_coordinator_output, MockCryptoRng},
+        test_utils::{check_one_coordinator_output, MockCryptoRng},
         Protocol,
     };
     use frost_core::Field;
@@ -319,7 +319,7 @@ mod test {
                     msg_hash,
                 )
                 .unwrap();
-                one_coordinator_output(data, coordinator).unwrap();
+                check_one_coordinator_output(data, coordinator).unwrap();
             }
         }
     }
@@ -385,7 +385,7 @@ mod test {
             },
         )
         .unwrap();
-        let signature = one_coordinator_output(result, coordinator).unwrap();
+        let signature = check_one_coordinator_output(result, coordinator).unwrap();
         insta::assert_json_snapshot!(signature);
     }
 

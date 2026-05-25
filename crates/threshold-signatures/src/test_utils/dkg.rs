@@ -1,7 +1,10 @@
+use frost_core::{keys::SigningShare, Group};
 use rand::SeedableRng;
 use rand_core::CryptoRngCore;
 
+use crate::crypto::polynomials::Polynomial;
 use crate::participants::Participant;
+use crate::test_utils::participants::generate_participants_with_random_ids;
 use crate::test_utils::{run_protocol, GenOutput, GenProtocol};
 use crate::thresholds::ReconstructionLowerBound;
 use crate::{keygen, refresh, reshare, Ciphersuite, Element, KeygenOutput, Scalar, VerifyingKey};
@@ -129,4 +132,47 @@ pub fn assert_public_key_invariant<C: Ciphersuite>(
     {
         panic!("public key package is not the same for all participants");
     }
+}
+
+/// Generates a random polynomial of given degree and derives the corresponding
+/// public verifying key. Returns both the polynomial (for per-participant share
+/// derivation) and the verifying key.
+pub fn generate_test_keys<C: Ciphersuite>(
+    degree: usize,
+    rng: &mut impl CryptoRngCore,
+) -> (Polynomial<C>, VerifyingKey<C>) {
+    let f = Polynomial::<C>::generate_polynomial(None, degree, rng).unwrap();
+    let secret = f.eval_at_zero().unwrap().0;
+    (
+        f,
+        VerifyingKey::new(<C::Group as Group>::generator() * secret),
+    )
+}
+
+/// Constructs a [`KeygenOutput`] for a single participant from a shared
+/// polynomial and public verifying key.
+pub fn make_keygen_output<C: Ciphersuite>(
+    f: &Polynomial<C>,
+    pk: &VerifyingKey<C>,
+    p: Participant,
+) -> KeygenOutput<C> {
+    KeygenOutput {
+        private_share: SigningShare::new(f.eval_at_participant(p).unwrap().0),
+        public_key: *pk,
+    }
+}
+
+/// Centralized key generation for testing: generates random participant IDs
+/// and creates `KeygenOutput` for each using polynomial evaluation.
+pub fn build_frost_key_packages_with_dealer<C: Ciphersuite>(
+    max_signers: u16,
+    min_signers: u16,
+    rng: &mut impl CryptoRngCore,
+) -> GenOutput<C> {
+    let participants = generate_participants_with_random_ids(max_signers as usize, rng);
+    let (f, pk) = generate_test_keys::<C>((min_signers - 1) as usize, rng);
+    participants
+        .iter()
+        .map(|p| (*p, make_keygen_output(&f, &pk, *p)))
+        .collect()
 }
