@@ -650,11 +650,25 @@ cmd_deploy_target() {
   pass "Migration target ready"
 }
 
+# Clear backup-cli's cached keyshares (from a prior forward/back run). The
+# `Refusing to overwrite existing permanent keyshares ...` safety check in
+# `mpc-node`'s PermanentKeyStorage will trip otherwise. Preserve
+# secrets.json (the backup-cli identity). Note:
+# LocalPermanentKeyStorageBackend reads from $home_dir/key (top-level file),
+# not from permanent_keys/ — must remove both.
+clear_keyshare_cache() {
+  if [ -e "$BACKUP_HOME_DIR/key" ] || [ -d "$BACKUP_HOME_DIR/permanent_keys" ]; then
+    log "Clearing cached permanent keyshares at $BACKUP_HOME_DIR"
+    rm -rf "$BACKUP_HOME_DIR/permanent_keys" "$BACKUP_HOME_DIR/key"
+  fi
+}
+
 cmd_forward() {
   cmd_deploy_target
   ensure_backup_cli
   ensure_backup_keys
   register_backup_service
+  clear_keyshare_cache
   do_get_keyshares "$B_SOURCE_INDEX"
   do_start_node_migration "$B_SOURCE_INDEX" "$B_INDEX"
   do_put_keyshares "$B_INDEX"
@@ -669,16 +683,7 @@ cmd_back() {
   ensure_backup_cli
   ensure_backup_keys
   register_backup_service
-
-  # Clear backup-cli's cached keyshares from the forward run. Without this,
-  # backup-cli refuses GET with: "Refusing to overwrite existing permanent
-  # keyshares of epoch 0 with new permanent keyshares of same epoch ...".
-  # Note: LocalPermanentKeyStorageBackend reads from $home_dir/key (top-level
-  # file), not from permanent_keys/ — must remove both. Preserve secrets.json
-  # (the backup-cli identity).
-  log "Clearing cached permanent keyshares at $BACKUP_HOME_DIR"
-  rm -rf "$BACKUP_HOME_DIR/permanent_keys" "$BACKUP_HOME_DIR/key"
-
+  clear_keyshare_cache
   do_get_keyshares "$B_INDEX"             # source is now B0
   do_start_node_migration "$B_INDEX" "$B_SOURCE_INDEX"   # B -> A
   do_put_keyshares "$B_SOURCE_INDEX"
