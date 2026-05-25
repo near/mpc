@@ -814,7 +814,9 @@ impl MpcContract {
 
         if attestation_storage_must_be_paid_by_caller {
             // `saturating_sub`: if a re-submission shrinks the entry, charge nothing
-            // rather than underflow.
+            // rather than underflow. Intentional asymmetry: we do not refund freed bytes
+            // either — the caller already paid for the larger entry, and we'd rather
+            // accept that asymmetry than open a refund path for payload-shrinking games.
             let storage_used = env::storage_usage().saturating_sub(initial_storage);
             let cost = env::storage_byte_cost().saturating_mul(storage_used as u128);
             let attached = env::attached_deposit();

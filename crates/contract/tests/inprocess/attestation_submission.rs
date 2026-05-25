@@ -2,6 +2,7 @@
 
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
+    errors::{Error, InvalidParameters},
     primitives::{
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantId, ParticipantInfo},
@@ -308,16 +309,30 @@ fn submit_participant_info__should_reject_overwrite_from_other_account() {
         .expect("victim attestation should be stored");
 
     // When: an unrelated account submits an attestation that targets the victim's TLS key.
+    // The attacker context attaches a deposit large enough to cover any storage charge,
+    // so the call can only fail due to the ownership check — not `InsufficientDeposit`.
     let attacker_node = NodeId {
         account_id: "attacker.near".parse().unwrap(),
         tls_public_key: victim_node.tls_public_key.clone(),
         account_public_key: bogus_ed25519_public_key(),
     };
-    let attack_result = setup
-        .try_submit_attestation_for_node(&attacker_node, Attestation::Mock(MockAttestation::Valid));
+    testing_env!(VMContextBuilder::new()
+        .signer_account_id(attacker_node.account_id.clone())
+        .predecessor_account_id(attacker_node.account_id.clone())
+        .attached_deposit(NearToken::from_near(1))
+        .build());
+    let attack_result = setup.contract.submit_participant_info(
+        Attestation::Mock(MockAttestation::Valid),
+        attacker_node.tls_public_key.clone(),
+    );
 
-    // Then: the contract rejects the call and the victim's entry is unchanged.
-    assert_matches!(attack_result, Err(_));
+    // Then: the contract rejects the call with the TLS-ownership error and the victim's
+    // entry is unchanged.
+    assert_matches!(
+        &attack_result,
+        Err(Error::InvalidParameters(InvalidParameters::InvalidTeeRemoteAttestation { reason }))
+            if reason.contains("TLS public key is already registered")
+    );
     let stored_after = setup
         .contract
         .get_attestation(victim_node.tls_public_key)
