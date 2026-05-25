@@ -37,6 +37,10 @@ pub enum TeeQuoteStatus {
 pub(crate) enum AttestationSubmissionError {
     #[error("the submitted attestation failed verification, reason: {:?}", .0)]
     InvalidAttestation(#[from] attestation::VerificationError),
+    #[error(
+        "TLS public key is already registered to a different account; only the owning account may update it"
+    )]
+    TlsKeyOwnedByOtherAccount,
 }
 
 #[derive(Debug)]
@@ -161,6 +165,16 @@ impl TeeState {
         )?;
 
         let tls_pk = node_id.tls_public_key.clone();
+
+        // Authorization: a TLS key registered to one account must not be
+        // overwritten by a submission from a different account. Without this,
+        // any caller could replace any participant's stored attestation, since
+        // the entry is keyed only by `tls_public_key`.
+        if let Some(existing) = self.stored_attestations.get(&tls_pk) {
+            if existing.node_id.account_id != node_id.account_id {
+                return Err(AttestationSubmissionError::TlsKeyOwnedByOtherAccount);
+            }
+        }
 
         let insertion = self.stored_attestations.insert(
             tls_pk,
@@ -1287,6 +1301,93 @@ mod tests {
             TeeValidationResult::Full,
             "All participants should be valid before expiry"
         );
+    }
+
+    #[test]
+    fn add_participant__should_reject_tls_key_owned_by_other_account() {
+        // Given: an existing attestation registered to `alice.near` under some TLS key.
+        const TEE_UPGRADE_DURATION: Duration = Duration::from_secs(10_000);
+
+        let mut tee_state = TeeState::default();
+        let tls_public_key = bogus_ed25519_public_key();
+
+        let alice_node = NodeId {
+            account_id: "alice.near".parse().unwrap(),
+            tls_public_key: tls_public_key.clone(),
+            account_public_key: bogus_ed25519_public_key(),
+        };
+        tee_state
+            .add_participant(
+                alice_node.clone(),
+                Attestation::Mock(MockAttestation::Valid),
+                TEE_UPGRADE_DURATION,
+            )
+            .expect("initial insertion should succeed");
+
+        // When: a different account submits an attestation for the same TLS key.
+        let attacker_node = NodeId {
+            account_id: "attacker.near".parse().unwrap(),
+            tls_public_key: tls_public_key.clone(),
+            account_public_key: bogus_ed25519_public_key(),
+        };
+        let result = tee_state.add_participant(
+            attacker_node,
+            Attestation::Mock(MockAttestation::Valid),
+            TEE_UPGRADE_DURATION,
+        );
+
+        // Then: the overwrite is rejected and the original entry is untouched.
+        assert_matches!(
+            result,
+            Err(AttestationSubmissionError::TlsKeyOwnedByOtherAccount)
+        );
+        let stored = tee_state
+            .stored_attestations
+            .get(&tls_public_key)
+            .expect("entry must still be present");
+        assert_eq!(stored.node_id, alice_node);
+    }
+
+    #[test]
+    fn add_participant__should_allow_same_account_to_update_its_own_entry() {
+        // Given: an existing attestation registered to `alice.near`.
+        const TEE_UPGRADE_DURATION: Duration = Duration::from_secs(10_000);
+
+        let mut tee_state = TeeState::default();
+        let tls_public_key = bogus_ed25519_public_key();
+
+        let initial_node = NodeId {
+            account_id: "alice.near".parse().unwrap(),
+            tls_public_key: tls_public_key.clone(),
+            account_public_key: bogus_ed25519_public_key(),
+        };
+        tee_state
+            .add_participant(
+                initial_node,
+                Attestation::Mock(MockAttestation::Valid),
+                TEE_UPGRADE_DURATION,
+            )
+            .expect("initial insertion should succeed");
+
+        // When: the same account resubmits with a rotated account_public_key.
+        let rotated_node = NodeId {
+            account_id: "alice.near".parse().unwrap(),
+            tls_public_key,
+            account_public_key: bogus_ed25519_public_key(),
+        };
+        let result = tee_state.add_participant(
+            rotated_node.clone(),
+            Attestation::Mock(MockAttestation::Valid),
+            TEE_UPGRADE_DURATION,
+        );
+
+        // Then: the update is accepted and the stored entry reflects the new key.
+        assert_matches!(result, Ok(ParticipantInsertion::UpdatedExistingParticipant));
+        let stored = tee_state
+            .stored_attestations
+            .get(&rotated_node.tls_public_key)
+            .expect("entry must be present");
+        assert_eq!(stored.node_id, rotated_node);
     }
 
     #[test]
