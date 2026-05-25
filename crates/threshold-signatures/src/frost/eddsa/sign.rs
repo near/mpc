@@ -131,11 +131,13 @@ async fn do_sign_coordinator_v1(
     let nonces = Zeroizing::new(nonces);
     commitments_map.insert(me.to_identifier()?, commitments);
 
-    // Step 1.3
-    let commit_waitpoint = chan.next_waitpoint();
+    // --- Round 2
+    // * Send collected commitments for each party signature share
 
-    // Step 1.4
+    // Step 2.1
+    let commit_waitpoint = chan.next_waitpoint();
     for (from, commitment) in recv_from_others(&chan, commit_waitpoint, &participants, me).await? {
+        // Step 2.2
         commitments_map.insert(from.to_identifier()?, commitment);
     }
 
@@ -144,20 +146,20 @@ async fn do_sign_coordinator_v1(
     let mut signature_shares: BTreeMap<frost_ed25519::Identifier, round2::SignatureShare> =
         BTreeMap::new();
 
-    // Step 1.5
+    // Step 2.3
     let r2_wait_point = chan.next_waitpoint();
     chan.send_many(r2_wait_point, &signing_package)?;
 
-    // --- Round 2
+    // --- Round 3
     // * Wait for each other's signature share
-    // Step 2.3 (2.1 and 2.2 are implicit)
+    // Step 3.3 (3.1 and 3.2 are implicit)
     let vk_package = keygen_output.public_key;
     let key_package = construct_key_package(threshold, me, signing_share, &vk_package)?;
     let key_package = Zeroizing::new(key_package);
     let signature_share = round2::sign(&signing_package, &nonces, &key_package)
         .map_err(|e| ProtocolError::AssertionFailed(e.to_string()))?;
 
-    // Step 2.5 (2.4 is implicit)
+    // Step 3.5 (3.4 is implicit)
     signature_shares.insert(me.to_identifier()?, signature_share);
     for (from, signature_share) in recv_from_others(&chan, r2_wait_point, &participants, me).await?
     {
@@ -168,7 +170,7 @@ async fn do_sign_coordinator_v1(
     // * Converted collected signature shares into the signature.
     // * Signature is verified internally during `aggregate()` call.
 
-    // Step 2.6 and 2.7
+    // Step 3.6 and 3.7
     // We supply empty map as `verifying_shares` because we have disabled "cheater-detection" feature flag.
     // Feature "cheater-detection" only points to a malicious participant, if there's such.
     // It doesn't bring any additional guarantees.
@@ -278,11 +280,11 @@ async fn do_sign_participant_v1(
     let commit_waitpoint = chan.next_waitpoint();
     chan.send_private(commit_waitpoint, coordinator, &commitments)?;
 
-    // --- Round 2.
+    // --- Round 3.
     // * Wait for a signing package.
     // * Send our signature share.
 
-    // Step 2.1
+    // Step 3.1
     let r2_wait_point = chan.next_waitpoint();
     let signing_package = loop {
         let (from, signing_package): (_, frost_ed25519::SigningPackage) =
@@ -293,7 +295,7 @@ async fn do_sign_participant_v1(
         break signing_package;
     };
 
-    // Step 2.2
+    // Step 3.2
     if signing_package.message() != message.as_slice() {
         return Err(ProtocolError::AssertionFailed(
             "Expected message doesn't match with the actual message received in a signing package"
@@ -301,7 +303,7 @@ async fn do_sign_participant_v1(
         ));
     }
 
-    // Step 2.3
+    // Step 3.3
     let vk_package = keygen_output.public_key;
     let key_package = construct_key_package(threshold, me, signing_share, &vk_package)?;
     // Ensures the values are zeroized on drop
@@ -309,7 +311,7 @@ async fn do_sign_participant_v1(
     let signature_share = round2::sign(&signing_package, &nonces, &key_package)
         .map_err(|e| ProtocolError::AssertionFailed(e.to_string()))?;
 
-    // Step 2.4
+    // Step 3.4
     chan.send_private(r2_wait_point, coordinator, &signature_share)?;
 
     Ok(None)

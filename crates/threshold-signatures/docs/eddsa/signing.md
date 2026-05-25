@@ -49,21 +49,21 @@ $$
 
 1.2 $\star$ Each $P_i$ sends $(A_i, B_i)$ **only to the coordinator**.
 
-#### Round 1 (Coordinator)
+### Round 2 (Coordinator)
 
-1.3 $\bullet$ The coordinator waits to receive $(A_j, B_j)$ from every party $P_j$.
+2.1 $\bullet$ The coordinator waits to receive $(A_j, B_j)$ from every party $P_j$.
 
-1.4 The coordinator collects all terms into a set $\mathit{commits}\gets \set{(j, A_j, B_j)\colon \forall j \in \set{1.. N_1}}$.
+2.2 The coordinator collects all terms into a set $\mathit{commits}\gets \set{(j, A_j, B_j)\colon \forall j \in \set{1.. N_1}}$.
 
-1.5 $\star$ The coordinator sends $(\mathit{commits}, m)$ to every participant.
+2.3 $\star$ The coordinator sends $(\mathit{commits}, m)$ to every participant.
 
-### Round 2
+### Round 3
 
-2.1 $\bullet$ Each $P_i$ waits to receive $(\mathit{commits}, m^*)$ sent by the coordinator.
+3.1 $\bullet$ Each $P_i$ waits to receive $(\mathit{commits}, m^*)$ sent by the coordinator.
 
-2.2 Each $P_i$ verifies that $m = m^*$
+3.2 Each $P_i$ verifies that $m = m^*$
 
-2.3 Each $P_i$ computes a signature share using following [RFC9591](https://datatracker.ietf.org/doc/html/rfc9591#name-round-two-signature-share-g).
+3.3 Each $P_i$ computes a signature share using following [RFC9591](https://datatracker.ietf.org/doc/html/rfc9591#name-round-two-signature-share-g).
 
 In short, the following cryptographic steps are executed:
 
@@ -93,19 +93,19 @@ $$
 s_i = a_i + b_i * \rho_i+ \lambda(\mathcal{P}_1)_i * x_i * c
 $$
 
-2.4 Each $P_i$ sends its signature share $s_i$ **only to the coordinator**.
+3.4 Each $P_i$ sends its signature share $s_i$ **only to the coordinator**.
 
-#### Round 2 (Coordinator)
+#### Round 3 (Coordinator)
 
-2.5 $\bullet$ The coordinator waits to receive the signature share $s_j$ from every party $P_j$.
+3.5 $\bullet$ The coordinator waits to receive the signature share $s_j$ from every party $P_j$.
 
-2.6 The coordinator runs the aggregation following [RFC9591](https://datatracker.ietf.org/doc/html/rfc9591#name-signature-share-aggregation). In short, the following sum is executed:
+3.6 The coordinator runs the aggregation following [RFC9591](https://datatracker.ietf.org/doc/html/rfc9591#name-signature-share-aggregation). In short, the following sum is executed:
 
 $$
 s\gets \sum_j s_j
 $$
 
-2.7 $\blacktriangle$ The coordinator asserts that $(R, s)$ is a valid EdDSA signature for message $m$ over Ed25519.
+3.7 $\blacktriangle$ The coordinator asserts that $(R, s)$ is a valid EdDSA signature for message $m$ over Ed25519.
 
 **Output:** the signature $(R, s)$.
 
