@@ -2,8 +2,11 @@
 set -euo pipefail
 export NEAR_CLI_DISABLE_SPINNER=1
 
-log(){ echo -e "\033[1;34m[INFO]\033[0m $*"; }
-err(){ echo -e "\033[1;31m[ERROR]\033[0m $*"; }
+# Shared helpers: log/err/pass/warn/fatal, ports_to_toml.
+# Sourced early — $CLI definition is guarded, so it's safe even before
+# BASE_PATH is set (this script defines its own vmm-cli invocations inline).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/common.sh"
 
 find_free_port() {
   python3 -c '
@@ -134,19 +137,6 @@ REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 TEE_LAUNCHER_DIR="$REPO_ROOT/deployment/cvm-deployment"
 ENV_TPL="${ENV_TPL:-$REPO_ROOT/localnet/tee/scripts/node.env.tpl}"
 CONF_TPL="${CONF_TPL:-$REPO_ROOT/localnet/tee/scripts/rust-launcher/node.conf.localnet.toml.tpl}"
-
-# Convert comma-separated "host:container" port string to TOML inline table array entries.
-ports_to_toml() {
-  local ports="$1" result=""
-  IFS=',' read -ra pairs <<< "$ports"
-  for pair in "${pairs[@]}"; do
-    local host_port="${pair%%:*}"
-    local container_port="${pair##*:}"
-    result+="    { host =$host_port, container =$container_port },
-"
-  done
-  echo -n "$result"
-}
 
 WORKDIR="${WORKDIR:-$(mktemp -d /tmp/mpc_localnet_one_node.XXXXXX)}"
 mkdir -p "$WORKDIR"

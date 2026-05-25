@@ -56,7 +56,9 @@ ROOT_ACCOUNT="${MPC_NETWORK_NAME}${ACCOUNT_SUFFIX}"
 MPC_CONTRACT_ACCOUNT="${MPC_CONTRACT_ACCOUNT:-mpc.${ROOT_ACCOUNT}}"
 VMM_RPC="${VMM_RPC:-http://127.0.0.1:10000}"
 BASE_PATH="${BASE_PATH:?Must set BASE_PATH}"
-CLI="python3 $BASE_PATH/vmm/src/vmm-cli.py --url $VMM_RPC"
+# Shared helpers: $CLI, logging, HOST_PROFILE → IP_PREFIX/IP_START_OCTET,
+# ip_for_i, ports_to_toml, near_call_*, extract_json_*.
+source "$SCRIPT_DIR/common.sh"
 OS_IMAGE="${OS_IMAGE:-dstack-dev-0.5.8}"
 SEALING_KEY_TYPE="${SEALING_KEY_TYPE:-SGX}"
 DISK="${DISK:-500G}"
@@ -68,14 +70,6 @@ DISK="${DISK:-500G}"
 # Workdir matches deploy-tee-cluster.sh — we read its rendered node0.env etc.
 WORKDIR="/tmp/${USER}/mpc_testnet_scale/${MPC_NETWORK_NAME}"
 mkdir -p "$WORKDIR"
-
-# Host profile / IPs / ports — keep aligned with deploy-tee-cluster.sh defaults
-HOST_PROFILE="${HOST_PROFILE:-alice}"
-case "$HOST_PROFILE" in
-  alice) IP_PREFIX="51.68.219."; IP_START_OCTET=1 ;;
-  bob)   IP_PREFIX="5.196.36.";  IP_START_OCTET=113 ;;
-  *) echo "Unknown HOST_PROFILE=$HOST_PROFILE"; exit 1 ;;
-esac
 
 MAIN_PORT="${MAIN_PORT:-80}"                   # P2P/TLS — `port_override=80` makes the node bind here
 PUBLIC_DATA_BASE="${PUBLIC_DATA_BASE:-18082}"  # public_data is fixed at 18082 per port handler
@@ -96,57 +90,24 @@ BACKUP_HOME_DIR="${BACKUP_HOME_DIR:-/tmp/${USER}/mpc-migration-backup}"
 BACKUP_ENCRYPTION_KEY="${BACKUP_ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}"
 BACKUP_CLI="${BACKUP_CLI:-$REPO_ROOT/target/release/backup-cli}"
 
-# ---------- logging ----------
-log()  { echo -e "\033[1;34m[INFO]\033[0m $*"; }
-warn() { echo -e "\033[1;33m[WARN]\033[0m $*"; }
-err()  { echo -e "\033[1;31m[ERROR]\033[0m $*" >&2; }
-pass() { echo -e "\033[1;32m[PASS]\033[0m $*"; }
-fatal(){ err "$*"; exit 1; }
-
-# ---------- helpers ----------
+# ---------- script-specific helpers ----------
+# Migration-aware account map: the target B0 (index B_INDEX) shares its NEAR
+# account with the source it migrates from (B_SOURCE_INDEX). All other
+# indices map directly. This is what makes migration on-chain a "TLS-key
+# swap" rather than a participant set change.
 node_account_for_i() {
-  # The migration target B0 (index B_INDEX) shares its NEAR account with the
-  # source node it migrates from (B_SOURCE_INDEX). All other indices map
-  # directly. This is what makes migration on-chain a "TLS-key swap" rather
-  # than a participant set change.
   if [ "$1" = "$B_INDEX" ]; then
     echo "node${B_SOURCE_INDEX}.${ROOT_ACCOUNT}"
   else
     echo "node$1.${ROOT_ACCOUNT}"
   fi
 }
-ip_for_i()           { echo "${IP_PREFIX}$((IP_START_OCTET + $1))"; }
 migration_port_for_i() { echo "$MIGRATION_PORT"; }  # same on every CVM; per-IP isolation
-agent_port_for_i()   { echo $((AGENT_BASE + $1)); }
-ssh_port_for_i()     { echo $((SSH_BASE + $1)); }
+agent_port_for_i()     { echo $((AGENT_BASE + $1)); }
+ssh_port_for_i()       { echo $((SSH_BASE + $1)); }
 local_dbg_port_for_i() { echo $((LOCAL_DEBUG_BASE + $1 + 100)); }  # offset to dodge neard's 3030
-public_port_for_i()  { echo "$PUBLIC_DATA_BASE"; }
-b_app_name()         { echo "${MPC_NETWORK_NAME}-node${B_INDEX}-migration-tee"; }
-
-near_call_ro() {
-  local method="$1" args="$2"
-  near contract call-function as-read-only "$MPC_CONTRACT_ACCOUNT" "$method" \
-    json-args "$args" network-config "$NEAR_NETWORK_CONFIG" now 2>&1
-}
-near_call_tx() {
-  local method="$1" args="$2" signer="$3"
-  near contract call-function as-transaction "$MPC_CONTRACT_ACCOUNT" "$method" \
-    json-args "$args" prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' \
-    sign-as "$signer" network-config "$NEAR_NETWORK_CONFIG" sign-with-keychain send 2>&1
-}
-# Extract the JSON return value of a near call. Two variants because read-only
-# and as-transaction output differs (mirrors test-verify-and-upgrade.sh).
-extract_json_tx() {
-  sed -n '/^Function execution return value/,/^$/{ /^Function/d; /^$/d; p }' \
-    | sed '/^Here is your console/,$d' \
-    | sed 's/^│[[:space:]]*//' \
-    | sed '/^$/d'
-}
-extract_json_ro() {
-  sed -n '/^Function execution return value/,/^Here is your console/{
-    /^Function/d; /^Here is your console/d; p
-  }'
-}
+public_port_for_i()    { echo "$PUBLIC_DATA_BASE"; }
+b_app_name()           { echo "${MPC_NETWORK_NAME}-node${B_INDEX}-migration-tee"; }
 
 # ---------- backup-cli plumbing ----------
 ensure_backup_cli() {
