@@ -4,7 +4,10 @@ use crate::{
         sign::{sign_v1, sign_v2},
         KeygenOutput, PresignOutput, SignatureOption,
     },
-    test_utils::{generate_participants, run_protocol, GenProtocol, MockCryptoRng},
+    test_utils::{
+        assert_frost_presignatures_well_formed, generate_participants, run_protocol, GenProtocol,
+        MockCryptoRng,
+    },
     Participant, ReconstructionLowerBound,
 };
 
@@ -111,6 +114,19 @@ pub fn run_sign_v2(
         return Err("Invalid Coordinator".into());
     }
     Ok(run_protocol(protocols)?)
+}
+
+#[test]
+fn check_presignatures_terms() {
+    let mut rng = MockCryptoRng::seed_from_u64(42);
+    let participants = generate_participants(5);
+    let threshold = 4;
+    let actual_signers = 4;
+
+    let keys = crate::dkg::test::test_keygen::<C, _>(&participants, threshold, &mut rng);
+    let presignatures = run_presign(&keys, threshold, actual_signers, rng).unwrap();
+
+    assert_frost_presignatures_well_formed(&presignatures);
 }
 
 #[test]

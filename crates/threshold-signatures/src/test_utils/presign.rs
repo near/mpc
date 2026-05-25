@@ -1,8 +1,11 @@
-use frost_core::{Field, Group};
+use frost_core::round1::{SigningCommitments, SigningNonces};
+use frost_core::{Field, Group, Identifier};
 use frost_secp256k1::Secp256K1Sha256;
 use k256::AffinePoint;
 use rand_core::CryptoRngCore;
+use std::collections::BTreeMap;
 use std::error::Error;
+use std::fmt::Debug;
 
 use crate::ecdsa::{RerandomizationArguments, Tweak};
 use crate::frost;
@@ -77,4 +80,29 @@ where
     }
 
     Ok(run_protocol(protocols)?)
+}
+
+/// Asserts that a batch of FROST presignatures from a single run is well-formed.
+///
+/// Every participant identifier is unique, every participant's secret nonces
+/// are distinct, and every participant observes the same commitments map.
+pub fn assert_frost_presignatures_well_formed<C>(
+    presignatures: &[(Participant, frost::PresignOutput<C>)],
+) where
+    C: Ciphersuite + Send + 'static,
+    SigningNonces<C>: PartialEq + Debug,
+    BTreeMap<Identifier<C>, SigningCommitments<C>>: PartialEq + Debug,
+{
+    assert!(
+        presignatures.len() >= 2,
+        "expected at least 2 presignatures to compare; got {}",
+        presignatures.len()
+    );
+    for (i, (p1, presig1)) in presignatures.iter().enumerate() {
+        for (p2, presig2) in presignatures.iter().skip(i + 1) {
+            assert_ne!(p1, p2);
+            assert_ne!(presig1.nonces, presig2.nonces);
+            assert_eq!(presig1.commitments_map, presig2.commitments_map);
+        }
+    }
 }
