@@ -24,8 +24,8 @@ pub mod redjubjub;
 
 /// The necessary inputs for the creation of a presignature.
 pub struct PresignArguments<C: Ciphersuite> {
-    /// The output of key generation, i.e. our share of the secret key, and the public key package.
-    pub keygen_out: KeygenOutput<C>,
+    /// The output of key generation, i.e. our share of the secret key.
+    pub private_share: SigningShare<C>,
     /// The threshold for the scheme
     pub threshold: ReconstructionLowerBound,
 }
@@ -88,7 +88,7 @@ where
         ctx.shared_channel(),
         participants,
         me,
-        args.keygen_out.private_share,
+        args.private_share,
         rng,
     );
     Ok(make_protocol(ctx, fut))
@@ -101,17 +101,21 @@ async fn do_presign<C: Ciphersuite + Send>(
     signing_share: SigningShare<C>,
     mut rng: impl CryptoRngCore,
 ) -> Result<PresignOutput<C>, ProtocolError> {
-    // Round 1
+    // --- Round 1
+    // * Compute and Receive commitments.
     let mut commitments_map: BTreeMap<Identifier<C>, SigningCommitments<C>> = BTreeMap::new();
 
+    // Step 1.1
     // Creating two commitments and corresponding nonces
     let (nonces, commitments) = commit(&signing_share, &mut rng);
     commitments_map.insert(me.to_identifier()?, commitments);
 
+    // Step 1.2
     let commit_waitpoint = chan.next_waitpoint();
     // Sending the commitments to all
     chan.send_many(commit_waitpoint, &commitments)?;
 
+    // Step 1.3 and 1.4
     // Collecting the commitments
     for (from, commitment) in recv_from_others(&chan, commit_waitpoint, &participants, me).await? {
         commitments_map.insert(from.to_identifier()?, commitment);

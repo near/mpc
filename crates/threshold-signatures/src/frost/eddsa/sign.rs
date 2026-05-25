@@ -200,6 +200,9 @@ async fn do_sign_coordinator_v2(
     message: Vec<u8>,
 ) -> Result<SignatureOption, ProtocolError> {
     // --- Round 1
+    // * Receive others signature shares.
+    // * Compute my signature share.
+    // * Output the signature.
     let signing_package = frost_ed25519::SigningPackage::new(
         presignature.commitments_map.clone(),
         message.as_slice(),
@@ -214,10 +217,12 @@ async fn do_sign_coordinator_v2(
         construct_key_package(threshold, me, keygen_output.private_share, &vk_package)?;
 
     let key_package = Zeroizing::new(key_package);
+    // Step 1.1
     let signature_share = round2::sign(&signing_package, &presignature.nonces, &key_package)
         .map_err(|e| ProtocolError::AssertionFailed(e.to_string()))?;
     signature_shares.insert(me.to_identifier()?, signature_share);
 
+    // Step 1.3 (implicit step 1.2)
     let sign_waitpoint = chan.next_waitpoint();
     for (from, signature_share) in
         recv_from_others(&chan, sign_waitpoint, &participants, me).await?
@@ -232,6 +237,7 @@ async fn do_sign_coordinator_v2(
     // Feature "cheater-detection" only points to a malicious participant, if there's such.
     // It doesn't bring any additional guarantees.
     let public_key_package = PublicKeyPackage::new(BTreeMap::new(), vk_package);
+    // Step 1.4 and 1.5
     let signature = aggregate(&signing_package, &signature_shares, &public_key_package)
         .map_err(|e| ProtocolError::AssertionFailed(e.to_string()))?;
 
@@ -257,6 +263,7 @@ async fn do_sign_participant_v1(
     rng: &mut impl CryptoRngCore,
 ) -> Result<SignatureOption, ProtocolError> {
     // --- Round 1.
+    // * Compute and send commitments.
     if coordinator == me {
         return Err(ProtocolError::AssertionFailed(
             "the do_sign_participant function cannot be called
@@ -335,8 +342,8 @@ fn do_sign_participant_v2(
     presignature: &PresignOutput,
     message: &[u8],
 ) -> Result<SignatureOption, ProtocolError> {
-    // --- Round 1.
-    // * Send our signature share.
+    // --- Round 1
+    // * Send signature share.
     if coordinator == me {
         return Err(ProtocolError::AssertionFailed(
             "the do_sign_participant function cannot be called
@@ -345,17 +352,17 @@ fn do_sign_participant_v2(
         ));
     }
 
-    let vk_package = keygen_output.public_key;
-
     let key_package =
-        construct_key_package(threshold, me, keygen_output.private_share, &vk_package)?;
+        construct_key_package(threshold, me, keygen_output.private_share, &keygen_output.public_key)?;
     // Ensures the values are zeroized on drop
     let key_package = Zeroizing::new(key_package);
 
+    // Step 1.1
     let signing_package = SigningPackage::new(presignature.commitments_map.clone(), message);
     let signature_share = round2::sign(&signing_package, &presignature.nonces, &key_package)
         .map_err(|e| ProtocolError::AssertionFailed(e.to_string()))?;
 
+    // Step 1.2
     let sign_waitpoint = chan.next_waitpoint();
     chan.send_private(sign_waitpoint, coordinator, &signature_share)?;
 
