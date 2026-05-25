@@ -199,7 +199,9 @@ render_env_and_conf() {
   export INTERNAL_MPC_PUBLIC_DEBUG_PORT="${INTERNAL_PUBLIC_DEBUG_PORT:-8080}"
   export INTERNAL_MPC_DECENTRALIZED_STATE_SYNC="${INTERNAL_STATE_SYNC_PORT:-24567}"
   export INTERNAL_MPC_MAIN_PORT="${INTERNAL_MAIN_PORT:-80}"
-  export INTERNAL_MPC_MIGRATION_PORT="${INTERNAL_MIGRATION_PORT:-13001}"
+  # Container-side migration HTTP port — must match `migration_web_ui` in
+  # node.conf.localnet.toml.tpl (8079).
+  export INTERNAL_MPC_MIGRATION_PORT="${INTERNAL_MIGRATION_PORT:-8079}"
 
   export MPC_ENV="${MPC_ENV:-mpc-localnet}"
   export MPC_IMAGE="nearone/mpc-node"
@@ -209,9 +211,9 @@ render_env_and_conf() {
   # The launcher PORTS map is CVM->container. vmm-cli (in deploy-launcher.sh)
   # forwards host:$MIGRATION_PORT -> CVM:$INTERNAL_MIGRATION_PORT, so the
   # launcher must publish container:$INTERNAL_MIGRATION_PORT on the same CVM
-  # port. Mapping ${MIGRATION_PORT}:${MIGRATION_PORT} would land on a closed
-  # container port when the two differ.
-  export PORTS="${PORTS:-8080:8080,24566:24566,${INTERNAL_MIGRATION_PORT:-13001}:${INTERNAL_MIGRATION_PORT:-13001}}"
+  # port. We also forward host:$MAIN_PORT -> CVM:$INTERNAL_MAIN_PORT(=80)
+  # so the P2P/TLS listener (`port_override = 80`) is reachable.
+  export PORTS="${PORTS:-${INTERNAL_MAIN_PORT:-80}:${INTERNAL_MAIN_PORT:-80},8080:8080,24566:24566,${INTERNAL_MIGRATION_PORT:-8079}:${INTERNAL_MIGRATION_PORT:-8079}}"
   export PORTS_TOML
   PORTS_TOML="$(ports_to_toml "$PORTS")"
 
