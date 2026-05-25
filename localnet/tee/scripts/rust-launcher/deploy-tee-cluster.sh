@@ -850,10 +850,14 @@ render_node_files_range() {
       # `port_override = 80` in the toml makes the MPC node bind P2P on
       # container:80 regardless of the contract URL port, so we forward
       # main(80) here for P2P and 8079 for the migration endpoint.
-      export PORTS="${MAIN_PORT}:${INTERNAL_MAIN_PORT},8080:8080,24566:24566,${MIGRATION_PORT}:${INTERNAL_MIGRATION_PORT}"
+      # PORTS is CVM-side:container-side (the launcher's port_mappings),
+      # NOT host:CVM — host:CVM forwarding is set up separately via the
+      # EXTERNAL_* env vars in deploy-launcher.sh. Both sides should use
+      # the CVM/container-internal port values.
+      export PORTS="${INTERNAL_MAIN_PORT}:${INTERNAL_MAIN_PORT},8080:8080,24566:24566,${INTERNAL_MIGRATION_PORT}:${INTERNAL_MIGRATION_PORT}"
       export NEAR_BOOT_NODES="ed25519:BGa4WiBj43Mr66f9Ehf6swKtR6wZmWuwCsV3s4PSR3nx@10.0.2.2:24566"
     else
-      export PORTS="${MAIN_PORT}:${INTERNAL_MAIN_PORT},8080:8080,${STATE_SYNC_PORT}:${STATE_SYNC_PORT},${MIGRATION_PORT}:${INTERNAL_MIGRATION_PORT}"
+      export PORTS="${INTERNAL_MAIN_PORT}:${INTERNAL_MAIN_PORT},8080:8080,${STATE_SYNC_PORT}:${STATE_SYNC_PORT},${INTERNAL_MIGRATION_PORT}:${INTERNAL_MIGRATION_PORT}"
       export NEAR_BOOT_NODES="$bootnodes"
     fi
     export PORTS_TOML

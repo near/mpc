@@ -24,7 +24,9 @@
 # Prereqs:
 #   - dstack VMM running at $VMM_RPC
 #   - $BASE_PATH points at the dstack base dir (contains vmm/src/vmm-cli.py)
-#   - 51.68.219.{1,2,3} configured on the host (alice profile)
+#   - Three CVM IPs configured on the host:
+#       alice profile (default): 51.68.219.{1,2,3}
+#       bob profile (HOST_PROFILE=bob): 5.196.36.{113,114,115}
 #   - `near` CLI in PATH, mpc-localnet keychain configured
 #   - `jq`, `envsubst`, `python3`, `curl` available
 #
@@ -324,7 +326,10 @@ render_target_files() {
 
   # Localnet: route CVM outbound to host neard via the QEMU slirp gateway.
   # Forward MAIN(80) for P2P/TLS, 8080 for /public_data, 24566 for neard, 8079 for migration.
-  export PORTS="${MAIN_PORT}:${INTERNAL_MPC_MAIN_PORT},8080:8080,24566:24566,${migration_port}:${migration_port}"
+  # PORTS is CVM-side:container-side (the launcher's port_mappings); both
+  # sides use CVM/container-internal port values. host:CVM forwarding is
+  # handled separately by deploy-launcher.sh's EXTERNAL_* --port args.
+  export PORTS="${INTERNAL_MPC_MAIN_PORT}:${INTERNAL_MPC_MAIN_PORT},8080:8080,24566:24566,${migration_port}:${migration_port}"
   export NEAR_BOOT_NODES="ed25519:BGa4WiBj43Mr66f9Ehf6swKtR6wZmWuwCsV3s4PSR3nx@10.0.2.2:24566"
 
   # PORTS_TOML transformation (same shape as deploy-tee-cluster.sh).
@@ -612,6 +617,7 @@ cmd_prepare() {
     $CLI remove "$vm" 2>/dev/null || true
   done
 
+  warn "About to SIGKILL any running 'neard' processes and wipe \$HOME/.near/mpc-localnet — localnet-only, but destructive on a shared host."
   log "Resetting localnet neard"
   pkill -9 neard 2>/dev/null || true
   sleep 1
