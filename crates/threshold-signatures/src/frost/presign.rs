@@ -16,7 +16,7 @@ use crate::{
         internal::{make_protocol, Comms, SharedChannel},
         Protocol,
     },
-    Ciphersuite, ReconstructionLowerBound,
+    Ciphersuite, KeygenOutput, ReconstructionLowerBound,
 };
 
 /// The necessary inputs for the creation of a presignature.
@@ -42,7 +42,7 @@ pub struct PresignOutput<C: Ciphersuite + Send + 'static> {
 impl_secret_debug!({C: Ciphersuite + Send + 'static} PresignOutput<C> { show: [commitments_map], redact: [nonces] });
 
 /// Maximum incoming buffer entries for the FROST presign protocol.
-pub const FROST_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES: usize = 1;
+pub(crate) const FROST_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES: usize = 1;
 
 /// Runs Presigning of either `EdDSA` or `RedDSA`
 pub fn presign<C>(
