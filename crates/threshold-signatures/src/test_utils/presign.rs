@@ -93,6 +93,11 @@ pub fn assert_frost_presignatures_well_formed<C>(
     SigningNonces<C>: PartialEq + Debug,
     BTreeMap<Identifier<C>, SigningCommitments<C>>: PartialEq + Debug,
 {
+    assert!(
+        presignatures.len() >= 2,
+        "expected at least 2 presignatures to compare; got {}",
+        presignatures.len()
+    );
     for (i, (p1, presig1)) in presignatures.iter().enumerate() {
         for (p2, presig2) in presignatures.iter().skip(i + 1) {
             assert_ne!(p1, p2);
