@@ -191,7 +191,9 @@ fn test_refresh() -> Result<(), Box<dyn Error>> {
     let msg = b"hello world";
     run_sign_without_rerandomization(
         &presign_result,
-        MaxMalicious::from(max_malicious).reconstruction_threshold().unwrap(),
+        MaxMalicious::from(max_malicious)
+            .reconstruction_threshold()
+            .unwrap(),
         public_key.to_element(),
         msg,
         &mut rng,
@@ -239,7 +241,9 @@ fn test_reshare_sign_more_participants() -> Result<(), Box<dyn Error>> {
     let msg = b"hello world";
     run_sign_without_rerandomization(
         &presign_result,
-        MaxMalicious::from(max_malicious).reconstruction_threshold().unwrap(),
+        MaxMalicious::from(max_malicious)
+            .reconstruction_threshold()
+            .unwrap(),
         public_key.to_element(),
         msg,
         &mut rng,
@@ -282,7 +286,9 @@ fn test_reshare_sign_less_participants() -> Result<(), Box<dyn Error>> {
     let msg = b"hello world";
     run_sign_without_rerandomization(
         &presign_result,
-        MaxMalicious::from(max_malicious).reconstruction_threshold().unwrap(),
+        MaxMalicious::from(max_malicious)
+            .reconstruction_threshold()
+            .unwrap(),
         public_key.to_element(),
         msg,
         &mut rng,
@@ -305,7 +311,9 @@ fn test_e2e() -> Result<(), Box<dyn Error>> {
     let msg = b"hello world";
     run_sign_without_rerandomization(
         &presign_result,
-        MaxMalicious::from(max_malicious).reconstruction_threshold().unwrap(),
+        MaxMalicious::from(max_malicious)
+            .reconstruction_threshold()
+            .unwrap(),
         public_key.to_element(),
         msg,
         &mut rng,
@@ -331,7 +339,9 @@ fn test_e2e_random_identifiers() -> Result<(), Box<dyn Error>> {
     let msg = b"hello world";
     run_sign_without_rerandomization(
         &presign_result,
-        MaxMalicious::from(max_malicious).reconstruction_threshold().unwrap(),
+        MaxMalicious::from(max_malicious)
+            .reconstruction_threshold()
+            .unwrap(),
         public_key.to_element(),
         msg,
         &mut rng,

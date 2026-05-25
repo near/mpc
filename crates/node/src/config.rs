@@ -74,9 +74,7 @@ pub struct ParticipantsConfig {
 impl ParticipantsConfig {
     /// The threshold expressed in the form the threshold-signatures crypto
     /// library consumes (a `usize`-backed `ReconstructionThreshold`).
-    pub fn ts_threshold(
-        &self,
-    ) -> anyhow::Result<threshold_signatures::ReconstructionThreshold> {
+    pub fn ts_threshold(&self) -> anyhow::Result<threshold_signatures::ReconstructionThreshold> {
         Ok(threshold_signatures::ReconstructionThreshold::from(
             usize::try_from(self.threshold.inner())?,
         ))

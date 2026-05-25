@@ -83,7 +83,8 @@ pub fn sign(
         })?;
     if robust_ecdsa_threshold > participants.len() {
         return Err(InitializationError::BadParameters(
-            "2*(ReconstructionThreshold - 1)+1 must be less than or equals to participant count".to_string(),
+            "2*(ReconstructionThreshold - 1)+1 must be less than or equals to participant count"
+                .to_string(),
         ));
     }
 
@@ -308,7 +309,9 @@ mod test {
 
         let (_, sig) = run_sign_without_rerandomization(
             &participants_presign,
-            MaxMalicious::from(max_malicious).reconstruction_threshold().unwrap(),
+            MaxMalicious::from(max_malicious)
+                .reconstruction_threshold()
+                .unwrap(),
             public_key,
             msg,
             &mut rng,
@@ -380,7 +383,9 @@ mod test {
 
         let result = crate::ecdsa::robust_ecdsa::test::run_sign_without_rerandomization(
             &presignatures,
-            MaxMalicious::from(max_malicious).reconstruction_threshold().unwrap(),
+            MaxMalicious::from(max_malicious)
+                .reconstruction_threshold()
+                .unwrap(),
             public_key,
             &msg,
             &mut rng,
@@ -425,7 +430,9 @@ mod test {
 
         let result = crate::ecdsa::robust_ecdsa::test::run_sign_without_rerandomization(
             &presignatures,
-            MaxMalicious::from(max_malicious).reconstruction_threshold().unwrap(),
+            MaxMalicious::from(max_malicious)
+                .reconstruction_threshold()
+                .unwrap(),
             public_key,
             &msg,
             &mut rng,

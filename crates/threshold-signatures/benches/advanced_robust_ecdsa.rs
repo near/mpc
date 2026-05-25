@@ -198,7 +198,10 @@ fn setup_sign_snapshot(
 }
 
 /// Cheap per-sample setup: creates fresh sign protocol and clones the cached simulator
-fn prepare_simulated_sign(setup: &SignSetup, threshold: ReconstructionThreshold) -> PreparedSimulatedSig {
+fn prepare_simulated_sign(
+    setup: &SignSetup,
+    threshold: ReconstructionThreshold,
+) -> PreparedSimulatedSig {
     let real_protocol = sign(
         &setup.participants,
         setup.real_participant,

@@ -55,7 +55,8 @@ pub fn presign(
     let max_malicious = args.threshold.max_malicious();
     if max_malicious.value() > participants.len() {
         return Err(InitializationError::BadParameters(
-            "ReconstructionThreshold - 1 must be less than or equals to participant count".to_string(),
+            "ReconstructionThreshold - 1 must be less than or equals to participant count"
+                .to_string(),
         ));
     }
 
@@ -70,7 +71,8 @@ pub fn presign(
         })?;
     if robust_ecdsa_threshold > participants.len() {
         return Err(InitializationError::BadParameters(
-            "2*(ReconstructionThreshold - 1)+1 must be less than or equals to participant count".to_string(),
+            "2*(ReconstructionThreshold - 1)+1 must be less than or equals to participant count"
+                .to_string(),
         ));
     }
 
@@ -431,7 +433,9 @@ mod test {
                 *p,
                 PresignArguments {
                     keygen_out,
-                    threshold: MaxMalicious::from(max_malicious).reconstruction_threshold().unwrap(),
+                    threshold: MaxMalicious::from(max_malicious)
+                        .reconstruction_threshold()
+                        .unwrap(),
                 },
                 rng_p,
             )
@@ -471,7 +475,9 @@ mod test {
                     p,
                     PresignArguments {
                         keygen_out,
-                        threshold: MaxMalicious::from(max_malicious).reconstruction_threshold().unwrap(),
+                        threshold: MaxMalicious::from(max_malicious)
+                            .reconstruction_threshold()
+                            .unwrap(),
                     },
                     rng_p,
                 )
