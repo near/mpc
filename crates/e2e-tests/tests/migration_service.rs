@@ -569,23 +569,22 @@ async fn migration_service__should_migrate_nodes_via_backup_cli() {
     }
 }
 
-/// Exercises back-migration (A → B → A) against the investigation tracked at
-/// near/mpc#2121. After a forward A → B, we kill A and restart it (preserving
-/// its keyshares on disk — the operator scenario the issue describes), then
-/// run B → A.
+/// Back-migration (A → B → A) end-to-end via the backup CLI. See
+/// near/mpc#2121 for the production scenario this regresses against.
 ///
-/// **Empirical finding (2026-05-24):** this scenario **succeeds** in the Rust
-/// E2E harness, which mocks TEE attestation to `{"Mock": "Valid"}` (see
-/// `crates/e2e-tests/README.md:170`). That outcome is itself evidence: P1
-/// alone — the `execute_onboarding` early-return when keyshares are already
-/// on disk — is **not** sufficient to cause the production symptom. The
-/// leading remaining hypothesis is P2 (stale on-chain TEE attestation
-/// rejected by `conclude_node_migration`'s `reverify_participants` check),
-/// which this harness cannot reproduce because attestations are mocked
-/// always-valid. See `back_migration_bug_investigation.md` for context.
+/// Starts a cluster with 2 participating nodes (A0, A1) + 1 migration
+/// target (B0). A1 stays a participant throughout so threshold (2) holds
+/// during both directions. Per direction:
+///   1. Register backup service
+///   2. GET keyshares from source node
+///   3. Initiate node migration
+///   4. PUT keyshares to target node
+///   5. Verify migration finalizes and sign + ckd requests succeed
+/// Between the forward and back directions, A0's CVM is killed and
+/// restarted so its keyshares stay on disk through the restart.
 ///
-/// Setup: 2 participants (A0, A1) + 1 migration target (B0). A1 stays a
-/// participant throughout so threshold (2) holds during both migrations.
+/// Caveat: attestation is mocked as `{"Mock": "Valid"}` throughout, so
+/// this test cannot exercise the on-chain stale-attestation failure mode.
 #[tokio::test]
 #[expect(non_snake_case)]
 async fn migration_service__should_handle_back_migration_a_to_b_to_a() {
@@ -617,6 +616,9 @@ async fn migration_service__should_handle_back_migration_a_to_b_to_a() {
     common::send_sign_request(&cluster, &running, &mut rng, cluster.default_user_account())
         .await
         .expect("sign request failed before forward migration");
+    common::send_ckd_request(&cluster, &running, &mut rng, cluster.default_user_account())
+        .await
+        .expect("ckd request failed before forward migration");
 
     // When: forward migration A0 → B0.
     let backup_service_fwd = BackupService::must_get_new(backup_cli.clone());
@@ -637,11 +639,14 @@ async fn migration_service__should_handle_back_migration_a_to_b_to_a() {
         .await
         .expect("forward: wait_for_migration_completion failed");
 
-    // Then: forward worked — B0 is the active participant, sign still succeeds
-    // (B0 + A1).
+    // Then: forward worked — B0 is the active participant, sign + ckd still
+    // succeed (B0 + A1).
     common::send_sign_request(&cluster, &running, &mut rng, cluster.default_user_account())
         .await
         .expect("sign request failed after forward migration");
+    common::send_ckd_request(&cluster, &running, &mut rng, cluster.default_user_account())
+        .await
+        .expect("ckd request failed after forward migration");
 
     // Simulate operator decommissioning the old node and bringing it back
     // online later for the back-migration. `kill_nodes` + `start_nodes`
@@ -679,8 +684,11 @@ async fn migration_service__should_handle_back_migration_a_to_b_to_a() {
         .await
         .expect("back-migration did not finalize");
 
-    // Then: A0 + A1 are the participants again and the cluster still signs.
+    // Then: A0 + A1 are the participants again and sign + ckd still succeed.
     common::send_sign_request(&cluster, &running, &mut rng, cluster.default_user_account())
         .await
         .expect("sign request failed after back-migration");
+    common::send_ckd_request(&cluster, &running, &mut rng, cluster.default_user_account())
+        .await
+        .expect("ckd request failed after back-migration");
 }
