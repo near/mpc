@@ -127,7 +127,7 @@ Each [`PendingAttestation`](#mpc-contractsubmit_participant_info) holds:
 
 Entries are removed by the callback regardless of outcome; the only way one outlives its callback is the out-of-gas case in [§Handling failures](#handling-failures), where the TTL guarantees the orphan is bounded.
 
-Notably absent from `PendingAttestation`: the **allowed-image-hash list**. The callback re-reads it from contract state, so any governance vote that adds or removes an entry mid-Promise applies to verifications it overlaps. Snapshotting at request time would freeze each submission against stale policy — wrong default for a security control, where removing a compromised hash should take effect immediately.
+Notably absent from `PendingAttestation`: the **post-DCAP policy state** — allowed MPC image hashes, allowed launcher compose hashes, and accepted measurements. The callback re-reads all of them from contract state, so any governance vote that adds or removes an entry mid-Promise applies to verifications it overlaps. Snapshotting at request time would freeze each submission against stale policy — wrong default for a security control, where removing a compromised hash should take effect immediately.
 
 ```mermaid
 sequenceDiagram
@@ -158,7 +158,7 @@ Two new crates, plus an existing one that picks up a new dependency:
 - **`attestation`** (existing). TDX domain types and the post-DCAP verification logic. Picks up `tee-verifier-interface` to re-export `Collateral` and `QuoteBytes` instead of duplicating them.
 - **`mpc-attestation`** (existing). MPC-specific framing on top of `attestation`: the `Attestation { Dstack, Mock }` enum, the `(tls_pk, account_pk)` binding, mock attestation verification.
 
-The resulting Cargo dependency graph:
+The resulting Cargo dependency graph (arrows are `[dependencies]` edges — `tee-verifier` implements the wire format defined in `tee-verifier-interface`, see the bullet above):
 
 ```mermaid
 flowchart TD
