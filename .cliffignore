@@ -513,3 +513,8 @@ e8a2fdb038ce1347ac5e6421c0db5c7d6d430cad
 # so they don't appear in the next auto-generated release block.
 0a5a7988573d5f55af2230747e7f29059dd2014b
 5e2386dd0f6318c8bfc0065543b7aebb80039ae3
+
+# 3.10.1 was tagged on release/3.10.1 (not on main). The fix landed on main
+# first as cf179467 and was cherry-picked here; ignore the main-side commit so
+# it doesn't reappear in the next auto-generated release block.
+cf179467124203b0187ef0e80b429885b9a51627

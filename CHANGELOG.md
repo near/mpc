@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.10.1] - 2026-05-25
+
+### 🐛 Bug Fixes
+
+- [#3337](https://github.com/near/mpc/pull/3337)(@netrome): Prevent overwriting other participant's attestations (#3337)
+
+
 ## [3.10.0] - 2026-05-18
 
 ### 🚀 Features
