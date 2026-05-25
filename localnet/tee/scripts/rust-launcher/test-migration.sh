@@ -294,14 +294,7 @@ render_target_files() {
   export NEAR_BOOT_NODES="ed25519:BGa4WiBj43Mr66f9Ehf6swKtR6wZmWuwCsV3s4PSR3nx@10.0.2.2:24566"
 
   # PORTS_TOML transformation (same shape as deploy-tee-cluster.sh).
-  local PORTS_TOML="" pair host_port container_port
-  IFS=',' read -ra pairs <<< "$PORTS"
-  for pair in "${pairs[@]}"; do
-    host_port="${pair%%:*}"
-    container_port="${pair##*:}"
-    PORTS_TOML+="    { host =${host_port}, container =${container_port} },
-"
-  done
+  PORTS_TOML="$(ports_to_toml "$PORTS")"
   export PORTS_TOML
 
   local env_out="$WORKDIR/node${target_idx}.env"
