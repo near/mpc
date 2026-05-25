@@ -569,8 +569,9 @@ async fn migration_service__should_migrate_nodes_via_backup_cli() {
     }
 }
 
-/// Back-migration (A → B → A) end-to-end via the backup CLI. See
-/// near/mpc#2121 for the production scenario this regresses against.
+/// Back-migration (A → B → A) end-to-end via the backup CLI. Investigation
+/// context for the production scenario lives at near/mpc#2121; this test
+/// does NOT regress against that bug (see Caveat below).
 ///
 /// Starts a cluster with 2 participating nodes (A0, A1) + 1 migration
 /// target (B0). A1 stays a participant throughout so threshold (2) holds
@@ -582,24 +583,33 @@ async fn migration_service__should_migrate_nodes_via_backup_cli() {
 ///   5. Verify migration finalizes and sign + ckd requests succeed
 /// Between the forward and back directions, A0's CVM is killed and
 /// restarted so its keyshares stay on disk through the restart.
+/// After the back direction, B0 is killed so the final sign + ckd
+/// assertions prove A0 + A1 carry the workload alone.
 ///
 /// Caveat: attestation is mocked as `{"Mock": "Valid"}` throughout, so
-/// this test cannot exercise the on-chain stale-attestation failure mode.
+/// this test cannot exercise the on-chain stale-attestation failure mode —
+/// which is the leading suspect for #2121's production symptom. This is a
+/// positive-baseline regression test for the back-migration code path, not
+/// a reproducer for #2121.
 #[tokio::test]
 #[expect(non_snake_case)]
 async fn migration_service__should_handle_back_migration_a_to_b_to_a() {
     let backup_cli = must_get_backup_cli_path();
 
-    // Given: 2 participants (A0, A1) + 1 migration target (B0 at index 2).
+    // Given: 2 participants (A0, A1) + 1 migration target (B0).
+    let num_nodes = 2;
     let (mut cluster, running) =
         common::must_setup_cluster(common::MIGRATION_BACK_PORT_SEED, |c| {
-            c.num_nodes = 2;
-            c.threshold = 2;
+            c.num_nodes = num_nodes;
+            c.threshold = num_nodes;
             c.migration_targets = vec![0];
         })
         .await;
 
-    let (a_idx, b_idx) = (0usize, 2usize);
+    // A0 (idx 0) is the source we migrate from; B0 lives at `num_nodes`
+    // since `migration_targets[0] = 0` puts the first target right after
+    // the initial participants.
+    let (a_idx, b_idx) = (0usize, num_nodes);
     assert_eq!(
         cluster.nodes[a_idx].account_id().to_string(),
         cluster.nodes[b_idx].account_id().to_string(),
@@ -683,6 +693,14 @@ async fn migration_service__should_handle_back_migration_a_to_b_to_a() {
     wait_for_migration_completion(&cluster, b_idx, a_idx)
         .await
         .expect("back-migration did not finalize");
+
+    // Kill B0 before the final assertions so the sign + ckd requests cannot
+    // be served by the now-demoted node — that proves A0 + A1 are carrying
+    // the workload alone, mirroring what the forward test does by killing
+    // the source after migration.
+    cluster
+        .kill_nodes(&[b_idx])
+        .expect("failed to kill B0 after back-migration");
 
     // Then: A0 + A1 are the participants again and sign + ckd still succeed.
     common::send_sign_request(&cluster, &running, &mut rng, cluster.default_user_account())
