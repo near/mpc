@@ -17,7 +17,7 @@ use threshold_signatures::{
     },
     frost_secp256k1::VerifyingKey,
     participants::Participant,
-    Element, MaxMalicious, ParticipantList,
+    Element, ParticipantList, ReconstructionThreshold,
 };
 
 // Note: This is required to use Scalar::from_repr
@@ -32,7 +32,7 @@ type Tweak = threshold_signatures::Tweak<C>;
 
 fn run_presign(
     participants: HashMap<Participant, KeygenOutput>,
-    max_malicious: MaxMalicious,
+    threshold: ReconstructionThreshold,
 ) -> Vec<(Participant, PresignOutput)> {
     let mut protocols: GenProtocol<PresignOutput> = Vec::with_capacity(participants.len());
 
@@ -44,7 +44,7 @@ fn run_presign(
             p,
             PresignArguments {
                 keygen_out,
-                max_malicious,
+                threshold,
             },
             OsRng,
         )
@@ -57,7 +57,7 @@ fn run_presign(
 
 fn run_sign(
     participants_presign: Vec<(Participant, RerandomizedPresignOutput)>,
-    max_malicious: MaxMalicious,
+    threshold: ReconstructionThreshold,
     coordinator: Participant,
     public_key: Element<C>,
     msg_hash: [u8; 32],
@@ -74,7 +74,7 @@ fn run_sign(
         let protocol = sign(
             &participants,
             coordinator,
-            max_malicious,
+            threshold,
             p,
             public_key.to_affine(),
             presignature,
@@ -90,7 +90,7 @@ fn run_sign(
 
 fn run_sign_with_rerandomization(
     participants_presign: &[(Participant, PresignOutput)],
-    max_malicious: MaxMalicious,
+    threshold: ReconstructionThreshold,
     public_key: VerifyingKey,
     msg_hash: [u8; 32],
     tweak: [u8; 32],
@@ -132,7 +132,7 @@ fn run_sign_with_rerandomization(
     // run sign instantiation with the necessary arguments
     let all_sigs = run_sign(
         rerand_participants_presign,
-        max_malicious,
+        threshold,
         coordinator,
         derived_pk,
         msg_hash,
@@ -152,12 +152,11 @@ fn run_sign_with_rerandomization(
 #[test]
 fn test_run_sign() {
     let participants = generate_participants(11);
-    let max_malicious = 5;
-    let threshold = max_malicious + 1;
-    let keys = run_keygen(&participants, threshold.into());
+    let threshold = ReconstructionThreshold::from(6_usize);
+    let keys = run_keygen(&participants, threshold);
     let public_key = keys.get(&participants[0]).unwrap().public_key;
     assert_eq!(keys.len(), participants.len());
-    let presign_result = run_presign(keys.clone(), max_malicious.into());
+    let presign_result = run_presign(keys.clone(), threshold);
 
     let msg_hash = *b"hello worldhello worldhello worl";
     // generate a random tweak
@@ -169,7 +168,7 @@ fn test_run_sign() {
 
     let signature = run_sign_with_rerandomization(
         &presign_result,
-        max_malicious.into(),
+        threshold,
         public_key,
         msg_hash,
         tweak,
@@ -193,14 +192,14 @@ fn test_run_sign() {
 
     let mut new_participants = participants.clone();
     new_participants.push(Participant::from(20u32));
-    let new_threshold = 6;
+    let new_threshold = ReconstructionThreshold::from(6_usize);
 
     let new_keys = run_reshare(
         &participants,
         &public_key,
         participant_keys.as_slice(),
-        threshold.into(),
-        new_threshold.into(),
+        threshold,
+        new_threshold,
         &new_participants,
     );
     let new_public_key = new_keys.get(&participants[0]).unwrap().public_key;

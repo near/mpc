@@ -16,7 +16,7 @@ use crate::{
         internal::{make_protocol, Comms, SharedChannel},
         Protocol,
     },
-    Ciphersuite, KeygenOutput, ReconstructionLowerBound,
+    Ciphersuite, KeygenOutput, ReconstructionThreshold,
 };
 
 pub mod eddsa;
@@ -27,7 +27,7 @@ pub struct PresignArguments<C: Ciphersuite> {
     /// The output of key generation, i.e. our share of the secret key, and the public key package.
     pub keygen_out: KeygenOutput<C>,
     /// The threshold for the scheme
-    pub threshold: ReconstructionLowerBound,
+    pub threshold: ReconstructionThreshold,
 }
 
 /// The output of the presigning protocol.
@@ -126,7 +126,7 @@ async fn do_presign<C: Ciphersuite + Send>(
 /// Verifies that the sign inputs are valid
 pub fn assert_sign_inputs(
     participants: &[Participant],
-    threshold: impl Into<ReconstructionLowerBound>,
+    threshold: impl Into<ReconstructionThreshold>,
     me: Participant,
     coordinator: Participant,
 ) -> Result<ParticipantList, InitializationError> {

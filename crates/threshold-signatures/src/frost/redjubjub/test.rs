@@ -1,7 +1,7 @@
 use crate::{
     crypto::hash::{hash, HashOutput},
     frost::redjubjub::{sign::sign, KeygenOutput, PresignOutput, SignatureOption},
-    Participant, ReconstructionLowerBound,
+    Participant, ReconstructionThreshold,
 };
 
 use crate::test_utils::{
@@ -23,7 +23,7 @@ type C = JubjubBlake2b512;
 
 pub fn run_presign(
     participants: &[(Participant, KeygenOutput)],
-    threshold: impl Into<ReconstructionLowerBound> + Copy,
+    threshold: impl Into<ReconstructionThreshold> + Copy,
     actual_signers: usize,
     rng: impl CryptoRngCore + Send + Clone + 'static,
 ) -> Result<Vec<(Participant, PresignOutput)>, Box<dyn Error>> {
@@ -36,7 +36,7 @@ pub fn run_sign_with_presign(
     participants: &[(Participant, KeygenOutput)],
     actual_signers: usize,
     coordinator: Participant,
-    threshold: impl Into<ReconstructionLowerBound> + Copy + 'static,
+    threshold: impl Into<ReconstructionThreshold> + Copy + 'static,
     msg_hash: HashOutput,
 ) -> Result<Vec<(Participant, SignatureOption)>, Box<dyn Error>> {
     let mut rng = MockCryptoRng::seed_from_u64(644_221);

@@ -6,11 +6,11 @@ use rand::rngs::OsRng;
 use threshold_signatures::confidential_key_derivation::KeygenOutput;
 use threshold_signatures::confidential_key_derivation::BLS12381SHA256;
 use threshold_signatures::participants::Participant;
-use threshold_signatures::ReconstructionLowerBound;
+use threshold_signatures::ReconstructionThreshold;
 
 impl CKDProvider {
     pub(super) async fn run_key_generation_client_internal(
-        threshold: ReconstructionLowerBound,
+        threshold: ReconstructionThreshold,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<KeygenOutput> {
         let key = KeyGenerationComputation { threshold }
@@ -25,7 +25,7 @@ impl CKDProvider {
 /// Runs the key generation protocol, returning the key generated.
 /// This protocol is identical for the leader and the followers.
 pub struct KeyGenerationComputation {
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
 }
 
 #[async_trait::async_trait]
@@ -68,7 +68,7 @@ mod tests {
     use threshold_signatures::frost_core::Group;
     use threshold_signatures::participants::Participant;
     use threshold_signatures::test_utils::generate_participants;
-    use threshold_signatures::ReconstructionLowerBound;
+    use threshold_signatures::ReconstructionThreshold;
     use threshold_signatures::{confidential_key_derivation as ckd, ParticipantList};
     use tokio::sync::mpsc;
 
@@ -120,7 +120,7 @@ mod tests {
                 .ok_or_else(|| anyhow::anyhow!("No channel"))?
         };
         let key = KeyGenerationComputation {
-            threshold: ReconstructionLowerBound::from(3),
+            threshold: ReconstructionThreshold::from(3),
         }
         .perform_leader_centric_computation(channel, std::time::Duration::from_secs(60))
         .await?;

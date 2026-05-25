@@ -4,7 +4,7 @@ use subtle::ConditionallySelectable;
 use super::RerandomizedPresignOutput;
 use crate::errors::{InitializationError, ProtocolError};
 use crate::participants::{Participant, ParticipantList};
-use crate::ReconstructionLowerBound;
+use crate::ReconstructionThreshold;
 use crate::{
     ecdsa::{x_coordinate, AffinePoint, Scalar, Secp256K1Sha256, Signature, SignatureOption},
     protocol::{
@@ -28,7 +28,7 @@ pub(crate) const OT_ECDSA_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES: usize = 0;
 pub fn sign(
     participants: &[Participant],
     coordinator: Participant,
-    threshold: impl Into<ReconstructionLowerBound>,
+    threshold: impl Into<ReconstructionThreshold>,
     me: Participant,
     public_key: AffinePoint,
     presignature: RerandomizedPresignOutput,

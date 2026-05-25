@@ -16,6 +16,7 @@ use crate::test_utils::{
     run_sign, GenOutput, GenProtocol, MockCryptoRng,
 };
 use crate::thresholds::MaxMalicious;
+use crate::ReconstructionThreshold;
 
 use rand::seq::SliceRandom as _;
 use rand_core::{CryptoRngCore, SeedableRng};
@@ -24,7 +25,7 @@ use rand_core::{CryptoRngCore, SeedableRng};
 /// This signing does not rerandomize the presignatures and tests only the core protocol
 pub fn run_sign_without_rerandomization(
     participants_presign: &[(Participant, PresignOutput)],
-    max_malicious: MaxMalicious,
+    threshold: ReconstructionThreshold,
     public_key: Element,
     msg: &[u8],
     rng: &mut impl CryptoRngCore,
@@ -51,7 +52,7 @@ pub fn run_sign_without_rerandomization(
             sign(
                 participants,
                 coordinator,
-                max_malicious,
+                threshold,
                 me,
                 pk,
                 rerand_presig,
@@ -76,6 +77,7 @@ pub fn run_sign_with_rerandomization(
     msg: &[u8],
     rng: &mut impl CryptoRngCore,
 ) -> Result<(Tweak, Participant, Signature), Box<dyn Error>> {
+    let threshold = max_malicious.into().reconstruction_threshold().unwrap();
     // hash the message into secp256k1 field
     let msg_hash = scalar_hash_secp256k1(msg);
 
@@ -130,7 +132,7 @@ pub fn run_sign_with_rerandomization(
             sign(
                 participants,
                 coordinator,
-                max_malicious,
+                threshold,
                 me,
                 pk,
                 presignature,
@@ -152,6 +154,7 @@ pub fn run_presign<R: CryptoRngCore + SeedableRng + Send + 'static>(
     let mut protocols: GenProtocol<PresignOutput> = Vec::with_capacity(participants.len());
 
     let participant_list: Vec<Participant> = participants.iter().map(|(p, _)| *p).collect();
+    let threshold = max_malicious.into().reconstruction_threshold().unwrap();
 
     for (p, keygen_out) in participants {
         let rng_p = R::seed_from_u64(rng.next_u64());
@@ -160,7 +163,7 @@ pub fn run_presign<R: CryptoRngCore + SeedableRng + Send + 'static>(
             p,
             PresignArguments {
                 keygen_out,
-                max_malicious: max_malicious.into(),
+                threshold,
             },
             rng_p,
         )
@@ -188,7 +191,7 @@ fn test_refresh() -> Result<(), Box<dyn Error>> {
     let msg = b"hello world";
     run_sign_without_rerandomization(
         &presign_result,
-        max_malicious.into(),
+        MaxMalicious::from(max_malicious).reconstruction_threshold().unwrap(),
         public_key.to_element(),
         msg,
         &mut rng,
@@ -236,7 +239,7 @@ fn test_reshare_sign_more_participants() -> Result<(), Box<dyn Error>> {
     let msg = b"hello world";
     run_sign_without_rerandomization(
         &presign_result,
-        max_malicious.into(),
+        MaxMalicious::from(max_malicious).reconstruction_threshold().unwrap(),
         public_key.to_element(),
         msg,
         &mut rng,
@@ -279,7 +282,7 @@ fn test_reshare_sign_less_participants() -> Result<(), Box<dyn Error>> {
     let msg = b"hello world";
     run_sign_without_rerandomization(
         &presign_result,
-        max_malicious.into(),
+        MaxMalicious::from(max_malicious).reconstruction_threshold().unwrap(),
         public_key.to_element(),
         msg,
         &mut rng,
@@ -302,7 +305,7 @@ fn test_e2e() -> Result<(), Box<dyn Error>> {
     let msg = b"hello world";
     run_sign_without_rerandomization(
         &presign_result,
-        max_malicious.into(),
+        MaxMalicious::from(max_malicious).reconstruction_threshold().unwrap(),
         public_key.to_element(),
         msg,
         &mut rng,
@@ -328,7 +331,7 @@ fn test_e2e_random_identifiers() -> Result<(), Box<dyn Error>> {
     let msg = b"hello world";
     run_sign_without_rerandomization(
         &presign_result,
-        max_malicious.into(),
+        MaxMalicious::from(max_malicious).reconstruction_threshold().unwrap(),
         public_key.to_element(),
         msg,
         &mut rng,

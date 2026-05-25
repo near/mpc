@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
 use crate::participants::{Participant, ParticipantList, ParticipantMap};
-use crate::thresholds::ReconstructionLowerBound;
+use crate::thresholds::ReconstructionThreshold;
 use crate::{
     crypto::{
         commitment::{commit, Commitment},
@@ -32,7 +32,7 @@ use super::{multiplication::multiplication_many, TriplePub, TripleShare};
 ///     LABEL, NAME, Participants, threshold
 fn create_transcript(
     participants: &ParticipantList,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
 ) -> Result<Transcript, ProtocolError> {
     let mut transcript = Transcript::new(NEAR_TRIPLE_GENERATION_LABEL);
 
@@ -73,7 +73,7 @@ async fn do_generation(
     comms: Comms,
     participants: ParticipantList,
     me: Participant,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     rng: impl CryptoRngCore,
 ) -> Result<TripleGenerationOutput, ProtocolError> {
     let mut triple = do_generation_many::<1>(comms, participants, me, threshold, rng).await?;
@@ -125,7 +125,7 @@ async fn do_generation_many<const N: usize>(
     comms: Comms,
     participants: ParticipantList,
     me: Participant,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     mut rng: impl CryptoRngCore,
 ) -> Result<TripleGenerationOutputMany, ProtocolError> {
     if N == 0 {
@@ -707,8 +707,8 @@ async fn do_generation_many<const N: usize>(
 /// provided to this function.
 fn validate_triple_inputs(
     participants: &[Participant],
-    threshold: impl Into<ReconstructionLowerBound>,
-) -> Result<(ParticipantList, ReconstructionLowerBound), InitializationError> {
+    threshold: impl Into<ReconstructionThreshold>,
+) -> Result<(ParticipantList, ReconstructionThreshold), InitializationError> {
     let threshold = threshold.into();
     let threshold_value = threshold.value();
     if participants.len() < 2 {
@@ -781,7 +781,7 @@ pub fn triple_generation_max_incoming_buffer_entries(
 pub fn generate_triple(
     participants: &[Participant],
     me: Participant,
-    threshold: impl Into<ReconstructionLowerBound>,
+    threshold: impl Into<ReconstructionThreshold>,
     rng: impl CryptoRngCore + Send + 'static,
 ) -> Result<impl Protocol<Output = TripleGenerationOutput>, InitializationError> {
     let (participants, threshold) = validate_triple_inputs(participants, threshold)?;
@@ -797,7 +797,7 @@ pub fn generate_triple(
 pub fn generate_triple_many<const N: usize>(
     participants: &[Participant],
     me: Participant,
-    threshold: impl Into<ReconstructionLowerBound>,
+    threshold: impl Into<ReconstructionThreshold>,
     rng: impl CryptoRngCore + Send + 'static,
 ) -> Result<impl Protocol<Output = TripleGenerationOutputMany>, InitializationError> {
     let (participants, threshold) = validate_triple_inputs(participants, threshold)?;

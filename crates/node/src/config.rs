@@ -1,5 +1,6 @@
 use crate::primitives::ParticipantId;
 use mpc_node_config::{AuthConfig, ConfigFile};
+use mpc_primitives::ReconstructionThreshold;
 
 use anyhow::Context;
 use ed25519_dalek::{SigningKey, VerifyingKey};
@@ -62,9 +63,24 @@ impl MpcConfig {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ParticipantsConfig {
-    /// The threshold for the MPC protocol.
-    pub threshold: u64,
+    /// The threshold for the MPC protocol — number of share-holders required
+    /// to reconstruct the secret. Wire format is a plain integer (the inner
+    /// type is `#[serde(transparent)]`), so this is wire-compatible with the
+    /// previous `u64` field.
+    pub threshold: ReconstructionThreshold,
     pub participants: Vec<ParticipantInfo>,
+}
+
+impl ParticipantsConfig {
+    /// The threshold expressed in the form the threshold-signatures crypto
+    /// library consumes (a `usize`-backed `ReconstructionThreshold`).
+    pub fn ts_threshold(
+        &self,
+    ) -> anyhow::Result<threshold_signatures::ReconstructionThreshold> {
+        Ok(threshold_signatures::ReconstructionThreshold::from(
+            usize::try_from(self.threshold.inner())?,
+        ))
+    }
 }
 
 #[cfg(test)]
@@ -563,7 +579,7 @@ pub mod tests {
         let participant = gen_participant();
         let non_participant = gen_participant();
         let bogus_config = ParticipantsConfig {
-            threshold: 3,
+            threshold: ReconstructionThreshold::new(3),
             participants: vec![participant.clone()],
         };
         assert_matches!(

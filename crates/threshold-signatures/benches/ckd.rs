@@ -16,13 +16,13 @@ use threshold_signatures::{
     test_utils::{
         run_protocol_and_take_snapshots, run_simulated_protocol, MockCryptoRng, Simulator,
     },
-    ReconstructionLowerBound,
+    ReconstructionThreshold,
 };
 
 type PreparedSimulatedCkd = PreparedOutputs<CKDOutputOption>;
 
-fn threshold() -> ReconstructionLowerBound {
-    ReconstructionLowerBound::from(*MAX_MALICIOUS + 1)
+fn threshold() -> ReconstructionThreshold {
+    ReconstructionThreshold::from(*MAX_MALICIOUS + 1)
 }
 
 /// Benches the ckd protocol
@@ -62,7 +62,7 @@ struct CkdSetup {
 }
 
 /// Expensive one-time setup: runs the full N-party protocol to capture snapshots
-fn setup_ckd_snapshot(threshold: ReconstructionLowerBound) -> CkdSetup {
+fn setup_ckd_snapshot(threshold: ReconstructionThreshold) -> CkdSetup {
     let mut rng = MockCryptoRng::seed_from_u64(41);
     let preps = prepare_ckd(threshold, &mut rng);
     let (_, protocol_snapshot) = run_protocol_and_take_snapshots(preps.protocols)

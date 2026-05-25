@@ -10,12 +10,12 @@ use threshold_signatures::{
     frost_ed25519::Ed25519Sha512,
     frost_secp256k1::Secp256K1Sha256,
     test_utils::{bench_simulation, run_simulation, BenchConfig, MockCryptoRng, SimulationMetrics},
-    Ciphersuite, Element, ReconstructionLowerBound, Scalar,
+    Ciphersuite, Element, ReconstructionThreshold, Scalar,
 };
 
 fn main() {
     let config = BenchConfig::from_env();
-    let threshold = ReconstructionLowerBound::from(config.threshold);
+    let threshold = ReconstructionThreshold::from(config.threshold);
     let n = config.num_participants;
 
     println!("Protocol simulation: DKG");
@@ -50,7 +50,7 @@ fn main() {
 
 fn run_dkg<C: Ciphersuite>(
     n: usize,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     config: &BenchConfig,
 ) -> SimulationMetrics
 where

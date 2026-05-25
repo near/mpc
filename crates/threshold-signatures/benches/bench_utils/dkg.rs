@@ -5,13 +5,13 @@ use threshold_signatures::{
     participants::Participant,
     protocol::Protocol,
     test_utils::{generate_participants_with_random_ids, MockCryptoRng},
-    Ciphersuite, KeygenOutput, ReconstructionLowerBound,
+    Ciphersuite, KeygenOutput, ReconstructionThreshold,
 };
 
 /// Used to prepare DKG keygen protocols for benchmarking
 pub fn prepare_dkg<C: Ciphersuite, R: CryptoRngCore + SeedableRng + Send + 'static>(
     num_participants: usize,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     rng: &mut R,
 ) -> PreparedDkgPackage<C>
 where

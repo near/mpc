@@ -6,7 +6,7 @@ mod test;
 use crate::{
     ecdsa::{AffinePoint, KeygenOutput, RerandomizationArguments, Scalar},
     errors::ProtocolError,
-    MaxMalicious,
+    ReconstructionThreshold,
 };
 use serde::{Deserialize, Serialize};
 use subtle::{Choice, ConstantTimeEq};
@@ -17,8 +17,9 @@ pub struct PresignArguments {
     /// The output of key generation, i.e. our share of the secret key, and the public key package.
     /// This is of type `KeygenOutput<Secp256K1Sha256>` from Frost implementation
     pub keygen_out: KeygenOutput,
-    /// The desired threshold for the presignature, which must match the original threshold
-    pub max_malicious: MaxMalicious,
+    /// The desired threshold for the presignature, which must match the original threshold.
+    /// Used internally as `MaxMalicious = ReconstructionThreshold - 1`.
+    pub threshold: ReconstructionThreshold,
 }
 
 /// The output of the presigning protocol.

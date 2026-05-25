@@ -15,7 +15,7 @@ use threshold_signatures::{
         ecdsa_generate_rerandpresig_args, generate_participants_with_random_ids, run_keygen,
         MockCryptoRng,
     },
-    ReconstructionLowerBound,
+    ReconstructionThreshold,
 };
 
 use super::{PreparedPresig, PreparedSig};
@@ -23,7 +23,7 @@ use super::{PreparedPresig, PreparedSig};
 /// Used to prepare ot based ecdsa triples for benchmarking
 pub fn ot_ecdsa_prepare_triples<R: CryptoRngCore + SeedableRng + Send + 'static>(
     participant_num: usize,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     rng: &mut R,
 ) -> OTECDSAPreparedTriples {
     let mut protocols: Vec<(_, Box<dyn Protocol<Output = _>>)> =
@@ -45,7 +45,7 @@ pub fn ot_ecdsa_prepare_triples<R: CryptoRngCore + SeedableRng + Send + 'static>
 /// Used to prepare ot based ecdsa presignatures for benchmarking
 pub fn ot_ecdsa_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'static>(
     two_triples: &[(Participant, Vec<(TripleShare, TriplePub)>)],
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     rng: &mut R,
 ) -> OTECDSAPreparedPresig {
     let mut two_triples = two_triples.to_owned();
@@ -93,7 +93,7 @@ pub fn ot_ecdsa_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'static>
 /// Used to prepare ot based ecdsa signatures for benchmarking
 pub fn ot_ecdsa_prepare_sign<R: CryptoRngCore + SeedableRng>(
     result: &[(Participant, ot_based_ecdsa::PresignOutput)],
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     pk: frost_secp256k1::VerifyingKey,
     rng: &mut R,
 ) -> OTECDSAPreparedSig {

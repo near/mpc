@@ -9,7 +9,7 @@ use crate::test_utils::{
     generate_participants_with_random_ids, run_keygen, run_protocol, run_refresh, run_reshare,
     run_sign, GenOutput, GenProtocol, MockCryptoRng,
 };
-use crate::{protocol::Protocol, Participant, ReconstructionLowerBound};
+use crate::{protocol::Protocol, Participant, ReconstructionThreshold};
 
 use crate::crypto::hash::test::scalar_hash_secp256k1;
 use crate::ecdsa::{
@@ -25,7 +25,7 @@ use std::error::Error;
 /// This signing does not rerandomize the presignatures and tests only the core protocol
 pub fn run_sign_without_rerandomization(
     participants_presign: &[(Participant, PresignOutput)],
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     public_key: Element,
     msg: &[u8],
     rng: &mut impl CryptoRngCore,
@@ -78,7 +78,7 @@ pub fn run_sign_without_rerandomization(
 /// rerandomizing the presignatures
 pub fn run_sign_with_rerandomization(
     participants_presign: &[(Participant, PresignOutput)],
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     public_key: Element,
     msg: &[u8],
     rng: &mut impl CryptoRngCore,
@@ -153,7 +153,7 @@ pub fn run_presign(
     shares1: Vec<TripleShare>,
     pub0: &TriplePub,
     pub1: &TriplePub,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
 ) -> Vec<(Participant, PresignOutput)> {
     assert!(participants.len() == shares0.len());
     assert!(participants.len() == shares1.len());
@@ -461,7 +461,7 @@ fn test_robustness_with_rerandomization() {
 
 fn test_robustness<T, F, R: CryptoRngCore + SeedableRng + Send + 'static>(run_sign: F, rng: &mut R)
 where
-    F: Fn(&[(Participant, PresignOutput)], ReconstructionLowerBound, Element, &[u8], &mut R) -> T,
+    F: Fn(&[(Participant, PresignOutput)], ReconstructionThreshold, Element, &[u8], &mut R) -> T,
 {
     let participants_count = 7;
     let mut participants = generate_participants_with_random_ids(participants_count, rng);

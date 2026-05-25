@@ -17,11 +17,11 @@ use threshold_signatures::{
     test_utils::{
         run_protocol_and_take_snapshots, run_simulated_protocol, MockCryptoRng, Simulator,
     },
-    Ciphersuite, Element, KeygenOutput, ReconstructionLowerBound, Scalar,
+    Ciphersuite, Element, KeygenOutput, ReconstructionThreshold, Scalar,
 };
 
-fn threshold() -> ReconstructionLowerBound {
-    ReconstructionLowerBound::from(*MAX_MALICIOUS + 1)
+fn threshold() -> ReconstructionThreshold {
+    ReconstructionThreshold::from(*MAX_MALICIOUS + 1)
 }
 
 fn participants_num() -> usize {
@@ -82,7 +82,7 @@ struct DkgSetup {
 }
 
 /// Expensive one-time setup: runs the full N-party protocol to capture snapshots
-fn setup_dkg_snapshot<C: Ciphersuite>(threshold: ReconstructionLowerBound) -> DkgSetup
+fn setup_dkg_snapshot<C: Ciphersuite>(threshold: ReconstructionThreshold) -> DkgSetup
 where
     Element<C>: Send,
     Scalar<C>: Send,
@@ -112,7 +112,7 @@ where
 /// Cheap per-sample setup: creates fresh protocol and clones the cached simulator
 fn prepare_simulated_dkg<C: Ciphersuite>(
     setup: &DkgSetup,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
 ) -> PreparedSimulatedDkg<C>
 where
     Element<C>: Send,

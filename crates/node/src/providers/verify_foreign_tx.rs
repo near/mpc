@@ -22,7 +22,7 @@ use std::sync::Arc;
 use threshold_signatures::ecdsa::{KeygenOutput, Signature};
 use threshold_signatures::frost_secp256k1::keys::SigningShare;
 use threshold_signatures::frost_secp256k1::VerifyingKey;
-use threshold_signatures::ReconstructionLowerBound;
+use threshold_signatures::ReconstructionThreshold;
 
 /// Pre-built HTTP clients for each foreign chain, keyed in provider config order.
 ///
@@ -132,7 +132,7 @@ where
     }
 
     async fn run_key_generation_client(
-        _threshold: ReconstructionLowerBound,
+        _threshold: ReconstructionThreshold,
         _channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
         anyhow::bail!(
@@ -141,7 +141,7 @@ where
     }
 
     async fn run_key_resharing_client(
-        _new_threshold: ReconstructionLowerBound,
+        _new_threshold: ReconstructionThreshold,
         _key_share: Option<SigningShare>,
         _public_key: VerifyingKey,
         _old_participants: &ParticipantsConfig,

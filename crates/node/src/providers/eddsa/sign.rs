@@ -14,7 +14,7 @@ use threshold_signatures::frost_core::Scalar;
 use threshold_signatures::frost_ed25519::VerifyingKey;
 use threshold_signatures::frost_ed25519::{Ed25519Sha512, Signature};
 use threshold_signatures::participants::Participant;
-use threshold_signatures::ReconstructionLowerBound;
+use threshold_signatures::ReconstructionThreshold;
 use tokio::time::timeout;
 
 impl EddsaSignatureProvider {
@@ -24,8 +24,7 @@ impl EddsaSignatureProvider {
     ) -> anyhow::Result<(Signature, VerifyingKey)> {
         let sign_request = self.sign_request_store.get(id).await?;
 
-        let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
-        let threshold = ReconstructionLowerBound::from(threshold);
+        let threshold = self.mpc_config.participants.ts_threshold()?;
         let running_participants: Vec<_> = self
             .mpc_config
             .participants
@@ -95,8 +94,7 @@ impl EddsaSignatureProvider {
         .await??;
         metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_LOOKUP_SUCCEEDED.inc();
 
-        let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
-        let threshold = ReconstructionLowerBound::from(threshold);
+        let threshold = self.mpc_config.participants.ts_threshold()?;
 
         let Some(keygen_output) = self.keyshares.get(&sign_request.domain) else {
             anyhow::bail!("No keyshare for domain {:?}", sign_request.domain);
@@ -136,7 +134,7 @@ impl EddsaSignatureProvider {
 /// The tweak allows key derivation
 pub struct SignComputation {
     pub keygen_output: KeygenOutput,
-    pub threshold: ReconstructionLowerBound,
+    pub threshold: ReconstructionThreshold,
     pub message: Vec<u8>,
     pub tweak: Tweak,
 }

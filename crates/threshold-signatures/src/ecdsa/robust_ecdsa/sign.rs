@@ -12,7 +12,7 @@ use crate::{
         internal::{make_protocol, Comms, SharedChannel},
         Protocol,
     },
-    MaxMalicious,
+    ReconstructionThreshold,
 };
 use frost_core::serialization::SerializableScalar;
 use subtle::ConditionallySelectable;
@@ -32,14 +32,14 @@ pub(crate) const ROBUST_ECDSA_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES: usize = 0;
 /// setting if different subsets of participants sign different `(msg_hash, tweak)`
 /// values using shares derived from the same presignature (i.e., different
 /// rerandomization inputs for the same presignature).
-/// To reduce risk in this implementation, require `N1 = N2 = 2 * max_malicious + 1`,
+/// To reduce risk in this implementation, require `N1 = N2 = 2*(ReconstructionThreshold - 1) + 1`,
 /// ensure all participants agree on `(msg_hash, tweak, participants)` when creating
 /// `RerandomizedPresignOutput`, never reuse a presignature, and do not sign with
 /// `msg_hash == 0`.
 pub fn sign(
     participants: &[Participant],
     coordinator: Participant,
-    max_malicious: impl Into<MaxMalicious>,
+    threshold: impl Into<ReconstructionThreshold>,
     me: Participant,
     public_key: AffinePoint,
     presignature: RerandomizedPresignOutput,
@@ -70,20 +70,20 @@ pub fn sign(
         });
     }
 
-    // ensure number of participants during the signing phase is >= 2 * max_malicious + 1
+    // ensure number of participants during the signing phase is >= 2*(ReconstructionThreshold - 1) + 1
+    let max_malicious = threshold.into().max_malicious();
     let robust_ecdsa_threshold = max_malicious
-        .into()
         .value()
         .checked_mul(2)
         .and_then(|v| v.checked_add(1))
         .ok_or_else(|| {
             InitializationError::BadParameters(
-                "2*threshold+1 must be less than usize::MAX".to_string(),
+                "2*(ReconstructionThreshold - 1)+1 must be less than usize::MAX".to_string(),
             )
         })?;
     if robust_ecdsa_threshold > participants.len() {
         return Err(InitializationError::BadParameters(
-            "2*max_malicious+1 must be less than or equals to participant count".to_string(),
+            "2*(ReconstructionThreshold - 1)+1 must be less than or equals to participant count".to_string(),
         ));
     }
 
@@ -91,7 +91,7 @@ pub fn sign(
     // documented in docs/ecdsa/robust_ecdsa/signing.md
     if participants.len() != robust_ecdsa_threshold {
         return Err(InitializationError::BadParameters(
-            "the number of participants during signing must be exactly 2*max_malicious+1 to avoid split view attacks".to_string(),
+            "the number of participants during signing must be exactly 2*(ReconstructionThreshold - 1)+1 to avoid split view attacks".to_string(),
         ));
     }
     if bool::from(msg_hash.is_zero()) {
@@ -231,6 +231,7 @@ mod test {
     use crate::test_utils::{
         assert_buffer_capacity, expected_buffer_by_role, generate_participants, MockCryptoRng,
     };
+    use crate::thresholds::MaxMalicious;
     use rstest::rstest;
 
     type PresigSimulationOutput = (Scalar, Polynomial, Polynomial, Polynomial, ProjectivePoint);
@@ -307,7 +308,7 @@ mod test {
 
         let (_, sig) = run_sign_without_rerandomization(
             &participants_presign,
-            max_malicious.into(),
+            MaxMalicious::from(max_malicious).reconstruction_threshold().unwrap(),
             public_key,
             msg,
             &mut rng,
@@ -379,7 +380,7 @@ mod test {
 
         let result = crate::ecdsa::robust_ecdsa::test::run_sign_without_rerandomization(
             &presignatures,
-            max_malicious.into(),
+            MaxMalicious::from(max_malicious).reconstruction_threshold().unwrap(),
             public_key,
             &msg,
             &mut rng,
@@ -424,7 +425,7 @@ mod test {
 
         let result = crate::ecdsa::robust_ecdsa::test::run_sign_without_rerandomization(
             &presignatures,
-            max_malicious.into(),
+            MaxMalicious::from(max_malicious).reconstruction_threshold().unwrap(),
             public_key,
             &msg,
             &mut rng,
@@ -435,7 +436,7 @@ mod test {
             Err(err) => {
                 let text = err.to_string();
                 assert!(
-                    text.contains("bad parameters: 2*max_malicious+1 must be less than or equals to participant count"),
+                    text.contains("bad parameters: 2*(ReconstructionThreshold - 1)+1 must be less than or equals to participant count"),
                     "unexpected error type: {text}"
                 );
             }

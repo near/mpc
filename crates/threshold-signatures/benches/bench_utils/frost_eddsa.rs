@@ -10,7 +10,7 @@ use threshold_signatures::{
     participants::Participant,
     protocol::Protocol,
     test_utils::{generate_participants_with_random_ids, run_keygen, MockCryptoRng},
-    ReconstructionLowerBound,
+    ReconstructionThreshold,
 };
 
 use super::{PreparedPresig, MAX_MALICIOUS};
@@ -23,7 +23,7 @@ pub type PresignProtocols = Vec<(
 pub fn ed25519_build_presign_protocols<R: CryptoRngCore + SeedableRng + Send + 'static>(
     participants: &[Participant],
     key_packages: &[(Participant, eddsa::KeygenOutput)],
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     rng: &mut R,
 ) -> PresignProtocols {
     let mut protocols = Vec::with_capacity(participants.len());
@@ -52,7 +52,7 @@ pub fn ed25519_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'static>(
 ) -> FrostEd25519PreparedPresig {
     let participants = generate_participants_with_random_ids(num_participants, rng);
     let key_packages = run_keygen(&participants, *MAX_MALICIOUS + 1, rng);
-    let threshold = ReconstructionLowerBound::from(*MAX_MALICIOUS + 1);
+    let threshold = ReconstructionThreshold::from(*MAX_MALICIOUS + 1);
     let protocols = ed25519_build_presign_protocols(&participants, &key_packages, threshold, rng);
     FrostEd25519PreparedPresig {
         protocols,
@@ -63,7 +63,7 @@ pub fn ed25519_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'static>(
 
 /// Used to prepare ed25519 signatures for benchmarking
 pub fn ed25519_prepare_sign_v1<R: CryptoRngCore + SeedableRng + Send + 'static>(
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     rng: &mut R,
 ) -> FrostEd25519SigV1 {
     let num_participants = threshold.value();
@@ -107,7 +107,7 @@ pub fn ed25519_prepare_sign_v1<R: CryptoRngCore + SeedableRng + Send + 'static>(
 pub fn ed25519_prepare_sign_v2<R: CryptoRngCore + SeedableRng + Send + 'static>(
     result: &[(Participant, eddsa::PresignOutput)],
     key_packages: Vec<(Participant, eddsa::KeygenOutput)>,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     rng: &mut R,
 ) -> FrostEd25519SigV2 {
     let num_participants = threshold.value();
@@ -172,7 +172,7 @@ pub struct FrostEd25519SigV2 {
 }
 
 pub fn prepare_ckd<R: CryptoRngCore + SeedableRng + Send + 'static>(
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     rng: &mut R,
 ) -> PreparedCkdPackage {
     let num_participants = threshold.value();

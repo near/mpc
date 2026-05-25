@@ -9,21 +9,20 @@ use threshold_signatures::confidential_key_derivation::KeygenOutput;
 use threshold_signatures::confidential_key_derivation::SigningShare;
 use threshold_signatures::confidential_key_derivation::{VerifyingKey, BLS12381SHA256};
 use threshold_signatures::participants::Participant;
-use threshold_signatures::ReconstructionLowerBound;
+use threshold_signatures::ReconstructionThreshold;
 
 impl CKDProvider {
     pub(super) async fn run_key_resharing_client_internal(
-        new_threshold: ReconstructionLowerBound,
+        new_threshold: ReconstructionThreshold,
         my_share: Option<SigningShare>,
         public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<KeygenOutput> {
-        let old_threshold: usize = old_participants.threshold.try_into()?;
         let new_keyshare = KeyResharingComputation {
             threshold: new_threshold,
             old_participants: old_participants.participants.iter().map(|p| p.id).collect(),
-            old_threshold: ReconstructionLowerBound::from(old_threshold),
+            old_threshold: old_participants.ts_threshold()?,
             my_share,
             public_key,
         }
@@ -49,9 +48,9 @@ impl CKDProvider {
 ///       the old threshold; or
 ///     - the threshold is larger than the number of participants.
 pub struct KeyResharingComputation {
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     old_participants: Vec<ParticipantId>,
-    old_threshold: ReconstructionLowerBound,
+    old_threshold: ReconstructionThreshold,
     my_share: Option<SigningShare>,
     public_key: VerifyingKey,
 }
@@ -109,7 +108,7 @@ mod tests {
     use threshold_signatures::frost_core::Group;
     use threshold_signatures::participants::Participant;
     use threshold_signatures::test_utils::{generate_participants_with_random_ids, run_keygen};
-    use threshold_signatures::ReconstructionLowerBound;
+    use threshold_signatures::ReconstructionThreshold;
     use threshold_signatures::{confidential_key_derivation as ckd, ParticipantList};
     use tokio::sync::mpsc;
 
@@ -155,9 +154,9 @@ mod tests {
                             .ok_or_else(|| anyhow::anyhow!("No channel"))?
                     };
                     let key = KeyResharingComputation {
-                        threshold: ReconstructionLowerBound::from(THRESHOLD),
+                        threshold: ReconstructionThreshold::from(THRESHOLD),
                         old_participants,
-                        old_threshold: ReconstructionLowerBound::from(THRESHOLD),
+                        old_threshold: ReconstructionThreshold::from(THRESHOLD),
                         my_share: keyshare,
                         public_key: pubkey,
                     }

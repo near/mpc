@@ -367,7 +367,7 @@ pub fn convert_participant_infos(
     }
     Ok(ParticipantsConfig {
         participants: converted,
-        threshold: threshold_parameters.threshold.0,
+        threshold: threshold_parameters.threshold.into(),
     })
 }
 

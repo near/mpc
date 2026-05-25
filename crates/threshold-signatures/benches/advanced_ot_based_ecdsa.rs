@@ -9,7 +9,7 @@ use rand_core::SeedableRng;
 mod bench_utils;
 use crate::bench_utils::{
     analyze_received_sizes, ot_ecdsa_prepare_presign, ot_ecdsa_prepare_sign,
-    ot_ecdsa_prepare_triples, PreparedOutputs, MAX_MALICIOUS, RECONSTRUCTION_LOWER_BOUND,
+    ot_ecdsa_prepare_triples, PreparedOutputs, MAX_MALICIOUS, RECONSTRUCTION_THRESHOLD,
     SAMPLE_SIZE,
 };
 
@@ -29,7 +29,7 @@ use threshold_signatures::{
         run_protocol, run_protocol_and_take_snapshots, run_simulated_protocol, MockCryptoRng,
         Simulator,
     },
-    ReconstructionLowerBound,
+    ReconstructionThreshold,
 };
 
 use k256::AffinePoint;
@@ -72,7 +72,7 @@ fn bench_presign(c: &mut Criterion) {
     let max_malicious = *MAX_MALICIOUS;
 
     let mut rng = MockCryptoRng::seed_from_u64(42);
-    let preps = ot_ecdsa_prepare_triples(num, *RECONSTRUCTION_LOWER_BOUND, &mut rng);
+    let preps = ot_ecdsa_prepare_triples(num, *RECONSTRUCTION_THRESHOLD, &mut rng);
     let two_triples =
         run_protocol(preps.protocols).expect("Running triple preparations should succeed");
 
@@ -99,15 +99,15 @@ fn bench_sign(c: &mut Criterion) {
     let num = participants_num();
     let max_malicious = *MAX_MALICIOUS;
     let mut rng = MockCryptoRng::seed_from_u64(42);
-    let preps = ot_ecdsa_prepare_triples(num, *RECONSTRUCTION_LOWER_BOUND, &mut rng);
+    let preps = ot_ecdsa_prepare_triples(num, *RECONSTRUCTION_THRESHOLD, &mut rng);
     let two_triples =
         run_protocol(preps.protocols).expect("Running triples preparation should succeed");
 
-    let preps = ot_ecdsa_prepare_presign(&two_triples, *RECONSTRUCTION_LOWER_BOUND, &mut rng);
+    let preps = ot_ecdsa_prepare_presign(&two_triples, *RECONSTRUCTION_THRESHOLD, &mut rng);
     let result = run_protocol(preps.protocols).expect("Running presign preparation should succeed");
     let pk = preps.key_packages[0].1.public_key;
 
-    let setup = setup_sign_snapshot(&result, *RECONSTRUCTION_LOWER_BOUND, pk);
+    let setup = setup_sign_snapshot(&result, *RECONSTRUCTION_THRESHOLD, pk);
     let size = setup.cached_simulator.get_view_size();
 
     let mut group = c.benchmark_group("sign");
@@ -116,7 +116,7 @@ fn bench_sign(c: &mut Criterion) {
         format!("ot_ecdsa_sign_advanced_MAX_MALICIOUS_{max_malicious}_PARTICIPANTS_{num}"),
         |b| {
             b.iter_batched(
-                || prepare_simulated_sign(&setup, *RECONSTRUCTION_LOWER_BOUND),
+                || prepare_simulated_sign(&setup, *RECONSTRUCTION_THRESHOLD),
                 |preps| run_simulated_protocol(preps.participant, preps.protocol, preps.simulator),
                 criterion::BatchSize::SmallInput,
             );
@@ -139,7 +139,7 @@ struct TriplesSetup {
 fn setup_triples_snapshot(participant_num: usize) -> TriplesSetup {
     let mut rng = MockCryptoRng::seed_from_u64(42);
 
-    let preps = ot_ecdsa_prepare_triples(participant_num, *RECONSTRUCTION_LOWER_BOUND, &mut rng);
+    let preps = ot_ecdsa_prepare_triples(participant_num, *RECONSTRUCTION_THRESHOLD, &mut rng);
     let (_, protocol_snapshot) = run_protocol_and_take_snapshots(preps.protocols)
         .expect("Running protocol with snapshot should not have issues");
 
@@ -175,7 +175,7 @@ fn prepare_simulated_triples(setup: &TriplesSetup) -> PreparedSimulatedTriples {
     let real_protocol = generate_triple_many::<2>(
         &setup.participants,
         setup.real_participant,
-        *RECONSTRUCTION_LOWER_BOUND,
+        *RECONSTRUCTION_THRESHOLD,
         setup.real_participant_rng.clone(),
     )
     .map(|prot| Box::new(prot) as Box<dyn Protocol<Output = Vec<(TripleShare, TriplePub)>>>)
@@ -204,7 +204,7 @@ fn setup_presign_snapshot(
     two_triples: &[(Participant, Vec<(TripleShare, TriplePub)>)],
 ) -> PresignSetup {
     let mut rng = MockCryptoRng::seed_from_u64(40);
-    let preps = ot_ecdsa_prepare_presign(two_triples, *RECONSTRUCTION_LOWER_BOUND, &mut rng);
+    let preps = ot_ecdsa_prepare_presign(two_triples, *RECONSTRUCTION_THRESHOLD, &mut rng);
     let (_, protocol_snapshot) = run_protocol_and_take_snapshots(preps.protocols)
         .expect("Running protocol with snapshot should not have issues");
 
@@ -241,7 +241,7 @@ fn prepare_simulated_presign(setup: &PresignSetup) -> PreparedSimulatedPresig {
             triple0: (setup.share0.clone(), setup.pub0.clone()),
             triple1: (setup.share1.clone(), setup.pub1.clone()),
             keygen_out: setup.keygen_out.clone(),
-            threshold: *RECONSTRUCTION_LOWER_BOUND,
+            threshold: *RECONSTRUCTION_THRESHOLD,
         },
     )
     .map(|presig| Box::new(presig) as Box<dyn Protocol<Output = PresignOutput>>)
@@ -266,7 +266,7 @@ struct SignSetup {
 /// Expensive one-time setup for sign: runs the full N-party protocol to capture snapshots
 fn setup_sign_snapshot(
     result: &[(Participant, PresignOutput)],
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     pk: VerifyingKey,
 ) -> SignSetup {
     let mut rng = MockCryptoRng::seed_from_u64(40);
@@ -297,7 +297,7 @@ fn setup_sign_snapshot(
 /// Cheap per-sample setup: creates fresh sign protocol and clones the cached simulator
 fn prepare_simulated_sign(
     setup: &SignSetup,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
 ) -> PreparedSimulatedSig {
     let real_protocol = sign(
         &setup.participants,

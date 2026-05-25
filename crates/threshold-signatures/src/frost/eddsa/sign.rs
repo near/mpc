@@ -9,7 +9,7 @@ use crate::{
         internal::{make_protocol, Comms, SharedChannel},
         Protocol,
     },
-    Participant, ParticipantList, ReconstructionLowerBound,
+    Participant, ParticipantList, ReconstructionThreshold,
 };
 
 use frost_ed25519::{
@@ -48,7 +48,7 @@ pub(crate) const EDDSA_SIGN_V2_MAX_INCOMING_PARTICIPANT_ENTRIES: usize = 0;
 /// For reference, see how RFC 8032 handles "pre-hashing".
 pub fn sign_v1(
     participants: &[Participant],
-    threshold: impl Into<ReconstructionLowerBound>,
+    threshold: impl Into<ReconstructionThreshold>,
     me: Participant,
     coordinator: Participant,
     keygen_output: KeygenOutput,
@@ -75,7 +75,7 @@ pub fn sign_v1(
 
 pub fn sign_v2(
     participants: &[Participant],
-    threshold: impl Into<ReconstructionLowerBound> + Copy,
+    threshold: impl Into<ReconstructionThreshold> + Copy,
     me: Participant,
     coordinator: Participant,
     keygen_output: KeygenOutput,
@@ -111,7 +111,7 @@ pub fn sign_v2(
 async fn do_sign_coordinator_v1(
     mut chan: SharedChannel,
     participants: ParticipantList,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     me: Participant,
     keygen_output: KeygenOutput,
     message: Vec<u8>,
@@ -191,7 +191,7 @@ async fn do_sign_coordinator_v1(
 async fn do_sign_coordinator_v2(
     mut chan: SharedChannel,
     participants: ParticipantList,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     me: Participant,
     keygen_output: KeygenOutput,
     presignature: &PresignOutput,
@@ -247,7 +247,7 @@ async fn do_sign_coordinator_v2(
 /// For reference, see how RFC 8032 handles "pre-hashing".
 async fn do_sign_participant_v1(
     mut chan: SharedChannel,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     me: Participant,
     coordinator: Participant,
     keygen_output: KeygenOutput,
@@ -326,7 +326,7 @@ async fn do_sign_participant_v1(
 /// For reference, see how RFC 8032 handles "pre-hashing".
 fn do_sign_participant_v2(
     mut chan: SharedChannel,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     me: Participant,
     coordinator: Participant,
     keygen_output: &KeygenOutput,
@@ -363,7 +363,7 @@ fn do_sign_participant_v2(
 /// A function that takes a signing share and a keygenOutput
 /// and construct a public key package used for frost signing
 fn construct_key_package(
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     me: Participant,
     signing_share: SigningShare,
     verifying_key: &VerifyingKey,
@@ -386,7 +386,7 @@ fn construct_key_package(
 async fn fut_wrapper_v1(
     chan: SharedChannel,
     participants: ParticipantList,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     me: Participant,
     coordinator: Participant,
     keygen_output: KeygenOutput,
@@ -422,7 +422,7 @@ async fn fut_wrapper_v1(
 async fn fut_wrapper_v2(
     chan: SharedChannel,
     participants: ParticipantList,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     me: Participant,
     coordinator: Participant,
     keygen_output: KeygenOutput,

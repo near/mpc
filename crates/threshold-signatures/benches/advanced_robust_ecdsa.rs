@@ -8,7 +8,7 @@ use rand_core::SeedableRng;
 mod bench_utils;
 use crate::bench_utils::{
     analyze_received_sizes, robust_ecdsa_prepare_presign, robust_ecdsa_prepare_sign,
-    PreparedOutputs, MAX_MALICIOUS, SAMPLE_SIZE,
+    PreparedOutputs, MAX_MALICIOUS, RECONSTRUCTION_THRESHOLD, SAMPLE_SIZE,
 };
 use threshold_signatures::{
     ecdsa::{
@@ -28,6 +28,7 @@ use threshold_signatures::{
 
 use k256::AffinePoint;
 use threshold_signatures::ecdsa::Scalar;
+use threshold_signatures::ReconstructionThreshold;
 
 type PreparedPresig = PreparedOutputs<PresignOutput>;
 type PreparedSimulatedSig = PreparedOutputs<SignatureOption>;
@@ -69,7 +70,7 @@ fn bench_sign(c: &mut Criterion) {
     let result = run_protocol(preps.protocols).expect("Prepare sign should not fail");
     let pk = preps.key_packages[0].1.public_key;
 
-    let setup = setup_sign_snapshot(&result, max_malicious, pk);
+    let setup = setup_sign_snapshot(&result, *RECONSTRUCTION_THRESHOLD, pk);
     let size = setup.cached_simulator.get_view_size();
 
     let mut group = c.benchmark_group("sign");
@@ -78,7 +79,7 @@ fn bench_sign(c: &mut Criterion) {
         format!("robust_ecdsa_sign_advanced_MAX_MALICIOUS_{max_malicious}_PARTICIPANTS_{num}"),
         |b| {
             b.iter_batched(
-                || prepare_simulated_sign(&setup, max_malicious),
+                || prepare_simulated_sign(&setup, *RECONSTRUCTION_THRESHOLD),
                 |preps| run_simulated_protocol(preps.participant, preps.protocol, preps.simulator),
                 criterion::BatchSize::SmallInput,
             );
@@ -143,7 +144,7 @@ fn prepare_simulate_presign(setup: &PresignSetup) -> PreparedPresig {
         setup.real_participant,
         PresignArguments {
             keygen_out: setup.keygen_out.clone(),
-            max_malicious: (*MAX_MALICIOUS).into(),
+            threshold: *RECONSTRUCTION_THRESHOLD,
         },
         setup.real_participant_rng.clone(), // provide the exact same randomness
     )
@@ -169,11 +170,11 @@ struct SignSetup {
 /// Expensive one-time setup for sign: runs the full N-party protocol to capture snapshots
 fn setup_sign_snapshot(
     result: &[(Participant, PresignOutput)],
-    max_malicious: usize,
+    threshold: ReconstructionThreshold,
     pk: VerifyingKey,
 ) -> SignSetup {
     let mut rng = MockCryptoRng::seed_from_u64(41);
-    let preps = robust_ecdsa_prepare_sign(result, max_malicious.into(), pk, &mut rng);
+    let preps = robust_ecdsa_prepare_sign(result, threshold, pk, &mut rng);
     let (_, protocol_snapshot) = run_protocol_and_take_snapshots(preps.protocols)
         .expect("Running protocol with snapshot should not have issues");
 
@@ -197,11 +198,11 @@ fn setup_sign_snapshot(
 }
 
 /// Cheap per-sample setup: creates fresh sign protocol and clones the cached simulator
-fn prepare_simulated_sign(setup: &SignSetup, max_malicious: usize) -> PreparedSimulatedSig {
+fn prepare_simulated_sign(setup: &SignSetup, threshold: ReconstructionThreshold) -> PreparedSimulatedSig {
     let real_protocol = sign(
         &setup.participants,
         setup.real_participant,
-        max_malicious,
+        threshold,
         setup.real_participant,
         setup.derived_pk,
         setup.presig.clone(),

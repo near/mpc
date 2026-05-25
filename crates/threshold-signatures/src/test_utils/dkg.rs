@@ -3,7 +3,7 @@ use rand_core::CryptoRngCore;
 
 use crate::participants::Participant;
 use crate::test_utils::{run_protocol, GenOutput, GenProtocol};
-use crate::thresholds::ReconstructionLowerBound;
+use crate::thresholds::ReconstructionThreshold;
 use crate::{keygen, refresh, reshare, Ciphersuite, Element, KeygenOutput, Scalar, VerifyingKey};
 
 // +++++++++++++++++ DKG Functions +++++++++++++++++ //
@@ -15,7 +15,7 @@ type DKGGenProtocol<C> = GenProtocol<KeygenOutput<C>>;
 /// If the protocol succeeds, returns a sorted vector based on participants id
 pub fn run_keygen<C: Ciphersuite, R: CryptoRngCore + SeedableRng + Send + 'static>(
     participants: &[Participant],
-    threshold: impl Into<ReconstructionLowerBound> + Copy + Send + 'static,
+    threshold: impl Into<ReconstructionThreshold> + Copy + Send + 'static,
     rng: &mut R,
 ) -> GenOutput<C>
 where
@@ -38,7 +38,7 @@ where
 pub fn run_refresh<C: Ciphersuite, R: CryptoRngCore + SeedableRng + Send + 'static>(
     participants: &[Participant],
     keys: &[(Participant, KeygenOutput<C>)],
-    threshold: impl Into<ReconstructionLowerBound> + Copy + Send + 'static,
+    threshold: impl Into<ReconstructionThreshold> + Copy + Send + 'static,
     rng: &mut R,
 ) -> GenOutput<C>
 where
@@ -70,8 +70,8 @@ pub fn run_reshare<C: Ciphersuite, R: CryptoRngCore + SeedableRng + Send + 'stat
     participants: &[Participant],
     pub_key: &VerifyingKey<C>,
     keys: &[(Participant, KeygenOutput<C>)],
-    old_threshold: impl Into<ReconstructionLowerBound> + Copy + Send + 'static,
-    new_threshold: impl Into<ReconstructionLowerBound> + Copy + Send + 'static,
+    old_threshold: impl Into<ReconstructionThreshold> + Copy + Send + 'static,
+    new_threshold: impl Into<ReconstructionThreshold> + Copy + Send + 'static,
     new_participants: &[Participant],
     rng: &mut R,
 ) -> GenOutput<C>

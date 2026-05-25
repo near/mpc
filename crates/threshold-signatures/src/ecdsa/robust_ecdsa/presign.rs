@@ -52,32 +52,32 @@ pub fn presign(
         });
     }
 
-    if args.max_malicious.value() > participants.len() {
+    let max_malicious = args.threshold.max_malicious();
+    if max_malicious.value() > participants.len() {
         return Err(InitializationError::BadParameters(
-            "max_malicious must be less than or equals to participant count".to_string(),
+            "ReconstructionThreshold - 1 must be less than or equals to participant count".to_string(),
         ));
     }
 
-    let robust_ecdsa_threshold = args
-        .max_malicious
+    let robust_ecdsa_threshold = max_malicious
         .value()
         .checked_mul(2)
         .and_then(|v| v.checked_add(1))
         .ok_or_else(|| {
             InitializationError::BadParameters(
-                "2*max_malicious+1 must be less than usize::MAX".to_string(),
+                "2*(ReconstructionThreshold - 1)+1 must be less than usize::MAX".to_string(),
             )
         })?;
     if robust_ecdsa_threshold > participants.len() {
         return Err(InitializationError::BadParameters(
-            "2*max_malicious+1 must be less than or equals to participant count".to_string(),
+            "2*(ReconstructionThreshold - 1)+1 must be less than or equals to participant count".to_string(),
         ));
     }
 
     // To prevent split-view attacks documented in docs/ecdsa/robust_ecdsa/signing.md
     if participants.len() != robust_ecdsa_threshold {
         return Err(InitializationError::BadParameters(
-            "the number of participants during presigning must be exactly 2*max_malicious+1 to avoid split view attacks".to_string(),
+            "the number of participants during presigning must be exactly 2*(ReconstructionThreshold - 1)+1 to avoid split view attacks".to_string(),
         ));
     }
 
@@ -86,8 +86,8 @@ pub fn presign(
     Ok(make_protocol(ctx, fut))
 }
 
-/// /!\ Warning: the threshold in this scheme is the exactly the
-///              same as the max number of malicious parties.
+/// /!\ Warning: the polynomial degree in this scheme equals
+///              `ReconstructionThreshold - 1` (the max number of malicious parties).
 #[allow(clippy::too_many_lines)]
 async fn do_presign(
     mut chan: SharedChannel,
@@ -97,7 +97,7 @@ async fn do_presign(
     mut rng: impl CryptoRngCore,
 ) -> Result<PresignOutput, ProtocolError> {
     let rng = &mut rng;
-    let threshold = args.max_malicious.value();
+    let threshold = args.threshold.max_malicious().value();
     // Round 1
     let degree = threshold
         .checked_mul(2)
@@ -406,6 +406,7 @@ mod test {
         generate_participants, generate_test_keys, make_keygen_output, run_protocol, GenProtocol,
         MockCryptoRng,
     };
+    use crate::thresholds::MaxMalicious;
     use rstest::rstest;
 
     #[test]
@@ -430,7 +431,7 @@ mod test {
                 *p,
                 PresignArguments {
                     keygen_out,
-                    max_malicious: max_malicious.into(),
+                    threshold: MaxMalicious::from(max_malicious).reconstruction_threshold().unwrap(),
                 },
                 rng_p,
             )
@@ -470,7 +471,7 @@ mod test {
                     p,
                     PresignArguments {
                         keygen_out,
-                        max_malicious: max_malicious.into(),
+                        threshold: MaxMalicious::from(max_malicious).reconstruction_threshold().unwrap(),
                     },
                     rng_p,
                 )
