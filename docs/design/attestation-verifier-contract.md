@@ -108,7 +108,7 @@ The callback never panics: that would roll back the pending-entry cleanup and th
 1. **Verifier rejected the quote** — `Err(VerifierError)`. Bad quote, expired collateral, malformed input.
 2. **Verifier infrastructure failure** — `Err(PromiseError)`. Verifier account gone, OOM, etc.
 3. **Post-DCAP check failed** — any of the four checks listed in [§Submission flow](#submission-flow) (RTMR3 replay, app-compose validation, allowlist matching, report-data binding).
-4. **Callback ran out of gas.** The pending entry isn't cleared and the deposit isn't refunded — the `PendingAttestation` is orphaned until its TTL elapses. Each entry stamps `expires_on = env::block_height() + PENDING_ATTESTATION_TIMEOUT_BLOCKS` at submit time; a resubmit from the same `AccountId` is rejected while `block_height() < expires_on` and overwrites the orphan after. This is the same timeout-on-read pattern [`KeyEventInstance`](../../crates/contract/src/state/key_event.rs) uses for stalled key events.
+4. **Callback ran out of gas.** The pending entry isn't cleared and the deposit isn't refunded — the `PendingAttestation` is orphaned until its TTL elapses. Each entry stamps `expires_on = env::block_height() + PENDING_ATTESTATION_TIMEOUT_BLOCKS` at submit time; a resubmit from the same `AccountId` is rejected while `block_height() < expires_on` and overwrites the orphan after. This is the same timeout-on-read pattern [`KeyEventInstance::cleanup_if_timed_out`](https://github.com/near/mpc/blob/cf179467124203b0187ef0e80b429885b9a51627/crates/contract/src/state/key_event.rs#L160-L169) uses for stalled key events. For the case where the submitter never calls `submit_participant_info` again, an anyone-callable sweep method `clean_pending_attestations(max_scan)` removes expired entries and refunds their deposits — see [§`mpc-contract::submit_participant_info`](#mpc-contractsubmit_participant_info) for the signature.
 
 ### Contract state changes
 
@@ -118,7 +118,7 @@ The callback runs in a later block than `submit_participant_info`, as an indepen
 pending_attestations: LookupMap<AccountId, PendingAttestation>
 ```
 
-Each `PendingAttestation` holds:
+Each [`PendingAttestation`](#mpc-contractsubmit_participant_info) holds:
 
 - **The submitter's `Attestation::Dstack` payload** — the RTMR3 event log, app-compose, and report-data the post-DCAP checks consume.
 - **The submitter's TLS public key** — the callback hashes it with the submitter's account public key and compares to the quote's `report_data` field, proving the enclave produced the quote for this specific submitter.
@@ -185,36 +185,29 @@ flowchart TD
 
 ## Governance and upgrades
 
-The verifier has no admin methods or on-chain configuration — its behavior is fully determined by its deployed bytes, hence by its code hash. The only governance surface is on `mpc-contract`, choosing which deployed instance to trust.
+The verifier contract is stateless and has no admin methods or on-chain configuration. For security, every verifier instance is deployed to a locked account — a NEAR account with no full-access keys, so the protocol refuses any future redeploy. The deployed bytes are frozen for the lifetime of the account; there is no in-place upgrade path. Changing the verifier means voting in a different, separately-deployed instance at a new locked account. The only governance decision is on `mpc-contract`, choosing which instance to trust through a vote of active MPC participants. External callers (Defuse, Proximity) run their own equivalent vote on their own contract.
 
-### Verifier instances on-chain
+### Requirements on the verifier account
 
-Each verifier is a NEP-591 **global contract** attached to a locked NEAR account: the bytes are published to the protocol once (keyed by `CodeHash(H)`), an account points at them via `UseGlobalContractAction`, and that account's full-access keys are removed. From that moment on, the protocol's own `account_id → CodeHash(H)` binding is immutable, and the verifier's behavior at that account is fixed forever. `mpc-contract` calls the verifier through `self.tee_verifier_account_id` at call time.
+A trusted verifier account must not be replaceable by a malicious stub that returns `Ok(VerifiedReport)` for any input. Two checkable conditions prevent it:
 
-Before voting yes on a candidate, operators run four checks:
+1. **The right code is deployed.** The hash of the contract code currently deployed at the account matches the expected hash for that verifier release.
+2. **That code can never be replaced.** The account has no full-access keys.
 
-1. Reproducibly build the verifier source ([NEP-330](https://github.com/near/NEPs/blob/master/neps/nep-0330.md) / `cargo-near`) → `H_source`.
-2. RPC `view_account(candidate_account_id).contract` → `CodeHash(H_deployed)`.
-3. RPC `view_access_key_list(candidate_account_id)` → empty (locked).
+The verifier can be a regular contract or a NEP-591 global contract — both satisfy the requirements once locked. Globals have one small audit win — `view_account(account_id).contract` returns the protocol's own `CodeHash` directly, no client-side hashing — and enable cross-shard WASM dedup if other teams adopt the same hash.
+
+### Auditing a candidate verifier
+
+Before any operator votes yes on a candidate `account_id`, they need to confirm that the right code is deployed there and that the code can never be replaced. `mpc-contract` cannot verify either claim itself — a NEAR contract has no way to read another account's code hash or access-key list — so the audit is the voter's responsibility, not the contract's. The same four checks apply whether the candidate is a regular contract or a NEP-591 global:
+
+1. Reproducibly build the verifier source → `H_source`.
+2. Fetch `H_deployed`: `view_account(account_id).contract` for a global (returns `CodeHash` directly), or `view_code(account_id)` + local hash for a plain contract.
+3. `view_access_key_list(account_id)` → empty.
 4. `H_source == H_deployed`.
 
+In practice the MPC team publishes `H_source` alongside the on-chain vote to change the trusted verifier. Operators are free to rebuild from source and verify the hash themselves, but the common path is "trust the published hash".
 
-### Who chooses, and why NEP-591
-
-Active MPC participants vote, through `vote_tee_verifier_change` (see [§Voting on the trusted verifier](#voting-on-the-trusted-verifier)). External callers (Defuse, Proximity) run their own equivalent vote on their own contract — independent decisions, no shared governance surface.
-
-The reasons to prefer NEP-591 globals over a plain locked contract:
-
-- **Caller-side immutability is protocol-enforced.** The `account_id → CodeHash` binding lives in protocol state and cannot change once the account is locked.
-- **Atomic rollback.** Reverting an upgrade is one vote pointing back at a previously trusted `AccountId`; the old instance is still locked and callable.
-- **Multi-version coexistence and A/B-testing.** Several locked instances can coexist at different account IDs.
-- **Cross-shard code dedup.** If other teams adopt the same global, the protocol caches the WASM once. Marginal today, real with multi-team adoption.
-
-The cost is one extra deploy step: publishing the global and locking it onto a fresh account before the vote can open. Both are open to anyone, not just operators — useful friction for a security-critical primitive.
-
-### Trust model
-
-`expected_code_hash` carried by `vote_tee_verifier_change` is a voter commitment, not a contract-enforceable claim — Wasm can't read another account's `code_hash` on-chain. So the security of `tee_verifier_account_id` rests on every voter running the audit above before voting yes. The threshold raises "one careless voter" to "a majority of careless voters"; the CLI helper, social conventions, and an audit log of every vote are the only other mitigations. This is the same trust shape as `propose_update` / `vote_update` for `mpc-contract`'s own code, restated here because the verifier is a separate account that voters might not associate with the same discipline.
+A CLI helper that runs all four deterministically (for example `attestation-cli audit-verifier <account-id>`) is a potential follow-up.
 
 ## API Proposal
 
@@ -229,35 +222,26 @@ impl TeeVerifier {
     ///
     /// Calls `dcap_qvl::verify::verify` with the current block timestamp and
     /// returns the parsed `VerifiedReport` on success, or a structured
-    /// `VerifierError` on failure. The method does not panic on
-    /// caller-controlled input — a malformed quote or expired collateral comes
-    /// back as `Err(...)`, not as a `PromiseError::Failed` on the caller side.
-    #[result_serializer(borsh)]
+    /// `VerifierError` on failure.
     pub fn verify_quote(
         &self,
-        #[serializer(borsh)] quote: QuoteBytes,
-        #[serializer(borsh)] collateral: Collateral,
+        quote: QuoteBytes,
+        collateral: Collateral,
     ) -> Result<VerifiedReport, VerifierError>;
 }
 ```
 
-`VerifierError` lives in `tee-verifier-interface` so callers depend on the same enum. One variant per `dcap_qvl::verify::verify` failure category (quote-malformed, collateral-expired, tcb-revoked, signature-mismatch, etc.), plus a fallback `Other(String)` for upstream errors that don't fit cleanly. Returning a `Result` instead of panicking matters because `PromiseError` carried back to the caller is opaque — it would tell the caller *that* the receipt failed, not *why*. With the explicit `Err`, the callback in [`mpc-contract`](#mpc-contractsubmit_participant_info) can branch on the actual reason, log it, and refund the deposit, all in a single non-aborting receipt.
+The wire DTOs (`QuoteBytes`, `Collateral`, `VerifiedReport`, `VerifierError`, and the nested report types) live in the DTO-only `tee-verifier-interface` crate so callers depend on the same definitions. They are field-for-field Borsh mirrors of the corresponding `dcap_qvl` types. `VerifierError` has one variant per `dcap_qvl::verify::verify` failure category (quote-malformed, collateral-expired, tcb-revoked, signature-mismatch, etc.), plus a fallback `Other(String)` for upstream errors that don't fit cleanly.
 
-The contract is stateless. The wire DTOs (`QuoteBytes`, `Collateral`, `VerifiedReport`, `VerifierError`, and the nested report types) are field-for-field Borsh mirrors of the corresponding `dcap_qvl` types, defined in `tee-verifier-interface`.
+### Voting on the trusted verifier in `mpc-contract`
 
-The method is named `verify_quote`, not `verify`: even on a single-method contract, an unqualified `verify` reads ambiguously in caller code (`tee_verifier.verify(...)` vs `tee_verifier.verify_quote(...)`), and leaves no room for future siblings (e.g. a batched `verify_quote_batch`).
+The voting flow lives on `mpc-contract`, not on the verifier itself. It reuses `mpc-contract`'s existing generic [`Votes<V>`](../../crates/contract/src/primitives/votes.rs) primitive.
 
-The `#[serializer(borsh)]` / `#[result_serializer(borsh)]` annotations are deliberate: `near-sdk`'s default serializer is JSON, which would force every byte buffer in `Collateral` (a TCB info blob plus its signature, a QE identity blob plus its signature, and a PCK certificate chain) through base64 wrapping at both ends. Borsh keeps the payload as raw bytes, halves the over-the-wire size on the dominant fields, and matches what `dcap-qvl`'s own types are serialized as anyway. The verifier has no human-driven callers (no CLI invocations, no view methods from a wallet UI), so the usual JSON-for-ergonomics argument doesn't apply.
-
-### Voting on the trusted verifier
-
-Voting reuses the contract's generic [`Votes<V>`](../../crates/contract/src/primitives/votes.rs) primitive — the same one [`ProviderVotes`](../../crates/contract/src/foreign_chain_rpc.rs) uses for the foreign-chain-RPC whitelist. `Votes<V>` already implements per-voter bookkeeping, `vote` / `remove_vote`, and `voters_for(proposal_hash)`; we just provide the proposal payload and a `ProposalHashEncoding` impl so it can be addressed by hash. Rolling a bespoke `PendingVerifierChange { … votes: HashSet }` struct would re-implement what's already in-tree and grow the contract WASM for no gain.
+The proposal payload is the pair `(candidate_account_id, expected_code_hash)`. `candidate_account_id` is the address whose `verify_quote` method `mpc-contract` will invoke on every subsequent `submit_participant_info` call once the vote passes; that's all the contract actually consumes from the payload. `expected_code_hash` is included to make every voter explicitly commit to the hash they checked off-chain: without it, two voters could converge on the same `account_id` while disagreeing about what code that account runs. Both fields feed `ProposalHashEncoding`, so two voters submitting the same `account_id` with different hashes land in different vote buckets and neither reaches threshold on its own — that's how the contract enforces "everyone who voted yes endorsed the same code," without needing a separate validation step. When the winning bucket crosses threshold the contract clears *all* pending proposals for that `candidate_account_id` (including losing-hash buckets).
 
 ```rust
 /// Proposal payload. Two voters arrive at the same `ProposalHash` iff they
-/// borsh-serialize the same `(candidate_account_id, expected_code_hash)` —
-/// description is excluded from the hash so cosmetic differences don't fork
-/// the vote.
+/// borsh-serialize the same `(candidate_account_id, expected_code_hash)`.
 #[near(serializers = [borsh])]
 pub struct VerifierChangeProposal {
     pub candidate_account_id: AccountId,
@@ -271,25 +255,15 @@ impl ProposalHashEncoding for VerifierChangeProposal {
 }
 
 impl MpcContract {
-    /// Cast a vote for changing the trusted verifier to the given proposal.
-    /// The vote target is `(candidate_account_id, expected_code_hash)`, hashed
-    /// to a `ProposalHash`; voters who submit identical pairs converge on the
-    /// same hash. `description` is a free-form audit-trail string emitted in
-    /// the vote-event log but not used for hashing or equality.
-    ///
-    /// Calling this method a second time from the same voter replaces their
-    /// previous vote (delegated to `Votes::vote`). To withdraw a vote without
-    /// replacing it, use `withdraw_tee_verifier_vote`.
-    ///
-    /// When the threshold is reached, the contract writes
-    /// `self.tee_verifier_account_id = candidate_account_id`, emits an event
-    /// carrying `(candidate_account_id, expected_code_hash, description)`,
-    /// and clears the proposal.
+    /// Vote for `(candidate_account_id, expected_code_hash)`. Re-voting from
+    /// the same caller replaces the previous vote; see
+    /// `withdraw_tee_verifier_vote` to withdraw without replacing. When the
+    /// threshold is reached, `tee_verifier_account_id` is updated and the
+    /// proposal is cleared.
     pub fn vote_tee_verifier_change(
         &mut self,
         candidate_account_id: AccountId,
         expected_code_hash: CryptoHash,
-        description: String,
     );
 
     /// Withdraw the caller's current vote on any pending verifier-change
@@ -298,28 +272,55 @@ impl MpcContract {
 }
 ```
 
-The contract gains one additional state field:
+The contract gains two new state fields:
 
 ```rust
 pub struct MpcContract {
-    // ... existing fields, including tee_verifier_account_id ...
+    // ... existing fields ...
+
+    /// The locked account `mpc-contract` currently trusts as the verifier.
+    /// `submit_participant_info` calls `verify_quote` on this account;
+    /// mutated only by the threshold-crossing vote above.
+    tee_verifier_account_id: AccountId,
+
+    /// Pending votes for changing `tee_verifier_account_id`. Each voter is an
+    /// active MPC participant; each proposal is hashed from
+    /// `(candidate_account_id, expected_code_hash)`.
     tee_verifier_votes: Votes<AuthenticatedParticipantId>,
 }
 ```
 
-The proposal payload itself is *not* stored under a separate map: voters supply `(candidate_account_id, expected_code_hash)` on every call to `vote_tee_verifier_change`, the hash is computed at vote time, and `Votes<V>` only persists `(voter → proposal_hash)` and `(proposal_hash → voter_set)`. The audit-trail record of which hash a majority endorsed lives in the threshold-reached event, not in long-lived contract state. This matches `ProviderVotes`' encoding.
+After a resharing changes the participant set, votes from accounts that lost participant status are swept by calling `tee_verifier_votes.retain(new_participants)`. This is invoked by a `#[private]` cleanup method the contract schedules as a self-Promise once resharing completes — same mechanism as the existing [`clean_foreign_chain_data`](../../crates/contract/src/lib.rs) does for `ProviderVotes`.
 
-**`expected_code_hash` is now structured state**, not stuffed into `description: String` as before. The contract still cannot verify on-chain that the candidate account's deployed code actually has that hash (Wasm cannot read another account's `code_hash`; see [§Trust model](#trust-model) below) — but every vote now carries the hash as a typed `CryptoHash`, and any voter calling with a different hash for the same candidate produces a different `ProposalHash` and lands in a different vote bucket. A proposer who submits the wrong hash splits the vote rather than poisoning it.
+There's a race worth thinking through, and the behavior is intentional and safe: a `submit_participant_info` call schedules its cross-contract call to the current verifier, and then — before that call executes — a `vote_tee_verifier_change` passes and updates `tee_verifier_account_id` to a different address. The in-flight verification doesn't suddenly redirect to the new verifier, because the target account of a cross-contract call is fixed when the call is scheduled, not re-read when it executes. The in-flight call still goes to the old verifier, completes normally, and the callback in `mpc-contract` handles the result as usual; only the next `submit_participant_info` call, which re-reads `tee_verifier_account_id` from state, sees the new address. Letting the old verifier finish doesn't trust anything operators didn't previously audit and approve — they voted it in earlier; the new policy applies prospectively.
 
-**Proposal lifecycle.** A proposal that never reaches threshold has no garbage to collect: `Votes<V>` cleans up the per-proposal voter set when its last voter calls `withdraw_tee_verifier_vote`, and voters whose participant status changes (e.g. resharing dropped them from the active set) get their stale votes purged by the existing `Votes::retain` sweep on the next state transition — same as `ProviderVotes`. There is no separate `cancel_proposal` method because a proposal "exists" only as the union of live voters pointing at the same `ProposalHash`.
+```mermaid
+sequenceDiagram
+    participant Op as Operator
+    participant Gov as Governance
+    participant MPC as mpc-contract
+    participant VerOld as tee-verifier (old)
+    participant VerNew as tee-verifier (new)
 
-Any subsequent `submit_participant_info` call uses the new `tee_verifier_account_id` automatically. There is no `cfg(feature = ...)` selector and no recompile.
+    Op->>MPC: submit_participant_info(Dstack, tls_pk)
+    MPC->>MPC: read tee_verifier_account_id (= old)
+    MPC->>VerOld: Promise: verify_quote(...)
+    Note over MPC: yield until callback
 
-Outstanding `PendingAttestation` Promises remain bound to whatever `tee_verifier_account_id` was at submit time; a vote that changes the address takes effect on the next `submit_participant_info`, not on in-flight verifications.
+    Gov->>MPC: vote_tee_verifier_change passes
+    Note over MPC: tee_verifier_account_id = new
+
+    VerOld-->>MPC: VerifiedReport
+    MPC->>MPC: finish_verify (uses result from old verifier)
+
+    Op->>MPC: submit_participant_info(Dstack, tls_pk) (next call)
+    MPC->>MPC: read tee_verifier_account_id (= new)
+    MPC->>VerNew: Promise: verify_quote(...)
+```
 
 ### `mpc-contract::submit_participant_info`
 
-The method splits into two halves with a Promise between them — see [§Submission flow](#submission-flow) above for the architecture, sequence diagram, caller-side impact, and failure handling. The full implementation:
+The method splits into two halves with a Promise between them — see [§Submission flow](#submission-flow) above for the architecture. The return type is [`PromiseOrValue<()>`](https://docs.rs/near-sdk/5.26.1/near_sdk/enum.PromiseOrValue.html), `near-sdk`'s "sometimes synchronous, sometimes a Promise chain" type: `Mock` attestations return `Value(())` immediately, and `Dstack` attestations return a `Promise` that resolves once `tee-verifier::verify_quote` returns and the callback finishes. Draft implementation:
 
 ```rust
 impl MpcContract {
@@ -329,9 +330,7 @@ impl MpcContract {
         tls_pk: PublicKey,
     ) -> PromiseOrValue<()> {
         // Existing convention: caller must be the signer of this transaction,
-        // not a relayer or proxy. Preserved from today's contract for both
-        // Mock and Dstack paths so the Dstack-arm change below doesn't
-        // silently relax it on the Mock branch.
+        // not a relayer or proxy.
         let account_id = Self::assert_caller_is_signer();
         match attestation {
             // Unchanged from today.
@@ -341,9 +340,14 @@ impl MpcContract {
             }
             // New: Promise + callback.
             Attestation::Dstack(dstack) => {
-                // Reject if a fresh pending entry already exists; stale entries
-                // (older than PENDING_ATTESTATION_TIMEOUT_BLOCKS) self-heal — see
-                // §Handling failures.
+                // Reject if a verification from this account is already in
+                // flight. An entry can become abandoned if its callback ran
+                // out of gas (or otherwise failed before clearing state); to
+                // keep that from permanently blocking the account, entries
+                // whose `expires_on` has elapsed are treated as stale and
+                // silently overwritten by the `insert` below. For accounts
+                // that never resubmit, `clean_pending_attestations` is the
+                // explicit sweep that frees the entry and refunds its deposit.
                 if let Some(existing) = self.pending_attestations.get(&account_id) {
                     if env::block_height() < existing.expires_on {
                         env::panic_str("verification already pending");
@@ -377,11 +381,13 @@ impl MpcContract {
     }
 
     /// The callback never panics on a verifier or post-DCAP failure: panicking
-    /// would abort the receipt and roll back the `pending_attestations.remove`
-    /// plus the refund Promise, defeating both invariants we care about. All
-    /// failure branches do their state mutation and schedule the refund before
-    /// returning normally; the caller learns the outcome from the logged
-    /// reason and from contract-state reads.
+    /// would abort the receipt and roll back both the `pending_attestations`
+    /// entry removal (so the orphan stays) and the refund Promise (so the
+    /// deposit doesn't return to the submitter). All failure branches do their
+    /// state mutation and schedule the refund before returning normally.
+    /// Running out of gas mid-callback aborts the receipt anyway, leaving an
+    /// orphaned entry; that case is handled by `clean_pending_attestations`,
+    /// which sweeps expired entries and refunds their deposits.
     #[private]
     pub fn on_attestation_verified(
         &mut self,
@@ -427,16 +433,31 @@ impl MpcContract {
 }
 ```
 
-`VERIFIER_GAS_TGAS` and `CALLBACK_GAS_TGAS` are placeholders until benchmarked against the PoC in [#3247](https://github.com/near/mpc/pull/3247). The verifier-side cost is dominated by ECDSA verifications and X.509-chain walking inside `dcap_qvl::verify::verify`; the callback-side cost is dominated by RTMR3 replay and the four post-DCAP checks. Both need measurement, not estimation.
+`VERIFIER_GAS_TGAS` and `CALLBACK_GAS_TGAS` are placeholders until benchmarked. The verifier-side cost is dominated by ECDSA verifications and X.509-chain walking inside `dcap_qvl::verify::verify`; the callback-side cost is dominated by RTMR3 replay and the four post-DCAP checks.
+
+For accounts that never resubmit after an out-of-gas callback, an anyone-callable sweep recovers the stranded deposit and the storage. It mirrors the existing [`clean_invalid_attestations`](https://github.com/near/mpc/blob/cf179467124203b0187ef0e80b429885b9a51627/crates/contract/src/lib.rs#L1636) for `stored_attestations` — same shape, same `max_scan` budget pattern:
+
+```rust
+impl MpcContract {
+    /// Scans up to `max_scan` entries from `pending_attestations`, removes any
+    /// whose `expires_on` has elapsed, and refunds each one's `attached_deposit`
+    /// to the original submitter. Returns the number of entries removed.
+    /// Callable by anyone while the protocol is in `Running`.
+    ///
+    /// `max_scan` bounds per-call gas: NEAR contract methods are hard-capped at
+    /// 300 TGas regardless of map size, so callers pick a value that fits, and
+    /// repeat the call as needed to fully drain the map.
+    pub fn clean_pending_attestations(&mut self, max_scan: u32) -> u32;
+}
+```
 
 The contract gains the following state fields:
 
 ```rust
 pub struct MpcContract {
-    // ... existing fields ...
+    // ... existing fields, including tee_verifier_account_id and
+    // tee_verifier_votes from §Voting on the trusted verifier ...
     pending_attestations: LookupMap<AccountId, PendingAttestation>,
-    tee_verifier_account_id: AccountId,
-    // pending_tee_verifier_changes is described in §Voting on the trusted verifier
 }
 
 pub struct PendingAttestation {
@@ -447,24 +468,15 @@ pub struct PendingAttestation {
 }
 ```
 
-`pending_attestations` is keyed by `AccountId`; `stored_attestations` (the existing verified-attestation map) stays keyed by `tls_public_key`. The asymmetry is intentional: the pending entry is keyed by who pays and gets refunded, the verified entry is keyed by what identifies the node. See [§Handling failures](#handling-failures) for how `expires_on` recovers an orphan and rejects concurrent submits.
-
-`tee_verifier_account_id` is the locked account `mpc-contract` currently trusts as the verifier (see [§How verifier instances exist on-chain](#how-verifier-instances-exist-on-chain) for selection, [§Voting on the trusted verifier](#voting-on-the-trusted-verifier) for changes).
-
 ## Testing
 
-The new test surface is the Promise + callback split — the verifier-rejection / verifier-infra-failure / post-DCAP-fail / success branches in `on_attestation_verified` that the synchronous version never had to exercise. The strategy that covers it cleanly is a **stub `tee-verifier`** crate: same `tee-verifier-interface` DTOs, but `verify_quote` returns `Ok(VerifiedReport)` or `Err(VerifierError)` on demand. Sandbox tests deploy that stub like any other verifier candidate — lock the account it lives at, then call `propose_tee_verifier_change` + `vote_tee_verifier_change` from the test setup to point `mpc-contract` at the stub. Same code path as production; no compile-time switches.
+The Promise + callback split adds four branches in `on_attestation_verified` that the synchronous version never had: verifier returned `Err`, verifier infrastructure failed (Promise itself failed), post-DCAP check failed, and success. Each one needs test coverage, and exercising the failure branches requires the verifier to return specific responses on demand.
 
-Two test patterns become reachable that weren't before:
+To make that practical, we introduce a stub `tee-verifier` crate: same `tee-verifier-interface` DTOs as the real verifier, but `verify_quote` returns whatever `Ok(VerifiedReport)` or `Err(VerifierError)` the test asks for. Sandbox tests deploy the stub like any other verifier candidate — lock its account, then call `propose_tee_verifier_change` + `vote_tee_verifier_change` from the test setup to point `mpc-contract` at the stub. This runs the same code path as production; nothing in `mpc-contract` knows or cares whether it's talking to the real verifier or the stub.
 
-- **The Promise + callback path runs on every test.** Today, tests that submit `Attestation::Dstack` need real `dcap-qvl` running on real Intel collateral; tests that don't want that overhead use `Attestation::Mock` to bypass the verification path entirely. With a stub verifier, the Promise path is always live — the stub just decides what report comes back.
-- **Post-DCAP checks can be exercised directly.** The four post-DCAP checks now run in the callback against the verifier's `VerifiedReport`. The stub can return reports that pass DCAP but fail any one of them, exercising each branch without crafting full Dstack quotes.
+E2E tests in `crates/e2e-tests` deploy either the real `tee-verifier` (when the test wants real `dcap-qvl` against a fixture quote) or the stub (for everything else). The change is one extra `deploy` call in the setup helper.
 
-In-process unit tests are still the right place for callback edge cases (out-of-gas, missing pending entry, refund routing): construct a `VerifiedReport` from `tee-verifier-interface`'s public types, invoke `on_attestation_verified` directly, assert state. Faster than sandbox tests and doesn't require a near-sandbox process.
-
-The existing E2E setup (the `near-sandbox`-backed tests in `crates/e2e-tests`) gets one new deployment step: alongside `mpc-contract`, the test harness deploys either the real `tee-verifier` (for tests that want to exercise real `dcap-qvl` against a fixture quote) or the stub verifier (for everything else). No new test framework — same crate, one extra `deploy` call in the setup helper.
-
-Once the stub exists, `Attestation::Mock`'s role in tests is largely superseded: the stub covers skipping `dcap-qvl`, running on non-TDX machines, and exercising post-DCAP policy in isolation. The first iteration of this design keeps `Attestation::Mock`; a later iteration can remove it once the stub is the established path.
+`Attestation::Mock` stays in this iteration. The stub eventually supersedes it — both let tests bypass real `dcap-qvl` — but removing `Mock` is a separate cleanup, not in scope here.
 
 [submit-participant-info]: https://github.com/near/mpc/blob/efe49230bb66854c55bba080e7610e42f9221506/crates/contract/src/lib.rs#L754-L782
 [launcher-pattern]: https://github.com/near/mpc/blob/efe49230bb66854c55bba080e7610e42f9221506/docs/tee-lifecycle.md#upgrade
