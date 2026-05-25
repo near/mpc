@@ -36,7 +36,10 @@ pub use ckd::generate_ckd_app_package;
 pub use dkg::{assert_public_key_invariant, run_keygen, run_refresh, run_reshare};
 pub use participant_simulation::Simulator;
 pub use participants::{generate_participants, generate_participants_with_random_ids};
-pub use presign::{ecdsa_generate_rerandpresig_args, frost_run_presignature};
+pub use presign::{
+    assert_frost_presignatures_well_formed, ecdsa_generate_rerandpresig_args,
+    frost_run_presignature,
+};
 pub use protocol::{
     assert_buffer_capacity, build_buffer_test, expected_buffer_by_role,
     run_and_assert_buffer_entries,

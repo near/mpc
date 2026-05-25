@@ -5,7 +5,8 @@ use crate::{
 };
 
 use crate::test_utils::{
-    assert_public_key_invariant, build_frost_key_packages_with_dealer, generate_participants,
+    assert_frost_presignatures_well_formed, assert_public_key_invariant,
+    build_frost_key_packages_with_dealer, generate_participants,
     generate_participants_with_random_ids, one_coordinator_output, run_keygen, run_protocol,
     run_refresh, run_reshare, GenProtocol, MockCryptoRng,
 };
@@ -297,17 +298,10 @@ fn check_presignatures_terms() {
     let actual_signers = 10;
 
     let key_packages = build_frost_key_packages_with_dealer(max_signers, threshold, &mut rng);
-    // add the presignatures here
     let presignatures =
         run_presign(&key_packages, threshold as usize, actual_signers, rng).unwrap();
 
-    for (i, (p1, presig1)) in presignatures.iter().enumerate() {
-        for (p2, presig2) in presignatures.iter().skip(i + 1) {
-            assert_ne!(p1, p2);
-            assert_ne!(presig1.nonces, presig2.nonces);
-            assert_eq!(presig1.commitments_map, presig2.commitments_map);
-        }
-    }
+    assert_frost_presignatures_well_formed(&presignatures);
 }
 
 #[test]
@@ -319,17 +313,8 @@ fn check_presignatures_terms_with_less_active_participants() {
     let actual_signers = 8;
 
     let key_packages = build_frost_key_packages_with_dealer(max_signers, threshold, &mut rng);
-    // add the presignatures here
     let presignatures =
         run_presign(&key_packages, threshold as usize, actual_signers, rng).unwrap();
-    for i in 0..presignatures.len() {
-        for j in (i + 1)..presignatures.len() {
-            let (p1, presig1) = &presignatures[i];
-            let (p2, presig2) = &presignatures[j];
 
-            assert_ne!(p1, p2);
-            assert_ne!(presig1.nonces, presig2.nonces);
-            assert_eq!(presig1.commitments_map, presig2.commitments_map);
-        }
-    }
+    assert_frost_presignatures_well_formed(&presignatures);
 }
