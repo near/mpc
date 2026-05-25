@@ -122,7 +122,7 @@ Each [`PendingAttestation`](#mpc-contractsubmit_participant_info) holds:
 
 - **The submitter's `Attestation::Dstack` payload** — the RTMR3 event log, app-compose, and report-data the post-DCAP checks consume.
 - **The submitter's TLS public key** — the callback hashes it with the submitter's account public key and compares to the quote's `report_data` field, proving the enclave produced the quote for this specific submitter.
-- **The attached deposit** — covers storage staking on success, must be refunded on failure. `env::attached_deposit()` is not visible from the callback receipt.
+- **The attached deposit** — covers storage staking on success, refunded to the signer of the original `submit_participant_info` transaction on failure. `env::attached_deposit()` is not visible from the callback receipt, so the value is stashed at submit time and the recipient `AccountId` is the same one used to key the entry (set by `Self::assert_caller_is_signer()`).
 - **`expires_on: BlockHeight`** — TTL for orphan recovery; see [§Handling failures](#handling-failures).
 
 Entries are removed by the callback regardless of outcome; the only way one outlives its callback is the out-of-gas case in [§Handling failures](#handling-failures), where the TTL guarantees the orphan is bounded.
@@ -383,8 +383,12 @@ impl MpcContract {
     /// The callback never panics on a verifier or post-DCAP failure: panicking
     /// would abort the receipt and roll back both the `pending_attestations`
     /// entry removal (so the orphan stays) and the refund Promise (so the
-    /// deposit doesn't return to the submitter). All failure branches do their
+    /// deposit doesn't return to the signer of the original
+    /// `submit_participant_info` transaction). All failure branches do their
     /// state mutation and schedule the refund before returning normally.
+    /// `account_id` here is the signer (bound by `assert_caller_is_signer` at
+    /// submit time and captured into this callback), which is also the
+    /// recipient passed to `refund_deposit`.
     /// Running out of gas mid-callback aborts the receipt anyway, leaving an
     /// orphaned entry; that case is handled by `clean_pending_attestations`,
     /// which sweeps expired entries and refunds their deposits.
@@ -441,8 +445,9 @@ For accounts that never resubmit after an out-of-gas callback, an anyone-callabl
 impl MpcContract {
     /// Scans up to `max_scan` entries from `pending_attestations`, removes any
     /// whose `expires_on` has elapsed, and refunds each one's `attached_deposit`
-    /// to the original submitter. Returns the number of entries removed.
-    /// Callable by anyone while the protocol is in `Running`.
+    /// to the account that originally signed `submit_participant_info` for that
+    /// entry (the `AccountId` used to key the map). Returns the number of
+    /// entries removed. Callable by anyone while the protocol is in `Running`.
     ///
     /// `max_scan` bounds per-call gas: NEAR contract methods are hard-capped at
     /// 300 TGas regardless of map size, so callers pick a value that fits, and
