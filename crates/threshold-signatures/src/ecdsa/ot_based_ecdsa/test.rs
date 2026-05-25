@@ -13,9 +13,9 @@ use crate::{protocol::Protocol, Participant, ReconstructionLowerBound};
 
 use crate::crypto::hash::test::scalar_hash_secp256k1;
 use crate::ecdsa::{
-    Element, ParticipantList, RerandomizationArguments, Secp256K1Sha256, Signature,
-    SignatureOption, Tweak,
+    Element, RerandomizationArguments, Secp256K1Sha256, Signature, SignatureOption, Tweak,
 };
+use crate::participants::ParticipantList;
 
 use rand::seq::SliceRandom as _;
 use rand_core::{CryptoRngCore, SeedableRng};

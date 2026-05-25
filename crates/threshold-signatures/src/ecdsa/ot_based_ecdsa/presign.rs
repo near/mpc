@@ -1,5 +1,7 @@
-use super::{PresignArguments, PresignOutput};
-use crate::ecdsa::{ProjectivePoint, Scalar, Secp256K1Sha256};
+use crate::ecdsa::ot_based_ecdsa::triples::{TriplePub, TripleShare};
+use crate::ecdsa::{
+    AffinePoint, ProjectivePoint, RerandomizationArguments, Scalar, Secp256K1Sha256,
+};
 use crate::errors::{InitializationError, ProtocolError};
 use crate::participants::{Participant, ParticipantList};
 use crate::protocol::helpers::recv_from_others;
@@ -7,8 +9,123 @@ use crate::protocol::{
     internal::{make_protocol, Comms, SharedChannel},
     Protocol,
 };
+use crate::ReconstructionLowerBound;
+use serde::{Deserialize, Serialize};
+use subtle::{Choice, ConstantTimeEq};
+use zeroize::ZeroizeOnDrop;
 
 type Secp256 = Secp256K1Sha256;
+
+/// The arguments needed to create a presignature.
+#[derive(Debug, Clone)]
+pub struct PresignArguments {
+    /// The first triple's public information, and our share.
+    pub triple0: (TripleShare, TriplePub),
+    /// Ditto, for the second triple.
+    pub triple1: (TripleShare, TriplePub),
+    /// The output of key generation, i.e. our share of the secret key, and the public key package.
+    /// This is of type `KeygenOutput<Secp256K1Sha256>` from Frost implementation
+    pub keygen_out: crate::ecdsa::KeygenOutput,
+    /// The desired threshold for the presignature, which must match the original threshold
+    pub threshold: ReconstructionLowerBound,
+}
+
+/// The output of the presigning protocol.
+///
+/// This output is basically all the parts of the signature that we can perform
+/// without knowing the message.
+#[derive(Clone, Serialize, Deserialize, ZeroizeOnDrop)]
+pub struct PresignOutput {
+    /// The public nonce commitment.
+    #[zeroize[skip]]
+    pub big_r: AffinePoint,
+    /// Our share of the nonce value.
+    pub k: Scalar,
+    /// Our share of the sigma value.
+    pub sigma: Scalar,
+}
+
+impl_secret_debug!(PresignOutput {
+    show: [big_r],
+    redact: [k, sigma]
+});
+
+impl ConstantTimeEq for PresignOutput {
+    fn ct_eq(&self, other: &Self) -> Choice {
+        self.big_r.ct_eq(&other.big_r) & self.k.ct_eq(&other.k) & self.sigma.ct_eq(&other.sigma)
+    }
+}
+
+impl PartialEq for PresignOutput {
+    fn eq(&self, other: &Self) -> bool {
+        self.ct_eq(other).into()
+    }
+}
+impl Eq for PresignOutput {}
+
+/// The output of the presigning protocol.
+/// Contains the signature precomputed elements
+/// independently of the message
+#[derive(Clone, Serialize, Deserialize, ZeroizeOnDrop)]
+pub struct RerandomizedPresignOutput {
+    /// The rerandomized public nonce commitment.
+    #[zeroize[skip]]
+    pub big_r: AffinePoint,
+    /// Our rerandomized share of the nonce value.
+    pub k: Scalar,
+    /// Our rerandomized share of the sigma value.
+    pub sigma: Scalar,
+}
+
+impl_secret_debug!(RerandomizedPresignOutput {
+    show: [big_r],
+    redact: [k, sigma]
+});
+
+impl RerandomizedPresignOutput {
+    pub fn rerandomize_presign(
+        presignature: &PresignOutput,
+        args: &RerandomizationArguments,
+    ) -> Result<Self, ProtocolError> {
+        if presignature.big_r != args.big_r {
+            return Err(ProtocolError::IncompatibleRerandomizationInputs);
+        }
+        let delta = args.derive_randomness()?;
+        if delta.is_zero().into() {
+            return Err(ProtocolError::ZeroScalar);
+        }
+
+        // cannot be zero due to the previous check
+        let inv_delta = delta.invert().unwrap();
+
+        // delta . R
+        let rerandomized_big_r = presignature.big_r * delta;
+
+        //  (sigma + tweak * k) * delta^{-1}
+        let rerandomized_sigma =
+            (presignature.sigma + args.tweak.value() * presignature.k) * inv_delta;
+
+        // k * delta^{-1}
+        let rerandomized_k = presignature.k * inv_delta;
+
+        Ok(Self {
+            big_r: rerandomized_big_r.into(),
+            k: rerandomized_k,
+            sigma: rerandomized_sigma,
+        })
+    }
+
+    #[cfg(test)]
+    /// Outputs the same elements as in the `PresignatureOutput`
+    /// Used for testing the core schemes without rerandomization
+    pub fn new_without_rerandomization(presignature: &PresignOutput) -> Self {
+        Self {
+            big_r: presignature.big_r,
+            k: presignature.k,
+            sigma: presignature.sigma,
+        }
+    }
+}
 
 /// Maximum incoming buffer entries for the OT-based ECDSA presign protocol.
 pub(crate) const OT_ECDSA_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES: usize = 2;
