@@ -98,11 +98,7 @@ pub fn keygen<C: Ciphersuite>(
     me: Participant,
     threshold: impl Into<ReconstructionLowerBound> + Send + Copy + 'static,
     rng: impl CryptoRngCore + Send + 'static,
-) -> Result<impl Protocol<Output = KeygenOutput<C>>, InitializationError>
-where
-    Element<C>: Send,
-    Scalar<C>: Send,
-{
+) -> Result<impl Protocol<Output = KeygenOutput<C>>, InitializationError> {
     let comms = Comms::with_buffer_capacity(DKG_MAX_INCOMING_BUFFER_ENTRIES);
     let participants = assert_key_invariants(participants, me, threshold)?;
     let fut = do_keygen::<C>(comms.shared_channel(), participants, me, threshold, rng);
@@ -120,11 +116,7 @@ pub fn reshare<C: Ciphersuite>(
     new_threshold: impl Into<ReconstructionLowerBound> + Copy + Send + 'static,
     me: Participant,
     rng: impl CryptoRngCore + Send + 'static,
-) -> Result<impl Protocol<Output = KeygenOutput<C>>, InitializationError>
-where
-    Element<C>: Send,
-    Scalar<C>: Send,
-{
+) -> Result<impl Protocol<Output = KeygenOutput<C>>, InitializationError> {
     let comms = Comms::with_buffer_capacity(DKG_MAX_INCOMING_BUFFER_ENTRIES);
     let threshold = new_threshold;
     let (participants, old_participants) = assert_reshare_keys_invariants::<C>(
@@ -156,11 +148,7 @@ pub fn refresh<C: Ciphersuite>(
     old_threshold: impl Into<ReconstructionLowerBound> + Copy + Send + 'static,
     me: Participant,
     rng: impl CryptoRngCore + Send + 'static,
-) -> Result<impl Protocol<Output = KeygenOutput<C>>, InitializationError>
-where
-    Element<C>: Send,
-    Scalar<C>: Send,
-{
+) -> Result<impl Protocol<Output = KeygenOutput<C>>, InitializationError> {
     if old_signing_key.is_none() {
         return Err(InitializationError::BadParameters(format!(
             "The participant {me:?} is running refresh without an old share",
