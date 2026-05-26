@@ -486,10 +486,7 @@ async fn wait_for_migration_completion(
 /// `permanent_keys/` directory. Empty if the directory doesn't exist.
 /// Used by the back-migration test to assert keyshares survive a
 /// `kill_nodes` + `start_nodes` cycle on disk.
-fn snapshot_permanent_keys(
-    cluster: &e2e_tests::MpcCluster,
-    idx: usize,
-) -> Vec<(String, u64)> {
+fn snapshot_permanent_keys(cluster: &e2e_tests::MpcCluster, idx: usize) -> Vec<(String, u64)> {
     let home_dir = match &cluster.nodes[idx] {
         MpcNodeState::Running(n) => n.setup().home_dir().to_path_buf(),
         MpcNodeState::Stopped(s) => s.home_dir().to_path_buf(),
@@ -525,7 +522,9 @@ async fn run_migration_round(
     backup_service.must_generate_keys();
     register_backup_service_and_wait(cluster, source_idx, &backup_service)
         .await
-        .unwrap_or_else(|e| panic!("{direction_label}: register_backup_service_and_wait failed: {e:?}"));
+        .unwrap_or_else(|e| {
+            panic!("{direction_label}: register_backup_service_and_wait failed: {e:?}")
+        });
     get_keyshares_from_source(cluster, source_idx, &backup_service)
         .await
         .unwrap_or_else(|e| panic!("{direction_label}: get_keyshares_from_source failed: {e:?}"));
@@ -537,7 +536,9 @@ async fn run_migration_round(
         .unwrap_or_else(|e| panic!("{direction_label}: put_keyshares_to_target failed: {e:?}"));
     wait_for_migration_completion(cluster, source_idx, target_idx)
         .await
-        .unwrap_or_else(|e| panic!("{direction_label}: wait_for_migration_completion failed: {e:?}"));
+        .unwrap_or_else(|e| {
+            panic!("{direction_label}: wait_for_migration_completion failed: {e:?}")
+        });
 }
 
 /// Full end-to-end node migration via the backup CLI.
