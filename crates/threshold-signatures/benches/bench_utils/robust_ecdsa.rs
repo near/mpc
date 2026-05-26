@@ -9,10 +9,10 @@ use threshold_signatures::{
         ecdsa_generate_rerandpresig_args, generate_participants_with_random_ids, run_keygen,
         MockCryptoRng,
     },
-    MaxMalicious,
+    ReconstructionThreshold,
 };
 
-use super::{PreparedPresig, PreparedSig, MAX_MALICIOUS};
+use super::{PreparedPresig, PreparedSig, RECONSTRUCTION_THRESHOLD};
 
 /// Used to prepare robust ecdsa presignatures for benchmarking
 pub fn robust_ecdsa_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'static>(
@@ -20,7 +20,7 @@ pub fn robust_ecdsa_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'sta
     rng: &mut R,
 ) -> RobustECDSAPreparedPresig {
     let participants = generate_participants_with_random_ids(num_participants, rng);
-    let key_packages = run_keygen(&participants, *MAX_MALICIOUS + 1, rng);
+    let key_packages = run_keygen(&participants, *RECONSTRUCTION_THRESHOLD, rng);
     let mut protocols: Vec<_> = Vec::with_capacity(participants.len());
 
     for (p, keygen_out) in &key_packages {
@@ -30,7 +30,7 @@ pub fn robust_ecdsa_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'sta
             *p,
             robust_ecdsa::PresignArguments {
                 keygen_out: keygen_out.clone(),
-                max_malicious: (*MAX_MALICIOUS).into(),
+                threshold: *RECONSTRUCTION_THRESHOLD,
             },
             rng_p,
         )
@@ -48,7 +48,7 @@ pub fn robust_ecdsa_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'sta
 /// Used to prepare robust ecdsa signatures for benchmarking
 pub fn robust_ecdsa_prepare_sign<R: CryptoRngCore + SeedableRng>(
     result: &[(Participant, robust_ecdsa::PresignOutput)],
-    max_malicious: MaxMalicious,
+    threshold: ReconstructionThreshold,
     pk: frost_secp256k1::VerifyingKey,
     rng: &mut R,
 ) -> RobustECDSASig {
@@ -85,7 +85,7 @@ pub fn robust_ecdsa_prepare_sign<R: CryptoRngCore + SeedableRng>(
         let protocol = robust_ecdsa::sign::sign(
             &participants,
             coordinator,
-            max_malicious,
+            threshold,
             p,
             derived_pk,
             presignature,

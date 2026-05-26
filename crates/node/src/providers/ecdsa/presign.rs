@@ -23,7 +23,7 @@ use threshold_signatures::ecdsa::ot_based_ecdsa::{
     presign::presign, PresignArguments, PresignOutput,
 };
 use threshold_signatures::participants::Participant;
-use threshold_signatures::ReconstructionLowerBound;
+use threshold_signatures::ReconstructionThreshold;
 
 #[derive(derive_more::Deref)]
 pub struct PresignatureStorage(DistributedAssetStorage<PresignOutputWithParticipants>);
@@ -65,7 +65,7 @@ impl EcdsaSignatureProvider {
     /// so that needs to be separately handled.
     pub(super) async fn run_background_presignature_generation(
         client: Arc<MeshNetworkClient>,
-        threshold: ReconstructionLowerBound,
+        threshold: ReconstructionThreshold,
         config: Arc<PresignatureConfig>,
         triple_store: Arc<TripleStorage>,
         domain_id: DomainId,
@@ -174,9 +174,8 @@ impl EcdsaSignatureProvider {
         id.validate_owned_by(channel.sender().get_leader())?;
         let domain_data = self.domain_data(domain_id)?;
 
-        let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
         FollowerPresignComputation {
-            threshold: ReconstructionLowerBound::from(threshold),
+            threshold: self.mpc_config.participants.ts_threshold()?,
             keygen_out: domain_data.keyshare,
             triple_store: self.triple_store.clone(),
             paired_triple_id,
@@ -210,7 +209,7 @@ impl HasParticipants for PresignOutputWithParticipants {
 /// Performs an MPC presignature operation. This is shared for the initiator
 /// and for passive participants.
 pub struct PresignComputation {
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     triple0: TripleGenerationOutput,
     triple1: TripleGenerationOutput,
     keygen_out: KeygenOutput,
@@ -250,7 +249,7 @@ impl MpcLeaderCentricComputation<PresignOutput> for PresignComputation {
 /// The difference is: we need to read the triples from the triple store (which may fail),
 /// and we need to write the presignature to the presignature store before completing.
 pub struct FollowerPresignComputation {
-    pub threshold: ReconstructionLowerBound,
+    pub threshold: ReconstructionThreshold,
     pub paired_triple_id: UniqueId,
     pub keygen_out: KeygenOutput,
     pub triple_store: Arc<TripleStorage>,

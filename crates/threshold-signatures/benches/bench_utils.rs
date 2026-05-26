@@ -28,7 +28,7 @@ use threshold_signatures::{
     participants::Participant,
     protocol::Protocol,
     test_utils::Simulator,
-    ReconstructionLowerBound,
+    ReconstructionThreshold,
 };
 
 // fix malicious number of participants
@@ -47,8 +47,8 @@ pub static SAMPLE_SIZE: LazyLock<usize> = std::sync::LazyLock::new(|| {
         .unwrap_or(15)
 });
 
-pub static RECONSTRUCTION_LOWER_BOUND: LazyLock<ReconstructionLowerBound> =
-    LazyLock::new(|| ReconstructionLowerBound::from(*MAX_MALICIOUS + 1));
+pub static RECONSTRUCTION_THRESHOLD: LazyLock<ReconstructionThreshold> =
+    LazyLock::new(|| ReconstructionThreshold::from(*MAX_MALICIOUS + 1));
 
 /// This helps defining a generic type for the benchmarks prepared outputs
 pub struct PreparedOutputs<T> {

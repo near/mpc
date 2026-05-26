@@ -418,7 +418,11 @@ fn participants_config_to_threshold_parameters(
             )
             .expect("Failed to insert participant");
     }
-    ThresholdParameters::new(participants, Threshold::new(participants_config.threshold)).unwrap()
+    ThresholdParameters::new(
+        participants,
+        Threshold::new(participants_config.threshold.inner()),
+    )
+    .unwrap()
 }
 
 /// Runs the fake indexer's shared state and logic. There's one instance of this per test.

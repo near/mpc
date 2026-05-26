@@ -16,14 +16,14 @@ use threshold_signatures::{
     },
     participants::Participant,
     test_utils::frost_run_presignature,
-    ReconstructionLowerBound,
+    ReconstructionThreshold,
 };
 
 type C = Ed25519Sha512;
 type KeygenOutput = threshold_signatures::KeygenOutput<C>;
 
 fn run_sign_v1(
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     participants: &[(Participant, KeygenOutput)],
     coordinator: Participant,
     msg_hash: &[u8],
@@ -50,7 +50,7 @@ fn run_sign_v1(
 }
 
 fn run_sign_v2(
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     participants: &[(Participant, KeygenOutput)],
     coordinator: Participant,
     presig: &[(Participant, PresignOutput)],

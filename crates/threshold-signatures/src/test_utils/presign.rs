@@ -7,7 +7,7 @@ use crate::ecdsa::{RerandomizationArguments, Tweak};
 use crate::frost;
 use crate::test_utils::{random_32_bytes, run_protocol, GenProtocol};
 use crate::{
-    Ciphersuite, Participant, ParticipantList, ReconstructionLowerBound, Scalar, VerifyingKey,
+    Ciphersuite, Participant, ParticipantList, ReconstructionThreshold, Scalar, VerifyingKey,
 };
 
 // +++++++++++++++++ ECDSA Presignature Rerandomization +++++++++++++++++ //
@@ -44,7 +44,7 @@ pub fn ecdsa_generate_rerandpresig_args(
 type BoxErr = Box<dyn Error>;
 pub fn frost_run_presignature<C>(
     participants: &[(Participant, crate::KeygenOutput<C>)],
-    threshold: impl Into<ReconstructionLowerBound> + Copy,
+    threshold: impl Into<ReconstructionThreshold> + Copy,
     actual_signers: usize,
     mut rng: impl CryptoRngCore + Send + Clone + 'static,
 ) -> Result<Vec<(Participant, frost::PresignOutput<C>)>, BoxErr>

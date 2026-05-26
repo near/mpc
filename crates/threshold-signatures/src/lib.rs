@@ -36,7 +36,7 @@ use crate::errors::InitializationError;
 use crate::participants::Participant;
 use crate::protocol::internal::{make_protocol, Comms};
 use crate::protocol::Protocol;
-pub use crate::thresholds::{MaxMalicious, ReconstructionLowerBound};
+pub use crate::thresholds::ReconstructionThreshold;
 use rand_core::CryptoRngCore;
 use std::marker::Send;
 
@@ -96,7 +96,7 @@ pub(crate) const DKG_MAX_INCOMING_BUFFER_ENTRIES: usize = 5;
 pub fn keygen<C: Ciphersuite>(
     participants: &[Participant],
     me: Participant,
-    threshold: impl Into<ReconstructionLowerBound> + Send + Copy + 'static,
+    threshold: impl Into<ReconstructionThreshold> + Send + Copy + 'static,
     rng: impl CryptoRngCore + Send + 'static,
 ) -> Result<impl Protocol<Output = KeygenOutput<C>>, InitializationError> {
     let comms = Comms::with_buffer_capacity(DKG_MAX_INCOMING_BUFFER_ENTRIES);
@@ -109,11 +109,11 @@ pub fn keygen<C: Ciphersuite>(
 #[allow(clippy::too_many_arguments)]
 pub fn reshare<C: Ciphersuite>(
     old_participants: &[Participant],
-    old_threshold: impl Into<ReconstructionLowerBound> + Send + 'static,
+    old_threshold: impl Into<ReconstructionThreshold> + Send + 'static,
     old_signing_key: Option<SigningShare<C>>,
     old_public_key: VerifyingKey<C>,
     new_participants: &[Participant],
-    new_threshold: impl Into<ReconstructionLowerBound> + Copy + Send + 'static,
+    new_threshold: impl Into<ReconstructionThreshold> + Copy + Send + 'static,
     me: Participant,
     rng: impl CryptoRngCore + Send + 'static,
 ) -> Result<impl Protocol<Output = KeygenOutput<C>>, InitializationError> {
@@ -145,7 +145,7 @@ pub fn refresh<C: Ciphersuite>(
     old_signing_key: Option<SigningShare<C>>,
     old_public_key: VerifyingKey<C>,
     old_participants: &[Participant],
-    old_threshold: impl Into<ReconstructionLowerBound> + Copy + Send + 'static,
+    old_threshold: impl Into<ReconstructionThreshold> + Copy + Send + 'static,
     me: Participant,
     rng: impl CryptoRngCore + Send + 'static,
 ) -> Result<impl Protocol<Output = KeygenOutput<C>>, InitializationError> {

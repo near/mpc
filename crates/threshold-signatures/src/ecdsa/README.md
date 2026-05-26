@@ -15,13 +15,13 @@ Both schemes share common types defined in this module:
 
 ### OT-based ECDSA (`ot_based_ecdsa/`)
 
-Originally imported from the [Cait-Sith](https://github.com/cronokirby/cait-sith) library. Uses an **offline phase with two protocols** (triple generation + presigning) to enable efficient one-round online signing. Requires `N >= t` participants where `t = ReconstructionLowerBound`.
+Originally imported from the [Cait-Sith](https://github.com/cronokirby/cait-sith) library. Uses an **offline phase with two protocols** (triple generation + presigning) to enable efficient one-round online signing. Requires `N >= t` participants where `t = ReconstructionThreshold`.
 
 See [`ot_based_ecdsa/README.md`](ot_based_ecdsa/README.md) for details.
 
 ### Robust ECDSA (`robust_ecdsa/`)
 
-Implemented from scratch following \[[DJNPO20](https://eprint.iacr.org/2020/501)\] with minimal modifications. Avoids triple generation entirely -- the offline round consists of a single presigning protocol using degree-2t polynomials. Requires `N >= 2t+1` signers where `t = MaxMalicious`.
+Implemented from scratch following \[[DJNPO20](https://eprint.iacr.org/2020/501)\] with minimal modifications. Avoids triple generation entirely -- the offline round consists of a single presigning protocol using degree-2t polynomials. Requires `N >= 2t+1` signers where `t = MaxMalicious` (derived from `ReconstructionThreshold` via `.max_malicious()`).
 
 See [`robust_ecdsa/README.md`](robust_ecdsa/README.md) for details.
 
@@ -33,7 +33,7 @@ See [`robust_ecdsa/README.md`](robust_ecdsa/README.md) for details.
 | **Offline rounds** | 11+ | 3 |
 | **Sign rounds** | 1 | 1 |
 | **Triple requirement** | 2 triples per presignature | None |
-| **Threshold parameter** | `ReconstructionLowerBound` | `MaxMalicious` |
+| **Threshold parameter** | `ReconstructionThreshold` | `ReconstructionThreshold` |
 | **Scaling** | Less efficient with many participants | Better efficiency and bandwidth |
 
 See the [benchmark analysis](../../docs/benches/results.md) for detailed performance comparisons.

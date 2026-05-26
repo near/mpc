@@ -1026,7 +1026,7 @@ pub mod testing {
         let mut configs = Vec::new();
         for (i, singing_key) in p2p_keypairs.into_iter().enumerate() {
             let participants = ParticipantsConfig {
-                threshold: threshold as u64,
+                threshold: mpc_primitives::ReconstructionThreshold::new(threshold as u64),
                 participants: participants.clone(),
             };
 

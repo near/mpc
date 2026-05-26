@@ -28,7 +28,7 @@ use near_mpc_crypto_types::{KeyForDomain, Keyset};
 use std::sync::Arc;
 use std::time::Duration;
 use threshold_signatures::{
-    confidential_key_derivation as ckd, frost_ed25519, frost_secp256k1, ReconstructionLowerBound,
+    confidential_key_derivation as ckd, frost_ed25519, frost_secp256k1, ReconstructionThreshold,
 };
 use tokio::sync::{mpsc, watch, RwLock};
 use tokio::time::timeout;
@@ -47,7 +47,7 @@ pub async fn keygen_computation_inner(
     generated_keys: Vec<KeyForDomain>,
     key_id: KeyEventId,
     domain: DomainConfig,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
 ) -> anyhow::Result<()> {
     anyhow::ensure!(key_id.domain_id == domain.id, "Domain mismatch");
     let keyshare_handle = keyshare_storage
@@ -124,7 +124,7 @@ async fn keygen_computation(
     keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     chain_txn_sender: impl TransactionSender,
     key_id: KeyEventId,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
 ) -> anyhow::Result<()> {
     let key_event = wait_for_contract_catchup(&mut contract_key_event_id, key_id).await;
     let inner = keygen_computation_inner(
@@ -160,7 +160,7 @@ async fn keygen_computation(
 pub struct ResharingArgs {
     pub previous_keyset: Keyset,
     pub existing_keyshares: Option<Vec<Keyshare>>,
-    pub new_threshold: ReconstructionLowerBound,
+    pub new_threshold: ReconstructionThreshold,
     pub old_participants: ParticipantsConfig,
 }
 
@@ -416,7 +416,7 @@ pub async fn keygen_leader(
     keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     mut key_event_receiver: watch::Receiver<ContractKeyEventInstance>,
     chain_txn_sender: impl TransactionSender,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
 ) -> anyhow::Result<()> {
     loop {
         // Wait for all participants to be connected. Otherwise, computations are most likely going
@@ -500,7 +500,7 @@ pub async fn keygen_follower(
     keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     key_event_receiver: watch::Receiver<ContractKeyEventInstance>,
     chain_txn_sender: impl TransactionSender + 'static,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
 ) -> anyhow::Result<()> {
     let mut tasks = AutoAbortTaskCollection::new();
     loop {
@@ -900,9 +900,9 @@ mod tests {
         Arc::new(ResharingArgs {
             previous_keyset: Keyset::new(EpochId::new(5), vec![]),
             existing_keyshares: None,
-            new_threshold: ReconstructionLowerBound::from(3),
+            new_threshold: threshold_signatures::ReconstructionThreshold::from(3usize),
             old_participants: ParticipantsConfig {
-                threshold: 3,
+                threshold: mpc_primitives::ReconstructionThreshold::new(3),
                 participants: vec![],
             },
         })

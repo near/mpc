@@ -7,7 +7,7 @@ use rand_core::SeedableRng;
 mod bench_utils;
 use crate::bench_utils::{
     analyze_received_sizes, ed25519_prepare_presign, ed25519_prepare_sign_v2, PreparedOutputs,
-    MAX_MALICIOUS, RECONSTRUCTION_LOWER_BOUND, SAMPLE_SIZE,
+    MAX_MALICIOUS, RECONSTRUCTION_THRESHOLD, SAMPLE_SIZE,
 };
 use threshold_signatures::{
     frost::eddsa::{
@@ -19,7 +19,7 @@ use threshold_signatures::{
         run_protocol, run_protocol_and_take_snapshots, run_simulated_protocol, MockCryptoRng,
         Simulator,
     },
-    ReconstructionLowerBound,
+    ReconstructionThreshold,
 };
 
 type PreparedPresig = PreparedOutputs<PresignOutput>;
@@ -27,7 +27,7 @@ type PreparedSimulatedSig = PreparedOutputs<SignatureOption>;
 
 /// Benches the presigning protocol
 fn bench_presign(c: &mut Criterion) {
-    let num = RECONSTRUCTION_LOWER_BOUND.value();
+    let num = RECONSTRUCTION_THRESHOLD.value();
     let max_malicious = *MAX_MALICIOUS;
 
     let setup = setup_presign_snapshot(num);
@@ -50,10 +50,10 @@ fn bench_presign(c: &mut Criterion) {
 
 /// Benches the signing protocol
 fn bench_sign(c: &mut Criterion) {
-    let num = RECONSTRUCTION_LOWER_BOUND.value();
+    let num = RECONSTRUCTION_THRESHOLD.value();
     let max_malicious = *MAX_MALICIOUS;
 
-    let setup = setup_sign_snapshot(*RECONSTRUCTION_LOWER_BOUND);
+    let setup = setup_sign_snapshot(*RECONSTRUCTION_THRESHOLD);
     let size = setup.cached_simulator.get_view_size();
 
     let mut group = c.benchmark_group("sign");
@@ -62,7 +62,7 @@ fn bench_sign(c: &mut Criterion) {
         format!("frost_ed25519_sign_v2_advanced_MAX_MALICIOUS_{max_malicious}_PARTICIPANTS_{num}"),
         |b| {
             b.iter_batched(
-                || prepare_simulated_sign(&setup, *RECONSTRUCTION_LOWER_BOUND),
+                || prepare_simulated_sign(&setup, *RECONSTRUCTION_THRESHOLD),
                 |preps| run_simulated_protocol(preps.participant, preps.protocol, preps.simulator),
                 criterion::BatchSize::SmallInput,
             );
@@ -125,7 +125,7 @@ fn prepare_simulate_presign(setup: &PresignSetup) -> PreparedPresig {
         setup.real_participant,
         &PresignArguments {
             keygen_out: setup.keygen_out.clone(),
-            threshold: *RECONSTRUCTION_LOWER_BOUND,
+            threshold: *RECONSTRUCTION_THRESHOLD,
         },
         setup.real_participant_rng.clone(), // provide the exact same randomness
     )
@@ -149,7 +149,7 @@ struct SignSetup {
 }
 
 /// Expensive one-time setup for sign: runs the full N-party protocol to capture snapshots
-fn setup_sign_snapshot(threshold: ReconstructionLowerBound) -> SignSetup {
+fn setup_sign_snapshot(threshold: ReconstructionThreshold) -> SignSetup {
     let mut rng = MockCryptoRng::seed_from_u64(41);
     let preps = ed25519_prepare_presign(threshold.value(), &mut rng);
     let result = run_protocol(preps.protocols).expect("Prepare sign should not fail");
@@ -182,7 +182,7 @@ fn setup_sign_snapshot(threshold: ReconstructionLowerBound) -> SignSetup {
 /// Cheap per-sample setup: creates fresh sign protocol and clones the cached simulator
 fn prepare_simulated_sign(
     setup: &SignSetup,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
 ) -> PreparedSimulatedSig {
     let real_protocol = sign_v2(
         &setup.participants,

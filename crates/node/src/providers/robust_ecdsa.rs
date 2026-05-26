@@ -24,8 +24,7 @@ use threshold_signatures::ecdsa::KeygenOutput;
 use threshold_signatures::ecdsa::Signature;
 use threshold_signatures::frost_secp256k1::keys::SigningShare;
 use threshold_signatures::frost_secp256k1::VerifyingKey;
-use threshold_signatures::MaxMalicious;
-use threshold_signatures::ReconstructionLowerBound;
+use threshold_signatures::ReconstructionThreshold;
 
 pub struct RobustEcdsaSignatureProvider {
     config: Arc<ConfigFile>,
@@ -144,47 +143,24 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
     }
 
     async fn run_key_generation_client(
-        threshold: ReconstructionLowerBound,
+        threshold: ReconstructionThreshold,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
-        let number_of_participants = channel.participants().len();
-        let robust_ecdsa_threshold =
-            translate_threshold(threshold.value(), number_of_participants)?;
-        EcdsaSignatureProvider::run_key_generation_client_internal(
-            ReconstructionLowerBound::try_from(robust_ecdsa_threshold)?,
-            channel,
-        )
-        .await
+        EcdsaSignatureProvider::run_key_generation_client_internal(threshold, channel).await
     }
 
     async fn run_key_resharing_client(
-        new_threshold: ReconstructionLowerBound,
+        new_threshold: ReconstructionThreshold,
         my_share: Option<SigningShare>,
         public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
-        let number_of_participants = channel.participants().len();
-        let new_robust_ecdsa_threshold =
-            translate_threshold(new_threshold.value(), number_of_participants)?;
-
-        // This is a bad hack, but cannot think of a better way to solve it, as the struct
-        // comes directly from generic implementations, so probably this is the best place
-        // to do so anyway
-        let mut old_participants_patched = old_participants.clone();
-        let old_translated = translate_threshold(
-            old_participants.threshold.try_into()?,
-            old_participants.participants.len(),
-        )?;
-        old_participants_patched.threshold = ReconstructionLowerBound::try_from(old_translated)?
-            .value()
-            .try_into()?;
-
         EcdsaSignatureProvider::run_key_resharing_client_internal(
-            ReconstructionLowerBound::try_from(new_robust_ecdsa_threshold)?,
+            new_threshold,
             my_share,
             public_key,
-            &old_participants_patched,
+            old_participants,
             channel,
         )
         .await
@@ -252,96 +228,5 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
         }
 
         Ok(())
-    }
-}
-
-/// Although currently the threshold is always equal to the number of signers, if in
-/// the future we might want to change that invariant, for example to achieve
-/// higher security guarantees for robust-ecdsa. In that case,
-/// this function enforces that the number of signers and the threshold
-/// computed below in `translate_threshold` stay consistent
-pub(super) fn get_number_of_signers(
-    threshold: usize,
-    number_of_participants: usize,
-) -> anyhow::Result<usize> {
-    anyhow::ensure!(
-        threshold <= number_of_participants,
-        "threshold ({threshold}) exceeds number of participants ({number_of_participants})"
-    );
-    Ok(threshold)
-}
-
-/// This function translates the current threshold from the contract
-/// to the threshold expected by the robust-ecdsa scheme, which
-/// is semantically different.
-/// The function should be no longer needed when these issues are solved:
-/// https://github.com/near/threshold-signatures/issues/255
-/// https://github.com/near/mpc/issues/1649
-pub(super) fn translate_threshold(
-    threshold: usize,
-    number_of_participants: usize,
-) -> anyhow::Result<MaxMalicious> {
-    let number_of_signers = get_number_of_signers(threshold, number_of_participants)?;
-    anyhow::ensure!(number_of_signers >= 5, "Robust ECDSA requires the threshold to be at least 2, which implies that the number of signers needs to be at least 5");
-    Ok(MaxMalicious::from((number_of_signers - 1) / 2))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use rstest::rstest;
-
-    // The resulting threshold for robust-ecdsa must always satisfy
-    // the underlying invariant that 2 * threshold + 1 <= number of signers
-    #[test]
-    fn test_translate_threshold() {
-        let max_size = 30;
-        for threshold in 5..max_size {
-            for number_of_participants in threshold..max_size {
-                let number_of_signers =
-                    get_number_of_signers(threshold, number_of_participants).unwrap();
-                let new_threshold = translate_threshold(threshold, number_of_participants)
-                    .unwrap()
-                    .value();
-                assert!(2 * new_threshold < number_of_signers, "Failed for threshold={threshold}, number_of_participants={number_of_participants}");
-                assert!(new_threshold >= (threshold - 1) / 2, "The new threshold should not decrease security more than necessary: new_threshold={new_threshold}, threshold={threshold}");
-            }
-        }
-    }
-
-    // Tests that the number of signers is below the threshold,
-    // guaranteeing that security is not reduced
-    #[test]
-    fn test_get_number_of_signers_not_lower_than_threshold() {
-        let max_size = 30;
-        for threshold in 5..max_size {
-            for number_of_participants in threshold..max_size {
-                let number_of_signers =
-                    get_number_of_signers(threshold, number_of_participants).unwrap();
-                assert!(threshold <= number_of_signers && number_of_signers <= number_of_participants, "Failed for threshold={threshold}, number_of_participants={number_of_participants}");
-            }
-        }
-    }
-
-    #[rstest]
-    #[case(0, 10, true, 0)]
-    #[case(1, 10, true, 0)]
-    #[case(2, 10, true, 0)]
-    #[case(3, 10, true, 0)]
-    #[case(4, 10, true, 0)]
-    #[case(5, 10, false, 2)]
-    #[case(6, 10, false, 2)]
-    #[case(7, 10, false, 3)]
-    fn test_translate_threshold_special_cases(
-        #[case] threshold: usize,
-        #[case] number_of_participants: usize,
-        #[case] is_err: bool,
-        #[case] expected_threshold: usize,
-    ) {
-        let result = translate_threshold(threshold, number_of_participants);
-        assert_eq!(result.is_err(), is_err);
-        if !is_err {
-            assert_eq!(result.unwrap(), MaxMalicious::from(expected_threshold));
-        }
     }
 }

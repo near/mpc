@@ -367,7 +367,7 @@ pub fn convert_participant_infos(
     }
     Ok(ParticipantsConfig {
         participants: converted,
-        threshold: threshold_parameters.threshold.0,
+        threshold: threshold_parameters.threshold.into(),
     })
 }
 
@@ -401,7 +401,8 @@ mod tests {
     use near_indexer_primitives::types::AccountId;
     use near_mpc_contract_interface::types::AccountId as DtoAccountId;
     use near_mpc_contract_interface::types::{
-        ParticipantId, ParticipantInfo, Participants, Threshold, ThresholdParameters,
+        ParticipantId, ParticipantInfo, Participants, ReconstructionThreshold, Threshold,
+        ThresholdParameters,
     };
     use std::collections::HashMap;
 
@@ -493,7 +494,7 @@ mod tests {
         };
 
         let converted = convert_participant_infos(params, None).unwrap();
-        assert_eq!(converted.threshold, 3);
+        assert_eq!(converted.threshold, ReconstructionThreshold::new(3));
         for (i, p) in converted.participants.iter().enumerate() {
             assert!(p.near_account_id == account_ids[i]);
             let expected_pk: near_sdk::PublicKey = account_id_to_pk[&account_ids[i]].clone().into();

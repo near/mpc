@@ -5,11 +5,11 @@ use crate::providers::ecdsa::{EcdsaSignatureProvider, KeygenOutput};
 use rand::rngs::OsRng;
 use threshold_signatures::frost_secp256k1::Secp256K1Sha256;
 use threshold_signatures::participants::Participant;
-use threshold_signatures::ReconstructionLowerBound;
+use threshold_signatures::ReconstructionThreshold;
 
 impl EcdsaSignatureProvider {
     pub(crate) async fn run_key_generation_client_internal(
-        threshold: ReconstructionLowerBound,
+        threshold: ReconstructionThreshold,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<KeygenOutput> {
         let key = KeyGenerationComputation { threshold }
@@ -24,7 +24,7 @@ impl EcdsaSignatureProvider {
 /// Runs the key generation protocol, returning the key generated.
 /// This protocol is identical for the leader and the followers.
 pub struct KeyGenerationComputation {
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
 }
 
 #[async_trait::async_trait]
@@ -64,7 +64,7 @@ mod tests {
     use near_mpc_contract_interface::types::{AttemptId, EpochId, KeyEventId};
     use std::sync::Arc;
     use threshold_signatures::test_utils::generate_participants;
-    use threshold_signatures::ReconstructionLowerBound;
+    use threshold_signatures::ReconstructionThreshold;
     use tokio::sync::mpsc;
 
     #[tokio::test]
@@ -106,7 +106,7 @@ mod tests {
                 .ok_or_else(|| anyhow::anyhow!("No channel"))?
         };
         let key = KeyGenerationComputation {
-            threshold: ReconstructionLowerBound::from(3),
+            threshold: ReconstructionThreshold::from(3),
         }
         .perform_leader_centric_computation(channel, std::time::Duration::from_secs(60))
         .await?;

@@ -9,7 +9,7 @@ use super::{
 use crate::{
     ecdsa::{Field, Polynomial, ProjectivePoint, Secp256K1ScalarField},
     test_utils::MockCryptoRng,
-    ReconstructionLowerBound,
+    ReconstructionThreshold,
 };
 
 use crate::errors::ProtocolError;
@@ -25,7 +25,7 @@ use crate::test_utils::run_two_party_protocol;
 pub fn deal(
     rng: &mut impl CryptoRngCore,
     participants: &[Participant],
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
 ) -> Result<(TriplePub, Vec<TripleShare>), ProtocolError> {
     let a = Secp256K1ScalarField::random(&mut *rng);
     let b = Secp256K1ScalarField::random(&mut *rng);

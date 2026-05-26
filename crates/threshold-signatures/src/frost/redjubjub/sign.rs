@@ -10,7 +10,7 @@ use crate::{
         internal::{make_protocol, Comms, SharedChannel},
         Protocol,
     },
-    ReconstructionLowerBound,
+    ReconstructionThreshold,
 };
 
 use reddsa::frost::redjubjub::{
@@ -51,7 +51,7 @@ pub(crate) const REDJUBJUB_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES: usize = 1;
 #[allow(clippy::too_many_arguments)]
 pub fn sign(
     participants: &[Participant],
-    threshold: impl Into<ReconstructionLowerBound>,
+    threshold: impl Into<ReconstructionThreshold>,
     me: Participant,
     coordinator: Participant,
     keygen_output: KeygenOutput,
@@ -82,7 +82,7 @@ pub fn sign(
 async fn fut_wrapper(
     chan: SharedChannel,
     participants: ParticipantList,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     me: Participant,
     coordinator: Participant,
     keygen_output: KeygenOutput,
@@ -143,7 +143,7 @@ async fn fut_wrapper(
 async fn do_sign_coordinator(
     mut chan: SharedChannel,
     participants: ParticipantList,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     me: Participant,
     keygen_output: KeygenOutput,
     presignature: &PresignOutput,
@@ -217,7 +217,7 @@ async fn do_sign_coordinator(
 /// For reference, see how RFC 8032 handles "pre-hashing".
 async fn do_sign_participant(
     mut chan: SharedChannel,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     me: Participant,
     coordinator: Participant,
     keygen_output: KeygenOutput,
@@ -264,7 +264,7 @@ async fn do_sign_participant(
 /// A function that takes a signing share and a keygenOutput
 /// and construct a public key package used for frost signing
 fn construct_key_package(
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     me: Participant,
     keygen_output: &KeygenOutput,
 ) -> Result<KeyPackage, ProtocolError> {

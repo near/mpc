@@ -11,7 +11,6 @@ use threshold_signatures::{
         VerifyingKey,
     },
     participants::Participant,
-    ReconstructionLowerBound,
 };
 
 use crate::metrics;
@@ -29,8 +28,7 @@ impl CKDProvider {
     ) -> anyhow::Result<((ElementG1, ElementG1), VerifyingKey)> {
         let ckd_request = self.ckd_request_store.get(id).await?;
 
-        let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
-        let threshold = ReconstructionLowerBound::from(threshold);
+        let threshold = self.mpc_config.participants.ts_threshold()?;
         let running_participants: Vec<_> = self
             .mpc_config
             .participants

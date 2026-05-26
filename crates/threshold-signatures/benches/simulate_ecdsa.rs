@@ -18,7 +18,7 @@ use threshold_signatures::{
         bench_simulation, ecdsa_generate_rerandpresig_args, generate_participants_with_random_ids,
         run_keygen, run_simulation, BenchConfig, LatencyModel, MockCryptoRng, SimulationMetrics,
     },
-    MaxMalicious, ReconstructionLowerBound,
+    ReconstructionThreshold,
 };
 
 type TriplePair = (
@@ -29,8 +29,7 @@ type TriplesResult = Vec<(Participant, Vec<TriplePair>)>;
 
 fn main() {
     let config = BenchConfig::from_env();
-    let threshold = ReconstructionLowerBound::from(config.threshold);
-    let max_malicious = MaxMalicious::from(config.threshold - 1);
+    let threshold = ReconstructionThreshold::from(config.threshold);
 
     println!("Protocol simulation: ECDSA (Cait-Sith vs DamgardEtAl)");
     println!(
@@ -58,7 +57,7 @@ fn main() {
         robust_run_presign(
             &participants,
             &key_packages,
-            max_malicious,
+            threshold,
             &config.latency,
             &mut rng,
         );
@@ -75,7 +74,7 @@ fn main() {
     bench_damgard(
         &participants,
         &key_packages,
-        max_malicious,
+        threshold,
         coordinator,
         pk,
         &config,
@@ -85,7 +84,7 @@ fn main() {
 fn bench_cait_sith(
     participants: &[Participant],
     key_packages: &[(Participant, ecdsa::KeygenOutput)],
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     coordinator: Participant,
     pk: frost_secp256k1::VerifyingKey,
     config: &BenchConfig,
@@ -146,7 +145,7 @@ fn bench_cait_sith(
 fn bench_damgard(
     participants: &[Participant],
     key_packages: &[(Participant, ecdsa::KeygenOutput)],
-    max_malicious: MaxMalicious,
+    threshold: ReconstructionThreshold,
     coordinator: Participant,
     pk: frost_secp256k1::VerifyingKey,
     config: &BenchConfig,
@@ -155,7 +154,7 @@ fn bench_damgard(
     let (presign_outputs, _) = robust_run_presign(
         participants,
         key_packages,
-        max_malicious,
+        threshold,
         &config.latency,
         &mut presign_rng,
     );
@@ -167,7 +166,7 @@ fn bench_damgard(
             robust_run_presign(
                 participants,
                 key_packages,
-                max_malicious,
+                threshold,
                 &config.latency,
                 &mut rng,
             )
@@ -182,7 +181,7 @@ fn bench_damgard(
             robust_run_sign(
                 participants,
                 &presign_outputs,
-                max_malicious,
+                threshold,
                 coordinator,
                 pk,
                 &config.latency,
@@ -195,7 +194,7 @@ fn bench_damgard(
 
 fn ot_run_triples(
     participants: &[Participant],
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     latency: &LatencyModel,
     rng: &mut MockCryptoRng,
 ) -> (TriplesResult, SimulationMetrics) {
@@ -214,7 +213,7 @@ fn ot_run_presign(
     participants: &[Participant],
     two_triples: &[(Participant, Vec<TriplePair>)],
     key_packages: &[(Participant, ecdsa::KeygenOutput)],
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     latency: &LatencyModel,
 ) -> (
     Vec<(Participant, ot_based_ecdsa::PresignOutput)>,
@@ -250,7 +249,7 @@ fn ot_run_presign(
 fn ot_run_sign(
     participants: &[Participant],
     presign_outputs: &[(Participant, ot_based_ecdsa::PresignOutput)],
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     coordinator: Participant,
     pk: frost_secp256k1::VerifyingKey,
     latency: &LatencyModel,
@@ -301,7 +300,7 @@ fn ot_run_sign(
 fn robust_run_presign(
     participants: &[Participant],
     key_packages: &[(Participant, ecdsa::KeygenOutput)],
-    max_malicious: MaxMalicious,
+    threshold: ReconstructionThreshold,
     latency: &LatencyModel,
     rng: &mut MockCryptoRng,
 ) -> (
@@ -319,7 +318,7 @@ fn robust_run_presign(
             *p,
             robust_ecdsa::PresignArguments {
                 keygen_out: keygen_out.clone(),
-                max_malicious,
+                threshold,
             },
             rng_p,
         )
@@ -332,7 +331,7 @@ fn robust_run_presign(
 fn robust_run_sign(
     participants: &[Participant],
     presign_outputs: &[(Participant, robust_ecdsa::PresignOutput)],
-    max_malicious: MaxMalicious,
+    threshold: ReconstructionThreshold,
     coordinator: Participant,
     pk: frost_secp256k1::VerifyingKey,
     latency: &LatencyModel,
@@ -365,7 +364,7 @@ fn robust_run_sign(
         let protocol = robust_ecdsa::sign::sign(
             participants,
             coordinator,
-            max_malicious,
+            threshold,
             p,
             derived_pk,
             presig,

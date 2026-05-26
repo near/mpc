@@ -6,7 +6,7 @@ use rand_core::SeedableRng;
 mod bench_utils;
 use crate::bench_utils::{
     analyze_received_sizes, ed25519_prepare_sign_v1, PreparedOutputs, MAX_MALICIOUS,
-    RECONSTRUCTION_LOWER_BOUND, SAMPLE_SIZE,
+    RECONSTRUCTION_THRESHOLD, SAMPLE_SIZE,
 };
 use threshold_signatures::{
     frost::eddsa::{sign::sign_v1, KeygenOutput, SignatureOption},
@@ -15,17 +15,17 @@ use threshold_signatures::{
     test_utils::{
         run_protocol_and_take_snapshots, run_simulated_protocol, MockCryptoRng, Simulator,
     },
-    ReconstructionLowerBound,
+    ReconstructionThreshold,
 };
 
 type PreparedSimulatedSig = PreparedOutputs<SignatureOption>;
 
 /// Benches the signing protocol
 fn bench_sign(c: &mut Criterion) {
-    let num = RECONSTRUCTION_LOWER_BOUND.value();
+    let num = RECONSTRUCTION_THRESHOLD.value();
     let max_malicious = *MAX_MALICIOUS;
 
-    let setup = setup_sign_snapshot(*RECONSTRUCTION_LOWER_BOUND);
+    let setup = setup_sign_snapshot(*RECONSTRUCTION_THRESHOLD);
     let size = setup.cached_simulator.get_view_size();
 
     let mut group = c.benchmark_group("sign");
@@ -34,7 +34,7 @@ fn bench_sign(c: &mut Criterion) {
         format!("frost_ed25519_sign_advanced_MAX_MALICIOUS_{max_malicious}_PARTICIPANTS_{num}"),
         |b| {
             b.iter_batched(
-                || prepare_simulated_sign(&setup, *RECONSTRUCTION_LOWER_BOUND),
+                || prepare_simulated_sign(&setup, *RECONSTRUCTION_THRESHOLD),
                 |preps| run_simulated_protocol(preps.participant, preps.protocol, preps.simulator),
                 criterion::BatchSize::SmallInput,
             );
@@ -56,7 +56,7 @@ struct SignSetup {
 }
 
 /// Expensive one-time setup: runs the full N-party protocol to capture snapshots
-fn setup_sign_snapshot(threshold: ReconstructionLowerBound) -> SignSetup {
+fn setup_sign_snapshot(threshold: ReconstructionThreshold) -> SignSetup {
     let mut rng = MockCryptoRng::seed_from_u64(41);
     let preps = ed25519_prepare_sign_v1(threshold, &mut rng);
     let (_, protocol_snapshot) = run_protocol_and_take_snapshots(preps.protocols)
@@ -87,7 +87,7 @@ fn setup_sign_snapshot(threshold: ReconstructionLowerBound) -> SignSetup {
 /// Cheap per-sample setup: creates fresh sign protocol and clones the cached simulator
 fn prepare_simulated_sign(
     setup: &SignSetup,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
 ) -> PreparedSimulatedSig {
     let real_protocol = sign_v1(
         &setup.participants,

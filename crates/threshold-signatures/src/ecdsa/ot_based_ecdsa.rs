@@ -11,7 +11,7 @@ use crate::{
         ot_based_ecdsa::triples::{TriplePub, TripleShare},
         AffinePoint, KeygenOutput, RerandomizationArguments, Scalar,
     },
-    ReconstructionLowerBound,
+    ReconstructionThreshold,
 };
 use serde::{Deserialize, Serialize};
 use subtle::{Choice, ConstantTimeEq};
@@ -28,7 +28,7 @@ pub struct PresignArguments {
     /// This is of type `KeygenOutput<Secp256K1Sha256>` from Frost implementation
     pub keygen_out: KeygenOutput,
     /// The desired threshold for the presignature, which must match the original threshold
-    pub threshold: ReconstructionLowerBound,
+    pub threshold: ReconstructionThreshold,
 }
 
 /// The output of the presigning protocol.

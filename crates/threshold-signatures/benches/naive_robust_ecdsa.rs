@@ -3,7 +3,8 @@
 use criterion::{criterion_group, Criterion};
 mod bench_utils;
 use crate::bench_utils::{
-    robust_ecdsa_prepare_presign, robust_ecdsa_prepare_sign, MAX_MALICIOUS, SAMPLE_SIZE,
+    robust_ecdsa_prepare_presign, robust_ecdsa_prepare_sign, MAX_MALICIOUS,
+    RECONSTRUCTION_THRESHOLD, SAMPLE_SIZE,
 };
 use rand_core::SeedableRng;
 use threshold_signatures::test_utils::{run_protocol, MockCryptoRng};
@@ -48,7 +49,7 @@ fn bench_sign(c: &mut Criterion) {
         format!("robust_ecdsa_sign_naive_MAX_MALICIOUS_{max_malicious}_PARTICIPANTS_{num}"),
         |b| {
             b.iter_batched(
-                || robust_ecdsa_prepare_sign(&result, max_malicious.into(), pk, &mut rng),
+                || robust_ecdsa_prepare_sign(&result, *RECONSTRUCTION_THRESHOLD, pk, &mut rng),
                 |preps| run_protocol(preps.protocols),
                 criterion::BatchSize::SmallInput,
             );

@@ -219,7 +219,9 @@ mod test {
                     *p,
                     PresignArguments {
                         keygen_out,
-                        max_malicious: max_malicious.into(),
+                        threshold: crate::thresholds::MaxMalicious::from(max_malicious)
+                            .reconstruction_threshold()
+                            .unwrap(),
                     },
                     rng_p,
                 )
