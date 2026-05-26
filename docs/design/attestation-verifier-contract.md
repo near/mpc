@@ -76,7 +76,6 @@ sequenceDiagram
     Op->>MPC: submit_participant_info(Dstack, tls_pk)
     MPC->>State: insert PendingAttestation
     MPC->>Ver: Promise: verify_quote
-    Note over MPC: yield
 
     Ver->>DCAP: verify(quote, collateral, now)
     DCAP-->>Ver: Ok(VerifiedReport) or Err
@@ -139,7 +138,6 @@ sequenceDiagram
     Op->>MPC: submit_participant_info(Dstack, tls_pk)
     MPC->>MPC: insert PendingAttestation
     MPC->>Ver: Promise: verify_quote(...)
-    Note over MPC: yield until callback
 
     Gov->>MPC: vote_add_image_hash(H)
     Note over MPC: allowlist updated in state
@@ -307,7 +305,6 @@ sequenceDiagram
     Op->>MPC: submit_participant_info(Dstack, tls_pk)
     MPC->>MPC: read tee_verifier_account_id (= old)
     MPC->>VerOld: Promise: verify_quote(...)
-    Note over MPC: yield until callback
 
     Gov->>MPC: vote_tee_verifier_change passes
     Note over MPC: tee_verifier_account_id = new
