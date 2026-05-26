@@ -482,6 +482,34 @@ async fn wait_for_migration_completion(
     .context("migration state did not clear")
 }
 
+/// Returns the sorted (filename, length) pairs of files in the node's
+/// `permanent_keys/` directory. Empty if the directory doesn't exist.
+/// Used by the back-migration test to assert keyshares survive a
+/// `kill_nodes` + `start_nodes` cycle on disk.
+fn snapshot_permanent_keys(
+    cluster: &e2e_tests::MpcCluster,
+    idx: usize,
+) -> Vec<(String, u64)> {
+    let home_dir = match &cluster.nodes[idx] {
+        MpcNodeState::Running(n) => n.setup().home_dir().to_path_buf(),
+        MpcNodeState::Stopped(s) => s.home_dir().to_path_buf(),
+    };
+    let keys_dir = home_dir.join("permanent_keys");
+    let Ok(read_dir) = std::fs::read_dir(&keys_dir) else {
+        return Vec::new();
+    };
+    let mut entries: Vec<(String, u64)> = read_dir
+        .filter_map(|e| e.ok())
+        .filter_map(|e| {
+            let name = e.file_name().into_string().ok()?;
+            let len = e.metadata().ok()?.len();
+            Some((name, len))
+        })
+        .collect();
+    entries.sort();
+    entries
+}
+
 /// Drives one full backup-CLI migration round (register → GET → start →
 /// PUT → wait-for-completion) from `source_idx` to `target_idx`.
 /// `direction_label` prefixes the `expect` panic messages so a failure
@@ -676,7 +704,16 @@ async fn migration_service__should_handle_back_migration_a_to_b_to_a() {
     // online later for the back-migration. `kill_nodes` + `start_nodes`
     // preserves the node's home dir (keyshares stay on disk) — that disk
     // state is the trigger for the suspected P1 early-return.
-    let a0_tls_before_restart = cluster.nodes[a_idx].p2p_public_key_str();
+    //
+    // Snapshot A0's keyshare-file listing before kill so we can verify
+    // it's still there after start. Keyshares live in
+    // `home_dir/permanent_keys/` (see `crates/node/src/keyshare/local.rs`).
+    let a0_keyshares_before = snapshot_permanent_keys(&cluster, a_idx);
+    assert!(
+        !a0_keyshares_before.is_empty(),
+        "A0's permanent_keys/ is empty before kill — test setup did not produce keyshares, \
+         so the back-migration P1 precondition can't be modeled"
+    );
     cluster
         .kill_nodes(&[a_idx])
         .expect("failed to kill A0 before back-migration");
@@ -687,18 +724,16 @@ async fn migration_service__should_handle_back_migration_a_to_b_to_a() {
         .wait_for_node_healthy(a_idx)
         .await
         .expect("A0 did not become healthy after restart");
-    // Validate the assumption the test rests on: A0's home dir was
-    // preserved through kill+start. The derived P2P/TLS pubkey is a
-    // function of the on-disk secret_store_key, so an identical key
-    // before vs after restart means the home dir wasn't wiped and the
-    // keyshares are still on disk — the precondition modeling P1.
+    // Validate the assumption the test rests on: A0's keyshares are
+    // still on disk after the restart. If they're missing or different,
+    // the test no longer models production's back-migration scenario
+    // (e.g. someone swapped `start_nodes` for `reset_and_start_nodes`,
+    // which wipes the home dir).
+    let a0_keyshares_after = snapshot_permanent_keys(&cluster, a_idx);
     assert_eq!(
-        cluster.nodes[a_idx].p2p_public_key_str(),
-        a0_tls_before_restart,
-        "A0's TLS key changed across kill+start — home dir was NOT \
-         preserved, test no longer models the production back-migration \
-         scenario (probably someone swapped start_nodes for \
-         reset_and_start_nodes)"
+        a0_keyshares_before, a0_keyshares_after,
+        "A0's permanent_keys/ contents changed across kill+start — \
+         keyshares were NOT preserved on disk"
     );
 
     // When: back-migration B0 → A0 via the same helper, indices swapped.
