@@ -451,6 +451,17 @@ expression: abi
         }
       },
       {
+        "name": "clear_staged_contract",
+        "doc": " Abandon the caller's in-progress chunked upload and refund the accumulated\n chunk-storage deposits.",
+        "kind": "call",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
         "name": "code_hash_votes",
         "doc": " Returns the current code hash votes, showing each participant's vote.",
         "kind": "view",
@@ -548,6 +559,17 @@ expression: abi
         "modifiers": [
           "private"
         ]
+      },
+      {
+        "name": "finalize_contract_upload",
+        "doc": " Finalize the caller's chunked upload and register it as a contract-code\n proposal.\n\n The upload must be complete (received bytes equal the declared `total_size`).\n This call computes the SHA-256 of the assembled code (streaming through the\n chunks one at a time, so peak WASM memory stays bounded), moves the chunks\n from per-account staging storage into proposal-keyed storage, clears the\n staged metadata, and returns the new [`UpdateId`]. Voters can then call\n [`vote_update`] against that id; on threshold approval the chunks are\n reassembled and deployed.",
+        "kind": "call",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/UpdateId"
+          }
+        }
       },
       {
         "name": "get_attestation",
@@ -895,7 +917,7 @@ expression: abi
       },
       {
         "name": "propose_update",
-        "doc": " Propose update to either code or config, but not both of them at the same time.",
+        "doc": " Propose a config update. Contract-code updates are proposed via the chunked\n upload flow ([`start_contract_upload`] → [`upload_contract_chunk`] →\n [`finalize_contract_upload`]) so that proposals can exceed the per-transaction\n RPC size limit and so the proposal entry itself stays small.",
         "kind": "call",
         "modifiers": [
           "payable"
@@ -908,9 +930,6 @@ expression: abi
               "type_schema": {
                 "declaration": "ProposeUpdateArgs",
                 "definitions": {
-                  "()": {
-                    "Primitive": 0
-                  },
                   "Config": {
                     "Struct": [
                       [
@@ -967,67 +986,16 @@ expression: abi
                       ]
                     ]
                   },
-                  "Option<Config>": {
-                    "Enum": {
-                      "tag_width": 1,
-                      "variants": [
-                        [
-                          0,
-                          "None",
-                          "()"
-                        ],
-                        [
-                          1,
-                          "Some",
-                          "Config"
-                        ]
-                      ]
-                    }
-                  },
-                  "Option<Vec<u8>>": {
-                    "Enum": {
-                      "tag_width": 1,
-                      "variants": [
-                        [
-                          0,
-                          "None",
-                          "()"
-                        ],
-                        [
-                          1,
-                          "Some",
-                          "Vec<u8>"
-                        ]
-                      ]
-                    }
-                  },
                   "ProposeUpdateArgs": {
                     "Struct": [
                       [
-                        "code",
-                        "Option<Vec<u8>>"
-                      ],
-                      [
                         "config",
-                        "Option<Config>"
+                        "Config"
                       ]
                     ]
                   },
-                  "Vec<u8>": {
-                    "Sequence": {
-                      "length_width": 4,
-                      "length_range": {
-                        "start": 0,
-                        "end": 4294967295
-                      },
-                      "elements": "u8"
-                    }
-                  },
                   "u64": {
                     "Primitive": 8
-                  },
-                  "u8": {
-                    "Primitive": 1
                   }
                 }
               }
@@ -1380,6 +1348,44 @@ expression: abi
         }
       },
       {
+        "name": "start_contract_upload",
+        "doc": " Begin a chunked contract-code upload.\n\n A voter calls this once with the declared `total_size`, then makes one or\n more [`upload_contract_chunk`] calls totalling exactly `total_size` bytes,\n then [`finalize_contract_upload`] to register the proposal. Each voter may\n have at most one open upload at a time; call [`clear_staged_contract`] to\n abandon and reset.\n\n Splitting the upload across many transactions is necessary because a single\n transaction is bounded by the RPC's payload size limit (~1.5 MiB), which is\n smaller than recent contract binaries.",
+        "kind": "call",
+        "modifiers": [
+          "payable"
+        ],
+        "params": {
+          "serialization_type": "borsh",
+          "args": [
+            {
+              "name": "args",
+              "type_schema": {
+                "declaration": "StartContractUploadArgs",
+                "definitions": {
+                  "StartContractUploadArgs": {
+                    "Struct": [
+                      [
+                        "total_size",
+                        "u64"
+                      ]
+                    ]
+                  },
+                  "u64": {
+                    "Primitive": 8
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
         "name": "start_keygen_instance",
         "doc": " Starts a new attempt to generate a key for the current domain.\n This only succeeds if the signer is the leader (the participant with the lowest ID).",
         "kind": "call",
@@ -1502,6 +1508,54 @@ expression: abi
               }
             }
           ]
+        }
+      },
+      {
+        "name": "upload_contract_chunk",
+        "doc": " Append a chunk of contract code to the caller's in-progress upload.\n\n The cumulative byte count is validated against the `total_size` declared in\n [`start_contract_upload`]; sending more bytes than declared fails. Each call\n must attach enough deposit to back the chunk's storage cost (see\n [`StagedContractUpload::required_deposit_for_bytes`]).",
+        "kind": "call",
+        "modifiers": [
+          "payable"
+        ],
+        "params": {
+          "serialization_type": "borsh",
+          "args": [
+            {
+              "name": "args",
+              "type_schema": {
+                "declaration": "UploadContractChunkArgs",
+                "definitions": {
+                  "UploadContractChunkArgs": {
+                    "Struct": [
+                      [
+                        "data",
+                        "Vec<u8>"
+                      ]
+                    ]
+                  },
+                  "Vec<u8>": {
+                    "Sequence": {
+                      "length_width": 4,
+                      "length_range": {
+                        "start": 0,
+                        "end": 4294967295
+                      },
+                      "elements": "u8"
+                    }
+                  },
+                  "u8": {
+                    "Primitive": 1
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
         }
       },
       {
