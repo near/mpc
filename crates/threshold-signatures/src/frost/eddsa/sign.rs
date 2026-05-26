@@ -242,7 +242,7 @@ async fn do_sign_coordinator_v2(
     // Feature "cheater-detection" only points to a malicious participant, if there's such.
     // It doesn't bring any additional guarantees.
     let public_key_package = PublicKeyPackage::new(BTreeMap::new(), vk_package, None);
-     // Step 1.4 and 1.5
+    // Step 1.4 and 1.5
     let signature = aggregate_custom(
         &signing_package,
         &signature_shares,
