@@ -89,6 +89,34 @@ pub async fn submit_remote_attestation(
         .context("failed to submit attestation after multiple retry attempts")?
 }
 
+/// Generates a fresh attestation and submits it on-chain before this node
+/// concludes a back-migration.
+///
+/// Without this, back-migration can hit a case where the destination's
+/// stored attestation is already past expiry by the contract's
+/// `current_time_seconds` at conclude time, so `reverify_participants`
+/// rejects with `InvalidTeeRemoteAttestation` and `retry_conclude_onboarding`
+/// loops forever on the same stale state (see near/mpc#2121).
+///
+/// `submit_remote_attestation` waits for `TransactionStatus::Executed`, so
+/// by the time this function returns Ok the contract holds a fresh
+/// attestation under `tls_public_key`.
+pub async fn submit_attestation_before_concluding_migration(
+    tee_authority: TeeAuthority,
+    tx_sender: impl TransactionSender,
+    tls_public_key: Ed25519PublicKey,
+    account_public_key: Ed25519PublicKey,
+) -> anyhow::Result<()> {
+    let report_data: ReportData =
+        ReportDataV1::new(*tls_public_key.as_bytes(), *account_public_key.as_bytes()).into();
+    let attestation = tee_authority
+        .generate_attestation(report_data)
+        .await
+        .map_err(|e| anyhow::anyhow!(e))
+        .context("generate fresh attestation for conclude_node_migration")?;
+    submit_remote_attestation(tx_sender, attestation, tls_public_key).await
+}
+
 fn validate_remote_attestation(
     attestation: &Attestation,
     tls_public_key: Ed25519PublicKey,
@@ -533,6 +561,42 @@ mod tests {
             mock_sender.count(),
             1,
             "Expected no resubmission when monitoring service is stopped"
+        );
+    }
+
+    #[tokio::test]
+    #[expect(non_snake_case)]
+    async fn submit_attestation_before_concluding_migration__should_submit_one_fresh_attestation() {
+        // Given
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let tls_public_key: Ed25519PublicKey =
+            (&SigningKey::generate(&mut rng).verifying_key()).into();
+        let account_public_key: Ed25519PublicKey =
+            (&SigningKey::generate(&mut rng).verifying_key()).into();
+        let tee_authority = TeeAuthority::from(LocalTeeAuthorityConfig::default());
+        let node_id = NodeId {
+            account_id: "dummy.near".parse().unwrap(),
+            tls_public_key: tls_public_key.clone(),
+            account_public_key: account_public_key.clone(),
+        };
+        let (tee_accounts_sender, _) = watch::channel(vec![]);
+        let sender = MockSender::new(tee_accounts_sender, node_id);
+
+        // When
+        submit_attestation_before_concluding_migration(
+            tee_authority,
+            sender.clone(),
+            tls_public_key,
+            account_public_key,
+        )
+        .await
+        .expect("refresh-before-conclude should succeed against a valid TeeAuthority");
+
+        // Then
+        assert_eq!(
+            sender.count(),
+            1,
+            "expected exactly one SubmitParticipantInfo tx before conclude_node_migration"
         );
     }
 

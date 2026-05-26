@@ -310,13 +310,16 @@ where
     let allowed_docker_images_receiver_clone = indexer_api.allowed_docker_images_receiver.clone();
     let allowed_launcher_compose_receiver_clone =
         indexer_api.allowed_launcher_compose_receiver.clone();
+    let tee_authority_for_monitor = tee_authority.clone();
+    let tls_public_key_for_monitor = tls_public_key.clone();
+    let account_public_key_for_monitor = account_public_key.clone();
     tokio::spawn(async move {
         if let Err(e) = monitor_attestation_removal(
             account_id_clone,
-            tee_authority,
+            tee_authority_for_monitor,
             tx_sender_clone,
-            tls_public_key,
-            account_public_key,
+            tls_public_key_for_monitor,
+            account_public_key_for_monitor,
             allowed_docker_images_receiver_clone,
             allowed_launcher_compose_receiver_clone,
             tee_accounts_receiver,
@@ -341,6 +344,8 @@ where
         indexer_api.my_migration_info_receiver.clone(),
         indexer_api.contract_state_receiver.clone(),
         indexer_api.txn_sender.clone(),
+        tee_authority,
+        account_public_key,
     )
     .await?;
 

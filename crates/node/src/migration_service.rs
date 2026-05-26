@@ -2,7 +2,9 @@ use std::{net::SocketAddr, sync::Arc};
 
 use ed25519_dalek::SigningKey;
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types::Ed25519PublicKey;
 use onboarding::onboard;
+use tee_authority::tee_authority::TeeAuthority;
 use tokio::sync::{watch, RwLock};
 use types::MigrationInfo;
 
@@ -30,6 +32,7 @@ impl From<&SecretsConfig> for MigrationSecrets {
     }
 }
 
+#[expect(clippy::too_many_arguments)]
 pub async fn spawn_recovery_server_and_run_onboarding(
     migration_web_ui: SocketAddr,
     migration_secrets: MigrationSecrets,
@@ -38,6 +41,8 @@ pub async fn spawn_recovery_server_and_run_onboarding(
     my_migration_info_receiver: watch::Receiver<MigrationInfo>,
     contract_state_receiver: watch::Receiver<ContractState>,
     tx_sender: impl TransactionSender,
+    tee_authority: TeeAuthority,
+    account_public_key: Ed25519PublicKey,
 ) -> anyhow::Result<()> {
     let (import_keyshares_sender, import_keyshares_receiver) = tokio::sync::watch::channel(vec![]);
     let web_server_state = web::types::WebServerState {
@@ -61,6 +66,8 @@ pub async fn spawn_recovery_server_and_run_onboarding(
         tx_sender,
         keyshare_storage.clone(),
         import_keyshares_receiver,
+        tee_authority,
+        account_public_key,
     )
     .await?;
     Ok(())

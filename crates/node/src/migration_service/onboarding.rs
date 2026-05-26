@@ -5,7 +5,9 @@ use backon::{ExponentialBuilder, Retryable};
 use ed25519_dalek::VerifyingKey;
 use futures::TryFutureExt;
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_mpc_crypto_types::Keyset;
+use tee_authority::tee_authority::TeeAuthority;
 use tokio::sync::{watch, RwLock};
 use tokio_util::sync::CancellationToken;
 
@@ -17,6 +19,7 @@ use crate::{
     },
     keyshare::{Keyshare, KeyshareStorage},
     migration_service::types::{MigrationInfo, OnboardingJob, OnboardingTask},
+    tee::remote_attestation::submit_attestation_before_concluding_migration,
 };
 
 /// Waits until the node becomes an active participant in the current epoch or
@@ -25,6 +28,7 @@ use crate::{
 /// runs onboarding tasks as needed.
 ///
 /// Returns `Ok(())` when this node is an active participant in the current epoch.
+#[expect(clippy::too_many_arguments)]
 pub(crate) async fn onboard(
     contract_state_receiver: watch::Receiver<ContractState>,
     my_migration_info_receiver: watch::Receiver<MigrationInfo>,
@@ -33,6 +37,8 @@ pub(crate) async fn onboard(
     tx_sender: impl TransactionSender,
     keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     keyshare_receiver: watch::Receiver<Vec<Keyshare>>,
+    tee_authority: TeeAuthority,
+    account_public_key: Ed25519PublicKey,
 ) -> anyhow::Result<()> {
     tracing::info!(?my_near_account_id, "starting onboarding");
     let (cancel_monitoring_task, mut onboarding_job_receiver) = start_onboarding_monitoring_task(
@@ -68,6 +74,9 @@ pub(crate) async fn onboard(
                     tx_sender.clone(),
                     my_migration_info_receiver.clone(),
                     cancellation_token.clone(),
+                    tee_authority.clone(),
+                    (&tls_public_key).into(),
+                    account_public_key.clone(),
                 )
                 .await;
                 if cancellation_token.is_cancelled() {
@@ -230,6 +239,7 @@ async fn wait_for_active_migration_to_clear(
 /// This function returns Ok(()) if it is cancelled or succeeds.
 ///
 /// **Not cancellation-safe!** Needs to be cancelled via `cancel_import_token`
+#[expect(clippy::too_many_arguments)]
 async fn execute_onboarding(
     importing_keyset: Keyset,
     keyshare_storage: Arc<RwLock<KeyshareStorage>>,
@@ -237,6 +247,9 @@ async fn execute_onboarding(
     tx_sender: impl TransactionSender,
     my_migration_info_receiver: watch::Receiver<MigrationInfo>,
     cancel_import_token: CancellationToken,
+    tee_authority: TeeAuthority,
+    tls_public_key: Ed25519PublicKey,
+    account_public_key: Ed25519PublicKey,
 ) -> anyhow::Result<()> {
     if keyshare_storage
         .read()
@@ -252,6 +265,34 @@ async fn execute_onboarding(
             cancel_import_token.clone(),
         )
         .await?;
+    }
+
+    // Submit a fresh attestation before concluding. Back-migration can
+    // otherwise hit the case where the destination's stored on-chain
+    // attestation is past expiry by the contract's `current_time_seconds`,
+    // and `reverify_participants` rejects the conclude (see #2121). Failure
+    // here is logged but non-fatal: in the non-back-migration path the
+    // existing on-chain attestation is typically still valid, so we fall
+    // through to `retry_conclude_onboarding`.
+    tokio::select! {
+        result = submit_attestation_before_concluding_migration(
+            tee_authority,
+            tx_sender.clone(),
+            tls_public_key,
+            account_public_key,
+        ) => {
+            if let Err(err) = result {
+                tracing::warn!(
+                    ?err,
+                    "failed to refresh attestation before concluding migration; \
+                     proceeding with existing on-chain attestation"
+                );
+            }
+        }
+        _ = cancel_import_token.cancelled() => {
+            tracing::info!("attestation refresh cancelled");
+            return Ok(());
+        }
     }
 
     tokio::select! {
