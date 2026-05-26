@@ -118,7 +118,7 @@ async fn do_sign_coordinator_v1(
     rng: &mut impl CryptoRngCore,
 ) -> Result<SignatureOption, ProtocolError> {
     // --- Round 1.
-    // * Wait for other parties' commitments.
+    // * Compute and (implicitly) send commitments.
 
     let mut commitments_map: BTreeMap<frost_ed25519::Identifier, round1::SigningCommitments> =
         BTreeMap::new();
@@ -126,7 +126,7 @@ async fn do_sign_coordinator_v1(
     // signing share is the private_share
     let signing_share = keygen_output.private_share;
 
-    // Step 1.1 (and implicitely 1.2)
+    // Step 1.1 (and implicitly 1.2)
     let (nonces, commitments) = round1::commit(&signing_share, rng);
     let nonces = Zeroizing::new(nonces);
     commitments_map.insert(me.to_identifier()?, commitments);
@@ -134,8 +134,8 @@ async fn do_sign_coordinator_v1(
     // --- Round 2
     // * Receive others' commitments, then send the signing package.
 
-    // Step 2.1
     let commit_waitpoint = chan.next_waitpoint();
+    // Step 2.1
     for (from, commitment) in recv_from_others(&chan, commit_waitpoint, &participants, me).await? {
         // Step 2.2
         commitments_map.insert(from.to_identifier()?, commitment);
@@ -152,14 +152,14 @@ async fn do_sign_coordinator_v1(
 
     // --- Round 3
     // * Wait for each other's signature share
-    // Step 3.3 (3.1 and 3.2 are implicit)
+    // Step 3.3 (3.1 and 3.2 are no-ops for the coordinator since it created the signing package)
     let vk_package = keygen_output.public_key;
     let key_package = construct_key_package(threshold, me, signing_share, &vk_package)?;
     let key_package = Zeroizing::new(key_package);
     let signature_share = round2::sign(&signing_package, &nonces, &key_package)
         .map_err(|e| ProtocolError::AssertionFailed(e.to_string()))?;
 
-    // Step 3.5 (3.4 is implicit)
+    // Step 3.5 (3.4 is a no-op for the coordinator since it doesn't send its own share to itself)
     signature_shares.insert(me.to_identifier()?, signature_share);
     for (from, signature_share) in recv_from_others(&chan, r2_wait_point, &participants, me).await?
     {
@@ -205,8 +205,8 @@ async fn do_sign_coordinator_v2(
     message: Vec<u8>,
 ) -> Result<SignatureOption, ProtocolError> {
     // --- Round 1
-    // * Receive others signature shares.
     // * Compute my signature share.
+    // * Receive others' signature shares.
     // * Output the signature.
     let signing_package = frost_ed25519::SigningPackage::new(
         presignature.commitments_map.clone(),
@@ -353,7 +353,8 @@ fn do_sign_participant_v2(
     message: &[u8],
 ) -> Result<SignatureOption, ProtocolError> {
     // --- Round 1
-    // * Send signature share.
+    // * Compute signature share.
+    // * Send signature share to coordinator.
     if coordinator == me {
         return Err(ProtocolError::AssertionFailed(
             "the do_sign_participant function cannot be called

@@ -165,6 +165,8 @@ wishes to generate an EdDSA signature. Following the
 [RFC9591](https://datatracker.ietf.org/doc/html/rfc9591) we will use
 domain separated hash functions $H_1, H_2, H_4$.
 
+*Note: The signer set $\mathcal{P}_2$ must be the same set used at presigning time; the implementation does not validate this and signing will fail (signature aggregation or commitment lookup) if the sets diverge.*
+
 The inputs to this phase are:
 
 1. The secret key share $x_i$.
