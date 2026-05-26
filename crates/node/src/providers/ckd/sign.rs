@@ -11,7 +11,6 @@ use threshold_signatures::{
         VerifyingKey,
     },
     participants::Participant,
-    ReconstructionThreshold,
 };
 
 use crate::metrics;

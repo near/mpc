@@ -177,7 +177,7 @@ async fn test_key_resharing_multistage() {
     let mut participants_1 = setup.participants.clone();
     participants_1.participants.pop();
     participants_1.participants.pop();
-    participants_1.threshold = 3;
+    participants_1.threshold = ReconstructionThreshold::new(3);
 
     let domain = DomainConfig {
         id: DomainId(0),
@@ -227,7 +227,7 @@ async fn test_key_resharing_multistage() {
     // Have the fifth node join.
     let mut participants_2 = setup.participants.clone();
     participants_2.participants.pop();
-    participants_2.threshold = 3;
+    participants_2.threshold = ReconstructionThreshold::new(3);
     setup
         .indexer
         .contract_mut()
@@ -292,7 +292,7 @@ async fn test_key_resharing_multistage() {
     // Have the first node quit.
     let mut participants_3 = setup.participants.clone();
     participants_3.participants.remove(0);
-    participants_3.threshold = 3;
+    participants_3.threshold = ReconstructionThreshold::new(3);
     setup
         .indexer
         .contract_mut()
@@ -327,7 +327,7 @@ async fn test_key_resharing_multistage() {
     let mut participants_4 = setup.participants.clone();
     participants_4.participants.remove(0);
     participants_4.participants.remove(0);
-    participants_4.threshold = 3;
+    participants_4.threshold = ReconstructionThreshold::new(3);
     setup
         .indexer
         .contract_mut()

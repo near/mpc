@@ -1,5 +1,5 @@
 ---
-source: src/frost/redjubjub/sign.rs
+source: crates/threshold-signatures/src/frost/redjubjub/sign.rs
 expression: signature
 ---
-"a7c2af0d98674877b610ed32948e363d84dcf95feafffad2d8ba1354bb7b9266309055cc976b97a6f032423de888fa7ab28fcab43e631da01530b92561031303"
+"a9a7744b71a85128f2c424005c01dcba92e54400c3e442df30451b7988fe48b460e2e531a07e0c989773a94ffa230baf9cbb5f0bab5593498a48b7a9583d650e"

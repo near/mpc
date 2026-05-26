@@ -1,4 +1,3 @@
-use frost_core::{Field, Group};
 use frost_secp256k1::Secp256K1Sha256;
 use k256::AffinePoint;
 use rand_core::CryptoRngCore;
@@ -50,9 +49,7 @@ pub fn frost_run_presignature<C>(
     mut rng: impl CryptoRngCore + Send + Clone + 'static,
 ) -> Result<Vec<(Participant, frost::PresignOutput<C>)>, BoxErr>
 where
-    C: Ciphersuite + Send,
-    <<<C as frost_core::Ciphersuite>::Group as Group>::Field as Field>::Scalar: Send,
-    <<C as frost_core::Ciphersuite>::Group as frost_core::Group>::Element: std::marker::Send,
+    C: Ciphersuite,
 {
     let mut protocols: GenProtocol<frost::PresignOutput<C>> =
         Vec::with_capacity(participants.len());
