@@ -113,46 +113,33 @@ jobs:
           ref: ${{ needs.release-info.outputs.tag }}
           persist-credentials: false
 
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y liblzma-dev libudev-dev
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
 
-      - name: Install cargo-binstall
-        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
-        with:
-          tool: cargo-binstall
-
-      - name: Install cargo-near
-        run: |
-          cargo binstall --force --no-confirm --locked cargo-near@0.19.1 --pkg-url="{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }.{ archive-format }"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Restore /nix from cache
+        uses: ./.github/actions/restore-nix-cache
 
       - name: Build contract
-        run: |
-          cargo near build reproducible-wasm \
-            --manifest-path crates/contract/Cargo.toml
+        run: nix build -L .#mpc-contract
 
       - name: Compute contract hash
         id: contract-hash
         run: |
-          CONTRACT_HASH=$(sha256sum target/near/mpc_contract/mpc_contract.wasm | awk '{print $1}')
+          CONTRACT_HASH=$(sha256sum result/mpc_contract.wasm | awk '{print $1}')
           echo "sha256=$CONTRACT_HASH" >> "$GITHUB_OUTPUT"
 
       - name: Package contract artifacts
         env:
           VERSION: ${{ needs.release-info.outputs.version }}
         run: |
-          cd target/near/mpc_contract/
-          mv mpc_contract.wasm "mpc-contract-v${VERSION}.wasm"
+          cp result/mpc_contract.wasm "mpc-contract-v${VERSION}.wasm"
           tar -czf "mpc-contract-v${VERSION}.tar.gz" "mpc-contract-v${VERSION}.wasm"
 
       - name: Upload contract artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: mpc-contract
-          path: target/near/mpc_contract/mpc-contract-v${{ needs.release-info.outputs.version }}.tar.gz
+          path: mpc-contract-v${{ needs.release-info.outputs.version }}.tar.gz
 
   create-release:
     name: "Create draft GitHub release"
