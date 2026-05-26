@@ -377,7 +377,7 @@ dependencies = [
  "alloy-rlp",
  "alloy-serde",
  "alloy-sol-types",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "serde",
  "serde_json",
  "serde_with",
@@ -2648,12 +2648,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "debugless-unwrap"
-version = "0.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f400d0750c0c069e8493f2256cb4da6f604b6d2eeb69a0ca8863acde352f8400"
-
-[[package]]
 name = "der"
 version = "0.7.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3655,13 +3649,12 @@ checksum = "28dd6caf6059519a65843af8fe2a3ae298b14b80179855aeb4adc2c1934ee619"
 
 [[package]]
 name = "frost-core"
-version = "2.2.0"
+version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2619366c227233c0f817ae01156bd21b8cf74d2bd96cbe0889f4c2e266724e44"
+checksum = "81ef2787af391c7e8bedc037a3b9ea03dde803fbd93e778e6bb369547800e5cd"
 dependencies = [
  "byteorder",
  "const-crc32-nostd",
- "debugless-unwrap",
  "derive-getters",
  "document-features",
  "hex",
@@ -3673,13 +3666,14 @@ dependencies = [
  "thiserror 2.0.18",
  "visibility",
  "zeroize",
+ "zeroize_derive",
 ]
 
 [[package]]
 name = "frost-ed25519"
-version = "2.2.0"
+version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f73eb5fa9311d33450c2320199ad1663b5af7a50061d9627d2e0dc776f0acb27"
+checksum = "df345f704e41812a3ab238331a393126f76996c176d204296e289efe946c57f0"
 dependencies = [
  "curve25519-dalek",
  "document-features",
@@ -3691,9 +3685,9 @@ dependencies = [
 
 [[package]]
 name = "frost-rerandomized"
-version = "2.2.0"
+version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c5eb1ea58c0250b7ce834337f7b19e0417686d14ffc7f626137dea9149762d4"
+checksum = "8f4c5cedd2426728adef2c0b1720f57676354c473836d1ccc50d0f0d1c91942b"
 dependencies = [
  "derive-getters",
  "document-features",
@@ -3704,9 +3698,9 @@ dependencies = [
 
 [[package]]
 name = "frost-secp256k1"
-version = "2.2.0"
+version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f6974379aee791f2f9e0db47c37d9e4c77ea8a8233e488ae8949ce4c6864e96"
+checksum = "d69a97ae720bc1f01efd7a87c6c8451582bd00a45383052b01e83ba9c6faa5c5"
 dependencies = [
  "document-features",
  "frost-core",
@@ -9066,7 +9060,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -9079,7 +9073,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27c6023962132f4b30eb4c172c91ce92d933da334c59c23cddee82358ddafb0b"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -9457,8 +9451,9 @@ dependencies = [
 
 [[package]]
 name = "reddsa"
-version = "0.5.1"
-source = "git+https://github.com/near/reddsa?rev=c7cd92a55f7399d8d7f8c0ac386445b5f898f197#c7cd92a55f7399d8d7f8c0ac386445b5f898f197"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4784b85c8bfd17b36b86e664e6e504ecdb586001086ee23749e4a633bbb84832"
 dependencies = [
  "blake2b_simd",
  "byteorder",
