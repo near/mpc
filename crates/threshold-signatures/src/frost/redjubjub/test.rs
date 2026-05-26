@@ -1,5 +1,8 @@
 use crate::{
-    crypto::hash::{hash, HashOutput},
+    crypto::{
+        hash::{hash, HashOutput},
+        random::Randomness,
+    },
     frost::redjubjub::{sign::sign, KeygenOutput, PresignOutput, SignatureOption},
     Participant, ReconstructionLowerBound,
 };
@@ -14,7 +17,7 @@ use std::error::Error;
 
 use frost_core::Scalar;
 use rand::SeedableRng;
-use rand_core::{CryptoRngCore, RngCore};
+use rand_core::CryptoRngCore;
 use reddsa::frost::redjubjub::{keys::SigningShare, JubjubBlake2b512, SigningKey, VerifyingKey};
 
 type C = JubjubBlake2b512;
@@ -38,10 +41,7 @@ pub fn run_sign_with_presign(
     msg_hash: HashOutput,
 ) -> Result<Vec<(Participant, SignatureOption)>, Box<dyn Error>> {
     let mut rng = MockCryptoRng::seed_from_u64(644_221);
-    // 32-byte randomizer seed matches the serialized size of `JubjubScalarField`,
-    // which is what `Randomizer::new_from_commitments` uses upstream.
-    let mut randomizer_seed = vec![0u8; 32];
-    rng.fill_bytes(&mut randomizer_seed);
+    let randomizer_seed = Randomness::random(&mut rng);
 
     let mut protocols: GenProtocol<SignatureOption> = Vec::with_capacity(participants.len());
     let presig = run_presign(participants, threshold, actual_signers, rng)?;

@@ -1,6 +1,7 @@
 //! This module and the frost one are supposed to have the same helper function
 use super::{KeygenOutput, PresignOutput, SignatureOption};
 use crate::{
+    crypto::random::Randomness,
     errors::{InitializationError, ProtocolError},
     frost::assert_sign_inputs,
     participants::{Participant, ParticipantList},
@@ -56,7 +57,7 @@ pub fn sign(
     keygen_output: KeygenOutput,
     presignature: PresignOutput,
     message: Vec<u8>,
-    randomizer_seed: Option<Vec<u8>>,
+    randomizer_seed: Option<Randomness>,
 ) -> Result<impl Protocol<Output = SignatureOption>, InitializationError> {
     let threshold = threshold.into();
     let participants = assert_sign_inputs(participants, threshold, me, coordinator)?;
@@ -87,7 +88,7 @@ async fn fut_wrapper(
     keygen_output: KeygenOutput,
     presignature: PresignOutput,
     message: Vec<u8>,
-    randomizer_seed: Option<Vec<u8>>,
+    randomizer_seed: Option<Randomness>,
 ) -> Result<SignatureOption, ProtocolError> {
     if me == coordinator {
         match randomizer_seed {
@@ -147,7 +148,7 @@ async fn do_sign_coordinator(
     keygen_output: KeygenOutput,
     presignature: &PresignOutput,
     message: Vec<u8>,
-    randomizer_seed: Vec<u8>,
+    randomizer_seed: Randomness,
 ) -> Result<SignatureOption, ProtocolError> {
     // --- Round 1
     let key_package = construct_key_package(threshold, me, &keygen_output)?;
@@ -155,7 +156,7 @@ async fn do_sign_coordinator(
     let signing_package = SigningPackage::new(presignature.commitments_map.clone(), &message);
     let randomized_params = RandomizedParams::regenerate_from_seed_and_commitments(
         &keygen_output.public_key,
-        &randomizer_seed,
+        randomizer_seed.as_ref(),
         &presignature.commitments_map,
     )
     .map_err(|_| ProtocolError::ErrorFrostSigningFailed)?;
@@ -170,7 +171,7 @@ async fn do_sign_coordinator(
         &signing_package,
         &presignature.nonces,
         &key_package,
-        &randomizer_seed,
+        randomizer_seed.as_ref(),
     )
     .map_err(|_| ProtocolError::ErrorFrostSigningFailed)?;
 
@@ -235,7 +236,7 @@ async fn do_sign_participant(
     // Receive the randomizer seed from the coordinator
     let wait_round_1 = chan.next_waitpoint();
     let randomizer_seed = loop {
-        let (from, seed): (_, Vec<u8>) = chan.recv(wait_round_1).await?;
+        let (from, seed): (_, Randomness) = chan.recv(wait_round_1).await?;
         if from != coordinator {
             continue;
         }
@@ -250,7 +251,7 @@ async fn do_sign_participant(
         &signing_package,
         &presignature.nonces,
         &key_package,
-        &randomizer_seed,
+        randomizer_seed.as_ref(),
     )
     .map_err(|_| ProtocolError::ErrorFrostSigningFailed)?;
 
@@ -295,7 +296,7 @@ mod test {
         assert_buffer_capacity, build_frost_key_packages_with_dealer, expected_buffer_by_role,
     };
     use crate::{
-        crypto::hash::hash,
+        crypto::{hash::hash, random::Randomness},
         frost::redjubjub::{
             sign::sign, test::run_sign_with_presign, PresignOutput, SignatureOption,
         },
@@ -308,17 +309,6 @@ mod test {
     use reddsa::frost::redjubjub::{round1::commit, JubjubBlake2b512, JubjubScalarField};
     use rstest::rstest;
     use std::collections::BTreeMap;
-
-    /// Length in bytes of a randomizer seed for `JubjubBlake2b512`. This must
-    /// match the serialized size of a `JubjubScalarField` element, which is
-    /// what `Randomizer::new_from_commitments` uses upstream.
-    const RANDOMIZER_SEED_LEN: usize = 32;
-
-    fn make_randomizer_seed<R: RngCore>(rng: &mut R) -> Vec<u8> {
-        let mut seed = vec![0u8; RANDOMIZER_SEED_LEN];
-        rng.fill_bytes(&mut seed);
-        seed
-    }
 
     #[test]
     fn stress() {
@@ -374,7 +364,7 @@ mod test {
         }
 
         let mut rng = MockCryptoRng::seed_from_u64(644_221);
-        let randomizer_seed = make_randomizer_seed(&mut rng);
+        let randomizer_seed = Randomness::random(&mut rng);
         // This checks the output signature validity internally
         let result = crate::test_utils::run_sign::<JubjubBlake2b512, _, _, _>(
             participants_sign_builder,
@@ -435,7 +425,7 @@ mod test {
             nonces_map.insert(*p, nonces);
         }
 
-        let randomizer_seed = make_randomizer_seed(&mut presig_rng);
+        let randomizer_seed = Randomness::random(&mut presig_rng);
 
         let participants_list: Vec<_> = keys.iter().map(|(p, _)| *p).collect();
 
