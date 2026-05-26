@@ -482,6 +482,36 @@ async fn wait_for_migration_completion(
     .context("migration state did not clear")
 }
 
+/// Drives one full backup-CLI migration round (register → GET → start →
+/// PUT → wait-for-completion) from `source_idx` to `target_idx`.
+/// `direction_label` prefixes the `expect` panic messages so a failure
+/// reports which leg of an A→B→A test it came from.
+async fn run_migration_round(
+    cluster: &e2e_tests::MpcCluster,
+    source_idx: usize,
+    target_idx: usize,
+    backup_cli_path: &std::path::Path,
+    direction_label: &str,
+) {
+    let backup_service = BackupService::must_get_new(backup_cli_path.to_path_buf());
+    backup_service.must_generate_keys();
+    register_backup_service_and_wait(cluster, source_idx, &backup_service)
+        .await
+        .unwrap_or_else(|e| panic!("{direction_label}: register_backup_service_and_wait failed: {e:?}"));
+    get_keyshares_from_source(cluster, source_idx, &backup_service)
+        .await
+        .unwrap_or_else(|e| panic!("{direction_label}: get_keyshares_from_source failed: {e:?}"));
+    start_migration_and_wait(cluster, source_idx, target_idx)
+        .await
+        .unwrap_or_else(|e| panic!("{direction_label}: start_migration_and_wait failed: {e:?}"));
+    put_keyshares_to_target(cluster, target_idx, &backup_service)
+        .await
+        .unwrap_or_else(|e| panic!("{direction_label}: put_keyshares_to_target failed: {e:?}"));
+    wait_for_migration_completion(cluster, source_idx, target_idx)
+        .await
+        .unwrap_or_else(|e| panic!("{direction_label}: wait_for_migration_completion failed: {e:?}"));
+}
+
 /// Full end-to-end node migration via the backup CLI.
 ///
 /// Starts a cluster with 2 participating nodes and 2 target nodes (started
@@ -631,23 +661,7 @@ async fn migration_service__should_handle_back_migration_a_to_b_to_a() {
         .expect("ckd request failed before forward migration");
 
     // When: forward migration A0 → B0.
-    let backup_service_fwd = BackupService::must_get_new(backup_cli.clone());
-    backup_service_fwd.must_generate_keys();
-    register_backup_service_and_wait(&cluster, a_idx, &backup_service_fwd)
-        .await
-        .expect("forward: register_backup_service_and_wait failed");
-    get_keyshares_from_source(&cluster, a_idx, &backup_service_fwd)
-        .await
-        .expect("forward: get_keyshares_from_source failed");
-    start_migration_and_wait(&cluster, a_idx, b_idx)
-        .await
-        .expect("forward: start_migration_and_wait failed");
-    put_keyshares_to_target(&cluster, b_idx, &backup_service_fwd)
-        .await
-        .expect("forward: put_keyshares_to_target failed");
-    wait_for_migration_completion(&cluster, a_idx, b_idx)
-        .await
-        .expect("forward: wait_for_migration_completion failed");
+    run_migration_round(&cluster, a_idx, b_idx, &backup_cli, "forward").await;
 
     // Then: forward worked — B0 is the active participant, sign + ckd still
     // succeed (B0 + A1).
@@ -662,6 +676,7 @@ async fn migration_service__should_handle_back_migration_a_to_b_to_a() {
     // online later for the back-migration. `kill_nodes` + `start_nodes`
     // preserves the node's home dir (keyshares stay on disk) — that disk
     // state is the trigger for the suspected P1 early-return.
+    let a0_tls_before_restart = cluster.nodes[a_idx].p2p_public_key_str();
     cluster
         .kill_nodes(&[a_idx])
         .expect("failed to kill A0 before back-migration");
@@ -672,27 +687,22 @@ async fn migration_service__should_handle_back_migration_a_to_b_to_a() {
         .wait_for_node_healthy(a_idx)
         .await
         .expect("A0 did not become healthy after restart");
+    // Validate the assumption the test rests on: A0's home dir was
+    // preserved through kill+start. The derived P2P/TLS pubkey is a
+    // function of the on-disk secret_store_key, so an identical key
+    // before vs after restart means the home dir wasn't wiped and the
+    // keyshares are still on disk — the precondition modeling P1.
+    assert_eq!(
+        cluster.nodes[a_idx].p2p_public_key_str(),
+        a0_tls_before_restart,
+        "A0's TLS key changed across kill+start — home dir was NOT \
+         preserved, test no longer models the production back-migration \
+         scenario (probably someone swapped start_nodes for \
+         reset_and_start_nodes)"
+    );
 
-    // When: back-migration B0 → A0. Same scaffold with swapped indices: now
-    // B0 (idx 2) is the source and A0 (idx 0) is the target.
-    let backup_service_back = BackupService::must_get_new(backup_cli.clone());
-    backup_service_back.must_generate_keys();
-    register_backup_service_and_wait(&cluster, b_idx, &backup_service_back)
-        .await
-        .expect("back: register_backup_service_and_wait failed");
-    get_keyshares_from_source(&cluster, b_idx, &backup_service_back)
-        .await
-        .expect("back: get_keyshares_from_source failed");
-    start_migration_and_wait(&cluster, b_idx, a_idx)
-        .await
-        .expect("back: start_migration_and_wait failed");
-    put_keyshares_to_target(&cluster, a_idx, &backup_service_back)
-        .await
-        .expect("back: put_keyshares_to_target failed");
-
-    wait_for_migration_completion(&cluster, b_idx, a_idx)
-        .await
-        .expect("back-migration did not finalize");
+    // When: back-migration B0 → A0 via the same helper, indices swapped.
+    run_migration_round(&cluster, b_idx, a_idx, &backup_cli, "back").await;
 
     // Kill B0 before the final assertions so the sign + ckd requests cannot
     // be served by the now-demoted node — that proves A0 + A1 are carrying
