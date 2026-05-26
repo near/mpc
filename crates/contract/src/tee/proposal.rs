@@ -1,12 +1,146 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use near_sdk::{env::sha256, log, near};
-use std::{collections::BTreeMap, time::Duration};
+use std::time::Duration;
 
 use crate::primitives::{
-    key_state::AuthenticatedParticipantId, participants::Participants, time::Timestamp,
+    key_state::AuthenticatedParticipantId,
+    participants::Participants,
+    time::Timestamp,
+    votes::{ProposalHash, ProposalHashEncoding, Votes},
 };
+use crate::storage_keys::StorageKey;
 
 pub use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
+
+impl ProposalHashEncoding for NodeImageHash {
+    fn bytes_for_hash(&self) -> Vec<u8> {
+        borsh::to_vec(self).expect("borsh serialization of NodeImageHash must succeed")
+    }
+}
+
+/// Hash-based vote store for TEE code-hash proposals.
+#[near(serializers=[borsh])]
+#[derive(Debug)]
+pub struct CodeHashesVotes {
+    pending: Votes<AuthenticatedParticipantId>,
+}
+
+impl Default for CodeHashesVotes {
+    fn default() -> Self {
+        Self {
+            pending: Votes::new(
+                StorageKey::TeeCodeHashVotesByVoterV1,
+                StorageKey::TeeCodeHashVotesByProposalV1,
+            ),
+        }
+    }
+}
+
+impl CodeHashesVotes {
+    /// Records `participant`'s vote for `proposal`. Returns the count of voters
+    /// (still in `participants`) who have voted for the same code hash.
+    pub fn vote(
+        &mut self,
+        proposal: NodeImageHash,
+        participant: &AuthenticatedParticipantId,
+        participants: &Participants,
+    ) -> u64 {
+        let hash = ProposalHash::from(proposal);
+        let voter_set = self.pending.vote(participant.clone(), hash);
+        u64::try_from(
+            voter_set.count_for(|v| participants.is_participant_given_participant_id(&v.get())),
+        )
+        .expect("usize -> u64 conversion never fails on wasm32")
+    }
+
+    /// Clears all in-flight code-hash votes.
+    pub fn clear_votes(&mut self) {
+        self.pending.clear();
+    }
+
+    /// Drops votes cast by accounts no longer in `participants`.
+    pub fn retain_for(&mut self, participants: &Participants) {
+        self.pending
+            .retain_votes(|v| participants.is_participant_given_participant_id(&v.get()));
+    }
+
+    /// Returns a snapshot of the current votes for use by view methods.
+    pub fn snapshot(
+        &self,
+    ) -> std::collections::BTreeMap<
+        ProposalHash,
+        std::collections::BTreeSet<AuthenticatedParticipantId>,
+    > {
+        self.pending.all()
+    }
+
+    /// True when no in-flight votes are recorded. Used by tests.
+    pub fn is_empty(&self) -> bool {
+        self.pending.all().is_empty()
+    }
+}
+
+/// Hash-based vote store for TEE launcher add/remove proposals.
+#[near(serializers=[borsh])]
+#[derive(Debug)]
+pub struct LauncherHashVotes {
+    pending: Votes<AuthenticatedParticipantId>,
+}
+
+impl Default for LauncherHashVotes {
+    fn default() -> Self {
+        Self {
+            pending: Votes::new(
+                StorageKey::TeeLauncherVotesByVoterV1,
+                StorageKey::TeeLauncherVotesByProposalV1,
+            ),
+        }
+    }
+}
+
+impl LauncherHashVotes {
+    /// Records `participant`'s vote for `action`. Returns the count of voters
+    /// (still in `participants`) who have voted for the same action.
+    pub fn vote(
+        &mut self,
+        action: LauncherVoteAction,
+        participant: &AuthenticatedParticipantId,
+        participants: &Participants,
+    ) -> u64 {
+        let hash = ProposalHash::from(action);
+        let voter_set = self.pending.vote(participant.clone(), hash);
+        u64::try_from(
+            voter_set.count_for(|v| participants.is_participant_given_participant_id(&v.get())),
+        )
+        .expect("usize -> u64 conversion never fails on wasm32")
+    }
+
+    /// Clears all in-flight launcher votes.
+    pub fn clear_votes(&mut self) {
+        self.pending.clear();
+    }
+
+    /// Drops votes cast by accounts no longer in `participants`.
+    pub fn retain_for(&mut self, participants: &Participants) {
+        self.pending
+            .retain_votes(|v| participants.is_participant_given_participant_id(&v.get()));
+    }
+
+    /// Returns a snapshot of the current votes for use by view methods.
+    pub fn snapshot(
+        &self,
+    ) -> std::collections::BTreeMap<
+        ProposalHash,
+        std::collections::BTreeSet<AuthenticatedParticipantId>,
+    > {
+        self.pending.all()
+    }
+
+    /// True when no in-flight votes are recorded. Used by tests.
+    pub fn is_empty(&self) -> bool {
+        self.pending.all().is_empty()
+    }
+}
 
 /// Docker Compose YAML template for the launcher. Compose hashes are derived on-chain as
 /// `sha256(template(launcher_hash, mpc_hash))`. Placeholders:
@@ -14,63 +148,6 @@ pub use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, Nod
 /// - `{{DEFAULT_IMAGE_DIGEST_HASH}}`: the MPC node Docker image hash
 const LAUNCHER_DOCKER_COMPOSE_YAML_TEMPLATE: &str =
     include_str!("../../assets/launcher_docker_compose.yaml.template");
-
-/// Tracks votes to add whitelisted TEE code hashes. Each participant can at any given time vote for
-/// a code hash to add.
-#[near(serializers=[borsh, json])]
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct CodeHashesVotes {
-    pub proposal_by_account: BTreeMap<AuthenticatedParticipantId, NodeImageHash>,
-}
-
-impl CodeHashesVotes {
-    /// Casts a vote for the proposal and returns the total number of participants who have voted
-    /// for the same code hash. If the participant already voted, their previous vote is replaced.
-    pub fn vote(
-        &mut self,
-        proposal: NodeImageHash,
-        participant: &AuthenticatedParticipantId,
-    ) -> u64 {
-        if self
-            .proposal_by_account
-            .insert(participant.clone(), proposal)
-            .is_some()
-        {
-            log!("removed old vote for signer");
-        }
-        let total = self.count_votes(&proposal);
-        log!("total votes for proposal: {}", total);
-        total
-    }
-
-    /// Counts the total number of participants who have voted for the given code hash.
-    fn count_votes(&self, proposal: &NodeImageHash) -> u64 {
-        self.proposal_by_account
-            .values()
-            .filter(|&prop| prop == proposal)
-            .count() as u64
-    }
-
-    /// Clears all proposals.
-    pub fn clear_votes(&mut self) {
-        self.proposal_by_account.clear();
-    }
-
-    /// Returns a new `CodeHashesVotes` containing only votes from current participants.
-    pub fn get_remaining_votes(&self, participants: &Participants) -> Self {
-        let remaining = self
-            .proposal_by_account
-            .iter()
-            .filter(|(participant_id, _)| {
-                participants.is_participant_given_participant_id(&participant_id.get())
-            })
-            .map(|(participant_id, vote)| (participant_id.clone(), *vote))
-            .collect();
-        CodeHashesVotes {
-            proposal_by_account: remaining,
-        }
-    }
-}
 
 /// The action a participant is voting for on a launcher image hash.
 #[near(serializers=[borsh, json])]
@@ -80,63 +157,9 @@ pub enum LauncherVoteAction {
     Remove(LauncherImageHash),
 }
 
-/// Tracks votes for adding or removing launcher image hashes.
-/// Each participant can have at most one active vote at a time.
-#[near(serializers=[borsh, json])]
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct LauncherHashVotes {
-    pub vote_by_account: BTreeMap<AuthenticatedParticipantId, LauncherVoteAction>,
-}
-
-impl LauncherHashVotes {
-    /// Casts a vote for the given action and returns the total number of participants
-    /// who have voted for the same action. Replaces any previous vote by this participant.
-    pub fn vote(
-        &mut self,
-        action: LauncherVoteAction,
-        participant: &AuthenticatedParticipantId,
-    ) -> u64 {
-        if self
-            .vote_by_account
-            .insert(participant.clone(), action.clone())
-            .is_some()
-        {
-            log!("removed old launcher vote for signer");
-        }
-        let total = self.count_votes(&action);
-        log!("total launcher votes for action: {}", total);
-        total
-    }
-
-    /// Counts the total number of participants who have voted for the given action.
-    fn count_votes(&self, action: &LauncherVoteAction) -> u64 {
-        u64::try_from(
-            self.vote_by_account
-                .values()
-                .filter(|a| *a == action)
-                .count(),
-        )
-        .expect("participant count should not overflow u64")
-    }
-
-    /// Clears all launcher votes.
-    pub fn clear_votes(&mut self) {
-        self.vote_by_account.clear();
-    }
-
-    /// Returns a new `LauncherHashVotes` containing only votes from current participants.
-    pub fn get_remaining_votes(&self, participants: &Participants) -> Self {
-        let remaining = self
-            .vote_by_account
-            .iter()
-            .filter(|(participant_id, _)| {
-                participants.is_participant_given_participant_id(&participant_id.get())
-            })
-            .map(|(participant_id, vote)| (participant_id.clone(), vote.clone()))
-            .collect();
-        LauncherHashVotes {
-            vote_by_account: remaining,
-        }
+impl ProposalHashEncoding for LauncherVoteAction {
+    fn bytes_for_hash(&self) -> Vec<u8> {
+        borsh::to_vec(self).expect("borsh serialization of LauncherVoteAction must succeed")
     }
 }
 

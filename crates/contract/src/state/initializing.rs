@@ -2,7 +2,7 @@ use super::key_event::KeyEvent;
 use super::running::RunningContractState;
 use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{Error, InvalidParameters};
-use crate::primitives::domain::{AddDomainsVotes, DomainRegistry};
+use crate::primitives::domain::DomainRegistry;
 use crate::primitives::key_state::{
     AuthenticatedParticipantId, EpochId, KeyEventId, KeyForDomain, Keyset,
 };
@@ -94,7 +94,6 @@ impl InitializingContractState {
                     self.domains.clone(),
                     Keyset::new(self.epoch_id, self.generated_keys.clone()),
                     self.generating_key.proposed_parameters().clone(),
-                    AddDomainsVotes::default(),
                 )));
             }
         }
@@ -136,7 +135,6 @@ impl InitializingContractState {
                 domains,
                 Keyset::new(self.epoch_id, self.generated_keys.clone()),
                 self.generating_key.proposed_parameters().clone(),
-                AddDomainsVotes::default(),
             )));
         }
         Ok(None)
@@ -152,12 +150,10 @@ impl InitializingContractState {
 
 #[cfg(test)]
 pub mod tests {
-    use crate::primitives::domain::AddDomainsVotes;
     use crate::primitives::key_state::{AttemptId, KeyEventId};
     use crate::primitives::test_utils::{
         bogus_ed25519_public_key_extended, gen_account_id, NUM_PROTOCOLS,
     };
-    use crate::primitives::threshold_votes::ThresholdParametersVotes;
     use crate::state::key_event::tests::find_leader;
     use crate::state::running::RunningContractState;
     use crate::state::test_utils::gen_initializing_state;
@@ -307,11 +303,6 @@ pub mod tests {
         assert_eq!(running_state.keyset.domains, state.generated_keys);
         assert_eq!(running_state.keyset.domains.len(), num_domains);
         assert_eq!(running_state.domains, state.domains);
-        assert_eq!(
-            running_state.parameters_votes,
-            ThresholdParametersVotes::default()
-        );
-        assert_eq!(running_state.add_domains_votes, AddDomainsVotes::default());
     }
 
     #[rstest]

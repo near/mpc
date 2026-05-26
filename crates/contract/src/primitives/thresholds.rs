@@ -1,10 +1,17 @@
 use super::participants::{ParticipantId, ParticipantInfo, Participants};
+use super::votes::ProposalHashEncoding;
 use crate::errors::{Error, InvalidCandidateSet, InvalidThreshold};
 use near_account_id::AccountId;
 use near_sdk::near;
 use std::collections::BTreeMap;
 
 pub use near_mpc_contract_interface::types::Threshold;
+
+impl ProposalHashEncoding for ThresholdParameters {
+    fn bytes_for_hash(&self) -> Vec<u8> {
+        borsh::to_vec(self).expect("borsh serialization of ThresholdParameters must succeed")
+    }
+}
 
 /// Minimum absolute threshold required.
 const MIN_THRESHOLD_ABSOLUTE: u64 = 2;

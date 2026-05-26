@@ -8,6 +8,7 @@ pub mod test_utils;
 use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{DomainError, Error, InvalidState};
 use crate::primitives::{
+    contract_votes::ContractVotes,
     domain::DomainRegistry,
     key_state::{AuthenticatedParticipantId, EpochId, KeyEventId},
     participants::Participants,
@@ -87,12 +88,13 @@ impl ProtocolContractState {
     pub fn vote_reshared(
         &mut self,
         key_event_id: KeyEventId,
+        votes: &mut ContractVotes,
     ) -> Result<Option<ProtocolContractState>, Error> {
         let ProtocolContractState::Resharing(state) = self else {
             return Err(InvalidState::ProtocolStateNotResharing.into());
         };
         state
-            .vote_reshared(key_event_id)
+            .vote_reshared(key_event_id, votes)
             .map(|x| x.map(ProtocolContractState::Running))
     }
 
@@ -127,13 +129,14 @@ impl ProtocolContractState {
         &mut self,
         prospective_epoch_id: EpochId,
         proposed_parameters: &ThresholdParameters,
+        votes: &mut ContractVotes,
     ) -> Result<Option<ProtocolContractState>, Error> {
         match self {
             ProtocolContractState::Running(state) => {
-                state.vote_new_parameters(prospective_epoch_id, proposed_parameters)
+                state.vote_new_parameters(prospective_epoch_id, proposed_parameters, votes)
             }
             ProtocolContractState::Resharing(state) => {
-                state.vote_new_parameters(prospective_epoch_id, proposed_parameters)
+                state.vote_new_parameters(prospective_epoch_id, proposed_parameters, votes)
             }
             _ => Err(InvalidState::ProtocolStateNotRunningNorResharing.into()),
         }
@@ -143,9 +146,10 @@ impl ProtocolContractState {
     pub fn vote_add_domains(
         &mut self,
         domains: Vec<DomainConfig>,
+        votes: &mut ContractVotes,
     ) -> Result<Option<ProtocolContractState>, Error> {
         match self {
-            ProtocolContractState::Running(state) => state.vote_add_domains(domains),
+            ProtocolContractState::Running(state) => state.vote_add_domains(domains, votes),
             _ => Err(InvalidState::ProtocolStateNotRunning.into()),
         }
         .map(|x| x.map(ProtocolContractState::Initializing))

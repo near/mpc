@@ -3,9 +3,9 @@ use super::key_event::KeyEvent;
 use super::resharing::ResharingContractState;
 use crate::errors::{DomainError, Error, InvalidParameters, VoteError};
 use crate::primitives::{
-    domain::{AddDomainsVotes, DomainRegistry},
+    contract_votes::ContractVotes,
+    domain::{DomainRegistry, ProposedDomains},
     key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, Keyset},
-    threshold_votes::ThresholdParametersVotes,
     thresholds::ThresholdParameters,
 };
 use near_account_id::AccountId;
@@ -31,10 +31,6 @@ pub struct RunningContractState {
     pub keyset: Keyset,
     /// The current participants and threshold.
     pub parameters: ThresholdParameters,
-    /// Votes for proposals for a new set of participants and threshold.
-    pub parameters_votes: ThresholdParametersVotes,
-    /// Votes for proposals to add new domains.
-    pub add_domains_votes: AddDomainsVotes,
     /// The previous epoch id for a resharing state that was cancelled.
     /// This epoch id is tracked, as the next time the state transitions to resharing,
     /// we can't reuse a previously cancelled epoch id.
@@ -42,20 +38,11 @@ pub struct RunningContractState {
 }
 
 impl RunningContractState {
-    pub fn new(
-        domains: DomainRegistry,
-        keyset: Keyset,
-        parameters: ThresholdParameters,
-        add_domains_votes: AddDomainsVotes,
-    ) -> Self {
-        let remaining_add_domain_votes =
-            add_domains_votes.get_remaining_votes(parameters.participants());
+    pub fn new(domains: DomainRegistry, keyset: Keyset, parameters: ThresholdParameters) -> Self {
         RunningContractState {
             domains,
             keyset,
             parameters,
-            parameters_votes: ThresholdParametersVotes::default(),
-            add_domains_votes: remaining_add_domain_votes,
             previously_cancelled_resharing_epoch_id: None,
         }
     }
@@ -63,7 +50,14 @@ impl RunningContractState {
     pub fn transition_to_resharing_no_checks(
         &mut self,
         proposal: &ThresholdParameters,
+        votes: &mut ContractVotes,
     ) -> Option<ResharingContractState> {
+        // Entering a new `RunningContractState` lifetime — drop any in-flight
+        // governance votes; retain only domain votes from accounts that remain in
+        // the current participant set.
+        votes.clear_governance();
+        votes.retain_domain_votes_for(self.parameters.participants());
+
         if let Some(first_domain) = self.domains.get_domain_by_index(0) {
             let epoch_id = self.prospective_epoch_id();
 
@@ -72,7 +66,6 @@ impl RunningContractState {
                     self.domains.clone(),
                     self.keyset.clone(),
                     self.parameters.clone(),
-                    self.add_domains_votes.clone(),
                 ),
                 reshared_keys: Vec::new(),
                 resharing_key: KeyEvent::new(epoch_id, first_domain.clone(), proposal.clone()),
@@ -85,7 +78,6 @@ impl RunningContractState {
                 self.domains.clone(),
                 Keyset::new(self.keyset.epoch_id.next(), Vec::new()),
                 proposal.clone(),
-                self.add_domains_votes.clone(),
             );
             None
         }
@@ -97,6 +89,7 @@ impl RunningContractState {
         &mut self,
         prospective_epoch_id: EpochId,
         proposal: &ThresholdParameters,
+        votes: &mut ContractVotes,
     ) -> Result<Option<ResharingContractState>, Error> {
         let expected_prospective_epoch_id = self.prospective_epoch_id();
 
@@ -108,8 +101,8 @@ impl RunningContractState {
             .into());
         }
 
-        if self.process_new_parameters_proposal(proposal)? {
-            return Ok(self.transition_to_resharing_no_checks(proposal));
+        if self.process_new_parameters_proposal(proposal, votes)? {
+            return Ok(self.transition_to_resharing_no_checks(proposal, votes));
         }
         Ok(None)
     }
@@ -133,6 +126,7 @@ impl RunningContractState {
     pub(super) fn process_new_parameters_proposal(
         &mut self,
         proposal: &ThresholdParameters,
+        votes: &mut ContractVotes,
     ) -> Result<bool, Error> {
         // ensure the proposal is valid against the current parameters
         self.parameters.validate_incoming_proposal(proposal)?;
@@ -152,16 +146,17 @@ impl RunningContractState {
         // If the signer is not a participant of the current epoch, they can only vote after
         // `threshold` participant of the current epoch have casted their vote to admit them.
         if AuthenticatedAccountId::new(self.parameters.participants()).is_err() {
-            let n_votes = self
-                .parameters_votes
-                .n_votes(proposal, self.parameters.participants());
+            let n_votes = votes.governance_count_for(proposal, self.parameters.participants());
             if n_votes < self.parameters.threshold().value() {
                 return Err(VoteError::VoterPending.into());
             }
         }
 
-        // finally, vote.
-        let n_votes = self.parameters_votes.vote(proposal, candidate);
+        // Vote and count voters within the *proposed* participant set. The signer
+        // was authenticated against `proposal.participants()`, so every vote that
+        // reached this point came from a proposed participant; reaching unanimity
+        // among the proposed set means we can transition to Resharing.
+        let n_votes = votes.vote_governance(candidate, proposal, proposal.participants());
         Ok(proposal.participants().len() as u64 == n_votes)
     }
 
@@ -172,6 +167,7 @@ impl RunningContractState {
     pub fn vote_add_domains(
         &mut self,
         domains: Vec<DomainConfig>,
+        votes: &mut ContractVotes,
     ) -> Result<Option<InitializingContractState>, Error> {
         if domains.is_empty() {
             return Err(DomainError::AddDomainsMustAddAtLeastOneDomain.into());
@@ -182,9 +178,12 @@ impl RunningContractState {
             crate::primitives::domain::validate_domain_threshold(domain, num_participants)?;
         }
         let participant = AuthenticatedParticipantId::new(self.parameters.participants())?;
-        let n_votes = self.add_domains_votes.vote(domains.clone(), &participant);
+        let proposal = ProposedDomains(domains.clone());
+        let n_votes = votes.vote_domains(participant, &proposal);
         if self.parameters.participants().len() as u64 == n_votes {
             let new_domains = self.domains.add_domains(domains.clone())?;
+            // Threshold met; drop accumulated domain votes for this proposal.
+            votes.clear_domains();
             Ok(Some(InitializingContractState {
                 generated_keys: self.keyset.domains.clone(),
                 domains: new_domains,
@@ -214,9 +213,8 @@ pub mod running_tests {
     use rstest::rstest;
 
     use super::RunningContractState;
-    use crate::primitives::domain::AddDomainsVotes;
+    use crate::primitives::contract_votes::ContractVotes;
     use crate::primitives::test_utils::{gen_threshold_params, NUM_PROTOCOLS};
-    use crate::primitives::threshold_votes::ThresholdParametersVotes;
     use crate::state::key_event::tests::Environment;
     use crate::state::test_utils::{gen_running_state, gen_valid_params_proposal};
     use near_mpc_contract_interface::types::{
@@ -225,6 +223,7 @@ pub mod running_tests {
 
     fn test_running_for(num_domains: usize) {
         let mut state = gen_running_state(num_domains);
+        let mut votes = ContractVotes::default();
         println!(
             "Participants: {}, threshold: {}",
             state.parameters.participants().len(),
@@ -237,7 +236,7 @@ pub mod running_tests {
             let ksp = gen_threshold_params(30);
             env.set_signer(account_id);
             let _ = state
-                .vote_new_parameters(state.keyset.epoch_id.next(), &ksp)
+                .vote_new_parameters(state.keyset.epoch_id.next(), &ksp, &mut votes)
                 .unwrap_err();
         }
         // Assert that proposals of the wrong epoch ID get rejected.
@@ -245,10 +244,10 @@ pub mod running_tests {
             let ksp = gen_valid_params_proposal(&state.parameters);
             env.set_signer(&participants.participants()[0].0);
             let _ = state
-                .vote_new_parameters(state.keyset.epoch_id, &ksp)
+                .vote_new_parameters(state.keyset.epoch_id, &ksp, &mut votes)
                 .unwrap_err();
             let _ = state
-                .vote_new_parameters(state.keyset.epoch_id.next().next(), &ksp)
+                .vote_new_parameters(state.keyset.epoch_id.next().next(), &ksp, &mut votes)
                 .unwrap_err();
         }
         // Assert that disagreeing proposals do not reach consensus.
@@ -274,7 +273,7 @@ pub mod running_tests {
         for (i, (account_id, _, _)) in participants.participants().iter().enumerate() {
             env.set_signer(account_id);
             assert!(state
-                .vote_new_parameters(state.keyset.epoch_id.next(), &proposals[i])
+                .vote_new_parameters(state.keyset.epoch_id.next(), &proposals[i], &mut votes)
                 .unwrap()
                 .is_none());
         }
@@ -296,7 +295,7 @@ pub mod running_tests {
             n_votes += 1;
             env.set_signer(account_id);
             let res = state
-                .vote_new_parameters(state.keyset.epoch_id.next(), &proposal)
+                .vote_new_parameters(state.keyset.epoch_id.next(), &proposal, &mut votes)
                 .unwrap();
             if n_votes < proposal.participants().len() || num_domains == 0 {
                 assert!(res.is_none());
@@ -312,7 +311,7 @@ pub mod running_tests {
             n_votes += 1;
             env.set_signer(account_id);
             let res = state
-                .vote_new_parameters(state.keyset.epoch_id.next(), &proposal)
+                .vote_new_parameters(state.keyset.epoch_id.next(), &proposal, &mut votes)
                 .unwrap();
             if n_votes < proposal.participants().len() || num_domains == 0 {
                 assert!(res.is_none());
@@ -324,8 +323,12 @@ pub mod running_tests {
             // If there are no domains, we should transition directly to Running with a higher
             // epoch ID, not resharing.
             assert_eq!(state.keyset.epoch_id, original_epoch_id.next());
-            assert_eq!(state.parameters_votes, ThresholdParametersVotes::default());
-            assert_eq!(state.add_domains_votes, AddDomainsVotes::default());
+            // Governance votes are cleared on transition; the bucket for the
+            // accepted proposal must be empty afterwards.
+            assert_eq!(
+                votes.governance_count_for(&proposal, state.parameters.participants()),
+                0,
+            );
         } else {
             let resharing = resharing.unwrap();
             assert_eq!(
@@ -361,6 +364,7 @@ pub mod running_tests {
     ) {
         // Given
         let mut state = gen_running_state(1);
+        let mut votes = ContractVotes::default();
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
         let next_id = state.domains.next_domain_id();
@@ -373,7 +377,9 @@ pub mod running_tests {
         }];
 
         // When
-        let err = state.vote_add_domains(invalid_domain).unwrap_err();
+        let err = state
+            .vote_add_domains(invalid_domain, &mut votes)
+            .unwrap_err();
 
         // Then
         assert!(
@@ -397,12 +403,13 @@ pub mod running_tests {
     fn vote_add_domains__should_reject_threshold_below_two() {
         // Given a running state and a proposal carrying t = 1
         let mut state = gen_running_state(1);
+        let mut votes = ContractVotes::default();
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
         let proposal = proposal_with_threshold(&state, 1);
 
         // When voting to add the domain
-        let err = state.vote_add_domains(proposal).unwrap_err();
+        let err = state.vote_add_domains(proposal, &mut votes).unwrap_err();
 
         // Then the universal lower bound is enforced
         assert!(
@@ -416,13 +423,14 @@ pub mod running_tests {
     fn vote_add_domains__should_reject_threshold_exceeding_participants() {
         // Given a running state and a proposal whose threshold > n
         let mut state = gen_running_state(1);
+        let mut votes = ContractVotes::default();
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
         let n = state.parameters.participants().len() as u64;
         let proposal = proposal_with_threshold(&state, n + 1);
 
         // When voting to add the domain
-        let err = state.vote_add_domains(proposal).unwrap_err();
+        let err = state.vote_add_domains(proposal, &mut votes).unwrap_err();
 
         // Then the upper bound is enforced
         assert!(
@@ -435,13 +443,14 @@ pub mod running_tests {
     fn vote_add_domains__should_accept_threshold_equal_to_participant_count() {
         // Given a running state and a proposal where t == n (boundary case)
         let mut state = gen_running_state(1);
+        let mut votes = ContractVotes::default();
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
         let n = state.parameters.participants().len() as u64;
         let proposal = proposal_with_threshold(&state, n);
 
         // When voting to add the domain — vote is recorded without error
-        let res = state.vote_add_domains(proposal);
+        let res = state.vote_add_domains(proposal, &mut votes);
 
         // Then the call succeeds (single voter is below quorum, so no transition)
         assert!(res.is_ok(), "Expected success at boundary t == n: {res:?}");
@@ -453,6 +462,7 @@ pub mod running_tests {
         // gen_threshold_params produces n in [3, 30]; pick t = n so that
         // 2t - 1 > n holds (universally true for n >= 2).
         let mut state = gen_running_state(1);
+        let mut votes = ContractVotes::default();
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
         let n = state.parameters.participants().len() as u64;
@@ -465,7 +475,7 @@ pub mod running_tests {
         }];
 
         // When voting to add the domain
-        let err = state.vote_add_domains(proposal).unwrap_err();
+        let err = state.vote_add_domains(proposal, &mut votes).unwrap_err();
 
         // Then the DamgardEtAl-specific bound is enforced
         assert!(

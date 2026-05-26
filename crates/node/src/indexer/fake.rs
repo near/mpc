@@ -20,7 +20,7 @@ use assert_matches::assert_matches;
 use derive_more::From;
 use ed25519_dalek::VerifyingKey;
 use mpc_contract::node_migrations::NodeMigrations;
-use mpc_contract::primitives::domain::AddDomainsVotes;
+use mpc_contract::primitives::contract_votes::ContractVotes;
 use mpc_contract::primitives::{
     domain::DomainRegistry,
     key_state::{EpochId, KeyEventId, Keyset},
@@ -42,6 +42,7 @@ use tokio::sync::{broadcast, mpsc, watch};
 /// A simplification of the real MPC contract state for testing.
 pub struct FakeMpcContractState {
     pub state: ProtocolContractState,
+    pub votes: ContractVotes,
     config: dtos::InitConfig,
     env: Environment,
     // TODO(#1958): Although this is only used in tests, it does not seem correct to
@@ -80,6 +81,7 @@ impl FakeMpcContractState {
         let env = Environment::new(None, None, None);
         Self {
             state,
+            votes: ContractVotes::default(),
             config,
             env,
             pending_signatures: BTreeMap::new(),
@@ -176,7 +178,6 @@ impl FakeMpcContractState {
             DomainRegistry::default(),
             Keyset::new(EpochId::new(0), Vec::new()),
             participants_config_to_threshold_parameters(&participants),
-            AddDomainsVotes::default(),
         ));
     }
 
@@ -215,7 +216,6 @@ impl FakeMpcContractState {
                 previous_running_state.domains.clone(),
                 previous_running_state.keyset.clone(),
                 previous_running_state.parameters.clone(),
-                previous_running_state.add_domains_votes.clone(),
             ),
             reshared_keys: Vec::new(),
             resharing_key: KeyEvent::new(
@@ -323,7 +323,7 @@ impl FakeMpcContractState {
         match &mut self.state {
             ProtocolContractState::Resharing(state) => {
                 self.env.set_signer(&account_id);
-                let result = match state.vote_reshared(key_id) {
+                let result = match state.vote_reshared(key_id, &mut self.votes) {
                     Ok(result) => result,
                     Err(e) => {
                         tracing::info!("vote_reshared transaction failed: {}", e);
@@ -360,8 +360,6 @@ impl FakeMpcContractState {
                     domains: state.domains.clone(),
                     keyset: state.keyset.clone(),
                     parameters: new_parameters,
-                    parameters_votes: state.parameters_votes.clone(),
-                    add_domains_votes: state.add_domains_votes.clone(),
                     previously_cancelled_resharing_epoch_id: state
                         .previously_cancelled_resharing_epoch_id,
                 };
