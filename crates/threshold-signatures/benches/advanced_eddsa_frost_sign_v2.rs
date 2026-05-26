@@ -124,7 +124,7 @@ fn prepare_simulate_presign(setup: &PresignSetup) -> PreparedPresig {
         &setup.participants,
         setup.real_participant,
         &PresignArguments {
-            private_share: setup.keygen_out.private_share,
+            keygen_out: setup.keygen_out.clone(),
             threshold: *RECONSTRUCTION_LOWER_BOUND,
         },
         setup.real_participant_rng.clone(), // provide the exact same randomness

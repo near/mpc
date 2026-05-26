@@ -24,8 +24,8 @@ pub mod redjubjub;
 
 /// The necessary inputs for the creation of a presignature.
 pub struct PresignArguments<C: Ciphersuite> {
-    /// The output of key generation, i.e. our share of the secret key.
-    pub private_share: SigningShare<C>,
+    /// The output of key generation, i.e. our share of the secret key, and the public key package.
+    pub keygen_out: KeygenOutput<C>,
     /// The threshold for the scheme
     pub threshold: ReconstructionLowerBound,
 }
@@ -88,7 +88,7 @@ where
         ctx.shared_channel(),
         participants,
         me,
-        args.private_share,
+        args.keygen_out.private_share,
         rng,
     );
     Ok(make_protocol(ctx, fut))

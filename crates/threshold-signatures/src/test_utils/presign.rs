@@ -65,7 +65,7 @@ where
 
     for (participant, keygen_out) in participants.iter().take(actual_signers) {
         let args = crate::frost::PresignArguments {
-            private_share: keygen_out.private_share,
+            keygen_out: keygen_out.clone(),
             threshold: threshold.into(),
         };
         rng.next_u64();
