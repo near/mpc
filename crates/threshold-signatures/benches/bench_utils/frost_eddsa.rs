@@ -33,7 +33,7 @@ pub fn ed25519_build_presign_protocols<R: CryptoRngCore + SeedableRng + Send + '
             participants,
             *p,
             &eddsa::PresignArguments {
-                keygen_out: keygen_out.clone(),
+                private_share: keygen_out.private_share,
                 threshold,
             },
             rng_p,
