@@ -482,6 +482,65 @@ async fn wait_for_migration_completion(
     .context("migration state did not clear")
 }
 
+/// Returns the sorted (filename, length) pairs of files in the node's
+/// `permanent_keys/` directory. Empty if the directory doesn't exist.
+/// Used by the back-migration test to assert keyshares survive a
+/// `kill_nodes` + `start_nodes` cycle on disk.
+fn snapshot_permanent_keys(cluster: &e2e_tests::MpcCluster, idx: usize) -> Vec<(String, u64)> {
+    let home_dir = match &cluster.nodes[idx] {
+        MpcNodeState::Running(n) => n.setup().home_dir().to_path_buf(),
+        MpcNodeState::Stopped(s) => s.home_dir().to_path_buf(),
+    };
+    let keys_dir = home_dir.join("permanent_keys");
+    let Ok(read_dir) = std::fs::read_dir(&keys_dir) else {
+        return Vec::new();
+    };
+    let mut entries: Vec<(String, u64)> = read_dir
+        .filter_map(|e| e.ok())
+        .filter_map(|e| {
+            let name = e.file_name().into_string().ok()?;
+            let len = e.metadata().ok()?.len();
+            Some((name, len))
+        })
+        .collect();
+    entries.sort();
+    entries
+}
+
+/// Drives one full backup-CLI migration round (register → GET → start →
+/// PUT → wait-for-completion) from `source_idx` to `target_idx`.
+/// `direction_label` prefixes the `expect` panic messages so a failure
+/// reports which leg of an A→B→A test it came from.
+async fn run_migration_round(
+    cluster: &e2e_tests::MpcCluster,
+    source_idx: usize,
+    target_idx: usize,
+    backup_cli_path: &std::path::Path,
+    direction_label: &str,
+) {
+    let backup_service = BackupService::must_get_new(backup_cli_path.to_path_buf());
+    backup_service.must_generate_keys();
+    register_backup_service_and_wait(cluster, source_idx, &backup_service)
+        .await
+        .unwrap_or_else(|e| {
+            panic!("{direction_label}: register_backup_service_and_wait failed: {e:?}")
+        });
+    get_keyshares_from_source(cluster, source_idx, &backup_service)
+        .await
+        .unwrap_or_else(|e| panic!("{direction_label}: get_keyshares_from_source failed: {e:?}"));
+    start_migration_and_wait(cluster, source_idx, target_idx)
+        .await
+        .unwrap_or_else(|e| panic!("{direction_label}: start_migration_and_wait failed: {e:?}"));
+    put_keyshares_to_target(cluster, target_idx, &backup_service)
+        .await
+        .unwrap_or_else(|e| panic!("{direction_label}: put_keyshares_to_target failed: {e:?}"));
+    wait_for_migration_completion(cluster, source_idx, target_idx)
+        .await
+        .unwrap_or_else(|e| {
+            panic!("{direction_label}: wait_for_migration_completion failed: {e:?}")
+        });
+}
+
 /// Full end-to-end node migration via the backup CLI.
 ///
 /// Starts a cluster with 2 participating nodes and 2 target nodes (started
@@ -567,4 +626,133 @@ async fn migration_service__should_migrate_nodes_via_backup_cli() {
 
         tracing::info!(source_idx, target_idx, "migration completed successfully");
     }
+}
+
+/// Back-migration (A → B → A) end-to-end via the backup CLI. Investigation
+/// context for the production scenario lives at near/mpc#2121; this test
+/// does NOT regress against that bug (see Caveat below).
+///
+/// Starts a cluster with 2 participating nodes (A0, A1) + 1 migration
+/// target (B0). A1 stays a participant throughout so threshold (2) holds
+/// during both directions. Per direction:
+///   1. Register backup service
+///   2. GET keyshares from source node
+///   3. Initiate node migration
+///   4. PUT keyshares to target node
+///   5. Verify migration finalizes and sign + ckd requests succeed
+/// Between the forward and back directions, A0's CVM is killed and
+/// restarted so its keyshares stay on disk through the restart.
+/// After the back direction, B0 is killed so the final sign + ckd
+/// assertions prove A0 + A1 carry the workload alone.
+///
+/// Caveat: attestation is mocked as `{"Mock": "Valid"}` throughout, so
+/// this test cannot exercise the on-chain stale-attestation failure mode —
+/// which is the leading suspect for #2121's production symptom. This is a
+/// positive-baseline regression test for the back-migration code path, not
+/// a reproducer for #2121.
+#[tokio::test]
+#[expect(non_snake_case)]
+async fn migration_service__should_handle_back_migration_a_to_b_to_a() {
+    let backup_cli = must_get_backup_cli_path();
+
+    // Given: 2 participants (A0, A1) + 1 migration target (B0).
+    let num_nodes = 2;
+    let (mut cluster, running) =
+        common::must_setup_cluster(common::MIGRATION_BACK_PORT_SEED, |c| {
+            c.num_nodes = num_nodes;
+            c.threshold = num_nodes;
+            c.migration_targets = vec![0];
+        })
+        .await;
+
+    // A0 (idx 0) is the source we migrate from; B0 lives at `num_nodes`
+    // since `migration_targets[0] = 0` puts the first target right after
+    // the initial participants.
+    let (a_idx, b_idx) = (0usize, num_nodes);
+    assert_eq!(
+        cluster.nodes[a_idx].account_id().to_string(),
+        cluster.nodes[b_idx].account_id().to_string(),
+        "migration target must share the source account"
+    );
+    assert_ne!(
+        cluster.nodes[a_idx].p2p_public_key_str(),
+        cluster.nodes[b_idx].p2p_public_key_str(),
+        "migration target must have a different p2p key"
+    );
+
+    // Sanity: cluster is healthy before any migration.
+    let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+    common::send_sign_request(&cluster, &running, &mut rng, cluster.default_user_account())
+        .await
+        .expect("sign request failed before forward migration");
+    common::send_ckd_request(&cluster, &running, &mut rng, cluster.default_user_account())
+        .await
+        .expect("ckd request failed before forward migration");
+
+    // When: forward migration A0 → B0.
+    run_migration_round(&cluster, a_idx, b_idx, &backup_cli, "forward").await;
+
+    // Then: forward worked — B0 is the active participant, sign + ckd still
+    // succeed (B0 + A1).
+    common::send_sign_request(&cluster, &running, &mut rng, cluster.default_user_account())
+        .await
+        .expect("sign request failed after forward migration");
+    common::send_ckd_request(&cluster, &running, &mut rng, cluster.default_user_account())
+        .await
+        .expect("ckd request failed after forward migration");
+
+    // Simulate operator decommissioning the old node and bringing it back
+    // online later for the back-migration. `kill_nodes` + `start_nodes`
+    // preserves the node's home dir (keyshares stay on disk) — that disk
+    // state is the trigger for the suspected P1 early-return.
+    //
+    // Snapshot A0's keyshare-file listing before kill so we can verify
+    // it's still there after start. Keyshares live in
+    // `home_dir/permanent_keys/` (see `crates/node/src/keyshare/local.rs`).
+    let a0_keyshares_before = snapshot_permanent_keys(&cluster, a_idx);
+    assert!(
+        !a0_keyshares_before.is_empty(),
+        "A0's permanent_keys/ is empty before kill — test setup did not produce keyshares, \
+         so the back-migration P1 precondition can't be modeled"
+    );
+    cluster
+        .kill_nodes(&[a_idx])
+        .expect("failed to kill A0 before back-migration");
+    cluster
+        .start_nodes(&[a_idx])
+        .expect("failed to restart A0 for back-migration");
+    cluster
+        .wait_for_node_healthy(a_idx)
+        .await
+        .expect("A0 did not become healthy after restart");
+    // Validate the assumption the test rests on: A0's keyshares are
+    // still on disk after the restart. If they're missing or different,
+    // the test no longer models production's back-migration scenario
+    // (e.g. someone swapped `start_nodes` for `reset_and_start_nodes`,
+    // which wipes the home dir).
+    let a0_keyshares_after = snapshot_permanent_keys(&cluster, a_idx);
+    assert_eq!(
+        a0_keyshares_before, a0_keyshares_after,
+        "A0's permanent_keys/ contents changed across kill+start — \
+         keyshares were NOT preserved on disk"
+    );
+
+    // When: back-migration B0 → A0 via the same helper, indices swapped.
+    run_migration_round(&cluster, b_idx, a_idx, &backup_cli, "back").await;
+
+    // Kill B0 before the final assertions so the sign + ckd requests cannot
+    // be served by the now-demoted node — that proves A0 + A1 are carrying
+    // the workload alone, mirroring what the forward test does by killing
+    // the source after migration.
+    cluster
+        .kill_nodes(&[b_idx])
+        .expect("failed to kill B0 after back-migration");
+
+    // Then: A0 + A1 are the participants again and sign + ckd still succeed.
+    common::send_sign_request(&cluster, &running, &mut rng, cluster.default_user_account())
+        .await
+        .expect("sign request failed after back-migration");
+    common::send_ckd_request(&cluster, &running, &mut rng, cluster.default_user_account())
+        .await
+        .expect("ckd request failed after back-migration");
 }

@@ -12,6 +12,10 @@
 //! because we need a mutable reference to it to add access keys to our local state. On the other
 //! hand, sending an arbitrary transfer of NEAR tokens is in OperatingAccessKey, since no local
 //! state needs changing (other than updating the nonce, which is per access key).
+#![expect(
+    clippy::disallowed_types,
+    reason = "devnet tooling uses `near_crypto::SecretKey` to build signed transactions via the legacy `near_jsonrpc_client` API."
+)]
 use crate::contracts::ActionCall;
 use crate::queries;
 use crate::rpc::NearRpcClients;
@@ -596,7 +600,7 @@ impl OperatingAccounts {
 
     /// Get the balance of a single account.
     pub async fn get_account_balance(&self, account_id: &AccountId) -> u128 {
-        self.get_account_balances(&[account_id.clone()])
+        self.get_account_balances(std::slice::from_ref(account_id))
             .await
             .remove(account_id)
             .unwrap()

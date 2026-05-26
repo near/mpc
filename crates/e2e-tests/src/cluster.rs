@@ -1291,7 +1291,7 @@ async fn create_user_accounts(
         let key = generate_deterministic_key(200 + i);
         let account: AccountId = format!("user{i}.{SANDBOX_ROOT_ACCOUNT}").parse()?;
         blockchain
-            .create_account_with_keys(account.as_ref(), 100, &[key.clone()])
+            .create_account_with_keys(account.as_ref(), 100, std::slice::from_ref(&key))
             .await?;
         map.insert(account, key);
     }

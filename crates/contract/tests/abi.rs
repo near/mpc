@@ -10,6 +10,11 @@ fn compile_project() -> (Vec<u8>, serde_json::Value) {
         out_dir: Some(to_utf8(out_dir.clone())),
         features: Some("abi".to_string()),
         profile: Some("release-contract".to_string()),
+        // See `test_utils::contract_build` for the rationale; cargo-near's
+        // rustc >= 1.87 refusal is obsolete and the field-based bypass
+        // doesn't reach the `cargo-near` subprocess, so we inject the flag
+        // via the command prefix.
+        cli_description: test_utils::contract_build::skip_rust_version_check_cli_description(),
         ..Default::default()
     };
 
@@ -47,6 +52,7 @@ fn test_abi_has_not_changed() {
     insta::assert_json_snapshot!(abi,
         {
         ".metadata.wasm_hash" => "[WASM_HASH]",
-        ".metadata.build.builder" => "[CARGO_NEAR_BUILD_VERSION]"
+        ".metadata.build.builder" => "[CARGO_NEAR_BUILD_VERSION]",
+        ".metadata.build.compiler" => "[RUSTC_VERSION]"
     });
 }

@@ -199,6 +199,10 @@ mod tests {
 
     #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, BorshDeserialize, BorshSerialize)]
     struct TestVoter(String);
+    #[expect(
+        dead_code,
+        reason = "constructed in tests via Borsh deserialization, which the dead-code analyzer doesn't see."
+    )]
     #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, BorshDeserialize, BorshSerialize)]
     struct TestProposal(String);
 
