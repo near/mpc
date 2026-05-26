@@ -18,5 +18,13 @@ max-threads = 4
 filter = 'package(e2e-tests)'
 test-group = 'e2e'
 
+# Surface tracing output on passing migration_service tests so the
+# new wait_for_node_indexer_height_above log line (added in PR #3365)
+# is visible in CI logs without having to wait for a failure. Scoped to
+# this one test family to keep the rest of the e2e output quiet.
+[[profile.ci-e2e.overrides]]
+filter = 'package(e2e-tests) and test(/migration_service/)'
+success-output = 'immediate'
+
 [profile.ci-other]
 default-filter = 'not package(mpc-node) and not package(mpc-contract) and not package(e2e-tests) and not package(contract-history) and not test(=tee_authority::tests::test_fetch_collateral_from_pccs) and not (test(/^registry::integration_tests::/) and package(tee-launcher))'
