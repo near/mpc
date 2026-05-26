@@ -38,7 +38,6 @@ use near_time::Clock;
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
-use threshold_signatures::ReconstructionThreshold;
 use threshold_signatures::{confidential_key_derivation, ecdsa, frost::eddsa};
 use tokio::select;
 use tokio::sync::mpsc::unbounded_channel;
