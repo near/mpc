@@ -366,7 +366,6 @@ fn clean_tee_status__should_not_touch_attestations() {
         .participants_list
         .iter()
         .take(PARTICIPANT_COUNT)
-        .cloned()
         .map(|(account_id, _, participant_info)| NodeId {
             account_id: account_id.clone(),
             tls_public_key: participant_info.tls_public_key.clone(),
