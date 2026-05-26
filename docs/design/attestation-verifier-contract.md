@@ -187,6 +187,8 @@ flowchart TD
 
 The verifier contract is stateless and has no admin methods or on-chain configuration. For security, every verifier instance is deployed to a locked account — a NEAR account with no full-access keys, so the protocol refuses any future redeploy. The deployed bytes are frozen for the lifetime of the account; there is no in-place upgrade path. Changing the verifier means voting in a different, separately-deployed instance at a new locked account. The only governance decision is on `mpc-contract`, choosing which instance to trust through a vote of active MPC participants. External callers (Defuse, Proximity) run their own equivalent vote on their own contract.
 
+On a verifier change, stored attestations keep the DCAP verdict from whichever verifier validated them at submit time — the contract does not re-run DCAP under the new verifier. [`re_verify`][re-verify] re-checks the post-DCAP allowlist invariants (image hash, launcher hash, measurements, expiry) but doesn't re-verify the DCAP signature chain. Convergence to the new verifier happens naturally via `mpc-node`'s [`periodic_attestation_submission`][periodic-attestation-submission] task (1-hour cadence), with a 7-day hard ceiling from the attestation TTL. If the verifier change is in response to a discovered compromise rather than a routine `dcap-qvl` bump, operators don't wait for the resubmit cycle — they update the post-DCAP allowlist to drop the affected image / launcher hash, and any subsequent [`verify_tee`][verify-tee] or [`clean_invalid_attestations`][clean-invalid-attestations] sweep evicts the stale entries immediately.
+
 ### Requirements on the verifier account
 
 A trusted verifier account must not be replaceable by a malicious stub that returns `Ok(VerifiedReport)` for any input. Two checkable conditions prevent it:
@@ -484,6 +486,10 @@ E2E tests in `crates/e2e-tests` deploy either the real `tee-verifier` (when the 
 `Attestation::Mock` stays in this iteration. The stub eventually supersedes it — both let tests bypass real `dcap-qvl` — but removing `Mock` is a separate cleanup, not in scope here.
 
 [nep-509]: https://github.com/near/NEPs/blob/master/neps/nep-0509.md
+[re-verify]: https://github.com/near/mpc/blob/5e47bfe93b398cb2343681fa2c0f2691d02c7285/crates/mpc-attestation/src/attestation.rs#L93
+[periodic-attestation-submission]: https://github.com/near/mpc/blob/5e47bfe93b398cb2343681fa2c0f2691d02c7285/crates/node/src/tee/remote_attestation.rs#L140
+[verify-tee]: https://github.com/near/mpc/blob/5e47bfe93b398cb2343681fa2c0f2691d02c7285/crates/contract/src/lib.rs#L1543
+[clean-invalid-attestations]: https://github.com/near/mpc/blob/5e47bfe93b398cb2343681fa2c0f2691d02c7285/crates/contract/src/lib.rs#L1646
 [submit-participant-info]: https://github.com/near/mpc/blob/efe49230bb66854c55bba080e7610e42f9221506/crates/contract/src/lib.rs#L754-L782
 [launcher-pattern]: https://github.com/near/mpc/blob/efe49230bb66854c55bba080e7610e42f9221506/docs/tee-lifecycle.md#upgrade
 [slack-launcher-discussion]: https://nearone.slack.com/archives/C0B12RKBSAV/p1777897902903889
