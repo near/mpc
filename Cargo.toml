@@ -136,11 +136,11 @@ either = "1.15.0"
 elliptic-curve = "0.13.8"
 ethereum-types = "0.16.0"
 flume = "0.12.0"
-frost-core = { version = "2.2.0", default-features = false, features = [
+frost-core = { version = "3.0.0", default-features = false, features = [
     "serde",
 ] }
-frost-ed25519 = { version = "2.2.0", default-features = false }
-frost-secp256k1 = { version = "2.2.0", default-features = false }
+frost-ed25519 = { version = "3.0.0", default-features = false }
+frost-secp256k1 = { version = "3.0.0", default-features = false }
 futures = "0.3.32"
 futures-lite = "2.6.1"
 gcloud-sdk = { version = "0.30.0", default-features = false, features = [
@@ -200,8 +200,7 @@ proc-macro2 = "1.0"
 quote = "1.0"
 # TODO(#2051): updating this brings considerable breaking changes
 rcgen = "0.13.2"
-# This project has been forked due to incompatibility problems with cheater detection feature activated on the original Zcash repo
-reddsa = { git = "https://github.com/near/reddsa", rev = "c7cd92a55f7399d8d7f8c0ac386445b5f898f197", default-features = false, features = [
+reddsa = { version = "0.5.2", default-features = false, features = [
     "frost",
 ] }
 regex = "1.12.3"
