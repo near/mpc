@@ -114,7 +114,7 @@ impl SecretDB {
         Ok(Self { db, cipher }.into())
     }
 
-    fn cf_handle(&self, cf: DBCol) -> rocksdb::ColumnFamilyRef {
+    fn cf_handle(&self, cf: DBCol) -> rocksdb::ColumnFamilyRef<'_> {
         self.db.cf_handle(cf.as_str()).unwrap()
     }
 

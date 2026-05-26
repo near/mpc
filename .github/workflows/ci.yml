@@ -133,7 +133,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@21a544727d0c62386e78b4befe52d19ad12692e3 # v17
+        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
 
       - name: Restore /nix from cache
         uses: ./.github/actions/restore-nix-cache
@@ -165,7 +165,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@21a544727d0c62386e78b4befe52d19ad12692e3 # v17
+        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
 
       # only save nix cache in this single job to avoid duplicate cache saves from other jobs
       - name: Restore /nix from cache
@@ -174,9 +174,7 @@ jobs:
           save: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Build mpc-contract (reproducible)
-        run: |
-          nix develop --command cargo near build reproducible-wasm \
-            --manifest-path crates/contract/Cargo.toml
+        run: nix build -L .#mpc-contract
 
       - name: Check contract WASM size
         run: nix develop --command bash scripts/check-contract-wasm-size.sh
@@ -201,7 +199,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@21a544727d0c62386e78b4befe52d19ad12692e3 # v17
+        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
 
       - name: Restore /nix from cache
         uses: ./.github/actions/restore-nix-cache
@@ -233,7 +231,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@21a544727d0c62386e78b4befe52d19ad12692e3 # v17
+        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
 
       - name: Restore /nix from cache
         uses: ./.github/actions/restore-nix-cache
@@ -256,9 +254,9 @@ jobs:
       - name: Build mpc-contract reproducibly
         if: github.ref == 'refs/heads/main'
         run: |
-          nix develop --command cargo near build reproducible-wasm \
-            --manifest-path crates/contract/Cargo.toml \
-            --out-dir target/wasm32-unknown-unknown/release-contract
+          nix build -L .#mpc-contract
+          mkdir -p target/wasm32-unknown-unknown/release-contract
+          cp result/mpc_contract.wasm target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
 
       - name: Build test-parallel-contract
         run: nix develop --command cargo make build-test-parallel-contract-optimized
@@ -285,7 +283,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@21a544727d0c62386e78b4befe52d19ad12692e3 # v17
+        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
 
       - name: Restore /nix from cache
         uses: ./.github/actions/restore-nix-cache

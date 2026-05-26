@@ -363,7 +363,7 @@ fn test_e2e_random_identifiers_with_rerandomization() -> Result<(), Box<dyn Erro
 }
 
 #[test]
-#[ignore] // this test is ignored because our scheme is not yet robust due to split-view attacks
+#[ignore = "scheme is not yet robust due to split-view attacks"]
 fn test_robustness_without_rerandomization() {
     let mut rng = MockCryptoRng::seed_from_u64(42);
     // Without robustness, the signature verification would fail
@@ -372,7 +372,7 @@ fn test_robustness_without_rerandomization() {
 }
 
 #[test]
-#[ignore] // this test is ignored because our scheme is not yet robust due to split-view attacks
+#[ignore = "scheme is not yet robust due to split-view attacks"]
 fn test_robustness_with_rerandomization() {
     let mut rng = MockCryptoRng::seed_from_u64(42);
     // Without robustness, the signature verification would fail

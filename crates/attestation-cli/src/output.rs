@@ -6,7 +6,7 @@ use crate::verify::VerificationResult;
 
 pub fn print_success(static_data: &StaticWebData, result: &VerificationResult) {
     print_header(static_data);
-    print_verification_details(result);
+    print_accepted_attestation_details(result);
     println!();
     println!("Verdict: PASS");
 }
@@ -20,10 +20,6 @@ pub fn print_failure(static_data: &StaticWebData, err: &VerificationError) {
             println!("Reason:          TCB status is not up to date");
             println!("TCB Status:      {status}");
             println!("Expected Status: UpToDate");
-        }
-        VerificationError::NonEmptyAdvisoryIds(ids) => {
-            println!("Reason:          Outstanding security advisories");
-            println!("Advisory IDs:    {ids}");
         }
         VerificationError::WrongHash {
             name,
@@ -66,7 +62,7 @@ fn print_header(static_data: &StaticWebData) {
     println!("Attestation Type:       {attestation_type}");
 }
 
-fn print_verification_details(result: &VerificationResult) {
+fn print_accepted_attestation_details(result: &VerificationResult) {
     println!();
     println!("--- Extracted Values ---");
     println!("MPC Image Hash:         {}", result.mpc_image_hash.as_hex());
@@ -79,6 +75,12 @@ fn print_verification_details(result: &VerificationResult) {
         format_timestamp(result.expiry_timestamp_seconds),
         result.expiry_timestamp_seconds
     );
+    if !result.advisory_ids.is_empty() {
+        println!(
+            "Informational advisory IDs: {}",
+            result.advisory_ids.join(", ")
+        );
+    }
 }
 
 fn format_timestamp(unix_secs: u64) -> String {
