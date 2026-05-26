@@ -1,5 +1,9 @@
 //! Log-only check that the node's local foreign-chain RPC config matches the
 //! on-chain whitelist (`allowed_foreign_chain_providers`).
+//!
+//! On a fresh deployment with an unvoted whitelist, the first tick emits one
+//! `ChainNotInWhitelist` info per configured chain — expected during rollout,
+//! clears once the whitelist is populated.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -17,19 +21,17 @@ use crate::indexer::IndexerState;
 
 const VERIFY_INTERVAL: Duration = Duration::from_secs(300);
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct Diagnostic {
     chain: dtos::ForeignChain,
     provider: Option<RpcProviderName>,
     kind: DiagnosticKind,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum DiagnosticKind {
     ChainNotInWhitelist,
-    ChainNotInLocalConfig,
     ProviderNotInWhitelist,
-    ProviderNotInLocalConfig,
     BaseUrlMismatch {
         local_rpc_url: String,
         contract_base_url: String,
@@ -47,6 +49,13 @@ enum DiagnosticKind {
         local_name: String,
         contract_name: String,
     },
+    /// Header auth: the contract mandates a specific scheme tag (e.g. `Bearer`)
+    /// that doesn't match local. We can't compare token values, but we can compare
+    /// the scheme tag itself.
+    AuthSchemeHeaderSchemeMismatch {
+        local: Option<String>,
+        contract: Option<String>,
+    },
     /// The contract whitelist contains a variant this node binary doesn't
     /// recognize — operator should upgrade.
     UnknownContractVariant {
@@ -55,15 +64,10 @@ enum DiagnosticKind {
     },
 }
 
-/// Variants that reflect "local is a subset of whitelist" rather than a likely
-/// misconfiguration; logged at info rather than warn.
+/// Advisory diagnostics (logged at info rather than warn). Only `ChainNotInWhitelist`
+/// qualifies — it's the bootstrap case where a chain isn't yet voted in.
 fn is_informational(kind: &DiagnosticKind) -> bool {
-    matches!(
-        kind,
-        DiagnosticKind::ChainNotInWhitelist
-            | DiagnosticKind::ChainNotInLocalConfig
-            | DiagnosticKind::ProviderNotInLocalConfig
-    )
+    matches!(kind, DiagnosticKind::ChainNotInWhitelist)
 }
 
 fn compare(
@@ -71,37 +75,17 @@ fn compare(
     whitelist: &BTreeMap<dtos::ForeignChain, ChainEntry>,
 ) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
-    let local_chains: BTreeMap<dtos::ForeignChain, &ForeignChainConfig> =
-        local.iter_chains().collect();
 
-    for (chain, local_cfg) in &local_chains {
-        let Some(whitelist_entry) = whitelist.get(chain) else {
+    for (chain, local_cfg) in local.iter_chains() {
+        let Some(whitelist_entry) = whitelist.get(&chain) else {
             diagnostics.push(Diagnostic {
-                chain: *chain,
+                chain,
                 provider: None,
                 kind: DiagnosticKind::ChainNotInWhitelist,
             });
             continue;
         };
-        compare_chain(*chain, local_cfg, whitelist_entry, &mut diagnostics);
-    }
-
-    for (chain, whitelist_entry) in whitelist {
-        if local_chains.contains_key(chain) {
-            continue;
-        }
-        diagnostics.push(Diagnostic {
-            chain: *chain,
-            provider: None,
-            kind: DiagnosticKind::ChainNotInLocalConfig,
-        });
-        for whitelisted_id in whitelist_entry.providers.keys() {
-            diagnostics.push(Diagnostic {
-                chain: *chain,
-                provider: Some(RpcProviderName::from(whitelisted_id.0.clone())),
-                kind: DiagnosticKind::ProviderNotInLocalConfig,
-            });
-        }
+        compare_chain(chain, local_cfg, whitelist_entry, &mut diagnostics);
     }
 
     diagnostics
@@ -125,18 +109,6 @@ fn compare_chain(
         };
         compare_provider(chain, local_name, local_provider, contract_provider, out);
     }
-
-    for whitelisted_id in whitelist.providers.keys() {
-        let local_name = RpcProviderName::from(whitelisted_id.0.clone());
-        if local.providers.contains_key(&local_name) {
-            continue;
-        }
-        out.push(Diagnostic {
-            chain,
-            provider: Some(local_name),
-            kind: DiagnosticKind::ProviderNotInLocalConfig,
-        });
-    }
 }
 
 fn compare_provider(
@@ -147,9 +119,7 @@ fn compare_provider(
     out: &mut Vec<Diagnostic>,
 ) {
     let local_url = local.rpc_url.as_str();
-    let base = contract.base_url.trim_end_matches('/');
-    let local_trimmed = local_url.trim_end_matches('/');
-    if !local_trimmed.starts_with(base) {
+    if !base_url_matches(local_url, &contract.base_url) {
         out.push(Diagnostic {
             chain,
             provider: Some(name.clone()),
@@ -187,12 +157,29 @@ fn compare_provider(
     compare_auth(chain, name, &local.auth, &contract.auth_scheme, out);
 }
 
+/// Path-boundary-aware prefix check. `https://api.example.com/v2` matches `/v2`,
+/// `/v2/eth`, `/v2?key=x`, `/v2#frag` — but not `/v2-evil`.
+fn base_url_matches(local: &str, base: &str) -> bool {
+    let l = local.trim_end_matches('/');
+    let b = base.trim_end_matches('/');
+    if l == b {
+        return true;
+    }
+    let Some(rest) = l.strip_prefix(b) else {
+        return false;
+    };
+    rest.starts_with('/') || rest.starts_with('?') || rest.starts_with('#')
+}
+
 enum RoutingCheck {
     Ok,
     Mismatch,
     Unknown,
 }
 
+/// Substring-based (not a strict parse): `?xnetwork=ethereum` will satisfy
+/// `QueryParam { name: "network", value: "ethereum" }`. Acceptable for advisory
+/// diagnostics; tighten with `url::parse` if this ever drives enforcement.
 fn chain_routing_satisfied(local_url: &str, routing: &ChainRouting) -> RoutingCheck {
     match routing {
         ChainRouting::Embedded => RoutingCheck::Ok,
@@ -264,9 +251,14 @@ fn compare_auth(
             }
         }
         (
-            AuthConfig::Header { name: local_h, .. },
+            AuthConfig::Header {
+                name: local_h,
+                scheme: local_scheme,
+                ..
+            },
             AuthScheme::Header {
-                name: contract_h, ..
+                name: contract_h,
+                scheme: contract_scheme,
             },
         ) => {
             if local_h.as_str() != contract_h {
@@ -277,6 +269,16 @@ fn compare_auth(
                         variant: "Header",
                         local_name: local_h.as_str().to_string(),
                         contract_name: contract_h.clone(),
+                    },
+                });
+            }
+            if local_scheme != contract_scheme {
+                out.push(Diagnostic {
+                    chain,
+                    provider: Some(name.clone()),
+                    kind: DiagnosticKind::AuthSchemeHeaderSchemeMismatch {
+                        local: local_scheme.clone(),
+                        contract: contract_scheme.clone(),
                     },
                 });
             }
@@ -323,11 +325,42 @@ fn log_diagnostic(d: &Diagnostic) {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum DedupOutcome {
+    /// Same diagnostics as the previous tick — quiet (debug).
+    Unchanged,
+    /// Diagnostics set is empty (first tick or transition from non-empty).
+    Matching,
+    /// Diagnostics changed since previous tick.
+    Changed(Vec<Diagnostic>),
+}
+
+/// Per-tick dedup state. Extracted from `run` so it can be unit-tested.
+struct Dedup {
+    previous: Option<Vec<Diagnostic>>,
+}
+
+impl Dedup {
+    fn new() -> Self {
+        Self { previous: None }
+    }
+
+    fn observe(&mut self, current: Vec<Diagnostic>) -> DedupOutcome {
+        let action = if self.previous.as_ref() == Some(&current) {
+            DedupOutcome::Unchanged
+        } else if current.is_empty() {
+            DedupOutcome::Matching
+        } else {
+            DedupOutcome::Changed(current.clone())
+        };
+        self.previous = Some(current);
+        action
+    }
+}
+
 pub(crate) async fn run(indexer_state: Arc<IndexerState>, local: ForeignChainsConfig) {
     let mut ticker = tokio::time::interval(VERIFY_INTERVAL);
-    // None until the first successful tick; from then on, holds the previous
-    // tick's diagnostics so we can suppress logs while the state is unchanged.
-    let mut previous: Option<Vec<Diagnostic>> = None;
+    let mut dedup = Dedup::new();
     loop {
         ticker.tick().await;
         let whitelist = match indexer_state
@@ -341,24 +374,20 @@ pub(crate) async fn run(indexer_state: Arc<IndexerState>, local: ForeignChainsCo
                 continue;
             }
         };
-        let diagnostics = compare(&local, &whitelist);
-
-        if previous.as_ref() == Some(&diagnostics) {
-            tracing::debug!(
-                count = diagnostics.len(),
-                "foreign-chain whitelist verifier: no change since last tick"
-            );
-        } else {
-            if diagnostics.is_empty() {
+        match dedup.observe(compare(&local, &whitelist)) {
+            DedupOutcome::Unchanged => {
+                tracing::debug!("foreign-chain whitelist verifier: no change since last tick");
+            }
+            DedupOutcome::Matching => {
                 tracing::info!(
-                    "foreign-chain whitelist verifier: local config now matches contract whitelist"
+                    "foreign-chain whitelist verifier: local config matches contract whitelist"
                 );
-            } else {
+            }
+            DedupOutcome::Changed(diagnostics) => {
                 for d in &diagnostics {
                     log_diagnostic(d);
                 }
             }
-            previous = Some(diagnostics);
         }
     }
 }
@@ -725,6 +754,127 @@ mod tests {
         );
     }
 
+    /// Build a single-ethereum-chain `ForeignChainsConfig` with one alchemy
+    /// provider whose `auth` is a Header with the given (name, scheme).
+    fn local_header_eth(header_name: &str, scheme: Option<&str>) -> ForeignChainsConfig {
+        ForeignChainsConfig {
+            ethereum: Some(local_chain(&[(
+                "alchemy",
+                local_provider(
+                    "https://eth.alchemy.com/v2/",
+                    AuthConfig::Header {
+                        name: header_name.parse().unwrap(),
+                        scheme: scheme.map(str::to_string),
+                        token: TokenConfig::Val {
+                            val: "abc".to_string(),
+                        },
+                    },
+                ),
+            )])),
+            ..Default::default()
+        }
+    }
+
+    /// Build a matching contract whitelist entry with one alchemy provider whose
+    /// `auth_scheme` is a Header with the given (name, scheme).
+    fn contract_header_eth(
+        header_name: &str,
+        scheme: Option<&str>,
+    ) -> BTreeMap<dtos::ForeignChain, ChainEntry> {
+        [(
+            dtos::ForeignChain::Ethereum,
+            contract_chain_entry(
+                &[(
+                    "alchemy",
+                    contract_provider(
+                        "https://eth.alchemy.com/v2/",
+                        ChainRouting::Embedded,
+                        AuthScheme::Header {
+                            name: header_name.to_string(),
+                            scheme: scheme.map(str::to_string),
+                        },
+                    ),
+                )],
+                1,
+            ),
+        )]
+        .into_iter()
+        .collect()
+    }
+
+    #[test]
+    fn compare__should_emit_header_scheme_mismatch_when_schemes_differ() {
+        // Given: same Header name, different scheme tag.
+        let local = local_header_eth("authorization", Some("Bearer"));
+        let whitelist = contract_header_eth("authorization", Some("Basic"));
+
+        // When
+        let diags = compare(&local, &whitelist);
+
+        // Then
+        assert_eq!(diags.len(), 1);
+        assert_matches!(
+            &diags[0].kind,
+            DiagnosticKind::AuthSchemeHeaderSchemeMismatch { local, contract }
+                if local.as_deref() == Some("Bearer") && contract.as_deref() == Some("Basic")
+        );
+    }
+
+    #[test]
+    fn compare__should_emit_header_scheme_mismatch_when_one_side_is_none() {
+        // Given: local omits the scheme tag, contract requires one.
+        let local = local_header_eth("authorization", None);
+        let whitelist = contract_header_eth("authorization", Some("Bearer"));
+
+        // When
+        let diags = compare(&local, &whitelist);
+
+        // Then
+        assert_eq!(diags.len(), 1);
+        assert_matches!(
+            &diags[0].kind,
+            DiagnosticKind::AuthSchemeHeaderSchemeMismatch { local, contract }
+                if local.is_none() && contract.as_deref() == Some("Bearer")
+        );
+    }
+
+    #[test]
+    fn compare__should_emit_both_header_name_and_scheme_mismatch_when_both_differ() {
+        // Given: header name AND scheme both differ.
+        let local = local_header_eth("authorization", Some("Bearer"));
+        let whitelist = contract_header_eth("x-api-key", Some("Basic"));
+
+        // When
+        let diags = compare(&local, &whitelist);
+
+        // Then: two independent diagnostics for the same provider.
+        assert_eq!(diags.len(), 2);
+        assert!(diags.iter().any(|d| matches!(
+            &d.kind,
+            DiagnosticKind::AuthSchemeNameMismatch {
+                variant: "Header",
+                ..
+            }
+        )));
+        assert!(diags.iter().any(|d| matches!(
+            &d.kind,
+            DiagnosticKind::AuthSchemeHeaderSchemeMismatch { .. }
+        )));
+    }
+
+    #[test]
+    fn compare__should_accept_matching_header_name_and_scheme() {
+        // Given: header name AND scheme both match.
+        let local = local_header_eth("authorization", Some("Bearer"));
+        let whitelist = contract_header_eth("authorization", Some("Bearer"));
+
+        // When
+        let diags = compare(&local, &whitelist);
+
+        // Then
+        assert!(diags.is_empty(), "expected no diagnostics, got: {diags:?}");
+    }
+
     #[test]
     fn compare__should_emit_path_placeholder_mismatch_when_placeholders_differ() {
         // Given: local Path placeholder is "{KEY}", contract Path placeholder is "{TOKEN}".
@@ -821,8 +971,10 @@ mod tests {
     }
 
     #[test]
-    fn compare__should_emit_subset_informational_when_whitelist_has_unconfigured_chain() {
+    fn compare__should_be_silent_when_whitelist_has_chain_not_configured_locally() {
         // Given: local has no chains; whitelist has Ethereum with one provider.
+        // The verifier doesn't warn when the whitelist is a superset — operators
+        // intentionally run on subsets.
         let local = ForeignChainsConfig::default();
         let whitelist: BTreeMap<dtos::ForeignChain, ChainEntry> = [(
             dtos::ForeignChain::Ethereum,
@@ -844,17 +996,137 @@ mod tests {
         // When
         let diags = compare(&local, &whitelist);
 
-        // Then: one per missing chain + one per missing provider.
-        assert_eq!(diags.len(), 2);
-        assert!(diags
-            .iter()
-            .any(|d| d.kind == DiagnosticKind::ChainNotInLocalConfig));
-        assert!(diags
-            .iter()
-            .any(|d| d.kind == DiagnosticKind::ProviderNotInLocalConfig));
-        assert!(
-            diags.iter().all(|d| is_informational(&d.kind)),
-            "subset-style diagnostics should all be informational, got: {diags:?}"
-        );
+        // Then
+        assert!(diags.is_empty(), "expected no diagnostics, got: {diags:?}");
+    }
+
+    #[test]
+    fn base_url_matches__should_accept_exact_match_and_segment_aligned_prefix() {
+        assert!(base_url_matches(
+            "https://api.example.com/v2",
+            "https://api.example.com/v2"
+        ));
+        assert!(base_url_matches(
+            "https://api.example.com/v2/eth",
+            "https://api.example.com/v2"
+        ));
+        assert!(base_url_matches(
+            "https://api.example.com/v2/",
+            "https://api.example.com/v2"
+        ));
+        // Query string / fragment immediately after the base count as boundaries.
+        assert!(base_url_matches(
+            "https://api.example.com/v2?key=foo",
+            "https://api.example.com/v2"
+        ));
+        assert!(base_url_matches(
+            "https://api.example.com/v2#frag",
+            "https://api.example.com/v2"
+        ));
+    }
+
+    #[test]
+    fn base_url_matches__should_reject_path_boundary_violations() {
+        // The case the reviewer flagged: a path that *starts with* the base
+        // but isn't segment-aligned must be rejected.
+        assert!(!base_url_matches(
+            "https://api.example.com/v2-evil/x",
+            "https://api.example.com/v2"
+        ));
+        assert!(!base_url_matches(
+            "https://api.example.com/v2foo",
+            "https://api.example.com/v2"
+        ));
+        assert!(!base_url_matches(
+            "https://eth.alchemy.com/v2foo.attacker.example/",
+            "https://eth.alchemy.com/v2"
+        ));
+    }
+
+    fn fake_diag() -> Diagnostic {
+        Diagnostic {
+            chain: dtos::ForeignChain::Ethereum,
+            provider: None,
+            kind: DiagnosticKind::ChainNotInWhitelist,
+        }
+    }
+
+    fn fake_diag_provider_missing() -> Diagnostic {
+        Diagnostic {
+            chain: dtos::ForeignChain::Ethereum,
+            provider: Some(RpcProviderName::from("alchemy".to_string())),
+            kind: DiagnosticKind::ProviderNotInWhitelist,
+        }
+    }
+
+    #[test]
+    fn dedup_observe__should_return_matching_when_first_tick_is_empty() {
+        // Given
+        let mut d = Dedup::new();
+
+        // When / Then
+        assert_eq!(d.observe(vec![]), DedupOutcome::Matching);
+    }
+
+    #[test]
+    fn dedup_observe__should_return_changed_when_first_tick_has_diagnostics() {
+        // Given
+        let mut d = Dedup::new();
+        let diags = vec![fake_diag()];
+
+        // When
+        let action = d.observe(diags.clone());
+
+        // Then
+        assert_eq!(action, DedupOutcome::Changed(diags));
+    }
+
+    #[test]
+    fn dedup_observe__should_return_unchanged_when_two_consecutive_ticks_match() {
+        // Given
+        let mut d = Dedup::new();
+        let diags = vec![fake_diag()];
+        d.observe(diags.clone());
+
+        // When / Then
+        assert_eq!(d.observe(diags), DedupOutcome::Unchanged);
+    }
+
+    #[test]
+    fn dedup_observe__should_return_changed_when_diagnostics_change() {
+        // Given
+        let mut d = Dedup::new();
+        d.observe(vec![fake_diag()]);
+        let new_diags = vec![fake_diag(), fake_diag_provider_missing()];
+
+        // When
+        let action = d.observe(new_diags.clone());
+
+        // Then
+        assert_eq!(action, DedupOutcome::Changed(new_diags));
+    }
+
+    #[test]
+    fn dedup_observe__should_return_matching_when_diagnostics_transition_to_empty() {
+        // Given
+        let mut d = Dedup::new();
+        d.observe(vec![fake_diag()]);
+
+        // When / Then
+        assert_eq!(d.observe(vec![]), DedupOutcome::Matching);
+    }
+
+    #[test]
+    fn dedup_observe__should_return_changed_when_empty_transitions_to_diagnostics() {
+        // Given
+        let mut d = Dedup::new();
+        d.observe(vec![]);
+        let diags = vec![fake_diag()];
+
+        // When
+        let action = d.observe(diags.clone());
+
+        // Then
+        assert_eq!(action, DedupOutcome::Changed(diags));
     }
 }
