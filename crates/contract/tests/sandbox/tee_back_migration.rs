@@ -52,7 +52,7 @@ async fn setup_stale_back_migration(
 ) -> Result<(Account, Contract, Ed25519PublicKey, Keyset)> {
     let a0_account = setup.mpc_signer_accounts[0].clone();
     let a0_signer_pk = account_ed25519_public_key(&a0_account);
-    let destination_tls_key: Ed25519PublicKey = bogus_ed25519_public_key().into();
+    let destination_tls_key: Ed25519PublicKey = bogus_ed25519_public_key();
 
     let block = setup.worker.view_block().await?;
     let expiry_secs = block.timestamp() / 1_000_000_000 + ATTESTATION_EXPIRY_SECONDS;
