@@ -38,14 +38,17 @@ pub fn delete_stale_triples_and_presignatures(
         },
     };
 
+    // All cleanup work + the EpochData marker bump are staged on a single
+    // `SecretDBUpdate` so they commit as one atomic RocksDB batch. If the
+    // process dies before the commit, none of the deletes or the marker are
+    // persisted, and the next startup re-runs the full cleanup unchanged.
+    let mut update_writer = db.update();
     match asset_cleanup {
         AssetCleanup::Keep => {}
         AssetCleanup::DeleteAll => {
-            let mut update_writer = db.update();
-            let _ = update_writer.delete_all(DBCol::Presignature);
-            let _ = update_writer.delete_all(DBCol::Triple);
-            let _ = update_writer.delete_all(DBCol::TripleV2);
-            update_writer.commit()?;
+            update_writer.delete_all(DBCol::Presignature)?;
+            update_writer.delete_all(DBCol::Triple)?;
+            update_writer.delete_all(DBCol::TripleV2)?;
         }
         AssetCleanup::KeepOnly(persitent_participants) => {
             // Triples — both columns, since they are dual-written during the
@@ -53,6 +56,7 @@ pub fn delete_stale_triples_and_presignatures(
             // `TripleV2` uses a `[t as u64 BE]` prefix per store.
             clean_db::<PairedTriple>(
                 db,
+                &mut update_writer,
                 DBCol::Triple,
                 &persitent_participants,
                 my_participant_id,
@@ -61,6 +65,7 @@ pub fn delete_stale_triples_and_presignatures(
             for t in &triple_thresholds {
                 clean_db::<PairedTriple>(
                     db,
+                    &mut update_writer,
                     DBCol::TripleV2,
                     &persitent_participants,
                     my_participant_id,
@@ -71,6 +76,7 @@ pub fn delete_stale_triples_and_presignatures(
             for domain_id in &ecdsa_domain_ds {
                 clean_db::<PresignOutputWithParticipants>(
                     db,
+                    &mut update_writer,
                     DBCol::Presignature,
                     &persitent_participants,
                     my_participant_id,
@@ -80,12 +86,11 @@ pub fn delete_stale_triples_and_presignatures(
         }
     }
 
-    let mut update_writer = db.update();
     tracing::info!("Updating epoch data: {:?}.", current_epoch_data);
     let current_epoch_data_ser = serde_json::to_vec(&current_epoch_data)?;
     update_writer.put(DBCol::EpochData, EPOCH_ID_KEY, &current_epoch_data_ser);
-    tracing::info!("Updated epoch id entry");
     update_writer.commit()?;
+    tracing::info!("Updated epoch id entry");
     Ok(())
 }
 

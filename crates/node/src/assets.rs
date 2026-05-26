@@ -2,7 +2,7 @@ pub mod cleanup;
 #[cfg(test)]
 pub mod test_utils;
 
-use crate::db::{DBCol, SecretDB};
+use crate::db::{DBCol, SecretDB, SecretDBUpdate};
 use crate::primitives::{ParticipantId, UniqueId};
 use crate::providers::HasParticipants;
 use borsh::BorshDeserialize;
@@ -367,10 +367,15 @@ where
 
 /// Iterates over a key range in column `db_col`, determined by
 /// [`DistributedAssetStorage::<T>::make_prefix_range(my_participant_id, prefix)`],
-/// and deletes all entries in `db_col` that evaluate `false` for
-/// `is_subset_of_active_participants(persistent_participants)`.
+/// and stages a delete on `update_writer` for every entry that evaluates `false`
+/// for `is_subset_of_active_participants(persistent_participants)`.
+///
+/// The caller is responsible for committing `update_writer`. Sharing a writer
+/// across multiple calls lets a single cleanup pass (legacy + per-`t` +
+/// per-domain columns + epoch marker) be committed as one atomic batch.
 pub fn clean_db<T>(
     db: &Arc<SecretDB>,
+    update_writer: &mut SecretDBUpdate,
     db_col: DBCol,
     persistent_participants: &[ParticipantId],
     my_participant_id: ParticipantId,
@@ -381,7 +386,6 @@ where
 {
     let (start, end): (Vec<u8>, Vec<u8>) =
         DistributedAssetStorage::<T>::make_prefix_range(my_participant_id, prefix);
-    let mut update_writer = db.update();
     for item in db.iter_range(db_col, &start, &end) {
         let (key, value) = item?;
         let value: T = serde_json::from_slice(&value)?;
@@ -389,7 +393,6 @@ where
             update_writer.delete(db_col, &key);
         }
     }
-    update_writer.commit()?;
     Ok(())
 }
 
@@ -1393,33 +1396,42 @@ mod tests {
                     }
                 }
                 assert_db_num_owned(db_col, domain_id, 4);
+                let mut writer = db.update();
                 clean_db::<ParticipantsWithI32>(
                     &db,
+                    &mut writer,
                     db_col,
                     &all_participants,
                     my_participant_id,
                     &domain_id_to_prefix(domain_id),
                 )
                 .unwrap();
+                writer.commit().unwrap();
                 assert_db_num_owned(db_col, domain_id, 4);
+                let mut writer = db.update();
                 clean_db::<ParticipantsWithI32>(
                     &db,
+                    &mut writer,
                     db_col,
                     &participant_subset_a,
                     my_participant_id,
                     &domain_id_to_prefix(domain_id),
                 )
                 .unwrap();
+                writer.commit().unwrap();
                 assert_db_num_owned(db_col, domain_id, 2);
 
+                let mut writer = db.update();
                 clean_db::<ParticipantsWithI32>(
                     &db,
+                    &mut writer,
                     db_col,
                     &participant_subset_b,
                     my_participant_id,
                     &domain_id_to_prefix(domain_id),
                 )
                 .unwrap();
+                writer.commit().unwrap();
                 assert_db_num_owned(db_col, domain_id, 1);
             }
         }
