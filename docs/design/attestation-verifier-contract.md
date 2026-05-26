@@ -327,7 +327,7 @@ impl MpcContract {
     pub fn submit_participant_info(
         &mut self,
         attestation: Attestation,
-        tls_pk: PublicKey,
+        tls_pk: Ed25519PublicKey,
     ) -> PromiseOrValue<()> {
         // Existing convention: caller must be the signer of this transaction,
         // not a relayer or proxy.
@@ -467,7 +467,7 @@ pub struct MpcContract {
 
 pub struct PendingAttestation {
     pub dstack: DstackAttestation,
-    pub tls_pk: PublicKey,
+    pub tls_pk: Ed25519PublicKey,
     pub attached_deposit: NearToken,
     pub expires_on: BlockHeight,
 }
