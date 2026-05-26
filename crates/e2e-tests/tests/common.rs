@@ -164,6 +164,67 @@ pub async fn wait_metric_on_nodes(
     .await
 }
 
+/// Wait until node `idx`'s indexer block-height metric reports a value
+/// strictly greater than `min_height`.
+///
+/// Use this after `MpcCluster::start_nodes` + `wait_for_node_healthy` to
+/// confirm the node's *indexer* (not just the web server) is alive and
+/// progressing. `/health` returns 200 the moment the web server binds —
+/// which happens early in node startup, before the indexer is started
+/// (see `crates/node/src/web.rs`). If the indexer subsequently fails or
+/// the whole process crashes during catch-up, the test would otherwise
+/// march on with a node that's actually dead and only discover it via
+/// "Connection refused" 30s later in some downstream polling loop.
+///
+/// Returns an error if the indexer doesn't advance within `timeout` —
+/// for restarted nodes the caller should pass the height observed
+/// *before* the kill, so this proves the indexer caught up and made
+/// forward progress (not just resumed at the persisted height).
+pub async fn wait_for_node_indexer_height_above(
+    cluster: &MpcCluster,
+    idx: usize,
+    min_height: i64,
+    timeout: Duration,
+) -> anyhow::Result<()> {
+    let max_times = (timeout.as_millis() / POLL_INTERVAL.as_millis()) as usize;
+    (|| async {
+        let heights = cluster
+            .get_metric_all_nodes(metrics::INDEXER_LATEST_BLOCK_HEIGHT)
+            .await
+            .context("failed to scrape indexer block-height metric")?;
+        let h = heights
+            .get(idx)
+            .and_then(|h| *h)
+            .context("indexer block-height metric not available — node may have exited")?;
+        anyhow::ensure!(
+            h > min_height,
+            "node {idx} indexer height {h} has not advanced past {min_height} yet"
+        );
+        Ok(())
+    })
+    .retry(
+        ConstantBuilder::default()
+            .with_delay(POLL_INTERVAL)
+            .with_max_times(max_times),
+    )
+    .await
+    .with_context(|| {
+        format!("node {idx} indexer did not advance past height {min_height} within {timeout:?}")
+    })
+}
+
+/// Read node `idx`'s current indexer block height. Returns `None` if the
+/// node is not running or the metric scrape fails (process down).
+pub async fn current_node_indexer_height(
+    cluster: &MpcCluster,
+    idx: usize,
+) -> anyhow::Result<Option<i64>> {
+    let heights = cluster
+        .get_metric_all_nodes(metrics::INDEXER_LATEST_BLOCK_HEIGHT)
+        .await?;
+    Ok(heights.get(idx).copied().flatten())
+}
+
 /// Wait until every node in `alive_nodes` is at least `min_height_diff` blocks
 /// ahead of `faulty_node` according to the indexer block-height metric.
 ///

@@ -715,6 +715,13 @@ async fn migration_service__should_handle_back_migration_a_to_b_to_a() {
         "A0's permanent_keys/ is empty before kill — test setup did not produce keyshares, \
          so the back-migration P1 precondition can't be modeled"
     );
+    // Snapshot A0's indexer height before the kill so the post-restart
+    // readiness check (below) can prove the indexer has resumed and
+    // advanced past where it was — not just bound the web port.
+    let a0_indexer_height_before_kill = common::current_node_indexer_height(&cluster, a_idx)
+        .await
+        .expect("failed to read A0's indexer height before kill")
+        .expect("A0's indexer should be reporting a block height before the kill");
     cluster
         .kill_nodes(&[a_idx])
         .expect("failed to kill A0 before back-migration");
@@ -725,6 +732,23 @@ async fn migration_service__should_handle_back_migration_a_to_b_to_a() {
         .wait_for_node_healthy(a_idx)
         .await
         .expect("A0 did not become healthy after restart");
+    // `/health` returns 200 the moment the web server binds, which
+    // happens before the indexer is started (see
+    // crates/node/src/web.rs). Without an additional wait, the test
+    // can march into back-migration while A0's indexer is still
+    // initializing — and if A0's process then crashes during catch-up,
+    // the downstream `start_migration_and_wait` polling loop just
+    // hits "Connection refused" against a dead node for 30s.
+    // Wait for the indexer to actually advance past where it was before
+    // the kill (CI run 26451546911 attempt 1 hit this race).
+    common::wait_for_node_indexer_height_above(
+        &cluster,
+        a_idx,
+        a0_indexer_height_before_kill,
+        Duration::from_secs(60),
+    )
+    .await
+    .expect("A0's indexer did not resume + advance within 60s after restart");
     // Validate the assumption the test rests on: A0's keyshares are
     // still on disk after the restart. If they're missing or different,
     // the test no longer models production's back-migration scenario
