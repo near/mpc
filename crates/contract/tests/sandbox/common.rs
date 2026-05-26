@@ -1,5 +1,5 @@
 use crate::sandbox::utils::{
-    consts::{CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_INIT, GAS_FOR_VOTE_UPDATE, PARTICIPANT_LEN},
+    consts::{CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_INIT, PARTICIPANT_LEN},
     contract_build::current_contract,
     initializing_utils::{start_keygen_instance, vote_add_domains, vote_public_key},
     mpc_contract::{assert_running_return_threshold, get_state, submit_participant_info},
@@ -18,7 +18,7 @@ use mpc_contract::{
         thresholds::{Threshold, ThresholdParameters},
     },
     tee::tee_state::NodeId,
-    update::{ProposeUpdateArgs, UpdateId},
+    update::{StartContractUploadArgs, UpdateId, UploadContractChunkArgs},
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
@@ -36,6 +36,7 @@ use near_mpc_contract_interface::{
     },
 };
 use near_mpc_sdk::foreign_chain::{ExtractedValue, ForeignChainRpcRequest, Hash256};
+use near_workspaces::types::NearToken;
 use near_workspaces::{network::Sandbox, result::ExecutionSuccess, Contract};
 use near_workspaces::{result::Execution, Account, Worker};
 use rand_core::CryptoRngCore;
@@ -339,24 +340,7 @@ pub async fn propose_and_vote_contract_binary(
     contract: &Contract,
     new_contract_binary: &[u8],
 ) {
-    let propose_update_execution = accounts[0]
-        .call(contract.id(), method_names::PROPOSE_UPDATE)
-        .args_borsh(ProposeUpdateArgs {
-            code: Some(new_contract_binary.to_vec()),
-            config: None,
-        })
-        .max_gas()
-        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
-        .transact()
-        .await
-        .expect("propose update call succeeds");
-
-    assert!(
-        propose_update_execution.is_success(),
-        "propose update call failed"
-    );
-
-    let proposal_id: UpdateId = propose_update_execution.json().unwrap();
+    let proposal_id = chunked_upload_contract(&accounts[0], contract, new_contract_binary).await;
 
     // Try calling into state and see if it works.
     let state_request_execution = accounts[0]
@@ -379,18 +363,82 @@ pub async fn propose_and_vote_contract_binary(
     );
 }
 
+/// Upload chunk size used by sandbox helpers. 1 MiB stays comfortably under the
+/// RPC's ~1.5 MiB single-transaction payload limit while keeping the number of
+/// transactions low for multi-MiB binaries.
+pub const SANDBOX_UPLOAD_CHUNK_SIZE: usize = 1024 * 1024;
+
+/// Drives the chunked upload flow for `code` from `proposer` and returns the
+/// resulting [`UpdateId`].
+///
+/// Splits `code` into 1 MiB chunks, attaches enough deposit per chunk to back
+/// its storage cost, and panics with the underlying error message if any step
+/// fails — the helper is for tests that assume the happy path.
+pub async fn chunked_upload_contract(
+    proposer: &Account,
+    contract: &Contract,
+    code: &[u8],
+) -> UpdateId {
+    proposer
+        .call(contract.id(), method_names::START_CONTRACT_UPLOAD)
+        .args_borsh(StartContractUploadArgs {
+            total_size: code.len() as u64,
+        })
+        .max_gas()
+        .deposit(NearToken::from_yoctonear(1))
+        .transact()
+        .await
+        .expect("start_contract_upload call succeeds")
+        .into_result()
+        .expect("start_contract_upload should succeed");
+
+    for chunk in code.chunks(SANDBOX_UPLOAD_CHUNK_SIZE) {
+        proposer
+            .call(contract.id(), method_names::UPLOAD_CONTRACT_CHUNK)
+            .args_borsh(UploadContractChunkArgs {
+                data: chunk.to_vec(),
+            })
+            .max_gas()
+            .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
+            .transact()
+            .await
+            .expect("upload_contract_chunk call succeeds")
+            .into_result()
+            .expect("upload_contract_chunk should succeed");
+    }
+
+    let finalize_execution = proposer
+        .call(contract.id(), method_names::FINALIZE_CONTRACT_UPLOAD)
+        .args_borsh(())
+        .max_gas()
+        .transact()
+        .await
+        .expect("finalize_contract_upload call succeeds");
+    assert!(
+        finalize_execution.is_success(),
+        "finalize_contract_upload failed: {finalize_execution:#?}"
+    );
+    finalize_execution
+        .json()
+        .expect("finalize_contract_upload returns an UpdateId")
+}
+
 pub async fn vote_update_till_completion(
     contract: &Contract,
     accounts: &[Account],
     proposal_id: &UpdateId,
 ) {
+    // Use max_gas on every vote. The threshold-triggering vote also reassembles
+    // the chunked binary from storage and issues `deploy_contract` + `migrate`,
+    // which for multi-MiB binaries comfortably exceeds the `GAS_FOR_VOTE_UPDATE`
+    // budget used by the cheaper sub-threshold path.
     for voter in accounts {
         let execution = voter
             .call(contract.id(), method_names::VOTE_UPDATE)
             .args_json(serde_json::json!({
                 "id": proposal_id,
             }))
-            .gas(GAS_FOR_VOTE_UPDATE)
+            .max_gas()
             .transact()
             .await
             .unwrap();

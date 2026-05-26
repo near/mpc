@@ -40,6 +40,10 @@ pub const START_KEYGEN_INSTANCE: &str = "start_keygen_instance";
 pub const START_RESHARE_INSTANCE: &str = "start_reshare_instance";
 pub const PROPOSE_UPDATE: &str = "propose_update";
 pub const UPDATE_CONFIG: &str = "update_config";
+pub const START_CONTRACT_UPLOAD: &str = "start_contract_upload";
+pub const UPLOAD_CONTRACT_CHUNK: &str = "upload_contract_chunk";
+pub const FINALIZE_CONTRACT_UPLOAD: &str = "finalize_contract_upload";
+pub const CLEAR_STAGED_CONTRACT: &str = "clear_staged_contract";
 pub const FAIL_ON_TIMEOUT: &str = "fail_on_timeout";
 
 // TEE / Participant

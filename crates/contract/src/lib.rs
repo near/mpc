@@ -48,7 +48,10 @@ use crate::{
     state::ContractNotInitialized,
     storage_keys::StorageKey,
     tee::tee_state::{TeeQuoteStatus, TeeState},
-    update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId},
+    update::{
+        ProposeUpdateArgs, ProposedUpdates, StagedContractUpload, StartContractUploadArgs, Update,
+        UpdateId, UploadContractChunkArgs,
+    },
 };
 use config::Config;
 use crypto_shared::{
@@ -151,6 +154,20 @@ pub struct MpcContract {
     pending_ckd_requests: LookupMap<CKDRequest, Vec<YieldIndex>>,
     pending_verify_foreign_tx_requests: LookupMap<VerifyForeignTransactionRequest, Vec<YieldIndex>>,
     proposed_updates: ProposedUpdates,
+    /// Per-account metadata for in-progress chunked contract uploads. Each voter
+    /// may have at most one open upload at a time. See [`start_contract_upload`],
+    /// [`upload_contract_chunk`], [`finalize_contract_upload`],
+    /// [`clear_staged_contract`].
+    staged_uploads: IterableMap<AccountId, StagedContractUpload>,
+    /// Chunk bytes for in-progress uploads, keyed by `(uploader, chunk_index)`.
+    /// Lives in a separate `LookupMap` (rather than inside `StagedContractUpload`)
+    /// so appending a chunk only writes the new chunk's bytes — not the entire
+    /// accumulated blob.
+    staged_chunks: LookupMap<(AccountId, u32), Vec<u8>>,
+    /// Chunk bytes for finalized chunked-contract proposals, keyed by
+    /// `(update_id, chunk_index)`. Populated on `finalize_contract_upload` and
+    /// drained when the proposal is applied or invalidated by a sibling.
+    update_code_chunks: LookupMap<(UpdateId, u32), Vec<u8>>,
     node_foreign_chain_support: SupportedForeignChainsByNode,
     config: Config,
     tee_state: TeeState,
@@ -1183,16 +1200,18 @@ impl MpcContract {
             .vote_abort_key_event_instance(key_event_id)
     }
 
-    /// Propose update to either code or config, but not both of them at the same time.
+    /// Propose a config update. Contract-code updates are proposed via the chunked
+    /// upload flow ([`start_contract_upload`] → [`upload_contract_chunk`] →
+    /// [`finalize_contract_upload`]) so that proposals can exceed the per-transaction
+    /// RPC size limit and so the proposal entry itself stays small.
     #[payable]
     #[handle_result]
     pub fn propose_update(
         &mut self,
         #[serializer(borsh)] args: ProposeUpdateArgs,
     ) -> Result<UpdateId, Error> {
-        // Only voters can propose updates:
         let proposer = self.voter_or_panic();
-        let update: Update = args.try_into()?;
+        let update: Update = args.into();
 
         let attached = env::attached_deposit();
         let required = ProposedUpdates::required_deposit(&update);
@@ -1220,6 +1239,212 @@ impl MpcContract {
         }
 
         Ok(id)
+    }
+
+    /// Begin a chunked contract-code upload.
+    ///
+    /// A voter calls this once with the declared `total_size`, then makes one or
+    /// more [`upload_contract_chunk`] calls totalling exactly `total_size` bytes,
+    /// then [`finalize_contract_upload`] to register the proposal. Each voter may
+    /// have at most one open upload at a time; call [`clear_staged_contract`] to
+    /// abandon and reset.
+    ///
+    /// Splitting the upload across many transactions is necessary because a single
+    /// transaction is bounded by the RPC's payload size limit (~1.5 MiB), which is
+    /// smaller than recent contract binaries.
+    #[payable]
+    #[handle_result]
+    pub fn start_contract_upload(
+        &mut self,
+        #[serializer(borsh)] args: StartContractUploadArgs,
+    ) -> Result<(), Error> {
+        let caller = self.voter_or_panic();
+
+        if self.staged_uploads.contains_key(&caller) {
+            return Err(InvalidParameters::MalformedPayload {
+                reason:
+                    "caller already has a staged upload; call clear_staged_contract to abandon it first"
+                        .into(),
+            }
+            .into());
+        }
+
+        let staged = StagedContractUpload::new(args.total_size);
+        self.staged_uploads.insert(caller, staged);
+
+        log!(
+            "start_contract_upload: signer={}, total_size={}",
+            env::signer_account_id(),
+            args.total_size,
+        );
+
+        Ok(())
+    }
+
+    /// Append a chunk of contract code to the caller's in-progress upload.
+    ///
+    /// The cumulative byte count is validated against the `total_size` declared in
+    /// [`start_contract_upload`]; sending more bytes than declared fails. Each call
+    /// must attach enough deposit to back the chunk's storage cost (see
+    /// [`StagedContractUpload::required_deposit_for_bytes`]).
+    #[payable]
+    #[handle_result]
+    pub fn upload_contract_chunk(
+        &mut self,
+        #[serializer(borsh)] args: UploadContractChunkArgs,
+    ) -> Result<(), Error> {
+        let caller = self.voter_or_panic();
+
+        let attached = env::attached_deposit();
+        let chunk_len = args.data.len();
+        let required = StagedContractUpload::required_deposit_for_bytes(chunk_len);
+        if attached < required {
+            return Err(InvalidParameters::InsufficientDeposit {
+                attached: attached.as_yoctonear(),
+                required: required.as_yoctonear(),
+            }
+            .into());
+        }
+
+        let staged =
+            self.staged_uploads
+                .get_mut(&caller)
+                .ok_or(InvalidParameters::MalformedPayload {
+                    reason: "no staged upload found; call start_contract_upload first".into(),
+                })?;
+
+        let chunk_index = staged.record_chunk(chunk_len as u64)?;
+        staged.deposited = staged.deposited.saturating_add(attached);
+
+        // Store chunk bytes in a separate map so the metadata write is small.
+        self.staged_chunks.insert((caller, chunk_index), args.data);
+
+        log!(
+            "upload_contract_chunk: signer={}, chunk_index={}, chunk_len={}, received_bytes={}/{}",
+            env::signer_account_id(),
+            chunk_index,
+            chunk_len,
+            staged.received_bytes,
+            staged.total_size,
+        );
+
+        Ok(())
+    }
+
+    /// Finalize the caller's chunked upload and register it as a contract-code
+    /// proposal.
+    ///
+    /// The upload must be complete (received bytes equal the declared `total_size`).
+    /// This call computes the SHA-256 of the assembled code (streaming through the
+    /// chunks one at a time, so peak WASM memory stays bounded), moves the chunks
+    /// from per-account staging storage into proposal-keyed storage, clears the
+    /// staged metadata, and returns the new [`UpdateId`]. Voters can then call
+    /// [`vote_update`] against that id; on threshold approval the chunks are
+    /// reassembled and deployed.
+    #[handle_result]
+    pub fn finalize_contract_upload(&mut self) -> Result<UpdateId, Error> {
+        let caller = self.voter_or_panic();
+
+        let staged =
+            self.staged_uploads
+                .remove(&caller)
+                .ok_or(InvalidParameters::MalformedPayload {
+                    reason: "no staged upload found; call start_contract_upload first".into(),
+                })?;
+
+        if !staged.is_complete() {
+            // Reinstate the staged entry so the caller can resume or clear. This
+            // matches the contract invariant that a non-complete upload is either
+            // visible (via the staged_uploads map) or has been explicitly cleared.
+            let total_size = staged.total_size;
+            let received_bytes = staged.received_bytes;
+            self.staged_uploads.insert(caller, staged);
+            return Err(InvalidParameters::MalformedPayload {
+                reason: format!(
+                    "upload incomplete: received_bytes={received_bytes}, total_size={total_size}"
+                ),
+            }
+            .into());
+        }
+
+        let num_chunks = staged.num_chunks;
+        let total_size = staged.total_size;
+
+        // Reserve the proposal id before we move chunks so they can be keyed by it.
+        let id = self.proposed_updates.peek_next_id();
+
+        // Assemble the full code into memory once to compute its hash via the host
+        // sha256 function (no streaming variant is exposed by `env::`). The chunks
+        // are held in `chunks` so they can be re-inserted under the proposal key
+        // without a second round of storage reads.
+        let mut assembled = Vec::with_capacity(total_size as usize);
+        let mut chunks: Vec<Vec<u8>> = Vec::with_capacity(num_chunks as usize);
+        for i in 0..num_chunks {
+            let chunk = self
+                .staged_chunks
+                .remove(&(caller.clone(), i))
+                .expect("chunk recorded in staged metadata must be present in staged_chunks");
+            assembled.extend_from_slice(&chunk);
+            chunks.push(chunk);
+        }
+        let code_hash: [u8; 32] = env::sha256_array(&assembled);
+        // Release the assembled buffer before we reinsert the chunks.
+        drop(assembled);
+        for (i, chunk) in chunks.into_iter().enumerate() {
+            self.update_code_chunks.insert((id, i as u32), chunk);
+        }
+
+        let update = Update::ContractChunked {
+            total_size,
+            num_chunks,
+            code_hash,
+        };
+        let registered_id = self.proposed_updates.propose(update);
+        debug_assert_eq!(
+            registered_id, id,
+            "reserved id must match the id assigned by propose()"
+        );
+
+        log!(
+            "finalize_contract_upload: signer={}, id={:?}, total_size={}, num_chunks={}, code_hash={:?}",
+            env::signer_account_id(),
+            id,
+            total_size,
+            num_chunks,
+            code_hash,
+        );
+
+        Ok(id)
+    }
+
+    /// Abandon the caller's in-progress chunked upload and refund the accumulated
+    /// chunk-storage deposits.
+    #[handle_result]
+    pub fn clear_staged_contract(&mut self) -> Result<(), Error> {
+        let caller = self.voter_or_panic();
+
+        let staged =
+            self.staged_uploads
+                .remove(&caller)
+                .ok_or(InvalidParameters::MalformedPayload {
+                    reason: "no staged upload found".into(),
+                })?;
+
+        for i in 0..staged.num_chunks {
+            self.staged_chunks.remove(&(caller.clone(), i));
+        }
+
+        if staged.deposited > NearToken::from_yoctonear(0) {
+            Promise::new(caller).transfer(staged.deposited).detach();
+        }
+
+        log!(
+            "clear_staged_contract: signer={}, num_chunks_cleared={}",
+            env::signer_account_id(),
+            staged.num_chunks,
+        );
+
+        Ok(())
     }
 
     /// Vote for a proposed update given the [`UpdateId`] of the update.
@@ -1269,9 +1494,62 @@ impl MpcContract {
 
         let update_gas_deposit = Gas::from_tgas(self.config.contract_upgrade_deposit_tera_gas);
 
-        let Some(_promise) = self.proposed_updates.do_update(&id, update_gas_deposit) else {
+        let Some(result) = self.proposed_updates.do_update(&id) else {
             return Err(InvalidParameters::UpdateNotFound.into());
         };
+
+        // Discard chunk storage for sibling proposals that are now invalidated.
+        for (dropped_id, dropped_update) in result.dropped {
+            if let Update::ContractChunked { num_chunks, .. } = dropped_update {
+                for i in 0..num_chunks {
+                    self.update_code_chunks.remove(&(dropped_id, i));
+                }
+            }
+        }
+
+        let promise = Promise::new(env::current_account_id());
+        match result.executing {
+            Update::Contract(code) => {
+                let _ = promise.deploy_contract(code).function_call(
+                    method_names::MIGRATE,
+                    Vec::new(),
+                    NearToken::from_near(0),
+                    update_gas_deposit,
+                );
+            }
+            Update::ContractChunked {
+                total_size,
+                num_chunks,
+                ..
+            } => {
+                // Assemble the proposed binary from its chunks, draining them from
+                // storage as we go so we don't pay for them after deploy.
+                let mut code = Vec::with_capacity(total_size as usize);
+                for i in 0..num_chunks {
+                    let chunk = self.update_code_chunks.remove(&(id, i)).expect(
+                        "chunked-contract proposal must have all chunks present at deploy time",
+                    );
+                    code.extend_from_slice(&chunk);
+                }
+                let _ = promise.deploy_contract(code).function_call(
+                    method_names::MIGRATE,
+                    Vec::new(),
+                    NearToken::from_near(0),
+                    update_gas_deposit,
+                );
+            }
+            Update::Config(config) => {
+                // The new config's `contract_upgrade_deposit_tera_gas` value is the gas
+                // to spend on the call that applies it.
+                let new_config_gas_value = Gas::from_tgas(config.contract_upgrade_deposit_tera_gas);
+                let _ = promise.function_call(
+                    method_names::UPDATE_CONFIG,
+                    serde_json::to_vec(&(&config,)).unwrap(),
+                    NearToken::from_near(0),
+                    new_config_gas_value,
+                );
+            }
+        }
 
         Ok(true)
     }
@@ -1743,6 +2021,9 @@ impl MpcContract {
                 StorageKey::PendingVerifyForeignTxRequestsV2,
             ),
             proposed_updates: ProposedUpdates::default(),
+            staged_uploads: IterableMap::new(StorageKey::StagedContractUploads),
+            staged_chunks: LookupMap::new(StorageKey::StagedContractChunks),
+            update_code_chunks: LookupMap::new(StorageKey::UpdateCodeChunks),
             config: init_config.map(Into::into).unwrap_or_default(),
             tee_state,
             accept_requests: true,
@@ -1812,6 +2093,9 @@ impl MpcContract {
                 StorageKey::PendingVerifyForeignTxRequestsV2,
             ),
             proposed_updates: Default::default(),
+            staged_uploads: IterableMap::new(StorageKey::StagedContractUploads),
+            staged_chunks: LookupMap::new(StorageKey::StagedContractChunks),
+            update_code_chunks: LookupMap::new(StorageKey::UpdateCodeChunks),
             tee_state,
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
@@ -3907,6 +4191,9 @@ mod tests {
                 ),
                 accept_requests: true,
                 proposed_updates: Default::default(),
+                staged_uploads: IterableMap::new(StorageKey::StagedContractUploads),
+                staged_chunks: LookupMap::new(StorageKey::StagedContractChunks),
+                update_code_chunks: LookupMap::new(StorageKey::UpdateCodeChunks),
                 node_foreign_chain_support: Default::default(),
                 config: Default::default(),
                 tee_state: Default::default(),

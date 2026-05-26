@@ -3,20 +3,19 @@ use std::hash::Hash;
 
 use crate::{
     dto_mapping::IntoInterfaceType,
-    errors::{ConversionError, Error},
+    errors::{Error, InvalidParameters},
     primitives::participants::Participants,
     storage_keys::StorageKey,
 };
 use borsh::{self, BorshDeserialize, BorshSerialize};
 use derive_more::Deref;
 use near_account_id::AccountId;
-use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::UpdateHash;
 use near_sdk::{
     env, near,
     serde::{Deserialize, Serialize},
     store::IterableMap,
-    Gas, NearToken, Promise,
+    NearToken,
 };
 
 #[cfg_attr(
@@ -70,8 +69,23 @@ impl From<u64> for UpdateId {
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub enum Update {
+    /// Inline contract code. Carried for borsh compatibility with any in-flight
+    /// proposals from earlier contract versions; new proposals MUST use
+    /// [`Update::ContractChunked`] (constructed via the chunked-upload flow), which
+    /// keeps the proposed code outside the contract's inlined state.
     Contract(Vec<u8>),
     Config(near_mpc_contract_interface::types::Config),
+    /// Metadata for a chunked contract-code proposal. The actual code lives in the
+    /// `MpcContract::update_code_chunks` `LookupMap`, keyed by `(UpdateId, chunk_index)`,
+    /// so the proposal entry itself stays small and loading contract state remains cheap
+    /// regardless of binary size. The `code_hash` is the SHA-256 of the assembled code,
+    /// computed at finalize time, and is what voters compare against when validating a
+    /// proposal.
+    ContractChunked {
+        total_size: u64,
+        num_chunks: u32,
+        code_hash: [u8; 32],
+    },
 }
 
 #[derive(
@@ -88,33 +102,53 @@ pub enum Update {
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct ProposeUpdateArgs {
-    pub code: Option<Vec<u8>>,
-    pub config: Option<near_mpc_contract_interface::types::Config>,
+    pub config: near_mpc_contract_interface::types::Config,
 }
 
-impl TryFrom<ProposeUpdateArgs> for Update {
-    type Error = Error;
-
-    fn try_from(value: ProposeUpdateArgs) -> Result<Self, Self::Error> {
-        let ProposeUpdateArgs { code, config } = value;
-        let update = match (code, config) {
-            (Some(contract), None) => Update::Contract(contract),
-            (None, Some(config)) => Update::Config(config),
-            (Some(_), Some(_)) => {
-                return Err(ConversionError::DataConversion {
-                    reason: "Code and config updates are not allowed at the same time".into(),
-                }
-                .into());
-            }
-            _ => {
-                return Err(ConversionError::DataConversion {
-                    reason: "Expected either code or config update, received none of them".into(),
-                }
-                .into());
-            }
-        };
-        Ok(update)
+impl From<ProposeUpdateArgs> for Update {
+    fn from(value: ProposeUpdateArgs) -> Self {
+        Update::Config(value.config)
     }
+}
+
+/// Arguments for [`MpcContract::start_contract_upload`].
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    serde::Serialize,
+    serde::Deserialize,
+    borsh::BorshSerialize,
+    borsh::BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct StartContractUploadArgs {
+    /// Total size in bytes of the contract code that will be uploaded across
+    /// subsequent `upload_contract_chunk` calls.
+    pub total_size: u64,
+}
+
+/// Arguments for [`MpcContract::upload_contract_chunk`].
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    serde::Serialize,
+    serde::Deserialize,
+    borsh::BorshSerialize,
+    borsh::BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct UploadContractChunkArgs {
+    /// Bytes to append to the caller's in-progress upload. Chunks are appended in
+    /// transmission order; there is no per-chunk index parameter.
+    pub data: Vec<u8>,
 }
 
 #[derive(
@@ -139,6 +173,74 @@ pub(crate) struct UpdateEntry {
 pub(super) struct UpdateVotes {
     pub(super) votes: BTreeMap<AccountId, UpdateId>,
     pub(super) updates: BTreeMap<UpdateId, UpdateHash>,
+}
+
+/// Per-account metadata for an in-progress chunked contract upload.
+///
+/// The actual chunk bytes are stored separately in
+/// `MpcContract::staged_chunks` (keyed by `(AccountId, chunk_index)`) so that
+/// the staging metadata itself stays small. This way appending a chunk only
+/// rewrites a few bytes of this struct rather than rewriting all accumulated
+/// data in a single storage slot.
+#[derive(Clone, Debug, PartialEq, borsh::BorshSerialize, borsh::BorshDeserialize)]
+pub struct StagedContractUpload {
+    /// Total expected size, declared at `start_contract_upload`.
+    pub total_size: u64,
+    /// Number of bytes received so far.
+    pub received_bytes: u64,
+    /// Number of chunks received so far (and the next chunk's index).
+    pub num_chunks: u32,
+    /// Sum of all deposits attached to this upload's `start`, `upload_chunk` calls.
+    /// Refunded on `clear_staged_contract` if the upload is abandoned, or consumed
+    /// by the proposal entry's storage cost on `finalize_contract_upload`.
+    pub deposited: NearToken,
+}
+
+impl StagedContractUpload {
+    pub fn new(total_size: u64) -> Self {
+        Self {
+            total_size,
+            received_bytes: 0,
+            num_chunks: 0,
+            deposited: NearToken::from_yoctonear(0),
+        }
+    }
+
+    /// Records that a chunk of `chunk_len` bytes was appended. Returns the chunk's
+    /// index. Rejects appends that would exceed the declared `total_size`.
+    pub fn record_chunk(&mut self, chunk_len: u64) -> Result<u32, Error> {
+        let new_received = self.received_bytes.checked_add(chunk_len).ok_or_else(|| {
+            Error::from(InvalidParameters::MalformedPayload {
+                reason: "received_bytes overflow".into(),
+            })
+        })?;
+        if new_received > self.total_size {
+            return Err(InvalidParameters::MalformedPayload {
+                reason: format!(
+                    "chunk would exceed declared total_size: received_bytes={}, chunk_len={}, total_size={}",
+                    self.received_bytes, chunk_len, self.total_size
+                ),
+            }
+            .into());
+        }
+        self.received_bytes = new_received;
+        let chunk_index = self.num_chunks;
+        self.num_chunks = self.num_chunks.checked_add(1).ok_or_else(|| {
+            Error::from(InvalidParameters::MalformedPayload {
+                reason: "num_chunks overflow".into(),
+            })
+        })?;
+        Ok(chunk_index)
+    }
+
+    pub fn is_complete(&self) -> bool {
+        self.received_bytes == self.total_size
+    }
+
+    /// Storage deposit required to back `len` bytes of chunk data.
+    pub fn required_deposit_for_bytes(len: usize) -> NearToken {
+        env::storage_byte_cost().saturating_mul(len as u128)
+    }
 }
 
 #[near(serializers=[borsh ])]
@@ -174,6 +276,13 @@ impl ProposedUpdates {
         id
     }
 
+    /// Returns the [`UpdateId`] that the next call to [`Self::propose`] will assign,
+    /// without consuming it. Used by the chunked-upload flow so that chunks can be
+    /// written under their final `(UpdateId, chunk_index)` key in a single pass.
+    pub fn peek_next_id(&self) -> UpdateId {
+        self.id
+    }
+
     /// Records a vote by [`AccountId`] for the update with the given [`UpdateId`].
     ///
     /// If the voter has already voted for a different update, that vote is automatically removed
@@ -193,38 +302,30 @@ impl ProposedUpdates {
         Some(())
     }
 
-    pub fn do_update(&mut self, id: &UpdateId, gas: Gas) -> Option<Promise> {
+    /// Removes the entry for `id`, clears all other pending entries and votes,
+    /// and returns the executing update along with the dropped sibling updates
+    /// so the caller can clean up any associated external storage (e.g. chunk
+    /// `LookupMap` entries for chunked-contract proposals).
+    ///
+    /// Returns `None` if no entry exists for `id`.
+    pub fn do_update(&mut self, id: &UpdateId) -> Option<DoUpdateResult> {
         let entry = self.entries.remove(id)?;
 
-        // Clear all entries as they might be no longer valid
+        // The remaining entries are invalidated by the contract state change. Collect
+        // them so the caller can clean up any externally-stored data (chunked code).
+        let dropped: Vec<(UpdateId, Update)> = self
+            .entries
+            .iter()
+            .map(|(k, v)| (*k, v.update.clone()))
+            .collect();
+
         self.entries.clear();
         self.vote_by_participant.clear();
 
-        let mut promise = Promise::new(env::current_account_id());
-        match entry.update {
-            Update::Contract(code) => {
-                // deploy contract then do a `migrate` call to migrate state.
-                promise = promise.deploy_contract(code).function_call(
-                    method_names::MIGRATE,
-                    Vec::new(),
-                    NearToken::from_near(0),
-                    gas,
-                );
-            }
-            Update::Config(config) => {
-                // If we vote for a new config, we should use
-                // the value `contract_upgrade_deposit_tera_gas` from the config
-                // as the new gas value
-                let new_config_gas_value = Gas::from_tgas(config.contract_upgrade_deposit_tera_gas);
-                promise = promise.function_call(
-                    method_names::UPDATE_CONFIG,
-                    serde_json::to_vec(&(&config,)).unwrap(),
-                    NearToken::from_near(0),
-                    new_config_gas_value,
-                );
-            }
-        }
-        Some(promise)
+        Some(DoUpdateResult {
+            executing: entry.update,
+            dropped,
+        })
     }
 
     /// Removes the vote for [`AccountId`].
@@ -276,6 +377,17 @@ impl ProposedUpdates {
     }
 }
 
+/// Outcome of [`ProposedUpdates::do_update`]. `executing` is the update being
+/// applied; `dropped` are sibling updates that were cleared because the
+/// contract state is about to change in a way that invalidates them. Both lists
+/// may reference chunked-contract proposals whose chunk storage the caller is
+/// responsible for cleaning up.
+#[derive(Debug)]
+pub struct DoUpdateResult {
+    pub executing: Update,
+    pub dropped: Vec<(UpdateId, Update)>,
+}
+
 fn bytes_used(update: &Update) -> u128 {
     let mut bytes_used = std::mem::size_of::<UpdateEntry>() as u128;
 
@@ -290,6 +402,11 @@ fn bytes_used(update: &Update) -> u128 {
             let bytes = serde_json::to_vec(&config).unwrap();
             bytes_used += bytes.len() as u128;
         }
+        Update::ContractChunked { .. } => {
+            // The chunked variant carries only fixed-size metadata in the
+            // proposal entry; the chunk bytes themselves are paid for during
+            // `upload_contract_chunk` and live in a separate `LookupMap`.
+        }
     }
 
     bytes_used
@@ -300,14 +417,16 @@ fn required_deposit(bytes_used: u128) -> NearToken {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use crate::{
         dto_mapping::IntoInterfaceType,
         primitives::test_utils::{gen_account_id, gen_participants},
-        update::{bytes_used, ProposedUpdates, Update, UpdateEntry, UpdateId},
+        update::{
+            bytes_used, ProposedUpdates, StagedContractUpload, Update, UpdateEntry, UpdateId,
+        },
     };
     use near_account_id::AccountId;
-    use near_sdk::Gas;
     use std::collections::{BTreeMap, HashSet};
     use test_utils::contract_types::dummy_config;
 
@@ -599,7 +718,7 @@ mod tests {
         assert_eq!(before, expected_before);
 
         // When: executing an update
-        proposed_updates.do_update(&update_id_1, Gas::from_tgas(100));
+        proposed_updates.do_update(&update_id_1);
 
         // Then: all state is cleared (entries and votes)
         let after: TestUpdateVotes = (&proposed_updates).try_into().unwrap();
@@ -795,5 +914,85 @@ mod tests {
         };
         let result: TestUpdateVotes = (&proposed_updates).try_into().unwrap();
         assert_eq!(result, expected_after_removal);
+    }
+
+    #[test]
+    fn do_update__should_return_executing_and_dropped_updates() {
+        // Given
+        let mut proposed_updates = ProposedUpdates::default();
+        let update_a = Update::Contract([0; 100].into());
+        let update_b = Update::Contract([1; 100].into());
+        let update_c = Update::Config(dummy_config(1));
+        let id_a = proposed_updates.propose(update_a.clone());
+        let id_b = proposed_updates.propose(update_b.clone());
+        let id_c = proposed_updates.propose(update_c.clone());
+
+        // When: executing update b
+        let result = proposed_updates
+            .do_update(&id_b)
+            .expect("update should be found");
+
+        // Then: result reports b as executing and a + c as dropped
+        assert_eq!(result.executing, update_b);
+        let dropped: BTreeMap<UpdateId, Update> = result.dropped.into_iter().collect();
+        assert_eq!(
+            dropped,
+            BTreeMap::from([(id_a, update_a), (id_c, update_c)])
+        );
+    }
+
+    #[test]
+    fn do_update__should_return_none_when_update_id_is_unknown() {
+        let mut proposed_updates = ProposedUpdates::default();
+        assert!(proposed_updates.do_update(&UpdateId(42)).is_none());
+    }
+
+    mod staged_contract_upload {
+        use super::StagedContractUpload;
+
+        #[test]
+        fn record_chunk__should_track_received_bytes_and_assign_indices() {
+            // Given
+            let mut staged = StagedContractUpload::new(100);
+
+            // When
+            let idx_0 = staged.record_chunk(40).unwrap();
+            let idx_1 = staged.record_chunk(60).unwrap();
+
+            // Then
+            assert_eq!(idx_0, 0);
+            assert_eq!(idx_1, 1);
+            assert_eq!(staged.received_bytes, 100);
+            assert_eq!(staged.num_chunks, 2);
+            assert!(staged.is_complete());
+        }
+
+        #[test]
+        fn record_chunk__should_reject_appends_exceeding_total_size() {
+            // Given
+            let mut staged = StagedContractUpload::new(50);
+            staged.record_chunk(40).unwrap();
+
+            // When
+            let err = staged.record_chunk(20).unwrap_err();
+
+            // Then
+            assert!(err.to_string().contains("total_size"));
+            assert_eq!(staged.received_bytes, 40);
+            assert_eq!(staged.num_chunks, 1);
+        }
+
+        #[test]
+        fn is_complete__should_return_false_until_all_bytes_received() {
+            // Given
+            let mut staged = StagedContractUpload::new(100);
+
+            // Then
+            assert!(!staged.is_complete());
+            staged.record_chunk(50).unwrap();
+            assert!(!staged.is_complete());
+            staged.record_chunk(50).unwrap();
+            assert!(staged.is_complete());
+        }
     }
 }

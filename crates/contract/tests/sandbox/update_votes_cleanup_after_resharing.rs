@@ -1,7 +1,7 @@
 use crate::sandbox::{
-    common::SandboxTestSetup,
+    common::{chunked_upload_contract, SandboxTestSetup},
     utils::{
-        consts::{CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_NEW_DOMAIN, GAS_FOR_VOTE_UPDATE},
+        consts::{GAS_FOR_VOTE_NEW_DOMAIN, GAS_FOR_VOTE_UPDATE},
         mpc_contract::{
             assert_running_return_participants, assert_running_return_threshold, get_state,
         },
@@ -12,7 +12,7 @@ use crate::sandbox::{
 use anyhow::Result;
 use mpc_contract::{
     primitives::{participants::Participants, thresholds::ThresholdParameters},
-    update::{ProposeUpdateArgs, UpdateId},
+    update::UpdateId,
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::method_names;
@@ -41,18 +41,11 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
     let initial_participants = assert_running_return_participants(&contract).await?;
     let threshold = assert_running_return_threshold(&contract).await;
 
-    // Propose update and have first 2 participants vote on it
+    // Propose a code update via the chunked-upload flow, then have the first
+    // two participants vote on it.
     let code = vec![1u8; 1000];
-    let update_id: UpdateId = mpc_signer_accounts[0]
-        .call(contract.id(), method_names::PROPOSE_UPDATE)
-        .args_borsh(ProposeUpdateArgs {
-            code: Some(code.clone()),
-            config: None,
-        })
-        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
-        .transact()
-        .await?
-        .json()?;
+    let update_id: UpdateId =
+        chunked_upload_contract(&mpc_signer_accounts[0], &contract, &code).await;
 
     execute_async_transactions(
         &mpc_signer_accounts[0..2],

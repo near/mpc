@@ -1,9 +1,7 @@
 use crate::sandbox::{
-    common::SandboxTestSetup,
-    upgrade_from_current_contract::current_contract_proposal,
-    utils::consts::{CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_UPDATE},
+    common::{chunked_upload_contract, SandboxTestSetup},
+    utils::{consts::GAS_FOR_VOTE_UPDATE, contract_build::current_contract},
 };
-use mpc_contract::update::UpdateId;
 use near_mpc_contract_interface::method_names;
 
 #[tokio::test]
@@ -44,17 +42,8 @@ async fn run_upgrade_scenario(min_gas: u64) -> (bool, bool) {
         .build()
         .await;
 
-    let execution = mpc_signer_accounts[0]
-        .call(contract.id(), method_names::PROPOSE_UPDATE)
-        .args_borsh(current_contract_proposal())
-        .max_gas()
-        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
-        .transact()
-        .await
-        .unwrap();
-
-    assert!(execution.is_success());
-    let proposal_id: UpdateId = execution.json().unwrap();
+    let proposal_id =
+        chunked_upload_contract(&mpc_signer_accounts[0], &contract, current_contract()).await;
 
     let mut saw_completion = false;
     let mut saw_failure = false;

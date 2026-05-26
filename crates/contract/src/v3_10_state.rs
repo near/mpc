@@ -9,7 +9,10 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_contract_interface::types::{self as dtos, VerifyForeignTransactionRequest};
-use near_sdk::{env, store::LookupMap};
+use near_sdk::{
+    env,
+    store::{IterableMap, LookupMap},
+};
 use std::collections::BTreeMap;
 
 use crate::{
@@ -19,6 +22,7 @@ use crate::{
         signature::{SignatureRequest, YieldIndex},
     },
     state::ProtocolContractState,
+    storage_keys::StorageKey,
     tee::tee_state::TeeState,
     update::ProposedUpdates,
     Config, SupportedForeignChainsByNode,
@@ -86,12 +90,19 @@ impl From<MpcContract> for crate::MpcContract {
         // `3.10.0` had no vote endpoint, so `old.foreign_chain_rpc_whitelist.entries`
         // is guaranteed empty. Drop it and default-initialize the current reshaped
         // whitelist (empty `entries`, empty `votes.pending`).
+        //
+        // The chunked-upload maps (`staged_uploads`, `staged_chunks`, `update_code_chunks`)
+        // are new in this version, so they default-initialize to empty `LookupMap`s
+        // backed by fresh storage keys.
         crate::MpcContract {
             protocol_state: old.protocol_state,
             pending_signature_requests: old.pending_signature_requests,
             pending_ckd_requests: old.pending_ckd_requests,
             pending_verify_foreign_tx_requests: old.pending_verify_foreign_tx_requests,
             proposed_updates: old.proposed_updates,
+            staged_uploads: IterableMap::new(StorageKey::StagedContractUploads),
+            staged_chunks: LookupMap::new(StorageKey::StagedContractChunks),
+            update_code_chunks: LookupMap::new(StorageKey::UpdateCodeChunks),
             node_foreign_chain_support: old.node_foreign_chain_support,
             config: old.config,
             tee_state: old.tee_state,

@@ -440,6 +440,10 @@ fn get_voter_account_ids<'a>(
         .collect::<Vec<_>>()
 }
 
+/// Chunk size used by the devnet propose-update command. 1 MiB stays well below
+/// the RPC's ~1.5 MiB single-transaction payload limit.
+const PROPOSE_UPDATE_CHUNK_SIZE: usize = 1024 * 1024;
+
 impl MpcProposeUpdateContractCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
         println!("Going to propose update contract for MPC network {}", name);
@@ -468,25 +472,69 @@ impl MpcProposeUpdateContractCmd {
         .await;
         let proposer = setup.accounts.account(proposer_account_id);
 
-        let result = proposer
+        let total_size = contract_code.len() as u64;
+        let num_chunks = contract_code.len().div_ceil(PROPOSE_UPDATE_CHUNK_SIZE);
+        println!(
+            "Uploading {} bytes in {} chunks of up to {} bytes",
+            total_size, num_chunks, PROPOSE_UPDATE_CHUNK_SIZE
+        );
+
+        proposer
             .any_access_key()
             .await
             .submit_tx_to_call_function(
                 &contract,
-                method_names::PROPOSE_UPDATE,
-                &borsh::to_vec(&ProposeUpdateArgs {
-                    contract: Some(contract_code),
-                    config: None,
-                })
-                .unwrap(),
+                method_names::START_CONTRACT_UPLOAD,
+                &borsh::to_vec(&StartContractUploadArgs { total_size }).unwrap(),
                 300,
-                self.deposit_near * ONE_NEAR,
+                1,
                 near_primitives::views::TxExecutionStatus::Final,
                 false,
             )
             .await
             .into_return_value()
-            .expect("Failed to propose update");
+            .expect("Failed to start contract upload");
+
+        // Split the total deposit across chunks. Each chunk must carry enough yocto to
+        // back its storage cost — using a uniform `deposit_near / num_chunks` is the
+        // simplest correct allocation.
+        let deposit_per_chunk = (self.deposit_near * ONE_NEAR) / (num_chunks as u128);
+        for (i, chunk) in contract_code.chunks(PROPOSE_UPDATE_CHUNK_SIZE).enumerate() {
+            proposer
+                .any_access_key()
+                .await
+                .submit_tx_to_call_function(
+                    &contract,
+                    method_names::UPLOAD_CONTRACT_CHUNK,
+                    &borsh::to_vec(&UploadContractChunkArgs {
+                        data: chunk.to_vec(),
+                    })
+                    .unwrap(),
+                    300,
+                    deposit_per_chunk,
+                    near_primitives::views::TxExecutionStatus::Final,
+                    false,
+                )
+                .await
+                .into_return_value()
+                .unwrap_or_else(|err| panic!("Failed to upload contract chunk {i}: {err:?}"));
+        }
+
+        let result = proposer
+            .any_access_key()
+            .await
+            .submit_tx_to_call_function(
+                &contract,
+                method_names::FINALIZE_CONTRACT_UPLOAD,
+                &[],
+                300,
+                0,
+                near_primitives::views::TxExecutionStatus::Final,
+                false,
+            )
+            .await
+            .into_return_value()
+            .expect("Failed to finalize contract upload");
         let update_id: u64 = serde_json::from_slice(&result).expect(&format!(
             "Failed to deserialize result: {}",
             String::from_utf8_lossy(&result)
@@ -506,9 +554,13 @@ impl MpcProposeUpdateContractCmd {
 }
 
 #[derive(BorshSerialize, BorshDeserialize)]
-pub struct ProposeUpdateArgs {
-    pub contract: Option<Vec<u8>>,
-    pub config: Option<()>, // unsupported
+pub struct StartContractUploadArgs {
+    pub total_size: u64,
+}
+
+#[derive(BorshSerialize, BorshDeserialize)]
+pub struct UploadContractChunkArgs {
+    pub data: Vec<u8>,
 }
 
 impl MpcVoteUpdateCmd {

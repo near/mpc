@@ -30,4 +30,12 @@ pub enum StorageKey {
     AllowedForeignChainProvidersV1,
     ForeignChainProviderVotesByVoterV1,
     ForeignChainProviderVotesByProposalV1,
+    /// Per-account `StagedContractUpload` metadata.
+    StagedContractUploads,
+    /// Chunk bytes belonging to in-progress uploads, keyed by `(AccountId, chunk_index)`.
+    StagedContractChunks,
+    /// Chunk bytes belonging to finalized chunked-contract proposals, keyed by
+    /// `(UpdateId, chunk_index)`. Survives until the proposal is voted through or
+    /// invalidated by a sibling update being applied.
+    UpdateCodeChunks,
 }

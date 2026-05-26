@@ -675,6 +675,18 @@ BorshSchemaContainer {
                         "ProposedUpdates",
                     ),
                     (
+                        "staged_uploads",
+                        "IterableMap",
+                    ),
+                    (
+                        "staged_chunks",
+                        "LookupMap",
+                    ),
+                    (
+                        "update_code_chunks",
+                        "LookupMap",
+                    ),
+                    (
                         "node_foreign_chain_support",
                         "SupportedForeignChainsByNode",
                     ),

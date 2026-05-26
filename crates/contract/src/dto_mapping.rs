@@ -402,6 +402,10 @@ impl IntoInterfaceType<dtos::UpdateHash> for &Update {
             Update::Config(config) => dtos::UpdateHash::Config(sha256_array(
                 serde_json::to_vec(config).expect("serde serialization must succeed"),
             )),
+            // `code_hash` is the SHA-256 of the assembled contract code, computed
+            // and stored at finalize time. Voters compare this against the hash of
+            // the binary they intend to deploy before voting.
+            Update::ContractChunked { code_hash, .. } => dtos::UpdateHash::Code(*code_hash),
         }
     }
 }
