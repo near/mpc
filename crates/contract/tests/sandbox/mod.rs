@@ -5,6 +5,7 @@ pub mod foreign_chain_request;
 pub mod participants_gas;
 pub mod sign;
 pub mod tee;
+pub mod tee_back_migration;
 pub mod tee_cleanup_after_resharing;
 pub mod update_votes_cleanup_after_resharing;
 pub mod upgrade_from_current_contract;
