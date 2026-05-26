@@ -156,20 +156,16 @@ LOCAL_DEBUG_BASE=3031
 
 STATE_SYNC_PORT=24567
 MAIN_PORT=80
-# Per-node base port. In cvm-deployment (testnet/mainnet) the same
-# EXTERNAL_MPC_MIGRATION_PORT slot carries the migration HTTP endpoint on
-# :8079; here in the localnet rust-launcher path it is repurposed as the
-# per-node TLS/P2P forward — the contract's participant URLs point to
-# https://<ip>:$(migration_port_for_i $i), so the MPC node's TLS listener
-# binds on this port (not on $MAIN_PORT=80).
-MIGRATION_BASE_PORT="${MIGRATION_BASE_PORT:-13001}"
-migration_port_for_i() { echo $((MIGRATION_BASE_PORT + $1)); }
+# Migration HTTP endpoint that backup-cli connects to for get/put-keyshares.
+# Container-side this matches `migration_web_ui` in node.conf.*.toml.tpl.
+# Uniform across all CVMs — per-IP isolation keeps them from colliding.
+MIGRATION_PORT=8079
 
 INTERNAL_PUBLIC_DEBUG_PORT=8080
 INTERNAL_LOCAL_DEBUG_PORT=3030
 INTERNAL_STATE_SYNC_PORT=24567
 INTERNAL_MAIN_PORT=80
-INTERNAL_MIGRATION_PORT=13001
+INTERNAL_MIGRATION_PORT=8079
 
 OS_IMAGE="${OS_IMAGE:-dstack-dev-0.5.8}"
 SEALING_KEY_TYPE="${SEALING_KEY_TYPE:-SGX}"
@@ -731,7 +727,7 @@ preflight() {
   }
 
   log "Using IP range: ${IP_PREFIX}${IP_START_OCTET} .. ${IP_PREFIX}$((IP_START_OCTET + N - 1))"
-  log "Ports per node: main=$MAIN_PORT migration_base=$MIGRATION_BASE_PORT (per-node) state_sync=$STATE_SYNC_PORT public_data_base=$PUBLIC_DATA_BASE"
+  log "Ports per node: main=$MAIN_PORT migration=$MIGRATION_PORT state_sync=$STATE_SYNC_PORT public_data_base=$PUBLIC_DATA_BASE"
   log "Localhost per node: ssh_base=$SSH_BASE agent_base=$AGENT_BASE local_debug_base=$LOCAL_DEBUG_BASE"
 
   local any_fail=0
@@ -752,9 +748,8 @@ preflight() {
     p_ssh="$(ssh_port_for_i "$i")"
     p_agent="$(agent_port_for_i "$i")"
     p_ld="$(local_dbg_port_for_i "$i")"
-    p_migration="$(migration_port_for_i "$i")"
 
-    for port in "$MAIN_PORT" "$STATE_SYNC_PORT" "$p_pub" "$p_migration"; do
+    for port in "$MAIN_PORT" "$STATE_SYNC_PORT" "$p_pub" "$MIGRATION_PORT"; do
       if port_free "$ip" "$port"; then
         echo "  ✅ free $ip:$port"
       else
@@ -834,16 +829,13 @@ render_node_files_range() {
         export TIER3_PUBLIC_ADDR="${ip}:${STATE_SYNC_PORT}"
         export EXTERNAL_STORAGE_FALLBACK_THRESHOLD="${EXTERNAL_STORAGE_FALLBACK_THRESHOLD:-100}"
     fi
-    local migration_port
-    migration_port="$(migration_port_for_i "$i")"
-
-    export EXTERNAL_MPC_MIGRATION_PORT="${ip}:${migration_port}"
+    export EXTERNAL_MPC_MIGRATION_PORT="${ip}:${MIGRATION_PORT}"
 
     export INTERNAL_MPC_PUBLIC_DEBUG_PORT="$INTERNAL_PUBLIC_DEBUG_PORT"
     export INTERNAL_MPC_LOCAL_DEBUG_PORT="$INTERNAL_LOCAL_DEBUG_PORT"
     export INTERNAL_MPC_DECENTRALIZED_STATE_SYNC="$INTERNAL_STATE_SYNC_PORT"
     export INTERNAL_MPC_MAIN_PORT="$INTERNAL_MAIN_PORT"
-    export INTERNAL_MPC_MIGRATION_PORT="${migration_port}"
+    export INTERNAL_MPC_MIGRATION_PORT="$INTERNAL_MIGRATION_PORT"
 
     export MPC_ENV
 
@@ -855,10 +847,17 @@ render_node_files_range() {
       # 24566 forwards the CVM's outbound to the host's localnet neard via the
       # QEMU slirp gateway (10.0.2.2). On testnet we don't run a host neard;
       # the CVM's indexer talks to real testnet peers on 24567 directly.
-      export PORTS="8080:8080,24566:24566,${migration_port}:${migration_port}"
+      # `port_override = 80` in the toml makes the MPC node bind P2P on
+      # container:80 regardless of the contract URL port, so we forward
+      # main(80) here for P2P and 8079 for the migration endpoint.
+      # PORTS is CVM-side:container-side (the launcher's port_mappings),
+      # NOT host:CVM — host:CVM forwarding is set up separately via the
+      # EXTERNAL_* env vars in deploy-launcher.sh. Both sides should use
+      # the CVM/container-internal port values.
+      export PORTS="${INTERNAL_MAIN_PORT}:${INTERNAL_MAIN_PORT},8080:8080,24566:24566,${INTERNAL_MIGRATION_PORT}:${INTERNAL_MIGRATION_PORT}"
       export NEAR_BOOT_NODES="ed25519:BGa4WiBj43Mr66f9Ehf6swKtR6wZmWuwCsV3s4PSR3nx@10.0.2.2:24566"
     else
-      export PORTS="8080:8080,${STATE_SYNC_PORT}:${STATE_SYNC_PORT},${migration_port}:${migration_port}"
+      export PORTS="${INTERNAL_MAIN_PORT}:${INTERNAL_MAIN_PORT},8080:8080,${STATE_SYNC_PORT}:${STATE_SYNC_PORT},${INTERNAL_MIGRATION_PORT}:${INTERNAL_MIGRATION_PORT}"
       export NEAR_BOOT_NODES="$bootnodes"
     fi
     export PORTS_TOML
@@ -1080,13 +1079,15 @@ threshold = int("${threshold}")
 
 parts = []
 for k in keys:
-    url_port = 13001 + int(k["i"])
     parts.append([
         k["account"],
         k["i"],
         {
             "tls_public_key": k["tls_pk"],
-            "url": f"https://{k['ip']}:{url_port}",
+            # P2P/TLS listens on $MAIN_PORT(=80) inside the CVM. The toml
+            # sets `port_override = 80` so the node ignores the URL port
+            # and uses 80; we publish 80 here for clarity.
+            "url": f"https://{k['ip']}:80",
         },
     ])
 
@@ -1407,8 +1408,9 @@ for k in new_keys:
     acct=k["account"]
     ip=k["ip"]
     tls_pk=k["tls_pk"]  # P2P key == tls_public_key
-    url_port = 13001 + int(k["i"])
-    new_parts.append([acct, next_id, {"tls_public_key": tls_pk, "url": f"https://127.0.0.1:{url_port}"}])
+    # `port_override = 80` in the toml makes the node bind P2P on 80
+    # regardless of this URL port; publish 80 explicitly.
+    new_parts.append([acct, next_id, {"tls_public_key": tls_pk, "url": f"https://{ip}:80"}])
     next_id += 1
 
 out={
