@@ -61,10 +61,9 @@ let
     allowBuiltinFetchGit = true;
   };
 
-  # Build command mirrors the `container_build_command` declared in
-  # `crates/contract/Cargo.toml`. The docker-based reproducible build runs
-  # the exact same invocation inside `sourcescan/cargo-near:*`; here we
-  # provide the hermetic environment via Nix instead.
+  # The Nix sandbox provides the hermetic environment (toolchain, vendored
+  # registry, fixed SOURCE_DATE_EPOCH), and cargo-near drives the build —
+  # `non-reproducible-wasm` inside a hermetic environment becomes reproducible.
   cargoNearArgs = [
     "non-reproducible-wasm"
     "--locked"

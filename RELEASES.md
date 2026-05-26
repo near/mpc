@@ -137,19 +137,17 @@ Or, you can find this exact tag at docker hub.
 For example for the node image, visit the [nearone/mpc-node-gcp](https://hub.docker.com/r/nearone/mpc-node-gcp/tags)
 page and find the image associated with the commit at the release tag.
 
-Build the contract locally:
+Build the contract locally (requires [Nix](https://nixos.org/download/) with flakes enabled):
 
 ```sh
-cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
+nix build .#mpc-contract
 ```
 
 Rename and compress the contract into a `.tar.gz` archive:
 
 ```sh
-cd target/near/mpc_contract/
-mv mpc_contract.wasm mpc-contract-v3.1.0.wasm
-mv mpc_contract_abi.json mpc-contract-v3.1.0-abi.json
-tar -czf mpc-contract-v3.1.0.tar.gz mpc-contract-v3.1.0.wasm mpc-contract-v3.1.0-abi.json
+cp result/mpc_contract.wasm mpc-contract-v3.1.0.wasm
+tar -czf mpc-contract-v3.1.0.tar.gz mpc-contract-v3.1.0.wasm
 ```
 
 To get the digest of the MPC contract:
