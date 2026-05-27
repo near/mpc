@@ -3,8 +3,8 @@ use crate::sandbox::utils::{
     contract_build::current_contract,
     initializing_utils::{start_keygen_instance, vote_add_domains, vote_public_key},
     mpc_contract::{assert_running_return_threshold, get_state, submit_participant_info},
-    shared_key_utils::{make_key_for_domain, DomainKey},
-    sign_utils::{make_and_submit_requests, PendingSignRequest},
+    shared_key_utils::{DomainKey, make_key_for_domain},
+    sign_utils::{PendingSignRequest, make_and_submit_requests},
 };
 use digest::Digest;
 use dtos::ProtocolContractState;
@@ -36,8 +36,8 @@ use near_mpc_contract_interface::{
     },
 };
 use near_mpc_sdk::foreign_chain::{ExtractedValue, ForeignChainRpcRequest, Hash256};
-use near_workspaces::{network::Sandbox, result::ExecutionSuccess, Contract};
-use near_workspaces::{result::Execution, Account, Worker};
+use near_workspaces::{Account, Worker, result::Execution};
+use near_workspaces::{Contract, network::Sandbox, result::ExecutionSuccess};
 use rand_core::CryptoRngCore;
 use serde_json::json;
 use signature::hazmat::PrehashSigner;

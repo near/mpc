@@ -8,8 +8,8 @@ use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{ParticipantId, UniqueId};
 use crate::protocol::run_protocol;
-use crate::providers::ecdsa::{EcdsaSignatureProvider, EcdsaTaskId};
 use crate::providers::HasParticipants;
+use crate::providers::ecdsa::{EcdsaSignatureProvider, EcdsaTaskId};
 use crate::tracking::AutoAbortTaskCollection;
 use mpc_node_config::TripleConfig;
 use mpc_primitives::ReconstructionThreshold;
@@ -18,9 +18,9 @@ use rand::rngs::OsRng;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
+use threshold_signatures::ReconstructionLowerBound;
 use threshold_signatures::ecdsa::ot_based_ecdsa::triples::TripleGenerationOutput;
 use threshold_signatures::participants::Participant;
-use threshold_signatures::ReconstructionLowerBound;
 
 /// Per-`t` triple store. Holds triples generated with `n = t` participants
 /// (cait-sith triples are generated with exactly `t` parties, so the
@@ -110,7 +110,7 @@ pub fn migrate_legacy_triples_to_v2(db: &Arc<SecretDB>) -> anyhow::Result<usize>
         };
         // Both halves of a cait-sith paired triple are generated with the same
         // participant set, so either one yields the correct `t`.
-        let threshold: u64 = triple.0 .1.participants.len().try_into()?;
+        let threshold: u64 = triple.0.1.participants.len().try_into()?;
         let mut new_key = Vec::with_capacity(std::mem::size_of::<u64>() + legacy_key.len());
         new_key.extend_from_slice(&threshold.to_be_bytes());
         new_key.extend_from_slice(&legacy_key);
@@ -399,8 +399,8 @@ pub fn participants_from_triples(
 #[cfg(test)]
 mod tests {
     use super::{
-        migrate_legacy_triples_to_v2, ManyTripleGenerationComputation, PairedTriple,
-        ReconstructionThreshold, TripleStorage,
+        ManyTripleGenerationComputation, PairedTriple, ReconstructionThreshold, TripleStorage,
+        migrate_legacy_triples_to_v2,
     };
     use crate::assets::test_utils::{legacy_triple_key, make_triple, triple_v2_key};
     use crate::db::{DBCol, SecretDB};
@@ -411,11 +411,11 @@ mod tests {
     use crate::providers::ecdsa::EcdsaTaskId;
     use crate::tests::into_participant_ids;
     use crate::tracking;
-    use futures::{stream, FutureExt, StreamExt};
+    use futures::{FutureExt, StreamExt, stream};
     use std::collections::HashMap;
     use std::sync::Arc;
-    use threshold_signatures::test_utils::generate_participants;
     use threshold_signatures::ReconstructionLowerBound;
+    use threshold_signatures::test_utils::generate_participants;
     use tokio::sync::mpsc;
 
     const NUM_PARTICIPANTS: usize = 4;
@@ -576,7 +576,7 @@ mod tests {
 
     /// Returns the `t` (Shamir degree + 1) baked into a triple's public part.
     fn triple_threshold(triple: &PairedTriple) -> ReconstructionThreshold {
-        ReconstructionThreshold::new(triple.0 .1.participants.len() as u64)
+        ReconstructionThreshold::new(triple.0.1.participants.len() as u64)
     }
 
     /// Snapshot test pinning the on-disk DB key layout for the triple stores.
@@ -638,22 +638,26 @@ mod tests {
         // Then each legacy entry appears in TripleV2 under its `t` prefix, and
         // the legacy entries are still present (downgrade-safe).
         assert_eq!(migrated, 2);
-        assert!(db
-            .get(DBCol::TripleV2, &triple_v2_key(t3, id_a))
-            .unwrap()
-            .is_some());
-        assert!(db
-            .get(DBCol::TripleV2, &triple_v2_key(t4, id_b))
-            .unwrap()
-            .is_some());
-        assert!(db
-            .get(DBCol::Triple, &legacy_triple_key(id_a))
-            .unwrap()
-            .is_some());
-        assert!(db
-            .get(DBCol::Triple, &legacy_triple_key(id_b))
-            .unwrap()
-            .is_some());
+        assert!(
+            db.get(DBCol::TripleV2, &triple_v2_key(t3, id_a))
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            db.get(DBCol::TripleV2, &triple_v2_key(t4, id_b))
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            db.get(DBCol::Triple, &legacy_triple_key(id_a))
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            db.get(DBCol::Triple, &legacy_triple_key(id_b))
+                .unwrap()
+                .is_some()
+        );
 
         // And the per-`t` store surfaces only the matching triples.
         let store_t3 = new_triple_store(db.clone(), me, t3, participants_3.clone());
@@ -789,13 +793,15 @@ mod tests {
         let _ = store.take_owned().now_or_never().unwrap();
 
         // Then it is gone from both columns.
-        assert!(db
-            .get(DBCol::TripleV2, &triple_v2_key(t, id))
-            .unwrap()
-            .is_none());
-        assert!(db
-            .get(DBCol::Triple, &legacy_triple_key(id))
-            .unwrap()
-            .is_none());
+        assert!(
+            db.get(DBCol::TripleV2, &triple_v2_key(t, id))
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            db.get(DBCol::Triple, &legacy_triple_key(id))
+                .unwrap()
+                .is_none()
+        );
     }
 }

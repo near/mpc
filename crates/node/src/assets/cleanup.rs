@@ -1,10 +1,10 @@
 use crate::assets::clean_db;
 use crate::config::ParticipantsConfig;
-use crate::db::{DBCol, SecretDB, EPOCH_ID_KEY};
+use crate::db::{DBCol, EPOCH_ID_KEY, SecretDB};
 use crate::primitives;
 use crate::providers::ecdsa::presign::PresignOutputWithParticipants;
 use crate::providers::ecdsa::triple::PairedTriple;
-use mpc_primitives::{domain::DomainId, EpochId, ReconstructionThreshold};
+use mpc_primitives::{EpochId, ReconstructionThreshold, domain::DomainId};
 use serde::{self, Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -169,7 +169,8 @@ fn cleanup_behavior_during_update(
     if previous_epoch_id != current_epoch_id {
         tracing::info!(
             "We should not be updating during a resharing, but we will try our best. Current epoch id: {:?}, old epoch id {:?}.",
-            current_epoch_id, previous_epoch_id
+            current_epoch_id,
+            previous_epoch_id
         );
         AssetCleanup::DeleteAll
     } else {
@@ -183,12 +184,12 @@ mod tests {
     use crate::assets::cleanup::EpochDataWrapper;
     use crate::assets::cleanup::{delete_stale_triples_and_presignatures, get_epoch_data};
     use crate::assets::test_utils;
+    use crate::assets::test_utils::TestContext;
     use crate::assets::test_utils::get_participant_ids;
     use crate::assets::test_utils::legacy_triple_key;
     use crate::assets::test_utils::make_triple;
     use crate::assets::test_utils::random_verifying_key;
     use crate::assets::test_utils::triple_v2_key;
-    use crate::assets::test_utils::TestContext;
     use crate::db::{DBCol, SecretDB};
     use crate::primitives::UniqueId;
     use crate::providers::ecdsa::triple::TripleStorage;

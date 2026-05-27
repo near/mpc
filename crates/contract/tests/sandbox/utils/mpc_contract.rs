@@ -7,7 +7,7 @@ use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
     Attestation, Ed25519PublicKey, Participants, ProtocolContractState, Threshold,
 };
-use near_workspaces::{result::ExecutionFinalResult, Account, Contract};
+use near_workspaces::{Account, Contract, result::ExecutionFinalResult};
 
 pub async fn get_state(contract: &Contract) -> ProtocolContractState {
     contract

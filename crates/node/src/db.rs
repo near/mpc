@@ -138,7 +138,7 @@ impl SecretDB {
         col: DBCol,
         start: &[u8],
         end: &[u8],
-    ) -> impl Iterator<Item = anyhow::Result<(Box<[u8]>, Vec<u8>)>> + '_ {
+    ) -> impl Iterator<Item = anyhow::Result<(Box<[u8]>, Vec<u8>)>> + '_ + use<'_> {
         let iter_mode = rocksdb::IteratorMode::From(start, rocksdb::Direction::Forward);
         let mut iter_opt = rocksdb::ReadOptions::default();
         iter_opt.set_iterate_upper_bound(end);
@@ -304,11 +304,12 @@ mod tests {
         assert_eq!(db.get(DBCol::Triple, b"triple1")?, None);
 
         // Sanity check that the DB does encrypt the value.
-        assert!(!db
-            .get_ciphertext(DBCol::Triple, b"triple2")
-            .unwrap()
-            .unwrap()
-            .is_ascii());
+        assert!(
+            !db.get_ciphertext(DBCol::Triple, b"triple2")
+                .unwrap()
+                .unwrap()
+                .is_ascii()
+        );
 
         Ok(())
     }

@@ -8,9 +8,9 @@
 //! Distinct from [`crate::bench`]: those methods exist so callers can measure gas
 //! costs of internal operations; the methods here are behavioral introspection hooks.
 
+use crate::MpcContract;
 use crate::primitives::ckd::CKDRequest;
 use crate::primitives::signature::SignatureRequest;
-use crate::MpcContract;
 use near_sdk::near;
 
 // Import the generated extension trait from near

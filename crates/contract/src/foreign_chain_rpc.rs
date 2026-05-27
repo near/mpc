@@ -68,12 +68,12 @@ impl TryFrom<dtos::ChainEntry> for ChainEntry {
             });
         }
         for (id, config) in providers.iter() {
-            if let ChainRouting::PathSegment { segment } = &config.chain_routing {
-                if segment.contains('/') {
-                    return Err(ChainEntryValidationError::PathSegmentContainsSlash {
-                        provider_id: id.0.clone(),
-                    });
-                }
+            if let ChainRouting::PathSegment { segment } = &config.chain_routing
+                && segment.contains('/')
+            {
+                return Err(ChainEntryValidationError::PathSegmentContainsSlash {
+                    provider_id: id.0.clone(),
+                });
             }
             if let (
                 ChainRouting::QueryParam {
@@ -81,13 +81,12 @@ impl TryFrom<dtos::ChainEntry> for ChainEntry {
                 },
                 dtos::AuthScheme::Query { name: auth_name },
             ) = (&config.chain_routing, &config.auth_scheme)
+                && routing_name == auth_name
             {
-                if routing_name == auth_name {
-                    return Err(ChainEntryValidationError::QueryParamCollidesWithAuth {
-                        provider_id: id.0.clone(),
-                        name: auth_name.clone(),
-                    });
-                }
+                return Err(ChainEntryValidationError::QueryParamCollidesWithAuth {
+                    provider_id: id.0.clone(),
+                    name: auth_name.clone(),
+                });
             }
         }
         Ok(ChainEntry { providers, quorum })
@@ -389,9 +388,11 @@ mod tests {
         // Then
         let stored = stored_entry(&wl, ForeignChain::Ethereum).unwrap();
         assert_eq!(stored.providers.len(), 1);
-        assert!(stored
-            .providers
-            .contains_key(&ProviderId("alchemy".to_string())));
+        assert!(
+            stored
+                .providers
+                .contains_key(&ProviderId("alchemy".to_string()))
+        );
         assert_eq!(stored.quorum, 1);
         assert_eq!(pending_voter_count(&wl), 0);
     }
@@ -568,9 +569,11 @@ mod tests {
         // Then: full snapshot replaced — only drpc remains.
         let stored = stored_entry(&wl, ForeignChain::Ethereum).unwrap();
         assert_eq!(stored.providers.len(), 1);
-        assert!(stored
-            .providers
-            .contains_key(&ProviderId("drpc".to_string())));
+        assert!(
+            stored
+                .providers
+                .contains_key(&ProviderId("drpc".to_string()))
+        );
     }
 
     #[test]

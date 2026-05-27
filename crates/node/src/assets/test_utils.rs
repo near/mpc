@@ -1,11 +1,11 @@
-use crate::assets::cleanup::EpochData;
 use crate::assets::DistributedAssetStorage;
+use crate::assets::cleanup::EpochData;
 use crate::config::ParticipantsConfig;
 use crate::db::SecretDB;
 use crate::indexer::participants::convert_participant_infos;
+use crate::providers::HasParticipants;
 use crate::providers::ecdsa::presign::PresignOutputWithParticipants;
 use crate::providers::ecdsa::triple::PairedTriple;
-use crate::providers::HasParticipants;
 use crate::{
     db::DBCol,
     primitives::{ParticipantId, UniqueId},
@@ -14,18 +14,18 @@ use ed25519_dalek::{SigningKey, VerifyingKey};
 use k256::ProjectivePoint;
 use mpc_contract::primitives::test_utils::gen_participants;
 use mpc_contract::primitives::thresholds::{Threshold, ThresholdParameters};
-use mpc_primitives::{domain::DomainId, EpochId, ReconstructionThreshold};
+use mpc_primitives::{EpochId, ReconstructionThreshold, domain::DomainId};
 use near_time::FakeClock;
-use rand::rngs::OsRng;
 use rand::RngCore;
-use serde::de::DeserializeOwned;
+use rand::rngs::OsRng;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use std::sync::{Arc, Mutex};
+use threshold_signatures::ecdsa::Polynomial;
+use threshold_signatures::ecdsa::ot_based_ecdsa::PresignOutput;
 use threshold_signatures::ecdsa::ot_based_ecdsa::triples::{
     TripleGenerationOutput, TriplePub, TripleShare,
 };
-use threshold_signatures::ecdsa::ot_based_ecdsa::PresignOutput;
-use threshold_signatures::ecdsa::Polynomial;
 
 pub fn random_verifying_key() -> VerifyingKey {
     let mut csprng = OsRng;

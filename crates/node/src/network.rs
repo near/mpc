@@ -712,7 +712,7 @@ impl NetworkTaskChannel {
                 return Ok(Some(TaskChannelComputationData {
                     from: message.from,
                     data,
-                }))
+                }));
             }
             MpcMessageKind::Abort(err) => {
                 tracing::debug!(
@@ -787,8 +787,8 @@ impl NetworkTaskChannel {
 
 #[cfg(test)]
 pub mod testing {
-    use super::conn::{ConnectionVersion, NodeConnectivityInterface};
     use super::MeshNetworkTransportSender;
+    use super::conn::{ConnectionVersion, NodeConnectivityInterface};
     use crate::primitives::{MpcPeerMessage, ParticipantId, PeerMessage};
     use crate::tracking;
     use std::collections::HashMap;
@@ -1065,10 +1065,12 @@ mod tests {
                 }
                 channel.sender().send(
                     *other_participant_id,
-                    vec![borsh::to_vec(&TestTripleMessage {
-                        data: other_participant_id.raw() as u64 + self.seed,
-                    })
-                    .unwrap()],
+                    vec![
+                        borsh::to_vec(&TestTripleMessage {
+                            data: other_participant_id.raw() as u64 + self.seed,
+                        })
+                        .unwrap(),
+                    ],
                 )?;
             }
             let mut total = 0;
@@ -1098,10 +1100,12 @@ mod tests {
                     let inner: TestTripleMessage = borsh::from_slice(&msg.data[0])?;
                     channel.sender().send(
                         msg.from,
-                        vec![borsh::to_vec(&TestTripleMessage {
-                            data: (inner.data * inner.data) % MOD,
-                        })
-                        .unwrap()],
+                        vec![
+                            borsh::to_vec(&TestTripleMessage {
+                                data: (inner.data * inner.data) % MOD,
+                            })
+                            .unwrap(),
+                        ],
                     )?;
                 }
                 _ => unreachable!(),
@@ -1120,8 +1124,8 @@ mod tests {
     }
 
     #[test]
-    fn select_random_active_participants_including_me_should_return_not_enough_active_participants_when_peers_to_consider_is_empty(
-    ) {
+    fn select_random_active_participants_including_me_should_return_not_enough_active_participants_when_peers_to_consider_is_empty()
+     {
         let num_participants = 4;
         let participant_ids = into_participant_ids(&generate_participants(num_participants));
         let transports = new_test_transports(participant_ids.clone());

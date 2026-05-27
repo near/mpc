@@ -4,7 +4,7 @@ use mpc_node_config::{ConfigFile, DownloadConfigType, NearInitConfig, StartConfi
 use near_mpc_bounded_collections::NonEmptyVec;
 use std::path::Path;
 use tee_authority::tee_authority::{
-    validate_pccs_endpoints, DstackTeeAuthorityConfig, LocalTeeAuthorityConfig, TeeAuthority,
+    DstackTeeAuthorityConfig, LocalTeeAuthorityConfig, TeeAuthority, validate_pccs_endpoints,
 };
 
 pub trait TeeAuthorityImpl {
@@ -298,8 +298,8 @@ mod tests {
             // assertion below is meaningful (otherwise the test passes even if
             // the function does nothing).
             let mut config = empty_config_json();
-            config["state_sync"]["sync"]["ExternalStorage"]
-                ["external_storage_fallback_threshold"] = serde_json::json!(999);
+            config["state_sync"]["sync"]["ExternalStorage"]["external_storage_fallback_threshold"] =
+                serde_json::json!(999);
             let init = near_init(chain_id);
 
             // When
@@ -309,8 +309,7 @@ mod tests {
             assert_eq!(config["state_sync_enabled"], serde_json::json!(false));
             // Localnet branch must not touch the threshold — sentinel survives.
             assert_eq!(
-                config["state_sync"]["sync"]["ExternalStorage"]
-                    ["external_storage_fallback_threshold"],
+                config["state_sync"]["sync"]["ExternalStorage"]["external_storage_fallback_threshold"],
                 serde_json::json!(999)
             );
         }
@@ -360,9 +359,11 @@ mod tests {
         apply_near_config_patches(&mut config, &init, "v1.signer-prod.testnet");
 
         // Then
-        assert!(config["network"]["experimental"]
-            .get("tier3_public_addr")
-            .is_none());
+        assert!(
+            config["network"]["experimental"]
+                .get("tier3_public_addr")
+                .is_none()
+        );
     }
 
     #[test]
