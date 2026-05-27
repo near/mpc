@@ -8,8 +8,8 @@
 use std::collections::BTreeMap;
 
 use mpc_node_config::{
-    foreign_chains::RpcProviderName, AuthConfig, ForeignChainConfig, ForeignChainProviderConfig,
-    ForeignChainsConfig,
+    AuthConfig, ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig,
+    foreign_chains::RpcProviderName,
 };
 use near_mpc_contract_interface::types::{
     self as dtos, AuthScheme, ChainEntry, ChainRouting, ProviderConfig, ProviderId,
