@@ -1,3 +1,4 @@
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -230,7 +231,6 @@ pub async fn wait_for_node_indexer_height_above(
 /// surface a node's stderr.log into the test's panic message when a kill+restart
 /// wait helper times out, so CI logs can attribute crashes to the right node.
 fn read_stderr_tail(path: &Path, max_bytes: usize) -> String {
-    use std::io::{Read, Seek, SeekFrom};
     let Ok(mut f) = std::fs::File::open(path) else {
         return format!("(could not open {})", path.display());
     };
