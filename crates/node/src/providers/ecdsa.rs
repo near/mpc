@@ -23,6 +23,7 @@ use mpc_node_config::ConfigFile;
 use crate::types::SignatureId;
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_primitives::domain::DomainId;
+use mpc_primitives::ReconstructionThreshold;
 use near_time::Clock;
 use std::sync::Arc;
 use threshold_signatures::ecdsa::KeygenOutput;
@@ -35,7 +36,11 @@ pub struct EcdsaSignatureProvider {
     config: Arc<ConfigFile>,
     mpc_config: Arc<MpcConfig>,
     client: Arc<MeshNetworkClient>,
-    triple_store: Arc<TripleStorage>,
+    /// Triple stores indexed by signer-set size `t`. Populated at construction
+    /// from the set of thresholds this node needs to serve — cait-sith triple
+    /// generation always runs with exactly `t` parties, so the full set of
+    /// `t`s is known up front and no on-demand creation is needed.
+    triple_stores: HashMap<ReconstructionThreshold, Arc<TripleStorage>>,
     sign_request_store: Arc<SignRequestStorage>,
     per_domain_data: HashMap<DomainId, PerDomainData>,
 }
@@ -61,12 +66,23 @@ impl EcdsaSignatureProvider {
             Arc::new(move || network_client.all_alive_participant_ids())
         };
 
-        let triple_store = Arc::new(TripleStorage::new(
-            clock.clone(),
-            db.clone(),
-            client.my_participant_id(),
-            active_participants_query.clone(),
-        )?);
+        // The set of distinct `t`s the node needs to serve is fully known at
+        // startup. Today every ECDSA domain shares the network-wide threshold;
+        // once #3164 lands and each domain may declare its own
+        // `reconstruction_threshold`, derive this set from the keyshares'
+        // domain configs instead.
+        let network_threshold = ReconstructionThreshold::new(mpc_config.participants.threshold);
+        let mut triple_stores = HashMap::new();
+        triple_stores.insert(
+            network_threshold,
+            Arc::new(TripleStorage::new(
+                clock.clone(),
+                db.clone(),
+                client.my_participant_id(),
+                active_participants_query.clone(),
+                network_threshold,
+            )?),
+        );
 
         let mut per_domain_data = HashMap::new();
         for (domain_id, keyshare) in keyshares {
@@ -90,7 +106,7 @@ impl EcdsaSignatureProvider {
             config,
             mpc_config,
             client,
-            triple_store,
+            triple_stores,
             sign_request_store,
             per_domain_data,
         })
@@ -101,6 +117,24 @@ impl EcdsaSignatureProvider {
             .get(&domain_id)
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("No keyshare for domain {:?}", domain_id))
+    }
+
+    /// Returns the triple store for `t`, or an error if no store was
+    /// configured for that threshold at construction (e.g., a peer initiated a
+    /// follower protocol with an unexpected `t`).
+    pub(super) fn triple_store_for_t(
+        &self,
+        threshold: ReconstructionThreshold,
+    ) -> anyhow::Result<Arc<TripleStorage>> {
+        self.triple_stores.get(&threshold).cloned().ok_or_else(|| {
+            let mut configured: Vec<u64> = self.triple_stores.keys().map(|t| t.inner()).collect();
+            configured.sort();
+            anyhow::anyhow!(
+                "No triple store configured for t = {} (configured: {:?})",
+                threshold.inner(),
+                configured,
+            )
+        })
     }
 
     pub(super) fn new_channel_for_task(
@@ -232,8 +266,14 @@ impl SignatureProvider for EcdsaSignatureProvider {
     }
 
     async fn spawn_background_tasks(self: Arc<Self>) -> anyhow::Result<()> {
-        let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
-        let threshold = ReconstructionLowerBound::from(threshold);
+        // TODO(#3164): once each domain may carry its own `ReconstructionThreshold`,
+        // spawn one background generator per distinct `t` across CaitSith domains
+        // and source `t` from `domain.reconstruction_threshold` rather than the
+        // network-wide threshold.
+        let threshold = ReconstructionThreshold::new(self.mpc_config.participants.threshold);
+        let threshold_usize: usize = threshold.inner().try_into()?;
+        let threshold_bound = ReconstructionLowerBound::from(threshold_usize);
+        let triple_store = self.triple_store_for_t(threshold)?;
 
         let generate_triples = tracking::spawn(
             "generate triples",
@@ -241,8 +281,8 @@ impl SignatureProvider for EcdsaSignatureProvider {
                 self.client.clone(),
                 self.mpc_config.clone(),
                 self.config.triple.clone().into(),
-                self.triple_store.clone(),
-                threshold,
+                triple_store.clone(),
+                threshold_bound,
             ),
         );
 
@@ -254,9 +294,9 @@ impl SignatureProvider for EcdsaSignatureProvider {
                     &format!("generate presignatures for domain {}", domain_id.0),
                     Self::run_background_presignature_generation(
                         self.client.clone(),
-                        threshold,
+                        threshold_bound,
                         self.config.presignature.clone().into(),
-                        self.triple_store.clone(),
+                        triple_store.clone(),
                         *domain_id,
                         data.presignature_store.clone(),
                         data.keyshare.clone(),
