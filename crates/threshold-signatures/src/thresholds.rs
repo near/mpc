@@ -42,9 +42,14 @@ impl ReconstructionThreshold {
     /// Returns a crate-private type — robust ECDSA needs this internally;
     /// external callers stay in `ReconstructionThreshold` terms.
     ///
-    /// Panics if `ReconstructionThreshold == 0`; constructors only produce values ≥ 1.
-    pub fn max_malicious(self) -> MaxMalicious {
-        MaxMalicious(self.0 - 1)
+    /// Fails with [`ThresholdError::IntegerOverflow`] if `ReconstructionThreshold == 0`.
+    /// The auto-derived `From<usize>` and `Deserialize` impls accept 0, so this
+    /// validation is required at use-time.
+    pub fn max_malicious(self) -> Result<MaxMalicious, ThresholdError> {
+        self.0
+            .checked_sub(1)
+            .map(MaxMalicious)
+            .ok_or(ThresholdError::IntegerOverflow)
     }
 }
 
@@ -63,4 +68,48 @@ impl TryFrom<MaxMalicious> for ReconstructionThreshold {
 pub enum ThresholdError {
     #[error("integer overflow")]
     IntegerOverflow,
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn max_malicious__round_trips_via_reconstruction_threshold() {
+        // Given: every non-zero reconstruction threshold in a representative range
+        for n in 1usize..=64 {
+            let t = ReconstructionThreshold::from(n);
+
+            // When: derive MaxMalicious then map back via the inverse
+            let recovered = t.max_malicious().unwrap().reconstruction_threshold().unwrap();
+
+            // Then: the round-trip is the identity
+            assert_eq!(recovered, t, "round-trip failed for n={n}");
+        }
+    }
+
+    #[test]
+    fn max_malicious__should_err_when_reconstruction_threshold_is_zero() {
+        // Given: the unsafe construction path (auto-derived From<usize>) admits zero
+        let t = ReconstructionThreshold::from(0usize);
+
+        // When
+        let result = t.max_malicious();
+
+        // Then: the underflow is reported instead of silently wrapping
+        assert_eq!(result, Err(ThresholdError::IntegerOverflow));
+    }
+
+    #[test]
+    fn reconstruction_threshold__should_err_on_overflow_at_usize_max() {
+        // Given: MaxMalicious holds usize::MAX (only reachable via the unsafe ctor)
+        let m = MaxMalicious::from(usize::MAX);
+
+        // When
+        let result = m.reconstruction_threshold();
+
+        // Then
+        assert_eq!(result, Err(ThresholdError::IntegerOverflow));
+    }
 }

@@ -71,7 +71,11 @@ pub fn sign(
     }
 
     // ensure number of participants during the signing phase is >= 2*(ReconstructionThreshold - 1) + 1
-    let max_malicious = threshold.into().max_malicious();
+    let max_malicious = threshold.into().max_malicious().map_err(|_| {
+        InitializationError::BadParameters(
+            "ReconstructionThreshold must be > 0 to derive MaxMalicious".to_string(),
+        )
+    })?;
     let robust_ecdsa_threshold = max_malicious
         .value()
         .checked_mul(2)

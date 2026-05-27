@@ -52,7 +52,11 @@ pub fn presign(
         });
     }
 
-    let max_malicious = args.threshold.max_malicious();
+    let max_malicious = args.threshold.max_malicious().map_err(|_| {
+        InitializationError::BadParameters(
+            "ReconstructionThreshold must be > 0 to derive MaxMalicious".to_string(),
+        )
+    })?;
     if max_malicious.value() > participants.len() {
         return Err(InitializationError::BadParameters(
             "ReconstructionThreshold - 1 must be less than or equals to participant count"
@@ -99,7 +103,11 @@ async fn do_presign(
     mut rng: impl CryptoRngCore,
 ) -> Result<PresignOutput, ProtocolError> {
     let rng = &mut rng;
-    let threshold = args.threshold.max_malicious().value();
+    let threshold = args
+        .threshold
+        .max_malicious()
+        .map_err(|_| ProtocolError::IntegerOverflow)?
+        .value();
     // Round 1
     let degree = threshold
         .checked_mul(2)
