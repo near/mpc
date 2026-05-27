@@ -33,7 +33,7 @@ use crate::{
     Config, SupportedForeignChainsByNode,
 };
 
-/// Pre-3.11 layout of `ThresholdParameters`. The new layout appends
+/// `3.10.0` layout of `ThresholdParameters`. The new layout appends
 /// `per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>`
 /// (see #3169). Borsh is positional, so old bytes can be decoded into this
 /// shadow and then mapped to the new struct with the map defaulted to empty.
@@ -52,7 +52,7 @@ impl From<OldThresholdParameters> for ThresholdParameters {
     }
 }
 
-/// Pre-3.11 layout of `ThresholdParametersVotes` — same shape but with the
+/// `3.10.0` layout of `ThresholdParametersVotes` — same shape but with the
 /// old `OldThresholdParameters` as the value type.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 struct OldThresholdParametersVotes {
@@ -71,7 +71,7 @@ impl From<OldThresholdParametersVotes> for ThresholdParametersVotes {
     }
 }
 
-/// Pre-3.11 layout of `RunningContractState`. Mirrors the current shape but
+/// `3.10.0` layout of `RunningContractState`. Mirrors the current shape but
 /// uses the old `OldThresholdParameters` and `OldThresholdParametersVotes`.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 struct OldRunningContractState {
@@ -96,7 +96,7 @@ impl From<OldRunningContractState> for RunningContractState {
     }
 }
 
-/// Pre-3.11 layout of `ProtocolContractState`. Only the `Running` variant
+/// `3.10.0` layout of `ProtocolContractState`. Only the `Running` variant
 /// has a verified shadow — Initializing/Resharing reuse current types and
 /// would fail to deserialize old data, which matches the pre-existing
 /// "migration panics if not Running" policy.

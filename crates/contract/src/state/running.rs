@@ -3,7 +3,7 @@ use super::key_event::KeyEvent;
 use super::resharing::ResharingContractState;
 use crate::errors::{DomainError, Error, InvalidParameters, VoteError};
 use crate::primitives::{
-    domain::{AddDomainsVotes, DomainRegistry},
+    domain::{AddDomainsVotes, DomainRegistry, validate_domain_threshold},
     key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, Keyset},
     threshold_votes::ThresholdParametersVotes,
     thresholds::ThresholdParameters,
@@ -157,7 +157,7 @@ impl RunningContractState {
                 reconstruction_threshold: effective_threshold,
                 ..domain.clone()
             };
-            crate::primitives::domain::validate_domain_threshold(&proposed, new_num_participants)?;
+            validate_domain_threshold(&proposed, new_num_participants)?;
         }
 
         // ensure the signer is a proposed participant
@@ -487,8 +487,6 @@ pub mod running_tests {
             "Expected InsufficientParticipantsForProtocol, got: {err}"
         );
     }
-
-    // ----- #3169: per-domain threshold proposals in resharing -----
 
     use std::collections::BTreeMap;
 

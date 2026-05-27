@@ -131,17 +131,17 @@ pub use near_mpc_crypto_types::{KeyForDomain, Keyset};
 // =============================================================================
 
 /// Threshold parameters for distributed key operations.
-///
-/// `per_domain_thresholds` carries a proposed update for each domain's
-/// [`ReconstructionThreshold`] when this struct flows into
-/// `vote_new_parameters`. An empty map means "keep current per-domain
-/// thresholds"; a populated map must cover every existing domain (validated by
-/// the contract). Outside of resharing proposals the map is empty.
-///
-/// Backwards-compat for the legacy `{ participants, threshold }` wire shape is
-/// intrinsic: `serde(default)` parses old JSON without `per_domain_thresholds`
-/// as an empty map, and `skip_serializing_if` omits the field from `state()`
-/// output when no overlay is in flight.
+//
+// `per_domain_thresholds` carries a proposed update for each domain's
+// `ReconstructionThreshold` when this struct flows into `vote_new_parameters`.
+// An empty map means "keep current per-domain thresholds"; a populated map must
+// cover every existing domain (validated by the contract). Outside of resharing
+// proposals the map is empty.
+//
+// Backwards-compat for the legacy `{ participants, threshold }` wire shape is
+// intrinsic: `serde(default)` parses old JSON without `per_domain_thresholds`
+// as an empty map, and `skip_serializing_if` omits the field from `state()`
+// output when no overlay is in flight.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
