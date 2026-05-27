@@ -56,6 +56,8 @@ pub type TripleGenerationOutput = (TripleShare, TriplePub);
 pub type TripleGenerationOutputMany = Vec<(TripleShare, TriplePub)>;
 type C = Secp256K1Sha256;
 
+#[allow(dead_code)]
+// superseded by `PolynomialCommitmentsMessageMany`; kept as the single-instance wire-format reference.
 #[derive(Serialize, Deserialize)]
 struct PolynomialCommitmentsMessage {
     big_e: PolynomialCommitment,
@@ -869,7 +871,7 @@ mod test {
         let triple_pub = result[2].1 .1.clone();
 
         let participants = vec![result[0].0, result[1].0, result[2].0];
-        let triple_shares = vec![
+        let triple_shares = [
             result[0].1 .0.clone(),
             result[1].1 .0.clone(),
             result[2].1 .0.clone(),
@@ -923,7 +925,7 @@ mod test {
         let triple_pub = result[2].1[0].1.clone();
 
         let participants = vec![result[0].0, result[1].0, result[2].0];
-        let triple_shares = vec![
+        let triple_shares = [
             result[0].1[0].0.clone(),
             result[1].1[0].0.clone(),
             result[2].1[0].0.clone(),

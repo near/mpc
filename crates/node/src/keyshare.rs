@@ -510,6 +510,10 @@ pub async fn generate_key_storage() -> (KeyshareStorage, tempfile::TempDir) {
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::cloned_ref_to_slice_refs,
+    reason = "tests build single-element keyshare slices; clarity beats `slice::from_ref` here."
+)]
 pub mod tests {
     use mpc_primitives::domain::DomainId;
     use mpc_primitives::{AttemptId, EpochId, KeyEventId};

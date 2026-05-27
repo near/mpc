@@ -727,8 +727,7 @@ pub mod test {
         rng: &mut R,
     ) -> Vec<(Participant, KeygenOutput<C>)>
     where
-        <C::Group as Group>::Element: std::fmt::Debug + std::marker::Send,
-        <<C::Group as Group>::Field as Field>::Scalar: std::marker::Send,
+        <C::Group as Group>::Element: std::fmt::Debug,
     {
         let result = run_keygen::<C, R>(participants, threshold, rng);
         assert!(result.len() == participants.len());
@@ -747,8 +746,7 @@ pub mod test {
     >(
         rng: &mut R,
     ) where
-        <C::Group as Group>::Element: std::fmt::Debug + std::marker::Send,
-        <<C::Group as Group>::Field as Field>::Scalar: std::marker::Send,
+        <C::Group as Group>::Element: std::fmt::Debug,
     {
         let threshold = 1;
         let participants = generate_participants(2);
@@ -771,8 +769,7 @@ pub mod test {
         rng: &mut R,
     ) -> Vec<(Participant, KeygenOutput<C>)>
     where
-        <C::Group as Group>::Element: std::fmt::Debug + std::marker::Send,
-        <<C::Group as Group>::Field as Field>::Scalar: std::marker::Send,
+        <C::Group as Group>::Element: std::fmt::Debug,
     {
         let result0 = run_keygen::<C, R>(participants, threshold, rng);
         assert_public_key_invariant(&result0);
@@ -793,8 +790,7 @@ pub mod test {
         rng: &mut R,
     ) -> Vec<(Participant, KeygenOutput<C>)>
     where
-        <C::Group as Group>::Element: std::fmt::Debug + std::marker::Send,
-        <<C::Group as Group>::Field as Field>::Scalar: std::marker::Send,
+        <C::Group as Group>::Element: std::fmt::Debug,
     {
         let result0 = run_keygen::<C, R>(participants, threshold0, rng);
         assert_public_key_invariant(&result0);
@@ -827,8 +823,7 @@ pub mod test {
     >(
         rng: &mut R,
     ) where
-        <C::Group as Group>::Element: std::fmt::Debug + std::marker::Send,
-        <<C::Group as Group>::Field as Field>::Scalar: std::marker::Send,
+        <C::Group as Group>::Element: std::fmt::Debug,
     {
         let participants = generate_participants(2);
         let threshold0 = 2;

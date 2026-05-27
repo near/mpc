@@ -4,7 +4,7 @@ use rand_core::CryptoRngCore;
 use crate::participants::Participant;
 use crate::test_utils::{run_protocol, GenOutput, GenProtocol};
 use crate::thresholds::ReconstructionLowerBound;
-use crate::{keygen, refresh, reshare, Ciphersuite, Element, KeygenOutput, Scalar, VerifyingKey};
+use crate::{keygen, refresh, reshare, Ciphersuite, KeygenOutput, VerifyingKey};
 
 // +++++++++++++++++ DKG Functions +++++++++++++++++ //
 type DKGGenProtocol<C> = GenProtocol<KeygenOutput<C>>;
@@ -17,11 +17,7 @@ pub fn run_keygen<C: Ciphersuite, R: CryptoRngCore + SeedableRng + Send + 'stati
     participants: &[Participant],
     threshold: impl Into<ReconstructionLowerBound> + Copy + Send + 'static,
     rng: &mut R,
-) -> GenOutput<C>
-where
-    Element<C>: Send,
-    Scalar<C>: Send,
-{
+) -> GenOutput<C> {
     let mut protocols: DKGGenProtocol<C> = Vec::with_capacity(participants.len());
 
     for p in participants {
@@ -40,11 +36,7 @@ pub fn run_refresh<C: Ciphersuite, R: CryptoRngCore + SeedableRng + Send + 'stat
     keys: &[(Participant, KeygenOutput<C>)],
     threshold: impl Into<ReconstructionLowerBound> + Copy + Send + 'static,
     rng: &mut R,
-) -> GenOutput<C>
-where
-    Element<C>: Send,
-    Scalar<C>: Send,
-{
+) -> GenOutput<C> {
     let mut protocols: DKGGenProtocol<C> = Vec::with_capacity(participants.len());
 
     for (p, out) in keys {
@@ -74,11 +66,7 @@ pub fn run_reshare<C: Ciphersuite, R: CryptoRngCore + SeedableRng + Send + 'stat
     new_threshold: impl Into<ReconstructionLowerBound> + Copy + Send + 'static,
     new_participants: &[Participant],
     rng: &mut R,
-) -> GenOutput<C>
-where
-    Element<C>: Send,
-    Scalar<C>: Send,
-{
+) -> GenOutput<C> {
     assert!(!new_participants.is_empty());
     let mut setup = vec![];
 

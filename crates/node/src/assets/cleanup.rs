@@ -3,8 +3,8 @@ use crate::config::ParticipantsConfig;
 use crate::db::{DBCol, SecretDB, EPOCH_ID_KEY};
 use crate::primitives;
 use crate::providers::ecdsa::presign::PresignOutputWithParticipants;
-use crate::providers::ecdsa::triple::{PairedTriple, TRIPLE_STORE_DOMAIN_ID};
-use mpc_primitives::{domain::DomainId, EpochId};
+use crate::providers::ecdsa::triple::PairedTriple;
+use mpc_primitives::{domain::DomainId, EpochId, ReconstructionThreshold};
 use serde::{self, Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -23,6 +23,7 @@ pub fn delete_stale_triples_and_presignatures(
     current_epoch_data: EpochData,
     my_participant_id: primitives::ParticipantId,
     ecdsa_domain_ds: Vec<DomainId>,
+    triple_thresholds: Vec<ReconstructionThreshold>,
 ) -> anyhow::Result<()> {
     let current_epoch_id = current_epoch_data.epoch_id;
     let asset_cleanup: AssetCleanup = match get_epoch_data(db)? {
@@ -37,42 +38,59 @@ pub fn delete_stale_triples_and_presignatures(
         },
     };
 
+    // All cleanup work + the EpochData marker bump are staged on a single
+    // `SecretDBUpdate` so they commit as one atomic RocksDB batch. If the
+    // process dies before the commit, none of the deletes or the marker are
+    // persisted, and the next startup re-runs the full cleanup unchanged.
+    let mut update_writer = db.update();
     match asset_cleanup {
         AssetCleanup::Keep => {}
         AssetCleanup::DeleteAll => {
-            let mut update_writer = db.update();
-            let _ = update_writer.delete_all(DBCol::Presignature);
-            let _ = update_writer.delete_all(DBCol::Triple);
-            update_writer.commit()?;
+            update_writer.delete_all(DBCol::Presignature)?;
+            update_writer.delete_all(DBCol::Triple)?;
+            update_writer.delete_all(DBCol::TripleV2)?;
         }
         AssetCleanup::KeepOnly(persitent_participants) => {
-            // cleanup triples:
+            // Triples — both columns, since they are dual-written during the
+            // rollout window. Legacy `Triple` uses an empty prefix; new
+            // `TripleV2` uses a `[t as u64 BE]` prefix per store.
             clean_db::<PairedTriple>(
                 db,
+                &mut update_writer,
                 DBCol::Triple,
                 &persitent_participants,
                 my_participant_id,
-                TRIPLE_STORE_DOMAIN_ID,
+                &[],
             )?;
-            // cleanup presignatures:
+            for t in &triple_thresholds {
+                clean_db::<PairedTriple>(
+                    db,
+                    &mut update_writer,
+                    DBCol::TripleV2,
+                    &persitent_participants,
+                    my_participant_id,
+                    &t.inner().to_be_bytes(),
+                )?;
+            }
+            // Presignatures (per-domain, unchanged).
             for domain_id in &ecdsa_domain_ds {
                 clean_db::<PresignOutputWithParticipants>(
                     db,
+                    &mut update_writer,
                     DBCol::Presignature,
                     &persitent_participants,
                     my_participant_id,
-                    Some(*domain_id),
+                    &domain_id.0.to_be_bytes(),
                 )?;
             }
         }
     }
 
-    let mut update_writer = db.update();
     tracing::info!("Updating epoch data: {:?}.", current_epoch_data);
     let current_epoch_data_ser = serde_json::to_vec(&current_epoch_data)?;
     update_writer.put(DBCol::EpochData, EPOCH_ID_KEY, &current_epoch_data_ser);
-    tracing::info!("Updated epoch id entry");
     update_writer.commit()?;
+    tracing::info!("Updated epoch id entry");
     Ok(())
 }
 
@@ -166,9 +184,16 @@ mod tests {
     use crate::assets::cleanup::{delete_stale_triples_and_presignatures, get_epoch_data};
     use crate::assets::test_utils;
     use crate::assets::test_utils::get_participant_ids;
+    use crate::assets::test_utils::legacy_triple_key;
+    use crate::assets::test_utils::make_triple;
     use crate::assets::test_utils::random_verifying_key;
+    use crate::assets::test_utils::triple_v2_key;
     use crate::assets::test_utils::TestContext;
+    use crate::db::{DBCol, SecretDB};
+    use crate::primitives::UniqueId;
+    use crate::providers::ecdsa::triple::TripleStorage;
     use mpc_primitives::domain::DomainId;
+    use near_time::FakeClock;
     use std::sync::{Arc, Mutex};
 
     fn assert_epoch_data_in_db_matches(ctx: &TestContext, expected: &EpochData) {
@@ -185,7 +210,7 @@ mod tests {
     #[test]
     fn test_delete_triples_and_presignatures() {
         // setup
-        let (mut start_data, my_participant_id) = test_utils::gen_four_participants();
+        let (mut start_data, my_participant_id, threshold) = test_utils::gen_four_participants();
         let all_participants = get_participant_ids(start_data.clone());
         let subset: Vec<_> = all_participants.iter().take(3).cloned().collect();
         let alive_participants = Arc::new(Mutex::new(all_participants.clone()));
@@ -206,6 +231,7 @@ mod tests {
             start_data.clone(),
             my_participant_id,
             [DomainId(0), DomainId(1)].to_vec(),
+            vec![threshold],
         )
         .unwrap();
         ctx.assert_owned(2);
@@ -223,6 +249,7 @@ mod tests {
             start_data.clone(),
             my_participant_id,
             [DomainId(0), DomainId(1)].to_vec(),
+            vec![threshold],
         )
         .unwrap();
         ctx.assert_owned(1);
@@ -236,10 +263,204 @@ mod tests {
             end_data.clone(),
             my_participant_id,
             [DomainId(0), DomainId(1)].to_vec(),
+            vec![threshold],
         )
         .unwrap();
 
         ctx.assert_owned(0);
         assert_epoch_data_in_db_matches(&ctx, &end_data);
+    }
+
+    /// End-to-end check that a dual-written triple (via `TripleStorage::add_owned`,
+    /// which writes to both `DBCol::TripleV2` under `[t]` and `DBCol::Triple` with
+    /// no prefix) is removed from BOTH columns when the participant set changes.
+    /// The other cleanup tests populate `TripleV2` only via a local helper that
+    /// bypasses the dual-write, so this is the only one that exercises the
+    /// realistic post-`add_owned` state.
+    #[test]
+    #[expect(non_snake_case)]
+    fn delete_stale_triples_and_presignatures__should_clean_dual_written_triples_in_both_columns() {
+        // Given a node has dual-written a stale triple via TripleStorage.
+        let (mut start_data, my_participant_id, threshold) = test_utils::gen_four_participants();
+        let all_participants = get_participant_ids(start_data.clone());
+        let alive_participants = Arc::new(Mutex::new(all_participants.clone()));
+        let dir = tempfile::tempdir().unwrap();
+        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let triple_store = TripleStorage::new(
+            FakeClock::default().clock(),
+            db.clone(),
+            my_participant_id,
+            {
+                let alive = alive_participants.clone();
+                Arc::new(move || alive.lock().unwrap().clone())
+            },
+            threshold,
+        )
+        .unwrap();
+        let id = triple_store.generate_and_reserve_id();
+        triple_store.add_owned(id, make_triple(&all_participants));
+        let v2_key = triple_v2_key(threshold, id);
+        let legacy_key = legacy_triple_key(id);
+        // Sanity: the row really is in both columns.
+        assert!(db.get(DBCol::TripleV2, &v2_key).unwrap().is_some());
+        assert!(db.get(DBCol::Triple, &legacy_key).unwrap().is_some());
+
+        // Seed the persisted epoch_data so the next call enters the
+        // `KeepOnly` branch (same epoch_id, persistent set shrinks).
+        delete_stale_triples_and_presignatures(
+            &db,
+            start_data.clone(),
+            my_participant_id,
+            vec![DomainId(0)],
+            vec![threshold],
+        )
+        .unwrap();
+        assert!(db.get(DBCol::TripleV2, &v2_key).unwrap().is_some());
+        assert!(db.get(DBCol::Triple, &legacy_key).unwrap().is_some());
+
+        // When one participant's TLS key changes — the triple's participant
+        // set is no longer fully persistent.
+        start_data
+            .participants
+            .participants
+            .last_mut()
+            .unwrap()
+            .p2p_public_key = random_verifying_key();
+
+        delete_stale_triples_and_presignatures(
+            &db,
+            start_data.clone(),
+            my_participant_id,
+            vec![DomainId(0)],
+            vec![threshold],
+        )
+        .unwrap();
+
+        // Then the dual-written row is gone from both columns.
+        assert!(db.get(DBCol::TripleV2, &v2_key).unwrap().is_none());
+        assert!(db.get(DBCol::Triple, &legacy_key).unwrap().is_none());
+    }
+
+    /// Counterpart to the stale-cleaned test: a dual-written triple whose
+    /// participants are all in the persistent set must survive the cleanup in
+    /// both columns.
+    #[test]
+    #[expect(non_snake_case)]
+    fn delete_stale_triples_and_presignatures__should_keep_dual_written_active_triple() {
+        let (mut start_data, my_participant_id, threshold) = test_utils::gen_four_participants();
+        let all_participants = get_participant_ids(start_data.clone());
+        // Triple uses everyone EXCEPT the last participant (whose TLS we'll change
+        // below), so the participant set stays fully within the persistent set.
+        let active_subset: Vec<_> = all_participants
+            .iter()
+            .take(all_participants.len() - 1)
+            .copied()
+            .collect();
+        let alive_participants = Arc::new(Mutex::new(all_participants.clone()));
+        let dir = tempfile::tempdir().unwrap();
+        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let triple_store = TripleStorage::new(
+            FakeClock::default().clock(),
+            db.clone(),
+            my_participant_id,
+            {
+                let alive = alive_participants.clone();
+                Arc::new(move || alive.lock().unwrap().clone())
+            },
+            threshold,
+        )
+        .unwrap();
+        let id = triple_store.generate_and_reserve_id();
+        triple_store.add_owned(id, make_triple(&active_subset));
+        let v2_key = triple_v2_key(threshold, id);
+        let legacy_key = legacy_triple_key(id);
+
+        // Seed epoch_data, then run cleanup with one participant's TLS rotated
+        // (the one our triple does not depend on).
+        delete_stale_triples_and_presignatures(
+            &db,
+            start_data.clone(),
+            my_participant_id,
+            vec![DomainId(0)],
+            vec![threshold],
+        )
+        .unwrap();
+        start_data
+            .participants
+            .participants
+            .last_mut()
+            .unwrap()
+            .p2p_public_key = random_verifying_key();
+        delete_stale_triples_and_presignatures(
+            &db,
+            start_data.clone(),
+            my_participant_id,
+            vec![DomainId(0)],
+            vec![threshold],
+        )
+        .unwrap();
+
+        assert!(db.get(DBCol::TripleV2, &v2_key).unwrap().is_some());
+        assert!(db.get(DBCol::Triple, &legacy_key).unwrap().is_some());
+    }
+
+    /// A dual-written triple authored by a peer (received locally via
+    /// `add_unowned`) must not be touched by *our* cleanup — each node only
+    /// cleans the triples it owns.
+    #[test]
+    #[expect(non_snake_case)]
+    fn delete_stale_triples_and_presignatures__should_keep_peer_owned_dual_written_triple() {
+        let (mut start_data, my_participant_id, threshold) = test_utils::gen_four_participants();
+        let all_participants = get_participant_ids(start_data.clone());
+        let peer = *all_participants
+            .iter()
+            .find(|p| **p != my_participant_id)
+            .unwrap();
+        let alive_participants = Arc::new(Mutex::new(all_participants.clone()));
+        let dir = tempfile::tempdir().unwrap();
+        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let triple_store = TripleStorage::new(
+            FakeClock::default().clock(),
+            db.clone(),
+            my_participant_id,
+            {
+                let alive = alive_participants.clone();
+                Arc::new(move || alive.lock().unwrap().clone())
+            },
+            threshold,
+        )
+        .unwrap();
+        // Even an outright-stale peer-owned triple stays put — the peer cleans
+        // its own.
+        let peer_id = UniqueId::new(peer, 100, 0);
+        triple_store.add_unowned(peer_id, make_triple(&all_participants));
+        let v2_key = triple_v2_key(threshold, peer_id);
+        let legacy_key = legacy_triple_key(peer_id);
+
+        delete_stale_triples_and_presignatures(
+            &db,
+            start_data.clone(),
+            my_participant_id,
+            vec![DomainId(0)],
+            vec![threshold],
+        )
+        .unwrap();
+        start_data
+            .participants
+            .participants
+            .last_mut()
+            .unwrap()
+            .p2p_public_key = random_verifying_key();
+        delete_stale_triples_and_presignatures(
+            &db,
+            start_data.clone(),
+            my_participant_id,
+            vec![DomainId(0)],
+            vec![threshold],
+        )
+        .unwrap();
+
+        assert!(db.get(DBCol::TripleV2, &v2_key).unwrap().is_some());
+        assert!(db.get(DBCol::Triple, &legacy_key).unwrap().is_some());
     }
 }

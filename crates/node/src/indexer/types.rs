@@ -28,16 +28,6 @@ use near_mpc_contract_interface::method_names::REGISTER_FOREIGN_CHAIN_CONFIG;
 
 const MAX_GAS: Gas = Gas::from_teragas(300);
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
-pub struct SerializableScalar {
-    pub scalar: Scalar,
-}
-
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
-struct SerializableAffinePoint {
-    pub affine_point: AffinePoint,
-}
-
 /* The format in which the chain signatures contract expects
  * to receive the details of the original request. `epsilon`
  * is used to refer to the (serializable) tweak derived from the caller's

@@ -24,7 +24,15 @@ impl std::fmt::Debug for SecretDB {
 /// Each DBCol corresponds to a column family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DBCol {
+    /// Legacy triple column: keys are `borsh(UniqueId)` with no prefix.
+    /// Kept alongside `TripleV2` during the rollout so that a downgrade can
+    /// still find triples this binary wrote.
+    /// TODO(#3298): remove once all production nodes have upgraded past 3.11.
     Triple,
+    /// Per-`t` triple column: keys are `[t as u64 BE][borsh(UniqueId)]`. A
+    /// triple is stored under the threshold it was generated with so that
+    /// presign can draw from a store of matching `t`.
+    TripleV2,
     Presignature,
     SignRequest,
     CKDRequest,
@@ -36,6 +44,7 @@ impl DBCol {
     fn as_str(&self) -> &'static str {
         match self {
             DBCol::Triple => "triple",
+            DBCol::TripleV2 => "triple_v2",
             DBCol::Presignature => "presignature",
             DBCol::SignRequest => "sign_request",
             DBCol::CKDRequest => "ckd_request",
@@ -44,9 +53,10 @@ impl DBCol {
         }
     }
 
-    fn all() -> [DBCol; 6] {
+    fn all() -> [DBCol; 7] {
         [
             DBCol::Triple,
+            DBCol::TripleV2,
             DBCol::Presignature,
             DBCol::SignRequest,
             DBCol::CKDRequest,
@@ -104,7 +114,7 @@ impl SecretDB {
         Ok(Self { db, cipher }.into())
     }
 
-    fn cf_handle(&self, cf: DBCol) -> rocksdb::ColumnFamilyRef {
+    fn cf_handle(&self, cf: DBCol) -> rocksdb::ColumnFamilyRef<'_> {
         self.db.cf_handle(cf.as_str()).unwrap()
     }
 
@@ -135,6 +145,24 @@ impl SecretDB {
         let iter = self
             .db
             .iterator_cf_opt(&self.cf_handle(col), iter_opt, iter_mode);
+        iter.map(move |result| {
+            let (key, value) = result?;
+            let value = decrypt(&self.cipher, &value)?;
+            anyhow::Ok((key, value))
+        })
+    }
+
+    /// Iterates every key/value in the column with no upper bound. Use this
+    /// instead of `iter_range(col, &[], &[0xFF; N])` whenever a full-column
+    /// scan is intended — the latter silently skips rows whose keys are ≥ the
+    /// sentinel, which is fragile against future key-schema growth.
+    pub fn iter_all(
+        &self,
+        col: DBCol,
+    ) -> impl Iterator<Item = anyhow::Result<(Box<[u8]>, Vec<u8>)>> + '_ {
+        let iter = self
+            .db
+            .iterator_cf(self.cf_handle(col), IteratorMode::Start);
         iter.map(move |result| {
             let (key, value) = result?;
             let value = decrypt(&self.cipher, &value)?;
