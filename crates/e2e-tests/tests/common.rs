@@ -164,22 +164,9 @@ pub async fn wait_metric_on_nodes(
     .await
 }
 
-/// Wait until node `idx`'s indexer block-height metric reports a value
-/// strictly greater than `min_height`.
-///
-/// Use this after `MpcCluster::start_nodes` + `wait_for_node_healthy` to
-/// confirm the node's *indexer* (not just the web server) is alive and
-/// progressing. `/health` returns 200 the moment the web server binds —
-/// which happens early in node startup, before the indexer is started
-/// (see `crates/node/src/web.rs`). If the indexer subsequently fails or
-/// the whole process crashes during catch-up, the test would otherwise
-/// march on with a node that's actually dead and only discover it via
-/// "Connection refused" 30s later in some downstream polling loop.
-///
-/// Returns an error if the indexer doesn't advance within `timeout` —
-/// for restarted nodes the caller should pass the height observed
-/// *before* the kill, so this proves the indexer caught up and made
-/// forward progress (not just resumed at the persisted height).
+/// Wait until node `idx`'s indexer block-height metric exceeds `min_height`.
+/// Stronger readiness check than `wait_for_node_healthy`, which only verifies
+/// the web server is up (see #3366).
 pub async fn wait_for_node_indexer_height_above(
     cluster: &MpcCluster,
     idx: usize,
