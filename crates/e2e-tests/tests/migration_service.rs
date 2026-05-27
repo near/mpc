@@ -732,15 +732,8 @@ async fn migration_service__should_handle_back_migration_a_to_b_to_a() {
         .wait_for_node_healthy(a_idx)
         .await
         .expect("A0 did not become healthy after restart");
-    // `/health` returns 200 the moment the web server binds, which
-    // happens before the indexer is started (see
-    // crates/node/src/web.rs). Without an additional wait, the test
-    // can march into back-migration while A0's indexer is still
-    // initializing — and if A0's process then crashes during catch-up,
-    // the downstream `start_migration_and_wait` polling loop just
-    // hits "Connection refused" against a dead node for 30s.
-    // Wait for the indexer to actually advance past where it was before
-    // the kill (CI run 26451546911 attempt 1 hit this race).
+    // `wait_for_node_healthy` only checks the web port; wait for the
+    // indexer to actually resume before back-migration (see #3366).
     common::wait_for_node_indexer_height_above(
         &cluster,
         a_idx,
