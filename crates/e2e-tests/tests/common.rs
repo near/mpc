@@ -219,8 +219,9 @@ pub async fn wait_for_node_indexer_height_above(
     Ok(())
 }
 
-/// Read node `idx`'s current indexer block height. Returns `None` if the
-/// node is not running or the metric scrape fails (process down).
+/// Read node `idx`'s current indexer block height. Returns `Ok(None)` if
+/// the node is not running or the HTTP scrape can't connect (process
+/// down); returns `Err` if a metrics body read fails partway through.
 pub async fn current_node_indexer_height(
     cluster: &MpcCluster,
     idx: usize,
