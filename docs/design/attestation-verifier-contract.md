@@ -318,8 +318,10 @@ pub struct MpcContract {
     // ... existing fields ...
 
     /// The locked account `mpc-contract` currently trusts as the verifier.
-    /// `submit_participant_info` calls `verify_quote` on this account;
-    /// mutated only by the threshold-crossing vote above.
+    /// `submit_participant_info` calls `verify_quote` on this account.
+    /// Mutated only by the threshold-crossing vote above, which also
+    /// schedules a self-`Promise` calling `clean_invalid_attestations`
+    /// to evict every entry whose `verified_by` no longer matches.
     tee_verifier_account_id: AccountId,
 
     /// Pending votes for changing `tee_verifier_account_id`. Each voter is an
@@ -347,14 +349,17 @@ sequenceDiagram
     MPC->>VerOld: Promise: verify_quote(...) (.then resolve_verification)
 
     Gov->>MPC: vote_tee_verifier_change passes
-    Note over MPC: tee_verifier_account_id = new
+    Note over MPC: tee_verifier_account_id = new<br/>schedule self-Promise: clean_invalid_attestations
 
     VerOld-->>MPC: VerifiedReport
-    MPC->>MPC: resolve_verification (post-DCAP + insert, against fresh policy)
+    MPC->>MPC: resolve_verification (post-DCAP + insert, verified_by = old)
     MPC->>MPC: promise_yield_resume(data_id, FinalOutcome)
     MPC->>MPC: on_attestation_verified (trivial: return value)
 
-    Op->>MPC: submit_participant_info(Dstack, tls_pk) (next call)
+    MPC->>MPC: clean_invalid_attestations (self-Promise from vote)
+    Note over MPC: re_verify rejects verified_by = old → entry evicted
+
+    Op->>MPC: submit_participant_info(Dstack, tls_pk) (next call, fresh quote)
     MPC->>MPC: read tee_verifier_account_id (= new)
     MPC->>VerNew: Promise: verify_quote(...)
 ```
@@ -491,8 +496,7 @@ impl MpcContract {
                         // receipt, NOT `self.tee_verifier_account_id`. If a vote
                         // rotated the trusted verifier mid-flight, the entry must
                         // record the *old* address so the next sweep (scheduled by
-                        // the rotation handler) evicts it. See "Closing the gap"
-                        // in §Governance and upgrades.
+                        // the rotation handler) evicts it.
                         let verified_by = env::predecessor_account_id();
                         self.tee_state.stored_attestations.insert(
                             pending.tls_pk.clone(),
@@ -581,6 +585,8 @@ pub struct PendingAttestation {
 ## Testing
 
 The yield-resume split adds four branches the synchronous version never had: three of them live in `resolve_verification` (verifier returned `Err`, verifier returned `Ok` but post-DCAP failed, verifier returned `Ok` and post-DCAP passed) and one lives in `on_attestation_verified` (the yield-resume timeout fired with `Err(PromiseError::Failed)` — covering both verifier infrastructure failure and a `resolve_verification` receipt that rolled back). Each one needs test coverage, and exercising the failure branches requires the verifier to return specific responses on demand — or, for the timeout branch, the test driver to advance the chain past the yield-resume window without resuming.
+
+The verifier-rotation eviction path adds three more cases. First, `re_verify` must reject an entry whose `verified_by` does not equal the current `tee_verifier_account_id` even when every post-DCAP allowlist invariant still holds. Second, `vote_tee_verifier_change` crossing threshold must schedule the `clean_invalid_attestations` self-`Promise` and that sweep must evict every entry stamped with the old verifier. Third, the in-flight-rotation race: a verification scheduled against the old verifier that resolves *after* the vote crosses threshold must end up stamped with the old verifier (from `env::predecessor_account_id()`) and be evicted by the scheduled sweep.
 
 To make that practical, we introduce a stub `tee-verifier` crate: same `tee-verifier-interface` DTOs as the real verifier, but `verify_quote` returns whatever `Ok(VerifiedReport)` or `Err(VerifierError)` the test asks for. Sandbox tests deploy the stub like any other verifier candidate — lock its account, then call `propose_tee_verifier_change` + `vote_tee_verifier_change` from the test setup to point `mpc-contract` at the stub. This runs the same code path as production; nothing in `mpc-contract` knows or cares whether it's talking to the real verifier or the stub.
 
