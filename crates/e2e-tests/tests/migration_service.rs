@@ -715,6 +715,13 @@ async fn migration_service__should_handle_back_migration_a_to_b_to_a() {
         "A0's permanent_keys/ is empty before kill — test setup did not produce keyshares, \
          so the back-migration P1 precondition can't be modeled"
     );
+    // Snapshot A0's indexer height before the kill so the post-restart
+    // readiness check (below) can prove the indexer has resumed and
+    // advanced past where it was — not just bound the web port.
+    let a0_indexer_height_before_kill = common::current_node_indexer_height(&cluster, a_idx)
+        .await
+        .expect("failed to read A0's indexer height before kill")
+        .expect("A0's indexer should be reporting a block height before the kill");
     cluster
         .kill_nodes(&[a_idx])
         .expect("failed to kill A0 before back-migration");
@@ -725,6 +732,16 @@ async fn migration_service__should_handle_back_migration_a_to_b_to_a() {
         .wait_for_node_healthy(a_idx)
         .await
         .expect("A0 did not become healthy after restart");
+    // `wait_for_node_healthy` only checks the web port; wait for the
+    // indexer to actually resume before back-migration (see #3366).
+    common::wait_for_node_indexer_height_above(
+        &cluster,
+        a_idx,
+        a0_indexer_height_before_kill,
+        Duration::from_secs(60),
+    )
+    .await
+    .expect("A0's indexer did not resume + advance within 60s after restart");
     // Validate the assumption the test rests on: A0's keyshares are
     // still on disk after the restart. If they're missing or different,
     // the test no longer models production's back-migration scenario
