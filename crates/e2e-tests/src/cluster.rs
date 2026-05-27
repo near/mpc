@@ -399,6 +399,10 @@ impl MpcCluster {
 
     /// Wait until the node at `idx` responds with HTTP 200 on its `/health` endpoint.
     /// Returns an error if the node is not running or does not become healthy within 120 seconds.
+    ///
+    /// Only verifies the web server is bound; for full readiness (e.g. after
+    /// kill+restart), pair with `common::wait_for_node_indexer_height_above`.
+    /// See issue #3366.
     pub async fn wait_for_node_healthy(&self, idx: usize) -> anyhow::Result<()> {
         let node = match &self.nodes[idx] {
             MpcNodeState::Running(n) => n,
