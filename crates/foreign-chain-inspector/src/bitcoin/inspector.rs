@@ -3,12 +3,19 @@ use jsonrpsee::core::client::ClientT;
 use crate::bitcoin::{BitcoinExtractedValue, BitcoinTransactionHash};
 use crate::{BlockConfirmations, ForeignChainInspectionError, ForeignChainInspector};
 use foreign_chain_rpc_interfaces::bitcoin::{
-    GetRawTransactionArgs, GetRawTransactionVerboseResponse, TransportBitcoinTransactionHash,
+    GET_BLOCK_VERBOSITY_HEADER_AND_TXIDS, GetBlockArgs, GetBlockHashArgs, GetBlockResponse,
+    GetRawTransactionArgs, GetRawTransactionVerboseResponse, TransportBitcoinBlockHash,
+    TransportBitcoinTransactionHash,
 };
 
 /// https://developer.bitcoin.org/reference/rpc/getrawtransaction.html
 const GET_RAW_TRANSACTION_METHOD: &str = "getrawtransaction";
 const VERBOSE_RESPONSE: bool = true;
+
+/// https://developer.bitcoin.org/reference/rpc/getblock.html
+const GET_BLOCK_METHOD: &str = "getblock";
+/// https://developer.bitcoin.org/reference/rpc/getblockhash.html
+const GET_BLOCK_HASH_METHOD: &str = "getblockhash";
 
 pub struct BitcoinInspector<Client> {
     client: Client,
@@ -51,6 +58,9 @@ where
             });
         }
 
+        self.verify_block_is_canonical(rpc_response.blockhash)
+            .await?;
+
         let extracted_values = extractors
             .iter()
             .map(|extractor| extractor.extract_value(&rpc_response))
@@ -66,6 +76,42 @@ where
 {
     pub fn new(client: Client) -> Self {
         Self { client }
+    }
+
+    /// Checks that the receipt's block is on the canonical chain by resolving its height via
+    /// `getblock` and then asking the RPC for the canonical hash at that height via
+    /// `getblockhash`. `getblockhash` only ever returns canonical blocks, so a mismatch means
+    /// the `getrawtransaction` response was anchored to a side block (stale tx index,
+    /// partially-applied reorg, divergent RPC backend, etc.).
+    async fn verify_block_is_canonical(
+        &self,
+        receipt_blockhash: TransportBitcoinBlockHash,
+    ) -> Result<(), ForeignChainInspectionError> {
+        let get_block_args = GetBlockArgs {
+            blockhash: receipt_blockhash,
+            verbosity: GET_BLOCK_VERBOSITY_HEADER_AND_TXIDS,
+        };
+        let block: GetBlockResponse = self
+            .client
+            .request(GET_BLOCK_METHOD, &get_block_args)
+            .await?;
+
+        let get_block_hash_args = GetBlockHashArgs {
+            height: block.height,
+        };
+        let canonical_blockhash: TransportBitcoinBlockHash = self
+            .client
+            .request(GET_BLOCK_HASH_METHOD, &get_block_hash_args)
+            .await?;
+
+        if canonical_blockhash != receipt_blockhash {
+            return Err(ForeignChainInspectionError::NonCanonicalBlock {
+                block_number: block.height,
+                receipt_hash: (*receipt_blockhash).to_vec(),
+                canonical_hash: (*canonical_blockhash).to_vec(),
+            });
+        }
+        Ok(())
     }
 }
 

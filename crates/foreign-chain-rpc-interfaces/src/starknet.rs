@@ -62,6 +62,62 @@ impl ToRpcParams for &GetTransactionReceiptArgs {
     to_rpc_params_impl!();
 }
 
+/// Block identifier accepted by Starknet block-lookup RPCs. Only the `Number` variant is used
+/// by the inspector's canonical-chain check; the others are modeled for completeness.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum BlockId {
+    Number {
+        block_number: u64,
+    },
+    Hash {
+        #[serde(serialize_with = "serialize_starknet_felt")]
+        #[serde(deserialize_with = "deserialize_starknet_felt")]
+        block_hash: H256,
+    },
+}
+
+/// Partial RPC response for `starknet_getBlockWithTxHashes`.
+/// <https://www.alchemy.com/docs/chains/starknet/starknet-api-endpoints/starknet-get-block-with-tx-hashes>
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct GetBlockWithTxHashesResponse {
+    #[serde(deserialize_with = "deserialize_starknet_felt")]
+    pub block_hash: H256,
+    pub block_number: u64,
+}
+
+/// Request args for `starknet_getBlockWithTxHashes`.
+pub struct GetBlockWithTxHashesArgs {
+    pub block_id: BlockId,
+}
+
+impl Serialize for GetBlockWithTxHashesArgs {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        // `starknet_getBlockWithTxHashes` expects a single-element array: [block_id]
+        let request_parameters = [&self.block_id];
+        request_parameters.serialize(serializer)
+    }
+}
+
+impl ToRpcParams for &GetBlockWithTxHashesArgs {
+    to_rpc_params_impl!();
+}
+
+fn serialize_starknet_felt<S>(value: &H256, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    let mut hex = String::with_capacity(2 + 64);
+    hex.push_str("0x");
+    for byte in value.as_bytes() {
+        hex.push_str(&format!("{byte:02x}"));
+    }
+    serializer.serialize_str(&hex)
+}
+
 /// Starknet felt values use `0x`-prefixed hex like Ethereum, but may omit leading
 /// zeros (e.g. `"0x5"` instead of `"0x0000…0005"`). This function zero-pads
 /// short representations so they can be parsed as an [`H256`].
@@ -99,6 +155,7 @@ where
 #[expect(non_snake_case)]
 mod tests {
     use super::{
+        BlockId, GetBlockWithTxHashesArgs, GetBlockWithTxHashesResponse,
         GetTransactionReceiptResponse, H256, StarknetExecutionStatus, StarknetFinalityStatus,
         parse_felt,
     };
@@ -159,6 +216,47 @@ mod tests {
                 parse_felt("0x4322cec55a56b85793864e0cfd27a563849ac9209d4307621d65bcd616c1dd8")
                     .unwrap(),
             ]
+        );
+    }
+
+    #[test]
+    fn serialize_get_block_with_tx_hashes_args__should_wrap_block_id_in_array() {
+        // given
+        let args = GetBlockWithTxHashesArgs {
+            block_id: BlockId::Number {
+                block_number: 842_750,
+            },
+        };
+
+        // when
+        let serialized = serde_json::to_value(&args).unwrap();
+
+        // then
+        assert_eq!(serialized, serde_json::json!([{ "block_number": 842_750 }]));
+    }
+
+    #[test]
+    fn deserialize_get_block_with_tx_hashes_response__should_accept_short_hex_block_hash() {
+        let json = r#"
+        {
+            "block_hash": "0x5",
+            "block_number": 842750
+        }
+        "#;
+
+        let response: GetBlockWithTxHashesResponse = serde_json::from_str(json).unwrap();
+
+        let expected_bytes = {
+            let mut bytes = [0u8; 32];
+            bytes[31] = 5;
+            bytes
+        };
+        assert_eq!(
+            response,
+            GetBlockWithTxHashesResponse {
+                block_hash: H256::from(expected_bytes),
+                block_number: 842_750,
+            }
         );
     }
 }

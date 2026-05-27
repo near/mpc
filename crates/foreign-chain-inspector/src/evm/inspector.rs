@@ -136,9 +136,9 @@ where
 
         if canonical.hash != receipt_block_hash {
             return Err(ForeignChainInspectionError::NonCanonicalBlock {
-                block_number: receipt_block_number,
-                receipt_hash: receipt_block_hash,
-                canonical_hash: canonical.hash,
+                block_number: receipt_block_number.as_u64(),
+                receipt_hash: receipt_block_hash.as_bytes().to_vec(),
+                canonical_hash: canonical.hash.as_bytes().to_vec(),
             });
         }
         Ok(())
