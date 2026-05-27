@@ -1,13 +1,11 @@
 //! Log-only check that the node's local foreign-chain RPC config matches the
 //! on-chain whitelist (`allowed_foreign_chain_providers`).
 //!
-//! On a fresh deployment with an unvoted whitelist, the first tick emits one
+//! On a fresh deployment with an unvoted whitelist, the verifier emits one
 //! `ChainNotInWhitelist` info per configured chain — expected during rollout,
-//! clears once the whitelist is populated.
+//! clears once the whitelist is populated and the watch channel updates.
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
-use std::time::Duration;
 
 use mpc_node_config::{
     foreign_chains::RpcProviderName, AuthConfig, ForeignChainConfig, ForeignChainProviderConfig,
@@ -16,10 +14,39 @@ use mpc_node_config::{
 use near_mpc_contract_interface::types::{
     self as dtos, AuthScheme, ChainEntry, ChainRouting, ProviderConfig, ProviderId,
 };
+use tokio::sync::watch;
 
-use crate::indexer::IndexerState;
-
-const VERIFY_INTERVAL: Duration = Duration::from_secs(300);
+/// Subscribes to the contract's `allowed_foreign_chain_providers` whitelist (published by
+/// `monitor_allowed_foreign_chain_providers` in `crate::indexer::tee`) and logs any divergence
+/// from the local config. Processes the current value immediately, then reacts to each change.
+///
+/// `run` owns no I/O: the polling and retry live in the monitor adapter, so when the chain gateway
+/// exposes a native subscription only the adapter changes, and `run` can be driven from an
+/// in-memory `watch::channel` in tests.
+pub(crate) async fn run(
+    mut whitelist_rx: watch::Receiver<BTreeMap<dtos::ForeignChain, ChainEntry>>,
+    local: ForeignChainsConfig,
+) {
+    loop {
+        let diagnostics = {
+            let whitelist = whitelist_rx.borrow_and_update();
+            compare(&local, &whitelist)
+        };
+        if diagnostics.is_empty() {
+            tracing::info!(
+                "foreign-chain whitelist verifier: local config matches contract whitelist"
+            );
+        } else {
+            for d in &diagnostics {
+                log_diagnostic(d);
+            }
+        }
+        if whitelist_rx.changed().await.is_err() {
+            // Sender dropped: the indexer is shutting down, nothing left to verify against.
+            break;
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Diagnostic {
@@ -321,73 +348,6 @@ fn log_diagnostic(d: &Diagnostic) {
         }
         _ => {
             tracing::warn!(?chain, provider, kind = ?d.kind, "foreign-chain whitelist mismatch");
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-enum DedupOutcome {
-    /// Same diagnostics as the previous tick — quiet (debug).
-    Unchanged,
-    /// Diagnostics set is empty (first tick or transition from non-empty).
-    Matching,
-    /// Diagnostics changed since previous tick.
-    Changed(Vec<Diagnostic>),
-}
-
-/// Per-tick dedup state. Extracted from `run` so it can be unit-tested.
-struct Dedup {
-    previous: Option<Vec<Diagnostic>>,
-}
-
-impl Dedup {
-    fn new() -> Self {
-        Self { previous: None }
-    }
-
-    fn observe(&mut self, current: Vec<Diagnostic>) -> DedupOutcome {
-        let action = if self.previous.as_ref() == Some(&current) {
-            DedupOutcome::Unchanged
-        } else if current.is_empty() {
-            DedupOutcome::Matching
-        } else {
-            DedupOutcome::Changed(current.clone())
-        };
-        self.previous = Some(current);
-        action
-    }
-}
-
-pub(crate) async fn run(indexer_state: Arc<IndexerState>, local: ForeignChainsConfig) {
-    let mut ticker = tokio::time::interval(VERIFY_INTERVAL);
-    let mut dedup = Dedup::new();
-    loop {
-        ticker.tick().await;
-        let whitelist = match indexer_state
-            .view_client()
-            .get_allowed_foreign_chain_providers(indexer_state.mpc_contract_id().clone())
-            .await
-        {
-            Ok(w) => w,
-            Err(e) => {
-                tracing::warn!(error = ?e, "could not query allowed_foreign_chain_providers; skipping this verification round");
-                continue;
-            }
-        };
-        match dedup.observe(compare(&local, &whitelist)) {
-            DedupOutcome::Unchanged => {
-                tracing::debug!("foreign-chain whitelist verifier: no change since last tick");
-            }
-            DedupOutcome::Matching => {
-                tracing::info!(
-                    "foreign-chain whitelist verifier: local config matches contract whitelist"
-                );
-            }
-            DedupOutcome::Changed(diagnostics) => {
-                for d in &diagnostics {
-                    log_diagnostic(d);
-                }
-            }
         }
     }
 }
@@ -1041,92 +1001,5 @@ mod tests {
             "https://eth.alchemy.com/v2foo.attacker.example/",
             "https://eth.alchemy.com/v2"
         ));
-    }
-
-    fn fake_diag() -> Diagnostic {
-        Diagnostic {
-            chain: dtos::ForeignChain::Ethereum,
-            provider: None,
-            kind: DiagnosticKind::ChainNotInWhitelist,
-        }
-    }
-
-    fn fake_diag_provider_missing() -> Diagnostic {
-        Diagnostic {
-            chain: dtos::ForeignChain::Ethereum,
-            provider: Some(RpcProviderName::from("alchemy".to_string())),
-            kind: DiagnosticKind::ProviderNotInWhitelist,
-        }
-    }
-
-    #[test]
-    fn dedup_observe__should_return_matching_when_first_tick_is_empty() {
-        // Given
-        let mut d = Dedup::new();
-
-        // When / Then
-        assert_eq!(d.observe(vec![]), DedupOutcome::Matching);
-    }
-
-    #[test]
-    fn dedup_observe__should_return_changed_when_first_tick_has_diagnostics() {
-        // Given
-        let mut d = Dedup::new();
-        let diags = vec![fake_diag()];
-
-        // When
-        let action = d.observe(diags.clone());
-
-        // Then
-        assert_eq!(action, DedupOutcome::Changed(diags));
-    }
-
-    #[test]
-    fn dedup_observe__should_return_unchanged_when_two_consecutive_ticks_match() {
-        // Given
-        let mut d = Dedup::new();
-        let diags = vec![fake_diag()];
-        d.observe(diags.clone());
-
-        // When / Then
-        assert_eq!(d.observe(diags), DedupOutcome::Unchanged);
-    }
-
-    #[test]
-    fn dedup_observe__should_return_changed_when_diagnostics_change() {
-        // Given
-        let mut d = Dedup::new();
-        d.observe(vec![fake_diag()]);
-        let new_diags = vec![fake_diag(), fake_diag_provider_missing()];
-
-        // When
-        let action = d.observe(new_diags.clone());
-
-        // Then
-        assert_eq!(action, DedupOutcome::Changed(new_diags));
-    }
-
-    #[test]
-    fn dedup_observe__should_return_matching_when_diagnostics_transition_to_empty() {
-        // Given
-        let mut d = Dedup::new();
-        d.observe(vec![fake_diag()]);
-
-        // When / Then
-        assert_eq!(d.observe(vec![]), DedupOutcome::Matching);
-    }
-
-    #[test]
-    fn dedup_observe__should_return_changed_when_empty_transitions_to_diagnostics() {
-        // Given
-        let mut d = Dedup::new();
-        d.observe(vec![]);
-        let diags = vec![fake_diag()];
-
-        // When
-        let action = d.observe(diags.clone());
-
-        // Then
-        assert_eq!(action, DedupOutcome::Changed(diags));
     }
 }

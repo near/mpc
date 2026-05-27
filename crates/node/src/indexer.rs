@@ -81,14 +81,6 @@ impl IndexerState {
             stats: Arc::new(Mutex::new(IndexerStats::new())),
         }
     }
-
-    pub(crate) fn view_client(&self) -> &IndexerViewClient {
-        &self.view_client
-    }
-
-    pub(crate) fn mpc_contract_id(&self) -> &AccountId {
-        &self.mpc_contract_id
-    }
 }
 
 #[derive(Clone)]
