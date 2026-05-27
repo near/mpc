@@ -1,6 +1,6 @@
 use super::domain::DomainRegistry;
 use crate::{
-    crypto_shared::types::{serializable::SerializableEdwardsPoint, PublicKeyExtended},
+    crypto_shared::types::{PublicKeyExtended, serializable::SerializableEdwardsPoint},
     primitives::{
         participants::{ParticipantInfo, Participants},
         thresholds::{Threshold, ThresholdParameters},
@@ -11,7 +11,7 @@ use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
     DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
 };
-use rand::{distributions::Uniform, Rng};
+use rand::{Rng, distributions::Uniform};
 use std::collections::BTreeMap;
 // Re-export for convenience
 

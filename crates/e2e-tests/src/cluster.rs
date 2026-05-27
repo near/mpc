@@ -21,7 +21,6 @@ use crate::mpc_node::{MpcNode, MpcNodeSetup, MpcNodeSetupArgs, NodePorts};
 use crate::near_sandbox::NearSandbox;
 use crate::port_allocator::E2ePortAllocator;
 
-const DEFAULT_SANDBOX_VERSION: &str = "2.11.1";
 const SANDBOX_ROOT_ACCOUNT: &str = "sandbox";
 const SANDBOX_ROOT_SECRET_KEY: &str = near_sandbox::config::DEFAULT_GENESIS_ACCOUNT_PRIVATE_KEY;
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
@@ -157,7 +156,7 @@ impl MpcClusterConfig {
             port_seed,
             triples_to_buffer: DEFAULT_TRIPLES_TO_BUFFER,
             presignatures_to_buffer: DEFAULT_PRESIGNATURES_TO_BUFFER,
-            sandbox_version: DEFAULT_SANDBOX_VERSION.to_string(),
+            sandbox_version: test_utils::DEFAULT_SANDBOX_VERSION.to_string(),
             home_base: None,
             initial_participant_indices: vec![],
             node_foreign_chains_configs: vec![],
@@ -400,6 +399,10 @@ impl MpcCluster {
 
     /// Wait until the node at `idx` responds with HTTP 200 on its `/health` endpoint.
     /// Returns an error if the node is not running or does not become healthy within 120 seconds.
+    ///
+    /// Only verifies the web server is bound; for full readiness (e.g. after
+    /// kill+restart), pair with `common::wait_for_node_indexer_height_above`.
+    /// See issue #3366.
     pub async fn wait_for_node_healthy(&self, idx: usize) -> anyhow::Result<()> {
         let node = match &self.nodes[idx] {
             MpcNodeState::Running(n) => n,
@@ -1292,7 +1295,7 @@ async fn create_user_accounts(
         let key = generate_deterministic_key(200 + i);
         let account: AccountId = format!("user{i}.{SANDBOX_ROOT_ACCOUNT}").parse()?;
         blockchain
-            .create_account_with_keys(account.as_ref(), 100, &[key.clone()])
+            .create_account_with_keys(account.as_ref(), 100, std::slice::from_ref(&key))
             .await?;
         map.insert(account, key);
     }

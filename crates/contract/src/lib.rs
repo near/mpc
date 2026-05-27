@@ -36,13 +36,13 @@ use std::{
 
 use crate::{
     dto_mapping::{
-        args_into_verify_foreign_tx_request, IntoContractType, IntoInterfaceType,
-        TryIntoContractType,
+        IntoContractType, IntoInterfaceType, TryIntoContractType,
+        args_into_verify_foreign_tx_request,
     },
     errors::{Error, RequestError},
     foreign_chain_rpc::ForeignChainRpcWhitelist,
     primitives::{
-        ckd::{app_public_key_check, ckd_output_check, CKDRequest},
+        ckd::{CKDRequest, app_public_key_check, ckd_output_check},
         domain::AddDomainsVotes,
     },
     state::ContractNotInitialized,
@@ -73,9 +73,9 @@ use near_mpc_contract_interface::{method_names, types::CKDRequestArgs};
 use dtos::{Curve, DomainConfig, DomainId, DomainPurpose, Protocol};
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash};
 use near_sdk::{
-    env, log, near,
+    AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue, env,
+    log, near,
     store::{IterableMap, LookupMap},
-    AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue,
 };
 use node_migrations::NodeMigrations;
 use primitives::{
@@ -87,7 +87,7 @@ use primitives::{
 use tee::measurements::{ContractExpectedMeasurements, MeasurementVoteAction, MeasurementVotes};
 use tee::proposal::{CodeHashesVotes, LauncherHashVotes};
 
-use state::{running::RunningContractState, ProtocolContractState};
+use state::{ProtocolContractState, running::RunningContractState};
 use tee::{
     proposal::{LauncherVoteAction, NodeImageHash},
     tee_state::{AttestationSubmissionError, NodeId, ParticipantInsertion, TeeValidationResult},
@@ -847,10 +847,10 @@ impl MpcContract {
             }
 
             // Refund the difference if the proposer attached more than required
-            if let Some(diff) = attached.checked_sub(cost) {
-                if diff > NearToken::from_yoctonear(0) {
-                    Promise::new(account_id).transfer(diff).detach();
-                }
+            if let Some(diff) = attached.checked_sub(cost)
+                && diff > NearToken::from_yoctonear(0)
+            {
+                Promise::new(account_id).transfer(diff).detach();
             }
         }
 
@@ -1232,10 +1232,10 @@ impl MpcContract {
         );
 
         // Refund the difference if the proposer attached more than required.
-        if let Some(diff) = attached.checked_sub(required) {
-            if diff > NearToken::from_yoctonear(0) {
-                Promise::new(proposer).transfer(diff).detach();
-            }
+        if let Some(diff) = attached.checked_sub(required)
+            && diff > NearToken::from_yoctonear(0)
+        {
+            Promise::new(proposer).transfer(diff).detach();
         }
 
         Ok(id)
@@ -1581,7 +1581,9 @@ impl MpcContract {
 
         let threshold_parameters = match self.protocol_state.threshold_parameters() {
             Ok(threshold_parameters) => threshold_parameters,
-            Err(ContractNotInitialized) => env::panic_str("Contract is not initialized. Can not vote for a new image hash before initialization."),
+            Err(ContractNotInitialized) => env::panic_str(
+                "Contract is not initialized. Can not vote for a new image hash before initialization.",
+            ),
         };
 
         let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
@@ -2684,11 +2686,11 @@ mod tests {
     use crate::pending_requests::MAX_PENDING_REQUEST_FAN_OUT;
     use crate::primitives::participants::{ParticipantId, ParticipantInfo, Participants};
     use crate::primitives::test_utils::{
-        bogus_ed25519_near_public_key, bogus_ed25519_public_key, gen_account_id, gen_participant,
-        gen_participants, infer_purpose_from_protocol, NUM_PROTOCOLS,
+        NUM_PROTOCOLS, bogus_ed25519_near_public_key, bogus_ed25519_public_key, gen_account_id,
+        gen_participant, gen_participants, infer_purpose_from_protocol,
     };
-    use crate::state::key_event::tests::Environment;
     use crate::state::key_event::KeyEvent;
+    use crate::state::key_event::tests::Environment;
     use crate::state::resharing::ResharingContractState;
     use crate::state::test_utils::{
         gen_initializing_state, gen_resharing_state, gen_running_state,
@@ -2696,14 +2698,14 @@ mod tests {
     use crate::tee::measurements::{
         KeyProviderEventDigest, MrtdHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash,
     };
-    use crate::tee::proposal::{get_docker_compose_hash, LauncherVoteAction};
+    use crate::tee::proposal::{LauncherVoteAction, get_docker_compose_hash};
     use crate::tee::tee_state::NodeId;
     use assert_matches::assert_matches;
     use dtos::{Attestation, Ed25519PublicKey, ForeignTxSignPayload, MockAttestation};
     use dtos::{Curve, DomainConfig, DomainId, Payload, Protocol, ReconstructionThreshold, Tweak};
     use elliptic_curve::Field as _;
     use elliptic_curve::Group;
-    use k256::{self, ecdsa::SigningKey, elliptic_curve, Secp256k1};
+    use k256::{self, Secp256k1, ecdsa::SigningKey, elliptic_curve};
     use mpc_attestation::attestation::{
         Attestation as MpcAttestation, MockAttestation as MpcMockAttestation,
     };
@@ -2716,18 +2718,18 @@ mod tests {
         BitcoinExtractedValue, BitcoinExtractor, BitcoinRpcRequest, ExtractedValue,
         ForeignTxPayloadVersion, ForeignTxSignPayloadV1,
     };
-    use near_sdk::{test_utils::VMContextBuilder, testing_env, NearToken, VMContext};
+    use near_sdk::{NearToken, VMContext, test_utils::VMContextBuilder, testing_env};
     use primitives::key_state::{AttemptId, KeyForDomain};
-    use rand::seq::SliceRandom;
     use rand::SeedableRng;
-    use rand::{rngs::OsRng, RngCore};
+    use rand::seq::SliceRandom;
+    use rand::{RngCore, rngs::OsRng};
     use rand_core::CryptoRngCore;
     use rstest::rstest;
     use sha2::{Digest, Sha256};
 
     use test_utils::attestation::{
-        image_digest, launcher_image_hash, mock_dto_dstack_attestation, near_account_key,
-        p2p_tls_key, VALID_ATTESTATION_TIMESTAMP,
+        VALID_ATTESTATION_TIMESTAMP, image_digest, launcher_image_hash,
+        mock_dto_dstack_attestation, near_account_key, p2p_tls_key,
     };
     use test_utils::contract_types::dummy_config;
     use threshold_signatures::confidential_key_derivation as ckd;
@@ -3197,10 +3199,12 @@ mod tests {
             .expect("respond should succeed");
 
         // Then: the entire queue is drained — both queued yields received the response.
-        assert!(contract
-            .pending_signature_requests
-            .get(&signature_request)
-            .is_none());
+        assert!(
+            contract
+                .pending_signature_requests
+                .get(&signature_request)
+                .is_none()
+        );
     }
 
     #[test]
@@ -3227,23 +3231,27 @@ mod tests {
 
         // When: caller alice submits the request.
         let alice = AccountId::from_str("alice.near").unwrap();
-        testing_env!(VMContextBuilder::new()
-            .signer_account_id(alice.clone())
-            .predecessor_account_id(alice)
-            .current_account_id(context.current_account_id.clone())
-            .attached_deposit(NearToken::from_yoctonear(1))
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(alice.clone())
+                .predecessor_account_id(alice)
+                .current_account_id(context.current_account_id.clone())
+                .attached_deposit(NearToken::from_yoctonear(1))
+                .build()
+        );
         contract.verify_foreign_transaction(request_args.clone());
 
         // And: caller bob submits the identical request — a different account would today
         // be blocked from receiving a response by alice's submission.
         let bob = AccountId::from_str("bob.near").unwrap();
-        testing_env!(VMContextBuilder::new()
-            .signer_account_id(bob.clone())
-            .predecessor_account_id(bob)
-            .current_account_id(context.current_account_id.clone())
-            .attached_deposit(NearToken::from_yoctonear(1))
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(bob.clone())
+                .predecessor_account_id(bob)
+                .current_account_id(context.current_account_id.clone())
+                .attached_deposit(NearToken::from_yoctonear(1))
+                .build()
+        );
         contract.verify_foreign_transaction(request_args);
 
         // Then: both yields are queued under the single (caller-agnostic) request key.
@@ -3283,10 +3291,12 @@ mod tests {
             .expect("respond_verify_foreign_tx should succeed");
 
         // Then: both queued yields are drained from the single map entry.
-        assert!(contract
-            .pending_verify_foreign_tx_requests
-            .get(&request)
-            .is_none());
+        assert!(
+            contract
+                .pending_verify_foreign_tx_requests
+                .get(&request)
+                .is_none()
+        );
     }
 
     #[test]
@@ -3384,10 +3394,12 @@ mod tests {
         );
 
         // Then: the entry is gone.
-        assert!(contract
-            .pending_signature_requests
-            .get(&signature_request)
-            .is_none());
+        assert!(
+            contract
+                .pending_signature_requests
+                .get(&signature_request)
+                .is_none()
+        );
     }
 
     #[test]
@@ -3708,9 +3720,11 @@ mod tests {
                     )
                     .detach();
 
-                assert!(contract
-                    .get_pending_verify_foreign_tx_request(&request)
-                    .is_none(),);
+                assert!(
+                    contract
+                        .get_pending_verify_foreign_tx_request(&request)
+                        .is_none(),
+                );
             }
             Err(_) => panic!("respond_verify_foreign_tx should not fail"),
         }
@@ -3747,9 +3761,11 @@ mod tests {
             ),
             PromiseOrValue::Promise(_)
         ));
-        assert!(contract
-            .get_pending_verify_foreign_tx_request(&request)
-            .is_none());
+        assert!(
+            contract
+                .get_pending_verify_foreign_tx_request(&request)
+                .is_none()
+        );
     }
 
     #[rstest]
@@ -4103,11 +4119,13 @@ mod tests {
         );
 
         // Legit participant makes the CKD request
-        testing_env!(VMContextBuilder::new()
-            .signer_account_id(context.predecessor_account_id.clone())
-            .predecessor_account_id(context.predecessor_account_id.clone())
-            .attached_deposit(NearToken::from_near(1))
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(context.predecessor_account_id.clone())
+                .predecessor_account_id(context.predecessor_account_id.clone())
+                .attached_deposit(NearToken::from_near(1))
+                .build()
+        );
         contract.request_app_private_key(request);
         assert!(contract.get_pending_ckd_request(&ckd_request).is_some());
 
@@ -4116,11 +4134,13 @@ mod tests {
         let tls_key = bogus_ed25519_near_public_key();
         let dto_public_key = dtos::Ed25519PublicKey::try_from(&tls_key).unwrap();
 
-        testing_env!(VMContextBuilder::new()
-            .signer_account_id(outsider_id.clone())
-            .predecessor_account_id(outsider_id.clone())
-            .attached_deposit(NearToken::from_near(1))
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(outsider_id.clone())
+                .predecessor_account_id(outsider_id.clone())
+                .attached_deposit(NearToken::from_near(1))
+                .build()
+        );
 
         contract
             .submit_participant_info(Attestation::Mock(MockAttestation::Valid), dto_public_key)
@@ -4140,11 +4160,13 @@ mod tests {
             .expect("Participant should be allowed to respond_ckd");
 
         // --- Step 5: Now switch to attested outsider and verify it panics ---
-        testing_env!(VMContextBuilder::new()
-            .signer_account_id(outsider_id.clone())
-            .predecessor_account_id(outsider_id.clone())
-            .attached_deposit(NearToken::from_near(1))
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(outsider_id.clone())
+                .predecessor_account_id(outsider_id.clone())
+                .attached_deposit(NearToken::from_near(1))
+                .build()
+        );
 
         let outsider_response = CKDResponse {
             big_y: dtos::Bls12381G1PublicKey([3u8; 48]),
@@ -4802,7 +4824,7 @@ mod tests {
             let votes: Vec<dtos::AccountId> = proposed_updates
                 .votes
                 .iter()
-                .filter(|(_, &uid)| uid == update_id)
+                .filter(|&(_, &uid)| uid == update_id)
                 .map(|(account, _)| account.clone())
                 .collect();
             TestUpdate {
@@ -4844,7 +4866,7 @@ mod tests {
         let actual_voters: HashSet<_> = all_updates
             .votes
             .iter()
-            .filter(|(_, &update_id)| update_id == expected_update_id)
+            .filter(|&(_, &update_id)| update_id == expected_update_id)
             .map(|(account, _)| account.clone())
             .collect();
         assert_eq!(actual_voters, *expected_voters);
@@ -4954,7 +4976,7 @@ mod tests {
             let actual_voters: Vec<_> = proposed_updates
                 .votes
                 .iter()
-                .filter(|(_, &uid)| uid == update_id.0)
+                .filter(|&(_, &uid)| uid == update_id.0)
                 .map(|(voter, _)| voter.clone())
                 .collect();
             assert_eq!(actual_voters.len(), expected_voters.len());
@@ -4963,10 +4985,12 @@ mod tests {
             }
 
             // Remove the vote
-            testing_env!(VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .build());
+            testing_env!(
+                VMContextBuilder::new()
+                    .signer_account_id(account_id.clone())
+                    .predecessor_account_id(account_id.clone())
+                    .build()
+            );
 
             contract.remove_update_vote();
 
@@ -4977,7 +5001,7 @@ mod tests {
             let actual_voters: Vec<_> = res
                 .votes
                 .iter()
-                .filter(|(_, &uid)| uid == update_id.0)
+                .filter(|&(_, &uid)| uid == update_id.0)
                 .map(|(voter, _)| voter.clone())
                 .collect();
             assert_eq!(actual_voters.len(), test_update.votes.len());
@@ -5001,10 +5025,12 @@ mod tests {
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let account_id = test_update.votes.choose(&mut rng).unwrap();
         let account_id: AccountId = account_id.clone();
-        testing_env!(VMContextBuilder::new()
-            .signer_account_id(account_id.clone())
-            .predecessor_account_id(account_id)
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id)
+                .build()
+        );
 
         contract.remove_update_vote();
     }
@@ -5016,10 +5042,12 @@ mod tests {
             ProtocolContractState::Resharing(gen_resharing_state(NUM_DOMAINS).1);
         let mut contract = MpcContract::new_from_protocol_state(protocol_contract_state);
         let account_id = gen_account_id();
-        testing_env!(VMContextBuilder::new()
-            .signer_account_id(account_id.clone())
-            .predecessor_account_id(account_id)
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id)
+                .build()
+        );
         contract.remove_update_vote();
     }
 
@@ -5031,10 +5059,12 @@ mod tests {
         );
         let mut contract = MpcContract::new_from_protocol_state(protocol_contract_state);
         let account_id = gen_account_id();
-        testing_env!(VMContextBuilder::new()
-            .signer_account_id(account_id.clone())
-            .predecessor_account_id(account_id)
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id)
+                .build()
+        );
         contract.remove_update_vote();
     }
 
@@ -5073,10 +5103,12 @@ mod tests {
             .vote(&update_id, participant_1.clone());
 
         // when: first participant calls vote_update (only 1 valid participant vote out of 3 total)
-        testing_env!(VMContextBuilder::new()
-            .signer_account_id(participant_1.clone())
-            .predecessor_account_id(participant_1)
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(participant_1.clone())
+                .predecessor_account_id(participant_1)
+                .build()
+        );
         // then: threshold not met (need 2 valid votes, have only 1)
         assert!(!contract.vote_update(update_id).unwrap());
 
@@ -5086,10 +5118,12 @@ mod tests {
             .vote(&update_id, participant_2.clone());
 
         // when: second participant calls vote_update (2 valid participant votes out of 4 total)
-        testing_env!(VMContextBuilder::new()
-            .signer_account_id(participant_2.clone())
-            .predecessor_account_id(participant_2)
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(participant_2.clone())
+                .predecessor_account_id(participant_2)
+                .build()
+        );
         // then: threshold met (have 2 valid votes, need 2)
         assert!(contract.vote_update(update_id).unwrap());
     }
@@ -5134,10 +5168,12 @@ mod tests {
         );
 
         // when: calling remove_non_participant_update_votes
-        testing_env!(VMContextBuilder::new()
-            .current_account_id(env::current_account_id())
-            .predecessor_account_id(env::current_account_id())
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .current_account_id(env::current_account_id())
+                .predecessor_account_id(env::current_account_id())
+                .build()
+        );
         contract.remove_non_participant_update_votes().unwrap();
 
         // then: only the 2 participant votes remain
@@ -5169,11 +5205,13 @@ mod tests {
             .collect();
 
         for participant_account_id in participant_account_ids {
-            testing_env!(VMContextBuilder::new()
-                .signer_account_id(participant_account_id.clone())
-                .predecessor_account_id(participant_account_id.clone())
-                .block_timestamp(CURRENT_BLOCK_TIME_STAMP)
-                .build());
+            testing_env!(
+                VMContextBuilder::new()
+                    .signer_account_id(participant_account_id.clone())
+                    .predecessor_account_id(participant_account_id.clone())
+                    .block_timestamp(CURRENT_BLOCK_TIME_STAMP)
+                    .build()
+            );
 
             contract
                 .vote_code_hash(code_hash.into())
@@ -5267,11 +5305,13 @@ mod tests {
 
         // Set time to exact expiry boundary
         let (first_account_id, _, _) = &participant_list[0];
-        testing_env!(VMContextBuilder::new()
-            .signer_account_id(first_account_id.clone())
-            .predecessor_account_id(first_account_id.clone())
-            .block_timestamp(ATTESTATION_EXPIRY_SECONDS * 1_000_000_000) // nanoseconds
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(first_account_id.clone())
+                .predecessor_account_id(first_account_id.clone())
+                .block_timestamp(ATTESTATION_EXPIRY_SECONDS * 1_000_000_000) // nanoseconds
+                .build()
+        );
 
         // Call verify_tee - should trigger resharing
         let result = contract.verify_tee();
@@ -5365,11 +5405,13 @@ mod tests {
         setup_approved_launcher_hash(contract, participant_account_ids, block_timestamp_ns);
 
         for participant_account_id in participant_account_ids {
-            testing_env!(VMContextBuilder::new()
-                .signer_account_id(participant_account_id.clone())
-                .predecessor_account_id(participant_account_id.clone())
-                .block_timestamp(block_timestamp_ns)
-                .build());
+            testing_env!(
+                VMContextBuilder::new()
+                    .signer_account_id(participant_account_id.clone())
+                    .predecessor_account_id(participant_account_id.clone())
+                    .block_timestamp(block_timestamp_ns)
+                    .build()
+            );
 
             contract.vote_code_hash(*mpc_hash).expect("vote succeeds");
         }
@@ -5385,11 +5427,13 @@ mod tests {
         let launcher_hash = launcher_image_hash();
 
         for participant_account_id in participant_account_ids {
-            testing_env!(VMContextBuilder::new()
-                .signer_account_id(participant_account_id.clone())
-                .predecessor_account_id(participant_account_id.clone())
-                .block_timestamp(block_timestamp_ns)
-                .build());
+            testing_env!(
+                VMContextBuilder::new()
+                    .signer_account_id(participant_account_id.clone())
+                    .predecessor_account_id(participant_account_id.clone())
+                    .block_timestamp(block_timestamp_ns)
+                    .build()
+            );
 
             contract
                 .vote_add_launcher_hash(launcher_hash)
@@ -5406,11 +5450,13 @@ mod tests {
         for measurement in mpc_attestation::attestation::default_measurements() {
             let contract_measurement = ContractExpectedMeasurements::from(*measurement);
             for participant_account_id in participant_account_ids {
-                testing_env!(VMContextBuilder::new()
-                    .signer_account_id(participant_account_id.clone())
-                    .predecessor_account_id(participant_account_id.clone())
-                    .block_timestamp(block_timestamp_ns)
-                    .build());
+                testing_env!(
+                    VMContextBuilder::new()
+                        .signer_account_id(participant_account_id.clone())
+                        .predecessor_account_id(participant_account_id.clone())
+                        .block_timestamp(block_timestamp_ns)
+                        .build()
+                );
 
                 contract
                     .vote_add_os_measurement(contract_measurement.clone())
@@ -5446,13 +5492,15 @@ mod tests {
         setup_approved_measurements(&mut contract, &participant_account_ids, block_timestamp_ns);
 
         let account_id = participant_account_ids[0].clone();
-        testing_env!(VMContextBuilder::new()
-            .signer_account_id(account_id.clone())
-            .predecessor_account_id(account_id.clone())
-            .signer_account_pk(near_public_key.clone())
-            .attached_deposit(NearToken::from_near(1))
-            .block_timestamp(block_timestamp_ns)
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .signer_account_pk(near_public_key.clone())
+                .attached_deposit(NearToken::from_near(1))
+                .block_timestamp(block_timestamp_ns)
+                .build()
+        );
         let result = contract.submit_participant_info(attestation, tls_key);
 
         // then
@@ -5480,13 +5528,15 @@ mod tests {
         // when
 
         let account_id = participant_account_ids[0].clone();
-        testing_env!(VMContextBuilder::new()
-            .signer_account_id(account_id.clone())
-            .predecessor_account_id(account_id.clone())
-            .signer_account_pk(near_public_key.clone())
-            .attached_deposit(NearToken::from_near(1))
-            .block_timestamp(block_timestamp_ns)
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .signer_account_pk(near_public_key.clone())
+                .attached_deposit(NearToken::from_near(1))
+                .block_timestamp(block_timestamp_ns)
+                .build()
+        );
         let result = contract.submit_participant_info(attestation, tls_key);
 
         // then
@@ -5527,13 +5577,15 @@ mod tests {
         let invalid_tls_key = Ed25519PublicKey::from(invalid_tls_key_bytes);
 
         let account_id = participant_account_ids[0].clone();
-        testing_env!(VMContextBuilder::new()
-            .signer_account_id(account_id.clone())
-            .predecessor_account_id(account_id.clone())
-            .signer_account_pk(near_public_key.clone())
-            .attached_deposit(NearToken::from_near(1))
-            .block_timestamp(block_timestamp_ns)
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .signer_account_pk(near_public_key.clone())
+                .attached_deposit(NearToken::from_near(1))
+                .block_timestamp(block_timestamp_ns)
+                .build()
+        );
 
         let result = contract.submit_participant_info(attestation, invalid_tls_key);
 
@@ -5555,10 +5607,12 @@ mod tests {
 
         // First 2 votes (below threshold of 3) — launcher should NOT be added yet
         for (account_id, _, _) in &participant_list[0..2] {
-            testing_env!(VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .build());
+            testing_env!(
+                VMContextBuilder::new()
+                    .signer_account_id(account_id.clone())
+                    .predecessor_account_id(account_id.clone())
+                    .build()
+            );
             contract
                 .vote_add_launcher_hash(launcher_hash)
                 .expect("vote should succeed");
@@ -5570,10 +5624,12 @@ mod tests {
 
         // 3rd vote reaches threshold — launcher should be added
         let (account_id, _, _) = &participant_list[2];
-        testing_env!(VMContextBuilder::new()
-            .signer_account_id(account_id.clone())
-            .predecessor_account_id(account_id.clone())
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build()
+        );
         contract
             .vote_add_launcher_hash(launcher_hash)
             .expect("vote should succeed");
@@ -5590,10 +5646,12 @@ mod tests {
         let launcher_hash = make_launcher_hash(0xBB);
 
         let (account_id, _, _) = &participant_list[0];
-        testing_env!(VMContextBuilder::new()
-            .signer_account_id(account_id.clone())
-            .predecessor_account_id(account_id.clone())
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build()
+        );
 
         // Same participant votes twice — should count as 1 vote
         contract
@@ -5619,10 +5677,12 @@ mod tests {
         // Add two launcher hashes so removal of one doesn't hit the "last entry" guard
         for hash in [launcher_hash, launcher_hash_2] {
             for (account_id, _, _) in participant_list {
-                testing_env!(VMContextBuilder::new()
-                    .signer_account_id(account_id.clone())
-                    .predecessor_account_id(account_id.clone())
-                    .build());
+                testing_env!(
+                    VMContextBuilder::new()
+                        .signer_account_id(account_id.clone())
+                        .predecessor_account_id(account_id.clone())
+                        .build()
+                );
                 contract
                     .vote_add_launcher_hash(hash)
                     .expect("add vote should succeed");
@@ -5632,10 +5692,12 @@ mod tests {
 
         // Now vote to remove — first 3 votes (not all 4) should NOT remove
         for (account_id, _, _) in &participant_list[0..3] {
-            testing_env!(VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .build());
+            testing_env!(
+                VMContextBuilder::new()
+                    .signer_account_id(account_id.clone())
+                    .predecessor_account_id(account_id.clone())
+                    .build()
+            );
             contract
                 .vote_remove_launcher_hash(launcher_hash)
                 .expect("remove vote should succeed");
@@ -5648,10 +5710,12 @@ mod tests {
 
         // 4th vote — unanimous, should remove
         let (account_id, _, _) = &participant_list[3];
-        testing_env!(VMContextBuilder::new()
-            .signer_account_id(account_id.clone())
-            .predecessor_account_id(account_id.clone())
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build()
+        );
         contract
             .vote_remove_launcher_hash(launcher_hash)
             .expect("remove vote should succeed");
@@ -5671,10 +5735,12 @@ mod tests {
 
         // Add a single launcher hash
         for (account_id, _, _) in participant_list {
-            testing_env!(VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .build());
+            testing_env!(
+                VMContextBuilder::new()
+                    .signer_account_id(account_id.clone())
+                    .predecessor_account_id(account_id.clone())
+                    .build()
+            );
             contract
                 .vote_add_launcher_hash(launcher_hash)
                 .expect("add vote should succeed");
@@ -5683,10 +5749,12 @@ mod tests {
 
         // All 4 vote to remove — should still not remove because it's the last one
         for (account_id, _, _) in participant_list {
-            testing_env!(VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .build());
+            testing_env!(
+                VMContextBuilder::new()
+                    .signer_account_id(account_id.clone())
+                    .predecessor_account_id(account_id.clone())
+                    .build()
+            );
             contract
                 .vote_remove_launcher_hash(launcher_hash)
                 .expect("remove vote should succeed");
@@ -5710,11 +5778,13 @@ mod tests {
         let block_ts = 1_000_000_000u64;
 
         for (account_id, _, _) in participant_list {
-            testing_env!(VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .block_timestamp(block_ts)
-                .build());
+            testing_env!(
+                VMContextBuilder::new()
+                    .signer_account_id(account_id.clone())
+                    .predecessor_account_id(account_id.clone())
+                    .block_timestamp(block_ts)
+                    .build()
+            );
             contract
                 .vote_code_hash(mpc_hash)
                 .expect("mpc vote should succeed");
@@ -5722,11 +5792,13 @@ mod tests {
 
         // Now add a launcher hash — should auto-derive compose hashes
         for (account_id, _, _) in &participant_list[0..3] {
-            testing_env!(VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .block_timestamp(block_ts)
-                .build());
+            testing_env!(
+                VMContextBuilder::new()
+                    .signer_account_id(account_id.clone())
+                    .predecessor_account_id(account_id.clone())
+                    .block_timestamp(block_ts)
+                    .build()
+            );
             contract
                 .vote_add_launcher_hash(launcher_hash)
                 .expect("launcher vote should succeed");
@@ -5754,10 +5826,12 @@ mod tests {
 
         // Vote with 3 participants to reach threshold
         for (account_id, _, _) in &participant_list[0..3] {
-            testing_env!(VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .build());
+            testing_env!(
+                VMContextBuilder::new()
+                    .signer_account_id(account_id.clone())
+                    .predecessor_account_id(account_id.clone())
+                    .build()
+            );
             contract
                 .vote_add_launcher_hash(launcher_hash)
                 .expect("vote should succeed");
@@ -5767,10 +5841,12 @@ mod tests {
         // Votes should be cleared — voting for a second hash should start from 0
         let launcher_hash_2 = make_launcher_hash(0xFF);
         let (account_id, _, _) = &participant_list[0];
-        testing_env!(VMContextBuilder::new()
-            .signer_account_id(account_id.clone())
-            .predecessor_account_id(account_id.clone())
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build()
+        );
         contract
             .vote_add_launcher_hash(launcher_hash_2)
             .expect("vote should succeed");
@@ -5797,10 +5873,12 @@ mod tests {
 
         // First vote
         let (account_0, _, _) = &participant_list[0];
-        testing_env!(VMContextBuilder::new()
-            .signer_account_id(account_0.clone())
-            .predecessor_account_id(account_0.clone())
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(account_0.clone())
+                .predecessor_account_id(account_0.clone())
+                .build()
+        );
         contract
             .vote_add_launcher_hash(launcher_hash)
             .expect("vote should succeed");
@@ -5812,10 +5890,12 @@ mod tests {
 
         // Second vote
         let (account_1, _, _) = &participant_list[1];
-        testing_env!(VMContextBuilder::new()
-            .signer_account_id(account_1.clone())
-            .predecessor_account_id(account_1.clone())
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(account_1.clone())
+                .predecessor_account_id(account_1.clone())
+                .build()
+        );
         contract
             .vote_add_launcher_hash(launcher_hash)
             .expect("vote should succeed");
@@ -5826,10 +5906,12 @@ mod tests {
 
         // Third vote reaches threshold — votes should be cleared
         let (account_2, _, _) = &participant_list[2];
-        testing_env!(VMContextBuilder::new()
-            .signer_account_id(account_2.clone())
-            .predecessor_account_id(account_2.clone())
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(account_2.clone())
+                .predecessor_account_id(account_2.clone())
+                .build()
+        );
         contract
             .vote_add_launcher_hash(launcher_hash)
             .expect("vote should succeed");
@@ -5855,10 +5937,12 @@ mod tests {
         assert!(contract.code_hash_votes().proposal_by_account.is_empty());
 
         for (i, (account, _, _)) in participant_list[..threshold as usize].iter().enumerate() {
-            testing_env!(VMContextBuilder::new()
-                .signer_account_id(account.clone())
-                .predecessor_account_id(account.clone())
-                .build());
+            testing_env!(
+                VMContextBuilder::new()
+                    .signer_account_id(account.clone())
+                    .predecessor_account_id(account.clone())
+                    .build()
+            );
             contract
                 .vote_code_hash(code_hash)
                 .expect("vote should succeed");
@@ -5886,11 +5970,13 @@ mod tests {
         // First approve an MPC image
         let mpc_hash_1 = mpc_primitives::hash::NodeImageHash::from([0x11; 32]);
         for (account_id, _, _) in participant_list {
-            testing_env!(VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .block_timestamp(block_ts)
-                .build());
+            testing_env!(
+                VMContextBuilder::new()
+                    .signer_account_id(account_id.clone())
+                    .predecessor_account_id(account_id.clone())
+                    .block_timestamp(block_ts)
+                    .build()
+            );
             contract
                 .vote_code_hash(mpc_hash_1)
                 .expect("mpc vote should succeed");
@@ -5898,11 +5984,13 @@ mod tests {
 
         // Add a launcher hash
         for (account_id, _, _) in &participant_list[0..3] {
-            testing_env!(VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .block_timestamp(block_ts)
-                .build());
+            testing_env!(
+                VMContextBuilder::new()
+                    .signer_account_id(account_id.clone())
+                    .predecessor_account_id(account_id.clone())
+                    .block_timestamp(block_ts)
+                    .build()
+            );
             contract
                 .vote_add_launcher_hash(launcher_hash)
                 .expect("launcher vote should succeed");
@@ -5912,11 +6000,13 @@ mod tests {
         // Now vote in a second MPC image — should auto-derive a new compose hash
         let mpc_hash_2 = mpc_primitives::hash::NodeImageHash::from([0x22; 32]);
         for (account_id, _, _) in participant_list {
-            testing_env!(VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .block_timestamp(block_ts)
-                .build());
+            testing_env!(
+                VMContextBuilder::new()
+                    .signer_account_id(account_id.clone())
+                    .predecessor_account_id(account_id.clone())
+                    .block_timestamp(block_ts)
+                    .build()
+            );
             contract
                 .vote_code_hash(mpc_hash_2)
                 .expect("mpc vote 2 should succeed");
@@ -5951,11 +6041,13 @@ mod tests {
 
         let vote_mpc = |contract: &mut MpcContract, hash: NodeImageHash, ts: u64| {
             for (account_id, _, _) in participant_list {
-                testing_env!(VMContextBuilder::new()
-                    .signer_account_id(account_id.clone())
-                    .predecessor_account_id(account_id.clone())
-                    .block_timestamp(ts)
-                    .build());
+                testing_env!(
+                    VMContextBuilder::new()
+                        .signer_account_id(account_id.clone())
+                        .predecessor_account_id(account_id.clone())
+                        .block_timestamp(ts)
+                        .build()
+                );
                 contract
                     .vote_code_hash(hash)
                     .expect("mpc vote should succeed");
@@ -5964,11 +6056,13 @@ mod tests {
 
         let vote_launcher = |contract: &mut MpcContract, hash: LauncherImageHash, ts: u64| {
             for (account_id, _, _) in &participant_list[0..3] {
-                testing_env!(VMContextBuilder::new()
-                    .signer_account_id(account_id.clone())
-                    .predecessor_account_id(account_id.clone())
-                    .block_timestamp(ts)
-                    .build());
+                testing_env!(
+                    VMContextBuilder::new()
+                        .signer_account_id(account_id.clone())
+                        .predecessor_account_id(account_id.clone())
+                        .block_timestamp(ts)
+                        .build()
+                );
                 contract
                     .vote_add_launcher_hash(hash)
                     .expect("launcher vote should succeed");
@@ -5990,11 +6084,13 @@ mod tests {
         assert_eq!(contract.allowed_launcher_compose_hashes().len(), 2);
 
         let t2 = t1 + upgrade_deadline + sec;
-        testing_env!(VMContextBuilder::new()
-            .signer_account_id(participant_list[0].0.clone())
-            .predecessor_account_id(participant_list[0].0.clone())
-            .block_timestamp(t2)
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(participant_list[0].0.clone())
+                .predecessor_account_id(participant_list[0].0.clone())
+                .block_timestamp(t2)
+                .build()
+        );
         assert_eq!(
             contract.allowed_launcher_compose_hashes().len(),
             2,
@@ -6044,10 +6140,12 @@ mod tests {
 
         // First 2 votes — below threshold (3)
         for (account_id, _, _) in &participant_list[0..2] {
-            testing_env!(VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .build());
+            testing_env!(
+                VMContextBuilder::new()
+                    .signer_account_id(account_id.clone())
+                    .predecessor_account_id(account_id.clone())
+                    .build()
+            );
             contract
                 .vote_add_os_measurement(measurement.clone())
                 .expect("add vote should succeed");
@@ -6059,10 +6157,12 @@ mod tests {
 
         // 3rd vote — threshold reached
         let (account_id, _, _) = &participant_list[2];
-        testing_env!(VMContextBuilder::new()
-            .signer_account_id(account_id.clone())
-            .predecessor_account_id(account_id.clone())
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build()
+        );
         contract
             .vote_add_os_measurement(measurement.clone())
             .expect("add vote should succeed");
@@ -6071,10 +6171,12 @@ mod tests {
 
         // Voting for the same measurement again should not duplicate
         for (account_id, _, _) in &participant_list[0..3] {
-            testing_env!(VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .build());
+            testing_env!(
+                VMContextBuilder::new()
+                    .signer_account_id(account_id.clone())
+                    .predecessor_account_id(account_id.clone())
+                    .build()
+            );
             contract
                 .vote_add_os_measurement(measurement.clone())
                 .expect("add vote should succeed");
@@ -6098,10 +6200,12 @@ mod tests {
         // Add two measurements
         for m in [&measurement_1, &measurement_2] {
             for (account_id, _, _) in participant_list {
-                testing_env!(VMContextBuilder::new()
-                    .signer_account_id(account_id.clone())
-                    .predecessor_account_id(account_id.clone())
-                    .build());
+                testing_env!(
+                    VMContextBuilder::new()
+                        .signer_account_id(account_id.clone())
+                        .predecessor_account_id(account_id.clone())
+                        .build()
+                );
                 contract
                     .vote_add_os_measurement(m.clone())
                     .expect("add vote should succeed");
@@ -6111,10 +6215,12 @@ mod tests {
 
         // 3 votes to remove — not enough (need all 4)
         for (account_id, _, _) in &participant_list[0..3] {
-            testing_env!(VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .build());
+            testing_env!(
+                VMContextBuilder::new()
+                    .signer_account_id(account_id.clone())
+                    .predecessor_account_id(account_id.clone())
+                    .build()
+            );
             contract
                 .vote_remove_os_measurement(measurement_1.clone())
                 .expect("remove vote should succeed");
@@ -6127,10 +6233,12 @@ mod tests {
 
         // 4th vote — unanimous, should remove
         let (account_id, _, _) = &participant_list[3];
-        testing_env!(VMContextBuilder::new()
-            .signer_account_id(account_id.clone())
-            .predecessor_account_id(account_id.clone())
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build()
+        );
         contract
             .vote_remove_os_measurement(measurement_1.clone())
             .expect("remove vote should succeed");
@@ -6147,10 +6255,12 @@ mod tests {
 
         // Add a single measurement
         for (account_id, _, _) in participant_list {
-            testing_env!(VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .build());
+            testing_env!(
+                VMContextBuilder::new()
+                    .signer_account_id(account_id.clone())
+                    .predecessor_account_id(account_id.clone())
+                    .build()
+            );
             contract
                 .vote_add_os_measurement(measurement.clone())
                 .expect("add vote should succeed");
@@ -6159,10 +6269,12 @@ mod tests {
 
         // All 4 vote to remove — should not remove because it's the last one
         for (account_id, _, _) in participant_list {
-            testing_env!(VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .build());
+            testing_env!(
+                VMContextBuilder::new()
+                    .signer_account_id(account_id.clone())
+                    .predecessor_account_id(account_id.clone())
+                    .build()
+            );
             contract
                 .vote_remove_os_measurement(measurement.clone())
                 .expect("remove vote should succeed");
@@ -6186,10 +6298,12 @@ mod tests {
 
         // Cast one vote
         let (account_id, _, _) = &participant_list[0];
-        testing_env!(VMContextBuilder::new()
-            .signer_account_id(account_id.clone())
-            .predecessor_account_id(account_id.clone())
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build()
+        );
         contract
             .vote_add_os_measurement(measurement.clone())
             .expect("add vote should succeed");
@@ -6214,10 +6328,12 @@ mod tests {
 
         // Add first measurement (3 votes = threshold)
         for (account_id, _, _) in &participant_list[0..3] {
-            testing_env!(VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .build());
+            testing_env!(
+                VMContextBuilder::new()
+                    .signer_account_id(account_id.clone())
+                    .predecessor_account_id(account_id.clone())
+                    .build()
+            );
             contract
                 .vote_add_os_measurement(measurement_1.clone())
                 .expect("add vote should succeed");
@@ -6229,10 +6345,12 @@ mod tests {
 
         // Add second measurement
         for (account_id, _, _) in &participant_list[0..3] {
-            testing_env!(VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .build());
+            testing_env!(
+                VMContextBuilder::new()
+                    .signer_account_id(account_id.clone())
+                    .predecessor_account_id(account_id.clone())
+                    .build()
+            );
             contract
                 .vote_add_os_measurement(measurement_2.clone())
                 .expect("add vote should succeed");
@@ -6254,10 +6372,12 @@ mod tests {
 
         // Vote with 3 participants to reach threshold
         for (account_id, _, _) in &participant_list[0..3] {
-            testing_env!(VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .build());
+            testing_env!(
+                VMContextBuilder::new()
+                    .signer_account_id(account_id.clone())
+                    .predecessor_account_id(account_id.clone())
+                    .build()
+            );
             contract
                 .vote_add_os_measurement(measurement.clone())
                 .expect("vote should succeed");
@@ -6267,10 +6387,12 @@ mod tests {
         // Votes should be cleared — voting for a second measurement should start from 0
         let measurement_2 = make_measurement(0xBB);
         let (account_id, _, _) = &participant_list[0];
-        testing_env!(VMContextBuilder::new()
-            .signer_account_id(account_id.clone())
-            .predecessor_account_id(account_id.clone())
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build()
+        );
         contract
             .vote_add_os_measurement(measurement_2.clone())
             .expect("vote should succeed");
@@ -6530,8 +6652,8 @@ mod tests {
     }
 
     #[test]
-    fn vote_update_foreign_chain_providers__should_apply_chain_and_return_it_when_threshold_reached(
-    ) {
+    fn vote_update_foreign_chain_providers__should_apply_chain_and_return_it_when_threshold_reached()
+     {
         // Given: a running contract with 4 participants and signing threshold 3.
         let (_context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
         let participant_account_ids: Vec<AccountId> = contract
@@ -6560,10 +6682,12 @@ mod tests {
         let batch = NonEmptyBTreeMap::new(chain, entry.clone());
 
         let vote_as = |contract: &mut MpcContract, account_id: &AccountId| {
-            testing_env!(VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .build());
+            testing_env!(
+                VMContextBuilder::new()
+                    .signer_account_id(account_id.clone())
+                    .predecessor_account_id(account_id.clone())
+                    .build()
+            );
             contract
                 .vote_update_foreign_chain_providers(batch.clone())
                 .expect("vote should succeed")
@@ -6611,10 +6735,12 @@ mod tests {
         );
 
         // When: a non-participant attempts to vote — voter_or_panic should reject.
-        testing_env!(VMContextBuilder::new()
-            .signer_account_id(non_participant.clone())
-            .predecessor_account_id(non_participant)
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(non_participant.clone())
+                .predecessor_account_id(non_participant)
+                .build()
+        );
         let _ = contract.vote_update_foreign_chain_providers(batch);
     }
 }

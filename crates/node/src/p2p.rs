@@ -8,8 +8,8 @@ use crate::network::conn::{
 };
 use crate::network::constants::{MAX_MESSAGE_SIZE_BYTES, MESSAGE_READ_TIMEOUT_DURATION};
 use crate::network::handshake::{
-    p2p_handshake_dialer, p2p_handshake_listener, DialerData, HandshakeOutcome, ListenerData,
-    MIN_EXPECTED_CONNECTION_ID,
+    DialerData, HandshakeOutcome, ListenerData, MIN_EXPECTED_CONNECTION_ID, p2p_handshake_dialer,
+    p2p_handshake_listener,
 };
 use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
 use crate::primitives::{
@@ -18,7 +18,7 @@ use crate::primitives::{
 };
 use crate::protocol_version::CURRENT_PROTOCOL_VERSION;
 use crate::tracking::{self, AutoAbortTask, AutoAbortTaskCollection};
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use async_trait::async_trait;
 use borsh::{BorshDeserialize, BorshSerialize};
 use bytes::Bytes;
@@ -305,15 +305,15 @@ impl OutgoingConnection {
 
                 // Peer closing without close_notify is normal in P2P networks (task aborts,
                 // reconnections, process restarts). Treat it as a clean close, not an error.
-                if let Err(err) = &result {
-                    if is_tls_close_notify_error(err) {
-                        tracing::debug!(
-                            err = %err,
-                            peer_id = %peer_id,
-                            "peer closed connection without TLS close_notify"
-                        );
-                        return Ok(());
-                    }
+                if let Err(err) = &result
+                    && is_tls_close_notify_error(err)
+                {
+                    tracing::debug!(
+                        err = %err,
+                        peer_id = %peer_id,
+                        "peer closed connection without TLS close_notify"
+                    );
+                    return Ok(());
                 }
 
                 // Send TLS close_notify before dropping the connection so
@@ -468,8 +468,8 @@ pub async fn new_tls_mesh_network(
     config: &MpcConfig,
     p2p_private_key: &ed25519_dalek::SigningKey,
 ) -> anyhow::Result<(
-    impl MeshNetworkTransportSender,
-    impl MeshNetworkTransportReceiver,
+    impl MeshNetworkTransportSender + use<>,
+    impl MeshNetworkTransportReceiver + use<>,
 )> {
     let (server_config, client_config) = mpc_tls::tls::configure_tls(p2p_private_key)?;
 
@@ -740,15 +740,15 @@ async fn incoming_connection_handler(
 
     // Peer closing without close_notify is normal in P2P networks (task aborts,
     // reconnections, process restarts). Treat it as a clean close, not an error.
-    if let Err(err) = &result {
-        if is_tls_close_notify_error(err) {
-            tracing::debug!(
-                err = %err,
-                peer_id = %peer_id,
-                "peer closed connection without TLS close_notify"
-            );
-            return Ok(());
-        }
+    if let Err(err) = &result
+        && is_tls_close_notify_error(err)
+    {
+        tracing::debug!(
+            err = %err,
+            peer_id = %peer_id,
+            "peer closed connection without TLS close_notify"
+        );
+        return Ok(());
     }
 
     // Send TLS close_notify before dropping the connection so
@@ -777,12 +777,11 @@ async fn incoming_connection_handler(
 /// other I/O layers (e.g. LengthDelimitedCodec truncated frame headers).
 fn is_tls_close_notify_error(err: &anyhow::Error) -> bool {
     for cause in err.chain() {
-        if let Some(io_err) = cause.downcast_ref::<std::io::Error>() {
-            if io_err.kind() == std::io::ErrorKind::UnexpectedEof
-                && io_err.to_string().contains("close_notify")
-            {
-                return true;
-            }
+        if let Some(io_err) = cause.downcast_ref::<std::io::Error>()
+            && io_err.kind() == std::io::ErrorKind::UnexpectedEof
+            && io_err.to_string().contains("close_notify")
+        {
+            return true;
         }
     }
     false
@@ -1046,13 +1045,13 @@ mod tests {
     use crate::config::MpcConfig;
     use crate::network::conn::ConnectionVersion;
     use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
-    use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
+    use crate::p2p::testing::{PortSeed, generate_test_p2p_configs};
     use crate::primitives::{
         ChannelId, MpcMessage, MpcStartMessage, MpcTaskId, ParticipantId, PeerMessage, UniqueId,
     };
     use crate::providers::EcdsaTaskId;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
-    use mpc_primitives::{domain::DomainId, AttemptId, EpochId, KeyEventId};
+    use mpc_primitives::{AttemptId, EpochId, KeyEventId, domain::DomainId};
     use rand::Rng;
     use std::time::Duration;
     use tokio::time::timeout;
@@ -1087,9 +1086,9 @@ mod tests {
 
             for _ in 0..100 {
                 // TODO: adjust test?
-                let domain_id = rand::thread_rng().gen();
-                let epoch_id = rand::thread_rng().gen();
-                let n_attempts = rand::thread_rng().gen::<usize>() % 100;
+                let domain_id = rand::thread_rng().r#gen();
+                let epoch_id = rand::thread_rng().r#gen();
+                let n_attempts = rand::thread_rng().r#gen::<usize>() % 100;
                 let mut attempt_id = AttemptId::new();
                 for _ in 0..n_attempts {
                     attempt_id = attempt_id.next();
@@ -1327,9 +1326,11 @@ mod tests {
             bob_initial.wait_for_ready(2, &participants).await.unwrap();
 
             assert!(alice.connectivity(bob_id).is_bidirectionally_connected());
-            assert!(bob_initial
-                .connectivity(alice_id)
-                .is_bidirectionally_connected());
+            assert!(
+                bob_initial
+                    .connectivity(alice_id)
+                    .is_bidirectionally_connected()
+            );
 
             let alice_connection_versions = alice.connectivity(bob_id).connection_version();
             assert_eq!(
@@ -1358,9 +1359,11 @@ mod tests {
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
             // bob_new will never connect bidirectionally with Alice
-            assert!(!bob_new
-                .connectivity(alice_id)
-                .is_bidirectionally_connected());
+            assert!(
+                !bob_new
+                    .connectivity(alice_id)
+                    .is_bidirectionally_connected()
+            );
 
             let bob_new_version = bob_new.connectivity(alice_id).connection_version();
             assert_eq!(
@@ -1370,9 +1373,11 @@ mod tests {
                     incoming: 1
                 }
             );
-            assert!(bob_initial
-                .connectivity(alice_id)
-                .is_bidirectionally_connected());
+            assert!(
+                bob_initial
+                    .connectivity(alice_id)
+                    .is_bidirectionally_connected()
+            );
         })
         .await;
     }

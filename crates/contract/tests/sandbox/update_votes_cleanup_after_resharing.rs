@@ -128,10 +128,12 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
         .collect();
     assert_eq!(votes_for_update.len(), 1);
     let voter_id: &AccountId = votes_for_update[0];
-    assert!(final_participants
-        .participants
-        .iter()
-        .any(|(a, _, _)| a == voter_id));
+    assert!(
+        final_participants
+            .participants
+            .iter()
+            .any(|(a, _, _)| a == voter_id)
+    );
 
     Ok(())
 }

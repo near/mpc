@@ -1,5 +1,5 @@
 use near_sdk::Gas;
-use near_workspaces::{result::ExecutionFinalResult, Account, Contract};
+use near_workspaces::{Account, Contract, result::ExecutionFinalResult};
 use serde::Serialize;
 
 pub async fn execute_async_transactions(

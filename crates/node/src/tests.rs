@@ -3,28 +3,28 @@ use blstrs::{G1Projective, G2Projective, Scalar};
 use elliptic_curve::{Field as _, Group as _};
 use near_mpc_contract_interface::types::ProtocolContractState;
 use near_mpc_contract_interface::types::{
-    BitcoinExtractor, BitcoinRpcRequest, ForeignChainRpcRequest, ForeignTxPayloadVersion,
-    VerifyForeignTransactionRequestArgs, EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
-    EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
+    BitcoinExtractor, BitcoinRpcRequest, EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
+    EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES, ForeignChainRpcRequest, ForeignTxPayloadVersion,
+    VerifyForeignTransactionRequestArgs,
 };
 use rand::rngs::OsRng;
 use std::collections::BTreeMap;
 use std::net::{Ipv4Addr, SocketAddr};
 
-use tokio::sync::{watch, RwLock};
+use tokio::sync::{RwLock, watch};
 
 use crate::config::{ParticipantsConfig, PersistentSecrets, SecretsConfig};
 use crate::coordinator::Coordinator;
 use crate::db::SecretDB;
+use crate::indexer::IndexerAPI;
 use crate::indexer::fake::{FakeIndexerManager, FakeReadSupportedForeignChain};
 use crate::indexer::handler::{
     CKDArgs, CKDRequestFromChain, SignArgs, SignatureRequestFromChain,
     VerifyForeignTxRequestFromChain,
 };
-use crate::indexer::IndexerAPI;
 use crate::keyshare::{KeyStorageConfig, Keyshare};
 use crate::migration_service::spawn_recovery_server_and_run_onboarding;
-use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
+use crate::p2p::testing::{PortSeed, generate_test_p2p_configs};
 use mpc_node_config::{
     CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, PresignatureConfig,
     SignatureConfig, SyncMode, TripleConfig,
@@ -32,13 +32,13 @@ use mpc_node_config::{
 
 use crate::primitives::ParticipantId;
 use crate::tests::common::MockTransactionSender;
-use crate::tracking::{self, start_root_task, AutoAbortTask};
+use crate::tracking::{self, AutoAbortTask, start_root_task};
 use crate::web::{start_web_server, static_web_data};
 use assert_matches::assert_matches;
 use mpc_primitives::domain::{Curve, Protocol};
 use near_account_id::AccountId;
-use near_indexer_primitives::types::Finality;
 use near_indexer_primitives::CryptoHash;
+use near_indexer_primitives::types::Finality;
 use near_mpc_bounded_collections::BoundedVec;
 use near_mpc_contract_interface::types::DomainConfig;
 use near_mpc_contract_interface::types::Payload;

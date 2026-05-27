@@ -1,11 +1,11 @@
-use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::NetworkTaskChannel;
+use crate::network::computation::MpcLeaderCentricComputation;
 use crate::protocol::run_protocol;
 use crate::providers::ecdsa::{EcdsaSignatureProvider, KeygenOutput};
 use rand::rngs::OsRng;
+use threshold_signatures::ReconstructionLowerBound;
 use threshold_signatures::frost_secp256k1::Secp256K1Sha256;
 use threshold_signatures::participants::Participant;
-use threshold_signatures::ReconstructionLowerBound;
 
 impl EcdsaSignatureProvider {
     pub(crate) async fn run_key_generation_client_internal(
@@ -63,8 +63,8 @@ mod tests {
     use mpc_primitives::domain::DomainId;
     use near_mpc_contract_interface::types::{AttemptId, EpochId, KeyEventId};
     use std::sync::Arc;
-    use threshold_signatures::test_utils::generate_participants;
     use threshold_signatures::ReconstructionLowerBound;
+    use threshold_signatures::test_utils::generate_participants;
     use tokio::sync::mpsc;
 
     #[tokio::test]

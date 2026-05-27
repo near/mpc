@@ -21,10 +21,10 @@ use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_mpc_contract_interface::types::KeyEventId;
 use std::collections::HashMap;
 use std::sync::Arc;
+use threshold_signatures::ReconstructionLowerBound;
 use threshold_signatures::frost::eddsa::KeygenOutput;
 use threshold_signatures::frost_ed25519::keys::SigningShare;
 use threshold_signatures::frost_ed25519::{Signature, VerifyingKey};
-use threshold_signatures::ReconstructionLowerBound;
 
 #[derive(Clone)]
 pub struct EddsaSignatureProvider {

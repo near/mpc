@@ -13,9 +13,9 @@ use crate::{
 };
 
 use frost_ed25519::{
-    aggregate,
+    aggregate_custom,
     keys::{KeyPackage, PublicKeyPackage, SigningShare},
-    rand_core, round1, round2, SigningPackage, VerifyingKey,
+    rand_core, round1, round2, CheaterDetection, SigningPackage, VerifyingKey,
 };
 use rand_core::CryptoRngCore;
 use std::collections::BTreeMap;
@@ -172,9 +172,14 @@ async fn do_sign_coordinator_v1(
     // We supply empty map as `verifying_shares` because we have disabled "cheater-detection" feature flag.
     // Feature "cheater-detection" only points to a malicious participant, if there's such.
     // It doesn't bring any additional guarantees.
-    let public_key_package = PublicKeyPackage::new(BTreeMap::new(), vk_package);
-    let signature = aggregate(&signing_package, &signature_shares, &public_key_package)
-        .map_err(|e| ProtocolError::AssertionFailed(e.to_string()))?;
+    let public_key_package = PublicKeyPackage::new(BTreeMap::new(), vk_package, None);
+    let signature = aggregate_custom(
+        &signing_package,
+        &signature_shares,
+        &public_key_package,
+        CheaterDetection::Disabled,
+    )
+    .map_err(|e| ProtocolError::AssertionFailed(e.to_string()))?;
 
     Ok(Some(signature))
 }
@@ -229,9 +234,14 @@ async fn do_sign_coordinator_v2(
     // We supply empty map as `verifying_shares` because we have disabled "cheater-detection" feature flag.
     // Feature "cheater-detection" only points to a malicious participant, if there's such.
     // It doesn't bring any additional guarantees.
-    let public_key_package = PublicKeyPackage::new(BTreeMap::new(), vk_package);
-    let signature = aggregate(&signing_package, &signature_shares, &public_key_package)
-        .map_err(|e| ProtocolError::AssertionFailed(e.to_string()))?;
+    let public_key_package = PublicKeyPackage::new(BTreeMap::new(), vk_package, None);
+    let signature = aggregate_custom(
+        &signing_package,
+        &signature_shares,
+        &public_key_package,
+        CheaterDetection::Disabled,
+    )
+    .map_err(|e| ProtocolError::AssertionFailed(e.to_string()))?;
 
     Ok(Some(signature))
 }

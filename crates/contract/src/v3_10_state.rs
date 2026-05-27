@@ -16,6 +16,7 @@ use near_sdk::{
 use std::collections::BTreeMap;
 
 use crate::{
+    Config, SupportedForeignChainsByNode,
     node_migrations::NodeMigrations,
     primitives::{
         ckd::CKDRequest,
@@ -25,7 +26,6 @@ use crate::{
     storage_keys::StorageKey,
     tee::tee_state::TeeState,
     update::ProposedUpdates,
-    Config, SupportedForeignChainsByNode,
 };
 
 /// In-flight requests inherited from the schema before the duplicate-request fan-out
