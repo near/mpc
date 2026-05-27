@@ -1,5 +1,5 @@
 use crate::sandbox::{
-    common::{chunked_upload_contract, SandboxTestSetup},
+    common::{SandboxTestSetup, chunked_upload_contract},
     utils::{consts::GAS_FOR_VOTE_UPDATE, contract_build::current_contract},
 };
 use near_mpc_contract_interface::method_names;

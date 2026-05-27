@@ -1,5 +1,5 @@
 use crate::sandbox::{
-    common::{chunked_upload_contract, SandboxTestSetup},
+    common::{SandboxTestSetup, chunked_upload_contract},
     utils::{
         consts::{GAS_FOR_VOTE_NEW_DOMAIN, GAS_FOR_VOTE_UPDATE},
         mpc_contract::{
