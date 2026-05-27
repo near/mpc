@@ -1201,9 +1201,11 @@ impl MpcContract {
     }
 
     /// Propose a config update. Contract-code updates are proposed via the chunked
-    /// upload flow ([`start_contract_upload`] → [`upload_contract_chunk`] →
-    /// [`finalize_contract_upload`]) so that proposals can exceed the per-transaction
-    /// RPC size limit and so the proposal entry itself stays small.
+    /// upload flow ([`start_contract_upload`](Self::start_contract_upload) →
+    /// [`upload_contract_chunk`](Self::upload_contract_chunk) →
+    /// [`finalize_contract_upload`](Self::finalize_contract_upload)) so that proposals
+    /// can exceed the per-transaction RPC size limit and so the proposal entry itself
+    /// stays small.
     #[payable]
     #[handle_result]
     pub fn propose_update(
@@ -1244,10 +1246,11 @@ impl MpcContract {
     /// Begin a chunked contract-code upload.
     ///
     /// A voter calls this once with the declared `total_size`, then makes one or
-    /// more [`upload_contract_chunk`] calls totalling exactly `total_size` bytes,
-    /// then [`finalize_contract_upload`] to register the proposal. Each voter may
-    /// have at most one open upload at a time; call [`clear_staged_contract`] to
-    /// abandon and reset.
+    /// more [`upload_contract_chunk`](Self::upload_contract_chunk) calls totalling
+    /// exactly `total_size` bytes, then [`finalize_contract_upload`](Self::finalize_contract_upload)
+    /// to register the proposal. Each voter may have at most one open upload at a
+    /// time; call [`clear_staged_contract`](Self::clear_staged_contract) to abandon
+    /// and reset.
     ///
     /// Splitting the upload across many transactions is necessary because a single
     /// transaction is bounded by the RPC's payload size limit (~1.5 MiB), which is
@@ -1284,7 +1287,7 @@ impl MpcContract {
     /// Append a chunk of contract code to the caller's in-progress upload.
     ///
     /// The cumulative byte count is validated against the `total_size` declared in
-    /// [`start_contract_upload`]; sending more bytes than declared fails. Each call
+    /// [`start_contract_upload`](Self::start_contract_upload); sending more bytes than declared fails. Each call
     /// must attach enough deposit to back the chunk's storage cost (see
     /// [`StagedContractUpload::required_deposit_for_bytes`]).
     #[payable]
@@ -1339,7 +1342,7 @@ impl MpcContract {
     /// chunks one at a time, so peak WASM memory stays bounded), moves the chunks
     /// from per-account staging storage into proposal-keyed storage, clears the
     /// staged metadata, and returns the new [`UpdateId`]. Voters can then call
-    /// [`vote_update`] against that id; on threshold approval the chunks are
+    /// [`vote_update`](Self::vote_update) against that id; on threshold approval the chunks are
     /// reassembled and deployed.
     #[handle_result]
     pub fn finalize_contract_upload(&mut self) -> Result<UpdateId, Error> {

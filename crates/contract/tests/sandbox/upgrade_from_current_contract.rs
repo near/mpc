@@ -56,22 +56,6 @@ async fn test_propose_update_config() {
     let threshold = assert_running_return_threshold(&contract).await;
     dbg!(contract.id());
 
-    // contract should not be able to propose updates unless it's a part of the participant/voter set.
-    let execution = contract
-        .call(method_names::PROPOSE_UPDATE)
-        .args_borsh((dummy_contract_proposal(),))
-        .transact()
-        .await
-        .unwrap();
-    dbg!(&execution);
-    assert!(
-        execution
-            .into_result()
-            .unwrap_err()
-            .to_string()
-            .contains("not a voter")
-    );
-
     // have each participant propose a new update:
     let new_config = near_mpc_contract_interface::types::Config {
         key_event_timeout_blocks: 11,

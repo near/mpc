@@ -110,7 +110,7 @@ impl From<ProposeUpdateArgs> for Update {
     }
 }
 
-/// Arguments for [`MpcContract::start_contract_upload`].
+/// Arguments for [`MpcContract::start_contract_upload`](crate::MpcContract::start_contract_upload).
 #[derive(
     Clone,
     Debug,
@@ -130,7 +130,7 @@ pub struct StartContractUploadArgs {
     pub total_size: u64,
 }
 
-/// Arguments for [`MpcContract::upload_contract_chunk`].
+/// Arguments for [`MpcContract::upload_contract_chunk`](crate::MpcContract::upload_contract_chunk).
 #[derive(
     Clone,
     Debug,
