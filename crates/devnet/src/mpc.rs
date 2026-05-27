@@ -8,7 +8,7 @@ use crate::cli::{
 };
 use crate::constants::{ONE_NEAR, TESTNET_CONTRACT_ACCOUNT_ID};
 use crate::devnet::OperatingDevnetSetup;
-use crate::funding::{fund_accounts, AccountToFund};
+use crate::funding::{AccountToFund, fund_accounts};
 use crate::queries;
 use crate::rpc::NearRpcClients;
 use crate::terraform::get_urls;
@@ -24,9 +24,9 @@ use near_jsonrpc_client::methods::query::RpcQueryError;
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
-    protocol_state_to_string, DomainConfig, DomainPurpose, EpochId, NodeImageHash, ParticipantId,
-    ParticipantInfo, Participants, Protocol, ProtocolContractState, ReconstructionThreshold,
-    Threshold, ThresholdParameters,
+    DomainConfig, DomainPurpose, EpochId, NodeImageHash, ParticipantId, ParticipantInfo,
+    Participants, Protocol, ProtocolContractState, ReconstructionThreshold, Threshold,
+    ThresholdParameters, protocol_state_to_string,
 };
 use near_primitives::types::{BlockReference, Finality, FunctionArgs};
 use near_primitives::views::QueryRequest;
@@ -111,7 +111,8 @@ async fn update_mpc_network(
 
 impl NewMpcNetworkCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
-        println!("Going to create MPC network {} with {} maximum participants, {} NEAR per account, and {} additional access keys per participant for responding. Using SSD: {}",
+        println!(
+            "Going to create MPC network {} with {} maximum participants, {} NEAR per account, and {} additional access keys per participant for responding. Using SSD: {}",
             name,
             self.num_participants,
             self.near_per_account,
@@ -779,7 +780,8 @@ impl MpcVoteApprovedHashCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
         println!(
             "Going to vote_approved_hash for MPC network {}, adding following image hash to approved image hashes: {}.",
-            name, hex::encode(self.mpc_docker_image_hash)
+            name,
+            hex::encode(self.mpc_docker_image_hash)
         );
 
         let mut setup = OperatingDevnetSetup::load(config.rpc.clone()).await;

@@ -385,7 +385,10 @@ impl OperatingAccount {
                 );
             }
             _ => {
-                panic!("Account {} is not a normal or contract account, refusing to deploy contract to it", self.account_data.account_id);
+                panic!(
+                    "Account {} is not a normal or contract account, refusing to deploy contract to it",
+                    self.account_data.account_id
+                );
             }
         }
         let mut key = self.keys[0].lock().await;

@@ -1,9 +1,9 @@
 use crate::types::{CKDRequest, SignatureRequest, VerifyForeignTxRequest};
 use anyhow::Context;
 use k256::{
-    ecdsa::RecoveryId,
-    elliptic_curve::{ops::Reduce, point::AffineCoordinates, Curve, CurveArithmetic},
     AffinePoint, Scalar, Secp256k1,
+    ecdsa::RecoveryId,
+    elliptic_curve::{Curve, CurveArithmetic, ops::Reduce, point::AffineCoordinates},
 };
 use mpc_primitives::domain::DomainId;
 use near_indexer_primitives::types::Gas;
@@ -364,9 +364,9 @@ impl ChainVerifyForeignTransactionRespondArgs {
 #[cfg(test)]
 mod recovery_id_tests {
     use crate::indexer::types::ChainSignatureRespondArgs;
-    use k256::ecdsa::{RecoveryId, SigningKey};
-    use k256::elliptic_curve::{point::DecompressPoint, PrimeField};
     use k256::AffinePoint;
+    use k256::ecdsa::{RecoveryId, SigningKey};
+    use k256::elliptic_curve::{PrimeField, point::DecompressPoint};
     use rand::rngs::OsRng;
     use threshold_signatures::ecdsa::Signature;
 

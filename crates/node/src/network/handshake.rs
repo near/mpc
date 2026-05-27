@@ -1,7 +1,7 @@
 use bytes::{BufMut, BytesMut};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
-use crate::protocol_version::{CommunicationProtocols, CURRENT_PROTOCOL_VERSION};
+use crate::protocol_version::{CURRENT_PROTOCOL_VERSION, CommunicationProtocols};
 
 /// Arbitrary magic byte to distinguish from older protocol where we didn't send
 /// the protocol version at all.
@@ -271,10 +271,10 @@ impl ConnectionInfo {
 #[cfg(test)]
 mod tests {
     use super::{
-        p2p_handshake_dialer, p2p_handshake_listener, DialerData, HandshakeOutcome, ListenerData,
+        DialerData, HandshakeOutcome, ListenerData, p2p_handshake_dialer, p2p_handshake_listener,
     };
     use crate::network::handshake::{ConnectionInfo, MAGIC_BYTE};
-    use crate::protocol_version::{CommunicationProtocols, CURRENT_PROTOCOL_VERSION};
+    use crate::protocol_version::{CURRENT_PROTOCOL_VERSION, CommunicationProtocols};
     use rstest::*;
     use std::future::Future;
     use std::ops::Range;

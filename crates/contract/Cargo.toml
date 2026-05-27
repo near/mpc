@@ -2,7 +2,7 @@
 name = "mpc-contract"
 version = { workspace = true }
 license = { workspace = true }
-edition = "2021"
+edition = { workspace = true }
 repository = "https://github.com/near/mpc"
 
 # Reproducible builds are produced by the Nix derivation at `nix/mpc-contract.nix`

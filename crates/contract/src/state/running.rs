@@ -215,7 +215,7 @@ pub mod running_tests {
 
     use super::RunningContractState;
     use crate::primitives::domain::AddDomainsVotes;
-    use crate::primitives::test_utils::{gen_threshold_params, NUM_PROTOCOLS};
+    use crate::primitives::test_utils::{NUM_PROTOCOLS, gen_threshold_params};
     use crate::primitives::threshold_votes::ThresholdParametersVotes;
     use crate::state::key_event::tests::Environment;
     use crate::state::test_utils::{gen_running_state, gen_valid_params_proposal};
@@ -273,10 +273,12 @@ pub mod running_tests {
         }
         for (i, (account_id, _, _)) in participants.participants().iter().enumerate() {
             env.set_signer(account_id);
-            assert!(state
-                .vote_new_parameters(state.keyset.epoch_id.next(), &proposals[i])
-                .unwrap()
-                .is_none());
+            assert!(
+                state
+                    .vote_new_parameters(state.keyset.epoch_id.next(), &proposals[i])
+                    .unwrap()
+                    .is_none()
+            );
         }
 
         // Now let's vote for agreeing proposals.

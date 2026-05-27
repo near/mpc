@@ -7,11 +7,11 @@ use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{ParticipantId, UniqueId};
 use crate::protocol::run_protocol;
-use crate::providers::robust_ecdsa::{
-    get_number_of_signers, translate_threshold, KeygenOutput, RobustEcdsaSignatureProvider,
-    RobustEcdsaTaskId,
-};
 use crate::providers::HasParticipants;
+use crate::providers::robust_ecdsa::{
+    KeygenOutput, RobustEcdsaSignatureProvider, RobustEcdsaTaskId, get_number_of_signers,
+    translate_threshold,
+};
 use crate::tracking::AutoAbortTaskCollection;
 use crate::{metrics, tracking};
 use mpc_node_config::PresignatureConfig;
@@ -19,14 +19,14 @@ use mpc_primitives::domain::DomainId;
 use near_time::Clock;
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
 use std::time::Duration;
+use threshold_signatures::MaxMalicious;
 use threshold_signatures::ecdsa::robust_ecdsa::{
-    presign::presign, PresignArguments, PresignOutput,
+    PresignArguments, PresignOutput, presign::presign,
 };
 use threshold_signatures::participants::Participant;
-use threshold_signatures::MaxMalicious;
 
 #[derive(derive_more::Deref)]
 pub struct PresignatureStorage(DistributedAssetStorage<PresignOutputWithParticipants>);
@@ -195,11 +195,13 @@ fn compute_thresholds(
     let num_signers = get_number_of_signers(governance_threshold, num_running_participants)?;
     let robust_ecdsa_threshold =
         translate_threshold(governance_threshold, num_running_participants)?;
-    anyhow::ensure!(robust_ecdsa_threshold
-        .value()
-        .checked_mul(2)
-        .and_then(|v| v.checked_add(1))
-        .is_some_and(|v| v <= num_signers));
+    anyhow::ensure!(
+        robust_ecdsa_threshold
+            .value()
+            .checked_mul(2)
+            .and_then(|v| v.checked_add(1))
+            .is_some_and(|v| v <= num_signers)
+    );
     Ok((num_signers, robust_ecdsa_threshold))
 }
 

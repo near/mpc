@@ -1,11 +1,11 @@
 use crate::sandbox::{
-    common::{candidates, create_account_given_id, init, SandboxTestSetup},
+    common::{SandboxTestSetup, candidates, create_account_given_id, init},
     utils::{
         consts::ALL_PROTOCOLS,
         shared_key_utils::SharedSecretKey,
         sign_utils::{
-            gen_secp_256k1_sign_test, submit_ckd_response_measure_gas, submit_signature_response,
-            verify_timeout, CKDRequestTest, DomainResponseTest,
+            CKDRequestTest, DomainResponseTest, gen_secp_256k1_sign_test,
+            submit_ckd_response_measure_gas, submit_signature_response, verify_timeout,
         },
     },
 };
@@ -223,18 +223,22 @@ async fn test_contract_request_deposits_all_schemes() -> anyhow::Result<()> {
         // so the request should have never made it into the request queue and subsequently the MPC network.
         let respond = req.submit_response(&contract, attested_account).await;
         dbg!(&respond);
-        assert!(respond
-            .unwrap_err()
-            .to_string()
-            .contains(&errors::InvalidParameters::RequestNotFound.to_string()));
+        assert!(
+            respond
+                .unwrap_err()
+                .to_string()
+                .contains(&errors::InvalidParameters::RequestNotFound.to_string())
+        );
 
         let execution = status.await?;
         dbg!(&execution);
-        assert!(execution
-            .into_result()
-            .unwrap_err()
-            .to_string()
-            .contains("Attached deposit is lower than required"));
+        assert!(
+            execution
+                .into_result()
+                .unwrap_err()
+                .to_string()
+                .contains("Attached deposit is lower than required")
+        );
     }
     Ok(())
 }

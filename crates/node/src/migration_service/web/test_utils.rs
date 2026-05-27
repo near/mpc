@@ -8,11 +8,11 @@ use ed25519_dalek::SigningKey;
 use near_mpc_contract_interface::types::BackupServiceInfo;
 use rand::rngs::OsRng;
 use tempfile::TempDir;
-use tokio::sync::{watch, RwLock};
+use tokio::sync::{RwLock, watch};
 
 use crate::{
     config::AesKey256,
-    keyshare::{generate_key_storage, Keyshare, KeyshareStorage},
+    keyshare::{Keyshare, KeyshareStorage, generate_key_storage},
     migration_service::{
         types::MigrationInfo,
         web::{server::start_web_server, types::WebServerState},

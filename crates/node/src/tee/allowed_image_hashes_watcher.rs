@@ -193,7 +193,7 @@ mod tests {
     use mockall::predicate;
     use rstest::rstest;
     use std::{sync::Arc, time::Duration};
-    use tokio::sync::{mpsc::error::TryRecvError, Notify};
+    use tokio::sync::{Notify, mpsc::error::TryRecvError};
     use tokio_util::time::FutureExt;
 
     const TEST_TIMEOUT_DURATION: Duration = Duration::from_secs(5);

@@ -5,27 +5,27 @@ use crate::cli::{
     UpdateLoadtestCmd,
 };
 use crate::constants::{DEFAULT_PARALLEL_SIGN_CONTRACT_PATH, ONE_NEAR};
-use crate::contracts::{make_actions, ContractActionCall, ParallelSignCallArgs};
+use crate::contracts::{ContractActionCall, ParallelSignCallArgs, make_actions};
 use crate::devnet::OperatingDevnetSetup;
-use crate::funding::{fund_accounts, AccountToFund};
+use crate::funding::{AccountToFund, fund_accounts};
 use crate::mpc::read_contract_state;
 use crate::types::{LoadtestSetup, NearAccount, ParsedConfig};
 use anyhow::anyhow;
-use futures::future::BoxFuture;
 use futures::FutureExt;
+use futures::future::BoxFuture;
 use mpc_primitives::domain::{DomainId, Protocol};
+use near_jsonrpc_client::methods::EXPERIMENTAL_tx_status::RpcTransactionStatusRequest;
 use near_jsonrpc_client::methods::send_tx;
 use near_jsonrpc_client::methods::tx::{RpcTransactionResponse, TransactionInfo};
-use near_jsonrpc_client::methods::EXPERIMENTAL_tx_status::RpcTransactionStatusRequest;
 use near_mpc_contract_interface::types::{DomainConfig, ProtocolContractState};
 use near_primitives::transaction::SignedTransaction;
 use near_primitives::views::{FinalExecutionStatus, TxExecutionStatus};
 use std::f64;
-use std::io::{stdout, Write};
+use std::io::{Write, stdout};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::OwnedMutexGuard;
+use tokio::sync::mpsc::{Receiver, Sender};
 
 impl ListLoadtestCmd {
     pub async fn run(&self, config: ParsedConfig) {
@@ -75,7 +75,8 @@ async fn update_loadtest_setup(
 
 impl NewLoadtestCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
-        println!("Going to create loadtest setup {} with {} loadtest accounts, each with {} keys (total {} keys) and {} NEAR",
+        println!(
+            "Going to create loadtest setup {} with {} loadtest accounts, each with {} keys (total {} keys) and {} NEAR",
             name,
             self.num_accounts,
             self.keys_per_account,
@@ -85,7 +86,10 @@ impl NewLoadtestCmd {
 
         let mut setup = OperatingDevnetSetup::load(config.rpc).await;
         if setup.loadtest_setups.contains_key(name) {
-            println!("Loadtest setup with name {} already exists. Fetching the existing loadtest and updating.", name);
+            println!(
+                "Loadtest setup with name {} already exists. Fetching the existing loadtest and updating.",
+                name
+            );
         }
         let loadtest_setup = setup
             .loadtest_setups
@@ -248,8 +252,11 @@ impl RunLoadtestCmd {
             self.qps as f64
         };
         if tx_per_sec > config.rpc.total_qps() as f64 {
-            println!("WARNING: Transactions to send per second is {}, but the RPC servers are only capable of handling an aggregate of {} QPS",
-                tx_per_sec, config.rpc.total_qps());
+            println!(
+                "WARNING: Transactions to send per second is {}, but the RPC servers are only capable of handling an aggregate of {} QPS",
+                tx_per_sec,
+                config.rpc.total_qps()
+            );
         }
         let rpc_clone = config.rpc.clone();
         let contract_action: ContractActionCall = if parallel_sign_calls > 0 {

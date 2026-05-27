@@ -3,10 +3,10 @@ use std::collections::BTreeSet;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
+use near_sdk::IntoStorageKey;
 use near_sdk::near;
 use near_sdk::require;
 use near_sdk::store::IterableMap;
-use near_sdk::IntoStorageKey;
 
 /// Helper struct to keep track of submitted votes.
 /// Allows efficient look-up of votes by voter and votes by proposal.
@@ -184,8 +184,8 @@ where
 mod tests {
 
     use near_sdk::{
-        borsh::{self, BorshDeserialize, BorshSerialize},
         BorshStorageKey,
+        borsh::{self, BorshDeserialize, BorshSerialize},
     };
     use std::{
         collections::{BTreeMap, BTreeSet},

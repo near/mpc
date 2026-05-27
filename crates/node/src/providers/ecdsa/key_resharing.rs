@@ -1,14 +1,14 @@
 use crate::config::ParticipantsConfig;
-use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::NetworkTaskChannel;
+use crate::network::computation::MpcLeaderCentricComputation;
 use crate::primitives::ParticipantId;
 use crate::protocol::run_protocol;
 use crate::providers::ecdsa::{EcdsaSignatureProvider, KeygenOutput};
 use rand::rngs::OsRng;
+use threshold_signatures::ReconstructionLowerBound;
 use threshold_signatures::frost_secp256k1::keys::SigningShare;
 use threshold_signatures::frost_secp256k1::{Secp256K1Sha256, VerifyingKey};
 use threshold_signatures::participants::Participant;
-use threshold_signatures::ReconstructionLowerBound;
 
 impl EcdsaSignatureProvider {
     pub(crate) async fn run_key_resharing_client_internal(
@@ -95,17 +95,17 @@ mod tests {
     use crate::network::testing::run_test_clients;
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
     use crate::primitives::ParticipantId;
-    use crate::providers::ecdsa::key_resharing::KeyResharingComputation;
     use crate::providers::ecdsa::EcdsaTaskId;
+    use crate::providers::ecdsa::key_resharing::KeyResharingComputation;
     use crate::tests::into_participant_ids;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use mpc_primitives::domain::DomainId;
     use near_mpc_contract_interface::types::{AttemptId, EpochId, KeyEventId};
     use rand::{Rng as _, SeedableRng as _};
     use std::sync::Arc;
+    use threshold_signatures::ReconstructionLowerBound;
     use threshold_signatures::frost_secp256k1::Secp256K1Sha256;
     use threshold_signatures::test_utils::{generate_participants_with_random_ids, run_keygen};
-    use threshold_signatures::ReconstructionLowerBound;
     use tokio::sync::mpsc;
 
     #[tokio::test]
@@ -121,7 +121,7 @@ mod tests {
         let pubkey = keygens.iter().next().unwrap().1.public_key;
         let old_participants = into_participant_ids(&participants);
         let mut new_participants = into_participant_ids(&participants);
-        new_participants.push(ParticipantId::from_raw(rng.gen()));
+        new_participants.push(ParticipantId::from_raw(rng.r#gen()));
 
         let key_resharing_client_runner =
             move |client: Arc<MeshNetworkClient>,

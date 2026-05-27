@@ -3,8 +3,8 @@ use curve25519_dalek::constants::ED25519_BASEPOINT_POINT;
 #[cfg(target_arch = "wasm32")]
 use k256::EncodedPoint;
 use k256::{
-    elliptic_curve::{point::AffineCoordinates, CurveArithmetic, PrimeField},
     Secp256k1,
+    elliptic_curve::{CurveArithmetic, PrimeField, point::AffineCoordinates},
 };
 use near_mpc_contract_interface::types::Tweak;
 #[cfg(target_arch = "wasm32")]
@@ -54,8 +54,8 @@ mod tests {
     use rand::rngs::OsRng;
     use rand::{Rng, SeedableRng};
     use threshold_signatures::frost::eddsa::KeygenOutput;
-    use threshold_signatures::frost_core::keys::SigningShare;
     use threshold_signatures::frost_core::VerifyingKey;
+    use threshold_signatures::frost_core::keys::SigningShare;
     use threshold_signatures::frost_ed25519::{Ed25519Group, Ed25519Sha512, Group, SigningKey};
 
     pub(crate) fn derive_keygen_output(
@@ -75,7 +75,7 @@ mod tests {
 
     #[test]
     fn test_derivation() {
-        let random_bytes: [u8; 32] = rand::thread_rng().gen();
+        let random_bytes: [u8; 32] = rand::thread_rng().r#gen();
 
         let scalar = Scalar::from_bytes_mod_order(random_bytes);
         let private_share = SigningShare::<Ed25519Sha512>::new(scalar);
@@ -118,7 +118,7 @@ mod tests {
     #[test]
     fn test_derive_key_secp256k1_has_not_changed() {
         // given
-        let random_bytes: [u8; 32] = rand::rngs::StdRng::from_seed([42u8; 32]).gen();
+        let random_bytes: [u8; 32] = rand::rngs::StdRng::from_seed([42u8; 32]).r#gen();
         let tweak = derive_tweak(&"hello".parse().unwrap(), "my-path");
         let scalar = k256::Scalar::from_repr(random_bytes.into()).unwrap();
         let public_key_element = k256::ProjectivePoint::GENERATOR * scalar;
@@ -134,7 +134,7 @@ mod tests {
     #[test]
     fn test_derive_public_key_edwards_point_ed25519_has_not_changed() {
         // given
-        let random_bytes: [u8; 32] = rand::rngs::StdRng::from_seed([42u8; 32]).gen();
+        let random_bytes: [u8; 32] = rand::rngs::StdRng::from_seed([42u8; 32]).r#gen();
         let tweak = derive_tweak(&"hello".parse().unwrap(), "my-path");
         let scalar = Scalar::from_bytes_mod_order(random_bytes);
         let public_key_element = Ed25519Group::generator() * scalar;
