@@ -138,10 +138,10 @@ pub use near_mpc_crypto_types::{KeyForDomain, Keyset};
 // cover every existing domain (validated by the contract). Outside of resharing
 // proposals the map is empty.
 //
-// Backwards-compat for the legacy `{ participants, threshold }` wire shape is
-// intrinsic: `serde(default)` parses old JSON without `per_domain_thresholds`
-// as an empty map, and `skip_serializing_if` omits the field from `state()`
-// output when no overlay is in flight.
+// Input back-compat is intrinsic: `serde(default)` parses an old
+// `{ participants, threshold }` payload without `per_domain_thresholds` as an
+// empty map. The field is always serialized — an additive change that consumers
+// which don't recognize it simply ignore.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -150,8 +150,7 @@ pub use near_mpc_crypto_types::{KeyForDomain, Keyset};
 pub struct ThresholdParameters {
     pub participants: Participants,
     pub threshold: Threshold,
-    // The following skip_serializing_if should be deleted after release 3.11.0
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(default)]
     pub per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
 }
 

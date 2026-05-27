@@ -24,9 +24,10 @@ pub struct ThresholdParameters {
     /// resharing. Empty map means "keep current per-domain thresholds";
     /// populated map must cover every existing domain (validated in
     /// [`super::super::state::running::RunningContractState::process_new_parameters_proposal`]).
-    /// `skip_serializing_if`+`default` preserve the legacy `state()` wire
-    /// shape when no resharing is in flight.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    /// `serde(default)` keeps JSON decodes tolerant of the pre-#3169 shape; the
+    /// public wire (`state()`, `vote_new_parameters`) goes through the interface
+    /// DTO, while on-chain storage is borsh — neither depends on this attribute.
+    #[serde(default)]
     per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
 }
 
