@@ -11,7 +11,7 @@ static GLOBAL_ALLOCATOR: Jemalloc = Jemalloc;
 // rust-jemalloc-pprof (https://github.com/polarsignals/rust-jemalloc-pprof).
 #[cfg(target_os = "linux")]
 #[expect(non_upper_case_globals)]
-#[export_name = "malloc_conf"]
+#[unsafe(export_name = "malloc_conf")]
 pub static malloc_conf: &[u8] = b"prof:true,prof_active:true,lg_prof_sample:19\0";
 
 fn main() -> anyhow::Result<()> {

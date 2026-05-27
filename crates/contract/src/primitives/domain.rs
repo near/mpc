@@ -168,10 +168,10 @@ impl DomainRegistry {
                 return Err(DomainError::InvalidDomains.into());
             }
         }
-        if let Some(largest_domain_id) = registry.domains.last().map(|domain| domain.id.0) {
-            if largest_domain_id >= registry.next_domain_id {
-                return Err(DomainError::InvalidDomains.into());
-            }
+        if let Some(largest_domain_id) = registry.domains.last().map(|domain| domain.id.0)
+            && largest_domain_id >= registry.next_domain_id
+        {
+            return Err(DomainError::InvalidDomains.into());
         }
         Ok(registry)
     }
@@ -268,8 +268,8 @@ impl AddDomainsVotes {
 #[cfg(test)]
 pub mod tests {
     use super::{
-        is_valid_protocol_for_purpose, validate_domain_purpose, AddDomainsVotes, Curve,
-        DomainConfig, DomainId, DomainPurpose, DomainRegistry, Participants, Protocol,
+        AddDomainsVotes, Curve, DomainConfig, DomainId, DomainPurpose, DomainRegistry,
+        Participants, Protocol, is_valid_protocol_for_purpose, validate_domain_purpose,
     };
     use crate::primitives::key_state::AuthenticatedParticipantId;
     use crate::primitives::test_utils::{

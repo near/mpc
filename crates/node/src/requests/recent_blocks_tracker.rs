@@ -1,6 +1,6 @@
 use derive_more::Into;
-use near_indexer_primitives::types::BlockHeight;
 use near_indexer_primitives::CryptoHash;
+use near_indexer_primitives::types::BlockHeight;
 use std::collections::{HashMap, VecDeque};
 use std::fmt::Debug;
 use std::ops::Add;
@@ -158,7 +158,9 @@ impl AtomicBlockStatus {
 
     fn make_canonical(&self) {
         if self.is_final() {
-            tracing::error!("received invalid data from indexer. Downgrading from final to canonical is not possible");
+            tracing::error!(
+                "received invalid data from indexer. Downgrading from final to canonical is not possible"
+            );
             return;
         }
         self.0.store(
@@ -169,7 +171,9 @@ impl AtomicBlockStatus {
 
     fn make_non_canonical(&self) {
         if self.is_final() {
-            tracing::error!("received invalid data from indexer. Downgrading from final to non-canonical is not possible");
+            tracing::error!(
+                "received invalid data from indexer. Downgrading from final to non-canonical is not possible"
+            );
             return;
         }
         self.0.store(
@@ -493,10 +497,10 @@ impl RecentBlocksTracker {
 
         let mut old_node = self.canonical_head.upgrade();
         while let Some(current_node) = old_node {
-            if let Some(common_ancestor) = &common_ancestor {
-                if Arc::ptr_eq(&current_node, common_ancestor) {
-                    break;
-                }
+            if let Some(common_ancestor) = &common_ancestor
+                && Arc::ptr_eq(&current_node, common_ancestor)
+            {
+                break;
             }
             current_node.status.make_non_canonical();
             old_node = current_node.get_parent();
@@ -600,7 +604,7 @@ pub mod tests {
     use near_indexer::near_primitives::hash::hash;
     use near_indexer_primitives::CryptoHash;
     use std::collections::{HashMap, HashSet};
-    use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
+    use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
     use std::sync::{Arc, Mutex};
 
     pub struct TestBlock {
@@ -1074,8 +1078,8 @@ pub mod tests {
         let b4 = b2.descendant(4); // h=4, parent=b2 (h=3 intentionally skipped)
         let b5 = b4.child(); // h=5
         let b6 = b5.child(); // h=6 → first block whose grandparent-parent-self
-                             // forms 3 consecutive heights (b4-b5-b6), so its
-                             // last_final_block is b4
+        // forms 3 consecutive heights (b4-b5-b6), so its
+        // last_final_block is b4
 
         tester.add(&b1, "1");
         tester.add(&b2, "2");

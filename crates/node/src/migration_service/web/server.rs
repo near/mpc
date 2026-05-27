@@ -1,6 +1,6 @@
 use std::{convert::Infallible, net::SocketAddr, sync::Arc};
 
-use hyper::{service::service_fn, Body, Response, StatusCode};
+use hyper::{Body, Response, StatusCode, service::service_fn};
 use near_mpc_crypto_types::Keyset;
 use tokio::{
     net::{TcpListener, TcpStream},

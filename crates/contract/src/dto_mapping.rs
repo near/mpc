@@ -28,11 +28,11 @@ use crate::{
         thresholds::ThresholdParameters,
     },
     state::{
+        ProtocolContractState,
         initializing::InitializingContractState,
         key_event::{KeyEvent, KeyEventInstance},
         resharing::ResharingContractState,
         running::RunningContractState,
-        ProtocolContractState,
     },
     update::{ProposedUpdates, Update},
 };
@@ -537,8 +537,8 @@ impl From<near_mpc_contract_interface::types::Config> for Config {
 #[cfg(feature = "compat")]
 mod from_dto {
     use super::*;
-    use crate::crypto_shared::types::serializable::SerializableEdwardsPoint;
     use crate::crypto_shared::types::PublicKeyExtendedConversionError;
+    use crate::crypto_shared::types::serializable::SerializableEdwardsPoint;
 
     impl TryFrom<dtos::PublicKeyExtended> for PublicKeyExtended {
         type Error = PublicKeyExtendedConversionError;

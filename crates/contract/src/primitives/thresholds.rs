@@ -223,7 +223,7 @@ mod tests {
     #[test]
     fn test_threshold() {
         for _ in 0..20 {
-            let v = rand::thread_rng().gen::<u64>();
+            let v = rand::thread_rng().r#gen::<u64>();
             let x = Threshold::new(v);
             assert_eq!(v, x.value());
         }

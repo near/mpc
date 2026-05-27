@@ -8,8 +8,8 @@ use crate::providers::HasParticipants;
 use borsh::BorshDeserialize;
 use futures::FutureExt;
 use near_time::Clock;
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use std::collections::{HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 
@@ -298,16 +298,19 @@ where
 
         // If the cold queue is exhausted, process elements buffered in the hot queue
         while num_elements_to_process > 0 {
-            if let Some(Ok((id, value))) = self.hot_receiver.recv_async().now_or_never() {
-                num_elements_to_process -= 1;
-                let _ = self
-                    .cold_queue
-                    .lock()
-                    .unwrap()
-                    .add_if_condition_satisfied(id, value);
-            } else {
-                // Nothing waiting in the hot queue
-                break;
+            match self.hot_receiver.recv_async().now_or_never() {
+                Some(Ok((id, value))) => {
+                    num_elements_to_process -= 1;
+                    let _ = self
+                        .cold_queue
+                        .lock()
+                        .unwrap()
+                        .add_if_condition_satisfied(id, value);
+                }
+                _ => {
+                    // Nothing waiting in the hot queue
+                    break;
+                }
             }
         }
 
@@ -613,7 +616,7 @@ where
 mod tests {
     use super::{ColdQueue, DistributedAssetStorage, DoubleQueue, UniqueId};
     use crate::assets::clean_db;
-    use crate::async_testing::{run_future_once, MaybeReady};
+    use crate::async_testing::{MaybeReady, run_future_once};
     use crate::db::DBCol;
     use crate::primitives::ParticipantId;
     use crate::providers::HasParticipants;

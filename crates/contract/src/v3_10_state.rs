@@ -14,6 +14,7 @@ use near_mpc_contract_interface::types::{self as dtos, VerifyForeignTransactionR
 use near_sdk::{env, store::LookupMap};
 
 use crate::{
+    Config, SupportedForeignChainsByNode,
     node_migrations::NodeMigrations,
     primitives::{
         ckd::CKDRequest,
@@ -30,7 +31,6 @@ use crate::{
     },
     tee::tee_state::TeeState,
     update::ProposedUpdates,
-    Config, SupportedForeignChainsByNode,
 };
 
 /// `3.10.0` layout of `ThresholdParameters`. The new layout appends

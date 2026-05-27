@@ -578,13 +578,15 @@ mod tests {
             .unwrap();
         let allowed_docker_image_hashes = [NodeImageHash::from([42u8; 32])];
         let allowed_launcher_compose_hashes = [LauncherDockerComposeHash::from([42u8; 32])];
-        assert!(validate_remote_attestation(
-            &attestation,
-            tls_public_key,
-            account_public_key,
-            &allowed_docker_image_hashes,
-            &allowed_launcher_compose_hashes
-        )
-        .is_err());
+        assert!(
+            validate_remote_attestation(
+                &attestation,
+                tls_public_key,
+                account_public_key,
+                &allowed_docker_image_hashes,
+                &allowed_launcher_compose_hashes
+            )
+            .is_err()
+        );
     }
 }
