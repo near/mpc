@@ -9,7 +9,7 @@ set -euo pipefail
 #
 # Usage: bash scripts/check-contract-wasm-size.sh [path-to-wasm]
 
-WASM_PATH="${1:-target/near/mpc_contract/mpc_contract.wasm}"
+WASM_PATH="${1:-result/mpc_contract.wasm}"
 
 # NEAR max_transaction_size = 1572864; keep some headroom.
 # The on-chain RPC provider whitelist voting machinery (issue #3215) adds

@@ -161,10 +161,10 @@ impl KeyEvent {
     /// Whoever reads and parses the state must treat a timed out instance as equivalent to not
     /// having an instance at all; thus this function performs no functional change.
     fn cleanup_if_timed_out(&mut self) {
-        if let Some(instance) = self.instance.as_ref() {
-            if !instance.active() {
-                self.instance = None;
-            }
+        if let Some(instance) = self.instance.as_ref()
+            && !instance.active()
+        {
+            self.instance = None;
         }
     }
 

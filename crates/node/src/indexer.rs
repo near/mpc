@@ -18,7 +18,7 @@ use near_account_id::AccountId;
 use near_async::{
     messaging::CanSendAsync, multithread::MultithreadRuntimeHandle, tokio::TokioRuntimeHandle,
 };
-use near_client::{client_actor::ClientActor, RpcHandlerActor, Status, ViewClientActor};
+use near_client::{RpcHandlerActor, Status, ViewClientActor, client_actor::ClientActor};
 use near_indexer::near_primitives::transaction::SignedTransaction;
 use near_indexer_primitives::{
     types::{BlockReference, Finality},

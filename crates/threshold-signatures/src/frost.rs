@@ -1,7 +1,7 @@
 use frost_core::{
     keys::SigningShare,
     round1::{commit, SigningCommitments, SigningNonces},
-    Field, Group, Identifier,
+    Identifier,
 };
 use rand_core::CryptoRngCore;
 use serde::{Deserialize, Serialize};
@@ -35,14 +35,14 @@ pub struct PresignArguments<C: Ciphersuite> {
 /// This output is basically all the parts of the signature that we can perform
 /// without knowing the message.
 #[derive(Clone, Serialize, Deserialize, Eq, PartialEq, ZeroizeOnDrop)]
-pub struct PresignOutput<C: Ciphersuite + Send + 'static> {
+pub struct PresignOutput<C: Ciphersuite> {
     /// The secret signing nonces.
     pub nonces: SigningNonces<C>,
     #[zeroize(skip)]
     pub commitments_map: BTreeMap<Identifier<C>, SigningCommitments<C>>,
 }
 
-impl_secret_debug!({C: Ciphersuite + Send + 'static} PresignOutput<C> { show: [commitments_map], redact: [nonces] });
+impl_secret_debug!({C: Ciphersuite} PresignOutput<C> { show: [commitments_map], redact: [nonces] });
 
 /// Maximum incoming buffer entries for the FROST presign protocol.
 pub(crate) const FROST_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES: usize = 1;
@@ -55,9 +55,7 @@ pub fn presign<C>(
     rng: impl CryptoRngCore + Send + 'static,
 ) -> Result<impl Protocol<Output = PresignOutput<C>>, InitializationError>
 where
-    C: Ciphersuite + Send,
-    <<<C as frost_core::Ciphersuite>::Group as Group>::Field as Field>::Scalar: Send,
-    <<C as frost_core::Ciphersuite>::Group as frost_core::Group>::Element: std::marker::Send,
+    C: Ciphersuite,
 {
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
@@ -94,7 +92,7 @@ where
     Ok(make_protocol(ctx, fut))
 }
 
-async fn do_presign<C: Ciphersuite + Send>(
+async fn do_presign<C: Ciphersuite>(
     mut chan: SharedChannel,
     participants: ParticipantList,
     me: Participant,

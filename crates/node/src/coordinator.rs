@@ -1,4 +1,4 @@
-use crate::assets::cleanup::{delete_stale_triples_and_presignatures, EpochData};
+use crate::assets::cleanup::{EpochData, delete_stale_triples_and_presignatures};
 use crate::config::{MpcConfig, ParticipantsConfig, SecretsConfig};
 use crate::db::SecretDB;
 use crate::indexer::handler::ChainBlockUpdate;
@@ -6,16 +6,16 @@ use crate::indexer::participants::{
     ContractKeyEventInstance, ContractResharingState, ContractRunningState, ContractState,
 };
 use crate::indexer::types::{ChainRegisterForeignChainConfigArgs, ChainSendTransactionRequest};
-use crate::indexer::{tx_sender, IndexerAPI, ReadSupportedForeignChain};
+use crate::indexer::{IndexerAPI, ReadSupportedForeignChain, tx_sender};
 use crate::key_events::{
-    keygen_follower, keygen_leader, resharing_follower, resharing_leader, ResharingArgs,
+    ResharingArgs, keygen_follower, keygen_leader, resharing_follower, resharing_leader,
 };
 use crate::keyshare::{KeyshareData, KeyshareStorage};
 use crate::metrics;
 use crate::metrics::tokio_runtime_metrics::run_monitor_loop;
 use crate::mpc_client::MpcClient;
 use crate::network::{
-    run_network_client, MeshNetworkClient, MeshNetworkTransportSender, NetworkTaskChannel,
+    MeshNetworkClient, MeshNetworkTransportSender, NetworkTaskChannel, run_network_client,
 };
 use crate::p2p::new_tls_mesh_network;
 use crate::primitives::MpcTaskId;
@@ -29,11 +29,11 @@ use crate::storage::SignRequestStorage;
 use crate::storage::{CKDRequestStorage, VerifyForeignTransactionRequestStorage};
 use crate::tracking::{self};
 use crate::web::DebugRequest;
-use futures::future::BoxFuture;
 use futures::FutureExt;
+use futures::future::BoxFuture;
 use mpc_node_config::ConfigFile;
 use mpc_primitives::domain::{Curve, DomainId, Protocol};
-use mpc_primitives::EpochId;
+use mpc_primitives::{EpochId, ReconstructionThreshold};
 use near_time::Clock;
 use std::collections::HashMap;
 use std::future::Future;
@@ -42,7 +42,7 @@ use threshold_signatures::ReconstructionLowerBound;
 use threshold_signatures::{confidential_key_derivation, ecdsa, frost::eddsa};
 use tokio::select;
 use tokio::sync::mpsc::unbounded_channel;
-use tokio::sync::{broadcast, mpsc, watch, RwLock};
+use tokio::sync::{RwLock, broadcast, mpsc, watch};
 use tokio_metrics::RuntimeMonitor;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
@@ -280,7 +280,9 @@ where
             &config_file.my_near_account_id,
             &p2p_key.verifying_key(),
         ) else {
-            tracing::info!("We are not a participant in the current epoch; doing nothing until contract state change");
+            tracing::info!(
+                "We are not a participant in the current epoch; doing nothing until contract state change"
+            );
             return Ok(MpcJobResult::HaltUntilInterrupted);
         };
 
@@ -348,11 +350,18 @@ where
                 epoch_id: current_epoch_id,
                 participants: current_participants_config,
             };
+            // TODO(#3164): once each domain may declare its own
+            // `reconstruction_threshold`, collect the distinct `t`s across all
+            // CaitSith domains here instead of just the network-wide threshold.
+            let triple_thresholds = vec![ReconstructionThreshold::new(
+                running_state.participants.threshold,
+            )];
             delete_stale_triples_and_presignatures(
                 &secret_db,
                 current_epoch_data,
                 my_participant_id,
                 all_domains,
+                triple_thresholds,
             )?;
         }
         let mut running_participants = running_state.participants.clone();
@@ -373,7 +382,9 @@ where
             &config_file.my_near_account_id,
             &p2p_key.verifying_key(),
         ) else {
-            tracing::info!("We are not a participant in the current epoch; doing nothing until contract state change");
+            tracing::info!(
+                "We are not a participant in the current epoch; doing nothing until contract state change"
+            );
             return Ok(MpcJobResult::HaltUntilInterrupted);
         };
 
@@ -480,7 +491,9 @@ where
                     &config_file.my_near_account_id,
                     &p2p_public_key,
                 ) else {
-                    tracing::info!("We are not a participant in the current epoch; doing nothing until contract state change");
+                    tracing::info!(
+                        "We are not a participant in the current epoch; doing nothing until contract state change"
+                    );
                     return Ok(MpcJobResult::HaltUntilInterrupted);
                 };
 
@@ -493,9 +506,9 @@ where
                     Ok(keyshares) => keyshares,
                     Err(e) => {
                         tracing::error!(
-                        "Failed to load keyshares: {:?}; doing nothing until contract state changes.",
-                        e
-                    );
+                            "Failed to load keyshares: {:?}; doing nothing until contract state changes.",
+                            e
+                        );
                         return Ok(MpcJobResult::HaltUntilInterrupted);
                     }
                 };
@@ -713,7 +726,9 @@ where
                 .await
                 .is_ok()
             {
-                tracing::warn!("We should not have the previous keyshares when we were not a participant last epoch");
+                tracing::warn!(
+                    "We should not have the previous keyshares when we were not a participant last epoch"
+                );
             }
             None
         };

@@ -4,8 +4,8 @@
 //! so that sandbox tests can measure actual on-chain gas costs for each operation.
 //! This enables detecting performance regressions when changing internal data structures.
 
-use crate::primitives::participants::ParticipantInfo;
 use crate::MpcContract;
+use crate::primitives::participants::ParticipantInfo;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::near;

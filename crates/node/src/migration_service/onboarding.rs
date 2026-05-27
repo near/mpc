@@ -6,7 +6,7 @@ use ed25519_dalek::VerifyingKey;
 use futures::TryFutureExt;
 use near_account_id::AccountId;
 use near_mpc_crypto_types::Keyset;
-use tokio::sync::{watch, RwLock};
+use tokio::sync::{RwLock, watch};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -336,7 +336,7 @@ mod tests {
 
     use rand::SeedableRng as _;
     use tokio::{
-        sync::{watch, RwLock},
+        sync::{RwLock, watch},
         time::timeout,
     };
     use tokio_util::sync::CancellationToken;
@@ -347,15 +347,15 @@ mod tests {
         keyshare::{generate_key_storage_config, test_utils::KeysetBuilder},
         migration_service::{
             onboarding::{
-                wait_for_and_import_keyshares, IMPORT_CANCELLED_MSG, IMPORT_FAILURE_MSG,
-                IMPORT_SUCCESS_MSG, KEYSHARE_SENDER_CLOSED_MSG, START_IMPORT_LOOP_MSG,
+                IMPORT_CANCELLED_MSG, IMPORT_FAILURE_MSG, IMPORT_SUCCESS_MSG,
+                KEYSHARE_SENDER_CLOSED_MSG, START_IMPORT_LOOP_MSG, wait_for_and_import_keyshares,
             },
             types::{
-                tests::{
-                    make_initializing_contract_case, make_resharing_contract_case,
-                    make_running_contract_case, ContractCase, TestNodeId,
-                },
                 MigrationInfo, OnboardingJob, OnboardingTask,
+                tests::{
+                    ContractCase, TestNodeId, make_initializing_contract_case,
+                    make_resharing_contract_case, make_running_contract_case,
+                },
             },
         },
     };

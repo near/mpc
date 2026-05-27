@@ -175,7 +175,7 @@ where
         // Batch invert points_set to get 1 / x_i
         let inv_xis = batch_invert::<C>(points_set)?;
         // Return the proper numerator based on the number of elements
-        (if n % 2 == 0 { minus_p } else { p }, inv_xis)
+        (if n.is_multiple_of(2) { minus_p } else { p }, inv_xis)
     } else {
         // General case: x != 0
         let mut full_numerator = <C::Group as Group>::Field::one();

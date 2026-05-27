@@ -192,7 +192,7 @@ pub async fn load_config() -> ParsedConfig {
 ///    not allow values to be defined as bytes.
 pub mod near_crypto_compatible_serialization {
     use ed25519_dalek::{SigningKey, VerifyingKey};
-    use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
     const ED25519_PREFIX: &str = "ed25519";
 
     pub mod signing_keys {

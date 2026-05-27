@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 
 use crate::sandbox::{
-    common::{build_sandbox_node_ids, gen_accounts, submit_tee_attestations, SandboxTestSetup},
+    common::{SandboxTestSetup, build_sandbox_node_ids, gen_accounts, submit_tee_attestations},
     utils::{
         consts::ALL_PROTOCOLS,
         interface::IntoContractType,
@@ -300,8 +300,8 @@ async fn test_clean_tee_status_denies_external_account_access() -> Result<()> {
 /// endpoint leaves `stored_attestations` untouched. Attestation pruning is handled by the
 /// separate `clean_invalid_attestations` endpoint.
 #[tokio::test]
-async fn clean_tee_status__should_succeed_when_contract_calls_itself_and_leave_attestations_alone(
-) -> Result<()> {
+async fn clean_tee_status__should_succeed_when_contract_calls_itself_and_leave_attestations_alone()
+-> Result<()> {
     // Given
     let SandboxTestSetup {
         worker,
@@ -427,8 +427,8 @@ async fn clean_invalid_attestations__should_remove_expired_entries() -> Result<(
 }
 
 #[tokio::test]
-async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verification(
-) -> Result<()> {
+async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verification()
+-> Result<()> {
     let SandboxTestSetup {
         contract,
         mpc_signer_accounts,
