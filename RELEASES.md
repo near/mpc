@@ -131,8 +131,8 @@ Review the draft and click "Publish release." Publishing creates the
 Some operators consume floating tags like `nearone/mpc-node-gcp:testnet-release`
 and `:mainnet-release`. Promote with the retag workflows:
 
-- [Release Node Docker Image](.github/workflows/docker_node_release.yml) — run twice (once per repository)
-- [Release Launcher Docker Image](.github/workflows/docker_launcher_release.yml)
+- [Release Node Docker Image](.github/workflows/docker_node_release.yml) — run once with `repository: mpc-node` and once with `repository: mpc-node-gcp`.
+- [Release Launcher Docker Image](.github/workflows/docker_launcher_release.yml) — single run for `mpc-launcher`.
 
 Use `source-tag = 3.11.0` and `release-tag = testnet-release` or
 `mainnet-release`.
