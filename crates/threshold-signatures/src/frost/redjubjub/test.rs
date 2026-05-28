@@ -1,16 +1,16 @@
 use crate::{
+    Participant, ReconstructionLowerBound,
     crypto::{
-        hash::{hash, HashOutput},
+        hash::{HashOutput, hash},
         random::Randomness,
     },
-    frost::redjubjub::{sign::sign, KeygenOutput, PresignOutput, SignatureOption},
-    Participant, ReconstructionLowerBound,
+    frost::redjubjub::{KeygenOutput, PresignOutput, SignatureOption, sign::sign},
 };
 
 use crate::test_utils::{
-    assert_public_key_invariant, build_frost_key_packages_with_dealer, generate_participants,
-    generate_participants_with_random_ids, one_coordinator_output, run_keygen, run_protocol,
-    run_refresh, run_reshare, GenProtocol, MockCryptoRng,
+    GenProtocol, MockCryptoRng, assert_public_key_invariant, build_frost_key_packages_with_dealer,
+    generate_participants, generate_participants_with_random_ids, one_coordinator_output,
+    run_keygen, run_protocol, run_refresh, run_reshare,
 };
 
 use std::error::Error;
@@ -18,7 +18,7 @@ use std::error::Error;
 use frost_core::Scalar;
 use rand::SeedableRng;
 use rand_core::CryptoRngCore;
-use reddsa::frost::redjubjub::{keys::SigningShare, JubjubBlake2b512, SigningKey, VerifyingKey};
+use reddsa::frost::redjubjub::{JubjubBlake2b512, SigningKey, VerifyingKey, keys::SigningShare};
 
 type C = JubjubBlake2b512;
 

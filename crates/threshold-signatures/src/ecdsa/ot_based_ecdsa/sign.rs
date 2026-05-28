@@ -2,15 +2,15 @@ use elliptic_curve::scalar::IsHigh;
 use subtle::ConditionallySelectable;
 
 use super::RerandomizedPresignOutput;
+use crate::ReconstructionLowerBound;
 use crate::errors::{InitializationError, ProtocolError};
 use crate::participants::{Participant, ParticipantList};
-use crate::ReconstructionLowerBound;
 use crate::{
-    ecdsa::{x_coordinate, AffinePoint, Scalar, Secp256K1Sha256, Signature, SignatureOption},
+    ecdsa::{AffinePoint, Scalar, Secp256K1Sha256, Signature, SignatureOption, x_coordinate},
     protocol::{
-        helpers::recv_from_others,
-        internal::{make_protocol, Comms, SharedChannel},
         Protocol,
+        helpers::recv_from_others,
+        internal::{Comms, SharedChannel, make_protocol},
     },
 };
 
@@ -25,15 +25,18 @@ pub(crate) const OT_ECDSA_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES: usize = 0;
 /// **WARNING** You must absolutely hash an actual message before passing it to
 /// this function. Allowing the signing of arbitrary scalars *is* a security risk,
 /// and this function only tolerates this risk to allow for genericity.
-pub fn sign(
+pub fn sign<T>(
     participants: &[Participant],
     coordinator: Participant,
-    threshold: impl Into<ReconstructionLowerBound>,
+    threshold: T,
     me: Participant,
     public_key: AffinePoint,
     presignature: RerandomizedPresignOutput,
     msg_hash: Scalar,
-) -> Result<impl Protocol<Output = SignatureOption>, InitializationError> {
+) -> Result<impl Protocol<Output = SignatureOption> + use<T>, InitializationError>
+where
+    T: Into<ReconstructionLowerBound>,
+{
     let threshold = usize::from(threshold.into());
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
@@ -191,23 +194,23 @@ async fn fut_wrapper(
 #[cfg(test)]
 mod test {
     use super::{
-        fut_wrapper, x_coordinate, OT_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES,
-        OT_ECDSA_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES,
+        OT_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES,
+        OT_ECDSA_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES, fut_wrapper, x_coordinate,
     };
     use crate::{
         ecdsa::{
-            ot_based_ecdsa::{
-                test::{run_sign_with_rerandomization, run_sign_without_rerandomization},
-                PresignOutput,
-            },
             Polynomial,
+            ot_based_ecdsa::{
+                PresignOutput,
+                test::{run_sign_with_rerandomization, run_sign_without_rerandomization},
+            },
         },
         participants::Participant,
         test_utils::{
-            assert_buffer_capacity, expected_buffer_by_role, generate_participants, MockCryptoRng,
+            MockCryptoRng, assert_buffer_capacity, expected_buffer_by_role, generate_participants,
         },
     };
-    use k256::{ecdsa::signature::Verifier, ecdsa::VerifyingKey, ProjectivePoint, PublicKey};
+    use k256::{ProjectivePoint, PublicKey, ecdsa::VerifyingKey, ecdsa::signature::Verifier};
     use rand::SeedableRng;
     use rstest::rstest;
 
