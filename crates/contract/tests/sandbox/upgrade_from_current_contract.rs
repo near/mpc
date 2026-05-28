@@ -27,6 +27,7 @@ use sha2::Digest as _;
 #[tokio::test]
 async fn test_propose_contract_max_size_upload() {
     let SandboxTestSetup {
+        worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -40,7 +41,8 @@ async fn test_propose_contract_max_size_upload() {
     // Chunked upload removes that ceiling — verify we can register a proposal at
     // this size end-to-end.
     let large_code = vec![0u8; 1536 * 1024 - 400];
-    let _update_id = chunked_upload_contract(&mpc_signer_accounts[0], &contract, &large_code).await;
+    let _update_id =
+        chunked_upload_contract(&worker, &mpc_signer_accounts[0], &contract, &large_code).await;
 }
 
 #[tokio::test]
@@ -160,6 +162,7 @@ async fn test_propose_update_config() {
 #[tokio::test]
 async fn test_propose_update_contract() {
     let SandboxTestSetup {
+        worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -167,12 +170,14 @@ async fn test_propose_update_contract() {
         .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
-    propose_and_vote_contract_binary(&mpc_signer_accounts, &contract, current_contract()).await;
+    propose_and_vote_contract_binary(&worker, &mpc_signer_accounts, &contract, current_contract())
+        .await;
 }
 
 #[tokio::test]
 async fn test_invalid_contract_deploy() {
     let SandboxTestSetup {
+        worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -185,7 +190,7 @@ async fn test_invalid_contract_deploy() {
     // Propose an obviously invalid WASM blob via the chunked upload flow.
     let invalid_wasm = b"invalid wasm".to_vec();
     let proposal_id =
-        chunked_upload_contract(&mpc_signer_accounts[0], &contract, &invalid_wasm).await;
+        chunked_upload_contract(&worker, &mpc_signer_accounts[0], &contract, &invalid_wasm).await;
     vote_update_till_completion(&contract, &mpc_signer_accounts, &proposal_id).await;
 
     // Try calling into state and see if it works after the contract updates with an invalid
@@ -206,6 +211,7 @@ async fn test_invalid_contract_deploy() {
 #[tokio::test]
 async fn test_propose_update_contract_many() {
     let SandboxTestSetup {
+        worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -221,7 +227,8 @@ async fn test_propose_update_contract_many() {
     // and that we can have many at once living in the contract state.
     for i in 0..PROPOSAL_COUNT {
         let account = &mpc_signer_accounts[i % mpc_signer_accounts.len()];
-        let proposal_id = chunked_upload_contract(account, &contract, current_contract()).await;
+        let proposal_id =
+            chunked_upload_contract(&worker, account, &contract, current_contract()).await;
         proposals.push(proposal_id);
     }
 
@@ -255,6 +262,7 @@ async fn test_propose_update_contract_many() {
 #[tokio::test]
 async fn test_vote_update_gas_before_threshold() {
     let SandboxTestSetup {
+        worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -264,7 +272,8 @@ async fn test_vote_update_gas_before_threshold() {
         .await;
 
     let proposal_id =
-        chunked_upload_contract(&mpc_signer_accounts[0], &contract, current_contract()).await;
+        chunked_upload_contract(&worker, &mpc_signer_accounts[0], &contract, current_contract())
+            .await;
 
     // Cast votes until threshold is reached (need 6 total votes)
     for (idx, account) in mpc_signer_accounts[1..=5].iter().enumerate() {
@@ -352,6 +361,7 @@ async fn test_propose_incorrect_updates() {
 async fn many_sequential_updates() {
     let number_of_participants = PARTICIPANT_LEN;
     let SandboxTestSetup {
+        worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -363,7 +373,13 @@ async fn many_sequential_updates() {
     dbg!(contract.id());
     let number_of_updates = 3;
     for _ in 0..number_of_updates {
-        propose_and_vote_contract_binary(&mpc_signer_accounts, &contract, current_contract()).await;
+        propose_and_vote_contract_binary(
+            &worker,
+            &mpc_signer_accounts,
+            &contract,
+            current_contract(),
+        )
+        .await;
     }
 }
 
@@ -379,6 +395,7 @@ async fn many_sequential_updates() {
 async fn only_one_vote_from_participant() {
     let number_of_participants = 3;
     let SandboxTestSetup {
+        worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -390,9 +407,11 @@ async fn only_one_vote_from_participant() {
     dbg!(contract.id());
 
     let proposal_a =
-        chunked_upload_contract(&mpc_signer_accounts[0], &contract, current_contract()).await;
+        chunked_upload_contract(&worker, &mpc_signer_accounts[0], &contract, current_contract())
+            .await;
     let proposal_b =
-        chunked_upload_contract(&mpc_signer_accounts[0], &contract, current_contract()).await;
+        chunked_upload_contract(&worker, &mpc_signer_accounts[0], &contract, current_contract())
+            .await;
 
     let execution = mpc_signer_accounts[0]
         .call(contract.id(), method_names::VOTE_UPDATE)
@@ -478,7 +497,13 @@ async fn update_from_current_contract_to_migration_contract() {
         &mut OsRng,
     )
     .await;
-    propose_and_vote_contract_binary(&mpc_signer_accounts, &contract, migration_contract()).await;
+    propose_and_vote_contract_binary(
+        &worker,
+        &mpc_signer_accounts,
+        &contract,
+        migration_contract(),
+    )
+    .await;
 }
 
 // ──── Chunked upload integration tests ────
@@ -750,6 +775,7 @@ async fn test_clear_staged_contract_allows_restart() {
 #[tokio::test]
 async fn test_chunked_upload_large_contract() {
     let SandboxTestSetup {
+        worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -765,7 +791,8 @@ async fn test_chunked_upload_large_contract() {
         code.len()
     );
 
-    let proposal_id = chunked_upload_contract(&mpc_signer_accounts[0], &contract, code).await;
+    let proposal_id =
+        chunked_upload_contract(&worker, &mpc_signer_accounts[0], &contract, code).await;
 
     // Deploying a 2 MiB contract is gas-intensive — use max_gas per vote.
     for voter in &mpc_signer_accounts {

@@ -337,11 +337,13 @@ impl SandboxTestSetupBuilder {
 /// - The state call is not deserializable,
 /// - Or the post-upgrade code does not match the expected binary.
 pub async fn propose_and_vote_contract_binary(
+    worker: &Worker<Sandbox>,
     accounts: &[Account],
     contract: &Contract,
     new_contract_binary: &[u8],
 ) {
-    let proposal_id = chunked_upload_contract(&accounts[0], contract, new_contract_binary).await;
+    let proposal_id =
+        chunked_upload_contract(worker, &accounts[0], contract, new_contract_binary).await;
 
     // Try calling into state and see if it works.
     let state_request_execution = accounts[0]
@@ -376,10 +378,29 @@ pub const SANDBOX_UPLOAD_CHUNK_SIZE: usize = 1024 * 1024;
 /// its storage cost, and panics with the underlying error message if any step
 /// fails — the helper is for tests that assume the happy path.
 pub async fn chunked_upload_contract(
+    worker: &Worker<Sandbox>,
     proposer: &Account,
     contract: &Contract,
     code: &[u8],
 ) -> UpdateId {
+    // Top up the proposer so it can cover the per-chunk deposit for the whole
+    // upload (each chunk locks `CURRENT_CONTRACT_DEPLOY_DEPOSIT` as storage
+    // staking, and multi-MiB binaries plus repeated uploads can drain a dev
+    // account otherwise).
+    let chunk_count = code.len().div_ceil(SANDBOX_UPLOAD_CHUNK_SIZE) as u128;
+    let funding = NearToken::from_yoctonear(
+        CURRENT_CONTRACT_DEPLOY_DEPOSIT.as_yoctonear() * chunk_count
+            + NearToken::from_near(10).as_yoctonear(),
+    );
+    worker
+        .root_account()
+        .expect("sandbox worker has a root account")
+        .transfer_near(proposer.id(), funding)
+        .await
+        .expect("top up transfer call succeeds")
+        .into_result()
+        .expect("top up transfer succeeds");
+
     proposer
         .call(contract.id(), method_names::START_CONTRACT_UPLOAD)
         .args_borsh(StartContractUploadArgs {

@@ -33,6 +33,7 @@ async fn run_upgrade_scenario(min_gas: u64) -> (bool, bool) {
     };
 
     let SandboxTestSetup {
+        worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -43,7 +44,8 @@ async fn run_upgrade_scenario(min_gas: u64) -> (bool, bool) {
         .await;
 
     let proposal_id =
-        chunked_upload_contract(&mpc_signer_accounts[0], &contract, current_contract()).await;
+        chunked_upload_contract(&worker, &mpc_signer_accounts[0], &contract, current_contract())
+            .await;
 
     let mut saw_completion = false;
     let mut saw_failure = false;

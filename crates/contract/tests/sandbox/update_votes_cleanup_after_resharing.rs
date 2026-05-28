@@ -30,6 +30,7 @@ use std::collections::BTreeMap;
 async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing() -> Result<()> {
     // given: a running contract with PARTICIPANT_LEN participants and an update proposal with 2 votes
     let SandboxTestSetup {
+        worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -45,7 +46,7 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
     // two participants vote on it.
     let code = vec![1u8; 1000];
     let update_id: UpdateId =
-        chunked_upload_contract(&mpc_signer_accounts[0], &contract, &code).await;
+        chunked_upload_contract(&worker, &mpc_signer_accounts[0], &contract, &code).await;
 
     execute_async_transactions(
         &mpc_signer_accounts[0..2],
