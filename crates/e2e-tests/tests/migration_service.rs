@@ -628,42 +628,47 @@ async fn migration_service__should_migrate_nodes_via_backup_cli() {
     }
 }
 
-/// Back-migration (A → B → A) end-to-end via the backup CLI. Investigation
-/// context for the production scenario lives at near/mpc#2121; this test
-/// does NOT regress against that bug (see Caveat below).
+/// What to do to A0 between the forward and back directions of a
+/// round-trip back-migration test.
+enum BetweenDirections {
+    /// A0 stays running. Exercises the in-memory state-transition path
+    /// between forward and back directions; doesn't model the
+    /// disk-persisted-restart scenario.
+    None,
+    /// A0 is killed and restarted from its on-disk home dir. Models the
+    /// "operator decommissioned A then resurrected from disk" scenario
+    /// investigated in #2121. Asserts that keyshares survive the restart.
+    KillAndRestartA,
+}
+
+/// Shared scaffolding for the back-migration round-trip tests. Sets up
+/// the cluster, runs forward A→B, applies `between` to A0, runs back
+/// B→A, kills B0, and asserts sign+ckd work with A0+A1.
 ///
-/// Starts a cluster with 2 participating nodes (A0, A1) + 1 migration
-/// target (B0). A1 stays a participant throughout so threshold (2) holds
-/// during both directions. Per direction:
+/// Per direction the migration round does:
 ///   1. Register backup service
 ///   2. GET keyshares from source node
 ///   3. Initiate node migration
 ///   4. PUT keyshares to target node
 ///   5. Verify migration finalizes and sign + ckd requests succeed
-/// Between the forward and back directions, A0's CVM is killed and
-/// restarted so its keyshares stay on disk through the restart.
-/// After the back direction, B0 is killed so the final sign + ckd
-/// assertions prove A0 + A1 carry the workload alone.
 ///
 /// Caveat: attestation is mocked as `{"Mock": "Valid"}` throughout, so
-/// this test cannot exercise the on-chain stale-attestation failure mode —
-/// which is the leading suspect for #2121's production symptom. This is a
-/// positive-baseline regression test for the back-migration code path, not
-/// a reproducer for #2121.
-#[tokio::test]
-#[expect(non_snake_case)]
-async fn migration_service__should_handle_back_migration_a_to_b_to_a() {
+/// neither variant can exercise the on-chain stale-attestation failure
+/// mode — the leading suspect for #2121's production symptom. These
+/// are positive-baseline regression tests for the back-migration code
+/// path, not a reproducer for #2121.
+async fn run_back_migration_round_trip(port_seed: u16, between: BetweenDirections) {
     let backup_cli = must_get_backup_cli_path();
 
-    // Given: 2 participants (A0, A1) + 1 migration target (B0).
+    // Given: 2 participants (A0, A1) + 1 migration target (B0). A1 stays a
+    // participant throughout so threshold (2) holds in both directions.
     let num_nodes = 2;
-    let (mut cluster, running) =
-        common::must_setup_cluster(common::MIGRATION_BACK_PORT_SEED, |c| {
-            c.num_nodes = num_nodes;
-            c.threshold = num_nodes;
-            c.migration_targets = vec![0];
-        })
-        .await;
+    let (mut cluster, running) = common::must_setup_cluster(port_seed, |c| {
+        c.num_nodes = num_nodes;
+        c.threshold = num_nodes;
+        c.migration_targets = vec![0];
+    })
+    .await;
 
     // A0 (idx 0) is the source we migrate from; B0 lives at `num_nodes`
     // since `migration_targets[0] = 0` puts the first target right after
@@ -701,66 +706,76 @@ async fn migration_service__should_handle_back_migration_a_to_b_to_a() {
         .await
         .expect("ckd request failed after forward migration");
 
-    // Simulate operator decommissioning the old node and bringing it back
-    // online later for the back-migration. `kill_nodes` + `start_nodes`
-    // preserves the node's home dir (keyshares stay on disk) — that disk
-    // state is the trigger for the suspected P1 early-return.
-    //
-    // Snapshot A0's keyshare-file listing before kill so we can verify
-    // it's still there after start. Keyshares live in
-    // `home_dir/permanent_keys/` (see `crates/node/src/keyshare/local.rs`).
-    let a0_keyshares_before = snapshot_permanent_keys(&cluster, a_idx);
-    assert!(
-        !a0_keyshares_before.is_empty(),
-        "A0's permanent_keys/ is empty before kill — test setup did not produce keyshares, \
-         so the back-migration P1 precondition can't be modeled"
-    );
-    // Snapshot A0's indexer height before the kill so the post-restart
-    // readiness check (below) can prove the indexer has resumed and
-    // advanced past where it was — not just bound the web port.
-    let a0_indexer_height_before_kill = common::current_node_indexer_height(&cluster, a_idx)
-        .await
-        .expect("failed to read A0's indexer height before kill")
-        .expect("A0's indexer should be reporting a block height before the kill");
-    cluster
-        .kill_nodes(&[a_idx])
-        .expect("failed to kill A0 before back-migration");
-    cluster
-        .start_nodes(&[a_idx])
-        .expect("failed to restart A0 for back-migration");
-    cluster
-        .wait_for_node_healthy(a_idx)
-        .await
-        .expect("A0 did not become healthy after restart");
-    // `wait_for_node_healthy` only checks the web port; wait for the
-    // indexer to actually resume before back-migration (see #3366).
-    common::wait_for_node_indexer_height_above(
-        &cluster,
-        a_idx,
-        a0_indexer_height_before_kill,
-        Duration::from_secs(60),
-    )
-    .await
-    .expect("A0's indexer did not resume + advance within 60s after restart");
-    // Validate the assumption the test rests on: A0's keyshares are
-    // still on disk after the restart. If they're missing or different,
-    // the test no longer models production's back-migration scenario
-    // (e.g. someone swapped `start_nodes` for `reset_and_start_nodes`,
-    // which wipes the home dir).
-    let a0_keyshares_after = snapshot_permanent_keys(&cluster, a_idx);
-    assert_eq!(
-        a0_keyshares_before, a0_keyshares_after,
-        "A0's permanent_keys/ contents changed across kill+start — \
-         keyshares were NOT preserved on disk"
-    );
+    // Hook: apply the variant-specific between-directions action.
+    match between {
+        BetweenDirections::None => {}
+        BetweenDirections::KillAndRestartA => {
+            // Simulate operator decommissioning the old node and bringing
+            // it back online later for the back-migration. `kill_nodes` +
+            // `start_nodes` preserves the node's home dir (keyshares stay
+            // on disk) — that disk state is the trigger for the suspected
+            // P1 early-return.
+            //
+            // Snapshot A0's keyshare-file listing before kill so we can
+            // verify it's still there after start. Keyshares live in
+            // `home_dir/permanent_keys/` (see
+            // `crates/node/src/keyshare/local.rs`).
+            let a0_keyshares_before = snapshot_permanent_keys(&cluster, a_idx);
+            assert!(
+                !a0_keyshares_before.is_empty(),
+                "A0's permanent_keys/ is empty before kill — test setup did not produce \
+                 keyshares, so the back-migration P1 precondition can't be modeled"
+            );
+            // Snapshot A0's indexer height before the kill so the
+            // post-restart readiness check (below) can prove the indexer
+            // resumed and advanced past where it was — not just bound the
+            // web port.
+            let a0_indexer_height_before_kill =
+                common::current_node_indexer_height(&cluster, a_idx)
+                    .await
+                    .expect("failed to read A0's indexer height before kill")
+                    .expect("A0's indexer should be reporting a block height before the kill");
+            cluster
+                .kill_nodes(&[a_idx])
+                .expect("failed to kill A0 before back-migration");
+            cluster
+                .start_nodes(&[a_idx])
+                .expect("failed to restart A0 for back-migration");
+            cluster
+                .wait_for_node_healthy(a_idx)
+                .await
+                .expect("A0 did not become healthy after restart");
+            // `wait_for_node_healthy` only checks the web port; wait for
+            // the indexer to actually resume before back-migration
+            // (see #3366).
+            common::wait_for_node_indexer_height_above(
+                &cluster,
+                a_idx,
+                a0_indexer_height_before_kill,
+                Duration::from_secs(60),
+            )
+            .await
+            .expect("A0's indexer did not resume + advance within 60s after restart");
+            // Validate the assumption the test rests on: A0's keyshares
+            // are still on disk after the restart. If they're missing or
+            // different, the test no longer models production's
+            // back-migration scenario (e.g. someone swapped `start_nodes`
+            // for `reset_and_start_nodes`, which wipes the home dir).
+            let a0_keyshares_after = snapshot_permanent_keys(&cluster, a_idx);
+            assert_eq!(
+                a0_keyshares_before, a0_keyshares_after,
+                "A0's permanent_keys/ contents changed across kill+start — \
+                 keyshares were NOT preserved on disk"
+            );
+        }
+    }
 
     // When: back-migration B0 → A0 via the same helper, indices swapped.
     run_migration_round(&cluster, b_idx, a_idx, &backup_cli, "back").await;
 
-    // Kill B0 before the final assertions so the sign + ckd requests cannot
-    // be served by the now-demoted node — that proves A0 + A1 are carrying
-    // the workload alone, mirroring what the forward test does by killing
-    // the source after migration.
+    // Kill B0 before the final assertions so the sign + ckd requests
+    // cannot be served by the now-demoted node — that proves A0 + A1 are
+    // carrying the workload alone.
     cluster
         .kill_nodes(&[b_idx])
         .expect("failed to kill B0 after back-migration");
@@ -772,4 +787,34 @@ async fn migration_service__should_handle_back_migration_a_to_b_to_a() {
     common::send_ckd_request(&cluster, &running, &mut rng, cluster.default_user_account())
         .await
         .expect("ckd request failed after back-migration");
+}
+
+/// Back-migration A→B→A without kill+restart of A0. Stable variant that
+/// exercises the back-migration code path through A0's in-memory state
+/// transitions; doesn't depend on A0 surviving a sandbox-blocks-during-
+/// catch-up window (see #3366).
+///
+/// The kill+restart sibling `_a_to_b_to_a` owns coverage of the
+/// disk-persisted-restart scenario from #2121.
+#[tokio::test]
+#[expect(non_snake_case)]
+async fn migration_service__should_handle_back_migration_a_to_b_to_a_no_restart() {
+    run_back_migration_round_trip(
+        common::MIGRATION_BACK_NO_RESTART_PORT_SEED,
+        BetweenDirections::None,
+    )
+    .await;
+}
+
+/// Back-migration A→B→A with kill+restart of A0 between the two
+/// directions, modeling the disk-persisted-state scenario investigated
+/// in #2121.
+#[tokio::test]
+#[expect(non_snake_case)]
+async fn migration_service__should_handle_back_migration_a_to_b_to_a() {
+    run_back_migration_round_trip(
+        common::MIGRATION_BACK_PORT_SEED,
+        BetweenDirections::KillAndRestartA,
+    )
+    .await;
 }
