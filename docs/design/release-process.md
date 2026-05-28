@@ -137,24 +137,31 @@ applies going forward.
 - **Branch protection** on `main` and `release/vX.Y`:
   - PR required, ≥1 review, dismiss stale approvals on push, no force-push,
     no direct push.
+- **Branch creation ruleset** on `release/v*`: creation restricted to
+  repository admins. Closes the gap where branch protection only governs
+  what lands on an existing branch via PR, not where the branch is
+  initially rooted. Admins are trusted to fork from `main` HEAD.
 - **`production` environment ref policy:** `main` and `release/v*` allowed.
   No required reviewer initially. Tags are not in the ref policy and are
   never the deployment ref.
-- **Tag ruleset** on `refs/tags/*.*.*`: creatable only by the release
-  workflow's bot identity. Manual tag creation by humans is blocked at the
-  platform level.
+- **No tag ruleset initially.** The release workflow creates the
+  `*.*.*` tag using `GITHUB_TOKEN` with `contents: write`. In practice only
+  the workflow creates these tags; we rely on convention rather than a
+  ruleset for now.
 
 The two-human invariant is provided by branch protection: every commit on a
 release-eligible branch has been touched by ≥2 humans (author + reviewer).
 Anyone with workflow-dispatch permission can then trigger a release run,
 but can only release code that has already been reviewed.
 
-Defense-in-depth options not adopted initially:
+Defense-in-depth options not adopted since they are overkill for our releases:
 
 - Required environment reviewer (adds time gating and accidental-trigger
-  catch). Skipped to keep the release bar low; can be added later without
-  changing the workflow.
-- Restricting `workflow_dispatch` to a release-manager team. Same reasoning.
+  catch).
+- Restricting `workflow_dispatch` to a release-manager team.
+- Replacing admin-restricted `release/v*` creation with a bot-only
+  `create-release-branch.yml` workflow that mechanically forks from `main`.
+- Tag ruleset on `*.*.*` restricting creation to the workflow bot.
 
 ## What changes
 
@@ -199,17 +206,14 @@ High-level inventory; concrete edits to follow in implementation PRs.
 
 Not in any PR; needs to be configured by someone with repo-admin access:
 
-- Branch protection ruleset for `release/v*`.
+- Branch protection ruleset for `release/v*` (PR required, ≥1 review,
+  dismiss stale approvals on push, no force-push, no direct push).
+- Branch creation ruleset for `release/v*` restricting creation to repo
+  admins.
 - `production` environment deployment-ref policy: `main`, `release/v*`.
-- Tag ruleset on `*.*.*` restricting creation to the workflow bot.
 
 ## Open questions
 
-- **Which workflow identity creates the tag?** Default `GITHUB_TOKEN` works
-  for `git tag` + `git push` if the workflow has `contents: write`, but
-  whether that token can push through a `*.*.*` tag ruleset depends on
-  ruleset bypass configuration. May need to use a PAT or a GitHub App
-  identity if the default token is blocked.
 - **Pre-release / RC versions.** The model supports them naturally (set
   `Cargo.toml` to `3.11.0-rc1`, run workflow), but the tag regex
   `*.*.*` may need adjustment.
