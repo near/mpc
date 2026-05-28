@@ -3,10 +3,7 @@ name = "threshold-signatures"
 description = "Threshold Signatures"
 repository = "https://github.com/near/threshold-signatures"
 version = "0.1.0"
-# TODO(#3369): inherit the workspace edition (2024). Pinned to 2021 for now
-# because the migration needs precise-capturing `use<>` changes across the
-# public protocol API.
-edition = "2021"
+edition = { workspace = true }
 license.workspace = true
 
 [lib]

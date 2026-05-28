@@ -1,8 +1,8 @@
 use core::ptr;
 use digest::consts::U48;
 use digest::generic_array::GenericArray;
-use elliptic_curve::hash2curve::FromOkm;
 use elliptic_curve::Field;
+use elliptic_curve::hash2curve::FromOkm;
 use std::sync::atomic;
 use zeroize::Zeroize;
 

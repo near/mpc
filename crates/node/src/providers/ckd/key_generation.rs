@@ -38,7 +38,7 @@ impl MpcLeaderCentricComputation<KeygenOutput> for KeyGenerationComputation {
             .map(Participant::from)
             .collect::<Vec<_>>();
         let me = channel.my_participant_id();
-        let protocol = threshold_signatures::keygen::<BLS12381SHA256>(
+        let protocol = threshold_signatures::keygen::<BLS12381SHA256, _, _>(
             &cs_participants,
             me.into(),
             self.threshold,

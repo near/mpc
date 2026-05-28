@@ -22,7 +22,7 @@ use crate::errors::ProtocolError;
 use crate::participants::Participant;
 use crate::protocol::Protocol;
 use crate::{Ciphersuite, KeygenOutput};
-use frost_core::{keys::SigningShare, Group, VerifyingKey};
+use frost_core::{Group, VerifyingKey, keys::SigningShare};
 use rand_core::CryptoRngCore;
 
 /// Type representing DKG output keys
@@ -46,7 +46,7 @@ pub use protocol::{
 };
 pub use sign::{check_one_coordinator_output, run_sign};
 pub use simulator_bench::{
-    bench_simulation, run_simulation, BenchConfig, LatencyModel, SimulationMetrics,
+    BenchConfig, LatencyModel, SimulationMetrics, bench_simulation, run_simulation,
 };
 pub use snapshot::ProtocolSnapshot;
 

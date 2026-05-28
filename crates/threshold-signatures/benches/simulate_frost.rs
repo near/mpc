@@ -7,14 +7,14 @@ mod bench_utils;
 use bench_utils::ed25519_build_presign_protocols;
 
 use threshold_signatures::{
+    ReconstructionLowerBound,
     frost::eddsa,
     participants::Participant,
     protocol::Protocol,
     test_utils::{
-        bench_simulation, generate_participants_with_random_ids, run_simulation, BenchConfig,
-        LatencyModel, MockCryptoRng, SimulationMetrics,
+        BenchConfig, LatencyModel, MockCryptoRng, SimulationMetrics, bench_simulation,
+        generate_participants_with_random_ids, run_simulation,
     },
-    ReconstructionLowerBound,
 };
 
 fn main() {

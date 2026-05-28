@@ -73,7 +73,7 @@ impl MpcLeaderCentricComputation<KeygenOutput> for KeyResharingComputation {
             .map(Participant::from)
             .collect::<Vec<_>>();
 
-        let protocol = threshold_signatures::reshare::<Ed25519Sha512>(
+        let protocol = threshold_signatures::reshare::<Ed25519Sha512, _, _, _>(
             &old_participants,
             self.old_threshold,
             self.my_share,
