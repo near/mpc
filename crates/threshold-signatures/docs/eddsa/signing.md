@@ -10,7 +10,7 @@ of detecting which party deviated from the protocol.
 
 ### Note:  We denote $\mathcal{P}$ the set of participants included the DKG and the threshold $t = \mathsf{MaxMalicious}+1$
 
-### Note: We introduce two signing versions both formally proven secure in the original paper. The first version performs the entirety of FROST protocol during the signing. It relies heavily on the coordinator and thus takes 3 non-symmetric rounds to complete. The second version has been implemented later on, it splits the FROST scheme into a presigning round and a signing round. This relies less on the coordinator in the presigning phase by treating all participants symmetrically. It thus completes in two rounds.
+> **Note:** We introduce two signing versions both formally proven secure in the original paper. The first version performs the entirety of FROST protocol during the signing. It relies heavily on the coordinator and thus takes 3 non-symmetric rounds to complete. The second version has been implemented later on, it splits the FROST scheme into a presigning round and a signing round. This relies less on the coordinator in the presigning phase by treating all participants symmetrically. It thus completes in two rounds.
 
 ## Implementation Version 1: Signing
 
@@ -65,7 +65,7 @@ $$
 
 3.2 Each $P_i$ verifies that $m = m^*$
 
-3.3 Each $P_i$ computes a signature share using following [RFC9591](https://datatracker.ietf.org/doc/html/rfc9591#name-round-two-signature-share-g).
+3.3 Each $P_i$ computes a signature share following [RFC9591](https://datatracker.ietf.org/doc/html/rfc9591#name-round-two-signature-share-g).
 
 In short, the following cryptographic steps are executed:
 
@@ -111,8 +111,7 @@ $$
 
 **Output:** the signature $(R, s)$.
 
-*Note: We do not make use of the cheater detection feature which requires additional computation and potentially an extra round of communicating the cheater to the rest of the participants.*
-
+*Note: We do not make use of the cheater detection feature which requires additional computation and potentially an extra round to communicate the cheater to the rest of the participants.*
 
 ## Implementation Version 2: Presigning
 
@@ -165,7 +164,7 @@ wishes to generate an EdDSA signature. Following the
 [RFC9591](https://datatracker.ietf.org/doc/html/rfc9591) we will use
 domain separated hash functions $H_1, H_2, H_4$.
 
-*Note: The signer set $\mathcal{P}_2$ must be the same set used at presigning time; the implementation does not validate this and signing will fail (signature aggregation or commitment lookup) if the sets diverge.*
+*Note: If the signer set* $\mathcal{P}_2$ *is not the same set used at presigning time* $\mathcal{P}_1$*; then signing will fail (signature aggregation or commitment lookup).*
 
 The inputs to this phase are:
 
@@ -177,7 +176,7 @@ The inputs to this phase are:
 
 ### Round 1
 
-1.1 Each $P_i$ computes a signature share using following [RFC9591](https://datatracker.ietf.org/doc/html/rfc9591#name-round-two-signature-share-g).
+1.1 Each $P_i$ computes a signature share following [RFC9591](https://datatracker.ietf.org/doc/html/rfc9591#name-round-two-signature-share-g).
 
 In short, the following cryptographic steps are executed:
 
@@ -222,6 +221,4 @@ $$
 1.5 $\blacktriangle$ The coordinator asserts that $(R, s)$ is a valid EdDSA signature for message $m$
 
 
-
-*Note: We do not make use of the cheater detection feature which requires additional computation and potentially an extra round of communicating the cheater to the rest of the participants.*
-
+*Note: We do not make use of the cheater detection feature which requires additional computation and potentially an extra round to communicate the cheater to the rest of the participants.*

@@ -135,9 +135,8 @@ async fn do_sign_coordinator_v1(
     // * Receive others' commitments, then send the signing package.
 
     let commit_waitpoint = chan.next_waitpoint();
-    // Step 2.1
+    // Step 2.1 and 2.2
     for (from, commitment) in recv_from_others(&chan, commit_waitpoint, &participants, me).await? {
-        // Step 2.2
         commitments_map.insert(from.to_identifier()?, commitment);
     }
 
@@ -205,8 +204,7 @@ async fn do_sign_coordinator_v2(
     message: Vec<u8>,
 ) -> Result<SignatureOption, ProtocolError> {
     // --- Round 1
-    // * Compute my signature share.
-    // * Receive others' signature shares.
+    // * Compute my signature share and receive other's shares.
     // * Output the signature.
     let signing_package = frost_ed25519::SigningPackage::new(
         presignature.commitments_map.clone(),
