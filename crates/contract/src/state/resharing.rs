@@ -6,7 +6,7 @@ use crate::errors::{Error, InvalidParameters};
 use crate::primitives::key_state::{
     AuthenticatedAccountId, EpochId, KeyEventId, KeyForDomain, Keyset,
 };
-use crate::primitives::thresholds::ThresholdParameters;
+use crate::primitives::thresholds::ProposedThresholdParameters;
 use near_account_id::AccountId;
 use near_sdk::near;
 
@@ -51,7 +51,7 @@ impl ResharingContractState {
     pub fn vote_new_parameters(
         &mut self,
         prospective_epoch_id: EpochId,
-        proposal: &ThresholdParameters,
+        proposal: &ProposedThresholdParameters,
     ) -> Result<Option<ResharingContractState>, Error> {
         let expected_prospective_epoch_id = self.prospective_epoch_id().next();
         if prospective_epoch_id != expected_prospective_epoch_id {
@@ -143,8 +143,9 @@ impl ResharingContractState {
                     .previous_running_state
                     .domains
                     .with_overlaid_thresholds(proposed.per_domain_thresholds())?;
-                let mut new_parameters = proposed.clone();
-                new_parameters.clear_per_domain_thresholds();
+                // The overlay has now been folded into `new_domains`; the running
+                // state retains only the proposed participants/threshold.
+                let new_parameters = proposed.parameters().clone();
                 return Ok(Some(RunningContractState::new(
                     new_domains,
                     Keyset::new(self.prospective_epoch_id(), self.reshared_keys.clone()),

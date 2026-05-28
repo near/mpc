@@ -25,7 +25,7 @@ use crate::{
         key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, KeyForDomain, Keyset},
         participants::{ParticipantInfo, Participants},
         threshold_votes::ThresholdParametersVotes,
-        thresholds::ThresholdParameters,
+        thresholds::{ProposedThresholdParameters, ThresholdParameters},
     },
     state::{
         initializing::InitializingContractState,
@@ -215,7 +215,18 @@ impl IntoContractType<Participants> for dtos::Participants {
 impl IntoContractType<ThresholdParameters> for dtos::ThresholdParameters {
     fn into_contract_type(self) -> ThresholdParameters {
         ThresholdParameters::new_unvalidated(self.participants.into_contract_type(), self.threshold)
-            .with_per_domain_thresholds(self.per_domain_thresholds)
+    }
+}
+
+impl IntoContractType<ProposedThresholdParameters> for dtos::ProposedThresholdParameters {
+    fn into_contract_type(self) -> ProposedThresholdParameters {
+        ProposedThresholdParameters::new(
+            ThresholdParameters::new_unvalidated(
+                self.participants.into_contract_type(),
+                self.threshold,
+            ),
+            self.per_domain_thresholds,
+        )
     }
 }
 
@@ -724,6 +735,15 @@ impl IntoInterfaceType<dtos::Participants> for &Participants {
 impl IntoInterfaceType<dtos::ThresholdParameters> for &ThresholdParameters {
     fn into_dto_type(self) -> dtos::ThresholdParameters {
         dtos::ThresholdParameters {
+            participants: self.participants().into_dto_type(),
+            threshold: self.threshold(),
+        }
+    }
+}
+
+impl IntoInterfaceType<dtos::ProposedThresholdParameters> for &ProposedThresholdParameters {
+    fn into_dto_type(self) -> dtos::ProposedThresholdParameters {
+        dtos::ProposedThresholdParameters {
             participants: self.participants().into_dto_type(),
             threshold: self.threshold(),
             per_domain_thresholds: self.per_domain_thresholds().clone(),

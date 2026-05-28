@@ -79,7 +79,7 @@ use primitives::{
     domain::DomainRegistry,
     key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyEventId, Keyset},
     signature::{SignRequestArgs, SignatureRequest, YieldIndex},
-    thresholds::{Threshold, ThresholdParameters},
+    thresholds::{ProposedThresholdParameters, Threshold, ThresholdParameters},
 };
 use tee::measurements::{ContractExpectedMeasurements, MeasurementVoteAction, MeasurementVotes};
 use tee::proposal::{CodeHashesVotes, LauncherHashVotes};
@@ -868,9 +868,9 @@ impl MpcContract {
     pub fn vote_new_parameters(
         &mut self,
         prospective_epoch_id: EpochId,
-        proposal: dtos::ThresholdParameters,
+        proposal: dtos::ProposedThresholdParameters,
     ) -> Result<(), Error> {
-        let proposal: ThresholdParameters = proposal.into_contract_type();
+        let proposal: ProposedThresholdParameters = proposal.into_contract_type();
         log!(
             "vote_new_parameters: signer={}, proposal={:?}",
             env::signer_account_id(),
@@ -1589,8 +1589,12 @@ impl MpcContract {
                     Threshold::new(new_threshold as u64),
                 )
                 .expect("Require valid threshold parameters"); // this should never happen.
-                current_params.validate_incoming_proposal(&threshold_parameters)?;
-                let res = running_state.transition_to_resharing_no_checks(&threshold_parameters);
+                // This forced resharing keeps every domain's current reconstruction
+                // threshold, so the proposal carries no per-domain overlay.
+                let proposal =
+                    ProposedThresholdParameters::new(threshold_parameters, Default::default());
+                current_params.validate_incoming_proposal(&proposal)?;
+                let res = running_state.transition_to_resharing_no_checks(&proposal);
                 if let Some(resharing) = res {
                     self.protocol_state = ProtocolContractState::Resharing(resharing);
                 }

@@ -93,7 +93,7 @@ impl InitializingContractState {
                 return Ok(Some(RunningContractState::new(
                     self.domains.clone(),
                     Keyset::new(self.epoch_id, self.generated_keys.clone()),
-                    self.generating_key.proposed_parameters().clone(),
+                    self.generating_key.proposed_parameters().parameters().clone(),
                     AddDomainsVotes::default(),
                 )));
             }
@@ -135,7 +135,7 @@ impl InitializingContractState {
             return Ok(Some(RunningContractState::new(
                 domains,
                 Keyset::new(self.epoch_id, self.generated_keys.clone()),
-                self.generating_key.proposed_parameters().clone(),
+                self.generating_key.proposed_parameters().parameters().clone(),
                 AddDomainsVotes::default(),
             )));
         }

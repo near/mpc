@@ -130,24 +130,32 @@ pub use near_mpc_crypto_types::{KeyForDomain, Keyset};
 // Threshold/Participants Types
 // =============================================================================
 
-/// Threshold parameters for distributed key operations.
-//
-// `per_domain_thresholds` carries a proposed update for each domain's
-// `ReconstructionThreshold` when this struct flows into `vote_new_parameters`.
-// An empty map means "keep current per-domain thresholds"; a populated map must
-// cover every existing domain (validated by the contract). Outside of resharing
-// proposals the map is empty.
-//
-// Input back-compat is intrinsic: `serde(default)` parses an old
-// `{ participants, threshold }` payload without `per_domain_thresholds` as an
-// empty map. The field is always serialized — an additive change that consumers
-// which don't recognize it simply ignore.
+/// Threshold parameters for distributed key operations: the participant set and
+/// the cryptographic threshold currently in force.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
 pub struct ThresholdParameters {
+    pub participants: Participants,
+    pub threshold: Threshold,
+}
+
+/// A proposed parameter change submitted to `vote_new_parameters`: a new
+/// participant set and threshold, plus an optional per-domain
+/// `ReconstructionThreshold` overlay applied during the resulting resharing. An
+/// empty overlay keeps the current per-domain thresholds; a populated one must
+/// cover every existing domain (validated by the contract).
+//
+// `serde(default)` keeps input back-compat: a legacy `{ participants, threshold }`
+// payload without `per_domain_thresholds` parses as an empty overlay.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct ProposedThresholdParameters {
     pub participants: Participants,
     pub threshold: Threshold,
     #[serde(default)]
@@ -165,7 +173,7 @@ pub struct ThresholdParameters {
     derive(schemars::JsonSchema)
 )]
 pub struct ThresholdParametersVotes {
-    pub proposal_by_account: BTreeMap<AuthenticatedAccountId, ThresholdParameters>,
+    pub proposal_by_account: BTreeMap<AuthenticatedAccountId, ProposedThresholdParameters>,
 }
 
 /// Votes for adding new domains.
@@ -205,7 +213,7 @@ pub struct KeyEventInstance {
 pub struct KeyEvent {
     pub epoch_id: EpochId,
     pub domain: DomainConfig,
-    pub parameters: ThresholdParameters,
+    pub parameters: ProposedThresholdParameters,
     pub instance: Option<KeyEventInstance>,
     pub next_attempt_id: AttemptId,
 }
@@ -269,15 +277,12 @@ pub enum ProtocolContractState {
     Resharing(ResharingContractState),
 }
 
-fn params_to_string(output: &mut String, parameters: &ThresholdParameters) {
+fn params_to_string(output: &mut String, participants: &Participants, threshold: Threshold) {
     output.push_str("    Participants:\n");
-    for (account_id, id, info) in &parameters.participants.participants {
+    for (account_id, id, info) in &participants.participants {
         output.push_str(&format!("      ID {}: {} ({})\n", id, account_id, info.url));
     }
-    output.push_str(&format!(
-        "    Threshold: {}\n",
-        parameters.threshold.value()
-    ));
+    output.push_str(&format!("    Threshold: {}\n", threshold.value()));
 }
 
 /// Formats the protocol state for human-readable display.
@@ -325,7 +330,11 @@ pub fn protocol_state_to_string(contract_state: &ProtocolContractState) -> Strin
                 }
             }
             output.push_str("  Parameters:\n");
-            params_to_string(&mut output, &state.generating_key.parameters);
+            params_to_string(
+                &mut output,
+                &state.generating_key.parameters.participants,
+                state.generating_key.parameters.threshold,
+            );
             output.push_str("  Warning: this tool does not calculate automatic timeouts for key generation attempts\n");
         }
         ProtocolContractState::Running(state) => {
@@ -346,7 +355,11 @@ pub fn protocol_state_to_string(contract_state: &ProtocolContractState) -> Strin
                 ));
             }
             output.push_str("  Parameters:\n");
-            params_to_string(&mut output, &state.parameters);
+            params_to_string(
+                &mut output,
+                &state.parameters.participants,
+                state.parameters.threshold,
+            );
         }
         ProtocolContractState::Resharing(state) => {
             output.push_str("Contract is in Resharing state\n");
@@ -393,9 +406,17 @@ pub fn protocol_state_to_string(contract_state: &ProtocolContractState) -> Strin
                 }
             }
             output.push_str("  Previous Parameters:\n");
-            params_to_string(&mut output, &state.previous_running_state.parameters);
+            params_to_string(
+                &mut output,
+                &state.previous_running_state.parameters.participants,
+                state.previous_running_state.parameters.threshold,
+            );
             output.push_str("  Proposed Parameters:\n");
-            params_to_string(&mut output, &state.resharing_key.parameters);
+            params_to_string(
+                &mut output,
+                &state.resharing_key.parameters.participants,
+                state.resharing_key.parameters.threshold,
+            );
 
             output.push_str("  Warning: this tool does not calculate automatic timeouts for resharing attempts\n");
         }

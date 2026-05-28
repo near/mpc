@@ -1,4 +1,4 @@
-use crate::primitives::thresholds::ThresholdParameters;
+use crate::primitives::thresholds::ProposedThresholdParameters;
 use crate::primitives::{key_state::AuthenticatedAccountId, participants::Participants};
 use near_sdk::{log, near};
 use std::collections::BTreeMap;
@@ -10,12 +10,16 @@ use std::collections::BTreeMap;
 #[near(serializers=[borsh, json])]
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ThresholdParametersVotes {
-    pub(crate) proposal_by_account: BTreeMap<AuthenticatedAccountId, ThresholdParameters>,
+    pub(crate) proposal_by_account: BTreeMap<AuthenticatedAccountId, ProposedThresholdParameters>,
 }
 
 impl ThresholdParametersVotes {
     /// return the number of votes for `proposal` cast by members of `participants`
-    pub fn n_votes(&self, proposal: &ThresholdParameters, participants: &Participants) -> u64 {
+    pub fn n_votes(
+        &self,
+        proposal: &ProposedThresholdParameters,
+        participants: &Participants,
+    ) -> u64 {
         u64::try_from(
             self.proposal_by_account
                 .iter()
@@ -36,7 +40,7 @@ impl ThresholdParametersVotes {
     /// vote).
     pub fn vote(
         &mut self,
-        proposal: &ThresholdParameters,
+        proposal: &ProposedThresholdParameters,
         participant: AuthenticatedAccountId,
     ) -> u64 {
         if self

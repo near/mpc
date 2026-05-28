@@ -11,7 +11,7 @@ use crate::primitives::{
     domain::DomainRegistry,
     key_state::{AuthenticatedParticipantId, EpochId, KeyEventId},
     participants::Participants,
-    thresholds::{Threshold, ThresholdParameters},
+    thresholds::{ProposedThresholdParameters, Threshold, ThresholdParameters},
 };
 use initializing::InitializingContractState;
 use near_account_id::AccountId;
@@ -126,7 +126,7 @@ impl ProtocolContractState {
     pub fn vote_new_parameters(
         &mut self,
         prospective_epoch_id: EpochId,
-        proposed_parameters: &ThresholdParameters,
+        proposed_parameters: &ProposedThresholdParameters,
     ) -> Result<Option<ProtocolContractState>, Error> {
         match self {
             ProtocolContractState::Running(state) => {
@@ -184,7 +184,8 @@ impl ProtocolContractState {
             ProtocolContractState::Initializing(initializing_contract_state) => {
                 Ok(initializing_contract_state
                     .generating_key
-                    .proposed_parameters())
+                    .proposed_parameters()
+                    .parameters())
             }
             ProtocolContractState::Running(running_contract_state) => {
                 Ok(&running_contract_state.parameters)

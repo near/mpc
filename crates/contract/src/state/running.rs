@@ -6,12 +6,12 @@ use crate::primitives::{
     domain::{AddDomainsVotes, DomainRegistry, validate_domain_threshold},
     key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, Keyset},
     threshold_votes::ThresholdParametersVotes,
-    thresholds::ThresholdParameters,
+    thresholds::{ProposedThresholdParameters, ThresholdParameters},
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::DomainConfig;
 use near_sdk::near;
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 /// In this state, the contract is ready to process signature requests.
 ///
@@ -62,7 +62,7 @@ impl RunningContractState {
 
     pub fn transition_to_resharing_no_checks(
         &mut self,
-        proposal: &ThresholdParameters,
+        proposal: &ProposedThresholdParameters,
     ) -> Option<ResharingContractState> {
         if let Some(first_domain) = self.domains.get_domain_by_index(0) {
             let epoch_id = self.prospective_epoch_id();
@@ -80,11 +80,13 @@ impl RunningContractState {
             })
         } else {
             // A new ThresholdParameters was proposed, but we have no keys, so directly
-            // transition into Running state but bump the EpochId.
+            // transition into Running state but bump the EpochId. With no domains
+            // there is nothing for the per-domain overlay to apply to, so only the
+            // proposed participants/threshold are retained.
             *self = RunningContractState::new(
                 self.domains.clone(),
                 Keyset::new(self.keyset.epoch_id.next(), Vec::new()),
-                proposal.clone(),
+                proposal.parameters().clone(),
                 self.add_domains_votes.clone(),
             );
             None
@@ -96,7 +98,7 @@ impl RunningContractState {
     pub fn vote_new_parameters(
         &mut self,
         prospective_epoch_id: EpochId,
-        proposal: &ThresholdParameters,
+        proposal: &ProposedThresholdParameters,
     ) -> Result<Option<ResharingContractState>, Error> {
         let expected_prospective_epoch_id = self.prospective_epoch_id();
 
@@ -132,7 +134,7 @@ impl RunningContractState {
     /// Returns true if all participants of the proposed parameters voted for it.
     pub(super) fn process_new_parameters_proposal(
         &mut self,
-        proposal: &ThresholdParameters,
+        proposal: &ProposedThresholdParameters,
     ) -> Result<bool, Error> {
         // ensure the proposal is valid against the current parameters
         self.parameters.validate_incoming_proposal(proposal)?;
@@ -206,7 +208,9 @@ impl RunningContractState {
                 generating_key: KeyEvent::new(
                     self.keyset.epoch_id,
                     domains[0].clone(),
-                    self.parameters.clone(),
+                    // Key generation for new domains uses each domain's own
+                    // reconstruction threshold, so the proposal carries no overlay.
+                    ProposedThresholdParameters::new(self.parameters.clone(), BTreeMap::new()),
                 ),
                 cancel_votes: BTreeSet::new(),
             }))

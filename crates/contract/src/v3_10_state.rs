@@ -19,10 +19,9 @@ use crate::{
         ckd::CKDRequest,
         domain::{AddDomainsVotes, DomainRegistry},
         key_state::{AuthenticatedAccountId, EpochId, Keyset},
-        participants::Participants,
         signature::{SignatureRequest, YieldIndex},
         threshold_votes::ThresholdParametersVotes,
-        thresholds::{Threshold, ThresholdParameters},
+        thresholds::{ProposedThresholdParameters, ThresholdParameters},
     },
     state::{
         initializing::InitializingContractState, resharing::ResharingContractState,
@@ -33,30 +32,15 @@ use crate::{
     Config, SupportedForeignChainsByNode,
 };
 
-/// `3.10.0` layout of `ThresholdParameters`. The new layout appends
-/// `per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>`
-/// (see #3169). Borsh is positional, so old bytes can be decoded into this
-/// shadow and then mapped to the new struct with the map defaulted to empty.
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
-struct OldThresholdParameters {
-    participants: Participants,
-    threshold: Threshold,
-}
-
-impl From<OldThresholdParameters> for ThresholdParameters {
-    fn from(old: OldThresholdParameters) -> Self {
-        // Resharing votes from before this migration didn't carry per-domain
-        // thresholds, so the migrated proposal preserves the existing
-        // domains' thresholds (interpreted later as a no-change overlay).
-        ThresholdParameters::new_unvalidated(old.participants, old.threshold)
-    }
-}
-
-/// `3.10.0` layout of `ThresholdParametersVotes` — same shape but with the
-/// old `OldThresholdParameters` as the value type.
+/// `3.10.0` layout of `ThresholdParametersVotes`. In `3.10.0` each vote stored a
+/// bare `{ participants, threshold }` — exactly today's [`ThresholdParameters`]
+/// — whereas the current contract stores a [`ProposedThresholdParameters`] that
+/// also carries a per-domain `ReconstructionThreshold` overlay (see #3169).
+/// Borsh is positional, so old bytes decode into this shadow and each proposal
+/// is migrated with an empty overlay.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 struct OldThresholdParametersVotes {
-    proposal_by_account: BTreeMap<AuthenticatedAccountId, OldThresholdParameters>,
+    proposal_by_account: BTreeMap<AuthenticatedAccountId, ThresholdParameters>,
 }
 
 impl From<OldThresholdParametersVotes> for ThresholdParametersVotes {
@@ -65,19 +49,26 @@ impl From<OldThresholdParametersVotes> for ThresholdParametersVotes {
             proposal_by_account: old
                 .proposal_by_account
                 .into_iter()
-                .map(|(acc, params)| (acc, params.into()))
+                .map(|(acc, params)| {
+                    // Pre-#3169 votes carried no per-domain overlay, so the
+                    // migrated proposal keeps every domain's current threshold
+                    // (an empty overlay is interpreted later as a no-change).
+                    (acc, ProposedThresholdParameters::new(params, BTreeMap::new()))
+                })
                 .collect(),
         }
     }
 }
 
-/// `3.10.0` layout of `RunningContractState`. Mirrors the current shape but
-/// uses the old `OldThresholdParameters` and `OldThresholdParametersVotes`.
+/// `3.10.0` layout of `RunningContractState`. `parameters` is unchanged from
+/// `3.10.0`: #3169 moved the per-domain overlay onto the proposal type
+/// ([`ProposedThresholdParameters`]), not the stored parameters, so only
+/// `parameters_votes` needs a shadow.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 struct OldRunningContractState {
     domains: DomainRegistry,
     keyset: Keyset,
-    parameters: OldThresholdParameters,
+    parameters: ThresholdParameters,
     parameters_votes: OldThresholdParametersVotes,
     add_domains_votes: AddDomainsVotes,
     previously_cancelled_resharing_epoch_id: Option<EpochId>,
@@ -88,7 +79,7 @@ impl From<OldRunningContractState> for RunningContractState {
         RunningContractState {
             domains: old.domains,
             keyset: old.keyset,
-            parameters: old.parameters.into(),
+            parameters: old.parameters,
             parameters_votes: old.parameters_votes.into(),
             add_domains_votes: old.add_domains_votes,
             previously_cancelled_resharing_epoch_id: old.previously_cancelled_resharing_epoch_id,
@@ -196,27 +187,40 @@ impl From<MpcContract> for crate::MpcContract {
 mod tests {
     use super::*;
     use crate::primitives::test_utils::{gen_participants, NUM_PROTOCOLS};
+    use crate::primitives::thresholds::Threshold;
+    use near_sdk::{test_utils::VMContextBuilder, testing_env};
 
-    /// Borsh round-trip: write a `ThresholdParameters` in the OLD layout
-    /// (no `per_domain_thresholds` field), deserialize via the shadow,
-    /// convert to the new struct, and assert the overlay defaults to empty.
+    /// Borsh round-trip: write a `3.10.0` votes map whose proposals are bare
+    /// `{ participants, threshold }`, decode through the shadow, migrate, and
+    /// assert each proposal gains an empty per-domain overlay while preserving
+    /// the original participants/threshold.
     #[test]
-    fn old_threshold_parameters__should_deserialize_into_empty_overlay() {
-        // Given old-layout bytes
+    fn old_threshold_parameters_votes__should_migrate_proposals_with_empty_overlay() {
+        // Given a 3.10.0 votes map with one bare proposal
         let participants = gen_participants(NUM_PROTOCOLS);
         let n = participants.len() as u64;
-        let old = OldThresholdParameters {
-            participants,
-            threshold: Threshold::new(n),
+
+        let mut ctx = VMContextBuilder::new();
+        ctx.signer_account_id(participants.participants()[0].0.clone());
+        testing_env!(ctx.build());
+        let voter = AuthenticatedAccountId::new(&participants).unwrap();
+
+        let params = ThresholdParameters::new_unvalidated(participants, Threshold::new(n));
+        let mut proposal_by_account = BTreeMap::new();
+        proposal_by_account.insert(voter, params.clone());
+        let old = OldThresholdParametersVotes {
+            proposal_by_account,
         };
         let bytes = borsh::to_vec(&old).unwrap();
 
         // When borsh-decoding through the shadow and migrating
-        let decoded: OldThresholdParameters = borsh::from_slice(&bytes).unwrap();
-        let migrated: ThresholdParameters = decoded.into();
+        let decoded: OldThresholdParametersVotes = borsh::from_slice(&bytes).unwrap();
+        let migrated: ThresholdParametersVotes = decoded.into();
 
-        // Then per-domain overlay is empty and core fields round-trip
-        assert!(migrated.per_domain_thresholds().is_empty());
-        assert_eq!(migrated.threshold().value(), n);
+        // Then the migrated proposal has an empty overlay and round-trips fields
+        assert_eq!(migrated.proposal_by_account.len(), 1);
+        let proposed = migrated.proposal_by_account.values().next().unwrap();
+        assert!(proposed.per_domain_thresholds().is_empty());
+        assert_eq!(proposed.parameters(), &params);
     }
 }
