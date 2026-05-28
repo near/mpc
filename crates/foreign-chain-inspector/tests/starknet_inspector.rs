@@ -153,7 +153,11 @@ async fn extract__should_return_transaction_failed_when_execution_is_reverted() 
         StarknetFinalityStatus::AcceptedOnL2,
         StarknetExecutionStatus::Reverted,
     );
-    let mock_client = mock_client_from_fixed_response(receipt);
+    let canonical_block = canonical_block_for(&receipt);
+    let mock_client = SequentialResponseMockClientBuilder::new()
+        .with_response(&receipt)
+        .with_response(&canonical_block)
+        .build();
     let inspector = StarknetInspector::new(mock_client);
 
     // when
