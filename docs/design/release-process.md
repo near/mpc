@@ -94,30 +94,42 @@ release workflow promotes pre-built artifacts rather than building fresh.
 1. Validate ref is main or release/v*.
 2. Checkout the branch HEAD.
 3. Read version V from Cargo.toml; compute branch-tag <branch>-<short-sha>.
-4. Refuse if git tag V already exists (locally or on origin).
-5. Verify CHANGELOG.md has a section for V.
-6. Verify nearone/mpc-{node,node-gcp,launcher}:<branch-tag> all exist.
-7. Locate the build_contract.yml run for this SHA; download the artifact.
-8. Retag images :<branch-tag> → :V via skopeo copy --preserve-digests.
-9. Collect manifest digests of the retagged images.
-10. Create draft GitHub release with notes, digests, contract archive.
-    (Creates the V tag as a side effect of gh release create.)
+4. Refuse if git tag V exists on origin.
+5. Refuse if a GitHub release (draft or published) for V already exists.
+6. Verify CHANGELOG.md has a section for V.
+7. Verify nearone/mpc-{node,node-gcp,launcher}:<branch-tag> all exist.
+8. Locate the build_contract.yml run for this SHA; download the artifact.
+9. Retag images :<branch-tag> → :V via skopeo copy --preserve-digests --all.
+10. Collect manifest digests of the retagged images.
+11. Create draft GitHub release (--target SHA --draft) with notes, digests,
+    contract archive. The git tag is NOT created here; GitHub creates it
+    at the stored target_commitish when the operator publishes the draft.
 ```
 
 Three properties fall out:
 
-- `git tag V exists ⟺ release V succeeded.` Tag creation is bundled with
-  GitHub release creation (the last step). A re-run after a partial failure
-  is safe — every preceding step is idempotent (retag overwrites; verify
-  steps re-check from scratch).
+- `git tag V exists ⟺ release V was published.` Per GitHub's behavior,
+  draft releases do not materialize tags — the tag is created at publish
+  time. So tag presence is a strong receipt: someone explicitly clicked
+  Publish on the draft. The workflow's tag-existence and release-existence
+  checks together ensure a workflow re-run cannot quietly re-release the
+  same version.
 - Image tag overwrites are allowed by design. If the wrong image was
-  promoted to `:V`, a re-run from a fixed commit overwrites it. The git
-  tag check remains the guard against silently re-pointing `:V` at a
-  different *commit*.
+  promoted to `:V`, a re-run from a fixed commit (after deleting the stale
+  draft) overwrites it. The tag- and release-existence checks guard against
+  silently re-pointing `:V` at a different *commit* once it has shipped.
 - Digest preservation via `skopeo copy --preserve-digests` keeps the
   manifest digest identical between the `<branch>-<sha>` tag and the `V`
   tag. The release artifact is byte-identical to what was built and (if
   applicable) deployed for pre-release validation.
+
+Re-runnability after partial failure:
+
+| State after partial failure   | Recovery action                         |
+|-------------------------------|------------------------------------------|
+| No draft, no tag              | Re-run; retags overwrite cleanly.        |
+| Draft exists, no tag          | Delete the draft on releases page, re-run. |
+| Tag and published release     | Already shipped. Re-running requires deleting both. |
 
 The release runs in seconds — there is no reproducible build on the
 critical path. The slow build cost is amortized across branch pushes.
@@ -240,9 +252,11 @@ Not in any PR; needs to be configured by someone with repo-admin access:
 ## Open questions
 
 - **Pre-release / RC versions.** The model supports them naturally (set
-  `Cargo.toml` to `3.11.0-rc1`, run workflow), but the tag regex
-  `*.*.*` may need adjustment.
-- **What happens to the `mainnet-release` / `testnet-release` tags?** Today
-  the same retag action is reused for promoting releases to these floating
-  tags. In the new model, this promotion is a separate concern from the
-  release itself and likely deserves its own (small) workflow.
+  `Cargo.toml` to `3.11.0-rc1`, run workflow), but `Cargo.toml`'s version
+  regex and the workflow's semver check may need adjustment.
+- **Artifact retention.** GitHub Actions artifacts default to 90-day
+  retention. A patch released more than 90 days after its merge commit
+  will fail at the contract-download step. Acceptable for now (we don't
+  promote artifacts older than 90 days in practice), but if the limit
+  starts biting, bump `retention-days` on the upload-artifact step or
+  re-run `build_contract.yml` manually before triggering the release.

@@ -104,18 +104,27 @@ gh workflow run release.yml --ref release/v3.11
 Or use the Actions UI: "Release" → "Run workflow" → pick the branch.
 
 The workflow runs in the `production` environment and uses
-`DOCKERHUB_PAT` to retag images. If the version's git tag already exists
-on origin, or if any source artifact for the branch HEAD is missing, the
-workflow refuses.
+`DOCKERHUB_PAT` to retag images. It refuses if the version's git tag
+exists on origin, if a GitHub release (draft or published) for the
+version already exists, or if any source artifact for the branch HEAD
+is missing.
+
+> **Note:** GitHub Actions artifacts expire after 90 days. The contract
+> WASM must still be available at release time — make releases within
+> ~90 days of the corresponding merge commit, or re-run the
+> [Build Contract](.github/workflows/build_contract.yml) workflow
+> manually before triggering the release.
 
 ### 4. Edit and publish the draft release
 
 When the workflow finishes, a draft release named `MPC 3.11.0` appears on
 the [releases page](https://github.com/near/mpc/releases). The draft
 includes the changelog section, Docker image manifest digests, and the
-contract `.tar.gz`.
+contract `.tar.gz`. **The git tag does not yet exist** — it is created
+by GitHub when the draft is published.
 
-Review the draft and click "Publish release."
+Review the draft and click "Publish release." Publishing creates the
+`3.11.0` git tag at the released commit.
 
 ### 5. Promote to operator floating tags (optional)
 
@@ -130,18 +139,22 @@ Use `source-tag = 3.11.0` and `release-tag = testnet-release` or
 
 ## Re-running after a failure
 
-The Release workflow is idempotent up until the git tag is created (the
-last step). If something fails partway:
+The workflow refuses to start if a release for the version already
+exists in any state. To re-run after a partial failure:
 
-- Re-run the workflow. Image retags overwrite cleanly; the draft release
-  will be recreated.
-- If the workflow ran to completion but produced a bad release, delete
-  the draft release **and** the `X.Y.Z` git tag, then re-run.
+- **Workflow failed before creating the draft**: image retags may have
+  partially completed. Just re-run — retags overwrite cleanly.
+- **Workflow created the draft but it's wrong**: delete the draft
+  release on the releases page, then re-run.
+- **The release was published but produced a bad artifact**: delete
+  both the published release and the `X.Y.Z` git tag (publishing
+  creates the tag), then re-run.
 
-The tag-existence check is a guard against silently re-pointing `:X.Y.Z`
-at a different commit. Image overwrites at the same `:X.Y.Z` tag are
-allowed by design — useful for recovering from a bad build by re-running
-from a fixed commit.
+Image tag overwrites at `:X.Y.Z` are allowed by design — useful for
+recovering from a bad build by re-running from a fixed commit. The
+tag-existence and release-existence checks together guard against
+silently re-pointing `:X.Y.Z` at a different commit once it has been
+released.
 
 ## Creating a new release branch
 
@@ -178,12 +191,12 @@ We follow [Semantic Versioning](https://semver.org/) with these compatibility ru
 ## Changelog conventions
 
 We use [`git-cliff`](https://git-cliff.org/) to maintain `CHANGELOG.md`.
-The `prepare-release.sh` script invokes it with the right range for the
-release being prepared.
-
-For patch releases tagged off a `release/vX.Y` branch, the script
-generates the section from the previous patch tag (`git-cliff --from-tag
-X.Y.(Z-1)`). For minor/major releases on `main`, it uses `--unreleased`.
+The `prepare-release.sh` script invokes `git-cliff --unreleased -t
+<VERSION>` which picks up commits since the last tag reachable from
+`HEAD`. This works for both minor releases on `main` (where the last
+reachable tag is the previous minor) and patch releases on
+`release/vX.Y` (where the last reachable tag is the previous patch on
+the line).
 
 If a previous patch was tagged off a release branch and its fixes were
 also cherry-picked to `main`, append the main-side cherry-pick commits

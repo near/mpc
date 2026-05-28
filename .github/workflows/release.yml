@@ -68,12 +68,21 @@ jobs:
           VERSION: ${{ steps.inputs.outputs.version }}
         run: |
           set -euo pipefail
-          if git rev-parse --verify --quiet "refs/tags/${VERSION}" >/dev/null; then
-            echo "::error::Git tag ${VERSION} already exists locally. Refusing to overwrite a completed release."
+          if git ls-remote --exit-code --tags origin "${VERSION}" >/dev/null 2>&1; then
+            echo "::error::Git tag ${VERSION} already exists on origin."
+            echo "::error::If this was an accidental orphan tag, delete it and re-run. Otherwise the release has already shipped."
             exit 1
           fi
-          if git ls-remote --exit-code --tags origin "${VERSION}" >/dev/null 2>&1; then
-            echo "::error::Git tag ${VERSION} already exists on origin. Refusing to overwrite a completed release."
+
+      - name: Refuse if GitHub release already exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.inputs.outputs.version }}
+        run: |
+          set -euo pipefail
+          if gh release view "${VERSION}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "::error::A GitHub release (draft or published) for ${VERSION} already exists."
+            echo "::error::Delete it on the releases page before re-running."
             exit 1
           fi
 
@@ -203,29 +212,20 @@ jobs:
           - digest: \`sha256:${CONTRACT_HASH}\`
           EOF
 
-      - name: Push git tag
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.inputs.outputs.version }}
-          SHA: ${{ steps.inputs.outputs.sha }}
-        run: |
-          set -euo pipefail
-          gh api \
-            --method POST \
-            "repos/${GITHUB_REPOSITORY}/git/refs" \
-            -f "ref=refs/tags/${VERSION}" \
-            -f "sha=${SHA}"
-
       - name: Create draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.inputs.outputs.version }}
+          SHA: ${{ steps.inputs.outputs.sha }}
           CONTRACT_ARCHIVE: ${{ steps.contract.outputs.archive }}
         run: |
           set -euo pipefail
+          # The git tag is NOT created here. GitHub materializes the tag at
+          # target_commitish when the operator publishes the draft.
           gh release create "$VERSION" \
             --repo "$GITHUB_REPOSITORY" \
             --title "MPC ${VERSION}" \
             --notes-file release-notes.md \
+            --target "$SHA" \
             --draft \
             "$CONTRACT_ARCHIVE"
