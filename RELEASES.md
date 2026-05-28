@@ -52,26 +52,25 @@ with whatever version you're releasing.
 
 ### 1. Prepare the release PR
 
-Run [`scripts/prepare-release.sh`](./scripts/prepare-release.sh) on the
-branch you intend to release from:
+Create a working branch off the release-source branch, then run
+[`scripts/prepare-release.sh`](./scripts/prepare-release.sh) to apply the
+release boilerplate (changelog, version bump, ABI snapshot, licenses):
 
 ```sh
 # For a minor/major release:
 git checkout main && git pull
+git checkout -b release-prep/v3.11.0
 ./scripts/prepare-release.sh 3.11.0
 
 # For a patch release:
 git checkout release/v3.11 && git pull
+git checkout -b release-prep/v3.11.1
 ./scripts/prepare-release.sh 3.11.1
 ```
 
-The script generates the changelog section, bumps the workspace version in
-`Cargo.toml`, updates the contract ABI snapshot, regenerates third-party
-licenses, and commits the result. Push the branch and open a PR against
-`main` (for minor releases) or `release/vX.Y` (for patches).
-
-Once the PR is reviewed and merged, the merge commit is what will be
-released.
+Push the working branch and open a PR against `main` (for minor releases)
+or `release/vX.Y` (for patches). Once the PR is reviewed and merged, the
+merge commit is what will be released.
 
 ### 2. Wait for the build workflows
 
