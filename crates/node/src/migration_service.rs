@@ -3,7 +3,7 @@ use std::{net::SocketAddr, sync::Arc};
 use ed25519_dalek::SigningKey;
 use near_account_id::AccountId;
 use onboarding::onboard;
-use tokio::sync::{watch, RwLock};
+use tokio::sync::{RwLock, watch};
 use types::MigrationInfo;
 
 use crate::{

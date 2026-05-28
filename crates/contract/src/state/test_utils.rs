@@ -1,5 +1,5 @@
-use super::resharing::ResharingContractState;
 use super::InitializingContractState;
+use super::resharing::ResharingContractState;
 use crate::primitives::domain::AddDomainsVotes;
 use crate::primitives::test_utils::{bogus_ed25519_public_key_extended, gen_domains_to_add};
 use crate::primitives::{key_state::AttemptId, test_utils::gen_domain_registry};
@@ -28,7 +28,7 @@ pub fn gen_valid_params_proposal(params: &ThresholdParameters) -> ThresholdParam
         .collect();
     let mut new_ids = BTreeSet::new();
     while new_ids.len() < (n_old_participants as usize) {
-        let x: usize = rng.gen::<usize>() % old_ids.len();
+        let x: usize = rng.r#gen::<usize>() % old_ids.len();
         let c = *old_ids.iter().nth(x).unwrap();
         new_ids.insert(c);
         old_ids.remove(&c);
@@ -73,13 +73,13 @@ pub fn gen_resharing_state(num_domains: usize) -> (Environment, ResharingContrac
 }
 /// Generates a Running state that contains this many domains.
 pub fn gen_running_state(num_domains: usize) -> RunningContractState {
-    let epoch_id = EpochId::new(rand::thread_rng().gen());
+    let epoch_id = EpochId::new(rand::thread_rng().r#gen());
     let domains = gen_domain_registry(num_domains);
 
     let mut keys = Vec::new();
     for domain in domains.domains() {
         let mut attempt = AttemptId::default();
-        let x: usize = rand::thread_rng().gen();
+        let x: usize = rand::thread_rng().r#gen();
         let x = x % 800;
         for _ in 0..x {
             attempt = attempt.next();

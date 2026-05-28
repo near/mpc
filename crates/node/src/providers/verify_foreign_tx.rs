@@ -1,6 +1,6 @@
 mod sign;
 
-use crate::config::{auth_config_to_rpc_auth, ParticipantsConfig};
+use crate::config::{ParticipantsConfig, auth_config_to_rpc_auth};
 use crate::network::NetworkTaskChannel;
 use crate::primitives::{MpcTaskId, UniqueId};
 use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
@@ -19,10 +19,10 @@ use foreign_chain_inspector::starknet::inspector::StarknetInspector;
 use mpc_node_config::{ConfigFile, ForeignChainsConfig};
 use near_mpc_contract_interface::types as dtos;
 use std::sync::Arc;
-use threshold_signatures::ecdsa::{KeygenOutput, Signature};
-use threshold_signatures::frost_secp256k1::keys::SigningShare;
-use threshold_signatures::frost_secp256k1::VerifyingKey;
 use threshold_signatures::ReconstructionLowerBound;
+use threshold_signatures::ecdsa::{KeygenOutput, Signature};
+use threshold_signatures::frost_secp256k1::VerifyingKey;
+use threshold_signatures::frost_secp256k1::keys::SigningShare;
 
 /// Pre-built HTTP clients for each foreign chain, keyed in provider config order.
 ///
@@ -43,7 +43,7 @@ impl ForeignChainInspectors<HttpClient> {
     fn build(config: &ForeignChainsConfig) -> anyhow::Result<Self> {
         // using a macro because the chain config and inspector types differ per chain
         macro_rules! build_inspectors {
-            ($chain_config:expr, $Inspector:ident) => {
+            ($chain_config:expr_2021, $Inspector:ident) => {
                 match $chain_config {
                     Some(c) => c
                         .providers

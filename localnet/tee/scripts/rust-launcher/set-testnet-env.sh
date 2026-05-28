@@ -51,6 +51,16 @@ export VMM_RPC=http://127.0.0.1:10000
 export ROOT_INITIAL_BALANCE="20 NEAR"
 # (CONTRACT_INITIAL_BALANCE and NODE_INITIAL_BALANCE use the script's
 # defaults — 16 NEAR contract, 1 NEAR per node.)
+#
+# If you plan to run `test-migration.sh both` against this cluster, bump:
+#   export NODE_INITIAL_BALANCE="10 NEAR"     # was 1 NEAR by default
+#   export ROOT_INITIAL_BALANCE="45 NEAR"     # 16 contract + 2*10 nodes + buffer
+# Migration drives ~5 operator txns per node (add-key x2 for the target,
+# register_backup_service, start_node_migration, plus retries), and 1 NEAR
+# runs out mid-test. Cost note for testnet: real NEAR, not free —
+# expect ~25–30 NEAR per full prepare + forward + back cycle. The faucet
+# caps at ~10 NEAR per account, so you'll need to top up `$FUNDER_ACCOUNT`
+# via `create-and-sweep-to-treasury.sh` a few times before starting.
 
 # --- Image reference (no tag — manifest digest is voted in separately) ---
 

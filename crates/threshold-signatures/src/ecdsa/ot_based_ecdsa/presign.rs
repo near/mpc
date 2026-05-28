@@ -4,8 +4,8 @@ use crate::errors::{InitializationError, ProtocolError};
 use crate::participants::{Participant, ParticipantList};
 use crate::protocol::helpers::recv_from_others;
 use crate::protocol::{
-    internal::{make_protocol, Comms, SharedChannel},
     Protocol,
+    internal::{Comms, SharedChannel, make_protocol},
 };
 
 type Secp256 = Secp256K1Sha256;
@@ -24,7 +24,7 @@ pub fn presign(
     participants: &[Participant],
     me: Participant,
     args: PresignArguments,
-) -> Result<impl Protocol<Output = PresignOutput>, InitializationError> {
+) -> Result<impl Protocol<Output = PresignOutput> + use<>, InitializationError> {
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
             participants: participants.len(),
@@ -194,8 +194,8 @@ mod test {
     use crate::{
         ecdsa::ot_based_ecdsa::triples::test::deal,
         test_utils::{
-            generate_participants, generate_test_keys, make_keygen_output, run_protocol,
-            GenProtocol, MockCryptoRng,
+            GenProtocol, MockCryptoRng, generate_participants, generate_test_keys,
+            make_keygen_output, run_protocol,
         },
     };
     use rand_core::SeedableRng;

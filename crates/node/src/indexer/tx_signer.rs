@@ -4,11 +4,11 @@ use ed25519_dalek::{SigningKey, VerifyingKey};
 use k256::ecdsa::signature::Signer;
 use near_account_id::AccountId;
 use near_indexer::near_primitives::account::AccessKey;
+use near_indexer_primitives::CryptoHash;
 use near_indexer_primitives::near_primitives::transaction::{
     FunctionCallAction, SignedTransaction, Transaction, TransactionV0,
 };
 use near_indexer_primitives::types::{Balance, Gas};
-use near_indexer_primitives::CryptoHash;
 use std::sync::Arc;
 use std::sync::Mutex;
 

@@ -1,4 +1,4 @@
-use prometheus::{register_counter_vec, register_int_counter_vec, CounterVec, IntCounterVec};
+use prometheus::{CounterVec, IntCounterVec, register_counter_vec, register_int_counter_vec};
 use std::sync::LazyLock;
 use tokio_metrics::{TaskIntervals, TaskMonitor};
 

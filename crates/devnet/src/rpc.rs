@@ -1,7 +1,7 @@
 use crate::types::RpcConfig;
-use futures::future::BoxFuture;
 use futures::FutureExt;
-use near_jsonrpc_client::{auth, methods, JsonRpcClient, MethodCallResult};
+use futures::future::BoxFuture;
+use near_jsonrpc_client::{JsonRpcClient, MethodCallResult, auth, methods};
 use std::ops::Deref;
 use std::sync::Arc;
 
