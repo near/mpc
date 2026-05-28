@@ -135,12 +135,32 @@ pub fn setup_starknet_mock(server: &MockServer) {
             let id = body["id"].clone();
             let method = body["method"].as_str().expect("method field");
 
-            if method != "starknet_getTransactionReceipt" {
-                return jsonrpc_error(id, method);
-            }
+            let result = match method {
+                "starknet_getTransactionReceipt" => starknet_receipt_result(),
+                "starknet_getBlockWithTxHashes" => serde_json::json!({
+                    "block_hash": format!("0x{MOCK_BLOCK_HASH}"),
+                    "block_number": 6868546,
+                }),
+                other => return jsonrpc_error(id, other),
+            };
 
             let response_body = serde_json::json!({
-                "result": {
+                "result": result,
+                "jsonrpc": "2.0",
+                "id": id,
+            });
+
+            HttpMockResponse::builder()
+                .status(200)
+                .header("content-type", "application/json")
+                .body(serde_json::to_string(&response_body).unwrap())
+                .build()
+        });
+    });
+}
+
+fn starknet_receipt_result() -> serde_json::Value {
+    serde_json::json!({
                     "type": "INVOKE",
                     "transaction_hash": "0x52a6c2b9d1d1b77dbc322b298fd91f39e3cca9bf1db4a7aa79f14a90efa633e",
                     "actual_fee": { "amount": "0xe97d3e61059940", "unit": "FRI" },
@@ -206,16 +226,5 @@ pub fn setup_starknet_mock(server: &MockServer) {
                         "l2_gas": 3159360,
                         "l1_data_gas": 512,
                     },
-                },
-                "jsonrpc": "2.0",
-                "id": id,
-            });
-
-            HttpMockResponse::builder()
-                .status(200)
-                .header("content-type", "application/json")
-                .body(serde_json::to_string(&response_body).unwrap())
-                .build()
-        });
-    });
+    })
 }

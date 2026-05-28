@@ -2,7 +2,9 @@
 
 pub mod common;
 
-use crate::common::{FixedResponseRpcClient, mock_client_from_fixed_response};
+use crate::common::{
+    FixedResponseRpcClient, SequentialResponseMockClientBuilder, mock_client_from_fixed_response,
+};
 
 use foreign_chain_inspector::{
     ForeignChainInspectionError, ForeignChainInspector, RpcAuthentication, build_http_client,
@@ -14,8 +16,8 @@ use foreign_chain_inspector::{
 
 use assert_matches::assert_matches;
 use foreign_chain_rpc_interfaces::starknet::{
-    GetTransactionReceiptResponse, H256, StarknetEvent, StarknetExecutionStatus,
-    StarknetFinalityStatus,
+    GetBlockWithTxHashesResponse, GetTransactionReceiptResponse, H256, StarknetEvent,
+    StarknetExecutionStatus, StarknetFinalityStatus,
 };
 use httpmock::prelude::*;
 use httpmock::{HttpMockRequest, HttpMockResponse};
@@ -37,6 +39,13 @@ fn mock_receipt(
         }],
         finality_status,
         execution_status,
+    }
+}
+
+fn canonical_block_for(receipt: &GetTransactionReceiptResponse) -> GetBlockWithTxHashesResponse {
+    GetBlockWithTxHashesResponse {
+        block_hash: receipt.block_hash,
+        block_number: receipt.block_number,
     }
 }
 
@@ -62,7 +71,11 @@ async fn extract__should_return_block_hash_when_finality_is_sufficient(
     let tx_id = StarknetTransactionHash::from([3; 32]);
 
     let receipt = mock_receipt(actual_finality_status, StarknetExecutionStatus::Succeeded);
-    let mock_client = mock_client_from_fixed_response(receipt);
+    let canonical_block = canonical_block_for(&receipt);
+    let mock_client = SequentialResponseMockClientBuilder::new()
+        .with_response(&receipt)
+        .with_response(&canonical_block)
+        .build();
     let inspector = StarknetInspector::new(mock_client);
 
     // when
@@ -168,7 +181,11 @@ async fn extract__should_return_empty_when_no_extractors_are_requested() {
         StarknetFinalityStatus::AcceptedOnL1,
         StarknetExecutionStatus::Succeeded,
     );
-    let mock_client = mock_client_from_fixed_response(receipt);
+    let canonical_block = canonical_block_for(&receipt);
+    let mock_client = SequentialResponseMockClientBuilder::new()
+        .with_response(&receipt)
+        .with_response(&canonical_block)
+        .build();
     let inspector = StarknetInspector::new(mock_client);
 
     // when
@@ -217,7 +234,11 @@ async fn extract__should_return_error_when_log_index_out_of_bounds() {
         StarknetFinalityStatus::AcceptedOnL1,
         StarknetExecutionStatus::Succeeded,
     );
-    let mock_client = mock_client_from_fixed_response(receipt);
+    let canonical_block = canonical_block_for(&receipt);
+    let mock_client = SequentialResponseMockClientBuilder::new()
+        .with_response(&receipt)
+        .with_response(&canonical_block)
+        .build();
     let inspector = StarknetInspector::new(mock_client);
 
     // when
@@ -259,7 +280,11 @@ async fn extract__should_return_correct_log_for_specific_index() {
         finality_status: StarknetFinalityStatus::AcceptedOnL1,
         execution_status: StarknetExecutionStatus::Succeeded,
     };
-    let mock_client = mock_client_from_fixed_response(receipt);
+    let canonical_block = canonical_block_for(&receipt);
+    let mock_client = SequentialResponseMockClientBuilder::new()
+        .with_response(&receipt)
+        .with_response(&canonical_block)
+        .build();
     let inspector = StarknetInspector::new(mock_client);
 
     // when
@@ -303,6 +328,7 @@ fn test_receipt() -> GetTransactionReceiptResponse {
 
 fn setup_starknet_rpc_mock(server: &MockServer) {
     let receipt = test_receipt();
+    let canonical_block = canonical_block_for(&receipt);
     server.mock(|when, then| {
         when.method(POST).path("/");
         then.respond_with(move |req: &HttpMockRequest| {
@@ -311,9 +337,11 @@ fn setup_starknet_rpc_mock(server: &MockServer) {
             let id = body["id"].clone();
             let method = body["method"].as_str().expect("method field");
 
-            assert_eq!(method, "starknet_getTransactionReceipt");
-
-            let result = serde_json::to_value(&receipt).unwrap();
+            let result = match method {
+                "starknet_getTransactionReceipt" => serde_json::to_value(&receipt).unwrap(),
+                "starknet_getBlockWithTxHashes" => serde_json::to_value(&canonical_block).unwrap(),
+                other => panic!("unexpected RPC method: {other}"),
+            };
 
             let response_body = serde_json::json!({
                 "jsonrpc": "2.0",
@@ -359,6 +387,83 @@ async fn extract__should_return_block_hash_via_http_rpc_client() {
         ))],
         extracted_values,
     );
+}
+
+#[tokio::test]
+async fn extract__should_return_non_canonical_block_when_receipt_block_hash_differs_from_canonical()
+{
+    // given: the receipt is fully finalized but the canonical block at its height has a
+    // different hash, simulating an RPC that served a side-block receipt for a finalized block.
+    let tx_id = StarknetTransactionHash::from([1; 32]);
+
+    let receipt = GetTransactionReceiptResponse {
+        block_hash: H256::from([0xbb; 32]),
+        block_number: 842_750,
+        events: vec![],
+        finality_status: StarknetFinalityStatus::AcceptedOnL1,
+        execution_status: StarknetExecutionStatus::Succeeded,
+    };
+    let canonical_block = GetBlockWithTxHashesResponse {
+        block_hash: H256::from([0xcc; 32]),
+        block_number: 842_750,
+    };
+
+    let mock_client = SequentialResponseMockClientBuilder::new()
+        .with_response(&receipt)
+        .with_response(&canonical_block)
+        .build();
+    let inspector = StarknetInspector::new(mock_client);
+
+    // when
+    let response = inspector
+        .extract(
+            tx_id,
+            StarknetFinality::AcceptedOnL1,
+            vec![StarknetExtractor::BlockHash],
+        )
+        .await;
+
+    // then
+    assert_matches!(
+        response,
+        Err(ForeignChainInspectionError::NonCanonicalBlock {
+            block_number,
+            receipt_hash,
+            canonical_hash,
+        }) if block_number == 842_750
+            && receipt_hash == foreign_chain_inspector::HexBytes(vec![0xbb; 32])
+            && canonical_hash == foreign_chain_inspector::HexBytes(vec![0xcc; 32])
+    );
+}
+
+#[tokio::test]
+async fn extract__should_propagate_get_block_with_tx_hashes_rpc_error() {
+    // given: starknet_getTransactionReceipt succeeds; starknet_getBlockWithTxHashes returns
+    // a payload that fails to deserialize as GetBlockWithTxHashesResponse.
+    let tx_id = StarknetTransactionHash::from([1; 32]);
+
+    let receipt = mock_receipt(
+        StarknetFinalityStatus::AcceptedOnL1,
+        StarknetExecutionStatus::Succeeded,
+    );
+
+    let mock_client = SequentialResponseMockClientBuilder::new()
+        .with_response(receipt)
+        .with_response(serde_json::json!({ "unexpected": "shape" }))
+        .build();
+    let inspector = StarknetInspector::new(mock_client);
+
+    // when
+    let response = inspector
+        .extract(
+            tx_id,
+            StarknetFinality::AcceptedOnL1,
+            vec![StarknetExtractor::BlockHash],
+        )
+        .await;
+
+    // then
+    assert_matches!(response, Err(ForeignChainInspectionError::ClientError(_)));
 }
 
 #[tokio::test]

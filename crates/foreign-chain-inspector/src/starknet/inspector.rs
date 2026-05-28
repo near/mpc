@@ -1,13 +1,14 @@
 use crate::starknet::{StarknetExtractedValue, StarknetTransactionHash};
 use crate::{ForeignChainInspectionError, ForeignChainInspector};
 use foreign_chain_rpc_interfaces::starknet::{
-    GetTransactionReceiptArgs, GetTransactionReceiptResponse, H256, StarknetExecutionStatus,
-    StarknetFinalityStatus,
+    BlockId, GetBlockWithTxHashesArgs, GetBlockWithTxHashesResponse, GetTransactionReceiptArgs,
+    GetTransactionReceiptResponse, H256, StarknetExecutionStatus, StarknetFinalityStatus,
 };
 use jsonrpsee::core::client::ClientT;
 use near_mpc_contract_interface::types::{StarknetFelt, StarknetLog};
 
 const GET_TRANSACTION_RECEIPT_METHOD: &str = "starknet_getTransactionReceipt";
+const GET_BLOCK_WITH_TX_HASHES_METHOD: &str = "starknet_getBlockWithTxHashes";
 
 pub struct StarknetInspector<Client> {
     client: Client,
@@ -58,6 +59,9 @@ where
             return Err(ForeignChainInspectionError::NotFinalized);
         }
 
+        self.verify_block_is_canonical(rpc_response.block_number, rpc_response.block_hash)
+            .await?;
+
         let extracted_values = extractors
             .iter()
             .map(|extractor| extractor.extract_value(&rpc_response))
@@ -73,6 +77,36 @@ where
 {
     pub fn new(client: Client) -> Self {
         Self { client }
+    }
+
+    /// Checks that the receipt's block is on the canonical chain by re-fetching the canonical
+    /// block at `receipt_block_number` and comparing hashes. `starknet_getBlockWithTxHashes`
+    /// only ever resolves to a canonical block, so a mismatch means the receipt was indexed
+    /// against a side block (stale tx index, partially-applied reorg, divergent RPC backend,
+    /// etc.).
+    async fn verify_block_is_canonical(
+        &self,
+        receipt_block_number: u64,
+        receipt_block_hash: H256,
+    ) -> Result<(), ForeignChainInspectionError> {
+        let args = GetBlockWithTxHashesArgs {
+            block_id: BlockId::Number {
+                block_number: receipt_block_number,
+            },
+        };
+        let canonical: GetBlockWithTxHashesResponse = self
+            .client
+            .request(GET_BLOCK_WITH_TX_HASHES_METHOD, &args)
+            .await?;
+
+        if canonical.block_hash != receipt_block_hash {
+            return Err(ForeignChainInspectionError::NonCanonicalBlock {
+                block_number: receipt_block_number,
+                receipt_hash: receipt_block_hash.as_bytes().to_vec().into(),
+                canonical_hash: canonical.block_hash.as_bytes().to_vec().into(),
+            });
+        }
+        Ok(())
     }
 }
 
