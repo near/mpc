@@ -4,7 +4,7 @@ mod polynomial;
 pub use commitment::PolynomialCommitment;
 pub use polynomial::Polynomial;
 
-use frost_core::{serialization::SerializableScalar, Field, Group, Scalar};
+use frost_core::{Field, Group, Scalar, serialization::SerializableScalar};
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
 use super::ciphersuite::Ciphersuite;
@@ -249,10 +249,10 @@ mod test {
     use crate::errors::ProtocolError;
     use crate::participants::Participant;
     use crate::test_utils::{
-        generate_participants, generate_participants_with_random_ids, MockCryptoRng,
+        MockCryptoRng, generate_participants, generate_participants_with_random_ids,
     };
-    use frost_core::keys::CoefficientCommitment;
     use frost_core::Field;
+    use frost_core::keys::CoefficientCommitment;
     use frost_secp256k1::{Secp256K1Group, Secp256K1ScalarField, Secp256K1Sha256};
     use k256::Scalar;
     use rand_core::{RngCore, SeedableRng};
@@ -597,18 +597,14 @@ mod test {
         assert!(
             PolynomialCommitment::<C>::eval_exponent_interpolation(&ids, &shares, None).is_ok()
         );
-        assert!(PolynomialCommitment::<C>::eval_exponent_interpolation(
-            &ids[..1],
-            &shares[..1],
-            None
-        )
-        .is_err());
-        assert!(PolynomialCommitment::<C>::eval_exponent_interpolation(
-            &ids[..0],
-            &shares[..0],
-            None
-        )
-        .is_err());
+        assert!(
+            PolynomialCommitment::<C>::eval_exponent_interpolation(&ids[..1], &shares[..1], None)
+                .is_err()
+        );
+        assert!(
+            PolynomialCommitment::<C>::eval_exponent_interpolation(&ids[..0], &shares[..0], None)
+                .is_err()
+        );
         assert!(
             PolynomialCommitment::<C>::eval_exponent_interpolation(&ids[..2], &shares, None)
                 .is_err()

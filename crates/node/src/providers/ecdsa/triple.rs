@@ -329,6 +329,8 @@ impl<const N: usize> MpcLeaderCentricComputation<Vec<PairedTriple>>
         let me = channel.my_participant_id();
         let protocol = threshold_signatures::ecdsa::ot_based_ecdsa::triples::generate_triple_many::<
             N,
+            _,
+            _,
         >(&cs_participants, me.into(), self.threshold, OsRng)?;
         let _timer = metrics::MPC_TRIPLES_GENERATION_TIME_ELAPSED.start_timer();
         let triples = run_protocol("many triple gen", channel, protocol).await?;

@@ -4,9 +4,9 @@ pub mod sign;
 mod test;
 
 use crate::{
+    MaxMalicious,
     ecdsa::{AffinePoint, KeygenOutput, RerandomizationArguments, Scalar},
     errors::ProtocolError,
-    MaxMalicious,
 };
 use serde::{Deserialize, Serialize};
 use subtle::{Choice, ConstantTimeEq};

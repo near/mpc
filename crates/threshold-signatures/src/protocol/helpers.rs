@@ -1,5 +1,5 @@
 //! Helper functions for the protocol.
-use super::{internal::SharedChannel, Participant, ProtocolError};
+use super::{Participant, ProtocolError, internal::SharedChannel};
 use crate::participants::{ParticipantCounter, ParticipantList};
 
 /// Gather exactly one message from each participant in a group before proceeding.

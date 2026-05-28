@@ -1,22 +1,22 @@
 #![allow(clippy::indexing_slicing)]
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use rand_core::SeedableRng;
 
 mod bench_utils;
 use crate::bench_utils::{
-    analyze_received_sizes, prepare_ckd, PreparedOutputs, MAX_MALICIOUS, SAMPLE_SIZE,
+    MAX_MALICIOUS, PreparedOutputs, SAMPLE_SIZE, analyze_received_sizes, prepare_ckd,
 };
 use threshold_signatures::{
+    ReconstructionLowerBound,
     confidential_key_derivation::{
-        protocol::ckd as ckd_protocol, AppId, CKDOutputOption, ElementG1, KeygenOutput,
+        AppId, CKDOutputOption, ElementG1, KeygenOutput, protocol::ckd as ckd_protocol,
     },
     participants::Participant,
     protocol::Protocol,
     test_utils::{
-        run_protocol_and_take_snapshots, run_simulated_protocol, MockCryptoRng, Simulator,
+        MockCryptoRng, Simulator, run_protocol_and_take_snapshots, run_simulated_protocol,
     },
-    ReconstructionLowerBound,
 };
 
 type PreparedSimulatedCkd = PreparedOutputs<CKDOutputOption>;
