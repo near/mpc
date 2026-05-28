@@ -1,7 +1,7 @@
 use frost_core::{
-    keys::SigningShare,
-    round1::{commit, SigningCommitments, SigningNonces},
     Identifier,
+    keys::SigningShare,
+    round1::{SigningCommitments, SigningNonces, commit},
 };
 use rand_core::CryptoRngCore;
 use serde::{Deserialize, Serialize};
@@ -9,14 +9,14 @@ use std::collections::BTreeMap;
 use zeroize::ZeroizeOnDrop;
 
 use crate::{
+    Ciphersuite, KeygenOutput, ReconstructionLowerBound,
     errors::{InitializationError, ProtocolError},
     participants::{Participant, ParticipantList},
     protocol::{
-        helpers::recv_from_others,
-        internal::{make_protocol, Comms, SharedChannel},
         Protocol,
+        helpers::recv_from_others,
+        internal::{Comms, SharedChannel, make_protocol},
     },
-    Ciphersuite, KeygenOutput, ReconstructionLowerBound,
 };
 
 pub mod eddsa;
@@ -48,14 +48,15 @@ impl_secret_debug!({C: Ciphersuite} PresignOutput<C> { show: [commitments_map], 
 pub(crate) const FROST_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES: usize = 1;
 
 /// Runs Presigning of either `EdDSA` or `RedDSA`
-pub fn presign<C>(
+pub fn presign<C, R>(
     participants: &[Participant],
     me: Participant,
     args: &PresignArguments<C>,
-    rng: impl CryptoRngCore + Send + 'static,
-) -> Result<impl Protocol<Output = PresignOutput<C>>, InitializationError>
+    rng: R,
+) -> Result<impl Protocol<Output = PresignOutput<C>> + use<C, R>, InitializationError>
 where
     C: Ciphersuite,
+    R: CryptoRngCore + Send + 'static,
 {
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
@@ -167,7 +168,7 @@ pub fn assert_sign_inputs(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::test_utils::{assert_buffer_capacity, generate_participants, MockCryptoRng};
+    use crate::test_utils::{MockCryptoRng, assert_buffer_capacity, generate_participants};
     use frost_ed25519::Ed25519Sha512;
     use rand::SeedableRng;
     use rstest::rstest;

@@ -1,4 +1,4 @@
-use frost_core::{keys::CoefficientCommitment, Group, Scalar};
+use frost_core::{Group, Scalar, keys::CoefficientCommitment};
 use subtle::ConstantTimeEq;
 
 use crate::crypto::ciphersuite::Ciphersuite;
@@ -66,7 +66,7 @@ impl<C: Ciphersuite> PolynomialCommitment<C> {
                 (None, None) =>
                 // should be unreachable
                 {
-                    return Err(ProtocolError::EmptyOrZeroCoefficients)
+                    return Err(ProtocolError::EmptyOrZeroCoefficients);
                 }
             };
             coefficients.push(sum);

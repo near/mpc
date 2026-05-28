@@ -6,11 +6,11 @@ mod bench_utils;
 use bench_utils::prepare_dkg;
 
 use threshold_signatures::{
+    Ciphersuite, Element, ReconstructionLowerBound, Scalar,
     confidential_key_derivation::ciphersuite::BLS12381SHA256,
     frost_ed25519::Ed25519Sha512,
     frost_secp256k1::Secp256K1Sha256,
-    test_utils::{bench_simulation, run_simulation, BenchConfig, MockCryptoRng, SimulationMetrics},
-    Ciphersuite, Element, ReconstructionLowerBound, Scalar,
+    test_utils::{BenchConfig, MockCryptoRng, SimulationMetrics, bench_simulation, run_simulation},
 };
 
 fn main() {

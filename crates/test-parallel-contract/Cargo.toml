@@ -22,7 +22,7 @@ sha2 = { workspace = true }
 
 # k256 won't compile without settings the custom rand flag for `getrandom`
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom = { version = "0.2.12", features = ["custom"] }
+getrandom = { workspace = true, features = ["custom"] }
 
 [lints]
 workspace = true
