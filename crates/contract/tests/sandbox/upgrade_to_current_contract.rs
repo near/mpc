@@ -25,7 +25,7 @@ use near_mpc_contract_interface::types::{
     CKDResponse, DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
 };
 use near_mpc_sdk::sign::SignatureRequestResponse;
-use near_workspaces::{network::Sandbox, Account, Contract, Worker};
+use near_workspaces::{Account, Contract, Worker, network::Sandbox};
 use rand_core::OsRng;
 use rstest::rstest;
 use std::collections::HashSet;

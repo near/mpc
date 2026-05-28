@@ -7,15 +7,15 @@ use near_mpc_bounded_collections::BoundedVec;
 use near_mpc_contract_interface::{
     method_names,
     types::{
-        Bls12381G1PublicKey, CKDAppPublicKey, CKDRequestArgs, DomainConfig, Payload, Protocol,
-        SignRequestArgs, EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
-        EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
+        Bls12381G1PublicKey, CKDAppPublicKey, CKDRequestArgs, DomainConfig,
+        EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES, Payload,
+        Protocol, SignRequestArgs,
     },
 };
 use near_primitives::action::Action;
-use rand::rngs::OsRng;
 use rand::Rng;
 use rand::RngCore;
+use rand::rngs::OsRng;
 use serde::Serialize;
 
 /// Gas attached to a `sign` (or legacy `sign`) request. Matches the e2e

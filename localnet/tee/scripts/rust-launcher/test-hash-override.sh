@@ -33,46 +33,22 @@ ROOT_ACCOUNT="${MPC_NETWORK_NAME}${ACCOUNT_SUFFIX}"
 MPC_CONTRACT_ACCOUNT="${MPC_CONTRACT_ACCOUNT:-mpc.${ROOT_ACCOUNT}}"
 VMM_RPC="${VMM_RPC:-http://127.0.0.1:10000}"
 BASE_PATH="${BASE_PATH:?Must set BASE_PATH}"
-CLI="python3 $BASE_PATH/vmm/src/vmm-cli.py --url $VMM_RPC"
+# Shared helpers: $CLI, logging, HOST_PROFILE → IP_PREFIX/IP_START_OCTET,
+# ip_for_i, near_call_*, extract_json_*.
+source "$SCRIPT_DIR/common.sh"
 
 WORKDIR="/tmp/${USER}/mpc_testnet_scale/${MPC_NETWORK_NAME}"
 
-HOST_PROFILE="${HOST_PROFILE:-alice}"
-case "$HOST_PROFILE" in
-  alice) IP_PREFIX="51.68.219."; IP_START_OCTET=1 ;;
-  bob)   IP_PREFIX="51.68.219."; IP_START_OCTET=11 ;;
-  *)     echo "Unknown HOST_PROFILE=$HOST_PROFILE"; exit 1 ;;
-esac
-
 AGENT_BASE="${AGENT_BASE:-18090}"
 
-# ---------- logging ----------
-log()  { echo -e "\033[1;34m[INFO]\033[0m $*"; }
-warn() { echo -e "\033[1;33m[WARN]\033[0m $*"; }
-err()  { echo -e "\033[1;31m[ERROR]\033[0m $*"; }
-pass() { echo -e "\033[1;32m[PASS]\033[0m $*"; }
-fail() { echo -e "\033[1;31m[FAIL]\033[0m $*"; FAILURES=$((FAILURES + 1)); }
-
+# Test-local: non-fatal failure counter; common.sh's `fatal` exits, this
+# script wants to keep going and report at the end.
 FAILURES=0
+fail() { echo -e "\033[1;31m[FAIL]\033[0m $*" >&2; FAILURES=$((FAILURES + 1)); }
 
-# ---------- helpers ----------
+# ---------- script-local helpers ----------
 node_account() { echo "node$1.${ROOT_ACCOUNT}"; }
-ip_for_i()     { echo "${IP_PREFIX}$((IP_START_OCTET + $1))"; }
 agent_port()   { echo $((AGENT_BASE + $1)); }
-
-near_call_ro() {
-  local method="$1" args="$2"
-  near contract call-function as-read-only "$MPC_CONTRACT_ACCOUNT" "$method" \
-    json-args "$args" network-config "$NEAR_NETWORK_CONFIG" now 2>&1
-}
-
-extract_json_ro() {
-  sed -n '/^Function execution return value/,/^Here is your console/{
-    /^Function/d
-    /^Here is your console/d
-    p
-  }'
-}
 
 # =============================================================================
 # POSITIVE TEST: override forces launcher to use a specific approved hash

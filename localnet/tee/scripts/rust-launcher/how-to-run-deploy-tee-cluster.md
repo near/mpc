@@ -381,8 +381,12 @@ verification uses the per-step `near` commands above.)
 ## Notes
 
 - All nodes vote for **add-domain**
-- Node-to-node ports are per-node (`13001+i`)
-- Telemetry uses port `18082` with per-node IPs
+- Node-to-node P2P/TLS binds container port `80` on every CVM (the templates
+  set `port_override = 80`, so the MPC node ignores the contract URL port and
+  always uses 80). CVMs are distinguished by IP (`<ip-i>:80`).
+- Migration HTTP (`migration_web_ui`) is uniform at container port `8079`,
+  reachable at `<ip-i>:8079`.
+- Telemetry / `/public_data` / `/debug/*` uses port `18082` with per-node IPs.
 - Script is designed for iterative debugging and safe restarts
 - The launcher uses TOML config
 - MPC node image must support `start-with-config-file` (commit `9515e18` or later)

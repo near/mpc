@@ -186,20 +186,20 @@ impl VerifyForeignTransactionRequestStorage {
         loop {
             let added_id = match rx.recv().await {
                 Ok(added_id) => added_id,
-                Err(e) => {
-                    match e {
-                        broadcast::error::RecvError::Closed => {
-                            metrics::VERIFY_FOREIGN_TX_REQUEST_CHANNEL_FAILED.inc();
-                            return Err(anyhow::anyhow!(
-                                "Error in verify_foreign_tx_request channel recv, {e}"
-                            ));
-                        }
-                        broadcast::error::RecvError::Lagged(msg_n) => {
-                            tracing::info!("{msg_n} messages lagged during verify_foreign_tx_request channel recv");
-                            continue;
-                        }
+                Err(e) => match e {
+                    broadcast::error::RecvError::Closed => {
+                        metrics::VERIFY_FOREIGN_TX_REQUEST_CHANNEL_FAILED.inc();
+                        return Err(anyhow::anyhow!(
+                            "Error in verify_foreign_tx_request channel recv, {e}"
+                        ));
                     }
-                }
+                    broadcast::error::RecvError::Lagged(msg_n) => {
+                        tracing::info!(
+                            "{msg_n} messages lagged during verify_foreign_tx_request channel recv"
+                        );
+                        continue;
+                    }
+                },
             };
             if added_id == id {
                 break;

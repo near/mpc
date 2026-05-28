@@ -1,35 +1,35 @@
 #![allow(clippy::missing_panics_doc)]
 #![allow(clippy::indexing_slicing)]
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use frost_secp256k1::VerifyingKey;
-use rand::{seq::SliceRandom as _, Rng, RngCore};
+use rand::{Rng, RngCore, seq::SliceRandom as _};
 use rand_core::SeedableRng;
 
 mod bench_utils;
 use crate::bench_utils::{
+    MAX_MALICIOUS, PreparedOutputs, RECONSTRUCTION_LOWER_BOUND, SAMPLE_SIZE,
     analyze_received_sizes, ot_ecdsa_prepare_presign, ot_ecdsa_prepare_sign,
-    ot_ecdsa_prepare_triples, PreparedOutputs, MAX_MALICIOUS, RECONSTRUCTION_LOWER_BOUND,
-    SAMPLE_SIZE,
+    ot_ecdsa_prepare_triples,
 };
 
 use threshold_signatures::{
+    ReconstructionLowerBound,
     ecdsa::{
+        KeygenOutput, SignatureOption,
         ot_based_ecdsa::{
+            PresignArguments, PresignOutput, RerandomizedPresignOutput,
             presign::presign,
             sign::sign,
-            triples::{generate_triple_many, TriplePub, TripleShare},
-            PresignArguments, PresignOutput, RerandomizedPresignOutput,
+            triples::{TriplePub, TripleShare, generate_triple_many},
         },
-        KeygenOutput, SignatureOption,
     },
     participants::Participant,
     protocol::Protocol,
     test_utils::{
-        run_protocol, run_protocol_and_take_snapshots, run_simulated_protocol, MockCryptoRng,
-        Simulator,
+        MockCryptoRng, Simulator, run_protocol, run_protocol_and_take_snapshots,
+        run_simulated_protocol,
     },
-    ReconstructionLowerBound,
 };
 
 use k256::AffinePoint;
@@ -172,7 +172,7 @@ fn setup_triples_snapshot(participant_num: usize) -> TriplesSetup {
 
 /// Cheap per-sample setup: creates fresh triples protocol and clones the cached simulator
 fn prepare_simulated_triples(setup: &TriplesSetup) -> PreparedSimulatedTriples {
-    let real_protocol = generate_triple_many::<2>(
+    let real_protocol = generate_triple_many::<2, _, _>(
         &setup.participants,
         setup.real_participant,
         *RECONSTRUCTION_LOWER_BOUND,

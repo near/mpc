@@ -1,5 +1,5 @@
 use crate::p2p::testing::PortSeed;
-use crate::tests::{IntegrationTestSetup, DEFAULT_BLOCK_TIME};
+use crate::tests::{DEFAULT_BLOCK_TIME, IntegrationTestSetup};
 use crate::tracking::AutoAbortTask;
 use mpc_node_config::foreign_chains::RpcProviderName;
 use mpc_node_config::{
@@ -14,8 +14,8 @@ use std::time::Duration;
 #[tokio::test]
 #[test_log::test]
 #[expect(non_snake_case)]
-async fn foreign_chain_configuration_auto_registered_to_contract_on_startup__should_use_local_config(
-) {
+async fn foreign_chain_configuration_auto_registered_to_contract_on_startup__should_use_local_config()
+ {
     // Given
     const THRESHOLD: usize = 2;
     const TXN_DELAY_BLOCKS: u64 = 1;

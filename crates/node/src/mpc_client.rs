@@ -1,10 +1,10 @@
+use crate::indexer::ReadSupportedForeignChain;
 use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::tx_sender::TransactionSender;
 use crate::indexer::types::{
     ChainCKDRespondArgs, ChainSendTransactionRequest, ChainSignatureRespondArgs,
     ChainVerifyForeignTransactionRespondArgs,
 };
-use crate::indexer::ReadSupportedForeignChain;
 use crate::metrics;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
@@ -13,7 +13,7 @@ use crate::providers::eddsa::EddsaSignatureProvider;
 use crate::providers::robust_ecdsa::RobustEcdsaSignatureProvider;
 use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;
 use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
-use crate::requests::queue::{PendingRequests, CHECK_EACH_REQUEST_INTERVAL};
+use crate::requests::queue::{CHECK_EACH_REQUEST_INTERVAL, PendingRequests};
 use crate::storage::{
     CKDRequestStorage, SignRequestStorage, VerifyForeignTransactionRequestStorage,
 };
@@ -454,8 +454,8 @@ where
                                         let response = ChainCKDRespondArgs::new_ckd(
                                             &ckd_attempt.request,
                                             &CKDResponse {
-                                                big_y: (&response.0 .0).into(),
-                                                big_c: (&response.0 .1).into(),
+                                                big_y: (&response.0.0).into(),
+                                                big_c: (&response.0.1).into(),
                                             },
                                         )?;
 
@@ -542,12 +542,12 @@ where
                                         )
                                         .await??;
 
-                                        let payload_hash = response.0 .0.compute_msg_hash()?;
+                                        let payload_hash = response.0.0.compute_msg_hash()?;
                                         let response =
                                             ChainVerifyForeignTransactionRespondArgs::new(
                                                 verify_foreign_tx_attempt.request.clone(),
                                                 payload_hash,
-                                                response.0 .1,
+                                                response.0.1,
                                                 response.1,
                                             )?;
 

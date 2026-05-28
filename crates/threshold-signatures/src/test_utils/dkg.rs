@@ -2,9 +2,9 @@ use rand::SeedableRng;
 use rand_core::CryptoRngCore;
 
 use crate::participants::Participant;
-use crate::test_utils::{run_protocol, GenOutput, GenProtocol};
+use crate::test_utils::{GenOutput, GenProtocol, run_protocol};
 use crate::thresholds::ReconstructionLowerBound;
-use crate::{keygen, refresh, reshare, Ciphersuite, KeygenOutput, VerifyingKey};
+use crate::{Ciphersuite, KeygenOutput, VerifyingKey, keygen, refresh, reshare};
 
 // +++++++++++++++++ DKG Functions +++++++++++++++++ //
 type DKGGenProtocol<C> = GenProtocol<KeygenOutput<C>>;
@@ -22,7 +22,7 @@ pub fn run_keygen<C: Ciphersuite, R: CryptoRngCore + SeedableRng + Send + 'stati
 
     for p in participants {
         let rng_p = R::seed_from_u64(rng.next_u64());
-        let protocol = keygen::<C>(participants, *p, threshold, rng_p).unwrap();
+        let protocol = keygen::<C, _, _>(participants, *p, threshold, rng_p).unwrap();
         protocols.push((*p, Box::new(protocol)));
     }
 
@@ -41,7 +41,7 @@ pub fn run_refresh<C: Ciphersuite, R: CryptoRngCore + SeedableRng + Send + 'stat
 
     for (p, out) in keys {
         let rng_p = R::seed_from_u64(rng.next_u64());
-        let protocol = refresh::<C>(
+        let protocol = refresh::<C, _, _>(
             Some(out.private_share),
             out.public_key,
             participants,

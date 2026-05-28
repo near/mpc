@@ -3,7 +3,7 @@ name = "threshold-signatures"
 description = "Threshold Signatures"
 repository = "https://github.com/near/threshold-signatures"
 version = "0.1.0"
-edition = "2021"
+edition = { workspace = true }
 license.workspace = true
 
 [lib]

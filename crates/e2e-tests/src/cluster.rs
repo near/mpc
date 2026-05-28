@@ -399,6 +399,10 @@ impl MpcCluster {
 
     /// Wait until the node at `idx` responds with HTTP 200 on its `/health` endpoint.
     /// Returns an error if the node is not running or does not become healthy within 120 seconds.
+    ///
+    /// Only verifies the web server is bound; for full readiness (e.g. after
+    /// kill+restart), pair with `common::wait_for_node_indexer_height_above`.
+    /// See issue #3366.
     pub async fn wait_for_node_healthy(&self, idx: usize) -> anyhow::Result<()> {
         let node = match &self.nodes[idx] {
             MpcNodeState::Running(n) => n,
@@ -1291,7 +1295,7 @@ async fn create_user_accounts(
         let key = generate_deterministic_key(200 + i);
         let account: AccountId = format!("user{i}.{SANDBOX_ROOT_ACCOUNT}").parse()?;
         blockchain
-            .create_account_with_keys(account.as_ref(), 100, &[key.clone()])
+            .create_account_with_keys(account.as_ref(), 100, std::slice::from_ref(&key))
             .await?;
         map.insert(account, key);
     }

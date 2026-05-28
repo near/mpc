@@ -2,15 +2,15 @@ use crate::crypto::constants::{BITS, SECURITY_PARAMETER};
 use crate::ecdsa::ot_based_ecdsa::triples::bits::{BitVector, ChoiceVector, SEC_PARAM_64};
 use crate::ecdsa::ot_based_ecdsa::triples::random_ot_extension::random_ot_extension_sender_helper;
 use crate::{
-    crypto::hash::{hash, HashOutput},
+    crypto::hash::{HashOutput, hash},
     ecdsa::{
+        Scalar,
         ot_based_ecdsa::triples::{
             batch_random_ot::{
                 batch_random_ot_receiver_random_helper, batch_random_ot_sender_helper,
             },
             mta::{mta_receiver_random_helper, mta_sender_random_helper},
         },
-        Scalar,
     },
     errors::ProtocolError,
     participants::{Participant, ParticipantList},
@@ -25,8 +25,8 @@ use super::{
     batch_random_ot::{batch_random_ot_receiver, batch_random_ot_sender},
     mta::{mta_receiver, mta_sender},
     random_ot_extension::{
-        random_ot_extension_receiver, random_ot_extension_receiver_helper,
-        random_ot_extension_sender, RandomOtExtensionParams,
+        RandomOtExtensionParams, random_ot_extension_receiver, random_ot_extension_receiver_helper,
+        random_ot_extension_sender,
     },
 };
 use std::collections::VecDeque;
@@ -278,8 +278,8 @@ mod test {
         crypto::hash::hash,
         ecdsa::ot_based_ecdsa::triples::multiplication::multiplication_many,
         participants::ParticipantList,
-        protocol::internal::{make_protocol, Comms},
-        test_utils::{generate_participants, run_protocol, GenProtocol, MockCryptoRng},
+        protocol::internal::{Comms, make_protocol},
+        test_utils::{GenProtocol, MockCryptoRng, generate_participants, run_protocol},
     };
 
     #[test]

@@ -1,12 +1,12 @@
 #![allow(non_snake_case)]
 
 use crate::sandbox::common::{
-    abstract_evm_request, arbitrum_evm_request,
+    SandboxTestSetup, abstract_evm_request, arbitrum_evm_request,
     await_pending_foreign_tx_request_observed_on_contract, base_evm_request,
     bitcoin_extracted_values, bitcoin_request, bnb_evm_request, ethereum_evm_request,
     evm_block_hash_extracted_values, hyper_evm_request, polygon_evm_request,
     register_foreign_chain_configuration, sign_foreign_tx_response, starknet_extracted_values,
-    starknet_request, SandboxTestSetup,
+    starknet_request,
 };
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{

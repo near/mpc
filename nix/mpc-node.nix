@@ -71,15 +71,11 @@ let
   };
 
   # Vendor the cargo lockfile via nixpkgs' importCargoLock instead of crane's
-  # default `cargo package`-based vendoring. Two reasons:
-  #
-  #   1. `cargo package --exclude-lockfile` (used by recent crane) requires
-  #      cargo >= 1.88, but rust-toolchain.toml pins 1.86.0.
-  #   2. `cargo package` only ships files inside a crate's own directory.
-  #      Some git deps (e.g. nearcore's `near-jsonrpc`) pull files from
-  #      sibling directories via `include_bytes!("../../../...")`; those get
-  #      stripped by cargo's packaging rules. `fetchgit` copies the entire
-  #      git checkout, preserving siblings.
+  # default `cargo package`-based vendoring. Reason: `cargo package` only ships
+  # files inside a crate's own directory. Some git deps (e.g. nearcore's
+  # `near-jsonrpc`) pull files from sibling directories via
+  # `include_bytes!("../../../...")`; those get stripped by cargo's packaging
+  # rules. `fetchgit` copies the entire git checkout, preserving siblings.
   #
   # `allowBuiltinFetchGit = true` uses `builtins.fetchGit`, which is
   # reproducible: the revision fully determines content, no `sha256` needed.
@@ -103,7 +99,7 @@ let
   #
   #   $out/                           ← cargoVendorDir (3 ups from src/lib.rs)
   #   ├── vendor/                     ← config.toml's `directory = "..."`
-  #   │   ├── near-jsonrpc-2.11.1 ──┐ relative symlink (stays inside $out)
+  #   │   ├── near-jsonrpc-X.Y.Z  ──┐ relative symlink (stays inside $out)
   #   │   └── (other crates as symlinks into importedVendorDir)
   #   ├── chain/jsonrpc/  ←──────────┘ real copy of the near-jsonrpc tree
   #   │   ├── src/lib.rs

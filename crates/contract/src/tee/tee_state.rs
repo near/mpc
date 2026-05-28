@@ -175,10 +175,10 @@ impl TeeState {
         // overwritten by a submission from a different account. Without this,
         // any caller could replace any participant's stored attestation, since
         // the entry is keyed only by `tls_public_key`.
-        if let Some(existing) = self.stored_attestations.get(&tls_pk) {
-            if existing.node_id.account_id != node_id.account_id {
-                return Err(AttestationSubmissionError::TlsKeyOwnedByOtherAccount);
-            }
+        if let Some(existing) = self.stored_attestations.get(&tls_pk)
+            && existing.node_id.account_id != node_id.account_id
+        {
+            return Err(AttestationSubmissionError::TlsKeyOwnedByOtherAccount);
         }
 
         let insertion = self.stored_attestations.insert(
@@ -594,13 +594,17 @@ mod tests {
         // Then: attestations are left untouched (attestation cleanup is a separate path).
         assert_eq!(tee_state.stored_attestations.len(), 4);
         for node_id in &participant_nodes {
-            assert!(tee_state
-                .stored_attestations
-                .contains_key(&node_id.tls_public_key));
+            assert!(
+                tee_state
+                    .stored_attestations
+                    .contains_key(&node_id.tls_public_key)
+            );
         }
-        assert!(tee_state
-            .stored_attestations
-            .contains_key(&non_participant_uid.tls_public_key));
+        assert!(
+            tee_state
+                .stored_attestations
+                .contains_key(&non_participant_uid.tls_public_key)
+        );
     }
 
     #[test]
@@ -653,12 +657,16 @@ mod tests {
 
         // Then: only the expired entry is removed.
         assert_eq!(removed, 1);
-        assert!(tee_state
-            .stored_attestations
-            .contains_key(&fresh_node.tls_public_key));
-        assert!(!tee_state
-            .stored_attestations
-            .contains_key(&stale_node.tls_public_key));
+        assert!(
+            tee_state
+                .stored_attestations
+                .contains_key(&fresh_node.tls_public_key)
+        );
+        assert!(
+            !tee_state
+                .stored_attestations
+                .contains_key(&stale_node.tls_public_key)
+        );
     }
 
     #[test]
@@ -736,9 +744,11 @@ mod tests {
 
         // Then: nothing is removed.
         assert_eq!(removed, 0);
-        assert!(tee_state
-            .stored_attestations
-            .contains_key(&node_id.tls_public_key));
+        assert!(
+            tee_state
+                .stored_attestations
+                .contains_key(&node_id.tls_public_key)
+        );
     }
 
     #[test]
@@ -892,12 +902,16 @@ mod tests {
 
         // then
         assert_eq!(tee_state.stored_attestations.len(), 2);
-        assert!(tee_state
-            .stored_attestations
-            .contains_key(&node_1.tls_public_key));
-        assert!(tee_state
-            .stored_attestations
-            .contains_key(&node_2.tls_public_key));
+        assert!(
+            tee_state
+                .stored_attestations
+                .contains_key(&node_1.tls_public_key)
+        );
+        assert!(
+            tee_state
+                .stored_attestations
+                .contains_key(&node_2.tls_public_key)
+        );
     }
 
     #[test]
@@ -959,11 +973,14 @@ mod tests {
             .unwrap();
 
         // when
-        testing_env!(VMContextBuilder::new()
-            .block_timestamp(
-                Duration::from_secs(EXPIRY_TIMESTAMP_SECONDS + ELAPSED_SECONDS).as_nanos() as u64
-            )
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .block_timestamp(
+                    Duration::from_secs(EXPIRY_TIMESTAMP_SECONDS + ELAPSED_SECONDS).as_nanos()
+                        as u64
+                )
+                .build()
+        );
 
         let status = tee_state.reverify_participants(&node_id, Duration::from_secs(0));
 
@@ -983,9 +1000,11 @@ mod tests {
 
         const EXPIRY_TIMESTAMP_SECONDS: u64 = 1000;
 
-        testing_env!(VMContextBuilder::new()
-            .block_timestamp(Duration::from_secs(0).as_nanos() as u64)
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .block_timestamp(Duration::from_secs(0).as_nanos() as u64)
+                .build()
+        );
 
         let attestation = Attestation::Mock(MockAttestation::WithConstraints {
             mpc_docker_image_hash: None,

@@ -4,8 +4,8 @@ use std::fmt::Display;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use k256::{
-    elliptic_curve::{group::GroupEncoding, CurveArithmetic, PrimeField},
     AffinePoint, Secp256k1,
+    elliptic_curve::{CurveArithmetic, PrimeField, group::GroupEncoding},
 };
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -352,7 +352,9 @@ mod tests {
 
     /// Tests the serialization and deserialization of [`PublicKeyExtended`] works.
     #[rstest]
-    #[case("secp256k1:4Ls3DBDeFDaf5zs2hxTBnJpKnfsnjNahpKU9HwQvij8fTXoCP9y5JQqQpe273WgrKhVVj1EH73t5mMJKDFMsxoEd")]
+    #[case(
+        "secp256k1:4Ls3DBDeFDaf5zs2hxTBnJpKnfsnjNahpKU9HwQvij8fTXoCP9y5JQqQpe273WgrKhVVj1EH73t5mMJKDFMsxoEd"
+    )]
     #[case("ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp")]
     fn test_serialization_of_public_key_extended(#[case] near_public_key: near_sdk::PublicKey) {
         let public_key_extended = PublicKeyExtended::try_from(near_public_key).unwrap();

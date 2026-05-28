@@ -1,8 +1,8 @@
 // TODO(#1686): split this file
 use crate::sandbox::{
     common::{
-        gen_account, gen_participant_info, generate_participant_and_submit_attestation,
-        SandboxTestSetup,
+        SandboxTestSetup, gen_account, gen_participant_info,
+        generate_participant_and_submit_attestation,
     },
     utils::{
         consts::{ALL_PROTOCOLS, GAS_FOR_VOTE_CANCEL_KEYGEN, PARTICIPANT_LEN},
@@ -24,7 +24,7 @@ use mpc_contract::primitives::{
 };
 use near_mpc_contract_interface::types::ReconstructionThreshold;
 use near_mpc_contract_interface::{method_names, types as dtos};
-use near_workspaces::{network::Sandbox, Account, Contract, Worker};
+use near_workspaces::{Account, Contract, Worker, network::Sandbox};
 use rstest::rstest;
 use serde_json::json;
 
@@ -420,8 +420,7 @@ async fn test_cancel_resharing_vote_is_idempotent(
 
     let initial_threshold = initial_running_state.parameters.threshold.0 as usize;
     assert_ne!(
-        initial_threshold,
-        1,
+        initial_threshold, 1,
         "Sanity check failed. Initial_threshold should be at least 2 or greater for the purpose of this test."
     );
 
@@ -682,8 +681,8 @@ async fn test_cancelled_epoch_cannot_be_reused(
 /// Test: After cancellation and successful resharing, `previously_cancelled_resharing_epoch_id`
 /// in the running state is set to None.
 #[tokio::test]
-async fn test_successful_resharing_after_cancellation_clears_cancelled_epoch_id(
-) -> anyhow::Result<()> {
+async fn test_successful_resharing_after_cancellation_clears_cancelled_epoch_id()
+-> anyhow::Result<()> {
     let ResharingTestContext {
         contract,
         persistent_participants,

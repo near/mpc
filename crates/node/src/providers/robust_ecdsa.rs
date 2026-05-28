@@ -20,12 +20,12 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_primitives::domain::DomainId;
 use near_time::Clock;
 use std::sync::Arc;
-use threshold_signatures::ecdsa::KeygenOutput;
-use threshold_signatures::ecdsa::Signature;
-use threshold_signatures::frost_secp256k1::keys::SigningShare;
-use threshold_signatures::frost_secp256k1::VerifyingKey;
 use threshold_signatures::MaxMalicious;
 use threshold_signatures::ReconstructionLowerBound;
+use threshold_signatures::ecdsa::KeygenOutput;
+use threshold_signatures::ecdsa::Signature;
+use threshold_signatures::frost_secp256k1::VerifyingKey;
+use threshold_signatures::frost_secp256k1::keys::SigningShare;
 
 pub struct RobustEcdsaSignatureProvider {
     config: Arc<ConfigFile>,
@@ -282,7 +282,10 @@ pub(super) fn translate_threshold(
     number_of_participants: usize,
 ) -> anyhow::Result<MaxMalicious> {
     let number_of_signers = get_number_of_signers(threshold, number_of_participants)?;
-    anyhow::ensure!(number_of_signers >= 5, "Robust ECDSA requires the threshold to be at least 2, which implies that the number of signers needs to be at least 5");
+    anyhow::ensure!(
+        number_of_signers >= 5,
+        "Robust ECDSA requires the threshold to be at least 2, which implies that the number of signers needs to be at least 5"
+    );
     Ok(MaxMalicious::from((number_of_signers - 1) / 2))
 }
 
@@ -303,8 +306,14 @@ mod tests {
                 let new_threshold = translate_threshold(threshold, number_of_participants)
                     .unwrap()
                     .value();
-                assert!(2 * new_threshold < number_of_signers, "Failed for threshold={threshold}, number_of_participants={number_of_participants}");
-                assert!(new_threshold >= (threshold - 1) / 2, "The new threshold should not decrease security more than necessary: new_threshold={new_threshold}, threshold={threshold}");
+                assert!(
+                    2 * new_threshold < number_of_signers,
+                    "Failed for threshold={threshold}, number_of_participants={number_of_participants}"
+                );
+                assert!(
+                    new_threshold >= (threshold - 1) / 2,
+                    "The new threshold should not decrease security more than necessary: new_threshold={new_threshold}, threshold={threshold}"
+                );
             }
         }
     }
@@ -318,7 +327,10 @@ mod tests {
             for number_of_participants in threshold..max_size {
                 let number_of_signers =
                     get_number_of_signers(threshold, number_of_participants).unwrap();
-                assert!(threshold <= number_of_signers && number_of_signers <= number_of_participants, "Failed for threshold={threshold}, number_of_participants={number_of_participants}");
+                assert!(
+                    threshold <= number_of_signers && number_of_signers <= number_of_participants,
+                    "Failed for threshold={threshold}, number_of_participants={number_of_participants}"
+                );
             }
         }
     }

@@ -9,7 +9,7 @@ use threshold_signatures::{
     confidential_key_derivation::{self as ckd},
     ecdsa as ts_ecdsa,
     frost::eddsa,
-    frost_ed25519::{keys::SigningShare, Ed25519Group, Group as _, VerifyingKey},
+    frost_ed25519::{Ed25519Group, Group as _, VerifyingKey, keys::SigningShare},
     frost_secp256k1::{self, Secp256K1Group},
 };
 
