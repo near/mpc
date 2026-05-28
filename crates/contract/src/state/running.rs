@@ -561,6 +561,9 @@ pub mod running_tests {
         assert!(
             err.to_string().contains("not in the current registry"),
             "Expected UnknownDomainInProposal, got: {err}"
+        );
+    }
+
     /// Builds a `DomainConfig` for the next domain id with the given protocol,
     /// purpose, and reconstruction threshold.
     fn caitsith_lock_test_proposal(
@@ -674,6 +677,8 @@ pub mod running_tests {
             "Expected ReconstructionThresholdTooLow on overlay value, got: {err}"
         );
     }
+
+    #[test]
     fn vote_add_domains__should_accept_caitsith_threshold_matching_existing() {
         // Given a Running state with a CaitSith domain at t = 2 (fixture
         // default) and a matching proposal.
