@@ -77,29 +77,56 @@ acceptance.
 
 ### Workflow shape
 
+Artifacts are built continuously on push to protected branches, and the
+release workflow promotes pre-built artifacts rather than building fresh.
+
+**Build (continuous, on push to `main` and `release/v*`):**
+
+- Existing `docker_build_node.yml`, `docker_build_node_gcp.yml`,
+  `docker_build_rust_launcher.yml`, extended to trigger on `release/v*`.
+  Push images as `nearone/mpc-{node,node-gcp,launcher}:<branch>-<short-sha>`.
+- New `build_contract.yml`. Builds the contract reproducibly, uploads the
+  WASM as a GitHub Actions artifact named `contract`.
+
+**Release (`workflow_dispatch` on protected branch):**
+
 ```
-1. Checkout the branch HEAD.
-2. Read version V from Cargo.toml.
-3. Refuse if git tag V already exists. (Idempotency guard.)
-4. Verify CHANGELOG.md has a section for V.
-5. Build images reproducibly (deployment/build-images.sh).
-6. Build contract reproducibly.
-7. Push images as nearone/mpc-{node,node-gcp,launcher}:V.
-   (Overwrites any pre-existing tag at this version.)
-8. Create draft GitHub release with notes, image digests, contract artifact.
-9. Create and push git tag V at the released commit. (Last step.)
+1. Validate ref is main or release/v*.
+2. Checkout the branch HEAD.
+3. Read version V from Cargo.toml; compute branch-tag <branch>-<short-sha>.
+4. Refuse if git tag V already exists (locally or on origin).
+5. Verify CHANGELOG.md has a section for V.
+6. Verify nearone/mpc-{node,node-gcp,launcher}:<branch-tag> all exist.
+7. Locate the build_contract.yml run for this SHA; download the artifact.
+8. Retag images :<branch-tag> → :V via skopeo copy --preserve-digests.
+9. Collect manifest digests of the retagged images.
+10. Create draft GitHub release with notes, digests, contract archive.
+    (Creates the V tag as a side effect of gh release create.)
 ```
 
-Two properties fall out:
+Three properties fall out:
 
-- `git tag V exists ⟺ release V succeeded.` A re-run after a partial failure
-  is safe — the tag is the final step, and every preceding step is
-  idempotent (re-pushing a Docker tag overwrites; the draft release can be
-  recreated).
-- Image tag overwrites are allowed by design. If the wrong image was pushed
-  to `:V`, a re-run from a fixed commit overwrites it. The git tag check
-  remains the guard against silently re-pointing `:V` at a different
-  *commit*.
+- `git tag V exists ⟺ release V succeeded.` Tag creation is bundled with
+  GitHub release creation (the last step). A re-run after a partial failure
+  is safe — every preceding step is idempotent (retag overwrites; verify
+  steps re-check from scratch).
+- Image tag overwrites are allowed by design. If the wrong image was
+  promoted to `:V`, a re-run from a fixed commit overwrites it. The git
+  tag check remains the guard against silently re-pointing `:V` at a
+  different *commit*.
+- Digest preservation via `skopeo copy --preserve-digests` keeps the
+  manifest digest identical between the `<branch>-<sha>` tag and the `V`
+  tag. The release artifact is byte-identical to what was built and (if
+  applicable) deployed for pre-release validation.
+
+The release runs in seconds — there is no reproducible build on the
+critical path. The slow build cost is amortized across branch pushes.
+
+A pre-release validation window exists by construction: between when the
+build workflows finish and when an operator runs the release workflow,
+the `:<branch>-<sha>` images are deployable for smoke-testing. We do not
+currently wire any automated validation into this window, but the seam
+is there for later.
 
 ### Branch convention
 
@@ -169,21 +196,19 @@ High-level inventory; concrete edits to follow in implementation PRs.
 
 ### Workflows
 
-- **`release.yml`**: rewritten. Trigger becomes `workflow_dispatch`. The
-  workflow body absorbs the responsibilities currently spread across
-  `release.yml`, `docker_node_release.yml`, and `docker_launcher_release.yml`
-  — build images directly, push at `:V`, build contract, create GH release,
-  create tag.
-- **`docker_node_release.yml`, `docker_launcher_release.yml`**: deleted.
-  Their retag responsibility is gone in the new model.
+- **`release.yml`**: rewritten. Trigger becomes `workflow_dispatch`. Reads
+  version from `Cargo.toml`, retags the pre-built `<branch>-<sha>` images
+  to `:V`, downloads the contract artifact from the matching
+  `build_contract.yml` run, creates the draft GH release with the tag.
+- **`build_contract.yml`**: new. Builds the contract reproducibly on push
+  to `main` and `release/v*`, uploads WASM as a GH Actions artifact.
 - **`docker_build_node.yml`, `docker_build_node_gcp.yml`,
-  `docker_build_rust_launcher.yml`**: status TBD. These currently produce
-  `main-<sha>` images on every push to `main`. The release workflow no
-  longer consumes them. If they have other consumers (smoke tests, manual
-  testnet deploys), they stay; if not, they can be deleted or moved to a
-  separate "preview" environment with its own credential.
-- **`docker_release_legacy.yml`**: deleted. Manual fallback for the old
-  retag flow.
+  `docker_build_rust_launcher.yml`**: extended to trigger on `release/v*`
+  pushes in addition to `main`. Otherwise unchanged.
+- **`docker_node_release.yml`, `docker_launcher_release.yml`**: kept as-is.
+  No longer used by the release flow; retained for promoting `:V` images
+  to floating operator tags (`:mainnet-release`, `:testnet-release`).
+- **`docker_release_legacy.yml`**: deleted.
 
 ### Scripts
 
