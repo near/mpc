@@ -540,30 +540,20 @@ pub async fn new_tls_mesh_network(
     let incoming_connections_task =
         tracking::spawn("incoming connection handler tls mesh network", async move {
             let mut tasks = AutoAbortTaskCollection::new();
-            loop {
-                match tcp_listener.accept().await {
-                    Ok((tcp_stream, _)) => {
-                        let message_sender = message_sender.clone();
-                        let participant_identities = participant_identities.clone();
-                        let tls_acceptor = tls_acceptor.clone();
-                        let connectivities = connectivities_clone.clone();
-                        tasks.spawn_checked::<_, ()>(
-                            "new connection handler tls mesh network",
-                            incoming_connection_handler(
-                                message_sender,
-                                connectivities,
-                                tcp_stream,
-                                tls_acceptor,
-                                participant_identities,
-                                my_id,
-                            ),
-                        );
-                    }
-                    Err(err) => {
-                        tracing::error!("error accepting tcp stream: {}", err);
-                    }
-                }
-            }
+            run_accept_loop(listener_accept_stream(tcp_listener), |tcp_stream| {
+                tasks.spawn_checked::<_, ()>(
+                    "new connection handler tls mesh network",
+                    incoming_connection_handler(
+                        message_sender.clone(),
+                        connectivities_clone.clone(),
+                        tcp_stream,
+                        tls_acceptor.clone(),
+                        participant_identities.clone(),
+                        my_id,
+                    ),
+                );
+            })
+            .await;
         });
 
     let sender = TlsMeshSender {
@@ -759,6 +749,34 @@ async fn incoming_connection_handler(
     }
 
     result
+}
+
+/// Adapts a `TcpListener` into a `Stream` of accepted connections, so that the
+/// accept loop can be tested by substituting a fake stream of results.
+fn listener_accept_stream(
+    listener: TcpListener,
+) -> impl futures::Stream<Item = std::io::Result<TcpStream>> {
+    futures::stream::poll_fn(move |cx| {
+        listener
+            .poll_accept(cx)
+            .map(|res| Some(res.map(|(stream, _)| stream)))
+    })
+}
+
+/// Drives `accept_stream` to completion, dispatching each successful item to
+/// `on_connection`. Errors are logged and the loop keeps running so the listener
+/// task does not silently die on a transient accept failure.
+async fn run_accept_loop<S>(
+    accept_stream: impl futures::Stream<Item = std::io::Result<S>>,
+    mut on_connection: impl FnMut(S),
+) {
+    let mut accept_stream = std::pin::pin!(accept_stream);
+    while let Some(result) = accept_stream.next().await {
+        match result {
+            Ok(stream) => on_connection(stream),
+            Err(err) => tracing::error!("error accepting tcp stream: {}", err),
+        }
+    }
 }
 
 /// Checks whether an error is caused by the peer closing the TLS connection
@@ -1041,6 +1059,7 @@ pub mod testing {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use crate::config::MpcConfig;
     use crate::network::conn::ConnectionVersion;
@@ -1380,5 +1399,34 @@ mod tests {
             );
         })
         .await;
+    }
+
+    /// Regression test to ensure that
+    /// the incoming-connections accept loop keeps running after an
+    /// `accept()` error, including across a burst of consecutive errors as can
+    /// happen under FD exhaustion or other transient conditions.
+    #[tokio::test]
+    async fn run_accept_loop__should_continue_after_accept_error() {
+        // Given a stream that interleaves Errs and Oks, including a burst of
+        // consecutive Errs before any Ok.
+        fn err() -> std::io::Result<()> {
+            Err(std::io::Error::other("simulated accept error"))
+        }
+        let accept_stream = futures::stream::iter([err(), err(), Ok(()), err(), Ok(())]);
+        let (on_connection_tx, mut on_connection_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+
+        // When run_accept_loop is driven against that stream.
+        super::run_accept_loop(accept_stream, move |_| {
+            on_connection_tx.send(()).unwrap();
+        })
+        .await;
+
+        // Then `on_connection` is invoked for every Ok in the stream, proving
+        // the loop survived both the leading burst of Errs and the Err between
+        // the two Oks. A final `None` confirms the loop also terminated cleanly
+        // on stream end (i.e. dropped the sender) rather than getting stuck.
+        assert_eq!(on_connection_rx.recv().await, Some(()));
+        assert_eq!(on_connection_rx.recv().await, Some(()));
+        assert_eq!(on_connection_rx.recv().await, None);
     }
 }
