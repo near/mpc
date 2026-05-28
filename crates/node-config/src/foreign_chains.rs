@@ -85,6 +85,15 @@ impl ForeignChainsConfig {
         self.all_configured_chains().is_empty()
     }
 
+    /// Iterate over every chain that has a local config, paired with its DTO identifier.
+    pub fn iter_chains(
+        &self,
+    ) -> impl Iterator<Item = (dtos::ForeignChain, &ForeignChainConfig)> + '_ {
+        self.all_configured_chains()
+            .into_iter()
+            .map(|(cfg, id)| (id, cfg))
+    }
+
     #[expect(deprecated, reason = "https://github.com/near/mpc/issues/3079")]
     pub fn configured_chains(&self) -> dtos::ForeignChainConfiguration {
         self.all_configured_chains()
