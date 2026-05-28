@@ -271,9 +271,13 @@ async fn test_vote_update_gas_before_threshold() {
         .build()
         .await;
 
-    let proposal_id =
-        chunked_upload_contract(&worker, &mpc_signer_accounts[0], &contract, current_contract())
-            .await;
+    let proposal_id = chunked_upload_contract(
+        &worker,
+        &mpc_signer_accounts[0],
+        &contract,
+        current_contract(),
+    )
+    .await;
 
     // Cast votes until threshold is reached (need 6 total votes)
     for (idx, account) in mpc_signer_accounts[1..=5].iter().enumerate() {
@@ -406,12 +410,20 @@ async fn only_one_vote_from_participant() {
         .await;
     dbg!(contract.id());
 
-    let proposal_a =
-        chunked_upload_contract(&worker, &mpc_signer_accounts[0], &contract, current_contract())
-            .await;
-    let proposal_b =
-        chunked_upload_contract(&worker, &mpc_signer_accounts[0], &contract, current_contract())
-            .await;
+    let proposal_a = chunked_upload_contract(
+        &worker,
+        &mpc_signer_accounts[0],
+        &contract,
+        current_contract(),
+    )
+    .await;
+    let proposal_b = chunked_upload_contract(
+        &worker,
+        &mpc_signer_accounts[0],
+        &contract,
+        current_contract(),
+    )
+    .await;
 
     let execution = mpc_signer_accounts[0]
         .call(contract.id(), method_names::VOTE_UPDATE)
