@@ -39,16 +39,30 @@ pub fn gen_valid_params_proposal(params: &ThresholdParameters) -> ThresholdParam
         let info = current_participants.info(&account_id).unwrap();
         let _ = new_participants.insert_with_id(account_id, info.clone(), id);
     }
+<<<<<<< Updated upstream
     // Floor the proposal's participant count at 3 so the result is compatible
     // with every protocol — `DamgardEtAl` requires `n >= 2t - 1`, which forces
     // `n >= 3` even at the minimum `t = 2`. `gen_threshold_params` enforces the
     // same floor for the initial params; this keeps the proposal consistent.
+=======
+    let max_added: usize = rng.gen_range(0..10);
+    // Floor the proposal's participant count at 3 so the result is compatible
+    // with every protocol — `DamgardEtAl` requires `n >= 2t - 1`, which forces
+    // `n >= 3` even at the minimum `t = 2`. `gen_threshold_params` enforces
+    // the same floor for the initial params; this keeps the proposal
+    // consistent. Clamping after sampling keeps the original `[0, 10)` range
+    // and only nudges the lowest values up when they'd produce an invalid n.
+>>>>>>> Stashed changes
     let min_added = if n_old_participants < 3 {
         3 - n_old_participants
     } else {
         0
     };
+<<<<<<< Updated upstream
     let max_added: usize = rng.gen_range(min_added..min_added + 10);
+=======
+    let max_added = max_added.max(min_added);
+>>>>>>> Stashed changes
     let mut next_id = current_participants.next_id();
     for i in 0..max_added {
         let (account_id, info) = gen_participant(i);
