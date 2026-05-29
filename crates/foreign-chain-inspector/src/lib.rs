@@ -1,4 +1,5 @@
 use derive_more::{Deref, Display, From};
+use ethereum_types::H256;
 use http::{HeaderMap, HeaderName, HeaderValue};
 use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
 use thiserror::Error;
@@ -51,6 +52,12 @@ pub struct BlockConfirmations(u64);
 /// 32-byte hash, Starknet felt, ...).
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, From)]
 pub struct HexBytes(pub Vec<u8>);
+
+impl From<H256> for HexBytes {
+    fn from(hash: H256) -> Self {
+        HexBytes(hash.as_bytes().to_vec())
+    }
+}
 
 impl std::fmt::Display for HexBytes {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

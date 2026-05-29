@@ -108,8 +108,8 @@ where
         if !hash_matches || !height_matches {
             return Err(ForeignChainInspectionError::NonCanonicalBlock {
                 block_number: receipt_block_number,
-                receipt_hash: receipt_block_hash.as_bytes().to_vec().into(),
-                canonical_hash: canonical.block_hash.as_bytes().to_vec().into(),
+                receipt_hash: receipt_block_hash.into(),
+                canonical_hash: canonical.block_hash.into(),
             });
         }
         Ok(())
