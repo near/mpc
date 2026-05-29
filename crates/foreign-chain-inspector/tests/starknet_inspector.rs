@@ -399,17 +399,20 @@ async fn extract__should_return_non_canonical_block_when_receipt_block_hash_diff
     // given: the receipt is fully finalized but the canonical block at its height has a
     // different hash, simulating an RPC that served a side-block receipt for a finalized block.
     let tx_id = StarknetTransactionHash::from([1; 32]);
+    let block_number: u64 = 842_750;
+    let receipt_hash_bytes = [0xbb; 32];
+    let canonical_hash_bytes = [0xcc; 32];
 
     let receipt = GetTransactionReceiptResponse {
-        block_hash: H256::from([0xbb; 32]),
-        block_number: 842_750,
+        block_hash: H256::from(receipt_hash_bytes),
+        block_number,
         events: vec![],
         finality_status: StarknetFinalityStatus::AcceptedOnL1,
         execution_status: StarknetExecutionStatus::Succeeded,
     };
     let canonical_block = GetBlockWithTxHashesResponse {
-        block_hash: H256::from([0xcc; 32]),
-        block_number: 842_750,
+        block_hash: H256::from(canonical_hash_bytes),
+        block_number,
     };
 
     let mock_client = SequentialResponseMockClientBuilder::new()
@@ -431,12 +434,12 @@ async fn extract__should_return_non_canonical_block_when_receipt_block_hash_diff
     assert_matches!(
         response,
         Err(ForeignChainInspectionError::NonCanonicalBlock {
-            block_number,
+            block_number: observed_block_number,
             receipt_hash,
             canonical_hash,
-        }) if block_number == 842_750
-            && receipt_hash == foreign_chain_inspector::HexBytes(vec![0xbb; 32])
-            && canonical_hash == foreign_chain_inspector::HexBytes(vec![0xcc; 32])
+        }) if observed_block_number == block_number
+            && receipt_hash == foreign_chain_inspector::HexBytes(receipt_hash_bytes.to_vec())
+            && canonical_hash == foreign_chain_inspector::HexBytes(canonical_hash_bytes.to_vec())
     );
 }
 

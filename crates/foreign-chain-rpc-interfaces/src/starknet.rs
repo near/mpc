@@ -141,39 +141,40 @@ mod tests {
         parse_felt,
     };
 
+    const TEST_BLOCK_NUMBER: u64 = 842_750;
+    const TEST_RECEIPT_BLOCK_NUMBER: u64 = 6_195_041;
+    const SHORT_HEX_BLOCK_HASH: &str = "0x5";
+
+    fn short_hex_block_hash_as_h256() -> H256 {
+        // `SHORT_HEX_BLOCK_HASH` zero-padded to a 32-byte hash.
+        let mut bytes = [0u8; 32];
+        bytes[31] = 5;
+        H256::from(bytes)
+    }
+
     #[test]
     fn deserialize_receipt__should_accept_short_hex_block_hash() {
-        let json = r#"
-        {
-            "block_hash": "0x5",
-            "block_number": 6195041,
+        let json = serde_json::json!({
+            "block_hash": SHORT_HEX_BLOCK_HASH,
+            "block_number": TEST_RECEIPT_BLOCK_NUMBER,
             "events": [
               {
-                "data": [
-                  "0x2b"
-                ],
+                "data": ["0x2b"],
                 "from_address": "0x387b62e702a722396a056e60b6affecebaddc258170446b07d57e47c541a0dd",
                 "keys": [
                   "0x2b0cdef3c28f9d954382f060df168ae56204d5937d2f0cd1fd9ce759afaf095",
-                  "0x4322cec55a56b85793864e0cfd27a563849ac9209d4307621d65bcd616c1dd8"
-                ]
-              }
+                  "0x4322cec55a56b85793864e0cfd27a563849ac9209d4307621d65bcd616c1dd8",
+                ],
+              },
             ],
             "finality_status": "ACCEPTED_ON_L1",
-            "execution_status": "SUCCEEDED"
-        }
-        "#;
+            "execution_status": "SUCCEEDED",
+        });
 
-        let receipt: GetTransactionReceiptResponse = serde_json::from_str(json).unwrap();
+        let receipt: GetTransactionReceiptResponse = serde_json::from_value(json).unwrap();
 
-        let expected_bytes = {
-            let mut bytes = [0u8; 32];
-            bytes[31] = 5;
-            bytes
-        };
-        let expected_hash = H256::from(expected_bytes);
-        assert_eq!(receipt.block_hash, expected_hash);
-        assert_eq!(receipt.block_number, 6195041);
+        assert_eq!(receipt.block_hash, short_hex_block_hash_as_h256());
+        assert_eq!(receipt.block_number, TEST_RECEIPT_BLOCK_NUMBER);
         assert_eq!(
             receipt.finality_status,
             StarknetFinalityStatus::AcceptedOnL1
@@ -205,7 +206,7 @@ mod tests {
         // given
         let args = GetBlockWithTxHashesArgs {
             block_id: BlockId::Number {
-                block_number: 842_750,
+                block_number: TEST_BLOCK_NUMBER,
             },
         };
 
@@ -213,30 +214,26 @@ mod tests {
         let serialized = serde_json::to_value(&args).unwrap();
 
         // then
-        assert_eq!(serialized, serde_json::json!([{ "block_number": 842_750 }]));
+        assert_eq!(
+            serialized,
+            serde_json::json!([{ "block_number": TEST_BLOCK_NUMBER }])
+        );
     }
 
     #[test]
     fn deserialize_get_block_with_tx_hashes_response__should_accept_short_hex_block_hash() {
-        let json = r#"
-        {
-            "block_hash": "0x5",
-            "block_number": 842750
-        }
-        "#;
+        let json = serde_json::json!({
+            "block_hash": SHORT_HEX_BLOCK_HASH,
+            "block_number": TEST_BLOCK_NUMBER,
+        });
 
-        let response: GetBlockWithTxHashesResponse = serde_json::from_str(json).unwrap();
+        let response: GetBlockWithTxHashesResponse = serde_json::from_value(json).unwrap();
 
-        let expected_bytes = {
-            let mut bytes = [0u8; 32];
-            bytes[31] = 5;
-            bytes
-        };
         assert_eq!(
             response,
             GetBlockWithTxHashesResponse {
-                block_hash: H256::from(expected_bytes),
-                block_number: 842_750,
+                block_hash: short_hex_block_hash_as_h256(),
+                block_number: TEST_BLOCK_NUMBER,
             }
         );
     }
