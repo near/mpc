@@ -67,25 +67,19 @@ impl From<u64> for UpdateId {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
-/// A pending contract update awaiting threshold approval.
-///
-/// An earlier `Contract(Vec<u8>)` variant that inlined the proposed code directly
-/// in contract state was removed in favor of the chunked-upload flow. Dropping it
-/// shifts the borsh discriminants of the remaining variants, which is safe for two
-/// independent reasons. First, [`ProposedUpdates::do_update`] clears every pending
-/// proposal before new code is deployed, so no `Update` value written by an older
-/// contract version can survive into this version's runtime. Second, migration is
-/// lazy: near-sdk collections borsh-(de)serialize only their storage-prefix handles,
-/// never the stored [`UpdateEntry`] values, so no `Update` byte sequence is ever
-/// decoded under the new layout during `migrate` regardless.
+// NB: borsh enum discriminants are positional, so reordering or removing variants
+// changes the on-disk encoding. That is only safe given the contract invariant that
+// `do_update` clears all pending proposals before any code deploy, and that migration
+// never deserializes stored proposal values.
+/// A pending update awaiting threshold approval: either a configuration change or a
+/// chunked contract-code proposal.
 pub enum Update {
     Config(near_mpc_contract_interface::types::Config),
-    /// Metadata for a chunked contract-code proposal. The actual code lives in the
-    /// `MpcContract::update_code_chunks` `LookupMap`, keyed by `(UpdateId, chunk_index)`,
-    /// so the proposal entry itself stays small and loading contract state remains cheap
-    /// regardless of binary size. The `code_hash` is the SHA-256 of the assembled code,
-    /// computed at finalize time, and is what voters compare against when validating a
-    /// proposal.
+    /// A contract-code proposal whose code was uploaded in chunks. Only fixed-size
+    /// metadata lives in the proposal; the code itself is stored separately so the
+    /// proposal stays small regardless of binary size. `code_hash` is the SHA-256 of
+    /// the assembled code, which voters compare against the binary they intend to
+    /// approve.
     ContractChunked {
         total_size: u64,
         num_chunks: u32,

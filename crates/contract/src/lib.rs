@@ -1342,12 +1342,10 @@ impl MpcContract {
     /// proposal.
     ///
     /// The upload must be complete (received bytes equal the declared `total_size`).
-    /// This call assembles the chunks into a single contiguous buffer to compute the
-    /// SHA-256 of the code (the host `sha256` has no streaming variant), re-keys the
-    /// chunk bytes from per-account staging storage into proposal-keyed storage,
-    /// clears the staged metadata, and returns the new [`UpdateId`]. Voters can then
-    /// call [`vote_update`](Self::vote_update) against that id; on threshold approval
-    /// the chunks are reassembled and deployed.
+    /// Computes the SHA-256 of the assembled code — recorded on the proposal so voters
+    /// can confirm what they are approving — and returns the new [`UpdateId`]. Voters
+    /// then call [`vote_update`](Self::vote_update) against that id; on threshold
+    /// approval the code is deployed.
     #[handle_result]
     pub fn finalize_contract_upload(&mut self) -> Result<UpdateId, Error> {
         let caller = self.voter_or_panic();
