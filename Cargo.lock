@@ -6047,7 +6047,7 @@ dependencies = [
  "num_enum",
  "pprof",
  "pprof_util",
- "prometheus 0.13.4",
+ "prometheus 0.14.0",
  "rand 0.8.6",
  "regex",
  "rocksdb",
