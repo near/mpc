@@ -50,22 +50,13 @@ pub struct BlockConfirmations(u64);
 /// Used in error messages to keep block-hash logs readable across chains
 /// whose hashes have different native types (EVM `H256`, Bitcoin's reversed
 /// 32-byte hash, Starknet felt, ...).
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, From)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Display, From)]
+#[display("0x{}", hex::encode(_0))]
 pub struct HexBytes(pub Vec<u8>);
 
 impl From<H256> for HexBytes {
     fn from(hash: H256) -> Self {
         HexBytes(hash.as_bytes().to_vec())
-    }
-}
-
-impl std::fmt::Display for HexBytes {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("0x")?;
-        for byte in &self.0 {
-            write!(f, "{byte:02x}")?;
-        }
-        Ok(())
     }
 }
 
