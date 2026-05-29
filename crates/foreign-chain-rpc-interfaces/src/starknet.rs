@@ -137,20 +137,12 @@ where
 mod tests {
     use super::{
         BlockId, GetBlockWithTxHashesArgs, GetBlockWithTxHashesResponse,
-        GetTransactionReceiptResponse, H256, StarknetExecutionStatus, StarknetFinalityStatus,
-        parse_felt,
+        GetTransactionReceiptResponse, StarknetExecutionStatus, StarknetFinalityStatus, parse_felt,
     };
 
     const TEST_BLOCK_NUMBER: u64 = 842_750;
     const TEST_RECEIPT_BLOCK_NUMBER: u64 = 6_195_041;
     const SHORT_HEX_BLOCK_HASH: &str = "0x5";
-
-    fn short_hex_block_hash_as_h256() -> H256 {
-        // `SHORT_HEX_BLOCK_HASH` zero-padded to a 32-byte hash.
-        let mut bytes = [0u8; 32];
-        bytes[31] = 5;
-        H256::from(bytes)
-    }
 
     #[test]
     fn deserialize_receipt__should_accept_short_hex_block_hash() {
@@ -173,7 +165,10 @@ mod tests {
 
         let receipt: GetTransactionReceiptResponse = serde_json::from_value(json).unwrap();
 
-        assert_eq!(receipt.block_hash, short_hex_block_hash_as_h256());
+        assert_eq!(
+            receipt.block_hash,
+            parse_felt(SHORT_HEX_BLOCK_HASH).unwrap()
+        );
         assert_eq!(receipt.block_number, TEST_RECEIPT_BLOCK_NUMBER);
         assert_eq!(
             receipt.finality_status,
@@ -232,7 +227,7 @@ mod tests {
         assert_eq!(
             response,
             GetBlockWithTxHashesResponse {
-                block_hash: short_hex_block_hash_as_h256(),
+                block_hash: parse_felt(SHORT_HEX_BLOCK_HASH).unwrap(),
                 block_number: TEST_BLOCK_NUMBER,
             }
         );
