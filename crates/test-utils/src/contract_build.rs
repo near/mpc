@@ -5,24 +5,6 @@ fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-/// `CliDescription` whose command prefix passes `--skip-rust-version-check` to the
-/// `cargo-near` subprocess invoked by `build_with_cli`.
-// TODO(#3363): drop this helper and the `cli_description` override once
-// cargo-near-build ships near/cargo-near#420, then set
-// `BuildOpts::skip_rust_version_check: true` instead.
-pub fn skip_rust_version_check_cli_description() -> cargo_near_build::CliDescription {
-    cargo_near_build::CliDescription {
-        cli_name_abi: "cargo-near".into(),
-        cli_command_prefix: vec![
-            "cargo".into(),
-            "near".into(),
-            "build".into(),
-            "non-reproducible-wasm".into(),
-            "--skip-rust-version-check".into(),
-        ],
-    }
-}
-
 /// Builds a contract and returns the path to the compiled WASM artifact.
 ///
 /// Uses `cargo near build non-reproducible-wasm` under the hood. The caller
@@ -104,16 +86,7 @@ impl ContractBuilder {
             } else {
                 Some(self.features.join(","))
             },
-            // Bypass cargo-near's rustc >= 1.87 refusal: the historical bulk-memory
-            // incompatibility with the nearcore contract VM has been resolved
-            // upstream, so the check is now obsolete and would otherwise block
-            // contract builds with the workspace's current toolchain.
-            //
-            // `BuildOpts::skip_rust_version_check` is honored only by the
-            // in-process build path; `build_with_cli` invokes a separate
-            // `cargo-near` process whose CLI doesn't read that field. We inject
-            // `--skip-rust-version-check` into the prefix so the subprocess sees it.
-            cli_description: skip_rust_version_check_cli_description(),
+            skip_rust_version_check: true,
             ..Default::default()
         };
 
