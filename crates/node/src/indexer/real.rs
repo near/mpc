@@ -8,7 +8,8 @@ use crate::config::RespondConfig;
 use crate::config::load_listening_blocks_file;
 use crate::indexer::configs::IndexerConfigExt;
 use crate::indexer::tee::{
-    monitor_allowed_docker_images, monitor_allowed_launcher_compose_hashes, monitor_tee_accounts,
+    monitor_allowed_docker_images, monitor_allowed_foreign_chain_providers,
+    monitor_allowed_launcher_compose_hashes, monitor_tee_accounts,
 };
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
 use ed25519_dalek::{SigningKey, VerifyingKey};
@@ -58,6 +59,7 @@ pub fn spawn_real_indexer(
     protocol_state_sender: watch::Sender<ProtocolContractState>,
     migration_state_sender: watch::Sender<(u64, ContractMigrationInfo)>,
     tls_public_key: VerifyingKey,
+    foreign_chains: mpc_node_config::ForeignChainsConfig,
 ) -> IndexerAPI<impl TransactionSender, RealForeignChainPolicyReader> {
     let (contract_state_sender_oneshot, contract_state_receiver_oneshot) = oneshot::channel();
     let (migration_info_sender_oneshot, migration_info_receiver_oneshot) = oneshot::channel();
@@ -156,6 +158,17 @@ pub fn spawn_real_indexer(
             tokio::spawn(monitor_tee_accounts(
                 tee_accounts_sender,
                 indexer_state.clone(),
+            ));
+
+            let (foreign_chain_whitelist_sender, foreign_chain_whitelist_receiver) =
+                watch::channel(std::collections::BTreeMap::new());
+            tokio::spawn(monitor_allowed_foreign_chain_providers(
+                foreign_chain_whitelist_sender,
+                indexer_state.clone(),
+            ));
+            tokio::spawn(crate::foreign_chain_whitelist_verifier::run(
+                foreign_chain_whitelist_receiver,
+                foreign_chains.clone(),
             ));
 
             // Returns once the contract state is available.
