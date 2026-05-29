@@ -10,6 +10,7 @@ use httpmock::{HttpMockRequest, HttpMockResponse};
 pub const MOCK_BLOCK_HASH: &str =
     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 pub const MOCK_TX_ID: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+pub const MOCK_STARKNET_BLOCK_NUMBER: u64 = 6_868_546;
 
 fn jsonrpc_error(id: serde_json::Value, method: &str) -> HttpMockResponse {
     let response_body = serde_json::json!({
@@ -139,7 +140,7 @@ pub fn setup_starknet_mock(server: &MockServer) {
                 "starknet_getTransactionReceipt" => starknet_receipt_result(),
                 "starknet_getBlockWithTxHashes" => serde_json::json!({
                     "block_hash": format!("0x{MOCK_BLOCK_HASH}"),
-                    "block_number": 6868546,
+                    "block_number": MOCK_STARKNET_BLOCK_NUMBER,
                 }),
                 other => return jsonrpc_error(id, other),
             };
@@ -167,7 +168,7 @@ fn starknet_receipt_result() -> serde_json::Value {
                     "execution_status": "SUCCEEDED",
                     "finality_status": "ACCEPTED_ON_L1",
                     "block_hash": format!("0x{MOCK_BLOCK_HASH}"),
-                    "block_number": 6868546,
+                    "block_number": MOCK_STARKNET_BLOCK_NUMBER,
                     "messages_sent": [],
                     "events": [
                         {
