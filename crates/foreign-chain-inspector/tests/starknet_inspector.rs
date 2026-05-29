@@ -49,8 +49,8 @@ fn canonical_block_for(receipt: &GetTransactionReceiptResponse) -> GetBlockWithT
     }
 }
 
-#[rstest]
 #[tokio::test]
+#[rstest]
 #[case::requested_l2_actual_l2(
     StarknetFinality::AcceptedOnL2,
     StarknetFinalityStatus::AcceptedOnL2
