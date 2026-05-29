@@ -10,11 +10,7 @@ fn compile_project() -> (Vec<u8>, serde_json::Value) {
         out_dir: Some(to_utf8(out_dir.clone())),
         features: Some("abi".to_string()),
         profile: Some("release-contract".to_string()),
-        // See `test_utils::contract_build` for the rationale; cargo-near's
-        // rustc >= 1.87 refusal is obsolete and the field-based bypass
-        // doesn't reach the `cargo-near` subprocess, so we inject the flag
-        // via the command prefix.
-        cli_description: test_utils::contract_build::skip_rust_version_check_cli_description(),
+        skip_rust_version_check: true,
         ..Default::default()
     };
 

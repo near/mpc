@@ -69,8 +69,7 @@ let
   # resolved upstream, so the check is now obsolete and would otherwise block
   # the build with the workspace's current toolchain. Mirrors the matching
   # workaround in crates/test-utils/src/contract_build.rs.
-  # TODO(#3363): drop `--skip-rust-version-check` once cargo-near removes the
-  # obsolete check.
+  # Drop `--skip-rust-version-check` once cargo-near removes the obsolete check.
   cargoNearArgs = [
     "non-reproducible-wasm"
     "--skip-rust-version-check"
