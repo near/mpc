@@ -17,7 +17,7 @@ use foreign_chain_inspector::{
 
 use assert_matches::assert_matches;
 use foreign_chain_rpc_interfaces::bitcoin::{
-    GetBlockResponse, GetRawTransactionVerboseResponse, TransportBitcoinBlockHash,
+    GetBlockHeaderVerboseResponse, GetRawTransactionVerboseResponse, TransportBitcoinBlockHash,
 };
 use httpmock::prelude::*;
 use httpmock::{HttpMockRequest, HttpMockResponse};
@@ -47,7 +47,7 @@ async fn extract_returns_block_hash_when_confirmations_sufficient(
         blockhash: transport_block_hash,
         confirmations: *confirmations,
     };
-    let block_response = GetBlockResponse {
+    let block_response = GetBlockHeaderVerboseResponse {
         hash: transport_block_hash,
         height: TEST_BLOCK_HEIGHT,
     };
@@ -116,7 +116,7 @@ async fn extract_returns_empty_when_no_extractors_provided() {
         blockhash: transport_block_hash,
         confirmations: *confirmations,
     };
-    let block_response = GetBlockResponse {
+    let block_response = GetBlockHeaderVerboseResponse {
         hash: transport_block_hash,
         height: TEST_BLOCK_HEIGHT,
     };
@@ -165,7 +165,7 @@ async fn extract_propagates_rpc_client_errors() {
 #[tokio::test]
 async fn extract__should_return_non_canonical_block_when_receipt_blockhash_differs_from_canonical()
 {
-    // given: the receipt's blockhash exists (getblock resolves its height) but the canonical hash
+    // given: the receipt's blockhash exists (getblockheader resolves its height) but the canonical hash
     // at that height differs, simulating an RPC that returned a receipt for a side block.
     let tx_id = BitcoinTransactionHash::from([1; 32]);
     let threshold = BlockConfirmations::from(1u64);
@@ -178,7 +178,7 @@ async fn extract__should_return_non_canonical_block_when_receipt_blockhash_diffe
         blockhash: receipt_blockhash,
         confirmations: TEST_SUFFICIENT_CONFIRMATIONS,
     };
-    let block_response = GetBlockResponse {
+    let block_response = GetBlockHeaderVerboseResponse {
         hash: receipt_blockhash,
         height: TEST_BLOCK_HEIGHT,
     };
@@ -209,8 +209,8 @@ async fn extract__should_return_non_canonical_block_when_receipt_blockhash_diffe
 }
 
 #[tokio::test]
-async fn extract__should_propagate_getblock_rpc_error() {
-    // given: getrawtransaction succeeds; getblock returns a payload that fails to deserialize.
+async fn extract__should_propagate_get_block_header_deserialize_error() {
+    // given: getrawtransaction succeeds; getblockheader returns a payload that fails to deserialize.
     let tx_id = BitcoinTransactionHash::from([1; 32]);
     let threshold = BlockConfirmations::from(1u64);
     let receipt_blockhash = TransportBitcoinBlockHash::from([0xbb; 32]);
@@ -236,8 +236,8 @@ async fn extract__should_propagate_getblock_rpc_error() {
 }
 
 #[tokio::test]
-async fn extract__should_propagate_getblockhash_rpc_error() {
-    // given: getrawtransaction and getblock succeed; getblockhash returns an invalid payload.
+async fn extract__should_propagate_getblockhash_deserialize_error() {
+    // given: getrawtransaction and getblockheader succeed; getblockhash returns a payload that fails to deserialize.
     let tx_id = BitcoinTransactionHash::from([1; 32]);
     let threshold = BlockConfirmations::from(1u64);
     let receipt_blockhash = TransportBitcoinBlockHash::from([0xbb; 32]);
@@ -246,7 +246,7 @@ async fn extract__should_propagate_getblockhash_rpc_error() {
         blockhash: receipt_blockhash,
         confirmations: TEST_SUFFICIENT_CONFIRMATIONS,
     };
-    let block_response = GetBlockResponse {
+    let block_response = GetBlockHeaderVerboseResponse {
         hash: receipt_blockhash,
         height: TEST_BLOCK_HEIGHT,
     };
@@ -281,7 +281,7 @@ async fn inspector_extracts_block_hash_via_http_rpc_client() {
         blockhash: transport_block_hash,
         confirmations: TEST_SUFFICIENT_CONFIRMATIONS,
     };
-    let block_response = GetBlockResponse {
+    let block_response = GetBlockHeaderVerboseResponse {
         hash: transport_block_hash,
         height: TEST_BLOCK_HEIGHT,
     };
@@ -296,7 +296,7 @@ async fn inspector_extracts_block_hash_via_http_rpc_client() {
 
             let result = match method {
                 "getrawtransaction" => serde_json::to_value(&tx_response).unwrap(),
-                "getblock" => serde_json::to_value(&block_response).unwrap(),
+                "getblockheader" => serde_json::to_value(&block_response).unwrap(),
                 "getblockhash" => serde_json::to_value(transport_block_hash).unwrap(),
                 other => panic!("unexpected RPC method: {other}"),
             };

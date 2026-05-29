@@ -3,17 +3,16 @@ use jsonrpsee::core::client::ClientT;
 use crate::bitcoin::{BitcoinExtractedValue, BitcoinTransactionHash};
 use crate::{BlockConfirmations, ForeignChainInspectionError, ForeignChainInspector};
 use foreign_chain_rpc_interfaces::bitcoin::{
-    GET_BLOCK_VERBOSITY_HEADER_AND_TXIDS, GetBlockArgs, GetBlockHashArgs, GetBlockResponse,
-    GetRawTransactionArgs, GetRawTransactionVerboseResponse, TransportBitcoinBlockHash,
-    TransportBitcoinTransactionHash,
+    GetBlockHashArgs, GetBlockHeaderArgs, GetBlockHeaderVerboseResponse, GetRawTransactionArgs,
+    GetRawTransactionVerboseResponse, TransportBitcoinBlockHash, TransportBitcoinTransactionHash,
 };
 
 /// https://developer.bitcoin.org/reference/rpc/getrawtransaction.html
 const GET_RAW_TRANSACTION_METHOD: &str = "getrawtransaction";
 const VERBOSE_RESPONSE: bool = true;
 
-/// https://developer.bitcoin.org/reference/rpc/getblock.html
-const GET_BLOCK_METHOD: &str = "getblock";
+/// https://developer.bitcoin.org/reference/rpc/getblockheader.html
+const GET_BLOCK_HEADER_METHOD: &str = "getblockheader";
 /// https://developer.bitcoin.org/reference/rpc/getblockhash.html
 const GET_BLOCK_HASH_METHOD: &str = "getblockhash";
 
@@ -79,22 +78,40 @@ where
     }
 
     /// Checks that the receipt's block is on the canonical chain by resolving its height via
-    /// `getblock` and then asking the RPC for the canonical hash at that height via
+    /// `getblockheader` and then asking the RPC for the canonical hash at that height via
     /// `getblockhash`. `getblockhash` only ever returns canonical blocks, so a mismatch means
     /// the `getrawtransaction` response was anchored to a side block (stale tx index,
     /// partially-applied reorg, divergent RPC backend, etc.).
+    ///
+    /// The two RPC calls are necessarily sequential — `getblockhash`'s height parameter
+    /// depends on `getblockheader`'s response — so a reorg landing between them could in
+    /// principle yield a spurious `NonCanonicalBlock`. The caller is expected to retry.
+    ///
+    /// Failures from the RPCs themselves ("Block not found" / "block height out of range")
+    /// surface as `ClientError` rather than `NonCanonicalBlock`; mapping those error
+    /// messages to a more specific variant is left to a follow-up.
     async fn verify_block_is_canonical(
         &self,
         receipt_blockhash: TransportBitcoinBlockHash,
     ) -> Result<(), ForeignChainInspectionError> {
-        let get_block_args = GetBlockArgs {
+        let get_block_header_args = GetBlockHeaderArgs {
             blockhash: receipt_blockhash,
-            verbosity: GET_BLOCK_VERBOSITY_HEADER_AND_TXIDS,
+            verbose: VERBOSE_RESPONSE,
         };
-        let block: GetBlockResponse = self
+        let block: GetBlockHeaderVerboseResponse = self
             .client
-            .request(GET_BLOCK_METHOD, &get_block_args)
+            .request(GET_BLOCK_HEADER_METHOD, &get_block_header_args)
             .await?;
+
+        // Defensive: `getblockheader(receipt_blockhash)` must echo back the same hash. A
+        // disagreement means the RPC backend has returned a different block than queried.
+        if block.hash != receipt_blockhash {
+            return Err(non_canonical_block_error(
+                block.height,
+                receipt_blockhash,
+                block.hash,
+            ));
+        }
 
         let get_block_hash_args = GetBlockHashArgs {
             height: block.height,
@@ -105,13 +122,28 @@ where
             .await?;
 
         if canonical_blockhash != receipt_blockhash {
-            return Err(ForeignChainInspectionError::NonCanonicalBlock {
-                block_number: block.height,
-                receipt_hash: (*receipt_blockhash).to_vec().into(),
-                canonical_hash: (*canonical_blockhash).to_vec().into(),
-            });
+            return Err(non_canonical_block_error(
+                block.height,
+                receipt_blockhash,
+                canonical_blockhash,
+            ));
         }
         Ok(())
+    }
+}
+
+/// Bitcoin block hashes travel over JSON-RPC in reversed ("RPC byte order") form, so the
+/// bytes recorded here are reversed relative to the on-chain orientation a block explorer
+/// expects. Triagers reading this error need to reverse the hex to look the block up.
+fn non_canonical_block_error(
+    block_number: u64,
+    receipt_blockhash: TransportBitcoinBlockHash,
+    canonical_blockhash: TransportBitcoinBlockHash,
+) -> ForeignChainInspectionError {
+    ForeignChainInspectionError::NonCanonicalBlock {
+        block_number,
+        receipt_hash: (*receipt_blockhash).to_vec().into(),
+        canonical_hash: (*canonical_blockhash).to_vec().into(),
     }
 }
 

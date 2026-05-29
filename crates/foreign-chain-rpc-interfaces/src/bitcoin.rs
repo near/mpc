@@ -41,39 +41,39 @@ impl ToRpcParams for &GetRawTransactionArgs {
     to_rpc_params_impl!();
 }
 
-/// Verbosity level for `getblock` that returns a decoded JSON header (with `height` and `hash`)
-/// plus a list of txids. Lower levels return hex-encoded raw bytes which we'd have to parse.
-pub const GET_BLOCK_VERBOSITY_HEADER_AND_TXIDS: u8 = 1;
-
-/// Partial RPC response for `getblock`. See link below for full spec;
-/// <https://developer.bitcoin.org/reference/rpc/getblock.html>
+/// Partial RPC response for `getblockheader` with `verbose=true`. See link below for full spec;
+/// <https://developer.bitcoin.org/reference/rpc/getblockheader.html>
+///
+/// Prefer `getblockheader` over `getblock` when only `hash`/`height` are needed: `getblock`
+/// (even at verbosity 1) returns the full transaction-id list, which on mainnet adds
+/// substantial bandwidth/latency to every RPC roundtrip.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct GetBlockResponse {
+pub struct GetBlockHeaderVerboseResponse {
     pub hash: TransportBitcoinBlockHash,
     pub height: u64,
 }
 
-/// Request args for `getblock`.
-pub struct GetBlockArgs {
+/// Request args for `getblockheader`.
+pub struct GetBlockHeaderArgs {
     pub blockhash: TransportBitcoinBlockHash,
-    pub verbosity: u8,
+    pub verbose: bool,
 }
 
-impl Serialize for GetBlockArgs {
+impl Serialize for GetBlockHeaderArgs {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        // `getblock` expects a positional list https://developer.bitcoin.org/reference/rpc/getblock.html#argument-1-blockhash
+        // `getblockheader` expects a positional list https://developer.bitcoin.org/reference/rpc/getblockheader.html#argument-1-blockhash
         // 1. blockhash
-        // 2. verbosity
-        let request_parameters = (&self.blockhash, &self.verbosity);
+        // 2. verbose
+        let request_parameters = (&self.blockhash, &self.verbose);
 
         request_parameters.serialize(serializer)
     }
 }
 
-impl ToRpcParams for &GetBlockArgs {
+impl ToRpcParams for &GetBlockHeaderArgs {
     to_rpc_params_impl!();
 }
 

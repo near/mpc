@@ -41,7 +41,7 @@ pub fn setup_bitcoin_mock(server: &MockServer) {
                     "blockhash": MOCK_BLOCK_HASH,
                     "confirmations": MOCK_BITCOIN_CONFIRMATIONS,
                 }),
-                "getblock" => serde_json::json!({
+                "getblockheader" => serde_json::json!({
                     "hash": MOCK_BLOCK_HASH,
                     "height": MOCK_BLOCK_HEIGHT,
                 }),
