@@ -4560,6 +4560,7 @@ expression: abi
               "$ref": "#/definitions/Participants"
             },
             "per_domain_thresholds": {
+              "default": {},
               "type": "object",
               "additionalProperties": {
                 "type": "integer",
