@@ -10,7 +10,7 @@ hex = { workspace = true }
 mpc-attestation = { workspace = true, features = ["test-utils"] }
 mpc-primitives = { workspace = true }
 near-mpc-contract-interface = { workspace = true }
-near-sdk = { workspace = true }
+near-sdk = { workspace = true, features = ["non-contract-usage"] }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 sha2 = { workspace = true }
