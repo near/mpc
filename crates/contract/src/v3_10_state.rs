@@ -26,8 +26,8 @@ use crate::{
         thresholds::{Threshold, ThresholdParameters},
     },
     state::{
-        initializing::InitializingContractState, resharing::ResharingContractState,
-        running::RunningContractState, ProtocolContractState,
+        ProtocolContractState, initializing::InitializingContractState,
+        resharing::ResharingContractState, running::RunningContractState,
     },
     tee::tee_state::TeeState,
     update::ProposedUpdates,
@@ -195,7 +195,7 @@ impl From<MpcContract> for crate::MpcContract {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use crate::primitives::test_utils::{gen_participants, NUM_PROTOCOLS};
+    use crate::primitives::test_utils::{NUM_PROTOCOLS, gen_participants};
 
     /// Borsh round-trip: write a `ThresholdParameters` in the OLD layout
     /// (no `per_domain_thresholds` field), deserialize via the shadow,
