@@ -1,7 +1,7 @@
 use crate::sandbox::{
     common::{
         call_contract_key_generation, execute_key_generation_and_add_random_state, gen_accounts,
-        init, propose_and_vote_contract_binary, submit_attestations,
+        init, propose_and_vote_contract_binary_inline, submit_attestations,
     },
     utils::{
         consts::PARTICIPANT_LEN,
@@ -180,7 +180,10 @@ async fn propose_upgrade_from_production_to_current_binary(
 
     let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
 
-    propose_and_vote_contract_binary(&worker, &accounts, &contract, current_contract()).await;
+    // The deployed contract is the production 3.10.1 binary, which only supports
+    // the inline `propose_update` upgrade flow — it has no chunked-upload endpoints
+    // — so drive the upgrade with the legacy inline helper.
+    propose_and_vote_contract_binary_inline(&accounts, &contract, current_contract()).await;
 
     let state_post_upgrade: ProtocolContractState = get_state(&contract).await;
 

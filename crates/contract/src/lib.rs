@@ -1272,7 +1272,11 @@ impl MpcContract {
             .into());
         }
 
-        let staged = StagedContractUpload::new(args.total_size);
+        // Track the deposit attached to `start` so it is refunded on
+        // `clear_staged_contract`, matching `StagedContractUpload::deposited`'s
+        // documented contract (the sum of `start` + `upload_chunk` deposits).
+        let mut staged = StagedContractUpload::new(args.total_size);
+        staged.deposited = env::attached_deposit();
         self.staged_uploads.insert(caller, staged);
 
         log!(
@@ -1338,12 +1342,12 @@ impl MpcContract {
     /// proposal.
     ///
     /// The upload must be complete (received bytes equal the declared `total_size`).
-    /// This call computes the SHA-256 of the assembled code (streaming through the
-    /// chunks one at a time, so peak WASM memory stays bounded), moves the chunks
-    /// from per-account staging storage into proposal-keyed storage, clears the
-    /// staged metadata, and returns the new [`UpdateId`]. Voters can then call
-    /// [`vote_update`](Self::vote_update) against that id; on threshold approval the chunks are
-    /// reassembled and deployed.
+    /// This call assembles the chunks into a single contiguous buffer to compute the
+    /// SHA-256 of the code (the host `sha256` has no streaming variant), re-keys the
+    /// chunk bytes from per-account staging storage into proposal-keyed storage,
+    /// clears the staged metadata, and returns the new [`UpdateId`]. Voters can then
+    /// call [`vote_update`](Self::vote_update) against that id; on threshold approval
+    /// the chunks are reassembled and deployed.
     #[handle_result]
     pub fn finalize_contract_upload(&mut self) -> Result<UpdateId, Error> {
         let caller = self.voter_or_panic();
@@ -1512,14 +1516,6 @@ impl MpcContract {
 
         let promise = Promise::new(env::current_account_id());
         match result.executing {
-            Update::Contract(code) => {
-                let _ = promise.deploy_contract(code).function_call(
-                    method_names::MIGRATE,
-                    Vec::new(),
-                    NearToken::from_near(0),
-                    update_gas_deposit,
-                );
-            }
             Update::ContractChunked {
                 total_size,
                 num_chunks,
@@ -4840,9 +4836,13 @@ mod tests {
 
     fn propose_and_vote_code(expected_update_id: u64, contract: &mut MpcContract) -> TestUpdate {
         let code: [u8; 1000] = std::array::from_fn(|_| rand::random());
-        let hash = Sha256::digest(code);
-        let update = Update::Contract(code.into());
-        let expected_update_hash = dtos::UpdateHash::Code(hash.into());
+        let code_hash: [u8; 32] = Sha256::digest(code).into();
+        let update = Update::ContractChunked {
+            total_size: code.len() as u64,
+            num_chunks: 1,
+            code_hash,
+        };
+        let expected_update_hash = dtos::UpdateHash::Code(code_hash);
         let expected_votes = propose_and_vote(contract, update, expected_update_id);
         TestUpdate {
             update_id: expected_update_id,
@@ -5094,9 +5094,17 @@ mod tests {
         let mut contract =
             MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
 
-        let update_id = contract
-            .proposed_updates
-            .propose(Update::Contract([0; 1000].into()));
+        let update_id = contract.proposed_updates.propose(Update::ContractChunked {
+            total_size: 1000,
+            num_chunks: 1,
+            code_hash: [0u8; 32],
+        });
+        // The threshold-reaching `vote_update` below reassembles the chunked
+        // proposal and issues the deploy, so the chunk bytes must be present
+        // under the reserved update id.
+        contract
+            .update_code_chunks
+            .insert((update_id, 0), vec![0u8; 1000]);
 
         // given: 2 non-participant votes + 1 participant vote (simulating old voters from before resharing)
         contract.proposed_updates.vote(&update_id, gen_account_id());

@@ -1302,10 +1302,15 @@ async fn create_user_accounts(
     Ok(map)
 }
 
-/// Borsh-encoded mirror of the contract's `ProposeUpdateArgs`. We keep it
-/// local rather than depending on `mpc-contract` for two fields. `Config` is
-/// modeled as `Option<()>` because we never propose a config-only update; the
-/// `None` discriminator is `[0u8]` regardless of the inner type.
+/// Borsh-encoded mirror of the *legacy* `ProposeUpdateArgs` (the `{ code, config }`
+/// shape from production contract versions that predate the chunked-upload flow).
+/// The contract-upgrade-compatibility test
+/// boots the production binary and upgrades it in place, and that production binary
+/// still accepts an inline `code` blob via `propose_update`. The current contract
+/// dropped inline code uploads in favor of the chunked-upload flow, so this mirror
+/// intentionally does not match the current `mpc-contract::ProposeUpdateArgs`.
+/// `config` is modeled as `Option<()>` because we never propose a config-only update;
+/// the `None` discriminator is `[0u8]` regardless of the inner type.
 #[derive(borsh::BorshSerialize)]
 struct ProposeUpdateArgsBorsh<'a> {
     code: Option<&'a [u8]>,
