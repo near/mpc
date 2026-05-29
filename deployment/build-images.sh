@@ -198,7 +198,10 @@ if $USE_PUSH; then
     fi
     sanitized_branch_name="${branch_name//\//-}"
 
-    short_hash=$(git rev-parse --short HEAD)
+    # Fixed 7-char truncation (not `git rev-parse --short`) so the tag is a
+    # pure function of the SHA — the Release workflow computes the same
+    # string via `${SHA::7}` when looking up the image to retag.
+    short_hash="${GIT_COMMIT_HASH:0:7}"
     image_tag="$sanitized_branch_name-$short_hash"
     echo "Using branch-hash tag: $image_tag"
 
