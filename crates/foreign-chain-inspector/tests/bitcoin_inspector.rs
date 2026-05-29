@@ -25,6 +25,7 @@ use jsonrpsee::core::client::error::Error as RpcClientError;
 use rstest::rstest;
 
 const TEST_BLOCK_HEIGHT: u64 = 800_000;
+const TEST_SUFFICIENT_CONFIRMATIONS: u64 = 10;
 
 #[rstest]
 #[case::confirmations_equals_threshold(BlockConfirmations::from(1), BlockConfirmations::from(1))]
@@ -168,12 +169,14 @@ async fn extract__should_return_non_canonical_block_when_receipt_blockhash_diffe
     // at that height differs, simulating an RPC that returned a receipt for a side block.
     let tx_id = BitcoinTransactionHash::from([1; 32]);
     let threshold = BlockConfirmations::from(1u64);
-    let receipt_blockhash = TransportBitcoinBlockHash::from([0xbb; 32]);
-    let canonical_blockhash = TransportBitcoinBlockHash::from([0xcc; 32]);
+    let receipt_hash_bytes = [0xbb; 32];
+    let canonical_hash_bytes = [0xcc; 32];
+    let receipt_blockhash = TransportBitcoinBlockHash::from(receipt_hash_bytes);
+    let canonical_blockhash = TransportBitcoinBlockHash::from(canonical_hash_bytes);
 
     let tx_response = GetRawTransactionVerboseResponse {
         blockhash: receipt_blockhash,
-        confirmations: 10,
+        confirmations: TEST_SUFFICIENT_CONFIRMATIONS,
     };
     let block_response = GetBlockResponse {
         hash: receipt_blockhash,
@@ -200,8 +203,8 @@ async fn extract__should_return_non_canonical_block_when_receipt_blockhash_diffe
             receipt_hash,
             canonical_hash,
         }) if block_number == TEST_BLOCK_HEIGHT
-            && receipt_hash == foreign_chain_inspector::HexBytes(vec![0xbb; 32])
-            && canonical_hash == foreign_chain_inspector::HexBytes(vec![0xcc; 32])
+            && receipt_hash == foreign_chain_inspector::HexBytes(receipt_hash_bytes.to_vec())
+            && canonical_hash == foreign_chain_inspector::HexBytes(canonical_hash_bytes.to_vec())
     );
 }
 
@@ -214,7 +217,7 @@ async fn extract__should_propagate_getblock_rpc_error() {
 
     let tx_response = GetRawTransactionVerboseResponse {
         blockhash: receipt_blockhash,
-        confirmations: 10,
+        confirmations: TEST_SUFFICIENT_CONFIRMATIONS,
     };
 
     let mock_client = SequentialResponseMockClientBuilder::new()
@@ -241,7 +244,7 @@ async fn extract__should_propagate_getblockhash_rpc_error() {
 
     let tx_response = GetRawTransactionVerboseResponse {
         blockhash: receipt_blockhash,
-        confirmations: 10,
+        confirmations: TEST_SUFFICIENT_CONFIRMATIONS,
     };
     let block_response = GetBlockResponse {
         hash: receipt_blockhash,
@@ -272,12 +275,11 @@ async fn inspector_extracts_block_hash_via_http_rpc_client() {
     let tx_id = BitcoinTransactionHash::from([9; 32]);
     let expected_block_hash = BitcoinBlockHash::from([5; 32]);
     let transport_block_hash = TransportBitcoinBlockHash::from(*expected_block_hash);
-    let confirmations = 10u64;
     let threshold = BlockConfirmations::from(6u64);
 
     let tx_response = GetRawTransactionVerboseResponse {
         blockhash: transport_block_hash,
-        confirmations,
+        confirmations: TEST_SUFFICIENT_CONFIRMATIONS,
     };
     let block_response = GetBlockResponse {
         hash: transport_block_hash,
