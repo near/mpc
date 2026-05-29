@@ -49,7 +49,6 @@ fn canonical_block_for(receipt: &GetTransactionReceiptResponse) -> GetBlockWithT
     }
 }
 
-#[tokio::test]
 #[rstest]
 #[case::requested_l2_actual_l2(
     StarknetFinality::AcceptedOnL2,
@@ -63,6 +62,7 @@ fn canonical_block_for(receipt: &GetTransactionReceiptResponse) -> GetBlockWithT
     StarknetFinality::AcceptedOnL1,
     StarknetFinalityStatus::AcceptedOnL1
 )]
+#[tokio::test]
 async fn extract__should_return_block_hash_when_finality_is_sufficient(
     #[case] requested_finality: StarknetFinality,
     #[case] actual_finality_status: StarknetFinalityStatus,

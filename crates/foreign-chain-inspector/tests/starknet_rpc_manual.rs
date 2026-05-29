@@ -21,15 +21,15 @@ const FINALIZED_BLOCK_HASH: &str =
 /// `None` for both `tx_hash`/`expected_block_hash` means "resolve at runtime from
 /// the live `starknet_getBlockWithTxHashes("latest")` lookup"; both `Some` means
 /// "use these hardcoded constants for a known L1-finalized mainnet tx."
-#[tokio::test]
 #[rstest]
-#[ignore = "manual test: extract block hash against live RPC provider"]
 #[case::latest(None, None, StarknetFinality::AcceptedOnL2)]
 #[case::finalized(
     Some(FINALIZED_TX_HASH),
     Some(FINALIZED_BLOCK_HASH),
     StarknetFinality::AcceptedOnL1
 )]
+#[ignore = "manual test: extract block hash against live RPC provider"]
+#[tokio::test]
 async fn inspector_extracts_block_hash_against_live_rpc_provider(
     #[case] tx_hash: Option<&'static str>,
     #[case] expected_block_hash: Option<&'static str>,

@@ -19,13 +19,13 @@ use httpmock::prelude::*;
 use jsonrpsee::core::client::error::Error as RpcClientError;
 use rstest::rstest;
 
-#[tokio::test]
 #[rstest]
 #[case::confirmations_equals_threshold(BlockConfirmations::from(1), BlockConfirmations::from(1))]
 #[case::confirmations_greater_than_threshold(
     BlockConfirmations::from(2),
     BlockConfirmations::from(1)
 )]
+#[tokio::test]
 async fn extract_returns_block_hash_when_confirmations_sufficient(
     #[case] confirmations: BlockConfirmations,
     #[case] threshold: BlockConfirmations,
