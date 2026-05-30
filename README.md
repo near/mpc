@@ -153,10 +153,9 @@ We run several checks in CI that require tools beyond the default Rust toolchain
 - [`cargo-shear`](https://github.com/Boshen/cargo-shear)
 - [`cargo-deny`](https://github.com/EmbarkStudios/cargo-deny)
 - [`zizmor`](https://github.com/woodruffw/zizmor)
-- [`ruff`](https://github.com/astral-sh/ruff)
 - [`lychee`](https://github.com/lycheeverse/lychee)
 - [`editorconfig-checker`](https://github.com/editorconfig-checker/editorconfig-checker)
-- [`python`](https://www.python.org/) (3.11) with [`tree-sitter`](https://pypi.org/project/tree-sitter/) and [`tree-sitter-rust`](https://pypi.org/project/tree-sitter-rust/)
+- [`ast-grep`](https://github.com/ast-grep/ast-grep)
 
 This set does not include all checks, but only the most common reasons for CI
 failures. Therefore, we suggest running these checks locally before opening a
