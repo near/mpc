@@ -842,7 +842,7 @@ Use the following custom settings for MPC:
 1. Launcher docker compose file - provided above.
 2. VM HW setting (use exactly those settings, since vCPU/Memory are measured):
     vCPU number=8, Memory = 64GB, disk = 500 GB
-3. Pre script - empty.
+3. Pre-launch Script and Init Script - both must be empty (a non-empty script fails attestation).
 4. user-config - provided above
 5. Toggles:
    - KMS = disable
