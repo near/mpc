@@ -562,7 +562,7 @@ expression: abi
       },
       {
         "name": "finalize_contract_upload",
-        "doc": " Finalize the caller's chunked upload and register it as a contract-code\n proposal.\n\n The upload must be complete (received bytes equal the declared `total_size`).\n Computes the SHA-256 of the assembled code — recorded on the proposal so voters\n can confirm what they are approving — and returns the new [`UpdateId`]. Voters\n then call [`vote_update`](Self::vote_update) against that id; on threshold\n approval the code is deployed.",
+        "doc": " Finalize the caller's chunked upload and register it as a contract-code\n proposal.\n\n The upload must be complete (received bytes equal the declared `total_size`).\n Assembles the uploaded chunks into the full contract binary and registers it as\n an ordinary contract-code proposal — the same kind a single-transaction code\n proposal would create — returning the new [`UpdateId`]. Voters then call\n [`vote_update`](Self::vote_update) against that id; on threshold approval the\n binary is deployed. This is the only way to propose contract code;\n [`propose_update`](Self::propose_update) handles config changes only.",
         "kind": "call",
         "result": {
           "serialization_type": "json",

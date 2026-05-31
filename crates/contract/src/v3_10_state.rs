@@ -91,9 +91,9 @@ impl From<MpcContract> for crate::MpcContract {
         // is guaranteed empty. Drop it and default-initialize the current reshaped
         // whitelist (empty `entries`, empty `votes.pending`).
         //
-        // The chunked-upload maps (`staged_uploads`, `staged_chunks`, `update_code`)
-        // are new in this version, so they default-initialize to empty `LookupMap`s
-        // backed by fresh storage keys.
+        // The chunked-upload maps (`staged_uploads`, `staged_chunks`) are new in this
+        // version, so they default-initialize to empty `LookupMap`s backed by fresh
+        // storage keys.
         crate::MpcContract {
             protocol_state: old.protocol_state,
             pending_signature_requests: old.pending_signature_requests,
@@ -102,7 +102,6 @@ impl From<MpcContract> for crate::MpcContract {
             proposed_updates: old.proposed_updates,
             staged_uploads: IterableMap::new(StorageKey::StagedContractUploads),
             staged_chunks: LookupMap::new(StorageKey::StagedContractChunks),
-            update_code: LookupMap::new(StorageKey::UpdateCode),
             node_foreign_chain_support: old.node_foreign_chain_support,
             config: old.config,
             tee_state: old.tee_state,

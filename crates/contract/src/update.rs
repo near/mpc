@@ -10,9 +10,10 @@ use crate::{
 use borsh::{self, BorshDeserialize, BorshSerialize};
 use derive_more::Deref;
 use near_account_id::AccountId;
+use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::UpdateHash;
 use near_sdk::{
-    NearToken, env, near,
+    Gas, NearToken, Promise, env, near,
     serde::{Deserialize, Serialize},
     store::IterableMap,
 };
@@ -67,21 +68,9 @@ impl From<u64> for UpdateId {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
-// NB: borsh enum discriminants are positional, so reordering or removing variants
-// changes the on-disk encoding. That is only safe given the contract invariant that
-// `do_update` clears all pending proposals before any code deploy, and that migration
-// never deserializes stored proposal values.
-/// A pending update awaiting threshold approval: either a configuration change or a
-/// chunked contract-code proposal.
 pub enum Update {
+    Contract(Vec<u8>),
     Config(near_mpc_contract_interface::types::Config),
-    /// A contract-code proposal whose code was uploaded in chunks. The proposal holds
-    /// only `code_hash` (the SHA-256 of the assembled code); the code itself is stored
-    /// separately, keyed by the proposal id, so the proposal stays small regardless of
-    /// binary size. Voters compare `code_hash` against the binary they intend to approve.
-    ContractChunked {
-        code_hash: [u8; 32],
-    },
 }
 
 #[derive(
@@ -145,30 +134,6 @@ pub struct UploadContractChunkArgs {
     /// Bytes to append to the caller's in-progress upload. Chunks are appended in
     /// transmission order; there is no per-chunk index parameter.
     pub data: Vec<u8>,
-}
-
-#[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    serde::Serialize,
-    serde::Deserialize,
-    borsh::BorshSerialize,
-    borsh::BorshDeserialize,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
-)]
-pub(crate) struct UpdateEntry {
-    pub(super) update: Update,
-    pub(super) bytes_used: u128,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(super) struct UpdateVotes {
-    pub(super) votes: BTreeMap<AccountId, UpdateId>,
-    pub(super) updates: BTreeMap<UpdateId, UpdateHash>,
 }
 
 /// Per-account metadata for an in-progress chunked contract upload.
@@ -239,6 +204,30 @@ impl StagedContractUpload {
     }
 }
 
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    serde::Serialize,
+    serde::Deserialize,
+    borsh::BorshSerialize,
+    borsh::BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub(crate) struct UpdateEntry {
+    pub(super) update: Update,
+    pub(super) bytes_used: u128,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct UpdateVotes {
+    pub(super) votes: BTreeMap<AccountId, UpdateId>,
+    pub(super) updates: BTreeMap<UpdateId, UpdateHash>,
+}
+
 #[near(serializers=[borsh ])]
 #[derive(Debug)]
 pub struct ProposedUpdates {
@@ -272,13 +261,6 @@ impl ProposedUpdates {
         id
     }
 
-    /// Returns the [`UpdateId`] that the next call to [`Self::propose`] will assign,
-    /// without consuming it. Used by the chunked-upload flow so that chunks can be
-    /// written under their final `(UpdateId, chunk_index)` key in a single pass.
-    pub fn peek_next_id(&self) -> UpdateId {
-        self.id
-    }
-
     /// Records a vote by [`AccountId`] for the update with the given [`UpdateId`].
     ///
     /// If the voter has already voted for a different update, that vote is automatically removed
@@ -298,30 +280,38 @@ impl ProposedUpdates {
         Some(())
     }
 
-    /// Removes the entry for `id`, clears all other pending entries and votes,
-    /// and returns the executing update along with the dropped sibling updates
-    /// so the caller can clean up any associated external storage (e.g. chunk
-    /// `LookupMap` entries for chunked-contract proposals).
-    ///
-    /// Returns `None` if no entry exists for `id`.
-    pub fn do_update(&mut self, id: &UpdateId) -> Option<DoUpdateResult> {
+    pub fn do_update(&mut self, id: &UpdateId, gas: Gas) -> Option<Promise> {
         let entry = self.entries.remove(id)?;
 
-        // The remaining entries are invalidated by the contract state change. Collect
-        // them so the caller can clean up any externally-stored data (chunked code).
-        let dropped: Vec<(UpdateId, Update)> = self
-            .entries
-            .iter()
-            .map(|(k, v)| (*k, v.update.clone()))
-            .collect();
-
+        // Clear all entries as they might be no longer valid
         self.entries.clear();
         self.vote_by_participant.clear();
 
-        Some(DoUpdateResult {
-            executing: entry.update,
-            dropped,
-        })
+        let mut promise = Promise::new(env::current_account_id());
+        match entry.update {
+            Update::Contract(code) => {
+                // deploy contract then do a `migrate` call to migrate state.
+                promise = promise.deploy_contract(code).function_call(
+                    method_names::MIGRATE,
+                    Vec::new(),
+                    NearToken::from_near(0),
+                    gas,
+                );
+            }
+            Update::Config(config) => {
+                // If we vote for a new config, we should use
+                // the value `contract_upgrade_deposit_tera_gas` from the config
+                // as the new gas value
+                let new_config_gas_value = Gas::from_tgas(config.contract_upgrade_deposit_tera_gas);
+                promise = promise.function_call(
+                    method_names::UPDATE_CONFIG,
+                    serde_json::to_vec(&(&config,)).unwrap(),
+                    NearToken::from_near(0),
+                    new_config_gas_value,
+                );
+            }
+        }
+        Some(promise)
     }
 
     /// Removes the vote for [`AccountId`].
@@ -373,17 +363,6 @@ impl ProposedUpdates {
     }
 }
 
-/// Outcome of [`ProposedUpdates::do_update`]. `executing` is the update being
-/// applied; `dropped` are sibling updates that were cleared because the
-/// contract state is about to change in a way that invalidates them. Both lists
-/// may reference chunked-contract proposals whose chunk storage the caller is
-/// responsible for cleaning up.
-#[derive(Debug)]
-pub struct DoUpdateResult {
-    pub executing: Update,
-    pub dropped: Vec<(UpdateId, Update)>,
-}
-
 fn bytes_used(update: &Update) -> u128 {
     let mut bytes_used = std::mem::size_of::<UpdateEntry>() as u128;
 
@@ -391,14 +370,12 @@ fn bytes_used(update: &Update) -> u128 {
     bytes_used += 128 * std::mem::size_of::<AccountId>() as u128;
 
     match update {
+        Update::Contract(code) => {
+            bytes_used += code.len() as u128;
+        }
         Update::Config(config) => {
             let bytes = serde_json::to_vec(&config).unwrap();
             bytes_used += bytes.len() as u128;
-        }
-        Update::ContractChunked { .. } => {
-            // The chunked variant carries only fixed-size metadata in the
-            // proposal entry; the chunk bytes themselves are paid for during
-            // `upload_contract_chunk` and live in a separate `LookupMap`.
         }
     }
 
@@ -410,27 +387,16 @@ fn required_deposit(bytes_used: u128) -> NearToken {
 }
 
 #[cfg(test)]
-#[expect(non_snake_case)]
 mod tests {
     use crate::{
         dto_mapping::IntoInterfaceType,
         primitives::test_utils::{gen_account_id, gen_participants},
-        update::{
-            ProposedUpdates, StagedContractUpload, Update, UpdateEntry, UpdateId, bytes_used,
-        },
+        update::{ProposedUpdates, Update, UpdateEntry, UpdateId, bytes_used},
     };
     use near_account_id::AccountId;
+    use near_sdk::Gas;
     use std::collections::{BTreeMap, HashSet};
     use test_utils::contract_types::dummy_config;
-
-    /// Builds a distinct chunked-contract update for tests that only need *some*
-    /// `Update` value. `seed` makes the `code_hash` (and thus the whole value)
-    /// unique so proposals can be told apart.
-    fn chunked(seed: u8) -> Update {
-        Update::ContractChunked {
-            code_hash: [seed; 32],
-        }
-    }
 
     /// Helper struct for testing. Mirrors [`ProposedUpdates`] structure with native types.
     #[derive(Debug, PartialEq)]
@@ -460,7 +426,7 @@ mod tests {
     #[test]
     fn test_proposed_updates_propose_update() {
         let mut proposed_updates = ProposedUpdates::default();
-        let update = chunked(0);
+        let update = Update::Contract([0; 1000].into());
         let bytes_used = bytes_used(&update);
         let expected_update_id = 0.into();
         // assert return value (update id) matches
@@ -505,10 +471,10 @@ mod tests {
     #[test]
     fn test_proposed_updates_vote_update_simple() {
         let mut proposed_updates = ProposedUpdates::default();
-        let update_0 = chunked(0);
+        let update_0 = Update::Contract([0; 1000].into());
         let update_id_0 = proposed_updates.propose(update_0.clone());
         assert_eq!(update_id_0.0, 0);
-        let update_1 = chunked(1);
+        let update_1 = Update::Contract([1; 1000].into());
         let bytes_used = bytes_used(&update_0);
         let update_id_1 = proposed_updates.propose(update_1.clone());
         assert_eq!(update_id_1.0, 1);
@@ -547,7 +513,7 @@ mod tests {
     #[test]
     fn test_proposed_updates_remove_vote() {
         let mut proposed_updates = ProposedUpdates::default();
-        let update_0 = chunked(0);
+        let update_0 = Update::Contract([0; 1000].into());
         let bytes_used = bytes_used(&update_0);
         let update_id_0 = proposed_updates.propose(update_0.clone());
         assert_eq!(update_id_0.0, 0);
@@ -581,10 +547,10 @@ mod tests {
     #[test]
     fn test_proposed_updates_change_vote() {
         let mut proposed_updates = ProposedUpdates::default();
-        let update_0 = chunked(0);
+        let update_0 = Update::Contract([0; 1000].into());
         let update_id_0 = proposed_updates.propose(update_0.clone());
         assert_eq!(update_id_0.0, 0);
-        let update_1 = chunked(1);
+        let update_1 = Update::Contract([1; 1000].into());
         let bytes_used = bytes_used(&update_0);
         let update_id_1 = proposed_updates.propose(update_1.clone());
         assert_eq!(update_id_1.0, 1);
@@ -632,7 +598,7 @@ mod tests {
     #[test]
     fn test_proposed_updates_invalid_vote_removes_previous_vote() {
         let mut proposed_updates = ProposedUpdates::default();
-        let update_0 = chunked(0);
+        let update_0 = Update::Contract([0; 1000].into());
         let bytes_used = bytes_used(&update_0);
         let update_id_0 = proposed_updates.propose(update_0.clone());
         assert_eq!(update_id_0.0, 0);
@@ -672,10 +638,10 @@ mod tests {
         // Given: multiple update proposals with votes from different accounts
         let mut proposed_updates = ProposedUpdates::default();
 
-        let update_0 = chunked(0);
+        let update_0 = Update::Contract([0; 1000].into());
         let update_id_0 = proposed_updates.propose(update_0.clone());
 
-        let update_1 = chunked(1);
+        let update_1 = Update::Contract([1; 1000].into());
         let update_id_1 = proposed_updates.propose(update_1.clone());
 
         let update_2 = Update::Config(dummy_config(1));
@@ -724,7 +690,7 @@ mod tests {
         assert_eq!(before, expected_before);
 
         // When: executing an update
-        proposed_updates.do_update(&update_id_1);
+        proposed_updates.do_update(&update_id_1, Gas::from_tgas(100));
 
         // Then: all state is cleared (entries and votes)
         let after: TestUpdateVotes = (&proposed_updates).try_into().unwrap();
@@ -765,10 +731,10 @@ mod tests {
         assert_eq!(result.votes, BTreeMap::new());
         assert_eq!(result.updates, BTreeMap::new());
 
-        let update_0 = chunked(0);
+        let update_0 = Update::Contract([0; 1000].into());
         let update_id_0 = proposed_updates.propose(update_0.clone());
         assert_eq!(update_id_0.0, 0);
-        let update_1 = chunked(1);
+        let update_1 = Update::Contract([1; 1000].into());
         let update_id_1 = proposed_updates.propose(update_1.clone());
         assert_eq!(update_id_1.0, 1);
 
@@ -805,7 +771,7 @@ mod tests {
     #[test]
     fn test_proposed_updates_remove_votes() {
         let mut proposed_updates = ProposedUpdates::default();
-        let update = chunked(0);
+        let update = Update::Contract([0; 1000].into());
         let bytes_used = bytes_used(&update);
         let update_id = proposed_updates.propose(update.clone());
 
@@ -835,7 +801,7 @@ mod tests {
     #[test]
     fn test_proposed_updates_remove_non_participant_votes() {
         let mut proposed_updates = ProposedUpdates::default();
-        let update = chunked(0);
+        let update = Update::Contract([0; 1000].into());
         let bytes_used = bytes_used(&update);
         let update_id = proposed_updates.propose(update.clone());
 
@@ -874,7 +840,7 @@ mod tests {
         let mut proposed_updates = ProposedUpdates::default();
         assert!(proposed_updates.voters().is_empty());
 
-        let update = chunked(0);
+        let update = Update::Contract([0; 1000].into());
         let bytes_used = bytes_used(&update);
         let update_id = proposed_updates.propose(update.clone());
         let (acc0, acc1, acc2) = (gen_account_id(), gen_account_id(), gen_account_id());
@@ -922,39 +888,9 @@ mod tests {
         assert_eq!(result, expected_after_removal);
     }
 
-    #[test]
-    fn do_update__should_return_executing_and_dropped_updates() {
-        // Given
-        let mut proposed_updates = ProposedUpdates::default();
-        let update_a = chunked(0);
-        let update_b = chunked(1);
-        let update_c = Update::Config(dummy_config(1));
-        let id_a = proposed_updates.propose(update_a.clone());
-        let id_b = proposed_updates.propose(update_b.clone());
-        let id_c = proposed_updates.propose(update_c.clone());
-
-        // When: executing update b
-        let result = proposed_updates
-            .do_update(&id_b)
-            .expect("update should be found");
-
-        // Then: result reports b as executing and a + c as dropped
-        assert_eq!(result.executing, update_b);
-        let dropped: BTreeMap<UpdateId, Update> = result.dropped.into_iter().collect();
-        assert_eq!(
-            dropped,
-            BTreeMap::from([(id_a, update_a), (id_c, update_c)])
-        );
-    }
-
-    #[test]
-    fn do_update__should_return_none_when_update_id_is_unknown() {
-        let mut proposed_updates = ProposedUpdates::default();
-        assert!(proposed_updates.do_update(&UpdateId(42)).is_none());
-    }
-
+    #[expect(non_snake_case)]
     mod staged_contract_upload {
-        use super::StagedContractUpload;
+        use crate::update::StagedContractUpload;
 
         #[test]
         fn record_chunk__should_track_received_bytes_and_assign_indices() {

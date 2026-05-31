@@ -34,8 +34,4 @@ pub enum StorageKey {
     StagedContractUploads,
     /// Chunk bytes belonging to in-progress uploads, keyed by `(AccountId, chunk_index)`.
     StagedContractChunks,
-    /// Assembled contract code for finalized chunked-contract proposals, keyed by
-    /// `UpdateId`. Survives until the proposal is voted through or invalidated by a
-    /// sibling update being applied.
-    UpdateCode,
 }

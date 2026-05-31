@@ -164,10 +164,6 @@ pub struct MpcContract {
     /// so appending a chunk only writes the new chunk's bytes — not the entire
     /// accumulated blob.
     staged_chunks: LookupMap<(AccountId, u32), Vec<u8>>,
-    /// Assembled contract code for finalized chunked-contract proposals, keyed by
-    /// `UpdateId`. Populated on `finalize_contract_upload` and drained when the
-    /// proposal is applied or invalidated by a sibling.
-    update_code: LookupMap<UpdateId, Vec<u8>>,
     node_foreign_chain_support: SupportedForeignChainsByNode,
     config: Config,
     tee_state: TeeState,
@@ -1342,10 +1338,12 @@ impl MpcContract {
     /// proposal.
     ///
     /// The upload must be complete (received bytes equal the declared `total_size`).
-    /// Computes the SHA-256 of the assembled code — recorded on the proposal so voters
-    /// can confirm what they are approving — and returns the new [`UpdateId`]. Voters
-    /// then call [`vote_update`](Self::vote_update) against that id; on threshold
-    /// approval the code is deployed.
+    /// Assembles the uploaded chunks into the full contract binary and registers it as
+    /// an ordinary contract-code proposal — the same kind a single-transaction code
+    /// proposal would create — returning the new [`UpdateId`]. Voters then call
+    /// [`vote_update`](Self::vote_update) against that id; on threshold approval the
+    /// binary is deployed. This is the only way to propose contract code;
+    /// [`propose_update`](Self::propose_update) handles config changes only.
     #[handle_result]
     pub fn finalize_contract_upload(&mut self) -> Result<UpdateId, Error> {
         let caller = self.voter_or_panic();
@@ -1375,40 +1373,26 @@ impl MpcContract {
         let num_chunks = staged.num_chunks;
         let total_size = staged.total_size;
 
-        // Reserve the proposal id before we store the code so it can be keyed by it.
-        let id = self.proposed_updates.peek_next_id();
-
-        // Drain the staged chunks into a single contiguous buffer. The upload was
-        // split only to fit the per-transaction RPC payload limit; on-chain the whole
-        // binary fits in one storage value (a deployable contract is bounded by
-        // `max_contract_size`, which equals `max_length_storage_value`). So we hash
-        // the assembled code with the host `sha256` (which has no streaming variant)
-        // and store it as a single value keyed by the proposal id.
-        let mut assembled = Vec::with_capacity(total_size as usize);
+        // The upload was split only to fit the per-transaction RPC payload limit.
+        // On-chain that limit is gone, so reassemble the chunks into the full binary
+        // and register it as a normal `Update::Contract` proposal; the proposal then
+        // behaves exactly like one made before chunked upload existed.
+        let mut code = Vec::with_capacity(total_size as usize);
         for i in 0..num_chunks {
             let chunk = self
                 .staged_chunks
                 .remove(&(caller.clone(), i))
                 .expect("chunk recorded in staged metadata must be present in staged_chunks");
-            assembled.extend_from_slice(&chunk);
+            code.extend_from_slice(&chunk);
         }
-        let code_hash: [u8; 32] = env::sha256_array(&assembled);
-        self.update_code.insert(id, assembled);
-
-        let update = Update::ContractChunked { code_hash };
-        let registered_id = self.proposed_updates.propose(update);
-        debug_assert_eq!(
-            registered_id, id,
-            "reserved id must match the id assigned by propose()"
-        );
+        let id = self.proposed_updates.propose(Update::Contract(code));
 
         log!(
-            "finalize_contract_upload: signer={}, id={:?}, total_size={}, num_chunks={}, code_hash={:?}",
+            "finalize_contract_upload: signer={}, id={:?}, total_size={}, num_chunks={}",
             env::signer_account_id(),
             id,
             total_size,
             num_chunks,
-            code_hash,
         );
 
         Ok(id)
@@ -1491,45 +1475,9 @@ impl MpcContract {
 
         let update_gas_deposit = Gas::from_tgas(self.config.contract_upgrade_deposit_tera_gas);
 
-        let Some(result) = self.proposed_updates.do_update(&id) else {
+        let Some(_promise) = self.proposed_updates.do_update(&id, update_gas_deposit) else {
             return Err(InvalidParameters::UpdateNotFound.into());
         };
-
-        // Discard stored code for sibling proposals that are now invalidated.
-        for (dropped_id, dropped_update) in result.dropped {
-            if let Update::ContractChunked { .. } = dropped_update {
-                self.update_code.remove(&dropped_id);
-            }
-        }
-
-        let promise = Promise::new(env::current_account_id());
-        match result.executing {
-            Update::ContractChunked { .. } => {
-                // Drain the stored code and deploy it; removing it first means we
-                // stop paying storage for it once the deploy lands.
-                let code = self
-                    .update_code
-                    .remove(&id)
-                    .expect("chunked-contract proposal must have its code present at deploy time");
-                let _ = promise.deploy_contract(code).function_call(
-                    method_names::MIGRATE,
-                    Vec::new(),
-                    NearToken::from_near(0),
-                    update_gas_deposit,
-                );
-            }
-            Update::Config(config) => {
-                // The new config's `contract_upgrade_deposit_tera_gas` value is the gas
-                // to spend on the call that applies it.
-                let new_config_gas_value = Gas::from_tgas(config.contract_upgrade_deposit_tera_gas);
-                let _ = promise.function_call(
-                    method_names::UPDATE_CONFIG,
-                    serde_json::to_vec(&(&config,)).unwrap(),
-                    NearToken::from_near(0),
-                    new_config_gas_value,
-                );
-            }
-        }
 
         Ok(true)
     }
@@ -2005,7 +1953,6 @@ impl MpcContract {
             proposed_updates: ProposedUpdates::default(),
             staged_uploads: IterableMap::new(StorageKey::StagedContractUploads),
             staged_chunks: LookupMap::new(StorageKey::StagedContractChunks),
-            update_code: LookupMap::new(StorageKey::UpdateCode),
             config: init_config.map(Into::into).unwrap_or_default(),
             tee_state,
             accept_requests: true,
@@ -2077,7 +2024,6 @@ impl MpcContract {
             proposed_updates: Default::default(),
             staged_uploads: IterableMap::new(StorageKey::StagedContractUploads),
             staged_chunks: LookupMap::new(StorageKey::StagedContractChunks),
-            update_code: LookupMap::new(StorageKey::UpdateCode),
             tee_state,
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
@@ -4195,7 +4141,6 @@ mod tests {
                 proposed_updates: Default::default(),
                 staged_uploads: IterableMap::new(StorageKey::StagedContractUploads),
                 staged_chunks: LookupMap::new(StorageKey::StagedContractChunks),
-                update_code: LookupMap::new(StorageKey::UpdateCode),
                 node_foreign_chain_support: Default::default(),
                 config: Default::default(),
                 tee_state: Default::default(),
@@ -4817,9 +4762,9 @@ mod tests {
 
     fn propose_and_vote_code(expected_update_id: u64, contract: &mut MpcContract) -> TestUpdate {
         let code: [u8; 1000] = std::array::from_fn(|_| rand::random());
-        let code_hash: [u8; 32] = Sha256::digest(code).into();
-        let update = Update::ContractChunked { code_hash };
-        let expected_update_hash = dtos::UpdateHash::Code(code_hash);
+        let hash = Sha256::digest(code);
+        let update = Update::Contract(code.into());
+        let expected_update_hash = dtos::UpdateHash::Code(hash.into());
         let expected_votes = propose_and_vote(contract, update, expected_update_id);
         TestUpdate {
             update_id: expected_update_id,
@@ -5071,12 +5016,9 @@ mod tests {
         let mut contract =
             MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
 
-        let update_id = contract.proposed_updates.propose(Update::ContractChunked {
-            code_hash: [0u8; 32],
-        });
-        // The threshold-reaching `vote_update` below deploys the proposal's stored
-        // code, so it must be present under the reserved update id.
-        contract.update_code.insert(update_id, vec![0u8; 1000]);
+        let update_id = contract
+            .proposed_updates
+            .propose(Update::Contract([0; 1000].into()));
 
         // given: 2 non-participant votes + 1 participant vote (simulating old voters from before resharing)
         contract.proposed_updates.vote(&update_id, gen_account_id());

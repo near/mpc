@@ -683,10 +683,6 @@ BorshSchemaContainer {
                         "LookupMap",
                     ),
                     (
-                        "update_code",
-                        "LookupMap",
-                    ),
-                    (
                         "node_foreign_chain_support",
                         "SupportedForeignChainsByNode",
                     ),
