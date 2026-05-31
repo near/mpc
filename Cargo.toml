@@ -152,8 +152,9 @@ hex = { version = "0.4.3", features = ["serde"] }
 hkdf = "0.12.4"
 http = "1.4.0"
 humantime = "2.3.0"
-# TODO(#1299): updating this brings considerable breaking changes
-hyper = { version = "0.14.32", features = ["client", "server", "http1", "tcp", "stream"] }
+hyper = { version = "1.10.1", features = ["client", "server", "http1"] }
+hyper-util = { version = "0.1.20", features = ["tokio"] }
+http-body-util = "0.1.3"
 inferno = "0.12"
 insta = { version = "1.46.3", features = ["json", "redactions"] }
 itertools = "0.14.0"
