@@ -62,6 +62,43 @@ impl ToRpcParams for &GetTransactionReceiptArgs {
     to_rpc_params_impl!();
 }
 
+/// Block identifier accepted by Starknet block-lookup RPCs. The inspector's canonical-chain
+/// check uses `Number`; add more variants only when a caller actually needs them.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum BlockId {
+    Number { block_number: u64 },
+}
+
+/// Partial RPC response for `starknet_getBlockWithTxHashes`.
+/// <https://www.alchemy.com/docs/chains/starknet/starknet-api-endpoints/starknet-get-block-with-tx-hashes>
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct GetBlockWithTxHashesResponse {
+    #[serde(deserialize_with = "deserialize_starknet_felt")]
+    pub block_hash: H256,
+    pub block_number: u64,
+}
+
+/// Request args for `starknet_getBlockWithTxHashes`.
+pub struct GetBlockWithTxHashesArgs {
+    pub block_id: BlockId,
+}
+
+impl Serialize for GetBlockWithTxHashesArgs {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        // `starknet_getBlockWithTxHashes` expects a single-element array: [block_id]
+        let request_parameters = [&self.block_id];
+        request_parameters.serialize(serializer)
+    }
+}
+
+impl ToRpcParams for &GetBlockWithTxHashesArgs {
+    to_rpc_params_impl!();
+}
+
 /// Starknet felt values use `0x`-prefixed hex like Ethereum, but may omit leading
 /// zeros (e.g. `"0x5"` instead of `"0x0000…0005"`). This function zero-pads
 /// short representations so they can be parsed as an [`H256`].
@@ -99,43 +136,40 @@ where
 #[expect(non_snake_case)]
 mod tests {
     use super::{
-        GetTransactionReceiptResponse, H256, StarknetExecutionStatus, StarknetFinalityStatus,
-        parse_felt,
+        BlockId, GetBlockWithTxHashesArgs, GetBlockWithTxHashesResponse,
+        GetTransactionReceiptResponse, StarknetExecutionStatus, StarknetFinalityStatus, parse_felt,
     };
+
+    const TEST_BLOCK_NUMBER: u64 = 842_750;
+    const TEST_RECEIPT_BLOCK_NUMBER: u64 = 6_195_041;
+    const SHORT_HEX_BLOCK_HASH: &str = "0x5";
 
     #[test]
     fn deserialize_receipt__should_accept_short_hex_block_hash() {
-        let json = r#"
-        {
-            "block_hash": "0x5",
-            "block_number": 6195041,
+        let json = serde_json::json!({
+            "block_hash": SHORT_HEX_BLOCK_HASH,
+            "block_number": TEST_RECEIPT_BLOCK_NUMBER,
             "events": [
               {
-                "data": [
-                  "0x2b"
-                ],
+                "data": ["0x2b"],
                 "from_address": "0x387b62e702a722396a056e60b6affecebaddc258170446b07d57e47c541a0dd",
                 "keys": [
                   "0x2b0cdef3c28f9d954382f060df168ae56204d5937d2f0cd1fd9ce759afaf095",
-                  "0x4322cec55a56b85793864e0cfd27a563849ac9209d4307621d65bcd616c1dd8"
-                ]
-              }
+                  "0x4322cec55a56b85793864e0cfd27a563849ac9209d4307621d65bcd616c1dd8",
+                ],
+              },
             ],
             "finality_status": "ACCEPTED_ON_L1",
-            "execution_status": "SUCCEEDED"
-        }
-        "#;
+            "execution_status": "SUCCEEDED",
+        });
 
-        let receipt: GetTransactionReceiptResponse = serde_json::from_str(json).unwrap();
+        let receipt: GetTransactionReceiptResponse = serde_json::from_value(json).unwrap();
 
-        let expected_bytes = {
-            let mut bytes = [0u8; 32];
-            bytes[31] = 5;
-            bytes
-        };
-        let expected_hash = H256::from(expected_bytes);
-        assert_eq!(receipt.block_hash, expected_hash);
-        assert_eq!(receipt.block_number, 6195041);
+        assert_eq!(
+            receipt.block_hash,
+            parse_felt(SHORT_HEX_BLOCK_HASH).unwrap()
+        );
+        assert_eq!(receipt.block_number, TEST_RECEIPT_BLOCK_NUMBER);
         assert_eq!(
             receipt.finality_status,
             StarknetFinalityStatus::AcceptedOnL1
@@ -159,6 +193,43 @@ mod tests {
                 parse_felt("0x4322cec55a56b85793864e0cfd27a563849ac9209d4307621d65bcd616c1dd8")
                     .unwrap(),
             ]
+        );
+    }
+
+    #[test]
+    fn serialize_get_block_with_tx_hashes_args__should_wrap_block_id_in_array() {
+        // given
+        let args = GetBlockWithTxHashesArgs {
+            block_id: BlockId::Number {
+                block_number: TEST_BLOCK_NUMBER,
+            },
+        };
+
+        // when
+        let serialized = serde_json::to_value(&args).unwrap();
+
+        // then
+        assert_eq!(
+            serialized,
+            serde_json::json!([{ "block_number": TEST_BLOCK_NUMBER }])
+        );
+    }
+
+    #[test]
+    fn deserialize_get_block_with_tx_hashes_response__should_accept_short_hex_block_hash() {
+        let json = serde_json::json!({
+            "block_hash": SHORT_HEX_BLOCK_HASH,
+            "block_number": TEST_BLOCK_NUMBER,
+        });
+
+        let response: GetBlockWithTxHashesResponse = serde_json::from_value(json).unwrap();
+
+        assert_eq!(
+            response,
+            GetBlockWithTxHashesResponse {
+                block_hash: parse_felt(SHORT_HEX_BLOCK_HASH).unwrap(),
+                block_number: TEST_BLOCK_NUMBER,
+            }
         );
     }
 }
