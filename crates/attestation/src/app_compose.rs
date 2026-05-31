@@ -24,6 +24,11 @@ pub struct AppCompose {
     pub no_instance_id: bool,
     pub secure_time: Option<bool>,
     pub pre_launch_script: Option<String>,
+    /// Bash script that dstack (>= 0.5.5) executes as root, before the docker
+    /// daemon starts. Like `pre_launch_script`, it is arbitrary pre-workload
+    /// code, so we model it explicitly and require it to be absent during
+    /// verification (see `validate_app_compose_config`).
+    pub init_script: Option<String>,
     // The following fields that don't have any security implication are omitted:
     //
     // - docker_config: JsonValue,
