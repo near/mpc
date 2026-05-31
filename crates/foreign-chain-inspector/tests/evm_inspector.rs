@@ -545,9 +545,9 @@ macro_rules! evm_inspector_tests {
                         block_number,
                         receipt_hash,
                         canonical_hash,
-                    }) if block_number == U64::from(90)
-                        && receipt_hash == H256::from([0xbb; 32])
-                        && canonical_hash == H256::from([0xcc; 32])
+                    }) if block_number == 90
+                        && receipt_hash == foreign_chain_inspector::HexBytes(vec![0xbb; 32])
+                        && canonical_hash == foreign_chain_inspector::HexBytes(vec![0xcc; 32])
                 );
             }
         }
