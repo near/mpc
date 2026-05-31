@@ -75,14 +75,11 @@ impl From<u64> for UpdateId {
 /// chunked contract-code proposal.
 pub enum Update {
     Config(near_mpc_contract_interface::types::Config),
-    /// A contract-code proposal whose code was uploaded in chunks. Only fixed-size
-    /// metadata lives in the proposal; the code itself is stored separately so the
-    /// proposal stays small regardless of binary size. `code_hash` is the SHA-256 of
-    /// the assembled code, which voters compare against the binary they intend to
-    /// approve.
+    /// A contract-code proposal whose code was uploaded in chunks. The proposal holds
+    /// only `code_hash` (the SHA-256 of the assembled code); the code itself is stored
+    /// separately, keyed by the proposal id, so the proposal stays small regardless of
+    /// binary size. Voters compare `code_hash` against the binary they intend to approve.
     ContractChunked {
-        total_size: u64,
-        num_chunks: u32,
         code_hash: [u8; 32],
     },
 }
@@ -431,8 +428,6 @@ mod tests {
     /// unique so proposals can be told apart.
     fn chunked(seed: u8) -> Update {
         Update::ContractChunked {
-            total_size: 1000,
-            num_chunks: 1,
             code_hash: [seed; 32],
         }
     }

@@ -683,7 +683,7 @@ BorshSchemaContainer {
                         "LookupMap",
                     ),
                     (
-                        "update_code_chunks",
+                        "update_code",
                         "LookupMap",
                     ),
                     (
