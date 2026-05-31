@@ -842,7 +842,7 @@ Use the following custom settings for MPC:
 1. Launcher docker compose file - provided above.
 2. VM HW setting (use exactly those settings, since vCPU/Memory are measured):
     vCPU number=8, Memory = 64GB, disk = 500 GB
-3. Pre script - empty.
+3. Pre-launch Script **and** Init Script - both must be left **empty**. The WebUI may pre-fill the Pre-launch Script with a dstack launch-token check; delete it. Any script content changes the measured app configuration, and the MPC attestation verifier requires `pre_launch_script` to be absent — a node deployed with a non-empty script will fail attestation and be rejected by the other participants and the contract.
 4. user-config - provided above
 5. Toggles:
    - KMS = disable
