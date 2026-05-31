@@ -23,6 +23,7 @@ use near_mpc_contract_interface::types::ProtocolContractState;
 use near_workspaces::types::NearToken;
 use rand_core::OsRng;
 use sha2::Digest as _;
+use std::num::NonZeroU64;
 
 #[tokio::test]
 async fn test_propose_contract_max_size_upload() {
@@ -542,7 +543,7 @@ async fn test_chunked_upload_multi_chunk_and_deploy() {
     mpc_signer_accounts[0]
         .call(contract.id(), method_names::START_CONTRACT_UPLOAD)
         .args_borsh(StartContractUploadArgs {
-            total_size: code.len() as u64,
+            total_size: NonZeroU64::new(code.len() as u64).unwrap(),
         })
         .max_gas()
         .deposit(NearToken::from_yoctonear(1))
@@ -603,7 +604,9 @@ async fn test_chunked_upload_non_voter_rejected() {
     // The contract's own account is not a participant.
     let execution = contract
         .call(method_names::START_CONTRACT_UPLOAD)
-        .args_borsh(StartContractUploadArgs { total_size: 100 })
+        .args_borsh(StartContractUploadArgs {
+            total_size: NonZeroU64::new(100).unwrap(),
+        })
         .deposit(NearToken::from_yoctonear(1))
         .transact()
         .await
@@ -628,7 +631,9 @@ async fn test_chunked_upload_double_start_rejected() {
 
     mpc_signer_accounts[0]
         .call(contract.id(), method_names::START_CONTRACT_UPLOAD)
-        .args_borsh(StartContractUploadArgs { total_size: 100 })
+        .args_borsh(StartContractUploadArgs {
+            total_size: NonZeroU64::new(100).unwrap(),
+        })
         .max_gas()
         .deposit(NearToken::from_yoctonear(1))
         .transact()
@@ -639,7 +644,9 @@ async fn test_chunked_upload_double_start_rejected() {
 
     let execution = mpc_signer_accounts[0]
         .call(contract.id(), method_names::START_CONTRACT_UPLOAD)
-        .args_borsh(StartContractUploadArgs { total_size: 200 })
+        .args_borsh(StartContractUploadArgs {
+            total_size: NonZeroU64::new(200).unwrap(),
+        })
         .max_gas()
         .deposit(NearToken::from_yoctonear(1))
         .transact()
@@ -665,7 +672,9 @@ async fn test_chunked_upload_exceeding_total_size_rejected() {
 
     mpc_signer_accounts[0]
         .call(contract.id(), method_names::START_CONTRACT_UPLOAD)
-        .args_borsh(StartContractUploadArgs { total_size: 10 })
+        .args_borsh(StartContractUploadArgs {
+            total_size: NonZeroU64::new(10).unwrap(),
+        })
         .max_gas()
         .deposit(NearToken::from_yoctonear(1))
         .transact()
@@ -704,7 +713,9 @@ async fn test_chunked_upload_finalize_incomplete_rejected() {
 
     mpc_signer_accounts[0]
         .call(contract.id(), method_names::START_CONTRACT_UPLOAD)
-        .args_borsh(StartContractUploadArgs { total_size: 100 })
+        .args_borsh(StartContractUploadArgs {
+            total_size: NonZeroU64::new(100).unwrap(),
+        })
         .max_gas()
         .deposit(NearToken::from_yoctonear(1))
         .transact()
@@ -752,7 +763,9 @@ async fn test_clear_staged_contract_allows_restart() {
 
     mpc_signer_accounts[0]
         .call(contract.id(), method_names::START_CONTRACT_UPLOAD)
-        .args_borsh(StartContractUploadArgs { total_size: 100 })
+        .args_borsh(StartContractUploadArgs {
+            total_size: NonZeroU64::new(100).unwrap(),
+        })
         .max_gas()
         .deposit(NearToken::from_yoctonear(1))
         .transact()
@@ -772,7 +785,9 @@ async fn test_clear_staged_contract_allows_restart() {
 
     mpc_signer_accounts[0]
         .call(contract.id(), method_names::START_CONTRACT_UPLOAD)
-        .args_borsh(StartContractUploadArgs { total_size: 200 })
+        .args_borsh(StartContractUploadArgs {
+            total_size: NonZeroU64::new(200).unwrap(),
+        })
         .max_gas()
         .deposit(NearToken::from_yoctonear(1))
         .transact()
@@ -828,6 +843,76 @@ async fn test_chunked_upload_large_contract() {
         }
     }
     panic!("Update never completed");
+}
+
+/// `finalize_contract_upload` must reject an upload whose accumulated deposit
+/// covers the raw chunk bytes but falls short of the proposal entry's full
+/// storage cost (which also bills for per-proposal vote-tracking overhead).
+#[tokio::test]
+async fn test_finalize_contract_upload_insufficient_deposit_rejected() {
+    let SandboxTestSetup {
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = SandboxTestSetup::builder()
+        .with_protocols(ALL_PROTOCOLS)
+        .build()
+        .await;
+
+    let uploader = &mpc_signer_accounts[0];
+
+    uploader
+        .call(contract.id(), method_names::START_CONTRACT_UPLOAD)
+        .args_borsh(StartContractUploadArgs {
+            total_size: NonZeroU64::new(1).unwrap(),
+        })
+        .max_gas()
+        .deposit(NearToken::from_yoctonear(1))
+        .transact()
+        .await
+        .unwrap()
+        .into_result()
+        .expect("start should succeed");
+
+    // 1 millinear backs the single raw byte (which needs only ~storage_byte_cost)
+    // but is far below the proposal entry's storage cost, so the upload call
+    // succeeds while finalize must reject.
+    uploader
+        .call(contract.id(), method_names::UPLOAD_CONTRACT_CHUNK)
+        .args_borsh(UploadContractChunkArgs { data: vec![0u8; 1] })
+        .max_gas()
+        .deposit(NearToken::from_millinear(1))
+        .transact()
+        .await
+        .unwrap()
+        .into_result()
+        .expect("upload should succeed");
+
+    let execution = uploader
+        .call(contract.id(), method_names::FINALIZE_CONTRACT_UPLOAD)
+        .max_gas()
+        .transact()
+        .await
+        .unwrap();
+
+    let err = execution
+        .into_result()
+        .expect_err("finalize with insufficient deposit should fail");
+    assert!(
+        err.to_string()
+            .contains("Attached deposit is lower than required"),
+        "unexpected error: {err}"
+    );
+
+    // The upload is left intact, so the caller can still clear it.
+    uploader
+        .call(contract.id(), method_names::CLEAR_STAGED_CONTRACT)
+        .max_gas()
+        .transact()
+        .await
+        .unwrap()
+        .into_result()
+        .expect("clear should succeed after a rejected finalize");
 }
 
 #[tokio::test]

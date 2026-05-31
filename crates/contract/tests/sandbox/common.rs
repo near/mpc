@@ -451,7 +451,8 @@ pub async fn chunked_upload_contract(
     proposer
         .call(contract.id(), method_names::START_CONTRACT_UPLOAD)
         .args_borsh(StartContractUploadArgs {
-            total_size: code.len() as u64,
+            total_size: std::num::NonZeroU64::new(code.len() as u64)
+                .expect("contract code must be non-empty"),
         })
         .max_gas()
         .deposit(NearToken::from_yoctonear(1))

@@ -562,7 +562,7 @@ expression: abi
       },
       {
         "name": "finalize_contract_upload",
-        "doc": " Finalize the caller's chunked upload and register it as a contract-code\n proposal.\n\n The upload must be complete (received bytes equal the declared `total_size`).\n Assembles the uploaded chunks into the full contract binary and registers it as\n an ordinary contract-code proposal — the same kind a single-transaction code\n proposal would create — returning the new [`UpdateId`]. Voters then call\n [`vote_update`](Self::vote_update) against that id; on threshold approval the\n binary is deployed. This is the only way to propose contract code;\n [`propose_update`](Self::propose_update) handles config changes only.",
+        "doc": " Finalize the caller's chunked upload and register it as a contract-code\n proposal.\n\n The upload must be complete (received bytes equal the declared `total_size`).\n Assembles the uploaded chunks into the full contract binary and registers it as\n an ordinary contract-code proposal — the same kind a single-transaction code\n proposal would create — returning the new [`UpdateId`]. Voters then call\n [`vote_update`](Self::vote_update) against that id; on threshold approval the\n binary is deployed. This is the only way to propose contract code;\n [`propose_update`](Self::propose_update) handles config changes only.\n\n Like [`propose_update`](Self::propose_update), the proposer must fully fund the\n proposal entry's storage: the deposit accumulated across `start`/`upload_chunk`\n must cover [`ProposedUpdates::required_deposit`] for the assembled binary\n (which bills for the code plus the proposal's vote-tracking overhead, not just\n the raw bytes backed per chunk). Any excess is refunded; if it falls short the\n upload is left intact so the caller can top up via\n [`clear_staged_contract`](Self::clear_staged_contract) and re-upload.",
         "kind": "call",
         "result": {
           "serialization_type": "json",
@@ -1362,16 +1362,16 @@ expression: abi
               "type_schema": {
                 "declaration": "StartContractUploadArgs",
                 "definitions": {
+                  "NonZeroU64": {
+                    "Primitive": 8
+                  },
                   "StartContractUploadArgs": {
                     "Struct": [
                       [
                         "total_size",
-                        "u64"
+                        "NonZeroU64"
                       ]
                     ]
-                  },
-                  "u64": {
-                    "Primitive": 8
                   }
                 }
               }

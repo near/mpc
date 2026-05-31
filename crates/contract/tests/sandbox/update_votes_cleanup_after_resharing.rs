@@ -12,7 +12,7 @@ use crate::sandbox::{
 use anyhow::Result;
 use mpc_contract::{
     primitives::{participants::Participants, thresholds::ThresholdParameters},
-    update::UpdateId,
+    update::{StartContractUploadArgs, UpdateId, UploadContractChunkArgs},
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::method_names;
@@ -20,7 +20,7 @@ use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::{
     DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
 };
-use near_workspaces::Account;
+use near_workspaces::{Account, types::NearToken};
 use serde_json::json;
 use sha2::Digest;
 use std::collections::BTreeMap;
@@ -134,6 +134,102 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
             .participants
             .iter()
             .any(|(a, _, _)| a == voter_id)
+    );
+
+    Ok(())
+}
+
+/// An in-progress chunked upload owned by an account that resharing removes from
+/// the participant set can never be finalized or cleared by its (now non-voter)
+/// owner, so the post-resharing cleanup must drop it and refund the accumulated
+/// deposit.
+#[tokio::test]
+async fn staged_uploads_from_kicked_out_participants_are_cleared_after_resharing() -> Result<()> {
+    // Given: a running contract where participant 0 has an in-progress upload.
+    let SandboxTestSetup {
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = SandboxTestSetup::builder()
+        .with_protocols(&[Protocol::CaitSith])
+        .build()
+        .await;
+
+    let initial_participants = assert_running_return_participants(&contract).await?;
+    let threshold = assert_running_return_threshold(&contract).await;
+
+    let uploader = &mpc_signer_accounts[0];
+    let chunk = vec![7u8; 1000];
+    let chunk_deposit = NearToken::from_near(1);
+
+    uploader
+        .call(contract.id(), method_names::START_CONTRACT_UPLOAD)
+        .args_borsh(StartContractUploadArgs {
+            total_size: std::num::NonZeroU64::new(chunk.len() as u64).unwrap(),
+        })
+        .max_gas()
+        .deposit(NearToken::from_yoctonear(1))
+        .transact()
+        .await?
+        .into_result()
+        .map_err(|e| anyhow::anyhow!("start_contract_upload failed: {e}"))?;
+
+    uploader
+        .call(contract.id(), method_names::UPLOAD_CONTRACT_CHUNK)
+        .args_borsh(UploadContractChunkArgs {
+            data: chunk.clone(),
+        })
+        .max_gas()
+        .deposit(chunk_deposit)
+        .transact()
+        .await?
+        .into_result()
+        .map_err(|e| anyhow::anyhow!("upload_contract_chunk failed: {e}"))?;
+
+    let balance_before = uploader.view_account().await?.balance;
+
+    // When: resharing completes with new participants that exclude participant 0.
+    let mut new_participants = Participants::new();
+    for (account_id, participant_id, participant_info) in initial_participants
+        .participants
+        .iter()
+        .skip(1)
+        .take(threshold.0 as usize)
+    {
+        new_participants
+            .insert_with_id(
+                account_id.clone(),
+                mpc_contract::primitives::participants::ParticipantInfo {
+                    url: participant_info.url.clone(),
+                    tls_public_key: participant_info.tls_public_key.clone(),
+                },
+                mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
+            )
+            .map_err(|e| anyhow::anyhow!("Failed to insert participant: {}", e))?;
+    }
+
+    let new_threshold_parameters = ThresholdParameters::new(
+        new_participants,
+        mpc_contract::primitives::thresholds::Threshold::new(threshold.0),
+    )
+    .map_err(|e| anyhow::anyhow!("{}", e))?;
+    let prospective_epoch_id = dtos::EpochId(6);
+
+    do_resharing(
+        &mpc_signer_accounts[1..threshold.0 as usize + 1],
+        &contract,
+        new_threshold_parameters,
+        prospective_epoch_id,
+    )
+    .await?;
+
+    // Then: the cleanup promise refunds participant 0's accumulated deposit.
+    // Participant 0 submits no transactions in this window, so its balance can
+    // only increase, and only via the refund.
+    let balance_after = uploader.view_account().await?.balance;
+    assert!(
+        balance_after > balance_before,
+        "expected staged-upload deposit to be refunded after resharing: before={balance_before}, after={balance_after}"
     );
 
     Ok(())

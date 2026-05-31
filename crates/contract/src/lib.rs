@@ -1344,6 +1344,14 @@ impl MpcContract {
     /// [`vote_update`](Self::vote_update) against that id; on threshold approval the
     /// binary is deployed. This is the only way to propose contract code;
     /// [`propose_update`](Self::propose_update) handles config changes only.
+    ///
+    /// Like [`propose_update`](Self::propose_update), the proposer must fully fund the
+    /// proposal entry's storage: the deposit accumulated across `start`/`upload_chunk`
+    /// must cover [`ProposedUpdates::required_deposit`] for the assembled binary
+    /// (which bills for the code plus the proposal's vote-tracking overhead, not just
+    /// the raw bytes backed per chunk). Any excess is refunded; if it falls short the
+    /// upload is left intact so the caller can top up via
+    /// [`clear_staged_contract`](Self::clear_staged_contract) and re-upload.
     #[handle_result]
     pub fn finalize_contract_upload(&mut self) -> Result<UpdateId, Error> {
         let caller = self.voter_or_panic();
@@ -1372,20 +1380,52 @@ impl MpcContract {
 
         let num_chunks = staged.num_chunks;
         let total_size = staged.total_size;
+        let deposited = staged.deposited;
 
         // The upload was split only to fit the per-transaction RPC payload limit.
         // On-chain that limit is gone, so reassemble the chunks into the full binary
         // and register it as a normal `Update::Contract` proposal; the proposal then
         // behaves exactly like one made before chunked upload existed.
-        let mut code = Vec::with_capacity(total_size as usize);
+        //
+        // Read (don't remove) the chunks first so the deposit can be validated before
+        // any storage is mutated: if the deposit is short we reinstate the staged entry
+        // and bail with the chunks still in place.
+        let mut code = Vec::with_capacity(total_size.get() as usize);
         for i in 0..num_chunks {
             let chunk = self
                 .staged_chunks
-                .remove(&(caller.clone(), i))
+                .get(&(caller.clone(), i))
                 .expect("chunk recorded in staged metadata must be present in staged_chunks");
-            code.extend_from_slice(&chunk);
+            code.extend_from_slice(chunk);
         }
-        let id = self.proposed_updates.propose(Update::Contract(code));
+
+        let update = Update::Contract(code);
+        // The proposal entry reserves storage for the code *plus* per-proposal
+        // vote-tracking overhead. The per-chunk deposit only backs the raw bytes, so
+        // require the accumulated deposit to cover the full proposal cost — matching
+        // the invariant `propose_update` enforces for config proposals.
+        let required = ProposedUpdates::required_deposit(&update);
+        if deposited < required {
+            self.staged_uploads.insert(caller, staged);
+            return Err(InvalidParameters::InsufficientDeposit {
+                attached: deposited.as_yoctonear(),
+                required: required.as_yoctonear(),
+            }
+            .into());
+        }
+
+        // Deposit is sufficient; free the staged chunk storage and register the proposal.
+        for i in 0..num_chunks {
+            self.staged_chunks.remove(&(caller.clone(), i));
+        }
+        let id = self.proposed_updates.propose(update);
+
+        // Refund any deposit beyond the proposal's storage cost.
+        if let Some(diff) = deposited.checked_sub(required)
+            && diff > NearToken::from_yoctonear(0)
+        {
+            Promise::new(caller.clone()).transfer(diff).detach();
+        }
 
         log!(
             "finalize_contract_upload: signer={}, id={:?}, total_size={}, num_chunks={}",
@@ -1824,8 +1864,31 @@ impl MpcContract {
             }
         };
 
+        // An in-progress chunked upload owned by an account that is no longer a
+        // participant can never be finalized or cleared by its owner (both endpoints
+        // require `voter_or_panic`), so its chunk bytes and metadata would linger
+        // forever, locking the contract's balance behind storage staking. Drop them
+        // here and refund each owner's accumulated deposit.
+        let orphaned: Vec<(AccountId, u32, NearToken)> = self
+            .staged_uploads
+            .iter()
+            .filter(|(account, _)| !participants.is_participant_given_account_id(account))
+            .map(|(account, staged)| (account.clone(), staged.num_chunks, staged.deposited))
+            .collect();
+
         self.proposed_updates
             .remove_non_participant_votes(participants);
+
+        for (account, num_chunks, deposited) in orphaned {
+            for i in 0..num_chunks {
+                self.staged_chunks.remove(&(account.clone(), i));
+            }
+            self.staged_uploads.remove(&account);
+            if deposited > NearToken::from_yoctonear(0) {
+                Promise::new(account).transfer(deposited).detach();
+            }
+        }
+
         Ok(())
     }
 

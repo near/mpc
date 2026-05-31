@@ -1,3 +1,4 @@
+use core::num::NonZeroU64;
 use std::collections::BTreeMap;
 use std::hash::Hash;
 
@@ -113,7 +114,7 @@ impl From<ProposeUpdateArgs> for Update {
 pub struct StartContractUploadArgs {
     /// Total size in bytes of the contract code that will be uploaded across
     /// subsequent `upload_contract_chunk` calls.
-    pub total_size: u64,
+    pub total_size: NonZeroU64,
 }
 
 /// Arguments for [`MpcContract::upload_contract_chunk`](crate::MpcContract::upload_contract_chunk).
@@ -146,7 +147,7 @@ pub struct UploadContractChunkArgs {
 #[derive(Clone, Debug, PartialEq, borsh::BorshSerialize, borsh::BorshDeserialize)]
 pub struct StagedContractUpload {
     /// Total expected size, declared at `start_contract_upload`.
-    pub total_size: u64,
+    pub total_size: NonZeroU64,
     /// Number of bytes received so far.
     pub received_bytes: u64,
     /// Number of chunks received so far (and the next chunk's index).
@@ -158,7 +159,7 @@ pub struct StagedContractUpload {
 }
 
 impl StagedContractUpload {
-    pub fn new(total_size: u64) -> Self {
+    pub fn new(total_size: NonZeroU64) -> Self {
         Self {
             total_size,
             received_bytes: 0,
@@ -175,7 +176,7 @@ impl StagedContractUpload {
                 reason: "received_bytes overflow".into(),
             })
         })?;
-        if new_received > self.total_size {
+        if new_received > self.total_size.into() {
             return Err(InvalidParameters::MalformedPayload {
                 reason: format!(
                     "chunk would exceed declared total_size: received_bytes={}, chunk_len={}, total_size={}",
@@ -195,7 +196,7 @@ impl StagedContractUpload {
     }
 
     pub fn is_complete(&self) -> bool {
-        self.received_bytes == self.total_size
+        self.received_bytes == self.total_size.get()
     }
 
     /// Storage deposit required to back `len` bytes of chunk data.
@@ -891,11 +892,12 @@ mod tests {
     #[expect(non_snake_case)]
     mod staged_contract_upload {
         use crate::update::StagedContractUpload;
+        use core::num::NonZeroU64;
 
         #[test]
         fn record_chunk__should_track_received_bytes_and_assign_indices() {
             // Given
-            let mut staged = StagedContractUpload::new(100);
+            let mut staged = StagedContractUpload::new(NonZeroU64::new(100).unwrap());
 
             // When
             let idx_0 = staged.record_chunk(40).unwrap();
@@ -912,7 +914,7 @@ mod tests {
         #[test]
         fn record_chunk__should_reject_appends_exceeding_total_size() {
             // Given
-            let mut staged = StagedContractUpload::new(50);
+            let mut staged = StagedContractUpload::new(NonZeroU64::new(50).unwrap());
             staged.record_chunk(40).unwrap();
 
             // When
@@ -927,7 +929,7 @@ mod tests {
         #[test]
         fn is_complete__should_return_false_until_all_bytes_received() {
             // Given
-            let mut staged = StagedContractUpload::new(100);
+            let mut staged = StagedContractUpload::new(NonZeroU64::new(100).unwrap());
 
             // Then
             assert!(!staged.is_complete());
