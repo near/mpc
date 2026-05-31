@@ -154,7 +154,7 @@ async fn handle_request(
                             &state.backup_encryption_key,
                         )
                         .unwrap_or_else(|err| {
-                            tracing::error!(?err, "serializtion or encryption error");
+                            tracing::error!(?err, "serialization or encryption error");
                             "internal error serializing or encrypting keyshares".to_string()
                         });
                         let mut response = Response::new(Full::new(Bytes::from(resp)));
