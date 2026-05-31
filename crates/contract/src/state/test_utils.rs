@@ -47,11 +47,11 @@ pub fn gen_valid_params_proposal(params: &ThresholdParameters) -> ThresholdParam
     // consistent. Clamping after sampling keeps the original `[0, 10)` range
     // and only nudges the lowest values up when they'd produce an invalid n.
     let min_added = if n_old_participants < 3 {
-        3 - n_old_participants
+        3_i32.saturating_sub(n_old_participants.try_into().unwrap())
     } else {
         0
     };
-    let max_added = max_added.max(min_added);
+    let max_added = max_added.max(min_added.try_into().unwrap());
     let mut next_id = current_participants.next_id();
     for i in 0..max_added {
         let (account_id, info) = gen_participant(i);
