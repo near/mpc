@@ -49,19 +49,20 @@ pub struct AppCompose {
     pub bash_script: Option<String>,
     // The fields below are absorbed only to satisfy `deny_unknown_fields`; they are never read, so
     // they deserialize as `IgnoredAny` to avoid allocating attacker-controlled JSON from the
-    // untrusted app-compose. `key_provider` integrity is pinned by the measured `key-provider`
-    // event digest (`verify_key_provider_digest`), not this field. `port_policy` is a dstack 0.5.11
-    // gateway field (0.5.8 never emits it), inert while the gateway is disabled.
+    // untrusted app-compose.
     #[serde(default)]
     pub features: Option<IgnoredAny>,
     #[serde(default)]
     pub public_tcbinfo: Option<bool>,
+    // Key-provider integrity is pinned by the measured `key-provider` event digest
+    // (`verify_key_provider_digest`), not this field.
     #[serde(default)]
     pub key_provider: Option<IgnoredAny>,
     #[serde(default)]
     pub storage_fs: Option<String>,
     #[serde(default)]
     pub swap_size: Option<IgnoredAny>,
+    // dstack 0.5.11 gateway field (0.5.8 never emits it); inert while the gateway is disabled.
     #[serde(default)]
     pub port_policy: Option<IgnoredAny>,
     #[serde(default)]
