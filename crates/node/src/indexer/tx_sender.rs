@@ -162,7 +162,7 @@ async fn submit_tx(
 
     let tx_hash = transaction.get_hash();
     let nonce = transaction.transaction.nonce().nonce();
-    // Clone the signature before the transaction is moved into `submit_tx`.
+    // Clone the signature before `transaction` is moved into `rpc_handler.submit_tx`.
     let signature = transaction.signature.clone();
     tracing::info!(
         target = "mpc",

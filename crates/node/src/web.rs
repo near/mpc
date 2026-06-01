@@ -1,6 +1,6 @@
 use crate::config::SecretsConfig;
 use crate::indexer::migrations::ContractMigrationInfo;
-use crate::indexer::recent_transactions::RecentTransactions;
+use crate::indexer::recent_transactions::{self, RecentTransactions};
 use crate::tracking::TaskHandle;
 use axum::body::Body;
 use axum::extract::State;
@@ -195,8 +195,10 @@ async fn contract_state(state: State<WebServerState>) -> String {
 }
 
 async fn debug_recent_transactions(State(state): State<WebServerState>) -> String {
-    let recent_transactions = state.recent_transactions.lock().unwrap();
-    format!("{:?}", &*recent_transactions)
+    // Clone the entries under the lock, then format after releasing it, so we
+    // don't block the transaction processor's writes while rendering.
+    let snapshot = state.recent_transactions.lock().unwrap().snapshot();
+    recent_transactions::render(&snapshot)
 }
 
 async fn third_party_licenses() -> Html<&'static str> {

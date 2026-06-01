@@ -17,7 +17,7 @@ use near_indexer_primitives::types::{BlockHeight, Nonce};
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_time::{Clock, Utc};
 use std::collections::VecDeque;
-use std::fmt::{self, Debug};
+use std::fmt::{self, Display};
 
 /// The most recent submitted transactions to retain. Each entry is small, so a
 /// generous bound is fine; older entries are evicted once the buffer is full.
@@ -177,6 +177,18 @@ impl RecentTransactions {
         }
     }
 
+    /// Clones the retained entries, newest first, for rendering. The clone lets
+    /// the caller drop the lock before doing the (potentially non-trivial)
+    /// string formatting, so it does not block concurrent `record_submitted` /
+    /// `update_status` writes from the transaction processor.
+    pub fn snapshot(&self) -> Vec<SubmittedTransaction> {
+        self.entries
+            .iter()
+            .rev()
+            .map(|(_, tx)| tx.clone())
+            .collect()
+    }
+
     /// Number of entries currently retained. Exposed for tests.
     #[cfg(test)]
     fn len(&self) -> usize {
@@ -184,43 +196,51 @@ impl RecentTransactions {
     }
 }
 
-impl Debug for RecentTransactions {
+/// Renders a snapshot (newest first, as returned by
+/// [`RecentTransactions::snapshot`]) into the human-readable page served at
+/// `/debug/recent_transactions`.
+pub fn render(transactions: &[SubmittedTransaction]) -> String {
+    use std::fmt::Write;
+
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "Recently submitted transactions (newest first, up to {NUM_RECENT_TRANSACTIONS_TO_KEEP} retained):"
+    );
+    if transactions.is_empty() {
+        let _ = writeln!(out, "  (none)");
+        return out;
+    }
+    for tx in transactions {
+        let _ = writeln!(out, "{tx}");
+    }
+    out
+}
+
+impl Display for SubmittedTransaction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(
+        let tx_hash = self
+            .tx_hash
+            .map_or_else(|| "-".to_string(), |hash| hash.to_string());
+        let nonce = self
+            .nonce
+            .map_or_else(|| "-".to_string(), |nonce| nonce.to_string());
+        let block_height = self
+            .block_height
+            .map_or_else(|| "-".to_string(), |height| height.to_string());
+        let signature = self
+            .signature
+            .as_ref()
+            .map_or_else(|| "-".to_string(), |signature| signature.to_string());
+        write!(
             f,
-            "Recently submitted transactions (newest first, up to {} retained):",
-            NUM_RECENT_TRANSACTIONS_TO_KEEP
-        )?;
-        if self.entries.is_empty() {
-            writeln!(f, "  (none)")?;
-            return Ok(());
-        }
-        // Newest first.
-        for (_, tx) in self.entries.iter().rev() {
-            let tx_hash = tx
-                .tx_hash
-                .map_or_else(|| "-".to_string(), |hash| hash.to_string());
-            let nonce = tx
-                .nonce
-                .map_or_else(|| "-".to_string(), |nonce| nonce.to_string());
-            let block_height = tx
-                .block_height
-                .map_or_else(|| "-".to_string(), |height| height.to_string());
-            let signature = tx
-                .signature
-                .as_ref()
-                .map_or_else(|| "-".to_string(), |signature| signature.to_string());
-            writeln!(
-                f,
-                "  {submitted_at}  {status:<12}  method={method:<24}  txid={tx_hash}  nonce={nonce}  block={block_height}  signer={signer_account_id} key={signer_public_key} sig={signature}",
-                submitted_at = tx.submitted_at,
-                status = format!("{:?}", tx.status),
-                method = tx.method,
-                signer_account_id = tx.signer_account_id,
-                signer_public_key = String::from(&tx.signer_public_key),
-            )?;
-        }
-        Ok(())
+            "  {submitted_at}  {status:<12}  method={method:<24}  txid={tx_hash}  nonce={nonce}  block={block_height}  signer={signer_account_id} key={signer_public_key} sig={signature}",
+            submitted_at = self.submitted_at,
+            status = format!("{:?}", self.status),
+            method = self.method,
+            signer_account_id = self.signer_account_id,
+            signer_public_key = String::from(&self.signer_public_key),
+        )
     }
 }
 
@@ -296,13 +316,13 @@ mod tests {
     }
 
     #[test]
-    fn recent_transactions_debug__should_render_all_fields() {
+    fn render__should_include_all_fields() {
         // Given
         let mut buffer = RecentTransactions::default();
         buffer.record_submitted(test_transaction("respond"));
 
         // When
-        let rendered = format!("{:?}", buffer);
+        let rendered = render(&buffer.snapshot());
 
         // Then
         assert!(rendered.contains("respond"), "method missing: {rendered}");
@@ -331,5 +351,35 @@ mod tests {
             rendered.contains("Submitting"),
             "status missing: {rendered}"
         );
+    }
+
+    #[test]
+    fn render__should_report_empty_buffer() {
+        // Given
+        let buffer = RecentTransactions::default();
+
+        // When
+        let rendered = render(&buffer.snapshot());
+
+        // Then
+        assert!(
+            rendered.contains("(none)"),
+            "empty buffer must render `(none)`: {rendered}"
+        );
+    }
+
+    #[test]
+    fn snapshot__should_return_entries_newest_first() {
+        // Given
+        let mut buffer = RecentTransactions::default();
+        buffer.record_submitted(test_transaction("respond"));
+        buffer.record_submitted(test_transaction("respond_ckd"));
+
+        // When
+        let snapshot = buffer.snapshot();
+
+        // Then
+        let methods: Vec<&str> = snapshot.iter().map(|tx| tx.method).collect();
+        assert_eq!(methods, vec!["respond_ckd", "respond"]);
     }
 }
