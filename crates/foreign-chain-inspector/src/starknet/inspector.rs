@@ -10,6 +10,7 @@ use near_mpc_contract_interface::types::{StarknetFelt, StarknetLog};
 const GET_TRANSACTION_RECEIPT_METHOD: &str = "starknet_getTransactionReceipt";
 const GET_BLOCK_WITH_TX_HASHES_METHOD: &str = "starknet_getBlockWithTxHashes";
 
+#[derive(Clone)]
 pub struct StarknetInspector<Client> {
     client: Client,
 }
@@ -22,7 +23,7 @@ pub enum StarknetFinality {
 
 impl<Client> ForeignChainInspector for StarknetInspector<Client>
 where
-    Client: ClientT + Send,
+    Client: ClientT + Send + Sync,
 {
     type TransactionId = StarknetTransactionHash;
     type Finality = StarknetFinality;
@@ -73,7 +74,7 @@ where
 
 impl<Client> StarknetInspector<Client>
 where
-    Client: ClientT + Send,
+    Client: ClientT + Send + Sync,
 {
     pub fn new(client: Client) -> Self {
         Self { client }
