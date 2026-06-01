@@ -562,7 +562,7 @@ expression: abi
       },
       {
         "name": "finalize_contract_upload",
-        "doc": " Finalize the caller's chunked upload and register it as a contract-code\n proposal.\n\n The upload must be complete (received bytes equal the declared `total_size`).\n Assembles the uploaded chunks into the full contract binary and registers it as\n an ordinary contract-code proposal — the same kind a single-transaction code\n proposal would create — returning the new [`UpdateId`]. Voters then call\n [`vote_update`](Self::vote_update) against that id; on threshold approval the\n binary is deployed. This is the only way to propose contract code;\n [`propose_update`](Self::propose_update) handles config changes only.\n\n Like [`propose_update`](Self::propose_update), the proposer must fully fund the\n proposal entry's storage: the deposit accumulated across `start`/`upload_chunk`\n must cover [`ProposedUpdates::required_deposit`] for the assembled binary\n (which bills for the code plus the proposal's vote-tracking overhead, not just\n the raw bytes backed per chunk). Any excess is refunded; if it falls short the\n upload is left intact so the caller can top up via\n [`clear_staged_contract`](Self::clear_staged_contract) and re-upload.",
+        "doc": " Finalize the caller's chunked upload and register it as a contract-code\n proposal.",
         "kind": "call",
         "result": {
           "serialization_type": "json",
@@ -917,7 +917,7 @@ expression: abi
       },
       {
         "name": "propose_update",
-        "doc": " Propose a config update. Contract-code updates are proposed via the chunked\n upload flow ([`start_contract_upload`](Self::start_contract_upload) →\n [`upload_contract_chunk`](Self::upload_contract_chunk) →\n [`finalize_contract_upload`](Self::finalize_contract_upload)) so that proposals\n can exceed the per-transaction RPC size limit and so the proposal entry itself\n stays small.",
+        "doc": " Propose update to either code or config, but not both of them at the same time.",
         "kind": "call",
         "modifiers": [
           "payable"
@@ -1349,7 +1349,7 @@ expression: abi
       },
       {
         "name": "start_contract_upload",
-        "doc": " Begin a chunked contract-code upload.\n\n A voter calls this once with the declared `total_size`, then makes one or\n more [`upload_contract_chunk`](Self::upload_contract_chunk) calls totalling\n exactly `total_size` bytes, then [`finalize_contract_upload`](Self::finalize_contract_upload)\n to register the proposal. Each voter may have at most one open upload at a\n time; call [`clear_staged_contract`](Self::clear_staged_contract) to abandon\n and reset.\n\n Splitting the upload across many transactions is necessary because a single\n transaction is bounded by the RPC's payload size limit (~1.5 MiB), which is\n smaller than recent contract binaries.",
+        "doc": " Begin a chunked contract-code upload.",
         "kind": "call",
         "modifiers": [
           "payable"
@@ -1512,7 +1512,7 @@ expression: abi
       },
       {
         "name": "upload_contract_chunk",
-        "doc": " Append a chunk of contract code to the caller's in-progress upload.\n\n The cumulative byte count is validated against the `total_size` declared in\n [`start_contract_upload`](Self::start_contract_upload); sending more bytes than declared fails. Each call\n must attach enough deposit to back the chunk's storage cost (see\n [`StagedContractUpload::required_deposit_for_bytes`]).",
+        "doc": " Append a chunk of contract code to the caller's in-progress upload.",
         "kind": "call",
         "modifiers": [
           "payable"
