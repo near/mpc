@@ -214,6 +214,13 @@ impl IntoContractType<Participants> for dtos::Participants {
 
 impl IntoContractType<ThresholdParameters> for dtos::ThresholdParameters {
     fn into_contract_type(self) -> ThresholdParameters {
+        // This conversion is intentionally infallible: `new_unvalidated` skips the
+        // absolute/relative (>= 60%) threshold checks. Validation is not the job of the
+        // DTO mapping — every contract entry point that accepts these parameters
+        // (`init`, `init_running`, `vote_new_parameters`) calls `validate()` /
+        // `validate_incoming_proposal` downstream, so production proposals are still
+        // rejected if they violate the threshold bounds. Deferring validation here also
+        // lets tests construct parameters with sub-production thresholds.
         ThresholdParameters::new_unvalidated(self.participants.into_contract_type(), self.threshold)
             .with_per_domain_thresholds(self.per_domain_thresholds)
     }
