@@ -1,8 +1,11 @@
 use std::sync::Arc;
 
 use anyhow::Context;
+use bytes::Bytes;
 use ed25519_dalek::VerifyingKey;
-use hyper::{body::to_bytes, client::conn::SendRequest, Body, Request};
+use http_body_util::{BodyExt, Full};
+use hyper::{Request, client::conn::http1::SendRequest};
+use hyper_util::rt::TokioIo;
 use mpc_tls::tls::configure_tls;
 use near_mpc_contract_interface::types::Keyset;
 use tokio::net::TcpStream;
@@ -21,7 +24,7 @@ pub async fn connect_to_web_server(
     p2p_private_key: &ed25519_dalek::SigningKey,
     target_address: impl tokio::net::ToSocketAddrs + std::fmt::Debug,
     expected_server_key: &VerifyingKey,
-) -> anyhow::Result<SendRequest<Body>> {
+) -> anyhow::Result<SendRequest<Full<Bytes>>> {
     tracing::info!(?target_address, "connecting on ");
     let (_server_config, client_config) = configure_tls(p2p_private_key)?;
     let conn = TcpStream::connect(target_address)
@@ -38,9 +41,10 @@ pub async fn connect_to_web_server(
         "TLS handshake complete, mpc node authenticated and encrypted channel established."
     );
 
-    let (request_sender, connection) = hyper::client::conn::handshake(tls_conn)
-        .await
-        .context("failed to perform HTTP handshake")?;
+    let (request_sender, connection) =
+        hyper::client::conn::http1::handshake(TokioIo::new(tls_conn))
+            .await
+            .context("failed to perform HTTP handshake")?;
 
     // Run the connection driver in the background.
     tokio::spawn(async move {
@@ -54,14 +58,16 @@ pub async fn connect_to_web_server(
 
 /// server matches on path only
 const BOGUS_URL: &str = "http://example";
-pub async fn make_hello_request(request_sender: &mut SendRequest<Body>) -> anyhow::Result<String> {
+pub async fn make_hello_request(
+    request_sender: &mut SendRequest<Full<Bytes>>,
+) -> anyhow::Result<String> {
     let req = Request::builder()
         .method("GET")
         .uri(format!("{}/hello", BOGUS_URL))
-        .body(hyper::Body::empty())?;
+        .body(Full::new(Bytes::new()))?;
 
     let response = request_sender.send_request(req).await?;
-    let body_bytes = to_bytes(response.into_body()).await?;
+    let body_bytes = response.into_body().collect().await?.to_bytes();
     let body_str = String::from_utf8_lossy(&body_bytes);
 
     tracing::info!("Response: {}", body_str);
@@ -69,7 +75,7 @@ pub async fn make_hello_request(request_sender: &mut SendRequest<Body>) -> anyho
 }
 
 pub async fn make_keyshare_get_request(
-    request_sender: &mut SendRequest<Body>,
+    request_sender: &mut SendRequest<Full<Bytes>>,
     keyset: &Keyset,
     backup_encryption_key: &AesKey256,
 ) -> anyhow::Result<Vec<Keyshare>> {
@@ -77,7 +83,7 @@ pub async fn make_keyshare_get_request(
     let req = Request::builder()
         .method("GET")
         .uri(format!("{}/get_keyshares", BOGUS_URL))
-        .body(hyper::Body::from(params.to_string()))
+        .body(Full::new(Bytes::from(params.to_string())))
         .inspect_err(|err| tracing::error!(?err, "building request failed"))?;
 
     let response = request_sender
@@ -87,17 +93,23 @@ pub async fn make_keyshare_get_request(
     // Check HTTP status
     if !response.status().is_success() {
         let status = response.status();
-        let body_bytes = to_bytes(response.into_body())
+        let body_bytes = response
+            .into_body()
+            .collect()
             .await
-            .context("failed to read error body")?;
+            .context("failed to read error body")?
+            .to_bytes();
         let body_str = String::from_utf8_lossy(&body_bytes);
         anyhow::bail!("server returned {}: {}", status, body_str);
     }
 
     // Collect the response body
-    let body_bytes = to_bytes(response.into_body())
+    let body_bytes = response
+        .into_body()
+        .collect()
         .await
-        .inspect_err(|err| tracing::error!(?err, "failed to read body"))?;
+        .inspect_err(|err| tracing::error!(?err, "failed to read body"))?
+        .to_bytes();
 
     let keyshares: Vec<Keyshare> =
         decrypt_and_deserialize_keyshares(&body_bytes, backup_encryption_key)?;
@@ -108,7 +120,7 @@ pub async fn make_keyshare_get_request(
 }
 
 pub async fn make_set_keyshares_request(
-    request_sender: &mut SendRequest<Body>,
+    request_sender: &mut SendRequest<Full<Bytes>>,
     keyshares: &[Keyshare],
     backup_encryption_key: &AesKey256,
 ) -> anyhow::Result<()> {
@@ -118,7 +130,7 @@ pub async fn make_set_keyshares_request(
         .method("PUT")
         .uri(format!("{}/set_keyshares", BOGUS_URL))
         .header(hyper::header::CONTENT_TYPE, "application/json")
-        .body(Body::from(body))?;
+        .body(Full::new(Bytes::from(body)))?;
     let response = request_sender
         .send_request(req)
         .await
@@ -127,17 +139,23 @@ pub async fn make_set_keyshares_request(
     // Check status code
     if !response.status().is_success() {
         let status = response.status();
-        let body_bytes = to_bytes(response.into_body())
+        let body_bytes = response
+            .into_body()
+            .collect()
             .await
-            .context("failed to read error body")?;
+            .context("failed to read error body")?
+            .to_bytes();
         let body_str = String::from_utf8_lossy(&body_bytes);
         anyhow::bail!("server returned {}: {}", status, body_str);
     }
 
     // Optionally read response body (the server sends "Keyshares received.")
-    let body_bytes = to_bytes(response.into_body())
+    let body_bytes = response
+        .into_body()
+        .collect()
         .await
-        .context("failed to read response body")?;
+        .context("failed to read response body")?
+        .to_bytes();
     let body_str = String::from_utf8_lossy(&body_bytes);
 
     tracing::info!("Server response: {}", body_str);

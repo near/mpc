@@ -1,7 +1,7 @@
 use crate::errors::{InitializationError, ProtocolError};
 use crate::participants::Participant;
 use crate::protocol::Protocol;
-use crate::test_utils::{run_protocol, GenProtocol};
+use crate::test_utils::{GenProtocol, run_protocol};
 use crate::{Ciphersuite, Element, Scalar};
 use std::error::Error;
 

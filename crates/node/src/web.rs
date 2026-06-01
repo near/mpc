@@ -5,9 +5,9 @@ use axum::body::Body;
 use axum::extract::State;
 use axum::http::{Response, StatusCode};
 use axum::response::{Html, IntoResponse};
-use axum::{serve, Json};
-use futures::future::BoxFuture;
+use axum::{Json, serve};
 use futures::FutureExt;
+use futures::future::BoxFuture;
 use mpc_attestation::attestation::Attestation;
 use mpc_node_config::{
     CKDConfig, ConfigFile, IndexerConfig, KeygenConfig, PresignatureConfig, SignatureConfig,
@@ -17,7 +17,7 @@ use near_account_id::AccountId;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use node_types::http_server::StaticWebData;
-use prometheus::{default_registry, Encoder, TextEncoder};
+use prometheus::{Encoder, TextEncoder, default_registry};
 use serde::Serialize;
 use std::net::SocketAddr;
 use std::sync::{Arc, OnceLock};

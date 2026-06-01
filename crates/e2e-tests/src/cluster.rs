@@ -8,7 +8,7 @@ use ed25519_dalek::SigningKey;
 use near_kit::AccountId;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
-    AccountId as ContractAccountId, CKDAppPublicKey, Curve, DomainConfig, DomainId, DomainPurpose,
+    AccountId as ContractAccountId, CKDAppPublicKey, DomainConfig, DomainId, DomainPurpose,
     Ed25519PublicKey, EpochId, ParticipantId, ParticipantInfo, Participants, Protocol,
     ProtocolContractState, ReconstructionThreshold, Threshold, ThresholdParameters,
 };
@@ -17,12 +17,10 @@ use rand::rngs::StdRng;
 use serde_json::json;
 
 use crate::blockchain::{ClientHandle, DeployedContract, NearBlockchain};
-use crate::legacy_init::LegacyThresholdParameters;
 use crate::mpc_node::{MpcNode, MpcNodeSetup, MpcNodeSetupArgs, NodePorts};
 use crate::near_sandbox::NearSandbox;
 use crate::port_allocator::E2ePortAllocator;
 
-const DEFAULT_SANDBOX_VERSION: &str = "2.11.1";
 const SANDBOX_ROOT_ACCOUNT: &str = "sandbox";
 const SANDBOX_ROOT_SECRET_KEY: &str = near_sandbox::config::DEFAULT_GENESIS_ACCOUNT_PRIVATE_KEY;
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
@@ -98,30 +96,16 @@ pub struct MpcClusterConfig {
 
 /// JSON wire format used for the contract's `init` call.
 ///
-/// Whenever a wire-breaking change to an `init` argument lands (e.g. the
-/// `sign_pk` → `tls_public_key` rename in 3.10), a new variant is needed so
-/// the cluster can still target the older production contract.
-///
-/// # Maintaining this enum across upgrades
-///
-/// - **When a new wire-breaking change to `init` lands**: add a new variant
-///   (e.g. `Legacy3_10_X`) that emits the now-old shape, and update the
-///   `init_contract` helper in `cluster.rs` to branch on it.
-/// - **After the breaking change has rolled out to Mainnet/Testnet**: remove
-///   the obsolete variant and any tests that pin to it. The `current_*()`
-///   pointers in `contract-history` will already reference a binary that
-///   speaks the new format, so `Current` is enough.
+/// Scaffold for cross-version compatibility: when a wire-breaking change to
+/// `init` lands, add a `Legacy*` variant emitting the now-old shape and
+/// branch on it in `init_parameters_json` so tests can still target the
+/// previous production contract. After the breaking change has rolled out to
+/// Mainnet/Testnet, drop the obsolete variant.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ContractInitFormat {
-    /// Current `ThresholdParameters` shape (uses `tls_public_key`).
+    /// Current `ThresholdParameters` shape.
     #[default]
     Current,
-    /// Pre-3.10 `ThresholdParameters` shape (uses `sign_pk`). Only the field
-    /// inside `ParticipantInfo` differs; everything else is forward-compatible
-    /// because the 3.9.1 contract ignores unknown JSON fields. Remove this
-    /// variant once `contract_history::current_*()` no longer points at a
-    /// binary that requires the legacy shape.
-    Legacy3_9_1,
 }
 
 impl ContractInitFormat {
@@ -133,7 +117,6 @@ impl ContractInitFormat {
     ) -> serde_json::Result<serde_json::Value> {
         match self {
             Self::Current => serde_json::to_value(params),
-            Self::Legacy3_9_1 => serde_json::to_value(LegacyThresholdParameters::from(params)),
         }
     }
 }
@@ -151,21 +134,18 @@ impl MpcClusterConfig {
             domains: vec![
                 DomainConfig {
                     id: DomainId(0),
-                    curve: Curve::Secp256k1,
                     protocol: Protocol::CaitSith,
                     reconstruction_threshold: ReconstructionThreshold::new(2),
                     purpose: DomainPurpose::Sign,
                 },
                 DomainConfig {
                     id: DomainId(1),
-                    curve: Curve::Edwards25519,
                     protocol: Protocol::Frost,
                     reconstruction_threshold: ReconstructionThreshold::new(2),
                     purpose: DomainPurpose::Sign,
                 },
                 DomainConfig {
                     id: DomainId(2),
-                    curve: Curve::Bls12381,
                     protocol: Protocol::ConfidentialKeyDerivation,
                     reconstruction_threshold: ReconstructionThreshold::new(2),
                     purpose: DomainPurpose::CKD,
@@ -176,7 +156,7 @@ impl MpcClusterConfig {
             port_seed,
             triples_to_buffer: DEFAULT_TRIPLES_TO_BUFFER,
             presignatures_to_buffer: DEFAULT_PRESIGNATURES_TO_BUFFER,
-            sandbox_version: DEFAULT_SANDBOX_VERSION.to_string(),
+            sandbox_version: test_utils::DEFAULT_SANDBOX_VERSION.to_string(),
             home_base: None,
             initial_participant_indices: vec![],
             node_foreign_chains_configs: vec![],
@@ -419,6 +399,10 @@ impl MpcCluster {
 
     /// Wait until the node at `idx` responds with HTTP 200 on its `/health` endpoint.
     /// Returns an error if the node is not running or does not become healthy within 120 seconds.
+    ///
+    /// Only verifies the web server is bound; for full readiness (e.g. after
+    /// kill+restart), pair with `common::wait_for_node_indexer_height_above`.
+    /// See issue #3366.
     pub async fn wait_for_node_healthy(&self, idx: usize) -> anyhow::Result<()> {
         let node = match &self.nodes[idx] {
             MpcNodeState::Running(n) => n,
@@ -465,7 +449,7 @@ impl MpcCluster {
     /// `Initializing` state. Does NOT wait for key generation to complete —
     /// use `add_domains_and_wait` for the full flow.
     pub async fn start_add_domains(&self, domains: Vec<DomainConfig>) -> anyhow::Result<()> {
-        let args = json!({ "domains": domains });
+        let args = json!({ "domains": &domains });
         self.call_from_all_nodes_concurrently(method_names::VOTE_ADD_DOMAINS, args)
             .await?;
 
@@ -1311,7 +1295,7 @@ async fn create_user_accounts(
         let key = generate_deterministic_key(200 + i);
         let account: AccountId = format!("user{i}.{SANDBOX_ROOT_ACCOUNT}").parse()?;
         blockchain
-            .create_account_with_keys(account.as_ref(), 100, &[key.clone()])
+            .create_account_with_keys(account.as_ref(), 100, std::slice::from_ref(&key))
             .await?;
         map.insert(account, key);
     }

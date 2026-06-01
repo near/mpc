@@ -3,24 +3,30 @@ use crate::primitives::domain::MIN_RECONSTRUCTION_THRESHOLD;
 use crate::primitives::key_state::{EpochId, Keyset};
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
-use near_mpc_contract_interface::types::{Curve, DomainId, DomainPurpose, ForeignChain, Protocol};
+use near_mpc_contract_interface::types::{DomainId, DomainPurpose, ForeignChain, Protocol};
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum NodeMigrationError {
     #[error("Node does not have an ongoing recovery")]
     MigrationNotFound,
-    #[error("The transaction was submitted by a different public key than expected. Found: {found:?}, expected: {expected:?}")]
+    #[error(
+        "The transaction was submitted by a different public key than expected. Found: {found:?}, expected: {expected:?}"
+    )]
     AccountPublicKeyMismatch {
         found: near_sdk::PublicKey,
         expected: near_sdk::PublicKey,
     },
-    #[error("The submitted keyset differs from the expected keyset. Found: {found:?}, expected: {expected:?}")]
+    #[error(
+        "The submitted keyset differs from the expected keyset. Found: {found:?}, expected: {expected:?}"
+    )]
     KeysetMismatch { found: Keyset, expected: Keyset },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TeeError {
-    #[error("Due to previously failed TEE validation, the network is not accepting new requests at this point in time. Try again later.")]
+    #[error(
+        "Due to previously failed TEE validation, the network is not accepting new requests at this point in time. Try again later."
+    )]
     TeeValidationFailed,
 }
 
@@ -28,13 +34,19 @@ pub enum TeeError {
 pub enum RequestError {
     #[error("Request has timed out.")]
     Timeout,
+    #[error(
+        "Pending-request queue is full for this request key (limit: {limit}). Try again once an in-flight response or timeout has cleared room."
+    )]
+    PendingRequestQueueFull { limit: u8 },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum RespondError {
     #[error("The provided signature is invalid.")]
     InvalidSignature,
-    #[error("The provided signature scheme does not match. MPC response: {mpc_scheme:?}, user request: {user_scheme:?}")]
+    #[error(
+        "The provided signature scheme does not match. MPC response: {mpc_scheme:?}, user request: {user_scheme:?}"
+    )]
     SignatureSchemeMismatch {
         mpc_scheme: Box<dtos::SignatureResponse>,
         user_scheme: Box<crate::crypto_shared::types::PublicKeyExtended>,
@@ -57,7 +69,9 @@ pub enum PublicKeyError {
 pub enum KeyEventError {
     #[error("Key event Id mismatch")]
     KeyEventIdMismatch,
-    #[error("Can not start a new reshare or keygen instance while the current instance is still active.")]
+    #[error(
+        "Can not start a new reshare or keygen instance while the current instance is still active."
+    )]
     ActiveKeyEvent,
     #[error("Expected ongoing reshare")]
     NoActiveKeyEvent,
@@ -73,6 +87,29 @@ pub enum VoteError {
         "Candidates can only cast a vote after `threshold` participants casted one to admit them"
     )]
     VoterPending,
+}
+
+/// Reasons a `ChainEntry` proposal fails validation. `NonEmptyBTreeMap` already
+/// enforces non-empty + unique-`ProviderId` at borsh-deserialize time, so those
+/// cases are absent here.
+#[derive(Debug, Clone, Eq, PartialEq, thiserror::Error)]
+pub enum ChainEntryValidationError {
+    #[error("ChainEntry.quorum must be >= 1")]
+    ZeroQuorum,
+    #[error(
+        "ChainEntry.quorum ({quorum}) exceeds providers.len() ({providers_len}) — RPC response quorum is unreachable"
+    )]
+    QuorumExceedsProviders { quorum: u64, providers_len: u64 },
+    #[error(
+        "ChainRouting::PathSegment.segment for provider_id {provider_id:?} must not contain '/'"
+    )]
+    PathSegmentContainsSlash { provider_id: String },
+    #[error(
+        "ChainRouting::QueryParam.name collides with AuthScheme::Query.name {name:?} for provider_id {provider_id:?}"
+    )]
+    QueryParamCollidesWithAuth { provider_id: String, name: String },
+    #[error("providers.len() {len} does not fit in u64: {reason}")]
+    ProvidersLenOverflow { len: usize, reason: String },
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
@@ -140,7 +177,9 @@ pub enum InvalidState {
 pub enum InvalidThreshold {
     #[error("Threshold does not meet the minimum absolute requirement")]
     MinAbsRequirementFailed,
-    #[error("Threshold does not meet the minimum relative requirement: require at least {required}, found {found}")]
+    #[error(
+        "Threshold does not meet the minimum relative requirement: require at least {required}, found {found}"
+    )]
     MinRelRequirementFailed { required: u64, found: u64 },
     #[error("Threshold must not exceed number of participants: max {max}, found {found}")]
     MaxRequirementFailed { max: u64, found: u64 },
@@ -158,7 +197,9 @@ pub enum InvalidCandidateSet {
     },
     #[error("Existing participant {account_id} changed info (url or tls_public_key).")]
     ParticipantInfoChanged { account_id: AccountId },
-    #[error("New participant {account_id} reuses ID {new_id} already assigned to existing participant {existing_account_id}.")]
+    #[error(
+        "New participant {account_id} reuses ID {new_id} already assigned to existing participant {existing_account_id}."
+    )]
     NewParticipantReusesOldId {
         account_id: AccountId,
         new_id: u32,
@@ -194,13 +235,9 @@ pub enum DomainError {
     InvalidDomains,
     #[error("Domains from keyset do not match the provided domains")]
     DomainsMismatch,
-    #[error("Inconsistent curve/protocol pair: curve {curve:?} does not match protocol {protocol:?} (expected {expected:?})")]
-    InconsistentCurveProtocol {
-        curve: Curve,
-        protocol: Protocol,
-        expected: Curve,
-    },
-    #[error("Invalid protocol-purpose combination: protocol {protocol:?} is not compatible with purpose {purpose:?}")]
+    #[error(
+        "Invalid protocol-purpose combination: protocol {protocol:?} is not compatible with purpose {purpose:?}"
+    )]
     InvalidProtocolPurposeCombination {
         protocol: Protocol,
         purpose: DomainPurpose,
@@ -224,6 +261,8 @@ pub enum DomainError {
         "Reconstruction threshold {threshold} overflowed when computing the DamgardEtAl bound."
     )]
     ReconstructionThresholdOverflow { threshold: u64 },
+    #[error("CaitSith threshold mismatch: expected {expected}, found {found}.")]
+    CaitsithThresholdMismatch { expected: u64, found: u64 },
 }
 
 /// A list specifying general categories of MPC Contract errors.

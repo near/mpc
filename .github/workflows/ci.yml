@@ -19,8 +19,22 @@ on:
     - cron: "5 0 * * 0"
 
 jobs:
+  # Downstream gates use `if: ${{ always() && needs.changes.outputs.code_changed != 'false' }}`.
+  # The `always()` overrides GitHub's implicit `success()` on `needs`, so a
+  # failed detector doesn't silently skip dependents (skipped checks satisfy
+  # required-check rules and could let a PR merge with zero CI signal). Only
+  # an explicit `'false'` (docs-only PR) skips the job.
+  changes:
+    name: "Detect non-docs changes"
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/changes.yml
+
   docker-tee-build:
     name: "Build MPC Node TEE Docker image"
+    needs: changes
+    if: ${{ always() && needs.changes.outputs.code_changed != 'false' }}
     runs-on: warp-ubuntu-2404-x64-16x
     timeout-minutes: 60
     permissions:
@@ -53,6 +67,8 @@ jobs:
 
   docker-rust-launcher-build-and-verify:
     name: "Build Rust Launcher Docker image and verify"
+    needs: changes
+    if: ${{ always() && needs.changes.outputs.code_changed != 'false' }}
     runs-on: warp-ubuntu-2404-x64-8x
     timeout-minutes: 60
     permissions:
@@ -90,6 +106,8 @@ jobs:
 
   mpc-unittests:
     name: "Cargo test: ${{ matrix.group }}"
+    needs: changes
+    if: ${{ always() && needs.changes.outputs.code_changed != 'false' }}
     runs-on: ${{ matrix.runner || 'warp-ubuntu-2404-x64-16x' }}
     timeout-minutes: 60
     permissions:
@@ -115,7 +133,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@21a544727d0c62386e78b4befe52d19ad12692e3 # v17
+        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
 
       - name: Restore /nix from cache
         uses: ./.github/actions/restore-nix-cache
@@ -133,6 +151,8 @@ jobs:
 
   mpc-contract-reproducible-build:
     name: "MPC contract reproducible build"
+    needs: changes
+    if: ${{ always() && needs.changes.outputs.code_changed != 'false' }}
     runs-on: warp-ubuntu-2404-x64-16x
     timeout-minutes: 60
     permissions:
@@ -145,7 +165,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@21a544727d0c62386e78b4befe52d19ad12692e3 # v17
+        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
 
       # only save nix cache in this single job to avoid duplicate cache saves from other jobs
       - name: Restore /nix from cache
@@ -154,15 +174,15 @@ jobs:
           save: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Build mpc-contract (reproducible)
-        run: |
-          nix develop --command cargo near build reproducible-wasm \
-            --manifest-path crates/contract/Cargo.toml
+        run: nix build -L .#mpc-contract
 
       - name: Check contract WASM size
         run: nix develop --command bash scripts/check-contract-wasm-size.sh
 
   nix-build-mpc-node:
     name: "Nix build mpc-node"
+    needs: changes
+    if: ${{ always() && needs.changes.outputs.code_changed != 'false' }}
     permissions:
       contents: read
     uses: ./.github/workflows/nix-build-mpc-node.yml
@@ -179,7 +199,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@21a544727d0c62386e78b4befe52d19ad12692e3 # v17
+        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
 
       - name: Restore /nix from cache
         uses: ./.github/actions/restore-nix-cache
@@ -197,6 +217,8 @@ jobs:
 
   mpc-e2e-tests:
     name: "MPC E2E tests"
+    needs: changes
+    if: ${{ always() && needs.changes.outputs.code_changed != 'false' }}
     runs-on: warp-ubuntu-2404-x64-32x
     timeout-minutes: 60
     permissions:
@@ -209,7 +231,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@21a544727d0c62386e78b4befe52d19ad12692e3 # v17
+        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
 
       - name: Restore /nix from cache
         uses: ./.github/actions/restore-nix-cache
@@ -232,9 +254,9 @@ jobs:
       - name: Build mpc-contract reproducibly
         if: github.ref == 'refs/heads/main'
         run: |
-          nix develop --command cargo near build reproducible-wasm \
-            --manifest-path crates/contract/Cargo.toml \
-            --out-dir target/wasm32-unknown-unknown/release-contract
+          nix build -L .#mpc-contract
+          mkdir -p target/wasm32-unknown-unknown/release-contract
+          cp result/mpc_contract.wasm target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
 
       - name: Build test-parallel-contract
         run: nix develop --command cargo make build-test-parallel-contract-optimized
@@ -249,6 +271,8 @@ jobs:
 
   ci-extra:
     name: "Extra CI checks"
+    needs: changes
+    if: ${{ always() && needs.changes.outputs.code_changed != 'false' }}
     runs-on: warp-ubuntu-2404-x64-2x
     permissions:
       contents: read
@@ -259,7 +283,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@21a544727d0c62386e78b4befe52d19ad12692e3 # v17
+        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
 
       - name: Restore /nix from cache
         uses: ./.github/actions/restore-nix-cache

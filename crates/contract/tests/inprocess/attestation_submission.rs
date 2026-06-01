@@ -1,7 +1,9 @@
 #![allow(non_snake_case)]
 
 use mpc_contract::{
+    MpcContract,
     crypto_shared::types::PublicKeyExtended,
+    errors::{Error, InvalidParameters},
     primitives::{
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantId, ParticipantInfo},
@@ -9,17 +11,16 @@ use mpc_contract::{
         thresholds::{Threshold, ThresholdParameters},
     },
     tee::tee_state::NodeId,
-    MpcContract,
 };
 use near_mpc_contract_interface::types::{
     Attestation, InitConfig, MockAttestation, Protocol, ProtocolContractState,
     ReconstructionThreshold,
 };
-use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, DomainPurpose};
+use near_mpc_contract_interface::types::{DomainConfig, DomainId, DomainPurpose};
 
 use assert_matches::assert_matches;
 use near_account_id::AccountId;
-use near_sdk::{test_utils::VMContextBuilder, testing_env, NearToken, VMContext};
+use near_sdk::{NearToken, VMContext, test_utils::VMContextBuilder, testing_env};
 use rstest::rstest;
 use std::{str::FromStr, time::Duration};
 
@@ -106,7 +107,6 @@ impl TestSetupBuilder {
 
         let domains = vec![DomainConfig {
             id: DomainId::default(),
-            curve: Curve::Secp256k1,
             protocol: Protocol::CaitSith,
             reconstruction_threshold: ReconstructionThreshold::new(2),
             purpose: DomainPurpose::Sign,
@@ -160,7 +160,6 @@ impl TestSetupBuilder {
                         .contract
                         .vote_add_domains(vec![DomainConfig {
                             id: DomainId(1),
-                            curve: Curve::Edwards25519,
                             protocol: Protocol::Frost,
                             reconstruction_threshold: ReconstructionThreshold::new(2),
                             purpose: DomainPurpose::Sign,
@@ -225,11 +224,13 @@ impl TestSetup {
 
     /// Switches testing context to a given participant at a specific timestamp
     fn with_env(&mut self, account_id: &AccountId, timestamp: u64) {
-        testing_env!(VMContextBuilder::new()
-            .block_timestamp(timestamp)
-            .signer_account_id(account_id.clone())
-            .predecessor_account_id(account_id.clone())
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .block_timestamp(timestamp)
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build()
+        );
     }
 
     /// Makes all participants vote for a given code hash at a specific timestamp
@@ -273,9 +274,79 @@ fn create_context_for_participant(account_id: &AccountId) -> VMContext {
 }
 
 fn set_system_time(nano_seconds_since_unix_epoch: u64) {
-    testing_env!(VMContextBuilder::new()
-        .block_timestamp(nano_seconds_since_unix_epoch)
-        .build());
+    testing_env!(
+        VMContextBuilder::new()
+            .block_timestamp(nano_seconds_since_unix_epoch)
+            .build()
+    );
+}
+
+/// **Test that `submit_participant_info` rejects an attempt by one account to overwrite
+/// another account's stored attestation entry**, keyed by TLS public key. Without this
+/// gate, any caller could replace a legit participant's attestation and lock them out of
+/// every attestation-gated method (DoS via cross-participant overwrite).
+#[test]
+fn submit_participant_info__should_reject_overwrite_from_other_account() {
+    // Given: a running contract with two participants who have submitted their
+    // attestations. We will treat `participants_list[0]` as the victim.
+    const PARTICIPANT_COUNT: usize = 2;
+    const THRESHOLD: u64 = 2;
+
+    testing_env!(
+        VMContextBuilder::new()
+            .attached_deposit(NearToken::from_near(1))
+            .build()
+    );
+
+    let mut setup = TestSetupBuilder::new()
+        .with_partcipant_count(PARTICIPANT_COUNT)
+        .with_threshold(THRESHOLD)
+        .build();
+
+    let participant_nodes = setup.get_participant_node_ids();
+    let victim_node = participant_nodes[0].clone();
+    let victim_attestation = Attestation::Mock(MockAttestation::Valid);
+    setup.submit_attestation_for_node(&victim_node, victim_attestation);
+
+    let stored_before = setup
+        .contract
+        .get_attestation(victim_node.tls_public_key.clone())
+        .unwrap()
+        .expect("victim attestation should be stored");
+
+    // When: an unrelated account submits an attestation that targets the victim's TLS key.
+    // The attacker context attaches a deposit large enough to cover any storage charge,
+    // so the call can only fail due to the ownership check — not `InsufficientDeposit`.
+    let attacker_node = NodeId {
+        account_id: "attacker.near".parse().unwrap(),
+        tls_public_key: victim_node.tls_public_key.clone(),
+        account_public_key: bogus_ed25519_public_key(),
+    };
+    testing_env!(
+        VMContextBuilder::new()
+            .signer_account_id(attacker_node.account_id.clone())
+            .predecessor_account_id(attacker_node.account_id.clone())
+            .attached_deposit(NearToken::from_near(1))
+            .build()
+    );
+    let attack_result = setup.contract.submit_participant_info(
+        Attestation::Mock(MockAttestation::Valid),
+        attacker_node.tls_public_key.clone(),
+    );
+
+    // Then: the contract rejects the call with the TLS-ownership error and the victim's
+    // entry is unchanged.
+    assert_matches!(
+        &attack_result,
+        Err(Error::InvalidParameters(InvalidParameters::InvalidTeeRemoteAttestation { reason }))
+            if reason.contains("TLS public key is already registered")
+    );
+    let stored_after = setup
+        .contract
+        .get_attestation(victim_node.tls_public_key)
+        .unwrap()
+        .expect("victim attestation should still be stored");
+    assert_eq!(stored_before, stored_after);
 }
 
 /// **Test that `clean_tee_status()` is vote-only** — attestations for non-participants
@@ -287,9 +358,11 @@ fn clean_tee_status__should_not_touch_attestations() {
     const PARTICIPANT_COUNT: usize = 2; // After resharing removed one participant
     const THRESHOLD: u64 = 2;
 
-    testing_env!(VMContextBuilder::new()
-        .attached_deposit(NearToken::from_near(1))
-        .build());
+    testing_env!(
+        VMContextBuilder::new()
+            .attached_deposit(NearToken::from_near(1))
+            .build()
+    );
 
     // Create contract in Running state with 2 current participants
     let mut setup = TestSetupBuilder::new()
@@ -303,7 +376,6 @@ fn clean_tee_status__should_not_touch_attestations() {
         .participants_list
         .iter()
         .take(PARTICIPANT_COUNT)
-        .cloned()
         .map(|(account_id, _, participant_info)| NodeId {
             account_id: account_id.clone(),
             tls_public_key: participant_info.tls_public_key.clone(),
@@ -371,10 +443,12 @@ fn clean_invalid_attestations__should_remove_expired_entries() {
     const EXPIRY_SECONDS: u64 = 1_000;
     const NOW_NS: u64 = 5_000 * NANOS_IN_SECOND;
 
-    testing_env!(VMContextBuilder::new()
-        .attached_deposit(NearToken::from_near(1))
-        .block_timestamp(0)
-        .build());
+    testing_env!(
+        VMContextBuilder::new()
+            .attached_deposit(NearToken::from_near(1))
+            .block_timestamp(0)
+            .build()
+    );
 
     let mut setup = TestSetupBuilder::new()
         .with_partcipant_count(PARTICIPANT_COUNT)
@@ -431,10 +505,12 @@ fn clean_invalid_attestations__should_remove_expired_entries() {
 #[test]
 fn clean_invalid_attestations__should_reject_when_not_running() {
     // Given: contract sitting in Initializing state.
-    testing_env!(VMContextBuilder::new()
-        .attached_deposit(NearToken::from_near(1))
-        .block_timestamp(0)
-        .build());
+    testing_env!(
+        VMContextBuilder::new()
+            .attached_deposit(NearToken::from_near(1))
+            .block_timestamp(0)
+            .build()
+    );
 
     let mut setup = TestSetupBuilder::new()
         .with_contract_protocol_state(ContractProtocolState::Initializing)
@@ -448,7 +524,7 @@ fn clean_invalid_attestations__should_reject_when_not_running() {
 }
 
 macro_rules! assert_allowed_docker_image_hashes {
-    ($test_setup:expr, $blocktime_ns:expr, $expected_value:expr $(,)?) => {{
+    ($test_setup:expr_2021, $blocktime_ns:expr_2021, $expected_value:expr_2021 $(,)?) => {{
         set_system_time($blocktime_ns);
 
         let mut res: Vec<[u8; 32]> = $test_setup

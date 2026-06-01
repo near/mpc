@@ -38,7 +38,7 @@ members = [
 ]
 
 [workspace.package]
-version = "3.9.0"
+version = "3.11.0"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/near/mpc"
@@ -122,7 +122,7 @@ derive_more = { version = "2.1.1", features = [
 ] }
 digest = "0.10.7"
 dstack-sdk = { version = "0.1.2" }
-dstack-sdk-types = { version = "0.1.2", default-features = false, features = [
+dstack-sdk-types = { version = "0.1.3", default-features = false, features = [
     "borsh",
 ] }
 ecdsa = { version = "0.16.9", features = ["digest", "hazmat"] }
@@ -132,18 +132,18 @@ ed25519-dalek = { version = "2.2.0", features = [
     "pkcs8",
     "rand_core",
 ] }
-either = "1.15.0"
+either = "1.16.0"
 elliptic-curve = "0.13.8"
 ethereum-types = "0.16.0"
 flume = "0.12.0"
-frost-core = { version = "2.2.0", default-features = false, features = [
+frost-core = { version = "3.0.0", default-features = false, features = [
     "serde",
 ] }
-frost-ed25519 = { version = "2.2.0", default-features = false }
-frost-secp256k1 = { version = "2.2.0", default-features = false }
+frost-ed25519 = { version = "3.0.0", default-features = false }
+frost-secp256k1 = { version = "3.0.0", default-features = false }
 futures = "0.3.32"
 futures-lite = "2.6.1"
-gcloud-sdk = { version = "0.29.0", default-features = false, features = [
+gcloud-sdk = { version = "0.30.0", default-features = false, features = [
     "google-cloud-secretmanager-v1",
     "tls-webpki-roots",
 ] }
@@ -151,9 +151,10 @@ group = "0.13"
 hex = { version = "0.4.3", features = ["serde"] }
 hkdf = "0.12.4"
 http = "1.4.0"
+http-body-util = "0.1.3"
 humantime = "2.3.0"
-# TODO(#1299): updating this brings considerable breaking changes
-hyper = { version = "0.14.32", features = ["server", "http1", "tcp", "stream"] }
+hyper = { version = "1.10.1", features = ["client", "server", "http1"] }
+hyper-util = { version = "0.1.20", features = ["tokio"] }
 inferno = "0.12"
 insta = { version = "1.46.3", features = ["json", "redactions"] }
 itertools = "0.14.0"
@@ -182,7 +183,6 @@ near-primitives = "0.34.6"
 near-sandbox = "0.3.9"
 near-sdk = { version = "5.26.1", features = [
     "legacy",
-    "unit-testing",
     "unstable",
 ] }
 near-workspaces = { version = "0.22.1" }
@@ -200,8 +200,7 @@ proc-macro2 = "1.0"
 quote = "1.0"
 # TODO(#2051): updating this brings considerable breaking changes
 rcgen = "0.13.2"
-# This project has been forked due to incompatibility problems with cheater detection feature activated on the original Zcash repo
-reddsa = { git = "https://github.com/near/reddsa", rev = "c7cd92a55f7399d8d7f8c0ac386445b5f898f197", default-features = false, features = [
+reddsa = { version = "0.5.2", default-features = false, features = [
     "frost",
 ] }
 regex = "1.12.3"
@@ -216,7 +215,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_bytes = "0.11.19"
 serde_json = "1.0"
 serde_repr = "0.1.20"
-serde_with = { version = "3.17.0", features = ["hex"] }
+serde_with = { version = "3.20.0", features = ["hex"] }
 serial_test = "3.4.0"
 sha2 = "0.10.9"
 sha3 = "0.10.8"
@@ -252,16 +251,16 @@ zeroize = { version = "1.8.2", features = ["zeroize_derive"] }
 zstd = "0.13.3"
 
 # NEAR CORE DEPENDENCIES:
-near-async = { git = "https://github.com/near/nearcore", tag = "2.11.1" }
-near-client = { git = "https://github.com/near/nearcore", tag = "2.11.1" }
-near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.11.1" }
-near-crypto = { git = "https://github.com/near/nearcore", tag = "2.11.1" }
-near-indexer = { git = "https://github.com/near/nearcore", tag = "2.11.1" }
-near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.11.1" }
-near-o11y = { git = "https://github.com/near/nearcore", tag = "2.11.1" }
-near-store = { git = "https://github.com/near/nearcore", tag = "2.11.1" }
-near-time = { git = "https://github.com/near/nearcore", tag = "2.11.1" }
-nearcore = { git = "https://github.com/near/nearcore", tag = "2.11.1" }
+near-async = { git = "https://github.com/near/nearcore", tag = "2.12.0-rc.2" }
+near-client = { git = "https://github.com/near/nearcore", tag = "2.12.0-rc.2" }
+near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.12.0-rc.2" }
+near-crypto = { git = "https://github.com/near/nearcore", tag = "2.12.0-rc.2" }
+near-indexer = { git = "https://github.com/near/nearcore", tag = "2.12.0-rc.2" }
+near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.12.0-rc.2" }
+near-o11y = { git = "https://github.com/near/nearcore", tag = "2.12.0-rc.2" }
+near-store = { git = "https://github.com/near/nearcore", tag = "2.12.0-rc.2" }
+near-time = { git = "https://github.com/near/nearcore", tag = "2.12.0-rc.2" }
+nearcore = { git = "https://github.com/near/nearcore", tag = "2.12.0-rc.2" }
 
 ## Outdated dependencies we cannot upgrade ##
 # Version 0.8.3 requires rustc 1.88
@@ -270,8 +269,7 @@ httpmock = "0.8.2"
 # This can be removed once the workspace `utilities` crate is removed
 near-account-id-v1 = { version = "1.1.4", package = "near-account-id" }
 
-# This cannot be upgraded because it conflicts the prometheus version required by nearcore
-prometheus = { version = "0.13.4", default-features = false }
+prometheus = { version = "0.14.0", default-features = false }
 
 # TODO(#690): This cannot be upgraded until nearcore does
 rocksdb = "0.21.0"

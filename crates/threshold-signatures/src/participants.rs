@@ -6,14 +6,14 @@
 
 use std::collections::HashMap;
 
-use frost_core::serialization::SerializableScalar;
 use frost_core::Identifier;
+use frost_core::serialization::SerializableScalar;
 use serde::{Deserialize, Serialize};
 
+use crate::Scalar;
 use crate::crypto::ciphersuite::BytesOrder;
 use crate::crypto::{ciphersuite::Ciphersuite, polynomials::compute_lagrange_coefficient};
 use crate::errors::ProtocolError;
-use crate::Scalar;
 
 /// Represents a participant in the protocol.
 ///
@@ -235,13 +235,12 @@ impl<'a, T> ParticipantMap<'a, T> {
     ///
     /// This will do nothing if the participant is unknown, or already has a value
     pub fn put(&mut self, participant: Participant, data: T) {
-        if let Some(&i) = self.participants.indices.get(&participant) {
-            if let Some(data_i) = self.data.get_mut(i) {
-                if data_i.is_none() {
-                    *data_i = Some(data);
-                    self.count += 1;
-                }
-            }
+        if let Some(&i) = self.participants.indices.get(&participant)
+            && let Some(data_i) = self.data.get_mut(i)
+            && data_i.is_none()
+        {
+            *data_i = Some(data);
+            self.count += 1;
         }
     }
 

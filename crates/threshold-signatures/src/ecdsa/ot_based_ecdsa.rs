@@ -7,11 +7,11 @@ mod test;
 
 use crate::errors::ProtocolError;
 use crate::{
-    ecdsa::{
-        ot_based_ecdsa::triples::{TriplePub, TripleShare},
-        AffinePoint, KeygenOutput, RerandomizationArguments, Scalar,
-    },
     ReconstructionLowerBound,
+    ecdsa::{
+        AffinePoint, KeygenOutput, RerandomizationArguments, Scalar,
+        ot_based_ecdsa::triples::{TriplePub, TripleShare},
+    },
 };
 use serde::{Deserialize, Serialize};
 use subtle::{Choice, ConstantTimeEq};

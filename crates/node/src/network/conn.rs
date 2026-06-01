@@ -348,7 +348,7 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> AllNodeConnectivities<I
 
 #[cfg(test)]
 mod tests {
-    use crate::async_testing::{run_future_once, MaybeReady};
+    use crate::async_testing::{MaybeReady, run_future_once};
     use crate::network::conn::{
         AllNodeConnectivities, ConnectionVersion, ConnectionWithVersion, NodeConnectivity,
         OptionSenderConnectionId,

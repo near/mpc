@@ -2,44 +2,30 @@
 name = "mpc-contract"
 version = { workspace = true }
 license = { workspace = true }
-edition = "2021"
+edition = { workspace = true }
 repository = "https://github.com/near/mpc"
 
-# fields to configure build with WASM reproducibility, according to specs
-# in https://github.com/near/NEPs/blob/master/neps/nep-0330.md
-[package.metadata.near.reproducible_build]
-# docker image, descriptor of build environment
-image = "sourcescan/cargo-near:0.17.0-rust-1.86.0"
-# tag after colon above serves only descriptive purpose; image is identified by digest
-image_digest = "sha256:1784ca6310f3496f0048356ce420921c8f5fdf71ee8124d43a2e1ceb1f70db8a"
-# list of environment variables names, whose values, if set, will be used as external build parameters
-# in a reproducible manner
-# supported by `sourcescan/cargo-near:0.10.1-rust-1.82.0` image or later images
-passed_env = []
-# build command inside of docker container
-# if docker image from default gallery is used https://hub.docker.com/r/sourcescan/cargo-near/tags,
-# the command may be any combination of flags of `cargo-near`,
-# supported by respective version of binary inside the container besides `--no-locked` flag
-container_build_command = [
-    "cargo",
-    "near",
-    "build",
-    # this is counter intuitive, but it correctly follows the docs,
-    # the non-reproducible build inside a reproducible environment becomes reproducible
-    "non-reproducible-wasm",
-    "--locked",
-    "--profile=release-contract",
-    "--features",
-    "abi",
-]
+# Reproducible builds are produced by the Nix derivation at `nix/mpc-contract.nix`
+# (exposed as `packages.<system>.mpc-contract` in `flake.nix`). See
+# `docs/reproducible-builds.md` for instructions and hash verification.
 
 [lib]
 crate-type = ["cdylib", "lib"]
 
 [features]
-test-utils = ["rand", "threshold-signatures", "near-mpc-contract-interface/blstrs"]
+test-utils = [
+    "rand",
+    "threshold-signatures",
+    "near-mpc-contract-interface/blstrs",
+    "near-sdk/unit-testing",
+]
 # WASM-compatible benchmark endpoints for sandbox gas testing
 bench-contract-methods = []
+# Sandbox-only view methods that expose internal contract state for tests that need to
+# assert invariants that aren't visible through the production API surface (e.g. the
+# length of a fan-out queue). Distinct from `bench-contract-methods` because these are
+# behavioral hooks, not gas-measurement hooks.
+sandbox-test-methods = []
 # Exposes constructors for DTO-to-internal type conversion in the node.
 # TODO(#381): Remove once the node no longer depends on the contract crate.
 compat = []
@@ -108,7 +94,11 @@ digest = { workspace = true }
 ecdsa = { workspace = true }
 futures = { workspace = true }
 insta = { workspace = true }
-mpc-contract = { workspace = true, features = ["compat", "test-utils"] }
+mpc-contract = { workspace = true, features = [
+    "compat",
+    "sandbox-test-methods",
+    "test-utils",
+] }
 near-abi = { workspace = true }
 near-mpc-sdk = { workspace = true }
 near-workspaces = { workspace = true }

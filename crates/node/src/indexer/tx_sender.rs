@@ -1,6 +1,6 @@
-use super::tx_signer::{TransactionSigner, TransactionSigners};
 use super::ChainSendTransactionRequest::{self, *};
 use super::IndexerState;
+use super::tx_signer::{TransactionSigner, TransactionSigners};
 use crate::config::RespondConfig;
 use crate::metrics;
 use anyhow::Context;
@@ -172,37 +172,40 @@ async fn observe_tx_result(
     match request {
         Respond(respond_args) => {
             // Confirm whether the respond call succeeded by checking whether the
-            // pending signature request still exists in the contract state
+            // pending signature request still exists in the contract state.
+            // A successful respond removes the request from contract state.
             let pending_request_response = indexer_state
                 .view_client
                 .get_pending_request(&indexer_state.mpc_contract_id, &respond_args.request)
                 .await?;
 
             let transaction_status = match pending_request_response {
-                Some(_) => TransactionStatus::Executed,
-                None => TransactionStatus::NotExecuted,
+                Some(_) => TransactionStatus::NotExecuted,
+                None => TransactionStatus::Executed,
             };
 
             Ok(transaction_status)
         }
         CKDRespond(respond_args) => {
             // Confirm whether the respond call succeeded by checking whether the
-            // pending ckd request still exists in the contract state
+            // pending ckd request still exists in the contract state.
+            // A successful respond removes the request from contract state.
             let pending_request_response = indexer_state
                 .view_client
                 .get_pending_ckd_request(&indexer_state.mpc_contract_id, &respond_args.request)
                 .await?;
 
             let transaction_status = match pending_request_response {
-                Some(_) => TransactionStatus::Executed,
-                None => TransactionStatus::NotExecuted,
+                Some(_) => TransactionStatus::NotExecuted,
+                None => TransactionStatus::Executed,
             };
 
             Ok(transaction_status)
         }
         VerifyForeignTransactionRespond(respond_args) => {
             // Confirm whether the respond call succeeded by checking whether the
-            // pending verify foreign tx request still exists in the contract state
+            // pending verify foreign tx request still exists in the contract state.
+            // A successful respond removes the request from contract state.
             let pending_request_response = indexer_state
                 .view_client
                 .get_pending_verify_foreign_tx_request(
@@ -212,8 +215,8 @@ async fn observe_tx_result(
                 .await?;
 
             let transaction_status = match pending_request_response {
-                Some(_) => TransactionStatus::Executed,
-                None => TransactionStatus::NotExecuted,
+                Some(_) => TransactionStatus::NotExecuted,
+                None => TransactionStatus::Executed,
             };
 
             Ok(transaction_status)

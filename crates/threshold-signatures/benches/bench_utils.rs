@@ -24,11 +24,11 @@ use k256::AffinePoint;
 use std::{env, sync::LazyLock};
 
 use threshold_signatures::{
+    ReconstructionLowerBound,
     ecdsa::{self, Scalar},
     participants::Participant,
     protocol::Protocol,
     test_utils::Simulator,
-    ReconstructionLowerBound,
 };
 
 // fix malicious number of participants

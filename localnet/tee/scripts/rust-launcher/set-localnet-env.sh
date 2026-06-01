@@ -16,7 +16,7 @@ export MPC_IMAGE=nearone/mpc-node
 # Manifest digest of the MPC node image (filled into the launcher compose
 # template and voted in as the allowed code hash).
 # Get with: docker pull nearone/mpc-node:<tag> 2>&1 | grep Digest
-export MPC_MANIFEST_DIGEST=sha256:eb4e3b75d439b77689534df6a69b542e779989f10b681ac43787a58e7c4aefdb
+export MPC_MANIFEST_DIGEST=sha256:2d399b135910f1c92696c7675d7e95c02e0da3766b39a1943087757e73386a61
 
 # Manifest digest of the launcher image (filled into the launcher compose
 # template and voted in as the allowed launcher hash).
@@ -31,6 +31,12 @@ export FUNDER_ACCOUNT=test.near
 export FUNDER_PRIVATE_KEY="$(jq -r '.secret_key' ~/.near/mpc-localnet/validator_key.json)"
 
 export MAX_NODES_TO_FUND=2
+
+# Migration test drives a lot of operator txns (add-key x2 for the target,
+# register_backup_service, start_node_migration) — 1 NEAR per node runs
+# out. Give each node 10 NEAR and the root enough to cover.
+export NODE_INITIAL_BALANCE="10 NEAR"
+export ROOT_INITIAL_BALANCE="45 NEAR"
 
 export NEAR_TX_SLEEP_SEC=1
 export NEAR_RETRY_SLEEP_SEC=2

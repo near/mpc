@@ -2,8 +2,8 @@
 
 use crate::sandbox::{
     common::{
-        account_ed25519_public_key, build_sandbox_node_ids, gen_accounts, submit_tee_attestations,
-        SandboxTestSetup,
+        SandboxTestSetup, account_ed25519_public_key, build_sandbox_node_ids, gen_accounts,
+        submit_tee_attestations,
     },
     utils::{
         interface::IntoContractType,

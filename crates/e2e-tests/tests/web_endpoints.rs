@@ -96,7 +96,10 @@ async fn test_web_endpoints() {
             &client,
             i,
             &format!("http://{web_addr}/metrics"),
-            &["mpc_num_signature_requests_indexed"],
+            &[
+                "mpc_num_signature_requests_indexed", // representative of mpc metrics
+                "near_block_processed_total",         // representative of nearcore metrics
+            ],
         )
         .await
         .expect("metrics endpoint failed");
@@ -112,7 +115,7 @@ async fn test_web_endpoints() {
             &client,
             i,
             &format!("http://{web_addr}/debug/blocks"),
-            &["Recent blocks:", "reqs:"],
+            &["Recent blocks:"],
         )
         .await
         .expect("debug/blocks endpoint failed");

@@ -7,8 +7,6 @@ dependencies = [
   "editorconfig",
   "assert-matches",
   "use-in-fn",
-  "ruff-format",
-  "ruff-check",
   "fmt",
   "cargo-sort",
   "cargo-shear",
@@ -74,14 +72,6 @@ args = [
   "--locked",
 ]
 
-[tasks.ruff-format]
-command = "ruff"
-args = ["format", "--diff"]
-
-[tasks.ruff-check]
-command = "ruff"
-args = ["check", "--diff"]
-
 [tasks.zizmor]
 command = "zizmor"
 args = [".github/"]
@@ -114,8 +104,8 @@ args = ["scripts/check-assert-matches.sh"]
 
 [tasks.use-in-fn]
 description = "Check for use statements inside function bodies"
-command = "python"
-args = ["scripts/check-use-in-fn.py"]
+command = "ast-grep"
+args = ["scan", "--rule", "lints/no-use-in-fn.yml", "crates/"]
 
 [tasks.cargo-deny]
 description = "Run cargo deny"
@@ -169,9 +159,12 @@ args = [
 [tasks.build-mpc-contract-optimized]
 description = "Build the mpc-contract WASM used by the E2E tests"
 condition = { env_not_set = ["E2E_SKIP_BUILD"] }
+# `--enable-bulk-memory` and `--enable-nontrapping-float-to-int` mirror what
+# `cargo near build` passes to wasm-opt; rustc >= 1.87 emits both feature
+# sets by default, so wasm-opt must accept them to validate the input.
 script = [
   "cargo build -p mpc-contract --target=wasm32-unknown-unknown --profile=release-contract --locked",
-  "wasm-opt -Oz target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm -o target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm",
+  "wasm-opt -Oz --enable-bulk-memory --enable-nontrapping-float-to-int target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm -o target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm",
 ]
 
 [tasks.build-test-parallel-contract-optimized]
@@ -179,7 +172,7 @@ description = "Build the test-parallel-contract WASM used by the E2E tests"
 condition = { env_not_set = ["E2E_SKIP_BUILD"] }
 script = [
   "cargo build -p test-parallel-contract --target=wasm32-unknown-unknown --profile=release-contract --locked",
-  "wasm-opt -Oz target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm -o target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm",
+  "wasm-opt -Oz --enable-bulk-memory --enable-nontrapping-float-to-int target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm -o target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm",
 ]
 
 [tasks.build-backup-cli]

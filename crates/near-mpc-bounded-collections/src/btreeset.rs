@@ -116,10 +116,10 @@ impl<T: Ord + schemars::JsonSchema> schemars::JsonSchema for NonEmptyBTreeSet<T>
     fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
         // Reuse BTreeSet's schema with minItems: 1
         let mut schema = <BTreeSet<T>>::json_schema(generator);
-        if let schemars::schema::Schema::Object(ref mut obj) = schema {
-            if let Some(ref mut array) = obj.array {
-                array.min_items = Some(1);
-            }
+        if let schemars::schema::Schema::Object(ref mut obj) = schema
+            && let Some(ref mut array) = obj.array
+        {
+            array.min_items = Some(1);
         }
         schema
     }

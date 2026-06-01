@@ -25,7 +25,7 @@ pub(crate) trait IsSyncing: Send + Sync + 'static {
                 match self.is_syncing().await {
                     Ok(false) => return,
                     Ok(true) => {
-                        if attempt % 120 == 0 {
+                        if attempt.is_multiple_of(120) {
                             tracing::info!("has been syncing for: {} seconds", attempt / 2);
                         }
                         attempt += 1;

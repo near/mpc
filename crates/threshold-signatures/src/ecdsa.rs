@@ -6,12 +6,12 @@ pub mod robust_ecdsa;
 use hkdf::Hkdf;
 
 use elliptic_curve::{
+    PrimeField,
     bigint::U256,
     ops::{Invert, Reduce},
     point::AffineCoordinates,
     scalar::IsHigh,
     sec1::ToEncodedPoint,
-    PrimeField,
 };
 
 use frost_secp256k1::{Field, Group, Secp256K1Group, Secp256K1ScalarField};
@@ -196,22 +196,22 @@ mod test {
         },
         participants::ParticipantList,
         test_utils::{
-            ecdsa_generate_rerandpresig_args, generate_participants,
-            generate_participants_with_random_ids, MockCryptoRng,
+            MockCryptoRng, ecdsa_generate_rerandpresig_args, generate_participants,
+            generate_participants_with_random_ids,
         },
     };
 
     use elliptic_curve::ops::{Invert, LinearCombination, Reduce};
 
-    use frost_core::{keys::SigningShare, Ciphersuite, SigningKey as FrostSigningKey};
+    use frost_core::{Ciphersuite, SigningKey as FrostSigningKey, keys::SigningShare};
 
     use k256::{
-        ecdsa::{signature::Verifier, SigningKey},
         ProjectivePoint, Secp256k1,
+        ecdsa::{SigningKey, signature::Verifier},
     };
     use rand::SeedableRng;
     use rand_core::{CryptoRngCore, RngCore};
-    use sha2::{digest::FixedOutput, Digest, Sha256};
+    use sha2::{Digest, Sha256, digest::FixedOutput};
     type C = Secp256K1Sha256;
 
     #[test]

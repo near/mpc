@@ -1,7 +1,7 @@
 use frost_core::{
+    Identifier,
     keys::SigningShare,
-    round1::{commit, SigningCommitments, SigningNonces},
-    Field, Group, Identifier,
+    round1::{SigningCommitments, SigningNonces, commit},
 };
 use rand_core::CryptoRngCore;
 use serde::{Deserialize, Serialize};
@@ -9,14 +9,14 @@ use std::collections::BTreeMap;
 use zeroize::ZeroizeOnDrop;
 
 use crate::{
+    Ciphersuite, KeygenOutput, ReconstructionLowerBound,
     errors::{InitializationError, ProtocolError},
     participants::{Participant, ParticipantList},
     protocol::{
-        helpers::recv_from_others,
-        internal::{make_protocol, Comms, SharedChannel},
         Protocol,
+        helpers::recv_from_others,
+        internal::{Comms, SharedChannel, make_protocol},
     },
-    Ciphersuite, KeygenOutput, ReconstructionLowerBound,
 };
 
 pub mod eddsa;
@@ -35,29 +35,28 @@ pub struct PresignArguments<C: Ciphersuite> {
 /// This output is basically all the parts of the signature that we can perform
 /// without knowing the message.
 #[derive(Clone, Serialize, Deserialize, Eq, PartialEq, ZeroizeOnDrop)]
-pub struct PresignOutput<C: Ciphersuite + Send + 'static> {
+pub struct PresignOutput<C: Ciphersuite> {
     /// The secret signing nonces.
     pub nonces: SigningNonces<C>,
     #[zeroize(skip)]
     pub commitments_map: BTreeMap<Identifier<C>, SigningCommitments<C>>,
 }
 
-impl_secret_debug!({C: Ciphersuite + Send + 'static} PresignOutput<C> { show: [commitments_map], redact: [nonces] });
+impl_secret_debug!({C: Ciphersuite} PresignOutput<C> { show: [commitments_map], redact: [nonces] });
 
 /// Maximum incoming buffer entries for the FROST presign protocol.
 pub(crate) const FROST_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES: usize = 1;
 
 /// Runs Presigning of either `EdDSA` or `RedDSA`
-pub fn presign<C>(
+pub fn presign<C, R>(
     participants: &[Participant],
     me: Participant,
     args: &PresignArguments<C>,
-    rng: impl CryptoRngCore + Send + 'static,
-) -> Result<impl Protocol<Output = PresignOutput<C>>, InitializationError>
+    rng: R,
+) -> Result<impl Protocol<Output = PresignOutput<C>> + use<C, R>, InitializationError>
 where
-    C: Ciphersuite + Send,
-    <<<C as frost_core::Ciphersuite>::Group as Group>::Field as Field>::Scalar: Send,
-    <<C as frost_core::Ciphersuite>::Group as frost_core::Group>::Element: std::marker::Send,
+    C: Ciphersuite,
+    R: CryptoRngCore + Send + 'static,
 {
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
@@ -94,24 +93,28 @@ where
     Ok(make_protocol(ctx, fut))
 }
 
-async fn do_presign<C: Ciphersuite + Send>(
+async fn do_presign<C: Ciphersuite>(
     mut chan: SharedChannel,
     participants: ParticipantList,
     me: Participant,
     signing_share: SigningShare<C>,
     mut rng: impl CryptoRngCore,
 ) -> Result<PresignOutput<C>, ProtocolError> {
-    // Round 1
+    // --- Round 1
+    // * Compute and Receive commitments.
     let mut commitments_map: BTreeMap<Identifier<C>, SigningCommitments<C>> = BTreeMap::new();
 
+    // Step 1.1
     // Creating two commitments and corresponding nonces
     let (nonces, commitments) = commit(&signing_share, &mut rng);
     commitments_map.insert(me.to_identifier()?, commitments);
 
+    // Step 1.2
     let commit_waitpoint = chan.next_waitpoint();
     // Sending the commitments to all
     chan.send_many(commit_waitpoint, &commitments)?;
 
+    // Step 1.3 and 1.4
     // Collecting the commitments
     for (from, commitment) in recv_from_others(&chan, commit_waitpoint, &participants, me).await? {
         commitments_map.insert(from.to_identifier()?, commitment);
@@ -169,7 +172,7 @@ pub fn assert_sign_inputs(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::test_utils::{assert_buffer_capacity, generate_participants, MockCryptoRng};
+    use crate::test_utils::{MockCryptoRng, assert_buffer_capacity, generate_participants};
     use frost_ed25519::Ed25519Sha512;
     use rand::SeedableRng;
     use rstest::rstest;

@@ -63,6 +63,9 @@
         mpc-node = pkgs.callPackage ./nix/mpc-node.nix {
           inherit crane prodCFlags;
         };
+        mpc-contract = pkgs.callPackage ./nix/mpc-contract.nix {
+          cargo-near = pkgs.callPackage ./nix/cargo-near.nix { };
+        };
       });
 
       devShells = forAllSystems (
@@ -164,17 +167,10 @@
             cargo-near
           ];
 
-          pythonTools = with pkgs; [
-            python311
-            python311Packages.keyring
-            python311Packages.tree-sitter
-            python311Packages.tree-sitter-rust
-            ruff # linter and formatter
-          ];
-
           miscTools = with pkgs; [
             git
             binaryen
+            ast-grep  # structural lints, e.g. lints/no-use-in-fn.yml
             editorconfig-checker
             jq
             perl
@@ -222,7 +218,6 @@
               llvmTools ++
               rustTools ++
               cargoTools ++
-              pythonTools ++
               nearTools ++
               miscTools ++
               buildLibs;

@@ -10,8 +10,8 @@ use httpmock::prelude::*;
 use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::types::{
-    BitcoinExtractor, BitcoinRpcRequest, BitcoinTxId, BlockConfirmations, Curve, DomainConfig,
-    DomainId, DomainPurpose, EvmExtractor, EvmFinality, EvmRpcRequest, EvmTxId, ForeignChain,
+    BitcoinExtractor, BitcoinRpcRequest, BitcoinTxId, BlockConfirmations, DomainConfig, DomainId,
+    DomainPurpose, EvmExtractor, EvmFinality, EvmRpcRequest, EvmTxId, ForeignChain,
     ForeignChainRpcRequest, ForeignTxPayloadVersion, Protocol, ReconstructionThreshold,
     StarknetExtractor, StarknetFelt, StarknetFinality, StarknetRpcRequest, StarknetTxId,
     VerifyForeignTransactionRequestArgs,
@@ -19,7 +19,7 @@ use near_mpc_contract_interface::types::{
 
 struct ForeignTxTestEnv {
     cluster: e2e_tests::MpcCluster,
-    secp_domain_id: DomainId,
+    foreign_tx_domain_id: DomainId,
     _mock_servers: Vec<MockServer>,
 }
 
@@ -177,7 +177,6 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
             c.threshold = 2;
             c.domains = vec![DomainConfig {
                 id: DomainId(0),
-                curve: Curve::Secp256k1,
                 protocol: Protocol::CaitSith,
                 reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::ForeignTx,
@@ -232,17 +231,17 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
         near_mpc_contract_interface::types::ProtocolContractState::Running(r) => r,
         _ => bail!("expected Running state"),
     };
-    let secp_domain_id = running
+    let foreign_tx_domain_id = running
         .domains
         .domains
         .iter()
-        .find(|d| d.curve == Curve::Secp256k1)
-        .context("no Secp256k1 domain")?
+        .find(|d| d.purpose == DomainPurpose::ForeignTx)
+        .context("no ForeignTx domain")?
         .id;
 
     Ok(ForeignTxTestEnv {
         cluster,
-        secp_domain_id,
+        foreign_tx_domain_id,
         _mock_servers: mock_servers,
     })
 }
@@ -296,7 +295,7 @@ async fn verify_bitcoin(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
             confirmations: BlockConfirmations(1),
             extractors: vec![BitcoinExtractor::BlockHash],
         }),
-        domain_id: env.secp_domain_id,
+        domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
     };
     let outcome = env
@@ -314,7 +313,7 @@ async fn verify_abstract(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
             extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }],
             finality: EvmFinality::Finalized,
         }),
-        domain_id: env.secp_domain_id,
+        domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
     };
     let outcome = env
@@ -332,7 +331,7 @@ async fn verify_bnb(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
             extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }],
             finality: EvmFinality::Finalized,
         }),
-        domain_id: env.secp_domain_id,
+        domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
     };
     let outcome = env
@@ -350,7 +349,7 @@ async fn verify_base(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
             extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }],
             finality: EvmFinality::Finalized,
         }),
-        domain_id: env.secp_domain_id,
+        domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
     };
     let outcome = env
@@ -368,7 +367,7 @@ async fn verify_starknet(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
             finality: StarknetFinality::AcceptedOnL1,
             extractors: vec![StarknetExtractor::BlockHash],
         }),
-        domain_id: env.secp_domain_id,
+        domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
     };
     let outcome = env
@@ -386,7 +385,7 @@ async fn verify_arbitrum(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
             extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }],
             finality: EvmFinality::Finalized,
         }),
-        domain_id: env.secp_domain_id,
+        domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
     };
     let outcome = env
@@ -404,7 +403,7 @@ async fn verify_hyper_evm(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
             extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }],
             finality: EvmFinality::Finalized,
         }),
-        domain_id: env.secp_domain_id,
+        domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
     };
     let outcome = env
@@ -422,7 +421,7 @@ async fn verify_polygon(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
             extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }],
             finality: EvmFinality::Finalized,
         }),
-        domain_id: env.secp_domain_id,
+        domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
     };
     let outcome = env
@@ -476,7 +475,7 @@ async fn verify_foreign_transaction__should_sign_all_supported_chains() {
             extractors: vec![EvmExtractor::BlockHash],
             finality: EvmFinality::Finalized,
         }),
-        domain_id: env.secp_domain_id,
+        domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
     };
     let outcome = env

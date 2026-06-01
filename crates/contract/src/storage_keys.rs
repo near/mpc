@@ -1,4 +1,4 @@
-use near_sdk::{near, BorshStorageKey};
+use near_sdk::{BorshStorageKey, near};
 
 // !!! IMPORTANT !!!
 // for backwards compatibility, ensure the order is preserved and only append to this list
@@ -18,10 +18,16 @@ pub enum StorageKey {
     BackupServicesInfo,
     NodeMigrations,
     _ForeignChainPolicyVotes,
-    PendingVerifyForeignTxRequests,
-    PendingCKDRequestsV2,
+    _DeprecatedPendingVerifyForeignTxRequests,
+    _DeprecatedPendingCKDRequestsV2,
     _SupportedForeignChainsVotes,
-    PendingSignatureRequestsV3,
+    _DeprecatedPendingSignatureRequestsV3,
     StoredAttestations,
     SupportedForeignChainsByNode,
+    PendingSignatureRequestsV4,
+    PendingCKDRequestsV3,
+    PendingVerifyForeignTxRequestsV2,
+    AllowedForeignChainProvidersV1,
+    ForeignChainProviderVotesByVoterV1,
+    ForeignChainProviderVotesByProposalV1,
 }

@@ -1,4 +1,4 @@
-use crate::account::{make_random_account_name, OperatingAccount, OperatingAccounts};
+use crate::account::{OperatingAccount, OperatingAccounts, make_random_account_name};
 use crate::constants::{
     MINIMUM_BALANCE_TO_REMAIN_IN_ACCOUNTS, ONE_NEAR,
     PERCENT_OF_ORIGINAL_BALANCE_BELOW_WHICH_TO_REFILL,
@@ -99,7 +99,9 @@ pub async fn fund_accounts(
         .sum::<u128>()
         > 100 * ONE_NEAR
     {
-        panic!("Refusing to fund more than 100 NEAR at once, as it would drain too much of the faucet.");
+        panic!(
+            "Refusing to fund more than 100 NEAR at once, as it would drain too much of the faucet."
+        );
     }
 
     while !accounts_to_be_funded.is_empty() {

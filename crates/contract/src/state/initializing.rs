@@ -155,7 +155,7 @@ pub mod tests {
     use crate::primitives::domain::AddDomainsVotes;
     use crate::primitives::key_state::{AttemptId, KeyEventId};
     use crate::primitives::test_utils::{
-        bogus_ed25519_public_key_extended, gen_account_id, NUM_PROTOCOLS,
+        NUM_PROTOCOLS, bogus_ed25519_public_key_extended, gen_account_id,
     };
     use crate::primitives::threshold_votes::ThresholdParametersVotes;
     use crate::state::key_event::tests::find_leader;

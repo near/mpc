@@ -3,10 +3,10 @@ use std::collections::BTreeSet;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
+use near_sdk::IntoStorageKey;
 use near_sdk::near;
 use near_sdk::require;
 use near_sdk::store::IterableMap;
-use near_sdk::IntoStorageKey;
 
 /// Helper struct to keep track of submitted votes.
 /// Allows efficient look-up of votes by voter and votes by proposal.
@@ -17,6 +17,18 @@ where
 {
     proposal_by_voter: IterableMap<V, ProposalHash>,
     votes_by_proposal: IterableMap<ProposalHash, VoterSet<V>>,
+}
+
+impl<V> std::fmt::Debug for Votes<V>
+where
+    V: BorshSerialize + BorshDeserialize + Ord + std::fmt::Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Votes")
+            .field("proposal_by_voter", &self.proposal_by_voter)
+            .field("votes_by_proposal", &self.votes_by_proposal)
+            .finish()
+    }
 }
 
 impl<V> Votes<V>
@@ -172,8 +184,8 @@ where
 mod tests {
 
     use near_sdk::{
-        borsh::{self, BorshDeserialize, BorshSerialize},
         BorshStorageKey,
+        borsh::{self, BorshDeserialize, BorshSerialize},
     };
     use std::{
         collections::{BTreeMap, BTreeSet},
@@ -187,6 +199,10 @@ mod tests {
 
     #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, BorshDeserialize, BorshSerialize)]
     struct TestVoter(String);
+    #[expect(
+        dead_code,
+        reason = "constructed in tests via Borsh deserialization, which the dead-code analyzer doesn't see."
+    )]
     #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, BorshDeserialize, BorshSerialize)]
     struct TestProposal(String);
 

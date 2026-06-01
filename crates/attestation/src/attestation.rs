@@ -10,10 +10,10 @@ use crate::{
 use alloc::{
     format,
     string::{String, ToString},
+    vec::Vec,
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use core::fmt;
-use dcap_qvl::verify::VerifiedReport;
 use derive_more::Constructor;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256, Sha384};
@@ -37,6 +37,17 @@ pub struct DstackAttestation {
     pub tcb_info: TcbInfo,
 }
 
+/// Result of a successful [`DstackAttestation::verify`] call.
+#[derive(Clone, Debug)]
+pub struct AcceptedDstackAttestation {
+    pub measurements: ExpectedMeasurements,
+    /// Informational advisory IDs (e.g. `INTEL-DOC-10000` post-ESU) surfaced by
+    /// Intel's PCS alongside an `UpToDate` TCB status. They are not a security
+    /// failure — `UpToDate` is the sole security gate; these advisories convey
+    /// platform lifecycle information.
+    pub advisory_ids: Vec<String>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum VerificationError {
     #[error("could not parse embedded measurements: {0}")]
@@ -47,8 +58,6 @@ pub enum VerificationError {
     ReportNotTd10,
     #[error("TCB status `{0}` is not up to date")]
     TcbStatusNotUpToDate(String),
-    #[error("ouststanding advisories reported: {0}")]
-    NonEmptyAdvisoryIds(String),
     #[error("wrong {name} hash (found {found} expected {expected})")]
     WrongHash {
         name: &'static str,
@@ -122,13 +131,14 @@ impl DstackAttestation {
     ///   If any element in the set is valid, the function accepts the attestation as
     ///   valid.
     ///
-    /// On success, returns the matched measurements.
+    /// On success, returns the matched measurements along with any informational
+    /// advisory IDs surfaced alongside an `UpToDate` TCB status.
     pub fn verify(
         &self,
         expected_report_data: ReportData,
         timestamp_seconds: u64,
         accepted_measurements: &[ExpectedMeasurements],
-    ) -> Result<ExpectedMeasurements, VerificationError> {
+    ) -> Result<AcceptedDstackAttestation, VerificationError> {
         let verification_result =
             dcap_qvl::verify::verify(&self.quote, &self.collateral, timestamp_seconds)
                 .map_err(|e| VerificationError::DcapVerification(e.to_string()))?;
@@ -139,13 +149,18 @@ impl DstackAttestation {
             .ok_or(VerificationError::ReportNotTd10)?;
 
         // Verify all attestation components
-        self.verify_tcb_status(&verification_result)?;
+        let advisory_ids = Self::verify_tcb_status(&verification_result)?;
         self.verify_report_data(&expected_report_data, report_data)?;
 
         self.verify_rtmr3(report_data, &self.tcb_info)?;
         self.verify_app_compose(&self.tcb_info)?;
 
-        self.verify_any_measurements(report_data, &self.tcb_info, accepted_measurements)
+        let measurements =
+            self.verify_any_measurements(report_data, &self.tcb_info, accepted_measurements)?;
+        Ok(AcceptedDstackAttestation {
+            measurements,
+            advisory_ids,
+        })
     }
 
     /// Replays RTMR3 from the event log by hashing all relevant events together and verifies all
@@ -212,29 +227,28 @@ impl DstackAttestation {
         compare_hashes("app_compose_payload", &app_compose_hash, &expected_payload)
     }
 
-    /// Verifies TCB status and security advisories.
+    /// Verifies the TCB status and returns any advisory IDs reported alongside it.
+    ///
+    /// The "UpToDate" TCB status indicates that the measured platform components (CPU
+    /// microcode, firmware, etc.) match the latest known good values published by Intel
+    /// and do not require any updates or mitigations — this is the sole security gate.
+    ///
+    /// Intel's PCS surfaces `advisory_ids` for two distinct purposes:
+    ///   1. `INTEL-SA-NNNNN`: real Security Advisories. Intel only attaches these to
+    ///      a non-UpToDate TCB status, so they are implicitly rejected by the status
+    ///      check below.
+    ///   2. `INTEL-DOC-NNNNN`: informational lifecycle markers (e.g. `INTEL-DOC-10000`
+    ///      after a product's Extended Servicing Updates date). These may appear with
+    ///      `UpToDate` and do not indicate a vulnerability; they are returned so the
+    ///      caller can log/expose them.
     fn verify_tcb_status(
-        &self,
-        verification_result: &VerifiedReport,
-    ) -> Result<(), VerificationError> {
-        // The "UpToDate" TCB status indicates that the measured platform components (CPU
-        // microcode, firmware, etc.) match the latest known good values published by Intel
-        // and do not require any updates or mitigations.
-        let status_is_up_to_date = verification_result.status == EXPECTED_QUOTE_STATUS;
-
-        // Advisory IDs indicate known security vulnerabilities or issues with the TEE.
-        // For a quote to be considered secure, there should be no outstanding advisories.
-        let no_security_advisories = verification_result.advisory_ids.is_empty();
-
-        status_is_up_to_date.or_err(|| {
+        verification_result: &dcap_qvl::verify::VerifiedReport,
+    ) -> Result<Vec<String>, VerificationError> {
+        (verification_result.status == EXPECTED_QUOTE_STATUS).or_err(|| {
             VerificationError::TcbStatusNotUpToDate(verification_result.status.clone())
         })?;
 
-        no_security_advisories.or_err(|| {
-            VerificationError::NonEmptyAdvisoryIds(verification_result.advisory_ids.join(", "))
-        })?;
-
-        Ok(())
+        Ok(verification_result.advisory_ids.clone())
     }
 
     /// Verifies report data matches expected values.
@@ -374,6 +388,7 @@ impl DstackAttestation {
             && app_compose.allowed_envs.is_empty()
             && app_compose.no_instance_id
             && app_compose.pre_launch_script.is_none()
+            && app_compose.init_script.is_none()
     }
 
     /// Verifies local key-provider event digest matches the expected digest.
@@ -465,7 +480,102 @@ impl GetSingleEvent for TcbInfo {
 mod tests {
     use super::*;
 
-    use alloc::{string::ToString, vec::Vec};
+    use alloc::{string::ToString, vec, vec::Vec};
+    use dcap_qvl::{
+        quote::{EnclaveReport, Report},
+        tcb_info::{TcbStatus, TcbStatusWithAdvisory},
+        verify::VerifiedReport,
+    };
+
+    fn verified_report(status: &str, advisory_ids: Vec<String>) -> VerifiedReport {
+        VerifiedReport {
+            status: status.to_string(),
+            advisory_ids,
+            // `verify_tcb_status` does not read any of the fields below; we
+            // provide arbitrary zeroed values to satisfy the struct's type.
+            report: Report::SgxEnclave(EnclaveReport {
+                cpu_svn: [0u8; 16],
+                misc_select: 0,
+                reserved1: [0u8; 28],
+                attributes: [0u8; 16],
+                mr_enclave: [0u8; 32],
+                reserved2: [0u8; 32],
+                mr_signer: [0u8; 32],
+                reserved3: [0u8; 96],
+                isv_prod_id: 0,
+                isv_svn: 0,
+                reserved4: [0u8; 60],
+                report_data: [0u8; 64],
+            }),
+            ppid: Vec::new(),
+            qe_status: TcbStatusWithAdvisory::new(TcbStatus::UpToDate, Vec::new()),
+            platform_status: TcbStatusWithAdvisory::new(TcbStatus::UpToDate, Vec::new()),
+        }
+    }
+
+    #[test]
+    fn verify_tcb_status__should_accept_uptodate_with_empty_advisories() {
+        // Given
+        let report = verified_report("UpToDate", vec![]);
+
+        // When
+        let result = DstackAttestation::verify_tcb_status(&report);
+
+        // Then
+        assert_eq!(result, Ok(vec![]));
+    }
+
+    #[test]
+    fn verify_tcb_status__should_accept_uptodate_with_informational_advisories() {
+        // After Intel's 2026 PCS change, `UpToDate` may ship with informational
+        // advisory IDs (e.g. `INTEL-DOC-10000` post-ESU). These must not cause
+        // the quote to be rejected; they should be returned so the caller can
+        // surface them.
+
+        // Given
+        let advisories = vec!["INTEL-DOC-10000".to_string()];
+        let report = verified_report("UpToDate", advisories.clone());
+
+        // When
+        let result = DstackAttestation::verify_tcb_status(&report);
+
+        // Then
+        assert_eq!(result, Ok(advisories));
+    }
+
+    #[test]
+    fn verify_tcb_status__should_reject_non_uptodate_status() {
+        // Given
+        let report = verified_report("OutOfDate", vec![]);
+
+        // When
+        let result = DstackAttestation::verify_tcb_status(&report);
+
+        // Then
+        assert_eq!(
+            result,
+            Err(VerificationError::TcbStatusNotUpToDate(
+                "OutOfDate".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn verify_tcb_status__should_reject_non_uptodate_status_with_advisories() {
+        // Given
+        let report = verified_report("OutOfDate", vec!["INTEL-SA-00001".to_string()]);
+
+        // When
+        let result = DstackAttestation::verify_tcb_status(&report);
+
+        // Then
+        assert_eq!(
+            result,
+            Err(VerificationError::TcbStatusNotUpToDate(
+                "OutOfDate".to_string()
+            ))
+        );
+    }
 
     #[test]
     fn validate_app_compose_config__succeeds_on_valid_app_compose() {
@@ -476,6 +586,38 @@ mod tests {
 
         // Then
         assert!(result)
+    }
+
+    #[test]
+    fn validate_app_compose_config__rejects_present_pre_launch_script() {
+        // Given
+        let app_compose = AppCompose {
+            pre_launch_script: Some("echo pwn".to_string()),
+            ..valid_app_compose()
+        };
+        // When
+        let result = DstackAttestation::validate_app_compose_config(&app_compose);
+
+        // Then
+        assert!(!result)
+    }
+
+    #[test]
+    fn validate_app_compose_config__rejects_present_init_script() {
+        // `init_script` is arbitrary root code run before dockerd. It is
+        // measured into the compose hash but not pinned to any allowed value,
+        // so verification must reject it outright.
+
+        // Given
+        let app_compose = AppCompose {
+            init_script: Some("echo pwn".to_string()),
+            ..valid_app_compose()
+        };
+        // When
+        let result = DstackAttestation::validate_app_compose_config(&app_compose);
+
+        // Then
+        assert!(!result)
     }
 
     #[test]
@@ -509,6 +651,7 @@ mod tests {
             no_instance_id: true,
             secure_time: None,
             pre_launch_script: None,
+            init_script: None,
         }
     }
 }

@@ -49,7 +49,9 @@ async fn ckd_response__passes_cryptographic_verification() {
         .domains
         .domains
         .iter()
-        .find(|d| d.curve == Curve::Bls12381 && matches!(d.purpose, DomainPurpose::CKD))
+        .find(|d| {
+            Curve::from(d.protocol) == Curve::Bls12381 && matches!(d.purpose, DomainPurpose::CKD)
+        })
         .expect("no Bls12381 CKD domain found")
         .clone();
 
@@ -100,7 +102,9 @@ async fn ckd_pv_response__passes_cryptographic_verification() {
         .domains
         .domains
         .iter()
-        .find(|d| d.curve == Curve::Bls12381 && matches!(d.purpose, DomainPurpose::CKD))
+        .find(|d| {
+            Curve::from(d.protocol) == Curve::Bls12381 && matches!(d.purpose, DomainPurpose::CKD)
+        })
         .expect("no Bls12381 CKD domain found")
         .clone();
 
