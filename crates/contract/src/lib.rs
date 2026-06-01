@@ -2176,9 +2176,17 @@ impl MpcContract {
     /// on a participant's behalf whenever that participant merely calls into it. Requiring
     /// `signer == predecessor` removes the intermediary from the trust path.
     ///
-    /// Governance methods gated by this check (directly or via [`Self::voter_or_panic`]):
-    /// `vote_new_parameters`, `propose_update`, `vote_update`, `vote_code_hash`, `verify_tee`,
-    /// and the other `voter_or_panic`-gated votes.
+    /// This check reaches every signer-authenticated mutating method through one of three
+    /// paths (the list below is illustrative, not exhaustive):
+    /// - Called directly: `vote_new_parameters`, `vote_add_domains`, `vote_cancel_resharing`,
+    ///   `vote_cancel_keygen`, `register_foreign_chain_support`, `submit_participant_info`,
+    ///   and the node-migration methods.
+    /// - Via [`Self::voter_or_panic`]: `propose_update`, `vote_update`, `remove_update_vote`,
+    ///   `vote_code_hash`, the launcher/OS-measurement votes,
+    ///   `vote_update_foreign_chain_providers`, and `verify_tee`.
+    /// - Via [`Self::assert_caller_is_attested_participant_and_protocol_active`]: the key-event
+    ///   votes `vote_pk`, `vote_reshared`, `vote_abort_key_event_instance`, and the leader-only
+    ///   `start_keygen_instance` / `start_reshare_instance`, plus the `respond*` callbacks.
     fn assert_caller_is_signer() -> AccountId {
         let signer_id = env::signer_account_id();
         let predecessor_id = env::predecessor_account_id();
