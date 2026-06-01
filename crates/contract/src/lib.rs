@@ -934,6 +934,7 @@ impl MpcContract {
     /// must be the same as the `next_domain_id` returned by state().
     #[handle_result]
     pub fn vote_add_domains(&mut self, domains: Vec<DomainConfig>) -> Result<(), Error> {
+        Self::assert_caller_is_signer();
         log!(
             "vote_add_domains: signer={}, domains={:?}",
             env::signer_account_id(),
@@ -951,6 +952,7 @@ impl MpcContract {
         &mut self,
         foreign_chain_support: dtos::SupportedForeignChains,
     ) -> Result<(), Error> {
+        Self::assert_caller_is_signer();
         let ProtocolContractState::Running(running_state) = &self.protocol_state else {
             env::panic_str("protocol must be in running state");
         };
@@ -1150,6 +1152,7 @@ impl MpcContract {
     ///     - The contract is not in a resharing state.
     #[handle_result]
     pub fn vote_cancel_resharing(&mut self) -> Result<(), Error> {
+        Self::assert_caller_is_signer();
         log!("vote_cancel_resharing: signer={}", env::signer_account_id());
 
         if let Some(new_state) = self.protocol_state.vote_cancel_resharing()? {
@@ -1167,6 +1170,7 @@ impl MpcContract {
     /// to prevent stale requests from accidentally cancelling a future key generation state.
     #[handle_result]
     pub fn vote_cancel_keygen(&mut self, next_domain_id: u64) -> Result<(), Error> {
+        Self::assert_caller_is_signer();
         log!("vote_cancel_keygen: signer={}", env::signer_account_id());
 
         if let Some(new_state) = self.protocol_state.vote_cancel_keygen(next_domain_id)? {
@@ -3783,6 +3787,63 @@ mod tests {
         // When / Then: the confused-deputy vote must be rejected before it is recorded.
         contract
             .vote_new_parameters(EpochId::new(1), (&proposal).into_dto_type())
+            .expect("expected panic when predecessor != signer");
+    }
+
+    /// Builds a Running-state contract and installs a VM context where the participant is the
+    /// signer but the call is forwarded through another contract (`predecessor != signer`).
+    /// All governance methods gated by `assert_caller_is_signer()` run that check before any
+    /// protocol-state logic, so Running state is sufficient to exercise the guard for every one.
+    fn forwarded_participant_call_contract() -> MpcContract {
+        let running_state = gen_running_state(1);
+        let participant = running_state.parameters.participants().participants()[0]
+            .0
+            .clone();
+        let contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+
+        let ctx = VMContextBuilder::new()
+            .signer_account_id(participant)
+            .predecessor_account_id("forwarder.near".parse().unwrap())
+            .build();
+        testing_env!(ctx);
+
+        contract
+    }
+
+    #[test]
+    #[should_panic(expected = "Caller must be the signer account")]
+    fn vote_add_domains__should_panic_when_predecessor_differs_from_signer() {
+        let mut contract = forwarded_participant_call_contract();
+        contract
+            .vote_add_domains(vec![])
+            .expect("expected panic when predecessor != signer");
+    }
+
+    #[test]
+    #[should_panic(expected = "Caller must be the signer account")]
+    fn vote_cancel_resharing__should_panic_when_predecessor_differs_from_signer() {
+        let mut contract = forwarded_participant_call_contract();
+        contract
+            .vote_cancel_resharing()
+            .expect("expected panic when predecessor != signer");
+    }
+
+    #[test]
+    #[should_panic(expected = "Caller must be the signer account")]
+    fn vote_cancel_keygen__should_panic_when_predecessor_differs_from_signer() {
+        let mut contract = forwarded_participant_call_contract();
+        contract
+            .vote_cancel_keygen(0)
+            .expect("expected panic when predecessor != signer");
+    }
+
+    #[test]
+    #[should_panic(expected = "Caller must be the signer account")]
+    fn register_foreign_chain_support__should_panic_when_predecessor_differs_from_signer() {
+        let mut contract = forwarded_participant_call_contract();
+        contract
+            .register_foreign_chain_support(BTreeSet::new().into())
             .expect("expected panic when predecessor != signer");
     }
 
