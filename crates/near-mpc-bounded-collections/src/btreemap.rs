@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
-use crate::NonEmptyBTreeSet;
+use crate::{NonEmptyBTreeSet, NonEmptyVec};
 
 /// A `BTreeMap` that is guaranteed to contain at least one entry.
 ///
@@ -52,6 +52,31 @@ impl<K: Ord, V> NonEmptyBTreeMap<K, V> {
         let set = self.0.iter().map(|(k, v)| f(k, v)).collect();
         // self is non-empty, so the resulting set has at least one element.
         NonEmptyBTreeSet::new_unchecked(set)
+    }
+
+    /// Maps each entry to a value and collects into a `NonEmptyVec`, in
+    /// ascending key order.
+    pub fn map_to_vec<T, F>(&self, mut f: F) -> NonEmptyVec<T>
+    where
+        F: FnMut(&K, &V) -> T,
+    {
+        let vec: Vec<T> = self.0.iter().map(|(k, v)| f(k, v)).collect();
+        NonEmptyVec::from_vec(vec).expect("non-empty by construction")
+    }
+
+    /// Like [`Self::map_to_vec`] but the mapping closure may fail. The
+    /// non-empty invariant is preserved structurally — only the user's `f` can
+    /// turn the conversion into a `Result::Err`.
+    pub fn try_map_to_vec<T, E, F>(&self, mut f: F) -> Result<NonEmptyVec<T>, E>
+    where
+        F: FnMut(&K, &V) -> Result<T, E>,
+    {
+        let vec: Vec<T> = self
+            .0
+            .iter()
+            .map(|(k, v)| f(k, v))
+            .collect::<Result<_, E>>()?;
+        Ok(NonEmptyVec::from_vec(vec).expect("non-empty by construction"))
     }
 }
 
@@ -336,6 +361,46 @@ mod tests {
             *set,
             BTreeSet::from(["1:a".to_string(), "2:b".to_string(), "3:c".to_string()])
         );
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn map_to_vec__should_collect_into_non_empty_vec_in_key_order() {
+        // Given
+        let original =
+            NonEmptyBTreeMap::try_from(BTreeMap::from([(2, "b"), (1, "a"), (3, "c")])).unwrap();
+        // When
+        let vec = original.map_to_vec(|k, v| format!("{k}:{v}"));
+        // Then
+        assert_eq!(
+            Vec::from(vec),
+            vec!["1:a".to_string(), "2:b".to_string(), "3:c".to_string()],
+        );
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn try_map_to_vec__should_return_non_empty_vec_when_all_mappings_succeed() {
+        // Given
+        let original =
+            NonEmptyBTreeMap::try_from(BTreeMap::from([(1, 10), (2, 20), (3, 30)])).unwrap();
+        // When
+        let vec: NonEmptyVec<i32> = original.try_map_to_vec(|_, v| Ok::<_, ()>(v * 2)).unwrap();
+        // Then
+        assert_eq!(Vec::from(vec), vec![20, 40, 60]);
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn try_map_to_vec__should_propagate_first_error_from_closure() {
+        // Given
+        let original =
+            NonEmptyBTreeMap::try_from(BTreeMap::from([(1, 10), (2, 0), (3, 30)])).unwrap();
+        // When
+        let result: Result<NonEmptyVec<i32>, &'static str> =
+            original.try_map_to_vec(|_, v| if *v == 0 { Err("zero") } else { Ok(*v) });
+        // Then
+        assert_eq!(result.unwrap_err(), "zero");
     }
 
     #[test]

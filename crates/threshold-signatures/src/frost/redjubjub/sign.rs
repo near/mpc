@@ -1,24 +1,24 @@
 //! This module and the frost one are supposed to have the same helper function
 use super::{KeygenOutput, PresignOutput, SignatureOption};
 use crate::{
+    ReconstructionLowerBound,
     crypto::random::Randomness,
     errors::{InitializationError, ProtocolError},
     frost::assert_sign_inputs,
     participants::{Participant, ParticipantList},
     protocol::{
-        helpers::recv_from_others,
-        internal::{make_protocol, Comms, SharedChannel},
         Protocol,
+        helpers::recv_from_others,
+        internal::{Comms, SharedChannel, make_protocol},
     },
-    ReconstructionLowerBound,
 };
 
 use reddsa::frost::redjubjub::{
+    CheaterDetection, Identifier, SigningPackage,
     keys::{KeyPackage, PublicKeyPackage},
     rerandomized,
     rerandomized::RandomizedParams,
     round2::SignatureShare,
-    CheaterDetection, Identifier, SigningPackage,
 };
 use std::collections::BTreeMap;
 use zeroize::Zeroizing;
@@ -49,16 +49,19 @@ pub(crate) const REDJUBJUB_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES: usize = 1;
 /// the randomizer from `(seed, signing_commitments)` so they don't have to
 /// trust the coordinator's RNG.
 #[allow(clippy::too_many_arguments)]
-pub fn sign(
+pub fn sign<T>(
     participants: &[Participant],
-    threshold: impl Into<ReconstructionLowerBound>,
+    threshold: T,
     me: Participant,
     coordinator: Participant,
     keygen_output: KeygenOutput,
     presignature: PresignOutput,
     message: Vec<u8>,
     randomizer_seed: Option<Randomness>,
-) -> Result<impl Protocol<Output = SignatureOption>, InitializationError> {
+) -> Result<impl Protocol<Output = SignatureOption> + use<T>, InitializationError>
+where
+    T: Into<ReconstructionLowerBound>,
+{
     let threshold = threshold.into();
     let participants = assert_sign_inputs(participants, threshold, me, coordinator)?;
 
@@ -289,24 +292,24 @@ fn construct_key_package(
 #[cfg(test)]
 mod test {
     use super::{
-        fut_wrapper, REDJUBJUB_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES,
-        REDJUBJUB_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES,
+        REDJUBJUB_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES,
+        REDJUBJUB_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES, fut_wrapper,
     };
     use crate::test_utils::{
         assert_buffer_capacity, build_frost_key_packages_with_dealer, expected_buffer_by_role,
     };
     use crate::{
+        Protocol,
         crypto::{hash::hash, random::Randomness},
         frost::redjubjub::{
-            sign::sign, test::run_sign_with_presign, PresignOutput, SignatureOption,
+            PresignOutput, SignatureOption, sign::sign, test::run_sign_with_presign,
         },
-        test_utils::{one_coordinator_output, MockCryptoRng},
-        Protocol,
+        test_utils::{MockCryptoRng, one_coordinator_output},
     };
     use frost_core::Field;
-    use rand::{seq::SliceRandom as _, SeedableRng};
+    use rand::{SeedableRng, seq::SliceRandom as _};
     use rand_core::RngCore;
-    use reddsa::frost::redjubjub::{round1::commit, JubjubBlake2b512, JubjubScalarField};
+    use reddsa::frost::redjubjub::{JubjubBlake2b512, JubjubScalarField, round1::commit};
     use rstest::rstest;
     use std::collections::BTreeMap;
 

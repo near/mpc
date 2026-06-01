@@ -1,18 +1,18 @@
 use elliptic_curve::scalar::IsHigh;
 
 use crate::{
+    MaxMalicious,
     ecdsa::{
-        robust_ecdsa::RerandomizedPresignOutput, x_coordinate, AffinePoint, Scalar,
-        Secp256K1Sha256, Signature, SignatureOption,
+        AffinePoint, Scalar, Secp256K1Sha256, Signature, SignatureOption,
+        robust_ecdsa::RerandomizedPresignOutput, x_coordinate,
     },
     errors::{InitializationError, ProtocolError},
     participants::{Participant, ParticipantList},
     protocol::{
-        helpers::recv_from_others,
-        internal::{make_protocol, Comms, SharedChannel},
         Protocol,
+        helpers::recv_from_others,
+        internal::{Comms, SharedChannel, make_protocol},
     },
-    MaxMalicious,
 };
 use frost_core::serialization::SerializableScalar;
 use subtle::ConditionallySelectable;
@@ -36,15 +36,18 @@ pub(crate) const ROBUST_ECDSA_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES: usize = 0;
 /// ensure all participants agree on `(msg_hash, tweak, participants)` when creating
 /// `RerandomizedPresignOutput`, never reuse a presignature, and do not sign with
 /// `msg_hash == 0`.
-pub fn sign(
+pub fn sign<M>(
     participants: &[Participant],
     coordinator: Participant,
-    max_malicious: impl Into<MaxMalicious>,
+    max_malicious: M,
     me: Participant,
     public_key: AffinePoint,
     presignature: RerandomizedPresignOutput,
     msg_hash: Scalar,
-) -> Result<impl Protocol<Output = SignatureOption>, InitializationError> {
+) -> Result<impl Protocol<Output = SignatureOption> + use<M>, InitializationError>
+where
+    M: Into<MaxMalicious>,
+{
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
             participants: participants.len(),
@@ -217,19 +220,19 @@ async fn fut_wrapper(
 #[cfg(test)]
 mod test {
 
-    use k256::{ecdsa::signature::Verifier, ecdsa::VerifyingKey, PublicKey};
+    use k256::{PublicKey, ecdsa::VerifyingKey, ecdsa::signature::Verifier};
     use rand_core::{CryptoRngCore, SeedableRng};
 
     use super::*;
     use crate::ecdsa::{
-        robust_ecdsa::{
-            test::{run_sign_with_rerandomization, run_sign_without_rerandomization},
-            PresignOutput,
-        },
         Field, Polynomial, ProjectivePoint, Secp256K1ScalarField,
+        robust_ecdsa::{
+            PresignOutput,
+            test::{run_sign_with_rerandomization, run_sign_without_rerandomization},
+        },
     };
     use crate::test_utils::{
-        assert_buffer_capacity, expected_buffer_by_role, generate_participants, MockCryptoRng,
+        MockCryptoRng, assert_buffer_capacity, expected_buffer_by_role, generate_participants,
     };
     use rstest::rstest;
 

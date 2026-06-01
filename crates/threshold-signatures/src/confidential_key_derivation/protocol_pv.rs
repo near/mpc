@@ -1,15 +1,15 @@
+use crate::Protocol;
 use crate::confidential_key_derivation::ciphersuite::{
-    check_valid_point_g1, check_valid_point_g2, multi_miller_loop, BLS12381SHA256,
+    BLS12381SHA256, check_valid_point_g1, check_valid_point_g2, multi_miller_loop,
 };
 use crate::confidential_key_derivation::{
-    hash_app_id_with_pk, AppId, CKDOutput, CKDOutputOption, ElementG1, ElementG2, KeygenOutput,
-    PublicVerificationKey, Scalar, VerifyingKey,
+    AppId, CKDOutput, CKDOutputOption, ElementG1, ElementG2, KeygenOutput, PublicVerificationKey,
+    Scalar, VerifyingKey, hash_app_id_with_pk,
 };
 use crate::errors::{InitializationError, ProtocolError};
 use crate::participants::{Participant, ParticipantList};
 use crate::protocol::helpers::recv_from_others;
-use crate::protocol::internal::{make_protocol, Comms, SharedChannel};
-use crate::Protocol;
+use crate::protocol::internal::{Comms, SharedChannel, make_protocol};
 
 use elliptic_curve::{Field as _, Group as _};
 use rand_core::CryptoRngCore;
@@ -84,15 +84,19 @@ pub const CKD_MAX_INCOMING_PARTICIPANT_ENTRIES: usize = 0;
 ///
 /// Depending on whether the current participant is a coordinator or not,
 /// runs the signature protocol as either a participant or a coordinator.
-pub fn ckd(
+pub fn ckd<A, R>(
     participants: &[Participant],
     coordinator: Participant,
     me: Participant,
     key_pair: KeygenOutput,
-    app_id: impl Into<AppId>,
+    app_id: A,
     app_pk: PublicVerificationKey,
-    rng: impl CryptoRngCore + Send + 'static,
-) -> Result<impl Protocol<Output = CKDOutputOption>, InitializationError> {
+    rng: R,
+) -> Result<impl Protocol<Output = CKDOutputOption> + use<A, R>, InitializationError>
+where
+    A: Into<AppId>,
+    R: CryptoRngCore + Send + 'static,
+{
     // not enough participants
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
@@ -248,11 +252,11 @@ mod test {
     use super::{CKD_MAX_INCOMING_COORDINATOR_ENTRIES, CKD_MAX_INCOMING_PARTICIPANT_ENTRIES};
     use crate::confidential_key_derivation::hash_app_id_with_pk;
     use crate::test_utils::{
-        assert_buffer_capacity, check_one_coordinator_output, expected_buffer_by_role,
-        generate_ckd_app_package, generate_participants, generate_test_keys, make_keygen_output,
-        run_protocol, GenProtocol, MockCryptoRng,
+        GenProtocol, MockCryptoRng, assert_buffer_capacity, check_one_coordinator_output,
+        expected_buffer_by_role, generate_ckd_app_package, generate_participants,
+        generate_test_keys, make_keygen_output, run_protocol,
     };
-    use rand::{seq::SliceRandom as _, RngCore, SeedableRng};
+    use rand::{RngCore, SeedableRng, seq::SliceRandom as _};
     use rstest::rstest;
 
     #[test]
