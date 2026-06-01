@@ -49,3 +49,14 @@ updates:
       - dependency-name: "near-jsonrpc-client"
       - dependency-name: "near-jsonrpc-primitives"
       - dependency-name: "near-primitives"
+      # These are pinned by git tag and bumped manually in lockstep;
+      # dependabot misreads the `-rc` pre-release ordering and tries to downgrade them.
+      - dependency-name: "near-async"
+      - dependency-name: "near-client"
+      - dependency-name: "near-config-utils"
+      - dependency-name: "near-indexer"
+      - dependency-name: "near-indexer-primitives"
+      - dependency-name: "near-o11y"
+      - dependency-name: "near-store"
+      - dependency-name: "near-time"
+      - dependency-name: "nearcore"
