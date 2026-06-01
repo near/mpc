@@ -17,7 +17,7 @@ use near_indexer_primitives::types::{BlockHeight, Nonce};
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_time::{Clock, Utc};
 use std::collections::VecDeque;
-use std::fmt::{self, Display};
+use std::fmt::{self, Display, Write};
 
 /// The most recent submitted transactions to retain. Each entry is small, so a
 /// generous bound is fine; older entries are evicted once the buffer is full.
@@ -200,8 +200,6 @@ impl RecentTransactions {
 /// [`RecentTransactions::snapshot`]) into the human-readable page served at
 /// `/debug/recent_transactions`.
 pub fn render(transactions: &[SubmittedTransaction]) -> String {
-    use std::fmt::Write;
-
     let mut out = String::new();
     let _ = writeln!(
         out,
