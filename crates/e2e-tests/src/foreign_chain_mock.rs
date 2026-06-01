@@ -151,37 +151,38 @@ pub fn setup_evm_mock(server: &MockServer) -> usize {
 }
 
 pub fn setup_starknet_mock(server: &MockServer) -> usize {
-    server.mock(|when, then| {
-        when.method(POST).path("/");
-        then.respond_with(move |req: &HttpMockRequest| {
-            let body: serde_json::Value =
-                serde_json::from_slice(req.body().as_ref()).expect("valid json-rpc request");
-            let id = body["id"].clone();
-            let method = body["method"].as_str().expect("method field");
+    server
+        .mock(|when, then| {
+            when.method(POST).path("/");
+            then.respond_with(move |req: &HttpMockRequest| {
+                let body: serde_json::Value =
+                    serde_json::from_slice(req.body().as_ref()).expect("valid json-rpc request");
+                let id = body["id"].clone();
+                let method = body["method"].as_str().expect("method field");
 
-            let result = match method {
-                "starknet_getTransactionReceipt" => starknet_receipt_result(),
-                "starknet_getBlockWithTxHashes" => serde_json::json!({
-                    "block_hash": format!("0x{MOCK_BLOCK_HASH}"),
-                    "block_number": MOCK_STARKNET_BLOCK_NUMBER,
-                }),
-                other => return jsonrpc_error(id, other),
-            };
+                let result = match method {
+                    "starknet_getTransactionReceipt" => starknet_receipt_result(),
+                    "starknet_getBlockWithTxHashes" => serde_json::json!({
+                        "block_hash": format!("0x{MOCK_BLOCK_HASH}"),
+                        "block_number": MOCK_STARKNET_BLOCK_NUMBER,
+                    }),
+                    other => return jsonrpc_error(id, other),
+                };
 
-            let response_body = serde_json::json!({
-                "result": result,
-                "jsonrpc": "2.0",
-                "id": id,
+                let response_body = serde_json::json!({
+                    "result": result,
+                    "jsonrpc": "2.0",
+                    "id": id,
+                });
+
+                HttpMockResponse::builder()
+                    .status(200)
+                    .header("content-type", "application/json")
+                    .body(serde_json::to_string(&response_body).unwrap())
+                    .build()
             });
-
-            HttpMockResponse::builder()
-                .status(200)
-                .header("content-type", "application/json")
-                .body(serde_json::to_string(&response_body).unwrap())
-                .build()
-        });
-    })
-    .id
+        })
+        .id
 }
 
 fn starknet_receipt_result() -> serde_json::Value {
