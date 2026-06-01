@@ -864,12 +864,19 @@ impl MpcContract {
     /// The epoch_id must be equal to 1 plus the current epoch ID (if Running) or prospective epoch
     /// ID (if Resharing). Otherwise the vote is ignored. This is to prevent late transactions from
     /// accidentally voting on outdated proposals.
+    ///
+    /// Like the other governance voting methods, this must be called directly from the
+    /// participant's own NEAR account: `assert_caller_is_signer()` requires
+    /// `signer_account_id == predecessor_account_id`, so calls forwarded through another
+    /// contract (e.g. a multisig) are rejected. This prevents a confused-deputy vote being
+    /// cast on a participant's behalf when they merely call into an untrusted contract.
     #[handle_result]
     pub fn vote_new_parameters(
         &mut self,
         prospective_epoch_id: EpochId,
         proposal: dtos::ThresholdParameters,
     ) -> Result<(), Error> {
+        Self::assert_caller_is_signer();
         let proposal: ThresholdParameters = proposal.into_contract_type();
         log!(
             "vote_new_parameters: signer={}, proposal={:?}",
@@ -2157,6 +2164,17 @@ impl MpcContract {
 
     /// Ensures the current call originates from the signer account itself.
     /// Panics if `signer_account_id` and `predecessor_account_id` differ.
+    ///
+    /// This enforces the network-wide policy that **all governance methods must be called
+    /// directly from the participant's own NEAR account**, never forwarded through another
+    /// contract such as a multisig. Authenticating on `signer_account_id` alone would be a
+    /// confused-deputy hazard: a malicious or buggy intermediate contract could cast a vote
+    /// on a participant's behalf whenever that participant merely calls into it. Requiring
+    /// `signer == predecessor` removes the intermediary from the trust path.
+    ///
+    /// Governance methods gated by this check (directly or via [`Self::voter_or_panic`]):
+    /// `vote_new_parameters`, `propose_update`, `vote_update`, `vote_code_hash`, `verify_tee`,
+    /// and the other `voter_or_panic`-gated votes.
     fn assert_caller_is_signer() -> AccountId {
         let signer_id = env::signer_account_id();
         let predecessor_id = env::predecessor_account_id();
@@ -3744,6 +3762,28 @@ mod tests {
             result.is_ok(),
             "Should succeed when participants have Valid or None TEE status (invalid attestations rejected)"
         );
+    }
+
+    #[test]
+    #[should_panic(expected = "Caller must be the signer account")]
+    fn vote_new_parameters__should_panic_when_predecessor_differs_from_signer() {
+        // Given: a participant whose vote is forwarded through another contract,
+        // so signer_account_id (the participant) != predecessor_account_id (the forwarder).
+        let (mut contract, participants, first_participant_id) = setup_tee_test_contract(3, 2);
+        let threshold = Threshold::new(2);
+        let proposal = ThresholdParameters::new(participants, threshold).unwrap();
+
+        let ctx = VMContextBuilder::new()
+            .signer_account_id(first_participant_id)
+            .predecessor_account_id("forwarder.near".parse().unwrap())
+            .attached_deposit(NearToken::from_yoctonear(0))
+            .build();
+        testing_env!(ctx);
+
+        // When / Then: the confused-deputy vote must be rejected before it is recorded.
+        contract
+            .vote_new_parameters(EpochId::new(1), (&proposal).into_dto_type())
+            .expect("expected panic when predecessor != signer");
     }
 
     #[test]
