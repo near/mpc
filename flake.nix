@@ -167,17 +167,10 @@
             cargo-near
           ];
 
-          pythonTools = with pkgs; [
-            python313
-            python313Packages.keyring
-            python313Packages.tree-sitter
-            python313Packages.tree-sitter-rust
-            ruff # linter and formatter
-          ];
-
           miscTools = with pkgs; [
             git
             binaryen
+            ast-grep  # structural lints, e.g. lints/no-use-in-fn.yml
             editorconfig-checker
             jq
             perl
@@ -225,7 +218,6 @@
               llvmTools ++
               rustTools ++
               cargoTools ++
-              pythonTools ++
               nearTools ++
               miscTools ++
               buildLibs;
