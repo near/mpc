@@ -44,6 +44,7 @@ pub mod handler;
 pub mod migrations;
 pub mod participants;
 pub mod real;
+pub mod recent_transactions;
 pub mod stats;
 pub mod tee;
 pub mod tx_sender;

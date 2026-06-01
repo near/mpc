@@ -7,7 +7,7 @@ use crate::{
     db::SecretDB,
     indexer::{
         IndexerAPI, ReadSupportedForeignChain, real::spawn_real_indexer,
-        tx_sender::TransactionSender,
+        recent_transactions::RecentTransactions, tx_sender::TransactionSender,
     },
     keyshare::{GcpPermanentKeyStorageConfig, KeyStorageConfig, KeyshareStorage},
     migration_service::spawn_recovery_server_and_run_onboarding,
@@ -152,6 +152,13 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
         watch::channel(ProtocolContractState::NotInitialized);
 
     let (migration_state_sender, migration_state_receiver) = watch::channel((0, BTreeMap::new()));
+
+    // Shared buffer of recently submitted transactions, surfaced on
+    // `/debug/recent_transactions`. Created here so it can be shared between the
+    // web server (started below) and the indexer's transaction processor
+    // (spawned afterwards).
+    let recent_transactions = Arc::new(Mutex::new(RecentTransactions::default()));
+
     let web_server = root_runtime
         .block_on(start_web_server(
             root_task_handle.clone(),
@@ -161,6 +168,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
             protocol_state_receiver,
             migration_state_receiver,
             config.node.clone(),
+            recent_transactions.clone(),
         ))
         .context("Failed to create web server.")?;
 
@@ -179,6 +187,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
         migration_state_sender,
         *tls_public_key,
         node_config.foreign_chains.clone(),
+        recent_transactions,
     );
 
     let (shutdown_signal_sender, mut shutdown_signal_receiver) = mpsc::channel(1);

@@ -7,6 +7,7 @@ use crate::config::RespondConfig;
 #[cfg(feature = "network-hardship-simulation")]
 use crate::config::load_listening_blocks_file;
 use crate::indexer::configs::IndexerConfigExt;
+use crate::indexer::recent_transactions::RecentTransactions;
 use crate::indexer::tee::{
     monitor_allowed_docker_images, monitor_allowed_foreign_chain_providers,
     monitor_allowed_launcher_compose_hashes, monitor_tee_accounts,
@@ -60,6 +61,7 @@ pub fn spawn_real_indexer(
     migration_state_sender: watch::Sender<(u64, ContractMigrationInfo)>,
     tls_public_key: VerifyingKey,
     foreign_chains: mpc_node_config::ForeignChainsConfig,
+    recent_transactions: Arc<std::sync::Mutex<RecentTransactions>>,
 ) -> IndexerAPI<impl TransactionSender, RealForeignChainPolicyReader> {
     let (contract_state_sender_oneshot, contract_state_receiver_oneshot) = oneshot::channel();
     let (migration_info_sender_oneshot, migration_info_receiver_oneshot) = oneshot::channel();
@@ -115,6 +117,7 @@ pub fn spawn_real_indexer(
                 account_secret_key.clone(),
                 respond_config_clone,
                 Arc::clone(&indexer_state),
+                recent_transactions,
             );
 
             let Ok(txn_sender) = txn_sender_result else {

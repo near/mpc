@@ -1,5 +1,8 @@
 use super::ChainSendTransactionRequest::{self, *};
 use super::IndexerState;
+use super::recent_transactions::{
+    RecentTransactions, SubmittedTransaction, SubmittedTransactionStatus, TransactionRecordId,
+};
 use super::tx_signer::{TransactionSigner, TransactionSigners};
 use crate::config::RespondConfig;
 use crate::metrics;
@@ -7,10 +10,12 @@ use anyhow::Context;
 use ed25519_dalek::SigningKey;
 use mpc_attestation::attestation::DEFAULT_EXPIRATION_DURATION_SECONDS;
 use near_account_id::AccountId;
-use near_indexer_primitives::types::Gas;
-use near_mpc_contract_interface::types::{Attestation, VerifiedAttestation};
+use near_indexer_primitives::CryptoHash;
+use near_indexer_primitives::types::{BlockHeight, Gas, Nonce};
+use near_mpc_contract_interface::types::{Attestation, Ed25519PublicKey, VerifiedAttestation};
+use near_time::Clock;
 use std::future::Future;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::{mpsc, oneshot};
 use tokio::time;
@@ -48,6 +53,7 @@ impl TransactionProcessorHandle {
         owner_secret_key: SigningKey,
         config: RespondConfig,
         indexer_state: Arc<IndexerState>,
+        recent_transactions: Arc<Mutex<RecentTransactions>>,
     ) -> anyhow::Result<impl TransactionSender> {
         let mut signers = TransactionSigners::new(config, owner_account_id, owner_secret_key)
             .context("Failed to initialize transaction signers")?;
@@ -62,6 +68,7 @@ impl TransactionProcessorHandle {
 
                 let tx_signer = signers.signer_for(&tx_request);
                 let indexer_state = indexer_state.clone();
+                let recent_transactions = recent_transactions.clone();
                 tokio::spawn(async move {
                     let Ok(txn_json) = serde_json::to_string(&tx_request) else {
                         tracing::error!(target: "mpc", "Failed to serialize response args");
@@ -73,6 +80,7 @@ impl TransactionProcessorHandle {
                         indexer_state,
                         tx_request,
                         txn_json,
+                        recent_transactions,
                     )
                     .await;
 
@@ -133,14 +141,23 @@ pub enum TransactionStatus {
     Unknown,
 }
 
+/// Metadata about a built-and-submitted transaction, surfaced on the
+/// `/debug/recent_transactions` page.
+struct SubmittedTxMetadata {
+    tx_hash: CryptoHash,
+    nonce: Nonce,
+    block_height: BlockHeight,
+}
+
 /// Creates, signs, and submits a function call with the given method and serialized arguments.
+/// On success, returns the metadata of the submitted transaction for debugging.
 async fn submit_tx(
     tx_signer: Arc<TransactionSigner>,
     indexer_state: Arc<IndexerState>,
     method: String,
     params_ser: String,
     gas: Gas,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<SubmittedTxMetadata> {
     let block = indexer_state.view_client.latest_final_block().await?;
 
     let transaction = tx_signer.create_and_sign_function_call_tx(
@@ -153,15 +170,22 @@ async fn submit_tx(
     );
 
     let tx_hash = transaction.get_hash();
+    let nonce = transaction.transaction.nonce().nonce();
     tracing::info!(
         target = "mpc",
         "sending tx {:?} with ak={:?} nonce={:?}",
         tx_hash,
         tx_signer.public_key(),
-        transaction.transaction.nonce(),
+        nonce,
     );
 
-    indexer_state.rpc_handler.submit_tx(transaction).await
+    indexer_state.rpc_handler.submit_tx(transaction).await?;
+
+    Ok(SubmittedTxMetadata {
+        tx_hash,
+        nonce,
+        block_height: block.header.height,
+    })
 }
 
 /// Confirms whether the intended effect of the transaction request has been observed on chain.
@@ -311,22 +335,58 @@ async fn ensure_send_transaction(
     indexer_state: Arc<IndexerState>,
     request: ChainSendTransactionRequest,
     params_ser: String,
+    recent_transactions: Arc<Mutex<RecentTransactions>>,
 ) -> TransactionStatus {
-    if let Err(err) = submit_tx(
+    let method = request.method();
+    let signer_account_id = tx_signer.account_id().clone();
+    let signer_public_key = Ed25519PublicKey::from(&tx_signer.public_key());
+    let submitted_metadata = submit_tx(
         tx_signer.clone(),
         indexer_state.clone(),
-        request.method().to_string(),
+        method.to_string(),
         params_ser.clone(),
         request.gas_required(),
     )
-    .await
-    {
-        metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
-            .with_label_values(&[request.method(), "local_error"])
-            .inc();
-        tracing::error!(%err, "Failed to forward transaction {:?}", request);
-        return TransactionStatus::NotExecuted;
+    .await;
+
+    let metadata = match submitted_metadata {
+        Ok(metadata) => metadata,
+        Err(err) => {
+            metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
+                .with_label_values(&[method, "local_error"])
+                .inc();
+            tracing::error!(%err, "Failed to forward transaction {:?}", request);
+            recent_transactions
+                .lock()
+                .unwrap()
+                .record_submitted(SubmittedTransaction {
+                    tx_hash: None,
+                    nonce: None,
+                    signer_account_id,
+                    signer_public_key,
+                    method,
+                    block_height: None,
+                    submitted_at: Clock::real().now_utc(),
+                    status: SubmittedTransactionStatus::SubmitFailed,
+                });
+            return TransactionStatus::NotExecuted;
+        }
     };
+
+    let record_id: TransactionRecordId =
+        recent_transactions
+            .lock()
+            .unwrap()
+            .record_submitted(SubmittedTransaction {
+                tx_hash: Some(metadata.tx_hash),
+                nonce: Some(metadata.nonce),
+                signer_account_id,
+                signer_public_key,
+                method,
+                block_height: Some(metadata.block_height),
+                submitted_at: Clock::real().now_utc(),
+                status: SubmittedTransactionStatus::Submitting,
+            });
 
     // Allow time for the transaction to be included
     time::sleep(TRANSACTION_TIMEOUT).await;
@@ -334,29 +394,24 @@ async fn ensure_send_transaction(
     // Then try to check whether it had the intended effect
     let transaction_status = observe_tx_result(indexer_state.clone(), &request).await;
 
-    match &transaction_status {
-        Ok(TransactionStatus::Executed) => {
-            metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
-                .with_label_values(&[request.method(), "succeeded"])
-                .inc();
-        }
+    let (outcome_label, recorded_status) = match &transaction_status {
+        Ok(TransactionStatus::Executed) => ("succeeded", SubmittedTransactionStatus::Executed),
         Ok(TransactionStatus::NotExecuted) => {
-            metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
-                .with_label_values(&[request.method(), "timed_out"])
-                .inc();
+            ("timed_out", SubmittedTransactionStatus::NotExecuted)
         }
-        Ok(TransactionStatus::Unknown) => {
-            metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
-                .with_label_values(&[request.method(), "unknown"])
-                .inc();
-        }
+        Ok(TransactionStatus::Unknown) => ("unknown", SubmittedTransactionStatus::Unknown),
         Err(err) => {
-            metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
-                .with_label_values(&[request.method(), "unknown_err"])
-                .inc();
             tracing::warn!(target:"mpc", %err, "encountered error trying to confirm result of transaction {:?}", request);
+            ("unknown_err", SubmittedTransactionStatus::ObserveError)
         }
-    }
+    };
+    metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
+        .with_label_values(&[method, outcome_label])
+        .inc();
+    recent_transactions
+        .lock()
+        .unwrap()
+        .update_status(record_id, recorded_status);
 
     transaction_status.unwrap_or(TransactionStatus::Unknown)
 }

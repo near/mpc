@@ -22,6 +22,7 @@ use crate::indexer::handler::{
     CKDArgs, CKDRequestFromChain, SignArgs, SignatureRequestFromChain,
     VerifyForeignTxRequestFromChain,
 };
+use crate::indexer::recent_transactions::RecentTransactions;
 use crate::keyshare::{KeyStorageConfig, Keyshare};
 use crate::migration_service::spawn_recovery_server_and_run_onboarding;
 use crate::p2p::testing::{PortSeed, generate_test_p2p_configs};
@@ -46,7 +47,7 @@ use near_time::Clock;
 use rand::{Rng, RngCore};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use tokio::time::timeout;
 
 pub mod common;
@@ -117,6 +118,7 @@ impl OneNodeTestConfig {
                     dummy_protocol_state_receiver,
                     dummy_migration_state_receiver,
                     self.config.clone(),
+                    Arc::new(Mutex::new(RecentTransactions::default())),
                 )
                 .await?;
                 let _web_server = tracking::spawn_checked("web server", web_server);
