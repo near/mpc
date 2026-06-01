@@ -132,7 +132,7 @@ ed25519-dalek = { version = "2.2.0", features = [
     "pkcs8",
     "rand_core",
 ] }
-either = "1.15.0"
+either = "1.16.0"
 elliptic-curve = "0.13.8"
 ethereum-types = "0.16.0"
 flume = "0.12.0"
