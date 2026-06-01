@@ -504,7 +504,10 @@ pub mod tests {
             let mut running = gen_running_state(1);
             let current_params = running.parameters.clone();
             let n = current_params.participants().len() as u64;
-            assert!(n >= 3, "gen_running_state guarantees at least 3 participants");
+            assert!(
+                n >= 3,
+                "gen_running_state guarantees at least 3 participants"
+            );
             let domain_id = running.domains.domains()[0].id;
             let original_threshold = running.domains.domains()[0].reconstruction_threshold;
             let new_threshold = ReconstructionThreshold::new(n);
