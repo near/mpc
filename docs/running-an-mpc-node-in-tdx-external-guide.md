@@ -1201,6 +1201,12 @@ near account add-key $ACCOUNT_ID \
 > responder key). Verify with `near account list-keys $ACCOUNT_ID` that each key
 > now shows an empty `method_names` list.
 
+After the key is fixed, **restart the node**. Foreign-chain registration
+(`register_foreign_chain_config`) only runs at startup, so a node that previously
+failed that call with the restricted key will not retry it until it boots again.
+Once restarted, confirm the contract now reports your node's supported chains
+(e.g. via `get_foreign_chain_support_by_node`).
+
 ## Joining the MPC Cluster
 
 After the MPC node has been deployed and its NEAR account key successfully added to the operator's account, the node will attempt to sync and then submit its attestation information to the contract.
