@@ -3,13 +3,16 @@ use super::key_event::KeyEvent;
 use super::resharing::ResharingContractState;
 use crate::errors::{ConversionError, DomainError, Error, InvalidParameters, VoteError};
 use crate::primitives::{
-    domain::{AddDomainsVotes, DomainRegistry, validate_domain_threshold},
+    domain::{
+        AddDomainsVotes, DomainRegistry, validate_caitsith_uniform_threshold,
+        validate_domain_threshold,
+    },
     key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, Keyset},
     threshold_votes::ThresholdParametersVotes,
     thresholds::ThresholdParameters,
 };
 use near_account_id::AccountId;
-use near_mpc_contract_interface::types::{DomainConfig, Protocol};
+use near_mpc_contract_interface::types::DomainConfig;
 use near_sdk::near;
 use std::collections::{BTreeSet, HashSet};
 
@@ -158,17 +161,30 @@ impl RunningContractState {
                 return Err(DomainError::UnknownDomainInProposal { domain_id: *id }.into());
             }
         }
-        for domain in self.domains.domains() {
-            let effective_threshold = overlay
-                .get(&domain.id)
-                .copied()
-                .unwrap_or(domain.reconstruction_threshold);
-            let proposed = DomainConfig {
-                reconstruction_threshold: effective_threshold,
-                ..domain.clone()
-            };
-            validate_domain_threshold(&proposed, new_num_participants)?;
+        let effective_domains: Vec<DomainConfig> = self
+            .domains
+            .domains()
+            .iter()
+            .map(|domain| {
+                let effective_threshold = overlay
+                    .get(&domain.id)
+                    .copied()
+                    .unwrap_or(domain.reconstruction_threshold);
+                DomainConfig {
+                    reconstruction_threshold: effective_threshold,
+                    ..domain.clone()
+                }
+            })
+            .collect();
+        for domain in &effective_domains {
+            validate_domain_threshold(domain, new_num_participants)?;
         }
+        // 3.11-transition lock: the overlay can rewrite per-domain thresholds,
+        // so it could leave CaitSith domains with differing thresholds — which
+        // `vote_add_domains` forbids and the legacy `DBCol::Triple` mirror
+        // (#3292) requires. Fail fast here; `with_overlaid_thresholds` re-runs
+        // this same check at the final resharing transition.
+        validate_caitsith_uniform_threshold(&effective_domains)?;
 
         // ensure the signer is a proposed participant
         let candidate = AuthenticatedAccountId::new(proposal.participants())?;
@@ -212,29 +228,18 @@ impl RunningContractState {
         }
         // 3.11-transition lock: all CaitSith domains (ForeignTx included) must
         // share one `reconstruction_threshold` so the legacy unprefixed
-        // `DBCol::Triple` mirror (#3292) can't collide. If no CaitSith
-        // domain exists yet the first one is free to pick any valid `t`;
-        // any later CaitSith — in the same proposal or in future calls —
-        // must match it. Remove once #3298 drops the mirror.
-        let mut expected_caitsith_t = self
+        // `DBCol::Triple` mirror (#3292) can't collide. If no CaitSith domain
+        // exists yet the first one is free to pick any valid `t`; any later
+        // CaitSith — already present or in this proposal — must match it.
+        // Remove once #3298 drops the mirror.
+        let existing_and_new: Vec<DomainConfig> = self
             .domains
             .domains()
             .iter()
-            .find(|d| d.protocol == Protocol::CaitSith)
-            .map(|d| d.reconstruction_threshold.inner());
-        for domain in &domains {
-            if domain.protocol != Protocol::CaitSith {
-                continue;
-            }
-            let found = domain.reconstruction_threshold.inner();
-            match expected_caitsith_t {
-                None => expected_caitsith_t = Some(found),
-                Some(expected) if expected != found => {
-                    return Err(DomainError::CaitsithThresholdMismatch { expected, found }.into());
-                }
-                Some(_) => {}
-            }
-        }
+            .cloned()
+            .chain(domains.iter().cloned())
+            .collect();
+        validate_caitsith_uniform_threshold(&existing_and_new)?;
         let participant = AuthenticatedParticipantId::new(self.parameters.participants())?;
         let n_votes = self.add_domains_votes.vote(domains.clone(), &participant);
         if self.parameters.participants().len() as u64 == n_votes {

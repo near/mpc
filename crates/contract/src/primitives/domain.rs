@@ -71,6 +71,30 @@ pub fn validate_domain_threshold(
     Ok(())
 }
 
+/// Enforces the 3.11-transition lock: every CaitSith domain (ForeignTx
+/// included) must share a single `reconstruction_threshold` so the legacy
+/// unprefixed `DBCol::Triple` mirror (#3292) can't collide. Domains using
+/// other protocols are unconstrained. The first CaitSith domain encountered
+/// fixes the expected value; any later CaitSith domain with a different
+/// threshold is rejected. Remove once #3298 drops the mirror.
+pub fn validate_caitsith_uniform_threshold(domains: &[DomainConfig]) -> Result<(), Error> {
+    let mut expected: Option<u64> = None;
+    for domain in domains {
+        if domain.protocol != Protocol::CaitSith {
+            continue;
+        }
+        let found = domain.reconstruction_threshold.inner();
+        match expected {
+            None => expected = Some(found),
+            Some(expected) if expected != found => {
+                return Err(DomainError::CaitsithThresholdMismatch { expected, found }.into());
+            }
+            Some(_) => {}
+        }
+    }
+    Ok(())
+}
+
 /// All the domains present in the contract, as well as the next domain ID which is kept to ensure
 /// that we never reuse domain IDs. (Domains may be deleted in only one case: when we decided to
 /// add domains but ultimately canceled that process.)
@@ -186,6 +210,13 @@ impl DomainRegistry {
     /// [`DomainError::UnknownDomainInProposal`]. Domains absent from
     /// `overlay` retain their existing threshold. An empty overlay returns a
     /// structurally identical clone.
+    ///
+    /// The resulting registry is re-checked against the 3.11-transition lock
+    /// (see [`validate_caitsith_uniform_threshold`]): because the overlay can
+    /// rewrite per-domain thresholds, it could otherwise leave CaitSith
+    /// domains with differing thresholds. This is the authoritative chokepoint
+    /// — no resharing transition can produce a registry that violates the
+    /// invariant.
     pub fn with_overlaid_thresholds(
         &self,
         overlay: &BTreeMap<DomainId, ReconstructionThreshold>,
@@ -195,7 +226,7 @@ impl DomainRegistry {
                 return Err(DomainError::UnknownDomainInProposal { domain_id: *id }.into());
             }
         }
-        let domains = self
+        let domains: Vec<DomainConfig> = self
             .domains
             .iter()
             .map(|d| {
@@ -209,6 +240,7 @@ impl DomainRegistry {
                 }
             })
             .collect();
+        validate_caitsith_uniform_threshold(&domains)?;
         Ok(DomainRegistry {
             domains,
             next_domain_id: self.next_domain_id,
@@ -694,6 +726,85 @@ pub mod tests {
             assert!(
                 err.to_string().contains("not in the current registry"),
                 "Expected UnknownDomainInProposal, got: {err}"
+            );
+        }
+
+        #[test]
+        fn with_overlaid_thresholds__should_reject_overlay_that_diverges_caitsith_thresholds() {
+            // Given a registry with two CaitSith domains sharing one threshold
+            // (the 3.11-transition lock invariant) and an overlay that rewrites
+            // only one of them to a different value.
+            let registry = registry_of(vec![
+                DomainConfig {
+                    id: DomainId(0),
+                    protocol: Protocol::CaitSith,
+                    reconstruction_threshold: ReconstructionThreshold::new(3),
+                    purpose: DomainPurpose::Sign,
+                },
+                DomainConfig {
+                    id: DomainId(1),
+                    protocol: Protocol::CaitSith,
+                    reconstruction_threshold: ReconstructionThreshold::new(3),
+                    purpose: DomainPurpose::Sign,
+                },
+            ]);
+            let mut overlay = BTreeMap::new();
+            overlay.insert(DomainId(0), ReconstructionThreshold::new(5));
+
+            // When applying the overlay
+            let err = registry.with_overlaid_thresholds(&overlay).unwrap_err();
+
+            // Then the 3.11-transition lock rejects the divergence
+            assert!(
+                err.to_string().contains("CaitSith threshold mismatch"),
+                "Expected CaitsithThresholdMismatch, got: {err}"
+            );
+        }
+
+        #[test]
+        fn with_overlaid_thresholds__should_accept_overlay_that_keeps_caitsith_thresholds_uniform()
+        {
+            // Given two CaitSith domains and a Frost domain, with an overlay
+            // that moves both CaitSith domains to the same new threshold.
+            let registry = registry_of(vec![
+                DomainConfig {
+                    id: DomainId(0),
+                    protocol: Protocol::CaitSith,
+                    reconstruction_threshold: ReconstructionThreshold::new(3),
+                    purpose: DomainPurpose::Sign,
+                },
+                DomainConfig {
+                    id: DomainId(1),
+                    protocol: Protocol::CaitSith,
+                    reconstruction_threshold: ReconstructionThreshold::new(3),
+                    purpose: DomainPurpose::Sign,
+                },
+                DomainConfig {
+                    id: DomainId(2),
+                    protocol: Protocol::Frost,
+                    reconstruction_threshold: ReconstructionThreshold::new(2),
+                    purpose: DomainPurpose::Sign,
+                },
+            ]);
+            let mut overlay = BTreeMap::new();
+            overlay.insert(DomainId(0), ReconstructionThreshold::new(5));
+            overlay.insert(DomainId(1), ReconstructionThreshold::new(5));
+
+            // When applying the overlay
+            let result = registry.with_overlaid_thresholds(&overlay).unwrap();
+
+            // Then both CaitSith domains move together and Frost is untouched
+            assert_eq!(
+                result.domains()[0].reconstruction_threshold,
+                ReconstructionThreshold::new(5)
+            );
+            assert_eq!(
+                result.domains()[1].reconstruction_threshold,
+                ReconstructionThreshold::new(5)
+            );
+            assert_eq!(
+                result.domains()[2].reconstruction_threshold,
+                ReconstructionThreshold::new(2)
             );
         }
     }
