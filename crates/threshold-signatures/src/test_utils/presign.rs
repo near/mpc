@@ -5,7 +5,7 @@ use std::error::Error;
 
 use crate::ecdsa::{RerandomizationArguments, Tweak};
 use crate::frost;
-use crate::test_utils::{random_32_bytes, run_protocol, GenProtocol};
+use crate::test_utils::{GenProtocol, random_32_bytes, run_protocol};
 use crate::{
     Ciphersuite, Participant, ParticipantList, ReconstructionLowerBound, Scalar, VerifyingKey,
 };
@@ -68,7 +68,7 @@ where
         rng.next_u64();
         // run the signing scheme
         let protocol =
-            crate::frost::presign::<C>(&participants_list, *participant, &args, rng.clone())?;
+            crate::frost::presign::<C, _>(&participants_list, *participant, &args, rng.clone())?;
 
         protocols.push((*participant, Box::new(protocol)));
     }

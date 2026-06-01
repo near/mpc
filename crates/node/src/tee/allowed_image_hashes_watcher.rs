@@ -52,13 +52,12 @@ impl AllowedImageHashesStorage for AllowedImageHashesFile {
 
             tokio::task::spawn_blocking(move || {
                 let file = std::fs::File::create(&tmp_path)?;
-                serde_json::to_writer_pretty(&file, &approved_hashes)
-                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                serde_json::to_writer_pretty(&file, &approved_hashes).map_err(io::Error::other)?;
 
                 file.sync_all()
             })
             .await
-            .map_err(|_| io::Error::new(io::ErrorKind::Other, "writing to disk task failed"))??;
+            .map_err(|_| io::Error::other("writing to disk task failed"))??;
         }
         // Atomic replace: POSIX rename() ensures that either the old file or the new file exists.
         // The final file is never left in a partially-written state.
@@ -193,8 +192,8 @@ mod tests {
     use assert_matches::assert_matches;
     use mockall::predicate;
     use rstest::rstest;
-    use std::{io::ErrorKind, sync::Arc, time::Duration};
-    use tokio::sync::{mpsc::error::TryRecvError, Notify};
+    use std::{sync::Arc, time::Duration};
+    use tokio::sync::{Notify, mpsc::error::TryRecvError};
     use tokio_util::time::FutureExt;
 
     const TEST_TIMEOUT_DURATION: Duration = Duration::from_secs(5);
@@ -279,9 +278,9 @@ mod tests {
     ) {
         let mut mock = MockAllowedImageHashesStorage::new();
 
-        mock.expect_set().once().returning(|_| {
-            Box::pin(async { Err(io::Error::new(ErrorKind::Other, "Expected test error.")) })
-        });
+        mock.expect_set()
+            .once()
+            .returning(|_| Box::pin(async { Err(io::Error::other("Expected test error.")) }));
 
         let cancellation_token = CancellationToken::new();
         let (_sender, receiver) = watch::channel(allowed_images);

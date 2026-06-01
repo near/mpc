@@ -1,0 +1,12 @@
+id: no-use-in-fn
+language: rust
+severity: error
+message: "`use` statement inside a function body"
+note: Move this `use` declaration to module scope.
+rule:
+  kind: use_declaration
+  inside:
+    any:
+      - kind: function_item
+      - kind: closure_expression
+    stopBy: end

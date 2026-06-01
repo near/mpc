@@ -1,23 +1,26 @@
 #!/usr/bin/env bash
 #
-# prepare-release.sh — Automates local steps of the MPC release process.
+# prepare-release.sh — Apply the local file changes for a release.
+#
+# Run this on a working branch off the release-source branch (e.g. off
+# `main` for a minor release, off `release/vX.Y` for a patch). The script
+# only touches files and commits — branch creation, push, and PR opening
+# are the operator's responsibility.
 #
 # Steps:
-#   1. Create and push release branch "release/v<VERSION>"
-#   2. Generate changelog with git-cliff
-#   3. Bump workspace version in Cargo.toml
-#   4. Verify and update contract ABI snapshot
-#   5. Regenerate third-party licenses
-#   6. Commit all release changes (push left to the user)
+#   1. Generate changelog section with git-cliff
+#   2. Bump workspace version in Cargo.toml
+#   3. Verify and update contract ABI snapshot
+#   4. Regenerate third-party licenses
+#   5. Commit the release changes
 #
-# Usage:  ./prepare-release.sh <VERSION>
-# Example: ./prepare-release.sh 3.6.0
+# Usage:  ./scripts/prepare-release.sh <VERSION>
+# Example: ./scripts/prepare-release.sh 3.6.0
 #
 
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-REMOTE="${REMOTE:-origin}"
 
 # --- Argument parsing ---
 
@@ -73,7 +76,6 @@ fi
 
 echo "==> Preparing release v${VERSION}"
 
-BRANCH="release/v${VERSION}"
 cd "$REPO_ROOT"
 
 # --- Clean working tree check ---
@@ -82,28 +84,8 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
     die "Working tree has uncommitted changes. Please commit or stash them first."
 fi
 
-# --- Branch creation ---
-
-if git show-ref --verify --quiet "refs/heads/${BRANCH}"; then
-    die "Branch '${BRANCH}' already exists locally."
-fi
-
-git fetch "$REMOTE" --quiet
-if git show-ref --verify --quiet "refs/remotes/${REMOTE}/${BRANCH}"; then
-    die "Branch '${BRANCH}' already exists on ${REMOTE}."
-fi
-
-echo "==> Creating branch '${BRANCH}' from $(git rev-parse --short HEAD)"
-git checkout -b "$BRANCH"
-
-# --- Push to remote ---
-
-echo "==> Pushing '${BRANCH}' to ${REMOTE}..."
-git push -u "$REMOTE" "$BRANCH"
-
 # --- Generate changelog ---
 
-# Branch must be pushed first so git-cliff can resolve PR links.
 # Use --prepend --unreleased so the new release section is added on top of
 # CHANGELOG.md, preserving any manually authored sections (e.g. for releases
 # whose tag does not live on main, like 3.9.1 on release/v3.9.1). When new
@@ -150,4 +132,4 @@ cd "$REPO_ROOT"
 
 git add -A
 git commit -m "release: v${VERSION}"
-echo "==> Done. Please review the commit and push when ready."
+echo "==> Done. Review the commit, push your branch, and open a PR against the release-source branch."

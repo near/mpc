@@ -187,7 +187,7 @@ impl Participants {
         let mut rng = rand::thread_rng();
         while self.len() < n {
             let (account, pinfo) =
-                crate::primitives::test_utils::gen_participant(rand::Rng::gen(&mut rng));
+                crate::primitives::test_utils::gen_participant(rand::Rng::r#gen(&mut rng));
             self.insert(account, pinfo).unwrap();
         }
     }

@@ -1,168 +1,204 @@
 # Release Guide
 
-This document outlines our release process for the NEAR MPC project.
+This document describes the release process for the NEAR MPC project.
 
 ## Overview
 
-The NEAR MPC project consists of two main components that are released together as a single bundle:
-- **MPC Node Binary**: The core MPC signing node implementation.
-- **Chain Signatures Contract**: The smart contract that manages signing requests and node coordination.
+The NEAR MPC project ships two artifacts together as one release bundle:
 
-## Release Principles
+- **MPC Node binary** — distributed as Docker images
+  (`nearone/mpc-node`, `nearone/mpc-node-gcp`, `nearone/mpc-launcher`).
+- **Chain Signatures contract** — distributed as a reproducibly-built WASM
+  attached to the GitHub release.
 
-### 1. Release from the `main` branch
-Releases are created by pushing a release tag on the `main` branch. The [Release workflow](.github/workflows/release.yml) then automatically creates a draft GitHub release with all artifacts.
+A release is a [Release workflow](.github/workflows/release.yml) run that
+promotes already-built artifacts to a versioned release. The workflow:
 
-Before creating the tag, make sure to update the version number in the workspace `Cargo.toml` file.
+1. Reads the version from `Cargo.toml` on the dispatched branch.
+2. Retags the Docker images that were built for the branch HEAD
+   (`nearone/mpc-{node,node-gcp,launcher}:<branch>-<short-sha>`) to the
+   release version (`:X.Y.Z`).
+3. Downloads the reproducibly-built contract WASM from the matching
+   [Build Contract](.github/workflows/build_contract.yml) run.
+4. Creates a draft GitHub release with the changelog, image digests, and
+   contract archive.
+5. Creates and pushes the `X.Y.Z` git tag at the released commit.
 
-### 2. Use dedicated branches for patch releases
-The exception to the rule above is when we backport critical fixes.
-For these patch releases, we create dedicated release branches
-of the format `release/vX.Y.Z`, based on the previous release tag `X.Y.Z-1`.
+The git tag is the **receipt** of a successful release, not its trigger.
+If the tag exists, the release succeeded.
 
-### 3. Respect SemVer compatibility guarantees
+## Branch model
 
-We follow [Semantic Versioning (SemVer)](https://semver.org/) with the following compatibility guarantees:
+Releases ship from protected branches:
 
-#### Major Version Bumps (X.Y.Z → X+1.0.0)
-- **Contract Compatibility**: The new contract must maintain compatibility with nodes from the previous major version.
-- **Breaking Changes**: Node-to-node communication protocols may change, requiring coordinated upgrades.
+- **`main`** — ships the next minor or major.
+- **`release/vX.Y`** — ships patches for the X.Y line (`X.Y.0`, `X.Y.1`, ...).
+  Created from `main` by a repository admin when a release line needs its
+  own branch.
 
-#### Minor Version Bumps (X.Y.Z → X.Y+1.0)
-- **Backward Compatibility**: Both contract and node must be compatible with previous versions of the node binary.
+Patches accumulate on `release/vX.Y` over time:
 
-#### Patch Version Bumps (X.Y.Z → X.Y.Z+1)
-- **Full Backward Compatibility**: No breaking changes allowed.
-- **Bug Fixes Only**: Only bug fixes and security patches.
+- `release/v3.11` ships `3.11.0`, then `3.11.1`, then `3.11.2`, ...
+- `release/v3.12` ships `3.12.0` and onward.
 
-## Automated Release Script
-
-We also have a script that automates the local steps (changelog, version bump, snapshot update, license regeneration) described below. You can find it at [`scripts/prepare-release.sh`](https://github.com/near/mpc/blob/main/scripts/prepare-release.sh). Run it with the desired version:
-
-```sh
-./scripts/prepare-release.sh 3.1.0
-```
-
-The remaining steps (opening the PR, creating the tag, and publishing the release) still need to be done manually.
+Branch protection on `main` and `release/v*` requires every commit to land
+via a reviewed PR. Branch *creation* on `release/v*` is restricted to repo
+admins — admins are trusted to fork release branches from `main` HEAD.
 
 ## How to make a release
 
-In practice when making a release, you need to do the following things:
+The walkthrough below uses `3.11.0` as the example version. Replace it
+with whatever version you're releasing.
 
-1. Update the changelog.
-2. Bump the crate versions.
-3. Update license versions.
-4. Open and merge a PR with the changes.
-5. Create the release tag.
-6. Edit and publish the draft GitHub release.
+### 1. Prepare the release PR
 
-The following sections will walk you through the steps of doing this for the `3.1.0` release.
-Replace this with whatever release version you're making.
-
-### 1. Update the changelog
-We use `git-cliff` to maintain the changelog.
-Installation instructions can be found [here](https://git-cliff.org/docs/installation/).
-
-> ⚠️ Ensure your current branch is pushed to GitHub (e.g. `origin`). Otherwise `git-cliff` will not be able to resolve PR links in the generated notes.
-
-For typical releases, the following command should be sufficient.
-```sh
-git-cliff --prepend CHANGELOG.md --unreleased -t 3.1.0
-```
-
-This prepends the new release block to `CHANGELOG.md` rather than regenerating the entire file, so any hand-authored sections (e.g. for releases whose tag does not live on `main`, like a backport tagged on a `release/vX.Y.Z` branch) are preserved. If a previous patch release was tagged off-`main` and its fixes were also cherry-picked to `main`, append the main-side cherry-pick commits to `.cliffignore` so they don't reappear in the next auto-generated block.
-
-Note: The tag doesn't have to have been created yet.
-
-### 2. Bump the crate versions
-To bump the crate versions, just update the `version` field in `Cargo.toml`.
-After this, the `Cargo.lock` file and contract ABI snapshot tests must be updated.
-This can be done by running the snapshot test and reviewing the new snapshot with cargo insta.
+Create a working branch off the release-source branch, then run
+[`scripts/prepare-release.sh`](./scripts/prepare-release.sh) to apply the
+release boilerplate (changelog, version bump, ABI snapshot, licenses):
 
 ```sh
-cargo nextest run -p mpc-contract abi_has_not_changed
-cargo insta review
+# For a minor/major release:
+git checkout main && git pull
+git checkout -b release-prep/v3.11.0
+./scripts/prepare-release.sh 3.11.0
+
+# For a patch release:
+git checkout release/v3.11 && git pull
+git checkout -b release-prep/v3.11.1
+./scripts/prepare-release.sh 3.11.1
 ```
 
-### 3. Update license versions
-Follow the [how-to-regenerate](https://github.com/near/mpc/tree/main/third-party-licenses#how-to-regenerate) guide, to update the license versions.
+Push the working branch and open a PR against `main` (for minor releases)
+or `release/vX.Y` (for patches). Once the PR is reviewed and merged, the
+merge commit is what will be released.
 
-### 4. Open and merge a PR with the changelog and version bumps
-At this point it's appropriate to open a PR with the changelog and crate and license version changes.
-See [the 3.0.6 PR](https://github.com/near/mpc/pull/1549) for reference.
-Once approved, merge it to `main` before creating the release tag.
+### 2. Wait for the build workflows
 
-### 5. Create the release tag
-Once the changelog and crate versions have been bumped on latest `main`
-we're ready to create the release tag.
+When the release PR merges, four workflows fire on the protected branch:
 
-Before pushing the tag, verify that the Docker images for the tagged commit have already been published by the CI pipeline (e.g. `main-<short-sha>` tags on Docker Hub). The Release workflow retags these existing images, so it will fail if they don't exist yet.
+- [Build Docker Node Image](.github/workflows/docker_build_node.yml)
+- [Build Docker Node GCP Image](.github/workflows/docker_build_node_gcp.yml)
+- [Build Docker Rust Launcher Image](.github/workflows/docker_build_rust_launcher.yml)
+- [Build Contract](.github/workflows/build_contract.yml)
 
-You can create the tag directly in GitHub, but I prefer to do it locally:
+The image workflows push `nearone/mpc-{node,node-gcp,launcher}:<branch>-<short-sha>`.
+The contract workflow uploads the reproducible WASM as a GitHub Actions
+artifact named `contract`.
+
+Wait for all four to finish successfully. The Release workflow refuses to
+run if any artifact is missing.
+
+> **Tip:** The pre-release images are deployable. If you want to
+> smoke-test on testnet before promoting, deploy
+> `nearone/mpc-node-gcp:release-v3.11-<short-sha>` directly.
+
+### 3. Run the Release workflow
+
+Trigger the [Release workflow](.github/workflows/release.yml) against the
+branch:
 
 ```sh
-git tag 3.1.0
-git push origin 3.1.0 # Assuming `origin` points at github.com:near/mpc.git
+gh workflow run release.yml --ref release/v3.11
 ```
 
-### 6. Edit and publish the draft GitHub release
+Or use the Actions UI: "Release" → "Run workflow" → pick the branch.
 
-Pushing the tag in the previous step triggers the [Release workflow](.github/workflows/release.yml), which automatically:
+The workflow runs in the `production` environment and uses
+`DOCKERHUB_PAT` to retag images. It refuses if the version's git tag
+exists on origin, if a GitHub release (draft or published) for the
+version already exists, or if any source artifact for the branch HEAD
+is missing.
 
-1. Retags the Docker images (`mpc-launcher`, `mpc-node`, `mpc-node-gcp`) from `main-<short-sha>` to the release version.
-2. Builds the contract reproducibly and computes its SHA-256 digest.
-3. Creates a **draft** GitHub release with the changelog, Docker image digests, and the contract artifact attached.
+> **Note:** GitHub Actions artifacts expire after 90 days. The contract
+> WASM must still be available at release time — make releases within
+> ~90 days of the corresponding merge commit, or re-run the
+> [Build Contract](.github/workflows/build_contract.yml) workflow
+> manually before triggering the release.
 
-Once the workflow completes, go to the [releases page](https://github.com/near/mpc/releases), review and edit the draft as needed, then publish it.
+### 4. Edit and publish the draft release
 
-<details>
-<summary>Manual alternative (if the workflow is unavailable)</summary>
+When the workflow finishes, a draft release named `MPC 3.11.0` appears on
+the [releases page](https://github.com/near/mpc/releases). The draft
+includes the changelog section, Docker image manifest digests, and the
+contract `.tar.gz`. **The git tag does not yet exist** — it is created
+by GitHub when the draft is published.
 
-To create the launcher and MPC node docker images, use the following workflows:
+Review the draft and click "Publish release." Publishing creates the
+`3.11.0` git tag at the released commit.
 
-- **Launcher**: [Release Launcher Docker Image](https://github.com/near/mpc/actions/workflows/docker_launcher_release.yml)
-- **Node**: [Release Node Docker Image](https://github.com/near/mpc/actions/workflows/docker_node_release.yml)
+### 5. Promote to operator floating tags (optional)
 
-Note: the **Node** workflow should be run twice, for `nearone/mpc-node-gcp` and `nearone/mpc-node` images.
+Some operators consume floating tags like `nearone/mpc-node-gcp:testnet-release`
+and `:mainnet-release`. Promote with the retag workflows:
 
-Both of these work the same way. They take an existing image and retag it with the provided tag.
+- [Release Node Docker Image](.github/workflows/docker_node_release.yml) — run once with `repository: mpc-node` and once with `repository: mpc-node-gcp`.
+- [Release Launcher Docker Image](.github/workflows/docker_launcher_release.yml) — single run for `mpc-launcher`.
 
-Run these workflows with the source image tag `main-<short-commit-hash>` using the short commit hash
-as the release tag.
-To get the release tag run:
-````sh
-git rev-parse --short=7 3.1.0
-````
-Or, you can find this exact tag at docker hub.
-For example for the node image, visit the [nearone/mpc-node-gcp](https://hub.docker.com/r/nearone/mpc-node-gcp/tags)
-page and find the image associated with the commit at the release tag.
+Use `source-tag = 3.11.0` and `release-tag = testnet-release` or
+`mainnet-release`.
 
-Build the contract locally:
+## Re-running after a failure
+
+The workflow refuses to start if a release for the version already
+exists in any state. To re-run after a partial failure:
+
+- **Workflow failed before creating the draft**: image retags may have
+  partially completed. Just re-run — retags overwrite cleanly.
+- **Workflow created the draft but it's wrong**: delete the draft
+  release on the releases page, then re-run.
+- **The release was published but produced a bad artifact**: delete
+  both the published release and the `X.Y.Z` git tag (publishing
+  creates the tag), then re-run.
+
+Image tag overwrites at `:X.Y.Z` are allowed by design — useful for
+recovering from a bad build by re-running from a fixed commit. The
+tag-existence and release-existence checks together guard against
+silently re-pointing `:X.Y.Z` at a different commit once it has been
+released.
+
+## Creating a new release branch
+
+When a minor line needs its own branch (typically just before or just
+after shipping `X.Y.0`), a repo admin forks from `main`:
 
 ```sh
-cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
+git checkout main && git pull
+git push origin main:refs/heads/release/v3.11
 ```
 
-Rename and compress the contract into a `.tar.gz` archive:
+The branch ruleset on `release/v*` restricts creation to admins. After
+the initial push, the branch's protection rules require PRs for any
+further commits.
 
-```sh
-cd target/near/mpc_contract/
-mv mpc_contract.wasm mpc-contract-v3.1.0.wasm
-mv mpc_contract_abi.json mpc-contract-v3.1.0-abi.json
-tar -czf mpc-contract-v3.1.0.tar.gz mpc-contract-v3.1.0.wasm mpc-contract-v3.1.0-abi.json
-```
+## SemVer compatibility guarantees
 
-To get the digest of the MPC contract:
+We follow [Semantic Versioning](https://semver.org/) with these compatibility rules:
 
-```sh
-sha256sum mpc-contract-v3.1.0.wasm
-```
+### Major version bumps (X.Y.Z → X+1.0.0)
+- **Contract compatibility**: the new contract must remain compatible
+  with nodes from the previous major version.
+- **Breaking changes**: node-to-node protocol may change, requiring
+  coordinated upgrades.
 
-Then create the release from the [release page](https://github.com/near/mpc/releases) — click "Draft a new release",
-paste the relevant changelog entries, add Docker image links, and attach the contract artifact.
+### Minor version bumps (X.Y.Z → X.Y+1.0)
+- **Backward compatibility**: both contract and node must remain
+  compatible with previous node binaries.
 
-</details>
+### Patch version bumps (X.Y.Z → X.Y.Z+1)
+- **Full backward compatibility**: no breaking changes.
+- **Bug fixes only**: bug fixes and security patches.
 
-Note: When you want to roll this release out to testnet and mainnet,
-you can use the same re-tagging action to re-tag the released images as `nearone/mpc-node-gcp:testnet-release`
-and `nearone/mpc-node-gcp:mainnet-release`.
+## Changelog conventions
+
+We use [`git-cliff`](https://git-cliff.org/) to maintain `CHANGELOG.md`.
+The `prepare-release.sh` script invokes `git-cliff --unreleased -t
+<VERSION>` which picks up commits since the last tag reachable from
+`HEAD`. This works for both minor releases on `main` (where the last
+reachable tag is the previous minor) and patch releases on
+`release/vX.Y` (where the last reachable tag is the previous patch on
+the line).
+
+If a previous patch was tagged off a release branch and its fixes were
+also cherry-picked to `main`, append the main-side cherry-pick commits
+to `.cliffignore` so they don't reappear in the next auto-generated
+block on `main`.

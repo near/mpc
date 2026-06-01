@@ -5,6 +5,111 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.11.0] - 2026-05-27
+
+### 🚀 Features
+
+- [#3249](https://github.com/near/mpc/pull/3249)(@anodar): Implement voting for RPC providers (#3249)
+
+- [#3299](https://github.com/near/mpc/pull/3299)(@gilcu3): Split ecdsa triple pool per threshold (#3299)
+
+- [#3317](https://github.com/near/mpc/pull/3317)(@gilcu3): Lock all CaitSith domains to the same threshold (#3317)
+
+
+### 🐛 Bug Fixes
+
+- [#3291](https://github.com/near/mpc/pull/3291)(@andrei-near): Release workflow env and secrets (#3291)
+
+- [#3285](https://github.com/near/mpc/pull/3285)(@gilcu3): Make robust-ecdsa tasks infallible (#3285)
+
+- [#3296](https://github.com/near/mpc/pull/3296)(@pbeza): Decouple advisory-ID enforcement from tcbStatus check (#3296)
+
+- [#3337](https://github.com/near/mpc/pull/3337)(@netrome): Prevent overwriting other participant's attestations (#3337)
+
+
+### 💼 Other
+
+- [#3284](https://github.com/near/mpc/pull/3284)(@gilcu3): *(nix)* Remove stale neard flake (#3284)
+
+- [#3323](https://github.com/near/mpc/pull/3323)(@gilcu3): Add reproducible nix build for mpc-contract (#3323)
+
+
+### 🚜 Refactor
+
+- [#3286](https://github.com/near/mpc/pull/3286)(@kevindeforth): Split `get_requests_to_attempt` in queue.rs (#3286)
+
+- [#3319](https://github.com/near/mpc/pull/3319)(@kevindeforth): `RecentBlocksTracker` does no longer track block contents (#3319)
+
+
+### 📚 Documentation
+
+- [#3192](https://github.com/near/mpc/pull/3192)(@barakeinav1): Running multiple MPC nodes on one host (#3192)
+
+- [#3256](https://github.com/near/mpc/pull/3256)(@barakeinav1): Fill gaps in MPC image-hash voting section (#3256)
+
+- [#3254](https://github.com/near/mpc/pull/3254)(@barakeinav1): Add documentation for resharing log entries (#3254)
+
+- [#3253](https://github.com/near/mpc/pull/3253)(@barakeinav1): Submit_participant_info verification + errors (#3253)
+
+- [#3302](https://github.com/near/mpc/pull/3302)(@barakeinav1): *(operator-guide)* Standardize on bare `near` CLI invocation (#3302)
+
+- [#3297](https://github.com/near/mpc/pull/3297)(@barakeinav1): *(node-migration-guide)* Revoke OLD node's signer key after migration (#3297)
+
+- [#3308](https://github.com/near/mpc/pull/3308)(@barakeinav1): *(operator-guide)* Typography, heading, and copy sweep (#3308)
+
+- [#3310](https://github.com/near/mpc/pull/3310)(@barakeinav1): *(operator-guide)* Refresh dstack UI screenshots for 0.5.8 (#3310)
+
+- [#3311](https://github.com/near/mpc/pull/3311)(@pbeza): *(design)* Attestation verifier contract breakout (#3311)
+
+
+### 🧪 Testing
+
+- [#3346](https://github.com/near/mpc/pull/3346)(@barakeinav1): *(e2e)* Back-migration regression test (#3346)
+
+- [#3365](https://github.com/near/mpc/pull/3365)(@barakeinav1): *(e2e)* Wait for indexer progress in back-migration restart (fix flaky test) (#3365)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- [#3263](https://github.com/near/mpc/pull/3263)(@barakeinav1): *(cvm-deployment)* Align user-config.toml example with prod values (#3263)
+
+- [#3276](https://github.com/near/mpc/pull/3276)(@dependabot[bot]): Bump gcloud-sdk from 0.29.0 to 0.30.0 (#3276)
+
+- [#3275](https://github.com/near/mpc/pull/3275)(@anodar): Don't run CI tests on doc only change prs (#3275)
+
+- [#3287](https://github.com/near/mpc/pull/3287)(@andrei-near): Production environment for workflows (#3287)
+
+- [#3294](https://github.com/near/mpc/pull/3294)(@dependabot[bot]): Bump openssl from 0.10.79 to 0.10.80 in the cargo group across 1 directory (#3294)
+
+- [#3280](https://github.com/near/mpc/pull/3280)(@gilcu3): Remove migrations after 3.10 release (#3280)
+
+- [#3315](https://github.com/near/mpc/pull/3315)(@gilcu3): Remove legacy pending requests after 3.10 (#3315)
+
+- [#3314](https://github.com/near/mpc/pull/3314)(@gilcu3): Remove legacy-JSON compat for DomainConfig after 3.10 (#3314)
+
+- [#3328](https://github.com/near/mpc/pull/3328)(@gilcu3): Remove mpc-contract dep from backup-cli (#3328)
+
+- [#3354](https://github.com/near/mpc/pull/3354)(@gilcu3): Unify sanbox version across workspace (#3354)
+
+- [#3358](https://github.com/near/mpc/pull/3358)(@gilcu3): Update contract-history after 3.10.1 contract update (#3358)
+
+- [#3288](https://github.com/near/mpc/pull/3288)(@gilcu3): Update frost crates to 3.0 (#3288)
+
+- [#3332](https://github.com/near/mpc/pull/3332)(@gilcu3): Bump nix-installer-action to avoid node.js 20 warning (#3332)
+
+- [#3356](https://github.com/near/mpc/pull/3356)(@gilcu3): Use nix for contract reproducible builds (#3356)
+
+- [#3338](https://github.com/near/mpc/pull/3338)(@barakeinav1): *(tee/localnet)* Unify port_override with cvm-deployment + add migration smoke test (#3238) (#3338)
+
+- [#3321](https://github.com/near/mpc/pull/3321)(@gilcu3): Bump nearcore to 2.12 rc 1, bumps rust to 1.93 (#3321)
+
+- [#3367](https://github.com/near/mpc/pull/3367)(@dependabot[bot]): Bump the rust-minor-and-patch group with 2 updates (#3367)
+
+- [#3371](https://github.com/near/mpc/pull/3371)(@gilcu3): Update edition to 2024 in most crates (#3371)
+
+- [#3378](https://github.com/near/mpc/pull/3378)(@gilcu3): Bump to nearcore 2.12-rc2 (#3378)
+
+
 ## [3.10.0] - 2026-05-18
 
 ### 🚀 Features

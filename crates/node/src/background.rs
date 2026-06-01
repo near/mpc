@@ -1,5 +1,5 @@
-use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
 
 /// Tracks number of in-flight generations so we don't generate too many at the same time.
 pub struct InFlightGenerationTracker {

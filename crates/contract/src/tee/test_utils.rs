@@ -6,7 +6,7 @@
 use crate::primitives::test_utils::{gen_account_id, gen_seed};
 use near_account_id::AccountId;
 use near_sdk::test_utils::VMContextBuilder;
-use near_sdk::{testing_env, BlockHeight, PublicKey};
+use near_sdk::{BlockHeight, PublicKey, testing_env};
 use rand::Rng;
 
 /// Test environment for managing VM context state.
@@ -31,7 +31,7 @@ impl Environment {
     ) -> Self {
         let seed = seed.unwrap_or(gen_seed());
         let mut ctx = VMContextBuilder::new();
-        let block_height = block_height.unwrap_or(rand::thread_rng().gen());
+        let block_height = block_height.unwrap_or(rand::thread_rng().r#gen());
         ctx.block_height(block_height);
         ctx.random_seed(seed);
         let signer = signer.unwrap_or(gen_account_id());
@@ -87,7 +87,9 @@ impl Environment {
 
 /// Sets the blockchain timestamp for testing time-dependent behavior.
 pub fn set_block_timestamp(timestamp_nanos: u64) {
-    testing_env!(VMContextBuilder::new()
-        .block_timestamp(timestamp_nanos)
-        .build());
+    testing_env!(
+        VMContextBuilder::new()
+            .block_timestamp(timestamp_nanos)
+            .build()
+    );
 }

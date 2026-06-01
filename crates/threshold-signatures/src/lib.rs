@@ -34,14 +34,14 @@ mod thresholds;
 use crate::dkg::{assert_key_invariants, assert_reshare_keys_invariants, do_keygen, do_reshare};
 use crate::errors::InitializationError;
 use crate::participants::Participant;
-use crate::protocol::internal::{make_protocol, Comms};
 use crate::protocol::Protocol;
+use crate::protocol::internal::{Comms, make_protocol};
 pub use crate::thresholds::{MaxMalicious, ReconstructionLowerBound};
 use rand_core::CryptoRngCore;
 use std::marker::Send;
 
 use frost_core::serialization::SerializableScalar;
-use frost_core::{keys::SigningShare, Group, VerifyingKey};
+use frost_core::{Group, VerifyingKey, keys::SigningShare};
 
 use serde::{Deserialize, Serialize};
 
@@ -73,7 +73,7 @@ impl<C: Ciphersuite> Tweak<C> {
 
     /// Outputs the inner value of the tweak
     pub fn value(&self) -> Scalar<C> {
-        self.0 .0
+        self.0.0
     }
 
     /// Derives the signing share as x + tweak
@@ -93,12 +93,17 @@ impl<C: Ciphersuite> Tweak<C> {
 pub(crate) const DKG_MAX_INCOMING_BUFFER_ENTRIES: usize = 5;
 
 /// Generic key generation function agnostic of the curve
-pub fn keygen<C: Ciphersuite>(
+pub fn keygen<C, T, R>(
     participants: &[Participant],
     me: Participant,
-    threshold: impl Into<ReconstructionLowerBound> + Send + Copy + 'static,
-    rng: impl CryptoRngCore + Send + 'static,
-) -> Result<impl Protocol<Output = KeygenOutput<C>>, InitializationError> {
+    threshold: T,
+    rng: R,
+) -> Result<impl Protocol<Output = KeygenOutput<C>> + use<C, T, R>, InitializationError>
+where
+    C: Ciphersuite,
+    T: Into<ReconstructionLowerBound> + Send + Copy + 'static,
+    R: CryptoRngCore + Send + 'static,
+{
     let comms = Comms::with_buffer_capacity(DKG_MAX_INCOMING_BUFFER_ENTRIES);
     let participants = assert_key_invariants(participants, me, threshold)?;
     let fut = do_keygen::<C>(comms.shared_channel(), participants, me, threshold, rng);
@@ -107,16 +112,22 @@ pub fn keygen<C: Ciphersuite>(
 
 /// Performs the key reshare protocol
 #[allow(clippy::too_many_arguments)]
-pub fn reshare<C: Ciphersuite>(
+pub fn reshare<C, OT, NT, R>(
     old_participants: &[Participant],
-    old_threshold: impl Into<ReconstructionLowerBound> + Send + 'static,
+    old_threshold: OT,
     old_signing_key: Option<SigningShare<C>>,
     old_public_key: VerifyingKey<C>,
     new_participants: &[Participant],
-    new_threshold: impl Into<ReconstructionLowerBound> + Copy + Send + 'static,
+    new_threshold: NT,
     me: Participant,
-    rng: impl CryptoRngCore + Send + 'static,
-) -> Result<impl Protocol<Output = KeygenOutput<C>>, InitializationError> {
+    rng: R,
+) -> Result<impl Protocol<Output = KeygenOutput<C>> + use<C, OT, NT, R>, InitializationError>
+where
+    C: Ciphersuite,
+    OT: Into<ReconstructionLowerBound> + Send + 'static,
+    NT: Into<ReconstructionLowerBound> + Copy + Send + 'static,
+    R: CryptoRngCore + Send + 'static,
+{
     let comms = Comms::with_buffer_capacity(DKG_MAX_INCOMING_BUFFER_ENTRIES);
     let threshold = new_threshold;
     let (participants, old_participants) = assert_reshare_keys_invariants::<C>(
@@ -141,14 +152,19 @@ pub fn reshare<C: Ciphersuite>(
 }
 
 /// Performs the refresh protocol
-pub fn refresh<C: Ciphersuite>(
+pub fn refresh<C, T, R>(
     old_signing_key: Option<SigningShare<C>>,
     old_public_key: VerifyingKey<C>,
     old_participants: &[Participant],
-    old_threshold: impl Into<ReconstructionLowerBound> + Copy + Send + 'static,
+    old_threshold: T,
     me: Participant,
-    rng: impl CryptoRngCore + Send + 'static,
-) -> Result<impl Protocol<Output = KeygenOutput<C>>, InitializationError> {
+    rng: R,
+) -> Result<impl Protocol<Output = KeygenOutput<C>> + use<C, T, R>, InitializationError>
+where
+    C: Ciphersuite,
+    T: Into<ReconstructionLowerBound> + Copy + Send + 'static,
+    R: CryptoRngCore + Send + 'static,
+{
     if old_signing_key.is_none() {
         return Err(InitializationError::BadParameters(format!(
             "The participant {me:?} is running refresh without an old share",

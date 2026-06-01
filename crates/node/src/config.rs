@@ -147,10 +147,10 @@ impl ParticipantsConfig {
         account_id: &AccountId,
         p2p_public_key: &VerifyingKey,
     ) -> Option<ParticipantId> {
-        if let Some(participant_info) = self.get_info_by_account_id(account_id) {
-            if &participant_info.p2p_public_key == p2p_public_key {
-                return Some(participant_info.id);
-            }
+        if let Some(participant_info) = self.get_info_by_account_id(account_id)
+            && &participant_info.p2p_public_key == p2p_public_key
+        {
+            return Some(participant_info.id);
         };
         None
     }
@@ -315,16 +315,21 @@ impl PersistentSecrets {
             number_of_responder_keys > 0,
             "At least one access key must be provided"
         );
-        let secrets = if let Some(secrets) = Self::maybe_get_existing(home_dir)? {
-            tracing::debug!("p2p and near account secret key already exists. Using existing.");
-            secrets
-        } else {
-            tracing::debug!("p2p and near account secret key not found. Generating...");
-            Self::gen_secrets_and_write_to_disk(home_dir, number_of_responder_keys)?
+        let secrets = match Self::maybe_get_existing(home_dir)? {
+            Some(secrets) => {
+                tracing::debug!("p2p and near account secret key already exists. Using existing.");
+                secrets
+            }
+            _ => {
+                tracing::debug!("p2p and near account secret key not found. Generating...");
+                Self::gen_secrets_and_write_to_disk(home_dir, number_of_responder_keys)?
+            }
         };
 
         if secrets.near_responder_keys.len() != number_of_responder_keys {
-            tracing::warn!("Number of responder keys in secrets.json does not match number of responder keys specified.")
+            tracing::warn!(
+                "Number of responder keys in secrets.json does not match number of responder keys specified."
+            )
         }
 
         Ok(secrets)
@@ -491,9 +496,9 @@ pub mod tests {
     use assert_matches::assert_matches;
     use mpc_contract::primitives::test_utils::bogus_ed25519_near_public_key;
     use rand::{
+        Rng, RngCore,
         distributions::{Alphanumeric, Uniform},
         rngs::OsRng,
-        Rng, RngCore,
     };
     use std::net::{Ipv4Addr, SocketAddr};
 
@@ -548,7 +553,7 @@ pub mod tests {
         let address: String = (0..16).map(|_| rng.sample(Alphanumeric) as char).collect();
         let p2p_public_key =
             VerifyingKey::from_near_sdk_public_key(&bogus_ed25519_near_public_key()).unwrap();
-        let port: u16 = rng.gen();
+        let port: u16 = rng.r#gen();
         ParticipantInfo {
             id: ParticipantId::from_raw(participant_id),
             address,

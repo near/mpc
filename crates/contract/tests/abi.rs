@@ -10,6 +10,7 @@ fn compile_project() -> (Vec<u8>, serde_json::Value) {
         out_dir: Some(to_utf8(out_dir.clone())),
         features: Some("abi".to_string()),
         profile: Some("release-contract".to_string()),
+        skip_rust_version_check: true,
         ..Default::default()
     };
 
@@ -47,6 +48,7 @@ fn test_abi_has_not_changed() {
     insta::assert_json_snapshot!(abi,
         {
         ".metadata.wasm_hash" => "[WASM_HASH]",
-        ".metadata.build.builder" => "[CARGO_NEAR_BUILD_VERSION]"
+        ".metadata.build.builder" => "[CARGO_NEAR_BUILD_VERSION]",
+        ".metadata.build.compiler" => "[RUSTC_VERSION]"
     });
 }

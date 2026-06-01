@@ -340,10 +340,13 @@ During development, it's recommended to build non-deterministically using [cargo
 cargo near build non-reproducible-wasm --features abi --manifest-path crates/contract/Cargo.toml --locked
 ```
 
-The contract can also be built deterministically. This requires `docker` to be installed.
+The contract can also be built deterministically via Nix. See
+[reproducible-builds.md](../../docs/reproducible-builds.md#mpc-contract) for the
+full workflow.
 
 ```bash
-cargo near build reproducible-wasm --features abi --manifest-path crates/contract/Cargo.toml
+nix build .#mpc-contract
+sha256sum result/mpc_contract.wasm
 ```
 
 ## TEE Specific information

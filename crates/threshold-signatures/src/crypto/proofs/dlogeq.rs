@@ -1,5 +1,6 @@
 use super::strobe_transcript::Transcript;
 use crate::{
+    Ciphersuite, Element, Scalar,
     crypto::constants::{
         NEAR_DLOGEQ_CHALLENGE_LABEL, NEAR_DLOGEQ_COMMITMENT_LABEL,
         NEAR_DLOGEQ_ENCODE_LABEL_GENERATOR1, NEAR_DLOGEQ_ENCODE_LABEL_PUBLIC0,
@@ -7,9 +8,8 @@ use crate::{
         NEAR_DLOGEQ_STATEMENT_LABEL,
     },
     errors::ProtocolError,
-    Ciphersuite, Element, Scalar,
 };
-use frost_core::{serialization::SerializableScalar, Group};
+use frost_core::{Group, serialization::SerializableScalar};
 use subtle::ConstantTimeEq;
 use zeroize::Zeroize;
 

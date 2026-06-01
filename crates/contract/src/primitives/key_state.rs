@@ -125,7 +125,7 @@ pub mod tests {
 
     #[test]
     fn test_epoch_id() {
-        let id = rand::thread_rng().gen();
+        let id = rand::thread_rng().r#gen();
         let epoch_id = EpochId::new(id);
         assert_eq!(epoch_id.get(), id);
         assert_eq!(epoch_id.next().get(), id + 1);
