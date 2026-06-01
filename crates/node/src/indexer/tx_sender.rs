@@ -1,7 +1,8 @@
 use super::ChainSendTransactionRequest::{self, *};
 use super::IndexerState;
 use super::recent_transactions::{
-    RecentTransactions, SubmittedTransaction, SubmittedTransactionStatus, TransactionRecordId,
+    RecentTransactions, SignerContext, SubmittedTransaction, SubmittedTransactionStatus,
+    SubmittedTxMetadata, TransactionRecordId,
 };
 use super::tx_signer::{TransactionSigner, TransactionSigners};
 use crate::config::RespondConfig;
@@ -10,10 +11,8 @@ use anyhow::Context;
 use ed25519_dalek::SigningKey;
 use mpc_attestation::attestation::DEFAULT_EXPIRATION_DURATION_SECONDS;
 use near_account_id::AccountId;
-use near_indexer_primitives::CryptoHash;
-use near_indexer_primitives::types::{BlockHeight, Gas, Nonce};
+use near_indexer_primitives::types::Gas;
 use near_mpc_contract_interface::types::{Attestation, Ed25519PublicKey, VerifiedAttestation};
-use near_time::Clock;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -141,14 +140,6 @@ pub enum TransactionStatus {
     Unknown,
 }
 
-/// Metadata about a built-and-submitted transaction, surfaced on the
-/// `/debug/recent_transactions` page.
-struct SubmittedTxMetadata {
-    tx_hash: CryptoHash,
-    nonce: Nonce,
-    block_height: BlockHeight,
-}
-
 /// Creates, signs, and submits a function call with the given method and serialized arguments.
 /// On success, returns the metadata of the submitted transaction for debugging.
 async fn submit_tx(
@@ -171,6 +162,8 @@ async fn submit_tx(
 
     let tx_hash = transaction.get_hash();
     let nonce = transaction.transaction.nonce().nonce();
+    // Clone the signature before the transaction is moved into `submit_tx`.
+    let signature = transaction.signature.clone();
     tracing::info!(
         target = "mpc",
         "sending tx {:?} with ak={:?} nonce={:?}",
@@ -184,6 +177,7 @@ async fn submit_tx(
     Ok(SubmittedTxMetadata {
         tx_hash,
         nonce,
+        signature,
         block_height: block.header.height,
     })
 }
@@ -338,8 +332,11 @@ async fn ensure_send_transaction(
     recent_transactions: Arc<Mutex<RecentTransactions>>,
 ) -> TransactionStatus {
     let method = request.method();
-    let signer_account_id = tx_signer.account_id().clone();
-    let signer_public_key = Ed25519PublicKey::from(&tx_signer.public_key());
+    let signer = SignerContext {
+        account_id: tx_signer.account_id().clone(),
+        public_key: Ed25519PublicKey::from(&tx_signer.public_key()),
+        method,
+    };
     let submitted_metadata = submit_tx(
         tx_signer.clone(),
         indexer_state.clone(),
@@ -359,34 +356,15 @@ async fn ensure_send_transaction(
             recent_transactions
                 .lock()
                 .unwrap()
-                .record_submitted(SubmittedTransaction {
-                    tx_hash: None,
-                    nonce: None,
-                    signer_account_id,
-                    signer_public_key,
-                    method,
-                    block_height: None,
-                    submitted_at: Clock::real().now_utc(),
-                    status: SubmittedTransactionStatus::SubmitFailed,
-                });
+                .record_submitted(SubmittedTransaction::submit_failed(signer));
             return TransactionStatus::NotExecuted;
         }
     };
 
-    let record_id: TransactionRecordId =
-        recent_transactions
-            .lock()
-            .unwrap()
-            .record_submitted(SubmittedTransaction {
-                tx_hash: Some(metadata.tx_hash),
-                nonce: Some(metadata.nonce),
-                signer_account_id,
-                signer_public_key,
-                method,
-                block_height: Some(metadata.block_height),
-                submitted_at: Clock::real().now_utc(),
-                status: SubmittedTransactionStatus::Submitting,
-            });
+    let record_id: TransactionRecordId = recent_transactions
+        .lock()
+        .unwrap()
+        .record_submitted(SubmittedTransaction::submitting(signer, metadata));
 
     // Allow time for the transaction to be included
     time::sleep(TRANSACTION_TIMEOUT).await;
