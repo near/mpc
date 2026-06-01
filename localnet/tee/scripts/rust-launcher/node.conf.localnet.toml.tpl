@@ -28,7 +28,7 @@ my_near_account_id = "${MPC_ACCOUNT_ID}"
 near_responder_account_id = "${MPC_ACCOUNT_ID}"
 number_of_responder_keys = 1
 web_ui = "0.0.0.0:8080"
-migration_web_ui = "0.0.0.0:8078"
+migration_web_ui = "0.0.0.0:8079"
 cores = 4
 
 [mpc_node_config.node.indexer]
@@ -37,6 +37,11 @@ sync_mode = "Latest"
 concurrency = 1
 mpc_contract_id = "${MPC_CONTRACT_ID}"
 finality = "optimistic"
+# Force the P2P/TLS listener onto port 80 regardless of the port written in
+# the contract participant URL. This matches `deployment/cvm-deployment/`
+# and `deployment/testnet/{frodo,sam}.toml`. With per-CVM IPs, host:<ip>:80
+# is unique per node so there's no collision.
+port_override = 80
 
 [mpc_node_config.node.triple]
 concurrency = 2

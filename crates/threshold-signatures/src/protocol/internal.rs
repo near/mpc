@@ -48,7 +48,7 @@ use futures::future::BoxFuture;
 use futures::lock::Mutex;
 use futures::task::noop_waker;
 use futures::{FutureExt, StreamExt};
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use sha2::{Digest, Sha256};
 use std::collections::VecDeque;
 use std::task::Context;

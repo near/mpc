@@ -6,15 +6,15 @@ use rand_core::OsRng;
 use common::{choose_coordinator_at_random, generate_participants, run_keygen, run_reshare};
 use threshold_signatures::{
     confidential_key_derivation::{
-        ciphersuite::{verify_signature, Field as _, G1Projective, Group as _},
+        AppId, CKDOutputOption, PublicVerificationKey,
+        ciphersuite::{Field as _, G1Projective, Group as _, verify_signature},
         ckd_pv,
         protocol::ckd,
-        AppId, CKDOutputOption, PublicVerificationKey,
     },
     participants::Participant,
 };
 
-use crate::common::{run_protocol, GenProtocol};
+use crate::common::{GenProtocol, run_protocol};
 type C = threshold_signatures::confidential_key_derivation::BLS12381SHA256;
 type Scalar = threshold_signatures::Scalar<C>;
 

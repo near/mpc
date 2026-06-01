@@ -1,4 +1,4 @@
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use foreign_chain_inspector::abstract_chain::inspector::AbstractExtractor;
 use foreign_chain_inspector::arbitrum::inspector::ArbitrumExtractor;
 use foreign_chain_inspector::base::inspector::BaseExtractor;
@@ -22,7 +22,7 @@ use crate::{
 use near_mpc_bounded_collections::BoundedVec;
 use near_mpc_contract_interface::types::{self as dtos, ECDSA_PAYLOAD_SIZE_BYTES};
 use near_mpc_contract_interface::types::{Payload, Tweak};
-use tokio::time::{timeout, Duration};
+use tokio::time::{Duration, timeout};
 
 const FOREIGN_CHAIN_INSPECTION_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -287,7 +287,7 @@ where
                     .as_ref()
                     .context("no inspector configured for Starknet")?;
 
-                let transaction_id = request.tx_id.0 .0.into();
+                let transaction_id = request.tx_id.0.0.into();
                 let finality: StarknetFinality = request.finality.clone().try_into()?;
                 let extractors: Vec<StarknetExtractor> = request
                     .extractors

@@ -118,7 +118,10 @@ pub fn set_progress(progress: &str) {
 /// Starts a root task. This is the entry point for tracking tasks.
 /// All other futures must be spawned with `tracking::spawn`, rather than
 /// `tokio::spawn`.
-pub fn start_root_task<F, R>(name: &str, f: F) -> (impl Future<Output = R>, Arc<TaskHandle>)
+pub fn start_root_task<F, R>(
+    name: &str,
+    f: F,
+) -> (impl Future<Output = R> + use<F, R>, Arc<TaskHandle>)
 where
     F: Future<Output = R> + Send + 'static,
     R: Send + 'static,
@@ -245,7 +248,11 @@ impl TaskHandle {
     /// Forces the future to run in the scope of the given task handle.
     /// Useful when there's a tracking gap due to a third party library
     /// (such as actix_web) spawning futures with tokio::spawn.
-    pub fn scope<F, R>(self: &Arc<TaskHandle>, description: &str, f: F) -> impl Future<Output = R>
+    pub fn scope<F, R>(
+        self: &Arc<TaskHandle>,
+        description: &str,
+        f: F,
+    ) -> impl Future<Output = R> + use<F, R>
     where
         F: Future<Output = R> + Send + 'static,
         R: Send + 'static,
@@ -262,7 +269,7 @@ impl TaskHandle {
         self: &Arc<TaskHandle>,
         description: &str,
         f: F,
-    ) -> impl Future<Output = ()>
+    ) -> impl Future<Output = ()> + use<F, R>
     where
         F: Future<Output = anyhow::Result<R>> + Send + 'static,
         R: Send + 'static,

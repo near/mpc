@@ -1,7 +1,7 @@
 use std::hash::Hash;
 
 use derive_more::{Deref, Display, From};
-use ethereum_types::{H256, U64};
+use ethereum_types::H256;
 use http::{HeaderMap, HeaderName, HeaderValue};
 use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
 use near_mpc_bounded_collections::NonEmptyVec;
@@ -182,6 +182,26 @@ pub enum RpcAuthentication {
 #[derive(From, Debug, Display, Clone, Copy, Deref, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BlockConfirmations(u64);
 
+/// Chain-agnostic byte buffer that formats as `0x`-prefixed lowercase hex.
+/// Used in error messages to keep block-hash logs readable across chains
+/// whose hashes have different native types (EVM `H256`, Bitcoin's reversed
+/// 32-byte hash, Starknet felt, ...).
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Display, From)]
+#[display("0x{}", hex::encode(_0))]
+pub struct HexBytes(pub Vec<u8>);
+
+impl From<H256> for HexBytes {
+    fn from(hash: H256) -> Self {
+        HexBytes(hash.as_bytes().to_vec())
+    }
+}
+
+impl std::fmt::Debug for HexBytes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(self, f)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum EthereumFinality {
     Finalized,
@@ -205,12 +225,12 @@ pub enum ForeignChainInspectionError {
     #[error("transaction has not reached expected finality level")]
     NotFinalized,
     #[error(
-        "transaction receipt's block_hash does not match the canonical chain at block {block_number}: receipt_hash={receipt_hash:?}, canonical_hash={canonical_hash:?}"
+        "transaction receipt's block_hash does not match the canonical chain at block {block_number}: receipt_hash={receipt_hash}, canonical_hash={canonical_hash}"
     )]
     NonCanonicalBlock {
-        block_number: U64,
-        receipt_hash: H256,
-        canonical_hash: H256,
+        block_number: u64,
+        receipt_hash: HexBytes,
+        canonical_hash: HexBytes,
     },
     #[error("The transaction's status was not success")]
     TransactionFailed,

@@ -1,6 +1,6 @@
 mod sign;
 
-use crate::config::{auth_config_to_rpc_auth, ParticipantsConfig};
+use crate::config::{ParticipantsConfig, auth_config_to_rpc_auth};
 use crate::network::NetworkTaskChannel;
 use crate::primitives::{MpcTaskId, UniqueId};
 use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
@@ -20,10 +20,10 @@ use foreign_chain_inspector::FanOut;
 use mpc_node_config::{ConfigFile, ForeignChainConfig, ForeignChainsConfig};
 use near_mpc_contract_interface::types as dtos;
 use std::sync::Arc;
-use threshold_signatures::ecdsa::{KeygenOutput, Signature};
-use threshold_signatures::frost_secp256k1::keys::SigningShare;
-use threshold_signatures::frost_secp256k1::VerifyingKey;
 use threshold_signatures::ReconstructionLowerBound;
+use threshold_signatures::ecdsa::{KeygenOutput, Signature};
+use threshold_signatures::frost_secp256k1::VerifyingKey;
+use threshold_signatures::frost_secp256k1::keys::SigningShare;
 
 /// Pre-built HTTP clients for each foreign chain, keyed in provider config order.
 ///

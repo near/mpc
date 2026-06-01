@@ -169,10 +169,10 @@ impl<K: Ord + schemars::JsonSchema, V: schemars::JsonSchema> schemars::JsonSchem
     fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
         // Reuse BTreeMap's schema with minProperties: 1
         let mut schema = <BTreeMap<K, V>>::json_schema(generator);
-        if let schemars::schema::Schema::Object(ref mut obj) = schema {
-            if let Some(ref mut object) = obj.object {
-                object.min_properties = Some(1);
-            }
+        if let schemars::schema::Schema::Object(ref mut obj) = schema
+            && let Some(ref mut object) = obj.object
+        {
+            object.min_properties = Some(1);
         }
         schema
     }

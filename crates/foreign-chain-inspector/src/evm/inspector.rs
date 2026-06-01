@@ -128,6 +128,10 @@ where
     /// block at `receipt_block_number` and comparing hashes. `eth_getBlockByNumber` only ever
     /// resolves to a canonical block, so a mismatch means the receipt was indexed against a
     /// side block (stale tx index, partially-applied reorg, divergent RPC backend, etc.).
+    ///
+    /// The canonical block's height is also asserted against the requested one — a divergent
+    /// RPC that returns a hash from a different height would otherwise sneak past a
+    /// hash-only check.
     async fn verify_block_is_canonical(
         &self,
         receipt_block_number: U64,
@@ -142,11 +146,13 @@ where
             .request(GET_BLOCK_BY_NUMBER_METHOD, &args)
             .await?;
 
-        if canonical.hash != receipt_block_hash {
+        let hash_matches = canonical.hash == receipt_block_hash;
+        let height_matches = canonical.number == receipt_block_number;
+        if !hash_matches || !height_matches {
             return Err(ForeignChainInspectionError::NonCanonicalBlock {
-                block_number: receipt_block_number,
-                receipt_hash: receipt_block_hash,
-                canonical_hash: canonical.hash,
+                block_number: receipt_block_number.as_u64(),
+                receipt_hash: receipt_block_hash.into(),
+                canonical_hash: canonical.hash.into(),
             });
         }
         Ok(())

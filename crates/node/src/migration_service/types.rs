@@ -141,8 +141,8 @@ pub mod tests {
     use mpc_contract::{
         primitives::test_utils::{bogus_ed25519_public_key, gen_participant},
         state::{
-            test_utils::{gen_initializing_state, gen_resharing_state, gen_running_state},
             ProtocolContractState,
+            test_utils::{gen_initializing_state, gen_resharing_state, gen_running_state},
         },
     };
     use near_account_id::AccountId;

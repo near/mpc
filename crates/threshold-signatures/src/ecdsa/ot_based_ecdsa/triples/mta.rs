@@ -1,4 +1,4 @@
-use frost_core::{serialization::SerializableScalar, Field, Group};
+use frost_core::{Field, Group, serialization::SerializableScalar};
 use rand_core::CryptoRngCore;
 use serde::{Deserialize, Serialize};
 use std::slice::Iter;
@@ -155,8 +155,8 @@ mod test {
 
     use crate::errors::ProtocolError;
     use crate::participants::Participant;
-    use crate::protocol::internal::{make_protocol, Comms};
-    use crate::test_utils::{run_two_party_protocol, MockCryptoRng};
+    use crate::protocol::internal::{Comms, make_protocol};
+    use crate::test_utils::{MockCryptoRng, run_two_party_protocol};
 
     /// Run the multiplicative to additive protocol
     fn run_mta(

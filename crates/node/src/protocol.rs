@@ -3,7 +3,7 @@ use crate::tracking;
 use crate::{network::NetworkTaskChannel, tracking::TaskHandle};
 use futures::TryFutureExt;
 use std::collections::{BTreeMap, HashMap};
-use std::sync::{atomic::AtomicUsize, Arc};
+use std::sync::{Arc, atomic::AtomicUsize};
 use threshold_signatures::protocol::{Action, Protocol};
 use tokio::sync::mpsc;
 

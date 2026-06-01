@@ -11,8 +11,8 @@ use clap::{Args, Parser, Subcommand};
 use hex::FromHex;
 use launcher_interface::types::{TeeAuthorityConfig, TeeConfig};
 use mpc_node_config::{
-    load_config_file, ChainId, ConfigFile, DownloadConfigType, GcpStartConfig, LogConfig,
-    LogFormat, NearInitConfig, SecretsStartConfig, StartConfig,
+    ChainId, ConfigFile, DownloadConfigType, GcpStartConfig, LogConfig, LogFormat, NearInitConfig,
+    SecretsStartConfig, StartConfig, load_config_file,
 };
 use mpc_primitives::hash::NodeImageHash;
 use std::path::PathBuf;
@@ -392,7 +392,7 @@ mod testing {
 
     use crate::{
         config::PersistentSecrets,
-        p2p::testing::{generate_test_p2p_configs, PortSeed},
+        p2p::testing::{PortSeed, generate_test_p2p_configs},
     };
     use mpc_node_config::{
         BlockArgs, CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig,
@@ -643,9 +643,11 @@ mod tests {
             result.is_err(),
             "Export command should fail on nonexistent keyshare"
         );
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("No keyshare found"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("No keyshare found")
+        );
     }
 }

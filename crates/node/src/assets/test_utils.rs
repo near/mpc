@@ -1,28 +1,31 @@
-use crate::assets::cleanup::EpochData;
 use crate::assets::DistributedAssetStorage;
+use crate::assets::cleanup::EpochData;
 use crate::config::ParticipantsConfig;
 use crate::db::SecretDB;
 use crate::indexer::participants::convert_participant_infos;
-use crate::providers::ecdsa::presign::PresignOutputWithParticipants;
-use crate::providers::ecdsa::triple::{PairedTriple, TRIPLE_STORE_DOMAIN_ID};
 use crate::providers::HasParticipants;
-use crate::{db::DBCol, primitives::ParticipantId};
+use crate::providers::ecdsa::presign::PresignOutputWithParticipants;
+use crate::providers::ecdsa::triple::PairedTriple;
+use crate::{
+    db::DBCol,
+    primitives::{ParticipantId, UniqueId},
+};
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use k256::ProjectivePoint;
 use mpc_contract::primitives::test_utils::gen_participants;
 use mpc_contract::primitives::thresholds::{Threshold, ThresholdParameters};
-use mpc_primitives::{domain::DomainId, EpochId};
+use mpc_primitives::{EpochId, ReconstructionThreshold, domain::DomainId};
 use near_time::FakeClock;
-use rand::rngs::OsRng;
 use rand::RngCore;
-use serde::de::DeserializeOwned;
+use rand::rngs::OsRng;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use std::sync::{Arc, Mutex};
+use threshold_signatures::ecdsa::Polynomial;
+use threshold_signatures::ecdsa::ot_based_ecdsa::PresignOutput;
 use threshold_signatures::ecdsa::ot_based_ecdsa::triples::{
     TripleGenerationOutput, TriplePub, TripleShare,
 };
-use threshold_signatures::ecdsa::ot_based_ecdsa::PresignOutput;
-use threshold_signatures::ecdsa::Polynomial;
 
 pub fn random_verifying_key() -> VerifyingKey {
     let mut csprng = OsRng;
@@ -30,9 +33,28 @@ pub fn random_verifying_key() -> VerifyingKey {
     signing_key.verifying_key()
 }
 
-pub fn gen_four_participants() -> (EpochData, ParticipantId) {
+/// On-disk key for a `DBCol::TripleV2` entry: `[t (8 BE)][borsh(UniqueId)]`.
+/// Mirrors the internal `make_key` in `DistributedAssetStorage` so tests don't
+/// depend on its implementation details.
+pub fn triple_v2_key(t: ReconstructionThreshold, id: UniqueId) -> Vec<u8> {
+    let mut key = t.inner().to_be_bytes().to_vec();
+    key.extend_from_slice(&borsh::to_vec(&id).unwrap());
+    key
+}
+
+/// On-disk key for a `DBCol::Triple` (legacy) entry: just `borsh(UniqueId)`.
+pub fn legacy_triple_key(id: UniqueId) -> Vec<u8> {
+    borsh::to_vec(&id).unwrap()
+}
+
+/// Generates a 4-participant test fixture with threshold 3. Returns the epoch
+/// data, the local participant's ID, and the threshold so callers don't have
+/// to restate the magic number alongside the fixture.
+pub fn gen_four_participants() -> (EpochData, ParticipantId, ReconstructionThreshold) {
+    let threshold = ReconstructionThreshold::new(3);
     let epoch_id = EpochId::new(rand::thread_rng().next_u64());
-    let parameters = ThresholdParameters::new(gen_participants(4), Threshold::new(3)).unwrap();
+    let parameters =
+        ThresholdParameters::new(gen_participants(4), Threshold::new(threshold.inner())).unwrap();
     let parameters_dto: near_mpc_contract_interface::types::ThresholdParameters = parameters.into();
     let participants: ParticipantsConfig = convert_participant_infos(parameters_dto, None).unwrap();
     let epoch_data = EpochData {
@@ -40,7 +62,7 @@ pub fn gen_four_participants() -> (EpochData, ParticipantId) {
         participants,
     };
     let my_participant_id = epoch_data.participants.participants.first().unwrap().id;
-    (epoch_data, my_participant_id)
+    (epoch_data, my_participant_id, threshold)
 }
 
 pub fn get_participant_ids(epoch_data: EpochData) -> Vec<ParticipantId> {
@@ -114,11 +136,7 @@ impl TestContext {
         }
     }
 
-    pub fn new_store<T>(
-        &self,
-        db_col: DBCol,
-        domain_id: Option<DomainId>,
-    ) -> DistributedAssetStorage<T>
+    pub fn new_store<T>(&self, db_col: DBCol, prefix: Vec<u8>) -> DistributedAssetStorage<T>
     where
         T: Serialize + DeserializeOwned + Send + 'static + HasParticipants,
     {
@@ -126,7 +144,8 @@ impl TestContext {
             self.clock.clock(),
             self.db.clone(),
             db_col,
-            domain_id,
+            prefix,
+            None,
             self.my_participant_id,
             |cond, val| val.is_subset_of_active_participants(cond),
             {
@@ -138,28 +157,30 @@ impl TestContext {
     }
 
     pub fn populate(&self, participants: &[ParticipantId]) {
-        {
-            let store = self.new_store::<PairedTriple>(DBCol::Triple, TRIPLE_STORE_DOMAIN_ID);
+        // Mirror cleanup's view of triples: legacy column has no prefix.
+        let store = self.new_store::<PairedTriple>(DBCol::Triple, Vec::new());
+        let id = store.generate_and_reserve_id();
+        store.add_owned(id, make_triple(participants));
+
+        for &d in &self.presign_domain_ids {
+            let store = self.new_store::<PresignOutputWithParticipants>(
+                DBCol::Presignature,
+                d.0.to_be_bytes().to_vec(),
+            );
             let id = store.generate_and_reserve_id();
-            store.add_owned(id, make_triple(participants));
-        }
-        {
-            for &d in &self.presign_domain_ids {
-                let store =
-                    self.new_store::<PresignOutputWithParticipants>(DBCol::Presignature, Some(d));
-                let id = store.generate_and_reserve_id();
-                store.add_owned(id, make_presign(participants));
-            }
+            store.add_owned(id, make_presign(participants));
         }
     }
 
     pub fn assert_owned(&self, expected: usize) {
-        let store = self.new_store::<PairedTriple>(DBCol::Triple, TRIPLE_STORE_DOMAIN_ID);
+        let store = self.new_store::<PairedTriple>(DBCol::Triple, Vec::new());
         assert_eq!(store.num_owned(), expected);
 
         for &d in &self.presign_domain_ids {
-            let store =
-                self.new_store::<PresignOutputWithParticipants>(DBCol::Presignature, Some(d));
+            let store = self.new_store::<PresignOutputWithParticipants>(
+                DBCol::Presignature,
+                d.0.to_be_bytes().to_vec(),
+            );
             assert_eq!(store.num_owned(), expected);
         }
     }
