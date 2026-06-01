@@ -1,7 +1,7 @@
 use super::initializing::InitializingContractState;
 use super::key_event::KeyEvent;
 use super::resharing::ResharingContractState;
-use crate::errors::{DomainError, Error, InvalidParameters, VoteError};
+use crate::errors::{ConversionError, DomainError, Error, InvalidParameters, VoteError};
 use crate::primitives::{
     domain::{AddDomainsVotes, DomainRegistry, validate_domain_threshold},
     key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, Keyset},
@@ -141,7 +141,12 @@ impl RunningContractState {
         // participant count. Domains not present in the overlay keep their
         // existing threshold; overlay entries override. An overlay entry
         // referencing an unknown domain ID is rejected.
-        let new_num_participants = proposal.participants().len() as u64;
+        let new_num_participants =
+            u64::try_from(proposal.participants().len()).map_err(|e| {
+                ConversionError::DataConversion {
+                    reason: format!("participant count does not fit in u64: {e}"),
+                }
+            })?;
         let overlay = proposal.per_domain_thresholds();
         for id in overlay.keys() {
             if self.domains.get_domain_by_domain_id(*id).is_none() {
@@ -176,7 +181,13 @@ impl RunningContractState {
 
         // finally, vote.
         let n_votes = self.parameters_votes.vote(proposal, candidate);
-        Ok(proposal.participants().len() as u64 == n_votes)
+        let num_participants =
+            u64::try_from(proposal.participants().len()).map_err(|e| {
+                ConversionError::DataConversion {
+                    reason: format!("participant count does not fit in u64: {e}"),
+                }
+            })?;
+        Ok(num_participants == n_votes)
     }
 
     /// Casts a vote for the signer participant to add new domains, replacing any previous vote.
