@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.11.1] - 2026-06-01
+
+### ⚙️ Miscellaneous Tasks
+
+- [#3396](https://github.com/near/mpc/pull/3396)(@gilcu3): Bump prometheus, fix missing nearcore metric (#3396)
+
+
 ## [3.11.0] - 2026-05-27
 
 ### 🚀 Features
