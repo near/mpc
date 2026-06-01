@@ -141,13 +141,18 @@ impl RunningContractState {
         // participant count. Domains not present in the overlay keep their
         // existing threshold; overlay entries override. An overlay entry
         // referencing an unknown domain ID is rejected.
-        let new_num_participants =
-            u64::try_from(proposal.participants().len()).map_err(|e| {
-                ConversionError::DataConversion {
-                    reason: format!("participant count does not fit in u64: {e}"),
-                }
-            })?;
+        let new_num_participants = u64::try_from(proposal.participants().len()).map_err(|e| {
+            ConversionError::DataConversion {
+                reason: format!("participant count does not fit in u64: {e}"),
+            }
+        })?;
         let overlay = proposal.per_domain_thresholds();
+        // `with_overlaid_thresholds` re-runs this same guard at the final
+        // resharing transition, so this is intentionally redundant. We check it
+        // here too to fail fast at vote acceptance: the threshold-validation
+        // loop below iterates the existing domains (not the overlay keys), so
+        // without this guard an entry for an unknown domain ID would be
+        // silently ignored now and only rejected at transition time.
         for id in overlay.keys() {
             if self.domains.get_domain_by_domain_id(*id).is_none() {
                 return Err(DomainError::UnknownDomainInProposal { domain_id: *id }.into());
@@ -181,12 +186,11 @@ impl RunningContractState {
 
         // finally, vote.
         let n_votes = self.parameters_votes.vote(proposal, candidate);
-        let num_participants =
-            u64::try_from(proposal.participants().len()).map_err(|e| {
-                ConversionError::DataConversion {
-                    reason: format!("participant count does not fit in u64: {e}"),
-                }
-            })?;
+        let num_participants = u64::try_from(proposal.participants().len()).map_err(|e| {
+            ConversionError::DataConversion {
+                reason: format!("participant count does not fit in u64: {e}"),
+            }
+        })?;
         Ok(num_participants == n_votes)
     }
 
