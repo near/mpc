@@ -30,11 +30,8 @@ pub const TON_CELL_MAX_REFS: usize = 4;
 
 /// Data bytes of a TON Cell: between 0 and [`TON_CELL_MAX_DATA_BYTES`] bytes (inclusive).
 ///
-/// Holds the cell's data bits packed big-endian into bytes. The exact number of
-/// significant bits is carried separately in [`TonLog::body_bit_length`]; the unused
-/// low bits of the final byte are zero. A non-byte-aligned cell body is therefore
-/// fully representable: `body_bits` carries the padded bytes and `body_bit_length`
-/// recovers the true bit length.
+/// Holds a cell's data bits packed big-endian into bytes; the exact significant bit count
+/// is carried alongside it in [`TonCellBody`].
 pub type TonCellData = EmptyBoundedVec<u8, TON_CELL_MAX_DATA_BYTES>;
 
 /// References of a TON Cell: between 0 and [`TON_CELL_MAX_REFS`] entries (inclusive).
@@ -392,6 +389,114 @@ pub enum TonExtractor {
     Log { message_index: u64 } = 1,
 }
 
+/// The data section of a TON message-body cell.
+///
+/// A TON cell carries up to [`TON_CELL_MAX_DATA_BITS`] *bits*, which need not be a whole
+/// number of bytes, so we store the bits packed big-endian into bytes ([`TonCellData`],
+/// the final byte's unused low bits zeroed) alongside the exact significant bit count.
+/// The bit length is kept explicit so two cells that share trailing bytes but differ in
+/// bit length (e.g. 1015 vs 1023 bits) do not collide under
+/// [`ForeignTxSignPayload::compute_msg_hash`].
+///
+/// The byte buffer and bit length are a coupled invariant — the byte count must equal
+/// `⌈bit_length / 8⌉` and `bit_length <= `[`TON_CELL_MAX_DATA_BITS`]. [`TonCellBody::new`]
+/// is the only constructor and the `Deserialize`/`BorshDeserialize` impls route through
+/// it, so any value that exists is well-formed; there is no separate validation step.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, BorshSerialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct TonCellBody {
+    bits: TonCellData,
+    bit_length: u16,
+}
+
+impl TonCellBody {
+    /// Builds a cell body from `bits` (significant bits packed big-endian into bytes) and
+    /// the significant `bit_length`, enforcing `bit_length <= `[`TON_CELL_MAX_DATA_BITS`]
+    /// and `bits.len() == ⌈bit_length / 8⌉`.
+    pub fn new(bits: TonCellData, bit_length: u16) -> Result<Self, TonCellBodyError> {
+        if bit_length > TON_CELL_MAX_DATA_BITS {
+            return Err(TonCellBodyError::BitLengthTooLarge { bit_length });
+        }
+        let expected_bytes = usize::from(bit_length.div_ceil(8));
+        if bits.len() != expected_bytes {
+            return Err(TonCellBodyError::BitLengthByteMismatch {
+                bit_length,
+                byte_len: bits.len(),
+            });
+        }
+        Ok(Self { bits, bit_length })
+    }
+}
+
+/// Wire representation shared by the `Deserialize` and `BorshDeserialize` impls, so the
+/// field layout and the routing through [`TonCellBody::new`] live in one place.
+#[derive(Deserialize, BorshDeserialize)]
+struct TonCellBodyRepr {
+    bits: TonCellData,
+    bit_length: u16,
+}
+
+impl TryFrom<TonCellBodyRepr> for TonCellBody {
+    type Error = TonCellBodyError;
+
+    fn try_from(repr: TonCellBodyRepr) -> Result<Self, Self::Error> {
+        Self::new(repr.bits, repr.bit_length)
+    }
+}
+
+impl<'de> Deserialize<'de> for TonCellBody {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        <TonCellBodyRepr as Deserialize>::deserialize(deserializer)?
+            .try_into()
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+impl BorshDeserialize for TonCellBody {
+    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        TonCellBodyRepr::deserialize_reader(reader)?
+            .try_into()
+            .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))
+    }
+}
+
+/// Errors building a [`TonCellBody`]; see [`TonCellBody::new`].
+#[derive(Debug, Clone, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum TonCellBodyError {
+    /// `bit_length` exceeds [`TON_CELL_MAX_DATA_BITS`].
+    BitLengthTooLarge { bit_length: u16 },
+    /// The byte count does not match `bit_length` rounded up to whole bytes.
+    BitLengthByteMismatch { bit_length: u16, byte_len: usize },
+}
+
+impl core::fmt::Display for TonCellBodyError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::BitLengthTooLarge { bit_length } => write!(
+                f,
+                "TON cell bit_length {bit_length} exceeds maximum {TON_CELL_MAX_DATA_BITS}"
+            ),
+            Self::BitLengthByteMismatch {
+                bit_length,
+                byte_len,
+            } => write!(
+                f,
+                "TON cell bit_length {bit_length} requires {} body bytes but found {byte_len}",
+                bit_length.div_ceil(8)
+            ),
+        }
+    }
+}
+
+impl std::error::Error for TonCellBodyError {}
+
 #[derive(
     Debug,
     Clone,
@@ -409,76 +514,12 @@ pub enum TonExtractor {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
-/// A TON outbound log message as observed on-chain.
-///
-/// `body_bits` and `body_bit_length` together describe the message-body cell's data:
-/// `body_bits` holds the bits packed into bytes and `body_bit_length` records how many
-/// of those bits are significant (`0..=`[`TON_CELL_MAX_DATA_BITS`]). Keeping the bit
-/// length explicit is required for the canonical payload to uniquely identify the cell —
-/// two cells that share trailing bytes but differ in bit length (e.g. 1015 vs 1023 bits)
-/// must not produce the same [`ForeignTxSignPayload::compute_msg_hash`].
-///
-/// Well-formedness (the invariants checked by [`TonLog::validate`]) is enforced where the
-/// cell is parsed from an RPC response, before the log enters a signing payload.
+/// A TON outbound log message as observed on-chain. The message body is a
+/// [`TonCellBody`], which is well-formed by construction.
 pub struct TonLog {
     pub from_address: TonAddress,
-    pub body_bits: TonCellData,
-    /// Number of significant data bits in `body_bits`; see the type-level docs.
-    pub body_bit_length: u16,
+    pub body: TonCellBody,
     pub body_refs: TonCellRefs,
-}
-
-/// Well-formedness errors for a [`TonLog`] body, reported by [`TonLog::validate`].
-#[derive(Debug, Clone, Eq, PartialEq)]
-#[non_exhaustive]
-pub enum TonLogError {
-    /// `body_bit_length` exceeds [`TON_CELL_MAX_DATA_BITS`].
-    BitLengthTooLarge { bit_length: u16 },
-    /// `body_bits` byte count does not match `body_bit_length` rounded up to whole bytes.
-    BitLengthByteMismatch { bit_length: u16, byte_len: usize },
-}
-
-impl core::fmt::Display for TonLogError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::BitLengthTooLarge { bit_length } => write!(
-                f,
-                "TON cell body_bit_length {bit_length} exceeds maximum {TON_CELL_MAX_DATA_BITS}"
-            ),
-            Self::BitLengthByteMismatch {
-                bit_length,
-                byte_len,
-            } => write!(
-                f,
-                "TON cell body_bit_length {bit_length} requires {} body bytes but found {byte_len}",
-                bit_length.div_ceil(8)
-            ),
-        }
-    }
-}
-
-impl std::error::Error for TonLogError {}
-
-impl TonLog {
-    /// Checks the body invariants: `body_bit_length <= `[`TON_CELL_MAX_DATA_BITS`] and
-    /// `body_bits` holds exactly `⌈body_bit_length / 8⌉` bytes. Callers that build a
-    /// `TonLog` from untrusted input (e.g. an RPC-parsed cell) must call this before the
-    /// log is hashed into a signing payload.
-    pub fn validate(&self) -> Result<(), TonLogError> {
-        if self.body_bit_length > TON_CELL_MAX_DATA_BITS {
-            return Err(TonLogError::BitLengthTooLarge {
-                bit_length: self.body_bit_length,
-            });
-        }
-        let expected_bytes = usize::from(self.body_bit_length.div_ceil(8));
-        if self.body_bits.len() != expected_bytes {
-            return Err(TonLogError::BitLengthByteMismatch {
-                bit_length: self.body_bit_length,
-                byte_len: self.body_bits.len(),
-            });
-        }
-        Ok(())
-    }
 }
 
 #[derive(
@@ -1596,8 +1637,8 @@ mod tests {
                         workchain: 0,
                         hash: Hash256([0xaa; 32]),
                     },
-                    body_bits: vec![0xde, 0xad, 0xbe, 0xef].try_into().unwrap(),
-                    body_bit_length: 32,
+                    body: TonCellBody::new(vec![0xde, 0xad, 0xbe, 0xef].try_into().unwrap(), 32)
+                        .unwrap(),
                     body_refs: vec![Hash256([0x01; 32]), Hash256([0x02; 32])]
                         .try_into()
                         .unwrap(),
@@ -1618,8 +1659,7 @@ mod tests {
                 workchain: 0,
                 hash: Hash256([0xaa; 32]),
             },
-            body_bits: body_bits.try_into().unwrap(),
-            body_bit_length,
+            body: TonCellBody::new(body_bits.try_into().unwrap(), body_bit_length).unwrap(),
             body_refs: vec![].try_into().unwrap(),
         }
     }
@@ -1630,29 +1670,27 @@ mod tests {
     #[case::byte_aligned(vec![0xde, 0xad], 16)]
     #[case::non_byte_aligned(vec![0xde, 0xa0], 12)]
     #[case::max(vec![0xff; 128], TON_CELL_MAX_DATA_BITS)]
-    fn ton_log_validate__should_accept_consistent_body(
-        #[case] body_bits: Vec<u8>,
-        #[case] body_bit_length: u16,
+    fn ton_cell_body_new__should_accept_consistent_body(
+        #[case] bits: Vec<u8>,
+        #[case] bit_length: u16,
     ) {
-        // Given
-        let log = ton_log_with_body(body_bits, body_bit_length);
-
-        // When / Then
-        log.validate().unwrap();
+        // Given / When / Then
+        TonCellBody::new(bits.try_into().unwrap(), bit_length).unwrap();
     }
 
     #[test]
-    fn ton_log_validate__should_reject_bit_length_above_max() {
+    fn ton_cell_body_new__should_reject_bit_length_above_max() {
         // Given: one bit past the maximum, with a byte buffer that matches that bit count.
-        let log = ton_log_with_body(vec![0xff; 128], TON_CELL_MAX_DATA_BITS + 1);
-
         // When
-        let result = log.validate();
+        let result = TonCellBody::new(
+            vec![0xff; 128].try_into().unwrap(),
+            TON_CELL_MAX_DATA_BITS + 1,
+        );
 
         // Then
         assert_eq!(
             result,
-            Err(TonLogError::BitLengthTooLarge {
+            Err(TonCellBodyError::BitLengthTooLarge {
                 bit_length: TON_CELL_MAX_DATA_BITS + 1,
             })
         );
@@ -1662,25 +1700,48 @@ mod tests {
     #[case::too_few_bytes(vec![0xde], 16)]
     #[case::too_many_bytes(vec![0xde, 0xad], 1)]
     #[case::empty_bytes_nonzero_bits(vec![], 1)]
-    fn ton_log_validate__should_reject_byte_bit_mismatch(
-        #[case] body_bits: Vec<u8>,
-        #[case] body_bit_length: u16,
+    fn ton_cell_body_new__should_reject_byte_bit_mismatch(
+        #[case] bits: Vec<u8>,
+        #[case] bit_length: u16,
     ) {
         // Given
-        let byte_len = body_bits.len();
-        let log = ton_log_with_body(body_bits, body_bit_length);
+        let byte_len = bits.len();
 
         // When
-        let result = log.validate();
+        let result = TonCellBody::new(bits.try_into().unwrap(), bit_length);
 
         // Then
         assert_eq!(
             result,
-            Err(TonLogError::BitLengthByteMismatch {
-                bit_length: body_bit_length,
+            Err(TonCellBodyError::BitLengthByteMismatch {
+                bit_length,
                 byte_len,
             })
         );
+    }
+
+    #[test]
+    fn ton_cell_body_borsh_deserialize__should_reject_inconsistent_body() {
+        // Given: borsh bytes for a 1-byte buffer claiming 16 significant bits.
+        let bytes = borsh::to_vec(&(vec![0xde_u8], 16_u16)).unwrap();
+
+        // When
+        let result = TonCellBody::try_from_slice(&bytes);
+
+        // Then
+        result.unwrap_err();
+    }
+
+    #[test]
+    fn ton_cell_body_json_deserialize__should_reject_inconsistent_body() {
+        // Given: JSON for a 1-byte buffer claiming 16 significant bits.
+        let json = r#"{"bits":[222],"bit_length":16}"#;
+
+        // When
+        let result = serde_json::from_str::<TonCellBody>(json);
+
+        // Then
+        result.unwrap_err();
     }
 
     #[test]
