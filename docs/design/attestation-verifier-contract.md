@@ -211,15 +211,15 @@ flowchart TD
 
 The verifier contract is stateless and has no admin methods or on-chain configuration. For security, every verifier instance is deployed to a locked account — a NEAR account with no full-access keys, so the protocol refuses any future redeploy. The deployed bytes are frozen for the lifetime of the account; there is no in-place upgrade path. Changing the verifier means voting in a different, separately-deployed instance at a new locked account. The only governance decision is on `mpc-contract`, choosing which instance to trust through a vote of active MPC participants. External callers (Defuse, Proximity) run their own equivalent vote on their own contract.
 
-The expected trigger for a verifier rotation is a discovered bug in the existing verifier — for example, a DCAP signature-chain flaw that let a non-genuine TEE submit an attestation the contract then stored. Voting for a patched verifier has to do more than route future submissions in that case: it has to invalidate the attestations the broken verifier already accepted. Without that, an attacker holding a wrongly-accepted entry has no reason to act — they skip `mpc-node`'s [`periodic_attestation_submission`][periodic-attestation-submission] 1-hour resubmit cadence and ride the entry out for up to 7 days, since [`re_verify`][re-verify] only re-checks post-DCAP allowlist invariants and never re-runs DCAP. The original quote and collateral aren't kept either, so a patched verifier has nothing to re-check against. The same property exists on `main` today (a `dcap-qvl` upgrade is the same shape, just as a redeploy rather than a vote), but once rotation is a governance event rather than a redeploy, the gap might be more visible.
+The expected trigger for a verifier rotation is a discovered bug in the existing verifier — for example, a DCAP signature-chain flaw that let a non-genuine TEE submit an attestation the contract then stored. A rotation vote re-points `tee_verifier_account_id` at a patched, separately-deployed instance, so every subsequent `submit_participant_info` is verified by the new verifier. It does *not* reach back and delete the entries the broken verifier already accepted: the contract keeps neither the original quote nor the collateral, and [`re_verify`][re-verify] re-checks only post-DCAP allowlist invariants, never DCAP itself.
 
-The fix has two parts. First, every `VerifiedAttestation` records which verifier produced its verdict, in a new `verified_by: AccountId` field. `resolve_verification` stamps it from [`env::predecessor_account_id()`][predecessor-account-id] — the verifier that actually returned the `VerifiedReport` — rather than from `tee_verifier_account_id` in state. That choice is what makes the in-flight-rotation race come out correctly: a verification scheduled against the old verifier that resolves *after* the rotation vote crosses threshold gets stamped as belonging to the old verifier, as it should. `re_verify` then adds one check at the top: `verified_by` must equal the contract's current `tee_verifier_account_id`. After a rotation, every entry the old verifier produced fails this predicate.
+Instead, those entries **age out on their own**. Every stored `VerifiedAttestation` carries an `expiry_timestamp_seconds` and [`re_verify`][re-verify] already rejects any entry once it is past — the same check that bounds a legitimate attestation's lifetime also bounds a wrongly-accepted one's. The lever is the expiration duration, today a hardcoded `DEFAULT_EXPIRATION_DURATION_SECONDS` of 7 days, stamped off-chain at attestation time and carried through the DTO into the stored entry (the contract enforces it, it doesn't compute it). This design lowers that constant to a shorter value — 1 day is a reasonable starting point — shipped as a normal contract/node upgrade, not an on-chain votable parameter. A wrongly-accepted entry then rides out for at most ~1 day after the rotation instead of 7, uniformly and with no sweep, flag, or per-entry bookkeeping.
 
-The predicate alone isn't enough: stored entries are only re-checked when something explicitly runs `re_verify`, and the signing-path gate [`is_caller_an_attested_participant`][is-caller-attested] is a presence check (`stored_attestations.get(&tls_pk)`), not a re-verification. So `vote_tee_verifier_change`'s threshold-crossing handler also schedules a self-`Promise` calling [`clean_invalid_attestations`][clean-invalid-attestations] in a subsequent receipt — the same mechanism used today to schedule [`clean_foreign_chain_data`][clean-foreign-chain-data] after a resharing. Stale entries are gone within a block or two of the vote landing, and honest nodes pick up the removal via `mpc-node`'s [`monitor_attestation_removal`][monitor-attestation-removal] task — which watches the contract's TEE-accounts list and resubmits the moment its own entry disappears — so honest recovery happens within seconds. The 1-hour periodic resubmission becomes a worst-case fallback, not the primary recovery path.
+The window must stay well above the honest-node resubmit cadence so nobody is evicted for timing: `mpc-node`'s [`periodic_attestation_submission`][periodic-attestation-submission] resubmits every hour, and [`monitor_attestation_removal`][monitor-attestation-removal] resubmits the moment a node's entry disappears. Honest nodes therefore refresh with comfortable margin while a stale entry nobody refreshes simply lapses. This is deliberately gentler than purging old-verifier entries the instant a rotation lands: an immediate purge down to threshold is effectively expiration zero, where a transient PCCS or connectivity hiccup can knock honest nodes out before they re-attest, threatening liveness. The short window contains the bad entry without that cliff.
 
-The cost is a brief service-availability gap: right after the sweep, `verify_tee` flips [`accept_requests = false`][accept-requests-flag] until enough honest nodes have re-attested through the new verifier. The contract should refuse new requests until it has fresh verdicts from a verifier the protocol still trusts. Note also what this mechanism does *not* do: it stops future trust in entries the old verifier produced, but does not undo whatever MPC operations a node holding such an entry already participated in. Recovering from past damage is out of scope for this document.
+Note what this does *not* do: it bounds future trust in entries the old verifier produced, but does not undo whatever MPC operations a node holding such an entry already participated in. This is containment of future trust, not remediation of past damage, which is out of scope here.
 
-Verifier rotation is also not the only response to a compromise. If the bad behavior can be pinned to a specific image or launcher hash rather than the verifier itself, operators can leave the verifier alone and drop the affected hash from the post-DCAP allowlist; any subsequent [`verify_tee`][verify-tee] or [`clean_invalid_attestations`][clean-invalid-attestations] sweep evicts the matching entries through the existing allowlist-mismatch path. This route predates the design and remains available.
+Verifier rotation is also not the right response when the fault is not in the verifier. If the bad behavior can be pinned to a specific image or launcher hash, operators can leave the verifier alone and drop the affected hash from the post-DCAP allowlist; any subsequent [`verify_tee`][verify-tee] or [`clean_invalid_attestations`][clean-invalid-attestations] sweep then evicts the matching entries through the existing allowlist-mismatch path. That path is unchanged by this design and remains available as a faster, targeted response when the offending measurement is known.
 
 ### Requirements on the verifier account
 
@@ -292,13 +292,11 @@ impl MpcContract {
     /// Vote for `(candidate_account_id, expected_code_hash)`. Re-voting from
     /// the same caller replaces the previous vote; see
     /// `withdraw_tee_verifier_vote` to withdraw without replacing. When the
-    /// threshold is reached, `tee_verifier_account_id` is updated, the
-    /// proposal is cleared, and a self-`Promise` is scheduled to call
-    /// `clean_invalid_attestations` so every entry stamped with the old
-    /// verifier's `AccountId` is evicted in a subsequent receipt. Honest
-    /// nodes detect the removal via `monitor_attestation_removal` and
-    /// resubmit through the new verifier without waiting for the 1-hour
-    /// periodic cycle.
+    /// threshold is reached, `tee_verifier_account_id` is updated and the
+    /// proposal is cleared. Every subsequent `submit_participant_info` is
+    /// then verified by the new verifier; entries the previous verifier
+    /// produced are not purged — they age out via the attestation
+    /// expiration window enforced in `re_verify`.
     pub fn vote_tee_verifier_change(
         &mut self,
         candidate_account_id: AccountId,
@@ -319,9 +317,9 @@ pub struct MpcContract {
 
     /// The locked account `mpc-contract` currently trusts as the verifier.
     /// `submit_participant_info` calls `verify_quote` on this account.
-    /// Mutated only by the threshold-crossing vote above, which also
-    /// schedules a self-`Promise` calling `clean_invalid_attestations`
-    /// to evict every entry whose `verified_by` no longer matches.
+    /// Mutated only by the threshold-crossing vote above; the mutation
+    /// re-routes future submissions and does not touch already-stored
+    /// attestations.
     tee_verifier_account_id: AccountId,
 
     /// Pending votes for changing `tee_verifier_account_id`. Each voter is an
@@ -333,7 +331,7 @@ pub struct MpcContract {
 
 After a resharing changes the participant set, votes from accounts that lost participant status are swept by calling `tee_verifier_votes.retain(new_participants)`. This is invoked by a `#[private]` cleanup method the contract schedules as a self-Promise once resharing completes — same mechanism as the existing [`clean_foreign_chain_data`](../../crates/contract/src/lib.rs) does for `ProviderVotes`.
 
-There's a race worth thinking through, and the behavior is intentional and safe: a `submit_participant_info` call schedules its cross-contract call to the current verifier, and then — before that call executes — a `vote_tee_verifier_change` passes and updates `tee_verifier_account_id` to a different address. The in-flight verification doesn't suddenly redirect to the new verifier, because the target account of a cross-contract call is fixed when the call is scheduled, not re-read when it executes. The in-flight call still goes to the old verifier, completes normally, and `resolve_verification` in `mpc-contract` runs the post-DCAP checks and inserts the entry as usual — but it stamps `verified_by` with the predecessor (the *old* verifier), so the rotation-handler's self-scheduled sweep evicts the entry along with every other old-verifier verdict. The submitter's node then sees its entry disappear via `monitor_attestation_removal` and resubmits through the new verifier within seconds. Letting the old verifier finish therefore costs nothing security-wise: the entry it produced is gone before the next signing operation that would consult it, and the submitter recovers automatically.
+There's a small race worth naming, and it is benign. A `submit_participant_info` call schedules its cross-contract call to the current verifier, and then — before that call executes — a `vote_tee_verifier_change` passes and updates `tee_verifier_account_id` to a different address. The in-flight verification does not redirect to the new verifier: the target account of a cross-contract call is fixed when the call is scheduled, not re-read when it executes. So the in-flight call still goes to the old verifier, completes normally, and `resolve_verification` stores the entry exactly as it would have without the rotation. Nothing special happens to that entry — it is a normal stored attestation that ages out within the expiration window like any other old-verifier entry, and the submitting node's next hourly `periodic_attestation_submission` re-attests through the new verifier well before the window closes. There is no sweep to race and no per-entry verifier bookkeeping to get right.
 
 ```mermaid
 sequenceDiagram
@@ -345,21 +343,16 @@ sequenceDiagram
 
     Op->>MPC: submit_participant_info(Dstack, tls_pk)
     MPC->>MPC: read tee_verifier_account_id (= old)
-    MPC->>MPC: promise_yield_create → data_id
     MPC->>VerOld: Promise: verify_quote(...) (.then resolve_verification)
 
     Gov->>MPC: vote_tee_verifier_change passes
-    Note over MPC: tee_verifier_account_id = new<br/>schedule self-Promise: clean_invalid_attestations
+    Note over MPC: tee_verifier_account_id = new (routing only,<br/>no eviction)
 
     VerOld-->>MPC: VerifiedReport
-    MPC->>MPC: resolve_verification (post-DCAP + insert, verified_by = old)
-    MPC->>MPC: promise_yield_resume(data_id, FinalOutcome)
-    MPC->>MPC: on_attestation_verified (trivial: return value)
+    MPC->>MPC: resolve_verification (post-DCAP + insert, as usual)
+    Note over MPC: stored entry ages out within the<br/>expiration window via re_verify
 
-    MPC->>MPC: clean_invalid_attestations (self-Promise from vote)
-    Note over MPC: re_verify rejects verified_by = old → entry evicted
-
-    Op->>MPC: submit_participant_info(Dstack, tls_pk) (next call, fresh quote)
+    Op->>MPC: submit_participant_info(Dstack, tls_pk) (next hourly resubmit)
     MPC->>MPC: read tee_verifier_account_id (= new)
     MPC->>VerNew: Promise: verify_quote(...)
 ```
@@ -491,16 +484,9 @@ impl MpcContract {
                 // take effect.
                 match finish_verify(pending, &report, self.allowlist_fresh()) {
                     Ok(()) => {
-                        // Stamp the entry with the verifier that actually produced
-                        // the verdict — i.e. the predecessor of this `.then`
-                        // receipt, NOT `self.tee_verifier_account_id`. If a vote
-                        // rotated the trusted verifier mid-flight, the entry must
-                        // record the *old* address so the next sweep (scheduled by
-                        // the rotation handler) evicts it.
-                        let verified_by = env::predecessor_account_id();
                         self.tee_state.stored_attestations.insert(
                             pending.tls_pk.clone(),
-                            VerifiedAttestation::from((pending.clone(), report, verified_by)),
+                            VerifiedAttestation::from((pending.clone(), report)),
                         );
                         FinalOutcome::Ok
                     }
@@ -586,7 +572,7 @@ pub struct PendingAttestation {
 
 The yield-resume split adds four branches the synchronous version never had: three of them live in `resolve_verification` (verifier returned `Err`, verifier returned `Ok` but post-DCAP failed, verifier returned `Ok` and post-DCAP passed) and one lives in `on_attestation_verified` (the yield-resume timeout fired with `Err(PromiseError::Failed)` — covering both verifier infrastructure failure and a `resolve_verification` receipt that rolled back). Each one needs test coverage, and exercising the failure branches requires the verifier to return specific responses on demand — or, for the timeout branch, the test driver to advance the chain past the yield-resume window without resuming.
 
-The verifier-rotation eviction path adds three more cases. First, `re_verify` must reject an entry whose `verified_by` does not equal the current `tee_verifier_account_id` even when every post-DCAP allowlist invariant still holds. Second, `vote_tee_verifier_change` crossing threshold must schedule the `clean_invalid_attestations` self-`Promise` and that sweep must evict every entry stamped with the old verifier. Third, the in-flight-rotation race: a verification scheduled against the old verifier that resolves *after* the vote crosses threshold must end up stamped with the old verifier (from `env::predecessor_account_id()`) and be evicted by the scheduled sweep.
+The verifier-rotation design changes the test surface in three ways. First, the expiration window itself: an entry whose `expiry_timestamp_seconds` is in the past must be rejected by `re_verify` even when every post-DCAP allowlist invariant still holds, and an entry within the (shortened) window must still pass — this is the existing expiry check, now exercised against the lowered `DEFAULT_EXPIRATION_DURATION_SECONDS`. Second, rotation routing: after `vote_tee_verifier_change` crosses threshold, the next `submit_participant_info` must call `verify_quote` on the new `tee_verifier_account_id`, and existing stored entries must remain present (no purge) until they expire. Third, the in-flight case: a verification scheduled against the old verifier that resolves after the vote crosses threshold must still be stored as a normal entry — it is not treated specially and ages out via the same expiration window as any other entry.
 
 To make that practical, we introduce a stub `tee-verifier` crate: same `tee-verifier-interface` DTOs as the real verifier, but `verify_quote` returns whatever `Ok(VerifiedReport)` or `Err(VerifierError)` the test asks for. Sandbox tests deploy the stub like any other verifier candidate — lock its account, then call `propose_tee_verifier_change` + `vote_tee_verifier_change` from the test setup to point `mpc-contract` at the stub. This runs the same code path as production; nothing in `mpc-contract` knows or cares whether it's talking to the real verifier or the stub.
 
@@ -602,10 +588,7 @@ E2E tests in `crates/e2e-tests` deploy either the real `tee-verifier` (when the 
 [verify-tee]: https://github.com/near/mpc/blob/5e47bfe93b398cb2343681fa2c0f2691d02c7285/crates/contract/src/lib.rs#L1543
 [clean-invalid-attestations]: https://github.com/near/mpc/blob/5e47bfe93b398cb2343681fa2c0f2691d02c7285/crates/contract/src/lib.rs#L1646
 [clean-foreign-chain-data]: https://github.com/near/mpc/blob/5e47bfe93b398cb2343681fa2c0f2691d02c7285/crates/contract/src/lib.rs#L1669
-[accept-requests-flag]: https://github.com/near/mpc/blob/5e47bfe93b398cb2343681fa2c0f2691d02c7285/crates/contract/src/lib.rs#L1573
-[is-caller-attested]: https://github.com/near/mpc/blob/5e47bfe93b398cb2343681fa2c0f2691d02c7285/crates/contract/src/tee/tee_state.rs#L449
 [monitor-attestation-removal]: https://github.com/near/mpc/blob/5e47bfe93b398cb2343681fa2c0f2691d02c7285/crates/node/src/tee/remote_attestation.rs#L209
-[predecessor-account-id]: https://docs.rs/near-sdk/5.26.1/near_sdk/env/fn.predecessor_account_id.html
 [submit-participant-info]: https://github.com/near/mpc/blob/efe49230bb66854c55bba080e7610e42f9221506/crates/contract/src/lib.rs#L754-L782
 [launcher-pattern]: https://github.com/near/mpc/blob/efe49230bb66854c55bba080e7610e42f9221506/docs/tee-lifecycle.md#upgrade
 [slack-launcher-discussion]: https://nearone.slack.com/archives/C0B12RKBSAV/p1777897902903889
