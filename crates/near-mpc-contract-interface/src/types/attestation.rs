@@ -278,6 +278,7 @@ pub struct AppCompose {
     pub secure_time: Option<bool>,
     pub pre_launch_script: Option<String>,
     pub init_script: Option<String>,
+    pub bash_script: Option<String>,
 }
 
 /// Trusted Computing Base information structure

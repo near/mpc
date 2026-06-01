@@ -1,8 +1,7 @@
 use alloc::{string::String, vec::Vec};
 use borsh::{BorshDeserialize, BorshSerialize};
 use derive_more::{Deref, From};
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde::{Deserialize, Serialize, de::IgnoredAny};
 
 /// Helper struct to deserialize the `app_compose` JSON from TCB info. This is a workaround due to
 /// current limitations in the Dstack SDK.
@@ -15,7 +14,7 @@ use serde_json::Value;
 /// dstack's `AppCompose` (`dstack-types/src/lib.rs`) plus the script keys read directly via `jq`
 /// during boot (`pre_launch_script`, `init_script`, `bash_script`). Fields without a security
 /// implication are modeled only to absorb their key; they are not validated.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AppCompose {
     pub manifest_version: u32,
@@ -48,23 +47,25 @@ pub struct AppCompose {
     pub init_script: Option<String>,
     #[serde(default)]
     pub bash_script: Option<String>,
-    // Modeled to absorb the key under `deny_unknown_fields`; not validated.
+    // The fields below are absorbed only to satisfy `deny_unknown_fields`; they are never read, so
+    // they deserialize as `IgnoredAny` to avoid allocating attacker-controlled JSON from the
+    // untrusted app-compose. `key_provider` integrity is pinned by the measured `key-provider`
+    // event digest (`verify_key_provider_digest`), not this field. `port_policy` is a dstack 0.5.11
+    // gateway field (0.5.8 never emits it), inert while the gateway is disabled.
     #[serde(default)]
-    pub features: Vec<String>,
+    pub features: Option<IgnoredAny>,
     #[serde(default)]
     pub public_tcbinfo: Option<bool>,
     #[serde(default)]
-    pub key_provider: Option<Value>,
+    pub key_provider: Option<IgnoredAny>,
     #[serde(default)]
     pub storage_fs: Option<String>,
     #[serde(default)]
-    pub swap_size: Option<Value>,
-    // Added in dstack 0.5.11 (0.5.8 never emits it); pre-modeled for future 0.5.11 support. Gateway
-    // port config, inert while the gateway is disabled, so no security implication.
+    pub swap_size: Option<IgnoredAny>,
     #[serde(default)]
-    pub port_policy: Option<Value>,
+    pub port_policy: Option<IgnoredAny>,
     #[serde(default)]
-    pub docker_config: Option<Value>,
+    pub docker_config: Option<IgnoredAny>,
 }
 
 /// A type that contains a docker compose the contents of a docker compose file as

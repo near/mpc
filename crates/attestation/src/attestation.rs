@@ -676,10 +676,13 @@ mod tests {
             "some_future_dstack_field": "whatever"
         }"#;
         // When
-        let result = serde_json::from_str::<AppCompose>(app_compose_json);
+        let err = serde_json::from_str::<AppCompose>(app_compose_json).unwrap_err();
 
         // Then
-        result.unwrap_err();
+        assert!(
+            err.to_string().contains("unknown field"),
+            "expected an unknown-field error, got: {err}"
+        );
     }
 
     #[test]
@@ -715,7 +718,7 @@ mod tests {
             pre_launch_script: None,
             init_script: None,
             bash_script: None,
-            features: Vec::new(),
+            features: None,
             public_tcbinfo: None,
             key_provider: None,
             storage_fs: None,
