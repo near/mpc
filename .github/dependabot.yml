@@ -19,8 +19,6 @@ updates:
           - "minor"
           - "patch"
     ignore:
-      # TODO(#1299): updating this brings considerable breaking changes
-      - dependency-name: "hyper"
       # TODO(#2051): updating this brings considerable breaking changes
       - dependency-name: "rcgen"
       ## Outdated dependencies we cannot upgrade ##
