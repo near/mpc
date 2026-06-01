@@ -1089,7 +1089,7 @@ This section shows how to add the MPC node's public key (from the previous secti
 * **`METHOD_NAMES`** → The list of contract methods the MPC node is allowed to call:
 
   ```txt
-  respond,respond_ckd,respond_verify_foreign_tx,vote_pk,start_keygen_instance,vote_reshared,vote_foreign_chain_policy,start_reshare_instance,vote_abort_key_event_instance,verify_tee,submit_participant_info,conclude_node_migration
+  respond,respond_ckd,respond_verify_foreign_tx,vote_pk,start_keygen_instance,vote_reshared,register_foreign_chain_support,register_foreign_chain_config,start_reshare_instance,vote_abort_key_event_instance,verify_tee,submit_participant_info,conclude_node_migration
   ```
 
   > **Note:** This must be a single comma-separated string with no spaces or newlines.
@@ -1129,7 +1129,7 @@ ALLOWANCE="unlimited"
 NETWORK="testnet"   # or "mainnet"
 
 # Methods the MPC node is allowed to call
-METHOD_NAMES="respond,respond_ckd,respond_verify_foreign_tx,vote_pk,start_keygen_instance,vote_reshared,vote_foreign_chain_policy,start_reshare_instance,vote_abort_key_event_instance,verify_tee,submit_participant_info,conclude_node_migration"
+METHOD_NAMES="respond,respond_ckd,respond_verify_foreign_tx,vote_pk,start_keygen_instance,vote_reshared,register_foreign_chain_support,register_foreign_chain_config,start_reshare_instance,vote_abort_key_event_instance,verify_tee,submit_participant_info,conclude_node_migration"
 
 # === Add Access Key ===
 near account add-key $ACCOUNT_ID \
