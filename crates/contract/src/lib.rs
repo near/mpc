@@ -868,8 +868,7 @@ impl MpcContract {
     /// Like the other governance voting methods, this must be called directly from the
     /// participant's own NEAR account: `assert_caller_is_signer()` requires
     /// `signer_account_id == predecessor_account_id`, so calls forwarded through another
-    /// contract (e.g. a multisig) are rejected. This prevents a confused-deputy vote being
-    /// cast on a participant's behalf when they merely call into an untrusted contract.
+    /// contract are rejected.
     #[handle_result]
     pub fn vote_new_parameters(
         &mut self,
@@ -2171,10 +2170,7 @@ impl MpcContract {
     ///
     /// This enforces the network-wide policy that **all governance methods must be called
     /// directly from the participant's own NEAR account**, never forwarded through another
-    /// contract such as a multisig. Authenticating on `signer_account_id` alone would be a
-    /// confused-deputy hazard: a malicious or buggy intermediate contract could cast a vote
-    /// on a participant's behalf whenever that participant merely calls into it. Requiring
-    /// `signer == predecessor` removes the intermediary from the trust path.
+    /// contract such as a multisig.
     ///
     /// This check reaches every signer-authenticated mutating method through one of three
     /// paths (the list below is illustrative, not exhaustive):
