@@ -35,12 +35,6 @@ pub const TON_CELL_MAX_REFS: usize = 4;
 pub type TonCellData = EmptyBoundedVec<u8, TON_CELL_MAX_DATA_BYTES>;
 
 /// References of a TON Cell: between 0 and [`TON_CELL_MAX_REFS`] entries (inclusive).
-///
-/// Each reference is the 32-byte representation hash of the referenced child cell,
-/// matching TON's standard cell representation, in which a parent commits to each
-/// child by its representation hash (which recursively commits to the child's entire
-/// subtree). Bounding each ref to a fixed 32 bytes removes the unbounded-payload
-/// (gas-amplification / DoS) vector of carrying arbitrary child-cell bytes.
 pub type TonCellRefs = EmptyBoundedVec<Hash256, TON_CELL_MAX_REFS>;
 
 #[derive(
@@ -397,11 +391,6 @@ pub enum TonExtractor {
 /// The bit length is kept explicit so two cells that share trailing bytes but differ in
 /// bit length (e.g. 1015 vs 1023 bits) do not collide under
 /// [`ForeignTxSignPayload::compute_msg_hash`].
-///
-/// The byte buffer and bit length are a coupled invariant — the byte count must equal
-/// `⌈bit_length / 8⌉` and `bit_length <= `[`TON_CELL_MAX_DATA_BITS`]. [`TonCellBody::new`]
-/// is the only constructor and the `Deserialize`/`BorshDeserialize` impls route through
-/// it, so any value that exists is well-formed; there is no separate validation step.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, BorshSerialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
