@@ -241,6 +241,11 @@ expression: abi
                       9,
                       "HyperEvm",
                       "ForeignChain__HyperEvm"
+                    ],
+                    [
+                      10,
+                      "Ton",
+                      "ForeignChain__Ton"
                     ]
                   ]
                 }
@@ -273,6 +278,9 @@ expression: abi
                 "Struct": null
               },
               "ForeignChain__Starknet": {
+                "Struct": null
+              },
+              "ForeignChain__Ton": {
                 "Struct": null
               },
               "NonEmptyBTreeMap<ProviderId, ProviderConfig>": {
@@ -2050,6 +2058,11 @@ expression: abi
                           9,
                           "HyperEvm",
                           "ForeignChain__HyperEvm"
+                        ],
+                        [
+                          10,
+                          "Ton",
+                          "ForeignChain__Ton"
                         ]
                       ]
                     }
@@ -2082,6 +2095,9 @@ expression: abi
                     "Struct": null
                   },
                   "ForeignChain__Starknet": {
+                    "Struct": null
+                  },
+                  "ForeignChain__Ton": {
                     "Struct": null
                   },
                   "NonEmptyBTreeMap<ForeignChain, ChainEntry>": {
