@@ -1196,12 +1196,7 @@ impl MpcContract {
             .vote_abort_key_event_instance(key_event_id)
     }
 
-    /// Propose a config update. Contract-code updates are proposed via the chunked
-    /// upload flow ([`start_contract_upload`](Self::start_contract_upload) →
-    /// [`upload_contract_chunk`](Self::upload_contract_chunk) →
-    /// [`finalize_contract_upload`](Self::finalize_contract_upload)) so that proposals
-    /// can exceed the per-transaction RPC size limit and so the proposal entry itself
-    /// stays small.
+    /// Propose update to either code or config, but not both of them at the same time.
     #[payable]
     #[handle_result]
     pub fn propose_update(
@@ -1240,17 +1235,6 @@ impl MpcContract {
     }
 
     /// Begin a chunked contract-code upload.
-    ///
-    /// A voter calls this once with the declared `total_size`, then makes one or
-    /// more [`upload_contract_chunk`](Self::upload_contract_chunk) calls totalling
-    /// exactly `total_size` bytes, then [`finalize_contract_upload`](Self::finalize_contract_upload)
-    /// to register the proposal. Each voter may have at most one open upload at a
-    /// time; call [`clear_staged_contract`](Self::clear_staged_contract) to abandon
-    /// and reset.
-    ///
-    /// Splitting the upload across many transactions is necessary because a single
-    /// transaction is bounded by the RPC's payload size limit (~1.5 MiB), which is
-    /// smaller than recent contract binaries.
     #[payable]
     #[handle_result]
     pub fn start_contract_upload(
@@ -1285,11 +1269,6 @@ impl MpcContract {
     }
 
     /// Append a chunk of contract code to the caller's in-progress upload.
-    ///
-    /// The cumulative byte count is validated against the `total_size` declared in
-    /// [`start_contract_upload`](Self::start_contract_upload); sending more bytes than declared fails. Each call
-    /// must attach enough deposit to back the chunk's storage cost (see
-    /// [`StagedContractUpload::required_deposit_for_bytes`]).
     #[payable]
     #[handle_result]
     pub fn upload_contract_chunk(
@@ -1336,22 +1315,6 @@ impl MpcContract {
 
     /// Finalize the caller's chunked upload and register it as a contract-code
     /// proposal.
-    ///
-    /// The upload must be complete (received bytes equal the declared `total_size`).
-    /// Assembles the uploaded chunks into the full contract binary and registers it as
-    /// an ordinary contract-code proposal — the same kind a single-transaction code
-    /// proposal would create — returning the new [`UpdateId`]. Voters then call
-    /// [`vote_update`](Self::vote_update) against that id; on threshold approval the
-    /// binary is deployed. This is the only way to propose contract code;
-    /// [`propose_update`](Self::propose_update) handles config changes only.
-    ///
-    /// Like [`propose_update`](Self::propose_update), the proposer must fully fund the
-    /// proposal entry's storage: the deposit accumulated across `start`/`upload_chunk`
-    /// must cover [`ProposedUpdates::required_deposit`] for the assembled binary
-    /// (which bills for the code plus the proposal's vote-tracking overhead, not just
-    /// the raw bytes backed per chunk). Any excess is refunded; if it falls short the
-    /// upload is left intact so the caller can top up via
-    /// [`clear_staged_contract`](Self::clear_staged_contract) and re-upload.
     #[handle_result]
     pub fn finalize_contract_upload(&mut self) -> Result<UpdateId, Error> {
         let caller = self.voter_or_panic();
@@ -1382,11 +1345,6 @@ impl MpcContract {
         let total_size = staged.total_size;
         let deposited = staged.deposited;
 
-        // The upload was split only to fit the per-transaction RPC payload limit.
-        // On-chain that limit is gone, so reassemble the chunks into the full binary
-        // and register it as a normal `Update::Contract` proposal; the proposal then
-        // behaves exactly like one made before chunked upload existed.
-        //
         // Read (don't remove) the chunks first so the deposit can be validated before
         // any storage is mutated: if the deposit is short we reinstate the staged entry
         // and bail with the chunks still in place.
