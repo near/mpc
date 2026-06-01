@@ -589,7 +589,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_app_compose_config__rejects_non_empty_pre_launch_script() {
+    fn validate_app_compose_config__rejects_present_pre_launch_script() {
         // Given
         let app_compose = AppCompose {
             pre_launch_script: Some("echo pwn".to_string()),
@@ -603,7 +603,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_app_compose_config__rejects_non_empty_init_script() {
+    fn validate_app_compose_config__rejects_present_init_script() {
         // `init_script` is arbitrary root code run before dockerd. It is
         // measured into the compose hash but not pinned to any allowed value,
         // so verification must reject it outright.
