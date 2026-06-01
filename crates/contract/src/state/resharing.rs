@@ -476,6 +476,8 @@ pub mod tests {
     #[expect(non_snake_case)]
     mod per_domain_threshold_overlay {
         use super::*;
+        use crate::state::key_event::tests::Environment;
+        use crate::state::test_utils::gen_running_state;
         use near_mpc_contract_interface::types::ReconstructionThreshold;
         use std::collections::BTreeMap;
 
@@ -483,35 +485,46 @@ pub mod tests {
         /// `per_domain_thresholds` overlay must be applied to the new
         /// `DomainRegistry`, and the running-state `parameters` overlay
         /// must be cleared.
+        ///
+        /// The fixture is deterministic on purpose: it keeps the participant
+        /// set unchanged (a key-refresh resharing) so the proposed participant
+        /// count equals the running count (`n >= 3`, guaranteed by
+        /// `gen_running_state`). That guarantees `n` is itself a valid
+        /// reconstruction threshold and always differs from the default `2` —
+        /// avoiding the flakiness of deriving the new value from the random
+        /// cluster threshold, which lands on `2` whenever the proposal has 2 or
+        /// 3 participants.
         #[test]
         fn vote_reshared__final_transition__should_apply_overlay_to_registry() {
-            // Given a resharing state whose proposal carries a per-domain overlay
-            // setting domain 0's threshold to a new value distinct from the
-            // existing one.
-            let (mut env, mut state) = gen_resharing_state(1);
-            let original_threshold =
-                state.previous_running_state.domains.domains()[0].reconstruction_threshold;
-            // Pick a new value that is achievable for the proposed participant
-            // count: the current proposal's threshold is a safe lower-bound.
-            let new_value = state
-                .resharing_key
-                .proposed_parameters()
-                .threshold()
-                .value();
-            assert!(new_value >= 2);
-            let new_threshold = ReconstructionThreshold::new(new_value);
+            // Given a running state with a single CaitSith domain at the default
+            // reconstruction threshold (2), and a resharing proposal over the
+            // same participant set carrying an overlay that moves that domain to
+            // `n` — a value valid for `n` participants and distinct from 2.
+            let mut env = Environment::new(Some(100), None, None);
+            let mut running = gen_running_state(1);
+            let current_params = running.parameters.clone();
+            let n = current_params.participants().len() as u64;
+            assert!(n >= 3, "gen_running_state guarantees at least 3 participants");
+            let domain_id = running.domains.domains()[0].id;
+            let original_threshold = running.domains.domains()[0].reconstruction_threshold;
+            let new_threshold = ReconstructionThreshold::new(n);
             assert_ne!(new_threshold, original_threshold);
-            let domain_id = state.previous_running_state.domains.domains()[0].id;
             let mut overlay = BTreeMap::new();
             overlay.insert(domain_id, new_threshold);
-            let mut proposal_with_overlay = state.resharing_key.proposed_parameters().clone();
-            proposal_with_overlay =
-                proposal_with_overlay.with_per_domain_thresholds(overlay.clone());
-            state.resharing_key = crate::state::key_event::KeyEvent::new(
-                state.prospective_epoch_id(),
-                state.previous_running_state.domains.domains()[0].clone(),
-                proposal_with_overlay,
-            );
+            let proposal = current_params.with_per_domain_thresholds(overlay);
+
+            // Drive the proposal to acceptance so we transition into Resharing
+            // through the real vote path (which also exercises the fail-fast
+            // overlay validation in `process_new_parameters_proposal`).
+            let prospective_epoch_id = running.prospective_epoch_id();
+            let mut state = None;
+            for (account, _, _) in proposal.participants().participants() {
+                env.set_signer(account);
+                state = running
+                    .vote_new_parameters(prospective_epoch_id, &proposal)
+                    .unwrap();
+            }
+            let mut state = state.expect("Should've transitioned into resharing");
 
             // When all candidates vote-reshared for the (single) domain
             let leader = find_leader(&state.resharing_key);
