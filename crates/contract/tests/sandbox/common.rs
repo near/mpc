@@ -791,6 +791,7 @@ pub fn bogus_ton_log_extracted_value() -> Vec<ExtractedValue> {
                 hash: Hash256([1; 32]),
             },
             body_bits: vec![].try_into().unwrap(),
+            body_bit_length: 0,
             body_refs: vec![].try_into().unwrap(),
         },
     ))]

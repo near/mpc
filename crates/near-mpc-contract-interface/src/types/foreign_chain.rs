@@ -12,8 +12,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::types::SignatureResponse;
 use crate::types::primitives::{AccountId, DomainId};
 
-/// Maximum number of data bytes in a TON Cell: up to 1023 data bits,
-/// i.e. ⌈1023/8⌉ = 128 bytes.
+/// Maximum number of significant data bits a TON Cell may hold.
+///
+/// See <https://docs.ton.org/foundations/serialization/cells#standard-cell-representation-and-its-hash>.
+pub const TON_CELL_MAX_DATA_BITS: u16 = 1023;
+
+/// Maximum number of data bytes in a TON Cell: ⌈1023/8⌉ = 128 bytes, the
+/// byte-padded length of a cell holding the maximal [`TON_CELL_MAX_DATA_BITS`].
 ///
 /// See <https://docs.ton.org/foundations/serialization/cells#standard-cell-representation-and-its-hash>.
 pub const TON_CELL_MAX_DATA_BYTES: usize = 128;
@@ -25,11 +30,21 @@ pub const TON_CELL_MAX_REFS: usize = 4;
 
 /// Data bytes of a TON Cell: between 0 and [`TON_CELL_MAX_DATA_BYTES`] bytes (inclusive).
 ///
-/// Byte-aligned — non-byte-aligned cell bodies are not representable here.
+/// Holds the cell's data bits packed big-endian into bytes. The exact number of
+/// significant bits is carried separately in [`TonLog::body_bit_length`]; the unused
+/// low bits of the final byte are zero. A non-byte-aligned cell body is therefore
+/// fully representable: `body_bits` carries the padded bytes and `body_bit_length`
+/// recovers the true bit length.
 pub type TonCellData = EmptyBoundedVec<u8, TON_CELL_MAX_DATA_BYTES>;
 
 /// References of a TON Cell: between 0 and [`TON_CELL_MAX_REFS`] entries (inclusive).
-pub type TonCellRefs = EmptyBoundedVec<Vec<u8>, TON_CELL_MAX_REFS>;
+///
+/// Each reference is the 32-byte representation hash of the referenced child cell,
+/// matching TON's standard cell representation, in which a parent commits to each
+/// child by its representation hash (which recursively commits to the child's entire
+/// subtree). Bounding each ref to a fixed 32 bytes removes the unbounded-payload
+/// (gas-amplification / DoS) vector of carrying arbitrary child-cell bytes.
+pub type TonCellRefs = EmptyBoundedVec<Hash256, TON_CELL_MAX_REFS>;
 
 #[derive(
     Debug,
@@ -395,10 +410,75 @@ pub enum TonExtractor {
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 /// A TON outbound log message as observed on-chain.
+///
+/// `body_bits` and `body_bit_length` together describe the message-body cell's data:
+/// `body_bits` holds the bits packed into bytes and `body_bit_length` records how many
+/// of those bits are significant (`0..=`[`TON_CELL_MAX_DATA_BITS`]). Keeping the bit
+/// length explicit is required for the canonical payload to uniquely identify the cell —
+/// two cells that share trailing bytes but differ in bit length (e.g. 1015 vs 1023 bits)
+/// must not produce the same [`ForeignTxSignPayload::compute_msg_hash`].
+///
+/// Well-formedness (the invariants checked by [`TonLog::validate`]) is enforced where the
+/// cell is parsed from an RPC response, before the log enters a signing payload.
 pub struct TonLog {
     pub from_address: TonAddress,
     pub body_bits: TonCellData,
+    /// Number of significant data bits in `body_bits`; see the type-level docs.
+    pub body_bit_length: u16,
     pub body_refs: TonCellRefs,
+}
+
+/// Well-formedness errors for a [`TonLog`] body, reported by [`TonLog::validate`].
+#[derive(Debug, Clone, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum TonLogError {
+    /// `body_bit_length` exceeds [`TON_CELL_MAX_DATA_BITS`].
+    BitLengthTooLarge { bit_length: u16 },
+    /// `body_bits` byte count does not match `body_bit_length` rounded up to whole bytes.
+    BitLengthByteMismatch { bit_length: u16, byte_len: usize },
+}
+
+impl core::fmt::Display for TonLogError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::BitLengthTooLarge { bit_length } => write!(
+                f,
+                "TON cell body_bit_length {bit_length} exceeds maximum {TON_CELL_MAX_DATA_BITS}"
+            ),
+            Self::BitLengthByteMismatch {
+                bit_length,
+                byte_len,
+            } => write!(
+                f,
+                "TON cell body_bit_length {bit_length} requires {} body bytes but found {byte_len}",
+                bit_length.div_ceil(8)
+            ),
+        }
+    }
+}
+
+impl std::error::Error for TonLogError {}
+
+impl TonLog {
+    /// Checks the body invariants: `body_bit_length <= `[`TON_CELL_MAX_DATA_BITS`] and
+    /// `body_bits` holds exactly `⌈body_bit_length / 8⌉` bytes. Callers that build a
+    /// `TonLog` from untrusted input (e.g. an RPC-parsed cell) must call this before the
+    /// log is hashed into a signing payload.
+    pub fn validate(&self) -> Result<(), TonLogError> {
+        if self.body_bit_length > TON_CELL_MAX_DATA_BITS {
+            return Err(TonLogError::BitLengthTooLarge {
+                bit_length: self.body_bit_length,
+            });
+        }
+        let expected_bytes = usize::from(self.body_bit_length.div_ceil(8));
+        if self.body_bits.len() != expected_bytes {
+            return Err(TonLogError::BitLengthByteMismatch {
+                bit_length: self.body_bit_length,
+                byte_len: self.body_bits.len(),
+            });
+        }
+        Ok(())
+    }
 }
 
 #[derive(
@@ -1421,7 +1501,8 @@ mod tests {
                         hash: Hash256([0xaa; 32]),
                     },
                     body_bits: vec![0xde, 0xad, 0xbe, 0xef].try_into().unwrap(),
-                    body_refs: vec![vec![0x01, 0x02, 0x03], vec![0x04, 0x05]]
+                    body_bit_length: 32,
+                    body_refs: vec![Hash256([0x01; 32]), Hash256([0x02; 32])]
                         .try_into()
                         .unwrap(),
                 },
@@ -1433,5 +1514,104 @@ mod tests {
 
         // Then
         insta::assert_json_snapshot!(hex::encode(hash.0));
+    }
+
+    fn ton_log_with_body(body_bits: Vec<u8>, body_bit_length: u16) -> TonLog {
+        TonLog {
+            from_address: TonAddress {
+                workchain: 0,
+                hash: Hash256([0xaa; 32]),
+            },
+            body_bits: body_bits.try_into().unwrap(),
+            body_bit_length,
+            body_refs: vec![].try_into().unwrap(),
+        }
+    }
+
+    #[rstest]
+    #[case::empty(vec![], 0)]
+    #[case::single_bit(vec![0x80], 1)]
+    #[case::byte_aligned(vec![0xde, 0xad], 16)]
+    #[case::non_byte_aligned(vec![0xde, 0xa0], 12)]
+    #[case::max(vec![0xff; 128], TON_CELL_MAX_DATA_BITS)]
+    fn ton_log_validate__should_accept_consistent_body(
+        #[case] body_bits: Vec<u8>,
+        #[case] body_bit_length: u16,
+    ) {
+        // Given
+        let log = ton_log_with_body(body_bits, body_bit_length);
+
+        // When / Then
+        log.validate().unwrap();
+    }
+
+    #[test]
+    fn ton_log_validate__should_reject_bit_length_above_max() {
+        // Given: one bit past the maximum, with a byte buffer that matches that bit count.
+        let log = ton_log_with_body(vec![0xff; 128], TON_CELL_MAX_DATA_BITS + 1);
+
+        // When
+        let result = log.validate();
+
+        // Then
+        assert_eq!(
+            result,
+            Err(TonLogError::BitLengthTooLarge {
+                bit_length: TON_CELL_MAX_DATA_BITS + 1,
+            })
+        );
+    }
+
+    #[rstest]
+    #[case::too_few_bytes(vec![0xde], 16)]
+    #[case::too_many_bytes(vec![0xde, 0xad], 1)]
+    #[case::empty_bytes_nonzero_bits(vec![], 1)]
+    fn ton_log_validate__should_reject_byte_bit_mismatch(
+        #[case] body_bits: Vec<u8>,
+        #[case] body_bit_length: u16,
+    ) {
+        // Given
+        let byte_len = body_bits.len();
+        let log = ton_log_with_body(body_bits, body_bit_length);
+
+        // When
+        let result = log.validate();
+
+        // Then
+        assert_eq!(
+            result,
+            Err(TonLogError::BitLengthByteMismatch {
+                bit_length: body_bit_length,
+                byte_len,
+            })
+        );
+    }
+
+    #[test]
+    fn ton_log_compute_msg_hash__should_differ_for_same_bytes_but_different_bit_length() {
+        // Given: two cells with identical trailing bytes but different significant bit lengths.
+        let make_payload = |body_bit_length: u16| {
+            ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
+                request: ForeignChainRpcRequest::Ton(TonRpcRequest {
+                    tx_id: TonTxId([0x99; 32]),
+                    account: TonAddress {
+                        workchain: 0,
+                        hash: Hash256([0xaa; 32]),
+                    },
+                    finality: TonFinality::MasterchainIncluded,
+                    extractors: vec![TonExtractor::Log { message_index: 0 }],
+                }),
+                values: vec![ExtractedValue::TonExtractedValue(TonExtractedValue::Log(
+                    ton_log_with_body(vec![0xff], body_bit_length),
+                ))],
+            })
+        };
+
+        // When
+        let hash_7_bits = make_payload(7).compute_msg_hash().unwrap();
+        let hash_8_bits = make_payload(8).compute_msg_hash().unwrap();
+
+        // Then
+        assert_ne!(hash_7_bits, hash_8_bits);
     }
 }
