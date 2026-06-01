@@ -551,8 +551,26 @@ pub mod running_tests {
         // proposed participant count
         let mut state = gen_running_state(1);
         let mut env = Environment::new(None, None, None);
-        env.set_signer(&state.parameters.participants().participants()[0].0);
         let proposal = gen_valid_params_proposal(&state.parameters);
+        // Sign as a participant present in BOTH the current and proposed sets:
+        // `gen_valid_params_proposal` keeps only a random subset of the current
+        // participants, so an arbitrary current participant may be absent from
+        // the proposal (rejected as a non-participant) and a freshly added one
+        // would be deferred as a pending newcomer. The retained overlap is
+        // non-empty (at least `threshold` current participants are kept).
+        let signer = proposal
+            .participants()
+            .participants()
+            .iter()
+            .map(|(account_id, _, _)| account_id.clone())
+            .find(|account_id| {
+                state
+                    .parameters
+                    .participants()
+                    .is_participant_given_account_id(account_id)
+            })
+            .expect("proposal must retain at least one current participant");
+        env.set_signer(&signer);
 
         // When voting with an empty per_domain_thresholds map (legacy shape)
         let res = state.vote_new_parameters(state.keyset.epoch_id.next(), &proposal);
