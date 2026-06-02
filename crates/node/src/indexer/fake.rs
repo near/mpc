@@ -229,6 +229,7 @@ impl FakeMpcContractState {
                 participants_config_to_threshold_parameters(&new_participants),
             ),
             cancellation_requests: HashSet::new(),
+            per_domain_thresholds: std::collections::BTreeMap::new(),
         });
     }
 

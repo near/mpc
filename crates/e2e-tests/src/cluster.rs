@@ -9,8 +9,9 @@ use near_kit::AccountId;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
     AccountId as ContractAccountId, CKDAppPublicKey, DomainConfig, DomainId, DomainPurpose,
-    Ed25519PublicKey, EpochId, ParticipantId, ParticipantInfo, Participants, Protocol,
-    ProtocolContractState, ReconstructionThreshold, Threshold, ThresholdParameters,
+    Ed25519PublicKey, EpochId, ParticipantId, ParticipantInfo, Participants,
+    ProposedThresholdParameters, Protocol, ProtocolContractState, ReconstructionThreshold,
+    Threshold, ThresholdParameters,
 };
 use rand::SeedableRng;
 use rand::rngs::StdRng;
@@ -502,9 +503,11 @@ impl MpcCluster {
 
         let participants =
             build_participants_from_nodes(new_participants, &self.nodes, current_participants);
-        let proposal = ThresholdParameters {
-            threshold: Threshold(new_threshold as u64),
-            participants,
+        let proposal = ProposedThresholdParameters {
+            parameters: ThresholdParameters {
+                threshold: Threshold(new_threshold as u64),
+                participants,
+            },
             per_domain_thresholds: std::collections::BTreeMap::new(),
         };
 
@@ -1123,7 +1126,6 @@ async fn init_contract(
     let params = ThresholdParameters {
         threshold: Threshold(threshold as u64),
         participants,
-        per_domain_thresholds: std::collections::BTreeMap::new(),
     };
 
     tracing::info!(

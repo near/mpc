@@ -490,7 +490,6 @@ mod tests {
         let params = ThresholdParameters {
             participants: chain_infos.clone(),
             threshold: Threshold(3),
-            per_domain_thresholds: std::collections::BTreeMap::new(),
         };
 
         let converted = convert_participant_infos(params, None).unwrap();
@@ -517,7 +516,6 @@ mod tests {
         let params = ThresholdParameters {
             participants: chain_infos,
             threshold: Threshold(3),
-            per_domain_thresholds: std::collections::BTreeMap::new(),
         };
         let converted = convert_participant_infos(params.clone(), None)
             .unwrap()
@@ -555,7 +553,6 @@ mod tests {
             let params = ThresholdParameters {
                 participants: new_infos,
                 threshold: Threshold(3),
-                per_domain_thresholds: std::collections::BTreeMap::new(),
             };
             print!("\n\nmy params: \n{:?}\n", params);
             let converted = convert_participant_infos(params, None);

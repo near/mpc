@@ -25,7 +25,7 @@ use crate::{
         key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, KeyForDomain, Keyset},
         participants::{ParticipantInfo, Participants},
         threshold_votes::ThresholdParametersVotes,
-        thresholds::ThresholdParameters,
+        thresholds::{ProposedThresholdParameters, ThresholdParameters},
     },
     state::{
         ProtocolContractState,
@@ -222,7 +222,17 @@ impl IntoContractType<ThresholdParameters> for dtos::ThresholdParameters {
         // rejected if they violate the threshold bounds. Deferring validation here also
         // lets tests construct parameters with sub-production thresholds.
         ThresholdParameters::new_unvalidated(self.participants.into_contract_type(), self.threshold)
-            .with_per_domain_thresholds(self.per_domain_thresholds)
+    }
+}
+
+impl IntoContractType<ProposedThresholdParameters> for dtos::ProposedThresholdParameters {
+    fn into_contract_type(self) -> ProposedThresholdParameters {
+        // Infallible for the same reason as `ThresholdParameters` above: the
+        // proposal is validated downstream in `process_new_parameters_proposal`.
+        ProposedThresholdParameters::new(
+            self.parameters.into_contract_type(),
+            self.per_domain_thresholds,
+        )
     }
 }
 
@@ -644,6 +654,12 @@ mod to_dto {
         }
     }
 
+    impl From<ProposedThresholdParameters> for dtos::ProposedThresholdParameters {
+        fn from(params: ProposedThresholdParameters) -> Self {
+            (&params).into_dto_type()
+        }
+    }
+
     impl From<ParticipantInfo> for dtos::ParticipantInfo {
         fn from(info: ParticipantInfo) -> Self {
             dtos::ParticipantInfo {
@@ -733,6 +749,14 @@ impl IntoInterfaceType<dtos::ThresholdParameters> for &ThresholdParameters {
         dtos::ThresholdParameters {
             participants: self.participants().into_dto_type(),
             threshold: self.threshold(),
+        }
+    }
+}
+
+impl IntoInterfaceType<dtos::ProposedThresholdParameters> for &ProposedThresholdParameters {
+    fn into_dto_type(self) -> dtos::ProposedThresholdParameters {
+        dtos::ProposedThresholdParameters {
+            parameters: self.parameters().into_dto_type(),
             per_domain_thresholds: self.per_domain_thresholds().clone(),
         }
     }
@@ -862,6 +886,7 @@ impl IntoInterfaceType<dtos::ResharingContractState> for &ResharingContractState
                 .iter()
                 .map(|a| a.into_dto_type())
                 .collect(),
+            per_domain_thresholds: self.per_domain_thresholds.clone(),
         }
     }
 }

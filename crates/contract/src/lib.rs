@@ -79,7 +79,7 @@ use primitives::{
     domain::DomainRegistry,
     key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyEventId, Keyset},
     signature::{SignRequestArgs, SignatureRequest, YieldIndex},
-    thresholds::{Threshold, ThresholdParameters},
+    thresholds::{ProposedThresholdParameters, Threshold, ThresholdParameters},
 };
 use tee::measurements::{ContractExpectedMeasurements, MeasurementVoteAction, MeasurementVotes};
 use tee::proposal::{CodeHashesVotes, LauncherHashVotes};
@@ -868,9 +868,9 @@ impl MpcContract {
     pub fn vote_new_parameters(
         &mut self,
         prospective_epoch_id: EpochId,
-        proposal: dtos::ThresholdParameters,
+        proposal: dtos::ProposedThresholdParameters,
     ) -> Result<(), Error> {
-        let proposal: ThresholdParameters = proposal.into_contract_type();
+        let proposal: ProposedThresholdParameters = proposal.into_contract_type();
         log!(
             "vote_new_parameters: signer={}, proposal={:?}",
             env::signer_account_id(),
@@ -1592,7 +1592,11 @@ impl MpcContract {
                 )
                 .expect("Require valid threshold parameters"); // this should never happen.
                 current_params.validate_incoming_proposal(&threshold_parameters)?;
-                let res = running_state.transition_to_resharing_no_checks(&threshold_parameters);
+                // TEE-driven resharing only changes the participant set, so the
+                // per-domain reconstruction-threshold overlay is empty.
+                let proposed_parameters =
+                    ProposedThresholdParameters::new(threshold_parameters, BTreeMap::new());
+                let res = running_state.transition_to_resharing_no_checks(&proposed_parameters);
                 if let Some(resharing) = res {
                     self.protocol_state = ProtocolContractState::Resharing(resharing);
                 }
@@ -3648,7 +3652,10 @@ mod tests {
             .build();
         testing_env!(voting_context);
 
-        let proposal = ThresholdParameters::new(participants, threshold).unwrap();
+        let proposal = ProposedThresholdParameters::new(
+            ThresholdParameters::new(participants, threshold).unwrap(),
+            BTreeMap::new(),
+        );
         contract.vote_new_parameters(EpochId::new(1), (&proposal).into_dto_type())
     }
 
@@ -5062,6 +5069,7 @@ mod tests {
                 expected_params,
             ),
             cancellation_requests: HashSet::new(),
+            per_domain_thresholds: BTreeMap::new(),
         };
 
         assert_eq!(*resharing_state, expected_resharing_state);

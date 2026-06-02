@@ -9,7 +9,7 @@ use crate::primitives::{
     },
     key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, Keyset},
     threshold_votes::ThresholdParametersVotes,
-    thresholds::ThresholdParameters,
+    thresholds::{ProposedThresholdParameters, ThresholdParameters},
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::DomainConfig;
@@ -65,7 +65,7 @@ impl RunningContractState {
 
     pub fn transition_to_resharing_no_checks(
         &mut self,
-        proposal: &ThresholdParameters,
+        proposal: &ProposedThresholdParameters,
     ) -> Option<ResharingContractState> {
         if let Some(first_domain) = self.domains.get_domain_by_index(0) {
             let epoch_id = self.prospective_epoch_id();
@@ -78,16 +78,23 @@ impl RunningContractState {
                     self.add_domains_votes.clone(),
                 ),
                 reshared_keys: Vec::new(),
-                resharing_key: KeyEvent::new(epoch_id, first_domain.clone(), proposal.clone()),
+                resharing_key: KeyEvent::new(
+                    epoch_id,
+                    first_domain.clone(),
+                    proposal.parameters().clone(),
+                ),
                 cancellation_requests: HashSet::new(),
+                per_domain_thresholds: proposal.per_domain_thresholds().clone(),
             })
         } else {
-            // A new ThresholdParameters was proposed, but we have no keys, so directly
-            // transition into Running state but bump the EpochId.
+            // New parameters were proposed, but we have no keys, so directly
+            // transition into Running state but bump the EpochId. With no
+            // domains the per-domain overlay has nothing to apply to and is
+            // dropped.
             *self = RunningContractState::new(
                 self.domains.clone(),
                 Keyset::new(self.keyset.epoch_id.next(), Vec::new()),
-                proposal.clone(),
+                proposal.parameters().clone(),
                 self.add_domains_votes.clone(),
             );
             None
@@ -99,7 +106,7 @@ impl RunningContractState {
     pub fn vote_new_parameters(
         &mut self,
         prospective_epoch_id: EpochId,
-        proposal: &ThresholdParameters,
+        proposal: &ProposedThresholdParameters,
     ) -> Result<Option<ResharingContractState>, Error> {
         let expected_prospective_epoch_id = self.prospective_epoch_id();
 
@@ -135,10 +142,11 @@ impl RunningContractState {
     /// Returns true if all participants of the proposed parameters voted for it.
     pub(super) fn process_new_parameters_proposal(
         &mut self,
-        proposal: &ThresholdParameters,
+        proposal: &ProposedThresholdParameters,
     ) -> Result<bool, Error> {
         // ensure the proposal is valid against the current parameters
-        self.parameters.validate_incoming_proposal(proposal)?;
+        self.parameters
+            .validate_incoming_proposal(proposal.parameters())?;
 
         // Validate effective per-domain thresholds against the proposed new
         // participant count. Domains not present in the overlay keep their
@@ -274,7 +282,7 @@ pub mod running_tests {
 
     use super::RunningContractState;
     use crate::primitives::domain::AddDomainsVotes;
-    use crate::primitives::test_utils::{NUM_PROTOCOLS, gen_threshold_params};
+    use crate::primitives::test_utils::{NUM_PROTOCOLS, gen_proposed_threshold_params};
     use crate::primitives::threshold_votes::ThresholdParametersVotes;
     use crate::state::key_event::tests::Environment;
     use crate::state::test_utils::{gen_running_state, gen_valid_params_proposal};
@@ -293,7 +301,7 @@ pub mod running_tests {
         let participants = state.parameters.participants().clone();
         // Assert that random proposals get rejected.
         for (account_id, _, _) in participants.participants() {
-            let ksp = gen_threshold_params(30);
+            let ksp = gen_proposed_threshold_params(30);
             env.set_signer(account_id);
             let _ = state
                 .vote_new_parameters(state.keyset.epoch_id.next(), &ksp)
@@ -397,7 +405,14 @@ pub mod running_tests {
                 resharing.prospective_epoch_id(),
                 state.keyset.epoch_id.next(),
             );
-            assert_eq!(resharing.resharing_key.proposed_parameters(), &proposal);
+            assert_eq!(
+                resharing.resharing_key.proposed_parameters(),
+                proposal.parameters()
+            );
+            assert_eq!(
+                resharing.per_domain_thresholds,
+                *proposal.per_domain_thresholds()
+            );
         }
     }
 
@@ -551,8 +566,26 @@ pub mod running_tests {
         // proposed participant count
         let mut state = gen_running_state(1);
         let mut env = Environment::new(None, None, None);
-        env.set_signer(&state.parameters.participants().participants()[0].0);
         let proposal = gen_valid_params_proposal(&state.parameters);
+        // Sign as a participant present in BOTH the current and proposed sets:
+        // `gen_valid_params_proposal` keeps only a random subset of the current
+        // participants, so an arbitrary current participant may be absent from
+        // the proposal (rejected as a non-participant) and a freshly added one
+        // would be deferred as a pending newcomer. The retained overlap is
+        // non-empty (at least `threshold` current participants are kept).
+        let signer = proposal
+            .participants()
+            .participants()
+            .iter()
+            .map(|(account_id, _, _)| account_id.clone())
+            .find(|account_id| {
+                state
+                    .parameters
+                    .participants()
+                    .is_participant_given_account_id(account_id)
+            })
+            .expect("proposal must retain at least one current participant");
+        env.set_signer(&signer);
 
         // When voting with an empty per_domain_thresholds map (legacy shape)
         let res = state.vote_new_parameters(state.keyset.epoch_id.next(), &proposal);

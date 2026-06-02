@@ -1707,7 +1707,7 @@ expression: abi
             {
               "name": "proposal",
               "type_schema": {
-                "$ref": "#/definitions/ThresholdParameters"
+                "$ref": "#/definitions/ProposedThresholdParameters"
               }
             }
           ]
@@ -3832,6 +3832,31 @@ expression: abi
             }
           }
         },
+        "ProposedThresholdParameters": {
+          "description": "A proposed set of threshold parameters submitted to `vote_new_parameters`. Carries the new [`ThresholdParameters`] plus an optional per-domain `ReconstructionThreshold` overlay for the resharing it would trigger.",
+          "type": "object",
+          "required": [
+            "participants",
+            "threshold"
+          ],
+          "properties": {
+            "participants": {
+              "$ref": "#/definitions/Participants"
+            },
+            "per_domain_thresholds": {
+              "default": {},
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            },
+            "threshold": {
+              "$ref": "#/definitions/Threshold"
+            }
+          }
+        },
         "ProposedUpdates": {
           "type": "object",
           "required": [
@@ -4129,6 +4154,16 @@ expression: abi
                 "$ref": "#/definitions/AuthenticatedAccountId"
               },
               "uniqueItems": true
+            },
+            "per_domain_thresholds": {
+              "description": "Per-domain `ReconstructionThreshold` overlay carried from the accepted proposal. Applied to the `DomainRegistry` when resharing completes.",
+              "default": {},
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
             },
             "previous_running_state": {
               "$ref": "#/definitions/RunningContractState"
@@ -4549,7 +4584,7 @@ expression: abi
           "minimum": 0.0
         },
         "ThresholdParameters": {
-          "description": "Threshold parameters for distributed key operations.",
+          "description": "Threshold parameters for distributed key operations: the current participant set and the cryptographic threshold. This is the stored, always-current shape; per-domain reconstruction-threshold *proposals* live on [`ProposedThresholdParameters`].",
           "type": "object",
           "required": [
             "participants",
@@ -4558,15 +4593,6 @@ expression: abi
           "properties": {
             "participants": {
               "$ref": "#/definitions/Participants"
-            },
-            "per_domain_thresholds": {
-              "default": {},
-              "type": "object",
-              "additionalProperties": {
-                "type": "integer",
-                "format": "uint64",
-                "minimum": 0.0
-              }
             },
             "threshold": {
               "$ref": "#/definitions/Threshold"
@@ -4583,7 +4609,7 @@ expression: abi
             "proposal_by_account": {
               "type": "object",
               "additionalProperties": {
-                "$ref": "#/definitions/ThresholdParameters"
+                "$ref": "#/definitions/ProposedThresholdParameters"
               }
             }
           }

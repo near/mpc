@@ -11,11 +11,12 @@ use crate::primitives::{
     key_state::{EpochId, KeyForDomain, Keyset},
     participants::{ParticipantId, Participants},
     test_utils::{gen_participant, gen_threshold_params},
-    thresholds::{Threshold, ThresholdParameters},
+    thresholds::{ProposedThresholdParameters, Threshold, ThresholdParameters},
 };
 use rand::Rng;
+use std::collections::BTreeMap;
 
-pub fn gen_valid_params_proposal(params: &ThresholdParameters) -> ThresholdParameters {
+pub fn gen_valid_params_proposal(params: &ThresholdParameters) -> ProposedThresholdParameters {
     let mut rng = rand::thread_rng();
     let current_k = params.threshold().value() as usize;
     let current_n = params.participants().len();
@@ -48,7 +49,10 @@ pub fn gen_valid_params_proposal(params: &ThresholdParameters) -> ThresholdParam
     }
 
     let threshold = ((new_participants.len() as f64) * 0.6).ceil() as u64;
-    ThresholdParameters::new(new_participants, Threshold::new(threshold)).unwrap()
+    let parameters = ThresholdParameters::new(new_participants, Threshold::new(threshold)).unwrap();
+    // Valid proposals carry an empty (no-change) per-domain overlay by default;
+    // tests that exercise overlays attach one via `with_per_domain_thresholds`.
+    ProposedThresholdParameters::new(parameters, BTreeMap::new())
 }
 
 /// Generates a resharing state with the given number of domains.

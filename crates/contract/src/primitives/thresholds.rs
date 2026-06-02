@@ -10,66 +10,29 @@ pub use near_mpc_contract_interface::types::Threshold;
 /// Minimum absolute threshold required.
 const MIN_THRESHOLD_ABSOLUTE: u64 = 2;
 
-/// Stores information about the threshold key parameters:
-/// - owners of key shares
-/// - cryptographic threshold
-/// - per-domain reconstruction thresholds (only populated when this struct
-///   carries a resharing proposal; empty otherwise)
+/// Stores the threshold key parameters: the owners of key shares
+/// (`participants`) and the cryptographic `threshold`. This is the stored,
+/// always-current shape. Per-domain reconstruction-threshold *proposals* are
+/// carried separately by [`ProposedThresholdParameters`], so this type can
+/// never hold a meaningless overlay.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct ThresholdParameters {
     participants: Participants,
     threshold: Threshold,
-    /// Proposed per-domain `ReconstructionThreshold` updates for this
-    /// resharing. Empty map means "keep current per-domain thresholds";
-    /// populated map must cover every existing domain (validated in
-    /// [`super::super::state::running::RunningContractState::process_new_parameters_proposal`]).
-    /// `serde(default)` keeps JSON decodes tolerant of the pre-#3169 shape; the
-    /// public wire (`state()`, `vote_new_parameters`) goes through the interface
-    /// DTO, while on-chain storage is borsh — neither depends on this attribute.
-    #[serde(default)]
-    per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
 }
 
 impl ThresholdParameters {
     /// Constructs Threshold parameters from `participants` and `threshold` if the
-    /// threshold meets the absolute and relative validation criteria. The
-    /// `per_domain_thresholds` map is initialized empty — populate it on
-    /// resharing proposals via [`Self::with_per_domain_thresholds`].
+    /// threshold meets the absolute and relative validation criteria.
     pub fn new(participants: Participants, threshold: Threshold) -> Result<Self, Error> {
         match Self::validate_threshold(participants.len() as u64, threshold) {
             Ok(_) => Ok(ThresholdParameters {
                 participants,
                 threshold,
-                per_domain_thresholds: BTreeMap::new(),
             }),
             Err(err) => Err(err),
         }
-    }
-
-    /// Builder-style helper: attach a per-domain threshold overlay. Used by
-    /// resharing proposal callers; non-proposal sites leave the map empty.
-    pub fn with_per_domain_thresholds(
-        mut self,
-        per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
-    ) -> Self {
-        self.per_domain_thresholds = per_domain_thresholds;
-        self
-    }
-
-    /// Returns the per-domain threshold overlay. Empty in non-proposal
-    /// contexts and on stored running-state parameters (after resharing
-    /// completes the overlay is consumed into the
-    /// [`super::domain::DomainRegistry`]).
-    pub fn per_domain_thresholds(&self) -> &BTreeMap<DomainId, ReconstructionThreshold> {
-        &self.per_domain_thresholds
-    }
-
-    /// Clears the per-domain overlay. Called when a resharing proposal has
-    /// been applied to the [`super::domain::DomainRegistry`] — the proposal
-    /// map is no longer meaningful as part of the running state's parameters.
-    pub fn clear_per_domain_thresholds(&mut self) {
-        self.per_domain_thresholds.clear();
     }
 
     /// Ensures that the threshold `k` is sensible and meets the absolute and minimum requirements.
@@ -187,7 +150,6 @@ impl ThresholdParameters {
         ThresholdParameters {
             participants,
             threshold,
-            per_domain_thresholds: BTreeMap::new(),
         }
     }
 
@@ -203,6 +165,68 @@ impl ThresholdParameters {
     #[cfg(feature = "bench-contract-methods")]
     pub fn participants_mut(&mut self) -> &mut Participants {
         &mut self.participants
+    }
+}
+
+/// A proposed set of threshold parameters submitted to `vote_new_parameters`:
+/// the new [`ThresholdParameters`] plus an optional per-domain
+/// `ReconstructionThreshold` overlay for the resharing it would trigger.
+///
+/// The overlay is meaningful only while a proposal is in flight — it is applied
+/// to the [`super::domain::DomainRegistry`] when resharing completes and the
+/// stored [`ThresholdParameters`] is taken from [`Self::parameters`], so the
+/// overlay is structurally dropped rather than scrubbed at runtime.
+///
+/// An empty overlay means "keep current per-domain thresholds"; a populated map
+/// must reference only existing domains (validated in
+/// [`super::super::state::running::RunningContractState::process_new_parameters_proposal`]).
+#[near(serializers=[borsh, json])]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
+pub struct ProposedThresholdParameters {
+    parameters: ThresholdParameters,
+    #[serde(default)]
+    per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
+}
+
+impl ProposedThresholdParameters {
+    pub fn new(
+        parameters: ThresholdParameters,
+        per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
+    ) -> Self {
+        ProposedThresholdParameters {
+            parameters,
+            per_domain_thresholds,
+        }
+    }
+
+    /// Builder-style helper: replace the per-domain reconstruction-threshold
+    /// overlay. Convenient for constructing proposals (notably in tests).
+    pub fn with_per_domain_thresholds(
+        mut self,
+        per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
+    ) -> Self {
+        self.per_domain_thresholds = per_domain_thresholds;
+        self
+    }
+
+    /// The proposed stored parameters (participants + threshold).
+    pub fn parameters(&self) -> &ThresholdParameters {
+        &self.parameters
+    }
+
+    /// The proposed per-domain reconstruction-threshold overlay.
+    pub fn per_domain_thresholds(&self) -> &BTreeMap<DomainId, ReconstructionThreshold> {
+        &self.per_domain_thresholds
+    }
+
+    /// Delegates to the proposed parameters' participants.
+    pub fn participants(&self) -> &Participants {
+        self.parameters.participants()
+    }
+
+    /// Delegates to the proposed parameters' threshold.
+    pub fn threshold(&self) -> Threshold {
+        self.parameters.threshold()
     }
 }
 
@@ -281,7 +305,7 @@ mod tests {
         let params = gen_threshold_params(10);
         let proposal = gen_valid_params_proposal(&params);
         params
-            .validate_incoming_proposal(&proposal)
+            .validate_incoming_proposal(proposal.parameters())
             .expect("Valid proposal should validate");
 
         // Random proposals should not validate.

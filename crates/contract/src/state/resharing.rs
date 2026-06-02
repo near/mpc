@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 use super::key_event::KeyEvent;
 use super::running::RunningContractState;
@@ -6,8 +6,9 @@ use crate::errors::{Error, InvalidParameters};
 use crate::primitives::key_state::{
     AuthenticatedAccountId, EpochId, KeyEventId, KeyForDomain, Keyset,
 };
-use crate::primitives::thresholds::ThresholdParameters;
+use crate::primitives::thresholds::ProposedThresholdParameters;
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types::{DomainId, ReconstructionThreshold};
 use near_sdk::near;
 
 /// In this state, we reshare the key of every domain onto a new set of participants and threshold.
@@ -31,6 +32,10 @@ pub struct ResharingContractState {
     pub reshared_keys: Vec<KeyForDomain>,
     pub resharing_key: KeyEvent,
     pub cancellation_requests: HashSet<AuthenticatedAccountId>,
+    /// Per-domain `ReconstructionThreshold` overlay carried from the accepted
+    /// proposal. Applied to the [`DomainRegistry`](crate::primitives::domain::DomainRegistry)
+    /// when resharing completes; empty means "keep current per-domain thresholds".
+    pub per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
 }
 
 impl ResharingContractState {
@@ -51,7 +56,7 @@ impl ResharingContractState {
     pub fn vote_new_parameters(
         &mut self,
         prospective_epoch_id: EpochId,
-        proposal: &ThresholdParameters,
+        proposal: &ProposedThresholdParameters,
     ) -> Result<Option<ResharingContractState>, Error> {
         let expected_prospective_epoch_id = self.prospective_epoch_id().next();
         if prospective_epoch_id != expected_prospective_epoch_id {
@@ -80,9 +85,10 @@ impl ResharingContractState {
                         .get_domain_by_index(0)
                         .unwrap()
                         .clone(),
-                    proposal.clone(),
+                    proposal.parameters().clone(),
                 ),
                 cancellation_requests: HashSet::new(),
+                per_domain_thresholds: proposal.per_domain_thresholds().clone(),
             }));
         }
         Ok(None)
@@ -138,17 +144,18 @@ impl ResharingContractState {
                     self.resharing_key.proposed_parameters().clone(),
                 );
             } else {
-                let proposed = self.resharing_key.proposed_parameters();
+                // Resharing complete: fold the per-domain overlay into the
+                // registry and store the proposed parameters. The overlay lives
+                // only on this resharing state, so it is structurally dropped
+                // here rather than scrubbed off the stored parameters.
                 let new_domains = self
                     .previous_running_state
                     .domains
-                    .with_overlaid_thresholds(proposed.per_domain_thresholds())?;
-                let mut new_parameters = proposed.clone();
-                new_parameters.clear_per_domain_thresholds();
+                    .with_overlaid_thresholds(&self.per_domain_thresholds)?;
                 return Ok(Some(RunningContractState::new(
                     new_domains,
                     Keyset::new(self.prospective_epoch_id(), self.reshared_keys.clone()),
-                    new_parameters,
+                    self.resharing_key.proposed_parameters().clone(),
                     self.previous_running_state.add_domains_votes.clone(),
                 )));
             }
@@ -208,14 +215,14 @@ pub mod tests {
             key_state::{AttemptId, KeyEventId},
             test_utils::gen_account_id,
             threshold_votes::ThresholdParametersVotes,
-            thresholds::{Threshold, ThresholdParameters},
+            thresholds::{ProposedThresholdParameters, Threshold, ThresholdParameters},
         },
         state::test_utils::gen_resharing_state,
     };
     use near_account_id::AccountId;
     use near_mpc_contract_interface::types::DomainId;
     use rstest::rstest;
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
 
     fn test_resharing_contract_state_for(num_domains: usize) {
         println!("Testing with {} domains", num_domains);
@@ -412,6 +419,9 @@ pub mod tests {
             .subset(new_participants_1.len() - old_participants.len()..new_participants_1.len());
         let new_params_1 = ThresholdParameters::new(new_participants_1, new_threshold).unwrap();
         let new_params_2 = ThresholdParameters::new(new_participants_2, new_threshold).unwrap();
+        // Proposals carry an empty (no-change) per-domain overlay.
+        let proposed_1 = ProposedThresholdParameters::new(new_params_1.clone(), BTreeMap::new());
+        let proposed_2 = ProposedThresholdParameters::new(new_params_2.clone(), BTreeMap::new());
         state
             .previous_running_state
             .parameters
@@ -430,10 +440,10 @@ pub mod tests {
         {
             env.set_signer(&old_participants.participants()[0].0);
             let _ = state
-                .vote_new_parameters(state.prospective_epoch_id(), &new_params_1)
+                .vote_new_parameters(state.prospective_epoch_id(), &proposed_1)
                 .unwrap_err();
             let _ = state
-                .vote_new_parameters(state.prospective_epoch_id().next().next(), &new_params_1)
+                .vote_new_parameters(state.prospective_epoch_id().next().next(), &proposed_1)
                 .unwrap_err();
         }
 
@@ -443,7 +453,7 @@ pub mod tests {
             env.set_signer(account);
             assert!(new_state.is_none());
             new_state = state
-                .vote_new_parameters(state.prospective_epoch_id().next(), &new_params_1)
+                .vote_new_parameters(state.prospective_epoch_id().next(), &proposed_1)
                 .unwrap();
         }
         // We should've gotten a new resharing state.
@@ -469,7 +479,7 @@ pub mod tests {
         // Repropose with new_params_2. That should fail.
         env.set_signer(&old_participants.participants()[0].0);
         let _ = new_state
-            .vote_new_parameters(new_state.prospective_epoch_id().next(), &new_params_2)
+            .vote_new_parameters(new_state.prospective_epoch_id().next(), &proposed_2)
             .unwrap_err();
     }
 
@@ -483,8 +493,9 @@ pub mod tests {
 
         /// On successful resharing transition, the proposal's
         /// `per_domain_thresholds` overlay must be applied to the new
-        /// `DomainRegistry`, and the running-state `parameters` overlay
-        /// must be cleared.
+        /// `DomainRegistry`. The overlay lives only on the proposal /
+        /// resharing state, so the stored `RunningContractState.parameters`
+        /// (a plain `ThresholdParameters`) cannot carry it at all.
         ///
         /// The fixture is deterministic on purpose: it keeps the participant
         /// set unchanged (a key-refresh resharing) so the proposed participant
@@ -514,7 +525,7 @@ pub mod tests {
             assert_ne!(new_threshold, original_threshold);
             let mut overlay = BTreeMap::new();
             overlay.insert(domain_id, new_threshold);
-            let proposal = current_params.with_per_domain_thresholds(overlay);
+            let proposal = ProposedThresholdParameters::new(current_params.clone(), overlay);
 
             // Drive the proposal to acceptance so we transition into Resharing
             // through the real vote path (which also exercises the fail-fast
@@ -553,15 +564,12 @@ pub mod tests {
             }
 
             // Then the new running state's registry carries the overlay's
-            // threshold and its parameters overlay is cleared.
+            // threshold. (The stored parameters are a plain `ThresholdParameters`
+            // and structurally cannot carry an overlay.)
             let new_running = new_running.expect("resharing should have transitioned to Running");
             assert_eq!(
                 new_running.domains.domains()[0].reconstruction_threshold,
                 new_threshold,
-            );
-            assert!(
-                new_running.parameters.per_domain_thresholds().is_empty(),
-                "stored parameters.per_domain_thresholds should be cleared after applying overlay"
             );
         }
     }

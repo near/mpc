@@ -130,18 +130,10 @@ pub use near_mpc_crypto_types::{KeyForDomain, Keyset};
 // Threshold/Participants Types
 // =============================================================================
 
-/// Threshold parameters for distributed key operations.
-//
-// `per_domain_thresholds` carries a proposed update for each domain's
-// `ReconstructionThreshold` when this struct flows into `vote_new_parameters`.
-// An empty map means "keep current per-domain thresholds"; a populated map must
-// cover every existing domain (validated by the contract). Outside of resharing
-// proposals the map is empty.
-//
-// Input back-compat is intrinsic: `serde(default)` parses an old
-// `{ participants, threshold }` payload without `per_domain_thresholds` as an
-// empty map. The field is always serialized — an additive change that consumers
-// which don't recognize it simply ignore.
+/// Threshold parameters for distributed key operations: the current
+/// participant set and the cryptographic threshold. This is the stored,
+/// always-current shape; per-domain reconstruction-threshold *proposals* live
+/// on [`ProposedThresholdParameters`].
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -150,6 +142,29 @@ pub use near_mpc_crypto_types::{KeyForDomain, Keyset};
 pub struct ThresholdParameters {
     pub participants: Participants,
     pub threshold: Threshold,
+}
+
+/// A proposed set of threshold parameters submitted to `vote_new_parameters`.
+/// Carries the new [`ThresholdParameters`] plus an optional per-domain
+/// `ReconstructionThreshold` overlay for the resharing it would trigger.
+//
+// `per_domain_thresholds` proposes an updated `ReconstructionThreshold` for the
+// listed domains. An empty map means "keep current per-domain thresholds"; a
+// populated map must reference only existing domains (validated by the
+// contract). The overlay is applied to the `DomainRegistry` when resharing
+// completes and never persists onto the stored `ThresholdParameters`.
+//
+// `serde(flatten)` keeps the wire shape flat — `{ participants, threshold,
+// per_domain_thresholds }` — so callers submit the same JSON as before, and
+// `serde(default)` parses a payload lacking `per_domain_thresholds` as empty.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct ProposedThresholdParameters {
+    #[serde(flatten)]
+    pub parameters: ThresholdParameters,
     #[serde(default)]
     pub per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
 }
@@ -165,7 +180,7 @@ pub struct ThresholdParameters {
     derive(schemars::JsonSchema)
 )]
 pub struct ThresholdParametersVotes {
-    pub proposal_by_account: BTreeMap<AuthenticatedAccountId, ThresholdParameters>,
+    pub proposal_by_account: BTreeMap<AuthenticatedAccountId, ProposedThresholdParameters>,
 }
 
 /// Votes for adding new domains.
@@ -254,6 +269,10 @@ pub struct ResharingContractState {
     pub reshared_keys: Vec<KeyForDomain>,
     pub resharing_key: KeyEvent,
     pub cancellation_requests: HashSet<AuthenticatedAccountId>,
+    /// Per-domain `ReconstructionThreshold` overlay carried from the accepted
+    /// proposal. Applied to the `DomainRegistry` when resharing completes.
+    #[serde(default)]
+    pub per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
 }
 
 /// The main protocol contract state enum.
