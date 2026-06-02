@@ -77,7 +77,7 @@ use near_sdk::{
 use node_migrations::NodeMigrations;
 use primitives::{
     domain::DomainRegistry,
-    key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyEventId, Keyset},
+    key_state::{AuthenticatedParticipantId, EpochId, KeyEventId, Keyset},
     signature::{SignRequestArgs, SignatureRequest, YieldIndex},
     thresholds::{Threshold, ThresholdParameters},
 };
@@ -946,19 +946,21 @@ impl MpcContract {
         Ok(())
     }
 
+    /// Registers the set of foreign chains the calling node supports.
+    ///
+    /// Must be called directly from the participant's own NEAR account
+    /// (`voter_or_panic` requires `signer == predecessor`, blocking calls forwarded
+    /// through another contract). Callable by a participant in any active protocol phase
+    /// (Initializing, Running, or Resharing — authenticated against that phase's participant
+    /// set); panics in `NotInitialized` or when the caller is not a participant. Entries for
+    /// accounts that are no longer participants are pruned after resharing by
+    /// [`Self::clean_foreign_chain_data`].
     #[handle_result]
     pub fn register_foreign_chain_support(
         &mut self,
         foreign_chain_support: dtos::SupportedForeignChains,
     ) -> Result<(), Error> {
-        Self::assert_caller_is_signer();
-        let ProtocolContractState::Running(running_state) = &self.protocol_state else {
-            env::panic_str("protocol must be in running state");
-        };
-
-        let authenticated_voter =
-            AuthenticatedAccountId::new(running_state.parameters.participants())?;
-        let account_id = authenticated_voter.get().clone();
+        let account_id = self.voter_or_panic();
 
         self.node_foreign_chain_support
             .foreign_chain_support_by_node
@@ -6283,6 +6285,39 @@ mod tests {
     }
 
     #[test]
+    fn register_foreign_chain_support__should_store_for_previous_participant_during_resharing() {
+        // Given: a contract mid-resharing, and a participant from the previous running set.
+        let (_env, resharing_state) = gen_resharing_state(1);
+        let previous_participant = resharing_state
+            .previous_running_state
+            .parameters
+            .participants()
+            .participants()[0]
+            .0
+            .clone();
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Resharing(resharing_state));
+        let foreign_chain_support: dtos::SupportedForeignChains =
+            BTreeSet::from([dtos::ForeignChain::Bitcoin]).into();
+        let _env = Environment::new(None, Some(previous_participant.clone()), None);
+
+        // When: that participant registers foreign-chain support outside of Running state.
+        contract
+            .register_foreign_chain_support(foreign_chain_support.clone())
+            .expect("a previous participant may register during resharing");
+
+        // Then: the registration is stored against their account.
+        let stored = contract.get_foreign_chain_support_by_node();
+        assert_eq!(
+            stored
+                .foreign_chain_support_by_node
+                .get(&previous_participant),
+            Some(&foreign_chain_support)
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "not a voter")]
     fn register_foreign_chain_config__should_reject_non_participant() {
         // Given
         let running_state = gen_running_state(1);
@@ -6299,11 +6334,11 @@ mod tests {
         let non_participant = gen_account_id();
         let _env = Environment::new(None, Some(non_participant), None);
 
-        // When
-        let result = contract.register_foreign_chain_config(foreign_chain_configuration);
-
-        // Then
-        result.expect_err("non-participant should not be able to register");
+        // When / Then: a non-participant is rejected. Registration now authenticates via
+        // `voter_or_panic()`, which panics rather than returning an error.
+        contract
+            .register_foreign_chain_config(foreign_chain_configuration)
+            .expect("non-participant should not be able to register");
     }
 
     #[test]
