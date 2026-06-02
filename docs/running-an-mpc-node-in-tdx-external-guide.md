@@ -426,9 +426,11 @@ RUN rustup target add x86_64-unknown-linux-musl
 RUN cd dstack && git checkout "${DSTACK_REV}" && \
     cargo build --release -p dstack-mr-cli --target x86_64-unknown-linux-musl
 
-# NOTE: kvin/kms supplies the `dstack-acpi-tables` helper (feeds RTMR0). It is an
-# unpinned third-party image — pin it by digest for reproducible measurements.
-FROM kvin/kms:latest
+# kvin/kms supplies the `dstack-acpi-tables` helper (feeds RTMR0). Pinned by
+# digest for reproducible measurements (this digest is verified to reproduce the
+# canonical RTMR/MRTD values). It is a third-party image; a NEAR/Dstack-owned
+# published image would be a better long-term trust root.
+FROM kvin/kms@sha256:ad6a8c5c43aed7278e665cd0960ae5be95060847f7d517633be685cabda95a3d
 COPY --from=kms-builder /build/dstack/target/x86_64-unknown-linux-musl/release/dstack-mr /usr/local/bin/
 ENTRYPOINT ["dstack-mr"]
 CMD []
