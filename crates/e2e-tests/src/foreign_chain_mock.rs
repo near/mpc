@@ -31,6 +31,8 @@ pub const MOCK_BLOCK_HASH: &str =
     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 pub const MOCK_TX_ID: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 pub const MOCK_STARKNET_BLOCK_NUMBER: u64 = 6_868_546;
+pub const MOCK_BLOCK_HEIGHT: u64 = 800_000;
+pub const MOCK_BITCOIN_CONFIRMATIONS: u64 = 10;
 
 fn jsonrpc_error(id: serde_json::Value, method: &str) -> HttpMockResponse {
     let response_body = serde_json::json!({
@@ -55,16 +57,22 @@ pub fn setup_bitcoin_mock(server: &MockServer) -> usize {
                 let id = body["id"].clone();
                 let method = body["method"].as_str().expect("method field");
 
-                if method != "getrawtransaction" {
-                    return jsonrpc_error(id, method);
-                }
+                let result = match method {
+                    "getrawtransaction" => serde_json::json!({
+                        "blockhash": MOCK_BLOCK_HASH,
+                        "confirmations": MOCK_BITCOIN_CONFIRMATIONS,
+                    }),
+                    "getblockheader" => serde_json::json!({
+                        "hash": MOCK_BLOCK_HASH,
+                        "height": MOCK_BLOCK_HEIGHT,
+                    }),
+                    "getblockhash" => serde_json::Value::String(MOCK_BLOCK_HASH.to_string()),
+                    other => return jsonrpc_error(id, other),
+                };
 
                 let response_body = serde_json::json!({
                     "jsonrpc": "2.0",
-                    "result": {
-                        "blockhash": MOCK_BLOCK_HASH,
-                        "confirmations": 10,
-                    },
+                    "result": result,
                     "id": id,
                 });
 
