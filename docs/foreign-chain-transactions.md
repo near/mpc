@@ -518,7 +518,7 @@ This ensures different nodes query different providers for the same request whil
 
 ## Failure and Timeout Behavior
 
-* Nodes **abstain** if RPC queries fail or extraction fails.
+* Nodes **do not participate** if RPC queries fail or extraction fails.
 * A failed verification does **not** produce an on-chain failure response. The request eventually times out and fails with the standard timeout error.
 
 For operators, enabling a chain requires each node to register its local foreign-chain configuration with the contract:
@@ -555,7 +555,7 @@ See "Contract State (Foreign Chain Configurations)" above.
 * Node config contains chain RPC providers and timeouts (API keys stay local).
 * On startup, each node submits a single `register_foreign_chain_config` transaction derived from its local configuration. The call is idempotent.
 * Nodes do **not** vote, poll, or wait for network-wide consensus — the transaction is sent and startup continues.
-* The supported set is the on-chain RPC whitelist, not these registrations: a chain appears in `get_supported_foreign_chains()` once the network votes in a `ChainEntry` for it. Every active node is expected to support every supported chain; a node that does not is treated like a node that is down for that chain (it abstains) and is surfaced by alerting. See [Calculating the supported foreign-chain set](design/calculating-supported-foreign-chains.md).
+* The supported set is the on-chain RPC whitelist, not these registrations: a chain appears in `get_supported_foreign_chains()` once the network votes in a `ChainEntry` for it. Every active node is expected to support every supported chain; a node that does not is treated like a node that is down for that chain (it does not participate) and is surfaced by alerting. See [Calculating the supported foreign-chain set](design/calculating-supported-foreign-chains.md).
 * Per-participant registrations can be inspected with `get_foreign_chain_support_by_node()`, and feed the alerting that detects a node not supporting a supported chain.
 
 ### Configuration (Node)
@@ -614,11 +614,11 @@ providers require no auth at all.
 
 * **RPC trust and correctness**: Verification relies on centralized RPC providers. A malicious
   or faulty provider could return incorrect data for a subset of nodes.
-* **No additional consensus**: Nodes independently query providers and abstain on failures.
+* **No additional consensus**: Nodes independently query providers and do not participate on failures.
   If a threshold of nodes are misled by providers, the network could sign invalid observations.
 * **Provider availability**: Outages or rate limits can cause verification failures and reduced
   signing availability.
 * **Finality semantics**: Finality definitions differ across chains; mapping them correctly is critical.
-* **Incomplete chain coverage**: A chain is supported as soon as the network votes in its whitelist entry, independent of any single operator. A node that hasn't configured a supported chain is treated like a node that is down for it — it abstains from that chain's verification requests, and the pre-generated triples/presignatures it co-owns become offline assets and are discarded unused. Since these are shared signing assets (domain-agnostic triples; an ECDSA presignature pool reused for ordinary `sign()`), the waste reduces overall signing throughput across domains, not just that chain's availability. This is mitigated operationally by alerting on any active node that does not support a supported chain, rather than by the protocol.
+* **Incomplete chain coverage**: A chain is supported as soon as the network votes in its whitelist entry, independent of any single operator. A node that hasn't configured a supported chain is treated like a node that is down for it — it does not participate in that chain's verification requests, and the pre-generated triples/presignatures it co-owns become offline assets and are discarded unused. Foreign-tx presignatures live in their own dedicated `ForeignTx`-domain pool, but triples are shared per reconstruction threshold across all CaitSith domains, so stranding them also reduces ordinary `sign()` presignature generation — the waste is not confined to that chain's availability. This is mitigated operationally by alerting on any active node that does not support a supported chain, rather than by the protocol.
 * **Config drift**: Nodes missing required provider keys will fail startup validation.
 * **Extractor correctness**: Bugs or ambiguous specifications in extractors could produce incorrect values.
