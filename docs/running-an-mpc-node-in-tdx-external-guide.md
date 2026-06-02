@@ -417,21 +417,28 @@ RUN apt-get update && \
     libprotobuf-dev \
     clang \
     libclang-dev
-RUN git clone https://github.com/Dstack-TEE/dstack.git && \
-    cd dstack
+RUN git clone https://github.com/Dstack-TEE/dstack.git
 RUN rustup target add x86_64-unknown-linux-musl
-RUN cd dstack && cargo build --release -p dstack-mr-cli --target x86_64-unknown-linux-musl
+# Build dstack-mr from the SAME dstack version as your guest OS image (passed via
+# --build-arg DSTACK_REV below). Building from master is not reproducible: the
+# measurement logic changes between releases and may compute different
+# MRTD/RTMR values than the on-chain measurement set was generated with.
+RUN cd dstack && git checkout "${DSTACK_REV}" && \
+    cargo build --release -p dstack-mr-cli --target x86_64-unknown-linux-musl
 
+# NOTE: kvin/kms supplies the `dstack-acpi-tables` helper (feeds RTMR0). It is an
+# unpinned third-party image — pin it by digest for reproducible measurements.
 FROM kvin/kms:latest
 COPY --from=kms-builder /build/dstack/target/x86_64-unknown-linux-musl/release/dstack-mr /usr/local/bin/
 ENTRYPOINT ["dstack-mr"]
 CMD []
 ```
 
-Build:
+Build (pass `DSTACK_REV` = your guest OS image's dstack version, e.g. `v0.5.8`,
+so `dstack-mr`'s measurement logic matches the image and the on-chain values):
 
 ```bash
-docker build . -t dstack-mr
+docker build --build-arg DSTACK_REV=v0.5.8 . -t dstack-mr
 ```
 
 Run:
