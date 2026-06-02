@@ -232,6 +232,13 @@ pub enum ForeignChainInspectionError {
         receipt_hash: HexBytes,
         canonical_hash: HexBytes,
     },
+    #[error(
+        "RPC backend returned a block that does not match the one queried by hash: requested={requested_hash}, returned={returned_hash}"
+    )]
+    InconsistentRpcResponse {
+        requested_hash: HexBytes,
+        returned_hash: HexBytes,
+    },
     #[error("The transaction's status was not success")]
     TransactionFailed,
     #[error("provided log index is out of bounds")]
