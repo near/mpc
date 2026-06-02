@@ -39,7 +39,15 @@ pub fn gen_valid_params_proposal(params: &ThresholdParameters) -> ThresholdParam
         let info = current_participants.info(&account_id).unwrap();
         let _ = new_participants.insert_with_id(account_id, info.clone(), id);
     }
-    let max_added: usize = rng.gen_range(0..10);
+    // The proposed (final) participant count must satisfy every protocol's
+    // bound. `DamgardEtAl` requires `n >= 2t - 1`, which forces `n >= 3` at the
+    // fixtures' minimum `t = 2` (the same floor `gen_threshold_params` applies
+    // to the initial params). The bound is on the final count, so clamp `new_n`
+    // and derive how many participants to add from it; this keeps the original
+    // `[0, 10)` sampling range and only nudges short draws up.
+    const MIN_PARTICIPANTS: usize = 3;
+    let new_n = (n_old_participants + rng.gen_range(0..10)).max(MIN_PARTICIPANTS);
+    let max_added = new_n - n_old_participants;
     let mut next_id = current_participants.next_id();
     for i in 0..max_added {
         let (account_id, info) = gen_participant(i);

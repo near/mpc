@@ -448,13 +448,11 @@ near_add_key_skip_if_exists() {
   local pk="$2"
   local label="$3"
 
-  # Use restricted function-call access key instead of full access.
-  # The key can only call node-facing methods on the MPC contract.
-  local node_methods="respond,respond_ckd,respond_verify_foreign_tx,vote_pk,start_keygen_instance,vote_reshared,register_foreign_chain_config,start_reshare_instance,vote_abort_key_event_instance,verify_tee,submit_participant_info,conclude_node_migration"
+  # Function-call key scoped to the MPC contract; empty --function-names allows all methods.
   local cmd=(near account add-key "$acct" grant-function-call-access
              --allowance unlimited
              --contract-account-id "$MPC_CONTRACT_ACCOUNT"
-             --function-names "$node_methods"
+             --function-names ''
              use-manually-provided-public-key "$pk"
              network-config "$NEAR_NETWORK_CONFIG" sign-with-keychain send)
 

@@ -388,6 +388,7 @@ impl DstackAttestation {
             && app_compose.allowed_envs.is_empty()
             && app_compose.no_instance_id
             && app_compose.pre_launch_script.is_none()
+            && app_compose.init_script.is_none()
     }
 
     /// Verifies local key-provider event digest matches the expected digest.
@@ -588,6 +589,38 @@ mod tests {
     }
 
     #[test]
+    fn validate_app_compose_config__rejects_present_pre_launch_script() {
+        // Given
+        let app_compose = AppCompose {
+            pre_launch_script: Some("echo pwn".to_string()),
+            ..valid_app_compose()
+        };
+        // When
+        let result = DstackAttestation::validate_app_compose_config(&app_compose);
+
+        // Then
+        assert!(!result)
+    }
+
+    #[test]
+    fn validate_app_compose_config__rejects_present_init_script() {
+        // `init_script` is arbitrary root code run before dockerd. It is
+        // measured into the compose hash but not pinned to any allowed value,
+        // so verification must reject it outright.
+
+        // Given
+        let app_compose = AppCompose {
+            init_script: Some("echo pwn".to_string()),
+            ..valid_app_compose()
+        };
+        // When
+        let result = DstackAttestation::validate_app_compose_config(&app_compose);
+
+        // Then
+        assert!(!result)
+    }
+
+    #[test]
     fn validate_app_compose_config__allows_insecure_time() {
         // Given
         let app_compose = AppCompose {
@@ -618,6 +651,7 @@ mod tests {
             no_instance_id: true,
             secure_time: None,
             pre_launch_script: None,
+            init_script: None,
         }
     }
 }

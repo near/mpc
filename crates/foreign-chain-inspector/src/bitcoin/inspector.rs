@@ -16,13 +16,14 @@ const GET_BLOCK_HEADER_METHOD: &str = "getblockheader";
 /// https://developer.bitcoin.org/reference/rpc/getblockhash.html
 const GET_BLOCK_HASH_METHOD: &str = "getblockhash";
 
+#[derive(Clone)]
 pub struct BitcoinInspector<Client> {
     client: Client,
 }
 
 impl<Client> ForeignChainInspector for BitcoinInspector<Client>
 where
-    Client: ClientT + Send,
+    Client: ClientT + Send + Sync,
 {
     type TransactionId = BitcoinTransactionHash;
     type Finality = BlockConfirmations;
@@ -71,7 +72,7 @@ where
 
 impl<Client> BitcoinInspector<Client>
 where
-    Client: ClientT + Send,
+    Client: ClientT + Send + Sync,
 {
     pub fn new(client: Client) -> Self {
         Self { client }
