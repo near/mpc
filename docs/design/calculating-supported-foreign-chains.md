@@ -78,21 +78,15 @@ Two guarantees hold today, and this rule keeps both.
 
 **Security** — the network signs an observation only if ≥ `threshold` participants
 each independently verified it (each via its own RPC quorum). Fewer than
-`threshold` can never force a false attestation. This holds because the
-supported-set source never touches the per-request verification path: a node
-treated as down — genuinely offline or just under-provisioned — does not
-participate, so it can never contribute a signature share toward a false result.
-Over-claiming support doesn't help an attacker either, as the node just fails its
-RPC quorum and does not participate.
+`threshold` can not force a false attestation.
 
 **Liveness** — a request completes as long as ≥ `threshold` supporting participants
 are online, the same `n − threshold` fault tolerance as the rest of signing. A
 non-supporting node is exactly an offline node to the protocol, a fault already
 absorbed. This strictly improves on the intersection rule, where one
-non-registering node dropped a chain to zero availability (a one-fault DoS, worse
-than `n − threshold`).
+non-registering node dropped a chain to zero availability.
 
-Also: **a chain with no whitelist entry is never supported** — correct, since a
+Also: **a chain with no whitelist entry is never supported**  since a
 chain with no trusted providers must not be advertised.
 
 ## Known tradeoff
@@ -108,9 +102,7 @@ while all their participants are alive), which are then discarded. Two surfaces:
   generation — this cost is **not** confined to `C`.
 
 The mitigation is operational: the alerting above keeps coverage high, and
-operators are expected to configure every node for every chain. We deliberately do
-**not** make the supported set adapt to which nodes support a chain — that
-per-node-input coupling is exactly what enables the single-operator DoS we remove.
+operators are expected to configure every node for every chain.
 
 ## Documentation impact
 
