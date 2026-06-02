@@ -25,18 +25,23 @@ This was first raised in [#381](https://github.com/near/mpc/issues/381) and disc
 ### 3.1 Architecture Layers
 
 ```
-                mpc-primitives (no_std, pure data types, no near-sdk)
+                mpc-primitives (pure data types, no near-sdk)
                /        |         \
               /         |          \
-mpc-contract           |     near-mpc-contract-interface
-(near-sdk,             |     (serde DTOs, re-exports primitives)
- borsh storage,        |           |
- validation)           |           |
-                       |          /
-                  mpc-node
-                 (depends on primitives + interface,
-                  NOT on mpc-contract)
+             /          |     near-mpc-contract-interface
+            /           |     (serde DTOs, re-exports primitives)
+           /            |          /   \
+mpc-contract ──────────┘─────────┘      \
+(near-sdk, borsh storage,                 \
+ validation; converts                      mpc-node
+ internal ⇄ DTO via                       (depends on primitives + interface,
+ dto_mapping.rs)                           NOT on mpc-contract)
 ```
+
+Note that `mpc-contract` depends on `near-mpc-contract-interface`: its view
+functions return DTOs and its call functions accept DTOs, converting to/from
+internal types in `dto_mapping.rs`. The interface crate is the contract's
+public boundary, consumed by both the contract itself and the node.
 
 ### 3.2 What Goes Where
 
@@ -53,7 +58,7 @@ The decoupling is done incrementally, module by module. Each step removes some `
 
 | Phase | Scope | Status |
 |-------|-------|--------|
-| 1 | Participants boundary (`indexer/participants.rs`) | [PR #2870](https://github.com/near/mpc/pull/2870) — in progress |
+| 1 | Participants boundary (`indexer/participants.rs`) | [PR #2870](https://github.com/near/mpc/pull/2870) — nearly complete (one `mpc_contract::primitives::key_state` import remains) |
 | 2 | Key state / keyshares (`keyshare.rs`, `keyshare/*.rs`) | Not started |
 | 3 | Coordinator / key events (`coordinator.rs`, `key_events.rs`) | Not started |
 | 4 | Signature / request types (`types.rs`, `indexer/handler.rs`, `mpc_client.rs`, providers) | Not started |
@@ -105,11 +110,20 @@ pub(crate) trait IntoInterfaceType<InterfaceType> {
     fn into_dto_type(self) -> InterfaceType;
 }
 
+pub(crate) trait TryIntoInterfaceType<InterfaceType> {
+    type Error;
+    fn try_into_dto_type(self) -> Result<InterfaceType, Self::Error>;
+}
+
 pub(crate) trait TryIntoContractType<ContractType> {
     type Error;
     fn try_into_contract_type(self) -> Result<ContractType, Self::Error>;
 }
 ```
+
+The `Try*` variants are used where a conversion can fail (e.g. validating a
+DTO's fields when converting into the internal type, or producing a DTO from
+internal state that may not always be representable).
 
 The node has its own parallel trait in `crates/node/src/trait_extensions/convert_to_contract_dto.rs`:
 
@@ -126,7 +140,9 @@ View functions convert internal state to DTOs before returning:
 ```rust
 // crates/contract/src/lib.rs
 pub fn state(&self) -> dtos::ProtocolContractState {
-    (&self.protocol_state).into_dto_type()
+    (&self.protocol_state)
+        .try_into_dto_type()
+        .expect("state conversion should not fail")
 }
 ```
 
@@ -161,9 +177,9 @@ The state is then broadcast to subsystems via `tokio::sync::watch` channels. The
 | Invariant enforcement | Validated at construction | None — pure data |
 | `near-sdk` dependency | Yes | No |
 | Backwards compat | Can change freely | Must maintain JSON wire format |
-| `DomainConfig.purpose` | Required (`DomainPurpose`) | Optional (`Option<DomainPurpose>`, for legacy compat) |
-| `DomainConfig.curve` | `Curve` (internal name) | `SignatureScheme` (with `serde(alias)` compat) |
-| `ParticipantInfo.sign_pk` | `near_sdk::PublicKey` | `String` (see [#2871](https://github.com/near/mpc/issues/2871)) |
+| `DomainConfig.purpose` | Required (`DomainPurpose`) | Required (`DomainPurpose`) |
+| `DomainConfig.curve` | `Curve` | `Curve` (field `curve`, with `#[serde(alias = "scheme")]` for pre-3.9.0 compat) |
+| `ParticipantInfo.sign_pk` | `near_sdk::PublicKey` | `Ed25519PublicKey` (resolved [#2871](https://github.com/near/mpc/issues/2871)) |
 
 ### 4.6 Serialization Compatibility
 
@@ -200,19 +216,19 @@ The interface crate exports ~60 types organized into:
 
 The interface crate exists so consumers (node, SDKs, external tools) don't need the full contract stack. Adding `near-sdk` would defeat this purpose. If a specific type needs `near-sdk` features, it should be behind a feature flag (the crate already has a `near` feature gate for this).
 
-**Consequence:** Types like `ParticipantInfo.sign_pk` use `String` instead of `near_sdk::PublicKey` in the interface crate. This is a known type-safety trade-off.
+**Consequence:** Types like `ParticipantInfo.sign_pk` use a `near-mpc-crypto-types` wrapper (`Ed25519PublicKey`) instead of `near_sdk::PublicKey`. See §5.2.
 
 ### 5.2 Use typed wrappers, not bare Strings
 
 Where possible, use existing typed wrappers from `near-mpc-crypto-types` (e.g., `Ed25519PublicKey`) instead of bare `String` fields. The interface crate already depends on `near-mpc-crypto-types`.
 
-**Open issue:** [#2871](https://github.com/near/mpc/issues/2871) — `ParticipantInfo.sign_pk` should be `Ed25519PublicKey` instead of `String`.
+**Applied:** [#2871](https://github.com/near/mpc/issues/2871) — `ParticipantInfo.sign_pk` is now `Ed25519PublicKey` (previously `String`).
 
 ### 5.3 KDF (Key Derivation Function) placement: `derive_tweak`, `derive_app_id`
 
-These are security-sensitive hash functions with hardcoded prefix strings. They're not pure DTOs but are needed by both the contract and the node. Current location: `near-mpc-contract-interface::types::kdf`.
+These are security-sensitive hash functions with hardcoded prefix strings. They're not pure DTOs but are needed by both the contract and the node. **Current location:** `near-mpc-crypto-types::kdf` (`crates/near-mpc-crypto-types/src/kdf.rs`). The interface crate re-exports them via `pub use near_mpc_crypto_types::kdf`, so consumers can reach them as `near_mpc_contract_interface::kdf` without depending on the crypto-types crate directly.
 
-**Open question:** Should these live in `mpc-primitives` instead? They'd be available to external users either way. The argument for the interface crate is that external SDKs already depend on it. The argument for `mpc-primitives` is that hash functions aren't DTOs.
+This resolves the earlier open question of whether they belonged in `mpc-primitives` vs. the interface crate: they now live alongside the crypto types they operate on, not in either DTO crate, since hash functions aren't DTOs.
 
 ### 5.4 Conversions between contract and interface types should fail at deserialization, not at use
 
@@ -220,7 +236,7 @@ When the interface DTO uses a weaker type (e.g., `String` for a public key), val
 
 ## 6. Open Questions
 
-1. **Where should `derive_tweak` / `derive_app_id` live?** Interface crate (current) vs. `mpc-primitives` vs. a new `mpc-crypto-shared` crate? (Raised in [PR #2831 discussion](https://github.com/near/mpc/pull/2831#issuecomment-4237068116))
+1. ~~**Where should `derive_tweak` / `derive_app_id` live?**~~ **Resolved** — they live in `near-mpc-crypto-types::kdf`, re-exported from the interface crate. See §5.3. (Originally raised in [PR #2831 discussion](https://github.com/near/mpc/pull/2831#issuecomment-4237068116).)
 
 2. **Should we publish `mpc-primitives` to crates.io?** External consumers (wallets, SDKs) need shared types. ([#2703](https://github.com/near/mpc/issues/2703))
 
@@ -240,7 +256,7 @@ When the interface DTO uses a weaker type (e.g., `String` for a public key), val
 - [#2831](https://github.com/near/mpc/pull/2831) — refactor: decouple node production code from mpc-contract crate (SimonRastikian, attempted full migration — descoped)
 
 ### Follow-up Issues
-- [#2871](https://github.com/near/mpc/issues/2871) — `ParticipantInfo.sign_pk` should be `Ed25519PublicKey` instead of `String`
+- [#2871](https://github.com/near/mpc/issues/2871) — `ParticipantInfo.sign_pk` should be `Ed25519PublicKey` instead of `String` (**resolved**: field is now `Ed25519PublicKey`)
 - [#2480](https://github.com/near/mpc/issues/2480) — Move voting types from contract crate to contract-interface
 - [#2060](https://github.com/near/mpc/issues/2060) — Refactor sandbox tests to eliminate DTO-to-contract type conversion methods
 - [#2703](https://github.com/near/mpc/issues/2703) — Publish `mpc-primitives` crate to crates.io
