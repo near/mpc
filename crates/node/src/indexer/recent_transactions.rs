@@ -7,6 +7,16 @@
 //! a prometheus counter. This buffer keeps a per-transaction record (txid,
 //! nonce, signer access key, ...) so an operator can debug failures such as
 //! out-of-order nonce rejections.
+//!
+//! Unlike the other debug pages (recent blocks/signatures/CKDs), which pull
+//! their data from the MPC client on demand and so only work while the node is
+//! `Running`, this buffer is written by the always-on transaction processor
+//! (see [`super::tx_sender`]) and shared directly with the web server as
+//! `Arc<Mutex<RecentTransactions>>`. The node submits transactions even while
+//! not `Running` (e.g. `vote_pk` while `Initializing`), and those states are
+//! exactly when an operator needs to inspect submission failures, so reading
+//! the buffer directly keeps the page available regardless of the node's
+//! running state.
 
 use near_account_id::AccountId;
 use near_crypto::Signature;

@@ -67,8 +67,9 @@ struct WebServerState {
     static_web_data: StaticWebData,
     node_config: NodeConfigResponse,
     /// Buffer of recently submitted transactions, populated by the indexer's
-    /// transaction processor. Read directly here (not via the debug-request
-    /// broadcast), so the page works regardless of the node's running state.
+    /// transaction processor. Read directly here rather than via the
+    /// debug-request broadcast; see [`crate::indexer::recent_transactions`] for
+    /// why this keeps the page available regardless of the node's running state.
     recent_transactions: Arc<Mutex<RecentTransactions>>,
 }
 
