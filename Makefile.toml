@@ -7,8 +7,6 @@ dependencies = [
   "editorconfig",
   "assert-matches",
   "use-in-fn",
-  "ruff-format",
-  "ruff-check",
   "fmt",
   "cargo-sort",
   "cargo-shear",
@@ -74,14 +72,6 @@ args = [
   "--locked",
 ]
 
-[tasks.ruff-format]
-command = "ruff"
-args = ["format", "--diff"]
-
-[tasks.ruff-check]
-command = "ruff"
-args = ["check", "--diff"]
-
 [tasks.zizmor]
 command = "zizmor"
 args = [".github/"]
@@ -114,8 +104,8 @@ args = ["scripts/check-assert-matches.sh"]
 
 [tasks.use-in-fn]
 description = "Check for use statements inside function bodies"
-command = "python"
-args = ["scripts/check-use-in-fn.py"]
+command = "ast-grep"
+args = ["scan", "--rule", "lints/no-use-in-fn.yml", "crates/"]
 
 [tasks.cargo-deny]
 description = "Run cargo deny"

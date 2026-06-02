@@ -25,6 +25,10 @@ impl Zeroize for ScalarWrapper {
     // behavior in a routine version bump.
     #[allow(clippy::volatile_composites, clippy::borrow_as_ptr)]
     fn zeroize(&mut self) {
+        // SAFETY: `&mut self.0` is a valid, properly aligned, exclusive pointer
+        // to an initialized `blstrs::Scalar` (it borrows a live field through
+        // `&mut self`), so the `write_volatile` is sound. The overwriting value
+        // is itself fully initialized via `Scalar::default()`.
         unsafe {
             ptr::write_volatile(&mut self.0, blstrs::Scalar::default());
         }

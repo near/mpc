@@ -851,7 +851,7 @@ Use the following custom settings for MPC:
 1. Launcher docker compose file - provided above.
 2. VM HW setting (use exactly those settings, since vCPU/Memory are measured):
     vCPU number=8, Memory = 64GB, disk = 500 GB
-3. Pre script - empty.
+3. Pre-launch Script and Init Script - both must be empty (a non-empty script fails attestation). Caution: the Pre-launch Script may not be empty by default - clear it before deploying.
 4. user-config - provided above
 5. Toggles:
    - KMS = disable
@@ -1095,13 +1095,17 @@ This section shows how to add the MPC node's public key (from the previous secti
 * **`MPC_NODE_PUBLIC_KEY`** → The public key of the MPC node you want to add.
   Example: `ed25519:ABCDEFG...`
 
-* **`METHOD_NAMES`** → The list of contract methods the MPC node is allowed to call:
+* **Allowed methods** → The key is granted access to **all** methods on the MPC
+  contract (an empty `--function-names` list). The key is still a function-call
+  key scoped to the MPC contract (`--contract-account-id`) with an allowance, so
+  it cannot transfer funds or call other contracts.
 
-  ```txt
-  respond,respond_ckd,respond_verify_foreign_tx,vote_pk,start_keygen_instance,vote_reshared,vote_foreign_chain_policy,start_reshare_instance,vote_abort_key_event_instance,verify_tee,submit_participant_info,conclude_node_migration
-  ```
-
-  > **Note:** This must be a single comma-separated string with no spaces or newlines.
+  > **Why allow all methods instead of an explicit list?** The set of methods an
+  > MPC node must call changes across releases (e.g. `register_foreign_chain_config`
+  > was added for foreign-chain support). A hand-maintained method list silently
+  > drifts out of date, and the node then fails — with no obvious error — on any
+  > new method the key was never granted. Allowing all methods on the contract
+  > avoids this class of breakage while keeping the key scoped to the MPC contract.
 
 * **`ALLOWANCE`** → Use `unlimited`. A finite allowance just means the node
   will eventually stop being able to submit `respond*` transactions once the
@@ -1116,7 +1120,7 @@ near account add-key $ACCOUNT_ID \
   grant-function-call-access \
   --allowance unlimited \
   --contract-account-id $MPC_CONTRACT_ID \
-  --function-names $METHOD_NAMES \
+  --function-names '' \
   use-manually-provided-public-key $MPC_NODE_PUBLIC_KEY \
   network-config testnet \
   sign-with-keychain \
@@ -1137,15 +1141,15 @@ MPC_NODE_PUBLIC_KEY="ed25519:YOUR_PUBLIC_KEY_HERE"
 ALLOWANCE="unlimited"
 NETWORK="testnet"   # or "mainnet"
 
-# Methods the MPC node is allowed to call
-METHOD_NAMES="respond,respond_ckd,respond_verify_foreign_tx,vote_pk,start_keygen_instance,vote_reshared,vote_foreign_chain_policy,start_reshare_instance,vote_abort_key_event_instance,verify_tee,submit_participant_info,conclude_node_migration"
+# The key is granted access to all methods on the MPC contract (empty list),
+# while staying scoped to the contract via --contract-account-id.
 
 # === Add Access Key ===
 near account add-key $ACCOUNT_ID \
   grant-function-call-access \
   --allowance "$ALLOWANCE" \
   --contract-account-id $MPC_CONTRACT_ID \
-  --function-names $METHOD_NAMES \
+  --function-names '' \
   use-manually-provided-public-key $MPC_NODE_PUBLIC_KEY \
   network-config $NETWORK \
   sign-with-keychain \
@@ -1163,6 +1167,50 @@ near account list-keys $ACCOUNT_ID \
   network-config $NETWORK \
   now
 ```
+
+The key you just added should appear with `permission` listing the MPC contract
+as the receiver and an **empty** `method_names` list — an empty list means the
+key may call **all** methods on that contract.
+
+---
+
+#### Updating an Existing Key to Allow All Methods
+
+If your node's key was previously added with a restricted `method_names` list
+(e.g. an older guide granted an explicit list), the node will fail — with no
+obvious error — on any contract method that was not in that list. A symptom of
+this is the node being unable to call `register_foreign_chain_config`, so the
+contract reports no foreign chains supported by your node.
+
+Access-key permissions are **immutable** in NEAR: you cannot edit an existing
+key's allowed methods. Instead, delete the restricted key and re-add the same
+public key with an empty `--function-names` list.
+
+```bash
+# 1. Delete the existing (restricted) key. Use the SAME public key the node uses.
+near account delete-keys $ACCOUNT_ID \
+  public-keys $MPC_NODE_PUBLIC_KEY \
+  network-config $NETWORK \
+  sign-with-keychain \
+  send
+
+# 2. Re-add it granting access to all methods on the MPC contract.
+near account add-key $ACCOUNT_ID \
+  grant-function-call-access \
+  --allowance unlimited \
+  --contract-account-id $MPC_CONTRACT_ID \
+  --function-names '' \
+  use-manually-provided-public-key $MPC_NODE_PUBLIC_KEY \
+  network-config $NETWORK \
+  sign-with-keychain \
+  send
+```
+
+> **Note:** Delete and re-add each affected key (e.g. both the node key and the
+> responder key). Verify with `near account list-keys $ACCOUNT_ID` that each key
+> now shows an empty `method_names` list.
+
+After the key is fixed, **restart the node** so foreign-chain registration runs again.
 
 ## Joining the MPC Cluster
 
