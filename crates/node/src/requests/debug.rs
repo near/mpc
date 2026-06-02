@@ -146,18 +146,20 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
         .unwrap();
         if self.active_attempt.strong_count() > 0 {
             write!(&mut output, " computing").unwrap();
-        } else if let Some(time) = self
-            .computation_progress
-            .lock()
-            .unwrap()
-            .last_response_submission
-        {
-            write!(
-                &mut output,
-                " responded: {}s",
-                clock.now().duration_since(time).as_secs()
-            )
-            .unwrap();
+        } else {
+            let last_response_submission = self
+                .computation_progress
+                .lock()
+                .unwrap()
+                .last_response_submission;
+            if let Some(time) = last_response_submission {
+                write!(
+                    &mut output,
+                    " responded: {}s",
+                    clock.now().duration_since(time).as_secs()
+                )
+                .unwrap();
+            }
         }
         write!(&mut output, " elect:").unwrap();
         for participant in self.leader_selection_order.iter() {

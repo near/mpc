@@ -1,6 +1,6 @@
 use super::permanent::PermanentKeyshareData;
 use super::{Keyshare, KeyshareData};
-use mpc_primitives::{domain::DomainId, EpochId, KeyEventId};
+use mpc_primitives::{EpochId, KeyEventId, domain::DomainId};
 use near_mpc_crypto_types::{KeyForDomain, Keyset};
 use rand::{CryptoRng, RngCore, SeedableRng};
 use threshold_signatures::ecdsa::KeygenOutput;

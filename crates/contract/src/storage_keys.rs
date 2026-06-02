@@ -1,4 +1,4 @@
-use near_sdk::{near, BorshStorageKey};
+use near_sdk::{BorshStorageKey, near};
 
 // !!! IMPORTANT !!!
 // for backwards compatibility, ensure the order is preserved and only append to this list

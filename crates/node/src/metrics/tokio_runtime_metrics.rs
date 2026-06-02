@@ -1,4 +1,4 @@
-use prometheus::{register_counter, register_int_gauge, Counter, IntGauge};
+use prometheus::{Counter, IntGauge, register_counter, register_int_gauge};
 use std::sync::LazyLock;
 use tokio_metrics::RuntimeMonitor;
 

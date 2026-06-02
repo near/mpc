@@ -1,8 +1,8 @@
 use crate::indexer::participants::ContractState;
 use crate::p2p::testing::PortSeed;
 use crate::tests::{
-    request_ckd_and_await_response, request_signature_and_await_response, IntegrationTestSetup,
-    DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
+    DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME, IntegrationTestSetup,
+    request_ckd_and_await_response, request_signature_and_await_response,
 };
 use crate::tracking::AutoAbortTask;
 use mpc_primitives::domain::{Curve, DomainId};
@@ -81,24 +81,28 @@ async fn test_basic_multidomain() {
     for domain in &domains {
         match Curve::from(domain.protocol) {
             Curve::Secp256k1 | Curve::Edwards25519 => {
-                assert!(request_signature_and_await_response(
-                    &mut setup.indexer,
-                    &format!("user{}", domain.id.0),
-                    domain,
-                    DEFAULT_MAX_SIGNATURE_WAIT_TIME
-                )
-                .await
-                .is_some());
+                assert!(
+                    request_signature_and_await_response(
+                        &mut setup.indexer,
+                        &format!("user{}", domain.id.0),
+                        domain,
+                        DEFAULT_MAX_SIGNATURE_WAIT_TIME
+                    )
+                    .await
+                    .is_some()
+                );
             }
             Curve::Bls12381 => {
-                assert!(request_ckd_and_await_response(
-                    &mut setup.indexer,
-                    &format!("user{}", domain.id.0),
-                    domain,
-                    DEFAULT_MAX_SIGNATURE_WAIT_TIME
-                )
-                .await
-                .is_some());
+                assert!(
+                    request_ckd_and_await_response(
+                        &mut setup.indexer,
+                        &format!("user{}", domain.id.0),
+                        domain,
+                        DEFAULT_MAX_SIGNATURE_WAIT_TIME
+                    )
+                    .await
+                    .is_some()
+                );
             }
         }
     }
@@ -149,24 +153,28 @@ async fn test_basic_multidomain() {
     for domain in &domains {
         match Curve::from(domain.protocol) {
             Curve::Secp256k1 | Curve::Edwards25519 => {
-                assert!(request_signature_and_await_response(
-                    &mut setup.indexer,
-                    &format!("user{}", domain.id.0),
-                    domain,
-                    DEFAULT_MAX_SIGNATURE_WAIT_TIME
-                )
-                .await
-                .is_some());
+                assert!(
+                    request_signature_and_await_response(
+                        &mut setup.indexer,
+                        &format!("user{}", domain.id.0),
+                        domain,
+                        DEFAULT_MAX_SIGNATURE_WAIT_TIME
+                    )
+                    .await
+                    .is_some()
+                );
             }
             Curve::Bls12381 => {
-                assert!(request_ckd_and_await_response(
-                    &mut setup.indexer,
-                    &format!("user{}", domain.id.0),
-                    domain,
-                    DEFAULT_MAX_SIGNATURE_WAIT_TIME
-                )
-                .await
-                .is_some());
+                assert!(
+                    request_ckd_and_await_response(
+                        &mut setup.indexer,
+                        &format!("user{}", domain.id.0),
+                        domain,
+                        DEFAULT_MAX_SIGNATURE_WAIT_TIME
+                    )
+                    .await
+                    .is_some()
+                );
             }
         }
     }
@@ -196,24 +204,28 @@ async fn test_basic_multidomain() {
     for domain in &domains {
         match Curve::from(domain.protocol) {
             Curve::Secp256k1 | Curve::Edwards25519 => {
-                assert!(request_signature_and_await_response(
-                    &mut setup.indexer,
-                    &format!("user{}", domain.id.0),
-                    domain,
-                    DEFAULT_MAX_SIGNATURE_WAIT_TIME
-                )
-                .await
-                .is_some());
+                assert!(
+                    request_signature_and_await_response(
+                        &mut setup.indexer,
+                        &format!("user{}", domain.id.0),
+                        domain,
+                        DEFAULT_MAX_SIGNATURE_WAIT_TIME
+                    )
+                    .await
+                    .is_some()
+                );
             }
             Curve::Bls12381 => {
-                assert!(request_ckd_and_await_response(
-                    &mut setup.indexer,
-                    &format!("user{}", domain.id.0),
-                    domain,
-                    DEFAULT_MAX_SIGNATURE_WAIT_TIME
-                )
-                .await
-                .is_some());
+                assert!(
+                    request_ckd_and_await_response(
+                        &mut setup.indexer,
+                        &format!("user{}", domain.id.0),
+                        domain,
+                        DEFAULT_MAX_SIGNATURE_WAIT_TIME
+                    )
+                    .await
+                    .is_some()
+                );
             }
         }
     }

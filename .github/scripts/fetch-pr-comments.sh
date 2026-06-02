@@ -58,11 +58,33 @@ if ! COMMENTS_JSON=$(gh api graphql \
   exit 0
 fi
 
-# Format comments for Claude using external Python script
+# Project the relevant fields to JSON context for Claude, truncating long diff
+# hunks to keep the token budget bounded. The LLM reads JSON directly, so no
+# prose formatting is needed.
 # Write to file instead of env var to avoid E2BIG on large PRs
 if [ -n "$COMMENTS_JSON" ]; then
   echo "$COMMENTS_JSON" > /tmp/pr_comments_json.txt
-  python3 "$(dirname "$0")/format_pr_comments.py" /tmp/pr_comments_json.txt > /tmp/pr_comments_context.txt
+  if ! jq '
+      # Truncate a diff hunk to ~$max chars at line boundaries (never mid-line).
+      def truncate_hunk($max):
+        if (length <= $max) then .
+        else
+          (reduce (split("\n")[]) as $line ({acc: [], count: 0, done: false};
+             if .done then .
+             elif ((.count + ($line | length) + 1) > $max and (.acc | length) > 0)
+             then .done = true
+             else {acc: (.acc + [$line]), count: (.count + ($line | length) + 1), done: false}
+             end)
+           | .acc | join("\n")) + "\n... (truncated)"
+        end;
+      (.data.repository.pullRequest // {}) | {
+        comments: [(.comments.nodes // [])[] | {author: .author.login, body, createdAt}],
+        reviews: [(.reviews.nodes // [])[] | select((.body // "") != "") | {author: .author.login, state, body, createdAt}],
+        threads: [(.reviewThreads.nodes // [])[] | {path, line, isResolved, isOutdated,
+          comments: [(.comments.nodes // [])[] | {author: .author.login, body, createdAt, diffHunk: ((.diffHunk // "") | truncate_hunk(500))}]}]
+      }' /tmp/pr_comments_json.txt > /tmp/pr_comments_context.txt; then
+    echo "⚠️ Unable to parse comment data." > /tmp/pr_comments_context.txt
+  fi
 else
   echo "⚠️ No comments data to process." > /tmp/pr_comments_context.txt
   exit 0

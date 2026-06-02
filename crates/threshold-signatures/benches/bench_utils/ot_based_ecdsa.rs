@@ -2,20 +2,20 @@ use rand::Rng;
 use rand_core::{CryptoRngCore, SeedableRng};
 
 use threshold_signatures::{
+    ReconstructionLowerBound,
     ecdsa::{
         self,
         ot_based_ecdsa::{
             self,
-            triples::{generate_triple_many, TriplePub, TripleShare},
+            triples::{TriplePub, TripleShare, generate_triple_many},
         },
     },
     participants::Participant,
     protocol::Protocol,
     test_utils::{
-        ecdsa_generate_rerandpresig_args, generate_participants_with_random_ids, run_keygen,
-        MockCryptoRng,
+        MockCryptoRng, ecdsa_generate_rerandpresig_args, generate_participants_with_random_ids,
+        run_keygen,
     },
-    ReconstructionLowerBound,
 };
 
 use super::{PreparedPresig, PreparedSig};
@@ -32,7 +32,7 @@ pub fn ot_ecdsa_prepare_triples<R: CryptoRngCore + SeedableRng + Send + 'static>
 
     for p in &participants {
         let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
-        let protocol = generate_triple_many::<2>(&participants, *p, threshold, rng_p)
+        let protocol = generate_triple_many::<2, _, _>(&participants, *p, threshold, rng_p)
             .expect("Triple generation should succeed");
         protocols.push((*p, Box::new(protocol)));
     }

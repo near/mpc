@@ -1,6 +1,6 @@
-use super::tx_signer::{TransactionSigner, TransactionSigners};
 use super::ChainSendTransactionRequest::{self, *};
 use super::IndexerState;
+use super::tx_signer::{TransactionSigner, TransactionSigners};
 use crate::config::RespondConfig;
 use crate::metrics;
 use anyhow::Context;

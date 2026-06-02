@@ -1,6 +1,6 @@
 //! This module contains cryptographic constants that are used throughout the codebase.
 
-use ecdsa::elliptic_curve::{bigint::Bounded, Curve};
+use ecdsa::elliptic_curve::{Curve, bigint::Bounded};
 use k256::Secp256k1;
 
 // Commitment Scheme Constants

@@ -2,20 +2,20 @@
 //!  into `cait-sith::Protocol` representation.
 use super::{KeygenOutput, PresignOutput, SignatureOption};
 use crate::{
+    Participant, ParticipantList, ReconstructionLowerBound,
     errors::{InitializationError, ProtocolError},
     frost::assert_sign_inputs,
     protocol::{
-        helpers::recv_from_others,
-        internal::{make_protocol, Comms, SharedChannel},
         Protocol,
+        helpers::recv_from_others,
+        internal::{Comms, SharedChannel, make_protocol},
     },
-    Participant, ParticipantList, ReconstructionLowerBound,
 };
 
 use frost_ed25519::{
-    aggregate,
+    CheaterDetection, SigningPackage, VerifyingKey, aggregate_custom,
     keys::{KeyPackage, PublicKeyPackage, SigningShare},
-    rand_core, round1, round2, SigningPackage, VerifyingKey,
+    rand_core, round1, round2,
 };
 use rand_core::CryptoRngCore;
 use std::collections::BTreeMap;
@@ -46,15 +46,19 @@ pub(crate) const EDDSA_SIGN_V2_MAX_INCOMING_PARTICIPANT_ENTRIES: usize = 0;
 /// creating a specific ciphersuite for this, and not just sending the hash
 /// as if it were the message.
 /// For reference, see how RFC 8032 handles "pre-hashing".
-pub fn sign_v1(
+pub fn sign_v1<T, R>(
     participants: &[Participant],
-    threshold: impl Into<ReconstructionLowerBound>,
+    threshold: T,
     me: Participant,
     coordinator: Participant,
     keygen_output: KeygenOutput,
     message: Vec<u8>,
-    rng: impl CryptoRngCore + Send + 'static,
-) -> Result<impl Protocol<Output = SignatureOption>, InitializationError> {
+    rng: R,
+) -> Result<impl Protocol<Output = SignatureOption> + use<T, R>, InitializationError>
+where
+    T: Into<ReconstructionLowerBound>,
+    R: CryptoRngCore + Send + 'static,
+{
     let threshold = threshold.into();
     let participants = assert_sign_inputs(participants, threshold, me, coordinator)?;
 
@@ -73,15 +77,18 @@ pub fn sign_v1(
     Ok(make_protocol(comms, fut))
 }
 
-pub fn sign_v2(
+pub fn sign_v2<T>(
     participants: &[Participant],
-    threshold: impl Into<ReconstructionLowerBound> + Copy,
+    threshold: T,
     me: Participant,
     coordinator: Participant,
     keygen_output: KeygenOutput,
     presignature: PresignOutput,
     message: Vec<u8>,
-) -> Result<impl Protocol<Output = SignatureOption>, InitializationError> {
+) -> Result<impl Protocol<Output = SignatureOption> + use<T>, InitializationError>
+where
+    T: Into<ReconstructionLowerBound> + Copy,
+{
     let participants = assert_sign_inputs(participants, threshold, me, coordinator)?;
 
     let comms = Comms::with_buffer_capacity(EDDSA_SIGN_V2_MAX_INCOMING_COORDINATOR_ENTRIES);
@@ -118,7 +125,7 @@ async fn do_sign_coordinator_v1(
     rng: &mut impl CryptoRngCore,
 ) -> Result<SignatureOption, ProtocolError> {
     // --- Round 1.
-    // * Wait for other parties' commitments.
+    // * Compute and (implicitly) send commitments.
 
     let mut commitments_map: BTreeMap<frost_ed25519::Identifier, round1::SigningCommitments> =
         BTreeMap::new();
@@ -126,16 +133,16 @@ async fn do_sign_coordinator_v1(
     // signing share is the private_share
     let signing_share = keygen_output.private_share;
 
-    // Step 1.1 (and implicitely 1.2)
+    // Step 1.1 (and implicitly 1.2)
     let (nonces, commitments) = round1::commit(&signing_share, rng);
     let nonces = Zeroizing::new(nonces);
     commitments_map.insert(me.to_identifier()?, commitments);
 
     // --- Round 2
-    // * Send collected commitments for each party signature share
+    // * Receive others' commitments, then send the signing package.
 
-    // Step 2.1
     let commit_waitpoint = chan.next_waitpoint();
+    // Step 2.1 and 2.2
     for (from, commitment) in recv_from_others(&chan, commit_waitpoint, &participants, me).await? {
         // Step 2.2
         commitments_map.insert(from.to_identifier()?, commitment);
@@ -152,14 +159,14 @@ async fn do_sign_coordinator_v1(
 
     // --- Round 3
     // * Wait for each other's signature share
-    // Step 3.3 (3.1 and 3.2 are implicit)
+    // Step 3.3 (3.1 and 3.2 are no-ops for the coordinator since it created the signing package)
     let vk_package = keygen_output.public_key;
     let key_package = construct_key_package(threshold, me, signing_share, &vk_package)?;
     let key_package = Zeroizing::new(key_package);
     let signature_share = round2::sign(&signing_package, &nonces, &key_package)
         .map_err(|e| ProtocolError::AssertionFailed(e.to_string()))?;
 
-    // Step 3.5 (3.4 is implicit)
+    // Step 3.5 (3.4 is a no-op for the coordinator since it doesn't send its own share to itself)
     signature_shares.insert(me.to_identifier()?, signature_share);
     for (from, signature_share) in recv_from_others(&chan, r2_wait_point, &participants, me).await?
     {
@@ -174,9 +181,14 @@ async fn do_sign_coordinator_v1(
     // We supply empty map as `verifying_shares` because we have disabled "cheater-detection" feature flag.
     // Feature "cheater-detection" only points to a malicious participant, if there's such.
     // It doesn't bring any additional guarantees.
-    let public_key_package = PublicKeyPackage::new(BTreeMap::new(), vk_package);
-    let signature = aggregate(&signing_package, &signature_shares, &public_key_package)
-        .map_err(|e| ProtocolError::AssertionFailed(e.to_string()))?;
+    let public_key_package = PublicKeyPackage::new(BTreeMap::new(), vk_package, None);
+    let signature = aggregate_custom(
+        &signing_package,
+        &signature_shares,
+        &public_key_package,
+        CheaterDetection::Disabled,
+    )
+    .map_err(|e| ProtocolError::AssertionFailed(e.to_string()))?;
 
     Ok(Some(signature))
 }
@@ -200,8 +212,7 @@ async fn do_sign_coordinator_v2(
     message: Vec<u8>,
 ) -> Result<SignatureOption, ProtocolError> {
     // --- Round 1
-    // * Receive others signature shares.
-    // * Compute my signature share.
+    // * Compute my signature share and receive other's shares.
     // * Output the signature.
     let signing_package = frost_ed25519::SigningPackage::new(
         presignature.commitments_map.clone(),
@@ -222,7 +233,7 @@ async fn do_sign_coordinator_v2(
         .map_err(|e| ProtocolError::AssertionFailed(e.to_string()))?;
     signature_shares.insert(me.to_identifier()?, signature_share);
 
-    // Step 1.3 (implicit step 1.2)
+    // Step 1.3 (step 1.2 is performed by the other participants)
     let sign_waitpoint = chan.next_waitpoint();
     for (from, signature_share) in
         recv_from_others(&chan, sign_waitpoint, &participants, me).await?
@@ -236,10 +247,15 @@ async fn do_sign_coordinator_v2(
     // We supply empty map as `verifying_shares` because we have disabled "cheater-detection" feature flag.
     // Feature "cheater-detection" only points to a malicious participant, if there's such.
     // It doesn't bring any additional guarantees.
-    let public_key_package = PublicKeyPackage::new(BTreeMap::new(), vk_package);
+    let public_key_package = PublicKeyPackage::new(BTreeMap::new(), vk_package, None);
     // Step 1.4 and 1.5
-    let signature = aggregate(&signing_package, &signature_shares, &public_key_package)
-        .map_err(|e| ProtocolError::AssertionFailed(e.to_string()))?;
+    let signature = aggregate_custom(
+        &signing_package,
+        &signature_shares,
+        &public_key_package,
+        CheaterDetection::Disabled,
+    )
+    .map_err(|e| ProtocolError::AssertionFailed(e.to_string()))?;
 
     Ok(Some(signature))
 }
@@ -343,7 +359,8 @@ fn do_sign_participant_v2(
     message: &[u8],
 ) -> Result<SignatureOption, ProtocolError> {
     // --- Round 1
-    // * Send signature share.
+    // * Compute signature share.
+    // * Send signature share to coordinator.
     if coordinator == me {
         return Err(ProtocolError::AssertionFailed(
             "the do_sign_participant function cannot be called
@@ -469,25 +486,26 @@ async fn fut_wrapper_v2(
 #[cfg(test)]
 mod test {
     use super::{
-        fut_wrapper_v1, fut_wrapper_v2, EDDSA_SIGN_V1_MAX_INCOMING_COORDINATOR_ENTRIES,
+        EDDSA_SIGN_V1_MAX_INCOMING_COORDINATOR_ENTRIES,
         EDDSA_SIGN_V1_MAX_INCOMING_PARTICIPANT_ENTRIES,
         EDDSA_SIGN_V2_MAX_INCOMING_COORDINATOR_ENTRIES,
-        EDDSA_SIGN_V2_MAX_INCOMING_PARTICIPANT_ENTRIES,
+        EDDSA_SIGN_V2_MAX_INCOMING_PARTICIPANT_ENTRIES, fut_wrapper_v1, fut_wrapper_v2,
     };
     use crate::test_utils::{
-        assert_buffer_capacity, assert_public_key_invariant, build_frost_key_packages_with_dealer,
-        expected_buffer_by_role, generate_participants, generate_participants_with_random_ids,
-        one_coordinator_output, run_keygen, run_refresh, run_reshare, MockCryptoRng,
+        MockCryptoRng, assert_buffer_capacity, assert_public_key_invariant,
+        build_frost_key_packages_with_dealer, expected_buffer_by_role, generate_participants,
+        generate_participants_with_random_ids, one_coordinator_output, run_keygen, run_refresh,
+        run_reshare,
     };
     use crate::{
+        Protocol,
         crypto::hash::hash,
         frost::eddsa::{
+            SignatureOption,
             sign::{sign_v1, sign_v2},
             test::{run_presign, run_sign_v1, run_sign_v2},
-            SignatureOption,
         },
         participants::{Participant, ParticipantList},
-        Protocol,
     };
     use frost_core::{Field, Group, Scalar};
     use frost_ed25519::{Ed25519Group, Ed25519ScalarField, Ed25519Sha512, VerifyingKey};
@@ -663,11 +681,13 @@ mod test {
             let signature = one_coordinator_output(data, coordinator).unwrap();
 
             // externally verify with the signature
-            assert!(key_packages[0]
-                .1
-                .public_key
-                .verify(msg_hash.as_ref(), &signature)
-                .is_ok());
+            assert!(
+                key_packages[0]
+                    .1
+                    .public_key
+                    .verify(msg_hash.as_ref(), &signature)
+                    .is_ok()
+            );
             // test refresh
             key_packages = run_refresh(&participants, &key_packages, threshold, &mut rng);
         }
@@ -698,11 +718,13 @@ mod test {
             let signature = one_coordinator_output(data, coordinator).unwrap();
 
             // externally verify with the signature
-            assert!(key_packages[0]
-                .1
-                .public_key
-                .verify(msg_hash.as_ref(), &signature)
-                .is_ok());
+            assert!(
+                key_packages[0]
+                    .1
+                    .public_key
+                    .verify(msg_hash.as_ref(), &signature)
+                    .is_ok()
+            );
             // test refresh
             key_packages = run_refresh(&participants, &key_packages, threshold, &mut rng);
         }
@@ -749,11 +771,13 @@ mod test {
             let signature = one_coordinator_output(data, coordinator).unwrap();
 
             // externally verify with the signature
-            assert!(key_packages[0]
-                .1
-                .public_key
-                .verify(msg_hash.as_ref(), &signature)
-                .is_ok());
+            assert!(
+                key_packages[0]
+                    .1
+                    .public_key
+                    .verify(msg_hash.as_ref(), &signature)
+                    .is_ok()
+            );
             // test refresh
             new_participants.push(Participant::from(20u32 + i));
             let new_threshold = threshold + 1;
@@ -810,11 +834,13 @@ mod test {
             let signature = one_coordinator_output(data, coordinator).unwrap();
 
             // externally verify with the signature
-            assert!(key_packages[0]
-                .1
-                .public_key
-                .verify(msg_hash.as_ref(), &signature)
-                .is_ok());
+            assert!(
+                key_packages[0]
+                    .1
+                    .public_key
+                    .verify(msg_hash.as_ref(), &signature)
+                    .is_ok()
+            );
             // test refresh
             new_participants.push(Participant::from(20u32 + i));
             let new_threshold = threshold + 1;
@@ -872,11 +898,13 @@ mod test {
             let signature = one_coordinator_output(data, coordinator).unwrap();
 
             // externally verify with the signature
-            assert!(key_packages[0]
-                .1
-                .public_key
-                .verify(msg_hash.as_ref(), &signature)
-                .is_ok());
+            assert!(
+                key_packages[0]
+                    .1
+                    .public_key
+                    .verify(msg_hash.as_ref(), &signature)
+                    .is_ok()
+            );
             // test refresh
             new_participants.pop();
             let new_threshold = threshold - 1;
@@ -1024,11 +1052,13 @@ mod test {
             let signature = one_coordinator_output(data, coordinator).unwrap();
 
             // externally verify with the signature
-            assert!(key_packages[0]
-                .1
-                .public_key
-                .verify(msg_hash.as_ref(), &signature)
-                .is_ok());
+            assert!(
+                key_packages[0]
+                    .1
+                    .public_key
+                    .verify(msg_hash.as_ref(), &signature)
+                    .is_ok()
+            );
             // test refresh
             new_participants.pop();
             let new_threshold = threshold - 1;

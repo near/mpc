@@ -1,21 +1,21 @@
 #![allow(clippy::indexing_slicing)]
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use rand_core::SeedableRng;
 
 mod bench_utils;
 use crate::bench_utils::{
-    analyze_received_sizes, ed25519_prepare_sign_v1, PreparedOutputs, MAX_MALICIOUS,
-    RECONSTRUCTION_LOWER_BOUND, SAMPLE_SIZE,
+    MAX_MALICIOUS, PreparedOutputs, RECONSTRUCTION_LOWER_BOUND, SAMPLE_SIZE,
+    analyze_received_sizes, ed25519_prepare_sign_v1,
 };
 use threshold_signatures::{
-    frost::eddsa::{sign::sign_v1, KeygenOutput, SignatureOption},
+    ReconstructionLowerBound,
+    frost::eddsa::{KeygenOutput, SignatureOption, sign::sign_v1},
     participants::Participant,
     protocol::Protocol,
     test_utils::{
-        run_protocol_and_take_snapshots, run_simulated_protocol, MockCryptoRng, Simulator,
+        MockCryptoRng, Simulator, run_protocol_and_take_snapshots, run_simulated_protocol,
     },
-    ReconstructionLowerBound,
 };
 
 type PreparedSimulatedSig = PreparedOutputs<SignatureOption>;

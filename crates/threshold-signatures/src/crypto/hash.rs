@@ -68,12 +68,12 @@ pub fn domain_separate_hash<T: Serialize>(
 
 #[cfg(test)]
 pub mod test {
-    use elliptic_curve::{ops::Reduce, Curve, CurveArithmetic};
+    use elliptic_curve::{Curve, CurveArithmetic, ops::Reduce};
     use subtle::ConstantTimeEq;
 
     use crate::crypto::hash::DomainSeparator;
 
-    use super::{domain_separate_hash, hash, HashOutput};
+    use super::{HashOutput, domain_separate_hash, hash};
     use digest::{Digest, FixedOutput};
     use ecdsa::hazmat::DigestPrimitive;
     use k256::{FieldBytes, Scalar, Secp256k1};
