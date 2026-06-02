@@ -208,6 +208,50 @@ async fn extract__should_return_non_canonical_block_when_receipt_blockhash_diffe
     );
 }
 
+/// `getblockheader` looks a header up by hash, so a backend that echoes back a *different* hash
+/// is misbehaving, simulating an RPC that returned the wrong block for the queried hash.
+#[tokio::test]
+async fn extract__should_return_inconsistent_rpc_response_when_get_block_header_echoes_different_hash()
+ {
+    // given
+    let tx_id = BitcoinTransactionHash::from([1; 32]);
+    let threshold = BlockConfirmations::from(1u64);
+    let receipt_hash_bytes = [0xbb; 32];
+    let returned_hash_bytes = [0xdd; 32];
+    let receipt_blockhash = TransportBitcoinBlockHash::from(receipt_hash_bytes);
+    let returned_blockhash = TransportBitcoinBlockHash::from(returned_hash_bytes);
+
+    let tx_response = GetRawTransactionVerboseResponse {
+        blockhash: receipt_blockhash,
+        confirmations: TEST_SUFFICIENT_CONFIRMATIONS,
+    };
+    let block_response = GetBlockHeaderVerboseResponse {
+        hash: returned_blockhash,
+        height: TEST_BLOCK_HEIGHT,
+    };
+
+    let mock_client = SequentialResponseMockClientBuilder::new()
+        .with_response(tx_response)
+        .with_response(block_response)
+        .build();
+    let inspector = BitcoinInspector::new(mock_client);
+
+    // when
+    let response = inspector
+        .extract(tx_id, threshold, vec![BitcoinExtractor::BlockHash])
+        .await;
+
+    // then
+    assert_matches!(
+        response,
+        Err(ForeignChainInspectionError::InconsistentRpcResponse {
+            requested_hash,
+            returned_hash,
+        }) if requested_hash == foreign_chain_inspector::HexBytes(receipt_hash_bytes.to_vec())
+            && returned_hash == foreign_chain_inspector::HexBytes(returned_hash_bytes.to_vec())
+    );
+}
+
 #[tokio::test]
 async fn extract__should_propagate_get_block_header_deserialize_error() {
     // given: getrawtransaction succeeds; getblockheader returns a payload that fails to deserialize.

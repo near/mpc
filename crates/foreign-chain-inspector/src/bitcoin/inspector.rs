@@ -103,14 +103,13 @@ where
             .request(GET_BLOCK_HEADER_METHOD, &get_block_header_args)
             .await?;
 
-        // Defensive: `getblockheader(receipt_blockhash)` must echo back the same hash. A
-        // disagreement means the RPC backend has returned a different block than queried.
+        // Defensive: `getblockheader` looks the header up *by hash*, so a well-behaved backend
+        // always echoes back the hash we queried
         if block.hash != receipt_blockhash {
-            return Err(non_canonical_block_error(
-                block.height,
-                receipt_blockhash,
-                block.hash,
-            ));
+            return Err(ForeignChainInspectionError::InconsistentRpcResponse {
+                requested_hash: (*receipt_blockhash).to_vec().into(),
+                returned_hash: (*block.hash).to_vec().into(),
+            });
         }
 
         let get_block_hash_args = GetBlockHashArgs {
@@ -132,14 +131,14 @@ where
     }
 }
 
-/// Bitcoin block hashes travel over JSON-RPC in reversed ("RPC byte order") form, so the
-/// bytes recorded here are reversed relative to the on-chain orientation a block explorer
-/// expects. Triagers reading this error need to reverse the hex to look the block up.
 fn non_canonical_block_error(
     block_number: u64,
     receipt_blockhash: TransportBitcoinBlockHash,
     canonical_blockhash: TransportBitcoinBlockHash,
 ) -> ForeignChainInspectionError {
+    // Bitcoin block hashes travel over JSON-RPC in reversed ("RPC byte order") form, so the
+    // bytes recorded here are reversed relative to the on-chain orientation a block explorer
+    // expects. A triager reading this error needs to reverse the hex to look the block up.
     ForeignChainInspectionError::NonCanonicalBlock {
         block_number,
         receipt_hash: (*receipt_blockhash).to_vec().into(),
