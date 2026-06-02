@@ -52,7 +52,7 @@ with the remaining signers. The cost is stranded pre-generated assets — see
 
 Each node fans the query out to its whitelisted providers for `C` and accepts a
 result only when ≥ `quorum(C)` return the same response. If fewer agree, the node
-errors out and produces no partial signature.
+errors out and produces no signature share.
 
 **This sub-quorum outcome must be terminal — the leader must not re-attempt the
 request.** Implementation requirement, not current behavior: the generic queue
@@ -81,7 +81,7 @@ each independently verified it (each via its own RPC quorum). Fewer than
 `threshold` can never force a false attestation. This holds because the
 supported-set source never touches the per-request verification path: a node
 treated as down — genuinely offline or just under-provisioned — does not
-participate, so it can never push a partial signature toward a false result.
+participate, so it can never contribute a signature share toward a false result.
 Over-claiming support doesn't help an attacker either, as the node just fails its
 RPC quorum and does not participate.
 
