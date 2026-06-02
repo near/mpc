@@ -187,8 +187,8 @@ The returned cluster exposes:
 - **Data management:** `wipe_db`, `set_block_ingestion`.
 - **Request submission:** `send_sign_request`, `send_ckd_request`,
   `send_verify_foreign_transaction`.
-- **Foreign chain policy:** `view_foreign_chain_policy`,
-  `view_foreign_chain_policy_proposals`, `vote_foreign_chain_policy`.
+- **Foreign chains:** `view_foreign_chains_supported_by_contract`,
+  `view_foreign_chain_configurations`, `register_foreign_chain_config`.
 - **User accounts:** `user_client`, `default_user_account`.
 
 `Drop` kills all running nodes; the temp directory is held via `test_dir` and
