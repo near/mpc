@@ -7,7 +7,7 @@ Status: Proposed — supersedes the all-participant intersection rule in
 ## Background
 
 `get_supported_foreign_chains()` is the set of chains the network advertises as
-verifiable; `verify_foreign_transaction` rejects any request whose target chain is
+verifiable. `verify_foreign_transaction` rejects any request whose target chain is
 not in it.
 
 Today that set is the **strict intersection** across all active participants, so a
@@ -69,21 +69,21 @@ detect it. Per-node registration (`register_foreign_chain_config` /
 `get_foreign_chain_support_by_node`) is **retained solely for this** — it no longer
 feeds the supported set, but lets monitoring **alert when an active node does not
 support a supported chain**. That alert fires for *us* (maintainers), who then
-nudge the operator; ideally operators also run their own coverage alert and fix
+nudge the operator. Ideally operators also run their own coverage alert and fix
 the gap first.
 
 ## Guarantees preserved
 
-Two guarantees hold today; this rule keeps both.
+Two guarantees hold today, and this rule keeps both.
 
 **Security** — the network signs an observation only if ≥ `threshold` participants
-each independently verified it (each via its own RPC quorum); fewer than
+each independently verified it (each via its own RPC quorum). Fewer than
 `threshold` can never force a false attestation. This holds because the
 supported-set source never touches the per-request verification path: a node
 treated as down — genuinely offline or just under-provisioned — does not
 participate, so it can never push a partial signature toward a false result.
-Over-claiming support doesn't help an attacker either; the node just fails its RPC
-quorum and does not participate.
+Over-claiming support doesn't help an attacker either, as the node just fails its
+RPC quorum and does not participate.
 
 **Liveness** — a request completes as long as ≥ `threshold` supporting participants
 are online, the same `n − threshold` fault tolerance as the rest of signing. A
@@ -114,7 +114,7 @@ per-node-input coupling is exactly what enables the single-operator DoS we remov
 
 ## Documentation impact
 
-Adopting this rule makes the following stale; update in the same change (per the
+Adopting this rule makes the following stale. Update in the same change (per the
 doc-alignment rule):
 
 - `docs/foreign-chain-transactions.md` — "Contract State (Foreign Chain
