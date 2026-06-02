@@ -287,7 +287,7 @@ general-purpose `sign()` keys, even if the same account and derivation path are 
 
 ## Contract State (Foreign Chain Configurations)
 
-The contract stores a foreign-chain configuration **per participant** — there is no global, voted-on policy. The set of chains the network collectively supports is derived as the **intersection** of chains registered by every active participant.
+The set of chains the network collectively supports is derived from the **on-chain RPC whitelist** (`foreign_chain_rpc_whitelist`): a chain is supported iff the network has voted in a `ChainEntry` for it. See [Calculating the supported foreign-chain set](design/calculating-supported-foreign-chains.md). The contract still stores a foreign-chain configuration **per participant**, but that registration no longer determines the supported set — it is retained as a monitoring/alerting signal (detecting an active node that does not support a supported chain).
 
 ```rust
 pub struct ForeignChainSupportByNode {
@@ -312,8 +312,8 @@ pub enum ForeignChain {
 Relevant contract methods:
 
 * `register_foreign_chain_config(foreign_chain_configuration: ForeignChainConfiguration)` — call method. The authenticated participant (re)registers its per-chain provider set. The call is idempotent.
-* `get_supported_foreign_chains() -> SupportedForeignChains` — view method. Returns the set of chains that appear in **every** active participant's registered configuration.
-* `get_foreign_chain_support_by_node() -> ForeignChainSupportByNode` — view method. Returns each participant's registered set of supported chains.
+* `get_supported_foreign_chains() -> SupportedForeignChains` — view method. Returns the set of chains present in the on-chain RPC whitelist (`foreign_chain_rpc_whitelist`).
+* `get_foreign_chain_support_by_node() -> ForeignChainSupportByNode` — view method. Returns each participant's registered set of supported chains. Used for monitoring/alerting (does every active node support every supported chain?), not for computing the supported set.
 
 ## On-chain RPC Provider Whitelist
 
@@ -555,8 +555,8 @@ See "Contract State (Foreign Chain Configurations)" above.
 * Node config contains chain RPC providers and timeouts (API keys stay local).
 * On startup, each node submits a single `register_foreign_chain_config` transaction derived from its local configuration. The call is idempotent.
 * Nodes do **not** vote, poll, or wait for network-wide consensus — the transaction is sent and startup continues.
-* A chain appears in `get_supported_foreign_chains()` only once **every** active participant has registered it.
-* Per-participant registrations can be inspected with `get_foreign_chain_support_by_node()`.
+* The supported set is the on-chain RPC whitelist, not these registrations: a chain appears in `get_supported_foreign_chains()` once the network votes in a `ChainEntry` for it. Every active node is expected to support every supported chain; a node that does not is treated like a node that is down for that chain (it abstains) and is surfaced by alerting. See [Calculating the supported foreign-chain set](design/calculating-supported-foreign-chains.md).
+* Per-participant registrations can be inspected with `get_foreign_chain_support_by_node()`, and feed the alerting that detects a node not supporting a supported chain.
 
 ### Configuration (Node)
 
@@ -619,6 +619,6 @@ providers require no auth at all.
 * **Provider availability**: Outages or rate limits can cause verification failures and reduced
   signing availability.
 * **Finality semantics**: Finality definitions differ across chains; mapping them correctly is critical.
-* **Rollout coordination**: A chain is only considered supported once **every** active participant has registered it; a single lagging operator can delay enabling a new chain.
+* **Incomplete chain coverage**: A chain is supported as soon as the network votes in its whitelist entry, independent of any single operator. A node that hasn't configured a supported chain is treated like a node that is down for it — it abstains from that chain's verification requests, and the pre-generated triples/presignatures it co-owns become offline assets and are discarded unused. Since these are shared signing assets (domain-agnostic triples; an ECDSA presignature pool reused for ordinary `sign()`), the waste reduces overall signing throughput across domains, not just that chain's availability. This is mitigated operationally by alerting on any active node that does not support a supported chain, rather than by the protocol.
 * **Config drift**: Nodes missing required provider keys will fail startup validation.
 * **Extractor correctness**: Bugs or ambiguous specifications in extractors could produce incorrect values.

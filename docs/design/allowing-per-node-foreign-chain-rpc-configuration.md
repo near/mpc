@@ -20,8 +20,8 @@ requiring all other nodes to have the exact same configuration.
 1. RPC providers are whitelisted by being voted into the contract by node operators submitting votes. The whitelist is **per-chain**, keyed by `(ForeignChain, ProviderId)`.
 2. The contract owns the connection config (`base_url`, `auth_scheme`, `chain_routing`), not the operator. Operator yaml carries `provider_id` + a `token_env` reference only.
 3. Nodes do not need to have local configurations covering all whitelisted RPC providers — a quorum number of locally-configured providers per chain is sufficient.
-4. Every node partaking in a foreign signature verification request queries all its locally configured RPC providers for the relevant chain, independently of other nodes. A quorum of those RPC providers must agree on the verification.
-5. A foreign chain is considered supported by the MPC network iff every node has at least a quorum number of whitelisted RPC providers configured for that chain. The quorum threshold is per-chain.
+4. Every node partaking in a foreign signature verification request queries all its locally configured RPC providers for the relevant chain, independently of other nodes. A quorum of those RPC providers must agree on the verification; if fewer than the quorum agree, the node errors out that foreign-tx validation and does **not** retry the request.
+5. A foreign chain is considered supported by the MPC network iff it has an entry in the on-chain RPC whitelist (a voted-in `ChainEntry`). Every active node is required to support every supported chain (configure at least a per-chain quorum number of whitelisted RPC providers for it); a node that does not is treated like a node that is down for that chain — it abstains, and the pre-generated triples/presignatures it co-owns become offline assets and are discarded unused (these are shared signing assets, so the waste hits overall signing throughput across domains, not just that chain) — and is surfaced by alerting. The quorum threshold is per-chain. See [Calculating the supported foreign-chain set](calculating-supported-foreign-chains.md).
 
 ## Why
 The current setup has many limitations and was implemented as an MVP.
@@ -107,13 +107,13 @@ Since the nodes are running in a Trusted Execution Environment (TEE), this funct
 
 ### Individual node quorum of RPC providers for verification requests
 
-When a foreign TX verification request is processed by a set of nodes, every node individually queries its locally-configured RPC providers for that chain. A node considers the foreign TX verified iff at least a per-chain quorum number of providers agreed.
+When a foreign TX verification request is processed by a set of nodes, every node individually queries its locally-configured RPC providers for that chain. A node considers the foreign TX verified iff at least a per-chain quorum number of providers agreed. If fewer than the quorum agree, the node errors out the validation and does **not** retry the request — it abstains for that request rather than re-querying or falling back.
 
 The quorum value comes from on-chain `ChainEntry.threshold`, voted in as part of the same `ChainVote` that voted the chain's provider list — so participants agree on both "which providers are trusted" and "how many of them must concur" in one round.
 
 ### Nodes submit the configured foreign chains on-chain
 
-Nodes submit their per-chain provider set on-chain so the network knows which chains they support. Functionality for this was added on the contract side in [#2784](https://github.com/near/mpc/pull/2784) and is kept — the whitelist is a new layer on top, not a replacement.
+Nodes submit their per-chain provider set on-chain so the network knows which chains they support. Functionality for this was added on the contract side in [#2784](https://github.com/near/mpc/pull/2784) and is kept — but its role is now **monitoring/alerting only**: the supported set is derived from the on-chain whitelist, while these registrations let us detect (and alert on) any active node that does not support a supported chain. See [Calculating the supported foreign-chain set](calculating-supported-foreign-chains.md).
 
 ## Rollout
 

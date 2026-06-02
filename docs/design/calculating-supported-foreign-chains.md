@@ -25,79 +25,98 @@ agree for that node to accept a verification result). The new rule builds on it.
 
 ## Proposal
 
-A chain `C` is supported by the network **iff at least a protocol-signing-threshold
-number of active participants each support `C`**, where a node *supports* `C` iff
-it has at least `quorum(C)` whitelisted RPC providers configured for `C`:
+The supported set is derived from the **on-chain RPC whitelist**, not from
+per-node registration:
 
 ```
-supported(C)  ⇔
-    |{ node ∈ active_participants :
-         | configured_providers(node, C) ∩ whitelist(C) |  ≥  quorum(C) }|
-    ≥  protocol_signing_threshold
+supported(C)  ⇔  AllowedProviders.entries contains an entry for C
+                 (non-empty provider list + its RPC response quorum)
 ```
 
-All inputs are read from current on-chain state:
+`get_supported_foreign_chains()` therefore returns `AllowedProviders.entries`'
+keys. The set is vote-gated whitelist state: a chain becomes supported when the
+network votes in a `ChainEntry` for it (see the whitelist vote semantics in
+[`docs/foreign-chain-transactions.md`](../foreign-chain-transactions.md#on-chain-rpc-provider-whitelist)),
+and no per-node input can subtract a chain from it.
+
+**Every active node is required to support every supported chain.** A node
+*supports* `C` iff it has at least `quorum(C)` whitelisted RPC providers
+configured for `C` (the minimum it needs to ever reach its RPC response quorum at
+verification time). Requiring all nodes to support all chains is the option that
+deviates least from today's liveness and security guarantees — under the old
+intersection rule, every node already had to register a chain for it to count —
+while removing the single-operator DoS.
+
+A node that does **not** support a supported chain is treated **identically to a
+node that is down** for that chain: it abstains from `C`'s verification requests,
+and the request proceeds with the remaining signers (subject to the usual signing
+threshold). The accepted cost is wasted assets — and the waste is **not confined
+to chain `C`**. Pre-generated triples and presignatures are usable only while
+every participant associated with them is alive, so the ones co-owned with a node
+treated as offline get stranded and discarded as offline assets, exactly as a
+genuinely down node strands the assets generated with it. These are **shared
+signing assets**, not foreign-chain-specific: triples are domain-agnostic, and
+foreign-tx signing reuses the same ECDSA presignature pool as ordinary `sign()`
+(see `crates/node/src/providers/verify_foreign_tx.rs`). So the cost falls on the
+network's overall signing capacity across all domains, not just on `C`'s
+availability. We consider this acceptable in exchange for the simplicity and the
+DoS resistance.
 
 | symbol | meaning | source |
 |---|---|---|
 | `whitelist(C)` | provider ids the network trusts for `C` | `AllowedProviders.entries[C].providers` |
 | `quorum(C)` | per-chain RPC response quorum | `AllowedProviders.entries[C].quorum` |
-| `protocol_signing_threshold` | signers required per request | `self.threshold()?.value()` |
-| `configured_providers(node, C)` | provider ids the node registered for `C` | per-node registration (see below) |
 
-This involves **two distinct quorums**, by design:
+## Verification behavior
 
-1. **Per-node provider quorum — `quorum(C)`.** A node can only reach its RPC
-   response quorum at verification time if it has at least that many whitelisted
-   providers configured. A node with fewer can never produce a verification for
-   `C`, so it does not count as supporting `C`.
-2. **Per-network node quorum — the protocol signing threshold.** A foreign-tx
-   verification needs `threshold` independent signers, each verifying locally. If
-   fewer than `threshold` nodes can verify `C`, no request on `C` can ever gather
-   enough partial signatures, so advertising `C` would be dishonest. Requiring
-   `threshold` nodes — rather than *all* `n` — is exactly what stops one operator
-   from removing a chain.
+When a foreign-tx verification request is processed, each node fans out the query
+to its locally-configured whitelisted providers for `C`. If fewer than `quorum(C)`
+of them return the same response, the node **errors out the foreign-tx validation
+and does not retry** that request — it abstains for that request rather than
+re-querying or falling back. This keeps the trust property crisp: a result is only
+accepted when an RPC response quorum genuinely agreed, and a node that can't reach
+that bar contributes nothing rather than a weaker observation.
 
-### Per-node registration
+## Monitoring and alerting
 
-To evaluate the rule the contract must know, per node and per chain, which
-*whitelisted* providers that node has configured. Nodes therefore register a
-per-chain set of `provider_id`s (the providers they resolved from local config
-against the on-chain whitelist), rather than just a flat set of chains as today.
-
-Registering provider *ids* — not a pre-computed "I support `C`" flag — means the
-supported set re-derives automatically when the whitelist or `quorum(C)` changes
-(e.g. a provider is voted out): no node has to re-register for the network's view
-to stay correct.
-
-A node that registers a provider id not present in `whitelist(C)` simply doesn't
-have it counted toward `quorum(C)`; registration is a liveness hint, never a
-trust anchor.
+Because a node that doesn't support a supported chain is silently treated as down,
+we need to detect that state so it doesn't quietly become the norm (which would
+erode the real availability margin for that chain). Per-node registration —
+`register_foreign_chain_config` / `get_foreign_chain_support_by_node` — is
+**retained solely as the signal for this**: it no longer feeds the supported-set
+computation, but it lets monitoring compare each active node's registered chains
+against the supported set and **alert when any active node does not support a
+supported chain**. This alert fires for *us* (the network maintainers) off the
+on-chain registrations; we then nudge the affected operator to fix that node's
+configuration. Ideally each operator also runs their own alert that checks their
+node covers every supported chain, so they catch and fix the gap before we have
+to chase them.
 
 ## Why this is safe
 
-- **It is a liveness floor, not a trust change.** `≥ threshold` supporting nodes
-  guarantees at least one viable signing committee exists for `C`. Trust still
-  comes entirely from the per-node RPC response quorum and the chain-identity
-  probe at verification time; a node that over-claims support just fails to
-  verify and abstains.
-- **A chain with no whitelist entry is never supported** (`whitelist(C)` empty),
-  which is correct: a chain with no network-trusted providers must not be
-  advertised.
-- **Single-operator DoS is gone.** One node registering nothing (or being slow
-  to register) can at most reduce the supporting-node count by one; as long as
-  `threshold` other nodes support `C`, `C` stays up.
+- **Single-operator DoS is gone.** The supported set is vote-gated whitelist
+  state, not per-node input. One node registering nothing — or being slow to
+  register — cannot remove a chain; at worst it is treated as down for that chain,
+  exactly like any offline node, and the alert fires.
+- **A chain with no whitelist entry is never supported**, which is correct: a
+  chain with no network-trusted providers must not be advertised.
+- **Trust is unchanged.** It still comes entirely from the per-node RPC response
+  quorum and the chain-identity probe at verification time; a node that lacks
+  enough providers simply abstains. Requiring all nodes to support all chains does
+  not weaken any per-request trust property — it only sets the availability
+  expectation.
 
 ## Known tradeoff
 
-If exactly `threshold` nodes support `C`, runtime flakiness of any one of them
-still causes individual requests to time out — `threshold` is the minimum for the
-chain to be *advertisable*, not a comfortable availability margin. Operators who
-want headroom run more nodes with `≥ quorum(C)` providers; the rule does not cap
-how many nodes may support a chain. We deliberately do not introduce a separate,
-larger "support quorum" knob — the signing threshold is the precise liveness
-requirement, and a higher bar would reintroduce the easier-to-DoS behavior we are
-removing.
+A node that doesn't support a supported chain strands the pre-generated
+triples/presignatures it co-owns — they become offline assets and are discarded
+unused. Because these are shared assets (domain-agnostic triples; an ECDSA
+presignature pool reused for ordinary `sign()`), the cost is borne by overall
+signing throughput across domains, not just by chain `C`'s availability margin. The mitigation is operational rather than
+protocol-level: the alerting above keeps coverage high, and operators are expected
+to configure every node for every supported chain. We deliberately do **not** make
+the supported set adapt to which nodes happen to support a chain — that is exactly
+the per-node-input coupling whose removal kills the single-operator DoS.
 
 ## Documentation impact
 
@@ -111,4 +130,4 @@ the same change (per the repo's doc-alignment rule):
   intersection rule.
 - `docs/design/allowing-per-node-foreign-chain-rpc-configuration.md` requirement
   #5 currently states "**every** node has at least a quorum number of whitelisted
-  RPC providers configured" — change to the threshold-of-nodes rule above.
+  RPC providers configured" — change to the whitelist-driven rule above.
