@@ -179,7 +179,7 @@ impl ThresholdParameters {
 ///
 /// An empty overlay means "keep current per-domain thresholds"; a populated map
 /// must reference only existing domains (validated in
-/// [`super::super::state::running::RunningContractState::process_new_parameters_proposal`]).
+/// `RunningContractState::process_new_parameters_proposal`).
 #[near(serializers=[borsh, json])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct ProposedThresholdParameters {
