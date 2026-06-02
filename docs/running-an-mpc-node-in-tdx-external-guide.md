@@ -405,7 +405,10 @@ Create a Dockerfile file with the following contents:
 ```shell
 # Dockerfile
 FROM rust:1.86.0@sha256:300ec56abce8cc9448ddea2172747d048ed902a3090e6b57babb2bf19f754081 AS kms-builder
-ARG DSTACK_REV
+# Default matches the guest OS image this guide uses (the `dstack-0.5.8/` dir
+# you cd into below). If you use a different OS image version, override it:
+#   --build-arg DSTACK_REV=v<your-version>
+ARG DSTACK_REV=v0.5.8
 WORKDIR /build
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -419,28 +422,32 @@ RUN apt-get update && \
     libclang-dev
 RUN git clone https://github.com/Dstack-TEE/dstack.git
 RUN rustup target add x86_64-unknown-linux-musl
-# Build dstack-mr from the SAME dstack version as your guest OS image (passed via
-# --build-arg DSTACK_REV below). Building from master is not reproducible: the
-# measurement logic changes between releases and may compute different
-# MRTD/RTMR values than the on-chain measurement set was generated with.
+# Build dstack-mr from the SAME dstack version as your guest OS image (DSTACK_REV).
+# Building from master is not reproducible: the measurement logic changes between
+# releases and may compute different MRTD/RTMR values than the on-chain set was
+# generated with.
 RUN cd dstack && git checkout "${DSTACK_REV}" && \
     cargo build --release -p dstack-mr-cli --target x86_64-unknown-linux-musl
 
-# kvin/kms supplies the `dstack-acpi-tables` helper (feeds RTMR0). Pinned by
-# digest for reproducible measurements (this digest is verified to reproduce the
-# canonical RTMR/MRTD values). It is a third-party image; a NEAR/Dstack-owned
-# published image would be a better long-term trust root.
+# kvin/kms supplies the `dstack-acpi-tables` helper (feeds RTMR0). Pinned by digest
+# (not the moving `:latest`) for reproducible measurements: this digest reproduces
+# the MRTD/RTMR0-2 published on-chain in `v1.signer`'s `allowed_os_measurements`
+# (the same values shown in the example output below), so an operator can re-check
+# it. It is a third-party image; a NEAR/Dstack-owned published image would be a
+# better long-term trust root.
 FROM kvin/kms@sha256:ad6a8c5c43aed7278e665cd0960ae5be95060847f7d517633be685cabda95a3d
 COPY --from=kms-builder /build/dstack/target/x86_64-unknown-linux-musl/release/dstack-mr /usr/local/bin/
 ENTRYPOINT ["dstack-mr"]
 CMD []
 ```
 
-Build (pass `DSTACK_REV` = your guest OS image's dstack version, e.g. `v0.5.8`,
-so `dstack-mr`'s measurement logic matches the image and the on-chain values):
+Build. `DSTACK_REV` defaults to the version matching the `dstack-0.5.8/`
+directory above; pass `--build-arg DSTACK_REV=v<version>` if your OS image
+differs, so `dstack-mr`'s measurement logic matches the image and the on-chain
+values:
 
 ```bash
-docker build --build-arg DSTACK_REV=v0.5.8 . -t dstack-mr
+docker build --build-arg DSTACK_REV=v0.5.8 -t dstack-mr .
 ```
 
 Run:
