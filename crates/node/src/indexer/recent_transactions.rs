@@ -1,32 +1,34 @@
-//! In-memory record of recently submitted transactions, surfaced on the
-//! `/debug/recent_transactions` web endpoint.
+//! In-memory record of recently submitted transactions, shown on the
+//! `/debug/recent_transactions` web page.
 //!
-//! Nodes submit transactions to the chain "fire and forget": a successful
-//! submission only means the transaction was routed, not that it was included
-//! or had its intended effect. The transaction processor already observes the
-//! on-chain effect after a delay (see [`super::tx_sender`]), but that outcome
-//! is otherwise only aggregated into a prometheus counter. This buffer keeps a
-//! per-transaction record so an operator can see exactly which transactions a
-//! node submitted, with enough detail (txid, nonce, signer access key, ...) to
-//! debug failures such as out-of-order nonce rejections.
+//! A successful submission only means the RPC accepted the transaction, not
+//! that it was included in a block or had its intended effect. That effect is
+//! observed later (see [`super::tx_sender`]) but otherwise only aggregated into
+//! a prometheus counter. This buffer keeps a per-transaction record (txid,
+//! nonce, signer access key, ...) so an operator can debug failures such as
+//! out-of-order nonce rejections.
 
 use near_account_id::AccountId;
 use near_crypto::Signature;
-use near_indexer_primitives::CryptoHash;
-use near_indexer_primitives::types::{BlockHeight, Nonce};
+use near_indexer_primitives::{
+    CryptoHash,
+    types::{BlockHeight, Nonce},
+};
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_time::{Clock, Utc};
 use std::collections::VecDeque;
-use std::fmt::{self, Display, Write};
+use std::fmt::Write;
 
-/// The most recent submitted transactions to retain. Each entry is small, so a
-/// generous bound is fine; older entries are evicted once the buffer is full.
-const NUM_RECENT_TRANSACTIONS_TO_KEEP: usize = 200;
+/// The most recent submitted transactions to retain; older entries are evicted
+/// once the buffer is full.
+const NUM_RECENT_TRANSACTIONS_TO_KEEP: usize = 2000;
 
-/// The observed lifecycle outcome of a submitted transaction. The terminal
-/// variants mirror the arms of `MPC_OUTGOING_TRANSACTION_OUTCOMES` recorded in
-/// [`super::tx_sender::ensure_send_transaction`], so the page and the metric
-/// never disagree.
+/// The observed lifecycle outcome of a submitted transaction. Every variant
+/// except `Submitting` is recorded as an `outcome` label on the
+/// `MPC_OUTGOING_TRANSACTION_OUTCOMES` metric (in
+/// [`super::tx_sender::ensure_send_transaction`]), so the page and the metric
+/// stay in step. `Submitting` is the pending state before an outcome is
+/// observed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SubmittedTransactionStatus {
     /// The transaction was routed and we are waiting to observe its effect.
@@ -47,26 +49,26 @@ pub enum SubmittedTransactionStatus {
 }
 
 /// A single submitted transaction and its current status.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, derive_more::Display)]
+#[display(
+    "  {submitted_at}  {:<12}  method={method:<24}  signer={signer_account_id} key={}  {}",
+    format!("{status:?}"),
+    String::from(signer_public_key),
+    metadata
+        .as_ref()
+        .map_or_else(|| "(not submitted)".to_string(), |m| m.to_string())
+)]
 pub struct SubmittedTransaction {
-    /// The transaction hash (txid), present once the transaction was built and
-    /// signed. Absent if building/signing failed before a hash was computed.
-    pub tx_hash: Option<CryptoHash>,
-    /// The nonce of the access key the transaction was signed with. Each access
-    /// key has an independent nonce sequence, so this is reported alongside the
-    /// signer key.
-    pub nonce: Option<Nonce>,
+    /// The built-and-signed transaction details (txid, nonce, signature, block
+    /// height). Absent if building/signing failed before they were produced;
+    /// present otherwise, all together.
+    pub metadata: Option<SubmittedTxMetadata>,
     /// The account the transaction was submitted from.
     pub signer_account_id: AccountId,
     /// The access key (public key) the transaction was signed with.
     pub signer_public_key: Ed25519PublicKey,
-    /// The signature over the transaction. Absent if building/signing failed
-    /// before a signed transaction was produced.
-    pub signature: Option<Signature>,
     /// The contract method invoked (e.g. `respond`, `respond_ckd`).
     pub method: &'static str,
-    /// The height of the reference block the transaction was built against.
-    pub block_height: Option<BlockHeight>,
     /// Wall-clock time at which the transaction was recorded as submitted.
     pub submitted_at: Utc,
     /// The current observed outcome.
@@ -83,6 +85,8 @@ pub struct SignerContext {
 
 /// The metadata of a successfully built-and-submitted transaction, captured by
 /// [`super::tx_sender::submit_tx`].
+#[derive(Clone, Debug, PartialEq, Eq, derive_more::Display)]
+#[display("txid={tx_hash}  nonce={nonce}  block={block_height}  sig={signature}")]
 pub struct SubmittedTxMetadata {
     pub tx_hash: CryptoHash,
     pub nonce: Nonce,
@@ -94,57 +98,66 @@ impl SubmittedTransaction {
     /// A record for a transaction that was successfully built and routed and is
     /// now awaiting on-chain observation.
     pub fn submitting(signer: SignerContext, metadata: SubmittedTxMetadata) -> Self {
-        Self {
-            tx_hash: Some(metadata.tx_hash),
-            nonce: Some(metadata.nonce),
-            signer_account_id: signer.account_id,
-            signer_public_key: signer.public_key,
-            signature: Some(metadata.signature),
-            method: signer.method,
-            block_height: Some(metadata.block_height),
-            submitted_at: Clock::real().now_utc(),
-            status: SubmittedTransactionStatus::Submitting,
-        }
+        Self::new(
+            signer,
+            Some(metadata),
+            SubmittedTransactionStatus::Submitting,
+        )
     }
 
     /// A record for a transaction that could not be built, signed, or routed and
     /// so never reached the network.
     pub fn submit_failed(signer: SignerContext) -> Self {
+        Self::new(signer, None, SubmittedTransactionStatus::SubmitFailed)
+    }
+
+    /// Builds a record from the signer context and, when the transaction was
+    /// successfully built, its metadata.
+    fn new(
+        signer: SignerContext,
+        metadata: Option<SubmittedTxMetadata>,
+        status: SubmittedTransactionStatus,
+    ) -> Self {
         Self {
-            tx_hash: None,
-            nonce: None,
+            metadata,
             signer_account_id: signer.account_id,
             signer_public_key: signer.public_key,
-            signature: None,
             method: signer.method,
-            block_height: None,
             submitted_at: Clock::real().now_utc(),
-            status: SubmittedTransactionStatus::SubmitFailed,
+            status,
         }
     }
 }
 
-/// Opaque handle to an entry, used to update its status later. The entry may
-/// have been evicted by the time the update arrives, in which case the update
-/// is a no-op.
+/// Identifies one recorded transaction so its status can be updated later.
+///
+/// Ids are assigned from a monotonically increasing counter, one per recorded
+/// transaction, and never reused. Because the buffer is a strict FIFO (one
+/// entry pushed per id, oldest evicted first), the live ids are always a
+/// contiguous range and an id maps to a deque position by subtraction. A
+/// submission is recorded immediately, but its outcome is only known after a
+/// timeout (see `tx_sender::ensure_send_transaction`), by which point newer
+/// submissions may have evicted the entry; [`RecentTransactions::update_status`]
+/// then finds it in O(1) if it still exists and no-ops if it was evicted.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TransactionRecordId(u64);
 
-/// A bounded, append-mostly log of recently submitted transactions. Newest
-/// entries are at the back; the oldest are evicted once the buffer is full.
+/// A bounded log of recently submitted transactions. Newest entries are at the
+/// back; the oldest are evicted once the buffer is full.
+///
+/// Entries are stored in id order, so lookup by [`TransactionRecordId`] is O(1)
+/// with no auxiliary index: the entry for id `q` (when live) is at deque index
+/// `q - (next_id - len)`.
+///
+/// Not internally synchronized: it is shared as `Arc<Mutex<RecentTransactions>>`
+/// and every method runs under the caller's lock, so concurrent
+/// `record_submitted` / `update_status` / `snapshot` calls are serialized.
+#[derive(Default)]
 pub struct RecentTransactions {
-    entries: VecDeque<(TransactionRecordId, SubmittedTransaction)>,
+    /// Retained transactions in id order; front is oldest, back is newest.
+    entries: VecDeque<SubmittedTransaction>,
     /// Monotonically increasing id assigned to the next recorded transaction.
     next_id: u64,
-}
-
-impl Default for RecentTransactions {
-    fn default() -> Self {
-        Self {
-            entries: VecDeque::with_capacity(NUM_RECENT_TRANSACTIONS_TO_KEEP),
-            next_id: 0,
-        }
-    }
 }
 
 impl RecentTransactions {
@@ -158,22 +171,38 @@ impl RecentTransactions {
         if self.entries.len() >= NUM_RECENT_TRANSACTIONS_TO_KEEP {
             self.entries.pop_front();
         }
-        self.entries.push_back((id, transaction));
+        self.entries.push_back(transaction);
         id
     }
 
-    /// Updates the status of a previously recorded transaction. A no-op if the
-    /// entry has already been evicted.
+    /// Deque index of the entry with the given id, or `None` if it was evicted
+    /// (id below the oldest live id) or never issued (id at or after
+    /// `next_id`). The live window is `[next_id - len, next_id)`; it is empty
+    /// when the buffer is empty. The subtraction runs only after the
+    /// lower-bound check, so it cannot underflow, and the result is
+    /// `< len <= NUM_RECENT_TRANSACTIONS_TO_KEEP`.
+    ///
+    /// Example: after 5 records of which the oldest 2 were evicted, the buffer
+    /// holds ids 2, 3, 4 (front to back) with `next_id == 5`, so
+    /// `oldest_id == 5 - 3 == 2` and the live window is `2..5`. Then:
+    /// - id 3 -> `Some(3 - 2) == Some(1)` (the middle entry),
+    /// - id 2 -> `Some(0)` (the front, oldest live entry),
+    /// - id 0 -> `None` (below the window: evicted),
+    /// - id 5 -> `None` (at `next_id`: never issued).
+    fn index_of(&self, id: TransactionRecordId) -> Option<usize> {
+        let oldest_id = self.next_id - self.entries.len() as u64;
+        (oldest_id..self.next_id)
+            .contains(&id.0)
+            .then(|| (id.0 - oldest_id) as usize)
+    }
+
+    /// Updates the status of a previously recorded transaction in O(1). A no-op
+    /// if the entry has already been evicted.
     pub fn update_status(&mut self, id: TransactionRecordId, status: SubmittedTransactionStatus) {
-        // The entry being updated was almost always the most recently recorded
-        // one, so scan from the back to find it in O(1) for the common case.
-        if let Some((_, transaction)) = self
-            .entries
-            .iter_mut()
-            .rev()
-            .find(|(entry_id, _)| *entry_id == id)
-        {
-            transaction.status = status;
+        // `index_of` only returns indices within `0..len`, so direct indexing
+        // cannot panic.
+        if let Some(index) = self.index_of(id) {
+            self.entries[index].status = status;
         }
     }
 
@@ -182,11 +211,7 @@ impl RecentTransactions {
     /// string formatting, so it does not block concurrent `record_submitted` /
     /// `update_status` writes from the transaction processor.
     pub fn snapshot(&self) -> Vec<SubmittedTransaction> {
-        self.entries
-            .iter()
-            .rev()
-            .map(|(_, tx)| tx.clone())
-            .collect()
+        self.entries.iter().rev().cloned().collect()
     }
 
     /// Number of entries currently retained. Exposed for tests.
@@ -215,33 +240,6 @@ pub fn render(transactions: &[SubmittedTransaction]) -> String {
     out
 }
 
-impl Display for SubmittedTransaction {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let tx_hash = self
-            .tx_hash
-            .map_or_else(|| "-".to_string(), |hash| hash.to_string());
-        let nonce = self
-            .nonce
-            .map_or_else(|| "-".to_string(), |nonce| nonce.to_string());
-        let block_height = self
-            .block_height
-            .map_or_else(|| "-".to_string(), |height| height.to_string());
-        let signature = self
-            .signature
-            .as_ref()
-            .map_or_else(|| "-".to_string(), |signature| signature.to_string());
-        write!(
-            f,
-            "  {submitted_at}  {status:<12}  method={method:<24}  txid={tx_hash}  nonce={nonce}  block={block_height}  signer={signer_account_id} key={signer_public_key} sig={signature}",
-            submitted_at = self.submitted_at,
-            status = format!("{:?}", self.status),
-            method = self.method,
-            signer_account_id = self.signer_account_id,
-            signer_public_key = String::from(&self.signer_public_key),
-        )
-    }
-}
-
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
@@ -250,13 +248,15 @@ mod tests {
 
     fn test_transaction(method: &'static str) -> SubmittedTransaction {
         SubmittedTransaction {
-            tx_hash: Some(CryptoHash::default()),
-            nonce: Some(7),
+            metadata: Some(SubmittedTxMetadata {
+                tx_hash: CryptoHash::default(),
+                nonce: 7,
+                signature: Signature::empty(near_crypto::KeyType::ED25519),
+                block_height: 42,
+            }),
             signer_account_id: AccountId::from_str("responder.near").unwrap(),
             signer_public_key: Ed25519PublicKey::from([7u8; 32]),
-            signature: Some(Signature::empty(near_crypto::KeyType::ED25519)),
             method,
-            block_height: Some(42),
             submitted_at: Utc::from_unix_timestamp(1_700_000_000).unwrap(),
             status: SubmittedTransactionStatus::Submitting,
         }
@@ -279,8 +279,9 @@ mod tests {
     #[test]
     fn recent_transactions__should_update_status_in_place() {
         // Given
+        let transaction = test_transaction("respond");
         let mut buffer = RecentTransactions::default();
-        let id = buffer.record_submitted(test_transaction("respond"));
+        let id = buffer.record_submitted(transaction.clone());
 
         // When
         buffer.update_status(id, SubmittedTransactionStatus::Executed);
@@ -288,16 +289,48 @@ mod tests {
         // Then
         let expected = SubmittedTransaction {
             status: SubmittedTransactionStatus::Executed,
-            ..test_transaction("respond")
+            ..transaction
         };
-        assert_eq!(buffer.entries, VecDeque::from([(id, expected)]),);
+        assert_eq!(buffer.entries, VecDeque::from([expected]));
+    }
+
+    #[test]
+    fn recent_transactions__should_update_buried_entry() {
+        // Given a buffer where the target is at the very front (maximally buried
+        // but not yet evicted), which is the realistic case: the outcome is only
+        // observed after a timeout, by which point many newer entries sit behind
+        // it.
+        let buried_tx = test_transaction("buried");
+        let mut buffer = RecentTransactions::default();
+        let buried_id = buffer.record_submitted(buried_tx.clone());
+        for _ in 0..(NUM_RECENT_TRANSACTIONS_TO_KEEP - 1) {
+            buffer.record_submitted(test_transaction("respond"));
+        }
+
+        // When
+        buffer.update_status(buried_id, SubmittedTransactionStatus::Executed);
+
+        // Then only the buried (oldest) entry changed.
+        let snapshot = buffer.snapshot();
+        let buried = snapshot.last().expect("buffer is non-empty");
+        let expected = SubmittedTransaction {
+            status: SubmittedTransactionStatus::Executed,
+            ..buried_tx
+        };
+        assert_eq!(*buried, expected);
+        assert!(
+            snapshot[..snapshot.len() - 1]
+                .iter()
+                .all(|tx| tx.status == SubmittedTransactionStatus::Submitting),
+            "only the targeted entry should change"
+        );
     }
 
     #[test]
     fn recent_transactions__should_ignore_status_update_for_evicted_entry() {
-        // Given
+        // Given an entry that is then evicted by enough newer submissions.
         let mut buffer = RecentTransactions::default();
-        let evicted_id = buffer.record_submitted(test_transaction("respond"));
+        let evicted_id = buffer.record_submitted(test_transaction("evicted"));
         for _ in 0..NUM_RECENT_TRANSACTIONS_TO_KEEP {
             buffer.record_submitted(test_transaction("respond"));
         }
@@ -305,50 +338,105 @@ mod tests {
         // When
         buffer.update_status(evicted_id, SubmittedTransactionStatus::Executed);
 
-        // Then
-        assert_eq!(buffer.len(), NUM_RECENT_TRANSACTIONS_TO_KEEP);
+        // Then the evicted entry is gone and no retained entry was changed.
+        let snapshot = buffer.snapshot();
+        assert_eq!(snapshot.len(), NUM_RECENT_TRANSACTIONS_TO_KEEP);
         assert!(
-            buffer.entries.iter().all(|(id, _)| *id != evicted_id),
+            snapshot.iter().all(|tx| tx.method == "respond"),
             "evicted entry must not reappear"
+        );
+        assert!(
+            snapshot
+                .iter()
+                .all(|tx| tx.status == SubmittedTransactionStatus::Submitting),
+            "update for an evicted id must not land on a live entry"
         );
     }
 
     #[test]
-    fn render__should_include_all_fields() {
+    fn recent_transactions__should_ignore_status_update_for_never_issued_id() {
+        // Given
+        let transaction = test_transaction("respond");
+        let mut buffer = RecentTransactions::default();
+        buffer.record_submitted(transaction.clone());
+
+        // When updating ids at and beyond `next_id` (never issued)
+        buffer.update_status(
+            TransactionRecordId(buffer.next_id),
+            SubmittedTransactionStatus::Executed,
+        );
+        buffer.update_status(
+            TransactionRecordId(buffer.next_id + 5),
+            SubmittedTransactionStatus::Executed,
+        );
+
+        // Then the live entry is untouched.
+        assert_eq!(buffer.snapshot(), vec![transaction]);
+    }
+
+    #[test]
+    fn recent_transactions__should_ignore_status_update_on_empty_buffer() {
         // Given
         let mut buffer = RecentTransactions::default();
-        buffer.record_submitted(test_transaction("respond"));
 
         // When
-        let rendered = render(&buffer.snapshot());
+        buffer.update_status(TransactionRecordId(0), SubmittedTransactionStatus::Executed);
+
+        // Then it does not panic and stays empty.
+        assert_eq!(buffer.snapshot(), vec![]);
+    }
+
+    #[test]
+    fn recent_transactions__should_update_only_the_targeted_entry() {
+        // Given three interleaved entries
+        let (a, b, c) = (
+            test_transaction("a"),
+            test_transaction("b"),
+            test_transaction("c"),
+        );
+        let mut buffer = RecentTransactions::default();
+        buffer.record_submitted(a.clone());
+        let id_b = buffer.record_submitted(b.clone());
+        buffer.record_submitted(c.clone());
+
+        // When
+        buffer.update_status(id_b, SubmittedTransactionStatus::Executed);
+
+        // Then only b changed and the snapshot is newest-first.
+        let executed_b = SubmittedTransaction {
+            status: SubmittedTransactionStatus::Executed,
+            ..b
+        };
+        assert_eq!(buffer.snapshot(), vec![c, executed_b, a]);
+    }
+
+    #[test]
+    fn submitted_transaction_display__should_render_exact_line_with_padding() {
+        // Given
+        let transaction = test_transaction("respond");
+
+        // When
+        let rendered = transaction.to_string();
 
         // Then
-        assert!(rendered.contains("respond"), "method missing: {rendered}");
-        assert!(rendered.contains("nonce=7"), "nonce missing: {rendered}");
-        assert!(
-            rendered.contains("block=42"),
-            "block height missing: {rendered}"
-        );
-        assert!(
-            rendered.contains("responder.near"),
-            "signer account missing: {rendered}"
-        );
-        assert!(
-            rendered.contains("key=ed25519:"),
-            "signer key not rendered in canonical form: {rendered}"
-        );
-        assert!(
-            rendered.contains("sig=ed25519:"),
-            "signature not rendered in canonical form: {rendered}"
-        );
-        assert!(
-            rendered.contains(&CryptoHash::default().to_string()),
-            "txid missing: {rendered}"
-        );
-        assert!(
-            rendered.contains("Submitting"),
-            "status missing: {rendered}"
-        );
+        let expected = "  2023-11-14 22:13:20.0 +00:00:00  Submitting    method=respond                   signer=responder.near key=ed25519:US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx  txid=11111111111111111111111111111111  nonce=7  block=42  sig=ed25519:1111111111111111111111111111111111111111111111111111111111111111";
+        assert_eq!(rendered, expected);
+    }
+
+    #[test]
+    fn submitted_transaction_display__should_render_marker_without_metadata() {
+        // Given
+        let transaction = SubmittedTransaction {
+            metadata: None,
+            ..test_transaction("respond")
+        };
+
+        // When
+        let rendered = transaction.to_string();
+
+        // Then
+        let expected = "  2023-11-14 22:13:20.0 +00:00:00  Submitting    method=respond                   signer=responder.near key=ed25519:US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx  (not submitted)";
+        assert_eq!(rendered, expected);
     }
 
     #[test]
