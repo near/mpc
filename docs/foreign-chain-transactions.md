@@ -37,7 +37,7 @@ Not all extractors can be satisfied by a single RPC method call.
 * **Extractor-driven calls**: Each extractor implicitly defines which RPC method(s) it requires. Some extractors require more than one call. For the initial set:
 
   * **BlockHash (Ethereum)**: `eth_getTransactionReceipt` for `blockHash`, plus `eth_getBlockByNumber` for the finality-head and canonical-chain checks.
-  * **BlockHash (Bitcoin)**: `getrawtransaction` (with verbose) to get the containing `blockhash` (and `getblock` if needed).
+  * **BlockHash (Bitcoin)**: `getrawtransaction` (verbose) for the containing `blockhash` and confirmation count, then `getblockheader` + `getblockhash` for the canonical-chain defense-in-depth check.
   * **BlockHash (Starknet)**: `starknet_getTransactionReceipt` for `block_hash` + `finality_status`, then `starknet_getBlockWithTxHashes` for the canonical-chain defense-in-depth check.
   * **SolanaProgramIdIndex / SolanaDataHash**: `getTransaction` to access `transaction.message` + `meta` and instruction data.
 * **Shared fetches**: When multiple extractors require the same underlying data, nodes may perform the RPC call once and share the result across extractors.
