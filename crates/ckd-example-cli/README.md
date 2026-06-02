@@ -10,9 +10,9 @@ that will:
 - compute the private key
 
 For more details on the design and cryptography of CKD, see the
-[docs](https://github.com/near/threshold-signatures/blob/main/docs/confidential_key_derivation/confidential_key_derivation.md).
+[docs](../threshold-signatures/docs/confidential_key_derivation/confidential-key-derivation.md).
 The contract interface is explained in the MPC contract
-[docs](https://github.com/near/mpc/blob/main/crates/contract/README.md#submitting-a-confidential-key-derivation-ckd-request).
+[docs](../contract/README.md#submitting-a-confidential-key-derivation-ckd-request).
 
 This cli does not cover anything related to TEE apps, as its main objective is to
 show how to use the functionality in the simplest possible setting.

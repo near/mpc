@@ -1,6 +1,0 @@
-{
-  "local": "True",
-  "near_root": "../libs/nearcore/target/release",
-  "binary_name": "neard",
-  "release": "False"
-}

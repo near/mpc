@@ -17,7 +17,9 @@ use mpc_contract::{
 use near_account_id::AccountId;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types as dtos;
-use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, DomainPurpose};
+use near_mpc_contract_interface::types::{
+    DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
+};
 use near_workspaces::Account;
 use serde_json::json;
 use sha2::Digest;
@@ -32,7 +34,7 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(&[Curve::Secp256k1])
+        .with_protocols(&[Protocol::CaitSith])
         .build()
         .await;
 
@@ -84,10 +86,10 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
     {
         new_participants
             .insert_with_id(
-                account_id.0.parse::<near_account_id::AccountId>().unwrap(),
+                account_id.clone(),
                 mpc_contract::primitives::participants::ParticipantInfo {
                     url: participant_info.url.clone(),
-                    sign_pk: participant_info.sign_pk.clone().into(),
+                    tls_public_key: participant_info.tls_public_key.clone(),
                 },
                 mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
             )
@@ -132,11 +134,13 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
         .map(|(account, _)| account)
         .collect();
     assert_eq!(votes_for_update.len(), 1);
-    let voter_id: AccountId = votes_for_update[0].0.parse().unwrap();
-    assert!(final_participants
-        .participants
-        .iter()
-        .any(|(a, _, _)| a.0.as_str() == voter_id.as_str()));
+    let voter_id: &AccountId = votes_for_update[0];
+    assert!(
+        final_participants
+            .participants
+            .iter()
+            .any(|(a, _, _)| a == voter_id)
+    );
 
     Ok(())
 }
@@ -151,7 +155,7 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(&[Curve::Secp256k1])
+        .with_protocols(&[Protocol::CaitSith])
         .build()
         .await;
 
@@ -167,7 +171,8 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
     };
     let domains_to_add = vec![DomainConfig {
         id: DomainId(next_domain_id),
-        curve: Curve::Edwards25519,
+        protocol: Protocol::Frost,
+        reconstruction_threshold: ReconstructionThreshold::new(6),
         purpose: DomainPurpose::Sign,
     }];
     execute_async_transactions(
@@ -195,10 +200,10 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
     {
         new_participants
             .insert_with_id(
-                account_id.0.parse::<near_account_id::AccountId>().unwrap(),
+                account_id.clone(),
                 mpc_contract::primitives::participants::ParticipantInfo {
                     url: participant_info.url.clone(),
-                    sign_pk: participant_info.sign_pk.clone().into(),
+                    tls_public_key: participant_info.tls_public_key.clone(),
                 },
                 mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
             )
@@ -249,7 +254,7 @@ pub fn assert_expected_proposed_update(
 ) {
     let mut expected_votes: Vec<_> = expected_voter_accounts
         .iter()
-        .map(|a| dtos::AccountId(a.id().to_string()))
+        .map(|a| a.id().clone())
         .collect();
     expected_votes.sort();
 

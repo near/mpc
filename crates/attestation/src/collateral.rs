@@ -1,11 +1,15 @@
-use alloc::{string::String, vec::Vec};
 use borsh::{BorshDeserialize, BorshSerialize};
-use core::str::FromStr;
 use derive_more::{Deref, From, Into};
-use hex::FromHexError;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use thiserror::Error;
+
+#[cfg(feature = "test-utils")]
+use {
+    alloc::{string::String, vec::Vec},
+    core::str::FromStr,
+    hex::FromHexError,
+    serde_json::Value,
+    thiserror::Error,
+};
 
 pub use dcap_qvl::QuoteCollateralV3;
 
@@ -15,9 +19,10 @@ pub use dcap_qvl::QuoteCollateralV3;
 #[derive(
     Clone, From, Deref, Into, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
 )]
-#[serde(try_from = "Value")]
+#[cfg_attr(feature = "test-utils", serde(try_from = "Value"))]
 pub struct Collateral(QuoteCollateralV3);
 
+#[cfg(feature = "test-utils")]
 impl Collateral {
     /// Attempts to create a [`Collateral`] from a JSON value containing quote collateral data.
     ///
@@ -58,6 +63,7 @@ impl Collateral {
     }
 }
 
+#[cfg(feature = "test-utils")]
 impl FromStr for Collateral {
     type Err = CollateralError;
 
@@ -79,6 +85,7 @@ impl FromStr for Collateral {
     }
 }
 
+#[cfg(feature = "test-utils")]
 impl TryFrom<Value> for Collateral {
     type Error = CollateralError;
 
@@ -87,6 +94,7 @@ impl TryFrom<Value> for Collateral {
     }
 }
 
+#[cfg(feature = "test-utils")]
 #[derive(Debug, Error)]
 pub enum CollateralError {
     #[error("Missing or invalid field: {0}")]

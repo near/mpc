@@ -56,8 +56,13 @@ rpcs:
   - url: https://test.rpc.fastnear.com
     rate_limit: 5
     max_concurrency: 30
+    # api_key: your-api-key   # optional, sent as `Authorization: Bearer <key>`
 infra_ops_path: path-to-infra-ops-repo
 ```
+
+The optional `api_key` field is sent as `Authorization: Bearer <value>` on
+every request to the corresponding endpoint. Omit it to use the public
+endpoint unauthenticated.
 
 * (Optional) Configure a `funding_account` to use a specific account for funding operations:
 
@@ -98,7 +103,7 @@ export MPC_NETWORK_NAME=yourusername-test
 mpc-devnet mpc $MPC_NETWORK_NAME new \
   --num-participants 2 \
   --num-responding-access-keys 8 \
-  --near-per-responding-account 1 
+  --near-per-responding-account 1
   [--ssd] # use only if you don't plan to run this for a long period, as it is more expensive
 ```
 
@@ -109,7 +114,7 @@ independent nonce.
 Then, deploy the contract.
 
 ```shell
-mpc-devnet mpc $MPC_NETWORK_NAME deploy-contract 
+mpc-devnet mpc $MPC_NETWORK_NAME deploy-contract
 ```
 
 The path of the contract binary can be overridden via `--path`.
@@ -167,12 +172,15 @@ if we wish to have fewer participants join the network at the beginning.
 ### Generating Keys
 
 When first deployed, the contract has no keys. In order to make any signatures,
-we must first generate some keys. This example generates two keys, one for
-each signature scheme. You can specify duplicate schemes here as well if you wish
-to add multiple keys for each scheme.
+we must first generate some keys. This example generates one key for each
+supported protocol. You can specify duplicate protocols here as well if you
+wish to add multiple keys for the same protocol. Use `DamgardEtAl` to add a
+Robust ECDSA key on Secp256k1 (distinct from `CaitSith`, which is the classic
+ECDSA protocol on the same curve).
 
 ```shell
-mpc-devnet mpc $MPC_NETWORK_NAME vote-add-domains --schemes Secp256k1,Ed25519,Bls12381
+mpc-devnet mpc $MPC_NETWORK_NAME vote-add-domains \
+  --protocols CaitSith,Frost,ConfidentialKeyDerivation
 ```
 
 This triggers the MPC nodes to start performing key generation, after which the
@@ -189,7 +197,7 @@ running in TEE to be authenticated.
 You can add approved image hashes with the following command:
 
 ```shell
-mpc-devnet mpc $MPC_NETWORK_NAME vote-code-hash --mpc-docker-image-hash <IMAGE_DIGEST>   
+mpc-devnet mpc $MPC_NETWORK_NAME vote-code-hash --mpc-docker-image-hash <IMAGE_DIGEST>
 ```
 
 ### Checking the Network State
@@ -209,11 +217,11 @@ Contract is in Running state
   Epoch: 9
   Keyset:
   Domain 0: Secp256k1, key from attempt 0
-  Domain 1: Ed25519, key from attempt 0
+  Domain 1: Edwards25519, key from attempt 0
   Domain 2: Secp256k1, key from attempt 0
-  Domain 3: Ed25519, key from attempt 0
+  Domain 3: Edwards25519, key from attempt 0
   Domain 4: Secp256k1, key from attempt 0
-  Domain 5: Ed25519, key from attempt 0
+  Domain 5: Edwards25519, key from attempt 0
   Parameters:
   Participants:
     ID 3: mpc-2-and-upg-c4c3bbdf00c0.andrei-devnet.testnet (http://mpc-node-2.service.mpc.consul:3000)
@@ -394,3 +402,24 @@ Collecting Signature Responses
 Found 4 parallel signature responses and 0 failures. Encountered 0 rpc errors.
 Success Rate: 100
 ```
+
+### Running predefined load-shape scenarios
+
+`scripts/loadtest-scenarios.sh` drives the `run` command above through a fixed
+set of load shapes — sustained baseline, higher steady-state, and a low/burst/
+low spike. It is intended for periodic load testing of the testnet contract.
+
+The script uses the parallel-sign helper contract so each RPC transaction
+fans out to multiple signature requests (default `--batch 10`); deploy it
+once with `mpc-devnet loadtest <name> deploy-parallel-sign-contract` before
+running.
+
+```shell
+./scripts/loadtest-scenarios.sh my-test                  # all scenarios
+./scripts/loadtest-scenarios.sh my-test --scenario spike # just the spike
+./scripts/loadtest-scenarios.sh my-test \
+    --contract v1.signer-prod.testnet \
+    --domain 0
+```
+
+Run `./scripts/loadtest-scenarios.sh --help` for the full list of options.

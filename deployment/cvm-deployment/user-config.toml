@@ -1,57 +1,112 @@
-# Minimal config for non-TEE CI check.
-# Only needs enough for the launcher to start and pull the MPC node image.
-# Uses mainnet chain_id with embedded genesis to avoid downloading the large
-# testnet genesis file, which requires ~20 GiB of RAM.
+# Example user-config.toml for new MPC node operators.
+# Defaults target testnet and mirror what NEAR One runs on its live
+# testnet node. Inline `# mainnet: ...` comments below show the value
+# to use when running on mainnet instead.
+#
+# MUST be replaced with real values before deploying:
+#   - my_near_account_id / near_responder_account_id
+#   - secrets.secret_store_key_hex
+#   - secrets.backup_encryption_key_hex
+# The placeholders below are intentionally non-hex so a forgotten swap
+# fails loudly at node startup.
 
 [launcher_config]
 image_reference = "nearone/mpc-node"
+# Matches the canonical port list in
+# docs/running-an-mpc-node-in-tdx-external-guide.md#required-ports
+# (80 P2P, 8080 web/metrics, 8079 migration, 3030 debug, 24567 DSS).
 port_mappings = [
-    { host = 8080, container = 8080 },
+    { host = 80,    container = 80 },     # MPC P2P (port_override convention)
+    { host = 8080,  container = 8080 },   # web_ui / metrics / /public_data
+    { host = 8079,  container = 8079 },   # migration_web_ui
+    { host = 3030,  container = 3030 },   # debug / telemetry
+    { host = 24567, container = 24567 },  # decentralized state sync
 ]
 
 [mpc_node_config]
 home_dir = "/data"
-# Override the PCCS URL for TDX attestation collateral. Defaults to Phala's PCCS if omitted.
-# pccs_url = "https://pccs.phala.network"
+
+# PCCS endpoints for TDX attestation collateral. The node tries each
+# entry in order until one succeeds. Defaults below: Phala primary,
+# Intel direct as fallback.
+#
+# To add a self-hosted local PCCS (e.g. for an operator running their
+# own), prepend an entry with a `tls` override. See the operator
+# deployment guide's "Self-hosting a local PCCS" appendix for the cert
+# setup. Example (commented):
+#
+#   [[mpc_node_config.pccs_endpoints]]
+#   url = "https://10.0.2.2:8081/"
+#   tls = { override = "ca_cert_pem", ca_cert_pem = "..." }
+#
+# `tls = { override = "insecure" }` disables TLS certificate/hostname
+# verification for any URL (no loopback enforcement, only a WARN). Use
+# only for local PCCS.
+
+[[mpc_node_config.pccs_endpoints]]
+url = "https://pccs.phala.network/"
+
+[[mpc_node_config.pccs_endpoints]]
+url = "https://api.trustedservices.intel.com/"
 
 [mpc_node_config.log]
 format = "plain"
 filter = "info"
 
 [mpc_node_config.near_init]
-chain_id = "mainnet"
-boot_nodes = "ed25519:ERguu7jQuYk8pxNsRC6FdezvNsegBPva1GRGqjmtD7i2@10.10.10.10:24567"
-download_genesis = false
+chain_id = "testnet"  # mainnet: "mainnet"
+# Testnet boot nodes. For mainnet, replace with the mainnet boot-nodes
+# string from https://near-nodes.io/ or the official nearcore mainnet
+# config.json (rpc.mainnet.near.org).
+boot_nodes = "ed25519:2956bsTqWmXcVmXDSovLYS4HRpdyh51euNCiuQjy1h8Y@65.108.141.230:24567,ed25519:2Ej627FDrHUBA1Mp55qw3zyhACSvJHF25sxtZfyFqasc@65.108.133.7:24567,ed25519:2GorYSFQUWB1But3sXLEM6zARfwb9Pj27QhQMsMpK8Dx@150.136.35.62:24567,ed25519:2nGLw9isJYVqCfaYzA6KHBE9YbtjzGQPPtVcRwYvpJj6@23.88.74.249:24567,ed25519:3VCjDXCbJWNr247wLzBas653C8FT69drtu3vDXbRAG2E@35.188.52.109:24567,ed25519:3wdbS6vbahK7pzgn8r8oFcgFthWvcT8mtXcUgtpQngqW@57.129.88.239:24567,ed25519:49F9yZpbQVefzWegVZYTh18WwFPPcfgvkDmhm7zM5MR4@89.58.28.231:24567,ed25519:4Fx8rLhGobUPVie1FXQCAxFaMQ3Dg6PYMDdm5keZcKW6@84.207.214.228:24567,ed25519:4M63uf6ccsjBkFygqx4T45fKSvKsFFMva9g7FRxjwzTH@176.9.105.103:24568,ed25519:4Rj2NR92umGC4xtXeJFkyCUYymdad3zii1zVEMVnVKqH@5.9.40.211:24567,ed25519:4b5MtShRdtu87BTNoPHX4HDBbZGnm5pjEQoGZk5J7L1w@34.12.14.28:24567,ed25519:4gdz1kjG7ndfbSwgMRtgNYZ7D6reHdnBgZN71U3agwtw@198.244.253.126:24567,ed25519:4qCcK9sWsqCpXzjV6kXxkaLyu5o5UpYNLpQzKFDSjfhA@34.123.242.245:24567,ed25519:4xTqirCWWjJ9QpXQbJLkyUbjRuRBgr4ZVpKMQAs4CjcH@57.128.210.54:24567,ed25519:4xmhjdejr2jWHqpiCrkeGXbrqBt98q9ewZ77WKrAz7JT@148.251.70.186:24567,ed25519:5M9DnL5xecA34RTHnkBpGB8SMXc2NcPvue7784D3GaH4@88.198.57.94:24568,ed25519:5MipaupEtQu7SqdMWsP5mdh2wfHQHgngai2BziCXv2T@185.6.13.181:24567,ed25519:5QmANbVUKooCvHq9qyKTd5cRgp4vYrQrAqjuRrA9M5TT@144.76.43.124:24567,ed25519:5T2wfCxjXT2rFPsyWAAxWnMqLajM24FC2ZWKXA62xbQ1@47.129.128.11:24567,ed25519:5VdRi9UAxjppwL2ku3g2hWXjn4oQZA4i1goEWJxpp9uv@113.172.202.5:24568"
+download_genesis = true
 download_config = "rpc"
+# Bound IP:24567 the node advertises for Tier3 state-sync responses.
+# Replace with the IP your dstack port-forward exposes for :24567.
+# tier3_public_addr = "10.10.10.10:24567"
+# DSS attempts per state part before falling back to the external
+# storage bucket. 0 = bucket-only (never run DSS); 100 = DSS-first with
+# bucket as a safety net.
+# external_storage_fallback_threshold = 100
 
 [mpc_node_config.secrets]
-secret_store_key_hex = "BD399143F5B3126098B0EAA023A0E730"
-backup_encryption_key_hex = "0000000000000000000000000000000000000000000000000000000000000000"
+# MUST replace with real values before deploying. The placeholders below
+# are non-hex so startup will fail loudly if not updated.
+# Generate: `openssl rand -hex 16` (16 bytes / 32 hex chars).
+secret_store_key_hex = "REPLACE_ME_WITH_16_BYTE_HEX_KEY_"
+# Generate: `openssl rand -hex 32` (32 bytes / 64 hex chars). On node
+# migration, must match the OLD node's backup_encryption_key.
+backup_encryption_key_hex = "REPLACE_ME_WITH_32_BYTE_HEX_KEY_REPLACE_ME_WITH_32_BYTE_HEX_KEY_"
 
 [mpc_node_config.node]
-my_near_account_id = "test_image.near"
-near_responder_account_id = "test_image.near"
+my_near_account_id = "your-mpc-account.testnet"
+near_responder_account_id = "your-mpc-account.testnet"
 number_of_responder_keys = 1
 web_ui = "0.0.0.0:8080"
-migration_web_ui = "0.0.0.0:8078"
-cores = 4
+migration_web_ui = "0.0.0.0:8079"
+# MPC tokio runtime worker threads (separate from the indexer's). Kept
+# below the CVM's attested VCPU=8 so the indexer isn't starved.
+cores = 6
 
 [mpc_node_config.node.indexer]
 validate_genesis = false
 sync_mode = "Latest"
 concurrency = 1
-mpc_contract_id = "v1.signer"
+mpc_contract_id = "v1.signer-prod.testnet"  # mainnet: "v1.signer"
 finality = "optimistic"
+# MPC P2P convention is port 80. Forces it on every peer URL (listen +
+# dial) regardless of the URL's scheme/port.
+port_override = 80
 
 [mpc_node_config.node.triple]
 concurrency = 2
-desired_triples_to_buffer = 128
+desired_triples_to_buffer = 16384
 timeout_sec = 60
 parallel_triple_generation_stagger_time_sec = 1
 
 [mpc_node_config.node.presignature]
-concurrency = 4
-desired_presignatures_to_buffer = 64
+concurrency = 16
+desired_presignatures_to_buffer = 8192
 timeout_sec = 60
 
 [mpc_node_config.node.signature]
@@ -59,3 +114,28 @@ timeout_sec = 60
 
 [mpc_node_config.node.ckd]
 timeout_sec = 60
+
+# Foreign-chain RPC URLs below target testnet networks (Bitcoin testnet,
+# Abstract testnet, Starknet Sepolia). For mainnet, swap each provider's
+# rpc_url for the corresponding mainnet endpoint.
+
+[mpc_node_config.node.foreign_chains.bitcoin]
+timeout_sec = 30
+max_retries = 3
+
+[mpc_node_config.node.foreign_chains.bitcoin.providers.public]
+rpc_url = "https://bitcoin-testnet-rpc.publicnode.com"
+
+[mpc_node_config.node.foreign_chains.abstract]
+timeout_sec = 30
+max_retries = 3
+
+[mpc_node_config.node.foreign_chains.abstract.providers.abstract-testnet]
+rpc_url = "https://api.testnet.abs.xyz"
+
+[mpc_node_config.node.foreign_chains.starknet]
+timeout_sec = 30
+max_retries = 3
+
+[mpc_node_config.node.foreign_chains.starknet.providers.publicnode]
+rpc_url = "https://starknet-sepolia-rpc.publicnode.com"

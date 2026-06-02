@@ -6,12 +6,12 @@ Near One is currently in the process of migrating the MPC nodes into **Trusted E
 
 Running MPC nodes inside TEEs significantly increases the security of the network, but poses additional operational challenges:
 
-- **Node migrations become more difficult:** Once an MPC node operates inside a TEE, extracting or transferring its secret key shares is infeasible. Migrating a node would normally require a full resharing, involving the entire MPC network.  
+- **Node migrations become more difficult:** Once an MPC node operates inside a TEE, extracting or transferring its secret key shares is infeasible. Migrating a node would normally require a full resharing, involving the entire MPC network.
 - **Recovery from catastrophic failures is harder:** If multiple MPC nodes fails irrecoverably and simultaneously, the network risks losing its signing quorum, which could halt protocol operations.
 
 This document outlines the design and implementation of a **Migration Service**, a service aimed at addressing those issues by solving the above problems:
 
-1. **Operational resilience** — the migration service enables secure recovery of nodes in the event of hardware or system failure.  
+1. **Operational resilience** — the migration service enables secure recovery of nodes in the event of hardware or system failure.
 2. **Node migration** — the migration service allows node operators to move their MPC nodes into or between TEEs without resharing.
 
 Near-One will roll-out its TEE implementation in two phases:
@@ -20,7 +20,7 @@ Near-One will roll-out its TEE implementation in two phases:
     - Their key shares are backed-up outside of the TEE through the migration service.
     - The MPC contract does not formally enforce nodes to run inside a TEE.
     - The migration service is used to move nodes into TEEs.
-- **Hard Launch:** 
+- **Hard Launch:**
     - All MPC nodes are running within TEEs.
     - Their key shares are backed-up inside another TEE through the Migration Service.
     - The MPC contract kicks out any nodes that are not running inside a TEE.
@@ -32,15 +32,15 @@ Near-One will roll-out its TEE implementation in two phases:
 
 The Migration Service enables secure backup and recovery of MPC node key shares. It involves four main components:
 - **MPC Node**
-  Runs the Multi-Party Computation protocol and holds the node’s secret key shares.  
-- **Node Operator** 
+  Runs the Multi-Party Computation protocol and holds the node’s secret key shares.
+- **Node Operator**
   A person or entity responsible for an MPC node.
 - **Backup Service**
   A separate process, running on a different machine than the MPC node. The backup service stores the encrypted key shares from the MPC node.
   During the *soft launch*, this service is implemented as a simple CLI and manually triggered by the node operator.
   For the *hard launch*, it will be a long-running program inside its own TEE, maintain an up-to-date view of the on-chain MPC contract and handle back-up and recovery processes in an automated manner. Each node operator must run their own back-up service.
 - **MPC Smart Contract**
-  Serves as the source of truth for protocol state and node information.  
+  Serves as the source of truth for protocol state and node information.
   It stores metadata about registered backup services and information about node migrations.
 
 Communication between the backup service and the MPC node takes place over **mutual TLS**. The MPC smart-contract, (i.e. the NEAR blockchain) is used as a public key infrastructure, that is, the MPC node and the backup service fetch the expected public key from the smart contract and authenticate their peer against the expected value.
@@ -55,7 +55,7 @@ On a high-level, the migration service allows two workflows:
 Note that the migration service does not enable a _"Recovery"_ of the _entire_
 node, but only of the secret shares. The MPC node generates a few secrets that would still be unrecoverable, since no back-up exists (such as TLS keys or access keys for NEAR accounts). As such, _Recovery_ is just a special case of _Migration_, where the target host machine stays the same. TLS Key and access key of the node are still expected to change.
 
-#### Backup 
+#### Backup
 
 ##### Soft Launch
 
@@ -97,7 +97,7 @@ flowchart TD
       **Node Operator**
       _Owner of the MPC node and Backup Service._
     ");
-    
+
     NO -->|"1. Provides symmetric encryption key `MPC_BACKUP_ENCRYPTION_KEY_HEX`"| BS;
     NO -->|"2. Provides symmetric encryption key `MPC_BACKUP_ENCRYPTION_KEY_HEX`"| MPC;
     NO -->|"3. register backup service in smart contract"| SC;
@@ -142,14 +142,14 @@ flowchart TD
       of key shares.
       Uniquely identified by a public key._
     ");
-    
+
     BS -->|"1. register backup service with attestation (resubmitted periodically)"| SC
     SC -->|"2. verify TEE attestation and Docker image hash"| SC
     BS -->|"3. read MPC node Public Key and address"| SC
     BS -->|"4. request encrypted keyshares (mTLS)"| MPC
     MPC -->|"5. verify attestation and read backup service Public Key"| SC
     MPC -->|"6. send encrypted key shares"| BS
-    
+
     SC@{shape: cylinder}
     MPC@{shape: proc}
     BS@{shape: proc}
@@ -183,11 +183,11 @@ flowchart TD
       node information._"]
 
     BS@{ label: "**Backup Service**
-        _Stores encrypted backups of key shares. 
+        _Stores encrypted backups of key shares.
         Uniquely identified by a public key._" }
     MPC["**New MPC node**
       _Needs keyshares from backup service._"]
-    
+
     NO -->|"1. Provides symmetric encryption key"| BS;
     NO -->|"2. Provides symmetric encryption key"| MPC;
     NO -->|"3. start onboarding for new node in smart contract"| SC;

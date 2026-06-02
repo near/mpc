@@ -12,12 +12,12 @@ pub mod types;
 mod tests {
 
     use ed25519_dalek::SigningKey;
-    use mpc_contract::node_migrations::BackupServiceInfo;
-    use rand::rngs::OsRng;
+    use near_mpc_contract_interface::types::BackupServiceInfo;
     use rand::SeedableRng as _;
+    use rand::rngs::OsRng;
 
     use super::test_utils::setup;
-    use crate::keyshare::{test_utils::KeysetBuilder, Keyshare};
+    use crate::keyshare::{Keyshare, test_utils::KeysetBuilder};
     use crate::migration_service::web::client::{
         connect_to_web_server, make_hello_request, make_keyshare_get_request,
         make_set_keyshares_request,
@@ -79,8 +79,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let keyset_dto: near_mpc_contract_interface::types::Keyset =
-            KeysetBuilder::new(1).keyset().into();
+        let keyset_dto: near_mpc_contract_interface::types::Keyset = KeysetBuilder::new(1).keyset();
         let res = make_keyshare_get_request(
             &mut send_request,
             &keyset_dto,
@@ -104,7 +103,7 @@ mod tests {
             )
             .await
             .unwrap();
-        let keyset_dto: near_mpc_contract_interface::types::Keyset = keyset_builder.keyset().into();
+        let keyset_dto: near_mpc_contract_interface::types::Keyset = keyset_builder.keyset();
         let res = make_keyshare_get_request(
             &mut send_request,
             &keyset_dto,

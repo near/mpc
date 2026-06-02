@@ -4,8 +4,8 @@ use auto_ops::impl_op_ex;
 use rand_core::CryptoRngCore;
 use serde::{Deserialize, Serialize};
 use sha3::{
-    digest::{ExtendableOutput, Update, XofReader},
     Shake256,
+    digest::{ExtendableOutput, Update, XofReader},
 };
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
@@ -234,7 +234,7 @@ impl BitMatrix {
     ///
     /// Each chunk will have a security parameter's worth of rows.
     pub fn random(rng: &mut impl CryptoRngCore, height: usize) -> Result<Self, ProtocolError> {
-        if height % SECURITY_PARAMETER != 0 {
+        if !height.is_multiple_of(SECURITY_PARAMETER) {
             return Err(ProtocolError::InvalidInput(format!(
                 "height {height} must be a multiple of SECURITY_PARAMETER ({SECURITY_PARAMETER})"
             )));
@@ -329,7 +329,7 @@ impl SquareBitMatrix {
     /// Expand transpose expands each row to contain `chunks * SECURITY_PARAMETER` bits, and then transposes
     /// the resulting matrix.
     pub fn expand_transpose(&self, sid: &[u8], rows: usize) -> Result<BitMatrix, ProtocolError> {
-        if rows % SECURITY_PARAMETER != 0 {
+        if !rows.is_multiple_of(SECURITY_PARAMETER) {
             return Err(ProtocolError::InvalidInput(format!(
                 "rows {rows} must be a multiple of SECURITY_PARAMETER ({SECURITY_PARAMETER})"
             )));
@@ -382,7 +382,7 @@ impl_secret_debug!(ChoiceVector);
 impl ChoiceVector {
     /// Generate a random vector with a certain number of bits.
     pub fn random(rng: &mut impl CryptoRngCore, size: usize) -> Result<Self, ProtocolError> {
-        if size == 0 || size % SECURITY_PARAMETER != 0 {
+        if size == 0 || !size.is_multiple_of(SECURITY_PARAMETER) {
             return Err(ProtocolError::InvalidInput(format!(
                 "size {size} must be a positive multiple of SECURITY_PARAMETER ({SECURITY_PARAMETER})"
             )));

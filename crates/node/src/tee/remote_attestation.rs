@@ -17,11 +17,9 @@ use near_mpc_contract_interface::types::Ed25519PublicKey;
 use tee_authority::tee_authority::TeeAuthority;
 use tokio_util::time::FutureExt;
 
-use mpc_contract::tee::{
-    proposal::{LauncherDockerComposeHash, NodeImageHash},
-    tee_state::NodeId,
-};
+use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash};
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types::NodeId;
 use tokio::sync::watch;
 
 const MIN_BACKOFF_DURATION: Duration = Duration::from_millis(100);
@@ -34,7 +32,7 @@ const BACKOFF_FACTOR: f32 = 1.5;
 /// This function continuously attempts to submit a [`SubmitParticipantInfoArgs`] transaction containing
 /// the given participant's attestation and TLS public key. It uses the provided
 /// [`TransactionSender`] to send the transaction and waits until [`TransactionStatus::Executed`]
-/// is observed.  
+/// is observed.
 pub async fn submit_remote_attestation(
     tx_sender: impl TransactionSender,
     attestation: Attestation,
@@ -168,7 +166,7 @@ pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Ti
                 crate::metrics::MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
                     .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_FAILURE])
                     .inc();
-                tracing::warn!(error = ?e, "TEE attestation failed, will retry next interval");
+                tracing::warn!(error = %e, "TEE attestation failed, will retry next interval");
                 continue;
             }
             Err(e) => {
@@ -220,8 +218,8 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
 ) -> anyhow::Result<()> {
     let node_id = NodeId {
         account_id: node_account_id.clone(),
-        tls_public_key: near_sdk::PublicKey::from(tls_public_key.clone()),
-        account_public_key: Some(near_sdk::PublicKey::from(account_public_key.clone())),
+        tls_public_key: tls_public_key.clone(),
+        account_public_key: account_public_key.clone(),
     };
 
     let initially_available =
@@ -268,7 +266,7 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
                         .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_FAILURE])
                         .inc();
                     tracing::warn!(
-                        error = ?e,
+                        error = %e,
                         "TEE attestation failed, periodic attestation task will retry",
                     );
                     was_available = is_available;
@@ -414,8 +412,8 @@ mod tests {
         let (dummy_sender, _) = watch::channel(vec![]);
         let dummy_node_id = NodeId {
             account_id: "dummy.near".parse().unwrap(),
-            tls_public_key: near_sdk::PublicKey::from(Ed25519PublicKey::from([0u8; 32])),
-            account_public_key: Some(near_sdk::PublicKey::from(Ed25519PublicKey::from([0u8; 32]))),
+            tls_public_key: Ed25519PublicKey::from([0u8; 32]),
+            account_public_key: Ed25519PublicKey::from([0u8; 32]),
         };
         let sender = MockSender::new(dummy_sender, dummy_node_id);
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
@@ -450,8 +448,8 @@ mod tests {
 
         let node_id = NodeId {
             account_id: node_account_id.clone(),
-            tls_public_key: near_sdk::PublicKey::from(tls_public_key.clone()),
-            account_public_key: Some(near_sdk::PublicKey::from(account_public_key.clone())),
+            tls_public_key: tls_public_key.clone(),
+            account_public_key: account_public_key.clone(),
         };
 
         // Create initial TEE accounts list including our node
@@ -580,13 +578,15 @@ mod tests {
             .unwrap();
         let allowed_docker_image_hashes = [NodeImageHash::from([42u8; 32])];
         let allowed_launcher_compose_hashes = [LauncherDockerComposeHash::from([42u8; 32])];
-        assert!(validate_remote_attestation(
-            &attestation,
-            tls_public_key,
-            account_public_key,
-            &allowed_docker_image_hashes,
-            &allowed_launcher_compose_hashes
-        )
-        .is_err());
+        assert!(
+            validate_remote_attestation(
+                &attestation,
+                tls_public_key,
+                account_public_key,
+                &allowed_docker_image_hashes,
+                &allowed_launcher_compose_hashes
+            )
+            .is_err()
+        );
     }
 }

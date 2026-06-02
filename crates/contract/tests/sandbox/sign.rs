@@ -1,11 +1,11 @@
 use crate::sandbox::{
-    common::{candidates, create_account_given_id, init, SandboxTestSetup},
+    common::{SandboxTestSetup, candidates, create_account_given_id, init},
     utils::{
-        consts::ALL_CURVES,
+        consts::ALL_PROTOCOLS,
         shared_key_utils::SharedSecretKey,
         sign_utils::{
-            gen_secp_256k1_sign_test, submit_ckd_response_measure_gas, submit_signature_response,
-            verify_timeout, CKDRequestTest, DomainResponseTest,
+            CKDRequestTest, DomainResponseTest, gen_secp_256k1_sign_test,
+            submit_ckd_response_measure_gas, submit_signature_response, verify_timeout,
         },
     },
 };
@@ -19,10 +19,9 @@ use mpc_contract::{
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::method_names;
-use near_mpc_contract_interface::types::Curve;
+use near_mpc_contract_interface::types::Protocol;
 use near_workspaces::types::NearToken;
 use rand::SeedableRng;
-use std::time::Duration;
 
 const SIGNATURE_TIMEOUT_BLOCKS: u64 = 200;
 const NUM_BLOCKS_BETWEEN_REQUESTS: u64 = 2;
@@ -36,7 +35,7 @@ async fn test_contract_request_all_schemes() -> anyhow::Result<()> {
         mpc_signer_accounts,
         keys,
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
     let attested_account = &mpc_signer_accounts[0];
@@ -69,55 +68,6 @@ async fn test_contract_request_all_schemes() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn test_contract_request_duplicate_requests_all_schemes() -> anyhow::Result<()> {
-    let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
-    let SandboxTestSetup {
-        worker,
-        contract,
-        mpc_signer_accounts,
-        keys,
-    } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
-        .build()
-        .await;
-    let attested_account = &mpc_signer_accounts[0];
-
-    for key in &keys {
-        let alice = worker.dev_create_account().await.unwrap();
-        let predecessor_id = alice.id();
-        // check that in case of duplicate request, only the most recent will be signed:
-        let req = DomainResponseTest::new(&mut rng, key, predecessor_id);
-        let status_1 = req
-            .submit_request_ensure_included(&alice, &contract)
-            .await?;
-        worker
-            .fast_forward(NUM_BLOCKS_BETWEEN_REQUESTS)
-            .await
-            .unwrap();
-        let status_2 = req
-            .submit_request_ensure_included(&alice, &contract)
-            .await?;
-
-        // unfortunately, we still can't completely get rid of this sleep
-        // TODO(#1306): remove the need to sleep
-        tokio::time::sleep(Duration::from_secs(3)).await;
-        worker
-            .fast_forward(NUM_BLOCKS_BETWEEN_REQUESTS)
-            .await
-            .unwrap();
-        req.submit_response(&contract, attested_account).await?;
-        req.verify_execution_outcome(status_2)
-            .await
-            .expect("most recent signature request should succeed");
-        worker.fast_forward(SIGNATURE_TIMEOUT_BLOCKS).await.unwrap();
-        verify_timeout(status_1)
-            .await
-            .expect("initial signature request should time out");
-    }
-    Ok(())
-}
-
-#[tokio::test]
 async fn test_contract_request_timeout_all_schemes() -> anyhow::Result<()> {
     let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
     let SandboxTestSetup {
@@ -126,7 +76,7 @@ async fn test_contract_request_timeout_all_schemes() -> anyhow::Result<()> {
         keys,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
 
@@ -152,7 +102,7 @@ async fn test_contract_success_refund_all_schemes() -> anyhow::Result<()> {
         mpc_signer_accounts,
         keys,
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
     let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
@@ -195,7 +145,7 @@ async fn test_contract_fail_refund_all_schemes() -> anyhow::Result<()> {
         keys,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
     let mut rng = rand::rngs::StdRng::from_seed([2u8; 32]);
@@ -236,7 +186,7 @@ async fn test_contract_request_deposits_all_schemes() -> anyhow::Result<()> {
         keys,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
     let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
@@ -273,18 +223,22 @@ async fn test_contract_request_deposits_all_schemes() -> anyhow::Result<()> {
         // so the request should have never made it into the request queue and subsequently the MPC network.
         let respond = req.submit_response(&contract, attested_account).await;
         dbg!(&respond);
-        assert!(respond
-            .unwrap_err()
-            .to_string()
-            .contains(&errors::InvalidParameters::RequestNotFound.to_string()));
+        assert!(
+            respond
+                .unwrap_err()
+                .to_string()
+                .contains(&errors::InvalidParameters::RequestNotFound.to_string())
+        );
 
         let execution = status.await?;
         dbg!(&execution);
-        assert!(execution
-            .into_result()
-            .unwrap_err()
-            .to_string()
-            .contains("Attached deposit is lower than required"));
+        assert!(
+            execution
+                .into_result()
+                .unwrap_err()
+                .to_string()
+                .contains("Attached deposit is lower than required")
+        );
     }
     Ok(())
 }
@@ -297,7 +251,7 @@ async fn test_sign_v1_compatibility() -> anyhow::Result<()> {
         keys,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(&[Curve::Secp256k1])
+        .with_protocols(&[Protocol::CaitSith])
         .build()
         .await;
     let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
@@ -398,7 +352,7 @@ async fn test_contract_ckd_pv_request() -> anyhow::Result<()> {
         mpc_signer_accounts,
         keys,
     } = SandboxTestSetup::builder()
-        .with_curves(&[Curve::Bls12381])
+        .with_protocols(&[Protocol::ConfidentialKeyDerivation])
         .build()
         .await;
     let attested_account = &mpc_signer_accounts[0];
@@ -433,7 +387,7 @@ async fn test_ckd_gas_regression() -> anyhow::Result<()> {
         mpc_signer_accounts,
         keys,
     } = SandboxTestSetup::builder()
-        .with_curves(&[Curve::Bls12381])
+        .with_protocols(&[Protocol::ConfidentialKeyDerivation])
         .build()
         .await;
     let attested_account = &mpc_signer_accounts[0];

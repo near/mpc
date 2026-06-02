@@ -3,13 +3,11 @@ use crate::config::{ParticipantInfo, ParticipantStatus, ParticipantsConfig};
 use crate::primitives::ParticipantId;
 use anyhow::Context;
 use ed25519_dalek::VerifyingKey;
-use mpc_contract::primitives::key_state::{
-    KeyEventId as ContractKeyEventId, KeyForDomain as ContractKeyForDomain,
-    Keyset as ContractKeyset,
-};
+use mpc_primitives::KeyEventId as ContractKeyEventId;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::{KeyEvent, ProtocolContractState, ThresholdParameters};
+use near_mpc_crypto_types::{KeyForDomain as ContractKeyForDomain, Keyset as ContractKeyset};
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use tokio::sync::watch;
@@ -40,8 +38,7 @@ pub fn convert_key_event_to_instance(
                     epoch_id: key_event.epoch_id,
                     domain_id: key_event.domain.id,
                     attempt_id: current_instance.attempt_id,
-                }
-                .into(),
+                },
                 domain: key_event.domain.clone(),
                 started: true,
                 completed: current_instance
@@ -57,8 +54,7 @@ pub fn convert_key_event_to_instance(
                 epoch_id: key_event.epoch_id,
                 domain_id: key_event.domain.id,
                 attempt_id: key_event.next_attempt_id,
-            }
-            .into(),
+            },
             domain: key_event.domain.clone(),
             started: false,
             completed: BTreeSet::new(),
@@ -111,6 +107,7 @@ pub enum KeyEventIdComparisonResult {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContractRunningState {
     pub keyset: ContractKeyset,
+    pub domains: Vec<dtos::DomainConfig>,
     pub participants: ParticipantsConfig,
     pub resharing_state: Option<ContractResharingState>,
 }
@@ -195,7 +192,8 @@ impl ContractState {
             }
             ProtocolContractState::Running(running_state) => {
                 ContractState::Running(ContractRunningState {
-                    keyset: running_state.keyset.clone().try_into()?,
+                    keyset: running_state.keyset.clone(),
+                    domains: running_state.domains.domains.clone(),
                     participants: convert_participant_infos(
                         running_state.parameters.clone(),
                         port_override,
@@ -212,8 +210,7 @@ impl ContractState {
                     reshared_keys: dtos::Keyset {
                         epoch_id: state.resharing_key.epoch_id,
                         domains: state.reshared_keys.clone(),
-                    }
-                    .try_into()?,
+                    },
                     key_event: convert_key_event_to_instance(
                         &state.resharing_key,
                         height,
@@ -225,7 +222,8 @@ impl ContractState {
                 let running_state = state.previous_running_state.clone();
 
                 ContractState::Running(ContractRunningState {
-                    keyset: running_state.keyset.clone().try_into()?,
+                    keyset: running_state.keyset.clone(),
+                    domains: running_state.domains.domains.clone(),
                     participants: convert_participant_infos(
                         running_state.parameters.clone(),
                         port_override,
@@ -352,13 +350,12 @@ pub fn convert_participant_infos(
             anyhow::bail!("no port found in participant url {}", info.url);
         };
 
-        let p2p_public_key = ed25519_dalek::VerifyingKey::try_from(&info.sign_pk)
-            .with_context(|| format!("Invalid sign_pk for peer: {:?}", info.sign_pk))?;
+        let p2p_public_key = ed25519_dalek::VerifyingKey::try_from(&info.tls_public_key)
+            .with_context(|| {
+                format!("Invalid tls_public_key for peer: {:?}", info.tls_public_key)
+            })?;
 
-        let near_account_id: AccountId = account_id
-            .0
-            .parse()
-            .with_context(|| format!("Invalid account id: {}", account_id.0))?;
+        let near_account_id: AccountId = account_id.clone();
 
         converted.push(ParticipantInfo {
             id: (*id).into(),
@@ -455,11 +452,11 @@ mod tests {
 
         for (i, (account_id, url, pk)) in sorted_raw.into_iter().enumerate() {
             entries.push((
-                DtoAccountId(account_id),
+                account_id.parse().unwrap(),
                 ParticipantId(i as u32),
                 ParticipantInfo {
                     url,
-                    sign_pk: pk.parse().unwrap(),
+                    tls_public_key: pk.parse().unwrap(),
                 },
             ));
         }
@@ -486,9 +483,8 @@ mod tests {
         let mut account_id_to_pk =
             HashMap::<AccountId, near_mpc_contract_interface::types::Ed25519PublicKey>::default();
         for (account_id, _, info) in &chain_infos.participants {
-            let near_account_id: AccountId = account_id.0.parse().unwrap();
-            account_ids.push(near_account_id.clone());
-            account_id_to_pk.insert(near_account_id, info.sign_pk.clone());
+            account_ids.push(account_id.clone());
+            account_id_to_pk.insert(account_id.clone(), info.tls_public_key.clone());
         }
         assert!(account_ids.is_sorted());
         let params = ThresholdParameters {
@@ -505,7 +501,7 @@ mod tests {
             let expected = chain_infos
                 .participants
                 .iter()
-                .find(|(a_id, _, _)| a_id.0.as_str() == account_ids[i].as_str())
+                .find(|(a_id, _, _)| *a_id == account_ids[i])
                 .map(|(_, p_id, _)| *p_id)
                 .unwrap();
             assert!(p.id.raw() == expected.0);

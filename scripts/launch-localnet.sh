@@ -174,9 +174,9 @@ EOF
     NODE_PUBKEY=$(curl -s localhost:$((BASE_WEB_UI_PORT + i))/public_data | jq -r ".near_signer_public_key")
     NODE_RESPONDER_KEY=$(curl -s localhost:$((BASE_WEB_UI_PORT + i))/public_data | jq -r ".near_responder_public_keys[0]")
 
-    NODE_METHODS="respond,respond_ckd,respond_verify_foreign_tx,vote_pk,start_keygen_instance,vote_reshared,vote_foreign_chain_policy,start_reshare_instance,vote_abort_key_event_instance,verify_tee,submit_participant_info,conclude_node_migration"
-    run_quiet_on_success "near account add-key $node_name grant-function-call-access --allowance '1 NEAR' --contract-account-id mpc-contract.test.near --function-names \"$NODE_METHODS\" use-manually-provided-public-key \"$NODE_PUBKEY\" network-config mpc-localnet sign-with-keychain send" && \
-    run_quiet_on_success "near account add-key $node_name grant-function-call-access --allowance '1 NEAR' --contract-account-id mpc-contract.test.near --function-names \"$NODE_METHODS\" use-manually-provided-public-key \"$NODE_RESPONDER_KEY\" network-config mpc-localnet sign-with-keychain send" &
+    # Function-call key scoped to the MPC contract; empty --function-names allows all methods.
+    run_quiet_on_success "near account add-key $node_name grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names '' use-manually-provided-public-key \"$NODE_PUBKEY\" network-config mpc-localnet sign-with-keychain send" && \
+    run_quiet_on_success "near account add-key $node_name grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names '' use-manually-provided-public-key \"$NODE_RESPONDER_KEY\" network-config mpc-localnet sign-with-keychain send" &
     pids_adding_keys+=($!)
   done
 
@@ -206,7 +206,7 @@ EOF
       --arg node_id "$((i - 1))" \
       --arg node_p2p_key "$node_p2p_key" \
       --arg node_url "$node_url" \
-      '.parameters.participants.participants += [[$node_name, ($node_id | tonumber), {sign_pk: $node_p2p_key, url: $node_url}]]')
+      '.parameters.participants.participants += [[$node_name, ($node_id | tonumber), {tls_public_key: $node_p2p_key, url: $node_url}]]')
   done
 
   init_args=$(mktemp /tmp/init_args.XXXXXX)

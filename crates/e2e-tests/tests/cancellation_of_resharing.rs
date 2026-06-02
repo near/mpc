@@ -13,7 +13,7 @@ use rand::SeedableRng;
 #[tokio::test]
 async fn test_cancellation_of_resharing() {
     let (mut cluster, _running) =
-        common::setup_cluster(common::CANCELLATION_OF_RESHARING_PORT_SEED, |c| {
+        common::must_setup_cluster(common::CANCELLATION_OF_RESHARING_PORT_SEED, |c| {
             c.num_nodes = 6;
             c.initial_participant_indices = (0..3).collect();
             c.triples_to_buffer = 2;
@@ -100,8 +100,11 @@ async fn test_cancellation_of_resharing() {
     // Verify liveness after cancellation.
     for _ in 0..3 {
         common::send_sign_request(&cluster, running, &mut rng, cluster.default_user_account())
-            .await;
-        common::send_ckd_request(&cluster, running, &mut rng, cluster.default_user_account()).await;
+            .await
+            .expect("sign request failed");
+        common::send_ckd_request(&cluster, running, &mut rng, cluster.default_user_account())
+            .await
+            .expect("ckd request failed");
     }
 
     // Retry resharing using node 5 (running since startup, fully synced)
@@ -129,7 +132,10 @@ async fn test_cancellation_of_resharing() {
     // Final liveness check.
     for _ in 0..3 {
         common::send_sign_request(&cluster, running, &mut rng, cluster.default_user_account())
-            .await;
-        common::send_ckd_request(&cluster, running, &mut rng, cluster.default_user_account()).await;
+            .await
+            .expect("sign request failed");
+        common::send_ckd_request(&cluster, running, &mut rng, cluster.default_user_account())
+            .await
+            .expect("ckd request failed");
     }
 }

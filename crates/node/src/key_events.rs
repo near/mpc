@@ -5,8 +5,8 @@ use crate::indexer::types::{
 };
 use crate::network::MeshNetworkClient;
 use crate::primitives::{MpcTaskId, ParticipantId};
-use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
 use crate::providers::EcdsaTaskId;
+use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
 use crate::tracking::AutoAbortTaskCollection;
 use crate::{
     config::ParticipantsConfig,
@@ -20,16 +20,17 @@ use crate::{
         CKDProvider, EcdsaSignatureProvider, RobustEcdsaSignatureProvider, SignatureProvider,
     },
 };
-use mpc_contract::primitives::key_state::{KeyEventId, KeyForDomain, Keyset};
-use mpc_primitives::domain::Curve;
+use mpc_primitives::KeyEventId;
+use mpc_primitives::domain::Protocol;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::DomainConfig;
+use near_mpc_crypto_types::{KeyForDomain, Keyset};
 use std::sync::Arc;
 use std::time::Duration;
 use threshold_signatures::{
-    confidential_key_derivation as ckd, frost_ed25519, frost_secp256k1, ReconstructionLowerBound,
+    ReconstructionLowerBound, confidential_key_derivation as ckd, frost_ed25519, frost_secp256k1,
 };
-use tokio::sync::{mpsc, watch, RwLock};
+use tokio::sync::{RwLock, mpsc, watch};
 use tokio::time::timeout;
 use tracing::{error, info};
 
@@ -59,8 +60,8 @@ pub async fn keygen_computation_inner(
         key_id
     );
 
-    let (keyshare, public_key) = match domain.curve {
-        Curve::Secp256k1 => {
+    let (keyshare, public_key) = match domain.protocol {
+        Protocol::CaitSith => {
             let keyshare =
                 EcdsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
             let public_key = dtos::PublicKey::Secp256k1(dtos::Secp256k1PublicKey::try_from(
@@ -68,15 +69,15 @@ pub async fn keygen_computation_inner(
             )?);
             (KeyshareData::Secp256k1(keyshare), public_key)
         }
-        Curve::V2Secp256k1 => {
+        Protocol::DamgardEtAl => {
             let keyshare =
                 RobustEcdsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
             let public_key = dtos::PublicKey::Secp256k1(dtos::Secp256k1PublicKey::try_from(
                 keyshare.public_key.to_element().to_affine(),
             )?);
-            (KeyshareData::V2Secp256k1(keyshare), public_key)
+            (KeyshareData::Secp256k1(keyshare), public_key)
         }
-        Curve::Edwards25519 => {
+        Protocol::Frost => {
             let keyshare =
                 EddsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
             let public_key = dtos::PublicKey::Ed25519(dtos::Ed25519PublicKey::from(
@@ -84,7 +85,7 @@ pub async fn keygen_computation_inner(
             ));
             (KeyshareData::Ed25519(keyshare), public_key)
         }
-        Curve::Bls12381 => {
+        Protocol::ConfidentialKeyDerivation => {
             let keyshare = CKDProvider::run_key_generation_client(threshold, channel).await?;
             let public_key = dtos::PublicKey::Bls12381(dtos::Bls12381G2PublicKey::from(
                 &keyshare.public_key.to_element(),
@@ -106,7 +107,7 @@ pub async fn keygen_computation_inner(
     );
     chain_txn_sender
         .send(ChainSendTransactionRequest::VotePk(ChainVotePkArgs {
-            key_event_id: key_id.into(),
+            key_event_id: key_id,
             public_key,
         }))
         .await?;
@@ -145,7 +146,7 @@ async fn keygen_computation(
                 Err(err) => {
                     tracing::error!("Key generation attempt {:?} failed: {:?}; sending vote_abort_key_event_instance", key_id, err);
                     chain_txn_sender.send(ChainSendTransactionRequest::VoteAbortKeyEventInstance(ChainVoteAbortKeyEventInstanceArgs {
-                        key_event_id: key_id.into(),
+                        key_event_id: key_id,
                     })).await?;
                 },
             }
@@ -204,17 +205,17 @@ async fn resharing_computation_inner(
         None => None,
     };
 
-    let previous_public_key = &args
+    let previous_public_key = args
         .previous_keyset
         .public_key(key_id.domain_id)
-        .map_err(|_| anyhow::anyhow!("Previous keyset does not contain key for {:?}", key_id))?;
+        .ok_or_else(|| anyhow::anyhow!("Previous keyset does not contain key for {:?}", key_id))?;
 
-    let public_key = dtos::PublicKey::from(previous_public_key.clone());
+    let public_key = dtos::PublicKey::try_from(&previous_public_key)?;
 
-    let keyshare_data = match (public_key, domain.curve) {
+    let keyshare_data = match (public_key, domain.protocol) {
         (
             near_mpc_contract_interface::types::PublicKey::Secp256k1(inner_public_key),
-            Curve::Secp256k1,
+            Protocol::CaitSith,
         ) => {
             let pk = k256::PublicKey::try_from(&inner_public_key)?;
             let public_key = frost_secp256k1::VerifyingKey::new(pk.to_projective());
@@ -236,13 +237,13 @@ async fn resharing_computation_inner(
         }
         (
             near_mpc_contract_interface::types::PublicKey::Secp256k1(inner_public_key),
-            Curve::V2Secp256k1,
+            Protocol::DamgardEtAl,
         ) => {
             let pk = k256::PublicKey::try_from(&inner_public_key)?;
             let public_key = frost_secp256k1::VerifyingKey::new(pk.to_projective());
             let my_share = existing_keyshare
                 .map(|keyshare| match keyshare.data {
-                    KeyshareData::V2Secp256k1(data) => Ok(data.private_share),
+                    KeyshareData::Secp256k1(data) => Ok(data.private_share),
                     _ => Err(anyhow::anyhow!("Expected ecdsa keyshare!")),
                 })
                 .transpose()?;
@@ -254,11 +255,11 @@ async fn resharing_computation_inner(
                 channel,
             )
             .await?;
-            KeyshareData::V2Secp256k1(res)
+            KeyshareData::Secp256k1(res)
         }
         (
             near_mpc_contract_interface::types::PublicKey::Ed25519(inner_public_key),
-            Curve::Edwards25519,
+            Protocol::Frost,
         ) => {
             let public_key = frost_ed25519::VerifyingKey::deserialize(inner_public_key.as_ref())?;
             let my_share = existing_keyshare
@@ -277,7 +278,7 @@ async fn resharing_computation_inner(
             .await?;
             KeyshareData::Ed25519(res)
         }
-        (dtos::PublicKey::Bls12381(inner_public_key), Curve::Bls12381) => {
+        (dtos::PublicKey::Bls12381(inner_public_key), Protocol::ConfidentialKeyDerivation) => {
             let public_key = ckd::VerifyingKey::new(ckd::ElementG2::try_from(&inner_public_key)?);
             let my_share = existing_keyshare
                 .map(|keyshare| match keyshare.data {
@@ -295,11 +296,11 @@ async fn resharing_computation_inner(
             .await?;
             KeyshareData::Bls12381(res)
         }
-        (public_key, curve) => {
+        (public_key, protocol) => {
             return Err(anyhow::anyhow!(
                 "Unexpected pair of ({:?}, {:?})",
                 public_key,
-                curve
+                protocol
             ));
         }
     };
@@ -317,7 +318,7 @@ async fn resharing_computation_inner(
     chain_txn_sender
         .send(ChainSendTransactionRequest::VoteReshared(
             ChainVoteResharedArgs {
-                key_event_id: key_id.into(),
+                key_event_id: key_id,
             },
         ))
         .await?;
@@ -356,7 +357,7 @@ async fn resharing_computation(
                 Err(err) => {
                     tracing::error!("Key resharing attempt {:?} failed: {:?}; sending vote_abort_key_event_instance", key_id, err);
                     chain_txn_sender.send(ChainSendTransactionRequest::VoteAbortKeyEventInstance(ChainVoteAbortKeyEventInstanceArgs {
-                        key_event_id: key_id.into(),
+                        key_event_id: key_id,
                     })).await?;
                 },
             }
@@ -431,9 +432,7 @@ pub async fn keygen_leader(
         // wait for it. If it doesn't happen after some time, we try again.
         chain_txn_sender
             .send(ChainSendTransactionRequest::StartKeygen(
-                ChainStartKeygenArgs {
-                    key_event_id: key_event_id.into(),
-                },
+                ChainStartKeygenArgs { key_event_id },
             ))
             .await?;
 
@@ -467,7 +466,7 @@ pub async fn keygen_leader(
         let participants = client.all_participant_ids();
         let Ok(channel) = client.new_channel_for_task(
             EcdsaTaskId::KeyGeneration {
-                key_event: key_event_id.into(),
+                key_event: key_event_id,
             },
             participants,
         ) else {
@@ -529,7 +528,7 @@ pub async fn keygen_follower(
                 channel,
                 keyshare_storage.clone(),
                 chain_txn_sender.clone(),
-                key_event_id.into(),
+                key_event_id,
                 threshold,
             ),
         );
@@ -565,9 +564,7 @@ pub async fn resharing_leader(
 
         chain_txn_sender
             .send(ChainSendTransactionRequest::StartReshare(
-                ChainStartReshareArgs {
-                    key_event_id: key_event_id.into(),
-                },
+                ChainStartReshareArgs { key_event_id },
             ))
             .await
             .inspect_err(|e| {
@@ -608,7 +605,7 @@ pub async fn resharing_leader(
         let participants = client.all_participant_ids();
         let channel = match client.new_channel_for_task(
             EcdsaTaskId::KeyResharing {
-                key_event: key_event_id.into(),
+                key_event: key_event_id,
             },
             participants,
         ) {
@@ -673,7 +670,7 @@ pub async fn resharing_follower(
                 channel,
                 keyshare_storage.clone(),
                 chain_txn_sender.clone(),
-                key_event_id.into(),
+                key_event_id,
                 args.clone(),
             ),
         );
@@ -727,9 +724,11 @@ mod tests {
     use crate::indexer::tx_sender::{TransactionProcessorError, TransactionStatus};
     use crate::keyshare::KeyStorageConfig;
     use assert_matches::assert_matches;
-    use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
-    use mpc_primitives::domain::{Curve, DomainId};
-    use near_mpc_contract_interface::types::{DomainConfig, DomainPurpose};
+    use mpc_primitives::domain::DomainId;
+    use mpc_primitives::{AttemptId, EpochId, KeyEventId};
+    use near_mpc_contract_interface::types::{
+        DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
+    };
     use std::collections::BTreeSet;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -787,8 +786,8 @@ mod tests {
     }
 
     #[test]
-    fn compare_to_expected_key_event_id__should_return_remote_behind_when_ids_match_but_not_started(
-    ) {
+    fn compare_to_expected_key_event_id__should_return_remote_behind_when_ids_match_but_not_started()
+     {
         // Given
         let key_event_id = make_key_event_id(6, 1, 1);
         let instance = make_key_event_instance(key_event_id, false);
@@ -887,7 +886,8 @@ mod tests {
             id: key_event_id,
             domain: DomainConfig {
                 id: key_event_id.domain_id,
-                curve: Curve::Secp256k1,
+                protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
             },
             started,

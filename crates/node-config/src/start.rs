@@ -1,7 +1,10 @@
 use super::ConfigFile;
 use anyhow::Context;
 use clap::ValueEnum;
+use launcher_interface::types::PccsEndpointConfig;
+use near_mpc_bounded_collections::NonEmptyVec;
 use serde::{Deserialize, Serialize};
+use std::net::SocketAddr;
 use std::path::PathBuf;
 
 /// Configuration for starting the MPC node. This is the canonical type used
@@ -24,16 +27,26 @@ pub struct StartConfig {
     /// Node configuration (indexer, protocol parameters, etc.).
     pub node: ConfigFile,
     pub log: LogConfig,
-    /// Base URL of the PCCS server used to fetch TDX attestation collateral.
-    /// Defaults to Phala's PCCS if not set in config.
-    #[serde(default = "default_pccs_url")]
-    pub pccs_url: url::Url,
+    /// PCCS servers used to fetch TDX attestation collateral. Each entry
+    /// is a URL plus an optional per-URL TLS trust override. Tried in
+    /// order on every fetch; the first one to succeed wins, the rest are
+    /// fallbacks. At least one entry is required. Defaults to Phala's
+    /// PCCS if the field is omitted.
+    ///
+    /// Per-URL TLS trust override (the `tls = ...` part of each entry)
+    /// lets an operator combine, for example, a self-signed local PCCS
+    /// (`tls = { override = "insecure" }`) with public-CA fallbacks
+    /// (`tls` omitted) in the same fallback chain.
+    #[serde(default = "default_pccs_endpoints")]
+    pub pccs_endpoints: NonEmptyVec<PccsEndpointConfig>,
 }
 
-pub fn default_pccs_url() -> url::Url {
-    launcher_interface::DEFAULT_PCCS_URL
+pub fn default_pccs_endpoints() -> NonEmptyVec<PccsEndpointConfig> {
+    let url: url::Url = launcher_interface::DEFAULT_PCCS_URL
         .parse()
-        .expect("default PCCS URL is valid")
+        .expect("default PCCS URL is valid");
+    NonEmptyVec::try_from(vec![PccsEndpointConfig { url, tls: None }])
+        .expect("single-element vec is non-empty")
 }
 
 impl StartConfig {
@@ -92,10 +105,23 @@ pub struct NearInitConfig {
     pub download_genesis_records_url: Option<String>,
     /// Override the NEAR node RPC listen address (e.g. "0.0.0.0:3031").
     /// Useful when running multiple nodes on the same machine.
-    pub rpc_addr: Option<String>,
+    pub rpc_addr: Option<SocketAddr>,
     /// Override the NEAR node network (indexer) listen address (e.g. "0.0.0.0:24568").
     /// Useful when running multiple nodes on the same machine.
-    pub network_addr: Option<String>,
+    pub network_addr: Option<SocketAddr>,
+    /// Override the public address advertised for Tier3 state-sync responses
+    /// (e.g. "203.0.113.5:24567"). Required on multi-IP hosts where outbound
+    /// source IP differs from the bound IP — auto-discovery picks the
+    /// outbound IP and DSS times out. Patches into nearcore's
+    /// `network.experimental.tier3_public_addr` config field.
+    pub tier3_public_addr: Option<SocketAddr>,
+    /// Override how many P2P (DSS) state-sync attempts to make before falling
+    /// back to the external storage bucket. `0` (current default) means
+    /// "go straight to bucket, never use DSS." A moderate value enables
+    /// DSS-first with bucket as a safety net; a very large value effectively
+    /// disables the bucket fallback. Patches into nearcore's
+    /// `state_sync.sync.ExternalStorage.external_storage_fallback_threshold`.
+    pub external_storage_fallback_threshold: Option<u64>,
 }
 
 /// Encryption keys needed at startup.
@@ -177,8 +203,10 @@ pub enum DownloadConfigType {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use launcher_interface::types::PccsTlsTrust;
 
     /// The tee-launcher blocks the "gcp" key in TEE mode using the hardcoded
     /// string "gcp" (see crates/tee-launcher/src/config.rs).
@@ -198,5 +226,189 @@ mod tests {
             parsed.contains_key("gcp"),
             "GCP field name changed — update tee-launcher's TEE-restricted key list"
         );
+    }
+
+    /// A single bare-URL entry (no `tls` override) parses as a one-element
+    /// [`NonEmptyVec`] with default trust.
+    #[test]
+    fn pccs_endpoints__should_parse_single_bare_url_entry() {
+        // Given
+        #[derive(Debug, Deserialize)]
+        struct Wrapper {
+            #[serde(default = "default_pccs_endpoints")]
+            pccs_endpoints: NonEmptyVec<PccsEndpointConfig>,
+        }
+        const URL: &str = "https://pccs.example.org/";
+        let toml_input = format!(
+            r#"
+                [[pccs_endpoints]]
+                url = "{URL}"
+            "#
+        );
+
+        // When
+        let parsed: Wrapper = toml::from_str(&toml_input).unwrap();
+        let entries: Vec<PccsEndpointConfig> = parsed.pccs_endpoints.into_iter().collect();
+
+        // Then
+        let expected = vec![PccsEndpointConfig {
+            url: URL.parse().unwrap(),
+            tls: None,
+        }];
+        assert_eq!(entries, expected);
+    }
+
+    /// Multiple entries parse in order; entries with `tls` overrides are
+    /// distinguishable from bare entries. Order matters: the fetch path
+    /// tries each endpoint in the order the user wrote them.
+    #[test]
+    fn pccs_endpoints__should_preserve_order_with_mixed_tls_overrides() {
+        // Given
+        #[derive(Debug, Deserialize)]
+        struct Wrapper {
+            #[serde(default = "default_pccs_endpoints")]
+            pccs_endpoints: NonEmptyVec<PccsEndpointConfig>,
+        }
+        let toml_input = r#"
+            [[pccs_endpoints]]
+            url = "https://localhost:8081/"
+            tls = { override = "insecure" }
+
+            [[pccs_endpoints]]
+            url = "https://pccs.phala.network/"
+
+            [[pccs_endpoints]]
+            url = "https://api.trustedservices.intel.com/"
+        "#;
+
+        // When
+        let parsed: Wrapper = toml::from_str(toml_input).unwrap();
+        let entries: Vec<PccsEndpointConfig> = parsed.pccs_endpoints.into_iter().collect();
+
+        // Then
+        let expected = vec![
+            PccsEndpointConfig {
+                url: "https://localhost:8081/".parse().unwrap(),
+                tls: Some(PccsTlsTrust::Insecure),
+            },
+            PccsEndpointConfig {
+                url: "https://pccs.phala.network/".parse().unwrap(),
+                tls: None,
+            },
+            PccsEndpointConfig {
+                url: "https://api.trustedservices.intel.com/".parse().unwrap(),
+                tls: None,
+            },
+        ];
+        assert_eq!(entries, expected);
+    }
+
+    /// When the field is omitted altogether, the `#[serde(default)]` hook
+    /// returns the Phala default as a single-element vec.
+    #[test]
+    fn pccs_endpoints__should_default_to_phala_when_omitted() {
+        // Given
+        #[derive(Debug, Deserialize)]
+        struct Wrapper {
+            #[serde(default = "default_pccs_endpoints")]
+            pccs_endpoints: NonEmptyVec<PccsEndpointConfig>,
+        }
+
+        // When
+        let parsed: Wrapper = toml::from_str("").unwrap();
+        let entries: Vec<PccsEndpointConfig> = parsed.pccs_endpoints.into_iter().collect();
+
+        // Then
+        let expected = vec![PccsEndpointConfig {
+            url: launcher_interface::DEFAULT_PCCS_URL.parse().unwrap(),
+            tls: None,
+        }];
+        assert_eq!(entries, expected);
+    }
+
+    /// Helper: parse `NearInitConfig` from a TOML fragment that only sets
+    /// `chain_id` and the field under test. Reduces noise in the address
+    /// validation tests.
+    fn parse_near_init_with_addr_field(field: &str, value: &str) -> Result<NearInitConfig, String> {
+        let toml_input =
+            format!("chain_id = \"testnet\"\ndownload_genesis = false\n{field} = \"{value}\"\n");
+        toml::from_str(&toml_input).map_err(|e| e.to_string())
+    }
+
+    #[test]
+    fn near_init_config__should_accept_valid_rpc_addr() {
+        // Given a syntactically valid socket address
+        // When
+        let parsed = parse_near_init_with_addr_field("rpc_addr", "0.0.0.0:3031");
+
+        // Then
+        let parsed = parsed.expect("expected valid rpc_addr to parse");
+        assert_eq!(parsed.rpc_addr, Some("0.0.0.0:3031".parse().unwrap()));
+    }
+
+    #[test]
+    fn near_init_config__should_accept_valid_network_addr() {
+        // Given
+        let parsed = parse_near_init_with_addr_field("network_addr", "51.68.219.13:24567");
+
+        // Then
+        let parsed = parsed.expect("expected valid network_addr to parse");
+        assert_eq!(
+            parsed.network_addr,
+            Some("51.68.219.13:24567".parse().unwrap())
+        );
+    }
+
+    #[test]
+    fn near_init_config__should_accept_valid_tier3_public_addr() {
+        // Given
+        let parsed = parse_near_init_with_addr_field("tier3_public_addr", "203.0.113.5:24567");
+
+        // Then
+        let parsed = parsed.expect("expected valid tier3_public_addr to parse");
+        assert_eq!(
+            parsed.tier3_public_addr,
+            Some("203.0.113.5:24567".parse().unwrap())
+        );
+    }
+
+    #[test]
+    fn near_init_config__should_reject_addr_without_port() {
+        // Given — common typo: IP only, no port
+        let result = parse_near_init_with_addr_field("tier3_public_addr", "203.0.113.5");
+
+        // Then — error should name the offending field
+        let err = result.expect_err("expected parse to fail on missing port");
+        assert!(
+            err.contains("tier3_public_addr"),
+            "error should name the offending field, got: {err}"
+        );
+    }
+
+    #[test]
+    fn near_init_config__should_reject_addr_with_non_numeric_port() {
+        // Given
+        let result = parse_near_init_with_addr_field("rpc_addr", "0.0.0.0:notaport");
+
+        // Then
+        let err = result.expect_err("expected parse to fail on non-numeric port");
+        assert!(
+            err.contains("rpc_addr"),
+            "error should name the offending field, got: {err}"
+        );
+    }
+
+    #[test]
+    fn near_init_config__should_accept_missing_optional_addr_fields() {
+        // Given — none of the optional address fields set
+        let toml_input = "chain_id = \"testnet\"\ndownload_genesis = false\n";
+
+        // When
+        let parsed: NearInitConfig = toml::from_str(toml_input).expect("expected default to parse");
+
+        // Then — all three address fields default to None
+        assert_eq!(parsed.rpc_addr, None);
+        assert_eq!(parsed.network_addr, None);
+        assert_eq!(parsed.tier3_public_addr, None);
     }
 }

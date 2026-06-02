@@ -50,6 +50,19 @@ This function contains an `.unwrap()`, but we can still guarantee that
 this function will never ever panic. Therefore it's not violating
 the "Don't panic" principle.
 
+### `must_` prefix for panicking test helpers
+
+In test code, plumbing helpers (loading WASM artifacts, resolving binary
+paths, extracting setup data from a known-good state) should panic on
+failure instead of returning `Result`: the failure means the test wasn't
+built or wired correctly, not that the system under test misbehaved, so
+there's no useful error path. Such helpers must be prefixed with `must_`
+(e.g. `must_load_contract_wasm`, `must_get_bls_public_key`) so callers
+can see at the call site that the function will panic on failure.
+
+Helpers whose failure could be a meaningful test outcome (network calls,
+state observations) should still return `Result`.
+
 ## Maintain Local Reasonability
 It's often tempting to write code that has implicit sequential dependencies.
 In these scenarios, the correctness of one expression depends on

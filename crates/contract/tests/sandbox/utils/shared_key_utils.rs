@@ -9,7 +9,7 @@ use threshold_signatures::{
     confidential_key_derivation::{self as ckd},
     ecdsa as ts_ecdsa,
     frost::eddsa,
-    frost_ed25519::{keys::SigningShare, Ed25519Group, Group as _, VerifyingKey},
+    frost_ed25519::{Ed25519Group, Group as _, VerifyingKey, keys::SigningShare},
     frost_secp256k1::{self, Secp256K1Group},
 };
 
@@ -64,7 +64,7 @@ pub fn new_secp256k1() -> (dtos::PublicKey, ts_ecdsa::KeygenOutput) {
 
 pub fn make_key_for_domain(domain_curve: Curve) -> (dtos::PublicKey, SharedSecretKey) {
     match domain_curve {
-        Curve::Secp256k1 | Curve::V2Secp256k1 => {
+        Curve::Secp256k1 => {
             let (pk, sk) = new_secp256k1();
             (pk, SharedSecretKey::Secp256k1(sk))
         }

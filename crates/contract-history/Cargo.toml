@@ -4,15 +4,8 @@ version = { workspace = true }
 license = { workspace = true }
 edition = { workspace = true }
 
-[[bin]]
-name = "copy_contracts"
-path = "src/bin/copy_contracts.rs"
-
 [features]
 external-services-tests = []
-
-[dependencies]
-clap.workspace = true
 
 [dev-dependencies]
 bs58.workspace = true

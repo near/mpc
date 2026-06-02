@@ -1,65 +1,72 @@
 mod sign;
 
-use crate::config::{auth_config_to_rpc_auth, ParticipantsConfig};
+use crate::config::{ParticipantsConfig, auth_config_to_rpc_auth};
 use crate::network::NetworkTaskChannel;
 use crate::primitives::{MpcTaskId, UniqueId};
 use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
 use crate::storage::VerifyForeignTransactionRequestStorage;
 use crate::types::VerifyForeignTxId;
 use borsh::{BorshDeserialize, BorshSerialize};
+use foreign_chain_inspector::FanOut;
 use foreign_chain_inspector::abstract_chain::inspector::AbstractInspector;
+use foreign_chain_inspector::arbitrum::inspector::ArbitrumInspector;
 use foreign_chain_inspector::base::inspector::BaseInspector;
 use foreign_chain_inspector::bitcoin::inspector::BitcoinInspector;
 use foreign_chain_inspector::bnb::inspector::BnbInspector;
 use foreign_chain_inspector::http_client::HttpClient;
+use foreign_chain_inspector::hyperevm::inspector::HyperEvmInspector;
+use foreign_chain_inspector::polygon::inspector::PolygonInspector;
 use foreign_chain_inspector::starknet::inspector::StarknetInspector;
-use mpc_node_config::{ConfigFile, ForeignChainsConfig};
+use mpc_node_config::{ConfigFile, ForeignChainConfig, ForeignChainsConfig};
 use near_mpc_contract_interface::types as dtos;
 use std::sync::Arc;
-use threshold_signatures::ecdsa::{KeygenOutput, Signature};
-use threshold_signatures::frost_secp256k1::keys::SigningShare;
-use threshold_signatures::frost_secp256k1::VerifyingKey;
 use threshold_signatures::ReconstructionLowerBound;
+use threshold_signatures::ecdsa::{KeygenOutput, Signature};
+use threshold_signatures::frost_secp256k1::VerifyingKey;
+use threshold_signatures::frost_secp256k1::keys::SigningShare;
 
 /// Pre-built HTTP clients for each foreign chain, keyed in provider config order.
 ///
 /// Built once at startup so that request handling only needs to select an index
 /// instead of re-parsing config and constructing clients on every call.
 pub(crate) struct ForeignChainInspectors<Client> {
-    pub bitcoin: Vec<BitcoinInspector<Client>>,
-    pub abstract_chain: Vec<AbstractInspector<Client>>,
-    pub bnb: Vec<BnbInspector<Client>>,
-    pub starknet: Vec<StarknetInspector<Client>>,
-    pub base: Vec<BaseInspector<Client>>,
+    pub bitcoin: Option<FanOut<BitcoinInspector<Client>>>,
+    pub abstract_chain: Option<FanOut<AbstractInspector<Client>>>,
+    pub bnb: Option<FanOut<BnbInspector<Client>>>,
+    pub starknet: Option<FanOut<StarknetInspector<Client>>>,
+    pub base: Option<FanOut<BaseInspector<Client>>>,
+    pub arbitrum: Option<FanOut<ArbitrumInspector<Client>>>,
+    pub hyper_evm: Option<FanOut<HyperEvmInspector<Client>>>,
+    pub polygon: Option<FanOut<PolygonInspector<Client>>>,
 }
 
 impl ForeignChainInspectors<HttpClient> {
     fn build(config: &ForeignChainsConfig) -> anyhow::Result<Self> {
-        // using a macro because the chain config and inspector types differ per chain
-        macro_rules! build_inspectors {
-            ($chain_config:expr, $Inspector:ident) => {
-                match $chain_config {
-                    Some(c) => c
-                        .providers
-                        .values()
-                        .map(|p| {
-                            let mut url = p.rpc_url.clone();
-                            let rpc_auth = auth_config_to_rpc_auth(p.auth.clone(), &mut url)?;
-                            let client = foreign_chain_inspector::build_http_client(url, rpc_auth)?;
-                            Ok($Inspector::new(client))
-                        })
-                        .collect::<anyhow::Result<Vec<_>>>()?,
-                    None => vec![],
-                }
+        fn build_fanout<I>(
+            chain_config: Option<&ForeignChainConfig>,
+            new_inspector: impl Fn(HttpClient) -> I,
+        ) -> anyhow::Result<Option<FanOut<I>>> {
+            let Some(c) = chain_config else {
+                return Ok(None);
             };
+            let inspectors = c.providers.try_map_to_vec(|_, p| {
+                let mut url = p.rpc_url.clone();
+                let rpc_auth = auth_config_to_rpc_auth(p.auth.clone(), &mut url)?;
+                let client = foreign_chain_inspector::build_http_client(url, rpc_auth)?;
+                Ok::<_, anyhow::Error>(new_inspector(client))
+            })?;
+            Ok(Some(FanOut::new(inspectors)))
         }
 
         Ok(Self {
-            bitcoin: build_inspectors!(&config.bitcoin, BitcoinInspector),
-            abstract_chain: build_inspectors!(&config.abstract_chain, AbstractInspector),
-            base: build_inspectors!(&config.base, BaseInspector),
-            bnb: build_inspectors!(&config.bnb, BnbInspector),
-            starknet: build_inspectors!(&config.starknet, StarknetInspector),
+            bitcoin: build_fanout(config.bitcoin.as_ref(), BitcoinInspector::new)?,
+            abstract_chain: build_fanout(config.abstract_chain.as_ref(), AbstractInspector::new)?,
+            base: build_fanout(config.base.as_ref(), BaseInspector::new)?,
+            bnb: build_fanout(config.bnb.as_ref(), BnbInspector::new)?,
+            starknet: build_fanout(config.starknet.as_ref(), StarknetInspector::new)?,
+            arbitrum: build_fanout(config.arbitrum.as_ref(), ArbitrumInspector::new)?,
+            hyper_evm: build_fanout(config.hyper_evm.as_ref(), HyperEvmInspector::new)?,
+            polygon: build_fanout(config.polygon.as_ref(), PolygonInspector::new)?,
         })
     }
 }
@@ -107,7 +114,7 @@ impl From<VerifyForeignTxTaskId> for MpcTaskId {
 impl<ForeignChainPolicyReader> SignatureProvider
     for VerifyForeignTxProvider<ForeignChainPolicyReader>
 where
-    ForeignChainPolicyReader: crate::indexer::ReadForeignChainPolicy,
+    ForeignChainPolicyReader: crate::indexer::ReadSupportedForeignChain,
 {
     type PublicKey = VerifyingKey;
     type SecretShare = SigningShare;

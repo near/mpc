@@ -406,7 +406,7 @@ The initial governor set and vote threshold are configured at contract deploymen
 | `allowed_launcher_image_hashes()` | View | Archive Signer | Query approved launcher image hashes |
 | `allowed_launcher_compose_hashes()` | View | Archive Signer | Query approved launcher compose hashes |
 | `get_tee_accounts()` | View | Anyone | Query nodes with valid attestations |
-| `get_foreign_chain_policy()` | View | Archive Signer | Query active foreign chain RPC configuration |
+| `get_supported_foreign_chains()` | View | Archive Signer |  Query active foreign chains (opt-in)  |
 
 ### Launcher Compose Hash Derivation
 

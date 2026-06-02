@@ -1,7 +1,9 @@
+#![allow(non_snake_case)]
+
 use crate::sandbox::{
-    common::{gen_accounts, submit_tee_attestations, SandboxTestSetup},
+    common::{SandboxTestSetup, build_sandbox_node_ids, gen_accounts, submit_tee_attestations},
     utils::{
-        consts::ALL_CURVES,
+        consts::ALL_PROTOCOLS,
         interface::IntoContractType,
         mpc_contract::{
             assert_running_return_participants, assert_running_return_threshold,
@@ -15,7 +17,7 @@ use anyhow::Result;
 use mpc_contract::primitives::{participants::Participants, test_utils::bogus_ed25519_public_key};
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
 use near_mpc_contract_interface::method_names;
-use near_mpc_contract_interface::types::Curve;
+use near_mpc_contract_interface::types::Protocol;
 use near_mpc_contract_interface::types::{self as dtos, Attestation, MockAttestation};
 use near_workspaces::Contract;
 use test_utils::attestation::{image_digest, p2p_tls_key};
@@ -30,7 +32,7 @@ async fn test_vote_code_hash_basic_threshold_and_stability() -> Result<()> {
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
     let threshold = assert_running_return_threshold(&contract).await;
@@ -82,7 +84,7 @@ async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Res
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
     let threshold = assert_running_return_threshold(&contract).await;
@@ -145,7 +147,7 @@ async fn test_vote_code_hash_doesnt_accept_account_id_not_in_participant_list() 
     let SandboxTestSetup {
         worker, contract, ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
     let random_account = &gen_accounts(&worker, 1).await.0[0];
@@ -176,7 +178,7 @@ async fn test_vote_code_hash_accepts_allowed_mpc_image_digest_hex_parameter() ->
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
     let allowed_mpc_image_digest =
@@ -241,7 +243,7 @@ async fn test_submit_participant_info_succeeds_with_mock_attestation() -> Result
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
     let mock_attestation = Attestation::Mock(MockAttestation::Valid);
@@ -265,7 +267,7 @@ async fn test_clean_tee_status_denies_external_account_access() -> Result<()> {
     let SandboxTestSetup {
         worker, contract, ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
 
@@ -294,26 +296,26 @@ async fn test_clean_tee_status_denies_external_account_access() -> Result<()> {
     Ok(())
 }
 
-/// **TEE cleanup functionality** - Tests that the clean_tee_status contract method works correctly when called by the contract itself.
-/// Unlike the access control test above, this demonstrates the positive case: the contract can successfully clean up
-/// TEE data for accounts that are no longer participants. Uses the test method to populate initial TEE state.
+/// **`clean_tee_status` when called by the contract itself** — the call succeeds and the
+/// endpoint leaves `stored_attestations` untouched. Attestation pruning is handled by the
+/// separate `clean_invalid_attestations` endpoint.
 #[tokio::test]
-async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<()> {
+async fn clean_tee_status__should_succeed_when_contract_calls_itself_and_leave_attestations_alone()
+-> Result<()> {
+    // Given
     let SandboxTestSetup {
         worker,
         contract,
         mut mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
 
-    let participant_uids = {
-        let p: Participants =
-            (&assert_running_return_participants(&contract).await?).into_contract_type();
-        p.get_node_ids()
-    };
+    let participants: Participants =
+        (&assert_running_return_participants(&contract).await?).into_contract_type();
+    let participant_uids = build_sandbox_node_ids(&participants, &mpc_signer_accounts);
     submit_tee_attestations(&contract, &mut mpc_signer_accounts, &participant_uids).await?;
 
     // Verify current participants have TEE data
@@ -323,17 +325,15 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
     const NUM_ADDITIONAL_ACCOUNTS: usize = 2;
     let (mut additional_accounts, additional_participants) =
         gen_accounts(&worker, NUM_ADDITIONAL_ACCOUNTS).await;
-    let additional_uids = additional_participants.get_node_ids();
+    let additional_uids = build_sandbox_node_ids(&additional_participants, &additional_accounts);
     submit_tee_attestations(&contract, &mut additional_accounts, &additional_uids).await?;
 
     // Verify we have TEE data for all accounts before cleanup
     let tee_participants_before = get_tee_accounts(&contract).await?;
-    assert_eq!(
-        tee_participants_before,
-        &additional_uids | &participant_uids
-    );
+    let expected_union = &additional_uids | &participant_uids;
+    assert_eq!(tee_participants_before, expected_union);
 
-    // Contract should be able to call clean_tee_status on itself
+    // When: contract calls clean_tee_status on itself.
     let result = contract
         .as_account()
         .call(contract.id(), method_names::CLEAN_TEE_STATUS)
@@ -343,23 +343,98 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
 
     assert!(result.is_success());
 
-    // Verify cleanup worked: only current participants should have TEE data
+    // Then: stored attestations are unchanged — vote-only cleanup.
     let tee_participants_after = get_tee_accounts(&contract).await?;
-    assert_eq!(tee_participants_after.len(), mpc_signer_accounts.len());
-    assert_eq!(participant_uids, tee_participants_after);
+    assert_eq!(tee_participants_after, expected_union);
+
+    Ok(())
+}
+
+/// **`clean_invalid_attestations` end-to-end** — an attestation whose expiry has passed
+/// is evicted from `stored_attestations` when the endpoint is invoked. Restores the
+/// functional cleanup-path coverage previously asserted via `clean_tee_status`.
+#[tokio::test]
+async fn clean_invalid_attestations__should_remove_expired_entries() -> Result<()> {
+    // `verify()` at insert time rejects attestations that are already expired, so the
+    // expiring attestation is submitted with an expiry a few seconds in the future and
+    // the test then fast-forwards past it. 100 blocks is enough that the block
+    // timestamp reliably advances past a 5-second expiry window.
+    const ATTESTATION_EXPIRY_SECONDS: u64 = 5;
+    const BLOCKS_TO_FAST_FORWARD: u64 = 100;
+
+    // Given
+    let SandboxTestSetup {
+        worker,
+        contract,
+        mut mpc_signer_accounts,
+        ..
+    } = SandboxTestSetup::builder()
+        .with_protocols(ALL_PROTOCOLS)
+        .build()
+        .await;
+
+    // Submit a structurally-valid attestation for every current participant so those
+    // entries survive the sweep.
+    let participants: Participants =
+        (&assert_running_return_participants(&contract).await?).into_contract_type();
+    let participant_uids = build_sandbox_node_ids(&participants, &mpc_signer_accounts);
+    submit_tee_attestations(&contract, &mut mpc_signer_accounts, &participant_uids).await?;
+
+    // Submit an attestation from a non-participant that will expire shortly.
+    let (stale_accounts, _stale_participants) = gen_accounts(&worker, 1).await;
+    let stale_account = &stale_accounts[0];
+    let stale_tls_key: dtos::Ed25519PublicKey = p2p_tls_key().into();
+    let block_info = worker.view_block().await?;
+    let expiry_timestamp_seconds =
+        block_info.timestamp() / 1_000_000_000 + ATTESTATION_EXPIRY_SECONDS;
+    let expiring_attestation = Attestation::Mock(MockAttestation::WithConstraints {
+        mpc_docker_image_hash: None,
+        launcher_docker_compose_hash: None,
+        expiry_timestamp_seconds: Some(expiry_timestamp_seconds),
+        expected_measurements: None,
+    });
+    let submit_result = submit_participant_info(
+        stale_account,
+        &contract,
+        &expiring_attestation,
+        &stale_tls_key,
+    )
+    .await?;
+    assert!(submit_result.is_success());
+
+    let before_cleanup = get_tee_accounts(&contract).await?;
+    assert_eq!(before_cleanup.len(), participant_uids.len() + 1);
+
+    // Advance past the expiry.
+    worker.fast_forward(BLOCKS_TO_FAST_FORWARD).await?;
+
+    // When: any account calls `clean_invalid_attestations` with a scan budget large enough
+    // to cover every stored entry.
+    let scan_budget: u32 = (before_cleanup.len() as u32) + 1;
+    let result = contract
+        .as_account()
+        .call(contract.id(), method_names::CLEAN_INVALID_ATTESTATIONS)
+        .args_json(serde_json::json!({ "max_scan": scan_budget }))
+        .transact()
+        .await?;
+    assert!(result.is_success());
+
+    // Then: the expired entry is evicted while the valid participant entries remain.
+    let after_cleanup = get_tee_accounts(&contract).await?;
+    assert_eq!(after_cleanup, participant_uids);
 
     Ok(())
 }
 
 #[tokio::test]
-async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verification(
-) -> Result<()> {
+async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verification()
+-> Result<()> {
     let SandboxTestSetup {
         contract,
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
     let threshold = assert_running_return_threshold(&contract).await;
@@ -419,7 +494,7 @@ async fn get_attestation_returns_none_when_tls_key_is_not_associated_with_an_att
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
 
@@ -455,7 +530,7 @@ async fn get_attestation_returns_some_when_tls_key_associated_with_an_attestatio
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
 
@@ -526,7 +601,7 @@ async fn get_attestation_overwrites_when_same_tls_key_is_reused() {
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
 
@@ -594,7 +669,7 @@ async fn test_function_allowed_launcher_compose_hashes() -> anyhow::Result<()> {
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
 
@@ -652,7 +727,7 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(&[Curve::Secp256k1])
+        .with_protocols(&[Protocol::CaitSith])
         .with_number_of_participants(PARTICIPANT_COUNT)
         .build()
         .await;
@@ -667,10 +742,9 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
     // Submit an expiring attestation for the last participant
     let target_account = &mpc_signer_accounts[2];
     let internal_participants: Participants = (&initial_participants).into_contract_type();
-    let target_node_id = internal_participants
-        .get_node_ids()
+    let target_node_id = build_sandbox_node_ids(&internal_participants, &mpc_signer_accounts)
         .into_iter()
-        .find(|node| &node.account_id == target_account.id())
+        .find(|node| node.account_id == *target_account.id())
         .expect("target participant not found");
 
     let expiring_attestation = Attestation::Mock(MockAttestation::WithConstraints {
@@ -684,8 +758,7 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
         target_account,
         &contract,
         &expiring_attestation,
-        &dtos::Ed25519PublicKey::try_from(&target_node_id.tls_public_key)
-            .expect("expected ED25519 key"),
+        &target_node_id.tls_public_key,
     )
     .await?
     .is_success();
@@ -739,7 +812,7 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
     let final_accounts: Vec<String> = final_participants
         .participants
         .iter()
-        .map(|(account_id, _, _)| account_id.0.clone())
+        .map(|(account_id, _, _)| account_id.to_string())
         .collect();
     let expected_accounts: Vec<String> = remaining_accounts
         .iter()

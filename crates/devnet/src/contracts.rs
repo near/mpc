@@ -1,17 +1,36 @@
 use std::collections::BTreeMap;
 
+use blstrs::G1Projective;
+use group::Group;
 use near_account_id::AccountId;
 use near_mpc_bounded_collections::BoundedVec;
 use near_mpc_contract_interface::{
     method_names,
     types::{
-        CKDAppPublicKey, CKDRequestArgs, Curve, DomainConfig, Payload, SignRequestArgs,
-        EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
+        Bls12381G1PublicKey, CKDAppPublicKey, CKDRequestArgs, DomainConfig,
+        EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES, Payload,
+        Protocol, SignRequestArgs,
     },
 };
 use near_primitives::action::Action;
+use rand::Rng;
 use rand::RngCore;
+use rand::rngs::OsRng;
 use serde::Serialize;
+
+/// Gas attached to a `sign` (or legacy `sign`) request. Matches the e2e
+/// test cluster's `SIGN_GAS` and the contract's
+/// `sign_call_gas_attachment_requirement_tera_gas` minimum.
+const SIGN_TGAS: u64 = 15;
+/// Gas attached to a `request_app_private_key` (CKD) call. Matches the
+/// e2e cluster's `CKD_PV_GAS`. CKD is more expensive than `sign` because
+/// `AppPublicKeyPV` does an on-chain bls12381 pairing check before
+/// yielding.
+const CKD_TGAS: u64 = 100;
+/// Gas attached to a `make_parallel_sign_calls` invocation on the
+/// parallel-sign helper contract. The helper schedules up to ~10
+/// sub-calls into the MPC contract, so this needs the full block budget.
+const PARALLEL_SIGN_TGAS: u64 = 300;
 
 #[derive(Clone)]
 pub struct ActionCall {
@@ -49,17 +68,21 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
     match call {
         ContractActionCall::ParallelSignCall(args) => {
             let mut ecdsa_calls_by_domain = BTreeMap::new();
+            let mut robust_ecdsa_calls_by_domain = BTreeMap::new();
             let mut eddsa_calls_by_domain = BTreeMap::new();
             let mut ckd_calls_by_domain = BTreeMap::new();
             for (domain, prot_calls) in args.calls_by_domain {
-                match domain.curve {
-                    Curve::Secp256k1 | Curve::V2Secp256k1 => {
+                match domain.protocol {
+                    Protocol::CaitSith => {
                         ecdsa_calls_by_domain.insert(domain.id.0, prot_calls);
                     }
-                    Curve::Edwards25519 => {
+                    Protocol::DamgardEtAl => {
+                        robust_ecdsa_calls_by_domain.insert(domain.id.0, prot_calls);
+                    }
+                    Protocol::Frost => {
                         eddsa_calls_by_domain.insert(domain.id.0, prot_calls);
                     }
-                    Curve::Bls12381 => {
+                    Protocol::ConfidentialKeyDerivation => {
                         ckd_calls_by_domain.insert(domain.id.0, prot_calls);
                     }
                 }
@@ -71,12 +94,13 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
                     &serde_json::to_vec(&ParallelSignArgsV2 {
                         target_contract: args.mpc_contract,
                         ecdsa_calls_by_domain,
+                        robust_ecdsa_calls_by_domain,
                         eddsa_calls_by_domain,
                         ckd_calls_by_domain,
                         seed: rand::random(),
                     })
                     .unwrap(),
-                    300,
+                    PARALLEL_SIGN_TGAS,
                     1,
                 )],
             }
@@ -89,11 +113,11 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
                     request: SignRequestArgs {
                         domain_id: args.domain_config.id,
                         path: "".to_string(),
-                        payload: make_payload(args.domain_config.curve),
+                        payload: make_payload(args.domain_config.protocol),
                     },
                 })
                 .unwrap(),
-                300,
+                SIGN_TGAS,
                 1,
             )],
         },
@@ -109,7 +133,7 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
                     },
                 })
                 .unwrap(),
-                300,
+                SIGN_TGAS,
                 1,
             )],
         },
@@ -121,13 +145,11 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
                     request: CKDRequestArgs {
                         derivation_path: "".to_string(),
                         domain_id: args.domain_config.id,
-                        app_public_key: CKDAppPublicKey::AppPublicKey(
-                            mpc_contract::utils::random_app_public_key(),
-                        ),
+                        app_public_key: CKDAppPublicKey::AppPublicKey(random_app_public_key()),
                     },
                 })
                 .unwrap(),
-                300,
+                CKD_TGAS,
                 1,
             )],
         },
@@ -160,20 +182,24 @@ struct CKDArgs {
 struct ParallelSignArgsV2 {
     target_contract: AccountId,
     ecdsa_calls_by_domain: BTreeMap<u64, u64>,
+    robust_ecdsa_calls_by_domain: BTreeMap<u64, u64>,
     eddsa_calls_by_domain: BTreeMap<u64, u64>,
     ckd_calls_by_domain: BTreeMap<u64, u64>,
     seed: u64,
 }
 
-fn make_payload(curve: Curve) -> Payload {
-    match curve {
-        Curve::Secp256k1 | Curve::V2Secp256k1 => Payload::Ecdsa(rand::random::<[u8; 32]>().into()),
-        Curve::Edwards25519 => {
-            let len = rand::random_range(
+fn make_payload(protocol: Protocol) -> Payload {
+    match protocol {
+        Protocol::CaitSith | Protocol::DamgardEtAl => {
+            Payload::Ecdsa(rand::random::<[u8; 32]>().into())
+        }
+        Protocol::Frost => {
+            let mut rng = rand::thread_rng();
+            let len = rng.gen_range(
                 EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES..=EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
             );
             let mut payload = vec![0; len];
-            rand::rng().fill_bytes(&mut payload);
+            rng.fill_bytes(&mut payload);
 
             let bounded_payload: BoundedVec<
                 u8,
@@ -183,10 +209,17 @@ fn make_payload(curve: Curve) -> Payload {
 
             Payload::Eddsa(bounded_payload)
         }
-        Curve::Bls12381 => {
-            unreachable!("make_payload should not be called with `Bls12381` curve")
+        Protocol::ConfidentialKeyDerivation => {
+            unreachable!(
+                "make_payload should not be called with `ConfidentialKeyDerivation` protocol"
+            )
         }
     }
+}
+
+fn random_app_public_key() -> Bls12381G1PublicKey {
+    let point = G1Projective::random(&mut OsRng);
+    (&point).into()
 }
 
 fn make_action(method: &str, args: &[u8], tgas: u64, deposit: u128) -> Action {

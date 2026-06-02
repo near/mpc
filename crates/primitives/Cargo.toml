@@ -11,14 +11,17 @@ abi = ["borsh/unstable__schema", "schemars"]
 borsh = { workspace = true }
 derive_more = { workspace = true }
 hex = { workspace = true }
+near-account-id = { workspace = true, features = ["borsh", "serde"] }
 serde = { workspace = true }
 thiserror = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+near-account-id = { workspace = true, features = ["borsh", "serde", "schemars-v0_8"] }
 schemars = { workspace = true, optional = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
+insta = { workspace = true }
 rand = { workspace = true }
 serde_json = { workspace = true }
 

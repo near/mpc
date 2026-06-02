@@ -1,6 +1,6 @@
+use crate::providers::EcdsaTaskId;
 use crate::providers::eddsa::EddsaTaskId;
 use crate::providers::robust_ecdsa::RobustEcdsaTaskId;
-use crate::providers::EcdsaTaskId;
 use crate::providers::{ckd::CKDTaskId, verify_foreign_tx::VerifyForeignTxTaskId};
 use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -151,11 +151,6 @@ impl From<Participant> for ParticipantId {
         ParticipantId(participant.into())
     }
 }
-impl From<mpc_contract::primitives::participants::ParticipantId> for ParticipantId {
-    fn from(participant: mpc_contract::primitives::participants::ParticipantId) -> Self {
-        ParticipantId(participant.get())
-    }
-}
 impl From<ParticipantId> for Participant {
     fn from(participant_id: ParticipantId) -> Self {
         Participant::from(participant_id.0)
@@ -174,7 +169,7 @@ impl ParticipantId {
 
 impl From<near_mpc_contract_interface::types::AuthenticatedParticipantId> for ParticipantId {
     fn from(p: near_mpc_contract_interface::types::AuthenticatedParticipantId) -> Self {
-        ParticipantId(p.0 .0)
+        ParticipantId(p.0.0)
     }
 }
 

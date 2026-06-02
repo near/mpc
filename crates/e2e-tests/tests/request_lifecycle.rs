@@ -1,7 +1,8 @@
 use crate::common;
 
 use near_mpc_contract_interface::types::{
-    Curve, DomainConfig, DomainId, DomainPurpose, SignatureResponse,
+    Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
+    SignatureResponse,
 };
 use rand::SeedableRng;
 
@@ -10,7 +11,7 @@ use rand::SeedableRng;
 async fn mpc_cluster__should_sign_with_scheme_matching_domain() {
     // given
     let (cluster, running) =
-        common::setup_cluster(common::SIGN_REQUEST_PER_SCHEME_PORT_SEED, |_| {}).await;
+        common::must_setup_cluster(common::SIGN_REQUEST_PER_SCHEME_PORT_SEED, |_| {}).await;
 
     assert!(
         !running.domains.domains.is_empty(),
@@ -18,10 +19,10 @@ async fn mpc_cluster__should_sign_with_scheme_matching_domain() {
     );
     let mut rng = rand::rngs::StdRng::seed_from_u64(0);
     for domain in &running.domains.domains {
-        tracing::info!(domain_id = ?domain.id, purpose = ?domain.purpose, curve = ?domain.curve, "sending request");
+        tracing::info!(domain_id = ?domain.id, purpose = ?domain.purpose, curve = ?Curve::from(domain.protocol), "sending request");
         match domain.purpose {
             DomainPurpose::Sign => {
-                let payload = match domain.curve {
+                let payload = match Curve::from(domain.protocol) {
                     Curve::Secp256k1 => common::generate_ecdsa_payload(&mut rng),
                     Curve::Edwards25519 => common::generate_eddsa_payload(&mut rng),
                     _ => continue,
@@ -45,12 +46,13 @@ async fn mpc_cluster__should_sign_with_scheme_matching_domain() {
                     .json()
                     .expect("failed to deserialize SignatureResponse from transaction result");
 
-                match (&domain.curve, &signature) {
+                let curve = Curve::from(domain.protocol);
+                match (curve, &signature) {
                     (Curve::Secp256k1, SignatureResponse::Secp256k1(_)) => {}
                     (Curve::Edwards25519, SignatureResponse::Ed25519 { .. }) => {}
                     _ => panic!(
                         "signature scheme mismatch: requested {:?}, got {:?}",
-                        domain.curve, signature
+                        curve, signature
                     ),
                 }
                 tracing::info!(domain_id = ?domain.id, "sign request returned valid signature");
@@ -84,13 +86,14 @@ async fn mpc_cluster__should_sign_with_scheme_matching_domain() {
 #[expect(non_snake_case)]
 async fn mpc_cluster__should_successfully_process_robust_ecdsa_requests() {
     // given
-    let (cluster, running) = common::setup_cluster(common::ROBUST_ECDSA_PORT_SEED, |c| {
+    let (cluster, running) = common::must_setup_cluster(common::ROBUST_ECDSA_PORT_SEED, |c| {
         c.num_nodes = 6;
         c.initial_participant_indices = (0..6).collect();
         c.threshold = 5;
         c.domains = vec![DomainConfig {
             id: DomainId(0),
-            curve: Curve::V2Secp256k1,
+            protocol: Protocol::DamgardEtAl,
+            reconstruction_threshold: ReconstructionThreshold::new(3),
             purpose: DomainPurpose::Sign,
         }];
         c.triples_to_buffer = 0;
@@ -102,8 +105,8 @@ async fn mpc_cluster__should_successfully_process_robust_ecdsa_requests() {
         .domains
         .domains
         .iter()
-        .find(|d| d.curve == Curve::V2Secp256k1)
-        .expect("no V2Secp256k1 domain found");
+        .find(|d| d.protocol == Protocol::DamgardEtAl)
+        .expect("no DamgardEtAl domain found");
 
     let mut rng = rand::rngs::StdRng::seed_from_u64(0);
 
@@ -120,7 +123,7 @@ async fn mpc_cluster__should_successfully_process_robust_ecdsa_requests() {
     // then
     assert!(
         outcome.is_success(),
-        "V2Secp256k1 sign request failed: {:?}",
+        "DamgardEtAl sign request failed: {:?}",
         outcome.failure_message()
     );
 

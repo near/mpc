@@ -5,7 +5,7 @@ use crate::test_utils::{ProtocolSnapshot, Simulator};
 use std::collections::HashMap;
 
 use crate::participants::ParticipantList;
-use crate::protocol::internal::{make_protocol, Comms};
+use crate::protocol::internal::{Comms, make_protocol};
 use crate::test_utils::{GenProtocol, MockCryptoRng};
 use rand::RngCore;
 use rand_core::SeedableRng;

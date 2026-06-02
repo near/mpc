@@ -10,8 +10,9 @@ pub fn dummy_config(value: u64) -> near_mpc_contract_interface::types::Config {
         return_ck_and_clean_state_on_success_call_tera_gas: value + 6,
         fail_on_timeout_tera_gas: value + 7,
         clean_tee_status_tera_gas: value + 8,
-        cleanup_orphaned_node_migrations_tera_gas: value + 9,
-        remove_non_participant_update_votes_tera_gas: value + 10,
-        clean_foreign_chain_data_tera_gas: value + 11,
+        clean_invalid_attestations_tera_gas: value + 9,
+        cleanup_orphaned_node_migrations_tera_gas: value + 10,
+        remove_non_participant_update_votes_tera_gas: value + 11,
+        clean_foreign_chain_data_tera_gas: value + 12,
     }
 }

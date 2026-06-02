@@ -4,7 +4,7 @@
 # (lowercase + hyphens only).
 #
 # Only checks git-tracked files in the directories listed in SEARCH_DIRS below.
-# Everything else (libs/, pytest/, .github/, infra/, etc.) is ignored.
+# Everything else (e.g. .github/) is ignored.
 # Untracked local files are never flagged.
 
 # Directories to search recursively
@@ -27,7 +27,6 @@ EXEMPT_FILES=(
     Makefile.md
     README.md
     RELEASES.md
-    launcher_docker_compose.yaml
     launcher_docker_compose_nontee.yaml
     launcher_image_compose.yaml
 )

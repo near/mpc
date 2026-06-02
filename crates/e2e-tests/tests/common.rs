@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use anyhow::Context;
 use backon::{ConstantBuilder, Retryable};
 use blstrs::{G1Projective, Scalar};
 use e2e_tests::{CLUSTER_WAIT_TIMEOUT, MpcCluster, MpcClusterConfig, metrics};
@@ -25,23 +26,35 @@ pub const CKD_VERIFICATION_PORT_SEED: u16 = 9;
 pub const LOST_ASSETS_PORT_SEED: u16 = 10;
 pub const CKD_PV_VERIFICATION_PORT_SEED: u16 = 11;
 pub const CLEANUP_LAGGING_NODE_PORT_SEED: u16 = 12;
+pub const FOREIGN_CHAIN_POLICY_PORT_SEED: u16 = 13;
+pub const MIGRATION_ENDPOINT_PORT_SEED: u16 = 14;
+pub const MIGRATION_SERVICE_PORT_SEED: u16 = 15;
+pub const FOREIGN_TX_VALIDATION_PORT_SEED: u16 = 16;
+pub const MULTI_DOMAIN_PORT_SEED: u16 = 17;
+pub const CONTRACT_UPGRADE_COMPATIBILITY_MAINNET_PORT_SEED: u16 = 18;
+pub const CONTRACT_UPGRADE_COMPATIBILITY_TESTNET_PORT_SEED: u16 = 19;
+pub const TIMEOUT_METRIC_PORT_SEED: u16 = 20;
+pub const MIGRATION_BACK_PORT_SEED: u16 = 21;
 
 /// Start a cluster, wait for Running state and presignatures to buffer.
 ///
 /// Uses `configure` to override defaults (3 nodes, threshold 2, 3 domains).
 /// Pass `|_| {}` for defaults.
 ///
+/// Plumbing helper: every caller treats setup failure as fatal, so we panic
+/// instead of returning `Result`.
+///
 /// ```ignore
 /// // Default 3-node cluster:
-/// setup_cluster(SEED, |_| {}).await;
+/// must_setup_cluster(SEED, |_| {}).await;
 ///
 /// // Custom 4-node cluster with 2 initial participants:
-/// setup_cluster(SEED, |c| {
+/// must_setup_cluster(SEED, |c| {
 ///     c.num_nodes = 4;
 ///     c.initial_participant_indices = vec![0, 1];
 /// }).await;
 /// ```
-pub async fn setup_cluster(
+pub async fn must_setup_cluster(
     port_seed: u16,
     configure: impl FnOnce(&mut MpcClusterConfig),
 ) -> (MpcCluster, RunningContractState) {
@@ -53,7 +66,7 @@ pub async fn setup_cluster(
         .try_init()
         .ok();
 
-    let contract_wasm = load_contract_wasm();
+    let contract_wasm = must_load_contract_wasm();
     let mut config = MpcClusterConfig::default_for_test(port_seed, contract_wasm);
     configure(&mut config);
 
@@ -79,7 +92,8 @@ pub async fn setup_cluster(
         &initial_participant_indices,
         presignatures_to_buffer,
     )
-    .await;
+    .await
+    .expect("presignature buffering failed");
 
     (cluster, running)
 }
@@ -91,22 +105,23 @@ pub async fn wait_for_presignatures(
     cluster: &MpcCluster,
     participant_indices: &[usize],
     presignatures_to_buffer: usize,
-) {
-    let expected = i64::try_from(presignatures_to_buffer).expect("presignatures exceeds i64::MAX");
+) -> anyhow::Result<()> {
+    let expected =
+        i64::try_from(presignatures_to_buffer).context("presignatures exceeds i64::MAX")?;
     let deadline = tokio::time::Instant::now() + CLUSTER_WAIT_TIMEOUT;
     loop {
         let values = cluster
             .get_metric_all_nodes(metrics::OWNED_PRESIGNATURES_AVAILABLE)
             .await
-            .expect("failed to get metrics");
+            .context("failed to get metrics")?;
         let participant_values: Vec<_> = participant_indices.iter().map(|&i| values[i]).collect();
         if participant_values
             .iter()
             .all(|v| v.is_some_and(|v| v >= expected))
         {
-            break;
+            return Ok(());
         }
-        assert!(
+        anyhow::ensure!(
             tokio::time::Instant::now() < deadline,
             "participant nodes did not generate presignatures in time (values: {participant_values:?})"
         );
@@ -115,19 +130,23 @@ pub async fn wait_for_presignatures(
 }
 
 /// Wait until every node in `indices` reports the given metric satisfying `predicate`.
+///
+/// Transient metric-scrape failures are retried within `timeout` (previously
+/// they aborted the wait immediately); this matches the behavior of every
+/// other "wait until X" helper in this module.
 pub async fn wait_metric_on_nodes(
     cluster: &e2e_tests::MpcCluster,
     indices: &[usize],
     name: &str,
     predicate: impl Fn(i64) -> bool + Copy,
     timeout: std::time::Duration,
-) {
+) -> anyhow::Result<()> {
     let max_times = (timeout.as_millis() / POLL_INTERVAL.as_millis()) as usize;
     (|| async {
         let values = cluster
             .get_metric_all_nodes(name)
             .await
-            .expect("failed to scrape metrics");
+            .context("failed to scrape metrics")?;
         for &idx in indices {
             anyhow::ensure!(
                 values[idx].is_some_and(predicate),
@@ -143,24 +162,95 @@ pub async fn wait_metric_on_nodes(
             .with_max_times(max_times),
     )
     .await
-    .unwrap_or_else(|e| panic!("{e}"));
+}
+
+/// Wait until node `idx`'s indexer block-height metric exceeds `min_height`.
+/// Stronger readiness check than `wait_for_node_healthy`, which only verifies
+/// the web server is up (see #3366).
+pub async fn wait_for_node_indexer_height_above(
+    cluster: &MpcCluster,
+    idx: usize,
+    min_height: i64,
+    timeout: Duration,
+) -> anyhow::Result<()> {
+    let max_times = (timeout.as_millis() / POLL_INTERVAL.as_millis()) as usize;
+    let start = std::time::Instant::now();
+    tracing::info!(
+        node = idx,
+        min_height,
+        timeout_ms = timeout.as_millis() as u64,
+        "waiting for indexer to advance past pre-kill height"
+    );
+    let attempts = std::sync::atomic::AtomicU32::new(0);
+    let result = (|| async {
+        attempts.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let heights = cluster
+            .get_metric_all_nodes(metrics::INDEXER_LATEST_BLOCK_HEIGHT)
+            .await
+            .context("failed to scrape indexer block-height metric")?;
+        let h = heights
+            .get(idx)
+            .and_then(|h| *h)
+            .context("indexer block-height metric not available — node may have exited")?;
+        anyhow::ensure!(
+            h > min_height,
+            "node {idx} indexer height {h} has not advanced past {min_height} yet"
+        );
+        Ok(h)
+    })
+    .retry(
+        ConstantBuilder::default()
+            .with_delay(POLL_INTERVAL)
+            .with_max_times(max_times),
+    )
+    .await
+    .with_context(|| {
+        format!("node {idx} indexer did not advance past height {min_height} within {timeout:?}")
+    })?;
+    let elapsed = start.elapsed();
+    tracing::info!(
+        node = idx,
+        min_height,
+        reached_height = result,
+        attempts = attempts.load(std::sync::atomic::Ordering::Relaxed),
+        elapsed_ms = elapsed.as_millis() as u64,
+        "indexer advanced past pre-kill height"
+    );
+    Ok(())
+}
+
+/// Read node `idx`'s current indexer block height. Returns `Ok(None)` if
+/// the node is not running or the HTTP scrape can't connect (process
+/// down); returns `Err` if a metrics body read fails partway through.
+pub async fn current_node_indexer_height(
+    cluster: &MpcCluster,
+    idx: usize,
+) -> anyhow::Result<Option<i64>> {
+    let heights = cluster
+        .get_metric_all_nodes(metrics::INDEXER_LATEST_BLOCK_HEIGHT)
+        .await?;
+    Ok(heights.get(idx).copied().flatten())
 }
 
 /// Wait until every node in `alive_nodes` is at least `min_height_diff` blocks
 /// ahead of `faulty_node` according to the indexer block-height metric.
+///
+/// Transient metric-scrape failures are retried within `timeout` (previously
+/// they aborted the wait immediately); this matches the behavior of every
+/// other "wait until X" helper in this module.
 pub async fn wait_for_indexer_lag(
     cluster: &MpcCluster,
     faulty_node: usize,
     alive_nodes: &[usize],
     min_height_diff: i64,
     timeout: Duration,
-) {
+) -> anyhow::Result<()> {
     let max_times = (timeout.as_millis() / POLL_INTERVAL.as_millis()) as usize;
     (|| async {
         let heights = cluster
             .get_metric_all_nodes(metrics::INDEXER_LATEST_BLOCK_HEIGHT)
             .await
-            .expect("failed to get metrics");
+            .context("failed to get metrics")?;
         let faulty = heights[faulty_node].unwrap_or(0);
         for &idx in alive_nodes {
             anyhow::ensure!(
@@ -177,26 +267,26 @@ pub async fn wait_for_indexer_lag(
             .with_max_times(max_times),
     )
     .await
-    .unwrap_or_else(|e| panic!("{e}"));
 }
 
 /// Sum a metric across all running nodes (stopped nodes contribute 0).
-pub async fn sum_metric(cluster: &MpcCluster, name: &str) -> i64 {
-    cluster
+pub async fn sum_metric(cluster: &MpcCluster, name: &str) -> anyhow::Result<i64> {
+    Ok(cluster
         .get_metric_all_nodes(name)
         .await
-        .expect("failed to scrape metrics")
+        .context("failed to scrape metrics")?
         .into_iter()
         .flatten()
-        .sum()
+        .sum())
 }
 
-pub fn load_contract_wasm() -> Vec<u8> {
+/// Plumbing helper: failures here are setup bugs, not test failures, so we panic.
+pub fn must_load_contract_wasm() -> Vec<u8> {
     if let Ok(path) = std::env::var("MPC_CONTRACT_WASM") {
         let wasm_path = PathBuf::from(&path);
         return std::fs::read(&wasm_path).unwrap_or_else(|e| {
             panic!(
-                "Failed to read contract WASM at {}: {e}",
+                "failed to read contract WASM at {}: {e}",
                 wasm_path.display()
             )
         });
@@ -208,7 +298,7 @@ pub fn load_contract_wasm() -> Vec<u8> {
     if default_path.exists() {
         return std::fs::read(&default_path).unwrap_or_else(|e| {
             panic!(
-                "Failed to read contract WASM at {}: {e}",
+                "failed to read contract WASM at {}: {e}",
                 default_path.display()
             )
         });
@@ -218,12 +308,13 @@ pub fn load_contract_wasm() -> Vec<u8> {
     test_utils::contract_build::ContractBuilder::new("crates/contract/Cargo.toml").build()
 }
 
-pub fn load_parallel_contract_wasm() -> Vec<u8> {
+/// Plumbing helper: failures here are setup bugs, not test failures, so we panic.
+pub fn must_load_parallel_contract_wasm() -> Vec<u8> {
     if let Ok(path) = std::env::var("MPC_PARALLEL_CONTRACT_WASM") {
         let wasm_path = PathBuf::from(&path);
         return std::fs::read(&wasm_path).unwrap_or_else(|e| {
             panic!(
-                "Failed to read parallel contract WASM at {}: {e}",
+                "failed to read parallel contract WASM at {}: {e}",
                 wasm_path.display()
             )
         });
@@ -234,7 +325,7 @@ pub fn load_parallel_contract_wasm() -> Vec<u8> {
     if default_path.exists() {
         return std::fs::read(&default_path).unwrap_or_else(|e| {
             panic!(
-                "Failed to read parallel contract WASM at {}: {e}",
+                "failed to read parallel contract WASM at {}: {e}",
                 default_path.display()
             )
         });
@@ -262,7 +353,14 @@ pub fn generate_ckd_app_public_key(rng: &mut impl rand::Rng) -> CKDAppPublicKey 
 }
 
 /// Extract the BLS12381 G2 public key for a given domain from running contract state.
-pub fn bls_public_key(running: &RunningContractState, domain_id: DomainId) -> Bls12381G2PublicKey {
+///
+/// Plumbing helper: the calling test has already set up a BLS domain and is
+/// extracting its key for further use. A missing domain or wrong key type is
+/// a test-setup bug, not a meaningful outcome, so we panic.
+pub fn must_get_bls_public_key(
+    running: &RunningContractState,
+    domain_id: DomainId,
+) -> Bls12381G2PublicKey {
     let key_for_domain = running
         .keyset
         .domains
@@ -277,48 +375,62 @@ pub fn bls_public_key(running: &RunningContractState, domain_id: DomainId) -> Bl
     }
 }
 
+/// Send a sign request and assert the network produced a successful response.
+///
+/// Panics if the request can't be submitted to the contract — the test cannot
+/// proceed without submission. Returns `Err` if the contract response indicates
+/// the network did not produce a valid signature; only the calling test knows
+/// whether that outcome is expected.
 pub async fn send_sign_request(
     cluster: &e2e_tests::MpcCluster,
     running: &RunningContractState,
     rng: &mut impl rand::Rng,
     account_id: &near_kit::AccountId,
-) {
+) -> anyhow::Result<()> {
     let domain = running
         .domains
         .domains
         .iter()
-        .find(|d| d.curve == Curve::Secp256k1 && d.purpose == DomainPurpose::Sign)
-        .expect("no Secp256k1 Sign domain");
+        .find(|d| Curve::from(d.protocol) == Curve::Secp256k1 && d.purpose == DomainPurpose::Sign)
+        .expect("no Secp256k1 Sign domain in running state");
     let outcome = cluster
         .send_sign_request(domain.id, generate_ecdsa_payload(rng), account_id)
         .await
-        .expect("sign request failed");
-    assert!(
+        .expect("failed to submit sign request");
+    anyhow::ensure!(
         outcome.is_success(),
-        "sign request failed: {:?}",
+        "sign request did not produce a successful response: {:?}",
         outcome.failure_message()
     );
+    Ok(())
 }
 
+/// Send a CKD request and assert the network produced a successful response.
+///
+/// Panics if the request can't be submitted to the contract — the test cannot
+/// proceed without submission. Returns `Err` if the contract response indicates
+/// the network did not produce a valid CKD response; only the calling test
+/// knows whether that outcome is expected.
 pub async fn send_ckd_request(
     cluster: &e2e_tests::MpcCluster,
     running: &RunningContractState,
     rng: &mut impl rand::Rng,
     account_id: &near_account_id::AccountId,
-) {
+) -> anyhow::Result<()> {
     let domain = running
         .domains
         .domains
         .iter()
         .find(|d| d.purpose == DomainPurpose::CKD)
-        .expect("no CKD domain");
+        .expect("no CKD domain in running state");
     let outcome = cluster
         .send_ckd_request(domain.id, generate_ckd_app_public_key(rng), account_id)
         .await
-        .expect("ckd request failed");
-    assert!(
+        .expect("failed to submit ckd request");
+    anyhow::ensure!(
         outcome.is_success(),
-        "ckd request failed: {:?}",
+        "ckd request did not produce a successful response: {:?}",
         outcome.failure_message()
     );
+    Ok(())
 }

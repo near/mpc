@@ -1,13 +1,15 @@
 use crate::indexer::participants::ContractState;
 use crate::p2p::testing::PortSeed;
 use crate::tests::{
-    request_ckd_and_await_response, request_ckd_pv_and_await_response,
-    request_signature_and_await_response, IntegrationTestSetup, DEFAULT_BLOCK_TIME,
-    DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
+    DEFAULT_BLOCK_TIME, DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
+    IntegrationTestSetup, request_ckd_and_await_response, request_ckd_pv_and_await_response,
+    request_signature_and_await_response,
 };
 use crate::tracking::AutoAbortTask;
-use mpc_primitives::domain::{Curve, DomainId};
-use near_mpc_contract_interface::types::{DomainConfig, DomainPurpose};
+use mpc_primitives::domain::DomainId;
+use near_mpc_contract_interface::types::{
+    DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
+};
 use near_time::Clock;
 
 // Make a cluster of four nodes, test that we can generate keyshares
@@ -33,19 +35,22 @@ async fn test_basic_cluster() {
 
     let signature_domain_ecdsa = DomainConfig {
         id: DomainId(0),
-        curve: Curve::Secp256k1,
+        protocol: Protocol::CaitSith,
+        reconstruction_threshold: ReconstructionThreshold::new(3),
         purpose: DomainPurpose::Sign,
     };
 
     let signature_domain_eddsa = DomainConfig {
         id: DomainId(1),
-        curve: Curve::Edwards25519,
+        protocol: Protocol::Frost,
+        reconstruction_threshold: ReconstructionThreshold::new(3),
         purpose: DomainPurpose::Sign,
     };
 
     let ckd_domain = DomainConfig {
         id: DomainId(2),
-        curve: Curve::Bls12381,
+        protocol: Protocol::ConfidentialKeyDerivation,
+        reconstruction_threshold: ReconstructionThreshold::new(3),
         purpose: DomainPurpose::CKD,
     };
 
@@ -76,39 +81,47 @@ async fn test_basic_cluster() {
         .await
         .expect("timeout waiting for keygen to complete");
 
-    assert!(request_signature_and_await_response(
-        &mut setup.indexer,
-        "user0",
-        &signature_domain_ecdsa,
-        DEFAULT_MAX_SIGNATURE_WAIT_TIME
-    )
-    .await
-    .is_some());
+    assert!(
+        request_signature_and_await_response(
+            &mut setup.indexer,
+            "user0",
+            &signature_domain_ecdsa,
+            DEFAULT_MAX_SIGNATURE_WAIT_TIME
+        )
+        .await
+        .is_some()
+    );
 
-    assert!(request_signature_and_await_response(
-        &mut setup.indexer,
-        "user0",
-        &signature_domain_eddsa,
-        DEFAULT_MAX_SIGNATURE_WAIT_TIME
-    )
-    .await
-    .is_some());
+    assert!(
+        request_signature_and_await_response(
+            &mut setup.indexer,
+            "user0",
+            &signature_domain_eddsa,
+            DEFAULT_MAX_SIGNATURE_WAIT_TIME
+        )
+        .await
+        .is_some()
+    );
 
-    assert!(request_ckd_and_await_response(
-        &mut setup.indexer,
-        "user0",
-        &ckd_domain,
-        DEFAULT_MAX_SIGNATURE_WAIT_TIME
-    )
-    .await
-    .is_some());
+    assert!(
+        request_ckd_and_await_response(
+            &mut setup.indexer,
+            "user0",
+            &ckd_domain,
+            DEFAULT_MAX_SIGNATURE_WAIT_TIME
+        )
+        .await
+        .is_some()
+    );
 
-    assert!(request_ckd_pv_and_await_response(
-        &mut setup.indexer,
-        "user0",
-        &ckd_domain,
-        DEFAULT_MAX_SIGNATURE_WAIT_TIME
-    )
-    .await
-    .is_some());
+    assert!(
+        request_ckd_pv_and_await_response(
+            &mut setup.indexer,
+            "user0",
+            &ckd_domain,
+            DEFAULT_MAX_SIGNATURE_WAIT_TIME
+        )
+        .await
+        .is_some()
+    );
 }

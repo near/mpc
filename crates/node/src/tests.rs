@@ -3,28 +3,28 @@ use blstrs::{G1Projective, G2Projective, Scalar};
 use elliptic_curve::{Field as _, Group as _};
 use near_mpc_contract_interface::types::ProtocolContractState;
 use near_mpc_contract_interface::types::{
-    BitcoinExtractor, BitcoinRpcRequest, ForeignChainRpcRequest, ForeignTxPayloadVersion,
-    VerifyForeignTransactionRequestArgs, EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
-    EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
+    BitcoinExtractor, BitcoinRpcRequest, EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
+    EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES, ForeignChainRpcRequest, ForeignTxPayloadVersion,
+    VerifyForeignTransactionRequestArgs,
 };
 use rand::rngs::OsRng;
 use std::collections::BTreeMap;
 use std::net::{Ipv4Addr, SocketAddr};
 
-use tokio::sync::{watch, RwLock};
+use tokio::sync::{RwLock, watch};
 
 use crate::config::{ParticipantsConfig, PersistentSecrets, SecretsConfig};
 use crate::coordinator::Coordinator;
 use crate::db::SecretDB;
-use crate::indexer::fake::{FakeForeignChainPolicyReader, FakeIndexerManager};
+use crate::indexer::IndexerAPI;
+use crate::indexer::fake::{FakeIndexerManager, FakeReadSupportedForeignChain};
 use crate::indexer::handler::{
     CKDArgs, CKDRequestFromChain, SignArgs, SignatureRequestFromChain,
     VerifyForeignTxRequestFromChain,
 };
-use crate::indexer::IndexerAPI;
 use crate::keyshare::{KeyStorageConfig, Keyshare};
 use crate::migration_service::spawn_recovery_server_and_run_onboarding;
-use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
+use crate::p2p::testing::{PortSeed, generate_test_p2p_configs};
 use mpc_node_config::{
     CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, PresignatureConfig,
     SignatureConfig, SyncMode, TripleConfig,
@@ -32,13 +32,13 @@ use mpc_node_config::{
 
 use crate::primitives::ParticipantId;
 use crate::tests::common::MockTransactionSender;
-use crate::tracking::{self, start_root_task, AutoAbortTask};
+use crate::tracking::{self, AutoAbortTask, start_root_task};
 use crate::web::{start_web_server, static_web_data};
 use assert_matches::assert_matches;
-use mpc_primitives::domain::Curve;
+use mpc_primitives::domain::{Curve, Protocol};
 use near_account_id::AccountId;
-use near_indexer_primitives::types::Finality;
 use near_indexer_primitives::CryptoHash;
+use near_indexer_primitives::types::Finality;
 use near_mpc_bounded_collections::BoundedVec;
 use near_mpc_contract_interface::types::DomainConfig;
 use near_mpc_contract_interface::types::Payload;
@@ -54,7 +54,7 @@ pub mod common;
 mod basic_cluster;
 mod changing_participant_details;
 mod faulty;
-mod foreign_chain_policy;
+mod foreign_chain_configuration;
 mod multidomain;
 mod onboarding;
 mod resharing;
@@ -69,7 +69,7 @@ pub struct OneNodeTestConfig {
     home_dir: PathBuf,
     pub config: ConfigFile,
     secrets: SecretsConfig,
-    indexer: IndexerAPI<MockTransactionSender, FakeForeignChainPolicyReader>,
+    indexer: IndexerAPI<MockTransactionSender, FakeReadSupportedForeignChain>,
     _indexer_task: AutoAbortTask<()>,
     currently_running_job_name: Arc<std::sync::Mutex<String>>,
 }
@@ -92,9 +92,7 @@ pub async fn get_keyshares(
 ) -> anyhow::Result<Vec<Keyshare>> {
     let key_storage_config = make_key_storage_config(home_dir, local_encryption_key);
     let keystore = key_storage_config.create().await.unwrap();
-    let contract_keyset: mpc_contract::primitives::key_state::Keyset =
-        keyset.clone().try_into().unwrap();
-    keystore.get_keyshares(&contract_keyset).await
+    keystore.get_keyshares(keyset).await
 }
 
 impl OneNodeTestConfig {
@@ -278,14 +276,14 @@ pub async fn request_signature_and_await_response(
     domain: &DomainConfig,
     timeout_sec: std::time::Duration,
 ) -> Option<std::time::Duration> {
-    let payload = match domain.curve {
-        Curve::Secp256k1 | Curve::V2Secp256k1 => {
+    let payload = match domain.protocol {
+        Protocol::CaitSith | Protocol::DamgardEtAl => {
             let mut payload = [0; 32];
             rand::thread_rng().fill_bytes(payload.as_mut());
 
             Payload::Ecdsa(payload.into())
         }
-        Curve::Edwards25519 => {
+        Protocol::Frost => {
             let len = rand::thread_rng().gen_range(
                 EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES..EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
             );
@@ -300,7 +298,7 @@ pub async fn request_signature_and_await_response(
 
             Payload::Eddsa(bounded_payload)
         }
-        Curve::Bls12381 => unreachable!(),
+        Protocol::ConfidentialKeyDerivation => unreachable!(),
     };
     let request = SignatureRequestFromChain {
         signature_id: CryptoHash(rand::random()),
@@ -401,7 +399,7 @@ async fn do_request_ckd_and_await_response(
     app_public_key: near_mpc_contract_interface::types::CKDAppPublicKey,
 ) -> Option<std::time::Duration> {
     assert_matches!(
-        domain.curve,
+        Curve::from(domain.protocol),
         Curve::Bls12381,
         "`request_ckd_and_await_response` must be called with a compatible domain",
     );
@@ -481,9 +479,9 @@ pub async fn request_verify_foreign_tx_and_await_response(
     timeout_sec: std::time::Duration,
 ) -> Option<std::time::Duration> {
     assert_matches!(
-        domain.curve,
+        Curve::from(domain.protocol),
         Curve::Secp256k1,
-        "`request_ckd_and_await_response` must be called with a compatible domain",
+        "`request_verify_foreign_tx_and_await_response` must be called with a compatible domain",
     );
     let request = VerifyForeignTxRequestFromChain {
         verify_foreign_tx_id: CryptoHash(rand::random()),

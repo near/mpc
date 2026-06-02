@@ -12,11 +12,15 @@
 //! because we need a mutable reference to it to add access keys to our local state. On the other
 //! hand, sending an arbitrary transfer of NEAR tokens is in OperatingAccessKey, since no local
 //! state needs changing (other than updating the nonce, which is per access key).
+#![expect(
+    clippy::disallowed_types,
+    reason = "devnet tooling uses `near_crypto::SecretKey` to build signed transactions via the legacy `near_jsonrpc_client` API."
+)]
 use crate::contracts::ActionCall;
 use crate::queries;
 use crate::rpc::NearRpcClients;
 use crate::types::{ContractSetup, MpcParticipantSetup, NearAccount, NearAccountKind};
-use ed25519_dalek::{ed25519::signature::rand_core::OsRng, SigningKey, VerifyingKey};
+use ed25519_dalek::{SigningKey, VerifyingKey};
 use futures::FutureExt;
 use near_account_id::AccountId;
 use near_crypto::{ED25519SecretKey, InMemorySigner, SecretKey, Signer};
@@ -30,6 +34,7 @@ use near_primitives::hash::CryptoHash;
 use near_primitives::types::Finality;
 use near_primitives::types::{BlockReference, FunctionArgs};
 use near_primitives::views::{CallResult, QueryRequest, TxExecutionStatus};
+use rand::rngs::OsRng;
 use reqwest::StatusCode;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -380,7 +385,10 @@ impl OperatingAccount {
                 );
             }
             _ => {
-                panic!("Account {} is not a normal or contract account, refusing to deploy contract to it", self.account_data.account_id);
+                panic!(
+                    "Account {} is not a normal or contract account, refusing to deploy contract to it",
+                    self.account_data.account_id
+                );
             }
         }
         let mut key = self.keys[0].lock().await;
@@ -595,7 +603,7 @@ impl OperatingAccounts {
 
     /// Get the balance of a single account.
     pub async fn get_account_balance(&self, account_id: &AccountId) -> u128 {
-        self.get_account_balances(&[account_id.clone()])
+        self.get_account_balances(std::slice::from_ref(account_id))
             .await
             .remove(account_id)
             .unwrap()

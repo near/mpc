@@ -1,21 +1,24 @@
 use crate::{
     config::{
-        generate_and_write_backup_encryption_key_to_disk, start::TeeAuthorityImpl as _,
         PersistentSecrets, RespondConfig, SecretsConfig,
+        generate_and_write_backup_encryption_key_to_disk, start::TeeAuthorityImpl as _,
     },
     coordinator::Coordinator,
     db::SecretDB,
     indexer::{
-        real::spawn_real_indexer, tx_sender::TransactionSender, IndexerAPI, ReadForeignChainPolicy,
+        IndexerAPI, ReadSupportedForeignChain, real::spawn_real_indexer,
+        tx_sender::TransactionSender,
     },
     keyshare::{GcpPermanentKeyStorageConfig, KeyStorageConfig, KeyshareStorage},
     migration_service::spawn_recovery_server_and_run_onboarding,
     profiler,
+    providers::ecdsa::triple::migrate_legacy_triples_to_v2,
     tracing::init_logging,
     tracking::{self, start_root_task},
-    web::{start_web_server, static_web_data, DebugRequest},
+    web::{DebugRequest, start_web_server, static_web_data},
 };
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
+use itertools::Itertools;
 use mpc_attestation::report_data::ReportDataV1;
 use mpc_node_config::{ConfigFile, StartConfig};
 use near_mpc_contract_interface::types::Ed25519PublicKey;
@@ -28,14 +31,13 @@ use std::{
     time::Duration,
 };
 use tee_authority::tee_authority::TeeAuthority;
-use tokio::sync::{broadcast, mpsc, oneshot, watch, RwLock};
+use tokio::sync::{RwLock, broadcast, mpsc, oneshot, watch};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 use crate::tee::{
-    monitor_allowed_image_hashes,
+    AllowedImageHashesFile, monitor_allowed_image_hashes,
     remote_attestation::{monitor_attestation_removal, periodic_attestation_submission},
-    AllowedImageHashesFile,
 };
 
 pub const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hour
@@ -58,7 +60,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
             launcher_interface::types::TeeAuthorityConfig::Local => "local",
         },
         image_hash = %config.tee.image_hash,
-        pccs_url = %config.pccs_url,
+        pccs_endpoints = %config.pccs_endpoints.iter().map(|e| e.url.as_str()).join(", "),
         "TEE config"
     );
     if let Some(ref near_init) = config.near_init {
@@ -105,7 +107,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     let tee_authority = config
         .tee
         .clone()
-        .into_tee_authority(config.pccs_url.clone())?;
+        .into_tee_authority(config.pccs_endpoints.clone())?;
     let tls_public_key = &secrets.persistent_secrets.p2p_private_key.verifying_key();
 
     let account_public_key = &secrets.persistent_secrets.near_signer_key.verifying_key();
@@ -129,7 +131,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
                 .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_FAILURE])
                 .inc();
             tracing::error!(
-                error = ?e,
+                error = %e,
                 "TEE attestation failed. Node will continue without attestation and retry periodically",
             );
             None
@@ -176,6 +178,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
         protocol_state_sender,
         migration_state_sender,
         *tls_public_key,
+        node_config.foreign_chains.clone(),
     );
 
     let (shutdown_signal_sender, mut shutdown_signal_receiver) = mpsc::channel(1);
@@ -244,7 +247,7 @@ async fn create_root_future<TransactionSenderImpl, ForeignChainPolicyReader>(
 ) -> anyhow::Result<()>
 where
     TransactionSenderImpl: TransactionSender + 'static,
-    ForeignChainPolicyReader: ReadForeignChainPolicy + Clone + Send + Sync + 'static,
+    ForeignChainPolicyReader: ReadSupportedForeignChain + Clone + Send + Sync + 'static,
 {
     let root_task_handle = tracking::current_task();
 
@@ -258,6 +261,11 @@ where
         Ed25519PublicKey::from(&secrets.persistent_secrets.near_signer_key.verifying_key());
 
     let secret_db = SecretDB::new(&home_dir.join("assets"), secrets.local_storage_aes_key)?;
+
+    // One-shot at process startup, before any TripleStorage is constructed
+    // for this DB. See `migrate_legacy_triples_to_v2`'s SAFETY note for why
+    // this can't run on every coordinator state transition.
+    migrate_legacy_triples_to_v2(&secret_db)?;
 
     let key_storage_config = KeyStorageConfig {
         home_dir: home_dir.clone(),

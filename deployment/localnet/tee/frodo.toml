@@ -15,7 +15,10 @@ filter = "info"
 
 [mpc_node_config.near_init]
 chain_id = "mpc-localnet"
-boot_nodes = ""
+# 10.0.2.2 is the QEMU slirp gateway inside the CVM — routes to the host's
+# loopback so the CVM reaches `neard` regardless of whether it binds to
+# 0.0.0.0 or 127.0.0.1 (see #2949).
+boot_nodes = "ed25519:BGa4WiBj43Mr66f9Ehf6swKtR6wZmWuwCsV3s4PSR3nx@10.0.2.2:24566"
 genesis_path = "/app/localnet-genesis.json"
 download_genesis = false
 

@@ -1,13 +1,10 @@
-use crate::indexer::handler::{
-    CKDRequestFromChain, ChainBlockUpdate, SignatureRequestFromChain,
-    VerifyForeignTxRequestFromChain,
-};
+use crate::indexer::ReadSupportedForeignChain;
+use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::tx_sender::TransactionSender;
 use crate::indexer::types::{
     ChainCKDRespondArgs, ChainSendTransactionRequest, ChainSignatureRespondArgs,
     ChainVerifyForeignTransactionRespondArgs,
 };
-use crate::indexer::ReadForeignChainPolicy;
 use crate::metrics;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
@@ -16,19 +13,18 @@ use crate::providers::eddsa::EddsaSignatureProvider;
 use crate::providers::robust_ecdsa::RobustEcdsaSignatureProvider;
 use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;
 use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
-use crate::requests::queue::{PendingRequests, CHECK_EACH_REQUEST_INTERVAL};
+use crate::requests::queue::{CHECK_EACH_REQUEST_INTERVAL, PendingRequests};
 use crate::storage::{
     CKDRequestStorage, SignRequestStorage, VerifyForeignTransactionRequestStorage,
 };
 use crate::tracking::{self, AutoAbortTaskCollection};
 use crate::types::SignatureRequest;
-use crate::types::{CKDRequest, VerifyForeignTxRequest};
+use crate::types::{CKDRequest, RequestsUpdate, VerifyForeignTxRequest};
 use crate::web::{DebugRequest, DebugRequestKind};
 use mpc_node_config::ConfigFile;
 
-use mpc_primitives::domain::{Curve, DomainId};
+use mpc_primitives::domain::{DomainId, Protocol};
 use near_mpc_contract_interface::types::CKDResponse;
-use near_mpc_crypto_types::kdf::derive_tweak;
 use near_time::Clock;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -57,12 +53,12 @@ pub struct MpcClient<ForeignChainPolicyReader> {
     eddsa_signature_provider: Arc<EddsaSignatureProvider>,
     ckd_provider: Arc<CKDProvider>,
     verify_foreign_tx_provider: Arc<VerifyForeignTxProvider<ForeignChainPolicyReader>>,
-    domain_to_curve: HashMap<DomainId, Curve>,
+    domain_to_protocol: HashMap<DomainId, Protocol>,
 }
 
 impl<ForeignChainPolicyReader> MpcClient<ForeignChainPolicyReader>
 where
-    ForeignChainPolicyReader: ReadForeignChainPolicy + 'static,
+    ForeignChainPolicyReader: ReadSupportedForeignChain + 'static,
 {
     #[expect(clippy::too_many_arguments)]
     pub fn new(
@@ -76,7 +72,7 @@ where
         eddsa_signature_provider: Arc<EddsaSignatureProvider>,
         ckd_provider: Arc<CKDProvider>,
         verify_foreign_tx_provider: Arc<VerifyForeignTxProvider<ForeignChainPolicyReader>>,
-        domain_to_curve: HashMap<DomainId, Curve>,
+        domain_to_protocol: HashMap<DomainId, Protocol>,
     ) -> Self {
         Self {
             config,
@@ -89,7 +85,7 @@ where
             eddsa_signature_provider,
             ckd_provider,
             verify_foreign_tx_provider,
-            domain_to_curve,
+            domain_to_protocol,
         }
     }
 
@@ -233,105 +229,42 @@ where
                         break;
                     };
 
-                    let entropy: [u8; 32] = block_update.block.entropy.clone().into();
-                    let timestamp_nanosec = block_update.block.timestamp_nanosec;
                     self.client.update_indexer_height(block_update.block.height);
-                    let signature_requests = block_update
-                        .signature_requests
-                        .into_iter()
-                        .map(|signature_request_from_chain| {
-                            let SignatureRequestFromChain {
-                                signature_id,
-                                receipt_id,
-                                request,
-                                predecessor_id,
-                            } = signature_request_from_chain;
-                            let signature_request = SignatureRequest {
-                                id: signature_id,
-                                receipt_id,
-                                payload: request.payload,
-                                tweak: derive_tweak(&predecessor_id, &request.path),
-                                entropy,
-                                timestamp_nanosec,
-                                domain: request.domain_id,
-                            };
-                            // Index the signature requests as soon as we see them. We'll decide
-                            // whether to *process* them after.
-                            self.sign_request_store.add(&signature_request);
-                            signature_request
-                        })
-                        .collect::<Vec<_>>();
-
-                    pending_signatures.notify_new_block(
-                        signature_requests,
+                    let signature_requests : RequestsUpdate<SignatureRequest> = RequestsUpdate::from_chain(
+                        &block_update.block,
+                        block_update.signature_requests,
                         block_update.completed_signatures,
-                        &block_update.block,
                     );
 
-                    let ckd_requests = block_update
-                        .ckd_requests
-                        .into_iter()
-                        .map(|ckd_request_from_chain| {
-                            let CKDRequestFromChain {
-                                ckd_id,
-                                receipt_id,
-                                request,
-                            } = ckd_request_from_chain;
-                            let ckd_request = CKDRequest {
-                                id: ckd_id,
-                                receipt_id,
-                                app_public_key: request.app_public_key,
-                                app_id: request.app_id,
-                                entropy,
-                                timestamp_nanosec,
-                                domain_id: request.domain_id,
-                            };
-                            // Index the ckd requests as soon as we see them. We'll decide
-                            // whether to *process* them after.
-                            self.ckd_request_store.add(&ckd_request);
-                            ckd_request
-                        })
-                        .collect::<Vec<_>>();
+                    // TODO(#3031): add batch request and unify stores
+                    for request in &signature_requests.requests {
+                        self.sign_request_store.add(request);
+                    }
 
-                    pending_ckds.notify_new_block(
-                        ckd_requests,
-                        block_update.completed_ckds,
+                    // TODO(#3032): remove completed & finalized requests from store
+                    pending_signatures.notify_new_block(signature_requests);
+
+                    let ckd_requests: RequestsUpdate<CKDRequest> = RequestsUpdate::from_chain(
                         &block_update.block,
+                        block_update.ckd_requests,
+                        block_update.completed_ckds
+                    );
+                    for request in &ckd_requests.requests {
+                        self.ckd_request_store.add(request);
+                    }
+
+                    pending_ckds.notify_new_block(ckd_requests);
+
+                    let verify_foreign_tx_requests : RequestsUpdate<VerifyForeignTxRequest> = RequestsUpdate::from_chain(
+                        &block_update.block,
+                        block_update.verify_foreign_tx_requests,
+                        block_update.completed_verify_foreign_txs
                     );
 
-                    let verify_foreign_tx_requests = block_update
-                        .verify_foreign_tx_requests
-                        .into_iter()
-                        .map(|verify_foreign_tx_request_from_chain| {
-                            let VerifyForeignTxRequestFromChain {
-                                verify_foreign_tx_id,
-                                receipt_id,
-                                request
-                            } = verify_foreign_tx_request_from_chain;
-                            let verify_foreign_tx_request = VerifyForeignTxRequest {
-                                id: verify_foreign_tx_id,
-                                receipt_id,
-                                domain_id: request.domain_id,
-                                entropy,
-                                payload_version: request.payload_version,
-                                request: request.request,
-                                timestamp_nanosec,
-                            };
-                            // Index the foreign tx requests as soon as we see them. We'll decide
-                            // whether to *process* them after.
-                            self.verify_foreign_tx_request_store.add(&verify_foreign_tx_request);
-                            verify_foreign_tx_request
-                        })
-                        .collect::<Vec<_>>();
-
-                    pending_verify_foreign_txs.notify_new_block(
-                        verify_foreign_tx_requests,
-                        block_update.completed_verify_foreign_txs,
-                        &block_update.block,
-                    );
-
-
-
+                    for request in &verify_foreign_tx_requests.requests {
+                        self.verify_foreign_tx_request_store.add(request);
+                    }
+                    pending_verify_foreign_txs.notify_new_block(verify_foreign_tx_requests);
                 }
                 debug_request = debug_receiver.recv() => {
                     if let Ok(debug_request) = debug_request {
@@ -388,10 +321,10 @@ where
                                     .inc();
 
                                 let response = match this
-                                    .domain_to_curve
+                                    .domain_to_protocol
                                     .get(&signature_attempt.request.domain)
                                 {
-                                    Some(Curve::Secp256k1) => {
+                                    Some(Protocol::CaitSith) => {
                                         let (signature, public_key) = timeout(
                                             Duration::from_secs(this.config.signature.timeout_sec),
                                             this.ecdsa_signature_provider
@@ -408,7 +341,7 @@ where
 
                                         Ok(response)
                                     }
-                                    Some(Curve::Edwards25519) => {
+                                    Some(Protocol::Frost) => {
                                         let (signature, _) = timeout(
                                             Duration::from_secs(this.config.signature.timeout_sec),
                                             this.eddsa_signature_provider
@@ -424,11 +357,13 @@ where
 
                                         Ok(response)
                                     }
-                                    Some(Curve::Bls12381) => Err(anyhow::anyhow!(
-                                        "Incorrect protocol for domain: {:?}",
-                                        signature_attempt.request.domain.clone()
-                                    )),
-                                    Some(Curve::V2Secp256k1) => {
+                                    Some(Protocol::ConfidentialKeyDerivation) => {
+                                        Err(anyhow::anyhow!(
+                                            "Incorrect protocol for domain: {:?}",
+                                            signature_attempt.request.domain.clone()
+                                        ))
+                                    }
+                                    Some(Protocol::DamgardEtAl) => {
                                         let (signature, public_key) = timeout(
                                             Duration::from_secs(this.config.signature.timeout_sec),
                                             this.robust_ecdsa_signature_provider
@@ -504,10 +439,10 @@ where
                                     .inc();
 
                                 let response = match this
-                                    .domain_to_curve
+                                    .domain_to_protocol
                                     .get(&ckd_attempt.request.domain_id)
                                 {
-                                    Some(Curve::Bls12381) => {
+                                    Some(Protocol::ConfidentialKeyDerivation) => {
                                         let response = timeout(
                                             Duration::from_secs(this.config.ckd.timeout_sec),
                                             this.ckd_provider
@@ -519,16 +454,16 @@ where
                                         let response = ChainCKDRespondArgs::new_ckd(
                                             &ckd_attempt.request,
                                             &CKDResponse {
-                                                big_y: (&response.0 .0).into(),
-                                                big_c: (&response.0 .1).into(),
+                                                big_y: (&response.0.0).into(),
+                                                big_c: (&response.0.1).into(),
                                             },
                                         )?;
 
                                         Ok(response)
                                     }
-                                    Some(Curve::Secp256k1)
-                                    | Some(Curve::V2Secp256k1)
-                                    | Some(Curve::Edwards25519) => Err(anyhow::anyhow!(
+                                    Some(Protocol::CaitSith)
+                                    | Some(Protocol::DamgardEtAl)
+                                    | Some(Protocol::Frost) => Err(anyhow::anyhow!(
                                         "Signature scheme is not allowed for domain: {:?}",
                                         ckd_attempt.request.domain_id.clone()
                                     )),
@@ -595,10 +530,10 @@ where
                                     .inc();
 
                                 let response = match this
-                                    .domain_to_curve
+                                    .domain_to_protocol
                                     .get(&verify_foreign_tx_attempt.request.domain_id)
                                 {
-                                    Some(Curve::Secp256k1) => {
+                                    Some(Protocol::CaitSith) => {
                                         let response = timeout(
                                             Duration::from_secs(this.config.signature.timeout_sec),
                                             this.verify_foreign_tx_provider.clone().make_signature(
@@ -607,20 +542,20 @@ where
                                         )
                                         .await??;
 
-                                        let payload_hash = response.0 .0.compute_msg_hash()?;
+                                        let payload_hash = response.0.0.compute_msg_hash()?;
                                         let response =
                                             ChainVerifyForeignTransactionRespondArgs::new(
                                                 verify_foreign_tx_attempt.request.clone(),
                                                 payload_hash,
-                                                response.0 .1,
+                                                response.0.1,
                                                 response.1,
                                             )?;
 
                                         Ok(response)
                                     }
-                                    Some(Curve::Bls12381)
-                                    | Some(Curve::V2Secp256k1)
-                                    | Some(Curve::Edwards25519) => Err(anyhow::anyhow!(
+                                    Some(Protocol::ConfidentialKeyDerivation)
+                                    | Some(Protocol::DamgardEtAl)
+                                    | Some(Protocol::Frost) => Err(anyhow::anyhow!(
                                         "Signature scheme is not allowed for domain: {:?}",
                                         verify_foreign_tx_attempt.request.domain_id.clone()
                                     )),

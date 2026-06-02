@@ -1,6 +1,6 @@
 use std::sync::LazyLock;
 
-use prometheus::{register_histogram_vec, register_int_gauge_vec, HistogramVec, IntGaugeVec};
+use prometheus::{HistogramVec, IntGaugeVec, register_histogram_vec, register_int_gauge_vec};
 
 pub(crate) const INCOMING_CONNECTION: &str = "incoming";
 pub(crate) const OUTGOING_CONNECTION: &str = "outgoing";

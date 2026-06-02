@@ -4,7 +4,7 @@
 /// collisions when tests run in parallel via `cargo nextest`.
 ///
 /// Layout per test:
-///   - 2 cluster-level ports (NEAR node RPC, NEAR node network)
+///   - 2 cluster-level ports (NEAR sandbox RPC/network)
 ///   - 8 ports per node * MAX_NODES
 #[derive(Debug, Clone)]
 pub struct E2ePortAllocator {

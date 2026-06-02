@@ -14,10 +14,10 @@ impl IntoContractType<Participants> for &dtos::Participants {
         for (account_id, participant_id, info) in &self.participants {
             participants
                 .insert_with_id(
-                    account_id.0.parse().unwrap(),
+                    account_id.clone(),
                     ParticipantInfo {
                         url: info.url.clone(),
-                        sign_pk: info.sign_pk.clone().into(),
+                        tls_public_key: info.tls_public_key.clone(),
                     },
                     mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
                 )

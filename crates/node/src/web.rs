@@ -5,26 +5,20 @@ use axum::body::Body;
 use axum::extract::State;
 use axum::http::{Response, StatusCode};
 use axum::response::{Html, IntoResponse};
-use axum::{serve, Json};
-use futures::future::BoxFuture;
+use axum::{Json, serve};
 use futures::FutureExt;
+use futures::future::BoxFuture;
 use mpc_attestation::attestation::Attestation;
-use mpc_node_config::foreign_chains::{BaseApiVariant, BaseChainConfig, BaseProviderConfig};
 use mpc_node_config::{
-    foreign_chains::{BnbApiVariant, BnbChainConfig, BnbProviderConfig},
-    AbstractApiVariant, AbstractChainConfig, AbstractProviderConfig, BitcoinApiVariant,
-    BitcoinChainConfig, BitcoinProviderConfig, CKDConfig, ConfigFile, EthereumApiVariant,
-    EthereumChainConfig, EthereumProviderConfig, ForeignChainsConfig, IndexerConfig, KeygenConfig,
-    PresignatureConfig, SignatureConfig, SolanaApiVariant, SolanaChainConfig, SolanaProviderConfig,
-    StarknetApiVariant, StarknetChainConfig, StarknetProviderConfig, TripleConfig,
+    CKDConfig, ConfigFile, IndexerConfig, KeygenConfig, PresignatureConfig, SignatureConfig,
+    TripleConfig,
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use node_types::http_server::StaticWebData;
-use prometheus::{default_registry, Encoder, TextEncoder};
+use prometheus::{Encoder, TextEncoder, default_registry};
 use serde::Serialize;
-use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, OnceLock};
 use tokio::net::TcpListener;
@@ -73,12 +67,16 @@ struct WebServerState {
     node_config: NodeConfigResponse,
 }
 
-/// Safe duplicate of ConfigFile for the debug endpoint.
-/// This struct is intentionally decoupled from ConfigFile so that if secret
-/// fields are added to ConfigFile in the future, they won't be leaked via
-/// the API. When adding new fields to ConfigFile, only add them here if they
-/// are safe to expose.
-/// Moreover, to decouple internal structure from what's served in the API.
+/// API-safe view of [`ConfigFile`] served by `/debug/node_config`.
+///
+/// Intentionally decoupled from [`ConfigFile`]: new fields are opt-in, so
+/// a field added to [`ConfigFile`] is *not* exposed unless it is also
+/// added here. When extending the response, prefer omitting any sub-config
+/// that could carry sensitive or operationally significant data (RPC
+/// providers, auth credentials, third-party integrations) entirely, rather
+/// than mirroring it via "API-safe duplicate" types that strip individual
+/// fields — those duplicates require keeping two definitions in sync and
+/// a missed update silently leaks data.
 #[derive(Clone, Serialize)]
 struct NodeConfigResponse {
     my_near_account_id: AccountId,
@@ -93,7 +91,6 @@ struct NodeConfigResponse {
     signature: SignatureConfig,
     ckd: CKDConfig,
     keygen: KeygenConfig,
-    foreign_chains: ForeignChains,
     cores: Option<usize>,
 }
 
@@ -112,277 +109,7 @@ impl From<ConfigFile> for NodeConfigResponse {
             signature: config.signature,
             ckd: config.ckd,
             keygen: config.keygen,
-            foreign_chains: config.foreign_chains.into(),
             cores: config.cores,
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// API-safe duplicates of foreign-chain config types.
-// These deliberately omit sensitive fields (auth tokens, credentials) so they
-// can never be leaked through the debug endpoint.
-// ---------------------------------------------------------------------------
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct ForeignChains {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    solana: Option<SolanaChain>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    bitcoin: Option<BitcoinChain>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    ethereum: Option<EthereumChain>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    abstract_chain: Option<AbstractChain>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    starknet: Option<StarknetChain>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    bnb: Option<BnbChain>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    base: Option<BaseChain>,
-}
-
-impl From<ForeignChainsConfig> for ForeignChains {
-    fn from(config: ForeignChainsConfig) -> Self {
-        Self {
-            solana: config.solana.map(Into::into),
-            bitcoin: config.bitcoin.map(Into::into),
-            ethereum: config.ethereum.map(Into::into),
-            abstract_chain: config.abstract_chain.map(Into::into),
-            starknet: config.starknet.map(Into::into),
-            bnb: config.bnb.map(Into::into),
-            base: config.base.map(Into::into),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct SolanaChain {
-    timeout_sec: u64,
-    max_retries: u64,
-    providers: BTreeMap<String, SolanaProvider>,
-}
-
-impl From<SolanaChainConfig> for SolanaChain {
-    fn from(config: SolanaChainConfig) -> Self {
-        let providers: BTreeMap<String, SolanaProviderConfig> = config.providers.into();
-        Self {
-            timeout_sec: config.timeout_sec,
-            max_retries: config.max_retries,
-            providers: providers.into_iter().map(|(k, v)| (k, v.into())).collect(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct SolanaProvider {
-    rpc_url: String,
-    api_variant: SolanaApiVariant,
-}
-
-impl From<SolanaProviderConfig> for SolanaProvider {
-    fn from(config: SolanaProviderConfig) -> Self {
-        Self {
-            rpc_url: config.rpc_url,
-            api_variant: config.api_variant,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct BitcoinChain {
-    timeout_sec: u64,
-    max_retries: u64,
-    providers: BTreeMap<String, BitcoinProvider>,
-}
-
-impl From<BitcoinChainConfig> for BitcoinChain {
-    fn from(config: BitcoinChainConfig) -> Self {
-        let providers: BTreeMap<String, BitcoinProviderConfig> = config.providers.into();
-        Self {
-            timeout_sec: config.timeout_sec,
-            max_retries: config.max_retries,
-            providers: providers.into_iter().map(|(k, v)| (k, v.into())).collect(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct BitcoinProvider {
-    rpc_url: String,
-    api_variant: BitcoinApiVariant,
-}
-
-impl From<BitcoinProviderConfig> for BitcoinProvider {
-    fn from(config: BitcoinProviderConfig) -> Self {
-        Self {
-            rpc_url: config.rpc_url,
-            api_variant: config.api_variant,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct EthereumChain {
-    timeout_sec: u64,
-    max_retries: u64,
-    providers: BTreeMap<String, EthereumProvider>,
-}
-
-impl From<EthereumChainConfig> for EthereumChain {
-    fn from(config: EthereumChainConfig) -> Self {
-        let providers: BTreeMap<String, EthereumProviderConfig> = config.providers.into();
-        Self {
-            timeout_sec: config.timeout_sec,
-            max_retries: config.max_retries,
-            providers: providers.into_iter().map(|(k, v)| (k, v.into())).collect(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct EthereumProvider {
-    rpc_url: String,
-    api_variant: EthereumApiVariant,
-}
-
-impl From<EthereumProviderConfig> for EthereumProvider {
-    fn from(config: EthereumProviderConfig) -> Self {
-        Self {
-            rpc_url: config.rpc_url,
-            api_variant: config.api_variant,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct AbstractChain {
-    timeout_sec: u64,
-    max_retries: u64,
-    providers: BTreeMap<String, AbstractProvider>,
-}
-
-impl From<AbstractChainConfig> for AbstractChain {
-    fn from(config: AbstractChainConfig) -> Self {
-        let providers: BTreeMap<String, AbstractProviderConfig> = config.providers.into();
-        Self {
-            timeout_sec: config.timeout_sec,
-            max_retries: config.max_retries,
-            providers: providers.into_iter().map(|(k, v)| (k, v.into())).collect(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct AbstractProvider {
-    rpc_url: String,
-    api_variant: AbstractApiVariant,
-}
-
-impl From<AbstractProviderConfig> for AbstractProvider {
-    fn from(config: AbstractProviderConfig) -> Self {
-        Self {
-            rpc_url: config.rpc_url,
-            api_variant: config.api_variant,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct StarknetChain {
-    timeout_sec: u64,
-    max_retries: u64,
-    providers: BTreeMap<String, StarknetProvider>,
-}
-
-impl From<StarknetChainConfig> for StarknetChain {
-    fn from(config: StarknetChainConfig) -> Self {
-        let providers: BTreeMap<String, StarknetProviderConfig> = config.providers.into();
-        Self {
-            timeout_sec: config.timeout_sec,
-            max_retries: config.max_retries,
-            providers: providers.into_iter().map(|(k, v)| (k, v.into())).collect(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct StarknetProvider {
-    rpc_url: String,
-    api_variant: StarknetApiVariant,
-}
-
-impl From<StarknetProviderConfig> for StarknetProvider {
-    fn from(config: StarknetProviderConfig) -> Self {
-        Self {
-            rpc_url: config.rpc_url,
-            api_variant: config.api_variant,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct BnbChain {
-    timeout_sec: u64,
-    max_retries: u64,
-    providers: BTreeMap<String, BnbProvider>,
-}
-
-impl From<BnbChainConfig> for BnbChain {
-    fn from(config: BnbChainConfig) -> Self {
-        let providers: BTreeMap<String, BnbProviderConfig> = config.providers.into();
-        Self {
-            timeout_sec: config.timeout_sec,
-            max_retries: config.max_retries,
-            providers: providers.into_iter().map(|(k, v)| (k, v.into())).collect(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct BnbProvider {
-    rpc_url: String,
-    api_variant: BnbApiVariant,
-}
-
-impl From<BnbProviderConfig> for BnbProvider {
-    fn from(config: BnbProviderConfig) -> Self {
-        Self {
-            rpc_url: config.rpc_url,
-            api_variant: config.api_variant,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct BaseChain {
-    timeout_sec: u64,
-    max_retries: u64,
-    providers: BTreeMap<String, BaseProvider>,
-}
-
-impl From<BaseChainConfig> for BaseChain {
-    fn from(config: BaseChainConfig) -> Self {
-        let providers: BTreeMap<String, BaseProviderConfig> = config.providers.into();
-        Self {
-            timeout_sec: config.timeout_sec,
-            max_retries: config.max_retries,
-            providers: providers.into_iter().map(|(k, v)| (k, v.into())).collect(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct BaseProvider {
-    rpc_url: String,
-    api_variant: BaseApiVariant,
-}
-
-impl From<BaseProviderConfig> for BaseProvider {
-    fn from(config: BaseProviderConfig) -> Self {
-        Self {
-            rpc_url: config.rpc_url,
-            api_variant: config.api_variant,
         }
     }
 }
@@ -459,8 +186,7 @@ async fn contract_state(state: State<WebServerState>) -> String {
         // Clone to avoid holding a lock
         .clone();
 
-    // TODO(#2880): share `protocol_state_to_string` with the contract crate.
-    format!("{:#?}", protocol_state)
+    near_mpc_contract_interface::types::protocol_state_to_string(&protocol_state)
 }
 
 async fn third_party_licenses() -> Html<&'static str> {
@@ -573,15 +299,55 @@ pub async fn start_web_server(
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use mpc_node_config::foreign_chains::{BaseApiVariant, BaseChainConfig, BaseProviderConfig};
-    use mpc_node_config::{AuthConfig, SyncMode, TokenConfig};
+    use mpc_node_config::foreign_chains::{
+        ForeignChainConfig, ForeignChainProviderConfig, RpcProviderName,
+    };
+    use mpc_node_config::{AuthConfig, ForeignChainsConfig, SyncMode, TokenConfig};
     use near_indexer_primitives::types::Finality;
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use std::net::Ipv4Addr;
+    use std::num::NonZeroU64;
     use std::str::FromStr;
 
+    const PROVIDER_ALCHEMY: &str = "alchemy";
+    const PROVIDER_ANKR: &str = "ankr";
+    const PROVIDER_BLAST: &str = "blast";
+    const PROVIDER_PUBLIC: &str = "public";
+
+    const SOLANA_RPC_URL: &str = "https://solana-mainnet.g.alchemy.com/v2/";
+    const BITCOIN_RPC_URL: &str = "https://rpc.ankr.com/btc/{api_key}";
+    const ETHEREUM_RPC_URL: &str = "https://eth-mainnet.g.alchemy.com/v2/";
+    const ABSTRACT_RPC_URL: &str = "https://api.testnet.abs.xyz";
+    const BNB_RPC_URL: &str = "https://bsc-rpc.publicnode.com";
+    const BASE_RPC_URL: &str = "https://base.publicnode.com";
+    const STARKNET_RPC_URL: &str = "https://starknet-mainnet.blastapi.io/";
+    const ARBITRUM_RPC_URL: &str = "https://arbitrum.publicnode.com";
+    const HYPER_EVM_RPC_URL: &str = "https://rpc.hyperliquid.xyz/evm";
+    const POLYGON_RPC_URL: &str = "https://polygon-bor-rpc.publicnode.com";
+
+    const SOLANA_BEARER_TOKEN: &str = "sk-SUPER-SECRET-KEY";
+    const BITCOIN_PATH_TOKEN: &str = "ankr-secret-token";
+    const STARKNET_QUERY_TOKEN: &str = "blast-secret";
+    const ETHEREUM_TOKEN_ENV_VAR: &str = "ALCHEMY_API_KEY";
+
+    fn test_chain(provider_name: &str, rpc_url: &str, auth: AuthConfig) -> ForeignChainConfig {
+        ForeignChainConfig {
+            timeout_sec: NonZeroU64::new(30).unwrap(),
+            max_retries: NonZeroU64::new(3).unwrap(),
+            providers: NonEmptyBTreeMap::new(
+                RpcProviderName::from(provider_name.to_string()),
+                ForeignChainProviderConfig {
+                    rpc_url: rpc_url.to_string(),
+                    auth,
+                },
+            ),
+        }
+    }
+
     /// Builds a [`ConfigFile`] with one provider per chain, each exercising a
-    /// different [`AuthConfig`] variant so every conversion path is covered.
+    /// different [`AuthConfig`] variant. Used to verify that no part of
+    /// `foreign_chains` (chain names, provider names, URLs, auth, tokens, or
+    /// secret values) ever appears in the serialized debug response.
     fn test_config() -> ConfigFile {
         ConfigFile {
             my_near_account_id: AccountId::from_str("test.near").unwrap(),
@@ -613,296 +379,123 @@ mod tests {
             ckd: CKDConfig { timeout_sec: 60 },
             keygen: KeygenConfig { timeout_sec: 60 },
             foreign_chains: ForeignChainsConfig {
-                // Header auth with Val token
-                solana: Some(SolanaChainConfig {
-                    timeout_sec: 30,
-                    max_retries: 3,
-                    providers: NonEmptyBTreeMap::new(
-                        "alchemy".to_string(),
-                        SolanaProviderConfig {
-                            rpc_url: "https://solana-mainnet.g.alchemy.com/v2/".to_string(),
-                            api_variant: SolanaApiVariant::Alchemy,
-                            auth: AuthConfig::Header {
-                                name: http::HeaderName::from_static("authorization"),
-                                scheme: Some("Bearer".to_string()),
-                                token: TokenConfig::Val {
-                                    val: "sk-SUPER-SECRET-KEY".to_string(),
-                                },
-                            },
+                solana: Some(test_chain(
+                    PROVIDER_ALCHEMY,
+                    SOLANA_RPC_URL,
+                    AuthConfig::Header {
+                        name: http::HeaderName::from_static("authorization"),
+                        scheme: Some("Bearer".to_string()),
+                        token: TokenConfig::Val {
+                            val: SOLANA_BEARER_TOKEN.to_string(),
                         },
-                    ),
-                }),
-                // Path auth with Val token (URL contains placeholder)
-                bitcoin: Some(BitcoinChainConfig {
-                    timeout_sec: 30,
-                    max_retries: 3,
-                    providers: NonEmptyBTreeMap::new(
-                        "ankr".to_string(),
-                        BitcoinProviderConfig {
-                            rpc_url: "https://rpc.ankr.com/btc/{api_key}".to_string(),
-                            api_variant: BitcoinApiVariant::Standard,
-                            auth: AuthConfig::Path {
-                                placeholder: "{api_key}".to_string(),
-                                token: TokenConfig::Val {
-                                    val: "ankr-secret-token".to_string(),
-                                },
-                            },
+                    },
+                )),
+                bitcoin: Some(test_chain(
+                    PROVIDER_ANKR,
+                    BITCOIN_RPC_URL,
+                    AuthConfig::Path {
+                        placeholder: "{api_key}".to_string(),
+                        token: TokenConfig::Val {
+                            val: BITCOIN_PATH_TOKEN.to_string(),
                         },
-                    ),
-                }),
-                // Query auth with Env token
-                ethereum: Some(EthereumChainConfig {
-                    timeout_sec: 30,
-                    max_retries: 3,
-                    providers: NonEmptyBTreeMap::new(
-                        "alchemy".to_string(),
-                        EthereumProviderConfig {
-                            rpc_url: "https://eth-mainnet.g.alchemy.com/v2/".to_string(),
-                            api_variant: EthereumApiVariant::Alchemy,
-                            auth: AuthConfig::Query {
-                                name: "api_key".to_string(),
-                                token: TokenConfig::Env {
-                                    env: "ALCHEMY_API_KEY".to_string(),
-                                },
-                            },
+                    },
+                )),
+                ethereum: Some(test_chain(
+                    PROVIDER_ALCHEMY,
+                    ETHEREUM_RPC_URL,
+                    AuthConfig::Query {
+                        name: "api_key".to_string(),
+                        token: TokenConfig::Env {
+                            env: ETHEREUM_TOKEN_ENV_VAR.to_string(),
                         },
-                    ),
-                }),
-                // No auth
-                abstract_chain: Some(AbstractChainConfig {
-                    timeout_sec: 30,
-                    max_retries: 3,
-                    providers: NonEmptyBTreeMap::new(
-                        "public".to_string(),
-                        AbstractProviderConfig {
-                            rpc_url: "https://api.testnet.abs.xyz".to_string(),
-                            api_variant: AbstractApiVariant::Standard,
-                            auth: AuthConfig::None,
+                    },
+                )),
+                abstract_chain: Some(test_chain(
+                    PROVIDER_PUBLIC,
+                    ABSTRACT_RPC_URL,
+                    AuthConfig::None,
+                )),
+                bnb: Some(test_chain(PROVIDER_PUBLIC, BNB_RPC_URL, AuthConfig::None)),
+                base: Some(test_chain(PROVIDER_PUBLIC, BASE_RPC_URL, AuthConfig::None)),
+                starknet: Some(test_chain(
+                    PROVIDER_BLAST,
+                    STARKNET_RPC_URL,
+                    AuthConfig::Query {
+                        name: "api_key".to_string(),
+                        token: TokenConfig::Val {
+                            val: STARKNET_QUERY_TOKEN.to_string(),
                         },
-                    ),
-                }),
-                bnb: Some(BnbChainConfig {
-                    timeout_sec: 30,
-                    max_retries: 3,
-                    providers: NonEmptyBTreeMap::new(
-                        "public".to_string(),
-                        BnbProviderConfig {
-                            rpc_url: "https://bsc-rpc.publicnode.com".to_string(),
-                            api_variant: BnbApiVariant::Standard,
-                            auth: AuthConfig::None,
-                        },
-                    ),
-                }),
-                base: Some(BaseChainConfig {
-                    timeout_sec: 30,
-                    max_retries: 3,
-                    providers: NonEmptyBTreeMap::new(
-                        "public".to_string(),
-                        BaseProviderConfig {
-                            rpc_url: "https://base.publicnode.com".to_string(),
-                            api_variant: BaseApiVariant::Standard,
-                            auth: AuthConfig::None,
-                        },
-                    ),
-                }),
-                // Query auth with Val token
-                starknet: Some(StarknetChainConfig {
-                    timeout_sec: 30,
-                    max_retries: 3,
-                    providers: NonEmptyBTreeMap::new(
-                        "blast".to_string(),
-                        StarknetProviderConfig {
-                            rpc_url: "https://starknet-mainnet.blastapi.io/".to_string(),
-                            api_variant: StarknetApiVariant::Blast,
-                            auth: AuthConfig::Query {
-                                name: "api_key".to_string(),
-                                token: TokenConfig::Val {
-                                    val: "blast-secret".to_string(),
-                                },
-                            },
-                        },
-                    ),
-                }),
+                    },
+                )),
+                arbitrum: Some(test_chain(
+                    PROVIDER_PUBLIC,
+                    ARBITRUM_RPC_URL,
+                    AuthConfig::None,
+                )),
+                hyper_evm: Some(test_chain(
+                    PROVIDER_PUBLIC,
+                    HYPER_EVM_RPC_URL,
+                    AuthConfig::None,
+                )),
+                polygon: Some(test_chain(
+                    PROVIDER_PUBLIC,
+                    POLYGON_RPC_URL,
+                    AuthConfig::None,
+                )),
             },
             cores: Some(4),
         }
     }
 
     #[test]
-    fn node_config_response_from__omits_auth_from_solana_provider() {
-        // Given
-        let config = test_config();
-
-        // When
-        let response = NodeConfigResponse::from(config);
-
-        // Then
-        let provider = &response.foreign_chains.solana.unwrap().providers["alchemy"];
-        assert_eq!(
-            *provider,
-            SolanaProvider {
-                rpc_url: "https://solana-mainnet.g.alchemy.com/v2/".to_string(),
-                api_variant: SolanaApiVariant::Alchemy,
-            }
-        );
-    }
-
-    #[test]
-    fn node_config_response_from__omits_auth_from_bitcoin_provider() {
-        // Given
-        let config = test_config();
-
-        // When
-        let response = NodeConfigResponse::from(config);
-
-        // Then
-        let provider = &response.foreign_chains.bitcoin.unwrap().providers["ankr"];
-        assert_eq!(
-            *provider,
-            BitcoinProvider {
-                rpc_url: "https://rpc.ankr.com/btc/{api_key}".to_string(),
-                api_variant: BitcoinApiVariant::Standard,
-            }
-        );
-    }
-
-    #[test]
-    fn node_config_response_from__omits_auth_from_ethereum_provider() {
-        // Given
-        let config = test_config();
-
-        // When
-        let response = NodeConfigResponse::from(config);
-
-        // Then
-        let provider = &response.foreign_chains.ethereum.unwrap().providers["alchemy"];
-        assert_eq!(
-            *provider,
-            EthereumProvider {
-                rpc_url: "https://eth-mainnet.g.alchemy.com/v2/".to_string(),
-                api_variant: EthereumApiVariant::Alchemy,
-            }
-        );
-    }
-
-    #[test]
-    fn node_config_response_from__omits_auth_from_abstract_provider() {
-        // Given
-        let config = test_config();
-
-        // When
-        let response = NodeConfigResponse::from(config);
-
-        // Then
-        let provider = &response.foreign_chains.abstract_chain.unwrap().providers["public"];
-        assert_eq!(
-            *provider,
-            AbstractProvider {
-                rpc_url: "https://api.testnet.abs.xyz".to_string(),
-                api_variant: AbstractApiVariant::Standard,
-            }
-        );
-    }
-
-    #[test]
-    fn node_config_response_from__omits_auth_from_starknet_provider() {
-        // Given
-        let config = test_config();
-
-        // When
-        let response = NodeConfigResponse::from(config);
-
-        // Then
-        let provider = &response.foreign_chains.starknet.unwrap().providers["blast"];
-        assert_eq!(
-            *provider,
-            StarknetProvider {
-                rpc_url: "https://starknet-mainnet.blastapi.io/".to_string(),
-                api_variant: StarknetApiVariant::Blast,
-            }
-        );
-    }
-
-    #[test]
-    fn node_config_response_from__omits_auth_from_bnb_provider() {
-        // Given
-        let config = test_config();
-
-        // When
-        let response = NodeConfigResponse::from(config);
-
-        // Then
-        let provider = &response.foreign_chains.bnb.unwrap().providers["public"];
-        assert_eq!(
-            *provider,
-            BnbProvider {
-                rpc_url: "https://bsc-rpc.publicnode.com".to_string(),
-                api_variant: BnbApiVariant::Standard,
-            }
-        );
-    }
-
-    #[test]
-    fn node_config_response_from__omits_auth_from_base_provider() {
-        // Given
-        let config = test_config();
-
-        // When
-        let response = NodeConfigResponse::from(config);
-
-        // Then
-        let provider = &response.foreign_chains.base.unwrap().providers["public"];
-        assert_eq!(
-            *provider,
-            BaseProvider {
-                rpc_url: "https://base.publicnode.com".to_string(),
-                api_variant: BaseApiVariant::Standard,
-            }
-        );
-    }
-
-    #[test]
-    fn node_config_response_from__preserves_chain_level_fields() {
-        // Given
-        let config = test_config();
-
-        // When
-        let response = NodeConfigResponse::from(config);
-
-        // Then
-        let solana = response.foreign_chains.solana.unwrap();
-        assert_eq!(solana.timeout_sec, 30);
-        assert_eq!(solana.max_retries, 3);
-    }
-
-    #[test]
-    fn node_config_response_json__does_not_contain_auth() {
+    fn node_config_response_json__should_not_leak_foreign_chain_info() {
         // Given
         let config = test_config();
 
         // When
         let json = serde_json::to_string(&NodeConfigResponse::from(config)).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
 
-        // Then
+        // Then — the structural invariant: the public debug response must
+        // not carry a `foreign_chains` field at all.
+        let object = value
+            .as_object()
+            .expect("response must serialize as a JSON object");
         assert!(
-            !json.contains("auth"),
-            "JSON response must not contain auth fields, got: {json}"
+            !object.contains_key("foreign_chains"),
+            "response must not contain a `foreign_chains` key, got: {json}"
         );
-        assert!(
-            !json.contains("token"),
-            "JSON response must not contain token fields, got: {json}"
-        );
-        assert!(
-            !json.contains("sk-SUPER-SECRET-KEY"),
-            "JSON response must not contain secret values"
-        );
-        assert!(
-            !json.contains("ankr-secret-token"),
-            "JSON response must not contain secret values"
-        );
-        assert!(
-            !json.contains("blast-secret"),
-            "JSON response must not contain secret values"
-        );
+
+        // Defense in depth: catch a regression that re-introduces RPC
+        // provider data under a different field name. Each needle below is
+        // a value present only in the foreign-chain test fixture, so its
+        // appearance anywhere in the serialized response is unambiguous
+        // evidence of a leak.
+        let forbidden = [
+            PROVIDER_ALCHEMY,
+            PROVIDER_ANKR,
+            PROVIDER_BLAST,
+            PROVIDER_PUBLIC,
+            SOLANA_RPC_URL,
+            BITCOIN_RPC_URL,
+            ETHEREUM_RPC_URL,
+            ABSTRACT_RPC_URL,
+            BNB_RPC_URL,
+            BASE_RPC_URL,
+            STARKNET_RPC_URL,
+            ARBITRUM_RPC_URL,
+            HYPER_EVM_RPC_URL,
+            POLYGON_RPC_URL,
+            SOLANA_BEARER_TOKEN,
+            BITCOIN_PATH_TOKEN,
+            STARKNET_QUERY_TOKEN,
+            ETHEREUM_TOKEN_ENV_VAR,
+        ];
+        for needle in forbidden {
+            assert!(
+                !json.contains(needle),
+                "JSON response must not contain `{needle}`, got: {json}"
+            );
+        }
     }
 }

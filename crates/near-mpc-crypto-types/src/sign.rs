@@ -34,10 +34,17 @@ pub struct SignRequestArgs {
 }
 
 /// Compat layer: all fields optional so both old and new wire formats parse.
+///
+/// The `payload` field is the legacy *untagged* representation — a raw 32-byte
+/// array with no `Ecdsa` / `Eddsa` enum tag, used by clients predating EdDSA
+/// support. It is intentionally converted to [`Payload::Ecdsa`] via
+/// [`Payload::from_legacy_ecdsa`] below; **defaulting untagged payloads to
+/// `Ecdsa` is required for backward compatibility**
 #[derive(Deserialize)]
 struct SignRequestArgsCompat {
     path: String,
     payload_v2: Option<Payload>,
+    /// Legacy untagged payload: raw 32 bytes, always interpreted as ECDSA.
     #[serde(rename = "payload")]
     deprecated_payload: Option<[u8; 32]>,
     domain_id: Option<DomainId>,
@@ -192,6 +199,28 @@ mod tests {
         assert_eq!(args.path, "m/44'/60'/0'/0/0");
         assert_eq!(args.domain_id, DomainId(0));
         assert_eq!(args.payload.as_ecdsa().unwrap(), &ecdsa_payload_bytes());
+    }
+
+    /// A a sign request whose `payload` field is
+    /// a raw 32-byte array (no `Ecdsa` / `Eddsa` tag) — the legacy on-chain
+    /// wire format predating EdDSA support — must be deserialized as
+    /// `Payload::Ecdsa`
+    #[test]
+    fn deserialize__should_default_untagged_payload_to_ecdsa() {
+        // Given — the exact legacy wire shape: raw bytes under `payload`, no
+        // enum tag, paired with `key_version`.
+        let json = serde_json::json!({
+            "path": "m/44'/60'/0'/0/0",
+            "payload": ecdsa_payload_bytes().to_vec(),
+            "key_version": 0
+        });
+
+        // When
+        let args: SignRequestArgs = serde_json::from_value(json).unwrap();
+
+        // Then — must default to ECDSA, not EdDSA.
+        assert_eq!(args.payload.as_ecdsa().unwrap(), &ecdsa_payload_bytes());
+        assert!(args.payload.as_eddsa().is_none());
     }
 
     #[test]

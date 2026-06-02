@@ -2,17 +2,17 @@ use rand::Rng;
 use rand_core::{CryptoRngCore, SeedableRng};
 
 use threshold_signatures::{
+    MaxMalicious,
     ecdsa::{self, robust_ecdsa},
     participants::Participant,
     protocol::Protocol,
     test_utils::{
-        ecdsa_generate_rerandpresig_args, generate_participants_with_random_ids, run_keygen,
-        MockCryptoRng,
+        MockCryptoRng, ecdsa_generate_rerandpresig_args, generate_participants_with_random_ids,
+        run_keygen,
     },
-    MaxMalicious,
 };
 
-use super::{PreparedPresig, PreparedSig, MAX_MALICIOUS};
+use super::{MAX_MALICIOUS, PreparedPresig, PreparedSig};
 
 /// Used to prepare robust ecdsa presignatures for benchmarking
 pub fn robust_ecdsa_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'static>(

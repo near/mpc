@@ -1,5 +1,5 @@
 use near_sdk::Gas;
-use near_workspaces::{result::ExecutionFinalResult, Account, Contract};
+use near_workspaces::{Account, Contract, result::ExecutionFinalResult};
 use serde::Serialize;
 
 pub async fn execute_async_transactions(
@@ -26,7 +26,7 @@ pub async fn execute_async_transactions(
     Ok(())
 }
 
-/// Returns an error if any of the outcomes in [`ExecutionFinalResult`] failed  
+/// Returns an error if any of the outcomes in [`ExecutionFinalResult`] failed
 pub fn all_receipts_successful(result: ExecutionFinalResult) -> anyhow::Result<()> {
     anyhow::ensure!(
         result.outcomes().iter().all(|o| !o.is_failure()),

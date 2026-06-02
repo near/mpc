@@ -24,6 +24,7 @@ pub struct AppCompose {
     pub no_instance_id: bool,
     pub secure_time: Option<bool>,
     pub pre_launch_script: Option<String>,
+    pub init_script: Option<String>,
     // The following fields that don't have any security implication are omitted:
     //
     // - docker_config: JsonValue,

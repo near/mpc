@@ -16,15 +16,17 @@ pub mod types {
 
     pub use metrics::Metrics;
     pub use near_mpc_crypto_types::kdf;
+    pub use node_migrations::{BackupServiceInfo, DestinationNodeInfo};
     pub use primitives::{AccountId, DomainId, Tweak};
     pub use sign::*;
     pub use state::{
         AddDomainsVotes, AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, Curve,
         DomainConfig, DomainPurpose, DomainRegistry, EpochId, InitializingContractState, KeyEvent,
-        KeyEventId, KeyEventInstance, KeyForDomain, Keyset, ProtocolContractState,
-        ResharingContractState, RunningContractState, Threshold, ThresholdParameters,
-        ThresholdParametersVotes,
+        KeyEventId, KeyEventInstance, KeyForDomain, Keyset, Protocol, ProtocolContractState,
+        ReconstructionThreshold, ResharingContractState, RunningContractState, Threshold,
+        ThresholdParameters, ThresholdParametersVotes, protocol_state_to_string,
     };
+    pub use tee::NodeId;
     pub use updates::{ProposedUpdates, UpdateHash};
 
     // Re-export hash types used in attestation DTO fields
@@ -42,10 +44,12 @@ pub mod types {
     mod config;
     mod foreign_chain;
     mod metrics;
+    mod node_migrations;
     mod participants;
     mod primitives;
     mod sign;
     mod state;
+    mod tee;
     mod updates;
 }
 

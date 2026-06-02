@@ -34,7 +34,6 @@ foreign_chains:
     max_retries: 3
     providers:
       public:
-        api_variant: esplora
         rpc_url: "https://bitcoin-rpc.publicnode.com"
         auth:
           kind: none
@@ -43,7 +42,6 @@ foreign_chains:
     max_retries: 3
     providers:
       public:
-        api_variant: standard
         rpc_url: "https://api.testnet.abs.xyz"
         auth:
           kind: none
@@ -52,7 +50,6 @@ foreign_chains:
     max_retries: 3
     providers:
       public:
-        api_variant: standard
         rpc_url: "https://starknet-rpc.publicnode.com"
         auth:
           kind: none

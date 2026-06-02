@@ -1,22 +1,26 @@
+#![allow(non_snake_case)]
+
 use mpc_contract::{
+    MpcContract,
     crypto_shared::types::PublicKeyExtended,
+    errors::{Error, InvalidParameters},
     primitives::{
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantId, ParticipantInfo},
-        test_utils::{bogus_ed25519_near_public_key, gen_participants},
+        test_utils::{bogus_ed25519_public_key, gen_participants},
         thresholds::{Threshold, ThresholdParameters},
     },
     tee::tee_state::NodeId,
-    MpcContract,
 };
 use near_mpc_contract_interface::types::{
-    Attestation, InitConfig, MockAttestation, ProtocolContractState,
+    Attestation, InitConfig, MockAttestation, Protocol, ProtocolContractState,
+    ReconstructionThreshold,
 };
-use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, DomainPurpose};
+use near_mpc_contract_interface::types::{DomainConfig, DomainId, DomainPurpose};
 
 use assert_matches::assert_matches;
 use near_account_id::AccountId;
-use near_sdk::{test_utils::VMContextBuilder, testing_env, NearToken, VMContext};
+use near_sdk::{NearToken, VMContext, test_utils::VMContextBuilder, testing_env};
 use rstest::rstest;
 use std::{str::FromStr, time::Duration};
 
@@ -103,7 +107,8 @@ impl TestSetupBuilder {
 
         let domains = vec![DomainConfig {
             id: DomainId::default(),
-            curve: Curve::Secp256k1,
+            protocol: Protocol::CaitSith,
+            reconstruction_threshold: ReconstructionThreshold::new(2),
             purpose: DomainPurpose::Sign,
         }];
 
@@ -118,9 +123,14 @@ impl TestSetupBuilder {
         testing_env!(context);
 
         let init_config = self.init_config;
-        let contract =
-            MpcContract::init_running(domains, 1, keyset, parameters.clone(), init_config.clone())
-                .unwrap();
+        let contract = MpcContract::init_running(
+            domains,
+            1,
+            keyset,
+            parameters.clone().into(),
+            init_config.clone(),
+        )
+        .unwrap();
 
         let mut setup = TestSetup {
             contract,
@@ -132,8 +142,8 @@ impl TestSetupBuilder {
             .iter()
             .map(|(account_id, _, participant_info)| NodeId {
                 account_id: account_id.clone(),
-                tls_public_key: participant_info.sign_pk.clone(),
-                account_public_key: Some(bogus_ed25519_near_public_key()),
+                tls_public_key: participant_info.tls_public_key.clone(),
+                account_public_key: bogus_ed25519_public_key(),
             })
             .collect();
 
@@ -150,7 +160,8 @@ impl TestSetupBuilder {
                         .contract
                         .vote_add_domains(vec![DomainConfig {
                             id: DomainId(1),
-                            curve: Curve::Edwards25519,
+                            protocol: Protocol::Frost,
+                            reconstruction_threshold: ReconstructionThreshold::new(2),
                             purpose: DomainPurpose::Sign,
                         }])
                         .unwrap();
@@ -177,7 +188,7 @@ impl TestSetupBuilder {
 
                     setup
                         .contract
-                        .vote_new_parameters(EpochId::new(6), parameters.clone())
+                        .vote_new_parameters(EpochId::new(6), parameters.clone().into())
                         .unwrap();
                 }
 
@@ -207,20 +218,19 @@ impl TestSetup {
     ) -> Result<(), mpc_contract::errors::Error> {
         let context = create_context_for_participant(&node_id.account_id);
         testing_env!(context);
-        self.contract.submit_participant_info(
-            attestation,
-            near_mpc_contract_interface::types::Ed25519PublicKey::try_from(&node_id.tls_public_key)
-                .expect("expected ED25519 key"),
-        )
+        self.contract
+            .submit_participant_info(attestation, node_id.tls_public_key.clone())
     }
 
     /// Switches testing context to a given participant at a specific timestamp
     fn with_env(&mut self, account_id: &AccountId, timestamp: u64) {
-        testing_env!(VMContextBuilder::new()
-            .block_timestamp(timestamp)
-            .signer_account_id(account_id.clone())
-            .predecessor_account_id(account_id.clone())
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .block_timestamp(timestamp)
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build()
+        );
     }
 
     /// Makes all participants vote for a given code hash at a specific timestamp
@@ -230,16 +240,17 @@ impl TestSetup {
             self.contract.vote_code_hash(hash.into()).unwrap();
         }
     }
-    /// Returns the list of NodeIds for all participants
-    /// Note that the account_public_key field in NodeId is None.
-    /// This is because NodeId is used in contexts where account_public_key is not needed. (only TLS key is needed)
+    /// Returns the list of NodeIds for all participants. The
+    /// `account_public_key` is a placeholder — only the `account_id` (to set
+    /// the signer context) and `tls_public_key` (passed to
+    /// `submit_participant_info`) are consumed by these tests.
     fn get_participant_node_ids(&self) -> Vec<NodeId> {
         self.participants_list
             .iter()
             .map(|(account_id, _, participant_info)| NodeId {
                 account_id: account_id.clone(),
-                tls_public_key: participant_info.sign_pk.clone(),
-                account_public_key: None,
+                tls_public_key: participant_info.tls_public_key.clone(),
+                account_public_key: bogus_ed25519_public_key(),
             })
             .collect()
     }
@@ -263,22 +274,95 @@ fn create_context_for_participant(account_id: &AccountId) -> VMContext {
 }
 
 fn set_system_time(nano_seconds_since_unix_epoch: u64) {
-    testing_env!(VMContextBuilder::new()
-        .block_timestamp(nano_seconds_since_unix_epoch)
-        .build());
+    testing_env!(
+        VMContextBuilder::new()
+            .block_timestamp(nano_seconds_since_unix_epoch)
+            .build()
+    );
 }
 
-/// ** Test for TEE cleanup of non-participants** - Tests that `clean_tee_status()` removes
-/// TEE accounts for accounts that are no longer in the participant list.
-/// This simulates cleanup after participant removal (e.g., post-resharing).
+/// **Test that `submit_participant_info` rejects an attempt by one account to overwrite
+/// another account's stored attestation entry**, keyed by TLS public key. Without this
+/// gate, any caller could replace a legit participant's attestation and lock them out of
+/// every attestation-gated method (DoS via cross-participant overwrite).
 #[test]
-fn test_clean_tee_status_removes_non_participants() {
+fn submit_participant_info__should_reject_overwrite_from_other_account() {
+    // Given: a running contract with two participants who have submitted their
+    // attestations. We will treat `participants_list[0]` as the victim.
+    const PARTICIPANT_COUNT: usize = 2;
+    const THRESHOLD: u64 = 2;
+
+    testing_env!(
+        VMContextBuilder::new()
+            .attached_deposit(NearToken::from_near(1))
+            .build()
+    );
+
+    let mut setup = TestSetupBuilder::new()
+        .with_partcipant_count(PARTICIPANT_COUNT)
+        .with_threshold(THRESHOLD)
+        .build();
+
+    let participant_nodes = setup.get_participant_node_ids();
+    let victim_node = participant_nodes[0].clone();
+    let victim_attestation = Attestation::Mock(MockAttestation::Valid);
+    setup.submit_attestation_for_node(&victim_node, victim_attestation);
+
+    let stored_before = setup
+        .contract
+        .get_attestation(victim_node.tls_public_key.clone())
+        .unwrap()
+        .expect("victim attestation should be stored");
+
+    // When: an unrelated account submits an attestation that targets the victim's TLS key.
+    // The attacker context attaches a deposit large enough to cover any storage charge,
+    // so the call can only fail due to the ownership check — not `InsufficientDeposit`.
+    let attacker_node = NodeId {
+        account_id: "attacker.near".parse().unwrap(),
+        tls_public_key: victim_node.tls_public_key.clone(),
+        account_public_key: bogus_ed25519_public_key(),
+    };
+    testing_env!(
+        VMContextBuilder::new()
+            .signer_account_id(attacker_node.account_id.clone())
+            .predecessor_account_id(attacker_node.account_id.clone())
+            .attached_deposit(NearToken::from_near(1))
+            .build()
+    );
+    let attack_result = setup.contract.submit_participant_info(
+        Attestation::Mock(MockAttestation::Valid),
+        attacker_node.tls_public_key.clone(),
+    );
+
+    // Then: the contract rejects the call with the TLS-ownership error and the victim's
+    // entry is unchanged.
+    assert_matches!(
+        &attack_result,
+        Err(Error::InvalidParameters(InvalidParameters::InvalidTeeRemoteAttestation { reason }))
+            if reason.contains("TLS public key is already registered")
+    );
+    let stored_after = setup
+        .contract
+        .get_attestation(victim_node.tls_public_key)
+        .unwrap()
+        .expect("victim attestation should still be stored");
+    assert_eq!(stored_before, stored_after);
+}
+
+/// **Test that `clean_tee_status()` is vote-only** — attestations for non-participants
+/// remain in `stored_attestations` after the call. Attestation pruning is handled by the
+/// separate `clean_invalid_attestations` endpoint.
+#[test]
+fn clean_tee_status__should_not_touch_attestations() {
+    // Given
     const PARTICIPANT_COUNT: usize = 2; // After resharing removed one participant
     const THRESHOLD: u64 = 2;
 
-    testing_env!(VMContextBuilder::new()
-        .attached_deposit(NearToken::from_near(1))
-        .build());
+    testing_env!(
+        VMContextBuilder::new()
+            .attached_deposit(NearToken::from_near(1))
+            .build()
+    );
 
     // Create contract in Running state with 2 current participants
     let mut setup = TestSetupBuilder::new()
@@ -291,12 +375,11 @@ fn test_clean_tee_status_removes_non_participants() {
     let participant_nodes: Vec<NodeId> = setup
         .participants_list
         .iter()
-        .take(2)
-        .cloned()
+        .take(PARTICIPANT_COUNT)
         .map(|(account_id, _, participant_info)| NodeId {
-            account_id,
-            tls_public_key: participant_info.sign_pk,
-            account_public_key: Some(bogus_ed25519_near_public_key()),
+            account_id: account_id.clone(),
+            tls_public_key: participant_info.tls_public_key.clone(),
+            account_public_key: bogus_ed25519_public_key(),
         })
         .collect();
     for node_id in &participant_nodes {
@@ -306,16 +389,17 @@ fn test_clean_tee_status_removes_non_participants() {
     // Add TEE account for someone who is NOT a current participant
     let removed_participant_node = NodeId {
         account_id: "removed.participant.near".parse().unwrap(),
-        tls_public_key: bogus_ed25519_near_public_key(),
-        account_public_key: Some(bogus_ed25519_near_public_key()),
+        tls_public_key: bogus_ed25519_public_key(),
+        account_public_key: bogus_ed25519_public_key(),
     };
-
     setup.submit_attestation_for_node(&removed_participant_node, valid_attestation);
 
     // Verify initial state: 2 participants but 3 TEE accounts
     const INITIAL_TEE_ACCOUNTS: usize = PARTICIPANT_COUNT + 1; // 2 current + 1 stale
-    let tee_accounts_before = setup.contract.get_tee_accounts().len();
-    assert_eq!(tee_accounts_before, INITIAL_TEE_ACCOUNTS);
+    assert_eq!(
+        setup.contract.get_tee_accounts().len(),
+        INITIAL_TEE_ACCOUNTS
+    );
 
     let running_state = match setup.contract.state() {
         ProtocolContractState::Running(r) => r,
@@ -324,28 +408,123 @@ fn test_clean_tee_status_removes_non_participants() {
     let participant_count = running_state.parameters.participants.participants.len();
     assert_eq!(participant_count, PARTICIPANT_COUNT);
 
-    // Test cleanup: should remove TEE account for non-participant
+    // When: clean_tee_status runs.
     setup.contract.clean_tee_status().unwrap();
 
-    // Verify cleanup worked: TEE accounts reduced to match participant count
-    let tee_accounts_after = setup.contract.get_tee_accounts().len();
-    assert_eq!(tee_accounts_after, PARTICIPANT_COUNT);
+    // Then: stored attestations are unchanged — only vote maps are touched by this endpoint.
+    assert_eq!(
+        setup.contract.get_tee_accounts().len(),
+        INITIAL_TEE_ACCOUNTS
+    );
 
     // State should remain Running with same participant count
     let final_running_state = match setup.contract.state() {
         ProtocolContractState::Running(r) => r,
         _ => panic!("Should still be Running after cleanup"),
     };
-    let final_participant_count = final_running_state
-        .parameters
-        .participants
-        .participants
-        .len();
-    assert_eq!(final_participant_count, PARTICIPANT_COUNT);
+    assert_eq!(
+        final_running_state
+            .parameters
+            .participants
+            .participants
+            .len(),
+        PARTICIPANT_COUNT
+    );
+}
+
+/// **Test that `clean_invalid_attestations()` prunes expired attestations end-to-end via
+/// the public endpoint**, including attestations that belong to current participants.
+/// Restores the cleanup-path coverage that lived in the old `clean_tee_status` test.
+#[test]
+fn clean_invalid_attestations__should_remove_expired_entries() {
+    // Given
+    const PARTICIPANT_COUNT: usize = 2;
+    const THRESHOLD: u64 = 2;
+    const EXPIRY_SECONDS: u64 = 1_000;
+    const NOW_NS: u64 = 5_000 * NANOS_IN_SECOND;
+
+    testing_env!(
+        VMContextBuilder::new()
+            .attached_deposit(NearToken::from_near(1))
+            .block_timestamp(0)
+            .build()
+    );
+
+    let mut setup = TestSetupBuilder::new()
+        .with_partcipant_count(PARTICIPANT_COUNT)
+        .with_threshold(THRESHOLD)
+        .build();
+
+    let expiring_attestation = Attestation::Mock(MockAttestation::WithConstraints {
+        mpc_docker_image_hash: None,
+        launcher_docker_compose_hash: None,
+        expiry_timestamp_seconds: Some(EXPIRY_SECONDS),
+        expected_measurements: None,
+    });
+
+    // init_running seeds one mock `Valid` attestation per participant. Overwrite the
+    // first participant's entry with an expiring one, and add a brand-new entry for an
+    // outsider account.
+    let participant_node = {
+        let (account_id, _, info) = &setup.participants_list[0];
+        NodeId {
+            account_id: account_id.clone(),
+            tls_public_key: info.tls_public_key.clone(),
+            account_public_key: bogus_ed25519_public_key(),
+        }
+    };
+    setup.submit_attestation_for_node(&participant_node, expiring_attestation.clone());
+
+    let stale_node = NodeId {
+        account_id: "stale.near".parse().unwrap(),
+        tls_public_key: bogus_ed25519_public_key(),
+        account_public_key: bogus_ed25519_public_key(),
+    };
+    setup.submit_attestation_for_node(&stale_node, expiring_attestation);
+
+    const EXPECTED_STORED: usize = PARTICIPANT_COUNT + 1; // original mocks + outsider entry
+    assert_eq!(setup.contract.get_tee_accounts().len(), EXPECTED_STORED);
+
+    // When: time advances past the expiry and cleanup runs with a generous max_scan.
+    set_system_time(NOW_NS);
+    let removed = setup.contract.clean_invalid_attestations(100).unwrap();
+
+    // Then: both entries with `expiry_timestamp_seconds` in the past are evicted; the
+    // second participant's un-overwritten `Valid` mock remains.
+    const EXPECTED_REMOVED: u32 = 2;
+    assert_eq!(removed, EXPECTED_REMOVED);
+    assert_eq!(
+        setup.contract.get_tee_accounts().len(),
+        EXPECTED_STORED - EXPECTED_REMOVED as usize
+    );
+}
+
+/// **Test that `clean_invalid_attestations()` rejects calls outside `Running` state** so
+/// that keygen / resharing flows (which may reference not-yet-activated attestations)
+/// aren't disrupted.
+#[test]
+fn clean_invalid_attestations__should_reject_when_not_running() {
+    // Given: contract sitting in Initializing state.
+    testing_env!(
+        VMContextBuilder::new()
+            .attached_deposit(NearToken::from_near(1))
+            .block_timestamp(0)
+            .build()
+    );
+
+    let mut setup = TestSetupBuilder::new()
+        .with_contract_protocol_state(ContractProtocolState::Initializing)
+        .build();
+
+    // When: the cleanup endpoint is invoked.
+    let result = setup.contract.clean_invalid_attestations(100);
+
+    // Then: the call errors without mutating state.
+    assert_matches!(result, Err(_));
 }
 
 macro_rules! assert_allowed_docker_image_hashes {
-    ($test_setup:expr, $blocktime_ns:expr, $expected_value:expr $(,)?) => {{
+    ($test_setup:expr_2021, $blocktime_ns:expr_2021, $expected_value:expr_2021 $(,)?) => {{
         set_system_time($blocktime_ns);
 
         let mut res: Vec<[u8; 32]> = $test_setup
@@ -552,7 +731,7 @@ fn latest_image_never_expires_if_its_not_superseded() {
 ///
 /// Grace Period Rules:
 /// - v1 expires at: T=4s + 15s + 1s = T=20s
-/// - v2 expires at: T=7s + 15s + 1s = T=23s  
+/// - v2 expires at: T=7s + 15s + 1s = T=23s
 /// - v3 never expires (no successor hash)
 ///
 /// Note: The +1s ensures we test *after* the grace period deadline has passed.

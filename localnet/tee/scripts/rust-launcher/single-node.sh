@@ -2,8 +2,11 @@
 set -euo pipefail
 export NEAR_CLI_DISABLE_SPINNER=1
 
-log(){ echo -e "\033[1;34m[INFO]\033[0m $*"; }
-err(){ echo -e "\033[1;31m[ERROR]\033[0m $*"; }
+# Shared helpers: log/err/pass/warn/fatal, ports_to_toml.
+# Sourced early — $CLI definition is guarded, so it's safe even before
+# BASE_PATH is set (this script defines its own vmm-cli invocations inline).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/common.sh"
 
 find_free_port() {
   python3 -c '
@@ -98,6 +101,7 @@ VALIDATOR_KEY="$(jq -r .secret_key ~/.near/mpc-localnet/validator_key.json)"
 : "${BASE_PATH:?Set BASE_PATH (dstack base path)}"
 : "${MACHINE_IP:?Set MACHINE_IP (host IP reachable from the CVM)}"
 : "${MPC_MANIFEST_DIGEST:?Set MPC_MANIFEST_DIGEST (e.g. sha256:abc...)}"
+: "${LAUNCHER_MANIFEST_DIGEST:?Set LAUNCHER_MANIFEST_DIGEST (e.g. sha256:abc...)}"
 
 # NODE_IP usually equals MACHINE_IP for single-node
 NODE_IP="${NODE_IP:-$MACHINE_IP}"
@@ -115,7 +119,7 @@ NEAR_P2P_PORT="${NEAR_P2P_PORT:-24566}"
 PUBLIC_DATA_PORT="${PUBLIC_DATA_PORT:-$(find_free_port)}"
 STATE_SYNC_PORT="${STATE_SYNC_PORT:-$(find_free_port)}"
 MAIN_PORT="${MAIN_PORT:-$(find_free_port)}"
-FUTURE_PORT="${FUTURE_PORT:-$(find_free_port)}"
+MIGRATION_PORT="${MIGRATION_PORT:-$(find_free_port)}"
 
 # Host-local ports
 SSH_PORT="${SSH_PORT:-$(find_free_port)}"
@@ -133,19 +137,6 @@ REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 TEE_LAUNCHER_DIR="$REPO_ROOT/deployment/cvm-deployment"
 ENV_TPL="${ENV_TPL:-$REPO_ROOT/localnet/tee/scripts/node.env.tpl}"
 CONF_TPL="${CONF_TPL:-$REPO_ROOT/localnet/tee/scripts/rust-launcher/node.conf.localnet.toml.tpl}"
-
-# Convert comma-separated "host:container" port string to TOML inline table array entries.
-ports_to_toml() {
-  local ports="$1" result=""
-  IFS=',' read -ra pairs <<< "$ports"
-  for pair in "${pairs[@]}"; do
-    local host_port="${pair%%:*}"
-    local container_port="${pair##*:}"
-    result+="    { host =$host_port, container =$container_port },
-"
-  done
-  echo -n "$result"
-}
 
 WORKDIR="${WORKDIR:-$(mktemp -d /tmp/mpc_localnet_one_node.XXXXXX)}"
 mkdir -p "$WORKDIR"
@@ -171,13 +162,15 @@ create_node_account() {
 }
 
 render_env_and_conf() {
-  # Correct bootnode format for localnet
+  # Correct bootnode format for localnet.
+  # Use QEMU slirp gateway (10.0.2.2) so the CVM reaches the host's neard over
+  # loopback — works regardless of whether neard binds to 0.0.0.0 or 127.0.0.1.
   local node_pubkey="${NODE_PUBKEY:-$(jq -r .public_key "$HOME/.near/mpc-localnet/node_key.json")}"
-  export NEAR_BOOT_NODES="${NEAR_BOOT_NODES:-${node_pubkey}@${MACHINE_IP}:${NEAR_P2P_PORT}}"
+  export NEAR_BOOT_NODES="${NEAR_BOOT_NODES:-${node_pubkey}@10.0.2.2:${NEAR_P2P_PORT}}"
 
   export APP_NAME="${APP_NAME:-mpc-localnet-one-node-$(date +%s)}"
   export VMM_RPC OS_IMAGE SEALING_KEY_TYPE DISK
-  export DOCKER_COMPOSE_FILE_PATH="launcher_docker_compose.yaml"
+  export LAUNCHER_MANIFEST_DIGEST MPC_MANIFEST_DIGEST
   export USER_CONFIG_FILE_PATH="$CONF_OUT"
 
   export EXTERNAL_SSH_PORT="127.0.0.1:${SSH_PORT}"
@@ -191,19 +184,26 @@ render_env_and_conf() {
   export EXTERNAL_MPC_PUBLIC_DEBUG_PORT="${NODE_IP}:${PUBLIC_DATA_PORT}"
   export EXTERNAL_MPC_DECENTRALIZED_STATE_SYNC="${NODE_IP}:${STATE_SYNC_PORT}"
   export EXTERNAL_MPC_MAIN_PORT="${NODE_IP}:${MAIN_PORT}"
-  export EXTERNAL_MPC_FUTURE_PORT="${NODE_IP}:${FUTURE_PORT}"
+  export EXTERNAL_MPC_MIGRATION_PORT="${NODE_IP}:${MIGRATION_PORT}"
 
   export INTERNAL_MPC_PUBLIC_DEBUG_PORT="${INTERNAL_PUBLIC_DEBUG_PORT:-8080}"
   export INTERNAL_MPC_DECENTRALIZED_STATE_SYNC="${INTERNAL_STATE_SYNC_PORT:-24567}"
   export INTERNAL_MPC_MAIN_PORT="${INTERNAL_MAIN_PORT:-80}"
-  export INTERNAL_MPC_FUTURE_PORT="${INTERNAL_FUTURE_PORT:-13001}"
+  # Container-side migration HTTP port — must match `migration_web_ui` in
+  # node.conf.localnet.toml.tpl (8079).
+  export INTERNAL_MPC_MIGRATION_PORT="${INTERNAL_MIGRATION_PORT:-8079}"
 
   export MPC_ENV="${MPC_ENV:-mpc-localnet}"
   export MPC_IMAGE="nearone/mpc-node"
   export MPC_ACCOUNT_ID="$NODE_ACCOUNT"
   export MPC_CONTRACT_ID="$CONTRACT_ACCOUNT"
   export MPC_SECRET_STORE_KEY="${MPC_SECRET_STORE_KEY:-00000000000000000000000000000000}"
-  export PORTS="${PORTS:-8080:8080,24566:24566,${FUTURE_PORT}:${FUTURE_PORT}}"
+  # The launcher PORTS map is CVM->container. vmm-cli (in deploy-launcher.sh)
+  # forwards host:$MIGRATION_PORT -> CVM:$INTERNAL_MIGRATION_PORT, so the
+  # launcher must publish container:$INTERNAL_MIGRATION_PORT on the same CVM
+  # port. We also forward host:$MAIN_PORT -> CVM:$INTERNAL_MAIN_PORT(=80)
+  # so the P2P/TLS listener (`port_override = 80`) is reachable.
+  export PORTS="${PORTS:-${INTERNAL_MAIN_PORT:-80}:${INTERNAL_MAIN_PORT:-80},8080:8080,24566:24566,${INTERNAL_MIGRATION_PORT:-8079}:${INTERNAL_MIGRATION_PORT:-8079}}"
   export PORTS_TOML
   PORTS_TOML="$(ports_to_toml "$PORTS")"
 

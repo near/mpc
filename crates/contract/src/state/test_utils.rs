@@ -1,5 +1,5 @@
-use super::resharing::ResharingContractState;
 use super::InitializingContractState;
+use super::resharing::ResharingContractState;
 use crate::primitives::domain::AddDomainsVotes;
 use crate::primitives::test_utils::{bogus_ed25519_public_key_extended, gen_domains_to_add};
 use crate::primitives::{key_state::AttemptId, test_utils::gen_domain_registry};
@@ -24,26 +24,34 @@ pub fn gen_valid_params_proposal(params: &ThresholdParameters) -> ThresholdParam
     let mut old_ids: BTreeSet<ParticipantId> = current_participants
         .participants()
         .iter()
-        .map(|(_, id, _)| id.clone())
+        .map(|(_, id, _)| *id)
         .collect();
     let mut new_ids = BTreeSet::new();
     while new_ids.len() < (n_old_participants as usize) {
-        let x: usize = rng.gen::<usize>() % old_ids.len();
-        let c = old_ids.iter().nth(x).unwrap().clone();
-        new_ids.insert(c.clone());
+        let x: usize = rng.r#gen::<usize>() % old_ids.len();
+        let c = *old_ids.iter().nth(x).unwrap();
+        new_ids.insert(c);
         old_ids.remove(&c);
     }
     let mut new_participants = Participants::default();
     for id in new_ids {
         let account_id = current_participants.account_id(&id).unwrap();
         let info = current_participants.info(&account_id).unwrap();
-        let _ = new_participants.insert_with_id(account_id, info.clone(), id.clone());
+        let _ = new_participants.insert_with_id(account_id, info.clone(), id);
     }
-    let max_added: usize = rng.gen_range(0..10);
+    // The proposed (final) participant count must satisfy every protocol's
+    // bound. `DamgardEtAl` requires `n >= 2t - 1`, which forces `n >= 3` at the
+    // fixtures' minimum `t = 2` (the same floor `gen_threshold_params` applies
+    // to the initial params). The bound is on the final count, so clamp `new_n`
+    // and derive how many participants to add from it; this keeps the original
+    // `[0, 10)` sampling range and only nudges short draws up.
+    const MIN_PARTICIPANTS: usize = 3;
+    let new_n = (n_old_participants + rng.gen_range(0..10)).max(MIN_PARTICIPANTS);
+    let max_added = new_n - n_old_participants;
     let mut next_id = current_participants.next_id();
     for i in 0..max_added {
         let (account_id, info) = gen_participant(i);
-        let _ = new_participants.insert_with_id(account_id, info, next_id.clone());
+        let _ = new_participants.insert_with_id(account_id, info, next_id);
         next_id = next_id.next();
     }
 
@@ -73,13 +81,13 @@ pub fn gen_resharing_state(num_domains: usize) -> (Environment, ResharingContrac
 }
 /// Generates a Running state that contains this many domains.
 pub fn gen_running_state(num_domains: usize) -> RunningContractState {
-    let epoch_id = EpochId::new(rand::thread_rng().gen());
+    let epoch_id = EpochId::new(rand::thread_rng().r#gen());
     let domains = gen_domain_registry(num_domains);
 
     let mut keys = Vec::new();
     for domain in domains.domains() {
         let mut attempt = AttemptId::default();
-        let x: usize = rand::thread_rng().gen();
+        let x: usize = rand::thread_rng().r#gen();
         let x = x % 800;
         for _ in 0..x {
             attempt = attempt.next();

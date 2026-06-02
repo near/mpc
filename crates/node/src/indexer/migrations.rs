@@ -1,8 +1,8 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use ed25519_dalek::VerifyingKey;
-use mpc_contract::node_migrations::{BackupServiceInfo, DestinationNodeInfo};
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types::{BackupServiceInfo, DestinationNodeInfo};
 use tokio::sync::watch;
 
 use crate::{indexer::IndexerState, migration_service::types::MigrationInfo};

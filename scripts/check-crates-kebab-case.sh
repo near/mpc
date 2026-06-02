@@ -15,7 +15,7 @@ fi
 
 BAD_FOLDERS=$(find crates -mindepth 1 -maxdepth 1 -type d -print0 | \
     xargs -0 -n 1 basename | \
-    grep -vE '^[a-z0-9-]+$' || true) 
+    grep -vE '^[a-z0-9-]+$' || true)
 
 if [ -n "$BAD_FOLDERS" ]; then
     echo "❌ Error: The following crate folders use underscores:"

@@ -3,8 +3,8 @@ use crate::sandbox::utils::{
     contract_build::current_contract,
     initializing_utils::{start_keygen_instance, vote_add_domains, vote_public_key},
     mpc_contract::{assert_running_return_threshold, get_state, submit_participant_info},
-    shared_key_utils::{make_key_for_domain, DomainKey},
-    sign_utils::{make_and_submit_requests, PendingSignRequest},
+    shared_key_utils::{DomainKey, make_key_for_domain},
+    sign_utils::{PendingSignRequest, make_and_submit_requests},
 };
 use digest::Digest;
 use dtos::ProtocolContractState;
@@ -14,34 +14,38 @@ use mpc_contract::{
     primitives::{
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantInfo, Participants},
-        test_utils::{bogus_ed25519_near_public_key, infer_purpose_from_curve},
+        test_utils::{bogus_ed25519_public_key, infer_purpose_from_protocol},
         thresholds::{Threshold, ThresholdParameters},
     },
     tee::tee_state::NodeId,
     update::{ProposeUpdateArgs, UpdateId},
 };
 use near_account_id::AccountId;
-use near_mpc_bounded_collections::NonEmptyBTreeSet;
-use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, DomainPurpose};
+use near_mpc_contract_interface::types::{
+    Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
+    SupportedForeignChains,
+};
 use near_mpc_contract_interface::{
     method_names,
     types::{
         self as dtos, Attestation, BitcoinExtractedValue, BitcoinExtractor, BitcoinRpcRequest,
         BitcoinTxId, BlockConfirmations, EvmExtractedValue, EvmExtractor, EvmFinality,
-        EvmRpcRequest, EvmTxId, ForeignChainPolicy, ForeignTxSignPayload, ForeignTxSignPayloadV1,
-        MockAttestation, RpcProvider, StarknetExtractedValue, StarknetExtractor, StarknetFelt,
-        StarknetFinality, StarknetRpcRequest, StarknetTxId, VerifyForeignTransactionResponse,
+        EvmRpcRequest, EvmTxId, ForeignTxSignPayload, ForeignTxSignPayloadV1, MockAttestation,
+        StarknetExtractedValue, StarknetExtractor, StarknetFelt, StarknetFinality,
+        StarknetRpcRequest, StarknetTxId, VerifyForeignTransactionResponse,
     },
 };
 use near_mpc_sdk::foreign_chain::{ExtractedValue, ForeignChainRpcRequest, Hash256};
-use near_workspaces::{network::Sandbox, result::ExecutionSuccess, Contract};
-use near_workspaces::{result::Execution, Account, Worker};
+use near_workspaces::{Account, Worker, result::Execution};
+use near_workspaces::{Contract, network::Sandbox, result::ExecutionSuccess};
 use rand_core::CryptoRngCore;
 use serde_json::json;
 use signature::hazmat::PrehashSigner;
 use std::collections::BTreeSet;
 use std::time::Duration;
 use tokio_util::time::FutureExt as _;
+
+use super::utils::contract_build;
 
 pub async fn create_account_given_id(
     worker: &Worker<Sandbox>,
@@ -54,7 +58,7 @@ pub async fn create_account_given_id(
 pub fn gen_participant_info() -> ParticipantInfo {
     ParticipantInfo {
         url: "127.0.0.1".into(),
-        sign_pk: bogus_ed25519_near_public_key(),
+        tls_public_key: bogus_ed25519_public_key(),
     }
 }
 
@@ -94,8 +98,13 @@ pub async fn gen_accounts(worker: &Worker<Sandbox>, amount: usize) -> (Vec<Accou
 }
 
 pub async fn init() -> (Worker<Sandbox>, Contract) {
-    let worker = near_workspaces::sandbox().await.unwrap();
-    let wasm = &current_contract();
+    init_with_wasm(current_contract()).await
+}
+
+pub async fn init_with_wasm(wasm: &[u8]) -> (Worker<Sandbox>, Contract) {
+    let worker = near_workspaces::sandbox_with_version(test_utils::DEFAULT_SANDBOX_VERSION)
+        .await
+        .unwrap();
     let contract = worker.dev_deploy(wasm).await.unwrap();
     (worker, contract)
 }
@@ -160,10 +169,11 @@ pub struct SandboxTestSetup {
 impl SandboxTestSetup {
     pub fn builder() -> SandboxTestSetupBuilder {
         SandboxTestSetupBuilder {
-            curves: Vec::new(),
+            protocols: Vec::new(),
             foreign_tx: false,
             number_of_participants: PARTICIPANT_LEN,
             init_config: None,
+            with_sandbox_test_methods: false,
         }
     }
 
@@ -177,15 +187,16 @@ impl SandboxTestSetup {
 }
 
 pub struct SandboxTestSetupBuilder {
-    curves: Vec<Curve>,
+    protocols: Vec<Protocol>,
     foreign_tx: bool,
     number_of_participants: usize,
     init_config: Option<dtos::InitConfig>,
+    with_sandbox_test_methods: bool,
 }
 
 impl SandboxTestSetupBuilder {
-    pub fn with_curves(mut self, curves: &[Curve]) -> Self {
-        self.curves = curves.to_vec();
+    pub fn with_protocols(mut self, protocols: &[Protocol]) -> Self {
+        self.protocols = protocols.to_vec();
         self
     }
 
@@ -204,8 +215,20 @@ impl SandboxTestSetupBuilder {
         self
     }
 
+    /// Deploys the wasm built with `--features sandbox-test-methods`, exposing the
+    /// introspection view methods in `crate::sandbox_test_methods` (e.g. fan-out queue
+    /// length).
+    pub fn with_sandbox_test_methods(mut self) -> Self {
+        self.with_sandbox_test_methods = true;
+        self
+    }
+
     pub async fn build(self) -> SandboxTestSetup {
-        let (worker, contract) = init().await;
+        let (worker, contract) = if self.with_sandbox_test_methods {
+            init_with_wasm(contract_build::current_contract_with_sandbox_test_methods()).await
+        } else {
+            init().await
+        };
         let (accounts, participants) = gen_accounts(&worker, self.number_of_participants).await;
         let threshold_parameters = make_threshold_params(&participants);
 
@@ -213,16 +236,29 @@ impl SandboxTestSetupBuilder {
         let mut domain_configs = Vec::new();
         let mut key_for_domains = Vec::new();
 
-        // Sign-purpose domains from curves
-        for curve in &self.curves {
-            let (pk, sk) = make_key_for_domain(*curve);
-            let purpose = infer_purpose_from_curve(*curve);
+        // Match the per-domain reconstruction threshold to the cluster
+        // threshold by default. DamgardEtAl additionally requires
+        // `2t - 1 <= n`, so cap t at `n.div_ceil(2)`.
+        let n = self.number_of_participants as u64;
+        let cluster_threshold = threshold_parameters.threshold().value();
+
+        for protocol in &self.protocols {
+            let curve = Curve::from(*protocol);
+            let (pk, sk) = make_key_for_domain(curve);
+            let purpose = infer_purpose_from_protocol(*protocol);
             let domain_id = DomainId(domain_configs.len() as u64);
 
+            let reconstruction_threshold = match *protocol {
+                Protocol::DamgardEtAl => {
+                    ReconstructionThreshold::new(cluster_threshold.min(n.div_ceil(2)))
+                }
+                _ => ReconstructionThreshold::new(cluster_threshold),
+            };
             let key: PublicKeyExtended = pk.try_into().unwrap();
             let config = DomainConfig {
                 id: domain_id,
-                curve: *curve,
+                protocol: *protocol,
+                reconstruction_threshold,
                 purpose,
             };
             keys.push(DomainKey {
@@ -246,7 +282,8 @@ impl SandboxTestSetupBuilder {
             let key: PublicKeyExtended = pk.try_into().unwrap();
             let config = DomainConfig {
                 id: domain_id,
-                curve: Curve::Secp256k1,
+                protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(cluster_threshold),
                 purpose: DomainPurpose::ForeignTx,
             };
             keys.push(DomainKey {
@@ -371,6 +408,47 @@ pub async fn vote_update_till_completion(
     panic!("Update didn't occurred")
 }
 
+/// Returns the [`dtos::Ed25519PublicKey`] corresponding to the `Account`'s
+/// signer. Mirrors what the contract reads via `env::signer_account_pk()` when
+/// the account submits a transaction.
+pub fn account_ed25519_public_key(account: &Account) -> dtos::Ed25519PublicKey {
+    let bytes: [u8; 32] = account
+        .secret_key()
+        .public_key()
+        .key_data()
+        .try_into()
+        .expect("sandbox Account key must be Ed25519");
+    dtos::Ed25519PublicKey::from(bytes)
+}
+
+/// Builds the set of [`NodeId`]s that a sandbox contract will store after
+/// each participant has submitted its attestation. Both the TLS key (from the
+/// participant's `tls_public_key`) and the account public key (read from the
+/// matching `Account`'s signer) must line up with what `submit_participant_info`
+/// will persist on-chain — it stores `env::signer_account_pk()` alongside the
+/// TLS key. Keep this in sync with `MpcContract::submit_participant_info` so
+/// that test-side `NodeId` comparisons against `get_tee_accounts()` stay valid.
+pub fn build_sandbox_node_ids(
+    participants: &Participants,
+    accounts: &[Account],
+) -> BTreeSet<NodeId> {
+    participants
+        .participants()
+        .iter()
+        .map(|(account_id, _, info)| {
+            let account = accounts
+                .iter()
+                .find(|a| a.id() == account_id)
+                .expect("matching Account must exist for each participant");
+            NodeId {
+                account_id: account_id.clone(),
+                tls_public_key: info.tls_public_key.clone(),
+                account_public_key: account_ed25519_public_key(account),
+            }
+        })
+        .collect()
+}
+
 pub async fn submit_tee_attestations(
     contract: &Contract,
     env_accounts: &mut [Account],
@@ -380,14 +458,9 @@ pub async fn submit_tee_attestations(
     for (account, node_id) in env_accounts.iter().zip(node_ids) {
         assert_eq!(*account.id(), node_id.account_id, "AccountId mismatch");
         let attestation = Attestation::Mock(MockAttestation::Valid); // TODO(#1109): add TLS key.
-        let result = submit_participant_info(
-            account,
-            contract,
-            &attestation,
-            &dtos::Ed25519PublicKey::try_from(&node_id.tls_public_key)
-                .expect("expected ED25519 key"),
-        )
-        .await?;
+        let result =
+            submit_participant_info(account, contract, &attestation, &node_id.tls_public_key)
+                .await?;
         assert!(result.is_success());
     }
     Ok(())
@@ -406,9 +479,7 @@ pub async fn submit_attestations(
         .enumerate()
         .map(|(i, ((_, _, participant), account))| async move {
             let attestation = Attestation::Mock(MockAttestation::Valid);
-            let tls_key: dtos::Ed25519PublicKey =
-                dtos::Ed25519PublicKey::try_from(&participant.sign_pk)
-                    .expect("expected ED25519 key");
+            let tls_key = participant.tls_public_key.clone();
             let success = submit_participant_info(account, contract, &attestation, &tls_key)
                 .await
                 .expect("submit_participant_info should not error")
@@ -466,7 +537,7 @@ pub async fn call_contract_key_generation<const N: usize>(
         start_keygen_instance(contract, accounts, key_event_id)
             .await
             .unwrap();
-        let (public_key, shared_secret_key) = make_key_for_domain(domain.curve);
+        let (public_key, shared_secret_key) = make_key_for_domain(Curve::from(domain.protocol));
 
         domain_keys.push(DomainKey {
             domain_config: domain.clone(),
@@ -518,7 +589,7 @@ pub async fn execute_key_generation_and_add_random_state(
         ThresholdParameters::new(participants, Threshold::new(threshold.0 + 1)).unwrap();
     let dummy_proposal = json!({
         "prospective_epoch_id": 1,
-        "proposal": dummy_threshold_parameters,
+        "proposal": &dummy_threshold_parameters,
     });
     accounts[0]
         .call(contract.id(), method_names::VOTE_NEW_PARAMETERS)
@@ -533,17 +604,20 @@ pub async fn execute_key_generation_and_add_random_state(
     let domains_to_add = [
         DomainConfig {
             id: 0.into(),
-            curve: Curve::Edwards25519,
+            protocol: Protocol::Frost,
+            reconstruction_threshold: ReconstructionThreshold::new(6),
             purpose: DomainPurpose::Sign,
         },
         DomainConfig {
             id: 1.into(),
-            curve: Curve::Secp256k1,
+            protocol: Protocol::CaitSith,
+            reconstruction_threshold: ReconstructionThreshold::new(6),
             purpose: DomainPurpose::Sign,
         },
         DomainConfig {
             id: 2.into(),
-            curve: Curve::Edwards25519,
+            protocol: Protocol::Frost,
+            reconstruction_threshold: ReconstructionThreshold::new(6),
             purpose: DomainPurpose::Sign,
         },
     ];
@@ -566,36 +640,26 @@ fn hash(code: &[u8]) -> [u8; 32] {
     hasher.finalize().into()
 }
 
-/// Build a [`ForeignChainPolicy`] that enables the given chain with a dummy RPC URL.
-pub fn make_foreign_chain_policy(
-    chain: near_mpc_contract_interface::types::ForeignChain,
-) -> near_mpc_contract_interface::types::ForeignChainPolicy {
-    let mut chains = std::collections::BTreeMap::new();
-    chains.insert(
-        chain,
-        NonEmptyBTreeSet::new(RpcProvider {
-            rpc_url: format!("https://{chain:?}-rpc.example.com").to_lowercase(),
-        }),
-    );
-    ForeignChainPolicy { chains }
-}
-
-/// Vote the given chain policy from all participants.
-pub async fn vote_chain_policy(
+/// registers a foreign chain configuration so the foreign chains are supported
+pub async fn register_foreign_chain_configuration(
     chain: near_mpc_contract_interface::types::ForeignChain,
     contract: &Contract,
     accounts: &[Account],
 ) {
-    let policy = make_foreign_chain_policy(chain);
+    let node_foreign_chain_support = SupportedForeignChains::from(BTreeSet::from([chain]));
     for account in accounts {
         let result = account
-            .call(contract.id(), method_names::VOTE_FOREIGN_CHAIN_POLICY)
-            .args_json(json!({ "policy": policy }))
+            .call(contract.id(), method_names::REGISTER_FOREIGN_CHAIN_SUPPORT)
+            .args_json(json!({ "foreign_chain_support": node_foreign_chain_support }))
             .transact()
             .await
             .unwrap()
             .into_result();
-        assert!(result.is_ok(), "vote_foreign_chain_policy should succeed");
+        assert!(
+            result.is_ok(),
+            "{} should succeed",
+            method_names::REGISTER_FOREIGN_CHAIN_SUPPORT
+        );
     }
 }
 
@@ -675,7 +739,7 @@ pub async fn generate_participant_and_submit_attestation(
         &new_account,
         contract,
         &dtos::Attestation::Mock(dtos::MockAttestation::Valid),
-        &dtos::Ed25519PublicKey::try_from(&new_participant.sign_pk).expect("expected ED25519 key"),
+        &new_participant.tls_public_key,
     )
     .await
     .expect("Attestation submission for new account must succeed.");
@@ -743,6 +807,30 @@ pub fn bnb_evm_request() -> ForeignChainRpcRequest {
 
 pub fn base_evm_request() -> ForeignChainRpcRequest {
     ForeignChainRpcRequest::Base(EvmRpcRequest {
+        tx_id: EvmTxId([0xbb; 32]),
+        extractors: vec![EvmExtractor::BlockHash],
+        finality: EvmFinality::Finalized,
+    })
+}
+
+pub fn arbitrum_evm_request() -> ForeignChainRpcRequest {
+    ForeignChainRpcRequest::Arbitrum(EvmRpcRequest {
+        tx_id: EvmTxId([0xbb; 32]),
+        extractors: vec![EvmExtractor::BlockHash],
+        finality: EvmFinality::Finalized,
+    })
+}
+
+pub fn hyper_evm_request() -> ForeignChainRpcRequest {
+    ForeignChainRpcRequest::HyperEvm(EvmRpcRequest {
+        tx_id: EvmTxId([0xbb; 32]),
+        extractors: vec![EvmExtractor::BlockHash],
+        finality: EvmFinality::Finalized,
+    })
+}
+
+pub fn polygon_evm_request() -> ForeignChainRpcRequest {
+    ForeignChainRpcRequest::Polygon(EvmRpcRequest {
         tx_id: EvmTxId([0xbb; 32]),
         extractors: vec![EvmExtractor::BlockHash],
         finality: EvmFinality::Finalized,

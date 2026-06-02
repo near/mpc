@@ -18,8 +18,7 @@ pub const VOTE_PK: &str = "vote_pk";
 pub const VOTE_RESHARED: &str = "vote_reshared";
 pub const VOTE_NEW_PARAMETERS: &str = "vote_new_parameters";
 pub const VOTE_ADD_DOMAINS: &str = "vote_add_domains";
-pub const VOTE_FOREIGN_CHAIN_POLICY: &str = "vote_foreign_chain_policy";
-pub const REGISTER_FOREIGN_CHAIN_CONFIG: &str = "register_foreign_chain_config";
+pub const REGISTER_FOREIGN_CHAIN_SUPPORT: &str = "register_foreign_chain_support";
 pub const VOTE_CODE_HASH: &str = "vote_code_hash";
 pub const VOTE_ADD_LAUNCHER_HASH: &str = "vote_add_launcher_hash";
 pub const VOTE_REMOVE_LAUNCHER_HASH: &str = "vote_remove_launcher_hash";
@@ -29,6 +28,7 @@ pub const VOTE_CANCEL_KEYGEN: &str = "vote_cancel_keygen";
 pub const VOTE_CANCEL_RESHARING: &str = "vote_cancel_resharing";
 pub const VOTE_ABORT_KEY_EVENT_INSTANCE: &str = "vote_abort_key_event_instance";
 pub const VOTE_UPDATE: &str = "vote_update";
+pub const VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS: &str = "vote_update_foreign_chain_providers";
 pub const REMOVE_UPDATE_VOTE: &str = "remove_update_vote";
 pub const REMOVE_NON_PARTICIPANT_UPDATE_VOTES: &str = "remove_non_participant_update_votes";
 
@@ -50,6 +50,7 @@ pub const START_NODE_MIGRATION: &str = "start_node_migration";
 pub const REGISTER_BACKUP_SERVICE: &str = "register_backup_service";
 pub const CLEANUP_ORPHANED_NODE_MIGRATIONS: &str = "cleanup_orphaned_node_migrations";
 pub const CLEAN_TEE_STATUS: &str = "clean_tee_status";
+pub const CLEAN_INVALID_ATTESTATIONS: &str = "clean_invalid_attestations";
 pub const CLEAN_FOREIGN_CHAIN_DATA: &str = "clean_foreign_chain_data";
 
 // Callbacks (used in promise_yield_create and indexed by the node)
@@ -71,11 +72,10 @@ pub const GET_PENDING_REQUEST: &str = "get_pending_request";
 pub const GET_PENDING_CKD_REQUEST: &str = "get_pending_ckd_request";
 pub const GET_PENDING_VERIFY_FOREIGN_TX_REQUEST: &str = "get_pending_verify_foreign_tx_request";
 pub const GET_TEE_ACCOUNTS: &str = "get_tee_accounts";
-pub const GET_FOREIGN_CHAIN_POLICY: &str = "get_foreign_chain_policy";
-pub const GET_FOREIGN_CHAIN_POLICY_PROPOSALS: &str = "get_foreign_chain_policy_proposals";
 pub const GET_ATTESTATION: &str = "get_attestation";
 pub const GET_SUPPORTED_FOREIGN_CHAINS: &str = "get_supported_foreign_chains";
-pub const GET_FOREIGN_CHAIN_CONFIGURATIONS: &str = "get_foreign_chain_configurations";
+pub const GET_FOREIGN_CHAIN_SUPPORT_BY_NODE: &str = "get_foreign_chain_support_by_node";
+pub const ALLOWED_FOREIGN_CHAIN_PROVIDERS: &str = "allowed_foreign_chain_providers";
 pub const ALLOWED_DOCKER_IMAGE_HASHES: &str = "allowed_docker_image_hashes";
 pub const ALLOWED_LAUNCHER_COMPOSE_HASHES: &str = "allowed_launcher_compose_hashes";
 pub const ALLOWED_LAUNCHER_IMAGE_HASHES: &str = "allowed_launcher_image_hashes";
@@ -84,3 +84,7 @@ pub const CODE_HASH_VOTES: &str = "code_hash_votes";
 pub const OS_MEASUREMENT_VOTES: &str = "os_measurement_votes";
 pub const ALLOWED_OS_MEASUREMENTS: &str = "allowed_os_measurements";
 pub const MIGRATION_INFO: &str = "migration_info";
+
+// Deprecated methods
+#[deprecated(note = "https://github.com/near/mpc/issues/3079")]
+pub const REGISTER_FOREIGN_CHAIN_CONFIG: &str = "register_foreign_chain_config";

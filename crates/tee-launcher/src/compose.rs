@@ -175,6 +175,32 @@ mod tests {
     }
 
     #[test]
+    fn tee_mode_includes_restart_on_failure() {
+        // given
+        let port_mappings = empty_port_mappings();
+        let digest = sample_digest();
+
+        // when
+        let rendered = render(Platform::Tee, &port_mappings, &digest);
+
+        // then
+        assert!(rendered.contains("restart: on-failure"));
+    }
+
+    #[test]
+    fn nontee_mode_includes_restart_on_failure() {
+        // given
+        let port_mappings = empty_port_mappings();
+        let digest = sample_digest();
+
+        // when
+        let rendered = render(Platform::NonTee, &port_mappings, &digest);
+
+        // then
+        assert!(rendered.contains("restart: on-failure"));
+    }
+
+    #[test]
     fn mounts_config_file_read_only() {
         // given
         let port_mappings = empty_port_mappings();

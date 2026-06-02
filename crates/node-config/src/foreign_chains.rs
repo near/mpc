@@ -1,192 +1,162 @@
+use std::borrow::Cow;
+use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use std::{borrow::Cow, collections::BTreeMap};
+use std::num::NonZeroU64;
 
-use anyhow::Context;
-use near_mpc_bounded_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet};
+use anyhow::Context as _;
+use near_mpc_bounded_collections::NonEmptyBTreeMap;
+use near_mpc_bounded_collections::NonEmptyBTreeSet;
 use near_mpc_contract_interface::types as dtos;
 use serde::{Deserialize, Serialize};
 
-mod abstract_chain;
-mod auth;
-mod base;
-mod bitcoin;
-mod bnb;
-mod ethereum;
-mod solana;
-mod starknet;
-
-pub use abstract_chain::{AbstractApiVariant, AbstractChainConfig, AbstractProviderConfig};
 pub use auth::{AuthConfig, TokenConfig};
-pub use base::{BaseApiVariant, BaseChainConfig, BaseProviderConfig};
-pub use bitcoin::{BitcoinApiVariant, BitcoinChainConfig, BitcoinProviderConfig};
-pub use bnb::{BnbApiVariant, BnbChainConfig, BnbProviderConfig};
-pub use ethereum::{EthereumApiVariant, EthereumChainConfig, EthereumProviderConfig};
-pub use solana::{SolanaApiVariant, SolanaChainConfig, SolanaProviderConfig};
-pub use starknet::{StarknetApiVariant, StarknetChainConfig, StarknetProviderConfig};
+
+mod auth;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
+// TODO(#3002): only keep variants that are actually supported by the node binary
 pub struct ForeignChainsConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub solana: Option<SolanaChainConfig>,
+    pub solana: Option<ForeignChainConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub bitcoin: Option<BitcoinChainConfig>,
+    pub bitcoin: Option<ForeignChainConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ethereum: Option<EthereumChainConfig>,
+    pub ethereum: Option<ForeignChainConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "abstract")]
-    pub abstract_chain: Option<AbstractChainConfig>,
+    pub abstract_chain: Option<ForeignChainConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub starknet: Option<StarknetChainConfig>,
+    pub starknet: Option<ForeignChainConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub bnb: Option<BnbChainConfig>,
+    pub bnb: Option<ForeignChainConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub base: Option<BaseChainConfig>,
+    pub base: Option<ForeignChainConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub arbitrum: Option<ForeignChainConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hyper_evm: Option<ForeignChainConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub polygon: Option<ForeignChainConfig>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ForeignChainConfig {
+    pub timeout_sec: NonZeroU64,
+    pub max_retries: NonZeroU64,
+    pub providers: NonEmptyBTreeMap<RpcProviderName, ForeignChainProviderConfig>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ForeignChainProviderConfig {
+    pub rpc_url: String,
+    #[serde(default)]
+    pub auth: auth::AuthConfig,
+}
+
+#[derive(
+    Clone,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Hash,
+    Ord,
+    PartialOrd,
+    derive_more::Into,
+    derive_more::From,
+    derive_more::Deref,
+)]
+pub struct RpcProviderName(String);
+
+impl ForeignChainProviderConfig {
+    fn rpc_url(&self) -> Cow<'_, str> {
+        self.auth.strip_placeholder(&self.rpc_url)
+    }
+
+    fn validate_auth_config(&self) -> anyhow::Result<()> {
+        auth::validate_auth_config(&self.auth, &self.rpc_url)
+    }
 }
 
 impl ForeignChainsConfig {
     pub fn is_empty(&self) -> bool {
-        self.solana.is_none()
-            && self.bitcoin.is_none()
-            && self.ethereum.is_none()
-            && self.abstract_chain.is_none()
-            && self.starknet.is_none()
-            && self.bnb.is_none()
-            && self.base.is_none()
+        self.all_configured_chains().is_empty()
+    }
+
+    /// Iterate over every chain that has a local config, paired with its DTO identifier.
+    pub fn iter_chains(
+        &self,
+    ) -> impl Iterator<Item = (dtos::ForeignChain, &ForeignChainConfig)> + '_ {
+        self.all_configured_chains()
+            .into_iter()
+            .map(|(cfg, id)| (id, cfg))
+    }
+
+    #[expect(deprecated, reason = "https://github.com/near/mpc/issues/3079")]
+    pub fn configured_chains(&self) -> dtos::ForeignChainConfiguration {
+        self.all_configured_chains()
+            .into_iter()
+            .map(|(config, foreign_chain_identifier)| {
+                let rpc_providers =
+                    config
+                        .providers
+                        .map_to_set(|_provider_name, provider_config| dtos::RpcProvider {
+                            rpc_url: provider_config.rpc_url().trim().to_string(),
+                        });
+
+                (foreign_chain_identifier, rpc_providers)
+            })
+            .collect::<BTreeMap<dtos::ForeignChain, NonEmptyBTreeSet<dtos::RpcProvider>>>()
+            .into()
     }
 
     pub fn validate(&self) -> anyhow::Result<()> {
-        if let Some(config) = &self.solana {
-            config.validate()?;
+        let configured_chains = self.all_configured_chains();
+
+        let mut seen_rpc_urls = BTreeSet::new();
+
+        for (foreign_chain_config, _identifier) in configured_chains {
+            for provider in foreign_chain_config.providers.values() {
+                let rpc_url = &provider.rpc_url;
+
+                // is a valid URL
+                url::Url::parse(rpc_url)
+                    .with_context(|| format!("provided RPC URL is invalid: `{rpc_url}`"))?;
+
+                // no duplication
+                anyhow::ensure!(
+                    seen_rpc_urls.insert(provider.rpc_url.clone()),
+                    "found a duplicate URL entry for an RPC provider. RPC provider URLs must be unique across configuration of all chains. {:?}",
+                    rpc_url
+                );
+
+                // valid auth configuration
+                provider.validate_auth_config()?;
+            }
         }
-        if let Some(config) = &self.bitcoin {
-            config.validate()?;
-        }
-        if let Some(config) = &self.ethereum {
-            config.validate()?;
-        }
-        if let Some(config) = &self.abstract_chain {
-            config.validate()?;
-        }
-        if let Some(config) = &self.starknet {
-            config.validate()?;
-        }
-        if let Some(config) = &self.bnb {
-            config.validate()?;
-        }
-        if let Some(config) = &self.base {
-            config.validate()?;
-        }
+
         Ok(())
     }
 
-    pub fn to_policy(&self) -> Option<dtos::ForeignChainPolicy> {
-        if self.is_empty() {
-            return None;
-        }
-
-        let mut chains = BTreeMap::new();
-
-        if let Some(config) = &self.solana {
-            chains.insert(
-                dtos::ForeignChain::Solana,
-                providers_to_set(&config.providers),
-            );
-        }
-
-        if let Some(config) = &self.bitcoin {
-            chains.insert(
-                dtos::ForeignChain::Bitcoin,
-                providers_to_set(&config.providers),
-            );
-        }
-
-        if let Some(config) = &self.ethereum {
-            chains.insert(
-                dtos::ForeignChain::Ethereum,
-                providers_to_set(&config.providers),
-            );
-        }
-
-        if let Some(config) = &self.abstract_chain {
-            chains.insert(
-                dtos::ForeignChain::Abstract,
-                providers_to_set(&config.providers),
-            );
-        }
-
-        if let Some(config) = &self.starknet {
-            chains.insert(
-                dtos::ForeignChain::Starknet,
-                providers_to_set(&config.providers),
-            );
-        }
-
-        if let Some(config) = &self.bnb {
-            chains.insert(dtos::ForeignChain::Bnb, providers_to_set(&config.providers));
-        }
-
-        if let Some(config) = &self.base {
-            chains.insert(
-                dtos::ForeignChain::Base,
-                providers_to_set(&config.providers),
-            );
-        }
-
-        Some(dtos::ForeignChainPolicy { chains })
+    fn all_configured_chains(&self) -> Vec<(&ForeignChainConfig, dtos::ForeignChain)> {
+        [
+            (self.solana.as_ref(), dtos::ForeignChain::Solana),
+            (self.bitcoin.as_ref(), dtos::ForeignChain::Bitcoin),
+            (self.ethereum.as_ref(), dtos::ForeignChain::Ethereum),
+            (self.abstract_chain.as_ref(), dtos::ForeignChain::Abstract),
+            (self.starknet.as_ref(), dtos::ForeignChain::Starknet),
+            (self.bnb.as_ref(), dtos::ForeignChain::Bnb),
+            (self.base.as_ref(), dtos::ForeignChain::Base),
+            (self.arbitrum.as_ref(), dtos::ForeignChain::Arbitrum),
+            (self.hyper_evm.as_ref(), dtos::ForeignChain::HyperEvm),
+            (self.polygon.as_ref(), dtos::ForeignChain::Polygon),
+        ]
+        .into_iter()
+        .filter_map(|(config, dto_identifier)| config.map(|config| (config, dto_identifier)))
+        .collect()
     }
-}
-
-fn providers_to_set<P: ForeignChainProviderConfig>(
-    providers: &NonEmptyBTreeMap<String, P>,
-) -> NonEmptyBTreeSet<dtos::RpcProvider> {
-    providers.map_to_set(|_name, provider| dtos::RpcProvider {
-        rpc_url: provider.rpc_url().trim().to_string(),
-    })
-}
-
-pub(crate) trait ForeignChainProviderConfig {
-    fn rpc_url(&self) -> Cow<'_, str>;
-    fn validate(&self, chain_label: &str, provider_name: &str) -> anyhow::Result<()>;
-}
-
-pub(crate) fn validate_chain_config<P: ForeignChainProviderConfig>(
-    chain_label: &str,
-    timeout_sec: u64,
-    max_retries: u64,
-    providers: &NonEmptyBTreeMap<String, P>,
-) -> anyhow::Result<()> {
-    anyhow::ensure!(
-        timeout_sec > 0,
-        "foreign_chains.{chain_label}.timeout_sec must be > 0"
-    );
-    anyhow::ensure!(
-        max_retries > 0,
-        "foreign_chains.{chain_label}.max_retries must be > 0"
-    );
-
-    let mut seen_rpc_urls = BTreeSet::new();
-    for (provider_name, provider) in providers.iter() {
-        let provider_rpc_url = provider.rpc_url();
-        anyhow::ensure!(
-            !provider_rpc_url.trim().is_empty(),
-            "foreign_chains.{chain_label}.providers.{provider_name}.rpc_url must be non-empty"
-        );
-        url::Url::parse(&provider_rpc_url).with_context(|| {
-            format!(
-                "foreign_chains.{chain_label}.providers.{provider_name}.rpc_url is not a valid URL"
-            )
-        })?;
-        anyhow::ensure!(
-            seen_rpc_urls.insert(provider_rpc_url.to_string()),
-            "foreign_chains.{chain_label}.providers.{provider_name}.rpc_url duplicates another provider URL"
-        );
-        provider
-            .validate(chain_label, provider_name)
-            .with_context(|| format!("invalid provider {provider_name} for {chain_label}"))?;
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]
@@ -279,7 +249,6 @@ foreign_chains:
     max_retries: 3
     providers:
       alchemy:
-        api_variant: alchemy
         rpc_url: "https://solana-mainnet.g.alchemy.com/v2/"
         auth:
           kind: header
@@ -288,7 +257,6 @@ foreign_chains:
           token:
             env: ALCHEMY_API_KEY
       quicknode:
-        api_variant: quicknode
         rpc_url: "https://your-endpoint.solana-mainnet.quiknode.pro/"
         auth:
           kind: header
@@ -296,7 +264,6 @@ foreign_chains:
           token:
             val: "local"
       ankr:
-        api_variant: ankr
         rpc_url: "https://rpc.ankr.com/near/{api_key}"
         auth:
           kind: path
@@ -304,12 +271,10 @@ foreign_chains:
           token:
             env: ANKR_API_KEY
       public:
-        api_variant: standard
         rpc_url: "https://rpc.public.example.com"
         auth:
           kind: none
       query:
-        api_variant: standard
         rpc_url: "https://rpc.example.com"
         auth:
           kind: query
@@ -321,7 +286,6 @@ foreign_chains:
     max_retries: 3
     providers:
       public:
-        api_variant: esplora
         rpc_url: "https://blockstream.info/api"
         auth:
           kind: none
@@ -330,7 +294,6 @@ foreign_chains:
     max_retries: 3
     providers:
       alchemy:
-        api_variant: alchemy
         rpc_url: "https://eth-mainnet.g.alchemy.com/v2/"
         auth:
           kind: header
@@ -351,117 +314,6 @@ foreign_chains:
         assert!(config.foreign_chains.solana.is_some());
         assert!(config.foreign_chains.bitcoin.is_some());
         assert!(config.foreign_chains.ethereum.is_some());
-    }
-
-    #[test]
-    fn config_parsing__should_fail_when_api_variant_is_missing() {
-        // Given
-        let yaml = r#"
-my_near_account_id: test.near
-near_responder_account_id: test.near
-number_of_responder_keys: 1
-web_ui:
-  host: localhost
-  port: 8080
-migration_web_ui:
-  host: localhost
-  port: 8081
-pprof_bind_address: 127.0.0.1:34001
-indexer:
-  validate_genesis: false
-  sync_mode: Latest
-  finality: optimistic
-  concurrency: 1
-  mpc_contract_id: mpc-contract.test.near
-triple:
-  concurrency: 1
-  desired_triples_to_buffer: 1
-  timeout_sec: 60
-  parallel_triple_generation_stagger_time_sec: 1
-presignature:
-  concurrency: 1
-  desired_presignatures_to_buffer: 1
-  timeout_sec: 60
-signature:
-  timeout_sec: 60
-ckd:
-  timeout_sec: 60
-foreign_chains:
-  solana:
-    timeout_sec: 30
-    max_retries: 3
-    providers:
-      alchemy:
-        rpc_url: "https://solana-mainnet.g.alchemy.com/v2/"
-        auth:
-          kind: header
-          name: Authorization
-          scheme: Bearer
-          token:
-            env: ALCHEMY_API_KEY
-"#;
-
-        // When
-        let result: Result<ConfigFile, _> = serde_yaml::from_str(yaml);
-
-        // Then
-        result.unwrap_err();
-    }
-
-    #[test]
-    fn config_parsing__should_fail_when_api_variant_is_invalid_for_chain() {
-        // Given
-        let yaml = r#"
-my_near_account_id: test.near
-near_responder_account_id: test.near
-number_of_responder_keys: 1
-web_ui:
-  host: localhost
-  port: 8080
-migration_web_ui:
-  host: localhost
-  port: 8081
-pprof_bind_address: 127.0.0.1:34001
-indexer:
-  validate_genesis: false
-  sync_mode: Latest
-  finality: optimistic
-  concurrency: 1
-  mpc_contract_id: mpc-contract.test.near
-triple:
-  concurrency: 1
-  desired_triples_to_buffer: 1
-  timeout_sec: 60
-  parallel_triple_generation_stagger_time_sec: 1
-presignature:
-  concurrency: 1
-  desired_presignatures_to_buffer: 1
-  timeout_sec: 60
-signature:
-  timeout_sec: 60
-ckd:
-  timeout_sec: 60
-foreign_chains:
-  solana:
-    timeout_sec: 30
-    max_retries: 3
-    providers:
-      alchemy:
-        api_variant: infura
-        rpc_url: "https://solana-mainnet.g.alchemy.com/v2/"
-        auth:
-          kind: header
-          name: Authorization
-          scheme: Bearer
-          token:
-            env: ALCHEMY_API_KEY
-"#;
-
-        // When
-        let result: Result<ConfigFile, _> = serde_yaml::from_str(yaml);
-
-        // Then
-        result.unwrap_err();
     }
 
     #[test]
@@ -503,7 +355,6 @@ foreign_chains:
     max_retries: 3
     providers:
       alchemy:
-        api_variant: alchemy
         rpc_url: "https://solana-mainnet.g.alchemy.com/v2/"
         auth:
           kind: header
@@ -511,12 +362,11 @@ foreign_chains:
           scheme: Bearer
           token:
             env: ALCHEMY_API_KEY
-  polygon:
+  not_a_real_chain:
     timeout_sec: 30
     max_retries: 3
     providers:
       public:
-        api_variant: standard
         rpc_url: "https://rpc.public.example.com"
         auth:
           kind: none
@@ -530,176 +380,7 @@ foreign_chains:
     }
 
     #[test]
-    fn config_parsing__should_fail_when_max_retries_is_zero_for_solana() {
-        // Given
-        let yaml = r#"
-my_near_account_id: test.near
-near_responder_account_id: test.near
-number_of_responder_keys: 1
-web_ui:
-  host: localhost
-  port: 8080
-migration_web_ui:
-  host: localhost
-  port: 8081
-pprof_bind_address: 127.0.0.1:34001
-indexer:
-  validate_genesis: false
-  sync_mode: Latest
-  finality: optimistic
-  concurrency: 1
-  mpc_contract_id: mpc-contract.test.near
-triple:
-  concurrency: 1
-  desired_triples_to_buffer: 1
-  timeout_sec: 60
-  parallel_triple_generation_stagger_time_sec: 1
-presignature:
-  concurrency: 1
-  desired_presignatures_to_buffer: 1
-  timeout_sec: 60
-signature:
-  timeout_sec: 60
-ckd:
-  timeout_sec: 60
-foreign_chains:
-  solana:
-    timeout_sec: 30
-    max_retries: 0
-    providers:
-      public:
-        api_variant: standard
-        rpc_url: "https://rpc.public.example.com"
-        auth:
-          kind: none
-"#;
-
-        // When
-        let config: ConfigFile = serde_yaml::from_str(yaml).unwrap();
-        let result = config.validate();
-
-        // Then
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(err.to_string().contains("max_retries must be > 0"));
-    }
-
-    #[test]
-    fn config_parsing__should_fail_when_max_retries_is_zero_for_bitcoin() {
-        // Given
-        let yaml = r#"
-my_near_account_id: test.near
-near_responder_account_id: test.near
-number_of_responder_keys: 1
-web_ui:
-  host: localhost
-  port: 8080
-migration_web_ui:
-  host: localhost
-  port: 8081
-pprof_bind_address: 127.0.0.1:34001
-indexer:
-  validate_genesis: false
-  sync_mode: Latest
-  finality: optimistic
-  concurrency: 1
-  mpc_contract_id: mpc-contract.test.near
-triple:
-  concurrency: 1
-  desired_triples_to_buffer: 1
-  timeout_sec: 60
-  parallel_triple_generation_stagger_time_sec: 1
-presignature:
-  concurrency: 1
-  desired_presignatures_to_buffer: 1
-  timeout_sec: 60
-signature:
-  timeout_sec: 60
-ckd:
-  timeout_sec: 60
-foreign_chains:
-  bitcoin:
-    timeout_sec: 30
-    max_retries: 0
-    providers:
-      public:
-        api_variant: esplora
-        rpc_url: "https://blockstream.info/api"
-        auth:
-          kind: none
-"#;
-
-        // When
-        let config: ConfigFile = serde_yaml::from_str(yaml).unwrap();
-        let result = config.validate();
-
-        // Then
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(err.to_string().contains("max_retries must be > 0"));
-    }
-
-    #[test]
-    fn config_parsing__should_fail_when_max_retries_is_zero_for_ethereum() {
-        // Given
-        let yaml = r#"
-my_near_account_id: test.near
-near_responder_account_id: test.near
-number_of_responder_keys: 1
-web_ui:
-  host: localhost
-  port: 8080
-migration_web_ui:
-  host: localhost
-  port: 8081
-pprof_bind_address: 127.0.0.1:34001
-indexer:
-  validate_genesis: false
-  sync_mode: Latest
-  finality: optimistic
-  concurrency: 1
-  mpc_contract_id: mpc-contract.test.near
-triple:
-  concurrency: 1
-  desired_triples_to_buffer: 1
-  timeout_sec: 60
-  parallel_triple_generation_stagger_time_sec: 1
-presignature:
-  concurrency: 1
-  desired_presignatures_to_buffer: 1
-  timeout_sec: 60
-signature:
-  timeout_sec: 60
-ckd:
-  timeout_sec: 60
-foreign_chains:
-  ethereum:
-    timeout_sec: 30
-    max_retries: 0
-    providers:
-      alchemy:
-        api_variant: alchemy
-        rpc_url: "https://eth-mainnet.g.alchemy.com/v2/"
-        auth:
-          kind: header
-          name: Authorization
-          scheme: Bearer
-          token:
-            env: ALCHEMY_API_KEY
-"#;
-
-        // When
-        let config: ConfigFile = serde_yaml::from_str(yaml).unwrap();
-        let result = config.validate();
-
-        // Then
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(err.to_string().contains("max_retries must be > 0"));
-    }
-
-    #[test]
-    fn to_policy__strips_path_auth_placeholder_from_rpc_url() {
+    fn configured_chains__should_strip_path_auth_placeholder_from_rpc_url() {
         // Given
         let yaml = r#"
 my_near_account_id: test.near
@@ -737,7 +418,6 @@ foreign_chains:
     max_retries: 3
     providers:
       ankr:
-        api_variant: ankr
         rpc_url: "https://rpc.ankr.com/solana/{api_key}"
         auth:
           kind: path
@@ -750,14 +430,16 @@ foreign_chains:
         let config: ConfigFile =
             serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
         config.validate().expect("config should be valid");
-        let policy = config.foreign_chains.to_policy().unwrap();
+        let configured = config.foreign_chains.configured_chains();
 
         // Then
-        let solana_providers = policy
-            .chains
+        let solana_providers = configured
             .get(&near_mpc_contract_interface::types::ForeignChain::Solana)
-            .unwrap();
-        let provider = solana_providers.iter().next().unwrap();
+            .expect("Solana should be in the configured chains");
+        let provider = solana_providers
+            .iter()
+            .next()
+            .expect("expected at least one Solana provider");
         assert_eq!(provider.rpc_url, "https://rpc.ankr.com/solana/");
     }
 
@@ -800,7 +482,6 @@ foreign_chains:
     max_retries: 3
     providers:
       blast:
-        api_variant: blast
         rpc_url: "https://starknet-mainnet.blastapi.io/"
         auth:
           kind: none
@@ -818,62 +499,7 @@ foreign_chains:
     }
 
     #[test]
-    fn config_parsing__should_fail_when_max_retries_is_zero_for_starknet() {
-        // Given
-        let yaml = r#"
-my_near_account_id: test.near
-near_responder_account_id: test.near
-number_of_responder_keys: 1
-web_ui:
-  host: localhost
-  port: 8080
-migration_web_ui:
-  host: localhost
-  port: 8081
-pprof_bind_address: 127.0.0.1:34001
-indexer:
-  validate_genesis: false
-  sync_mode: Latest
-  finality: optimistic
-  concurrency: 1
-  mpc_contract_id: mpc-contract.test.near
-triple:
-  concurrency: 1
-  desired_triples_to_buffer: 1
-  timeout_sec: 60
-  parallel_triple_generation_stagger_time_sec: 1
-presignature:
-  concurrency: 1
-  desired_presignatures_to_buffer: 1
-  timeout_sec: 60
-signature:
-  timeout_sec: 60
-ckd:
-  timeout_sec: 60
-foreign_chains:
-  starknet:
-    timeout_sec: 30
-    max_retries: 0
-    providers:
-      blast:
-        api_variant: blast
-        rpc_url: "https://starknet-mainnet.blastapi.io/"
-        auth:
-          kind: none
-"#;
-
-        // When
-        let config: ConfigFile = serde_yaml::from_str(yaml).unwrap();
-        let result = config.validate();
-
-        // Then
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(err.to_string().contains("max_retries must be > 0"));
-    }
-
-    #[test]
-    fn to_policy__preserves_url_for_non_path_auth() {
+    fn configured_chains__should_preserve_url_for_non_path_auth() {
         // Given
         let yaml = r#"
 my_near_account_id: test.near
@@ -911,7 +537,6 @@ foreign_chains:
     max_retries: 3
     providers:
       alchemy:
-        api_variant: alchemy
         rpc_url: "https://eth-mainnet.g.alchemy.com/v2/"
         auth:
           kind: header
@@ -925,14 +550,73 @@ foreign_chains:
         let config: ConfigFile =
             serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
         config.validate().expect("config should be valid");
-        let policy = config.foreign_chains.to_policy().unwrap();
+        let configured = config.foreign_chains.configured_chains();
 
         // Then
-        let eth_providers = policy
-            .chains
+        let eth_providers = configured
             .get(&near_mpc_contract_interface::types::ForeignChain::Ethereum)
-            .unwrap();
-        let provider = eth_providers.iter().next().unwrap();
+            .expect("Ethereum should be in the configured chains");
+        let provider = eth_providers
+            .iter()
+            .next()
+            .expect("expected at least one Ethereum provider");
         assert_eq!(provider.rpc_url, "https://eth-mainnet.g.alchemy.com/v2/");
+
+        assert!(
+            !configured.contains_key(&near_mpc_contract_interface::types::ForeignChain::Solana)
+        );
+        assert!(
+            !configured.contains_key(&near_mpc_contract_interface::types::ForeignChain::Bitcoin)
+        );
+    }
+
+    #[test]
+    fn config_parsing__should_succeed_with_legacy_field__api_variant() {
+        // Given
+        let yaml = r#"
+my_near_account_id: test.near
+near_responder_account_id: test.near
+number_of_responder_keys: 1
+web_ui:
+  host: localhost
+  port: 8080
+migration_web_ui:
+  host: localhost
+  port: 8081
+pprof_bind_address: 127.0.0.1:34001
+indexer:
+  validate_genesis: false
+  sync_mode: Latest
+  finality: optimistic
+  concurrency: 1
+  mpc_contract_id: mpc-contract.test.near
+triple:
+  concurrency: 1
+  desired_triples_to_buffer: 1
+  timeout_sec: 60
+  parallel_triple_generation_stagger_time_sec: 1
+presignature:
+  concurrency: 1
+  desired_presignatures_to_buffer: 1
+  timeout_sec: 60
+signature:
+  timeout_sec: 60
+ckd:
+  timeout_sec: 60
+foreign_chains:
+  starknet:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      blast:
+        api_variant: "THIS IS A LEGACY FIELD BEING TESTED"
+        rpc_url: "https://starknet-mainnet.blastapi.io/"
+        auth:
+          kind: none
+"#;
+
+        // When/then
+        let _config: ConfigFile =
+            serde_yaml::from_str(yaml).expect("yaml serialization passes with `api_variant_field`");
     }
 }

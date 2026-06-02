@@ -1,6 +1,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 use borsh::{BorshDeserialize, BorshSerialize};
+#[cfg(any(test, feature = "dstack-conversions"))]
 use dstack_sdk_types::dstack::{EventLog as DstackEventLog, TcbInfo as DstackTcbInfo};
 use serde::{Deserialize, Serialize};
 use serde_with::{FromInto, hex::Hex, serde_as};
@@ -115,6 +116,7 @@ impl<const N: usize> TryFrom<String> for HexBytes<N> {
     }
 }
 
+#[cfg(any(test, feature = "dstack-conversions"))]
 impl TryFrom<DstackTcbInfo> for TcbInfo {
     type Error = ParsingError;
 
@@ -158,6 +160,7 @@ impl TryFrom<DstackTcbInfo> for TcbInfo {
     }
 }
 
+#[cfg(any(test, feature = "dstack-conversions"))]
 impl TryFrom<DstackEventLog> for EventLog {
     type Error = ParsingError;
 

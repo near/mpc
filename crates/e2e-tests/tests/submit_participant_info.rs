@@ -11,7 +11,7 @@ use backon::{ConstantBuilder, Retryable};
 #[tokio::test]
 async fn test_submit_participant_info() {
     let (cluster, _running) =
-        common::setup_cluster(common::SUBMIT_PARTICIPANT_INFO_PORT_SEED, |c| {
+        common::must_setup_cluster(common::SUBMIT_PARTICIPANT_INFO_PORT_SEED, |c| {
             c.num_nodes = 4;
             c.initial_participant_indices = vec![0, 1];
         })

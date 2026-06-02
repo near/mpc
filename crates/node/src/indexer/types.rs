@@ -1,16 +1,16 @@
 use crate::types::{CKDRequest, SignatureRequest, VerifyForeignTxRequest};
 use anyhow::Context;
 use k256::{
-    ecdsa::RecoveryId,
-    elliptic_curve::{ops::Reduce, point::AffineCoordinates, Curve, CurveArithmetic},
     AffinePoint, Scalar, Secp256k1,
+    ecdsa::RecoveryId,
+    elliptic_curve::{Curve, CurveArithmetic, ops::Reduce, point::AffineCoordinates},
 };
 use mpc_primitives::domain::DomainId;
 use near_indexer_primitives::types::Gas;
 use near_mpc_contract_interface::method_names::{
     CONCLUDE_NODE_MIGRATION, RESPOND, RESPOND_CKD, RESPOND_VERIFY_FOREIGN_TX,
     START_KEYGEN_INSTANCE, START_RESHARE_INSTANCE, SUBMIT_PARTICIPANT_INFO, VERIFY_TEE,
-    VOTE_ABORT_KEY_EVENT_INSTANCE, VOTE_FOREIGN_CHAIN_POLICY, VOTE_PK, VOTE_RESHARED,
+    VOTE_ABORT_KEY_EVENT_INSTANCE, VOTE_PK, VOTE_RESHARED,
 };
 pub use near_mpc_contract_interface::types::SubmitParticipantInfoArgs;
 use near_mpc_contract_interface::types::{
@@ -23,17 +23,10 @@ use threshold_signatures::ecdsa::Signature;
 use threshold_signatures::frost_ed25519;
 use threshold_signatures::frost_secp256k1::VerifyingKey;
 
+#[expect(deprecated)]
+use near_mpc_contract_interface::method_names::REGISTER_FOREIGN_CHAIN_CONFIG;
+
 const MAX_GAS: Gas = Gas::from_teragas(300);
-
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
-pub struct SerializableScalar {
-    pub scalar: Scalar,
-}
-
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
-struct SerializableAffinePoint {
-    pub affine_point: AffinePoint,
-}
 
 /* The format in which the chain signatures contract expects
  * to receive the details of the original request. `epsilon`
@@ -160,8 +153,9 @@ pub struct ChainVoteResharedArgs {
 }
 
 #[derive(Serialize, Debug)]
-pub struct ChainVoteForeignChainPolicyArgs {
-    pub policy: dtos::ForeignChainPolicy,
+pub struct ChainRegisterForeignChainConfigArgs {
+    #[expect(deprecated)]
+    pub foreign_chain_configuration: dtos::ForeignChainConfiguration,
 }
 
 #[derive(Serialize, Debug)]
@@ -192,7 +186,7 @@ pub enum ChainSendTransactionRequest {
     VotePk(ChainVotePkArgs),
     StartKeygen(ChainStartKeygenArgs),
     VoteReshared(ChainVoteResharedArgs),
-    VoteForeignChainPolicy(ChainVoteForeignChainPolicyArgs),
+    RegisterForeignChainConfig(ChainRegisterForeignChainConfigArgs),
     StartReshare(ChainStartReshareArgs),
     VoteAbortKeyEventInstance(ChainVoteAbortKeyEventInstanceArgs),
     VerifyTee(),
@@ -215,7 +209,11 @@ impl ChainSendTransactionRequest {
             ChainSendTransactionRequest::CKDRespond(_) => RESPOND_CKD,
             ChainSendTransactionRequest::VotePk(_) => VOTE_PK,
             ChainSendTransactionRequest::VoteReshared(_) => VOTE_RESHARED,
-            ChainSendTransactionRequest::VoteForeignChainPolicy(_) => VOTE_FOREIGN_CHAIN_POLICY,
+            ChainSendTransactionRequest::RegisterForeignChainConfig(_) =>
+            {
+                #[expect(deprecated)]
+                REGISTER_FOREIGN_CHAIN_CONFIG
+            }
             ChainSendTransactionRequest::StartReshare(_) => START_RESHARE_INSTANCE,
             ChainSendTransactionRequest::StartKeygen(_) => START_KEYGEN_INSTANCE,
             ChainSendTransactionRequest::VoteAbortKeyEventInstance(_) => {
@@ -236,7 +234,7 @@ impl ChainSendTransactionRequest {
             | Self::CKDRespond(_)
             | Self::VotePk(_)
             | Self::VoteReshared(_)
-            | Self::VoteForeignChainPolicy(_)
+            | Self::RegisterForeignChainConfig(_)
             | Self::StartReshare(_)
             | Self::StartKeygen(_)
             | Self::VoteAbortKeyEventInstance(_)
@@ -366,9 +364,9 @@ impl ChainVerifyForeignTransactionRespondArgs {
 #[cfg(test)]
 mod recovery_id_tests {
     use crate::indexer::types::ChainSignatureRespondArgs;
-    use k256::ecdsa::{RecoveryId, SigningKey};
-    use k256::elliptic_curve::{point::DecompressPoint, PrimeField};
     use k256::AffinePoint;
+    use k256::ecdsa::{RecoveryId, SigningKey};
+    use k256::elliptic_curve::{PrimeField, point::DecompressPoint};
     use rand::rngs::OsRng;
     use threshold_signatures::ecdsa::Signature;
 

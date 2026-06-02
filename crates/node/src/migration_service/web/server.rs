@@ -1,7 +1,10 @@
 use std::{convert::Infallible, net::SocketAddr, sync::Arc};
 
-use hyper::{service::service_fn, Body, Response, StatusCode};
-use mpc_contract::primitives::key_state::Keyset;
+use bytes::Bytes;
+use http_body_util::{BodyExt, Full};
+use hyper::{Response, StatusCode, body::Incoming, service::service_fn};
+use hyper_util::rt::TokioIo;
+use near_mpc_crypto_types::Keyset;
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::watch,
@@ -70,11 +73,11 @@ async fn handle_stream(
     tracing::info!(
         "TLS handshake complete, backup service authenticated and encrypted channel established"
     );
-    let http_protocol = hyper::server::conn::Http::new();
+    let http_protocol = hyper::server::conn::http1::Builder::new();
 
     tokio::select! {
         res = http_protocol.serve_connection(
-            stream,
+            TokioIo::new(stream),
             service_fn(move |req| handle_request(req, state.clone())),
         ) => {
             match res {
@@ -116,14 +119,16 @@ async fn spawn_expected_peer_info_monitoring(
 }
 
 async fn handle_request(
-    req: hyper::Request<Body>,
+    req: hyper::Request<Incoming>,
     state: Arc<WebServerState>,
-) -> Result<hyper::Response<Body>, Infallible> {
+) -> Result<hyper::Response<Full<Bytes>>, Infallible> {
     match (req.method().as_str(), req.uri().path()) {
-        ("GET", "/hello") => Ok(Response::new(Body::from("Hello, world!"))),
+        ("GET", "/hello") => Ok(Response::new(Full::new(Bytes::from_static(
+            b"Hello, world!",
+        )))),
         ("GET", "/get_keyshares") => {
             tracing::info!("received get_keyshares request");
-            let whole_body = hyper::body::to_bytes(req.into_body()).await;
+            let whole_body = req.into_body().collect().await.map(|body| body.to_bytes());
             match whole_body {
                 Ok(bytes) => match serde_json::from_slice::<Keyset>(&bytes) {
                     Ok(keyset) => {
@@ -140,7 +145,7 @@ async fn handle_request(
                                 tracing::error!(msg);
                                 return Ok(Response::builder()
                                     .status(StatusCode::INTERNAL_SERVER_ERROR)
-                                    .body(Body::from("Failed to get keyshares"))
+                                    .body(Full::new(Bytes::from_static(b"Failed to get keyshares")))
                                     .unwrap());
                             }
                         };
@@ -149,10 +154,10 @@ async fn handle_request(
                             &state.backup_encryption_key,
                         )
                         .unwrap_or_else(|err| {
-                            tracing::error!(?err, "serializtion or encryption error");
+                            tracing::error!(?err, "serialization or encryption error");
                             "internal error serializing or encrypting keyshares".to_string()
                         });
-                        let mut response = Response::new(Body::from(resp));
+                        let mut response = Response::new(Full::new(Bytes::from(resp)));
                         response.headers_mut().insert(
                             hyper::header::CONTENT_TYPE,
                             hyper::header::HeaderValue::from_static("application/json"),
@@ -163,7 +168,7 @@ async fn handle_request(
                         tracing::error!(?err, "received invalid keyset");
                         Ok(Response::builder()
                             .status(StatusCode::BAD_REQUEST)
-                            .body(Body::from(format!("Invalid keyset: {err}")))
+                            .body(Full::new(Bytes::from(format!("Invalid keyset: {err}"))))
                             .unwrap())
                     }
                 },
@@ -171,13 +176,15 @@ async fn handle_request(
                     tracing::error!(?err, "failed to read body");
                     Ok(Response::builder()
                         .status(StatusCode::BAD_REQUEST)
-                        .body(Body::from(format!("Failed to read body: {err}")))
+                        .body(Full::new(Bytes::from(format!(
+                            "Failed to read body: {err}"
+                        ))))
                         .unwrap())
                 }
             }
         }
         ("PUT", "/set_keyshares") => {
-            let whole_body = hyper::body::to_bytes(req.into_body()).await;
+            let whole_body = req.into_body().collect().await.map(|body| body.to_bytes());
             match whole_body {
                 Ok(bytes) => {
                     match decrypt_and_deserialize_keyshares(&bytes, &state.backup_encryption_key) {
@@ -187,26 +194,32 @@ async fn handle_request(
                                 tracing::error!(msg);
                                 Ok(Response::builder()
                                     .status(StatusCode::INTERNAL_SERVER_ERROR)
-                                    .body(Body::from(msg))
+                                    .body(Full::new(Bytes::from(msg)))
                                     .unwrap())
                             } else {
-                                Ok(Response::new(Body::from("Keyshares received.")))
+                                Ok(Response::new(Full::new(Bytes::from_static(
+                                    b"Keyshares received.",
+                                ))))
                             }
                         }
                         Err(err) => Ok(Response::builder()
                             .status(StatusCode::BAD_REQUEST)
-                            .body(Body::from(format!("Invalid Json or encryption: {err}")))
+                            .body(Full::new(Bytes::from(format!(
+                                "Invalid Json or encryption: {err}"
+                            ))))
                             .unwrap()),
                     }
                 }
                 Err(err) => Ok(Response::builder()
                     .status(StatusCode::BAD_REQUEST)
-                    .body(Body::from(format!("Failed to read body: {err}")))
+                    .body(Full::new(Bytes::from(format!(
+                        "Failed to read body: {err}"
+                    ))))
                     .unwrap()),
             }
         }
         _ => {
-            let mut not_found = Response::new(Body::from("Not Found"));
+            let mut not_found = Response::new(Full::new(Bytes::from_static(b"Not Found")));
             *not_found.status_mut() = StatusCode::NOT_FOUND;
             Ok(not_found)
         }
@@ -221,7 +234,7 @@ mod tests {
     use near_mpc_contract_interface::types::Ed25519PublicKey;
 
     use ed25519_dalek::SigningKey;
-    use mpc_contract::node_migrations::BackupServiceInfo;
+    use near_mpc_contract_interface::types::BackupServiceInfo;
     use tokio::sync::watch;
 
     fn make_migration_info_with_key(key: &SigningKey) -> MigrationInfo {

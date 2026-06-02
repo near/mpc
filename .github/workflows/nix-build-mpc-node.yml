@@ -1,0 +1,44 @@
+name: Nix build mpc-node
+
+concurrency:
+  # Hardcoded group name (not `${{ github.workflow }}`) because when invoked via
+  # `workflow_call`, `github.workflow` resolves to the *caller's* workflow name,
+  # which causes a concurrency-group collision with the caller and a deadlock.
+  group: nix-build-mpc-node-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  nix-build-mpc-node:
+    name: "Nix build mpc-node"
+    runs-on: warp-ubuntu-2404-x64-32x
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+
+      - name: Restore /nix from cache
+        uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
+        with:
+          primary-key: nix-${{ runner.os }}-mpc-node-${{ hashFiles('flake.nix', 'flake.lock', 'nix/**', 'rust-toolchain.toml', 'Cargo.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-mpc-node-
+          save: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build mpc-node
+        run: nix build --print-build-logs .#mpc-node
+
+      - name: Print mpc-node binary hash
+        run: |
+          echo "Store path: $(readlink -f result)"
+          sha256sum result/bin/mpc-node

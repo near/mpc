@@ -1,24 +1,38 @@
 # MPC Testnet with TEE Support
 
-This guide describes how to set up a testnet MPC cluster, where each MPC node is runing inside a dstack TDX CVM.
+This guide describes how to set up a testnet MPC cluster, where each MPC
+node runs inside a dstack TDX CVM. The flow uses the Rust launcher (TOML
+config) — the older Python launcher and its `.conf` config format have
+been removed (#2951, #2952).
 
 ## Prerequisites
-1. One TDX-enabled machine (with 2 external IPs)
-2. dstack installed and configured
-3. MPC repository cloned  
-4. NEAR CLI installed  
+1. One TDX-enabled machine (with 2 external IPs), or two such machines.
+2. dstack installed and configured (`v0.5.5+` for reserved port forwarding).
+3. MPC repository cloned.
+4. NEAR CLI installed (`near-cli-rs`).
 
-**Note**, dstack version must be v0.55 or higher (in order to support reserved port forwarding).
+## Two flows
+
+This guide walks the **manual two-node** (`frodo` + `sam`) flow end-to-end —
+useful when learning the system or debugging individual steps.
+
+For deploying **N nodes at once** (or scaling up existing networks), use
+`localnet/tee/scripts/rust-launcher/deploy-tee-cluster.sh` with
+`MODE=testnet NEAR_NETWORK_CONFIG=testnet`. It automates account
+creation, contract deployment, key generation, attestation, and voting
+in a resumable script. See
+[`how-to-run-deploy-tee-cluster.md`](../../localnet/tee/scripts/rust-launcher/how-to-run-deploy-tee-cluster.md)
+for the full reference.
 
 
 ## High-Level Steps
 
-1. Create a NEAR account that will host the MPC contract.  
-2. Deploy the MPC contract.  
-3. Start two TDX CVMs: Running MPC node **frodo** and running MPC node **sam** on the same machine.  
-4. Get account and TLS keys from each node.  
-5. Initialize the contract with node parameters (keys, accounts, IPs).  
-6. Workaround for port override issue.  
+1. Create a NEAR account that will host the MPC contract.
+2. Deploy the MPC contract.
+3. Start two TDX CVMs: Running MPC node **frodo** and running MPC node **sam** on the same machine.
+4. Get account and TLS keys from each node.
+5. Initialize the contract with node parameters (keys, accounts, IPs).
+6. Workaround for port override issue.
 7. Vote for MPC code hash on the contract.
 8. Vote for launcher image hash on the contract.
 9. Vote for OS measurements on the contract.
@@ -28,9 +42,11 @@ This guide describes how to set up a testnet MPC cluster, where each MPC node is
 
 ---
 
-**Note:** These operations assume you start from the MPC root directory and are running on the Alice machine. Otherwise, it will be explicitly noted.
+**Note:** These operations assume you start from the MPC repo root.
 
-**Note**, It is possible to run both CVMs on seperate TDX-enabled machines. In that case, adjust the IPs and commands accordingly.
+**Note:** Both CVMs run on the same host below (one machine, two static
+IPs). To split the cluster across two TDX hosts instead, run the
+deploy command for each node on its own host and adjust the IPs.
 
 
 
@@ -54,7 +70,7 @@ export SAM_ACCOUNT=${MPC_NETWORK_NAME}_sam.testnet
 ```
 
 
-Since the faucet gives only **10 NEAR per account** (and the MPC contract storage costs **15 NEAR**),  
+Since the faucet gives only **10 NEAR per account** (and the MPC contract storage costs **15 NEAR**),
 we need to create two accounts and then transfer funds between them.
 
 ```bash
@@ -124,6 +140,8 @@ near account create-account sponsor-by-faucet-service $SAM_ACCOUNT autogenerate-
 
 ### Update Bootnodes and IPs
 
+> See [Running multiple MPC nodes on one host](../running-multiple-mpc-nodes-on-one-host.md) for the general framing of why each node needs its own host IP.
+
 Run this command to get the current testnet bootnodes.
 **Important:** Boot nodes must not contain duplicate addresses or peer IDs, as duplicates will cause the node to crash on startup. The command below deduplicates automatically:
 
@@ -165,7 +183,7 @@ envsubst < deployment/testnet/sam.env > "/tmp/$USER/sam.env"
 
 
 #### preliminry setup:
-Allow reserved port forwarding (e.g 80) for the CVMs. 
+Allow reserved port forwarding (e.g 80) for the CVMs.
 
 ```bash
 sudo setcap 'cap_net_bind_service=+ep' $(which qemu-system-x86_64)
@@ -193,19 +211,24 @@ Example: `$BASE_PATH/vmm/src/vmm-cli.py` should exist.
 export BASE_PATH="dstack base path"
 ```
 
-Start the nodes:
+Start the nodes (run both on the same host if it has both static IPs;
+otherwise run each on the host that owns its IP):
 
-**On Alice:**
+**Frodo:**
 
 ```bash
 ./deploy-launcher.sh --env-file /tmp/$USER/frodo.env --base-path $BASE_PATH --python-exec python
 ```
 
-**On Bob:**
+**Sam:**
 
 ```bash
 ./deploy-launcher.sh --env-file /tmp/$USER/sam.env --base-path $BASE_PATH --python-exec python
 ```
+
+> The `--python-exec python` flag refers to the Python binary used to invoke
+> dstack's `vmm-cli.py` — **not** to any MPC launcher. Confusingly named
+> but required.
 
 If successful, each command outputs an **App ID** and confirms creation of a **CVM instance**.
 
@@ -217,7 +240,7 @@ If successful, each command outputs an **App ID** and confirms creation of a **C
 
 Each node exposes its keys via:
 
-- Frodo: `http://$SERVER_IP_1:18081/public_data`  
+- Frodo: `http://$SERVER_IP_1:18081/public_data`
 - Sam: `http://$SERVER_IP_2:18082/public_data`
 
 ```bash
@@ -233,23 +256,26 @@ export SAM_P2P_KEY=$(curl -s http://$SERVER_IP_2:18082/public_data | jq -r '.nea
 
 Add keys to each NEAR account:
 
-```bash
-NODE_METHODS="respond,respond_ckd,respond_verify_foreign_tx,vote_pk,start_keygen_instance,vote_reshared,vote_foreign_chain_policy,start_reshare_instance,vote_abort_key_event_instance,verify_tee,submit_participant_info,conclude_node_migration"
+The keys are granted access to all methods on the MPC contract (empty
+`--function-names` list) while staying scoped to it via `--contract-account-id`.
+This avoids the keys breaking whenever a release adds a method the node must call
+(e.g. `register_foreign_chain_config`).
 
+```bash
 near account add-key $FRODO_ACCOUNT grant-function-call-access \
-  --allowance '1 NEAR' --contract-account-id $MPC_CONTRACT_ACCOUNT --function-names "$NODE_METHODS" \
+  --allowance unlimited --contract-account-id $MPC_CONTRACT_ACCOUNT --function-names '' \
   use-manually-provided-public-key "$FRODO_PUBKEY" network-config testnet sign-with-keychain send
 
 near account add-key $FRODO_ACCOUNT grant-function-call-access \
-  --allowance '1 NEAR' --contract-account-id $MPC_CONTRACT_ACCOUNT --function-names "$NODE_METHODS" \
+  --allowance unlimited --contract-account-id $MPC_CONTRACT_ACCOUNT --function-names '' \
   use-manually-provided-public-key "$FRODO_RESPONDER_KEY" network-config testnet sign-with-keychain send
 
 near account add-key $SAM_ACCOUNT grant-function-call-access \
-  --allowance '1 NEAR' --contract-account-id $MPC_CONTRACT_ACCOUNT --function-names "$NODE_METHODS" \
+  --allowance unlimited --contract-account-id $MPC_CONTRACT_ACCOUNT --function-names '' \
   use-manually-provided-public-key "$SAM_PUBKEY" network-config testnet sign-with-keychain send
 
 near account add-key $SAM_ACCOUNT grant-function-call-access \
-  --allowance '1 NEAR' --contract-account-id $MPC_CONTRACT_ACCOUNT --function-names "$NODE_METHODS" \
+  --allowance unlimited --contract-account-id $MPC_CONTRACT_ACCOUNT --function-names '' \
   use-manually-provided-public-key "$SAM_RESPONDER_KEY" network-config testnet sign-with-keychain send
 ```
 
@@ -285,7 +311,7 @@ Example:
           "barak_tee_test1_frodo.testnet",
           0,
           {
-            "sign_pk": "ed25519:6CeuXPt6qXtXRHVb5C4USZAyQcg65LXJvebPyCJewaN1",
+            "tls_public_key": "ed25519:6CeuXPt6qXtXRHVb5C4USZAyQcg65LXJvebPyCJewaN1",
             "url": "https://91.134.92.20:13001"
           }
         ],
@@ -293,7 +319,7 @@ Example:
           "barak_tee_test1_sam.testnet",
           1,
           {
-            "sign_pk": "ed25519:B2pHHn9Kr2GZhDn85VP3vGUccJK7Haekcmy5JRBScUn3",
+            "tls_public_key": "ed25519:B2pHHn9Kr2GZhDn85VP3vGUccJK7Haekcmy5JRBScUn3",
             "url": "https://57.129.140.254:13002"
           }
         ]
@@ -321,37 +347,25 @@ near contract call-function as-read-only $MPC_CONTRACT_ACCOUNT  state \
 
 ---
 
-## Step 6: Workaround for Port Override Issue  (optional)
+## Step 6: Workaround for Port Override Issue (optional)
 
-**note:** correctly setting port_override is set for testnet. So regradless of the port defined in the mpc contract, the nodes will try to use port 80.
+**Note:** `port_override = 80` is the default on testnet. The MPC nodes will
+advertise URL port 80 to the contract regardless of the contract's
+`url:` field. If you need a different port (e.g. dstack on this host
+can't forward port 80), change `port_override` post-deploy as follows.
 
-If you which which to change the port overide value here is the steps to do so.
+> SSH into the CVM is **not supported on dstack ≥ 0.5.6** unless the
+> launcher's `pre_launch_script` installs a passwordless SSH key (the
+> dstack-dev images stopped exposing SSH by default). On `dstack-0.5.5`
+> and earlier dev images you can SSH with `ssh root@localhost -p
+> <CVM-SSH-port>` (`1220` for frodo, `1221` for sam by default).
 
-Default `port_override = 80`.  
-dstack CVMs had issues forwarding port 80, so update the config on both machines.
-
-SSH into each CVM:
-
-```bash
-ssh root@localhost -p <CVM-SSH-port>  # 1220 Alice, 1221 Bob
-```
-
-Stop the MPC node container:
+Once on the CVM, stop the MPC container, edit the config, restart:
 
 ```bash
 docker stop mpc-node
-```
-
-Replace port 80 with 2080:
-
-```bash
 sed -i 's/port_override: 80/port_override: 2080/' /var/lib/docker/volumes/mpc-data/_data/config.yaml
 sed -i 's/port_override: 80/port_override: 2080/' /var/lib/docker/volumes/mpc-data/_data/config.json
-```
-
-Restart the container:
-
-```bash
 docker start mpc-node
 ```
 
@@ -361,7 +375,7 @@ docker start mpc-node
 
 Hash format: 00006c1059cc0219005b21956a4df8238b0cc33ad559a578a63169de4e28c81e  (no prefix)
 ```bash
-export CODE_HASH=<hash used to start the nodes> 
+export CODE_HASH=<hash used to start the nodes>
 ```
 
 ### Frodo votes
@@ -395,10 +409,16 @@ near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  allowed_docker
 ## Step 8: Vote Launcher Image Hash on Contract
 
 The launcher image hash must also be voted in for compose hashes to be derived and attestation to work.
-Extract it from the compose file:
+
+The previous steps had you set `LAUNCHER_MANIFEST_DIGEST` in `deployment/testnet/*.env` (uncommented in step 6 before running `deploy-launcher.sh`). The `.env` file is sourced by `deploy-launcher.sh` but not by your interactive shell, so re-export the value here. Either re-source the env file, or set the variable directly:
 
 ```bash
-export LAUNCHER_HASH=$(grep -E 'nearone/mpc-launcher@sha256:' deployment/cvm-deployment/launcher_docker_compose.yaml | head -n1 | sed -E 's/.*sha256:([0-9a-f]{64}).*/\1/')
+# Option A: pull from the env file you already edited
+set -a; source deployment/testnet/frodo.env; set +a   # or sam.env — both should match
+export LAUNCHER_HASH="${LAUNCHER_MANIFEST_DIGEST#sha256:}"
+
+# Option B: paste the same hex you put in the .env
+export LAUNCHER_HASH=<launcher digest (hex, no sha256: prefix)>
 ```
 
 ### Frodo votes

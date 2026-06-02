@@ -1,11 +1,11 @@
 use crate::errors::{Error, InvalidCandidateSet, InvalidParameters};
 
 use near_account_id::AccountId;
-use near_sdk::{near, PublicKey};
-use std::{collections::BTreeSet, fmt::Display};
+use near_mpc_contract_interface::types::Ed25519PublicKey;
+use near_sdk::near;
+use std::collections::BTreeSet;
 
-#[cfg(any(test, feature = "test-utils"))]
-use crate::tee::tee_state::NodeId;
+pub use near_mpc_contract_interface::types::ParticipantId;
 
 pub mod hpke {
     pub type PublicKey = [u8; 32];
@@ -15,26 +15,8 @@ pub mod hpke {
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct ParticipantInfo {
     pub url: String,
-    /// The public key used for verifying messages.
-    pub sign_pk: PublicKey,
-}
-
-#[near(serializers=[borsh, json])]
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub struct ParticipantId(pub u32);
-impl ParticipantId {
-    pub fn get(&self) -> u32 {
-        self.0
-    }
-    pub fn next(&self) -> Self {
-        ParticipantId(self.0 + 1)
-    }
-}
-
-impl Display for ParticipantId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
-    }
+    /// The Ed25519 public key used for P2P TLS.
+    pub tls_public_key: Ed25519PublicKey,
 }
 
 #[near(serializers=[borsh, json])]
@@ -79,14 +61,13 @@ impl Participants {
         if id < self.next_id() {
             return Err(InvalidParameters::ParticipantAlreadyUsed.into());
         }
-        self.participants
-            .push((account_id.clone(), id.clone(), info));
+        self.participants.push((account_id.clone(), id, info));
         self.next_id.0 = id.0 + 1;
         Ok(())
     }
 
     pub fn insert(&mut self, account_id: AccountId, info: ParticipantInfo) -> Result<(), Error> {
-        self.insert_with_id(account_id, info, self.next_id.clone())
+        self.insert_with_id(account_id, info, self.next_id)
     }
 
     pub fn participants(&self) -> &Vec<(AccountId, ParticipantId, ParticipantInfo)> {
@@ -94,7 +75,7 @@ impl Participants {
     }
 
     pub fn next_id(&self) -> ParticipantId {
-        self.next_id.clone()
+        self.next_id
     }
 
     /// Validates that the fields are coherent:
@@ -106,7 +87,7 @@ impl Participants {
         let mut accounts: BTreeSet<AccountId> = BTreeSet::new();
         for (acc_id, pid, _) in &self.participants {
             accounts.insert(acc_id.clone());
-            ids.insert(pid.clone());
+            ids.insert(*pid);
             if self.next_id.get() <= pid.get() {
                 return Err(InvalidCandidateSet::ParticipantIdNotLessThanNextId {
                     id: pid.get(),
@@ -174,7 +155,7 @@ impl Participants {
         self.participants
             .iter()
             .find(|(a_id, _, _)| a_id == account_id)
-            .map(|(_, p_id, _)| p_id.clone())
+            .map(|(_, p_id, _)| *p_id)
             .ok_or_else(|| {
                 crate::errors::InvalidState::NotParticipant {
                     account_id: account_id.clone(),
@@ -195,9 +176,9 @@ impl Participants {
     pub fn subset(&self, range: std::ops::Range<usize>) -> Participants {
         let participants = self.participants[range]
             .iter()
-            .map(|(a, p, i)| (a.clone(), p.clone(), i.clone()));
+            .map(|(a, p, i)| (a.clone(), *p, i.clone()));
         Participants {
-            next_id: self.next_id.clone(),
+            next_id: self.next_id,
             participants: participants.collect(),
         }
     }
@@ -206,7 +187,7 @@ impl Participants {
         let mut rng = rand::thread_rng();
         while self.len() < n {
             let (account, pinfo) =
-                crate::primitives::test_utils::gen_participant(rand::Rng::gen(&mut rng));
+                crate::primitives::test_utils::gen_participant(rand::Rng::r#gen(&mut rng));
             self.insert(account, pinfo).unwrap();
         }
     }
@@ -219,20 +200,6 @@ impl Participants {
         {
             self.participants.remove(pos);
         }
-    }
-
-    /// Returns the set of [`NodeId`]s corresponding to the participants.
-    /// Note that the `account_public_key` field in [`NodeId`] is `None`.
-    /// This is because [`NodeId`] is used in contexts where `account_public_key` is not needed (only TLS key is needed).
-    pub fn get_node_ids(&self) -> BTreeSet<NodeId> {
-        self.participants()
-            .iter()
-            .map(|(account_id, _, p_info)| NodeId {
-                account_id: account_id.clone(),
-                tls_public_key: p_info.sign_pk.clone(),
-                account_public_key: None,
-            })
-            .collect()
     }
 }
 

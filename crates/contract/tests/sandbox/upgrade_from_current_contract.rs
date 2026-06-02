@@ -1,11 +1,11 @@
 use crate::sandbox::{
     common::{
-        execute_key_generation_and_add_random_state, propose_and_vote_contract_binary,
-        vote_update_till_completion, SandboxTestSetup,
+        SandboxTestSetup, execute_key_generation_and_add_random_state,
+        propose_and_vote_contract_binary, vote_update_till_completion,
     },
     utils::{
         consts::{
-            ALL_CURVES, CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_BEFORE_THRESHOLD,
+            ALL_PROTOCOLS, CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_BEFORE_THRESHOLD,
             GAS_FOR_VOTE_UPDATE, MAX_GAS_FOR_THRESHOLD_VOTE, PARTICIPANT_LEN,
         },
         contract_build::{current_contract, migration_contract},
@@ -50,7 +50,7 @@ async fn test_propose_contract_max_size_upload() {
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
     dbg!(contract.id());
@@ -81,7 +81,7 @@ async fn test_propose_update_config() {
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
     let threshold = assert_running_return_threshold(&contract).await;
@@ -95,11 +95,13 @@ async fn test_propose_update_config() {
         .await
         .unwrap();
     dbg!(&execution);
-    assert!(execution
-        .into_result()
-        .unwrap_err()
-        .to_string()
-        .contains("not a voter"));
+    assert!(
+        execution
+            .into_result()
+            .unwrap_err()
+            .to_string()
+            .contains("not a voter")
+    );
 
     // have each participant propose a new update:
     let new_config = near_mpc_contract_interface::types::Config {
@@ -112,6 +114,7 @@ async fn test_propose_update_config() {
         return_ck_and_clean_state_on_success_call_tera_gas: 77,
         fail_on_timeout_tera_gas: 88,
         clean_tee_status_tera_gas: 99,
+        clean_invalid_attestations_tera_gas: 101,
         cleanup_orphaned_node_migrations_tera_gas: 11,
         remove_non_participant_update_votes_tera_gas: 12,
         clean_foreign_chain_data_tera_gas: 13,
@@ -191,7 +194,7 @@ async fn test_propose_update_contract() {
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
     propose_and_vote_contract_binary(&mpc_signer_accounts, &contract, current_contract()).await;
@@ -204,7 +207,7 @@ async fn test_invalid_contract_deploy() {
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
     dbg!(contract.id());
@@ -247,7 +250,7 @@ async fn test_propose_update_contract_many() {
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
     dbg!(contract.id());
@@ -308,7 +311,7 @@ async fn test_vote_update_gas_before_threshold() {
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
 
@@ -385,7 +388,7 @@ async fn test_propose_incorrect_updates() {
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
     dbg!(contract.id());
@@ -427,7 +430,7 @@ async fn many_sequential_updates() {
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .with_number_of_participants(number_of_participants)
         .build()
         .await;
@@ -454,7 +457,7 @@ async fn only_one_vote_from_participant() {
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_curves(ALL_CURVES)
+        .with_protocols(ALL_PROTOCOLS)
         .with_number_of_participants(number_of_participants)
         .build()
         .await;

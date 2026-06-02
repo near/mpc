@@ -2,22 +2,24 @@ use crate::indexer::participants::ContractState;
 use crate::metrics;
 use crate::p2p::testing::PortSeed;
 use crate::tests::{
-    request_ckd_and_await_response, request_signature_and_await_response, IntegrationTestSetup,
-    DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
+    DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME, IntegrationTestSetup,
+    request_ckd_and_await_response, request_signature_and_await_response,
 };
 use crate::tracking::AutoAbortTask;
 use mpc_primitives::domain::{Curve, DomainId};
-use near_mpc_contract_interface::types::{DomainConfig, DomainPurpose};
+use near_mpc_contract_interface::types::{
+    DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
+};
 use near_time::Clock;
 use rstest::rstest;
 use serial_test::serial;
 
 use super::DEFAULT_BLOCK_TIME;
 
-fn infer_purpose_from_curve(curve: Curve) -> DomainPurpose {
-    match curve {
-        Curve::Bls12381 => DomainPurpose::CKD,
-        _ => DomainPurpose::Sign,
+fn infer_purpose_from_protocol(protocol: Protocol) -> DomainPurpose {
+    match protocol {
+        Protocol::ConfidentialKeyDerivation => DomainPurpose::CKD,
+        Protocol::CaitSith | Protocol::Frost | Protocol::DamgardEtAl => DomainPurpose::Sign,
     }
 }
 
@@ -25,14 +27,14 @@ fn infer_purpose_from_curve(curve: Curve) -> DomainPurpose {
 #[tokio::test]
 #[test_log::test]
 #[rstest]
-#[case(0, Curve::Secp256k1, 3)]
-#[case(1, Curve::Edwards25519, 3)]
-#[case(2, Curve::Bls12381, 3)]
+#[case(0, Protocol::CaitSith, 3)]
+#[case(1, Protocol::Frost, 3)]
+#[case(2, Protocol::ConfidentialKeyDerivation, 3)]
 // TODO(#1946): re-enable once it is no longer flaky
-// #[case(3, Curve::V2Secp256k1, 5)]
+// #[case(3, Protocol::DamgardEtAl, 5)]
 async fn test_key_resharing_simple(
     #[case] case: u16,
-    #[case] curve: Curve,
+    #[case] protocol: Protocol,
     #[case] threshold: usize,
 ) {
     let num_participants: usize = threshold + 1;
@@ -56,8 +58,9 @@ async fn test_key_resharing_simple(
 
     let domain = DomainConfig {
         id: DomainId(0),
-        curve,
-        purpose: infer_purpose_from_curve(curve),
+        protocol,
+        reconstruction_threshold: ReconstructionThreshold::new(3),
+        purpose: infer_purpose_from_protocol(protocol),
     };
 
     {
@@ -82,26 +85,30 @@ async fn test_key_resharing_simple(
         .expect("must not exceed timeout");
 
     // Sanity check.
-    match domain.curve {
-        Curve::Secp256k1 | Curve::Edwards25519 | Curve::V2Secp256k1 => {
-            assert!(request_signature_and_await_response(
-                &mut setup.indexer,
-                "user1",
-                &domain,
-                DEFAULT_MAX_SIGNATURE_WAIT_TIME
-            )
-            .await
-            .is_some());
+    match Curve::from(domain.protocol) {
+        Curve::Secp256k1 | Curve::Edwards25519 => {
+            assert!(
+                request_signature_and_await_response(
+                    &mut setup.indexer,
+                    "user1",
+                    &domain,
+                    DEFAULT_MAX_SIGNATURE_WAIT_TIME
+                )
+                .await
+                .is_some()
+            );
         }
         Curve::Bls12381 => {
-            assert!(request_ckd_and_await_response(
-                &mut setup.indexer,
-                "user1",
-                &domain,
-                DEFAULT_MAX_SIGNATURE_WAIT_TIME
-            )
-            .await
-            .is_some());
+            assert!(
+                request_ckd_and_await_response(
+                    &mut setup.indexer,
+                    "user1",
+                    &domain,
+                    DEFAULT_MAX_SIGNATURE_WAIT_TIME
+                )
+                .await
+                .is_some()
+            );
         }
     }
 
@@ -126,26 +133,30 @@ async fn test_key_resharing_simple(
         .await
         .expect("Timeout waiting for resharing to complete");
 
-    match domain.curve {
-        Curve::Secp256k1 | Curve::Edwards25519 | Curve::V2Secp256k1 => {
-            assert!(request_signature_and_await_response(
-                &mut setup.indexer,
-                "user1",
-                &domain,
-                DEFAULT_MAX_SIGNATURE_WAIT_TIME
-            )
-            .await
-            .is_some());
+    match Curve::from(domain.protocol) {
+        Curve::Secp256k1 | Curve::Edwards25519 => {
+            assert!(
+                request_signature_and_await_response(
+                    &mut setup.indexer,
+                    "user1",
+                    &domain,
+                    DEFAULT_MAX_SIGNATURE_WAIT_TIME
+                )
+                .await
+                .is_some()
+            );
         }
         Curve::Bls12381 => {
-            assert!(request_ckd_and_await_response(
-                &mut setup.indexer,
-                "user1",
-                &domain,
-                DEFAULT_MAX_SIGNATURE_WAIT_TIME
-            )
-            .await
-            .is_some());
+            assert!(
+                request_ckd_and_await_response(
+                    &mut setup.indexer,
+                    "user1",
+                    &domain,
+                    DEFAULT_MAX_SIGNATURE_WAIT_TIME
+                )
+                .await
+                .is_some()
+            );
         }
     }
 }
@@ -178,7 +189,8 @@ async fn test_key_resharing_multistage() {
 
     let domain = DomainConfig {
         id: DomainId(0),
-        curve: Curve::Secp256k1,
+        protocol: Protocol::CaitSith,
+        reconstruction_threshold: ReconstructionThreshold::new(3),
         purpose: DomainPurpose::Sign,
     };
 
@@ -211,14 +223,16 @@ async fn test_key_resharing_multistage() {
         .expect("Timeout waiting for resharing to complete");
 
     // Sanity check.
-    assert!(request_signature_and_await_response(
-        &mut setup.indexer,
-        "user0",
-        &domain,
-        DEFAULT_MAX_SIGNATURE_WAIT_TIME
-    )
-    .await
-    .is_some());
+    assert!(
+        request_signature_and_await_response(
+            &mut setup.indexer,
+            "user0",
+            &domain,
+            DEFAULT_MAX_SIGNATURE_WAIT_TIME
+        )
+        .await
+        .is_some()
+    );
 
     // Have the fifth node join.
     let mut participants_2 = setup.participants.clone();
@@ -245,14 +259,16 @@ async fn test_key_resharing_multistage() {
         .await
         .expect("Timeout waiting for resharing to complete");
 
-    assert!(request_signature_and_await_response(
-        &mut setup.indexer,
-        "user1",
-        &domain,
-        DEFAULT_MAX_SIGNATURE_WAIT_TIME
-    )
-    .await
-    .is_some());
+    assert!(
+        request_signature_and_await_response(
+            &mut setup.indexer,
+            "user1",
+            &domain,
+            DEFAULT_MAX_SIGNATURE_WAIT_TIME
+        )
+        .await
+        .is_some()
+    );
 
     // Have the sixth node join.
     setup
@@ -276,14 +292,16 @@ async fn test_key_resharing_multistage() {
         .await
         .expect("Timeout waiting for resharing to complete");
 
-    assert!(request_signature_and_await_response(
-        &mut setup.indexer,
-        "user2",
-        &domain,
-        DEFAULT_MAX_SIGNATURE_WAIT_TIME
-    )
-    .await
-    .is_some());
+    assert!(
+        request_signature_and_await_response(
+            &mut setup.indexer,
+            "user2",
+            &domain,
+            DEFAULT_MAX_SIGNATURE_WAIT_TIME
+        )
+        .await
+        .is_some()
+    );
 
     // Have the first node quit.
     let mut participants_3 = setup.participants.clone();
@@ -310,14 +328,16 @@ async fn test_key_resharing_multistage() {
         .await
         .expect("Timeout waiting for resharing to complete");
 
-    assert!(request_signature_and_await_response(
-        &mut setup.indexer,
-        "user1",
-        &domain,
-        DEFAULT_MAX_SIGNATURE_WAIT_TIME
-    )
-    .await
-    .is_some());
+    assert!(
+        request_signature_and_await_response(
+            &mut setup.indexer,
+            "user1",
+            &domain,
+            DEFAULT_MAX_SIGNATURE_WAIT_TIME
+        )
+        .await
+        .is_some()
+    );
 
     // Have the second node quit.
     let mut participants_4 = setup.participants.clone();
@@ -345,14 +365,16 @@ async fn test_key_resharing_multistage() {
         .await
         .expect("Timeout waiting for resharing to complete");
 
-    assert!(request_signature_and_await_response(
-        &mut setup.indexer,
-        "user1",
-        &domain,
-        DEFAULT_MAX_SIGNATURE_WAIT_TIME
-    )
-    .await
-    .is_some());
+    assert!(
+        request_signature_and_await_response(
+            &mut setup.indexer,
+            "user1",
+            &domain,
+            DEFAULT_MAX_SIGNATURE_WAIT_TIME
+        )
+        .await
+        .is_some()
+    );
 }
 
 /// Test that signatures during resharing
@@ -383,7 +405,8 @@ async fn test_signature_requests_in_resharing_are_processed() {
 
     let domain = DomainConfig {
         id: DomainId(0),
-        curve: Curve::Secp256k1,
+        protocol: Protocol::CaitSith,
+        reconstruction_threshold: ReconstructionThreshold::new(3),
         purpose: DomainPurpose::Sign,
     };
 
@@ -431,10 +454,9 @@ async fn test_signature_requests_in_resharing_are_processed() {
         // We're running with [serial] so querying metrics should be OK.
         if let Ok(metric) =
             metrics::MPC_CURRENT_JOB_STATE.get_metric_with_label_values(&["Resharing"])
+            && metric.get() == NUM_PARTICIPANTS as i64 - 1
         {
-            if metric.get() == NUM_PARTICIPANTS as i64 - 1 {
-                break;
-            }
+            break;
         }
         if i == 19 {
             panic!("Timeout waiting for resharing to start");

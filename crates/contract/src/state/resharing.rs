@@ -193,15 +193,15 @@ impl ResharingContractState {
 }
 #[cfg(test)]
 pub mod tests {
-    use crate::primitives::test_utils::NUM_CURVES;
+    use crate::primitives::test_utils::NUM_PROTOCOLS;
     use crate::state::{key_event::tests::find_leader, running::RunningContractState};
     use crate::{
         primitives::{
             domain::AddDomainsVotes,
             key_state::{AttemptId, KeyEventId},
             test_utils::gen_account_id,
+            threshold_votes::ThresholdParametersVotes,
             thresholds::{Threshold, ThresholdParameters},
-            votes::ThresholdParametersVotes,
         },
         state::test_utils::gen_resharing_state,
     };
@@ -347,15 +347,15 @@ pub mod tests {
     #[case(1)]
     #[case(2)]
     #[case(3)]
-    #[case(NUM_CURVES)]
-    #[case(2*NUM_CURVES)]
+    #[case(NUM_PROTOCOLS)]
+    #[case(2*NUM_PROTOCOLS)]
     fn test_resharing_contract_state(#[case] num_domains: usize) {
         test_resharing_contract_state_for(num_domains);
     }
 
     #[test]
     fn test_resharing_reproposal() {
-        let (mut env, mut state) = gen_resharing_state(NUM_CURVES);
+        let (mut env, mut state) = gen_resharing_state(NUM_PROTOCOLS);
 
         // Vote for first domain's key.
         let leader = find_leader(&state.resharing_key);
@@ -403,8 +403,7 @@ pub mod tests {
         new_participants_1.add_random_participants_till_n((old_participants.len() * 3).div_ceil(2));
         let new_participants_2 = new_participants_1
             .subset(new_participants_1.len() - old_participants.len()..new_participants_1.len());
-        let new_params_1 =
-            ThresholdParameters::new(new_participants_1, new_threshold.clone()).unwrap();
+        let new_params_1 = ThresholdParameters::new(new_participants_1, new_threshold).unwrap();
         let new_params_2 = ThresholdParameters::new(new_participants_2, new_threshold).unwrap();
         state
             .previous_running_state

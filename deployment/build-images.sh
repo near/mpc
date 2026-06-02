@@ -1,7 +1,7 @@
 #! /usr/bin/env bash
 # Script to reproducibly build the docker images for the node and launcher
 #
-# Requirements: docker, docker-buildx, jq, git, find, touch, skopeo
+# Requirements: docker, docker-buildx, git, find, touch, skopeo
 # Extra requirements if using --node or --rust-launcher: repro-env, podman
 # Extra requirements if using --push: docker must be logged in to registry
 #
@@ -60,7 +60,7 @@ require_cmds() {
   [[ "${missing}" -eq 0 ]] || die "Please install the missing dependencies above."
 }
 
-require_cmds docker jq git find touch skopeo
+require_cmds docker git find touch skopeo
 
 if $USE_NODE || $USE_RUST_LAUNCHER; then
     require_cmds repro-env podman
@@ -106,15 +106,10 @@ fi
 build_reproducible_image() {
   local image_name=$1
   local dockerfile_path=$2
-  docker buildx build --builder ${buildkit_image_name} --no-cache \
+  docker buildx build --builder "${buildkit_image_name}" --no-cache \
     --build-arg SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" \
-    --output type=docker,name=$image_name,rewrite-timestamp=true \
+    --output "type=docker,name=$image_name,rewrite-timestamp=true" \
     --progress plain -f "$dockerfile_path" .
-}
-
-get_image_hash() {
-    local image_name=$1
-    docker inspect $image_name | jq -r .[0].Id
 }
 
 # Compress a locally built image via skopeo to a temp directory.
@@ -138,27 +133,62 @@ if $USE_RUST_LAUNCHER; then
     SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH repro-env build --env SOURCE_DATE_EPOCH -- cargo build -p tee-launcher --profile reproducible --locked
     rust_launcher_binary_hash=$(sha256sum target/reproducible/tee-launcher | cut -d' ' -f1)
 
-    build_reproducible_image $RUST_LAUNCHER_IMAGE_NAME $DOCKERFILE_RUST_LAUNCHER
-    rust_launcher_image_hash=$(get_image_hash $RUST_LAUNCHER_IMAGE_NAME)
+    build_reproducible_image "$RUST_LAUNCHER_IMAGE_NAME" "$DOCKERFILE_RUST_LAUNCHER"
     rust_launcher_skopeo_dir="$(skopeo_compress "$RUST_LAUNCHER_IMAGE_NAME")"
     rust_launcher_manifest_digest="$(manifest_digest_from_dir "$rust_launcher_skopeo_dir")"
 fi
 
 if $USE_NODE || $USE_NODE_GCP; then
-    SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH repro-env build --env SOURCE_DATE_EPOCH -- cargo build -p mpc-node --profile reproducible --locked
+    # Pin jemalloc's `./configure` auto-detected values so tikv-jemalloc-sys
+    # produces identical bytes across builders. See nix/mpc-node.nix for the
+    # full rationale; values match the standard x86_64 Linux ABI.
+    #
+    # GIT_CEILING_DIRECTORIES stops jemalloc's `./configure` from walking out
+    # of `target/` and finding the surrounding mpc repo's `.git/` — without
+    # it, `git describe HEAD` returns mpc's commit SHA, which is then baked
+    # into jemalloc's VERSION file (and the linked binary's `.rodata` and
+    # `smallocx_<sha>` exported symbol). The path is the in-container
+    # workspace mount (`/build`), not the host path.
+    # Pin the C/C++ ISA for cc-crate dependencies (rocksdb, snappy, zstd,
+    # jemalloc, ...) to match the rustc target-cpu set in .cargo/config.toml.
+    # Without this, the cc crate uses the container's default `-march`, which
+    # would diverge from the Rust code's ISA expectations.
+    #
+    # PCLMUL and AES are not part of the v3 micro-arch level (per System V
+    # psABI) but are universally available on v3-capable hardware. Adding
+    # them explicitly keeps rocksdb's PCLMUL-accelerated CRC32C path
+    # compiled in. Match nix/mpc-node.nix and flake.nix.
+    # BUILT_OVERRIDE_mpc_node_GIT_VERSION pins built's GIT_VERSION so local git
+    # tags aren't embedded in the binary (which would break reproducibility).
+    SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH \
+    JEMALLOC_SYS_WITH_LG_VADDR=48 \
+    JEMALLOC_SYS_WITH_LG_PAGE=12 \
+    JEMALLOC_SYS_WITH_LG_HUGEPAGE=21 \
+    GIT_CEILING_DIRECTORIES=/build/target \
+    BUILT_OVERRIDE_mpc_node_GIT_VERSION="${GIT_COMMIT_HASH:0:7}" \
+    CFLAGS="-march=x86-64-v3 -mpclmul -maes" \
+    CXXFLAGS="-march=x86-64-v3 -mpclmul -maes" \
+    repro-env build \
+      --env SOURCE_DATE_EPOCH \
+      --env JEMALLOC_SYS_WITH_LG_VADDR \
+      --env JEMALLOC_SYS_WITH_LG_PAGE \
+      --env JEMALLOC_SYS_WITH_LG_HUGEPAGE \
+      --env GIT_CEILING_DIRECTORIES \
+      --env BUILT_OVERRIDE_mpc_node_GIT_VERSION \
+      --env CFLAGS \
+      --env CXXFLAGS \
+      -- cargo build -p mpc-node --profile reproducible --locked
     node_binary_hash=$(sha256sum target/reproducible/mpc-node | cut -d' ' -f1)
 fi
 
 if $USE_NODE; then
-    build_reproducible_image $NODE_IMAGE_NAME $DOCKERFILE_NODE
-    node_image_hash=$(get_image_hash $NODE_IMAGE_NAME)
+    build_reproducible_image "$NODE_IMAGE_NAME" "$DOCKERFILE_NODE"
     node_skopeo_dir="$(skopeo_compress "$NODE_IMAGE_NAME")"
     node_manifest_digest="$(manifest_digest_from_dir "$node_skopeo_dir")"
 fi
 
 if $USE_NODE_GCP; then
-    build_reproducible_image $NODE_GCP_IMAGE_NAME $DOCKERFILE_NODE_GCP
-    node_gcp_image_hash=$(get_image_hash $NODE_GCP_IMAGE_NAME)
+    build_reproducible_image "$NODE_GCP_IMAGE_NAME" "$DOCKERFILE_NODE_GCP"
     node_gcp_skopeo_dir="$(skopeo_compress "$NODE_GCP_IMAGE_NAME")"
     node_gcp_manifest_digest="$(manifest_digest_from_dir "$node_gcp_skopeo_dir")"
 fi
@@ -172,7 +202,10 @@ if $USE_PUSH; then
     fi
     sanitized_branch_name="${branch_name//\//-}"
 
-    short_hash=$(git rev-parse --short HEAD)
+    # Fixed 7-char truncation (not `git rev-parse --short`) so the tag is a
+    # pure function of the SHA — the Release workflow computes the same
+    # string via `${SHA::7}` when looking up the image to retag.
+    short_hash="${GIT_COMMIT_HASH:0:7}"
     image_tag="$sanitized_branch_name-$short_hash"
     echo "Using branch-hash tag: $image_tag"
 
@@ -196,15 +229,12 @@ if $USE_NODE || $USE_NODE_GCP; then
     echo "node binary hash: $node_binary_hash"
 fi
 if $USE_NODE; then
-    echo "node docker image hash: $node_image_hash"
     echo "node manifest digest: $node_manifest_digest"
 fi
 if $USE_NODE_GCP; then
-    echo "node gcp docker image hash: $node_gcp_image_hash"
     echo "node gcp manifest digest: $node_gcp_manifest_digest"
 fi
 if $USE_RUST_LAUNCHER; then
     echo "rust launcher binary hash: $rust_launcher_binary_hash"
-    echo "rust launcher docker image hash: $rust_launcher_image_hash"
     echo "rust launcher manifest digest: $rust_launcher_manifest_digest"
 fi

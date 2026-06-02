@@ -1,5 +1,6 @@
 pub mod contract_configuration;
-pub mod foreign_chain_policy;
+pub mod duplicate_requests_fan_out;
+pub mod foreign_chain_configuration;
 pub mod foreign_chain_request;
 pub mod participants_gas;
 pub mod sign;
@@ -7,7 +8,6 @@ pub mod tee;
 pub mod tee_cleanup_after_resharing;
 pub mod update_votes_cleanup_after_resharing;
 pub mod upgrade_from_current_contract;
-#[expect(non_snake_case)]
 pub mod upgrade_to_current_contract;
 pub mod user_views;
 pub mod vote;

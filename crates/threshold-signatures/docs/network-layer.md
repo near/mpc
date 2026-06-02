@@ -84,7 +84,7 @@ In the following description, if a participant $i$ receives a message from a par
 4. $\bullet$ Each participant $i$ waits to receive either a message $(\mathbf{ECHO}, m_i^j)$ - respectively $(\mathbf{READY}, m_i^j)$ - from participant $j$
 
 5. Each participant $i$ stores $(\mathbf{ECHO}, m_i^j)$, resp. $(\mathbf{READY}, m_i^j)$.
-If $(\mathbf{ECHO},m_i^j)$ - resp. $(\mathbf{READY}, m_i^j)$ - has not been previously stored, then store it along with a counter initialized to $1$. 
+If $(\mathbf{ECHO},m_i^j)$ - resp. $(\mathbf{READY}, m_i^j)$ - has not been previously stored, then store it along with a counter initialized to $1$.
 Otherwise, increase the corresponding counter by $1$.
 
 6. $\star$ Once a counter for a message $(\mathbf{ECHO}, m)$ is greater than $~>\frac{N+\mathsf{MaxFaulty}}{2}$, send a $(\mathbf{READY}, m)$ to every participant $i$

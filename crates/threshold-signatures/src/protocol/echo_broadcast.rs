@@ -1,10 +1,10 @@
 use crate::participants::{ParticipantCounter, ParticipantList, ParticipantMap};
 use crate::protocol::ProtocolError;
 use crate::protocol::{
-    internal::{SharedChannel, Waitpoint},
     Participant,
+    internal::{SharedChannel, Waitpoint},
 };
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// This structure is essential for the reliable broadcast protocol
 /// Send is used in the first phase, Echo in the second, and Ready
@@ -165,7 +165,7 @@ where
             reliable_broadcast_receive_all MUST take a vote of
             type send_vote as input"
                     .to_string(),
-            ))
+            ));
         }
     };
     let mut is_simulated_vote = true;
@@ -179,7 +179,7 @@ where
             match chan.recv(wait).await {
                 Ok(value) => (from, (sid, vote)) = value,
                 _ => continue,
-            };
+            }
         }
 
         is_simulated_vote = false;
@@ -350,7 +350,7 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::protocol::internal::{make_protocol, Comms};
+    use crate::protocol::internal::{Comms, make_protocol};
     use crate::protocol::{Protocol, ProtocolError};
     use crate::test_utils::{generate_participants, run_protocol};
 
@@ -376,7 +376,7 @@ mod test {
         participants: &[Participant],
         me: Participant,
         data: bool,
-    ) -> Result<impl Protocol<Output = Vec<bool>>, ProtocolError> {
+    ) -> Result<impl Protocol<Output = Vec<bool>> + use<>, ProtocolError> {
         let participants = ParticipantList::new(participants).unwrap();
 
         if !participants.contains(me) {
@@ -467,7 +467,7 @@ mod test {
         participants: &[Participant],
         me: Participant,
         do_broadcast_dishonest_consume: F,
-    ) -> Result<impl Protocol<Output = Vec<bool>>, ProtocolError>
+    ) -> Result<impl Protocol<Output = Vec<bool>> + use<F, Fut>, ProtocolError>
     where
         F: FnOnce(SharedChannel, ParticipantList, Participant) -> Fut,
         Fut: futures::Future<Output = Result<Vec<bool>, ProtocolError>> + Send + 'static,

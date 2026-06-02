@@ -4,10 +4,9 @@ dependencies = [
   "crate-names",
   "kebab-file-names",
   "todo-format",
+  "editorconfig",
   "assert-matches",
   "use-in-fn",
-  "ruff-format",
-  "ruff-check",
   "fmt",
   "cargo-sort",
   "cargo-shear",
@@ -73,14 +72,6 @@ args = [
   "--locked",
 ]
 
-[tasks.ruff-format]
-command = "ruff"
-args = ["format", "--diff", "--exclude", "libs/nearcore"]
-
-[tasks.ruff-check]
-command = "ruff"
-args = ["check", "--diff", "--exclude", "libs/nearcore"]
-
 [tasks.zizmor]
 command = "zizmor"
 args = [".github/"]
@@ -97,6 +88,10 @@ args = ["scripts/check-kebab-case-files.sh"]
 command = "bash"
 args = ["scripts/check-todo-format.sh"]
 
+[tasks.editorconfig]
+description = "Enforce .editorconfig rules across all tracked files"
+command = "editorconfig-checker"
+
 [tasks.check-contract-size]
 description = "Check reproducible contract WASM size against baseline"
 command = "bash"
@@ -109,8 +104,8 @@ args = ["scripts/check-assert-matches.sh"]
 
 [tasks.use-in-fn]
 description = "Check for use statements inside function bodies"
-command = "python"
-args = ["scripts/check-use-in-fn.py"]
+command = "ast-grep"
+args = ["scan", "--rule", "lints/no-use-in-fn.yml", "crates/"]
 
 [tasks.cargo-deny]
 description = "Run cargo deny"
@@ -144,7 +139,7 @@ command = "bash"
 args = ["scripts/check-sandbox-image-version.sh"]
 
 # These build tasks are the single source of truth for both local and CI builds.
-# CI (`mpc-pytest-build` and `mpc-e2e-tests` jobs) invokes them via `cargo make`.
+# CI's `mpc-e2e-tests` job invokes them via `cargo make`.
 # All three are skipped when `E2E_SKIP_BUILD` is set (used by `e2e-tests-skip-build`).
 
 [tasks.build-mpc-node-network-hardship-simulation]
@@ -164,9 +159,12 @@ args = [
 [tasks.build-mpc-contract-optimized]
 description = "Build the mpc-contract WASM used by the E2E tests"
 condition = { env_not_set = ["E2E_SKIP_BUILD"] }
+# `--enable-bulk-memory` and `--enable-nontrapping-float-to-int` mirror what
+# `cargo near build` passes to wasm-opt; rustc >= 1.87 emits both feature
+# sets by default, so wasm-opt must accept them to validate the input.
 script = [
   "cargo build -p mpc-contract --target=wasm32-unknown-unknown --profile=release-contract --locked",
-  "wasm-opt -Oz target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm -o target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm",
+  "wasm-opt -Oz --enable-bulk-memory --enable-nontrapping-float-to-int target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm -o target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm",
 ]
 
 [tasks.build-test-parallel-contract-optimized]
@@ -174,8 +172,14 @@ description = "Build the test-parallel-contract WASM used by the E2E tests"
 condition = { env_not_set = ["E2E_SKIP_BUILD"] }
 script = [
   "cargo build -p test-parallel-contract --target=wasm32-unknown-unknown --profile=release-contract --locked",
-  "wasm-opt -Oz target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm -o target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm",
+  "wasm-opt -Oz --enable-bulk-memory --enable-nontrapping-float-to-int target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm -o target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm",
 ]
+
+[tasks.build-backup-cli]
+description = "Build the backup-cli binary used by the E2E migration tests"
+condition = { env_not_set = ["E2E_SKIP_BUILD"] }
+command = "cargo"
+args = ["build", "-p", "backup-cli", "--release", "--locked"]
 
 # Kill orphan mpc-node processes left over from interrupted test runs.
 # Ports are deterministic per test, so orphans from a previous run block the next one.
@@ -194,6 +198,7 @@ dependencies = [
   "build-mpc-node-network-hardship-simulation",
   "build-mpc-contract-optimized",
   "build-test-parallel-contract-optimized",
+  "build-backup-cli",
 ]
 command = "cargo"
 args = [

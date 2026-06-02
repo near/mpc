@@ -1,7 +1,7 @@
 use super::Keyshare;
 use crate::db::{decrypt, encrypt};
 use aes_gcm::{Aes128Gcm, KeyInit};
-use mpc_contract::primitives::key_state::{EpochId, KeyEventId};
+use mpc_primitives::{EpochId, KeyEventId};
 use std::path::PathBuf;
 use tokio::io::AsyncWriteExt;
 
@@ -149,7 +149,7 @@ impl PendingKeyshareStorageHandle {
 mod tests {
     use crate::keyshare::temporary::TemporaryKeyStorage;
     use crate::keyshare::test_utils::generate_dummy_keyshare;
-    use mpc_contract::primitives::key_state::EpochId;
+    use mpc_primitives::EpochId;
     use rand::SeedableRng as _;
 
     #[tokio::test]
@@ -174,10 +174,12 @@ mod tests {
             .start_generating_keyshare(key1.key_id)
             .await
             .unwrap();
-        assert!(storage
-            .start_generating_keyshare(key1.key_id)
-            .await
-            .is_err());
+        assert!(
+            storage
+                .start_generating_keyshare(key1.key_id)
+                .await
+                .is_err()
+        );
         handle1.commit_keyshare(key1.clone()).await.unwrap();
 
         let handle2 = storage

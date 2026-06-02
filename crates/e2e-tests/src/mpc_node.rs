@@ -1,3 +1,4 @@
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 
@@ -59,6 +60,10 @@ impl MpcNode {
 
     pub fn pprof_address(&self) -> String {
         format!("127.0.0.1:{}", self.setup.ports.pprof)
+    }
+
+    pub fn migration_web_ui_address(&self) -> String {
+        format!("127.0.0.1:{}", self.setup.ports.migration_web_ui)
     }
 
     /// Scrapes the node's `/metrics` HTTP endpoint and returns the value of
@@ -143,6 +148,9 @@ pub struct MpcNodeSetup {
     triples_to_buffer: usize,
     presignatures_to_buffer: usize,
 
+    // Foreign chains configuration
+    foreign_chains_config: mpc_node_config::ForeignChainsConfig,
+
     // Config file path (written on creation)
     config_path: PathBuf,
 }
@@ -182,6 +190,7 @@ impl MpcNodeSetup {
             backup_encryption_key_hex,
             triples_to_buffer: args.triples_to_buffer,
             presignatures_to_buffer: args.presignatures_to_buffer,
+            foreign_chains_config: args.foreign_chains_config,
             config_path,
         };
 
@@ -208,6 +217,38 @@ impl MpcNodeSetup {
     /// The node's home directory (logs, config, data).
     pub fn home_dir(&self) -> &std::path::Path {
         &self.home_dir
+    }
+
+    /// The node's backup encryption key as a hex string.
+    pub fn backup_encryption_key_hex(&self) -> &str {
+        &self.backup_encryption_key_hex
+    }
+
+    /// The node's P2P signing key.
+    pub fn p2p_signing_key(&self) -> &SigningKey {
+        &self.p2p_signing_key
+    }
+
+    /// The node's NEAR signer key.
+    pub fn near_signer_key(&self) -> &SigningKey {
+        &self.near_signer_key
+    }
+
+    /// The NEAR signer public key formatted as `"ed25519:<base58>"`.
+    pub fn near_signer_public_key_str(&self) -> String {
+        String::from(&Ed25519PublicKey::from(
+            &self.near_signer_key.verifying_key(),
+        ))
+    }
+
+    /// Path to the mpc-node binary.
+    pub fn binary_path(&self) -> &std::path::Path {
+        &self.binary_path
+    }
+
+    /// The MPC contract account ID.
+    pub fn mpc_contract_id(&self) -> &AccountId {
+        &self.mpc_contract_id
     }
 
     /// Fully reset the node by wiping its home directory.
@@ -361,8 +402,10 @@ impl MpcNodeSetup {
                 download_genesis: false,
                 download_genesis_url: None,
                 download_genesis_records_url: None,
-                rpc_addr: Some(format!("0.0.0.0:{}", self.ports.near_rpc)),
-                network_addr: Some(format!("0.0.0.0:{}", self.ports.near_network)),
+                rpc_addr: Some(SocketAddr::from(([0, 0, 0, 0], self.ports.near_rpc))),
+                network_addr: Some(SocketAddr::from(([0, 0, 0, 0], self.ports.near_network))),
+                tier3_public_addr: None,
+                external_storage_fallback_threshold: None,
             }),
             node: ConfigFile {
                 my_near_account_id: signer.clone(),
@@ -394,9 +437,9 @@ impl MpcNodeSetup {
                 signature: SignatureConfig { timeout_sec: 60 },
                 ckd: CKDConfig { timeout_sec: 60 },
                 keygen: KeygenConfig { timeout_sec: 60 },
-                foreign_chains: Default::default(),
+                foreign_chains: self.foreign_chains_config.clone(),
             },
-            pccs_url: mpc_node_config::default_pccs_url(),
+            pccs_endpoints: mpc_node_config::default_pccs_endpoints(),
         };
 
         let toml_string =
@@ -427,6 +470,8 @@ pub struct MpcNodeSetupArgs {
     pub near_genesis_path: PathBuf,
     /// Boot nodes string: `"ed25519:<pubkey>@127.0.0.1:<port>"`.
     pub near_boot_nodes: String,
+    /// Foreign chains configuration for this node.
+    pub foreign_chains_config: mpc_node_config::ForeignChainsConfig,
 }
 
 /// Ports allocated for a single MPC node.

@@ -3,28 +3,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_crypto_types::Ed25519PublicKey;
 use serde::{Deserialize, Serialize};
 
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-    derive_more::Deref,
-    derive_more::From,
-    derive_more::Into,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
-)]
-pub struct ParticipantId(pub u32);
+pub use mpc_primitives::ParticipantId;
 
 #[derive(
     Clone,
@@ -45,7 +24,7 @@ pub struct ParticipantId(pub u32);
 )]
 pub struct ParticipantInfo {
     pub url: String,
-    pub sign_pk: Ed25519PublicKey,
+    pub tls_public_key: Ed25519PublicKey,
 }
 
 /// DTO representation of the contract-internal `Participants` type.
@@ -80,18 +59,18 @@ mod tests {
         let participants_json = Participants {
             next_id: ParticipantId(1),
             participants: vec![(
-                AccountId("alice.near".to_string()),
+                "alice.near".parse().unwrap(),
                 ParticipantId(0),
                 ParticipantInfo {
                     url: "https://alice.com".to_string(),
-                    sign_pk: test_key(),
+                    tls_public_key: test_key(),
                 },
             )],
         };
 
         let json = serde_json::to_string(&participants_json).unwrap();
         let expected = format!(
-            r#"{{"next_id":1,"participants":[["alice.near",0,{{"url":"https://alice.com","sign_pk":"{TEST_KEY_STR}"}}]]}}"#,
+            r#"{{"next_id":1,"participants":[["alice.near",0,{{"url":"https://alice.com","tls_public_key":"{TEST_KEY_STR}"}}]]}}"#,
         );
         assert_eq!(json, expected);
     }
@@ -99,7 +78,7 @@ mod tests {
     #[test]
     fn test_deserialize_vec_format() {
         let json = format!(
-            r#"{{"next_id":1,"participants":[["alice.near",0,{{"url":"https://alice.com","sign_pk":"{TEST_KEY_STR}"}}]]}}"#,
+            r#"{{"next_id":1,"participants":[["alice.near",0,{{"url":"https://alice.com","tls_public_key":"{TEST_KEY_STR}"}}]]}}"#,
         );
         let deserialized: Participants = serde_json::from_str(&json).unwrap();
         assert_eq!(
@@ -107,11 +86,11 @@ mod tests {
             Participants {
                 next_id: ParticipantId(1),
                 participants: vec![(
-                    AccountId("alice.near".to_string()),
+                    "alice.near".parse().unwrap(),
                     ParticipantId(0),
                     ParticipantInfo {
                         url: "https://alice.com".to_string(),
-                        sign_pk: test_key(),
+                        tls_public_key: test_key(),
                     },
                 )],
             }

@@ -5,6 +5,7 @@ pub mod participants;
 pub mod signature;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;
+pub mod threshold_votes;
 pub mod thresholds;
 pub mod votes;
 

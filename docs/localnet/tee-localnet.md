@@ -2,7 +2,7 @@
 
 This guide explains how to create and test a **Multi-Party Computation (MPC)** network on a local blockchain (localnet), where each MPC node runs inside a **Confidential Virtual Machine (CVM)**.
 
-It builds upon the [Localnet Setup Guide](https://github.com/near/mpc/blob/main/docs/localnet/localnet.md), which describes how to launch a local blockchain network.  
+It builds upon the [Localnet Setup Guide](https://github.com/near/mpc/blob/main/docs/localnet/localnet.md), which describes how to launch a local blockchain network.
 However, instead of running MPC nodes as local binaries, this setup runs each MPC node inside a CVM, where the MPC node itself runs as a Docker container.
 
 For details on how to set up a TDX-based Confidential VM and prepare the DStack environment, refer to the [Running an MPC Node in TDX External Guide](https://github.com/near/mpc/blob/main/docs/running-an-mpc-node-in-tdx-external-guide.md).
@@ -11,16 +11,16 @@ For details on how to set up a TDX-based Confidential VM and prepare the DStack 
 
 ## High-Level Steps
 
-1. Prepare a TDX-enabled setup as described in the [TDX Guide](https://github.com/near/mpc/blob/main/docs/running-an-mpc-node-in-tdx-external-guide.md).  
-2. Prepare the localnet setup as described in the [Localnet Setup Guide](https://github.com/near/mpc/blob/main/docs/localnet/localnet.md), excluding the startup of the MPC nodes.  
-3. Start two MPC nodes that will run inside CVMs.  
-4. Extract the public keys from the nodes and add them to the contract and user accounts.  
-5. Vote for a new MPC Docker image hash on the contract.  
-6. Vote to add a domain to the contract.  
+1. Prepare a TDX-enabled setup as described in the [TDX Guide](https://github.com/near/mpc/blob/main/docs/running-an-mpc-node-in-tdx-external-guide.md).
+2. Prepare the localnet setup as described in the [Localnet Setup Guide](https://github.com/near/mpc/blob/main/docs/localnet/localnet.md), excluding the startup of the MPC nodes.
+3. Start two MPC nodes that will run inside CVMs.
+4. Extract the public keys from the nodes and add them to the contract and user accounts.
+5. Vote for a new MPC Docker image hash on the contract.
+6. Vote to add a domain to the contract.
 7. Send a `sign` command to the network.
 
 ---
-## Step 1: Prepare a TDX-enabled setup 
+## Step 1: Prepare a TDX-enabled setup
 Follow the [TDX Guide](https://github.com/near/mpc/blob/main/docs/running-an-mpc-node-in-tdx-external-guide.md). Up until (but not including **MPC Node Setup and Deployment**
 )
 
@@ -72,8 +72,8 @@ There are additional ports defined in frodo/sam.env, but you may change those to
 Those are the recommended configuration settings:
 you will need the following files:
 
-* [docker-compose.yml](../../deployment/cvm-deployment/launcher_docker_compose.yaml)
-* [frodo.toml](../../deployment/localnet/tee/frodo.toml) / [sam.toml](../../deployment/localnet/tee/sam.toml) 
+* [launcher_docker_compose.yaml.template](../../crates/contract/assets/launcher_docker_compose.yaml.template) — rendered with the launcher and MPC node manifest digests before deployment (see below)
+* [frodo.toml](../../deployment/localnet/tee/frodo.toml) / [sam.toml](../../deployment/localnet/tee/sam.toml)
 * [frodo.env](../../deployment/localnet/tee/frodo.env)/ [sam.env](../../deployment/localnet/tee/sam.env)    - if you use the deployment script
 
 
@@ -84,22 +84,20 @@ mkdir -p "/tmp/$USER"
 ```
 
 
-Concfiguratoin fields in `docker-compose.yml`
+Set the launcher and MPC node manifest digests in the env file
+(`LAUNCHER_MANIFEST_DIGEST` and `MPC_MANIFEST_DIGEST`). `deploy-launcher.sh`
+renders the contract template at deploy time, substituting these digests
+into the `image:` and `DEFAULT_IMAGE_DIGEST` fields.
 
-Update to use the correct launcher image: (note - this must match the launcher template defined in the MPC contract)
+Example values:
 
-```yaml
-image: nearone/mpc-launcher@sha256:bab4577e61bebcbcbed9fff22dd5fa741ded51465671638873af8a43e8f7373b
+```bash
+LAUNCHER_MANIFEST_DIGEST=sha256:bab4577e61bebcbcbed9fff22dd5fa741ded51465671638873af8a43e8f7373b
+MPC_MANIFEST_DIGEST=sha256:abc...
 ```
 
-Update to use the correct MPC node image hash:
 
-```yaml
-DEFAULT_IMAGE_DIGEST=sha256:abc
-```
-
-
-Define the machine's external IP once  
+Define the machine's external IP once
 
 ```bash
 export MACHINE_IP=$(curl -4 -s ifconfig.me)  # or use known IP for the machine
@@ -107,11 +105,11 @@ export MACHINE_IP=$(curl -4 -s ifconfig.me)  # or use known IP for the machine
 
 #### Environment File (`frodo/sam.toml`, `frodo/sam.env`)
 
-The `image` field in `frodo.toml` / `sam.toml` must point to the same repository whose manifest digest is set as `DEFAULT_IMAGE_DIGEST` in the docker-compose file above.
+The `image_reference` field in `frodo.toml` / `sam.toml` must point to the same repository whose manifest digest is set as `MPC_MANIFEST_DIGEST` in the env file.
 
-For example, if the compose file has:
-```yaml
-DEFAULT_IMAGE_DIGEST=sha256:5d1e604dcf3197f8b465c854f8073eaa89b9733f646248d59f86a15b81110ef5
+For example, if the env has:
+```bash
+MPC_MANIFEST_DIGEST=sha256:eb4e3b75d439b77689534df6a69b542e779989f10b681ac43787a58e7c4aefdb
 ```
 
 Then the TOML files should have:
@@ -120,7 +118,7 @@ Then the TOML files should have:
 image_reference = "nearone/mpc-node"
 ```
 
-The launcher combines these at runtime: `docker pull nearone/mpc-node@sha256:5d1e604d...`
+The launcher combines these at runtime: `docker pull nearone/mpc-node@sha256:eb4e3b75d...`
 
 Get the manifest digest for an image tag with:
 ```bash
@@ -134,56 +132,61 @@ You can start the nodes **manually** as described in the Operator Guide, or you 
 
 Once all paths and configuration files (`*.env` and `*.toml`) are prepared, you can launch each MPC node (Frodo and Sam) using the `deploy-launcher.sh` helper script.
 
-#### 1. Move into the `deployment/cvm-deployment` Directory
+All commands below are run from the **repo root** unless noted otherwise.
+
+#### 1. Copy the TOML config files into place
+
+The `.env` files reference `/tmp/$USER/frodo.toml` and `/tmp/$USER/sam.toml` via `USER_CONFIG_FILE_PATH`, so the checked-in templates need to land there before deployment:
+
+```bash
+cp deployment/localnet/tee/frodo.toml "/tmp/$USER/frodo.toml"
+cp deployment/localnet/tee/sam.toml   "/tmp/$USER/sam.toml"
+```
+
+The TOML files already contain a working `boot_nodes` entry pointing at `10.0.2.2:24566` — the QEMU slirp gateway inside the CVM, which routes to the host's loopback and works regardless of whether `neard` binds to `0.0.0.0` or `127.0.0.1` on the host (see #2949). `MACHINE_IP` is still needed for externally-reachable endpoints (public-data, telemetry) and should remain set.
+
+#### 2. Move into the `deployment/cvm-deployment` Directory
 
 ```bash
 cd deployment/cvm-deployment
 ```
 
-#### 2. Ensure the Script Is Executable
+#### 3. Ensure the Script Is Executable
 
 ```bash
 chmod +x deploy-launcher.sh
 ```
-#### 3. Set your env variables 
+
+#### 4. Set your env variables
 
 Set your `BASE_PATH` to the DStack directory that contains the `vmm` folder.
 
-Example:  
+Example:
 `$BASE_PATH/vmm/src/vmm-cli.py` should exist.
 
 ```bash
 export BASE_PATH="dstask base path"
 ```
 
-#### 4. Replace ${MACHINE_IP} inside the config files
-```bash
-envsubst '${MACHINE_IP}' < deployment/localnet/tee/frodo.toml > "/tmp/$USER/frodo.toml"
-```
-
-```bash
-envsubst '${MACHINE_IP}' < deployment/localnet/tee/sam.toml > "/tmp/$USER/sam.toml"
-```
-
 #### 5. Start the Frodo MPC Node
 
 ```bash
 ./deploy-launcher.sh \
-  --env-file ../deployment/localnet/tee/frodo.env \
+  --env-file ../localnet/tee/frodo.env \
   --base-path $BASE_PATH \
   --python-exec python
 ```
 
-#### 5. Start the Sam MPC Node
+#### 6. Start the Sam MPC Node
 
 ```bash
 ./deploy-launcher.sh \
-  --env-file ../deployment/localnet/tee/sam.env \
+  --env-file ../localnet/tee/sam.env \
   --base-path $BASE_PATH \
   --python-exec python
 ```
 
-If successful, each command will output an **App ID** and confirm creation of a **CVM instance** (e.g., `Created VM with ID: …`).  
+If successful, each command will output an **App ID** and confirm creation of a **CVM instance** (e.g., `Created VM with ID: …`).
 Your MPC nodes are now running inside TDX-backed CVMs and ready to participate in the network.
 
 ## Extracting Keys from MPC Nodes
@@ -209,24 +212,25 @@ export MPC_HOST=$MACHINE_IP
 
 ### Add the Keys to User Accounts
 
-Now, add these keys to the appropriate NEAR accounts using the NEAR CLI:
+Now, add these keys to the appropriate NEAR accounts using the NEAR CLI. The
+empty `--function-names ''` grants each key access to all methods on the MPC
+contract (still scoped to it via `--contract-account-id`), so the keys do not
+break when a release adds a method the node must call.
 
 ```bash
-NODE_METHODS="respond,respond_ckd,respond_verify_foreign_tx,vote_pk,start_keygen_instance,vote_reshared,vote_foreign_chain_policy,start_reshare_instance,vote_abort_key_event_instance,verify_tee,submit_participant_info,conclude_node_migration"
+near account add-key frodo.test.near grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names '' use-manually-provided-public-key "$FRODO_PUBKEY" network-config mpc-localnet sign-with-keychain send
+near account add-key frodo.test.near grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names '' use-manually-provided-public-key "$FRODO_RESPONDER_KEY" network-config mpc-localnet sign-with-keychain send
 
-near account add-key frodo.test.near grant-function-call-access --allowance '1 NEAR' --contract-account-id mpc-contract.test.near --function-names "$NODE_METHODS" use-manually-provided-public-key "$FRODO_PUBKEY" network-config mpc-localnet sign-with-keychain send
-near account add-key frodo.test.near grant-function-call-access --allowance '1 NEAR' --contract-account-id mpc-contract.test.near --function-names "$NODE_METHODS" use-manually-provided-public-key "$FRODO_RESPONDER_KEY" network-config mpc-localnet sign-with-keychain send
-
-near account add-key sam.test.near grant-function-call-access --allowance '1 NEAR' --contract-account-id mpc-contract.test.near --function-names "$NODE_METHODS" use-manually-provided-public-key "$SAM_PUBKEY" network-config mpc-localnet sign-with-keychain send
-near account add-key sam.test.near grant-function-call-access --allowance '1 NEAR' --contract-account-id mpc-contract.test.near --function-names "$NODE_METHODS" use-manually-provided-public-key "$SAM_RESPONDER_KEY" network-config mpc-localnet sign-with-keychain send
+near account add-key sam.test.near grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names '' use-manually-provided-public-key "$SAM_PUBKEY" network-config mpc-localnet sign-with-keychain send
+near account add-key sam.test.near grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names '' use-manually-provided-public-key "$SAM_RESPONDER_KEY" network-config mpc-localnet sign-with-keychain send
 ```
 
 ### Initialize the MPC Contract
 
-Move to MPC root folder:
+Move back to the MPC repo root (we are currently in `deployment/cvm-deployment/`):
 
 ```bash
-cd ..
+cd ../..
 ```
 
 Initialize the MPC contract with the two participants (using the `P2P_KEY` values retrieved earlier).
@@ -253,8 +257,8 @@ near contract call-function as-read-only mpc-contract.test.near state json-args 
 
 ## Voting for a New MPC Docker Image Hash
 
-Before voting, the contract’s list of valid MPC image hashes is empty.  
-Therefor, node attestation submissions will fail.
+Before voting, the contract’s list of valid MPC image hashes is empty.
+Therefore, node attestation submissions will fail.
 
 **Sample Error Log (Expected Before Voting):**
 
@@ -265,7 +269,7 @@ mpc_node::indexer::tx_sender: sending tx 381yxJCV5ByYo27oD8fX3BsGwnFpfGSzNCgDpfQ
 ERROR mpc_node::tee::remote_attestation: failed to submit attestation cause=attestation submission was not executed
 ```
 
-You can view the trasaction details by calling:
+You can view the transaction details by calling:
 
 ```bash
 near transaction view-status <transaction_Id> network-config mpc-localnet
@@ -284,10 +288,10 @@ for example:
 export CODE_HASH=7c0ee6d08f253f7f890883ce4d64c387aab0d1a192a8a827f7db8cdf55a6a3b8
 ```
 
-Note: this hash should be the same as the one used in the  **launcher_docker_compose.yaml**
+Note: this hash should be the same as the `MPC_MANIFEST_DIGEST` set in the env file.
 
 ```text
-DEFAULT_IMAGE_DIGEST=sha256:7c0ee6d08f253f7f890883ce4d64c387aab0d1a192a8a827f7db8cdf55a6a3b8
+MPC_MANIFEST_DIGEST=sha256:7c0ee6d08f253f7f890883ce4d64c387aab0d1a192a8a827f7db8cdf55a6a3b8
 ```
 
 ```bash
@@ -308,10 +312,16 @@ near contract call-function as-transaction mpc-contract.test.near vote_code_hash
 ### Vote for Launcher Image Hash
 
 A launcher image hash must also be voted in so that compose hashes can be derived.
-Extract the launcher hash from `deployment/cvm-deployment/launcher_docker_compose.yaml`:
+
+You set `LAUNCHER_MANIFEST_DIGEST` in `deployment/localnet/tee/frodo.env` / `sam.env` for the deploy. Those files are sourced by `deploy-launcher.sh` but not by your interactive shell — re-export the value here. Either re-source the env file or paste the same hex directly:
 
 ```bash
-export LAUNCHER_HASH=$(grep -E 'nearone/mpc-launcher@sha256:' deployment/cvm-deployment/launcher_docker_compose.yaml | head -n1 | sed -E 's/.*sha256:([0-9a-f]{64}).*/\1/')
+# Option A: pull from the env file you already edited
+set -a; source deployment/localnet/tee/frodo.env; set +a   # frodo and sam should match
+export LAUNCHER_HASH="${LAUNCHER_MANIFEST_DIGEST#sha256:}"
+
+# Option B: paste the same hex you put in the .env (no 'sha256:' prefix)
+export LAUNCHER_HASH=<launcher digest hex>
 ```
 
 ```bash
@@ -365,8 +375,8 @@ You should see both nodes with valid attestations containing a `tls_public_key` 
 
 ## Add a Domain
 
-Now the contract should be initialized and both nodes should be running.  
-To verify that the network is functional, request a signature from it.  
+Now the contract should be initialized and both nodes should be running.
+To verify that the network is functional, request a signature from it.
 Before that, add a domain.
 
 Both Frodo and Sam should vote to add a **Secp256k1** domain:
@@ -399,7 +409,7 @@ In the MPC node's logs you should see something like this:
 
 ```bash
 near contract call-function as-transaction mpc-contract.test.near sign \
-  file-args docs/localnet/args/sign.json \
+  file-args docs/localnet/args/sign_ecdsa.json \
   prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' \
   sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
 ```
@@ -428,7 +438,7 @@ near contract call-function as-transaction mpc-contract.test.near sign \
 
 ## Troubleshooting
 
-You can view trascation using:
+You can view a transaction using:
 ```bash
 near transaction view-status <transaction_Id>  network-config mpc-localnet
 ```

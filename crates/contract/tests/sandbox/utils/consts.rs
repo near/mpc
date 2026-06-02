@@ -1,15 +1,15 @@
 use std::time::Duration;
 
-use near_mpc_contract_interface::types::Curve;
+use near_mpc_contract_interface::types::Protocol;
 use near_sdk::{Gas, NearToken};
 
 /* --- Protocol defaults --- */
 pub const PARTICIPANT_LEN: usize = 10;
-pub const ALL_CURVES: &[Curve; 4] = &[
-    Curve::Secp256k1,
-    Curve::Edwards25519,
-    Curve::Bls12381,
-    Curve::V2Secp256k1,
+pub const ALL_PROTOCOLS: &[Protocol; 4] = &[
+    Protocol::CaitSith,
+    Protocol::Frost,
+    Protocol::ConfidentialKeyDerivation,
+    Protocol::DamgardEtAl,
 ];
 
 /* --- Gas constants --- */
@@ -17,7 +17,7 @@ pub const ALL_CURVES: &[Curve; 4] = &[
 /// gas attachment; in practice, nodes usually attach the maximum available gas. For testing,
 /// we use this constant to attach a fixed amount to each call and detect if gas usage
 /// increases unexpectedly in the future.
-pub const GAS_FOR_VOTE_RESHARED: Gas = Gas::from_tgas(34);
+pub const GAS_FOR_VOTE_RESHARED: Gas = Gas::from_tgas(44);
 pub const GAS_FOR_VOTE_PK: Gas = Gas::from_tgas(22);
 pub const GAS_FOR_VOTE_CANCEL_KEYGEN: Gas = Gas::from_tgas(5);
 pub const GAS_FOR_VOTE_CANCEL_RESHARING: Gas = Gas::from_tgas(5);
@@ -35,7 +35,7 @@ pub const GAS_FOR_VOTE_BEFORE_THRESHOLD: Gas = Gas::from_tgas(5);
 /// Maximum gas expected for the threshold vote that triggers the contract update.
 /// This vote is more expensive because it deploys the new contract code and executes
 /// the migration function.
-pub const MAX_GAS_FOR_THRESHOLD_VOTE: Gas = Gas::from_tgas(185);
+pub const MAX_GAS_FOR_THRESHOLD_VOTE: Gas = Gas::from_tgas(190);
 
 /* --- Deposit constants --- */
 /// This is the current deposit required for a contract deploy. This is subject to change but make

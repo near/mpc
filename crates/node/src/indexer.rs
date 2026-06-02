@@ -13,30 +13,24 @@ use crate::{
 use self::stats::IndexerStats;
 use anyhow::Context;
 use handler::ChainBlockUpdate;
-use mpc_contract::{
-    primitives::signature::YieldIndex,
-    tee::{
-        proposal::{LauncherDockerComposeHash, NodeImageHash},
-        tee_state::NodeId,
-    },
-};
+use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash};
 use near_account_id::AccountId;
 use near_async::{
     messaging::CanSendAsync, multithread::MultithreadRuntimeHandle, tokio::TokioRuntimeHandle,
 };
-use near_client::{client_actor::ClientActor, RpcHandlerActor, Status, ViewClientActor};
+use near_client::{RpcHandlerActor, Status, ViewClientActor, client_actor::ClientActor};
 use near_indexer::near_primitives::transaction::SignedTransaction;
 use near_indexer_primitives::{
     types::{BlockReference, Finality},
     views::{BlockView, QueryRequest, QueryResponseKind},
 };
 use near_mpc_contract_interface::method_names::{
-    ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_LAUNCHER_COMPOSE_HASHES, GET_ATTESTATION,
-    GET_FOREIGN_CHAIN_POLICY, GET_FOREIGN_CHAIN_POLICY_PROPOSALS, GET_PENDING_CKD_REQUEST,
-    GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, GET_TEE_ACCOUNTS, MIGRATION_INFO,
-    STATE,
+    ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_FOREIGN_CHAIN_PROVIDERS, ALLOWED_LAUNCHER_COMPOSE_HASHES,
+    GET_ATTESTATION, GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST,
+    GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, GET_SUPPORTED_FOREIGN_CHAINS, GET_TEE_ACCOUNTS,
+    MIGRATION_INFO, STATE,
 };
-use near_mpc_contract_interface::types as dtos;
+use near_mpc_contract_interface::types::{self as dtos, YieldIndex};
 use participants::ContractState;
 use serde::Deserialize;
 use std::{future::Future, sync::Arc, time::Duration};
@@ -90,7 +84,7 @@ impl IndexerState {
 }
 
 #[derive(Clone)]
-struct IndexerViewClient {
+pub(crate) struct IndexerViewClient {
     view_client: MultithreadRuntimeHandle<ViewClientActor>,
 }
 
@@ -267,24 +261,52 @@ impl IndexerViewClient {
         }
     }
 
-    pub(crate) async fn get_foreign_chain_policy(
+    pub(crate) async fn get_supported_chains(
         &self,
         mpc_contract_id: &AccountId,
-    ) -> anyhow::Result<dtos::ForeignChainPolicy> {
+    ) -> anyhow::Result<dtos::SupportedForeignChains> {
         let (_height, policy) = self
-            .get_mpc_state(mpc_contract_id.clone(), GET_FOREIGN_CHAIN_POLICY)
+            .get_mpc_state(mpc_contract_id.clone(), GET_SUPPORTED_FOREIGN_CHAINS)
             .await?;
         Ok(policy)
     }
 
-    pub(crate) async fn get_foreign_chain_policy_proposals(
+    /// Borsh-decoding view-fn query (`get_mpc_state` is JSON-only).
+    pub(crate) async fn get_allowed_foreign_chain_providers(
         &self,
-        mpc_contract_id: &AccountId,
-    ) -> anyhow::Result<dtos::ForeignChainPolicyVotes> {
-        let (_height, proposals) = self
-            .get_mpc_state(mpc_contract_id.clone(), GET_FOREIGN_CHAIN_POLICY_PROPOSALS)
-            .await?;
-        Ok(proposals)
+        mpc_contract_id: AccountId,
+    ) -> anyhow::Result<std::collections::BTreeMap<dtos::ForeignChain, dtos::ChainEntry>> {
+        let request = QueryRequest::CallFunction {
+            account_id: mpc_contract_id,
+            method_name: ALLOWED_FOREIGN_CHAIN_PROVIDERS.to_string(),
+            args: vec![].into(),
+        };
+        let query = near_client::Query {
+            block_reference: BlockReference::Finality(Finality::Final),
+            request,
+        };
+
+        let response = self.view_client.send_async(query).await??;
+
+        match response.kind {
+            QueryResponseKind::CallResult(result) => borsh::from_slice::<
+                std::collections::BTreeMap<dtos::ForeignChain, dtos::ChainEntry>,
+            >(&result.result)
+            .with_context(|| {
+                let preview: String = result
+                    .result
+                    .iter()
+                    .take(32)
+                    .map(|b| format!("{b:02x}"))
+                    .collect();
+                format!(
+                    "failed to borsh-decode allowed_foreign_chain_providers response (len={}, first {} bytes hex: {preview})",
+                    result.result.len(),
+                    result.result.len().min(32),
+                )
+            }),
+            _ => anyhow::bail!("got unexpected response querying allowed_foreign_chain_providers"),
+        }
     }
 
     pub(crate) async fn latest_final_block(&self) -> anyhow::Result<BlockView> {
@@ -320,7 +342,7 @@ impl IndexerViewClient {
     pub(crate) async fn get_mpc_tee_accounts(
         &self,
         mpc_contract_id: AccountId,
-    ) -> anyhow::Result<(u64, Vec<NodeId>)> {
+    ) -> anyhow::Result<(u64, Vec<dtos::NodeId>)> {
         self.get_mpc_state(mpc_contract_id, GET_TEE_ACCOUNTS).await
     }
 
@@ -365,13 +387,10 @@ impl IndexerViewClient {
 }
 
 #[cfg_attr(test, mockall::automock)]
-pub(crate) trait ReadForeignChainPolicy: Send + Sync {
-    fn get_foreign_chain_policy(
+pub(crate) trait ReadSupportedForeignChain: Send + Sync {
+    fn get_supported_chains(
         &self,
-    ) -> impl Future<Output = anyhow::Result<dtos::ForeignChainPolicy>> + Send;
-    fn get_foreign_chain_policy_proposals(
-        &self,
-    ) -> impl Future<Output = anyhow::Result<dtos::ForeignChainPolicyVotes>> + Send;
+    ) -> impl Future<Output = anyhow::Result<dtos::SupportedForeignChains>> + Send;
 }
 
 #[derive(Clone)]
@@ -385,20 +404,11 @@ impl RealForeignChainPolicyReader {
     }
 }
 
-impl ReadForeignChainPolicy for RealForeignChainPolicyReader {
-    async fn get_foreign_chain_policy(&self) -> anyhow::Result<dtos::ForeignChainPolicy> {
+impl ReadSupportedForeignChain for RealForeignChainPolicyReader {
+    async fn get_supported_chains(&self) -> anyhow::Result<dtos::SupportedForeignChains> {
         self.indexer_state
             .view_client
-            .get_foreign_chain_policy(&self.indexer_state.mpc_contract_id)
-            .await
-    }
-
-    async fn get_foreign_chain_policy_proposals(
-        &self,
-    ) -> anyhow::Result<dtos::ForeignChainPolicyVotes> {
-        self.indexer_state
-            .view_client
-            .get_foreign_chain_policy_proposals(&self.indexer_state.mpc_contract_id)
+            .get_supported_chains(&self.indexer_state.mpc_contract_id)
             .await
     }
 }
@@ -486,7 +496,7 @@ pub struct IndexerAPI<TransactionSender, ForeignChainPolicyReader> {
     /// Watcher that keeps track of allowed [`LauncherDockerComposeHash`]es on the contract.
     pub allowed_launcher_compose_receiver: watch::Receiver<Vec<LauncherDockerComposeHash>>,
     /// Watcher that tracks node IDs that have TEE attestations in the contract.
-    pub attested_nodes_receiver: watch::Receiver<Vec<NodeId>>,
+    pub attested_nodes_receiver: watch::Receiver<Vec<dtos::NodeId>>,
 
     pub my_migration_info_receiver: watch::Receiver<MigrationInfo>,
 

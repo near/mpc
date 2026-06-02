@@ -6,21 +6,25 @@ use crate::config::{MpcConfig, ParticipantsConfig};
 use crate::metrics::tokio_task_metrics::EDDSA_TASK_MONITORS;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
-use crate::providers::{PublicKeyConversion, SignatureProvider};
+#[cfg(test)]
+use crate::providers::PublicKeyConversion;
+use crate::providers::SignatureProvider;
 use crate::storage::SignRequestStorage;
 use crate::types::SignatureId;
+#[cfg(test)]
 use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_node_config::ConfigFile;
 use mpc_primitives::domain::DomainId;
+#[cfg(test)]
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_mpc_contract_interface::types::KeyEventId;
 use std::collections::HashMap;
 use std::sync::Arc;
+use threshold_signatures::ReconstructionLowerBound;
 use threshold_signatures::frost::eddsa::KeygenOutput;
 use threshold_signatures::frost_ed25519::keys::SigningShare;
 use threshold_signatures::frost_ed25519::{Signature, VerifyingKey};
-use threshold_signatures::ReconstructionLowerBound;
 
 #[derive(Clone)]
 pub struct EddsaSignatureProvider {
@@ -133,8 +137,8 @@ impl SignatureProvider for EddsaSignatureProvider {
     }
 }
 
+#[cfg(test)]
 impl PublicKeyConversion for VerifyingKey {
-    #[cfg(test)]
     fn to_near_sdk_public_key(&self) -> anyhow::Result<near_sdk::PublicKey> {
         let data = self.serialize()?;
         let data: [u8; 32] = data
@@ -151,8 +155,8 @@ impl PublicKeyConversion for VerifyingKey {
     }
 }
 
+#[cfg(test)]
 impl PublicKeyConversion for ed25519_dalek::VerifyingKey {
-    #[cfg(test)]
     fn to_near_sdk_public_key(&self) -> anyhow::Result<near_sdk::PublicKey> {
         Ok(near_sdk::PublicKey::from(Ed25519PublicKey::from(self)))
     }

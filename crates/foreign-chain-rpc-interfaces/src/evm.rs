@@ -23,20 +23,44 @@ pub struct GetTransactionReceiptARgs {
     pub transaction_hash: H256,
 }
 
-/// Partial RPC response for `eth_getTransactionReceipt`.
-/// <https://ethereum.org/developers/docs/apis/json-rpc/#eth_gettransactionreceipt>
+/// Partial RPC response for `eth_getBlockByNumber`.
+/// <https://ethereum.org/developers/docs/apis/json-rpc/#eth_getBlockByNumber>
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct GetBlockByNumberResponse {
     /// the block number
     pub number: U64,
+    /// the canonical block hash at this block number
+    pub hash: H256,
 }
 
-/// Partial RPC arguments for `eth_getTransactionReceipt`.
-/// <https://ethereum.org/developers/docs/apis/json-rpc/#eth_gettransactionreceipt>
+/// Partial RPC arguments for `eth_getBlockByNumber`.
+/// <https://ethereum.org/developers/docs/apis/json-rpc/#eth_getBlockByNumber>
 #[derive(
     Constructor, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
-pub struct GetBlockByNumberArgs(FinalityTag, ReturnFullTransactionObjects);
+pub struct GetBlockByNumberArgs(BlockNumberOrTag, ReturnFullTransactionObjects);
+
+/// First argument to `eth_getBlockByNumber`: either a finality tag or a concrete block number.
+/// Per the JSON-RPC spec the value is serialized as a string — finality tags as their lowercase
+/// name, block numbers as `0x`-prefixed hex.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum BlockNumberOrTag {
+    Tag(FinalityTag),
+    Number(U64),
+}
+
+impl From<FinalityTag> for BlockNumberOrTag {
+    fn from(tag: FinalityTag) -> Self {
+        Self::Tag(tag)
+    }
+}
+
+impl From<U64> for BlockNumberOrTag {
+    fn from(number: U64) -> Self {
+        Self::Number(number)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
