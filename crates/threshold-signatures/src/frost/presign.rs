@@ -1,5 +1,5 @@
 use frost_core::{
-    Field, Group, Identifier,
+    Identifier,
     keys::SigningShare,
     round1::{SigningCommitments, SigningNonces, commit},
 };
@@ -32,29 +32,28 @@ pub struct PresignArguments<C: Ciphersuite> {
 /// This output is basically all the parts of the signature that we can perform
 /// without knowing the message.
 #[derive(Clone, Serialize, Deserialize, Eq, PartialEq, ZeroizeOnDrop)]
-pub struct PresignOutput<C: Ciphersuite + Send + 'static> {
+pub struct PresignOutput<C: Ciphersuite> {
     /// The secret signing nonces.
     pub nonces: SigningNonces<C>,
     #[zeroize(skip)]
     pub commitments_map: BTreeMap<Identifier<C>, SigningCommitments<C>>,
 }
 
-impl_secret_debug!({C: Ciphersuite + Send + 'static} PresignOutput<C> { show: [commitments_map], redact: [nonces] });
+impl_secret_debug!({C: Ciphersuite} PresignOutput<C> { show: [commitments_map], redact: [nonces] });
 
 /// Maximum incoming buffer entries for the FROST presign protocol.
 pub const FROST_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES: usize = 1;
 
 /// Runs Presigning of either `EdDSA` or `RedDSA`
-pub fn presign<C>(
+pub fn presign<C, R>(
     participants: &[Participant],
     me: Participant,
     args: &PresignArguments<C>,
-    rng: impl CryptoRngCore + Send + 'static,
-) -> Result<impl Protocol<Output = PresignOutput<C>>, InitializationError>
+    rng: R,
+) -> Result<impl Protocol<Output = PresignOutput<C>> + use<C, R>, InitializationError>
 where
-    C: Ciphersuite + Send,
-    <<<C as frost_core::Ciphersuite>::Group as Group>::Field as Field>::Scalar: Send,
-    <<C as frost_core::Ciphersuite>::Group as frost_core::Group>::Element: std::marker::Send,
+    C: Ciphersuite,
+    R: CryptoRngCore + Send + 'static,
 {
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
@@ -91,7 +90,7 @@ where
     Ok(make_protocol(ctx, fut))
 }
 
-async fn do_presign<C: Ciphersuite + Send>(
+async fn do_presign<C: Ciphersuite>(
     mut chan: SharedChannel,
     participants: ParticipantList,
     me: Participant,

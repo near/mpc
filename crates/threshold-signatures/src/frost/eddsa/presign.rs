@@ -25,11 +25,14 @@ pub type PresignArguments = crate::frost::PresignArguments<Ed25519Sha512>;
 pub type PresignOutput = crate::frost::PresignOutput<Ed25519Sha512>;
 
 /// Ed25519 presigning function
-pub fn presign(
+pub fn presign<R>(
     participants: &[Participant],
     me: Participant,
     args: &PresignArguments,
-    rng: impl CryptoRngCore + Send + 'static,
-) -> Result<impl Protocol<Output = PresignOutput>, InitializationError> {
+    rng: R,
+) -> Result<impl Protocol<Output = PresignOutput> + use<R>, InitializationError>
+where
+    R: CryptoRngCore + Send + 'static,
+{
     crate::frost::presign(participants, me, args, rng)
 }
