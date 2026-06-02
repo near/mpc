@@ -5,5 +5,5 @@ pub mod sign;
 mod test;
 
 pub use presign::{
-    presign, Ed25519Sha512, KeygenOutput, PresignArguments, PresignOutput, SignatureOption,
+    Ed25519Sha512, KeygenOutput, PresignArguments, PresignOutput, SignatureOption, presign,
 };

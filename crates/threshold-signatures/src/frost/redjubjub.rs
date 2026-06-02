@@ -8,5 +8,5 @@ pub mod sign;
 mod test;
 
 pub use presign::{
-    presign, JubjubBlake2b512, KeygenOutput, PresignArguments, PresignOutput, SignatureOption,
+    JubjubBlake2b512, KeygenOutput, PresignArguments, PresignOutput, SignatureOption, presign,
 };

@@ -1,9 +1,9 @@
 use crate::{
+    Ciphersuite,
     crypto::ciphersuite::{BytesOrder, ScalarSerializationFormat},
     errors::InitializationError,
     participants::Participant,
     protocol::Protocol,
-    Ciphersuite,
 };
 use rand_core::CryptoRngCore;
 use reddsa::frost::redjubjub::Signature;

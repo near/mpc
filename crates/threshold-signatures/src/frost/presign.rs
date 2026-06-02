@@ -1,7 +1,7 @@
 use frost_core::{
-    keys::SigningShare,
-    round1::{commit, SigningCommitments, SigningNonces},
     Field, Group, Identifier,
+    keys::SigningShare,
+    round1::{SigningCommitments, SigningNonces, commit},
 };
 use rand_core::CryptoRngCore;
 use serde::{Deserialize, Serialize};
@@ -9,14 +9,14 @@ use std::collections::BTreeMap;
 use zeroize::ZeroizeOnDrop;
 
 use crate::{
+    Ciphersuite, ReconstructionLowerBound,
     errors::{InitializationError, ProtocolError},
     participants::{Participant, ParticipantList},
     protocol::{
-        helpers::recv_from_others,
-        internal::{make_protocol, Comms, SharedChannel},
         Protocol,
+        helpers::recv_from_others,
+        internal::{Comms, SharedChannel, make_protocol},
     },
-    Ciphersuite, ReconstructionLowerBound,
 };
 
 /// The necessary inputs for the creation of a presignature.
@@ -127,7 +127,7 @@ async fn do_presign<C: Ciphersuite + Send>(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::test_utils::{assert_buffer_capacity, generate_participants, MockCryptoRng};
+    use crate::test_utils::{MockCryptoRng, assert_buffer_capacity, generate_participants};
     use frost_ed25519::Ed25519Sha512;
     use rand::SeedableRng;
     use rstest::rstest;

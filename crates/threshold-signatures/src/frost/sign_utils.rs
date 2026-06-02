@@ -1,7 +1,7 @@
 use crate::{
+    ReconstructionLowerBound,
     errors::InitializationError,
     participants::{Participant, ParticipantList},
-    ReconstructionLowerBound,
 };
 
 /// Verifies that the sign inputs are valid
