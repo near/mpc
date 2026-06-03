@@ -66,7 +66,7 @@ public boundary, consumed by both the contract itself and the node.
 
 ### 3.3 Incremental Migration Path
 
-The decoupling is done incrementally, module by module. Each step removes some `mpc_contract::*` imports from the node.
+The decoupling is done incrementally, module by module. Each step removes some `mpc_contract::*` imports from the node. The canonical remaining-work list lives in the tracking issue [#381](https://github.com/near/mpc/issues/381) (also linked under the table below).
 
 | Phase | Scope | Status |
 |-------|-------|--------|
