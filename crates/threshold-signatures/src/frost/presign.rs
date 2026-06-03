@@ -42,7 +42,7 @@ pub struct PresignOutput<C: Ciphersuite> {
 impl_secret_debug!({C: Ciphersuite} PresignOutput<C> { show: [commitments_map], redact: [nonces] });
 
 /// Maximum incoming buffer entries for the FROST presign protocol.
-pub const FROST_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES: usize = 1;
+const FROST_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES: usize = 1;
 
 /// Runs Presigning of either `EdDSA` or `RedDSA`
 pub fn presign<C, R>(
