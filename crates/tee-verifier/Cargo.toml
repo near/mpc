@@ -3,7 +3,6 @@ name = "tee-verifier"
 version = { workspace = true }
 license = { workspace = true }
 edition = { workspace = true }
-repository = "https://github.com/near/mpc"
 
 [package.metadata.cargo-shear]
 ignored = ["borsh"]
