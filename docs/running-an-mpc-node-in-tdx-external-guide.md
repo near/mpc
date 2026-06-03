@@ -43,9 +43,12 @@ Note - we currently only support bare metal and do not support virtualized TDX s
 
 * Intel Xeon 5th/6th Generation CPU (TDX Support) and 8 RAM slots filled
   See [Intel TDX HW requirements](https://cc-enabling.trustedservices.intel.com/intel-tdx-enabling-guide/03/hardware_selection/)
-* Memory - 64GB
-* (v)Cores - 8
-* Disk space - 500GB, SSD NVMe or similar performance
+
+The memory, cores, and disk below are the resources consumed by a single MPC CVM. Because you may need to run two CVMs concurrently while migrating to a new launcher version, size your TDX host for at least **2x** these values, plus some margin.
+
+* Memory - 64GB per CVM
+* (v)Cores - 8 per CVM
+* Disk space - 1TB (1000 GB) per CVM, SSD NVMe or similar performance
 
 For a list of supported cloud providers offering bare metal servers with Intel TDX, see [Cloud Providers Supporting Bare Metal Servers with Intel TDX](./cloud-providers-tdx.md).
 
@@ -857,7 +860,7 @@ Use the following custom settings for MPC:
 
 1. Launcher docker compose file - provided above.
 2. VM HW setting (use exactly those settings, since vCPU/Memory are measured):
-    vCPU number=8, Memory = 64GB, disk = 500 GB
+    vCPU number=8, Memory = 64GB, disk = 1000 GB
 3. Pre-launch Script and Init Script - both must be empty (a non-empty script fails attestation). Caution: the Pre-launch Script may not be empty by default - clear it before deploying.
 4. user-config - provided above
 5. Toggles:
