@@ -62,7 +62,7 @@ public boundary, consumed by both the contract itself and the node.
 | `mpc-primitives` | Pure identity newtypes (`DomainId`, `EpochId`, `AttemptId`, `KeyEventId`, `ParticipantId`), enums (`Curve`, `Protocol`), hash types | `borsh`, `serde` (no `near-sdk`) |
 | `near-mpc-contract-interface` | DTOs for contract state (`ProtocolContractState`, `RunningContractState`, `Keyset`, etc.), public API types (`SignRequest`, `CKDRequest`), conversion traits | `mpc-primitives`, `near-mpc-crypto-types`, `serde` |
 | `mpc-contract` | Internal state, validation logic, NEAR storage, business rules | `mpc-primitives`, `near-mpc-contract-interface`, `near-sdk` |
-| `mpc-node` | Node binary — indexer, coordinator, providers, networking | Regular deps: `mpc-primitives`, `near-mpc-contract-interface`, `mpc-attestation`, `threshold-signatures` (no regular dep on `mpc-contract`). `mpc-contract` remains a `[dev-dependencies]` entry until Phase 8 (§3.3) — don't be misled by its presence in `Cargo.toml`. |
+| `mpc-node` | Node binary — indexer, coordinator, providers, networking | Regular deps: `mpc-primitives`, `near-mpc-contract-interface`, `near-mpc-crypto-types`, `mpc-attestation`, `threshold-signatures` (no regular dep on `mpc-contract`). `mpc-contract` remains a `[dev-dependencies]` entry until Phase 8 (§3.3) — don't be misled by its presence in `Cargo.toml`. |
 
 ### 3.3 Incremental Migration Path
 
@@ -77,7 +77,7 @@ The decoupling is done incrementally, module by module. Each step removes some `
 | 5 | Migration types (`migration_service/*`) | Done in production code (a `mpc_contract::` import remains only in a `#[cfg(test)]` block, `migration_service/types.rs`) |
 | 6 | TEE (Trusted Execution Environment) types (`tee/*`, `indexer/tee.rs`) | Done — no `mpc_contract::` imports |
 | 7 | Remove `mpc-contract` from node's regular dependencies | Done — `mpc-contract` is now only a `[dev-dependencies]` entry (`crates/node/Cargo.toml`), not a regular dependency |
-| 8 | Remove `mpc-contract` from node's dev-dependencies (rewrite test code) | Not started — the only genuinely open phase. Remaining `mpc_contract::` references live in `#[cfg(test)]` blocks (`config.rs`, `migration_service/types.rs`) and test-only modules (`indexer/fake.rs` gated behind `#[cfg(test)] pub mod fake`, `tests/*`, `assets/test_utils.rs`) |
+| 8 | Remove `mpc-contract` from node's dev-dependencies (rewrite test code) | Not started — the only genuinely open phase. Remaining `mpc_contract::` references live in `#[cfg(test)]` blocks (`config.rs`, `migration_service/types.rs`) and test-only modules (`indexer/fake.rs` gated behind `#[cfg(test)] pub mod fake`, `tests/*` — e.g. `tests/changing_participant_details.rs:96`, `tests/onboarding.rs:18,199` — and `assets/test_utils.rs`) |
 
 Statuses above were re-derived from `grep -rn "mpc_contract::" crates/node/src/` on this branch; production code is fully migrated. See the tracking issue [#381](https://github.com/near/mpc/issues/381) for the canonical remaining-work list. (Per-phase PR links are intentionally omitted here — PR status drifts faster than the design intent this table records, and a stale "Not started" badly overstates how much work is left.)
 
@@ -153,9 +153,13 @@ pub fn state(&self) -> near_mpc_contract_interface::types::ProtocolContractState
 Call functions accept DTOs and convert to internal types:
 
 ```rust
-pub fn submit_participant_info(&mut self, attestation: dtos::Attestation, ...) {
-    let attestation: Attestation = attestation.try_into_contract_type()?;
-    // ... work with internal type
+pub fn submit_participant_info(
+    &mut self,
+    proposed_participant_attestation: dtos::Attestation,
+    tls_public_key: dtos::Ed25519PublicKey,
+) -> Result<(), Error> {
+    let proposed_participant_attestation = proposed_participant_attestation.try_into_contract_type()?;
+    // ... work with internal types
 }
 ```
 
@@ -187,7 +191,9 @@ The state is then broadcast to subsystems via `tokio::sync::watch` channels (see
 | Backwards compat | Can change freely | Must maintain JSON wire format |
 | `ParticipantInfo.tls_public_key` | `Ed25519PublicKey` | `Ed25519PublicKey` (was `String`, resolved [#2871](https://github.com/near/mpc/issues/2871)) |
 
-Note: not every type has an internal/DTO split. `DomainConfig` and `DomainRegistry` are shared types imported directly from the interface crate (`crates/contract/src/state.rs`), so the contract and node use the *same* definition — there is no separate internal representation to convert. `DomainConfig`'s fields are `id`, `protocol` (a `Protocol`), `reconstruction_threshold`, and `purpose` (a `DomainPurpose`).
+Note: not every type has an internal/DTO split. `DomainConfig` is a shared type imported directly from the interface crate (`crates/contract/src/state.rs:18`), so the contract and node use the *same* definition — there is no separate internal representation to convert. `DomainConfig`'s fields are `id`, `protocol` (a `Protocol`), `reconstruction_threshold`, and `purpose` (a `DomainPurpose`).
+
+`DomainRegistry`, by contrast, *does* have a split: the contract's internal type (`crates/contract/src/primitives/domain.rs:77`) has private `domains` / `next_domain_id` fields with accessor methods, while the DTO (`crates/near-mpc-contract-interface/src/types/state.rs:117`) exposes them as public fields. The contract converts between them via `impl IntoInterfaceType<dtos::DomainRegistry> for &DomainRegistry` (`crates/contract/src/dto_mapping.rs:663`), and `crates/contract/src/state.rs:11` imports the internal `DomainRegistry` from `crate::primitives::domain`, not from the interface crate.
 
 ### 4.6 Serialization Compatibility
 
