@@ -41,13 +41,14 @@ For a full architecture review of the TEE-based MPC, see: [design doc](securing-
 
 Note - we currently only support bare metal and do not support virtualized TDX solutions (such as GCP).
 
-The figures below are the resources consumed by a single MPC CVM. Because you may need to run two CVMs concurrently while migrating to a new launcher version, size your TDX host for at least **2x** these values, plus some margin.
-
 * Intel Xeon 5th/6th Generation CPU (TDX Support) and 8 RAM slots filled
   See [Intel TDX HW requirements](https://cc-enabling.trustedservices.intel.com/intel-tdx-enabling-guide/03/hardware_selection/)
+
+The memory, cores, and disk below are the resources consumed by a single MPC CVM. Because you may need to run two CVMs concurrently while migrating to a new launcher version, size your TDX host for at least **2x** these values, plus some margin.
+
 * Memory - 64GB per CVM
 * (v)Cores - 8 per CVM
-* Disk space - 1TB per CVM, SSD NVMe or similar performance
+* Disk space - 1TB (1000 GB) per CVM, SSD NVMe or similar performance
 
 For a list of supported cloud providers offering bare metal servers with Intel TDX, see [Cloud Providers Supporting Bare Metal Servers with Intel TDX](./cloud-providers-tdx.md).
 
