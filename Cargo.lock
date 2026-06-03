@@ -11371,6 +11371,7 @@ dependencies = [
  "tee-verifier",
  "tee-verifier-interface",
  "test-utils",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

@@ -55,7 +55,9 @@ fn verify_quote__should_return_up_to_date_td10_report_for_valid_fixture() {
     let collateral = make_collateral();
 
     // When
-    let report = contract.verify_quote(quote, collateral);
+    let report = contract
+        .verify_quote(quote, collateral)
+        .expect("valid fixture should verify");
 
     // Then
     assert_eq!(report.status, "UpToDate");

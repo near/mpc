@@ -8,10 +8,24 @@
 //!
 //! See `docs/design/attestation-verifier-contract.md` for the design.
 
-use near_sdk::{env, near};
+use near_sdk::{FunctionError, env, near};
 use tee_verifier_interface::{Collateral, QuoteBytes, VerifiedReport};
 
 mod conversions;
+
+/// Failure returned by [`TeeVerifier::verify_quote`].
+#[derive(Debug, Clone, thiserror::Error)]
+pub enum VerifierError {
+    /// `dcap_qvl::verify::verify` rejected the quote / collateral.
+    #[error("dcap verification failed: {0}")]
+    DcapVerification(String),
+}
+
+impl FunctionError for VerifierError {
+    fn panic(&self) -> ! {
+        env::panic_str(&self.to_string())
+    }
+}
 
 // `dcap-qvl`'s `contract` feature pulls in `getrandom` but doesn't enable
 // any backend. On `wasm32-unknown-unknown` we register a custom impl that
@@ -30,30 +44,24 @@ pub struct TeeVerifier {}
 
 #[near]
 impl TeeVerifier {
-    /// Verify a TDX / SGX quote against Intel collateral.
+    /// Verify a TDX quote against Intel collateral.
     ///
     /// Calls `dcap_qvl::verify::verify` with the current block timestamp
     /// and returns the parsed `VerifiedReport` on success. The caller is
     /// responsible for any post-DCAP policy (RTMR3 replay, report-data
     /// binding, measurement allowlist matching, etc.).
-    ///
-    /// On verification failure, panics with the upstream error rendered as
-    /// a string. Callers should treat this as a `PromiseResult::Failed` in
-    /// their callback.
-    ///
-    /// Borsh I/O on both arguments and return value.
+    #[handle_result]
     #[result_serializer(borsh)]
     pub fn verify_quote(
         &self,
         #[serializer(borsh)] quote: QuoteBytes,
         #[serializer(borsh)] collateral: Collateral,
-    ) -> VerifiedReport {
+    ) -> Result<VerifiedReport, VerifierError> {
         let now_seconds = env::block_timestamp_ms() / 1000;
         let quote_bytes = conversions::quote_bytes_to_vec(quote);
         let collateral = conversions::collateral_to_dcap(collateral);
-        match dcap_qvl::verify::verify(&quote_bytes, &collateral, now_seconds) {
-            Ok(report) => conversions::verified_report(report),
-            Err(err) => env::panic_str(&format!("dcap verification failed: {err:?}")),
-        }
+        dcap_qvl::verify::verify(&quote_bytes, &collateral, now_seconds)
+            .map(conversions::verified_report)
+            .map_err(|err| VerifierError::DcapVerification(format!("{err:?}")))
     }
 }
