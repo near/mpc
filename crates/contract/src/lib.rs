@@ -3788,7 +3788,10 @@ mod tests {
         // so signer_account_id (the participant) != predecessor_account_id (the forwarder).
         let (mut contract, participants, first_participant_id) = setup_tee_test_contract(3, 2);
         let threshold = Threshold::new(2);
-        let proposal = ThresholdParameters::new(participants, threshold).unwrap();
+        let proposal = ProposedThresholdParameters::new(
+            ThresholdParameters::new(participants, threshold).unwrap(),
+            BTreeMap::new(),
+        );
 
         let ctx = VMContextBuilder::new()
             .signer_account_id(first_participant_id)
