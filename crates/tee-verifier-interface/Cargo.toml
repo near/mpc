@@ -9,6 +9,7 @@ borsh-schema = ["borsh/unstable__schema"]
 
 [dependencies]
 borsh = { workspace = true }
+derive_more = { workspace = true }
 
 [dev-dependencies]
 rstest = { workspace = true }

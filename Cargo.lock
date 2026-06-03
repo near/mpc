@@ -11649,6 +11649,7 @@ name = "tee-verifier-interface"
 version = "3.11.0"
 dependencies = [
  "borsh",
+ "derive_more 2.1.1",
  "rstest",
 ]
 
