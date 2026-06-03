@@ -41,7 +41,7 @@ In addition to the standard [hardware requirements](./running-an-mpc-node-in-tdx
 - **2× the single-node hardware** ([single-node minimums](./running-an-mpc-node-in-tdx-external-guide.md#hardware-requirements)
   apply per CVM): ≥ 128 GB memory, ≥ 16 cores, ≥ 1 TB SSD/NVMe disk.
 - **Firewall opened on both IPs** for the [required ports](./running-an-mpc-node-in-tdx-external-guide.md#required-ports)
-  (80, 8080, 24567).
+  (80, 8080, 24567, 8079).
 - *(Optional)* a DNS A record per IP. Recommended if you want to
   re-IP later without rotating operator-side configuration.
 
@@ -60,7 +60,7 @@ on the public internet on the canonical port `:24567`.
 |         ^                                  ^                |
 |         |                                  |                |
 |   hostfwd :80, :8080,                hostfwd :80, :8080,    |
-|     :24567 -> CVM_M                    :24567 -> CVM_T      |
+|     :24567, :8079 -> CVM_M           :24567, :8079 -> CVM_T |
 |         |                                  |                |
 |   +-----------+                      +-----------+          |
 |   |  qemu CVM |                      |  qemu CVM |          |
@@ -84,7 +84,7 @@ Key properties:
 - One `dstack-vmm` process and `vmm.toml` — same as a single-node
   deployment.
 - Each CVM specifies `host_address` per port mapping at creation
-  time, so its `:24567` / `:80` / `:8080` forwards land on a
+  time, so its `:24567` / `:80` / `:8080` / `:8079` forwards land on a
   distinct host IP.
 - The **SGX sealing-key-provider, PCCS endpoints, and `dstack-vmm`
   itself are shared by every CVM on this host** — they're host-level
@@ -119,8 +119,8 @@ this guide:
 
 | Chain | Host IP | Ports (host & CVM) |
 |---|---|---|
-| mainnet | `203.0.113.10` (`IP_M`) | `:24567`, `:80`, `:8080` |
-| testnet | `203.0.113.11` (`IP_T`) | `:24567`, `:80`, `:8080` |
+| mainnet | `203.0.113.10` (`IP_M`) | `:24567`, `:80`, `:8080`, `:8079` |
+| testnet | `203.0.113.11` (`IP_T`) | `:24567`, `:80`, `:8080`, `:8079` |
 
 Both CVMs use the same canonical ports — `host_address` is what
 disambiguates them on the host side.
