@@ -144,6 +144,7 @@ async fn do_sign_coordinator_v1(
     let commit_waitpoint = chan.next_waitpoint();
     // Step 2.1 and 2.2
     for (from, commitment) in recv_from_others(&chan, commit_waitpoint, &participants, me).await? {
+        // Step 2.2
         commitments_map.insert(from.to_identifier()?, commitment);
     }
 

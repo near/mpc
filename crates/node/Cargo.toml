@@ -27,8 +27,10 @@ futures = { workspace = true }
 gcloud-sdk = { workspace = true }
 hex = { workspace = true }
 http = { workspace = true }
+http-body-util = { workspace = true }
 humantime = { workspace = true }
 hyper = { workspace = true }
+hyper-util = { workspace = true }
 itertools = { workspace = true }
 k256 = { workspace = true }
 launcher-interface = { workspace = true }
@@ -53,7 +55,7 @@ near-mpc-contract-interface = { workspace = true, features = [
 ] }
 near-mpc-crypto-types = { workspace = true }
 near-o11y = { workspace = true }
-near-sdk = { workspace = true }
+near-sdk = { workspace = true, features = ["non-contract-usage"] }
 near-time = { workspace = true }
 node-types = { workspace = true }
 num_enum = { workspace = true }
@@ -108,7 +110,6 @@ insta = { workspace = true }
 itertools = { workspace = true }
 mockall = { workspace = true }
 mpc-contract = { workspace = true, features = ["compat", "test-utils"] }
-near-sdk = { workspace = true }
 rstest = { workspace = true }
 serial_test = { workspace = true }
 test-log = { workspace = true }
