@@ -18,35 +18,45 @@ holds, per chain, the network-trusted providers and the **RPC response quorum**
 `ChainEntry.quorum` (how many of a node's providers must agree for it to accept a
 result).
 
-## Proposal
+## Proposal: two sets of chains
 
-The supported set is derived from the **on-chain RPC whitelist**, not per-node
-registration:
+The network distinguishes two sets:
 
-```
-supported(C)  ⇔  AllowedProviders.entries contains an entry for C
-                 (non-empty provider list + its RPC response quorum)
-```
+- **Supported** — the explicit, whitelist-driven policy set every node is expected
+  to serve. `C` is supported iff the on-chain RPC whitelist has a `ChainEntry` for
+  `C`. `get_supported_foreign_chains()` returns exactly these keys. **No per-node
+  input can add or remove a chain**, so no single operator can drop one.
+- **Available** — the set the network can actually serve right now, computed
+  dynamically from the per-node config reports. `C` is available iff ≥ `threshold`
+  active participants report support for `C`, where `threshold` is the
+  reconstruction threshold of the `ForeignTx` domain and a participant *supports*
+  `C` iff it has ≥ `quorum(C)` whitelisted providers configured for `C`.
 
-So `get_supported_foreign_chains()` returns `AllowedProviders.entries`' keys — a
-chain is supported once the network votes in a `ChainEntry` for it (see
-[whitelist vote semantics](../foreign-chain-transactions.md#on-chain-rpc-provider-whitelist)),
-and no per-node input can subtract a chain.
+`available ⊆ supported` always — a node can only support a whitelisted chain.
 
-**Every active node is required to support every supported chain** — a node
-*supports* `C` iff it has ≥ `quorum(C)` whitelisted providers configured for `C`.
-A node lacking them behaves exactly like an offline node, a fault the threshold
-protocol already tolerates, so universal support is an operational expectation,
-not a new correctness/liveness requirement (see
-[Guarantees preserved](#guarantees-preserved)). Such a node is treated
-**identically to one that is down** for `C`: it does not participate, and the request proceeds
-with the remaining signers. The cost is stranded pre-generated assets — see
-[Known tradeoff](#known-tradeoff).
+`verify_foreign_transaction(C)` is **rejected unless `C` is available**: the
+contract fails fast instead of accepting a request that can't reach a signing
+quorum and letting it time out. The rejection is temporary — `C` becomes
+serviceable again as soon as enough nodes report support.
 
 | symbol | meaning | source |
 |---|---|---|
 | `whitelist(C)` | provider ids the network trusts for `C` | `AllowedProviders.entries[C].providers` |
 | `quorum(C)` | per-chain RPC response quorum | `AllowedProviders.entries[C].quorum` |
+
+## Why two sets
+
+**Supported** is a stable, operator-visible commitment: it changes only by vote,
+never flaps with node churn, and no single operator can shrink it. Every node is
+expected to support every supported chain.
+
+**Available** protects users from submitting requests that can't complete. Because
+it requires `threshold` — not all — participants, a chain leaves it only when more
+than `n − threshold` nodes stop supporting it.
+
+In a healthy network `available == supported`. A gap means nodes are down or
+misconfigured for a chain — an operational anomaly that alerting surfaces (see
+[Per-node registration](#per-node-registration)), not a steady state.
 
 ## Verification behavior
 
@@ -62,47 +72,48 @@ result as non-retryable. (Open: whether a sub-quorum from purely *transient*
 failures — timeouts, finality not reached — should still retry, vs. only genuine
 disagreement being terminal.)
 
-## Monitoring and alerting
+## Per-node registration
 
-A node silently treated as down erodes a chain's availability margin, so we must
-detect it. Per-node registration (`register_foreign_chain_config` /
-`get_foreign_chain_support_by_node`) is **retained solely for this** — it no longer
-feeds the supported set, but lets monitoring **alert when an active node does not
-support a supported chain**. That alert fires for *us* (maintainers), who then
-nudge the operator. Ideally operators also run their own coverage alert and fix
-the gap first.
+Per-node registration (`register_foreign_chain_config` /
+`get_foreign_chain_support_by_node`) reports which chains each node currently
+supports, and serves two roles:
+
+- it **feeds the available set** — the contract counts, per chain, how many active
+  participants report support and compares against `threshold`; and
+- it **drives alerting** — when an active node does not support a supported chain,
+  monitoring fires for *us* (maintainers), who nudge the operator. Ideally operators
+  run their own coverage alert and fix the gap first.
+
+Registration reflects each node's *current* config.
 
 ## Guarantees preserved
 
-Two guarantees hold today, and this rule keeps both.
-
 **Security** — the network signs an observation only if ≥ `threshold` participants
-each independently verified it (each via its own RPC quorum). Fewer than
-`threshold` can not force a false attestation.
+each independently verified it (each via its own RPC quorum). Fewer than `threshold`
+cannot force a false attestation.
 
-**Liveness** — a request completes as long as ≥ `threshold` supporting participants
-are online, the same `n − threshold` fault tolerance as the rest of signing. A
-non-supporting node is exactly an offline node to the protocol, a fault already
-absorbed. This strictly improves on the intersection rule, where one
-non-registering node dropped a chain to zero availability.
-
-Also: **a chain with no whitelist entry is never supported**  since a
-chain with no trusted providers must not be advertised.
+**Liveness** — a request is accepted only when `C` is available (≥ `threshold`
+participants support it), so an accepted request can reach a signing quorum; and a
+chain leaves the available set only when more than `n − threshold` nodes drop it.
+This strictly improves on the intersection rule, where one non-registering node
+dropped a chain to zero availability.
 
 ## Known tradeoff
 
-A node treated as down strands the pre-generated assets it co-owns (usable only
-while all their participants are alive), which are then discarded. Two surfaces:
+When a chain is available but not *every* node supports it, the non-supporting nodes
+are treated as down for `C`: they don't participate, stranding the pre-generated
+assets they co-own (usable only while all their participants are alive), which are
+then discarded. Two surfaces:
 
-- **Presignatures are per-domain.** Foreign-tx signing uses a dedicated
-  `ForeignTx` domain (`DomainPurpose::ForeignTx`), so stranded foreign-tx
-  presignatures stay in that pool.
-- **Triples are shared** per reconstruction threshold across all CaitSith
-  domains, so stranding them also dents ordinary `sign()` presignature
-  generation — this cost is **not** confined to `C`.
+- **Presignatures are per-domain.** Foreign-tx signing uses a dedicated `ForeignTx`
+  domain (`DomainPurpose::ForeignTx`), so stranded foreign-tx presignatures stay in
+  that pool.
+- **Triples are shared** per reconstruction threshold across all CaitSith domains,
+  so stranding them also dents ordinary `sign()` presignature generation — this cost
+  is **not** confined to `C`.
 
-The mitigation is operational: the alerting above keeps coverage high, and
-operators are expected to configure every node for every chain.
+The mitigation is operational: the alerting above keeps coverage high, and operators
+are expected to configure every node for every chain.
 
 ## Documentation impact
 
@@ -114,5 +125,5 @@ doc-alignment rule):
   note about a chain appearing "only once **every** active participant has registered
   it", and the rollout-coordination risk all describe the intersection rule.
 - `docs/design/allowing-per-node-foreign-chain-rpc-configuration.md` requirement #5
-  ("**every** node has at least a quorum number of whitelisted RPC providers
-  configured") — change to the whitelist-driven rule above.
+  — restate it as the supported/available split above (registration feeds the
+  available set; it is not monitoring-only).
