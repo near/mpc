@@ -253,10 +253,10 @@ impl fmt::Debug for DstackAttestation {
     BorshSerialize,
     BorshDeserialize,
 )]
-// NOTE: this is a hand-maintained mirror of the verified `attestation::AppCompose`. It is the
-// security-relevant subset and is NOT the type used during attestation verification. Keep its
-// security fields in sync with the verified struct, or it can drift (see #3425). Deduping the two
-// is pending a team decision.
+// This is a hand-maintained mirror of the verified `attestation::AppCompose` — the
+// security-relevant subset, NOT the type used during attestation verification. Keep its security
+// fields in sync with the verified struct, or it can drift.
+// TODO(#3425): dedupe with `attestation::AppCompose` (single source of truth) — pending team decision.
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)

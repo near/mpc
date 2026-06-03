@@ -23,49 +23,36 @@ pub struct AppCompose {
     pub docker_compose_file: DockerComposeString,
     #[serde(default)]
     pub kms_enabled: bool,
-    #[serde(default)]
     pub tproxy_enabled: Option<bool>,
-    #[serde(default)]
     pub gateway_enabled: Option<bool>,
-    #[serde(default)]
+    // public_logs / public_sysinfo / local_key_provider_enabled / no_instance_id must be `true`, so
+    // they carry no `serde(default)` — a missing one fails to parse. No security gap either way: a
+    // defaulted `false` is rejected by `validate_app_compose_config`; dropping it is just clearer.
+    // (kms_enabled / allowed_envs keep a default because their default *is* the safe value.)
     pub public_logs: bool,
-    #[serde(default)]
     pub public_sysinfo: bool,
-    #[serde(default)]
     pub local_key_provider_enabled: bool,
-    #[serde(default)]
     pub key_provider_id: Option<String>,
     #[serde(default)]
     pub allowed_envs: Vec<String>,
-    #[serde(default)]
     pub no_instance_id: bool,
-    #[serde(default)]
     pub secure_time: Option<bool>,
-    #[serde(default)]
     pub pre_launch_script: Option<String>,
-    #[serde(default)]
     pub init_script: Option<String>,
-    #[serde(default)]
     pub bash_script: Option<String>,
-    // The fields below are absorbed only to satisfy `deny_unknown_fields`; they are never read, so
-    // they deserialize as `IgnoredAny` to avoid allocating attacker-controlled JSON from the
-    // untrusted app-compose.
-    #[serde(default)]
+    // The fields below are absorbed only to satisfy `deny_unknown_fields`; they are never read. The
+    // structured ones use `IgnoredAny` to avoid allocating attacker-controlled JSON from the
+    // untrusted app-compose. (`serde(default)` is omitted on every `Option<_>` field above and
+    // below — serde already treats those as optional.)
     pub features: Option<IgnoredAny>,
-    #[serde(default)]
     pub public_tcbinfo: Option<bool>,
     // Key-provider integrity is pinned by the measured `key-provider` event digest
     // (`verify_key_provider_digest`), not this field.
-    #[serde(default)]
     pub key_provider: Option<IgnoredAny>,
-    #[serde(default)]
-    pub storage_fs: Option<String>,
-    #[serde(default)]
+    pub storage_fs: Option<IgnoredAny>,
     pub swap_size: Option<IgnoredAny>,
     // dstack 0.5.11 gateway field (0.5.8 never emits it); inert while the gateway is disabled.
-    #[serde(default)]
     pub port_policy: Option<IgnoredAny>,
-    #[serde(default)]
     pub docker_config: Option<IgnoredAny>,
 }
 
