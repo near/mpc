@@ -405,10 +405,11 @@ Create a Dockerfile file with the following contents:
 ```shell
 # Dockerfile
 FROM rust:1.86.0@sha256:300ec56abce8cc9448ddea2172747d048ed902a3090e6b57babb2bf19f754081 AS kms-builder
-# Default matches the guest OS image this guide uses (the `dstack-0.5.8/` dir
-# you cd into below). If you use a different OS image version, override it:
-#   --build-arg DSTACK_REV=v<your-version>
-ARG DSTACK_REV=v0.5.8
+# Pinned to a commit (immutable) rather than a tag (which can be moved). This is
+# the dstack v0.5.8 commit — matches the guest OS image this guide uses (the
+# `dstack-0.5.8/` dir you cd into below). For a different OS-image version,
+# override with the matching commit: --build-arg DSTACK_REV=<commit>
+ARG DSTACK_REV=368c62e7de5d4016bd75332824aa7f2ef1d7d19e
 WORKDIR /build
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -441,13 +442,12 @@ ENTRYPOINT ["dstack-mr"]
 CMD []
 ```
 
-Build. `DSTACK_REV` defaults to the version matching the `dstack-0.5.8/`
-directory above; pass `--build-arg DSTACK_REV=v<version>` if your OS image
-differs, so `dstack-mr`'s measurement logic matches the image and the on-chain
-values:
+Build. Pass `DSTACK_REV` = the **commit** matching your guest OS image's dstack
+version (here the v0.5.8 commit), so `dstack-mr`'s measurement logic matches the
+image and the on-chain values:
 
 ```bash
-docker build --build-arg DSTACK_REV=v0.5.8 -t dstack-mr .
+docker build --build-arg DSTACK_REV=368c62e7de5d4016bd75332824aa7f2ef1d7d19e -t dstack-mr .
 ```
 
 Run:
