@@ -25,18 +25,18 @@ The network distinguishes two sets:
 - **Supported** — the explicit, whitelist-driven policy set every node is expected
   to serve. `C` is supported iff the on-chain RPC whitelist has a `ChainEntry` for
   `C`. `get_supported_foreign_chains()` returns exactly these keys. **No per-node
-  input can add or remove a chain**, so no single operator can drop one.
+  input can add or remove a chain**, so no single operator can change it.
 - **Available** — the set the network can actually serve right now, computed
   dynamically from the per-node config reports. `C` is available iff ≥ `threshold`
   active participants report support for `C`, where `threshold` is the
   reconstruction threshold of the `ForeignTx` domain and a participant *supports*
   `C` iff it has ≥ `quorum(C)` whitelisted providers configured for `C`.
 
-`available ⊆ supported` always — a node can only support a whitelisted chain.
+`available ⊆ supported` always — a node can only cover a supported chain.
 
 `verify_foreign_transaction(C)` is **rejected unless `C` is available**: the
-contract fails fast instead of accepting a request that can't reach a signing
-quorum and letting it time out. The rejection is temporary — `C` becomes
+contract fails fast instead of accepting a request that can't reach the signing
+threshold and letting it time out. The rejection is temporary — `C` becomes
 serviceable again as soon as enough nodes report support.
 
 | symbol | meaning | source |
@@ -47,7 +47,7 @@ serviceable again as soon as enough nodes report support.
 ## Why two sets
 
 **Supported** is a stable, operator-visible commitment: it changes only by vote,
-never flaps with node churn, and no single operator can shrink it. Every node is
+never flaps with node churn, and no single operator can change it. Every node is
 expected to cover every supported chain.
 
 **Available** avoids spending resources on a request the network can't fulfill: one
@@ -95,7 +95,7 @@ each independently verified it (each via its own RPC quorum). Fewer than `thresh
 cannot force a false attestation.
 
 **Liveness** — a request is accepted only when `C` is available (≥ `threshold`
-participants support it), so an accepted request can reach a signing quorum; and a
+participants support it), so an accepted request can reach the signing threshold; and a
 chain leaves the available set only when more than `n − threshold` nodes drop it.
 This strictly improves on the intersection rule, where one non-registering node
 dropped a chain to zero availability.

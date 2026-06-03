@@ -555,7 +555,7 @@ See "Contract State (Foreign Chain Configurations)" above.
 * Node config contains chain RPC providers and timeouts (API keys stay local).
 * On startup, each node submits a single `register_foreign_chain_config` transaction derived from its local configuration. The call is idempotent.
 * Nodes do **not** vote, poll, or wait for network-wide consensus — the transaction is sent and startup continues.
-* `get_supported_foreign_chains()` returns the on-chain RPC whitelist's chains, not these registrations: a chain is *supported* once the network votes in a `ChainEntry`, and no single node can subtract it. It is *available* — actually served — only while ≥ `threshold` active nodes report support; `verify_foreign_transaction` early-rejects a supported-but-unavailable chain. See [Calculating the supported foreign-chain set](design/calculating-supported-foreign-chains.md).
+* `get_supported_foreign_chains()` returns the on-chain RPC whitelist's chains, not these registrations: a chain is *supported* once the network votes in a `ChainEntry`, and no single node can change it. It is *available* — actually served — only while ≥ `threshold` active nodes report support; `verify_foreign_transaction` early-rejects a supported-but-unavailable chain. See [Calculating the supported foreign-chain set](design/calculating-supported-foreign-chains.md).
 * `get_foreign_chain_support_by_node()` exposes per-participant registrations, which feed the availability check and the coverage alerting.
 
 ### Configuration (Node)
