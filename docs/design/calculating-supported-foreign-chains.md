@@ -50,9 +50,11 @@ serviceable again as soon as enough nodes report support.
 never flaps with node churn, and no single operator can shrink it. Every node is
 expected to cover every supported chain.
 
-**Available** protects users from submitting requests that can't complete. Because
-it requires `threshold` — not all — participants, a chain leaves it only when more
-than `n − threshold` nodes stop supporting it.
+**Available** avoids spending resources on a request the network can't fulfill: one
+for a chain without a signing threshold's worth of support is rejected up front, not
+attempted and left to time out. Because it requires `threshold` — not all —
+participants, a chain leaves it only when more than `n − threshold` nodes stop
+supporting it.
 
 In a healthy network `available == supported`. A gap means nodes are down or
 misconfigured for a chain — an operational anomaly that alerting surfaces (see
