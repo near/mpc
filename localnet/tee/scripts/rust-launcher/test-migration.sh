@@ -347,15 +347,15 @@ add_target_signer_key() {
   responder="$(jq -r '.near_responder_public_keys[0]' "$keys_json")"
   acct="$(node_account_for_i "$B_SOURCE_INDEX")"
   [ -n "$signer" ] && [ "$signer" != "null" ] || fatal "missing near_signer_public_key for B0"
-  log "Adding B0's signer key ($signer) to $acct as restricted FC-access key"
+  log "Adding B0's signer key ($signer) to $acct as a contract-scoped FC-access key"
 
-  local node_methods="respond,respond_ckd,respond_verify_foreign_tx,vote_pk,start_keygen_instance,vote_reshared,register_foreign_chain_config,start_reshare_instance,vote_abort_key_event_instance,verify_tee,submit_participant_info,conclude_node_migration"
+  # Function-call key scoped to the MPC contract; empty --function-names allows all methods.
 
   set +e
   near account add-key "$acct" grant-function-call-access \
     --allowance unlimited \
     --contract-account-id "$MPC_CONTRACT_ACCOUNT" \
-    --function-names "$node_methods" \
+    --function-names '' \
     use-manually-provided-public-key "$signer" \
     network-config "$NEAR_NETWORK_CONFIG" sign-with-keychain send 2>&1 | tail -3
   local rc=$?
@@ -367,7 +367,7 @@ add_target_signer_key() {
     near account add-key "$acct" grant-function-call-access \
       --allowance unlimited \
       --contract-account-id "$MPC_CONTRACT_ACCOUNT" \
-      --function-names "$node_methods" \
+      --function-names '' \
       use-manually-provided-public-key "$responder" \
       network-config "$NEAR_NETWORK_CONFIG" sign-with-keychain send 2>&1 | tail -3
     set -e

@@ -40,3 +40,59 @@ impl Serialize for GetRawTransactionArgs {
 impl ToRpcParams for &GetRawTransactionArgs {
     to_rpc_params_impl!();
 }
+
+/// Partial RPC response for `getblockheader` with `verbose=true`. See link below for full spec;
+/// <https://developer.bitcoin.org/reference/rpc/getblockheader.html>
+///
+/// Prefer `getblockheader` over `getblock` when only `hash`/`height` are needed: `getblock`
+/// (even at verbosity 1) returns the full transaction-id list, which on mainnet adds
+/// substantial bandwidth/latency to every RPC roundtrip.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct GetBlockHeaderVerboseResponse {
+    pub hash: TransportBitcoinBlockHash,
+    pub height: u64,
+}
+
+/// Request args for `getblockheader`.
+pub struct GetBlockHeaderArgs {
+    pub blockhash: TransportBitcoinBlockHash,
+    pub verbose: bool,
+}
+
+impl Serialize for GetBlockHeaderArgs {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        // `getblockheader` expects a positional list https://developer.bitcoin.org/reference/rpc/getblockheader.html#argument-1-blockhash
+        // 1. blockhash
+        // 2. verbose
+        let request_parameters = (&self.blockhash, &self.verbose);
+
+        request_parameters.serialize(serializer)
+    }
+}
+
+impl ToRpcParams for &GetBlockHeaderArgs {
+    to_rpc_params_impl!();
+}
+
+/// Request args for `getblockhash`.
+/// <https://developer.bitcoin.org/reference/rpc/getblockhash.html>
+pub struct GetBlockHashArgs {
+    pub height: u64,
+}
+
+impl Serialize for GetBlockHashArgs {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let request_parameters = [self.height];
+        request_parameters.serialize(serializer)
+    }
+}
+
+impl ToRpcParams for &GetBlockHashArgs {
+    to_rpc_params_impl!();
+}

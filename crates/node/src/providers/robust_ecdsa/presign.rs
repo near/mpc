@@ -47,7 +47,6 @@ impl PresignatureStorage {
             db,
             crate::db::DBCol::Presignature,
             domain_id.0.to_be_bytes().to_vec(),
-            None,
             my_participant_id,
             |participants, presignature| {
                 presignature.is_subset_of_active_participants(participants)

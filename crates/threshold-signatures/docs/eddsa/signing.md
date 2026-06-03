@@ -122,7 +122,7 @@ domain separated hash functions $H_3$.
 
 The inputs to this phase are:
 
-1. The output of key generation: the secret key share $x_i$ and the public key $X$ (only $x_i$ is used in this phase).
+1. The secret key share $x_i$.
 
 ### Round 1
 
