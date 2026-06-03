@@ -235,6 +235,12 @@ Restart=on-failure
 RestartSec=5
 User=mpc
 Group=mpc
+# Only stop the dstack-vmm process itself — not the qemu CVMs it supervises.
+# Without this, systemd's default KillMode=control-group sends SIGTERM to every
+# process in the unit's cgroup (i.e. all CVMs) whenever dstack-vmm is restarted —
+# for example when an OS package upgrade triggers `needrestart` — taking every
+# node on the host down at once.
+KillMode=process
 
 [Install]
 WantedBy=multi-user.target
