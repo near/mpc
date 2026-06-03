@@ -319,9 +319,12 @@ impl RecentBlocksTracker {
 
     /// Adds a block to the tracker. This is expected to be called for EVERY block given by the
     /// indexer (whether or not it is interesting).
-    pub fn add_block(&mut self, block: &BlockViewLite) -> anyhow::Result<AddBlockResult> {
-        if self.hash_to_node.contains_key(&block.hash) {
-            anyhow::bail!("Block already exists in the tracker");
+    pub fn add_block(&mut self, block: &BlockViewLite) -> AddBlockResult {
+        if let Some(block) = self.hash_to_node.get(&block.hash) {
+            tracing::error!(target: "recent blocks tracker", "Block {:?} at height {} already exists", block.hash, block.height);
+            return AddBlockResult {
+                block_ref: Arc::downgrade(&block.status),
+            };
         }
         let status = Arc::new(AtomicBlockStatus(AtomicU8::new(u8::from(
             BlockStatus::OptimisticButNotCanonical,
@@ -368,7 +371,7 @@ impl RecentBlocksTracker {
             self.maximum_height_available = block.height;
         }
         self.prune_old_blocks();
-        Ok(AddBlockResult { block_ref })
+        AddBlockResult { block_ref }
     }
 
     /// Advance the final head, mark its ancestors as final, and drop every
@@ -771,7 +774,7 @@ pub mod tests {
                 !self.parents_of_added_blocks.contains(&block.hash),
                 "Cannot retroactively add the parent of an already added block"
             );
-            let result = self.tracker.add_block(&block.to_block_view()).unwrap();
+            let result = self.tracker.add_block(&block.to_block_view());
             if let Some(parent) = block.parent.clone() {
                 self.parents_of_added_blocks.insert(parent.hash);
             }
