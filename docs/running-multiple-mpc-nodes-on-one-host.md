@@ -132,9 +132,18 @@ walkthrough. In the same dstack-vmm web UI (`http://127.0.0.1:10000`),
 create the second CVM following
 [Configuring and starting the MPC binary in a CVM](./running-an-mpc-node-in-tdx-external-guide.md#configuring-and-starting-the-mpc-binary-in-a-cvm).
 
-For **each port forward** (`:80`, `:8080`, `:24567`), set the **host
-address** to that CVM's assigned IP. The dstack-vmm web UI exposes
-this field next to host port / VM port at CVM-creation time.
+For **every public port forward** (`:80`, `:8080`, `:24567`, **and the
+migration port `:8079`**), set the **host address** to that CVM's
+assigned IP — never `0.0.0.0`. The dstack-vmm web UI exposes this field
+next to host port / VM port at CVM-creation time.
+
+> ⚠️ **Do not leave any public port on `0.0.0.0`.** A wildcard
+> `0.0.0.0:<port>` bind blocks *every* other CVM from binding that port
+> on its own IP, so whichever CVM boots first wins the port and the
+> others fail to start with
+> `qemu: Could not set up host forwarding rule 'tcp:<ip>:<port>-:<port>'`
+> and crash-loop. The migration port `:8079` is the easy one to miss —
+> its single-node default is `0.0.0.0:8079`.
 
 ### Step 3 — Per-CVM `user-config.toml`
 
