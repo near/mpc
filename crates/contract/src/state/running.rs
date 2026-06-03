@@ -186,12 +186,13 @@ impl RunningContractState {
             crate::primitives::domain::validate_domain_purpose(domain)?;
             crate::primitives::domain::validate_domain_threshold(domain, num_participants)?;
         }
-        // 3.11-transition lock: all CaitSith domains (ForeignTx included) must
-        // share one `reconstruction_threshold` so the legacy unprefixed
-        // `DBCol::Triple` mirror (#3292) can't collide. If no CaitSith
-        // domain exists yet the first one is free to pick any valid `t`;
-        // any later CaitSith — in the same proposal or in future calls —
-        // must match it. Remove once #3298 drops the mirror.
+        // TODO(#3164): remove this single-threshold lock once each domain can
+        // carry its own `t`. All CaitSith domains (ForeignTx included) must
+        // share one `reconstruction_threshold` today, because the node only
+        // runs background triple generation for a single `t`. If no CaitSith
+        // domain exists yet the first one is free to pick any valid `t`; any
+        // later CaitSith — in the same proposal or in future calls — must
+        // match it.
         let mut expected_caitsith_t = self
             .domains
             .domains()

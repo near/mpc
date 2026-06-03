@@ -1,6 +1,5 @@
 ---
 source: crates/node/src/providers/ecdsa/triple.rs
-expression: "format!(\"v2_key:     {}\\nlegacy_key: {}\", hex::encode(&v2_key),\nhex::encode(&legacy_key),)"
+expression: "format!(\"v2_key: {}\", hex::encode(&v2_key))"
 ---
-v2_key:     0102030405060708aabbccdd1122334455667788deadbeef
-legacy_key: aabbccdd1122334455667788deadbeef
+v2_key: 0102030405060708aabbccdd1122334455667788deadbeef
