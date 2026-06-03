@@ -45,7 +45,9 @@ This was first raised in [#381](https://github.com/near/mpc/issues/381) and disc
         │  dto_mapping.rs)           │  │  mpc-contract)              │
         └────────────────────────────┘  └─────────────────────────────┘
 
-Arrows point toward the dependency: "A ──▲ B" means A depends on B.
+Each arrow points away from the depender, toward the crate it depends on
+(`mpc-contract ──▲ near-mpc-contract-interface` reads "mpc-contract depends on
+near-mpc-contract-interface").
 ```
 
 Note that `mpc-contract` depends on `near-mpc-contract-interface`: its view
@@ -60,7 +62,7 @@ public boundary, consumed by both the contract itself and the node.
 | `mpc-primitives` | Pure identity newtypes (`DomainId`, `EpochId`, `AttemptId`, `KeyEventId`, `ParticipantId`), enums (`Curve`, `Protocol`), hash types | `borsh`, `serde` (no `near-sdk`) |
 | `near-mpc-contract-interface` | DTOs for contract state (`ProtocolContractState`, `RunningContractState`, `Keyset`, etc.), public API types (`SignRequest`, `CKDRequest`), conversion traits | `mpc-primitives`, `near-mpc-crypto-types`, `serde` |
 | `mpc-contract` | Internal state, validation logic, NEAR storage, business rules | `mpc-primitives`, `near-mpc-contract-interface`, `near-sdk` |
-| `mpc-node` | Node binary — indexer, coordinator, providers, networking | `mpc-primitives`, `near-mpc-contract-interface`, `threshold-signatures` |
+| `mpc-node` | Node binary — indexer, coordinator, providers, networking | Regular deps: `mpc-primitives`, `near-mpc-contract-interface`, `mpc-attestation`, `threshold-signatures` (no regular dep on `mpc-contract`). `mpc-contract` remains a `[dev-dependencies]` entry until Phase 8 (§3.3) — don't be misled by its presence in `Cargo.toml`. |
 
 ### 3.3 Incremental Migration Path
 
@@ -68,16 +70,16 @@ The decoupling is done incrementally, module by module. Each step removes some `
 
 | Phase | Scope | Status |
 |-------|-------|--------|
-| 1 | Participants boundary (`indexer/participants.rs`) | In progress — tracked by [#2167](https://github.com/near/mpc/issues/2167) (one `mpc_contract::primitives::key_state` import remains) |
-| 2 | Key state / keyshares (`keyshare.rs`, `keyshare/*.rs`) | Not started |
-| 3 | Coordinator / key events (`coordinator.rs`, `key_events.rs`) | Not started |
-| 4 | Signature / request types (`types.rs`, `indexer/handler.rs`, `mpc_client.rs`, providers) | Not started |
-| 5 | Migration types (`migration_service/*`) | Not started |
-| 6 | TEE (Trusted Execution Environment) types (`tee/*`, `indexer/tee.rs`) | Not started |
-| 7 | Remove `mpc-contract` from node's regular dependencies entirely | Not started |
-| 8 | Remove `mpc-contract` from node's dev-dependencies (rewrite test code) | Not started |
+| 1 | Participants boundary (`indexer/participants.rs`) | Done — no `mpc_contract::` imports |
+| 2 | Key state / keyshares (`keyshare.rs`, `keyshare/*.rs`) | Done — no `mpc_contract::` imports |
+| 3 | Coordinator / key events (`coordinator.rs`, `key_events.rs`) | Done — no `mpc_contract::` imports |
+| 4 | Signature / request types (`types.rs`, `indexer/handler.rs`, `mpc_client.rs`, providers) | Done — these use `near_mpc_contract_interface::types as dtos`, not `mpc_contract` |
+| 5 | Migration types (`migration_service/*`) | Done in production code (a `mpc_contract::` import remains only in a `#[cfg(test)]` block, `migration_service/types.rs`) |
+| 6 | TEE (Trusted Execution Environment) types (`tee/*`, `indexer/tee.rs`) | Done — no `mpc_contract::` imports |
+| 7 | Remove `mpc-contract` from node's regular dependencies | Done — `mpc-contract` is now only a `[dev-dependencies]` entry (`crates/node/Cargo.toml`), not a regular dependency |
+| 8 | Remove `mpc-contract` from node's dev-dependencies (rewrite test code) | Not started — the only genuinely open phase. Remaining `mpc_contract::` references live in `#[cfg(test)]` blocks (`config.rs`, `migration_service/types.rs`) and test-only modules (`indexer/fake.rs` gated behind `#[cfg(test)] pub mod fake`, `tests/*`, `assets/test_utils.rs`) |
 
-See the tracking issue [#381](https://github.com/near/mpc/issues/381) for the full list of remaining `mpc-contract` imports by module. (Per-phase PR links are intentionally omitted here — PR status drifts faster than the design intent this table records.)
+Statuses above were re-derived from `grep -rn "mpc_contract::" crates/node/src/` on this branch; production code is fully migrated. See the tracking issue [#381](https://github.com/near/mpc/issues/381) for the canonical remaining-work list. (Per-phase PR links are intentionally omitted here — PR status drifts faster than the design intent this table records, and a stale "Not started" badly overstates how much work is left.)
 
 ### 3.4 Conversion Pattern at Boundaries
 
@@ -173,7 +175,7 @@ pub(crate) async fn get_mpc_contract_state_dto(
 }
 ```
 
-The state is then broadcast to subsystems via `tokio::sync::watch` channels. The node works with DTOs directly — it should not convert them back to contract-internal types.
+The state is then broadcast to subsystems via `tokio::sync::watch` channels (see the `watch::channel` site in `crates/node/src/indexer/participants.rs`, where a `watch::Sender<dtos::ProtocolContractState>` pushes each freshly-fetched state). The node works with DTOs directly — it should not convert them back to contract-internal types.
 
 ### 4.5 Key Differences: Internal Types vs DTOs
 
