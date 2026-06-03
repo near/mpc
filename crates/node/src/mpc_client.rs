@@ -250,7 +250,7 @@ where
                     }
 
                     // TODO(#3032): remove completed & finalized requests from store
-                    pending_signatures.notify_new_block(signature_requests );
+                    pending_signatures.notify_new_block(signature_requests);
 
                     let ckd_requests: RequestsUpdate<CKDRequest> = RequestsUpdate::from_chain(
                         &block_update.block,
@@ -262,7 +262,7 @@ where
                         self.ckd_request_store.add(request);
                     }
 
-                    pending_ckds.notify_new_block(ckd_requests );
+                    pending_ckds.notify_new_block(ckd_requests);
 
                     let verify_foreign_tx_requests : RequestsUpdate<VerifyForeignTxRequest> = RequestsUpdate::from_chain(
                         &block_update.block,
@@ -274,7 +274,7 @@ where
                     for request in &verify_foreign_tx_requests.requests {
                         self.verify_foreign_tx_request_store.add(request);
                     }
-                    pending_verify_foreign_txs.notify_new_block(verify_foreign_tx_requests );
+                    pending_verify_foreign_txs.notify_new_block(verify_foreign_tx_requests);
                 }
                 debug_request = debug_receiver.recv() => {
                     if let Ok(debug_request) = debug_request {
