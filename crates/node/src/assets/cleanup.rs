@@ -47,21 +47,10 @@ pub fn delete_stale_triples_and_presignatures(
         AssetCleanup::Keep => {}
         AssetCleanup::DeleteAll => {
             update_writer.delete_all(DBCol::Presignature)?;
-            update_writer.delete_all(DBCol::Triple)?;
             update_writer.delete_all(DBCol::TripleV2)?;
         }
         AssetCleanup::KeepOnly(persitent_participants) => {
-            // Triples — both columns, since they are dual-written during the
-            // rollout window. Legacy `Triple` uses an empty prefix; new
-            // `TripleV2` uses a `[t as u64 BE]` prefix per store.
-            clean_db::<PairedTriple>(
-                db,
-                &mut update_writer,
-                DBCol::Triple,
-                &persitent_participants,
-                my_participant_id,
-                &[],
-            )?;
+            // Triples — `TripleV2` uses a `[t as u64 BE]` prefix per store.
             for t in &triple_thresholds {
                 clean_db::<PairedTriple>(
                     db,
@@ -186,7 +175,6 @@ mod tests {
     use crate::assets::test_utils;
     use crate::assets::test_utils::TestContext;
     use crate::assets::test_utils::get_participant_ids;
-    use crate::assets::test_utils::legacy_triple_key;
     use crate::assets::test_utils::make_triple;
     use crate::assets::test_utils::random_verifying_key;
     use crate::assets::test_utils::triple_v2_key;
@@ -272,16 +260,14 @@ mod tests {
         assert_epoch_data_in_db_matches(&ctx, &end_data);
     }
 
-    /// End-to-end check that a dual-written triple (via `TripleStorage::add_owned`,
-    /// which writes to both `DBCol::TripleV2` under `[t]` and `DBCol::Triple` with
-    /// no prefix) is removed from BOTH columns when the participant set changes.
-    /// The other cleanup tests populate `TripleV2` only via a local helper that
-    /// bypasses the dual-write, so this is the only one that exercises the
-    /// realistic post-`add_owned` state.
+    /// End-to-end check that a triple written via `TripleStorage::add_owned`
+    /// (into `DBCol::TripleV2` under `[t]`) is removed when the participant set
+    /// changes. The other cleanup tests populate `TripleV2` via a local helper;
+    /// this one exercises the realistic post-`add_owned` state.
     #[test]
     #[expect(non_snake_case)]
-    fn delete_stale_triples_and_presignatures__should_clean_dual_written_triples_in_both_columns() {
-        // Given a node has dual-written a stale triple via TripleStorage.
+    fn delete_stale_triples_and_presignatures__should_clean_stale_triple_in_v2_column() {
+        // Given a node has written a stale triple via TripleStorage.
         let (mut start_data, my_participant_id, threshold) = test_utils::gen_four_participants();
         let all_participants = get_participant_ids(start_data.clone());
         let alive_participants = Arc::new(Mutex::new(all_participants.clone()));
@@ -301,10 +287,8 @@ mod tests {
         let id = triple_store.generate_and_reserve_id();
         triple_store.add_owned(id, make_triple(&all_participants));
         let v2_key = triple_v2_key(threshold, id);
-        let legacy_key = legacy_triple_key(id);
-        // Sanity: the row really is in both columns.
+        // Sanity: the row really is in the TripleV2 column.
         assert!(db.get(DBCol::TripleV2, &v2_key).unwrap().is_some());
-        assert!(db.get(DBCol::Triple, &legacy_key).unwrap().is_some());
 
         // Seed the persisted epoch_data so the next call enters the
         // `KeepOnly` branch (same epoch_id, persistent set shrinks).
@@ -317,7 +301,6 @@ mod tests {
         )
         .unwrap();
         assert!(db.get(DBCol::TripleV2, &v2_key).unwrap().is_some());
-        assert!(db.get(DBCol::Triple, &legacy_key).unwrap().is_some());
 
         // When one participant's TLS key changes — the triple's participant
         // set is no longer fully persistent.
@@ -337,17 +320,15 @@ mod tests {
         )
         .unwrap();
 
-        // Then the dual-written row is gone from both columns.
+        // Then the row is gone from the TripleV2 column.
         assert!(db.get(DBCol::TripleV2, &v2_key).unwrap().is_none());
-        assert!(db.get(DBCol::Triple, &legacy_key).unwrap().is_none());
     }
 
-    /// Counterpart to the stale-cleaned test: a dual-written triple whose
-    /// participants are all in the persistent set must survive the cleanup in
-    /// both columns.
+    /// Counterpart to the stale-cleaned test: a triple whose participants are
+    /// all in the persistent set must survive the cleanup.
     #[test]
     #[expect(non_snake_case)]
-    fn delete_stale_triples_and_presignatures__should_keep_dual_written_active_triple() {
+    fn delete_stale_triples_and_presignatures__should_keep_active_triple() {
         let (mut start_data, my_participant_id, threshold) = test_utils::gen_four_participants();
         let all_participants = get_participant_ids(start_data.clone());
         // Triple uses everyone EXCEPT the last participant (whose TLS we'll change
@@ -374,7 +355,6 @@ mod tests {
         let id = triple_store.generate_and_reserve_id();
         triple_store.add_owned(id, make_triple(&active_subset));
         let v2_key = triple_v2_key(threshold, id);
-        let legacy_key = legacy_triple_key(id);
 
         // Seed epoch_data, then run cleanup with one participant's TLS rotated
         // (the one our triple does not depend on).
@@ -402,15 +382,14 @@ mod tests {
         .unwrap();
 
         assert!(db.get(DBCol::TripleV2, &v2_key).unwrap().is_some());
-        assert!(db.get(DBCol::Triple, &legacy_key).unwrap().is_some());
     }
 
-    /// A dual-written triple authored by a peer (received locally via
-    /// `add_unowned`) must not be touched by *our* cleanup — each node only
-    /// cleans the triples it owns.
+    /// A triple authored by a peer (received locally via `add_unowned`) must
+    /// not be touched by *our* cleanup — each node only cleans the triples it
+    /// owns.
     #[test]
     #[expect(non_snake_case)]
-    fn delete_stale_triples_and_presignatures__should_keep_peer_owned_dual_written_triple() {
+    fn delete_stale_triples_and_presignatures__should_keep_peer_owned_triple() {
         let (mut start_data, my_participant_id, threshold) = test_utils::gen_four_participants();
         let all_participants = get_participant_ids(start_data.clone());
         let peer = *all_participants
@@ -436,7 +415,6 @@ mod tests {
         let peer_id = UniqueId::new(peer, 100, 0);
         triple_store.add_unowned(peer_id, make_triple(&all_participants));
         let v2_key = triple_v2_key(threshold, peer_id);
-        let legacy_key = legacy_triple_key(peer_id);
 
         delete_stale_triples_and_presignatures(
             &db,
@@ -462,6 +440,5 @@ mod tests {
         .unwrap();
 
         assert!(db.get(DBCol::TripleV2, &v2_key).unwrap().is_some());
-        assert!(db.get(DBCol::Triple, &legacy_key).unwrap().is_some());
     }
 }
