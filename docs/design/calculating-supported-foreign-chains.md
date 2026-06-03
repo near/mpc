@@ -100,6 +100,14 @@ and serves two roles:
 
 Registration reflects each node's *current* config.
 
+The existing method names (`register_foreign_chain_config` /
+`get_foreign_chain_support_by_node`) are kept even though the data now feeds the
+*available* set: renaming them (e.g. to `register_available_chain_config` /
+`get_available_chain_by_node`) would add two more methods plus a multi-step
+contract→node→contract migration to retire the old ones — not worth growing the
+new-method set against the contract size limit, given this proposal already adds two
+views.
+
 ## Guarantees preserved
 
 **Safety** — the network signs an observation only if ≥ `signing_threshold`
