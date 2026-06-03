@@ -347,7 +347,7 @@ impl RecentBlocksTracker {
         let new_final_blocks = self.maybe_update_final_head(block.last_final_block);
         MPC_FINALIZED_BLOCKS_INDEXED.inc_by(
             u64::try_from(new_final_blocks.len())
-                .expect("usize shuold always fit into a u64 on our targets"),
+                .expect("usize should always fit into a u64 on our targets"),
         );
         match self.canonical_head.upgrade() {
             None => {
