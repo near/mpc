@@ -287,7 +287,7 @@ general-purpose `sign()` keys, even if the same account and derivation path are 
 
 ## Contract State (Foreign Chain Configurations)
 
-The set of chains the network collectively supports is derived from the **on-chain RPC whitelist** (`foreign_chain_rpc_whitelist`): a chain is supported iff the network has voted in a `ChainEntry` for it. See [Calculating the supported foreign-chain set](design/calculating-supported-foreign-chains.md). The contract still stores a foreign-chain configuration **per participant**, but that registration no longer determines the supported set — it is retained as a monitoring/alerting signal (detecting an active node that does not cover a supported chain).
+The **whitelisted** set is derived from the **on-chain RPC whitelist** (`foreign_chain_rpc_whitelist`): a chain is whitelisted iff the network has voted in a `ChainEntry` for it, exposed by `get_whitelisted_foreign_chains()`. The **available** set — the chains ≥ signing threshold active nodes currently cover — is computed from the per-participant registrations and exposed by `get_available_foreign_chains()`; `verify_foreign_transaction` gates on it. The per-participant registration also drives alerting (detecting an active node that does not cover a whitelisted chain). See [Calculating the whitelisted and available foreign-chain sets](design/calculating-supported-foreign-chains.md).
 
 ```rust
 pub struct ForeignChainSupportByNode {
@@ -312,8 +312,9 @@ pub enum ForeignChain {
 Relevant contract methods:
 
 * `register_foreign_chain_config(foreign_chain_configuration: ForeignChainConfiguration)` — call method. The authenticated participant (re)registers its per-chain provider set. The call is idempotent.
-* `get_supported_foreign_chains() -> SupportedForeignChains` — view method. Returns the set of chains present in the on-chain RPC whitelist (`foreign_chain_rpc_whitelist`).
-* `get_foreign_chain_support_by_node() -> ForeignChainSupportByNode` — view method. Returns each participant's registered set of supported chains. Used for monitoring/alerting (does every active node cover every supported chain?), not for computing the supported set.
+* `get_whitelisted_foreign_chains() -> WhitelistedForeignChains` — view method. Returns the chains present in the on-chain RPC whitelist (`foreign_chain_rpc_whitelist`). (`get_supported_foreign_chains()`, the old intersection rule, is **to be deprecated**.)
+* `get_available_foreign_chains() -> AvailableForeignChains` — view method. Returns the chains that ≥ signing threshold active nodes currently cover; `verify_foreign_transaction` gates on this set.
+* `get_foreign_chain_support_by_node() -> ForeignChainSupportByNode` — view method. Returns each participant's registered set of covered chains. Feeds the available-set computation and the coverage alerting (does every active node cover every whitelisted chain?).
 
 ## On-chain RPC Provider Whitelist
 
@@ -377,7 +378,7 @@ pub struct ProviderEntry {
 /// quorum nodes should use when querying.
 pub struct ChainEntry {
     pub providers: Vec<ProviderEntry>,
-    pub threshold: u64,
+    pub quorum: u64,
 }
 
 pub struct AllowedProviders {
@@ -419,7 +420,7 @@ pub struct ChainVote {
     pub chain: ForeignChain,
     pub providers: Vec<ProviderEntry>,
     /// RPC response quorum nodes apply when fanning out queries to those providers.
-    pub threshold: u64,
+    pub quorum: u64,
 }
 
 #[handle_result]
@@ -431,10 +432,10 @@ pub fn vote_update_foreign_chain_providers(
 
 Borsh args (not JSON) because serde::Deserialize for the nested `ChainVote`/`ProviderEntry`/`AuthScheme`/`ChainRouting` closure would push the contract past the per-tx WASM size cap.
 
-- **Vote target = the per-chain snapshot.** For each `ChainVote` in the batch, the participant is voting on the chain's *full* proposed state — providers and RPC response quorum together. Two participants count toward the same proposal for a chain when their canonical `(providers, threshold)` pairs are byte-identical.
+- **Vote target = the per-chain snapshot.** For each `ChainVote` in the batch, the participant is voting on the chain's *full* proposed state — providers and RPC response quorum together. Two participants count toward the same proposal for a chain when their canonical `(providers, quorum)` pairs are byte-identical.
 - **Canonicalization.** Within each `ChainVote`, the contract sorts `providers` by `provider_id` before comparison, so two participants who submitted the same logical set in different orders still count as the same proposal. A duplicate `provider_id` inside a single `ChainVote`, or a duplicate `chain` across the batch, is rejected with `InvalidParameters::MalformedPayload`.
 - **One active vote per participant per chain.** Votes are keyed by `(participant, chain)`. Recasting for a chain overwrites that participant's slot for *only that chain*; chains the participant didn't touch in the new call keep their prior slot.
-- **Gated on the protocol signing threshold.** A chain applies when the count of participants holding the same canonical `(providers, threshold)` pair reaches `self.threshold()?.value()` — the same threshold used by `verify_tee` and `vote_add_os_measurement`. There is no separate per-chain *voting* threshold; the per-chain numeric on `ChainVote.threshold` is the *RPC response quorum* (a runtime concept consumed by nodes), not a voting parameter.
+- **Gated on the protocol signing threshold.** A chain applies when the count of participants holding the same canonical `(providers, quorum)` pair reaches `self.threshold()?.value()` — the same threshold used by `verify_tee` and `vote_add_os_measurement`. There is no separate per-chain *voting* threshold; the per-chain numeric on `ChainVote.quorum` is the *RPC quorum* (a runtime concept consumed by nodes), not a voting parameter.
 - **Apply = full snapshot replacement.** When threshold is reached for a chain, `AllowedProviders.entries[chain]` is set to the proposed `ChainEntry` — the old provider list is discarded wholesale. The chain's pending votes are cleared (`clear_chain`) so the next round starts fresh. Other chains' pending votes are untouched.
 - **Threshold checked synchronously on every call.** No periodic sweep.
 - **Vote withdraw.** No explicit withdraw endpoint. Recasting overwrites your slot for the chains you touch. A vote is also cleared by being removed from the participant set (`clean_tee_status` → `ProviderVotes::retain_only`) or by the chain applying.
@@ -555,7 +556,7 @@ See "Contract State (Foreign Chain Configurations)" above.
 * Node config contains chain RPC providers and timeouts (API keys stay local).
 * On startup, each node submits a single `register_foreign_chain_config` transaction derived from its local configuration. The call is idempotent.
 * Nodes do **not** vote, poll, or wait for network-wide consensus — the transaction is sent and startup continues.
-* `get_supported_foreign_chains()` returns the on-chain RPC whitelist's chains, not these registrations: a chain is *supported* once the network votes in a `ChainEntry`, and no single node can change it. It is *available* — actually served — only while ≥ `threshold` active nodes report support; `verify_foreign_transaction` early-rejects a supported-but-unavailable chain. See [Calculating the supported foreign-chain set](design/calculating-supported-foreign-chains.md).
+* `get_whitelisted_foreign_chains()` returns the on-chain RPC whitelist's chains, not these registrations: a chain is *whitelisted* once the network votes in a `ChainEntry`, and no single node can change it. It is *available* — actually served — only while ≥ signing threshold active nodes cover it (`get_available_foreign_chains()`); `verify_foreign_transaction` early-rejects a whitelisted-but-unavailable chain. See [Calculating the whitelisted and available foreign-chain sets](design/calculating-supported-foreign-chains.md).
 * `get_foreign_chain_support_by_node()` exposes per-participant registrations, which feed the availability check and the coverage alerting.
 
 ### Configuration (Node)
@@ -619,6 +620,6 @@ providers require no auth at all.
 * **Provider availability**: Outages or rate limits can cause verification failures and reduced
   signing availability.
 * **Finality semantics**: Finality definitions differ across chains; mapping them correctly is critical.
-* **Incomplete chain coverage**: A chain is supported as soon as the network votes in its whitelist entry, independent of any single operator. A node that hasn't configured a supported chain is treated like a node that is down for it — it does not participate in that chain's verification requests, and the pre-generated triples/presignatures it co-owns become offline assets. As long as the leader knows the node is down there is no waste, but an asset that stays offline for a long period is eventually discarded. Foreign-tx presignatures live in their own dedicated `ForeignTx`-domain pool, but triples are shared per reconstruction threshold across all CaitSith domains, so stranding them also reduces ordinary `sign()` presignature generation — the waste is not confined to that chain's availability. This is mitigated operationally by alerting on any active node that does not cover a supported chain, rather than by the protocol.
+* **Incomplete chain coverage**: A chain is whitelisted as soon as the network votes in its whitelist entry, independent of any single operator. A node that hasn't configured a whitelisted chain is treated like a node that is down for it — it does not participate in that chain's verification requests, and the pre-generated triples/presignatures it co-owns become offline assets. As long as the leader knows the node is down there is no waste, but an asset that stays offline for a long period is eventually discarded. Foreign-tx presignatures live in their own dedicated `ForeignTx`-domain pool, but triples are shared across all CaitSith domains with the same signing threshold, so stranding them also reduces ordinary `sign()` presignature generation — the waste is not confined to that chain's availability. This is mitigated operationally by alerting on any active node that does not cover a whitelisted chain, rather than by the protocol.
 * **Config drift**: Nodes missing required provider keys will fail startup validation.
 * **Extractor correctness**: Bugs or ambiguous specifications in extractors could produce incorrect values.
