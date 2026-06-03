@@ -174,9 +174,9 @@ async fn test_multi_domain() {
     // when: start keygen for a new domain (ID 7), kill the leader to stall it,
     // then vote to cancel from the 3 remaining participants. Reuse the
     // existing CaitSith `t = 2` so the #3304 lock accepts the proposal.
-    // TODO(#3298): once the legacy `DBCol::Triple` mirror is gone and the
-    // #3304 lock is removed, restore `reconstruction_threshold = 3` to
-    // match the post-reshare cluster threshold.
+    // TODO(#3164): once the single-threshold #3304 lock is removed, restore
+    // `reconstruction_threshold = 3` to match the post-reshare cluster
+    // threshold.
     cluster
         .start_add_domains(vec![DomainConfig {
             id: DomainId(7),
