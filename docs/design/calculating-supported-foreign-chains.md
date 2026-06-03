@@ -101,9 +101,11 @@ dropped a chain to zero availability.
 ## Known tradeoff
 
 When a chain is available but not *every* node supports it, the non-supporting nodes
-are treated as down for `C`: they don't participate, stranding the pre-generated
-assets they co-own (usable only while all their participants are alive), which are
-then discarded. Two surfaces:
+are treated as down for `C`: they don't participate, and the pre-generated assets
+they co-own (usable only while all their participants are alive) become offline
+assets. As long as the leader knows a node is down there is no waste, only an asset
+that stays offline for a long period is eventually discarded, wasting the work that
+produced it. Two surfaces where that lands:
 
 - **Presignatures are per-domain.** Foreign-tx signing uses a dedicated `ForeignTx`
   domain (`DomainPurpose::ForeignTx`), so stranded foreign-tx presignatures stay in
