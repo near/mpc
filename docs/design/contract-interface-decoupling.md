@@ -60,7 +60,7 @@ public boundary, consumed by both the contract itself and the node.
 | Crate | Contains | Depends on |
 |-------|----------|------------|
 | `mpc-primitives` | Pure identity newtypes (`DomainId`, `EpochId`, `AttemptId`, `KeyEventId`, `ParticipantId`), enums (`Curve`, `Protocol`), hash types | `borsh`, `serde` (no `near-sdk`) |
-| `near-mpc-contract-interface` | DTOs for contract state (`ProtocolContractState`, `RunningContractState`, `Keyset`, etc.), public API types (`SignRequest`, `CKDRequest`), conversion traits | `mpc-primitives`, `near-mpc-crypto-types`, `serde` |
+| `near-mpc-contract-interface` | DTOs for contract state (`ProtocolContractState`, `RunningContractState`, `Keyset`, etc.), public API types (`SignatureRequest`, `CKDRequest`), conversion traits | `mpc-primitives`, `near-mpc-crypto-types`, `serde`, `borsh` |
 | `mpc-contract` | Internal state, validation logic, NEAR storage, business rules | `mpc-primitives`, `near-mpc-contract-interface`, `near-sdk` |
 | `mpc-node` | Node binary — indexer, coordinator, providers, networking | Regular deps: `mpc-primitives`, `near-mpc-contract-interface`, `near-mpc-crypto-types`, `mpc-attestation`, `threshold-signatures` (no regular dep on `mpc-contract`). `mpc-contract` remains a `[dev-dependencies]` entry until Phase 8 (§3.3) — don't be misled by its presence in `Cargo.toml`. |
 
@@ -214,11 +214,11 @@ This is the correct pattern for ensuring DTO compatibility, and it is applied to
 
 ### 4.7 Public API Surface
 
-The interface crate exports ~60 types organized into:
+The interface crate exports ~80 types organized into:
 - **State types:** `ProtocolContractState`, `RunningContractState`, `ResharingContractState`, `InitializingContractState`, `Keyset`, `KeyEvent`, `KeyEventInstance`, `ThresholdParameters`, etc.
 - **Domain types:** `DomainConfig`, `DomainRegistry`, `Protocol`, `Curve`, `DomainPurpose`
 - **Identity types:** `EpochId`, `AttemptId`, `DomainId`, `KeyEventId`, `ParticipantId`
-- **Request types:** `SignRequest`, `CKDRequest`, `Payload`, `Tweak`, `YieldIndex`
+- **Request types:** `SignatureRequest`, `SignRequestArgs`, `CKDRequest`, `Payload`, `Tweak`, `YieldIndex`
 - **Attestation types:** `Attestation`, `VerifiedAttestation`, `MockAttestation`, `DstackAttestation`
 - **Foreign chain types:** Full foreign chain policy and request types
 - **Crypto types:** Re-exported from `near-mpc-crypto-types` (`PublicKey`, `PublicKeyExtended`, `SignatureResponse`, etc.)
@@ -240,7 +240,7 @@ Where possible, use existing typed wrappers from `near-mpc-crypto-types` (e.g., 
 
 ### 5.3 KDF (Key Derivation Function) placement: `derive_tweak`, `derive_app_id`
 
-These are security-sensitive hash functions with hardcoded prefix strings. They're not pure DTOs but are needed by both the contract and the node. **Current location:** `near-mpc-crypto-types::kdf` (`crates/near-mpc-crypto-types/src/kdf.rs`). The interface crate re-exports them via `pub use near_mpc_crypto_types::kdf`, so consumers can reach them as `near_mpc_contract_interface::kdf` without depending on the crypto-types crate directly.
+These are security-sensitive hash functions with hardcoded prefix strings. They're not pure DTOs but are needed by both the contract and the node. **Current location:** `near-mpc-crypto-types::kdf` (`crates/near-mpc-crypto-types/src/kdf.rs`). The interface crate re-exports them via `pub use near_mpc_crypto_types::kdf` inside its `types` module (`crates/near-mpc-contract-interface/src/lib.rs:18`), so consumers can reach them as `near_mpc_contract_interface::types::kdf` without depending on the crypto-types crate directly. (The node currently imports them straight from `near_mpc_crypto_types::kdf` — see `crates/node/src/types.rs:6` — rather than through the interface re-export.)
 
 This resolves the earlier open question of whether they belonged in `mpc-primitives` vs. the interface crate: they now live alongside the crypto types they operate on, not in either DTO crate, since hash functions aren't DTOs.
 
@@ -250,7 +250,7 @@ When the interface DTO uses a weaker type (e.g., `String` for a public key), val
 
 ## 6. Open Questions
 
-1. ~~**Where should `derive_tweak` / `derive_app_id` live?**~~ **Resolved** — they live in `near-mpc-crypto-types::kdf`, re-exported from the interface crate. See §5.3. (Originally raised in [PR #2831 discussion](https://github.com/near/mpc/pull/2831#issuecomment-4237068116).)
+1. ~~**Where should `derive_tweak` / `derive_app_id` live?**~~ **Resolved** — they live in `near-mpc-crypto-types::kdf`, re-exported from the interface crate as `near_mpc_contract_interface::types::kdf`. See §5.3. (Originally raised in [PR #2831 discussion](https://github.com/near/mpc/pull/2831#issuecomment-4237068116).)
 
 2. **Should we publish `mpc-primitives` to crates.io?** External consumers (wallets, SDKs) need shared types. ([#2703](https://github.com/near/mpc/issues/2703))
 
