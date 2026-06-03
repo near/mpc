@@ -110,20 +110,14 @@ pub(crate) trait IntoInterfaceType<InterfaceType> {
     fn into_dto_type(self) -> InterfaceType;
 }
 
-pub(crate) trait TryIntoInterfaceType<InterfaceType> {
-    type Error;
-    fn try_into_dto_type(self) -> Result<InterfaceType, Self::Error>;
-}
-
 pub(crate) trait TryIntoContractType<ContractType> {
     type Error;
     fn try_into_contract_type(self) -> Result<ContractType, Self::Error>;
 }
 ```
 
-The `Try*` variants are used where a conversion can fail (e.g. validating a
-DTO's fields when converting into the internal type, or producing a DTO from
-internal state that may not always be representable).
+The `TryIntoContractType` variant is used where a conversion can fail (e.g.
+validating a DTO's fields when converting into the internal type).
 
 The node has its own parallel trait in `crates/node/src/trait_extensions/convert_to_contract_dto.rs`:
 
