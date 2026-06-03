@@ -880,13 +880,16 @@ mod tests {
             self.head.height().max(fork_height)
         }
 
-        /// Builds the next canonical block, adds it to the shared tracker, and packages
-        /// the data `notify_new_block` needs.
-        fn update(&mut self) -> RequestsUpdate<TestRequest> {
+        /// Builds the next canonical block, adds it to the shared tracker, and delivers
+        /// the resulting update to `pending`. Returns the new block height.
+        fn update(
+            &mut self,
+            pending: &mut PendingRequests<TestRequest, TestRequestRespondArgs>,
+        ) -> u64 {
             let new_height = self.max_known_height() + 1;
             let new_block = self.head.descendant(new_height);
             let block_ref = self.tracker.add_block(&new_block.to_block_view()).block_ref;
-            let requests = RequestsUpdate {
+            let update = RequestsUpdate {
                 requests: self.requests_to_submit.clone(),
                 completed_requests: self.responses_to_submit.clone(),
                 block_height: new_height,
@@ -895,18 +898,22 @@ mod tests {
             self.requests_to_submit = Vec::new();
             self.responses_to_submit = Vec::new();
             self.head = new_block;
-            requests
+            pending.notify_new_block(update);
+            new_height
         }
 
         /// Like [`update`] but forks the current head, making a new canonical chain.
-        fn update_canonical_fork(&mut self) -> RequestsUpdate<TestRequest> {
+        fn update_canonical_fork(
+            &mut self,
+            pending: &mut PendingRequests<TestRequest, TestRequestRespondArgs>,
+        ) -> u64 {
             let new_height = self.max_known_height() + 1;
             if self.fork.is_none() {
                 self.fork = self.head.parent.clone();
             }
             let new_block = self.fork.as_ref().unwrap().descendant(new_height);
             let block_ref = self.tracker.add_block(&new_block.to_block_view()).block_ref;
-            let requests = RequestsUpdate {
+            let update = RequestsUpdate {
                 requests: self.requests_to_submit.clone(),
                 completed_requests: self.responses_to_submit.clone(),
                 block_height: new_height,
@@ -915,22 +922,8 @@ mod tests {
             self.requests_to_submit = Vec::new();
             self.responses_to_submit = Vec::new();
             self.fork = Some(new_block);
-            requests
-        }
-
-        /// Convenience: build the next canonical block and deliver it to the queue.
-        fn deliver(&mut self, pending: &mut PendingRequests<TestRequest, TestRequestRespondArgs>) {
-            let update = self.update();
             pending.notify_new_block(update);
-        }
-
-        /// Convenience: build the next forked block and deliver it to the queue.
-        fn deliver_forked(
-            &mut self,
-            pending: &mut PendingRequests<TestRequest, TestRequestRespondArgs>,
-        ) {
-            let update = self.update_canonical_fork();
-            pending.notify_new_block(update);
+            new_height
         }
 
         fn advance_clock(&self, duration: Duration) {
@@ -948,7 +941,7 @@ mod tests {
         let _req1 = setup.add_request_follower();
         // and a request is added for which we are a leader
         let req2 = setup.add_request_leader();
-        setup.deliver(&mut pending_requests);
+        setup.update(&mut pending_requests);
 
         // Then: req1 is not attempted because we're not the leader. req2 is attempted.
         let to_attempt1 = pending_requests.get_requests_to_attempt();
@@ -963,7 +956,7 @@ mod tests {
         // When: a new request is issues for which we are a leader
         let req3 = setup.add_request_leader();
         let _req4 = setup.add_request_follower();
-        setup.deliver(&mut pending_requests);
+        setup.update(&mut pending_requests);
 
         // Then: req3 should be attempted, while request 4 should be ignored, as we're not leader.
         let to_attempt2 = pending_requests.get_requests_to_attempt();
@@ -993,7 +986,7 @@ mod tests {
         // Given: a leader request that has been attempted once and dropped.
         let (mut pending_requests, mut setup) = TestSetup::new();
         let req = setup.add_request_leader();
-        setup.deliver(&mut pending_requests);
+        setup.update(&mut pending_requests);
         let to_attempt1 = pending_requests.get_requests_to_attempt();
         assert_eq!(to_attempt1.len(), 1);
         assert_eq!(to_attempt1[0].request.id, req.id);
@@ -1020,7 +1013,7 @@ mod tests {
         // When: the response now lands on the canonical chain, but is not yet final.
         drop(to_attempt2);
         setup.add_indexed_respond_tx(req.id);
-        setup.deliver(&mut pending_requests);
+        setup.update(&mut pending_requests);
 
         // Then: we do NOT re-attempt — the response is on the canonical chain, so we wait for
         // it to finalize.
@@ -1028,8 +1021,8 @@ mod tests {
         assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
 
         // When: enough subsequent blocks arrive to finalize the response.
-        setup.deliver(&mut pending_requests);
-        setup.deliver(&mut pending_requests);
+        setup.update(&mut pending_requests);
+        setup.update(&mut pending_requests);
 
         // Then: we still don't re-attempt — the request is resolved.
         setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
@@ -1042,7 +1035,7 @@ mod tests {
         // Given: a request queue with one leader request, attempted once and dropped.
         let (mut pending_requests, mut setup) = TestSetup::new();
         let req = setup.add_request_leader();
-        setup.deliver(&mut pending_requests);
+        setup.update(&mut pending_requests);
         let to_attempt1 = pending_requests.get_requests_to_attempt();
         assert_eq!(to_attempt1.len(), 1);
         assert_eq!(to_attempt1[0].request.id, req.id);
@@ -1051,11 +1044,11 @@ mod tests {
         // When: a response lands in a canonical block.
         setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
         setup.add_indexed_respond_tx(req.id);
-        setup.deliver(&mut pending_requests);
+        setup.update(&mut pending_requests);
 
         // And: the chain forks and the new fork becomes canonical, leaving the response block
         // (and the response it carries) on the non-canonical branch.
-        setup.deliver_forked(&mut pending_requests);
+        setup.update_canonical_fork(&mut pending_requests);
 
         // Then: the queue should re-attempt the request — a non-canonical response does NOT
         // short-circuit `process()`, so the request flows through the normal leader path.
@@ -1073,7 +1066,7 @@ mod tests {
 
         // When: we have a request as leader
         let req1 = setup.add_request_leader();
-        setup.deliver(&mut pending_requests);
+        setup.update(&mut pending_requests);
         // then: attempt exactly `MAX_ATTEMPTS_PER_REQUEST_AS_LEADER
         for i in 0..MAX_ATTEMPTS_PER_REQUEST_AS_LEADER {
             let to_attempt = pending_requests.get_requests_to_attempt();
@@ -1095,13 +1088,9 @@ mod tests {
         // Given: a request queue with two request from two different blocks
         let (mut pending_requests, mut setup) = TestSetup::new();
         let _req1 = setup.add_request_leader();
-        let update = setup.update();
-        let block_height_req_1 = update.block_height;
-        pending_requests.notify_new_block(update);
+        let block_height_req_1 = setup.update(&mut pending_requests);
         let req2 = setup.add_request_leader();
-        let update = setup.update();
-        let block_height_req_2 = update.block_height;
-        pending_requests.notify_new_block(update);
+        let block_height_req_2 = setup.update(&mut pending_requests);
 
         // When: we set the network height past the expiry of the first, but before expiry of the
         // second signature
@@ -1122,7 +1111,7 @@ mod tests {
         // When: we get a third request that is now recent enough
         setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
         let req3 = setup.add_request_leader();
-        setup.deliver(&mut pending_requests);
+        setup.update(&mut pending_requests);
 
         // Then: we should attempt it
         let to_attempt2 = pending_requests.get_requests_to_attempt();
@@ -1134,7 +1123,7 @@ mod tests {
         drop(to_attempt2);
         setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
         let req4 = setup.add_request_leader();
-        setup.deliver_forked(&mut pending_requests);
+        setup.update_canonical_fork(&mut pending_requests);
 
         // Then: Req3 is now on a non-canonical fork so should not be attempted.
         let to_attempt3 = pending_requests.get_requests_to_attempt();
@@ -1145,7 +1134,7 @@ mod tests {
         drop(to_attempt3);
         setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
         let req5 = setup.add_request_leader();
-        setup.deliver(&mut pending_requests);
+        setup.update(&mut pending_requests);
 
         // Then: we should attempt that instead.
         let to_attempt4 = pending_requests.get_requests_to_attempt();
@@ -1174,7 +1163,7 @@ mod tests {
         let req1 = setup.add_request_leader_order(&[0, 1]);
         let req2 = setup.add_request_leader_order(&[2, 0, 1]);
         let _req3 = setup.add_request_leader_order(&[3, 1]);
-        setup.deliver(&mut pending_requests);
+        setup.update(&mut pending_requests);
 
         // Then: Since 0 and 2 are unavailable, and we are the first available leader for req1 and req2,
         // we should attempt these.
@@ -1192,7 +1181,7 @@ mod tests {
         // attempt any signatures, even if it were the preferred leader.
         setup.network_api.bring_up(setup.participant_ids[0]);
         let req4 = setup.add_request_leader_order(&[1]);
-        setup.deliver(&mut pending_requests);
+        setup.update(&mut pending_requests);
         assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
 
         // Bring down node 0 again. Now, node 1 should retry req1, req2 again, as well as trying req4.
@@ -1210,9 +1199,9 @@ mod tests {
         drop(to_attempt2);
         setup.add_indexed_respond_tx(req1.id);
         setup.add_indexed_respond_tx(req4.id);
-        setup.deliver(&mut pending_requests);
-        setup.deliver(&mut pending_requests);
-        setup.deliver(&mut pending_requests);
+        setup.update(&mut pending_requests);
+        setup.update(&mut pending_requests);
+        setup.update(&mut pending_requests);
         setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
 
         let to_attempt3 = pending_requests.get_requests_to_attempt();
@@ -1227,16 +1216,16 @@ mod tests {
         let (mut pending_requests, mut setup) = TestSetup::new();
         setup.advance_clock(Duration::seconds(1));
         let req1 = setup.add_request_leader();
-        setup.deliver(&mut pending_requests);
+        setup.update(&mut pending_requests);
         // When: we are lagging behind
         setup.advance_clock(Duration::microseconds(2432123));
         // When: we have a response in the subsequent block
         setup.add_indexed_respond_tx(req1.id);
-        setup.deliver(&mut pending_requests);
+        setup.update(&mut pending_requests);
         setup.advance_clock(Duration::seconds(1));
         // When: we finalize request and response
-        setup.deliver(&mut pending_requests);
-        setup.deliver(&mut pending_requests);
+        setup.update(&mut pending_requests);
+        setup.update(&mut pending_requests);
         setup.advance_clock(Duration::seconds(1));
         // Poll so the queue notices the response is final and records latency into
         // `recently_completed_requests` via the `Resolve` arm.
@@ -1266,9 +1255,7 @@ mod tests {
         // Given: one leader request at block height H
         let (mut pending_requests, mut setup) = TestSetup::new();
         let req1 = setup.add_request_leader();
-        let update = setup.update();
-        let block_height = update.block_height;
-        pending_requests.notify_new_block(update);
+        let block_height = setup.update(&mut pending_requests);
 
         // When: set network height to H + REQUEST_EXPIRATION_BLOCKS - 1
         setup.set_participant_network_height(block_height + REQUEST_EXPIRATION_BLOCKS - 1);
@@ -1285,9 +1272,7 @@ mod tests {
         // Given: one leader request at block height H
         let (mut pending_requests, mut setup) = TestSetup::new();
         let req1 = setup.add_request_leader();
-        let update = setup.update();
-        let block_height = update.block_height;
-        pending_requests.notify_new_block(update);
+        let block_height = setup.update(&mut pending_requests);
         assert!(
             pending_requests.requests.contains_key(&req1.id),
             "request should be in the queue"
