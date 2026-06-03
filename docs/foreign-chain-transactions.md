@@ -287,7 +287,7 @@ general-purpose `sign()` keys, even if the same account and derivation path are 
 
 ## Contract State (Foreign Chain Configurations)
 
-The set of chains the network collectively supports is derived from the **on-chain RPC whitelist** (`foreign_chain_rpc_whitelist`): a chain is supported iff the network has voted in a `ChainEntry` for it. See [Calculating the supported foreign-chain set](design/calculating-supported-foreign-chains.md). The contract still stores a foreign-chain configuration **per participant**, but that registration no longer determines the supported set — it is retained as a monitoring/alerting signal (detecting an active node that does not support a supported chain).
+The set of chains the network collectively supports is derived from the **on-chain RPC whitelist** (`foreign_chain_rpc_whitelist`): a chain is supported iff the network has voted in a `ChainEntry` for it. See [Calculating the supported foreign-chain set](design/calculating-supported-foreign-chains.md). The contract still stores a foreign-chain configuration **per participant**, but that registration no longer determines the supported set — it is retained as a monitoring/alerting signal (detecting an active node that does not cover a supported chain).
 
 ```rust
 pub struct ForeignChainSupportByNode {
@@ -313,7 +313,7 @@ Relevant contract methods:
 
 * `register_foreign_chain_config(foreign_chain_configuration: ForeignChainConfiguration)` — call method. The authenticated participant (re)registers its per-chain provider set. The call is idempotent.
 * `get_supported_foreign_chains() -> SupportedForeignChains` — view method. Returns the set of chains present in the on-chain RPC whitelist (`foreign_chain_rpc_whitelist`).
-* `get_foreign_chain_support_by_node() -> ForeignChainSupportByNode` — view method. Returns each participant's registered set of supported chains. Used for monitoring/alerting (does every active node support every supported chain?), not for computing the supported set.
+* `get_foreign_chain_support_by_node() -> ForeignChainSupportByNode` — view method. Returns each participant's registered set of supported chains. Used for monitoring/alerting (does every active node cover every supported chain?), not for computing the supported set.
 
 ## On-chain RPC Provider Whitelist
 
@@ -619,6 +619,6 @@ providers require no auth at all.
 * **Provider availability**: Outages or rate limits can cause verification failures and reduced
   signing availability.
 * **Finality semantics**: Finality definitions differ across chains; mapping them correctly is critical.
-* **Incomplete chain coverage**: A chain is supported as soon as the network votes in its whitelist entry, independent of any single operator. A node that hasn't configured a supported chain is treated like a node that is down for it — it does not participate in that chain's verification requests, and the pre-generated triples/presignatures it co-owns become offline assets and are discarded unused. Foreign-tx presignatures live in their own dedicated `ForeignTx`-domain pool, but triples are shared per reconstruction threshold across all CaitSith domains, so stranding them also reduces ordinary `sign()` presignature generation — the waste is not confined to that chain's availability. This is mitigated operationally by alerting on any active node that does not support a supported chain, rather than by the protocol.
+* **Incomplete chain coverage**: A chain is supported as soon as the network votes in its whitelist entry, independent of any single operator. A node that hasn't configured a supported chain is treated like a node that is down for it — it does not participate in that chain's verification requests, and the pre-generated triples/presignatures it co-owns become offline assets and are discarded unused. Foreign-tx presignatures live in their own dedicated `ForeignTx`-domain pool, but triples are shared per reconstruction threshold across all CaitSith domains, so stranding them also reduces ordinary `sign()` presignature generation — the waste is not confined to that chain's availability. This is mitigated operationally by alerting on any active node that does not cover a supported chain, rather than by the protocol.
 * **Config drift**: Nodes missing required provider keys will fail startup validation.
 * **Extractor correctness**: Bugs or ambiguous specifications in extractors could produce incorrect values.

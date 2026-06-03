@@ -48,7 +48,7 @@ serviceable again as soon as enough nodes report support.
 
 **Supported** is a stable, operator-visible commitment: it changes only by vote,
 never flaps with node churn, and no single operator can shrink it. Every node is
-expected to support every supported chain.
+expected to cover every supported chain.
 
 **Available** protects users from submitting requests that can't complete. Because
 it requires `threshold` — not all — participants, a chain leaves it only when more
@@ -80,7 +80,7 @@ supports, and serves two roles:
 
 - it **feeds the available set** — the contract counts, per chain, how many active
   participants report support and compares against `threshold`; and
-- it **drives alerting** — when an active node does not support a supported chain,
+- it **drives alerting** — when an active node does not cover a supported chain,
   monitoring fires for *us* (maintainers), who nudge the operator. Ideally operators
   run their own coverage alert and fix the gap first.
 
@@ -88,7 +88,7 @@ Registration reflects each node's *current* config.
 
 ## Guarantees preserved
 
-**Security** — the network signs an observation only if ≥ `threshold` participants
+**Safety** — the network signs an observation only if ≥ `threshold` participants
 each independently verified it (each via its own RPC quorum). Fewer than `threshold`
 cannot force a false attestation.
 

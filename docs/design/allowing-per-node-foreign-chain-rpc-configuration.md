@@ -113,7 +113,7 @@ The quorum value comes from on-chain `ChainEntry.threshold`, voted in as part of
 
 ### Nodes submit the configured foreign chains on-chain
 
-Nodes submit their per-chain provider set on-chain so the network knows which chains they support. Functionality for this was added on the contract side in [#2784](https://github.com/near/mpc/pull/2784) and is kept — but its role is now **monitoring/alerting only**: the supported set is derived from the on-chain whitelist, while these registrations let us detect (and alert on) any active node that does not support a supported chain. See [Calculating the supported foreign-chain set](calculating-supported-foreign-chains.md).
+Nodes submit their per-chain provider set on-chain so the network knows which chains they support. Functionality for this was added on the contract side in [#2784](https://github.com/near/mpc/pull/2784) and is kept — but its role is now **monitoring/alerting only**: the supported set is derived from the on-chain whitelist, while these registrations let us detect (and alert on) any active node that does not cover a supported chain. See [Calculating the supported foreign-chain set](calculating-supported-foreign-chains.md).
 
 ## Rollout
 
