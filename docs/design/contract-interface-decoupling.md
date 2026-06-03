@@ -25,17 +25,27 @@ This was first raised in [#381](https://github.com/near/mpc/issues/381) and disc
 ### 3.1 Architecture Layers
 
 ```
-                mpc-primitives (pure data types, no near-sdk)
-               /        |         \
-              /         |          \
-             /          |     near-mpc-contract-interface
-            /           |     (serde DTOs, re-exports primitives)
-           /            |          /   \
-mpc-contract ──────────┘─────────┘      \
-(near-sdk, borsh storage,                 \
- validation; converts                      mpc-node
- internal ⇄ DTO via                       (depends on primitives + interface,
- dto_mapping.rs)                           NOT on mpc-contract)
+                  ┌──────────────────────────────────────┐
+                  │ mpc-primitives                        │
+                  │ (pure data types, no near-sdk)        │
+                  └──────────────────────────────────────┘
+                     ▲             ▲              ▲
+                     │             │              │
+                     │   ┌─────────────────────────────────────┐
+                     │   │ near-mpc-contract-interface          │
+                     │   │ (serde DTOs, re-exports primitives)  │
+                     │   └─────────────────────────────────────┘
+                     │        ▲                    ▲
+                     │        │                    │
+        ┌────────────────────────────┐  ┌─────────────────────────────┐
+        │ mpc-contract               │  │ mpc-node                    │
+        │ (near-sdk, borsh storage,  │  │ (indexer, coordinator;      │
+        │  validation; converts      │  │  depends on primitives +    │
+        │  internal ⇄ DTO via        │  │  interface, NOT on          │
+        │  dto_mapping.rs)           │  │  mpc-contract)              │
+        └────────────────────────────┘  └─────────────────────────────┘
+
+Arrows point toward the dependency: "A ──▲ B" means A depends on B.
 ```
 
 Note that `mpc-contract` depends on `near-mpc-contract-interface`: its view
@@ -47,7 +57,7 @@ public boundary, consumed by both the contract itself and the node.
 
 | Crate | Contains | Depends on |
 |-------|----------|------------|
-| `mpc-primitives` | Pure identity newtypes (`DomainId`, `EpochId`, `AttemptId`, `KeyEventId`, `ParticipantId`), enums (`SignatureScheme`, `DomainPurpose`), hash types | `borsh`, `serde` (no `near-sdk`) |
+| `mpc-primitives` | Pure identity newtypes (`DomainId`, `EpochId`, `AttemptId`, `KeyEventId`, `ParticipantId`), enums (`Curve`, `Protocol`), hash types | `borsh`, `serde` (no `near-sdk`) |
 | `near-mpc-contract-interface` | DTOs for contract state (`ProtocolContractState`, `RunningContractState`, `Keyset`, etc.), public API types (`SignRequest`, `CKDRequest`), conversion traits | `mpc-primitives`, `near-mpc-crypto-types`, `serde` |
 | `mpc-contract` | Internal state, validation logic, NEAR storage, business rules | `mpc-primitives`, `near-mpc-contract-interface`, `near-sdk` |
 | `mpc-node` | Node binary — indexer, coordinator, providers, networking | `mpc-primitives`, `near-mpc-contract-interface`, `threshold-signatures` |
@@ -58,7 +68,7 @@ The decoupling is done incrementally, module by module. Each step removes some `
 
 | Phase | Scope | Status |
 |-------|-------|--------|
-| 1 | Participants boundary (`indexer/participants.rs`) | [PR #2870](https://github.com/near/mpc/pull/2870) — nearly complete (one `mpc_contract::primitives::key_state` import remains) |
+| 1 | Participants boundary (`indexer/participants.rs`) | In progress — tracked by [#2167](https://github.com/near/mpc/issues/2167) (one `mpc_contract::primitives::key_state` import remains) |
 | 2 | Key state / keyshares (`keyshare.rs`, `keyshare/*.rs`) | Not started |
 | 3 | Coordinator / key events (`coordinator.rs`, `key_events.rs`) | Not started |
 | 4 | Signature / request types (`types.rs`, `indexer/handler.rs`, `mpc_client.rs`, providers) | Not started |
@@ -67,7 +77,7 @@ The decoupling is done incrementally, module by module. Each step removes some `
 | 7 | Remove `mpc-contract` from node's regular dependencies entirely | Not started |
 | 8 | Remove `mpc-contract` from node's dev-dependencies (rewrite test code) | Not started |
 
-See [PR #2870 description](https://github.com/near/mpc/pull/2870) for the full list of remaining `mpc-contract` imports by module.
+See the tracking issue [#381](https://github.com/near/mpc/issues/381) for the full list of remaining `mpc-contract` imports by module. (Per-phase PR links are intentionally omitted here — PR status drifts faster than the design intent this table records.)
 
 ### 3.4 Conversion Pattern at Boundaries
 
@@ -153,9 +163,13 @@ The node's indexer calls contract view functions and deserializes the JSON respo
 
 ```rust
 // crates/node/src/indexer.rs
-async fn get_mpc_contract_state(&self) -> Result<ProtocolContractState> {
-    // Calls contract's state() view function
+pub(crate) async fn get_mpc_contract_state_dto(
+    &self,
+    mpc_contract_id: AccountId,
+) -> anyhow::Result<(u64, dtos::ProtocolContractState)> {
+    // Calls the contract's state() view function at a block height
     // Response is deserialized as dtos::ProtocolContractState
+    self.get_mpc_state(mpc_contract_id, STATE).await
 }
 ```
 
@@ -169,9 +183,9 @@ The state is then broadcast to subsystems via `tokio::sync::watch` channels. The
 | Invariant enforcement | Validated at construction | None — pure data |
 | `near-sdk` dependency | Yes | No |
 | Backwards compat | Can change freely | Must maintain JSON wire format |
-| `DomainConfig.purpose` | Required (`DomainPurpose`) | Required (`DomainPurpose`) |
-| `DomainConfig.curve` | `Curve` | `Curve` (field `curve`, with `#[serde(alias = "scheme")]` for pre-3.9.0 compat) |
-| `ParticipantInfo.sign_pk` | `near_sdk::PublicKey` | `Ed25519PublicKey` (resolved [#2871](https://github.com/near/mpc/issues/2871)) |
+| `ParticipantInfo.tls_public_key` | `Ed25519PublicKey` | `Ed25519PublicKey` (was `String`, resolved [#2871](https://github.com/near/mpc/issues/2871)) |
+
+Note: not every type has an internal/DTO split. `DomainConfig` and `DomainRegistry` are shared types imported directly from the interface crate (`crates/contract/src/state.rs`), so the contract and node use the *same* definition — there is no separate internal representation to convert. `DomainConfig`'s fields are `id`, `protocol` (a `Protocol`), `reconstruction_threshold`, and `purpose` (a `DomainPurpose`).
 
 ### 4.6 Serialization Compatibility
 
@@ -188,13 +202,13 @@ fn threshold_parameters_serde_is_compatible_with_dto() {
 }
 ```
 
-This is the correct pattern for ensuring DTO compatibility. The anti-pattern is ad-hoc `serde_json::from_value(serde_json::to_value(&x))` in test code without these guarantees.
+This is the correct pattern for ensuring DTO compatibility, and it is applied to several types — e.g. `participants_serde_is_compatible_with_dto` and `threshold_parameters_serde_is_compatible_with_dto`, both in `crates/contract/src/dto_mapping.rs`. The anti-pattern is ad-hoc `serde_json::from_value(serde_json::to_value(&x))` in test code without these guarantees.
 
 ### 4.7 Public API Surface
 
 The interface crate exports ~60 types organized into:
 - **State types:** `ProtocolContractState`, `RunningContractState`, `ResharingContractState`, `InitializingContractState`, `Keyset`, `KeyEvent`, `KeyEventInstance`, `ThresholdParameters`, etc.
-- **Domain types:** `DomainConfig`, `DomainRegistry`, `SignatureScheme`, `DomainPurpose`
+- **Domain types:** `DomainConfig`, `DomainRegistry`, `Protocol`, `Curve`, `DomainPurpose`
 - **Identity types:** `EpochId`, `AttemptId`, `DomainId`, `KeyEventId`, `ParticipantId`
 - **Request types:** `SignRequest`, `CKDRequest`, `Payload`, `Tweak`, `YieldIndex`
 - **Attestation types:** `Attestation`, `VerifiedAttestation`, `MockAttestation`, `DstackAttestation`
@@ -208,13 +222,13 @@ The interface crate exports ~60 types organized into:
 
 The interface crate exists so consumers (node, SDKs, external tools) don't need the full contract stack. Adding `near-sdk` would defeat this purpose. If a specific type needs `near-sdk` features, it should be behind a feature flag (the crate already has a `near` feature gate for this).
 
-**Consequence:** Types like `ParticipantInfo.sign_pk` use a `near-mpc-crypto-types` wrapper (`Ed25519PublicKey`) instead of `near_sdk::PublicKey`. See §5.2.
+**Consequence:** Types like `ParticipantInfo.tls_public_key` use a `near-mpc-crypto-types` wrapper (`Ed25519PublicKey`) instead of `near_sdk::PublicKey`. See §5.2.
 
 ### 5.2 Use typed wrappers, not bare Strings
 
 Where possible, use existing typed wrappers from `near-mpc-crypto-types` (e.g., `Ed25519PublicKey`) instead of bare `String` fields. The interface crate already depends on `near-mpc-crypto-types`.
 
-**Applied:** [#2871](https://github.com/near/mpc/issues/2871) — `ParticipantInfo.sign_pk` is now `Ed25519PublicKey` (previously `String`).
+**Applied:** [#2871](https://github.com/near/mpc/issues/2871) — `ParticipantInfo.tls_public_key` is now `Ed25519PublicKey` (previously `String`).
 
 ### 5.3 KDF (Key Derivation Function) placement: `derive_tweak`, `derive_app_id`
 
@@ -248,7 +262,7 @@ When the interface DTO uses a weaker type (e.g., `String` for a public key), val
 - [#2831](https://github.com/near/mpc/pull/2831) — refactor: decouple node production code from mpc-contract crate (SimonRastikian, attempted full migration — descoped)
 
 ### Follow-up Issues
-- [#2871](https://github.com/near/mpc/issues/2871) — `ParticipantInfo.sign_pk` should be `Ed25519PublicKey` instead of `String` (**resolved**: field is now `Ed25519PublicKey`)
+- [#2871](https://github.com/near/mpc/issues/2871) — `ParticipantInfo.tls_public_key` should be `Ed25519PublicKey` instead of `String` (**resolved**: field is now `Ed25519PublicKey`)
 - [#2480](https://github.com/near/mpc/issues/2480) — Move voting types from contract crate to contract-interface
 - [#2060](https://github.com/near/mpc/issues/2060) — Refactor sandbox tests to eliminate DTO-to-contract type conversion methods
 - [#2703](https://github.com/near/mpc/issues/2703) — Publish `mpc-primitives` crate to crates.io
