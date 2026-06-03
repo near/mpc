@@ -2,16 +2,17 @@
 //!
 //! Calls `TeeVerifier::verify_quote` directly (no Promise round-trip)
 //! with a real Dstack quote+collateral fixture taken from `test-utils`,
-//! and asserts that the returned `VerifiedReport` carries the
-//! `UpToDate` TCB status and a TD10 report.
+//! and asserts the returned `VerifiedReport` matches the fixture's known
+//! value in full.
 
 #![allow(non_snake_case)]
 
-use near_sdk::test_utils::VMContextBuilder;
-use near_sdk::testing_env;
+use near_sdk::{test_utils::VMContextBuilder, testing_env};
 use std::time::Duration;
 use tee_verifier::TeeVerifier;
-use tee_verifier_interface::{Collateral, QuoteBytes};
+use tee_verifier_interface::{
+    Collateral, QuoteBytes, Report, TDReport10, TcbStatus, TcbStatusWithAdvisory, VerifiedReport,
+};
 use test_utils::attestation::{VALID_ATTESTATION_TIMESTAMP, collateral as collateral_json, quote};
 
 fn make_collateral() -> Collateral {
@@ -60,16 +61,64 @@ fn verify_quote__should_return_up_to_date_td10_report_for_valid_fixture() {
         .expect("valid fixture should verify");
 
     // Then
-    assert_eq!(report.status, "UpToDate");
-    assert!(report.advisory_ids.is_empty());
-    let td10 = report
-        .report
-        .as_td10()
-        .expect("fixture is a TD10 attestation");
-    // The fixture's report_data is 64 bytes; we only check shape, not exact contents,
-    // because that's bound to the keys baked into the fixture.
-    assert_eq!(td10.report_data.len(), 64);
-    assert_eq!(td10.mr_td.len(), 48);
-    assert_eq!(td10.rt_mr0.len(), 48);
-    assert_eq!(td10.rt_mr3.len(), 48);
+    let expected = VerifiedReport {
+        status: "UpToDate".to_string(),
+        advisory_ids: vec![],
+        report: Report::TD10(TDReport10 {
+            tee_tcb_svn: hex_arr("0b010400000000000000000000000000"),
+            mr_seam: hex_arr(
+                "7bf063280e94fb051f5dd7b1fc59ce9aac42bb961df8d44b709c9b0ff87a7b4df648657ba6d1189589feab1d5a3c9a9d",
+            ),
+            mr_signer_seam: hex_arr(
+                "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+            ),
+            seam_attributes: hex_arr("0000000000000000"),
+            td_attributes: hex_arr("0000001000000000"),
+            xfam: hex_arr("e702060000000000"),
+            mr_td: hex_arr(
+                "f06dfda6dce1cf904d4e2bab1dc370634cf95cefa2ceb2de2eee127c9382698090d7a4a13e14c536ec6c9c3c8fa87077",
+            ),
+            mr_config_id: hex_arr(
+                "01cb9b2d6204f5e44238b75f69e3a3069550734c0d99ebdd3be507c238a261d8fa000000000000000000000000000000",
+            ),
+            mr_owner: hex_arr(
+                "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+            ),
+            mr_owner_config: hex_arr(
+                "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+            ),
+            rt_mr0: hex_arr(
+                "e673be2f70beefb70b48a6109eed4715d7270d4683b3bf356fa25fafbf1aa76e39e9127e6e688ccda98bdab1d4d47f46",
+            ),
+            rt_mr1: hex_arr(
+                "b598fde9491427341bc4683b75d10d3e36770af3a36a6954d8b6b7b22aa66358f13e1f172e51b7d6e6710d99a8d8532f",
+            ),
+            rt_mr2: hex_arr(
+                "c812d42bfff1c75382e91a37c867ab117b97eb5e8d6797488928ea38e5fd38b5ed2f87d9613d392507f1c3af94657c93",
+            ),
+            rt_mr3: hex_arr(
+                "b7662ac19c27af648a939be042684bbdb43bb3dddf4cd17bb21f4d455ab1926c6ee57038152fc46ddea392c47eb2af27",
+            ),
+            report_data: hex_arr(
+                "00014ee5e70e861db29a95224e48a47c016ab03c61238333319af7614593cd155ba531073edd69921742beb1c510ff4339480000000000000000000000000000",
+            ),
+        }),
+        ppid: hex::decode("d208dfb1002346ae1bb4ef2a3c055292").unwrap(),
+        qe_status: TcbStatusWithAdvisory {
+            status: TcbStatus::UpToDate,
+            advisory_ids: vec![],
+        },
+        platform_status: TcbStatusWithAdvisory {
+            status: TcbStatus::UpToDate,
+            advisory_ids: vec![],
+        },
+    };
+    assert_eq!(report, expected);
+}
+
+fn hex_arr<const N: usize>(s: &str) -> [u8; N] {
+    hex::decode(s)
+        .expect("valid hex")
+        .try_into()
+        .expect("correct length")
 }

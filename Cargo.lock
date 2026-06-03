@@ -11368,6 +11368,7 @@ dependencies = [
  "getrandom 0.2.17",
  "hex",
  "near-sdk",
+ "rstest",
  "tee-verifier",
  "tee-verifier-interface",
  "test-utils",

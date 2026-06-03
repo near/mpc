@@ -12,9 +12,10 @@ use near_sdk::{FunctionError, env, near};
 use tee_verifier_interface::{Collateral, QuoteBytes, VerifiedReport};
 
 mod conversions;
+use conversions::{IntoDcapType as _, IntoInterfaceType as _};
 
 /// Failure returned by [`TeeVerifier::verify_quote`].
-#[derive(Debug, Clone, thiserror::Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum VerifierError {
     /// `dcap_qvl::verify::verify` rejected the quote / collateral.
     #[error("dcap verification failed: {0}")]
@@ -58,10 +59,10 @@ impl TeeVerifier {
         #[serializer(borsh)] collateral: Collateral,
     ) -> Result<VerifiedReport, VerifierError> {
         let now_seconds = env::block_timestamp_ms() / 1000;
-        let quote_bytes = conversions::quote_bytes_to_vec(quote);
-        let collateral = conversions::collateral_to_dcap(collateral);
+        let quote_bytes: Vec<u8> = quote.into_dcap_type();
+        let collateral = collateral.into_dcap_type();
         dcap_qvl::verify::verify(&quote_bytes, &collateral, now_seconds)
-            .map(conversions::verified_report)
-            .map_err(|err| VerifierError::DcapVerification(format!("{err:?}")))
+            .map(|report| report.into_interface_type())
+            .map_err(|err| VerifierError::DcapVerification(format!("{err}")))
     }
 }
