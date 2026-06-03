@@ -381,14 +381,22 @@ impl DstackAttestation {
         app_compose.manifest_version == 2
             && app_compose.runner == "docker-compose"
             && !app_compose.kms_enabled
+            // dstack enables the gateway when `gateway_enabled || tproxy_enabled` (the latter is the
+            // legacy alias), so both must be disabled.
             && app_compose.gateway_enabled == Some(false)
+            && app_compose.tproxy_enabled != Some(true)
             && app_compose.public_logs
             && app_compose.public_sysinfo
             && app_compose.local_key_provider_enabled
             && app_compose.allowed_envs.is_empty()
             && app_compose.no_instance_id
+            // Reject all three arbitrary-root-code fields. `pre_launch_script` and `init_script` run
+            // unconditionally; `bash_script` only runs when `runner == "bash"` (so the runner pin
+            // above already neutralizes it), but we reject it explicitly so the guarantee does not
+            // silently depend on that pin.
             && app_compose.pre_launch_script.is_none()
             && app_compose.init_script.is_none()
+            && app_compose.bash_script.is_none()
     }
 
     /// Verifies local key-provider event digest matches the expected digest.
@@ -621,6 +629,63 @@ mod tests {
     }
 
     #[test]
+    fn validate_app_compose_config__rejects_present_bash_script() {
+        // `bash_script` is arbitrary root code; dstack only runs it when `runner == "bash"`, but we
+        // reject it explicitly rather than relying solely on the runner pin.
+
+        // Given
+        let app_compose = AppCompose {
+            bash_script: Some("echo pwn".to_string()),
+            ..valid_app_compose()
+        };
+        // When
+        let result = DstackAttestation::validate_app_compose_config(&app_compose);
+
+        // Then
+        assert!(!result)
+    }
+
+    #[test]
+    fn validate_app_compose_config__rejects_tproxy_enabled() {
+        // dstack enables the gateway on `gateway_enabled || tproxy_enabled`, so a `tproxy_enabled`
+        // set via the legacy alias must be rejected even when `gateway_enabled` is false.
+
+        // Given
+        let app_compose = AppCompose {
+            tproxy_enabled: Some(true),
+            ..valid_app_compose()
+        };
+        // When
+        let result = DstackAttestation::validate_app_compose_config(&app_compose);
+
+        // Then
+        assert!(!result)
+    }
+
+    #[test]
+    fn app_compose__rejects_unknown_field() {
+        // `deny_unknown_fields` must make a key dstack might add in the future fail to parse, so it
+        // halts verification rather than being silently ignored.
+
+        // Given
+        let app_compose_json = r#"{
+            "manifest_version": 2,
+            "name": "",
+            "runner": "docker-compose",
+            "docker_compose_file": "",
+            "some_future_dstack_field": "whatever"
+        }"#;
+        // When
+        let err = serde_json::from_str::<AppCompose>(app_compose_json).unwrap_err();
+
+        // Then
+        assert!(
+            err.to_string().contains("unknown field"),
+            "expected an unknown-field error, got: {err}"
+        );
+    }
+
+    #[test]
     fn validate_app_compose_config__allows_insecure_time() {
         // Given
         let app_compose = AppCompose {
@@ -652,6 +717,14 @@ mod tests {
             secure_time: None,
             pre_launch_script: None,
             init_script: None,
+            bash_script: None,
+            features: None,
+            public_tcbinfo: None,
+            key_provider: None,
+            storage_fs: None,
+            swap_size: None,
+            port_policy: None,
+            docker_config: None,
         }
     }
 }

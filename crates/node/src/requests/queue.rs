@@ -3,7 +3,7 @@ use super::recent_blocks_tracker::AtomicBlockStatus;
 use crate::indexer::types::ChainRespondArgs;
 use crate::primitives::ParticipantId;
 use crate::requests::metrics;
-use crate::requests::recent_blocks_tracker::RecentBlocksTracker;
+use crate::requests::recent_blocks_tracker::{AddBlockResult, RecentBlocksTracker};
 use crate::types::{self, Request, RequestId, RequestsUpdate};
 use k256::sha2::Sha256;
 use near_indexer_primitives::CryptoHash;
@@ -510,14 +510,8 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             requests,
             completed_requests,
         } = requests;
-        let block_ref = match self.recent_blocks.add_block(&block) {
-            Ok(add_result) => add_result.block_ref,
-            Err(err) => {
-                // block already exists.
-                tracing::warn!(target: "request", "Ignoring block {:?} at height {}: {:?}", block.hash, block.height, err);
-                return;
-            }
-        };
+
+        let AddBlockResult { block_ref } = self.recent_blocks.add_block(&block);
 
         // TODO(#3316): remove this per-queue counter when the tracker is shared across queues.
         mpc_pending_queue_blocks_indexed.inc();

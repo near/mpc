@@ -253,6 +253,10 @@ impl fmt::Debug for DstackAttestation {
     BorshSerialize,
     BorshDeserialize,
 )]
+// This is a hand-maintained mirror of the verified `attestation::AppCompose` — the
+// security-relevant subset, NOT the type used during attestation verification. Keep its security
+// fields in sync with the verified struct, or it can drift.
+// TODO(#3425): dedupe with `attestation::AppCompose` (single source of truth) — pending team decision.
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
@@ -274,6 +278,7 @@ pub struct AppCompose {
     pub secure_time: Option<bool>,
     pub pre_launch_script: Option<String>,
     pub init_script: Option<String>,
+    pub bash_script: Option<String>,
 }
 
 /// Trusted Computing Base information structure
