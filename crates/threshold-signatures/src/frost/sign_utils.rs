@@ -4,12 +4,15 @@ use crate::{
     participants::{Participant, ParticipantList},
 };
 
-/// Verifies that the sign inputs are valid
-pub fn assert_sign_inputs(
+/// Verifies the participant-set and threshold inputs shared by every FROST protocol.
+///
+/// Checks that there are at least two participants, that the list has no duplicates, that `me`
+/// is among them, and that the threshold does not exceed the participant count. Returns the
+/// validated [`ParticipantList`] so callers can layer on any protocol-specific checks.
+pub fn assert_participant_inputs(
     participants: &[Participant],
     threshold: impl Into<ReconstructionLowerBound>,
     me: Participant,
-    coordinator: Participant,
 ) -> Result<ParticipantList, InitializationError> {
     let threshold = threshold.into();
     if participants.len() < 2 {
@@ -36,6 +39,18 @@ pub fn assert_sign_inputs(
             max: participants.len(),
         });
     }
+
+    Ok(participants)
+}
+
+/// Verifies that the sign inputs are valid
+pub fn assert_sign_inputs(
+    participants: &[Participant],
+    threshold: impl Into<ReconstructionLowerBound>,
+    me: Participant,
+    coordinator: Participant,
+) -> Result<ParticipantList, InitializationError> {
+    let participants = assert_participant_inputs(participants, threshold, me)?;
 
     // ensure the coordinator is a participant
     if !participants.contains(coordinator) {

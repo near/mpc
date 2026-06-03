@@ -11,6 +11,7 @@ use zeroize::ZeroizeOnDrop;
 use crate::{
     Ciphersuite, ReconstructionLowerBound,
     errors::{InitializationError, ProtocolError},
+    frost::sign_utils::assert_participant_inputs,
     participants::{Participant, ParticipantList},
     protocol::{
         Protocol,
@@ -55,29 +56,7 @@ where
     C: Ciphersuite,
     R: CryptoRngCore + Send + 'static,
 {
-    if participants.len() < 2 {
-        return Err(InitializationError::NotEnoughParticipants {
-            participants: participants.len(),
-        });
-    }
-
-    let participants =
-        ParticipantList::new(participants).ok_or(InitializationError::DuplicateParticipants)?;
-
-    if !participants.contains(me) {
-        return Err(InitializationError::MissingParticipant {
-            role: "self",
-            participant: me,
-        });
-    }
-
-    // validate threshold
-    if args.threshold.value() > participants.len() {
-        return Err(InitializationError::ThresholdTooLarge {
-            threshold: args.threshold.into(),
-            max: participants.len(),
-        });
-    }
+    let participants = assert_participant_inputs(participants, args.threshold, me)?;
 
     let ctx = Comms::with_buffer_capacity(FROST_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES);
     let fut = do_presign(
