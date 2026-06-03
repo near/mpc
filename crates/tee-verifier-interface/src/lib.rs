@@ -247,7 +247,7 @@ mod tests {
     }
 
     #[test]
-    fn report__as_td10__should_unwrap_td15_to_its_base() {
+    fn as_td10__should_return_td15_base() {
         // Given
         let base = sample_td10();
         let td15 = Report::TD15(TDReport15 {
@@ -261,6 +261,52 @@ mod tests {
 
         // Then
         assert_eq!(unwrapped, Some(&base));
+    }
+
+    #[test]
+    fn as_td10__should_return_td10_itself() {
+        // Given
+        let td10 = sample_td10();
+        let report = Report::TD10(td10.clone());
+
+        // When
+        let unwrapped = report.as_td10();
+
+        // Then
+        assert_eq!(unwrapped, Some(&td10));
+    }
+
+    #[test]
+    fn as_td10__should_return_none_for_sgx() {
+        // Given
+        let report = Report::SgxEnclave(sample_sgx());
+
+        // When
+        let unwrapped = report.as_td10();
+
+        // Then
+        assert_eq!(unwrapped, None);
+    }
+
+    #[rstest]
+    #[case(TcbStatus::UpToDate)]
+    #[case(TcbStatus::OutOfDateConfigurationNeeded)]
+    #[case(TcbStatus::OutOfDate)]
+    #[case(TcbStatus::ConfigurationAndSWHardeningNeeded)]
+    #[case(TcbStatus::ConfigurationNeeded)]
+    #[case(TcbStatus::SWHardeningNeeded)]
+    #[case(TcbStatus::Revoked)]
+    fn tcb_status__should_round_trip_borsh(#[case] status: TcbStatus) {
+        // Given
+        let original = status;
+
+        // When
+        let bytes = borsh::to_vec(&original).expect("Borsh serialization should succeed");
+        let decoded: TcbStatus =
+            borsh::from_slice(&bytes).expect("Borsh deserialization should succeed");
+
+        // Then
+        assert_eq!(original, decoded);
     }
 
     #[test]
