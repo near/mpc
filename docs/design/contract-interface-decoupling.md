@@ -133,10 +133,8 @@ View functions convert internal state to DTOs before returning:
 
 ```rust
 // crates/contract/src/lib.rs
-pub fn state(&self) -> dtos::ProtocolContractState {
-    (&self.protocol_state)
-        .try_into_dto_type()
-        .expect("state conversion should not fail")
+pub fn state(&self) -> near_mpc_contract_interface::types::ProtocolContractState {
+    (&self.protocol_state).into_dto_type()
 }
 ```
 
