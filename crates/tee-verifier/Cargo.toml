@@ -30,6 +30,9 @@ crate-type = ["cdylib", "lib"]
 # and required for ABI / Borsh schema generation. Pulls in
 # `borsh/unstable__schema` and `BorshSchema` derives on the wire types.
 abi = ["borsh/unstable__schema", "tee-verifier-interface/borsh-schema"]
+# Enables `near_sdk::testing_env!` for tests; the workspace `near-sdk`
+# dependency no longer turns on `unit-testing` by default.
+test-utils = ["near-sdk/unit-testing"]
 
 [dependencies]
 borsh = { workspace = true }
@@ -42,6 +45,7 @@ getrandom = { workspace = true, features = ["custom"] }
 
 [dev-dependencies]
 hex = { workspace = true }
+tee-verifier = { path = ".", features = ["test-utils"] }
 test-utils = { workspace = true }
 
 [lints]
