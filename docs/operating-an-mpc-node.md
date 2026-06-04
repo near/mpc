@@ -32,7 +32,7 @@ Use your MPC operator account only for running the node — don't call other sma
 We have a shared Slack channel for all node operators. We expect you to be available there to coordinate network upgrades and respond to incidents.
 
 ## Uptime
-You're expected to keep your nodes healthy and participating in their networks. During normal operation we expect 99% uptime. That may sound low for this kind of service, but because the MPC network tolerates individual node failures, it translates to very high uptime for the network as a whole.
+You're expected to keep your nodes healthy and participating in their networks. During normal operation we expect 99% uptime. That may sound low for this kind of service, but because the MPC network tolerates individual node failures without any user impact, it translates to very high uptime for the network as a whole.
 
 ### Excused downtime
 You're not expected to run hot backup nodes for quick recovery if a node crashes for reasons outside your control. Syncing a recovering node can take a while — that's fine, and won't count against your uptime expectations as long as you responded promptly and took appropriate action.
