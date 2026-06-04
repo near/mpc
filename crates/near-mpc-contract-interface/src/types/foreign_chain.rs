@@ -1801,8 +1801,10 @@ mod tests {
                     finality: TonFinality::MasterchainIncluded,
                     extractors: vec![TonExtractor::Log { message_index: 0 }],
                 }),
+                // 0xfe (not 0xff) so the body stays canonical at 7 bits, where the final
+                // byte's low bit is unused padding and must be zero.
                 values: vec![ExtractedValue::TonExtractedValue(TonExtractedValue::Log(
-                    ton_log_with_body(vec![0xff], body_bit_length),
+                    ton_log_with_body(vec![0xfe], body_bit_length),
                 ))],
             })
         };
