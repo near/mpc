@@ -7,6 +7,8 @@ use std::ops::Add;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 
+use super::metrics::{MPC_BLOCKS_INDEXED, MPC_FINALIZED_BLOCKS_INDEXED};
+
 /// Tracks the topology of the recent blocks, using the blocks given by the indexer.
 ///
 /// This class provides two important functionalities:
@@ -112,10 +114,6 @@ pub struct RecentBlocksTracker {
     maximum_height_available: BlockHeight,
     /// Maps block hashes to their nodes in the tree.
     hash_to_node: HashMap<CryptoHash, Arc<BlockNode>>,
-    /// Counter incremented inside `add_block` whenever blocks transition to final.
-    /// The caller selects which prometheus counter to wire here (per request-type).
-    /// TODO(#3316): remove this argument
-    finalized_blocks_indexed_metric: &'static prometheus::IntCounter,
 }
 
 #[repr(u8)]
@@ -300,12 +298,7 @@ pub struct BlockViewLite {
 }
 
 impl RecentBlocksTracker {
-    pub fn new(
-        window_size: u64,
-        // TODO(#3316): remove this argument once we have one shared `RecentBlocksTracker`
-        // instance across queues.
-        finalized_blocks_indexed_metric: &'static prometheus::IntCounter,
-    ) -> Self {
+    pub fn new(window_size: u64) -> Self {
         Self {
             window_size,
             root_children: Vec::new(),
@@ -313,19 +306,25 @@ impl RecentBlocksTracker {
             final_head: None,
             maximum_height_available: 0,
             hash_to_node: HashMap::new(),
-            finalized_blocks_indexed_metric,
         }
     }
 
     /// Adds a block to the tracker. This is expected to be called for EVERY block given by the
     /// indexer (whether or not it is interesting).
     pub fn add_block(&mut self, block: &BlockViewLite) -> AddBlockResult {
-        if let Some(block) = self.hash_to_node.get(&block.hash) {
-            tracing::error!(target: "recent blocks tracker", "Block {:?} at height {} already exists", block.hash, block.height);
+        if let Some(node) = self.hash_to_node.get(&block.hash) {
+            tracing::error!(
+                target: "recent_blocks_tracker",
+                "block {:?} already exists at height {}. Incoming height: {}",
+                block.hash,
+                node.height,
+                block.height,
+            );
             return AddBlockResult {
-                block_ref: Arc::downgrade(&block.status),
+                block_ref: Arc::downgrade(&node.status),
             };
         }
+        MPC_BLOCKS_INDEXED.inc();
         let status = Arc::new(AtomicBlockStatus(AtomicU8::new(u8::from(
             BlockStatus::OptimisticButNotCanonical,
         ))));
@@ -346,11 +345,9 @@ impl RecentBlocksTracker {
         }
 
         let new_final_blocks = self.maybe_update_final_head(block.last_final_block);
-        // TODO(#3316): collapse the per-queue counter into a single shared metric on the
-        // tracker itself.
-        self.finalized_blocks_indexed_metric.inc_by(
+        MPC_FINALIZED_BLOCKS_INDEXED.inc_by(
             u64::try_from(new_final_blocks.len())
-                .expect("usize shuold always fit into a u64 on our targets"),
+                .expect("usize should always fit into a u64 on our targets"),
         );
         match self.canonical_head.upgrade() {
             None => {
@@ -746,12 +743,7 @@ pub mod tests {
     impl Tester {
         pub fn new(heights_to_keep: u64) -> Self {
             let maker = TestBlockMaker::new();
-            // Tests don't assert on the finalized-blocks counter; reuse the CKD prod counter
-            // as a no-op sink so the tracker signature is satisfied.
-            let tracker = RecentBlocksTracker::new(
-                heights_to_keep,
-                &crate::requests::metrics::MPC_PENDING_CKDS_QUEUE_FINALIZED_BLOCKS_INDEXED,
-            );
+            let tracker = RecentBlocksTracker::new(heights_to_keep);
             Self {
                 maker,
                 tracker,

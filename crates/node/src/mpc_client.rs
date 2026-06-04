@@ -13,7 +13,10 @@ use crate::providers::eddsa::EddsaSignatureProvider;
 use crate::providers::robust_ecdsa::RobustEcdsaSignatureProvider;
 use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;
 use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
-use crate::requests::queue::{CHECK_EACH_REQUEST_INTERVAL, PendingRequests};
+use crate::requests::queue::{
+    CHECK_EACH_REQUEST_INTERVAL, PendingRequests, REQUEST_EXPIRATION_BLOCKS,
+};
+use crate::requests::recent_blocks_tracker::{AddBlockResult, RecentBlocksTracker};
 use crate::storage::{
     CKDRequestStorage, SignRequestStorage, VerifyForeignTransactionRequestStorage,
 };
@@ -217,6 +220,7 @@ where
             self.client.clone(),
         );
 
+        let mut recent_blocks = RecentBlocksTracker::new(REQUEST_EXPIRATION_BLOCKS);
         let start_time = Clock::real().now();
         loop {
             tokio::select! {
@@ -230,8 +234,12 @@ where
                     };
 
                     self.client.update_indexer_height(block_update.block.height);
+
+                    let AddBlockResult{ block_ref } = recent_blocks.add_block(&block_update.block);
+
                     let signature_requests : RequestsUpdate<SignatureRequest> = RequestsUpdate::from_chain(
                         &block_update.block,
+                        block_ref.clone(),
                         block_update.signature_requests,
                         block_update.completed_signatures,
                     );
@@ -246,6 +254,7 @@ where
 
                     let ckd_requests: RequestsUpdate<CKDRequest> = RequestsUpdate::from_chain(
                         &block_update.block,
+                        block_ref.clone(),
                         block_update.ckd_requests,
                         block_update.completed_ckds
                     );
@@ -257,6 +266,7 @@ where
 
                     let verify_foreign_tx_requests : RequestsUpdate<VerifyForeignTxRequest> = RequestsUpdate::from_chain(
                         &block_update.block,
+                        block_ref,
                         block_update.verify_foreign_tx_requests,
                         block_update.completed_verify_foreign_txs
                     );
@@ -270,7 +280,7 @@ where
                     if let Ok(debug_request) = debug_request {
                         match debug_request.kind {
                             DebugRequestKind::RecentBlocks => {
-                                let debug_output = pending_signatures.debug_print_recent_blocks();
+                                let debug_output = format!("{:?}", recent_blocks);
                                 debug_request.respond(debug_output);
                             }
                             DebugRequestKind::RecentSignatures => {
