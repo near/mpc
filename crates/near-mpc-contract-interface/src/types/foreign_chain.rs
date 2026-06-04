@@ -424,7 +424,9 @@ impl TonCellBody {
         // hash differently under `compute_msg_hash`, despite encoding the same cell.
         let unused_bits = (8 - (bit_length % 8)) % 8;
         if unused_bits != 0 {
-            let last_byte = *bytes.last().expect("non-zero bit_length implies a final byte");
+            let last_byte = *bytes
+                .last()
+                .expect("non-zero bit_length implies a final byte");
             let padding_mask = (1u8 << unused_bits) - 1;
             if last_byte & padding_mask != 0 {
                 return Err(TonCellBodyError::TrailingBitsNotZero {
