@@ -89,13 +89,12 @@ and serves two roles:
 
 Registration reflects each node's *current* config.
 
-The existing method names (`register_foreign_chain_config` /
-`get_foreign_chain_support_by_node`) are kept even though the data now feeds the
-*available* set: renaming them (e.g. to `register_available_chain_config` /
-`get_available_chain_by_node`) would add two more methods plus a multi-step
-contract→node→contract migration to retire the old ones — not worth growing the
-new-method set against the contract size limit, given this proposal already adds two
-views.
+Because this data now feeds the *available* set, the methods are renamed to reflect that:
+`register_foreign_chain_config` → `register_available_chain_config` and
+`get_foreign_chain_support_by_node` → `get_available_chain_by_node`. The old names are kept as thin
+wrappers delegating to the new ones, then deprecated and removed once node and contract have both
+migrated — the same independent node/contract rollout used for the view methods, so the rename needs
+no flag-day coordination.
 
 ## Guarantees preserved
 

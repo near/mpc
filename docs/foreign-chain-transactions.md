@@ -347,7 +347,7 @@ pub enum ForeignChain {
 Relevant contract methods:
 
 * `register_foreign_chain_config(foreign_chain_configuration: ForeignChainConfiguration)` — call method. The authenticated participant (re)registers its per-chain provider set. The call is idempotent.
-* `get_whitelisted_foreign_chains() -> WhitelistedForeignChains` — view method. Returns the chains present in the on-chain RPC whitelist (`foreign_chain_rpc_whitelist`). (`get_supported_foreign_chains()`, the old intersection rule, is **to be deprecated**.)
+* `get_whitelisted_foreign_chains() -> WhitelistedForeignChains` — view method. Returns the chains present in the on-chain RPC whitelist (`foreign_chain_rpc_whitelist`). (`get_supported_foreign_chains()` is superseded by these two views and will be removed; see [Migration](design/calculating-supported-foreign-chains.md#migration).)
 * `get_available_foreign_chains() -> AvailableForeignChains` — view method. Returns the chains that ≥ signing threshold active nodes currently cover; `verify_foreign_transaction` gates on this set.
 * `get_foreign_chain_support_by_node() -> ForeignChainSupportByNode` — view method. Returns each participant's registered set of covered chains. Feeds the available-set computation and the coverage alerting (does every active node cover every whitelisted chain?).
 
@@ -572,15 +572,15 @@ flowchart TD
     SC["**MPC Signer Contract**
       _Per-node foreign-chain configurations._"]
 
-    SUPPORTED["**Supported Chains**
-      _Intersection of all active participants' registered chains._"]
+    AVAILABLE["**Available Chains**
+      _Whitelisted chains ≥ signing threshold of active nodes currently cover._"]
 
     NODE -->|"1. register_foreign_chain_config(local_config)"| SC
-    SC -->|"2. recompute on view"| SUPPORTED
+    SC -->|"2. feeds availability (recomputed on view)"| AVAILABLE
 
     NODE@{ shape: proc}
     SC@{ shape: db}
-    SUPPORTED@{ shape: proc}
+    AVAILABLE@{ shape: proc}
 ```
 
 ### Contract State (Types)
