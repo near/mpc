@@ -64,7 +64,7 @@ retries every request up to `MAX_ATTEMPTS_PER_REQUEST_AS_LEADER`
 (`requests/queue.rs:38`), so the foreign-tx path must special-case a sub-quorum
 result as non-retryable. (Open: whether a sub-quorum from purely *transient*
 failures — timeouts, finality not reached — should still retry, vs. only genuine
-disagreement being terminal.)
+disagreement being terminal. Tracked in [#3477](https://github.com/near/mpc/issues/3477).)
 
 ## Participant election
 
@@ -83,9 +83,10 @@ and serves two roles:
 
 - it **feeds the available set** — the contract counts, per chain, how many active
   participants report coverage and compares against `signing_threshold`; and
-- it **drives alerting** — when an active node does not cover a whitelisted chain,
-  monitoring fires for *us* (maintainers), who nudge the operator. Ideally operators
-  run their own coverage alert and fix the gap first.
+- it **will drive alerting** (planned, not yet implemented — tracked in
+  [#3476](https://github.com/near/mpc/issues/3476)) — when an active node does not cover a
+  whitelisted chain, monitoring should fire for *us* (maintainers), who nudge the operator. Ideally
+  operators run their own coverage alert and fix the gap first.
 
 Registration reflects each node's *current* config.
 
