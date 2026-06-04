@@ -397,7 +397,7 @@ pub enum TonExtractor {
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct TonCellBody {
-    bits: TonCellData,
+    bytes: TonCellData,
     bit_length: u16,
 }
 
@@ -405,18 +405,18 @@ impl TonCellBody {
     /// Builds a cell body from `bits` (significant bits packed big-endian into bytes) and
     /// the significant `bit_length`, enforcing `bit_length <= `[`TON_CELL_MAX_DATA_BITS`]
     /// and `bits.len() == ⌈bit_length / 8⌉`.
-    pub fn new(bits: TonCellData, bit_length: u16) -> Result<Self, TonCellBodyError> {
+    pub fn new(bytes: TonCellData, bit_length: u16) -> Result<Self, TonCellBodyError> {
         if bit_length > TON_CELL_MAX_DATA_BITS {
             return Err(TonCellBodyError::BitLengthTooLarge { bit_length });
         }
         let expected_bytes = usize::from(bit_length.div_ceil(8));
-        if bits.len() != expected_bytes {
+        if bytes.len() != expected_bytes {
             return Err(TonCellBodyError::BitLengthByteMismatch {
                 bit_length,
-                byte_len: bits.len(),
+                byte_len: bytes.len(),
             });
         }
-        Ok(Self { bits, bit_length })
+        Ok(Self { bytes, bit_length })
     }
 }
 
@@ -424,7 +424,7 @@ impl TonCellBody {
 /// field layout and the routing through [`TonCellBody::new`] live in one place.
 #[derive(Deserialize, BorshDeserialize)]
 struct TonCellBodyRepr {
-    bits: TonCellData,
+    cell_data: TonCellData,
     bit_length: u16,
 }
 
@@ -432,7 +432,7 @@ impl TryFrom<TonCellBodyRepr> for TonCellBody {
     type Error = TonCellBodyError;
 
     fn try_from(repr: TonCellBodyRepr) -> Result<Self, Self::Error> {
-        Self::new(repr.bits, repr.bit_length)
+        Self::new(repr.cell_data, repr.bit_length)
     }
 }
 
