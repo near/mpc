@@ -111,15 +111,11 @@ dropped a chain to zero availability.
 
 ## Known tradeoff
 
-When a chain is available but not *every* node covers it, a non-covering node is treated as down
-*for that chain* — it doesn't participate in that chain's requests. The foreign-tx **presignatures**
-it co-owns (the dedicated `ForeignTx` domain, `DomainPurpose::ForeignTx`) can then sit idle and, if
-they stay offline long enough, are eventually discarded. **Triples are not stranded by this** — the
-node is still up, and triples are shared across all CaitSith domains with the same signing threshold,
-so it keeps using them; triples only become offline assets if the node is genuinely down.
-
-The mitigation is operational: the alerting above keeps coverage high, and operators
-are expected to configure every node for every chain.
+A node that's up but not covering a chain only sidelines the `ForeignTx` **presignatures** it co-owns
+(discarded if they stay offline long enough). Its **triples are not lost** — they're shared across
+domains and stay in use, so triples go offline only if the node is genuinely down. Mitigation is
+operational: alerting keeps coverage high and operators are expected to configure every node for
+every chain.
 
 ## Migration
 
