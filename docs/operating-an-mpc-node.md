@@ -15,7 +15,7 @@ Do not co-locate these on the same machine — each needs its own. We also want 
 
 See the [TDX node guide](./running-an-mpc-node-in-tdx-external-guide.md) for how to operate TEE MPC nodes, and the [node migration guide](./node-migration-guide.md) for how to use our backup CLI to migrate nodes between different environments.
 
-> **Note** — TEE migration is in progress: testnet runs a mix of TEE and non-TEE nodes today, and mainnet has no TEE nodes yet. Until that changes, operators onboarding now should run a non-TEE node for mainnet and a TEE node for testnet. See the [legacy setup guide](https://docs.google.com/document/d/1YQFgjPxqP3U0w9wRxhZsTNQYyUjsD_y3jAwzNYhyNcM/) for details.
+> **Note** — As of 2026-06, TEE migration is in progress: testnet runs a mix of TEE and non-TEE nodes, and mainnet does not yet require TEE. Until that changes, operators onboarding now should run a non-TEE node for mainnet and a TEE node for testnet. See [Running the MPC Launcher in Non-TEE Mode](./using-the-launcher-in-nontee-setup.md) for details.
 
 ### One node per network per operator
 Each operator runs exactly one mainnet node and one testnet node — no more. A decentralized set of independently operated nodes is the whole point, so no single party may run more than one node per network, whether directly or by quietly operating several operators' nodes through subcontracting.
