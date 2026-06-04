@@ -18,34 +18,23 @@ per chain, the network-trusted providers and the **RPC quorum** (`ChainEntry.quo
 
 ## Proposal: two sets of chains
 
-The network distinguishes two sets:
+> **Terms** (whitelisted, available, RPC quorum, signing threshold, *covers*) are defined in
+> [Foreign Chain Transaction Verification Design — Terminology](../foreign-chain-transactions.md#terminology).
 
-- **Whitelisted** — the explicit, vote-driven policy set every node is expected to
-  cover. `C` is whitelisted iff the on-chain RPC whitelist has a `ChainEntry` for
-  `C`. `get_whitelisted_foreign_chains()` returns exactly these keys. **No per-node
-  input can add or remove a chain**, so no single operator can change it.
-- **Available** — the set the network can actually serve right now, computed
-  dynamically from the per-node config reports. `C` is available iff
-  ≥ `signing_threshold` active participants cover `C`, where `signing_threshold` is
-  the reconstruction threshold of the `ForeignTx` domain and a participant *covers*
-  `C` iff it has ≥ `rpc_quorum(C)` whitelisted providers configured for `C`.
-  `get_available_foreign_chains()` returns this set.
+The network distinguishes the **whitelisted** set (vote-driven policy, `get_whitelisted_foreign_chains()`)
+from the **available** set (servable right now, `get_available_foreign_chains()`):
 
-`available ⊆ whitelisted` always — a node can only cover a whitelisted chain.
+- **Whitelisted** is derived purely from the on-chain RPC whitelist — **no per-node input can add or
+  remove a chain**, so no single operator can change it.
+- **Available** is computed dynamically from the per-node config reports: `C` is available iff
+  ≥ `signing_threshold` active participants cover `C`. `available ⊆ whitelisted` always.
 
-`verify_foreign_transaction(C)` is **rejected unless `C` is available**: the contract
-fails fast instead of accepting a request that can't reach the signing threshold and
-letting it time out. The rejection is temporary — `C` becomes serviceable again as
-soon as enough nodes report coverage.
+`verify_foreign_transaction(C)` is **rejected unless `C` is available**: the contract fails fast
+instead of accepting a request that can't reach the signing threshold and letting it time out. The
+rejection is temporary — `C` becomes serviceable again as soon as enough nodes report coverage.
 
-The legacy `get_supported_foreign_chains()` (the intersection rule) is **to be
-deprecated** in favour of the two views above.
-
-| symbol | meaning | source |
-|---|---|---|
-| `whitelist(C)` | provider ids the network trusts for `C` | `AllowedProviders.entries[C].providers` |
-| `rpc_quorum(C)` | per-chain RPC quorum | `AllowedProviders.entries[C].quorum` |
-| `signing_threshold` | reconstruction threshold of the `ForeignTx` domain | `self.threshold()?.value()` |
+The legacy `get_supported_foreign_chains()` (the intersection rule) is **to be deprecated** in favour
+of the two views above.
 
 ## Why two sets
 

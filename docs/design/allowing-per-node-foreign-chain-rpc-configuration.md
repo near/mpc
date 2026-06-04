@@ -17,11 +17,22 @@ As part of [#2648](https://github.com/near/mpc/issues/2648), we want to be able 
 requiring all other nodes to have the exact same configuration.
 
 ### Requirements
+
+> Terms used below (whitelisted, available, RPC quorum, *covers*, signing threshold) are defined in
+> the [main doc's Terminology](../foreign-chain-transactions.md#terminology).
+
 1. RPC providers are whitelisted by being voted into the contract by node operators submitting votes. The whitelist is **per-chain**, keyed by `(ForeignChain, ProviderId)`.
 2. The contract owns the connection config (`base_url`, `auth_scheme`, `chain_routing`), not the operator. Operator yaml carries `provider_id` + a `token_env` reference only.
 3. Nodes do not need to have local configurations covering all whitelisted RPC providers — a quorum number of locally-configured providers per chain is sufficient.
 4. Every node partaking in a foreign signature verification request queries all its locally configured RPC providers for the relevant chain, independently of other nodes. A quorum of those RPC providers must agree on the verification; if fewer than the quorum agree, the node errors out that foreign-tx validation and does **not** retry the request.
-5. A foreign chain is **whitelisted** iff the on-chain RPC whitelist has a `ChainEntry` for it — `get_whitelisted_foreign_chains()` returns these, and no single node can change it. It is **available** (actually served) only while ≥ signing threshold active nodes cover it (each with at least the per-chain RPC quorum of whitelisted providers configured), as returned by `get_available_foreign_chains()`; `verify_foreign_transaction` early-rejects requests for a whitelisted-but-unavailable chain. Per-node registrations feed both this availability check and the alerting on coverage gaps. A node not covering a chain is treated as down for it — it does not participate, and its co-owned pre-generated assets may eventually be discarded. See [Calculating the whitelisted and available foreign-chain sets](calculating-supported-foreign-chains.md).
+5. Every node is expected to **cover** every whitelisted foreign chain at all times. There is no
+   on-chain enforcement, so the system must tolerate temporary **incomplete coverage**: a chain is
+   served while it is **available** (≥ signing threshold of active nodes cover it), and
+   `verify_foreign_transaction` early-rejects a whitelisted-but-unavailable chain. Per-node
+   registrations feed the availability computation. See
+   [Calculating the whitelisted and available foreign-chain sets](calculating-supported-foreign-chains.md).
+6. Monitoring and off-chain alert channels notify operators of incomplete coverage (a node not
+   covering some whitelisted chain); there is no on-chain penalty.
 
 ## Why
 The current setup has many limitations and was implemented as an MVP.
