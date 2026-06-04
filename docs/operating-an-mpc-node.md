@@ -2,7 +2,7 @@
 
 Whether you're already running a node or considering it — thank you. The NEAR MPC network stays secure, reliable, and decentralized only because independent operators like you keep it running. No single party can produce a signature alone; that guarantee rests on you.
 
-This guide lays out what we expect from operators. If anything is unclear, raise it in the operators' Slack channel.
+This guide lays out what we — the Near One MPC team behind the contract and node code — expect from operators. If anything is unclear, raise it in the operators' Slack channel.
 
 ## What you run
 All operators are expected to run the following:
@@ -11,7 +11,7 @@ All operators are expected to run the following:
 2. A mainnet MPC node (non-TEE until the TEE mainnet rollout completes)
 3. (once implemented) A TEE-enabled [backup service](./migration-service.md) node
 
-Do not co-locate these on the same machine — each needs its own. We also want to keep our testnet and mainnet setups as identical as possible to minimize the risk of mainnet-only bugs.
+Do not co-locate these on the same machine — each needs its own. Keep your testnet and mainnet setups as identical as possible, so testnet catches bugs before they reach mainnet.
 
 See the [TDX node guide](./running-an-mpc-node-in-tdx-external-guide.md) for how to operate TEE MPC nodes, and the [node migration guide](./node-migration-guide.md) for how to use our backup CLI to migrate nodes between different environments.
 
@@ -37,7 +37,7 @@ You're not expected to run hot backup nodes for quick recovery if a node crashes
 The same applies if we ask you to turn off your node during incident investigations or similar situations.
 
 ## Incident response
-We monitor network health. If something looks wrong with your node, we'll flag it to you on Slack, and we expect you to pick it up and start investigating as soon as you reasonably can. Prompt response is essential to the reliability of the network.
+When an issue with your node comes up, we expect you to pick it up and start investigating as soon as you reasonably can, and to keep others posted on Slack as you work it. This is essential to the reliability of the network.
 
 We'll move to tighter, formal response times once dedicated alerting is in place; until then, prompt best-effort response is what matters.
 
