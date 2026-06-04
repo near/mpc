@@ -20,7 +20,7 @@ pub const TON_CELL_MAX_DATA_BITS: u16 = 1023;
 /// Maximum number of data bytes in a TON Cell: ⌈1023/8⌉ = 128 bytes, the
 /// byte-padded length of a cell holding the maximal [`TON_CELL_MAX_DATA_BITS`].
 ///
-/// See <https://docs.ton.org/foundations/serialization/cells#standard-cell-representation-and-its-hash>.
+/// See <https://docs.ton.org/blockchain-basics/primitives/serialization/cells#basic-structure>.
 pub const TON_CELL_MAX_DATA_BYTES: usize = 128;
 
 /// Maximum number of references a TON Cell may hold.
