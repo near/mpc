@@ -285,6 +285,41 @@ pub fn derive_foreign_tx_tweak(predecessor_id: &AccountId, path: &str) -> Tweak 
 This ensures key material used for validated foreign transactions is **always** distinct from
 general-purpose `sign()` keys, even if the same account and derivation path are reused.
 
+## Terminology
+
+Defined here once; the two design docs
+([calculating the whitelisted/available sets](design/calculating-supported-foreign-chains.md),
+[per-node RPC configuration](design/allowing-per-node-foreign-chain-rpc-configuration.md)) point
+back here rather than redefining them.
+
+- **Local RPC config** — a node's `foreign_chains.yaml`: the per-chain set of whitelisted providers
+  (referenced by `provider_id`) and API tokens that node is configured to query. Local to each
+  operator, not network state. See [Configuration (Node)](#configuration-node).
+- **Whitelisted chain** — a chain the network has voted into the on-chain RPC whitelist
+  (`foreign_chain_rpc_whitelist`): there is a `ChainEntry` for it (trusted provider list + RPC
+  quorum). The policy set every node is expected to cover; **no single operator can add or remove a
+  chain — only a threshold vote can**. Returned by `get_whitelisted_foreign_chains()`. See
+  [On-chain RPC Provider Whitelist](#on-chain-rpc-provider-whitelist).
+- **RPC quorum** (`rpc_quorum(C)`) — per whitelisted chain `C`, how many of a node's configured
+  providers must return the same response for that node to accept a verification result
+  (`ChainEntry.quorum`), voted in alongside the provider list. A runtime knob; distinct from the
+  *signing threshold*.
+- **Signing threshold** — the cryptographic reconstruction threshold of the `ForeignTx` signing
+  domain (`self.threshold()`): how many participants must produce signature shares to sign an
+  observation. Distinct from the RPC quorum.
+- **A node covers (supports) a chain `C`** — the node's local RPC config has at least `rpc_quorum(C)`
+  of `C`'s whitelisted providers configured (enough to reach the RPC quorum on its own). Reported
+  on-chain via `register_foreign_chain_config`. *"Covers" and "supports" are interchangeable; this
+  doc prefers* covers.
+- **Available chain** — a whitelisted chain that at least `signing_threshold` active participants
+  currently cover, so the network can serve it now. Computed dynamically from per-node reports;
+  `available ⊆ whitelisted`. `verify_foreign_transaction(C)` is rejected unless `C` is available.
+  Returned by `get_available_foreign_chains()`.
+- **Incomplete coverage** — a whitelisted chain some active nodes do not cover. Expected to be
+  transient and surfaced by alerting, not a steady state; a node not covering a whitelisted chain is
+  treated as down for it. If coverage drops below `signing_threshold` the chain leaves the available
+  set until enough nodes report it again.
+
 ## Contract State (Foreign Chain Configurations)
 
 The **whitelisted** set is derived from the **on-chain RPC whitelist** (`foreign_chain_rpc_whitelist`): a chain is whitelisted iff the network has voted in a `ChainEntry` for it, exposed by `get_whitelisted_foreign_chains()`. The **available** set — the chains ≥ signing threshold active nodes currently cover — is computed from the per-participant registrations and exposed by `get_available_foreign_chains()`; `verify_foreign_transaction` gates on it. The per-participant registration also drives alerting (detecting an active node that does not cover a whitelisted chain). See [Calculating the whitelisted and available foreign-chain sets](design/calculating-supported-foreign-chains.md).
