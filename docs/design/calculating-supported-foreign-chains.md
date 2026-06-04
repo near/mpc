@@ -111,19 +111,12 @@ dropped a chain to zero availability.
 
 ## Known tradeoff
 
-When a chain is available but not *every* node covers it, the non-covering nodes are
-treated as down for `C`: they don't participate, and the pre-generated assets they
-co-own (usable only while all their participants are alive) become offline assets. As
-long as the leader knows a node is down there is no waste, only an asset that stays
-offline for a long period is eventually discarded, wasting the work that produced it.
-Two surfaces where that lands:
-
-- **Presignatures are per-domain.** Foreign-tx signing uses a dedicated `ForeignTx`
-  domain (`DomainPurpose::ForeignTx`), so stranded foreign-tx presignatures stay in
-  that pool.
-- **Triples are shared** across all CaitSith domains with the same signing threshold,
-  so stranding them also dents ordinary `sign()` presignature generation — this cost
-  is **not** confined to `C`.
+When a chain is available but not *every* node covers it, a non-covering node is treated as down
+*for that chain* — it doesn't participate in that chain's requests. The foreign-tx **presignatures**
+it co-owns (the dedicated `ForeignTx` domain, `DomainPurpose::ForeignTx`) can then sit idle and, if
+they stay offline long enough, are eventually discarded. **Triples are not stranded by this** — the
+node is still up, and triples are shared across all CaitSith domains with the same signing threshold,
+so it keeps using them; triples only become offline assets if the node is genuinely down.
 
 The mitigation is operational: the alerting above keeps coverage high, and operators
 are expected to configure every node for every chain.
@@ -138,17 +131,3 @@ can roll out before the contract upgrade (node and contract migrate independentl
 3. Vote the RPC providers / chains into the whitelist.
 4. Upgrade the contract.
 5. Switch node code to the new methods and deprecate `get_supported_foreign_chains()`.
-
-## Documentation impact
-
-Adopting this rule makes the following stale. Update in the same change (per the
-doc-alignment rule):
-
-- `docs/foreign-chain-transactions.md` — "Contract State (Foreign Chain
-  Configurations)", the `get_supported_foreign_chains` description (now superseded by
-  `get_whitelisted_foreign_chains` / `get_available_foreign_chains`), the operator-flow
-  note about a chain appearing "only once **every** active participant has registered
-  it", and the rollout-coordination risk all describe the intersection rule.
-- `docs/design/allowing-per-node-foreign-chain-rpc-configuration.md` requirement #5
-  — restate it as the whitelisted/available split above (registration feeds the
-  available set; it is not monitoring-only).
