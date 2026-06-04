@@ -11,7 +11,10 @@ All operators are expected to run the following:
 2. A mainnet MPC node (non-TEE until the TEE mainnet rollout completes)
 3. (once implemented) A TEE-enabled [backup service](./migration-service.md) node
 
-Do not co-locate these on the same machine — each needs its own. Keep your testnet and mainnet setups as identical as possible, so testnet catches bugs before they reach mainnet.
+Two things to keep in mind for the setup:
+
+- Run each component on its own machine — don't co-locate them.
+- Keep your mainnet and testnet setups as close to identical as possible, so testnet catches bugs before they reach mainnet.
 
 See the [TDX node guide](./running-an-mpc-node-in-tdx-external-guide.md) for how to operate TEE MPC nodes, and the [node migration guide](./node-migration-guide.md) for how to use our backup CLI to migrate nodes between different environments.
 
