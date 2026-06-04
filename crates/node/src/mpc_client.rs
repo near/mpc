@@ -235,11 +235,11 @@ where
 
                     self.client.update_indexer_height(block_update.block.height);
 
-                    let AddBlockResult{ block_ref } = recent_blocks.add_block(&block_update.block);
+                    let AddBlockResult{ block_status } = recent_blocks.add_block(&block_update.block);
 
                     let signature_requests : RequestsUpdate<SignatureRequest> = RequestsUpdate::from_chain(
                         &block_update.block,
-                        block_ref.clone(),
+                        block_status.clone(),
                         block_update.signature_requests,
                         block_update.completed_signatures,
                     );
@@ -254,7 +254,7 @@ where
 
                     let ckd_requests: RequestsUpdate<CKDRequest> = RequestsUpdate::from_chain(
                         &block_update.block,
-                        block_ref.clone(),
+                        block_status.clone(),
                         block_update.ckd_requests,
                         block_update.completed_ckds
                     );
@@ -266,7 +266,7 @@ where
 
                     let verify_foreign_tx_requests : RequestsUpdate<VerifyForeignTxRequest> = RequestsUpdate::from_chain(
                         &block_update.block,
-                        block_ref,
+                        block_status,
                         block_update.verify_foreign_tx_requests,
                         block_update.completed_verify_foreign_txs
                     );
