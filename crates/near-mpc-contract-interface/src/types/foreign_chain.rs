@@ -403,8 +403,10 @@ pub struct TonCellBody {
 
 impl TonCellBody {
     /// Builds a cell body from `bits` (significant bits packed big-endian into bytes) and
-    /// the significant `bit_length`, enforcing `bit_length <= `[`TON_CELL_MAX_DATA_BITS`]
-    /// and `bits.len() == ⌈bit_length / 8⌉`.
+    /// the significant `bit_length`, enforcing `bit_length <= `[`TON_CELL_MAX_DATA_BITS`],
+    /// `bits.len() == ⌈bit_length / 8⌉`, and that the final byte's unused low bits (the
+    /// `8 * bits.len() - bit_length` bits beyond `bit_length`) are zero, so that the byte
+    /// representation is canonical for a given `bit_length`.
     pub fn new(bytes: TonCellData, bit_length: u16) -> Result<Self, TonCellBodyError> {
         if bit_length > TON_CELL_MAX_DATA_BITS {
             return Err(TonCellBodyError::BitLengthTooLarge { bit_length });
@@ -415,6 +417,21 @@ impl TonCellBody {
                 bit_length,
                 byte_len: bytes.len(),
             });
+        }
+        // When `bit_length` is not byte-aligned, the final byte's low `unused_bits` bits lie
+        // beyond the significant data and must be zero. Otherwise two bodies sharing a
+        // `bit_length` but differing in padding would be distinct under `Eq`/`Hash` and
+        // hash differently under `compute_msg_hash`, despite encoding the same cell.
+        let unused_bits = (8 - (bit_length % 8)) % 8;
+        if unused_bits != 0 {
+            let last_byte = *bytes.last().expect("non-zero bit_length implies a final byte");
+            let padding_mask = (1u8 << unused_bits) - 1;
+            if last_byte & padding_mask != 0 {
+                return Err(TonCellBodyError::TrailingBitsNotZero {
+                    bit_length,
+                    last_byte,
+                });
+            }
         }
         Ok(Self { bytes, bit_length })
     }
@@ -463,6 +480,8 @@ pub enum TonCellBodyError {
     BitLengthTooLarge { bit_length: u16 },
     /// The byte count does not match `bit_length` rounded up to whole bytes.
     BitLengthByteMismatch { bit_length: u16, byte_len: usize },
+    /// The final byte's unused low bits (beyond `bit_length`) are not zero.
+    TrailingBitsNotZero { bit_length: u16, last_byte: u8 },
 }
 
 impl core::fmt::Display for TonCellBodyError {
@@ -479,6 +498,13 @@ impl core::fmt::Display for TonCellBodyError {
                 f,
                 "TON cell bit_length {bit_length} requires {} body bytes but found {byte_len}",
                 bit_length.div_ceil(8)
+            ),
+            Self::TrailingBitsNotZero {
+                bit_length,
+                last_byte,
+            } => write!(
+                f,
+                "TON cell with bit_length {bit_length} has non-zero unused padding bits in final byte {last_byte:#04x}"
             ),
         }
     }
@@ -1658,7 +1684,8 @@ mod tests {
     #[case::single_bit(vec![0x80], 1)]
     #[case::byte_aligned(vec![0xde, 0xad], 16)]
     #[case::non_byte_aligned(vec![0xde, 0xa0], 12)]
-    #[case::max(vec![0xff; 128], TON_CELL_MAX_DATA_BITS)]
+    // 1023 bits => final byte's low bit is unused, so it must be zero (0xfe, not 0xff).
+    #[case::max([vec![0xff; 127], vec![0xfe]].concat(), TON_CELL_MAX_DATA_BITS)]
     fn ton_cell_body_new__should_accept_consistent_body(
         #[case] bits: Vec<u8>,
         #[case] bit_length: u16,
@@ -1705,6 +1732,31 @@ mod tests {
             Err(TonCellBodyError::BitLengthByteMismatch {
                 bit_length,
                 byte_len,
+            })
+        );
+    }
+
+    #[rstest]
+    // 12 significant bits => final byte's low 4 bits must be zero; 0x01 sets one of them.
+    #[case::non_byte_aligned(vec![0xde, 0x01], 12, 0x01)]
+    // 1 significant bit => only the top bit is significant; any low bit set is rejected.
+    #[case::single_bit(vec![0x01], 1, 0x01)]
+    // 1015 bits => final byte's low bit is unused; 0xff sets it.
+    #[case::near_max(vec![0xff; 127], 1015, 0xff)]
+    fn ton_cell_body_new__should_reject_non_zero_padding_bits(
+        #[case] bits: Vec<u8>,
+        #[case] bit_length: u16,
+        #[case] last_byte: u8,
+    ) {
+        // When
+        let result = TonCellBody::new(bits.try_into().unwrap(), bit_length);
+
+        // Then
+        assert_eq!(
+            result,
+            Err(TonCellBodyError::TrailingBitsNotZero {
+                bit_length,
+                last_byte,
             })
         );
     }
