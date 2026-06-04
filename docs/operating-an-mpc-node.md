@@ -57,4 +57,4 @@ Follow our [reproducible builds guide](./reproducible-builds.md) to verify the d
 ### Contract upgrades & voting
 Contract upgrades happen through voting. Just like with nodes, reproduce the contract build to verify the code before voting.
 
-For any on-chain vote — upgrades, generating new keys, or changes to the operator set — we expect you to respond within three (3) calendar days of it opening: either approve it, or raise an objection so we can take it from there.
+For any on-chain vote — upgrades, generating new keys, or changes to the operator set — we expect you to respond within three (3) calendar days of it opening: either approve it, or raise an objection on slack.
