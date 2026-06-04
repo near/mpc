@@ -19,6 +19,7 @@ pub mod evm;
 pub mod hyperevm;
 pub mod polygon;
 pub mod starknet;
+pub mod ton;
 
 pub trait ForeignChainInspector {
     type TransactionId;

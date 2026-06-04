@@ -333,7 +333,7 @@ pub struct TonTxId(#[serde_as(as = "Hex")] pub [u8; 32]);
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct TonAddress {
-    pub workchain: i32,
+    pub workchain: i8,
     pub hash: Hash256,
 }
 

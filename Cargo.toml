@@ -172,6 +172,7 @@ lru = "0.18.0"
 # binary mappings into emitted pprof profiles so `pprof` can symbolicate
 # addresses through ASLR.
 mappings = "0.5"
+tonlib_core = "0.26.11"
 mockall = "0.14.0"
 named-lock = "0.4.1"
 near-abi = "0.4.4"
