@@ -52,7 +52,7 @@ When an incident is underway we expect you to be ready to collaborate on actions
 - Sharing logs for debugging.
 
 ## Upgrades
-When we publish new MPC versions we typically coordinate node upgrades first, followed by contract upgrades. We coordinate both on Slack. In each case we'd like you to independently verify the code before acting, so you can confirm the expected version is what's actually being run.
+Upgrades are a regular part of operating a node — expect a new MPC release roughly every one to two weeks, and note that every NEAR protocol upgrade requires a matching MPC upgrade. For each release we typically roll out node upgrades first, then contract upgrades, coordinating both on Slack. We'd like you to independently verify the code before acting, so you can confirm the expected version is what's actually being run.
 
 ### Node upgrades
 Follow our [reproducible builds guide](./reproducible-builds.md) to verify the docker image hashes, then upgrade your nodes to the requested version.
