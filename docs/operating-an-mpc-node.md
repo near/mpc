@@ -8,8 +8,8 @@ This guide lays out what we expect from operators. If anything is unclear, raise
 All operators are expected to run the following:
 
 1. A TEE testnet MPC node
-2. A TEE mainnet MPC node
-3. (once implemented) Our TEE enabled backup service
+2. A mainnet MPC node (non-TEE until the TEE mainnet rollout completes)
+3. (once implemented) A TEE-enabled backup service node
 
 Do not co-locate these on the same machine — each needs its own. We also want to keep our testnet and mainnet setups as identical as possible to minimize the risk of mainnet-only bugs.
 
