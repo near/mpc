@@ -892,12 +892,12 @@ mod tests {
     #[expect(non_snake_case)]
     mod staged_contract_upload {
         use crate::update::StagedContractUpload;
-        use core::num::NonZeroU64;
+        use core::num::NonZeroUsize;
 
         #[test]
         fn record_chunk__should_track_received_bytes_and_assign_indices() {
             // Given
-            let mut staged = StagedContractUpload::new(NonZeroU64::new(100).unwrap());
+            let mut staged = StagedContractUpload::new(NonZeroUsize::new(100).unwrap());
 
             // When
             let idx_0 = staged.record_chunk(40).unwrap();
@@ -914,7 +914,7 @@ mod tests {
         #[test]
         fn record_chunk__should_reject_appends_exceeding_total_size() {
             // Given
-            let mut staged = StagedContractUpload::new(NonZeroU64::new(50).unwrap());
+            let mut staged = StagedContractUpload::new(NonZeroUsize::new(50).unwrap());
             staged.record_chunk(40).unwrap();
 
             // When
@@ -929,7 +929,7 @@ mod tests {
         #[test]
         fn is_complete__should_return_false_until_all_bytes_received() {
             // Given
-            let mut staged = StagedContractUpload::new(NonZeroU64::new(100).unwrap());
+            let mut staged = StagedContractUpload::new(NonZeroUsize::new(100).unwrap());
 
             // Then
             assert!(!staged.is_complete());
