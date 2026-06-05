@@ -60,8 +60,7 @@ errors out and produces no signature share.
 
 **This sub-quorum outcome must be terminal — the leader must not re-attempt the
 request.** Implementation requirement, not current behavior: the generic queue
-retries every request up to `MAX_ATTEMPTS_PER_REQUEST_AS_LEADER`
-(`requests/queue.rs:38`), so the foreign-tx path must special-case a sub-quorum
+retries every request, so the foreign-tx path must special-case a sub-quorum
 result as non-retryable. (Open: whether a sub-quorum from purely *transient*
 failures — timeouts, finality not reached — should still retry, vs. only genuine
 disagreement being terminal. Tracked in [#3477](https://github.com/near/mpc/issues/3477).)
@@ -72,7 +71,7 @@ Foreign-tx signing must elect participants that **cover** the requested chain
 (report ≥ `rpc_quorum(C)` providers for `C`), not merely online ones — a
 non-covering participant produces no share and can stall the request.
 Implementation requirement, not current behavior: today the signing set is inherited
-from a presignature (`take_owned()` in `verify_foreign_tx/sign.rs`), whose
+from a presignature, whose
 participants were chosen for liveness, not chain coverage.
 
 ## Per-node registration
