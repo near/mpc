@@ -16,7 +16,7 @@ WASM_PATH="${1:-result/mpc_contract.wasm}"
 # ~12 KB over the pre-feature baseline; this limit gives a bit of headroom
 # above the post-feature size without leaving the contract free to creep up
 # to the protocol boundary.
-HARD_LIMIT=1520000
+HARD_LIMIT=1450000
 
 
 if [[ ! -f "$WASM_PATH" ]]; then
