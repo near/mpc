@@ -45,10 +45,11 @@ expected to cover every whitelisted chain.
 **Available** avoids spending resources on a request the network can't fulfill: one
 for a chain without a signing threshold's worth of coverage is rejected up front, not
 attempted and left to time out. Because it requires `signing_threshold` — not all —
-participants, a chain leaves it only when more than `n − signing_threshold` nodes
-stop covering it.
+participants, the network tolerates up to `n − signing_threshold` nodes
+stopping coverage.
 
-In a healthy network `available == whitelisted`. A gap means nodes are down or
+In a healthy network `available == whitelisted`. If there exists a chain that's 
+whitelisted but not available means nodes are down or
 misconfigured for a chain — an operational anomaly that alerting surfaces (see
 [Per-node registration](#per-node-registration)), not a steady state.
 
