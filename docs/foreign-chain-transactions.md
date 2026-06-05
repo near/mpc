@@ -519,7 +519,7 @@ Two reasons together drove the snapshot model over an Add/Remove diff-ops endpoi
 
 #### Why protocol signing threshold (not unanimous, not a separate per-chain knob)
 
-Voting uses the protocol's existing signing threshold (`self.threshold()?.value()`), the same gate as `verify_tee` and `vote_add_os_measurement`. An earlier design proposed a separate per-chain *voting* threshold so mainnet and testnet could be voted in under different agreement requirements; that was dropped because (a) there's no setter that could safely populate it without itself being voted in, leaving a hardcoded default that's strictly weaker than the protocol threshold, and (b) the per-chain numeric on `ChainVote.threshold` already covers the *runtime* security knob — how many of N whitelisted providers must agree for a node to accept a response — which is what operators actually need to tune per chain.
+Voting uses the protocol's existing signing threshold (`self.threshold()?.value()`), the same gate as `verify_tee` and `vote_add_os_measurement`. An earlier design proposed a separate per-chain *voting* threshold so mainnet and testnet could be voted in under different agreement requirements; that was dropped because (a) there's no setter that could safely populate it without itself being voted in, leaving a hardcoded default that's strictly weaker than the protocol threshold, and (b) the per-chain numeric on `ChainVote.quorum` already covers the *runtime* security knob — how many of N whitelisted providers must agree for a node to accept a response — which is what operators actually need to tune per chain.
 
 #### Why the chain-identity probe in addition to per-chain keying (PR 3)
 
