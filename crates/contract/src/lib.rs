@@ -163,7 +163,7 @@ pub struct MpcContract {
     /// Lives in a separate `LookupMap` (rather than inside `StagedContractUpload`)
     /// so appending a chunk only writes the new chunk's bytes — not the entire
     /// accumulated blob.
-    staged_chunks: LookupMap<(AccountId, u32), Vec<u8>>,
+    staged_chunks: LookupMap<(AccountId, usize), Vec<u8>>,
     node_foreign_chain_support: SupportedForeignChainsByNode,
     config: Config,
     tee_state: TeeState,
@@ -1289,7 +1289,7 @@ impl MpcContract {
                     reason: "no staged upload found; call start_contract_upload first".into(),
                 })?;
 
-        let chunk_index = staged.record_chunk(chunk_len as u64)?;
+        let chunk_index = staged.record_chunk(chunk_len)?;
         staged.deposited = staged.deposited.saturating_add(attached);
 
         // Store chunk bytes in a separate map so the metadata write is small.
@@ -1798,7 +1798,7 @@ impl MpcContract {
         // require `voter_or_panic`), so its chunk bytes and metadata would linger
         // forever, locking the contract's balance behind storage staking. Drop them
         // here and refund each owner's accumulated deposit.
-        let orphaned: Vec<(AccountId, u32, NearToken)> = self
+        let orphaned: Vec<(AccountId, usize, NearToken)> = self
             .staged_uploads
             .iter()
             .filter(|(account, _)| !participants.is_participant_given_account_id(account))

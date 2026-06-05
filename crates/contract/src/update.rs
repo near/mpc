@@ -1,4 +1,4 @@
-use core::num::NonZeroU64;
+use core::num::NonZeroUsize;
 use std::collections::BTreeMap;
 use std::hash::Hash;
 
@@ -114,7 +114,7 @@ impl From<ProposedConfigUpdateArgs> for Update {
 pub struct StartContractUploadArgs {
     /// Total size in bytes of the contract code that will be uploaded across
     /// subsequent `upload_contract_chunk` calls.
-    pub total_size: NonZeroU64,
+    pub total_size: NonZeroUsize,
 }
 
 /// Arguments for [`MpcContract::upload_contract_chunk`](crate::MpcContract::upload_contract_chunk).
@@ -147,11 +147,11 @@ pub struct UploadContractChunkArgs {
 #[derive(Clone, Debug, PartialEq, borsh::BorshSerialize, borsh::BorshDeserialize)]
 pub struct StagedContractUpload {
     /// Total expected size, declared at `start_contract_upload`.
-    pub total_size: NonZeroU64,
+    pub total_size: NonZeroUsize,
     /// Number of bytes received so far.
-    pub received_bytes: u64,
+    pub received_bytes: usize,
     /// Number of chunks received so far (and the next chunk's index).
-    pub num_chunks: u32,
+    pub num_chunks: usize,
     /// Sum of all deposits attached to this upload's `start`, `upload_chunk` calls.
     /// Refunded on `clear_staged_contract` if the upload is abandoned, or consumed
     /// by the proposal entry's storage cost on `finalize_contract_upload`.
@@ -159,7 +159,7 @@ pub struct StagedContractUpload {
 }
 
 impl StagedContractUpload {
-    pub fn new(total_size: NonZeroU64) -> Self {
+    pub fn new(total_size: NonZeroUsize) -> Self {
         Self {
             total_size,
             received_bytes: 0,
@@ -170,7 +170,7 @@ impl StagedContractUpload {
 
     /// Records that a chunk of `chunk_len` bytes was appended. Returns the chunk's
     /// index. Rejects appends that would exceed the declared `total_size`.
-    pub fn record_chunk(&mut self, chunk_len: u64) -> Result<u32, Error> {
+    pub fn record_chunk(&mut self, chunk_len: usize) -> Result<usize, Error> {
         let new_received = self.received_bytes.checked_add(chunk_len).ok_or_else(|| {
             Error::from(InvalidParameters::MalformedPayload {
                 reason: "received_bytes overflow".into(),
