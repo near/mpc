@@ -14,7 +14,7 @@ use super::metrics::{MPC_BLOCKS_INDEXED, MPC_FINALIZED_BLOCKS_INDEXED};
 /// This class provides two important functionalities:
 ///  - Converts a stream of optimistic blocks from the indexer into a stream of finalized
 ///    blocks.
-///  - For each block added via `add_block`, it returns a `Weak<AtomicBlockStatus>` that can be
+///  - For each block added via `add_block`, it returns a `BlockStatusHandle` that can be
 ///    used to observe that block's current `BlockStatus` (non-canonical, canonical or final).
 ///
 /// This class provides the following invariants (provided the requirements listed below are met):
@@ -137,14 +137,14 @@ impl From<BlockStatus> for u8 {
     }
 }
 
-pub struct AtomicBlockStatus(AtomicU8);
+struct AtomicBlockStatus(AtomicU8);
 
 impl AtomicBlockStatus {
-    pub fn is_final(&self) -> bool {
+    fn is_final(&self) -> bool {
         self.0.load(Ordering::Relaxed) == u8::from(BlockStatus::Final)
     }
 
-    pub fn is_canonical(&self) -> bool {
+    fn is_canonical(&self) -> bool {
         let status = self.0.load(Ordering::Relaxed);
         status == u8::from(BlockStatus::OptimisticAndCanonical)
             || status == u8::from(BlockStatus::Final)
@@ -181,17 +181,37 @@ impl AtomicBlockStatus {
     }
 }
 
+/// A handle to a block's status held by the [`RecentBlocksTracker`].
+///
+/// Consumers can read the current finality status but cannot hold a strong
+/// reference to the underlying atomic. Pruning a block from the tracker
+/// drops its ref count to zero.
+#[derive(Clone)]
+pub struct BlockStatusHandle(Weak<AtomicBlockStatus>);
+
+impl BlockStatusHandle {
+    /// `None` if the block has been pruned from the tracker.
+    pub fn is_final(&self) -> Option<bool> {
+        self.0.upgrade().map(|s| s.is_final())
+    }
+
+    /// `None` if the block has been pruned from the tracker.
+    pub fn is_canonical(&self) -> Option<bool> {
+        self.0.upgrade().map(|s| s.is_canonical())
+    }
+}
+
 pub struct AddBlockResult {
-    pub block_ref: Weak<AtomicBlockStatus>,
+    pub block_status: BlockStatusHandle,
 }
 
 /// Represents a block in the recent blockchain.
 struct BlockNode {
     hash: CryptoHash,
     height: u64,
-    /// Indicates the finality status of this block. Held as `Arc` so that a `Weak` reference
-    /// can be handed out (via `AddBlockResult::block_ref`) to consumers like `QueuedRequest`,
-    /// which observe status changes and detect pruning when the upgrade fails.
+    /// Indicates the finality status of this block. Held as `Arc`.
+    /// A [`BlockStatusHandle`] is handed out via [`AddBlockResult::block_status`] to consumers,
+    /// allowing them to observe status changes and detect pruning.
     status: Arc<AtomicBlockStatus>,
     /// The parent block, if we're aware of it. This may be None if we have never
     /// heard of the parent.
@@ -205,6 +225,10 @@ struct BlockNode {
 impl BlockNode {
     fn get_parent(&self) -> Option<Arc<BlockNode>> {
         self.parent.as_ref().and_then(Weak::upgrade)
+    }
+
+    fn status_handle(&self) -> BlockStatusHandle {
+        BlockStatusHandle(Arc::downgrade(&self.status))
     }
 
     fn keep_only_child(
@@ -321,22 +345,21 @@ impl RecentBlocksTracker {
                 block.height,
             );
             return AddBlockResult {
-                block_ref: Arc::downgrade(&node.status),
+                block_status: node.status_handle(),
             };
         }
         MPC_BLOCKS_INDEXED.inc();
-        let status = Arc::new(AtomicBlockStatus(AtomicU8::new(u8::from(
-            BlockStatus::OptimisticButNotCanonical,
-        ))));
-        let block_ref = Arc::downgrade(&status);
         let parent = self.hash_to_node.get(&block.prev_hash).cloned();
         let node = Arc::new(BlockNode {
             hash: block.hash,
             height: block.height,
-            status,
+            status: Arc::new(AtomicBlockStatus(AtomicU8::new(u8::from(
+                BlockStatus::OptimisticButNotCanonical,
+            )))),
             parent: parent.as_ref().map(Arc::downgrade),
             children: Mutex::new(Vec::new()),
         });
+        let block_status = node.status_handle();
         self.hash_to_node.insert(block.hash, node.clone());
         if let Some(parent) = parent {
             parent.children.lock().unwrap().push(node.clone());
@@ -368,7 +391,7 @@ impl RecentBlocksTracker {
             self.maximum_height_available = block.height;
         }
         self.prune_old_blocks();
-        AddBlockResult { block_ref }
+        AddBlockResult { block_status }
     }
 
     /// Advance the final head, mark its ancestors as final, and drop every
@@ -571,7 +594,7 @@ impl Debug for RecentBlocksTracker {
 
 #[cfg(test)]
 pub mod tests {
-    use crate::requests::recent_blocks_tracker::AtomicBlockStatus;
+    use crate::requests::recent_blocks_tracker::{AtomicBlockStatus, BlockStatusHandle};
 
     use super::{BlockEntropy, BlockStatus, BlockViewLite, RecentBlocksTracker};
     use near_indexer::near_primitives::hash::hash;
@@ -579,7 +602,7 @@ pub mod tests {
     use std::collections::HashSet;
     use std::fmt::Write;
     use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
-    use std::sync::{Arc, Mutex, Weak};
+    use std::sync::{Arc, Mutex};
 
     pub struct TestBlock {
         hash: CryptoHash,
@@ -756,12 +779,14 @@ pub mod tests {
             self.maker.block(height)
         }
 
-        pub fn check(&self, weak: &Weak<AtomicBlockStatus>) -> Option<BlockStatus> {
-            weak.upgrade()
+        pub fn check(&self, handle: &BlockStatusHandle) -> Option<BlockStatus> {
+            handle
+                .0
+                .upgrade()
                 .map(|s| BlockStatus::from(s.0.load(Ordering::Relaxed)))
         }
 
-        pub fn add(&mut self, block: &Arc<TestBlock>) -> Weak<AtomicBlockStatus> {
+        pub fn add(&mut self, block: &Arc<TestBlock>) -> BlockStatusHandle {
             assert!(
                 !self.parents_of_added_blocks.contains(&block.hash),
                 "Cannot retroactively add the parent of an already added block"
@@ -778,7 +803,7 @@ pub mod tests {
                 self.tracker
             )
             .unwrap();
-            result.block_ref
+            result.block_status
         }
     }
 
@@ -1090,12 +1115,12 @@ pub mod tests {
 
     #[test]
     #[expect(non_snake_case)]
-    fn test__weak_ref_is_in_sync_with_tracker() {
-        // Regression guard: the `Weak<AtomicBlockStatus>` returned by `Tester::add`
-        // must upgrade to the same atomic the tracker mutates on the BlockNode.
-        // A refactor that wires the returned Weak to a separate Arc would silently
-        // break finality observation for QueuedRequest. We exercise all four
-        // outcomes through the returned Weak:
+    fn block_status_handle__should_observe_same_atomic_as_tracker() {
+        // Regression guard: the `BlockStatusHandle` returned by `Tester::add`
+        // must observe the same atomic the tracker mutates on the BlockNode.
+        // A refactor that wires the returned handle to a separate Arc would
+        // silently break finality observation for QueuedRequest. We exercise
+        // all four outcomes through the returned handle:
         //  - OptimisticAndCanonical (canonical-head update on add),
         //  - OptimisticButNotCanonical (sibling root losing canonical race),
         //  - Final (last_final_block advance during a 3-block chain),
@@ -1122,14 +1147,14 @@ pub mod tests {
         tester.add(&b2);
         tester.add(&b3);
         // add(b3) advances last_final_block to b1 (3 consecutive heights b1-b2-b3),
-        // promoting b1 to Final. The Weak from add(b1) must observe this.
+        // promoting b1 to Final. The handle from add(b1) must observe this.
         assert_eq!(tester.check(&s1), Some(BlockStatus::Final));
 
         tester.add(&b4);
         tester.add(&b5);
         // After add(b5): max=5, window=3, final_head=b3 (h=3), min_keep=3.
-        // b1 (h=1) falls below the recency window → BlockNode dropped → Weak
-        // can no longer upgrade.
+        // b1 (h=1) falls below the recency window → BlockNode dropped → handle
+        // can no longer observe the status.
         assert_eq!(tester.check(&s1), None);
     }
 }

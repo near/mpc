@@ -1,5 +1,5 @@
 use super::debug::{CompletedRequest, CompletedRequests};
-use super::recent_blocks_tracker::AtomicBlockStatus;
+use super::recent_blocks_tracker::BlockStatusHandle;
 use crate::indexer::types::ChainRespondArgs;
 use crate::primitives::ParticipantId;
 use crate::requests::metrics;
@@ -79,12 +79,11 @@ struct IndexedRespondTxs(Vec<IndexedRespondTx>);
 /// An on-chain `respond` transaction observed in an indexed block.
 #[derive(Clone)]
 struct IndexedRespondTx {
-    /// Weak ref to the block's atomic status; lets us observe canonical/final changes the
-    /// tracker makes after we recorded the response.
-    block_status: Weak<AtomicBlockStatus>,
+    /// Live view of the finality status of the block this transaction was observed in.
+    block_status: BlockStatusHandle,
     /// Wall-clock time at which our node observed the block containing the response.
     received_at: near_time::Instant,
-    // TODO(#3318): We could share the `block_height` through the same weak pointer as
+    // TODO(#3318): We could share the `block_height` through the same guard as
     // `block_status`, however, that's a larger refactor and this change will only truly make sense
     // once we start improving the metrics with #3318, so we defer it to later and accept to hold a
     // u64 for each response.
@@ -99,16 +98,19 @@ impl Default for IndexedRespondTxs {
 
 impl IndexedRespondTxs {
     fn status(&self) -> AggregateResponseStatus {
-        for (status, received_at, block_height) in self.0.iter().filter_map(|tx| {
-            Weak::upgrade(&tx.block_status).map(|status| (status, tx.received_at, tx.block_height))
-        }) {
-            if status.is_final() {
-                return AggregateResponseStatus::Resolved {
-                    received_at,
-                    block_height,
-                };
+        for respond_tx in &self.0 {
+            match respond_tx.block_status.is_final() {
+                // the block this response was included in was dropped by the tracker
+                None => continue,
+                Some(true) => {
+                    return AggregateResponseStatus::Resolved {
+                        received_at: respond_tx.received_at,
+                        block_height: respond_tx.block_height,
+                    };
+                }
+                Some(false) => {}
             }
-            if status.is_canonical() {
+            if respond_tx.block_status.is_canonical() == Some(true) {
                 // We return early if the response is on the canonical chain.
                 // This is appropriate, because it is not possible to have, simultaneously:
                 // - a response that is final
@@ -151,7 +153,7 @@ pub(super) struct QueuedRequest<RequestType: Request, ChainRespondArgsType: Chai
     pub request: RequestType,
 
     /// Finality status of the block the request was included in.
-    status: Weak<AtomicBlockStatus>,
+    status: BlockStatusHandle,
     /// Respond transactions for this request observed in indexed blocks.
     indexed_respond_txs: IndexedRespondTxs,
 
@@ -251,7 +253,7 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
         clock: &near_time::Clock,
         request: RequestType,
         block_height: u64,
-        status: Weak<AtomicBlockStatus>,
+        status: BlockStatusHandle,
         all_participants: &[ParticipantId],
         time_indexed: near_time::Instant,
     ) -> Self {
@@ -376,10 +378,10 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             // This request is definitely not useful anymore, so discard it.
             return RequestStatus::Drop(DropReason::RequestTimedOut);
         }
-        let Some(status) = self.status.upgrade() else {
+        let Some(is_canonical) = self.status.is_canonical() else {
             return RequestStatus::Drop(DropReason::BlockNotFound);
         };
-        if !status.is_canonical() {
+        if !is_canonical {
             return RequestStatus::Wait("request is not on canonical chain");
         }
         let Some(leader) = self.current_leader(eligible_leaders) else {
@@ -486,7 +488,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
         let RequestsUpdate::<RequestType> {
             requests,
             completed_requests,
-            block_ref,
+            block_status,
             block_height,
         } = update;
 
@@ -499,14 +501,14 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                     &self.clock,
                     request.clone(),
                     block_height,
-                    block_ref.clone(),
+                    block_status.clone(),
                     &self.all_participants,
                     now,
                 ));
         }
         mpc_pending_queue_responses_indexed.inc_by(completed_requests.len() as u64);
         let indexed_respond_tx = IndexedRespondTx {
-            block_status: block_ref.clone(),
+            block_status: block_status.clone(),
             received_at: now,
             block_height,
         };
@@ -795,8 +797,8 @@ mod tests {
         responses_to_submit: Vec<CryptoHash>,
         rng: rand::rngs::StdRng,
         /// Test-side counterpart to the shared tracker that mpc_client owns in production.
-        /// Each `update*` adds a block to it; the resulting `Weak<AtomicBlockStatus>` ends
-        /// up inside the returned `RequestsUpdate`.
+        /// Each `update*` adds a block to it; the resulting `BlockStatusHandle` ends up
+        /// inside the returned `RequestsUpdate`.
         tracker: RecentBlocksTracker,
     }
 
@@ -888,12 +890,15 @@ mod tests {
         ) -> u64 {
             let new_height = self.max_known_height() + 1;
             let new_block = self.head.descendant(new_height);
-            let block_ref = self.tracker.add_block(&new_block.to_block_view()).block_ref;
+            let block_status = self
+                .tracker
+                .add_block(&new_block.to_block_view())
+                .block_status;
             let update = RequestsUpdate {
                 requests: self.requests_to_submit.clone(),
                 completed_requests: self.responses_to_submit.clone(),
                 block_height: new_height,
-                block_ref,
+                block_status,
             };
             self.requests_to_submit = Vec::new();
             self.responses_to_submit = Vec::new();
@@ -912,12 +917,15 @@ mod tests {
                 self.fork = self.head.parent.clone();
             }
             let new_block = self.fork.as_ref().unwrap().descendant(new_height);
-            let block_ref = self.tracker.add_block(&new_block.to_block_view()).block_ref;
+            let block_status = self
+                .tracker
+                .add_block(&new_block.to_block_view())
+                .block_status;
             let update = RequestsUpdate {
                 requests: self.requests_to_submit.clone(),
                 completed_requests: self.responses_to_submit.clone(),
                 block_height: new_height,
-                block_ref,
+                block_status,
             };
             self.requests_to_submit = Vec::new();
             self.responses_to_submit = Vec::new();

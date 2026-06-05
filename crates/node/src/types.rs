@@ -1,4 +1,4 @@
-use std::{fmt, sync::Weak};
+use std::fmt;
 
 use mpc_primitives::domain::DomainId;
 use near_indexer_primitives::CryptoHash;
@@ -12,20 +12,20 @@ use crate::{
     indexer::handler::{
         CKDRequestFromChain, SignatureRequestFromChain, VerifyForeignTxRequestFromChain,
     },
-    requests::recent_blocks_tracker::{AtomicBlockStatus, BlockViewLite},
+    requests::recent_blocks_tracker::{BlockStatusHandle, BlockViewLite},
 };
 
 pub(crate) struct RequestsUpdate<T> {
     pub(crate) requests: Vec<T>,
     pub(crate) completed_requests: Vec<RequestId>,
     pub(crate) block_height: u64,
-    pub(crate) block_ref: Weak<AtomicBlockStatus>,
+    pub(crate) block_status: BlockStatusHandle,
 }
 
 impl<T> RequestsUpdate<T> {
     pub(crate) fn from_chain<U>(
         block: &BlockViewLite,
-        block_ref: Weak<AtomicBlockStatus>,
+        block_status: BlockStatusHandle,
         new_requests: Vec<U>,
         completed_requests: Vec<RequestId>,
     ) -> RequestsUpdate<T>
@@ -41,7 +41,7 @@ impl<T> RequestsUpdate<T> {
             requests,
             completed_requests,
             block_height: block.height,
-            block_ref,
+            block_status,
         }
     }
 }
