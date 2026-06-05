@@ -862,9 +862,9 @@ async fn verify_tee__should_keep_participants_and_stop_signing_when_kickout_drop
     let initial_participants = assert_running_return_participants(&contract).await?;
     assert_eq!(initial_participants.participants.len(), PARTICIPANT_COUNT);
 
-    // Expiring 2 of 3 leaves 1 valid participant, which is below the threshold of 2.
-    let expired_count = PARTICIPANT_COUNT - 1;
-    let remaining_valid = PARTICIPANT_COUNT - expired_count;
+    // Expire all but `threshold - 1` attestations, leaving the valid set exactly one
+    // below threshold regardless of the participant/threshold constants above.
+    let remaining_valid = threshold.0 as usize - 1;
     assert!(
         remaining_valid < threshold.0 as usize,
         "test precondition: surviving participants ({remaining_valid}) must be below threshold ({})",
@@ -881,7 +881,7 @@ async fn verify_tee__should_keep_participants_and_stop_signing_when_kickout_drop
         expected_measurements: None,
     });
 
-    // Submit an expiring attestation for the last `expired_count` participants.
+    // Submit an expiring attestation for every participant past the first `remaining_valid`.
     let internal_participants: Participants = (&initial_participants).into_contract_type();
     let node_ids = build_sandbox_node_ids(&internal_participants, &mpc_signer_accounts);
     for target_account in &mpc_signer_accounts[remaining_valid..] {
