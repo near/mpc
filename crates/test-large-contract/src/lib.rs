@@ -1,4 +1,4 @@
-//! A minimal contract padded to ~2 MiB of incompressible bytes so its assembled
+//! A minimal contract padded with ~2 MiB of non-zero bytes so its assembled
 //! WASM exceeds the RPC's single-transaction payload limit. Used by
 //! `mpc-contract` sandbox tests to exercise the chunked-upload code path
 //! end-to-end (start → upload N chunks → finalize → vote → deploy).
