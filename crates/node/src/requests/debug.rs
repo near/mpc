@@ -185,7 +185,11 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs> Debug
         for request in self.requests.values() {
             let debug_line =
                 request.debug_print(&self.clock, self.my_participant_id, &eligible_leaders);
-            request_lines.push((request.block_height, request.request.get_id(), debug_line));
+            request_lines.push((
+                request.block_height.into(),
+                request.request.get_id(),
+                debug_line,
+            ));
         }
 
         for completed in &self.recently_completed_requests.requests {
