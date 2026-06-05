@@ -370,18 +370,6 @@ pub async fn propose_and_vote_contract_binary(
 
 /// Upgrades the given contract to `new_contract_binary` using the **legacy inline**
 /// `propose_update` flow, where the whole code blob is sent in a single transaction.
-///
-/// This exists only to drive upgrades *from* a production contract that predates
-/// the chunked-upload endpoints (the tests pin the 3.10.1 binary): those binaries
-/// expose `propose_update` with an inline `code: Option<Vec<u8>>` field and have no
-/// `start_contract_upload`.
-/// For the current contract — which dropped inline code uploads — use the chunked
-/// [`propose_and_vote_contract_binary`] instead.
-///
-/// The borsh payload mirrors the legacy `ProposeUpdateArgs { code, config }`: the
-/// 2-tuple `(Some(code), None)` serializes to identical bytes, since borsh encodes a
-/// tuple as the bare concatenation of its elements and `None` is a single `0` byte
-/// regardless of the inner config type.
 pub async fn propose_and_vote_contract_binary_inline(
     accounts: &[Account],
     contract: &Contract,
