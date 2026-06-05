@@ -16,7 +16,7 @@ use crate::sandbox::{
     },
 };
 use mpc_contract::update::{
-    ProposeUpdateArgs, StartContractUploadArgs, UpdateId, UploadContractChunkArgs,
+    ProposedConfigUpdateArgs, StartContractUploadArgs, UpdateId, UploadContractChunkArgs,
 };
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::ProtocolContractState;
@@ -47,7 +47,7 @@ async fn test_propose_contract_max_size_upload() {
 }
 
 #[tokio::test]
-async fn test_propose_update_config() {
+async fn test_propose_config_update() {
     let SandboxTestSetup {
         contract,
         mpc_signer_accounts,
@@ -78,8 +78,8 @@ async fn test_propose_update_config() {
 
     // contract should not be able to propose updates unless it's a part of the participant/voter set.
     let execution = contract
-        .call(method_names::PROPOSE_UPDATE)
-        .args_borsh((ProposeUpdateArgs {
+        .call(method_names::PROPOSE_CONFIG_UPDATE)
+        .args_borsh((ProposedConfigUpdateArgs {
             config: new_config.clone(),
         },))
         .transact()
@@ -97,8 +97,8 @@ async fn test_propose_update_config() {
     let mut proposals = Vec::with_capacity(mpc_signer_accounts.len());
     for account in &mpc_signer_accounts {
         let propose_execution = account
-            .call(contract.id(), method_names::PROPOSE_UPDATE)
-            .args_borsh((ProposeUpdateArgs {
+            .call(contract.id(), method_names::PROPOSE_CONFIG_UPDATE)
+            .args_borsh((ProposedConfigUpdateArgs {
                 config: new_config.clone(),
             },))
             .deposit(NearToken::from_millinear(100))
@@ -349,7 +349,7 @@ async fn test_propose_incorrect_updates() {
     // propose_update is config-only now: passing no args at all should fail at
     // the borsh-deserialize step.
     let execution = mpc_signer_accounts[0]
-        .call(contract.id(), method_names::PROPOSE_UPDATE)
+        .call(contract.id(), method_names::PROPOSE_CONFIG_UPDATE)
         .args_borsh(())
         .max_gas()
         .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)

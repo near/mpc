@@ -49,8 +49,8 @@ use crate::{
     storage_keys::StorageKey,
     tee::tee_state::{TeeQuoteStatus, TeeState},
     update::{
-        ProposeUpdateArgs, ProposedUpdates, StagedContractUpload, StartContractUploadArgs, Update,
-        UpdateId, UploadContractChunkArgs,
+        ProposedConfigUpdateArgs, ProposedUpdates, StagedContractUpload, StartContractUploadArgs,
+        Update, UpdateId, UploadContractChunkArgs,
     },
 };
 use config::Config;
@@ -1196,12 +1196,12 @@ impl MpcContract {
             .vote_abort_key_event_instance(key_event_id)
     }
 
-    /// Propose update to either code or config, but not both of them at the same time.
+    /// Propose update to the config.
     #[payable]
     #[handle_result]
-    pub fn propose_update(
+    pub fn propose_config_update(
         &mut self,
-        #[serializer(borsh)] args: ProposeUpdateArgs,
+        #[serializer(borsh)] args: ProposedConfigUpdateArgs,
     ) -> Result<UpdateId, Error> {
         let proposer = self.voter_or_panic();
         let update: Update = args.into();

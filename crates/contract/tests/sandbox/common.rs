@@ -47,6 +47,8 @@ use tokio_util::time::FutureExt as _;
 
 use super::utils::contract_build;
 
+const LEGACY_CONTRACT_UPDATE_METHOD_NAME: &str = "propose_update";
+
 pub async fn create_account_given_id(
     worker: &Worker<Sandbox>,
     account_id: AccountId,
@@ -386,7 +388,7 @@ pub async fn propose_and_vote_contract_binary_inline(
     new_contract_binary: &[u8],
 ) {
     let propose_update_execution = accounts[0]
-        .call(contract.id(), method_names::PROPOSE_UPDATE)
+        .call(contract.id(), LEGACY_CONTRACT_UPDATE_METHOD_NAME)
         .args_borsh((Some(new_contract_binary.to_vec()), Option::<()>::None))
         .max_gas()
         .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)

@@ -165,7 +165,7 @@ impl DeployedContract {
             .map_err(|e| anyhow::anyhow!("contract call `{method}` (with deposit) failed: {e}"))
     }
 
-    /// Call a method whose arguments are borsh-serialized (e.g. `propose_update`).
+    /// Call a method whose arguments are borsh-serialized (e.g. `propose_config_update`).
     pub async fn call_from_borsh_with_deposit<A: borsh::BorshSerialize>(
         &self,
         client: &ClientHandle,

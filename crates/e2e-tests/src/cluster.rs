@@ -906,7 +906,7 @@ impl MpcCluster {
             .contract
             .call_from_borsh_with_deposit(
                 &proposer_client,
-                method_names::PROPOSE_UPDATE,
+                method_names::PROPOSE_CONFIG_UPDATE,
                 propose_args,
                 CONTRACT_UPDATE_GAS,
                 CONTRACT_UPDATE_DEPOSIT,

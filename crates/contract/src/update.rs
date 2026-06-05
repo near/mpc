@@ -87,12 +87,12 @@ pub enum Update {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
-pub struct ProposeUpdateArgs {
+pub struct ProposedConfigUpdateArgs {
     pub config: near_mpc_contract_interface::types::Config,
 }
 
-impl From<ProposeUpdateArgs> for Update {
-    fn from(value: ProposeUpdateArgs) -> Self {
+impl From<ProposedConfigUpdateArgs> for Update {
+    fn from(value: ProposedConfigUpdateArgs) -> Self {
         Update::Config(value.config)
     }
 }
