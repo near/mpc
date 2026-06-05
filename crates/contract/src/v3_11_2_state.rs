@@ -24,10 +24,6 @@ use crate::{
     update::ProposedUpdates,
 };
 
-/// `3.11.2`'s `MpcContract` layout. Identical to the current `MpcContract`: no field
-/// has been added, removed, or reshaped since the `3.11.2` release, so every field type
-/// is imported from the live codebase and the `From` impl below is a straight 1:1 copy.
-///
 /// Keep this module in lock-step with [`crate::MpcContract`]: the moment a field's borsh
 /// layout diverges, shadow the old type here (see this module's history for examples) so
 /// state written by the `3.11.2` contract still deserializes during migration.
