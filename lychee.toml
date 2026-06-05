@@ -7,6 +7,6 @@
 offline = true
 
 # Check anchor/fragment links (e.g., #section-name)
-include_fragments = true
+include_fragments = "anchor-only"
 
 exclude_path = ["target", ".git"]
