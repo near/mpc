@@ -11757,6 +11757,8 @@ version = "3.11.0"
 dependencies = [
  "borsh",
  "near-sdk",
+ "rand 0.8.6",
+ "rand_chacha 0.3.1",
 ]
 
 [[package]]

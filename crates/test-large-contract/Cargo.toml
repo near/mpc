@@ -14,5 +14,9 @@ crate-type = ["cdylib", "lib"]
 borsh = { workspace = true }
 near-sdk = { workspace = true }
 
+[build-dependencies]
+rand = { workspace = true }
+rand_chacha = { workspace = true }
+
 [lints]
 workspace = true
