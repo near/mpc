@@ -135,7 +135,7 @@ mod tests {
         let proposal_a = base.clone().with_per_domain_thresholds(overlay_a);
         let proposal_b = base.with_per_domain_thresholds(overlay_b);
 
-        // When each voter casts a different overlay
+        // When each voter casts a different proposal
         let mut votes = ThresholdParametersVotes::default();
         votes.vote(&proposal_a, auth_p0);
         votes.vote(&proposal_b, auth_p1);
