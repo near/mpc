@@ -191,26 +191,48 @@ mod tests {
     use super::*;
     use crate::primitives::test_utils::{NUM_PROTOCOLS, gen_participants};
     use crate::primitives::thresholds::Threshold;
+    use near_sdk::{test_utils::VMContextBuilder, testing_env};
 
-    /// Borsh round-trip: write a `ThresholdParametersVotes` in the OLD layout
-    /// (vote values are bare `ThresholdParameters`, no `per_domain_thresholds`),
-    /// deserialize via the shadow, migrate, and assert each migrated proposal
-    /// gets an empty (no-change) overlay.
+    /// Borsh round-trip *through the shadow type*: write a `ThresholdParametersVotes`
+    /// in the OLD 3.10.0 layout (vote values are bare `ThresholdParameters`, with no
+    /// `per_domain_thresholds`), decode it via [`OldThresholdParametersVotes`], run the
+    /// real [`From`] migration, and assert each migrated vote becomes a
+    /// `ProposedThresholdParameters` carrying an empty (no-change) overlay.
+    ///
+    /// This exercises both the shadow's `BorshDeserialize` and the conversion impl, so
+    /// it fails if either the old layout or the overlay-defaulting logic regresses.
     #[test]
     fn old_threshold_parameter_votes__should_migrate_into_empty_overlay() {
-        // Given old-layout vote bytes: a single vote whose value is a bare
-        // `ThresholdParameters` (the 3.10.0 vote shape).
+        // Given a participant set with one member installed as the signer, so we can
+        // mint an `AuthenticatedAccountId` to key the vote by.
         let participants = gen_participants(NUM_PROTOCOLS);
         let n = participants.len() as u64;
+        let voter_account = participants.participants()[0].0.clone();
+
+        let mut ctx = VMContextBuilder::new();
+        ctx.signer_account_id(voter_account);
+        testing_env!(ctx.build());
+        let voter = AuthenticatedAccountId::new(&participants).unwrap();
+
+        // and old-layout vote bytes: a single vote whose value is a bare
+        // `ThresholdParameters` (the 3.10.0 vote shape).
         let params = ThresholdParameters::new(participants, Threshold::new(n)).unwrap();
-        let bytes = borsh::to_vec(&params).unwrap();
+        let old = OldThresholdParametersVotes {
+            proposal_by_account: BTreeMap::from([(voter.clone(), params)]),
+        };
+        let bytes = borsh::to_vec(&old).unwrap();
 
-        // When borsh-decoding the value through the shadow's value type and migrating
-        let decoded: ThresholdParameters = borsh::from_slice(&bytes).unwrap();
-        let migrated = ProposedThresholdParameters::new(decoded, BTreeMap::new());
+        // When decoding through the shadow type and running the real migration.
+        let decoded: OldThresholdParametersVotes = borsh::from_slice(&bytes).unwrap();
+        let migrated: ThresholdParametersVotes = decoded.into();
 
-        // Then the per-domain overlay is empty and core fields round-trip
-        assert!(migrated.per_domain_thresholds().is_empty());
-        assert_eq!(migrated.threshold().value(), n);
+        // Then the single migrated vote retains the original threshold and gains an
+        // empty per-domain overlay.
+        let proposal = migrated
+            .proposal_by_account
+            .get(&voter)
+            .expect("migrated vote should be keyed by the original voter");
+        assert!(proposal.per_domain_thresholds().is_empty());
+        assert_eq!(proposal.threshold().value(), n);
     }
 }
