@@ -1,5 +1,5 @@
 use super::debug::{CompletedRequest, CompletedRequests};
-use super::recent_blocks_tracker::BlockStatusGuard;
+use super::recent_blocks_tracker::BlockStatusHandle;
 use crate::indexer::types::ChainRespondArgs;
 use crate::primitives::ParticipantId;
 use crate::requests::metrics;
@@ -79,8 +79,8 @@ struct IndexedRespondTxs(Vec<IndexedRespondTx>);
 /// An on-chain `respond` transaction observed in an indexed block.
 #[derive(Clone)]
 struct IndexedRespondTx {
-    /// The finality status of the block this transaction was observed in.
-    block_status: BlockStatusGuard,
+    /// Live view of the finality status of the block this transaction was observed in.
+    block_status: BlockStatusHandle,
     /// Wall-clock time at which our node observed the block containing the response.
     received_at: near_time::Instant,
     // TODO(#3318): We could share the `block_height` through the same guard as
@@ -99,21 +99,18 @@ impl Default for IndexedRespondTxs {
 impl IndexedRespondTxs {
     fn status(&self) -> AggregateResponseStatus {
         for respond_tx in &self.0 {
-            let Some((is_final, is_canonical)) = respond_tx
-                .block_status
-                .try_with(|s| (s.is_final(), s.is_canonical()))
-            else {
+            match respond_tx.block_status.is_final() {
                 // the block this response was included in was dropped by the tracker
-                continue;
-            };
-
-            if is_final {
-                return AggregateResponseStatus::Resolved {
-                    received_at: respond_tx.received_at,
-                    block_height: respond_tx.block_height,
-                };
+                None => continue,
+                Some(true) => {
+                    return AggregateResponseStatus::Resolved {
+                        received_at: respond_tx.received_at,
+                        block_height: respond_tx.block_height,
+                    };
+                }
+                Some(false) => {}
             }
-            if is_canonical {
+            if respond_tx.block_status.is_canonical() == Some(true) {
                 // We return early if the response is on the canonical chain.
                 // This is appropriate, because it is not possible to have, simultaneously:
                 // - a response that is final
@@ -156,7 +153,7 @@ pub(super) struct QueuedRequest<RequestType: Request, ChainRespondArgsType: Chai
     pub request: RequestType,
 
     /// Finality status of the block the request was included in.
-    status: BlockStatusGuard,
+    status: BlockStatusHandle,
     /// Respond transactions for this request observed in indexed blocks.
     indexed_respond_txs: IndexedRespondTxs,
 
@@ -256,7 +253,7 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
         clock: &near_time::Clock,
         request: RequestType,
         block_height: u64,
-        status: BlockStatusGuard,
+        status: BlockStatusHandle,
         all_participants: &[ParticipantId],
         time_indexed: near_time::Instant,
     ) -> Self {
@@ -381,7 +378,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             // This request is definitely not useful anymore, so discard it.
             return RequestStatus::Drop(DropReason::RequestTimedOut);
         }
-        let Some(is_canonical) = self.status.try_with(|s| s.is_canonical()) else {
+        let Some(is_canonical) = self.status.is_canonical() else {
             return RequestStatus::Drop(DropReason::BlockNotFound);
         };
         if !is_canonical {
@@ -800,7 +797,7 @@ mod tests {
         responses_to_submit: Vec<CryptoHash>,
         rng: rand::rngs::StdRng,
         /// Test-side counterpart to the shared tracker that mpc_client owns in production.
-        /// Each `update*` adds a block to it; the resulting `BlockStatusGuard` ends up
+        /// Each `update*` adds a block to it; the resulting `BlockStatusHandle` ends up
         /// inside the returned `RequestsUpdate`.
         tracker: RecentBlocksTracker,
     }

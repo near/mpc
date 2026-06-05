@@ -12,20 +12,20 @@ use crate::{
     indexer::handler::{
         CKDRequestFromChain, SignatureRequestFromChain, VerifyForeignTxRequestFromChain,
     },
-    requests::recent_blocks_tracker::{BlockStatusGuard, BlockViewLite},
+    requests::recent_blocks_tracker::{BlockStatusHandle, BlockViewLite},
 };
 
 pub(crate) struct RequestsUpdate<T> {
     pub(crate) requests: Vec<T>,
     pub(crate) completed_requests: Vec<RequestId>,
     pub(crate) block_height: u64,
-    pub(crate) block_status: BlockStatusGuard,
+    pub(crate) block_status: BlockStatusHandle,
 }
 
 impl<T> RequestsUpdate<T> {
     pub(crate) fn from_chain<U>(
         block: &BlockViewLite,
-        block_status: BlockStatusGuard,
+        block_status: BlockStatusHandle,
         new_requests: Vec<U>,
         completed_requests: Vec<RequestId>,
     ) -> RequestsUpdate<T>
