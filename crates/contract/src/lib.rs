@@ -1259,12 +1259,6 @@ impl MpcContract {
         staged.deposited = env::attached_deposit();
         self.staged_uploads.insert(caller, staged);
 
-        log!(
-            "start_contract_upload: signer={}, total_size={}",
-            env::signer_account_id(),
-            args.total_size,
-        );
-
         Ok(())
     }
 
@@ -1300,15 +1294,6 @@ impl MpcContract {
 
         // Store chunk bytes in a separate map so the metadata write is small.
         self.staged_chunks.insert((caller, chunk_index), args.data);
-
-        log!(
-            "upload_contract_chunk: signer={}, chunk_index={}, chunk_len={}, received_bytes={}/{}",
-            env::signer_account_id(),
-            chunk_index,
-            chunk_len,
-            staged.received_bytes,
-            staged.total_size,
-        );
 
         Ok(())
     }
@@ -1385,14 +1370,6 @@ impl MpcContract {
             Promise::new(caller.clone()).transfer(diff).detach();
         }
 
-        log!(
-            "finalize_contract_upload: signer={}, id={:?}, total_size={}, num_chunks={}",
-            env::signer_account_id(),
-            id,
-            total_size,
-            num_chunks,
-        );
-
         Ok(id)
     }
 
@@ -1416,12 +1393,6 @@ impl MpcContract {
         if staged.deposited > NearToken::from_yoctonear(0) {
             Promise::new(caller).transfer(staged.deposited).detach();
         }
-
-        log!(
-            "clear_staged_contract: signer={}, num_chunks_cleared={}",
-            env::signer_account_id(),
-            staged.num_chunks,
-        );
 
         Ok(())
     }
