@@ -201,6 +201,7 @@ impl ProposedThresholdParameters {
 
     /// Builder-style helper: replace the per-domain reconstruction-threshold
     /// overlay. Convenient for constructing proposals (notably in tests).
+    #[cfg(test)]
     pub fn with_per_domain_thresholds(
         mut self,
         per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
