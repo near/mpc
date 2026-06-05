@@ -657,6 +657,32 @@ pub struct ForeignChainConfiguration(BTreeMap<ForeignChain, NonEmptyBTreeSet<Rpc
 )]
 pub struct SupportedForeignChains(BTreeSet<ForeignChain>);
 
+/// The set of foreign chains a node reports it can currently serve (cover). The available-set
+/// analog of [`SupportedForeignChains`]; submitted by nodes via
+/// `register_available_foreign_chain_config`.
+#[derive(
+    Debug,
+    Clone,
+    Default,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::From,
+    derive_more::Deref,
+    derive_more::DerefMut,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct AvailableForeignChains(BTreeSet<ForeignChain>);
+
 #[derive(
     Debug,
     Clone,

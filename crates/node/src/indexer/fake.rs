@@ -106,9 +106,33 @@ impl FakeMpcContractState {
         account_id: AccountId,
         local_foreign_chain_config: dtos::ForeignChainConfiguration,
     ) {
+        let chains: dtos::SupportedForeignChains = local_foreign_chain_config
+            .keys()
+            .copied()
+            .collect::<BTreeSet<_>>()
+            .into();
+        self.record_node_chains(account_id, chains);
+    }
+
+    pub fn register_available_foreign_chain_config(
+        &mut self,
+        account_id: AccountId,
+        available_foreign_chains: dtos::AvailableForeignChains,
+    ) {
+        let chains: dtos::SupportedForeignChains = available_foreign_chains
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>()
+            .into();
+        self.record_node_chains(account_id, chains);
+    }
+
+    /// Stores `account_id`'s reported chains and recomputes `supported_foreign_chains` as the
+    /// intersection across all active participants. Shared by both registration entry points.
+    fn record_node_chains(&mut self, account_id: AccountId, chains: dtos::SupportedForeignChains) {
         let ProtocolContractState::Running(state) = &self.state else {
             tracing::info!(
-                "register_foreign_chain_config transaction ignored because the contract is not in running state"
+                "register foreign chain transaction ignored because the contract is not in running state"
             );
             return;
         };
@@ -122,22 +146,14 @@ impl FakeMpcContractState {
 
         if !is_participant {
             tracing::info!(
-                "register_foreign_chain_config transaction ignored because signer is not a participant"
+                "register foreign chain transaction ignored because signer is not a participant"
             );
             return;
         }
 
-        let voter = account_id.clone();
-
-        let local_foreign_chain_support: dtos::SupportedForeignChains = local_foreign_chain_config
-            .keys()
-            .copied()
-            .collect::<BTreeSet<_>>()
-            .into();
-
         self.supported_foreign_chains_by_node
             .foreign_chain_support_by_node
-            .insert(voter, local_foreign_chain_support.clone());
+            .insert(account_id, chains);
 
         // Derive supported_foreign_chains as intersection of all active participants' votes
         let active_participant_account_ids: BTreeSet<dtos::AccountId> = state
@@ -685,6 +701,13 @@ impl FakeIndexerCore {
                         contract.register_foreign_chain_config(
                             account_id,
                             args.foreign_chain_configuration,
+                        );
+                    }
+                    ChainSendTransactionRequest::RegisterAvailableForeignChainConfig(args) => {
+                        let mut contract = contract.lock().await;
+                        contract.register_available_foreign_chain_config(
+                            account_id,
+                            args.available_foreign_chains,
                         );
                     }
                     ChainSendTransactionRequest::StartKeygen(start) => {

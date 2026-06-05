@@ -7,7 +7,9 @@ use backon::{ConstantBuilder, Retryable};
 use e2e_tests::CLUSTER_WAIT_TIMEOUT;
 use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
-use near_mpc_contract_interface::types::{ForeignChain, SupportedForeignChains};
+use near_mpc_contract_interface::types::{
+    AvailableForeignChains, ForeignChain, SupportedForeignChains,
+};
 
 const SOLANA_PROVIDER_NAME: &str = "public";
 const SOLANA_RPC_URL: &str = "https://rpc.public.example.com";
@@ -129,4 +131,63 @@ async fn supported_foreign_chains__should_require_all_participants_to_register()
     )
     .await
     .expect("timed out waiting for Solana to be reported as supported");
+}
+
+/// Each node auto-registers the chains it covers via `register_available_foreign_chain_config`
+/// on startup; `get_available_foreign_chain_by_node` should reflect those per-node sets.
+///
+/// 3-node cluster: nodes 0 and 1 are configured with Solana, node 2 has none.
+#[tokio::test]
+#[expect(non_snake_case)]
+async fn available_foreign_chain_by_node__should_reflect_auto_registered_configs() {
+    // given — 3-node cluster with Solana on nodes 0 and 1 only
+    let (cluster, _running) =
+        common::must_setup_cluster(common::AVAILABLE_FOREIGN_CHAINS_BY_NODE_PORT_SEED, |c| {
+            c.node_foreign_chains_configs = vec![
+                solana_foreign_chains_config(), // node 0
+                solana_foreign_chains_config(), // node 1
+                ForeignChainsConfig::default(), // node 2 — no foreign chains
+            ];
+        })
+        .await;
+
+    // then — every node auto-registers (node 2 with an empty set), and the per-node available
+    // view reflects it: nodes 0 and 1 cover exactly Solana, node 2 is empty.
+    let expected_node_available: AvailableForeignChains =
+        BTreeSet::from([ForeignChain::Solana]).into();
+    (|| async {
+        let by_node = cluster
+            .view_available_foreign_chain_by_node()
+            .await
+            .expect("failed to view available foreign chains by node");
+
+        anyhow::ensure!(
+            by_node.len() == 3,
+            "expected exactly 3 registrations, got {}",
+            by_node.len()
+        );
+        let covering_solana = by_node
+            .values()
+            .filter(|chains| **chains == expected_node_available)
+            .count();
+        anyhow::ensure!(
+            covering_solana == 2,
+            "expected exactly 2 nodes covering Solana, got {covering_solana}"
+        );
+        let empty = by_node.values().filter(|chains| chains.is_empty()).count();
+        anyhow::ensure!(
+            empty == 1,
+            "expected exactly 1 empty registration (node 2), got {empty}"
+        );
+        Ok(())
+    })
+    .retry(
+        ConstantBuilder::default()
+            .with_delay(common::POLL_INTERVAL)
+            .with_max_times(
+                (CLUSTER_WAIT_TIMEOUT.as_millis() / common::POLL_INTERVAL.as_millis()) as usize,
+            ),
+    )
+    .await
+    .expect("timed out waiting for available-foreign-chain registrations");
 }

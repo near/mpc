@@ -291,16 +291,48 @@ async fn observe_tx_result(
                 Ok(TransactionStatus::NotExecuted)
             }
         }
-        // We don't care. The contract state change will handle this.
-        StartKeygen(_)
+        RegisterAvailableForeignChainConfig(_) => {
+            // Registration is idempotent and best-effort, so we don't assert the write landed;
+            // we only probe whether the contract exposes the new methods. Before the contract is
+            // upgraded for #3475, the `get_available_foreign_chain_by_node` view resolves to
+            // MethodNotFound — expected during rollout — so we log a warning and report
+            // `Unknown` rather than surfacing it as a transaction error.
+            if let Err(err) = indexer_state
+                .view_client
+                .get_available_foreign_chain_by_node(&indexer_state.mpc_contract_id)
+                .await
+            {
+                if is_method_not_found(&err) {
+                    tracing::warn!(
+                        target: "mpc",
+                        "register_available_foreign_chain_config is not available on the contract yet \
+                         (MethodNotFound); the contract has likely not been upgraded for #3475. \
+                         Foreign-chain registration will take effect after the upgrade."
+                    );
+                } else {
+                    return Err(err);
+                }
+            }
+            Ok(TransactionStatus::Unknown)
+        }
+        // We don't care. The contract state change will handle this. The legacy
+        // `RegisterForeignChainConfig` stays fire-and-forget; the new
+        // `RegisterAvailableForeignChainConfig` above is the one we probe + warn on.
+        RegisterForeignChainConfig(_)
+        | StartKeygen(_)
         | StartReshare(_)
         | VotePk(_)
         | VoteReshared(_)
         | VoteAbortKeyEventInstance(_)
         | VerifyTee()
-        | ConcludeNodeMigration(_)
-        | RegisterForeignChainConfig(_) => Ok(TransactionStatus::Unknown),
+        | ConcludeNodeMigration(_) => Ok(TransactionStatus::Unknown),
     }
+}
+
+/// Whether `err` is the contract reporting that the called method does not exist, i.e. the
+/// contract has not yet been upgraded to include it. Mirrors the check in `indexer/tee.rs`.
+fn is_method_not_found(err: &anyhow::Error) -> bool {
+    format!("{err:?}").contains("MethodResolveError(MethodNotFound)")
 }
 
 /// Attempts to ensure that a function call with given method and args is included on-chain.

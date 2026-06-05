@@ -5,7 +5,10 @@ use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::participants::{
     ContractKeyEventInstance, ContractResharingState, ContractRunningState, ContractState,
 };
-use crate::indexer::types::{ChainRegisterForeignChainConfigArgs, ChainSendTransactionRequest};
+use crate::indexer::types::{
+    ChainRegisterAvailableForeignChainConfigArgs, ChainRegisterForeignChainConfigArgs,
+    ChainSendTransactionRequest,
+};
 use crate::indexer::{IndexerAPI, ReadSupportedForeignChain, tx_sender};
 use crate::key_events::{
     ResharingArgs, keygen_follower, keygen_leader, resharing_follower, resharing_leader,
@@ -388,8 +391,16 @@ where
             return Ok(MpcJobResult::HaltUntilInterrupted);
         };
 
-        // Register locally supported foreign chains with the contract.
+        // Send both registrations so the node works whether or not the contract is upgraded.
         let foreign_chain_configuration = config_file.foreign_chains.configured_chains();
+        let available_foreign_chains = foreign_chain_configuration
+            .keys()
+            .copied()
+            .collect::<std::collections::BTreeSet<_>>()
+            .into();
+
+        // TODO(#3475): delete this legacy call once the contract is upgraded with the new methods
+        // and the RPC whitelist has been voted in.
         if let Err(err) = chain_txn_sender
             .send(ChainSendTransactionRequest::RegisterForeignChainConfig(
                 ChainRegisterForeignChainConfigArgs {
@@ -398,7 +409,20 @@ where
             ))
             .await
         {
-            tracing::warn!(error = ?err, "failed to send register supported foreign chains transaction");
+            tracing::warn!(error = ?err, "failed to send register_foreign_chain_config transaction");
+        }
+
+        if let Err(err) = chain_txn_sender
+            .send(
+                ChainSendTransactionRequest::RegisterAvailableForeignChainConfig(
+                    ChainRegisterAvailableForeignChainConfigArgs {
+                        available_foreign_chains,
+                    },
+                ),
+            )
+            .await
+        {
+            tracing::warn!(error = ?err, "failed to send register_available_foreign_chain_config transaction");
         }
 
         tracing::info!("Creating tls mesh");
