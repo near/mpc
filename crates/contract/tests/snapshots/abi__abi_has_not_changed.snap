@@ -916,8 +916,8 @@ expression: abi
         }
       },
       {
-        "name": "propose_update",
-        "doc": " Propose update to either code or config, but not both of them at the same time.",
+        "name": "propose_config_update",
+        "doc": " Propose update to the config.",
         "kind": "call",
         "modifiers": [
           "payable"
@@ -928,7 +928,7 @@ expression: abi
             {
               "name": "args",
               "type_schema": {
-                "declaration": "ProposeUpdateArgs",
+                "declaration": "ProposedConfigUpdateArgs",
                 "definitions": {
                   "Config": {
                     "Struct": [
@@ -986,7 +986,7 @@ expression: abi
                       ]
                     ]
                   },
-                  "ProposeUpdateArgs": {
+                  "ProposedConfigUpdateArgs": {
                     "Struct": [
                       [
                         "config",
@@ -1363,14 +1363,14 @@ expression: abi
               "type_schema": {
                 "declaration": "StartContractUploadArgs",
                 "definitions": {
-                  "NonZeroU64": {
+                  "NonZeroUsize": {
                     "Primitive": 8
                   },
                   "StartContractUploadArgs": {
                     "Struct": [
                       [
                         "total_size",
-                        "NonZeroU64"
+                        "NonZeroUsize"
                       ]
                     ]
                   }
