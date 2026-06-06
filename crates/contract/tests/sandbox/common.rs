@@ -6,6 +6,7 @@ use crate::sandbox::utils::{
     shared_key_utils::{DomainKey, make_key_for_domain},
     sign_utils::{PendingSignRequest, make_and_submit_requests},
 };
+use core::option::Option::None;
 use digest::Digest;
 use dtos::ProtocolContractState;
 use k256::ecdsa::SigningKey;
@@ -48,6 +49,12 @@ use tokio_util::time::FutureExt as _;
 use super::utils::contract_build;
 
 const LEGACY_CONTRACT_UPDATE_METHOD_NAME: &str = "propose_update";
+
+#[derive(borsh::BorshSerialize)]
+struct LegacyCodeUpdateArgs {
+    _config: Option<near_mpc_contract_interface::types::Config>,
+    code: Option<Vec<u8>>,
+}
 
 pub async fn create_account_given_id(
     worker: &Worker<Sandbox>,
@@ -377,7 +384,10 @@ pub async fn propose_and_vote_contract_binary_inline(
 ) {
     let propose_update_execution = accounts[0]
         .call(contract.id(), LEGACY_CONTRACT_UPDATE_METHOD_NAME)
-        .args_borsh((Some(new_contract_binary.to_vec()), Option::<()>::None))
+        .args_borsh(LegacyCodeUpdateArgs {
+            _config: None,
+            code: Some(new_contract_binary.to_vec()),
+        })
         .max_gas()
         .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
         .transact()
@@ -441,7 +451,7 @@ pub async fn chunked_upload_contract(
     proposer
         .call(contract.id(), method_names::START_CONTRACT_UPLOAD)
         .args_borsh(StartContractUploadArgs {
-            total_size: std::num::NonZeroU64::new(code.len() as u64)
+            total_size: std::num::NonZeroUsize::new(code.len())
                 .expect("contract code must be non-empty"),
         })
         .max_gas()

@@ -165,7 +165,7 @@ async fn staged_uploads_from_kicked_out_participants_are_cleared_after_resharing
     uploader
         .call(contract.id(), method_names::START_CONTRACT_UPLOAD)
         .args_borsh(StartContractUploadArgs {
-            total_size: std::num::NonZeroU64::new(chunk.len() as u64).unwrap(),
+            total_size: std::num::NonZeroUsize::new(chunk.len()).unwrap(),
         })
         .max_gas()
         .deposit(NearToken::from_yoctonear(1))
