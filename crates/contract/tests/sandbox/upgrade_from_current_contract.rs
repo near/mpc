@@ -23,7 +23,7 @@ use near_mpc_contract_interface::types::ProtocolContractState;
 use near_workspaces::types::NearToken;
 use rand_core::OsRng;
 use sha2::Digest as _;
-use std::num::NonZeroU64;
+use std::num::NonZeroUsize;
 
 #[tokio::test]
 async fn test_propose_contract_max_size_upload() {
@@ -543,7 +543,7 @@ async fn test_chunked_upload_multi_chunk_and_deploy() {
     mpc_signer_accounts[0]
         .call(contract.id(), method_names::START_CONTRACT_UPLOAD)
         .args_borsh(StartContractUploadArgs {
-            total_size: NonZeroU64::new(code.len() as u64).unwrap(),
+            total_size: NonZeroUsize::new(code.len()).unwrap(),
         })
         .max_gas()
         .deposit(NearToken::from_yoctonear(1))
@@ -605,7 +605,7 @@ async fn test_chunked_upload_non_voter_rejected() {
     let execution = contract
         .call(method_names::START_CONTRACT_UPLOAD)
         .args_borsh(StartContractUploadArgs {
-            total_size: NonZeroU64::new(100).unwrap(),
+            total_size: NonZeroUsize::new(100).unwrap(),
         })
         .deposit(NearToken::from_yoctonear(1))
         .transact()
@@ -632,7 +632,7 @@ async fn test_chunked_upload_double_start_rejected() {
     mpc_signer_accounts[0]
         .call(contract.id(), method_names::START_CONTRACT_UPLOAD)
         .args_borsh(StartContractUploadArgs {
-            total_size: NonZeroU64::new(100).unwrap(),
+            total_size: NonZeroUsize::new(100).unwrap(),
         })
         .max_gas()
         .deposit(NearToken::from_yoctonear(1))
@@ -645,7 +645,7 @@ async fn test_chunked_upload_double_start_rejected() {
     let execution = mpc_signer_accounts[0]
         .call(contract.id(), method_names::START_CONTRACT_UPLOAD)
         .args_borsh(StartContractUploadArgs {
-            total_size: NonZeroU64::new(200).unwrap(),
+            total_size: NonZeroUsize::new(200).unwrap(),
         })
         .max_gas()
         .deposit(NearToken::from_yoctonear(1))
@@ -673,7 +673,7 @@ async fn test_chunked_upload_exceeding_total_size_rejected() {
     mpc_signer_accounts[0]
         .call(contract.id(), method_names::START_CONTRACT_UPLOAD)
         .args_borsh(StartContractUploadArgs {
-            total_size: NonZeroU64::new(10).unwrap(),
+            total_size: NonZeroUsize::new(10).unwrap(),
         })
         .max_gas()
         .deposit(NearToken::from_yoctonear(1))
@@ -714,7 +714,7 @@ async fn test_chunked_upload_finalize_incomplete_rejected() {
     mpc_signer_accounts[0]
         .call(contract.id(), method_names::START_CONTRACT_UPLOAD)
         .args_borsh(StartContractUploadArgs {
-            total_size: NonZeroU64::new(100).unwrap(),
+            total_size: NonZeroUsize::new(100).unwrap(),
         })
         .max_gas()
         .deposit(NearToken::from_yoctonear(1))
@@ -764,7 +764,7 @@ async fn test_clear_staged_contract_allows_restart() {
     mpc_signer_accounts[0]
         .call(contract.id(), method_names::START_CONTRACT_UPLOAD)
         .args_borsh(StartContractUploadArgs {
-            total_size: NonZeroU64::new(100).unwrap(),
+            total_size: NonZeroUsize::new(100).unwrap(),
         })
         .max_gas()
         .deposit(NearToken::from_yoctonear(1))
@@ -786,7 +786,7 @@ async fn test_clear_staged_contract_allows_restart() {
     mpc_signer_accounts[0]
         .call(contract.id(), method_names::START_CONTRACT_UPLOAD)
         .args_borsh(StartContractUploadArgs {
-            total_size: NonZeroU64::new(200).unwrap(),
+            total_size: NonZeroUsize::new(200).unwrap(),
         })
         .max_gas()
         .deposit(NearToken::from_yoctonear(1))
@@ -864,7 +864,7 @@ async fn test_finalize_contract_upload_insufficient_deposit_rejected() {
     uploader
         .call(contract.id(), method_names::START_CONTRACT_UPLOAD)
         .args_borsh(StartContractUploadArgs {
-            total_size: NonZeroU64::new(1).unwrap(),
+            total_size: NonZeroUsize::new(1).unwrap(),
         })
         .max_gas()
         .deposit(NearToken::from_yoctonear(1))
