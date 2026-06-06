@@ -159,7 +159,7 @@ USER_CONFIG_FILE_PATH=user-config.toml
 # CVM disk size. VCPU and MEMORY are NOT settable here — they're hardcoded
 # in deploy-launcher.sh (8 vCPU / 64G) because those values are measured
 # into the TDX attestation.
-DISK=500G
+DISK=1000G
 ```
 
 ---

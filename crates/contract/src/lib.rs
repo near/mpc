@@ -15,7 +15,7 @@ pub mod update;
 #[cfg(feature = "dev-utils")]
 pub mod utils;
 
-pub mod v3_10_state;
+pub mod v3_11_2_state;
 
 #[cfg(feature = "bench-contract-methods")]
 mod bench;
@@ -80,7 +80,7 @@ use near_sdk::{
 use node_migrations::NodeMigrations;
 use primitives::{
     domain::DomainRegistry,
-    key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyEventId, Keyset},
+    key_state::{AuthenticatedParticipantId, EpochId, KeyEventId, Keyset},
     signature::{SignRequestArgs, SignatureRequest, YieldIndex},
     thresholds::{Threshold, ThresholdParameters},
 };
@@ -877,12 +877,18 @@ impl MpcContract {
     /// The epoch_id must be equal to 1 plus the current epoch ID (if Running) or prospective epoch
     /// ID (if Resharing). Otherwise the vote is ignored. This is to prevent late transactions from
     /// accidentally voting on outdated proposals.
+    ///
+    /// Like the other governance voting methods, this must be called directly from the
+    /// participant's own NEAR account: `assert_caller_is_signer()` requires
+    /// `signer_account_id == predecessor_account_id`, so calls forwarded through another
+    /// contract are rejected.
     #[handle_result]
     pub fn vote_new_parameters(
         &mut self,
         prospective_epoch_id: EpochId,
         proposal: dtos::ThresholdParameters,
     ) -> Result<(), Error> {
+        Self::assert_caller_is_signer();
         let proposal: ThresholdParameters = proposal.into_contract_type();
         log!(
             "vote_new_parameters: signer={}, proposal={:?}",
@@ -940,6 +946,7 @@ impl MpcContract {
     /// must be the same as the `next_domain_id` returned by state().
     #[handle_result]
     pub fn vote_add_domains(&mut self, domains: Vec<DomainConfig>) -> Result<(), Error> {
+        Self::assert_caller_is_signer();
         log!(
             "vote_add_domains: signer={}, domains={:?}",
             env::signer_account_id(),
@@ -952,18 +959,21 @@ impl MpcContract {
         Ok(())
     }
 
+    /// Registers the set of foreign chains the calling node supports.
+    ///
+    /// Must be called directly from the participant's own NEAR account
+    /// (`voter_or_panic` requires `signer == predecessor`, blocking calls forwarded
+    /// through another contract). Callable by a participant in any active protocol phase
+    /// (Initializing, Running, or Resharing — authenticated against that phase's participant
+    /// set); panics in `NotInitialized` or when the caller is not a participant. Entries for
+    /// accounts that are no longer participants are pruned after resharing by
+    /// [`Self::clean_foreign_chain_data`].
     #[handle_result]
     pub fn register_foreign_chain_support(
         &mut self,
         foreign_chain_support: dtos::SupportedForeignChains,
     ) -> Result<(), Error> {
-        let ProtocolContractState::Running(running_state) = &self.protocol_state else {
-            env::panic_str("protocol must be in running state");
-        };
-
-        let authenticated_voter =
-            AuthenticatedAccountId::new(running_state.parameters.participants())?;
-        let account_id = authenticated_voter.get().clone();
+        let account_id = self.voter_or_panic();
 
         self.node_foreign_chain_support
             .foreign_chain_support_by_node
@@ -1156,6 +1166,7 @@ impl MpcContract {
     ///     - The contract is not in a resharing state.
     #[handle_result]
     pub fn vote_cancel_resharing(&mut self) -> Result<(), Error> {
+        Self::assert_caller_is_signer();
         log!("vote_cancel_resharing: signer={}", env::signer_account_id());
 
         if let Some(new_state) = self.protocol_state.vote_cancel_resharing()? {
@@ -1173,6 +1184,7 @@ impl MpcContract {
     /// to prevent stale requests from accidentally cancelling a future key generation state.
     #[handle_result]
     pub fn vote_cancel_keygen(&mut self, next_domain_id: u64) -> Result<(), Error> {
+        Self::assert_caller_is_signer();
         log!("vote_cancel_keygen: signer={}", env::signer_account_id());
 
         if let Some(new_state) = self.protocol_state.vote_cancel_keygen(next_domain_id)? {
@@ -2037,11 +2049,11 @@ impl MpcContract {
     pub fn migrate() -> Result<Self, Error> {
         log!("migrating contract");
 
-        match try_state_read::<v3_10_state::MpcContract>() {
+        match try_state_read::<v3_11_2_state::MpcContract>() {
             Ok(Some(state)) => return Ok(state.into()),
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => {
-                log!("failed to deserialize state into 3.10.0 state: {:?}", err);
+                log!("failed to deserialize state into 3.11.2 state: {:?}", err);
             }
         };
 
@@ -2359,6 +2371,22 @@ impl MpcContract {
 
     /// Ensures the current call originates from the signer account itself.
     /// Panics if `signer_account_id` and `predecessor_account_id` differ.
+    ///
+    /// This enforces the network-wide policy that **all governance methods must be called
+    /// directly from the participant's own NEAR account**, never forwarded through another
+    /// contract such as a multisig.
+    ///
+    /// This check reaches every signer-authenticated mutating method through one of three
+    /// paths (the list below is illustrative, not exhaustive):
+    /// - Called directly: `vote_new_parameters`, `vote_add_domains`, `vote_cancel_resharing`,
+    ///   `vote_cancel_keygen`, `register_foreign_chain_support`, `submit_participant_info`,
+    ///   and the node-migration methods.
+    /// - Via [`Self::voter_or_panic`]: `propose_update`, `vote_update`, `remove_update_vote`,
+    ///   `vote_code_hash`, the launcher/OS-measurement votes,
+    ///   `vote_update_foreign_chain_providers`, and `verify_tee`.
+    /// - Via [`Self::assert_caller_is_attested_participant_and_protocol_active`]: the key-event
+    ///   votes `vote_pk`, `vote_reshared`, `vote_abort_key_event_instance`, and the leader-only
+    ///   `start_keygen_instance` / `start_reshare_instance`, plus the `respond*` callbacks.
     fn assert_caller_is_signer() -> AccountId {
         let signer_id = env::signer_account_id();
         let predecessor_id = env::predecessor_account_id();
@@ -3946,6 +3974,85 @@ mod tests {
             result.is_ok(),
             "Should succeed when participants have Valid or None TEE status (invalid attestations rejected)"
         );
+    }
+
+    #[test]
+    #[should_panic(expected = "Caller must be the signer account")]
+    fn vote_new_parameters__should_panic_when_predecessor_differs_from_signer() {
+        // Given: a participant whose vote is forwarded through another contract,
+        // so signer_account_id (the participant) != predecessor_account_id (the forwarder).
+        let (mut contract, participants, first_participant_id) = setup_tee_test_contract(3, 2);
+        let threshold = Threshold::new(2);
+        let proposal = ThresholdParameters::new(participants, threshold).unwrap();
+
+        let ctx = VMContextBuilder::new()
+            .signer_account_id(first_participant_id)
+            .predecessor_account_id("forwarder.near".parse().unwrap())
+            .attached_deposit(NearToken::from_yoctonear(0))
+            .build();
+        testing_env!(ctx);
+
+        // When / Then: the confused-deputy vote must be rejected before it is recorded.
+        contract
+            .vote_new_parameters(EpochId::new(1), (&proposal).into_dto_type())
+            .expect("expected panic when predecessor != signer");
+    }
+
+    /// Builds a Running-state contract and installs a VM context where the participant is the
+    /// signer but the call is forwarded through another contract (`predecessor != signer`).
+    /// All governance methods gated by `assert_caller_is_signer()` run that check before any
+    /// protocol-state logic, so Running state is sufficient to exercise the guard for every one.
+    fn forwarded_participant_call_contract() -> MpcContract {
+        let running_state = gen_running_state(1);
+        let participant = running_state.parameters.participants().participants()[0]
+            .0
+            .clone();
+        let contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+
+        let ctx = VMContextBuilder::new()
+            .signer_account_id(participant)
+            .predecessor_account_id("forwarder.near".parse().unwrap())
+            .build();
+        testing_env!(ctx);
+
+        contract
+    }
+
+    #[test]
+    #[should_panic(expected = "Caller must be the signer account")]
+    fn vote_add_domains__should_panic_when_predecessor_differs_from_signer() {
+        let mut contract = forwarded_participant_call_contract();
+        contract
+            .vote_add_domains(vec![])
+            .expect("expected panic when predecessor != signer");
+    }
+
+    #[test]
+    #[should_panic(expected = "Caller must be the signer account")]
+    fn vote_cancel_resharing__should_panic_when_predecessor_differs_from_signer() {
+        let mut contract = forwarded_participant_call_contract();
+        contract
+            .vote_cancel_resharing()
+            .expect("expected panic when predecessor != signer");
+    }
+
+    #[test]
+    #[should_panic(expected = "Caller must be the signer account")]
+    fn vote_cancel_keygen__should_panic_when_predecessor_differs_from_signer() {
+        let mut contract = forwarded_participant_call_contract();
+        contract
+            .vote_cancel_keygen(0)
+            .expect("expected panic when predecessor != signer");
+    }
+
+    #[test]
+    #[should_panic(expected = "Caller must be the signer account")]
+    fn register_foreign_chain_support__should_panic_when_predecessor_differs_from_signer() {
+        let mut contract = forwarded_participant_call_contract();
+        contract
+            .register_foreign_chain_support(BTreeSet::new().into())
+            .expect("expected panic when predecessor != signer");
     }
 
     #[test]
@@ -6382,6 +6489,39 @@ mod tests {
     }
 
     #[test]
+    fn register_foreign_chain_support__should_store_for_previous_participant_during_resharing() {
+        // Given: a contract mid-resharing, and a participant from the previous running set.
+        let (_env, resharing_state) = gen_resharing_state(1);
+        let previous_participant = resharing_state
+            .previous_running_state
+            .parameters
+            .participants()
+            .participants()[0]
+            .0
+            .clone();
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Resharing(resharing_state));
+        let foreign_chain_support: dtos::SupportedForeignChains =
+            BTreeSet::from([dtos::ForeignChain::Bitcoin]).into();
+        let _env = Environment::new(None, Some(previous_participant.clone()), None);
+
+        // When: that participant registers foreign-chain support outside of Running state.
+        contract
+            .register_foreign_chain_support(foreign_chain_support.clone())
+            .expect("a previous participant may register during resharing");
+
+        // Then: the registration is stored against their account.
+        let stored = contract.get_foreign_chain_support_by_node();
+        assert_eq!(
+            stored
+                .foreign_chain_support_by_node
+                .get(&previous_participant),
+            Some(&foreign_chain_support)
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "not a voter")]
     fn register_foreign_chain_config__should_reject_non_participant() {
         // Given
         let running_state = gen_running_state(1);
@@ -6398,11 +6538,11 @@ mod tests {
         let non_participant = gen_account_id();
         let _env = Environment::new(None, Some(non_participant), None);
 
-        // When
-        let result = contract.register_foreign_chain_config(foreign_chain_configuration);
-
-        // Then
-        result.expect_err("non-participant should not be able to register");
+        // When / Then: a non-participant is rejected. Registration now authenticates via
+        // `voter_or_panic()`, which panics rather than returning an error.
+        contract
+            .register_foreign_chain_config(foreign_chain_configuration)
+            .expect("non-participant should not be able to register");
     }
 
     #[test]
