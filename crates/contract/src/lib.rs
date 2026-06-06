@@ -1345,7 +1345,7 @@ impl MpcContract {
         // Read (don't remove) the chunks first so the deposit can be validated before
         // any storage is mutated: if the deposit is short we reinstate the staged entry
         // and bail with the chunks still in place.
-        let mut code = Vec::with_capacity(total_size.get() as usize);
+        let mut code = Vec::with_capacity(total_size.get());
         for i in 0..num_chunks {
             let chunk = self
                 .staged_chunks
