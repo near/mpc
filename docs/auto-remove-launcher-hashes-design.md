@@ -112,5 +112,10 @@ New borsh fields ⇒ state migration: existing entries get
 
 1. **TTL = 14 days** implies *vote a launcher in at most 14 days before
    migrating to it*. Acceptable, or prefer 30 days?
-2. **Inline sweep vs. detached promise** — any path to this collection growing
-   beyond a handful of entries?
+2. **Inline sweep vs. detached promise** — the issue's acceptance criteria
+   suggest running cleanup in a detached promise, so that a mass-expiry can
+   never consume enough gas to fail the transaction it piggybacks on. This doc
+   instead sweeps inline in `verify_tee`, betting that
+   `allowed_launcher_images` stays tiny forever (entries only enter via rare
+   operator votes; sweeping ~4 entries is negligible gas). Does anyone see a
+   future where this list grows to many entries? If not, inline stands.
