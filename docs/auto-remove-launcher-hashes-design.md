@@ -114,4 +114,3 @@ New borsh fields ⇒ state migration: existing entries get
    migrating to it*. Acceptable, or prefer 30 days?
 2. **Inline sweep vs. detached promise** — any path to this collection growing
    beyond a handful of entries?
-3. **Observability** — should auto-eviction emit a contract event beyond `log!`?
