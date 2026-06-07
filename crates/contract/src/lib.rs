@@ -1022,7 +1022,8 @@ impl MpcContract {
     /// Recomputes [`Self::available_foreign_chains`]: chains supported by ≥ the signing threshold
     /// of active participants (stale non-participant reports excluded).
     ///
-    /// No-op when the contract is not in `Running` state.
+    /// No-op outside `Running`: only that state has a single [`ThresholdParameters`] where
+    /// threshold and participants are consistent (during `Resharing` they disagree).
     fn recompute_available_foreign_chains(&mut self) {
         let (threshold, active_participant_account_ids) = {
             let ProtocolContractState::Running(state) = &self.protocol_state else {
@@ -1827,6 +1828,9 @@ impl MpcContract {
         }
 
         self.foreign_chain_rpc_whitelist.votes.retain(participants);
+
+        // The active set just changed; refresh the cache against the new participants/threshold.
+        self.recompute_available_foreign_chains();
 
         Ok(())
     }
@@ -6889,8 +6893,8 @@ mod tests {
     }
 
     #[test]
-    fn vote_update_foreign_chain_providers__should_populate_available_set_when_whitelisting_covered_chain()
-     {
+    fn vote_update_foreign_chain_providers__should_populate_available_set_when_whitelisting_covered_chain(
+    ) {
         // Given: 4 participants, threshold 3. Bitcoin is NOT yet whitelisted.
         let (_context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
         let participants = participant_account_ids(&contract);
@@ -6921,11 +6925,9 @@ mod tests {
         for account_id in participants.iter().take(3) {
             register_coverage(&mut contract, account_id, [dtos::ForeignChain::Bitcoin]);
         }
-        assert!(
-            contract
-                .get_available_foreign_chains()
-                .contains(&dtos::ForeignChain::Bitcoin)
-        );
+        assert!(contract
+            .get_available_foreign_chains()
+            .contains(&dtos::ForeignChain::Bitcoin));
 
         // Simulate resharing completion: the new Running state drops participant[2] and keeps
         // participant[3] (who has not registered any chain).  Participant[2]'s registration
@@ -6945,7 +6947,8 @@ mod tests {
         };
         new_participants.remove(&participants[2]);
         // New Running: participants {0, 1, 3}, threshold 3.  Only 0 and 1 cover Bitcoin → 2 < 3.
-        let new_params = ThresholdParameters::new_unvalidated(new_participants, Threshold::new(3));
+        let new_params =
+            ThresholdParameters::new_unvalidated(new_participants, Threshold::new(3));
         contract.protocol_state = ProtocolContractState::Running(RunningContractState::new(
             domains,
             keyset,
@@ -6954,9 +6957,7 @@ mod tests {
         ));
 
         // When: clean_foreign_chain_data prunes participant[2]'s stale entry and recomputes.
-        contract
-            .clean_foreign_chain_data()
-            .expect("clean should succeed");
+        contract.clean_foreign_chain_data().expect("clean should succeed");
 
         // Then: 2 participants cover Bitcoin (< threshold 3) → no longer available.
         let available = contract.get_available_foreign_chains();

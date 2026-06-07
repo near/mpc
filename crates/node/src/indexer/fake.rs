@@ -174,10 +174,6 @@ impl FakeMpcContractState {
             .into();
     }
 
-    pub fn available_foreign_chains(&self) -> &dtos::AvailableForeignChains {
-        &self.available_foreign_chains
-    }
-
     /// Stores `account_id`'s reported chains and recomputes `supported_foreign_chains` as the
     /// intersection across all active participants. Shared by both registration entry points.
     fn record_node_chains(&mut self, account_id: AccountId, chains: dtos::SupportedForeignChains) {
