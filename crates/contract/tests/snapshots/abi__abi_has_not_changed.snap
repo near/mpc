@@ -578,6 +578,31 @@ expression: abi
         }
       },
       {
+        "name": "get_available_foreign_chain_by_node",
+        "doc": " Per-participant view of which foreign chains each node currently covers. Feeds the\n available-set computation ([`Self::get_available_foreign_chains`]) and coverage alerting.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/definitions/AvailableForeignChains"
+            }
+          }
+        }
+      },
+      {
+        "name": "get_available_foreign_chains",
+        "doc": " The **available** foreign chains: whitelisted chains that are supported\n by at least the signing threshold of active participants.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/AvailableForeignChains"
+          }
+        }
+      },
+      {
         "name": "get_foreign_chain_support_by_node",
         "kind": "view",
         "result": {
@@ -1078,6 +1103,28 @@ expression: abi
           "serialization_type": "json",
           "type_schema": {
             "$ref": "#/definitions/PublicKey"
+          }
+        }
+      },
+      {
+        "name": "register_available_foreign_chain_config",
+        "doc": " (Re)registers the foreign chains this participant currently covers, feeding the available\n set ([`Self::get_available_foreign_chains`]). Idempotent.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "available_foreign_chains",
+              "type_schema": {
+                "$ref": "#/definitions/AvailableForeignChains"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
           }
         }
       },
@@ -2243,6 +2290,14 @@ expression: abi
               "$ref": "#/definitions/ParticipantId"
             }
           ]
+        },
+        "AvailableForeignChains": {
+          "description": "The set of foreign chains a node reports it can currently serve (cover). The available-set analog of [`SupportedForeignChains`]; submitted by nodes via `register_available_foreign_chain_config`.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ForeignChain"
+          },
+          "uniqueItems": true
         },
         "BackupServiceInfo": {
           "type": "object",
