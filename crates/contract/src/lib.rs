@@ -1004,6 +1004,12 @@ impl MpcContract {
 
     /// (Re)registers the foreign chains this participant currently covers, feeding the available
     /// set ([`Self::get_available_foreign_chains`]). Idempotent.
+    ///
+    /// Note: `voter_or_panic` accepts callers in `Initializing` and `Resharing` phases, so a
+    /// registration in those phases will be written to `available_foreign_chains_by_node` but
+    /// the cache (`available_foreign_chains`) is not refreshed until the next `Running`-state
+    /// recompute (e.g. `clean_foreign_chain_data` after `vote_reshared`, or the next call to
+    /// this method once the contract is `Running`).
     #[handle_result]
     pub fn register_available_foreign_chain_config(
         &mut self,
@@ -1627,7 +1633,9 @@ impl MpcContract {
             "vote_update_foreign_chain_providers: applied chains={:?}",
             applied,
         );
-        self.recompute_available_foreign_chains();
+        if !applied.is_empty() {
+            self.recompute_available_foreign_chains();
+        }
         Ok(applied)
     }
 
@@ -6966,5 +6974,41 @@ mod tests {
         let available = contract.get_available_foreign_chains();
         assert!(!available.contains(&dtos::ForeignChain::Bitcoin));
         assert!(available.is_empty());
+    }
+
+    #[test]
+    fn recompute_available_foreign_chains__should_not_update_cache_during_resharing() {
+        // Given: Running contract with Bitcoin whitelisted and covered by threshold participants.
+        let (_context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let participants = participant_account_ids(&contract);
+        whitelist_chain(&mut contract, dtos::ForeignChain::Bitcoin);
+        for account_id in participants.iter().take(3) {
+            register_coverage(&mut contract, account_id, [dtos::ForeignChain::Bitcoin]);
+        }
+        let available_before = contract.get_available_foreign_chains();
+        assert!(available_before.contains(&dtos::ForeignChain::Bitcoin));
+
+        // Transition to Resharing by swapping protocol_state.
+        let resharing = {
+            let ProtocolContractState::Running(ref mut state) = contract.protocol_state else {
+                panic!("expected Running state");
+            };
+            let proposal = crate::state::test_utils::gen_valid_params_proposal(&state.parameters);
+            state
+                .transition_to_resharing_no_checks(&proposal)
+                .expect("contract has at least one domain")
+        };
+        contract.protocol_state = ProtocolContractState::Resharing(resharing);
+
+        // When: a participant (valid in the previous running state) registers chains during Resharing.
+        register_coverage(
+            &mut contract,
+            &participants[0],
+            [dtos::ForeignChain::Bitcoin],
+        );
+
+        // Then: the cache is unchanged — recompute is skipped outside Running.
+        let available_after = contract.get_available_foreign_chains();
+        assert_eq!(available_before, available_after);
     }
 }

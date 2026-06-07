@@ -156,7 +156,8 @@ impl FakeMpcContractState {
             .insert(account_id, available_foreign_chains);
 
         // Recompute using threshold semantics: a chain is available when ≥ threshold active
-        // participants cover it.  Mirrors the real contract's recompute_available_foreign_chains.
+        // participants cover it.  (Unlike the real contract this does not intersect with an
+        // on-chain RPC whitelist; the fake has no equivalent for that.)
         let mut chain_count: BTreeMap<dtos::ForeignChain, u64> = BTreeMap::new();
         for (voter_id, chains) in &self.available_foreign_chains_by_node {
             if !active_participant_ids.contains(voter_id) {
