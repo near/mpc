@@ -344,6 +344,33 @@ impl MpcCluster {
         Ok(())
     }
 
+    /// Send SIGTERM to a running node and wait up to `grace` for it to exit on
+    /// its own. Returns the exit status — `status.code().is_some()` indicates
+    /// the process exited cleanly via its own main() (i.e. our SIGTERM handler
+    /// ran), while `status.signal().is_some()` indicates the OS terminated it
+    /// (i.e. there was no handler).
+    pub fn terminate_node_with_sigterm(
+        &mut self,
+        idx: usize,
+        grace: std::time::Duration,
+    ) -> anyhow::Result<std::process::ExitStatus> {
+        anyhow::ensure!(
+            idx < self.nodes.len(),
+            "node index {idx} out of bounds (have {} nodes)",
+            self.nodes.len()
+        );
+        let state = self.nodes.remove(idx);
+        let (status, setup) = match state {
+            MpcNodeState::Running(node) => node.terminate_with_sigterm(grace)?,
+            MpcNodeState::Stopped(setup) => {
+                self.nodes.insert(idx, MpcNodeState::Stopped(setup));
+                anyhow::bail!("node {idx} already stopped; cannot SIGTERM");
+            }
+        };
+        self.nodes.insert(idx, MpcNodeState::Stopped(setup));
+        Ok(status)
+    }
+
     pub fn start_nodes(&mut self, indices: &[usize]) -> anyhow::Result<()> {
         for &idx in indices {
             let state = self.nodes.remove(idx);

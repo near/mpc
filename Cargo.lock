@@ -3288,6 +3288,7 @@ dependencies = [
  "hex",
  "httpmock",
  "launcher-interface",
+ "libc",
  "mpc-node-config",
  "mpc-primitives",
  "near-account-id 2.6.0",

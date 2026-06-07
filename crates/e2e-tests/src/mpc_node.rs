@@ -39,6 +39,42 @@ impl MpcNode {
         self.setup
     }
 
+    /// Send SIGTERM to the node and wait up to `grace` for it to exit on its
+    /// own. Returns the child's `ExitStatus` on graceful exit; errors if the
+    /// grace period elapses (in which case `self.process`'s Drop will SIGKILL
+    /// it as a fallback). Used to exercise the production SIGTERM handler.
+    pub fn terminate_with_sigterm(
+        mut self,
+        grace: std::time::Duration,
+    ) -> anyhow::Result<(std::process::ExitStatus, MpcNodeSetup)> {
+        let pid = self.process.0.id() as libc::pid_t;
+        // SAFETY: `libc::kill` with `SIGTERM` and a pid Rust's Child reports
+        // for a live child is well-defined. We make no assumptions beyond
+        // that the pid is the child we spawned.
+        let rc = unsafe { libc::kill(pid, libc::SIGTERM) };
+        anyhow::ensure!(
+            rc == 0,
+            "libc::kill({pid}, SIGTERM) failed: {}",
+            std::io::Error::last_os_error()
+        );
+
+        let start = std::time::Instant::now();
+        let poll_interval = std::time::Duration::from_millis(100);
+        loop {
+            match self.process.0.try_wait()? {
+                Some(status) => return Ok((status, self.setup)),
+                None => {
+                    if start.elapsed() >= grace {
+                        anyhow::bail!(
+                            "mpc-node pid {pid} did not exit within {grace:?} after SIGTERM"
+                        );
+                    }
+                    std::thread::sleep(poll_interval);
+                }
+            }
+        }
+    }
+
     /// Kill then start. New process, same config and data directory.
     pub fn restart(self) -> anyhow::Result<MpcNode> {
         self.kill().start()
