@@ -1108,7 +1108,7 @@ expression: abi
       },
       {
         "name": "register_available_foreign_chain_config",
-        "doc": " (Re)registers the foreign chains this participant currently covers, feeding the available\n set ([`Self::get_available_foreign_chains`]). Idempotent.",
+        "doc": " (Re)registers the foreign chains this participant currently covers, feeding the available\n set ([`Self::get_available_foreign_chains`]). Idempotent.\n\n Note: `voter_or_panic` accepts callers in `Initializing` and `Resharing` phases, so a\n registration in those phases will be written to `available_foreign_chains_by_node` but\n the cache (`available_foreign_chains`) is not refreshed until the next `Running`-state\n recompute (e.g. `clean_foreign_chain_data` after `vote_reshared`, or the next call to\n this method once the contract is `Running`).",
         "kind": "call",
         "params": {
           "serialization_type": "json",
