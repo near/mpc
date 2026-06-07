@@ -199,7 +199,6 @@ impl SupportedForeignChainsByNode {
 }
 
 /// Per-node map of the chains each participant reports covering, feeding the available set.
-/// Separate from the legacy [`SupportedForeignChainsByNode`].
 #[near(serializers=[borsh])]
 #[derive(Debug)]
 struct AvailableForeignChainsByNode {
@@ -1003,6 +1002,23 @@ impl MpcContract {
         Ok(())
     }
 
+    /// (Re)registers the foreign chains this participant currently covers, feeding the available
+    /// set ([`Self::get_available_foreign_chains`]). Idempotent.
+    #[handle_result]
+    pub fn register_available_foreign_chain_config(
+        &mut self,
+        available_foreign_chains: dtos::AvailableForeignChains,
+    ) -> Result<(), Error> {
+        let account_id = self.voter_or_panic();
+
+        self.available_foreign_chains_by_node
+            .available_foreign_chain_by_node
+            .insert(account_id, available_foreign_chains);
+        self.recompute_available_foreign_chains();
+
+        Ok(())
+    }
+
     /// Recomputes [`Self::available_foreign_chains`]: chains supported by ≥ the signing threshold
     /// of active participants (stale non-participant reports excluded).
     fn recompute_available_foreign_chains(&mut self) {
@@ -1020,6 +1036,7 @@ impl MpcContract {
             .collect::<BTreeSet<_>>();
 
         let mut chain_to_supporter_count: BTreeMap<dtos::ForeignChain, u64> = BTreeMap::new();
+        // Count supported chains that are also whitelisted.
         for (account_id, chains) in self
             .available_foreign_chains_by_node
             .available_foreign_chain_by_node
@@ -1029,7 +1046,13 @@ impl MpcContract {
                 continue;
             }
             for chain in chains.iter() {
-                *chain_to_supporter_count.entry(*chain).or_default() += 1;
+                if self
+                    .foreign_chain_rpc_whitelist
+                    .entries
+                    .is_whitelisted(chain)
+                {
+                    *chain_to_supporter_count.entry(*chain).or_default() += 1;
+                }
             }
         }
 
@@ -1039,23 +1062,6 @@ impl MpcContract {
             .map(|(chain, _)| chain)
             .collect::<BTreeSet<dtos::ForeignChain>>()
             .into();
-    }
-
-    /// (Re)registers the foreign chains this participant currently covers, feeding the available
-    /// set ([`Self::get_available_foreign_chains`]). Idempotent.
-    #[handle_result]
-    pub fn register_available_foreign_chain_config(
-        &mut self,
-        available_foreign_chains: dtos::AvailableForeignChains,
-    ) -> Result<(), Error> {
-        let account_id = self.voter_or_panic();
-
-        self.available_foreign_chains_by_node
-            .available_foreign_chain_by_node
-            .insert(account_id, available_foreign_chains);
-        self.recompute_available_foreign_chains();
-
-        Ok(())
     }
 
     #[deprecated(
@@ -1616,6 +1622,7 @@ impl MpcContract {
             "vote_update_foreign_chain_providers: applied chains={:?}",
             applied,
         );
+        self.recompute_available_foreign_chains();
         Ok(applied)
     }
 
@@ -2108,15 +2115,9 @@ impl MpcContract {
     /// The **available** foreign chains: whitelisted chains that are supported
     /// by at least the signing threshold of active participants.
     pub fn get_available_foreign_chains(&self) -> dtos::AvailableForeignChains {
-        // Cached set intersected with the current whitelist, so `available ⊆ whitelisted`.
         self.available_foreign_chains
             .iter()
             .copied()
-            .filter(|chain| {
-                self.foreign_chain_rpc_whitelist
-                    .entries
-                    .is_whitelisted(chain)
-            })
             .collect::<BTreeSet<dtos::ForeignChain>>()
             .into()
     }

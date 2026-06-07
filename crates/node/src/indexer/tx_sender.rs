@@ -315,8 +315,9 @@ async fn observe_tx_result(
             }
             Ok(TransactionStatus::Unknown)
         }
-        // We don't care. The contract state change will handle this. The legacy
-        // `RegisterForeignChainConfig` stays fire-and-forget; the new
+        // We don't care. The contract state change will handle this.
+        // The legacy
+        // `RegisterForeignChainConfig` stays fire-and-forget, the new
         // `RegisterAvailableForeignChainConfig` above is the one we probe + warn on.
         RegisterForeignChainConfig(_)
         | StartKeygen(_)
@@ -330,7 +331,7 @@ async fn observe_tx_result(
 }
 
 /// Whether `err` is the contract reporting that the called method does not exist, i.e. the
-/// contract has not yet been upgraded to include it. Mirrors the check in `indexer/tee.rs`.
+/// contract has not yet been upgraded to include it.
 fn is_method_not_found(err: &anyhow::Error) -> bool {
     format!("{err:?}").contains("MethodResolveError(MethodNotFound)")
 }
