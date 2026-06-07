@@ -1021,19 +1021,23 @@ impl MpcContract {
 
     /// Recomputes [`Self::available_foreign_chains`]: chains supported by ≥ the signing threshold
     /// of active participants (stale non-participant reports excluded).
+    ///
+    /// No-op when the contract is not in `Running` state.
     fn recompute_available_foreign_chains(&mut self) {
-        let Ok(threshold) = self.threshold() else {
-            return;
+        let (threshold, active_participant_account_ids) = {
+            let ProtocolContractState::Running(state) = &self.protocol_state else {
+                return;
+            };
+            let threshold = state.parameters.threshold().value();
+            let active = state
+                .parameters
+                .participants()
+                .participants()
+                .iter()
+                .map(|(account_id, _, _)| account_id.clone())
+                .collect::<BTreeSet<_>>();
+            (threshold, active)
         };
-        let threshold = threshold.value();
-
-        let active_participant_account_ids = self
-            .protocol_state
-            .active_participants()
-            .participants()
-            .iter()
-            .map(|(account_id, _, _)| account_id.clone())
-            .collect::<BTreeSet<_>>();
 
         let mut chain_to_supporter_count: BTreeMap<dtos::ForeignChain, u64> = BTreeMap::new();
         // Count supported chains that are also whitelisted.
@@ -2115,11 +2119,7 @@ impl MpcContract {
     /// The **available** foreign chains: whitelisted chains that are supported
     /// by at least the signing threshold of active participants.
     pub fn get_available_foreign_chains(&self) -> dtos::AvailableForeignChains {
-        self.available_foreign_chains
-            .iter()
-            .copied()
-            .collect::<BTreeSet<dtos::ForeignChain>>()
-            .into()
+        self.available_foreign_chains.clone()
     }
 
     /// Per-participant view of which foreign chains each node currently covers. Feeds the
@@ -6886,5 +6886,81 @@ mod tests {
         assert!(!available.contains(&dtos::ForeignChain::Ethereum));
         assert!(!available.contains(&dtos::ForeignChain::Solana));
         assert_eq!(available.len(), 1);
+    }
+
+    #[test]
+    fn vote_update_foreign_chain_providers__should_populate_available_set_when_whitelisting_covered_chain()
+     {
+        // Given: 4 participants, threshold 3. Bitcoin is NOT yet whitelisted.
+        let (_context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let participants = participant_account_ids(&contract);
+
+        // Threshold (3) participants already cover Bitcoin — but the chain is not whitelisted,
+        // so the cache must be empty.
+        for account_id in participants.iter().take(3) {
+            register_coverage(&mut contract, account_id, [dtos::ForeignChain::Bitcoin]);
+        }
+        assert!(contract.get_available_foreign_chains().is_empty());
+
+        // When: whitelist Bitcoin (vote_update_foreign_chain_providers triggers a recompute).
+        whitelist_chain(&mut contract, dtos::ForeignChain::Bitcoin);
+
+        // Then: cache flips from empty to populated.
+        let available = contract.get_available_foreign_chains();
+        assert!(available.contains(&dtos::ForeignChain::Bitcoin));
+        assert_eq!(available.len(), 1);
+    }
+
+    #[test]
+    fn clean_foreign_chain_data__should_drop_departed_participant_contribution_from_cache() {
+        // Given: 4 participants, threshold 3, Bitcoin whitelisted.
+        // Exactly 3 participants (0, 1, 2) cover Bitcoin → threshold met → available.
+        let (_context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let participants = participant_account_ids(&contract);
+        whitelist_chain(&mut contract, dtos::ForeignChain::Bitcoin);
+        for account_id in participants.iter().take(3) {
+            register_coverage(&mut contract, account_id, [dtos::ForeignChain::Bitcoin]);
+        }
+        assert!(
+            contract
+                .get_available_foreign_chains()
+                .contains(&dtos::ForeignChain::Bitcoin)
+        );
+
+        // Simulate resharing completion: the new Running state drops participant[2] and keeps
+        // participant[3] (who has not registered any chain).  Participant[2]'s registration
+        // entry is still in available_foreign_chains_by_node — this is the stale data that
+        // clean_foreign_chain_data must remove.
+        let (domains, keyset) = {
+            let ProtocolContractState::Running(ref state) = contract.protocol_state else {
+                panic!("expected Running state");
+            };
+            (state.domains.clone(), state.keyset.clone())
+        };
+        let mut new_participants = {
+            let ProtocolContractState::Running(ref state) = contract.protocol_state else {
+                panic!("expected Running state");
+            };
+            state.parameters.participants().clone()
+        };
+        new_participants.remove(&participants[2]);
+        // New Running: participants {0, 1, 3}, threshold 3.  Only 0 and 1 cover Bitcoin → 2 < 3.
+        let new_params = ThresholdParameters::new_unvalidated(new_participants, Threshold::new(3));
+        contract.protocol_state = ProtocolContractState::Running(RunningContractState::new(
+            domains,
+            keyset,
+            new_params,
+            AddDomainsVotes::default(),
+        ));
+
+        // When: clean_foreign_chain_data prunes participant[2]'s stale entry and recomputes.
+        contract
+            .clean_foreign_chain_data()
+            .expect("clean should succeed");
+
+        // Then: 2 participants cover Bitcoin (< threshold 3) → no longer available.
+        let available = contract.get_available_foreign_chains();
+        assert!(!available.contains(&dtos::ForeignChain::Bitcoin));
+        assert!(available.is_empty());
     }
 }

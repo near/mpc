@@ -292,11 +292,11 @@ async fn observe_tx_result(
             }
         }
         RegisterAvailableForeignChainConfig(_) => {
-            // Registration is idempotent and best-effort, so we don't assert the write landed;
-            // we only probe whether the contract exposes the new methods. Before the contract is
-            // upgraded for #3475, the `get_available_foreign_chain_by_node` view resolves to
-            // MethodNotFound — expected during rollout — so we log a warning and report
-            // `Unknown` rather than surfacing it as a transaction error.
+            // Registration is idempotent and best-effort; we only probe whether the contract
+            // exposes the new methods — we do not assert the write landed.  All view errors are
+            // swallowed: MethodNotFound is expected before the contract is upgraded for #3475,
+            // and any other transient view failure (network blip, indexer lag) is non-actionable
+            // because the registration already fire-and-forgot.
             if let Err(err) = indexer_state
                 .view_client
                 .get_available_foreign_chain_by_node(&indexer_state.mpc_contract_id)
@@ -310,7 +310,11 @@ async fn observe_tx_result(
                          Foreign-chain registration will take effect after the upgrade."
                     );
                 } else {
-                    return Err(err);
+                    tracing::warn!(
+                        target: "mpc",
+                        error = ?err,
+                        "probe view call failed after foreign-chain registration; ignoring transient error"
+                    );
                 }
             }
             Ok(TransactionStatus::Unknown)
@@ -332,7 +336,8 @@ async fn observe_tx_result(
 
 /// Whether `err` is the contract reporting that the called method does not exist, i.e. the
 /// contract has not yet been upgraded to include it.
-fn is_method_not_found(err: &anyhow::Error) -> bool {
+/// Checks only that the method is resolvable, not that any write from this node landed.
+pub(super) fn is_method_not_found(err: &anyhow::Error) -> bool {
     format!("{err:?}").contains("MethodResolveError(MethodNotFound)")
 }
 

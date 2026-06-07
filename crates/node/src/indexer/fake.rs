@@ -52,6 +52,10 @@ pub struct FakeMpcContractState {
     pub pending_verify_foreign_txs: BTreeMap<dtos::ForeignChainRpcRequest, VerifyForeignTxId>,
     supported_foreign_chains: dtos::SupportedForeignChains,
     supported_foreign_chains_by_node: dtos::ForeignChainSupportByNode,
+    /// Per-node map for the new `register_available_foreign_chain_config` API.
+    available_foreign_chains_by_node: BTreeMap<AccountId, dtos::AvailableForeignChains>,
+    /// Cached available set recomputed via threshold semantics (mirrors the real contract).
+    available_foreign_chains: dtos::AvailableForeignChains,
     pub migration_service: NodeMigrations,
 }
 
@@ -88,6 +92,8 @@ impl FakeMpcContractState {
             pending_verify_foreign_txs: BTreeMap::new(),
             supported_foreign_chains: dtos::SupportedForeignChains::default(),
             supported_foreign_chains_by_node: dtos::ForeignChainSupportByNode::default(),
+            available_foreign_chains_by_node: BTreeMap::new(),
+            available_foreign_chains: dtos::AvailableForeignChains::default(),
             migration_service: NodeMigrations::default(),
         }
     }
@@ -119,12 +125,57 @@ impl FakeMpcContractState {
         account_id: AccountId,
         available_foreign_chains: dtos::AvailableForeignChains,
     ) {
-        let chains: dtos::SupportedForeignChains = available_foreign_chains
+        let ProtocolContractState::Running(state) = &self.state else {
+            tracing::info!(
+                "register_available_foreign_chain_config ignored: contract not in running state"
+            );
+            return;
+        };
+        let is_participant = state
+            .parameters
+            .participants()
+            .participants()
             .iter()
-            .copied()
+            .any(|(id, _, _)| id == &account_id);
+        if !is_participant {
+            tracing::info!(
+                "register_available_foreign_chain_config ignored: signer is not a participant"
+            );
+            return;
+        }
+        let threshold = state.parameters.threshold().value();
+        let active_participant_ids: BTreeSet<AccountId> = state
+            .parameters
+            .participants()
+            .participants()
+            .iter()
+            .map(|(id, _, _)| id.clone())
+            .collect();
+
+        self.available_foreign_chains_by_node
+            .insert(account_id, available_foreign_chains);
+
+        // Recompute using threshold semantics: a chain is available when ≥ threshold active
+        // participants cover it.  Mirrors the real contract's recompute_available_foreign_chains.
+        let mut chain_count: BTreeMap<dtos::ForeignChain, u64> = BTreeMap::new();
+        for (voter_id, chains) in &self.available_foreign_chains_by_node {
+            if !active_participant_ids.contains(voter_id) {
+                continue;
+            }
+            for chain in chains.iter().copied() {
+                *chain_count.entry(chain).or_default() += 1;
+            }
+        }
+        self.available_foreign_chains = chain_count
+            .into_iter()
+            .filter(|(_, count)| *count >= threshold)
+            .map(|(chain, _)| chain)
             .collect::<BTreeSet<_>>()
             .into();
-        self.record_node_chains(account_id, chains);
+    }
+
+    pub fn available_foreign_chains(&self) -> &dtos::AvailableForeignChains {
+        &self.available_foreign_chains
     }
 
     /// Stores `account_id`'s reported chains and recomputes `supported_foreign_chains` as the
