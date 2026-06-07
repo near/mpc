@@ -6854,11 +6854,30 @@ mod tests {
         // - Bitcoin: covered by 3 participants (whitelisted + threshold) -> available.
         // - Ethereum: covered by 1 participant (whitelisted but under threshold) -> not available.
         // - Solana: covered by all 4 (threshold met but not whitelisted) -> not available.
-        use dtos::ForeignChain::{Bitcoin, Ethereum, Solana};
-        register_coverage(&mut contract, &participants[0], [Bitcoin, Ethereum, Solana]);
-        register_coverage(&mut contract, &participants[1], [Bitcoin, Solana]);
-        register_coverage(&mut contract, &participants[2], [Bitcoin, Solana]);
-        register_coverage(&mut contract, &participants[3], [Solana]);
+        register_coverage(
+            &mut contract,
+            &participants[0],
+            [
+                dtos::ForeignChain::Bitcoin,
+                dtos::ForeignChain::Ethereum,
+                dtos::ForeignChain::Solana,
+            ],
+        );
+        register_coverage(
+            &mut contract,
+            &participants[1],
+            [dtos::ForeignChain::Bitcoin, dtos::ForeignChain::Solana],
+        );
+        register_coverage(
+            &mut contract,
+            &participants[2],
+            [dtos::ForeignChain::Bitcoin, dtos::ForeignChain::Solana],
+        );
+        register_coverage(
+            &mut contract,
+            &participants[3],
+            [dtos::ForeignChain::Solana],
+        );
 
         // Then: only Bitcoin is available.
         let available = contract.get_available_foreign_chains();
