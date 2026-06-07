@@ -48,14 +48,6 @@ use tokio_util::time::FutureExt as _;
 
 use super::utils::contract_build;
 
-const LEGACY_CONTRACT_UPDATE_METHOD_NAME: &str = "propose_update";
-
-#[derive(borsh::BorshSerialize)]
-struct LegacyCodeUpdateArgs {
-    code: Option<Vec<u8>>,
-    _config: Option<near_mpc_contract_interface::types::Config>,
-}
-
 pub async fn create_account_given_id(
     worker: &Worker<Sandbox>,
     account_id: AccountId,
@@ -377,16 +369,17 @@ pub async fn propose_and_vote_contract_binary(
 
 /// Upgrades the given contract to `new_contract_binary` using the **legacy inline**
 /// `propose_update` flow, where the whole code blob is sent in a single transaction.
+#[expect(deprecated)]
 pub async fn propose_and_vote_contract_binary_inline(
     accounts: &[Account],
     contract: &Contract,
     new_contract_binary: &[u8],
 ) {
     let propose_update_execution = accounts[0]
-        .call(contract.id(), LEGACY_CONTRACT_UPDATE_METHOD_NAME)
-        .args_borsh(LegacyCodeUpdateArgs {
-            _config: None,
+        .call(contract.id(), method_names::LEGACY_PROPOSE_UPDATE)
+        .args_borsh(dtos::LegacyProposeUpdateArgs {
             code: Some(new_contract_binary.to_vec()),
+            config: None,
         })
         .max_gas()
         .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)

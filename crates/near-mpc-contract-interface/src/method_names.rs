@@ -92,3 +92,8 @@ pub const MIGRATION_INFO: &str = "migration_info";
 // Deprecated methods
 #[deprecated(note = "https://github.com/near/mpc/issues/3079")]
 pub const REGISTER_FOREIGN_CHAIN_CONFIG: &str = "register_foreign_chain_config";
+
+#[deprecated(
+    note = "renamed to `propose_config_update`; only valid against pre-chunked-upload binaries"
+)]
+pub const LEGACY_PROPOSE_UPDATE: &str = "propose_update";

@@ -27,6 +27,8 @@ pub mod types {
         ThresholdParameters, ThresholdParametersVotes, protocol_state_to_string,
     };
     pub use tee::NodeId;
+    #[expect(deprecated)]
+    pub use updates::LegacyProposeUpdateArgs;
     pub use updates::{ProposedUpdates, UpdateHash};
 
     // Re-export hash types used in attestation DTO fields

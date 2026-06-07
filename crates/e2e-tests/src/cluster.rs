@@ -902,17 +902,19 @@ impl MpcCluster {
             "cannot propose contract update with no nodes"
         );
 
-        let propose_args = ProposeUpdateArgsBorsh {
-            code: Some(new_wasm),
-            config: None,
-        };
         let proposer_client = self.operator_client_for(PROPOSER_NODE_INDEX)?;
+        // The production contract being upgraded uses the legacy
+        // scheme without chunking.
+        #[expect(deprecated)]
         let outcome = self
             .contract
             .call_from_borsh_with_deposit(
                 &proposer_client,
-                method_names::PROPOSE_CONFIG_UPDATE,
-                propose_args,
+                method_names::LEGACY_PROPOSE_UPDATE,
+                near_mpc_contract_interface::types::LegacyProposeUpdateArgs {
+                    code: Some(new_wasm.to_vec()),
+                    config: None,
+                },
                 CONTRACT_UPDATE_GAS,
                 CONTRACT_UPDATE_DEPOSIT,
             )
@@ -1305,21 +1307,6 @@ async fn create_user_accounts(
         map.insert(account, key);
     }
     Ok(map)
-}
-
-/// Borsh-encoded mirror of the *legacy* `ProposeUpdateArgs` (the `{ code, config }`
-/// shape from production contract versions that predate the chunked-upload flow).
-/// The contract-upgrade-compatibility test
-/// boots the production binary and upgrades it in place, and that production binary
-/// still accepts an inline `code` blob via `propose_update`. The current contract
-/// dropped inline code uploads in favor of the chunked-upload flow, so this mirror
-/// intentionally does not match the current `mpc-contract::ProposeUpdateArgs`.
-/// `config` is modeled as `Option<()>` because we never propose a config-only update;
-/// the `None` discriminator is `[0u8]` regardless of the inner type.
-#[derive(borsh::BorshSerialize)]
-struct ProposeUpdateArgsBorsh<'a> {
-    code: Option<&'a [u8]>,
-    config: Option<()>,
 }
 
 /// JSON mirror of the contract's `UpdateId`. `propose_update` returns it and
