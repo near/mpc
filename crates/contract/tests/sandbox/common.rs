@@ -52,8 +52,8 @@ const LEGACY_CONTRACT_UPDATE_METHOD_NAME: &str = "propose_update";
 
 #[derive(borsh::BorshSerialize)]
 struct LegacyCodeUpdateArgs {
-    _config: Option<near_mpc_contract_interface::types::Config>,
     code: Option<Vec<u8>>,
+    _config: Option<near_mpc_contract_interface::types::Config>,
 }
 
 pub async fn create_account_given_id(
