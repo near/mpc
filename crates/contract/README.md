@@ -340,14 +340,18 @@ During development, it's recommended to build non-deterministically using [cargo
 cargo near build non-reproducible-wasm --features abi --manifest-path crates/contract/Cargo.toml --locked
 ```
 
-The contract can also be built deterministically via Nix. See
-[reproducible-builds.md](../../docs/reproducible-builds.md#mpc-contract) for the
-full workflow.
+The contract can also be built deterministically. The released artifact is the
+cargo-near reproducible build, which embeds NEP-330 metadata for third-party
+verifiers (requires `docker`):
 
 ```bash
-nix build .#mpc-contract
-sha256sum result/mpc_contract.wasm
+cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
+sha256sum target/near/mpc_contract/mpc_contract.wasm
 ```
+
+A Nix-based reproducible build is also available. See
+[reproducible-builds.md](../../docs/reproducible-builds.md#mpc-contract) for the
+full workflow and the difference between the two.
 
 ## TEE Specific information
 
