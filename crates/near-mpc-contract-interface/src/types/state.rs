@@ -450,6 +450,7 @@ pub fn protocol_state_to_string(contract_state: &ProtocolContractState) -> Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::participants::{ParticipantId, ParticipantInfo};
 
     #[test]
     fn test_protocol_state_serialization() {
@@ -474,8 +475,6 @@ mod tests {
     /// A proposal carrying a non-empty per-domain overlay, used by the
     /// `ProposedThresholdParameters` wire-lock tests.
     fn sample_proposal() -> ProposedThresholdParameters {
-        use crate::types::participants::{ParticipantId, ParticipantInfo};
-
         let participants = Participants {
             next_id: ParticipantId(1),
             participants: vec![(
