@@ -108,7 +108,7 @@ enum OldProtocolContractState {
 /// state written by the `3.11.2` contract still deserializes during migration.
 ///
 /// `protocol_state` carries the per-domain-threshold layout shift (#3169) and is shadowed
-/// by [`OldProtocolContractState`]; every other field is byte-identical to `3.11.2`.
+/// by `OldProtocolContractState`; every other field is byte-identical to `3.11.2`.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct MpcContract {
     protocol_state: OldProtocolContractState,
