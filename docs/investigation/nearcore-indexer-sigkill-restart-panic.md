@@ -146,9 +146,11 @@ branch.
 git clone git@github.com:near/mpc.git
 cd mpc
 git checkout barak/2121-contract-stale-attestation-test
-# Verified reproducer commit: 607e3e21 (SIGTERM handler + full indexer drain,
-# with nearcore 2.12.0-rc.2 resolved at fadb5c1). Any subsequent commit on
-# this branch also reproduces.
+# Branch shape: stacked on near/mpc PRs #3410 (SIGTERM handler) + #3486
+# (full indexer drain — block_until_all_instances_are_dropped() returns
+# cleanly in 2–6 s on shutdown). The trigger is on top as commit
+# `0c02d27a` (refresh attestation before concluding back-migration, #2121).
+# nearcore is resolved to 2.12.0 (the final tag) via main's Cargo.lock.
 
 # 2. Build the e2e test binaries (~5 min cold).
 cargo make e2e-tests-skip-build  # builds then skips on subsequent runs

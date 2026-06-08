@@ -1,12 +1,22 @@
 # CI E2E flake diagnostic — `migration_service__should_handle_back_migration_a_to_b_to_a`
 
-The `back-migration` E2E test on PR #3362 fails with two distinct nearcore panics — both triggered by SIGKILL of an mpc-node process during active block production followed by an immediate restart. The same test passes ~100% on the baseline branch (no #3362 code), so the bug is upstream in nearcore — but PR #3362's `submit_attestation_before_concluding_migration` is necessary to reach it, and the failure rate also depends on what activity happens on chain between forward conclude and the SIGKILL.
+The `back-migration` E2E test on PR #3362 fails with two distinct nearcore panics — both triggered by stopping an mpc-node process during active block production followed by an immediate restart. The same test passes ~100% on the baseline branch (no #3362 code), so the bug is upstream in nearcore — but PR #3362's `submit_attestation_before_concluding_migration` is necessary to reach it, and the failure rate also depends on what activity happens on chain between forward conclude and the restart.
+
+## Latest state (as of 2026-06-08)
+
+The bug is upstream in nearcore — confirmed empirically with maximal embedder-side mitigation:
+
+- PR #3362's branch is now stacked on **PR #3410** (real SIGTERM handler) + **PR #3486** (full indexer-thread drain — `block_until_all_instances_are_dropped()` returns cleanly in 2–6 s, all `Arc<RocksDB>` refs released, indexer's tokio runtime dropped). nearcore is resolved to `2.12.0` (the final tag).
+- Even with that maximal graceful-shutdown stack, the back-migration test still panics ~80 % per run on the prototype branch's `607e3e21`. See "Real SIGTERM handler in mpc-node — also does not fix it" below.
+- The bug is **latent on current `main`** because the trigger (`submit_attestation_before_concluding_migration`, in PR #3362) hasn't merged. A 5/5 confirmation campaign on `main` + PR #3486 (no #3362 trigger) showed **0/5 fail**, re-confirming PR #3373's revert-experiment result.
+- Upstream-bug write-up is in [`nearcore-indexer-sigkill-restart-panic.md`](./nearcore-indexer-sigkill-restart-panic.md), ready to file against `near/nearcore`.
 
 > **Headline statistics.**
 > - **PR #3365 pre-merge** (no #3362 code): 0/15 fail.
 > - **PR #3362 against nearcore `aab31b0`** (initial branch state): 5/6 fail (~83%).
 > - **Revert experiment PR #3373** (PR #3362 minus the node-side fix, otherwise identical): 0/5 fail.
 > - **PR #3362 against nearcore `fadb5c1`** (after merging main, `Cargo.lock` bump within `2.12.0-rc.1`): back-migration test ~11/17 fail (~65%) combined across four sample batches.
+> - **PR #3486 against main, no #3362 trigger present** (5 runs on commit `7fecead3`): **0/5 fail**. Re-confirms the revert experiment — without the trigger, the upstream race isn't reached.
 > - **Focused-repro matrix** at the same commit — full 2⁴ on `(pre-sign, pre-ckd, post-sign, post-ckd)` plus SIGTERM counterparts for the worst variant and the back-migration test:
 >
 >   | # | pre-sign | pre-ckd | post-sign | post-ckd | Kill | Fail rate |
@@ -19,12 +29,12 @@ The `back-migration` E2E test on PR #3362 fails with two distinct nearcore panic
 >   | 13 | ✓ | ✓ | ✓ | — | SIGKILL | 3 / 10 (~30%) |
 >   | 14 | ✓ | ✓ | — | ✓ | SIGKILL | 3 / 10 (~30%) |
 >   | **15** | ✓ | ✓ | ✓ | ✓ | SIGKILL | **7 / 10 (~70%)** |
->   | 15-T | ✓ | ✓ | ✓ | ✓ | **SIGTERM 30s** | **2 / 2 (small)** |
->   | back-mig-T | ✓ | ✓ | ✓ | ✓ + back round | **SIGTERM 30s** | **2 / 2 (small)** |
+>   | 15-T | ✓ | ✓ | ✓ | ✓ | **SIGTERM 30s, no handler** | **2 / 2 (small)** |
+>   | back-mig-T | ✓ | ✓ | ✓ | ✓ + back round | **SIGTERM 30s, no handler** | **2 / 2 (small)** |
 >
 > The revert experiment proves PR #3362's code is *necessary* to reach the bug. The focused-repro matrix proves it isn't *sufficient* on its own — all four activity types (pre-sign + pre-ckd + post-sign + post-ckd) need to be present to reach ~70% reproduction. Drop any one and the rate falls to ~30% or zero. The back-migration round itself adds nothing.
 >
-> **No teardown change we've tried prevents the panic.** SIGTERM at 30 s grace fails 2 / 2 — but it turns out `mpc-node` has no SIGTERM handler, so the "graceful" path was effectively identical to SIGKILL. Drain-via-`listen_blocks.flag` then SIGKILL fails 5 / 5 — the flag only pauses our consumer-side; the panic is on nearcore's producer-side. A real graceful shutdown of mpc-node doesn't exist today (no SIGTERM handler, no `/shutdown` endpoint) and adding one is a separate piece of work.
+> **No teardown change prevents the panic — including a real graceful shutdown.** Initial SIGTERM-at-30s observations failed 2/2, but at that time `mpc-node` had no SIGTERM handler so the "graceful" path was effectively identical to SIGKILL. We later landed a real SIGTERM handler ([PR #3410](https://github.com/near/mpc/pull/3410)) plus full indexer-thread drain ([PR #3486](https://github.com/near/mpc/pull/3486)) — diagnostic confirms the indexer's tokio runtime is dropped, every `Arc<RocksDB>` is released, and `block_until_all_instances_are_dropped()` returns in 2–6 s. The panic still fires at ~80% on the back-migration test. Drain-via-`listen_blocks.flag` then SIGKILL fails 5/5 — the flag only pauses our consumer-side; the panic is on nearcore's producer-side. The fix has to be in nearcore.
 
 ---
 
@@ -357,12 +367,18 @@ The user-visible result is the same in both cases: A0's indexer-height metric ne
 
 ## Recommended follow-ups
 
-1. **Open an upstream nearcore issue.** Draft is ready at [`nearcore-indexer-sigkill-restart-panic.md`](./nearcore-indexer-sigkill-restart-panic.md) — self-contained, formatted as a GitHub issue body. Title suggestion: *"`near-indexer` panics on restart in `streamer/mod.rs:207` / `client_actor.rs:217` after stop+start, even with a graceful nearcore shutdown"*. The draft now includes the SIGTERM-handler campaign showing 4/5 fail even after a verified 100 ms graceful `shutdown_all_actors` — which is the cleanest single piece of evidence that the bug is upstream and not in how we shut down.
-2. **Decide what to do with the two remaining repro tests in PR #3362.** Variant 15 and the back-migration test both fail ~100% in this state. Options:
-   - Mark both `#[ignore]` with a note linking the upstream issue, so CI is green without removing the regression coverage.
-   - Use `reset_and_start_nodes` (wipes home dir) instead of `start_nodes` for the kill+restart step. The test becomes stable but loses the "keyshares preserved across restart" semantic that's the whole point of the back-migration model.
-   - Leave them flaky until nearcore is fixed.
-3. **Don't block PR #3362 on this flake.** The panics are inside nearcore code paths, not in #3362's diff. The stale-attestation node fix is independent and demonstrably correct (covered by the contract-sandbox tests in the same PR).
-4. **Factor the stderr-tail diagnostic** out of #3362 into a small standalone follow-up. It's a generally useful CI debuggability improvement and it has now paid off many times in surfacing this upstream bug.
-5. **~~mpc-node has no graceful-shutdown path — file a separate issue.~~** **In flight: [issue #3409](https://github.com/near/mpc/issues/3409) + [PR #3410](https://github.com/near/mpc/pull/3410).** The handler routes SIGTERM into the existing internal shutdown channel and calls `near_async::shutdown_all_actors()` before exit. Confirmed working in CI: 5/5 graceful shutdowns at 100 ms, no SIGKILL fallback. As called out in the "Real SIGTERM handler in mpc-node — also does not fix it" section above, the handler is a real production improvement (operators using dstack/Docker/Kubernetes/systemd now get graceful shutdown semantics) but **does not prevent the upstream nearcore panic**, which fires non-deterministically regardless of shutdown cleanliness. A more complete shutdown — wiring a `CancellationToken` through the indexer thread so `block_until_all_instances_are_dropped` could safely run — is a follow-up that's not necessary for the production improvement landed in #3410.
-6. **Close PR #3373** once it has served its diagnostic purpose; no merge is intended.
+Open:
+
+1. **Decide what to do with the back-migration test in PR #3362.** It fails ~80% per run on this branch (with the trigger + maximal graceful shutdown). Options:
+   - Mark `#[ignore]` with a note linking the upstream nearcore issue, so CI is green without removing the regression coverage. Recommended.
+   - Use `reset_and_start_nodes` (wipes home dir) instead of `start_nodes` for the kill+restart step. Test becomes stable but loses the "keyshares preserved across restart" semantic that's the whole point of the back-migration model. Not recommended.
+   - Leave it flaky until nearcore is fixed. Not recommended — CI signal degrades.
+2. **Don't block PR #3362 on this flake.** The panics are inside nearcore code paths, not in #3362's diff. The stale-attestation node fix is independent and demonstrably correct (covered by the contract-sandbox tests in the same PR).
+3. **Close PR #3373** once it has served its diagnostic purpose; no merge is intended.
+
+Done (kept here for record):
+
+4. ~~Open an upstream nearcore issue.~~ — draft ready at [`nearcore-indexer-sigkill-restart-panic.md`](./nearcore-indexer-sigkill-restart-panic.md), filing-ready.
+5. ~~File a `mpc-node has no graceful-shutdown path` issue.~~ — done: [#3409](https://github.com/near/mpc/issues/3409) + [PR #3410](https://github.com/near/mpc/pull/3410) (squashed, awaiting review). Handles SIGTERM + SIGINT + SIGHUP, routes into the existing shutdown channel, calls `near_async::shutdown_all_actors()` on exit.
+6. ~~Drain the indexer thread so `block_until_all_instances_are_dropped()` is safe to call.~~ — done: [#3485](https://github.com/near/mpc/issues/3485) + [PR #3486](https://github.com/near/mpc/pull/3486) (stacked on #3410). Wraps the indexer's terminal `listen_blocks` await in a `tokio::select!` against a `CancellationToken`; on cancel, the indexer's tokio runtime drops, every spawned monitor task is aborted, and all `Arc<RocksDB>` refs are released. `block_until_all_instances_are_dropped()` then returns cleanly in 2–6 s.
+7. ~~Factor the stderr-tail diagnostic out of #3362.~~ — landed in [#3410](https://github.com/near/mpc/pull/3410)'s e2e infra additions.
