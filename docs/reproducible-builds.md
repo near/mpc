@@ -49,10 +49,12 @@ The script will output the image hashes and other build information, which can b
 
 ## mpc-contract
 
-The MPC contract WASM is built reproducibly via two coexisting paths. They do
-**not** produce byte-identical output: the cargo-near build embeds an extra
-NEP-330 `build_info` metadata section that the Nix build omits, so their hashes
-differ by exactly that section. The released artifact is the cargo-near build.
+The MPC contract WASM is built reproducibly via two coexisting paths. Each is
+independently reproducible, but the two do **not** produce byte-identical output
+because they use different build environments: cargo-near builds inside a
+`sourcescan/cargo-near` Docker image and embeds NEP-330 `build_info` metadata,
+while Nix builds in its own sandbox. The cargo-near build is the released
+artifact; the Nix build is a fallback that is not used for releases.
 
 ### cargo-near (released artifact / third-party verifiers)
 
@@ -79,8 +81,8 @@ The Nix derivation at [`nix/mpc-contract.nix`](../nix/mpc-contract.nix) provides
 a hermetic toolchain (Rust pinned by `rust-toolchain.toml`, clang/LLVM, vendored
 cargo registry), so the build does not depend on a third-party Docker image. CI
 exercises it on every change as an independent reproducible path, and it is the
-quickest way to rebuild locally when you only need to compare contract logic
-(not the NEP-330 metadata):
+quickest way to rebuild the contract locally. It is a fallback and is not the
+released artifact; its output is not byte-identical to the cargo-near build:
 
 ```bash
 nix build .#mpc-contract
