@@ -175,12 +175,11 @@ A single test fires the bug:
   ```
 - **Test runtime:** ~100–110s on a failing run, ~50–60s on a passing run.
 
-### Reproduction via CI (recommended)
+### Reproduction via CI
 
 The easiest way to reproduce is to push to PR #3362's branch and let GitHub
 Actions run the test. CI builds everything from scratch and runs the test
-once; you can get N data points by pushing N times (or by fanning out to
-sister branches — see "Campaign protocol" below).
+once; you can get N data points by pushing N times.
 
 ```bash
 # 1. Authorize a push to PR #3362 or create a sister branch.
@@ -203,23 +202,6 @@ gh run watch <run-id>
 #
 #    or just `streamer/mod.rs:207` to jump right to the panic site.
 ```
-
-#### Campaign protocol — getting multiple data points in parallel
-
-CI's per-branch concurrency setting cancels in-progress runs on the same
-ref. To run N parallel CI campaigns of the same SHA, push the SHA to N
-sister branches:
-
-```bash
-SHA=$(git rev-parse HEAD)
-for i in 1 2 3 4 5; do
-  git push origin "$SHA:refs/heads/my-repro-campaign-run-$i"
-  gh workflow run CI --ref "my-repro-campaign-run-$i"
-done
-```
-
-Across recent 5-run campaigns, the back-migration test on PR #3362's head
-fails ~70–80%, with every failure carrying the same mode-A panic stack.
 
 ### Local reproduction
 
