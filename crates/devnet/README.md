@@ -272,7 +272,7 @@ To upgrade the contract, first propose the upgrade (suppose we wish to use the n
 contract code for the upgrade):
 
 ```shell
-mpc-devnet mpc $MPC_NETWORK_NAME propose-update-contract --path ../target/near/mpc_contract/mpc_contract.wasm
+mpc-devnet mpc $MPC_NETWORK_NAME propose-update-contract --path ../../target/near/mpc_contract/mpc_contract.wasm
 ```
 
 This will print out a command to run for voting for the upgrade:
