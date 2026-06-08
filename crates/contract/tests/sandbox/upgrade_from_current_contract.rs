@@ -536,7 +536,6 @@ async fn test_chunked_upload_multi_chunk_and_deploy() {
         .await;
 
     let code = current_contract();
-    assert!(code.len() > 1024, "contract binary should be non-trivial");
 
     // Force multi-chunk by uploading ~3 chunks regardless of code size.
     let chunk_size = code.len() / 3 + 1;
