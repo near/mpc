@@ -1,12 +1,12 @@
-use chain_gateway::event_subscriber::block_events::BlockContext;
-use chain_gateway::types::BlockHeight;
 use near_indexer_primitives::CryptoHash;
 use std::collections::{HashMap, VecDeque};
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 
-use super::metrics::{MPC_BLOCKS_INDEXED, MPC_FINALIZED_BLOCKS_INDEXED};
+use crate::event_subscriber::block_events::BlockContext;
+use crate::event_subscriber::metrics::{MPC_BLOCKS_INDEXED, MPC_FINALIZED_BLOCKS_INDEXED};
+use crate::types::BlockHeight;
 
 /// Tracks the topology of the recent blocks, using the blocks given by the indexer.
 ///
