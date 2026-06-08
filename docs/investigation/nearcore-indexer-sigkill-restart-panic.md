@@ -234,7 +234,7 @@ cargo nextest run --cargo-profile=test-release -p e2e-tests --all-features \
 ### What this PR adds that makes the bug strongly reproducible
 
 The relevant change is in
-[`crates/node/src/tee/remote_attestation.rs`](../../crates/node/src/tee/remote_attestation.rs)
+[`crates/node/src/tee/remote_attestation.rs`](https://github.com/near/mpc/blob/barak/2121-contract-stale-attestation-test/crates/node/src/tee/remote_attestation.rs)
 (see commit `1bcbb439` titled
 `fix(node): refresh attestation before concluding back-migration (#2121)`).
 It adds a function `submit_attestation_before_concluding_migration` that's
