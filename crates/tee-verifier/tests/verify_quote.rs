@@ -2,8 +2,12 @@
 //!
 //! Calls `TeeVerifier::verify_quote` directly (no Promise round-trip)
 //! with a real Dstack quote+collateral fixture taken from `test-utils`,
-//! and asserts the returned `VerifiedReport` matches the fixture's known
-//! value in full.
+//! and asserts the returned [`VerificationResult`]:
+//!
+//! - a valid quote yields [`VerificationResult::Verified`] carrying the
+//!   parsed report;
+//! - an invalid quote yields [`VerificationResult::Rejected`], returned as
+//!   the value of a successful call rather than a panic.
 
 #![allow(non_snake_case)]
 
@@ -11,7 +15,8 @@ use near_sdk::{test_utils::VMContextBuilder, testing_env};
 use std::time::Duration;
 use tee_verifier::TeeVerifier;
 use tee_verifier_interface::{
-    Collateral, QuoteBytes, Report, TDReport10, TcbStatus, TcbStatusWithAdvisory, VerifiedReport,
+    Collateral, QuoteBytes, Report, TDReport10, TcbStatus, TcbStatusWithAdvisory,
+    VerificationResult, VerifiedReport, VerifierError,
 };
 use test_utils::attestation::{VALID_ATTESTATION_TIMESTAMP, collateral as collateral_json, quote};
 
@@ -42,26 +47,30 @@ fn make_quote_bytes() -> QuoteBytes {
     QuoteBytes(Vec::from(quote()))
 }
 
-#[test]
-fn verify_quote__should_return_up_to_date_td10_report_for_valid_fixture() {
-    // Given
+/// Sets a VM context whose block timestamp makes the fixture's collateral
+/// current, so DCAP verification of the valid fixture succeeds.
+fn set_valid_timestamp_context() {
     let block_timestamp_ns = Duration::from_secs(VALID_ATTESTATION_TIMESTAMP).as_nanos() as u64;
     testing_env!(
         VMContextBuilder::new()
             .block_timestamp(block_timestamp_ns)
             .build()
     );
+}
+
+#[test]
+fn verify_quote__should_return_verified_td10_report_for_valid_fixture() {
+    // Given
+    set_valid_timestamp_context();
     let contract = TeeVerifier::default();
     let quote = make_quote_bytes();
     let collateral = make_collateral();
 
     // When
-    let report = contract
-        .verify_quote(quote, collateral)
-        .expect("valid fixture should verify");
+    let result = contract.verify_quote(quote, collateral);
 
     // Then
-    let expected = VerifiedReport {
+    let expected_report = VerifiedReport {
         status: "UpToDate".to_string(),
         advisory_ids: vec![],
         report: Report::TD10(TDReport10 {
@@ -113,7 +122,51 @@ fn verify_quote__should_return_up_to_date_td10_report_for_valid_fixture() {
             advisory_ids: vec![],
         },
     };
-    assert_eq!(report, expected);
+    assert_eq!(result, VerificationResult::Verified(expected_report));
+}
+
+#[test]
+fn verify_quote__should_reject_without_panicking_for_invalid_quote() {
+    // Given: a structurally broken quote against otherwise-valid collateral.
+    set_valid_timestamp_context();
+    let contract = TeeVerifier::default();
+    let invalid_quote = QuoteBytes(vec![0u8; 16]);
+    let collateral = make_collateral();
+
+    // When
+    let result = contract.verify_quote(invalid_quote, collateral);
+
+    // Then: a Rejected value, not a panic, and it carries a reason.
+    assert!(
+        matches!(
+            result,
+            VerificationResult::Rejected(VerifierError::DcapVerification(_))
+        ),
+        "expected Rejected(DcapVerification(_)), got {result:?}"
+    );
+}
+
+#[test]
+fn verify_quote__should_reject_valid_quote_with_mismatched_collateral() {
+    // Given: the real fixture quote, but collateral whose signed material has
+    // been corrupted so the DCAP signature chain no longer matches.
+    set_valid_timestamp_context();
+    let contract = TeeVerifier::default();
+    let quote = make_quote_bytes();
+    let mut collateral = make_collateral();
+    collateral.tcb_info = String::from("{}");
+
+    // When
+    let result = contract.verify_quote(quote, collateral);
+
+    // Then
+    assert!(
+        matches!(
+            result,
+            VerificationResult::Rejected(VerifierError::DcapVerification(_))
+        ),
+        "expected Rejected(DcapVerification(_)), got {result:?}"
+    );
 }
 
 fn hex_arr<const N: usize>(s: &str) -> [u8; N] {

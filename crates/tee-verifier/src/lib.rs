@@ -8,25 +8,11 @@
 //!
 //! See `docs/design/attestation-verifier-contract.md` for the design.
 
-use near_sdk::{FunctionError, env, near};
-use tee_verifier_interface::{Collateral, QuoteBytes, VerifiedReport};
+use near_sdk::{env, near};
+use tee_verifier_interface::{Collateral, QuoteBytes, VerificationResult, VerifierError};
 
 mod conversions;
 use conversions::{IntoDcapType as _, IntoInterfaceType as _};
-
-/// Failure returned by [`TeeVerifier::verify_quote`].
-#[derive(Debug, thiserror::Error)]
-pub enum VerifierError {
-    /// `dcap_qvl::verify::verify` rejected the quote / collateral.
-    #[error("dcap verification failed: {0}")]
-    DcapVerification(String),
-}
-
-impl FunctionError for VerifierError {
-    fn panic(&self) -> ! {
-        env::panic_str(&self.to_string())
-    }
-}
 
 // `dcap-qvl`'s `contract` feature pulls in `getrandom` but doesn't enable
 // any backend. On `wasm32-unknown-unknown` we register a custom impl that
@@ -48,21 +34,32 @@ impl TeeVerifier {
     /// Verify a TDX quote against Intel collateral.
     ///
     /// Calls `dcap_qvl::verify::verify` with the current block timestamp
-    /// and returns the parsed `VerifiedReport` on success. The caller is
-    /// responsible for any post-DCAP policy (RTMR3 replay, report-data
-    /// binding, measurement allowlist matching, etc.).
-    #[handle_result]
+    /// and returns `VerificationResult::Verified(report)` on success. The
+    /// caller is responsible for any post-DCAP policy (RTMR3 replay,
+    /// report-data binding, measurement allowlist matching, etc.).
+    ///
+    /// A rejected quote returns [`VerificationResult::Rejected`] as the
+    /// **value** of a *successful* receipt — deliberately not via
+    /// `#[handle_result]`. near-sdk serializes the returned enum through
+    /// `env::value_return`, so an on-chain caller's `#[callback_result]` sees
+    /// `Ok(VerificationResult::Rejected(_))` and can distinguish "verifier
+    /// rejected this quote" from `Err(PromiseError::Failed)` ("verifier
+    /// unreachable / crashed / timed out"). A failed receipt would carry no
+    /// payload and collapse both into the same opaque failure.
     #[result_serializer(borsh)]
     pub fn verify_quote(
         &self,
         #[serializer(borsh)] quote: QuoteBytes,
         #[serializer(borsh)] collateral: Collateral,
-    ) -> Result<VerifiedReport, VerifierError> {
+    ) -> VerificationResult {
         let now_seconds = env::block_timestamp_ms() / 1000;
         let quote_bytes: Vec<u8> = quote.into_dcap_type();
         let collateral = collateral.into_dcap_type();
-        dcap_qvl::verify::verify(&quote_bytes, &collateral, now_seconds)
-            .map(|report| report.into_interface_type())
-            .map_err(|err| VerifierError::DcapVerification(format!("{err}")))
+        match dcap_qvl::verify::verify(&quote_bytes, &collateral, now_seconds) {
+            Ok(report) => VerificationResult::Verified(report.into_interface_type()),
+            Err(err) => {
+                VerificationResult::Rejected(VerifierError::DcapVerification(format!("{err}")))
+            }
+        }
     }
 }
