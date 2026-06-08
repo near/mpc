@@ -1,5 +1,8 @@
 use crate::sandbox::utils::{
-    consts::{CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_INIT, PARTICIPANT_LEN},
+    consts::{
+        CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_FINALIZE_CONTRACT_UPLOAD, GAS_FOR_INIT,
+        GAS_FOR_START_CONTRACT_UPLOAD, GAS_FOR_UPLOAD_CONTRACT_CHUNK, PARTICIPANT_LEN,
+    },
     contract_build::current_contract,
     initializing_utils::{start_keygen_instance, vote_add_domains, vote_public_key},
     mpc_contract::{assert_running_return_threshold, get_state, submit_participant_info},
@@ -447,7 +450,7 @@ pub async fn chunked_upload_contract(
             total_size: std::num::NonZeroUsize::new(code.len())
                 .expect("contract code must be non-empty"),
         })
-        .max_gas()
+        .gas(GAS_FOR_START_CONTRACT_UPLOAD)
         .deposit(NearToken::from_yoctonear(1))
         .transact()
         .await
@@ -461,7 +464,7 @@ pub async fn chunked_upload_contract(
             .args_borsh(UploadContractChunkArgs {
                 data: chunk.to_vec(),
             })
-            .max_gas()
+            .gas(GAS_FOR_UPLOAD_CONTRACT_CHUNK)
             .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
             .transact()
             .await
@@ -473,7 +476,7 @@ pub async fn chunked_upload_contract(
     let finalize_execution = proposer
         .call(contract.id(), method_names::FINALIZE_CONTRACT_UPLOAD)
         .args_borsh(())
-        .max_gas()
+        .gas(GAS_FOR_FINALIZE_CONTRACT_UPLOAD)
         .transact()
         .await
         .expect("finalize_contract_upload call succeeds");

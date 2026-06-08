@@ -32,6 +32,9 @@ pub const GAS_FOR_VOTE_UPDATE: Gas = Gas::from_tgas(260);
 /// These votes are cheap because they only record the vote without triggering the actual
 /// contract update deployment and migration.
 pub const GAS_FOR_VOTE_BEFORE_THRESHOLD: Gas = Gas::from_tgas(5);
+pub const GAS_FOR_START_CONTRACT_UPLOAD: Gas = Gas::from_tgas(5);
+pub const GAS_FOR_UPLOAD_CONTRACT_CHUNK: Gas = Gas::from_tgas(200);
+pub const GAS_FOR_FINALIZE_CONTRACT_UPLOAD: Gas = Gas::from_tgas(200);
 /// Maximum gas expected for the threshold vote that triggers the contract update.
 /// This vote is more expensive because it deploys the new contract code and executes
 /// the migration function.

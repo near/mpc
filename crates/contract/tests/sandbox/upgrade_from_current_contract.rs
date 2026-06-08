@@ -5,8 +5,9 @@ use crate::sandbox::{
     },
     utils::{
         consts::{
-            ALL_PROTOCOLS, CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_BEFORE_THRESHOLD,
-            GAS_FOR_VOTE_UPDATE, MAX_GAS_FOR_THRESHOLD_VOTE, PARTICIPANT_LEN,
+            ALL_PROTOCOLS, CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_START_CONTRACT_UPLOAD,
+            GAS_FOR_UPLOAD_CONTRACT_CHUNK, GAS_FOR_VOTE_BEFORE_THRESHOLD, GAS_FOR_VOTE_UPDATE,
+            MAX_GAS_FOR_THRESHOLD_VOTE, PARTICIPANT_LEN,
         },
         contract_build::{current_contract, large_contract, migration_contract},
         interface::IntoContractType,
@@ -545,7 +546,7 @@ async fn test_chunked_upload_multi_chunk_and_deploy() {
         .args_borsh(StartContractUploadArgs {
             total_size: NonZeroUsize::new(code.len()).unwrap(),
         })
-        .max_gas()
+        .gas(GAS_FOR_START_CONTRACT_UPLOAD)
         .deposit(NearToken::from_yoctonear(1))
         .transact()
         .await
@@ -560,7 +561,7 @@ async fn test_chunked_upload_multi_chunk_and_deploy() {
             .args_borsh(UploadContractChunkArgs {
                 data: chunk.to_vec(),
             })
-            .max_gas()
+            .gas(GAS_FOR_UPLOAD_CONTRACT_CHUNK)
             .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
             .transact()
             .await
@@ -675,7 +676,7 @@ async fn test_chunked_upload_exceeding_total_size_rejected() {
         .args_borsh(StartContractUploadArgs {
             total_size: NonZeroUsize::new(10).unwrap(),
         })
-        .max_gas()
+        .gas(GAS_FOR_START_CONTRACT_UPLOAD)
         .deposit(NearToken::from_yoctonear(1))
         .transact()
         .await
@@ -688,7 +689,7 @@ async fn test_chunked_upload_exceeding_total_size_rejected() {
         .args_borsh(UploadContractChunkArgs {
             data: vec![0u8; 20], // exceeds declared total_size of 10
         })
-        .max_gas()
+        .gas(GAS_FOR_UPLOAD_CONTRACT_CHUNK)
         .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
         .transact()
         .await
@@ -716,7 +717,7 @@ async fn test_chunked_upload_finalize_incomplete_rejected() {
         .args_borsh(StartContractUploadArgs {
             total_size: NonZeroUsize::new(100).unwrap(),
         })
-        .max_gas()
+        .gas(GAS_FOR_START_CONTRACT_UPLOAD)
         .deposit(NearToken::from_yoctonear(1))
         .transact()
         .await
@@ -729,7 +730,7 @@ async fn test_chunked_upload_finalize_incomplete_rejected() {
         .args_borsh(UploadContractChunkArgs {
             data: vec![0u8; 50],
         })
-        .max_gas()
+        .gas(GAS_FOR_UPLOAD_CONTRACT_CHUNK)
         .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
         .transact()
         .await
@@ -866,7 +867,7 @@ async fn test_finalize_contract_upload_insufficient_deposit_rejected() {
         .args_borsh(StartContractUploadArgs {
             total_size: NonZeroUsize::new(1).unwrap(),
         })
-        .max_gas()
+        .gas(GAS_FOR_START_CONTRACT_UPLOAD)
         .deposit(NearToken::from_yoctonear(1))
         .transact()
         .await

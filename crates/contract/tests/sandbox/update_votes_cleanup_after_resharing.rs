@@ -1,7 +1,10 @@
 use crate::sandbox::{
     common::{SandboxTestSetup, chunked_upload_contract},
     utils::{
-        consts::{GAS_FOR_VOTE_NEW_DOMAIN, GAS_FOR_VOTE_UPDATE},
+        consts::{
+            GAS_FOR_START_CONTRACT_UPLOAD, GAS_FOR_UPLOAD_CONTRACT_CHUNK, GAS_FOR_VOTE_NEW_DOMAIN,
+            GAS_FOR_VOTE_UPDATE,
+        },
         mpc_contract::{
             assert_running_return_participants, assert_running_return_threshold, get_state,
         },
@@ -167,7 +170,7 @@ async fn staged_uploads_from_kicked_out_participants_are_cleared_after_resharing
         .args_borsh(StartContractUploadArgs {
             total_size: std::num::NonZeroUsize::new(chunk.len()).unwrap(),
         })
-        .max_gas()
+        .gas(GAS_FOR_START_CONTRACT_UPLOAD)
         .deposit(NearToken::from_yoctonear(1))
         .transact()
         .await?
@@ -179,7 +182,7 @@ async fn staged_uploads_from_kicked_out_participants_are_cleared_after_resharing
         .args_borsh(UploadContractChunkArgs {
             data: chunk.clone(),
         })
-        .max_gas()
+        .gas(GAS_FOR_UPLOAD_CONTRACT_CHUNK)
         .deposit(chunk_deposit)
         .transact()
         .await?
