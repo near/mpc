@@ -43,9 +43,12 @@ Note - we currently only support bare metal and do not support virtualized TDX s
 
 * Intel Xeon 5th/6th Generation CPU (TDX Support) and 8 RAM slots filled
   See [Intel TDX HW requirements](https://cc-enabling.trustedservices.intel.com/intel-tdx-enabling-guide/03/hardware_selection/)
-* Memory - 64GB
-* (v)Cores - 8
-* Disk space - 500GB, SSD NVMe or similar performance
+
+The memory, cores, and disk below are the resources consumed by a single MPC CVM. Because you may need to run two CVMs concurrently while migrating to a new launcher version, size your TDX host for at least **2x** these values, plus some margin.
+
+* Memory - 64GB per CVM
+* (v)Cores - 8 per CVM
+* Disk space - 1TB (1000 GB) per CVM, SSD NVMe or similar performance
 
 For a list of supported cloud providers offering bare metal servers with Intel TDX, see [Cloud Providers Supporting Bare Metal Servers with Intel TDX](./cloud-providers-tdx.md).
 
@@ -405,7 +408,11 @@ Create a Dockerfile file with the following contents:
 ```shell
 # Dockerfile
 FROM rust:1.86.0@sha256:300ec56abce8cc9448ddea2172747d048ed902a3090e6b57babb2bf19f754081 AS kms-builder
-ARG DSTACK_REV
+# Pinned to a commit (immutable) rather than a tag (which can be moved). This is
+# the dstack v0.5.8 commit — matches the guest OS image this guide uses (the
+# `dstack-0.5.8/` dir you cd into below). For a different OS-image version,
+# override with the matching commit: --build-arg DSTACK_REV=<commit>
+ARG DSTACK_REV=368c62e7de5d4016bd75332824aa7f2ef1d7d19e
 WORKDIR /build
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -417,21 +424,33 @@ RUN apt-get update && \
     libprotobuf-dev \
     clang \
     libclang-dev
-RUN git clone https://github.com/Dstack-TEE/dstack.git && \
-    cd dstack
+RUN git clone https://github.com/Dstack-TEE/dstack.git
 RUN rustup target add x86_64-unknown-linux-musl
-RUN cd dstack && cargo build --release -p dstack-mr-cli --target x86_64-unknown-linux-musl
+# Build dstack-mr from the SAME dstack version as your guest OS image (DSTACK_REV).
+# Building from master is not reproducible: the measurement logic changes between
+# releases and may compute different MRTD/RTMR values than the on-chain set was
+# generated with.
+RUN cd dstack && git checkout "${DSTACK_REV}" && \
+    cargo build --release -p dstack-mr-cli --target x86_64-unknown-linux-musl
 
-FROM kvin/kms:latest
+# kvin/kms supplies the `dstack-acpi-tables` helper (feeds RTMR0). Pinned by digest
+# (not the moving `:latest`) for reproducible measurements: this digest reproduces
+# the MRTD/RTMR0-2 published on-chain in `v1.signer`'s `allowed_os_measurements`
+# (the same values shown in the example output below), so an operator can re-check
+# it. It is a third-party image; a NEAR/Dstack-owned published image would be a
+# better long-term trust root.
+FROM kvin/kms@sha256:ad6a8c5c43aed7278e665cd0960ae5be95060847f7d517633be685cabda95a3d
 COPY --from=kms-builder /build/dstack/target/x86_64-unknown-linux-musl/release/dstack-mr /usr/local/bin/
 ENTRYPOINT ["dstack-mr"]
 CMD []
 ```
 
-Build:
+Build. Pass `DSTACK_REV` = the **commit** matching your guest OS image's dstack
+version (here the v0.5.8 commit), so `dstack-mr`'s measurement logic matches the
+image and the on-chain values:
 
 ```bash
-docker build . -t dstack-mr
+docker build --build-arg DSTACK_REV=368c62e7de5d4016bd75332824aa7f2ef1d7d19e -t dstack-mr .
 ```
 
 Run:
@@ -841,7 +860,7 @@ Use the following custom settings for MPC:
 
 1. Launcher docker compose file - provided above.
 2. VM HW setting (use exactly those settings, since vCPU/Memory are measured):
-    vCPU number=8, Memory = 64GB, disk = 500 GB
+    vCPU number=8, Memory = 64GB, disk = 1000 GB
 3. Pre-launch Script and Init Script - both must be empty (a non-empty script fails attestation). Caution: the Pre-launch Script may not be empty by default - clear it before deploying.
 4. user-config - provided above
 5. Toggles:

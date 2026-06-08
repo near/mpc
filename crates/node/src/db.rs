@@ -24,11 +24,6 @@ impl std::fmt::Debug for SecretDB {
 /// Each DBCol corresponds to a column family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DBCol {
-    /// Legacy triple column: keys are `borsh(UniqueId)` with no prefix.
-    /// Kept alongside `TripleV2` during the rollout so that a downgrade can
-    /// still find triples this binary wrote.
-    /// TODO(#3298): remove once all production nodes have upgraded past 3.11.
-    Triple,
     /// Per-`t` triple column: keys are `[t as u64 BE][borsh(UniqueId)]`. A
     /// triple is stored under the threshold it was generated with so that
     /// presign can draw from a store of matching `t`.
@@ -43,7 +38,6 @@ pub enum DBCol {
 impl DBCol {
     fn as_str(&self) -> &'static str {
         match self {
-            DBCol::Triple => "triple",
             DBCol::TripleV2 => "triple_v2",
             DBCol::Presignature => "presignature",
             DBCol::SignRequest => "sign_request",
@@ -53,9 +47,8 @@ impl DBCol {
         }
     }
 
-    fn all() -> [DBCol; 7] {
+    fn all() -> [DBCol; 6] {
         [
-            DBCol::Triple,
             DBCol::TripleV2,
             DBCol::Presignature,
             DBCol::SignRequest,
@@ -110,7 +103,21 @@ impl SecretDB {
             .into_iter()
             .collect();
         let all_cfs: Vec<&String> = known_cfs.union(&on_disk_cfs).collect();
-        let db = rocksdb::DB::open_cf(&options, path, &all_cfs)?;
+        let mut db = rocksdb::DB::open_cf(&options, path, &all_cfs)?;
+
+        // One-time cleanup: drop the legacy unprefixed triple column family
+        // (former `DBCol::Triple`) if a pre-3.12 binary left it on disk. Its
+        // contents are dead — every triple now lives in the per-`t`
+        // `DBCol::TripleV2`. Dropping reclaims the SST files rather than leaving
+        // tombstones behind.
+        // TODO(#3456): remove this cleanup once 3.12 has rolled out to all
+        // nodes, so no node still carries the column on disk.
+        let legacy_triple = "triple";
+        if on_disk_cfs.contains(legacy_triple) {
+            db.drop_cf(legacy_triple)?;
+            tracing::info!("Dropped legacy '{legacy_triple}' column family on startup");
+        }
+
         Ok(Self { db, cipher }.into())
     }
 
@@ -145,24 +152,6 @@ impl SecretDB {
         let iter = self
             .db
             .iterator_cf_opt(&self.cf_handle(col), iter_opt, iter_mode);
-        iter.map(move |result| {
-            let (key, value) = result?;
-            let value = decrypt(&self.cipher, &value)?;
-            anyhow::Ok((key, value))
-        })
-    }
-
-    /// Iterates every key/value in the column with no upper bound. Use this
-    /// instead of `iter_range(col, &[], &[0xFF; N])` whenever a full-column
-    /// scan is intended — the latter silently skips rows whose keys are ≥ the
-    /// sentinel, which is fragile against future key-schema growth.
-    pub fn iter_all(
-        &self,
-        col: DBCol,
-    ) -> impl Iterator<Item = anyhow::Result<(Box<[u8]>, Vec<u8>)>> + '_ {
-        let iter = self
-            .db
-            .iterator_cf(self.cf_handle(col), IteratorMode::Start);
         iter.map(move |result| {
             let (key, value) = result?;
             let value = decrypt(&self.cipher, &value)?;
@@ -267,23 +256,23 @@ mod tests {
         let db = SecretDB::new(dir.path(), [1; 16])?;
         let mut update = db.update();
         update.put(DBCol::Presignature, b"key", b"value");
-        update.put(DBCol::Triple, b"triple1", b"tripledata");
+        update.put(DBCol::TripleV2, b"triple1", b"tripledata");
         update.put(
-            DBCol::Triple,
+            DBCol::TripleV2,
             b"triple2",
             b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         );
-        update.put(DBCol::Triple, b"triple3", b"");
+        update.put(DBCol::TripleV2, b"triple3", b"");
         update.commit()?;
         assert_eq!(db.get(DBCol::Presignature, b"key")?.unwrap(), b"value");
-        assert_eq!(db.get(DBCol::Triple, b"triple1")?.unwrap(), b"tripledata");
+        assert_eq!(db.get(DBCol::TripleV2, b"triple1")?.unwrap(), b"tripledata");
         assert_eq!(
-            db.get(DBCol::Triple, b"triple2")?.unwrap(),
+            db.get(DBCol::TripleV2, b"triple2")?.unwrap(),
             b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         );
-        assert_eq!(db.get(DBCol::Triple, b"triple3")?.unwrap(), b"");
+        assert_eq!(db.get(DBCol::TripleV2, b"triple3")?.unwrap(), b"");
 
-        let mut iter = db.iter_range(DBCol::Triple, b"triple1", b"triple3");
+        let mut iter = db.iter_range(DBCol::TripleV2, b"triple1", b"triple3");
         assert_eq!(
             iter.next().unwrap().unwrap(),
             (
@@ -299,19 +288,48 @@ mod tests {
             )
         );
         let mut update = db.update();
-        update.delete(DBCol::Triple, b"triple1");
+        update.delete(DBCol::TripleV2, b"triple1");
         update.commit()?;
-        assert_eq!(db.get(DBCol::Triple, b"triple1")?, None);
+        assert_eq!(db.get(DBCol::TripleV2, b"triple1")?, None);
 
         // Sanity check that the DB does encrypt the value.
         assert!(
-            !db.get_ciphertext(DBCol::Triple, b"triple2")
+            !db.get_ciphertext(DBCol::TripleV2, b"triple2")
                 .unwrap()
                 .unwrap()
                 .is_ascii()
         );
 
         Ok(())
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn secret_db_new__should_drop_legacy_triple_column_family_on_startup() {
+        // Given a DB that still carries the populated legacy "triple" column
+        // family on disk (as a pre-3.12 binary would have left it).
+        let dir = tempfile::tempdir().expect("tempdir should be created");
+        let key = [1; 16];
+        let legacy_triple = "triple";
+        {
+            let mut options = rocksdb::Options::default();
+            options.create_if_missing(true);
+            options.create_missing_column_families(true);
+            let cfs = [legacy_triple, "triple_v2", "presignature"];
+            let db = rocksdb::DB::open_cf(&options, dir.path(), cfs).expect("db should open");
+            let cf = db.cf_handle(legacy_triple).unwrap();
+            db.put_cf(&cf, b"key", b"value").unwrap();
+        }
+
+        // When the DB is opened through SecretDB and then closed.
+        {
+            let _db = SecretDB::new(dir.path(), key).expect("SecretDB should open");
+        }
+
+        // Then the legacy column family is gone from disk.
+        let options = rocksdb::Options::default();
+        let on_disk = rocksdb::DB::list_cf(&options, dir.path()).expect("list_cf should succeed");
+        assert!(!on_disk.contains(&legacy_triple.to_string()));
     }
 
     #[test]

@@ -10,11 +10,12 @@
 use std::collections::BTreeMap;
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use near_mpc_contract_interface::types::{self as dtos, VerifyForeignTransactionRequest};
+use near_mpc_contract_interface::types::{Metrics, VerifyForeignTransactionRequest};
 use near_sdk::{env, store::LookupMap};
 
 use crate::{
     Config, SupportedForeignChainsByNode,
+    foreign_chain_rpc::ForeignChainRpcWhitelist,
     node_migrations::NodeMigrations,
     primitives::{
         ckd::CKDRequest,
@@ -32,9 +33,9 @@ use crate::{
     update::ProposedUpdates,
 };
 
-/// `3.10.0` layout of `ThresholdParametersVotes`. The stored
+/// `3.11.2` layout of `ThresholdParametersVotes`. The stored
 /// `ThresholdParameters` (`{ participants, threshold }`) is byte-identical
-/// between 3.10.0 and the current layout, so no shadow is needed for it — the
+/// between 3.11.2 and the current layout, so no shadow is needed for it — the
 /// real type decodes old bytes directly. Only the vote *value* type changed:
 /// votes now carry [`ProposedThresholdParameters`], which appends a
 /// `per_domain_thresholds` overlay. Borsh is positional, so old vote bytes are
@@ -64,8 +65,8 @@ impl From<OldThresholdParametersVotes> for ThresholdParametersVotes {
     }
 }
 
-/// `3.10.0` layout of `RunningContractState`. The stored `parameters` use the
-/// real `ThresholdParameters` (byte-identical to 3.10.0); only `parameters_votes`
+/// `3.11.2` layout of `RunningContractState`. The stored `parameters` use the
+/// real `ThresholdParameters` (byte-identical to 3.11.2); only `parameters_votes`
 /// needs the [`OldThresholdParametersVotes`] shadow.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 struct OldRunningContractState {
@@ -90,7 +91,7 @@ impl From<OldRunningContractState> for RunningContractState {
     }
 }
 
-/// `3.10.0` layout of `ProtocolContractState`. Only the `Running` variant
+/// `3.11.2` layout of `ProtocolContractState`. Only the `Running` variant
 /// has a verified shadow — Initializing/Resharing reuse current types and
 /// would fail to deserialize old data, which matches the pre-existing
 /// "migration panics if not Running" policy.
@@ -102,59 +103,26 @@ enum OldProtocolContractState {
     Resharing(ResharingContractState),
 }
 
-/// In-flight requests inherited from the schema before the duplicate-request fan-out
-/// upgrade. Kept inlined here (rather than imported) so storage written by the 3.10
-/// contract still deserializes during migration. Dropped in the `From` impl below
-/// because the legacy window has closed.
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
-struct LegacyPendingRequests {
-    signature_requests: LookupMap<SignatureRequest, YieldIndex>,
-    ckd_requests: LookupMap<CKDRequest, YieldIndex>,
-    verify_foreign_tx_requests: LookupMap<VerifyForeignTransactionRequest, YieldIndex>,
-}
-
-/// `3.10.0`'s `MpcContract` layout, plus the per-domain-threshold layout shift
-/// in `protocol_state` (#3169). The trailing `foreign_chain_rpc_whitelist`
-/// uses the pre-reshape `OldForeignChainRpcWhitelist` and `legacy_pending_requests`
-/// retains its 3.10 borsh shape; both are discarded in the `From` impl.
+/// Keep this module in lock-step with [`crate::MpcContract`]: the moment a field's borsh
+/// layout diverges, shadow the old type here (see this module's history for examples) so
+/// state written by the `3.11.2` contract still deserializes during migration.
+///
+/// `protocol_state` carries the per-domain-threshold layout shift (#3169) and is shadowed
+/// by [`OldProtocolContractState`]; every other field is byte-identical to `3.11.2`.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct MpcContract {
     protocol_state: OldProtocolContractState,
     pending_signature_requests: LookupMap<SignatureRequest, Vec<YieldIndex>>,
     pending_ckd_requests: LookupMap<CKDRequest, Vec<YieldIndex>>,
-    pending_verify_foreign_tx_requests:
-        LookupMap<dtos::VerifyForeignTransactionRequest, Vec<YieldIndex>>,
+    pending_verify_foreign_tx_requests: LookupMap<VerifyForeignTransactionRequest, Vec<YieldIndex>>,
     proposed_updates: ProposedUpdates,
     node_foreign_chain_support: SupportedForeignChainsByNode,
     config: Config,
     tee_state: TeeState,
     accept_requests: bool,
     node_migrations: NodeMigrations,
-    legacy_pending_requests: LegacyPendingRequests,
-    metrics: dtos::Metrics,
-    foreign_chain_rpc_whitelist: OldForeignChainRpcWhitelist,
-}
-
-/// `3.10.0`'s whitelist field shape: a single nested `BTreeMap`, no vote storage. The
-/// `From` impl above discards it and default-initializes the current whitelist because
-/// `3.10.0` had no vote endpoint and so the map is guaranteed empty.
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
-pub struct OldForeignChainRpcWhitelist {
-    entries: BTreeMap<dtos::ForeignChain, BTreeMap<dtos::ProviderId, OldProviderEntry>>,
-}
-
-/// Local shadow of `3.10.0`'s `ProviderEntry` borsh shape. The current revision renamed
-/// the public DTO to `ProviderConfig` and dropped the `provider_id` field (it became the
-/// map key), so the public DTO no longer matches `3.10.0`'s on-disk bytes. `3.10.0`
-/// guarantees the outer map is empty, so this inner type is never actually deserialized
-/// — but the parent `BTreeMap<ProviderId, _>` still needs a concrete `V: BorshDeserialize`
-/// to satisfy the type bound on the derive.
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
-pub struct OldProviderEntry {
-    provider_id: dtos::ProviderId,
-    base_url: String,
-    auth_scheme: dtos::AuthScheme,
-    chain_routing: dtos::ChainRouting,
+    metrics: Metrics,
+    foreign_chain_rpc_whitelist: ForeignChainRpcWhitelist,
 }
 
 impl From<MpcContract> for crate::MpcContract {
@@ -163,11 +131,6 @@ impl From<MpcContract> for crate::MpcContract {
             env::panic_str("Contract must be in running state when migrating.");
         };
 
-        // `3.10.0` had no vote endpoint, so `old.foreign_chain_rpc_whitelist.entries`
-        // is guaranteed empty — drop it and default-initialize the current reshaped
-        // whitelist (empty `entries`, empty `votes.pending`). `legacy_pending_requests`
-        // is also discarded: the field was removed from `crate::MpcContract` (#3279)
-        // and the legacy window has closed.
         crate::MpcContract {
             protocol_state: ProtocolContractState::Running(running.into()),
             pending_signature_requests: old.pending_signature_requests,
@@ -180,7 +143,7 @@ impl From<MpcContract> for crate::MpcContract {
             accept_requests: old.accept_requests,
             node_migrations: old.node_migrations,
             metrics: old.metrics,
-            foreign_chain_rpc_whitelist: Default::default(),
+            foreign_chain_rpc_whitelist: old.foreign_chain_rpc_whitelist,
         }
     }
 }
@@ -194,7 +157,7 @@ mod tests {
     use near_sdk::{test_utils::VMContextBuilder, testing_env};
 
     /// Borsh round-trip *through the shadow type*: write a `ThresholdParametersVotes`
-    /// in the OLD 3.10.0 layout (vote values are bare `ThresholdParameters`, with no
+    /// in the OLD 3.11.2 layout (vote values are bare `ThresholdParameters`, with no
     /// `per_domain_thresholds`), decode it via [`OldThresholdParametersVotes`], run the
     /// real [`From`] migration, and assert each migrated vote becomes a
     /// `ProposedThresholdParameters` carrying an empty (no-change) overlay.
@@ -215,7 +178,7 @@ mod tests {
         let voter = AuthenticatedAccountId::new(&participants).unwrap();
 
         // and old-layout vote bytes: a single vote whose value is a bare
-        // `ThresholdParameters` (the 3.10.0 vote shape).
+        // `ThresholdParameters` (the 3.11.2 vote shape).
         let params = ThresholdParameters::new(participants, Threshold::new(n)).unwrap();
         let old = OldThresholdParametersVotes {
             proposal_by_account: BTreeMap::from([(voter.clone(), params)]),
