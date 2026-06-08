@@ -1,5 +1,7 @@
 # near-indexer: SIGKILL + restart panic in `streamer/mod.rs:207` and `client_actor.rs:217`
 
+> **Filed upstream as [`near/nearcore#15867`](https://github.com/near/nearcore/issues/15867).**
+
 ## TL;DR
 
 A process embedding `near-indexer`, when stopped during normal block production

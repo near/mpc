@@ -10,7 +10,7 @@ The bug is upstream in nearcore — confirmed empirically with maximal embedder-
 - **Latest CI run confirms the bug reproduces on this exact stack.** Commit `3a2ceafe` (PR #3362 head after the rebase), e2e job: the back-migration test failed at `migration_service.rs:771` with the upstream nearcore mode-A panic — `streamer/mod.rs:207` `` `receipt` must be present at this moment `` — captured in full via the new pre/post-restart stdout/stderr diagnostic.
 - Earlier, on the prototype branch's `607e3e21` (against nearcore `2.12.0-rc.2`), a 5-run campaign showed 1/5 pass, 4/5 fail with the same panic even after a verified 2–6 s clean graceful shutdown. See "Real SIGTERM handler in mpc-node — also does not fix it" below.
 - The bug is **latent on current `main`** because the trigger (`submit_attestation_before_concluding_migration`, in PR #3362) hasn't merged. A 5-run confirmation campaign on `main` + PR #3486 (no #3362 trigger) showed **0/5 fail**, re-confirming PR #3373's revert-experiment result.
-- Upstream-bug write-up is in [`nearcore-indexer-sigkill-restart-panic.md`](./nearcore-indexer-sigkill-restart-panic.md), ready to file against `near/nearcore`.
+- Filed upstream as [`near/nearcore#15867`](https://github.com/near/nearcore/issues/15867). Write-up was prepared in [`nearcore-indexer-sigkill-restart-panic.md`](./nearcore-indexer-sigkill-restart-panic.md).
 
 > **Headline statistics.**
 > - **PR #3365 pre-merge** (no #3362 code): 0/15 fail.
@@ -379,7 +379,7 @@ Open:
 
 Done (kept here for record):
 
-4. ~~Open an upstream nearcore issue.~~ — draft ready at [`nearcore-indexer-sigkill-restart-panic.md`](./nearcore-indexer-sigkill-restart-panic.md), filing-ready.
+4. ~~Open an upstream nearcore issue.~~ — filed as [`near/nearcore#15867`](https://github.com/near/nearcore/issues/15867); write-up archived in [`nearcore-indexer-sigkill-restart-panic.md`](./nearcore-indexer-sigkill-restart-panic.md).
 5. ~~File a `mpc-node has no graceful-shutdown path` issue.~~ — done: [#3409](https://github.com/near/mpc/issues/3409) + [PR #3410](https://github.com/near/mpc/pull/3410) (squashed, awaiting review). Handles SIGTERM + SIGINT + SIGHUP, routes into the existing shutdown channel, calls `near_async::shutdown_all_actors()` on exit.
 6. ~~Drain the indexer thread so `block_until_all_instances_are_dropped()` is safe to call.~~ — done: [#3485](https://github.com/near/mpc/issues/3485) + [PR #3486](https://github.com/near/mpc/pull/3486) (stacked on #3410). Wraps the indexer's terminal `listen_blocks` await in a `tokio::select!` against a `CancellationToken`; on cancel, the indexer's tokio runtime drops, every spawned monitor task is aborted, and all `Arc<RocksDB>` refs are released. `block_until_all_instances_are_dropped()` then returns cleanly in 2–6 s.
 7. ~~Factor the stderr-tail diagnostic out of #3362.~~ — landed in [#3410](https://github.com/near/mpc/pull/3410)'s e2e infra additions.
