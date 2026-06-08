@@ -191,6 +191,10 @@ pub struct ThresholdParameters {
 pub struct ProposedThresholdParameters {
     #[serde(flatten)]
     pub parameters: ThresholdParameters,
+    // TODO(#3495): drop `serde(default)` after the 3.12 release. It exists only
+    // so pre-3.11 `vote_new_parameters` payloads (which omit this field) still
+    // deserialize as an empty overlay; once all callers populate it explicitly
+    // the field should be mandatory so legacy/malformed payloads fail loudly.
     #[serde(default)]
     pub per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
 }
