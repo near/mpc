@@ -239,7 +239,7 @@ impl RunningContractState {
         // `DBCol::Triple` mirror (#3292) can't collide. If no CaitSith domain
         // exists yet the first one is free to pick any valid `t`; any later
         // CaitSith — already present or in this proposal — must match it.
-        // Remove once #3298 drops the mirror.
+        // Tracked for removal in #3306.
         let existing_and_new: Vec<DomainConfig> = self
             .domains
             .domains()
