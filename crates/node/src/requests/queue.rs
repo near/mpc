@@ -1,9 +1,9 @@
 use super::debug::{CompletedRequest, CompletedRequests};
-use super::recent_blocks_tracker::BlockStatusHandle;
 use crate::indexer::types::ChainRespondArgs;
 use crate::primitives::ParticipantId;
 use crate::requests::metrics;
 use crate::types::{self, Request, RequestId, RequestsUpdate};
+use chain_gateway::event_subscriber::recent_blocks_tracker::BlockStatusHandle;
 use chain_gateway::types::BlockHeight;
 use k256::sha2::Sha256;
 use near_indexer_primitives::CryptoHash;
@@ -701,10 +701,12 @@ mod tests {
         CHECK_EACH_REQUEST_INTERVAL, MAX_ATTEMPTS_PER_REQUEST_AS_LEADER,
         MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE, REQUEST_EXPIRATION_BLOCKS,
     };
-    use crate::requests::recent_blocks_tracker::RecentBlocksTracker;
-    use crate::requests::recent_blocks_tracker::tests::{TestBlock, TestBlockMaker};
     use crate::tests::into_participant_ids;
     use crate::types::{RequestsUpdate, SignatureRequest};
+    use chain_gateway::event_subscriber::recent_blocks_tracker::RecentBlocksTracker;
+    use chain_gateway::event_subscriber::recent_blocks_tracker::tests::{
+        TestBlock, TestBlockMaker,
+    };
     use mpc_primitives::domain::DomainId;
     use near_indexer_primitives::CryptoHash;
     use near_mpc_contract_interface::types::{Payload, Tweak};

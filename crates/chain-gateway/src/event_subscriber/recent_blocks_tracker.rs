@@ -565,26 +565,29 @@ impl Debug for RecentBlocksTracker {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
 pub mod tests {
-    use crate::requests::recent_blocks_tracker::{AtomicBlockStatus, BlockStatusHandle};
-
-    use super::{BlockStatus, RecentBlocksTracker};
-    use chain_gateway::event_subscriber::block_events::BlockContext;
-    use chain_gateway::types::BlockEntropy;
+    use super::super::block_events::BlockContext;
+    use super::{BlockStatus, BlockStatusHandle, RecentBlocksTracker};
+    use crate::types::BlockEntropy;
     use near_indexer::near_primitives::hash::hash;
     use near_indexer_primitives::CryptoHash;
     use std::collections::HashSet;
     use std::fmt::Write;
-    use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::{Arc, Mutex};
+
+    #[cfg(test)]
+    use super::AtomicBlockStatus;
+    #[cfg(test)]
+    use std::sync::atomic::AtomicU8;
 
     pub struct TestBlock {
         hash: CryptoHash,
         height: u64,
         entropy: BlockEntropy,
         timestamp_nanosec: u64,
-        pub(crate) parent: Option<Arc<TestBlock>>,
+        pub parent: Option<Arc<TestBlock>>,
         tester: Arc<TestBlockMaker>,
         next_fork_seed: AtomicU64,
     }
