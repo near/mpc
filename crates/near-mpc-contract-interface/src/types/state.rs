@@ -154,9 +154,34 @@ pub struct ThresholdParameters {
 // contract). The overlay is applied to the `DomainRegistry` when resharing
 // completes and never persists onto the stored `ThresholdParameters`.
 //
-// `serde(flatten)` keeps the wire shape flat — `{ participants, threshold,
-// per_domain_thresholds }` — so callers submit the same JSON as before, and
-// `serde(default)` parses a payload lacking `per_domain_thresholds` as empty.
+// ## Wire contract and the `serde(flatten)` migration path
+//
+// The frozen wire contract is the flat object `{ participants, threshold,
+// per_domain_thresholds }` (and the positional borsh layout `[participants,
+// threshold, per_domain_thresholds]`). `serde(flatten)` is merely *how* that
+// flat JSON is produced today — by reusing `ThresholdParameters` as a named
+// sub-field — and is an implementation detail, not part of the contract.
+// `serde(default)` parses a payload lacking `per_domain_thresholds` as empty,
+// so pre-3.11 callers keep submitting `{ participants, threshold }` unchanged.
+//
+// To drop `serde(flatten)` later (e.g. after 3.12, to allow
+// `#[serde(deny_unknown_fields)]` or to escape flatten's `Content`-buffering
+// quirks), inline the two `parameters` fields:
+//
+//     pub participants: Participants,
+//     pub threshold: Threshold,
+//     #[serde(default)]
+//     pub per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
+//
+// That is byte-identical for JSON, borsh, and the generated ABI: borsh is
+// positional and ignores serde attributes, and the inlined JSON keys match. So
+// it needs no compat struct and no migration — only the conversion impls in
+// `dto_mapping.rs` that read `.parameters` must follow the field move. The
+// `proposed_threshold_parameters__*` wire-lock tests below pin this shape so a
+// non-equivalent change fails loudly. Changing the *shape itself* (e.g. nesting
+// the params under a `parameters` key) WOULD be wire-breaking and would instead
+// require a compat deserializer accepting both the old flat and new nested
+// forms across a transition window.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -444,5 +469,98 @@ mod tests {
 
         // Then
         assert_eq!(output, "Contract is not initialized\n");
+    }
+
+    /// A proposal carrying a non-empty per-domain overlay, used by the
+    /// `ProposedThresholdParameters` wire-lock tests.
+    fn sample_proposal() -> ProposedThresholdParameters {
+        use crate::types::participants::{ParticipantId, ParticipantInfo};
+
+        let participants = Participants {
+            next_id: ParticipantId(1),
+            participants: vec![(
+                "alice.near".parse().unwrap(),
+                ParticipantId(0),
+                ParticipantInfo {
+                    url: "https://alice.com".to_string(),
+                    tls_public_key: "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp"
+                        .parse()
+                        .unwrap(),
+                },
+            )],
+        };
+        ProposedThresholdParameters {
+            parameters: ThresholdParameters {
+                participants,
+                threshold: Threshold::new(1),
+            },
+            per_domain_thresholds: BTreeMap::from([(DomainId(0), ReconstructionThreshold::new(1))]),
+        }
+    }
+
+    /// Wire-format lock: the public contract for `ProposedThresholdParameters` is
+    /// the flat JSON object `{ participants, threshold, per_domain_thresholds }`,
+    /// not the `#[serde(flatten)]` mechanism that currently produces it. Pinning
+    /// the shape here means dropping `flatten` later (by inlining the `parameters`
+    /// fields) can be proven byte-identical rather than taken on faith.
+    #[test]
+    #[expect(non_snake_case)]
+    fn proposed_threshold_parameters__serializes_to_flat_keys() {
+        // Given a proposal carrying a non-empty per-domain overlay.
+        let proposal = sample_proposal();
+
+        // When serialized to JSON.
+        let value: serde_json::Value =
+            serde_json::from_str(&serde_json::to_string(&proposal).unwrap()).unwrap();
+
+        // Then the object is flat: `participants`/`threshold` sit at the top level
+        // alongside `per_domain_thresholds`, with no nested `parameters` key.
+        let mut keys: Vec<&str> = value
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(keys, ["participants", "per_domain_thresholds", "threshold"]);
+    }
+
+    /// Pre-3.11 callers submit `{ participants, threshold }` with no
+    /// `per_domain_thresholds`. `serde(default)` must keep parsing that as an
+    /// empty (no-change) overlay — the backward-compat guarantee that let the
+    /// field be added without a wire break.
+    #[test]
+    #[expect(non_snake_case)]
+    fn proposed_threshold_parameters__legacy_payload_omitting_overlay__parses_as_empty() {
+        // Given a legacy proposal value with the overlay field absent.
+        let mut legacy = serde_json::to_value(sample_proposal()).unwrap();
+        legacy
+            .as_object_mut()
+            .unwrap()
+            .remove("per_domain_thresholds");
+
+        // When deserialized.
+        let parsed: ProposedThresholdParameters = serde_json::from_value(legacy).unwrap();
+
+        // Then the overlay defaults to empty.
+        assert!(parsed.per_domain_thresholds.is_empty());
+    }
+
+    /// borsh is positional and ignores serde attributes, so the stored layout is
+    /// `[participants, threshold, per_domain_thresholds]` regardless of `flatten`.
+    /// A round-trip locks that the type stays borsh-stable across the eventual
+    /// inlining.
+    #[test]
+    #[expect(non_snake_case)]
+    fn proposed_threshold_parameters__borsh_round_trips() {
+        // Given a proposal carrying a non-empty per-domain overlay.
+        let proposal = sample_proposal();
+
+        // When borsh round-tripped.
+        let bytes = borsh::to_vec(&proposal).unwrap();
+        let decoded: ProposedThresholdParameters = borsh::from_slice(&bytes).unwrap();
+
+        // Then it survives unchanged.
+        assert_eq!(decoded, proposal);
     }
 }
