@@ -99,15 +99,16 @@ The `near-mpc-contract-interface` crate uses a Data Transfer Object (DTO) patter
 
 ### 4.1 Why DTOs
 
-The contract's internal types have:
-- **Private fields** with accessor methods (enforcing invariants like duplicate-ID checks)
-- **`near-sdk` dependencies** (NEAR storage traits, WASM-specific derives)
-- **Internal representation** that may change (e.g., `Participants` migrated from `Vec` to `BTreeMap` in PR #1861)
+A DTO defines the **wire format of a public type exchanged at an interaction boundary**. For the contract interface crate, that boundary is the contract interface itself: the DTOs are the types — and the serialization of those types — that callers use to interact with the contract (view-call responses, call arguments, deserialized state).
 
-DTOs mirror the same data with:
-- **Public fields** (simple data carriers, no invariants)
-- **No `near-sdk` dependency** (just `serde`, `borsh`)
-- **Stable JSON wire format** (the public API surface doesn't change when internals are refactored)
+The contract's *internal* types are free to optimize for the contract's own needs — storage layout, invariant enforcement, `near-sdk` integration — and they change as the implementation evolves (e.g., `Participants` migrated from `Vec` to `BTreeMap` in PR #1861). If callers depended on those internal types, every such change would be an implicit, often silent, change to the public API.
+
+DTOs break that coupling. They give the interaction boundary a representation that:
+- **Is stable** — the JSON/borsh wire format is the public contract, and it does not move when the contract's internals are refactored.
+- **Carries only what crosses the boundary** — no `near-sdk` dependency, no storage or WASM concerns; just `serde`/`borsh` data that any consumer (node, SDKs, external tools) can deserialize.
+- **Is decoupled from internal representation** — the contract maps between its internal types and the DTOs at the boundary (see §4.2), so the two can evolve independently as long as the wire format is preserved.
+
+Note that this is about the *role* the types play, not their field visibility. A DTO could technically use private fields with accessors; it would just be pointless, since a DTO carries no invariants of its own. The contract-interface DTOs use public fields precisely because they are plain data carriers for the wire format.
 
 ### 4.2 Conversion Traits
 
