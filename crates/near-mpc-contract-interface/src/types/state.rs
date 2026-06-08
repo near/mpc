@@ -131,7 +131,7 @@ pub use near_mpc_crypto_types::{KeyForDomain, Keyset};
 // =============================================================================
 
 /// Threshold parameters for distributed key operations: the current
-/// participant set and the cryptographic threshold. This is the stored,
+/// participant set and the governance threshold. This is the stored,
 /// always-current shape; per-domain reconstruction-threshold *proposals* live
 /// on [`ProposedThresholdParameters`].
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
