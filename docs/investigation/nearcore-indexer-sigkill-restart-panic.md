@@ -1,6 +1,6 @@
 # near-indexer: SIGKILL + restart panic in `streamer/mod.rs:207` and `client_actor.rs:217`
 
-> **Filed upstream as [`near/nearcore#15867`](https://github.com/near/nearcore/issues/15867).**
+> **Filed upstream as [`near/nearcore#15867`](https://github.com/near/nearcore/issues/15867).** Discussion thread on Zulip: [near-indexer panic in MPC node](https://near.zulipchat.com/#narrow/channel/469556-community-support/topic/near-indexer.20panic.20in.20MPC.20node).
 
 ## TL;DR
 

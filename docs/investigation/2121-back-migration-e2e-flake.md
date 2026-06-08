@@ -10,7 +10,7 @@ The bug is upstream in nearcore — confirmed empirically with maximal embedder-
 - **Latest CI run confirms the bug reproduces on this exact stack.** Commit `3a2ceafe` (PR #3362 head after the rebase), e2e job: the back-migration test failed at `migration_service.rs:771` with the upstream nearcore mode-A panic — `streamer/mod.rs:207` `` `receipt` must be present at this moment `` — captured in full via the new pre/post-restart stdout/stderr diagnostic.
 - Earlier, on the prototype branch's `607e3e21` (against nearcore `2.12.0-rc.2`), a 5-run campaign showed 1/5 pass, 4/5 fail with the same panic even after a verified 2–6 s clean graceful shutdown. See "Real SIGTERM handler in mpc-node — also does not fix it" below.
 - The bug is **latent on current `main`** because the trigger (`submit_attestation_before_concluding_migration`, in PR #3362) hasn't merged. A 5-run confirmation campaign on `main` + PR #3486 (no #3362 trigger) showed **0/5 fail**, re-confirming PR #3373's revert-experiment result.
-- Filed upstream as [`near/nearcore#15867`](https://github.com/near/nearcore/issues/15867). Write-up was prepared in [`nearcore-indexer-sigkill-restart-panic.md`](./nearcore-indexer-sigkill-restart-panic.md).
+- Filed upstream as [`near/nearcore#15867`](https://github.com/near/nearcore/issues/15867) (Zulip thread: [near-indexer panic in MPC node](https://near.zulipchat.com/#narrow/channel/469556-community-support/topic/near-indexer.20panic.20in.20MPC.20node)). Write-up was prepared in [`nearcore-indexer-sigkill-restart-panic.md`](./nearcore-indexer-sigkill-restart-panic.md).
 
 > **Headline statistics.**
 > - **PR #3365 pre-merge** (no #3362 code): 0/15 fail.
