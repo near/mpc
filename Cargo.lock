@@ -3833,6 +3833,7 @@ name = "foreign-chain-inspector"
 version = "3.11.0"
 dependencies = [
  "assert_matches",
+ "base64 0.22.1",
  "derive_more 2.1.1",
  "ethereum-types",
  "foreign-chain-rpc-interfaces",
@@ -3844,6 +3845,7 @@ dependencies = [
  "mpc-primitives",
  "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
+ "reqwest 0.13.4",
  "rstest",
  "serde",
  "serde_json",
@@ -3851,6 +3853,7 @@ dependencies = [
  "tokio",
  "tonlib-core",
  "tracing",
+ "url",
 ]
 
 [[package]]
@@ -3863,6 +3866,7 @@ dependencies = [
  "mpc-primitives",
  "serde",
  "serde_json",
+ "tonlib-core",
 ]
 
 [[package]]

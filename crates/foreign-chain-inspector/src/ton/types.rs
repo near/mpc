@@ -1,22 +1,26 @@
-mpc_primitives::define_hash!(TonTxId, 32);
-mpc_primitives::define_hash!(TonAddressHash, 32);
+use near_mpc_contract_interface::types::TonLog;
+
+/// Identifies a TON transaction to inspect: the (basechain) account that
+/// produced it plus the transaction hash. The workchain is carried explicitly
+/// so non-basechain requests can be rejected before any RPC round-trip.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TonTransactionId {
+    pub workchain: i8,
+    pub account: [u8; 32],
+    pub tx_hash: [u8; 32],
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TonFinality {
     MasterchainIncluded,
 }
 
-/// https://docs.ton.org/blockchain-basics/tolk/types/address#components
-pub struct TonAddress {
-    workchain: i8,
-    hash: TonAddressHash,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TonExtractor {
     Log { message_index: usize },
 }
-#[derive(Debug, Clone, PartialEq, Eq)]
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TonExtractedValue {
     Log(TonLog),
 }

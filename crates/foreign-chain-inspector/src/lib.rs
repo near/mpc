@@ -248,14 +248,19 @@ pub enum ForeignChainInspectionError {
     EventLogFailedBorshSerialization(std::io::Error),
     #[error("inspector clients returned mismatching extracted values")]
     InspectorResponseMismatch,
+    #[error(transparent)]
+    Ton(#[from] crate::ton::TonInspectionError),
 }
 
 impl ForeignChainInspectionError {
     pub fn is_transient(&self) -> bool {
-        matches!(
-            self,
-            Self::ClientError(_) | Self::NotFinalized | Self::NotEnoughBlockConfirmations { .. }
-        )
+        match self {
+            Self::ClientError(_)
+            | Self::NotFinalized
+            | Self::NotEnoughBlockConfirmations { .. } => true,
+            Self::Ton(error) => error.is_transient(),
+            _ => false,
+        }
     }
 }
 

@@ -1,12 +1,17 @@
-use super::{TonExtractedValue, TonInspectionError, normalize_body_boc};
+use super::types::{TonExtractedValue, TonExtractor, TonFinality, TonTransactionId};
+use super::{TonInspectionError, empty_body, normalize_body_boc};
 use crate::ton::rpc_client::TonRpcClient;
 use crate::{ForeignChainInspectionError, ForeignChainInspector};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use foreign_chain_rpc_interfaces::ton::{TonMessage, TonTransaction};
-use near_mpc_contract_interface::types::{Hash256, TonLog};
-use tonlib_core::types::TonAddress;
+use near_mpc_contract_interface::types::{Hash256, TonAddress, TonLog};
+use tonlib_core::types::TonAddress as RpcTonAddress;
 
 /// TON chain inspector.
+///
+/// Verifies a TON transaction via the TON HTTP API v3 `/transactions` endpoint and
+/// extracts the requested values (currently ext-out log messages). Only the
+/// basechain (`workchain == 0`) is supported in v1.
 pub struct TonInspector<Client> {
     client: Client,
 }
@@ -62,7 +67,7 @@ impl<Client: TonRpcClient> ForeignChainInspector for TonInspector<Client> {
 
         extractors
             .iter()
-            .map(|extractor| extract_value(extractor, &account, &ext_out_msgs))
+            .map(|extractor| extract_value(extractor, workchain, &account, &ext_out_msgs))
             .collect()
     }
 }
@@ -71,7 +76,7 @@ impl<Client: TonRpcClient> ForeignChainInspector for TonInspector<Client> {
 /// by parsed `created_lt` (ascending).
 ///
 /// Sorting by `created_lt` makes ext-out indexing deterministic across MPC
-/// nodes regardless of how the upstream toncenter v3 provider chose to order
+/// nodes regardless of how the upstream v3 API provider chose to order
 /// the `out_msgs` array in its JSON. Within a single TON transaction, every
 /// emitted message has a distinct, monotonically increasing `created_lt` —
 /// this is a TON protocol invariant (the TVM bumps `lt` on each
@@ -114,7 +119,7 @@ fn message_created_lt(msg: &TonMessage) -> Result<u64, ForeignChainInspectionErr
 fn ensure_account_matches(
     workchain: i8,
     expected_hash: &[u8; 32],
-    rpc_account: &TonAddress,
+    rpc_account: &RpcTonAddress,
 ) -> Result<(), ForeignChainInspectionError> {
     let expected_workchain: i32 = workchain.into();
     if rpc_account.workchain == expected_workchain
@@ -164,16 +169,17 @@ fn ensure_transaction_succeeded(tx: &TonTransaction) -> Result<(), ForeignChainI
     if tx.description.aborted || tx.description.destroyed {
         return Err(ForeignChainInspectionError::TransactionFailed);
     }
-    if let Some(compute_ph) = &tx.description.compute_ph {
-        if compute_ph.success == Some(false) {
-            return Err(ForeignChainInspectionError::TransactionFailed);
-        }
+    if let Some(compute_ph) = &tx.description.compute_ph
+        && compute_ph.success == Some(false)
+    {
+        return Err(ForeignChainInspectionError::TransactionFailed);
     }
     Ok(())
 }
 
 fn extract_value(
     extractor: &TonExtractor,
+    workchain: i8,
     expected_account_hash: &[u8; 32],
     ext_out_msgs: &[&TonMessage],
 ) -> Result<TonExtractedValue, ForeignChainInspectionError> {
@@ -199,17 +205,20 @@ fn extract_value(
                 .map(|c| c.body.as_str())
                 .unwrap_or_default();
 
-            // Empty body is a valid ext-out (rare but permitted): normalize
-            // returns `(vec![], vec![])` in that case via empty-cell handling.
-            let (body_bits, body_refs) = if body_b64.is_empty() {
-                (Vec::new(), Vec::new())
+            // Empty body is a valid ext-out (rare but permitted): treat it as a
+            // zero-bit cell with no references.
+            let (body, body_refs) = if body_b64.is_empty() {
+                empty_body().map_err(TonInspectionError::from)?
             } else {
                 normalize_body_boc(body_b64).map_err(TonInspectionError::from)?
             };
 
             Ok(TonExtractedValue::Log(TonLog {
-                from_address: Hash256(*expected_account_hash),
-                body_bits,
+                from_address: TonAddress {
+                    workchain,
+                    hash: Hash256(*expected_account_hash),
+                },
+                body,
                 body_refs,
             }))
         }
@@ -223,11 +232,11 @@ mod tests {
     use crate::RpcAuthentication;
     use crate::ton::rpc_client::{ReqwestTonClient, TonRpcError};
     use assert_matches::assert_matches;
-    use base64::Engine;
     use foreign_chain_rpc_interfaces::ton::{
         GetTransactionsResponse, TonCellBoc, TonComputePhase, TonMessage, TonTransaction,
         TonTransactionDescription,
     };
+    use near_mpc_contract_interface::types::TonCellBody;
     use std::sync::Mutex;
     use tonlib_core::cell::{ArcCell, BagOfCells, Cell};
 
@@ -272,8 +281,12 @@ mod tests {
         [0xde; 32]
     }
 
-    fn ton_address(workchain: i8, hash: &[u8; 32]) -> TonAddress {
-        TonAddress::new(workchain.into(), tonlib_core::types::TonHash::from(*hash))
+    fn ton_address(workchain: i8, hash: &[u8; 32]) -> RpcTonAddress {
+        RpcTonAddress::new(workchain.into(), tonlib_core::types::TonHash::from(*hash))
+    }
+
+    fn cell_body(bits: Vec<u8>, bit_length: u16) -> TonCellBody {
+        TonCellBody::new(bits.try_into().unwrap(), bit_length).unwrap()
     }
 
     /// Build a valid, finalized, successful transaction with one ext-out carrying
@@ -281,7 +294,7 @@ mod tests {
     fn happy_tx() -> TonTransaction {
         TonTransaction {
             account: ton_address(0, &account_hash()),
-            hash: base64::engine::general_purpose::STANDARD.encode(tx_hash_bytes()),
+            hash: STANDARD.encode(tx_hash_bytes()),
             mc_block_seqno: Some(12345),
             description: TonTransactionDescription {
                 aborted: false,
@@ -303,8 +316,7 @@ mod tests {
 
     fn encode_cell(data: Vec<u8>, bit_len: usize, refs: Vec<ArcCell>) -> String {
         let cell = std::sync::Arc::new(Cell::new(data, bit_len, refs, false).unwrap());
-        base64::engine::general_purpose::STANDARD
-            .encode(BagOfCells::new(&[cell]).serialize(false).unwrap())
+        STANDARD.encode(BagOfCells::new(&[cell]).serialize(false).unwrap())
     }
 
     fn inspector_from_tx(tx: TonTransaction) -> TonInspector<StubClient> {
@@ -333,13 +345,16 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(values.len(), 1);
-        match &values[0] {
-            TonExtractedValue::Log(log) => {
-                assert_eq!(log.from_address.0, account_hash());
-                assert_eq!(log.body_bits, vec![0x99, 0x00, 0x00, 0x01]);
-                assert!(log.body_refs.is_empty());
+        let TonExtractedValue::Log(log) = &values[0];
+        assert_eq!(
+            log.from_address,
+            TonAddress {
+                workchain: 0,
+                hash: Hash256(account_hash()),
             }
-        }
+        );
+        assert_eq!(log.body, cell_body(vec![0x99, 0x00, 0x00, 0x01], 32));
+        assert!(log.body_refs.is_empty());
     }
 
     #[tokio::test]
@@ -459,7 +474,7 @@ mod tests {
         // the request asked for (e.g. provider regression that ignores the
         // hash filter).
         let mut tx = happy_tx();
-        tx.hash = base64::engine::general_purpose::STANDARD.encode([0x55; 32]);
+        tx.hash = STANDARD.encode([0x55; 32]);
         let inspector = inspector_from_tx(tx);
 
         let err = inspector
@@ -583,13 +598,13 @@ mod tests {
         let TonExtractedValue::Log(first) = &values[0];
         let TonExtractedValue::Log(second) = &values[1];
         assert_eq!(
-            first.body_bits,
-            vec![0xaa; 4],
+            first.body,
+            cell_body(vec![0xaa; 4], 32),
             "earlier lt should come first"
         );
         assert_eq!(
-            second.body_bits,
-            vec![0xbb; 4],
+            second.body,
+            cell_body(vec![0xbb; 4], 32),
             "later lt should come second"
         );
     }

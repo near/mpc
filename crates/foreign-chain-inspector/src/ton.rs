@@ -1,4 +1,7 @@
-use near_mpc_contract_interface::types::TonLog;
+use near_mpc_bounded_collections::BoundedVecOutOfBounds;
+use near_mpc_contract_interface::types::{
+    Hash256, TonCellBody, TonCellBodyError, TonCellData, TonCellRefs,
+};
 use tonlib_core::cell::{BagOfCells, TonCellError};
 
 pub mod inspector;
@@ -17,13 +20,19 @@ pub enum TonBocError {
     #[error("TON cell body is not byte-aligned (bit_len={bit_len}, must be divisible by 8)")]
     NonByteAlignedBody { bit_len: usize },
 
-    #[error("failed to canonically re-serialize TON cell reference: {0}")]
-    SerializeRef(TonCellError),
+    #[error("TON cell bit length {bit_len} does not fit in u16")]
+    BitLengthTooLarge { bit_len: usize },
+
+    #[error("TON cell body is not a valid contract cell body: {0}")]
+    InvalidCellBody(TonCellBodyError),
+
+    #[error("TON cell exceeds contract bounds: {0}")]
+    OutOfBounds(BoundedVecOutOfBounds),
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum TonInspectionError {
-    #[error("toncenter RPC error: {0}")]
+    #[error("TON RPC error: {0}")]
     RpcError(#[from] crate::ton::rpc_client::TonRpcError),
 
     #[error("no transaction found on TON for hash {tx_hash_hex}")]
@@ -60,9 +69,24 @@ pub enum TonInspectionError {
     MessageDuplicateCreatedLt { value: u64 },
 }
 
-/// Split a TON cell (supplied as a base64-encoded BoC) into the
-/// `(body_bits, body_refs)` pair consumed by the bridge's TON log parser.
-pub fn normalize_body_boc(body_boc_b64: &str) -> Result<(Vec<u8>, Vec<Vec<u8>>), TonBocError> {
+impl TonInspectionError {
+    /// Whether this error is a transient failure (a failed RPC round-trip) as
+    /// opposed to a substantive verdict about the transaction. See
+    /// [`crate::ForeignChainInspectionError::is_transient`].
+    pub fn is_transient(&self) -> bool {
+        matches!(self, Self::RpcError(_))
+    }
+}
+
+/// Decompose a TON cell (supplied as a base64-encoded BoC) into the contract's
+/// canonical [`TonCellBody`] / [`TonCellRefs`] representation.
+///
+/// The cell's inline data becomes the [`TonCellBody`]; each child cell is
+/// represented by its 256-bit representation hash ([`tonlib_core::cell::Cell::cell_hash`]),
+/// matching the contract's `body_refs: `[`TonCellRefs`] shape. Only byte-aligned
+/// bodies are accepted — TON message bodies are byte-aligned in practice, and
+/// rejecting the rest keeps the signed payload unambiguous across nodes.
+pub fn normalize_body_boc(body_boc_b64: &str) -> Result<(TonCellBody, TonCellRefs), TonBocError> {
     let boc = BagOfCells::parse_base64(body_boc_b64).map_err(TonBocError::Parse)?;
 
     let root = boc.single_root().map_err(|_| TonBocError::NotSingleRoot)?;
@@ -75,20 +99,35 @@ pub fn normalize_body_boc(body_boc_b64: &str) -> Result<(Vec<u8>, Vec<Vec<u8>>),
 
     // Top-level cell's inline data, packed to `bit_len / 8` bytes.
     let body_bits = root.data().get(..byte_len).unwrap_or(root.data()).to_vec();
+    let bit_length =
+        u16::try_from(bit_len).map_err(|_| TonBocError::BitLengthTooLarge { bit_len })?;
+    let body = ton_cell_body(body_bits, bit_length)?;
 
-    // Each reference cell re-serialized as its own canonical single-root BoC,
-    // so downstream consumers can lazy-decode refs without parsing the parent.
-    let body_refs: Vec<Vec<u8>> = root
+    // Each reference is identified by its representation hash — the canonical,
+    // deterministic 32-byte identity TON uses for child cells.
+    let ref_hashes: Vec<Hash256> = root
         .references()
         .iter()
-        .map(|r| {
-            BagOfCells::new(std::slice::from_ref(r))
-                .serialize(false)
-                .map_err(TonBocError::SerializeRef)
-        })
-        .collect::<Result<_, _>>()?;
+        .map(|r| Hash256(r.cell_hash().into()))
+        .collect();
+    let body_refs: TonCellRefs = ref_hashes.try_into().map_err(TonBocError::OutOfBounds)?;
 
-    Ok((body_bits, body_refs))
+    Ok((body, body_refs))
+}
+
+/// The `(body, refs)` pair for an ext-out message that carries no content cell.
+pub fn empty_body() -> Result<(TonCellBody, TonCellRefs), TonBocError> {
+    let body = ton_cell_body(Vec::new(), 0)?;
+    let body_refs: TonCellRefs = Vec::new().try_into().map_err(TonBocError::OutOfBounds)?;
+    Ok((body, body_refs))
+}
+
+/// Build a contract [`TonCellBody`] from `bits` (packed big-endian) and the
+/// significant `bit_length`, mapping the bound/consistency checks to
+/// [`TonBocError`].
+fn ton_cell_body(bits: Vec<u8>, bit_length: u16) -> Result<TonCellBody, TonBocError> {
+    let data: TonCellData = bits.try_into().map_err(TonBocError::OutOfBounds)?;
+    TonCellBody::new(data, bit_length).map_err(TonBocError::InvalidCellBody)
 }
 
 #[cfg(test)]
@@ -108,13 +147,17 @@ mod tests {
             .encode(BagOfCells::new(&[root]).serialize(false).unwrap())
     }
 
+    fn cell_body(bits: Vec<u8>, bit_length: u16) -> TonCellBody {
+        TonCellBody::new(bits.try_into().unwrap(), bit_length).unwrap()
+    }
+
     #[test]
-    fn normalize_body_boc__should_return_empty_bits_and_no_refs_for_empty_cell() {
+    fn normalize_body_boc__should_return_empty_body_and_no_refs_for_empty_cell() {
         let root = cell_from_bytes(vec![], 0, vec![]);
         let b64 = encode_boc(root);
 
-        let (bits, refs) = normalize_body_boc(&b64).unwrap();
-        assert!(bits.is_empty());
+        let (body, refs) = normalize_body_boc(&b64).unwrap();
+        assert_eq!(body, cell_body(vec![], 0));
         assert!(refs.is_empty());
     }
 
@@ -125,41 +168,46 @@ mod tests {
         let root = cell_from_bytes(payload.clone(), payload.len() * 8, vec![]);
         let b64 = encode_boc(root);
 
-        let (bits, refs) = normalize_body_boc(&b64).unwrap();
-        assert_eq!(bits, payload);
+        let (body, refs) = normalize_body_boc(&b64).unwrap();
+        assert_eq!(body, cell_body(payload, 32));
         assert!(refs.is_empty());
     }
 
     #[test]
-    fn normalize_body_boc__should_preserve_refs_round_trip() {
+    fn normalize_body_boc__should_return_reference_cell_hashes() {
         let ref1 = cell_from_bytes(vec![0xaa, 0xbb], 16, vec![]);
         let ref2 = cell_from_bytes(vec![0x01, 0x02, 0x03], 24, vec![]);
         let root = cell_from_bytes(vec![0xde, 0xad], 16, vec![ref1.clone(), ref2.clone()]);
 
         let b64 = encode_boc(root);
-        let (bits, refs) = normalize_body_boc(&b64).unwrap();
+        let (body, refs) = normalize_body_boc(&b64).unwrap();
 
-        assert_eq!(bits, vec![0xde, 0xad]);
-        assert_eq!(refs.len(), 2);
-
-        // Each ref should round-trip back to the same cell tree.
-        let parsed_ref1 = BagOfCells::parse(&refs[0]).unwrap().single_root().unwrap();
-        let parsed_ref2 = BagOfCells::parse(&refs[1]).unwrap().single_root().unwrap();
-        assert_eq!(parsed_ref1.data(), ref1.data());
-        assert_eq!(parsed_ref2.data(), ref2.data());
+        assert_eq!(body, cell_body(vec![0xde, 0xad], 16));
+        // Refs are the children's representation hashes, in cell order.
+        let expected = vec![
+            Hash256(ref1.cell_hash().into()),
+            Hash256(ref2.cell_hash().into()),
+        ];
+        assert_eq!(refs.as_slice(), expected.as_slice());
     }
 
     #[test]
     fn normalize_body_boc__should_be_deterministic_across_runs() {
-        // Same input ⇒ byte-identical output (the determinism guarantee MPC relies on).
+        // Same input ⇒ identical output (the determinism guarantee MPC relies on).
         let ref1 = cell_from_bytes(vec![0xaa], 8, vec![]);
         let root = cell_from_bytes(vec![0xde, 0xad, 0xbe, 0xef], 32, vec![ref1]);
         let b64 = encode_boc(root);
 
-        let (bits1, refs1) = normalize_body_boc(&b64).unwrap();
-        let (bits2, refs2) = normalize_body_boc(&b64).unwrap();
-        assert_eq!(bits1, bits2);
-        assert_eq!(refs1, refs2);
+        let first = normalize_body_boc(&b64).unwrap();
+        let second = normalize_body_boc(&b64).unwrap();
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn empty_body__should_return_zero_bit_body_and_no_refs() {
+        let (body, refs) = empty_body().unwrap();
+        assert_eq!(body, cell_body(vec![], 0));
+        assert!(refs.is_empty());
     }
 
     #[test]

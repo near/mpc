@@ -9,9 +9,12 @@ const GET_TRANSACTIONS_PATH: &str = "transactions";
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 
 pub trait TonRpcClient: Send + Sync {
+    /// Fetch the transaction identified by `tx_hash_hex` on `account_hash`
+    /// (within `workchain`) from the TON HTTP API v3 `/transactions` endpoint.
     fn get_transaction(
         &self,
-        transaction_id: TonTxId,
+        workchain: i8,
+        account_hash: &[u8; 32],
         tx_hash_hex: &str,
     ) -> impl Future<Output = Result<GetTransactionsResponse, TonRpcError>> + Send;
 }
@@ -19,16 +22,16 @@ pub trait TonRpcClient: Send + Sync {
 /// Errors raised by [`ReqwestTonClient`].
 #[derive(Debug, Error)]
 pub enum TonRpcError {
-    #[error("failed to build toncenter request URL: {0}")]
+    #[error("failed to build TON RPC request URL: {0}")]
     InvalidUrl(url::ParseError),
 
-    #[error("toncenter HTTP request failed: {0}")]
+    #[error("TON RPC HTTP request failed: {0}")]
     Http(#[from] reqwest::Error),
 
-    #[error("toncenter returned non-success HTTP status {status}: {body}")]
+    #[error("TON RPC returned non-success HTTP status {status}: {body}")]
     BadStatus { status: u16, body: String },
 
-    #[error("failed to parse toncenter JSON response: {0}")]
+    #[error("failed to parse TON RPC JSON response: {0}")]
     Parse(serde_json::Error),
 }
 
@@ -102,7 +105,7 @@ impl TonRpcClient for ReqwestTonClient {
 }
 
 /// Format a basechain/workchain address as `"<workchain>:<lowercase-hex>"` —
-/// the canonical on-chain representation toncenter v3 accepts in its query
+/// the canonical on-chain representation the v3 API accepts in its query
 /// parameters.
 pub(crate) fn format_ton_account(workchain: i8, account_hash: &[u8; 32]) -> String {
     format!("{workchain}:{}", hex::encode(account_hash))
