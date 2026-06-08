@@ -6,7 +6,7 @@
 # External link checking is slow and flaky in CI.
 offline = true
 
-# Check anchor/fragment links (e.g., #section-name)
-include_fragments = true
+# Check fragment links: anchors (e.g., #section-name) and text fragments (#:~:text=).
+include_fragments = "full"
 
 exclude_path = ["target", ".git"]
