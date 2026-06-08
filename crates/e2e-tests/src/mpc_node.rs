@@ -137,7 +137,10 @@ impl MpcNode {
     }
 }
 
+pub const STDOUT_LOG: &str = "stdout.log";
+pub const STDOUT_LOG_PREVIOUS: &str = "stdout.log.previous";
 pub const STDERR_LOG: &str = "stderr.log";
+pub const STDERR_LOG_PREVIOUS: &str = "stderr.log.previous";
 
 /// Guard that kills the child process on drop.
 struct ProcessGuard(Child);
@@ -352,10 +355,25 @@ impl MpcNodeSetup {
             "starting mpc-node"
         );
 
-        let stdout_file = std::fs::File::create(self.home_dir.join("stdout.log"))
-            .context("failed to create stdout log")?;
-        let stderr_file = std::fs::File::create(self.home_dir.join("stderr.log"))
-            .context("failed to create stderr log")?;
+        // Rotate stdout.log / stderr.log to .previous on restart so that on
+        // a post-restart test failure the diagnostic can dump both the
+        // pre-kill mpc-node tracing (stdout) and any crash output (stderr)
+        // from BEFORE the restart, alongside whatever the restarted process
+        // produced. Without this rotation, `File::create` truncates and the
+        // pre-restart context is lost — leaving us blind to the upstream
+        // nearcore panic stack that lives in the pre-restart stderr.
+        let stdout_path = self.home_dir.join(STDOUT_LOG);
+        if stdout_path.exists() {
+            let _ = std::fs::rename(&stdout_path, self.home_dir.join(STDOUT_LOG_PREVIOUS));
+        }
+        let stdout_file =
+            std::fs::File::create(&stdout_path).context("failed to create stdout log")?;
+        let stderr_path = self.home_dir.join(STDERR_LOG);
+        if stderr_path.exists() {
+            let _ = std::fs::rename(&stderr_path, self.home_dir.join(STDERR_LOG_PREVIOUS));
+        }
+        let stderr_file =
+            std::fs::File::create(&stderr_path).context("failed to create stderr log")?;
 
         let child = Command::new(&self.binary_path)
             .arg("start-with-config-file")
