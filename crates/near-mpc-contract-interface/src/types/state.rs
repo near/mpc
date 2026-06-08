@@ -529,11 +529,11 @@ mod tests {
         assert_eq!(keys, ["participants", "per_domain_thresholds", "threshold"]);
     }
 
-    /// Pre-3.11 callers submit `{ participants, threshold }` with no
+    /// TODO(#3495): Pre-3.11 callers submit `{ participants, threshold }` with no
     /// `per_domain_thresholds`. `serde(default)` must keep parsing that as an
     /// empty (no-change) overlay — the backward-compat guarantee that let the
     /// field be added without a wire break. Removed alongside the
-    /// `serde(default)` it guards (see `TODO(#3495)` on the field).
+    /// `serde(default)` it guards.
     #[test]
     #[expect(non_snake_case)]
     fn proposed_threshold_parameters__legacy_payload_omitting_overlay__parses_as_empty() {
