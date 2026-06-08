@@ -168,11 +168,36 @@ pub struct TcbStatusWithAdvisory {
     pub advisory_ids: Vec<String>,
 }
 
+/// Verifier-side rejection of a quote, carried inside
+/// [`VerificationResult::Rejected`]. A wire DTO: it travels in a successful
+/// receipt payload so an on-chain caller can read the reason.
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq, derive_more::Display)]
+#[cfg_attr(feature = "borsh-schema", derive(borsh::BorshSchema))]
+pub enum VerifierError {
+    /// `dcap_qvl::verify::verify` rejected the quote / collateral.
+    #[display("dcap verification failed: {_0}")]
+    DcapVerification(String),
+}
+
+/// Outcome of `verify_quote`, returned as the value of a successful receipt
+/// (not via `#[handle_result]`). A rejection is therefore `Rejected(..)`, which
+/// a caller can tell apart from `PromiseError::Failed` ("verifier down"); a
+/// failed receipt carries no payload and would conflate the two.
+#[expect(clippy::large_enum_variant)]
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "borsh-schema", derive(borsh::BorshSchema))]
+pub enum VerificationResult {
+    /// The quote verified successfully against the supplied collateral.
+    Verified(VerifiedReport),
+    /// The verifier ran and rejected the quote.
+    Rejected(VerifierError),
+}
+
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use alloc::vec;
+    use alloc::{string::ToString, vec};
     use rstest::rstest;
 
     fn sample_td10() -> TDReport10 {
@@ -340,6 +365,35 @@ mod tests {
 
         // Then
         assert_eq!(original, decoded);
+    }
+
+    #[rstest]
+    #[case::verified(VerificationResult::Verified(sample_verified_report(Report::TD10(
+        sample_td10()
+    ))))]
+    #[case::rejected(VerificationResult::Rejected(VerifierError::DcapVerification(
+        String::from("TCB status is invalid")
+    )))]
+    fn verification_result__should_round_trip_borsh(#[case] original: VerificationResult) {
+        // When
+        let bytes = borsh::to_vec(&original).expect("Borsh serialization should succeed");
+        let decoded: VerificationResult =
+            borsh::from_slice(&bytes).expect("Borsh deserialization should succeed");
+
+        // Then
+        assert_eq!(original, decoded);
+    }
+
+    #[test]
+    fn verifier_error__should_display_reason() {
+        // Given
+        let err = VerifierError::DcapVerification(String::from("Fmspc mismatch"));
+
+        // When
+        let rendered = err.to_string();
+
+        // Then
+        assert_eq!(rendered, "dcap verification failed: Fmspc mismatch");
     }
 
     #[test]

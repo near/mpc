@@ -53,13 +53,13 @@ DCAP quote verification moves into a standalone contract called `tee-verifier`. 
 flowchart LR
     Op[Operator] --> MPC[mpc-contract WASM]
     MPC -- "verify_quote(quote, collateral)" --> VER[tee-verifier WASM]
-    VER -- "VerifiedReport" --> MPC
+    VER -- "VerificationResult" --> MPC
     VER --> DCAP[dcap-qvl library]
 ```
 
 ### Submission flow
 
-`mpc-contract`'s [`submit_participant_info`][submit-participant-info] becomes asynchronous for Dstack attestations and uses the same yield-resume pattern already in place for `sign`, `request_app_private_key`, and `request_verify_foreign_tx`. The method registers a yielded promise via [`env::promise_yield_create`][promise-yield-create] (going through the contract's existing [`enqueue_yield_request`][enqueue-yield-request] helper), stashes the resulting `data_id` in `pending_attestations`, and fires a cross-contract call to `tee-verifier::verify_quote` whose own `.then` callback (`resolve_verification`) runs the post-DCAP checks (RTMR3 replay, app-compose validation, measurement allowlist matching, report-data binding) against the `VerifiedReport`, inserts into `stored_attestations` on success, schedules a deposit refund on failure, and calls [`env::promise_yield_resume`][promise-yield-resume] with a compact `FinalOutcome` (`Ok` / `Err(reason)`). The yield-callback (`on_attestation_verified`) shrinks to the same shape as the sign-request callback [`return_signature_and_clean_state_on_success`][sign-yield-callback]: on the `Ok(FinalOutcome)` branch it just returns the value to the caller (`resolve_verification` already cleared the pending entry), and on `Err(PromiseError::Failed)` — fired by the runtime ~200 blocks after submit if no resume has landed — it removes the pending entry and schedules a refund. Moving the heavy work into `resolve_verification` keeps the yield-callback trivial enough that an OOG inside it is implausible by gas budgeting, and an OOG inside `resolve_verification` rolls back its entire receipt atomically: no partial state commits, and the runtime's yield-timeout still fires the trivial callback for cleanup.
+`mpc-contract`'s [`submit_participant_info`][submit-participant-info] becomes asynchronous for Dstack attestations and uses the same yield-resume pattern already in place for `sign`, `request_app_private_key`, and `request_verify_foreign_tx`. The method registers a yielded promise via [`env::promise_yield_create`][promise-yield-create] (going through the contract's existing [`enqueue_yield_request`][enqueue-yield-request] helper), stashes the resulting `data_id` in `pending_attestations`, and fires a cross-contract call to `tee-verifier::verify_quote` whose own `.then` callback (`resolve_verification`) bridges the verifier's response into a `promise_yield_resume`. Because `verify_quote` returns a `VerificationResult` value rather than failing the receipt (see [§Why a rejection is a value](#why-a-rejection-is-a-value-not-a-failed-receipt)), `resolve_verification`'s `#[callback_result]` distinguishes three outcomes: `Verified` runs the post-DCAP checks (RTMR3 replay, app-compose validation, measurement allowlist matching, report-data binding) and resumes; `Rejected` refunds and resumes **immediately** with the reason; and only `Err(PromiseError::Failed)` — the verifier unreachable or crashed — returns early, leaving cleanup to the ~200-block timeout. The yield-callback `on_attestation_verified` stays trivial, the same shape as the sign-request callback [`return_signature_and_clean_state_on_success`][sign-yield-callback]: it returns the resumed outcome to the caller, and only on the timeout (`Err(PromiseError::Failed)`) does it remove the pending entry and schedule a refund. Keeping the heavy work in `resolve_verification` makes an OOG in the yield-callback implausible, and an OOG in `resolve_verification` rolls back its whole receipt so the timeout still fires the trivial callback for cleanup. The exact branch-by-branch behavior is in [§Handling failures](#handling-failures) below.
 
 The post-DCAP policy inputs are the same fields `mpc-contract` already holds today — the allowed-image-hash list, the per-account TLS / account public-key binding, and the stored-attestation map. No new policy state is introduced; the only state addition is the `pending_attestations` map described below, which is bookkeeping for the in-flight yield.
 
@@ -78,35 +78,30 @@ sequenceDiagram
     MPC->>State: insert PendingAttestation { data_id, ... }
     MPC->>Ver: Promise: verify_quote (chained .then resolve_verification)
 
-    alt Verifier responded in time
-        Ver->>DCAP: verify(quote, collateral, now)
-        DCAP-->>Ver: Ok(VerifiedReport) or Err
-        Ver-->>MPC: VerifiedReport (or Err)
-        MPC->>MPC: resolve_verification
-        alt Verifier ok and post-DCAP ok
-            MPC->>State: read fresh allowlist
-            MPC->>MPC: finish_verify (post-DCAP checks)
-            MPC->>State: store VerifiedAttestation
-            MPC->>State: remove PendingAttestation
-            MPC->>MPC: promise_yield_resume(data_id, FinalOutcome::Ok)
-        else Verifier failed or post-DCAP failed
-            MPC->>State: remove PendingAttestation
-            MPC->>Op: refund attached deposit
-            MPC->>MPC: promise_yield_resume(data_id, FinalOutcome::Err(reason))
-        end
-        MPC->>MPC: on_attestation_verified (yield callback)
-        MPC-->>Op: success or error (carrying FinalOutcome)
-    else No response within ~200 blocks
-        Note over MPC: Runtime auto-fires on_attestation_verified<br/>with Err(PromiseError::Failed)
-        MPC->>State: remove PendingAttestation
-        MPC->>Op: refund attached deposit
+    Ver->>DCAP: verify(quote, collateral, now)
+
+    alt Verified (post-DCAP runs, then resumes)
+        Ver-->>MPC: VerificationResult::Verified(report)
+        MPC->>MPC: resolve_verification: finish_verify vs fresh allowlist
+        MPC->>State: store on pass / refund on fail, remove PendingAttestation
+        MPC->>MPC: promise_yield_resume(data_id, FinalOutcome)
+        MPC-->>Op: success or error, immediately
+    else Rejected (resumes immediately)
+        Ver-->>MPC: VerificationResult::Rejected(reason)
+        MPC->>MPC: resolve_verification: refund, remove PendingAttestation
+        MPC->>MPC: promise_yield_resume(data_id, FinalOutcome::Err(reason))
+        MPC-->>Op: error (carrying reason), immediately
+    else No verdict — verifier unreachable / silent for ~200 blocks
+        Note over MPC: resolve_verification (if it runs) only logs and returns.<br/>Cleanup is left to the runtime yield-timeout.
+        MPC->>MPC: on_attestation_verified fires with Err(PromiseError::Failed)
+        MPC->>State: remove PendingAttestation, refund
         MPC-->>Op: error
     end
 ```
 
 #### Caller-side impact
 
-The only caller of `submit_participant_info` in production is `mpc-node`'s `periodic_attestation_submission` task, which resubmits on a 1-hour cadence and on attestation-removal events. It already polls contract state to confirm the attestation is actually stored, with exponential backoff (100 ms → 60 s, capped at 12 h). That polling-based success criterion is what makes the sync→async change transparent. Under yield-resume the returned `Promise` also resolves with the actual outcome (success or timeout-error) within ~200 blocks, so any future caller that wants to await the result synchronously can — without changing the contract.
+The only caller of `submit_participant_info` in production is `mpc-node`'s `periodic_attestation_submission` task, which resubmits on a 1-hour cadence and on attestation-removal events. It already polls contract state to confirm the attestation is actually stored, with exponential backoff (100 ms → 60 s, capped at 12 h). That polling-based success criterion is what makes the sync→async change transparent. Under yield-resume the returned `Promise` also resolves with the actual outcome — success, a verifier-rejection error, or a post-DCAP-failure error (each as soon as the verifier answers), or a timeout error after ~200 blocks if it never does — so any future caller that wants to await the result synchronously can, without changing the contract.
 
 #### Handling failures
 
@@ -118,12 +113,13 @@ A **`.then` callback** is a normal cross-contract callback chained onto the veri
 
 A **yield-callback** is different. When `submit_participant_info` calls `promise_yield_create`, it asks the runtime to *park* the submitter's call so the contract can return its result later. The runtime fires the named callback exactly once per `data_id` — either when something calls `promise_yield_resume(data_id, payload)`, or after ~200 blocks of silence with `Err(PromiseError::Failed)`. That single firing's return value is what the submitter eventually receives. There is no second invocation: an OOG inside the yield-callback rolls back its whole receipt and drops whatever cleanup it was meant to do, with no automatic retry.
 
-The asymmetry decides the design. The expensive work — post-DCAP checks, the `stored_attestations` insert, the refund-on-failure, the pending-entry removal, the `promise_yield_resume` call — lives in the `.then` bridge `resolve_verification`. If it aborts mid-flight, the entire receipt rolls back atomically (including the resume), so the yield stays parked and the runtime's 200-block timeout still fires the yield-callback for cleanup — same recovery as "verifier never responded." The yield-callback `on_attestation_verified` is intentionally tiny: on resume, return the value to the caller; on timeout, remove the pending entry and schedule a refund.
+The asymmetry decides the design. The work the verifier's *answer* unlocks — post-DCAP checks, the `stored_attestations` insert, the refund on rejection or post-DCAP failure, the pending-entry removal, the `promise_yield_resume` call — lives in the `.then` bridge `resolve_verification`. If it aborts mid-flight, the entire receipt rolls back atomically (including the resume), so the yield stays parked and the runtime's 200-block timeout still fires the yield-callback for cleanup — same recovery as "verifier never responded." `resolve_verification` resolves immediately on either answer it can act on: `Verified` (run post-DCAP, then resume) and `Rejected` (refund and resume with the reason). Only `Err(PromiseError::Failed)` — no verdict, the verifier was unreachable or crashed — is deliberately *not* resolved here: `resolve_verification` logs and returns early, routing that case to the timeout cleanup. The yield-callback `on_attestation_verified` is intentionally tiny: on resume, return the value to the caller; on its `Err(PromiseError::Failed)` branch — verifier unreachable or silent timeout — remove the pending entry and schedule a refund.
 
 Walking every path the system can take:
 
-- `resolve_verification` finishes normally → it cleaned up before resuming, caller receives the outcome.
-- `resolve_verification` aborts → timeout fires, yield-callback cleans up.
+- `resolve_verification` resumes (verifier returned `Verified` (post-DCAP pass or fail) or `Rejected`) → it cleaned up before resuming, caller receives the outcome.
+- `resolve_verification` returns early (verifier unreachable — `Err(PromiseError::Failed)`) → timeout fires, yield-callback cleans up.
+- `resolve_verification` aborts (OOG / panic mid-receipt) → timeout fires, yield-callback cleans up.
 - `resolve_verification` never runs (verifier silent) → timeout fires, yield-callback cleans up.
 - Yield-callback itself OOGs → genuine orphan. Its body is one `LookupMap::remove` plus one Promise schedule, small enough that an out-of-gas failure is implausible with a sensible gas budget.
 
@@ -146,7 +142,7 @@ Each [`PendingAttestation`](#mpc-contractsubmit_participant_info) holds:
 - **The attached deposit** — covers storage staking on success, refunded to the signer of the original `submit_participant_info` transaction on failure. `env::attached_deposit()` is not visible from the callback receipt, so the value is stashed at submit time and the recipient `AccountId` is the same one used to key the entry (set by `Self::assert_caller_is_signer()`).
 - **`data_id: CryptoHash`** — the yield handle returned by [`env::promise_yield_create`][promise-yield-create]. The intermediate `.then` callback (`resolve_verification`) reads this back to call [`env::promise_yield_resume`][promise-yield-resume] with a `FinalOutcome` after the post-DCAP checks have run.
 
-Entries are removed by `resolve_verification` on every "verifier responded" branch (success, verifier err, post-DCAP err), and by `on_attestation_verified` on the timeout branch only.
+Entries are removed by `resolve_verification` on every branch where the verifier returned an answer — `Verified` (post-DCAP success or failure) and `Rejected`; only when the verifier gave no verdict (`Err(PromiseError::Failed)` — unreachable or crashed) does it return early and leave the entry in place. `on_attestation_verified` then removes the entry on its `Err(PromiseError::Failed)` branch, which covers that unreachable case and the no-response timeout.
 
 Notably absent from `PendingAttestation`: the **post-DCAP policy state** — allowed MPC image hashes, allowed launcher compose hashes, and accepted measurements. `resolve_verification` re-reads all of them from contract state, so any governance vote that adds or removes an entry mid-flight applies to verifications it overlaps. Snapshotting at request time would freeze each submission against stale policy — wrong default for a security control, where removing a compromised hash should take effect immediately.
 
@@ -165,7 +161,7 @@ sequenceDiagram
     Gov->>MPC: vote_add_image_hash(H)
     Note over MPC: allowlist updated in state
 
-    Ver-->>MPC: VerifiedReport
+    Ver-->>MPC: VerificationResult::Verified(report)
     MPC->>MPC: resolve_verification
     MPC->>MPC: read allowlist (sees H)
     MPC->>MPC: finish_verify against fresh allowlist
@@ -177,7 +173,7 @@ sequenceDiagram
 
 Two new crates, plus an existing one that picks up a new dependency:
 
-- **`tee-verifier-interface`** (new). Wire DTOs only — `QuoteBytes`, `Collateral`, `VerifiedReport`, and the nested report / TCB-status types — as Borsh-serializable mirrors of the corresponding `dcap-qvl` types. No `dcap-qvl` dependency, no MPC-specific types. This is what every caller of the verifier links against.
+- **`tee-verifier-interface`** (new). Wire DTOs only — `QuoteBytes`, `Collateral`, `VerifiedReport`, and the nested report / TCB-status types as Borsh-serializable mirrors of the corresponding `dcap-qvl` types, plus the two verifier-outcome types `VerifierError` and `VerificationResult` (`Verified` / `Rejected`) that `verify_quote` returns. No `dcap-qvl` dependency, no MPC-specific types. This is what every caller of the verifier links against.
 - **`tee-verifier`** (new). The verifier contract WASM. Exposes a single method, `verify_quote`, which wraps `dcap_qvl::verify::verify`.
 - **`attestation`** (existing). TDX domain types and the post-DCAP verification logic. This is the crate that currently holds the `dcap-qvl` dependency on `main` — `Collateral` is a re-export of `dcap_qvl::QuoteCollateralV3`, the post-DCAP helpers take `dcap_qvl::verify::VerifiedReport` and `dcap_qvl::quote::TDReport10` as arguments, and `Attestation::verify` calls `dcap_qvl::verify::verify`. Under this design those references are replaced with the Borsh-mirror equivalents from `tee-verifier-interface`, `Collateral` becomes a real DTO, and `Attestation::verify` moves out to an off-chain helper. After that `attestation/Cargo.toml` no longer lists `dcap-qvl`.
 - **`mpc-attestation`** (existing). MPC-specific framing on top of `attestation`: the `Attestation { Dstack, Mock }` enum, the `(tls_pk, account_pk)` binding, mock attestation verification. On `main` this crate has no `dcap-qvl` in its `[dependencies]` — it inherits the dep transitively through `attestation`, so once `attestation` is cleaned up `mpc-attestation` is dcap-qvl-free without any of its own code changing. `mpc-contract` and `mpc-node` keep depending on it exactly as they do today.
@@ -223,7 +219,7 @@ Verifier rotation is also not the right response when the fault is not in the ve
 
 ### Requirements on the verifier account
 
-A trusted verifier account must not be replaceable by a malicious stub that returns `Ok(VerifiedReport)` for any input. Two checkable conditions prevent it:
+A trusted verifier account must not be replaceable by a malicious stub that returns `VerificationResult::Verified` for any input. Two checkable conditions prevent it:
 
 1. **The right code is deployed.** The hash of the contract code currently deployed at the account matches the expected hash for that verifier release.
 2. **That code can never be replaced.** The account has no full-access keys.
@@ -255,19 +251,43 @@ impl TeeVerifier {
     /// Verify a TDX quote against Intel collateral.
     ///
     /// Calls `dcap_qvl::verify::verify` with the current block timestamp and
-    /// returns the parsed `VerifiedReport` on success. On failure it returns
-    /// `Err(VerifierError)` via `#[handle_result]`, which the runtime turns
-    /// into a failed receipt — the caller sees `PromiseError::Failed`.
-    #[handle_result]
+    /// returns a `VerificationResult` — `Verified(report)` on success,
+    /// `Rejected(VerifierError)` when DCAP rejects the quote. Both are the
+    /// *value* of a successful receipt (note: no `#[handle_result]`), so the
+    /// caller's `#[callback_result]` can tell a rejection apart from the
+    /// verifier being unreachable. See [§Why a rejection is a value, not a
+    /// failed receipt](#why-a-rejection-is-a-value-not-a-failed-receipt).
+    #[result_serializer(borsh)]
     pub fn verify_quote(
         &self,
-        quote: QuoteBytes,
-        collateral: Collateral,
-    ) -> Result<VerifiedReport, VerifierError>;
+        #[serializer(borsh)] quote: QuoteBytes,
+        #[serializer(borsh)] collateral: Collateral,
+    ) -> VerificationResult;
 }
 ```
 
-The wire DTOs (`QuoteBytes`, `Collateral`, `VerifiedReport`, and the nested report types) live in the DTO-only `tee-verifier-interface` crate so callers depend on the same definitions. They are field-for-field Borsh mirrors of the corresponding `dcap_qvl` types.
+The wire DTOs (`QuoteBytes`, `Collateral`, `VerifiedReport`, `VerifierError`, `VerificationResult`, and the nested report types) live in the DTO-only `tee-verifier-interface` crate so callers depend on the same definitions. Most are field-for-field Borsh mirrors of the corresponding `dcap_qvl` types; the two verifier-outcome types are:
+
+```rust
+pub enum VerifierError {
+    DcapVerification(String),
+}
+
+pub enum VerificationResult {
+    Verified(VerifiedReport),
+    Rejected(VerifierError),
+}
+```
+
+#### Why a rejection is a value, not a failed receipt
+
+Encoding the rejection the obvious way — `Result<VerifiedReport, VerifierError>` via `#[handle_result]`, so a rejection fails the receipt — loses the reason. NEAR's promise result is either `Successful(bytes)` or `Failed`, and **`Failed` carries no payload**: the caller's `#[callback_result]` sees a bare `Err(PromiseError::Failed)`, *identical* to the verifier being unreachable or out of gas. But `mpc-contract` must treat "the verifier rejected this quote" (definitive — refund and finish now) differently from "the verifier did not answer" (transient — wait for the yield timeout, the node resubmits). Returning the outcome as a *value* keeps them distinct, so `#[callback_result]` observes:
+
+- `Ok(VerificationResult::Verified(report))` — quote valid; run post-DCAP checks.
+- `Ok(VerificationResult::Rejected(reason))` — rejected; refund and resume **immediately**, with the reason.
+- `Err(PromiseError::Failed)` — unreachable / panicked / timed out; the yield timeout cleans up.
+
+This is the NEP-141 / NEP-171 shape — the meaningful outcome rides in the success payload, a failed receipt is reserved for "something broke" — and it preserves `mpc-contract`'s existing invariant that a rejection and a non-answer are never the same event. (near-sdk also refuses to serialize a bare `Result` return, so `VerificationResult` is a dedicated sum type.)
 
 ### Voting on the trusted verifier in `mpc-contract`
 
@@ -350,7 +370,7 @@ sequenceDiagram
     Gov->>MPC: vote_tee_verifier_change passes
     Note over MPC: tee_verifier_account_id = new (routing only,<br/>no eviction)
 
-    VerOld-->>MPC: VerifiedReport
+    VerOld-->>MPC: VerificationResult::Verified(report)
     MPC->>MPC: resolve_verification (post-DCAP + insert, as usual)
     Note over MPC: stored entry ages out within the<br/>expiration window via re_verify
 
@@ -441,17 +461,24 @@ impl MpcContract {
     }
 
     /// `.then` bridge between the verifier's cross-contract call and the
-    /// yield this submission registered. Owns all "verifier responded"
-    /// outcomes: runs the post-DCAP checks against fresh policy state,
-    /// inserts into `stored_attestations` on success, schedules a deposit
-    /// refund on failure, removes the pending entry, and calls
-    /// `promise_yield_resume(data_id, FinalOutcome)` as the LAST step of
-    /// the receipt. State mutations in this receipt are visible to the
+    /// yield this submission registered. Owns every outcome where the verifier
+    /// *answered* (`Ok(VerificationResult::{Verified,Rejected})`): on
+    /// `Verified` it runs the post-DCAP checks against fresh policy state and
+    /// inserts into `stored_attestations` on success; on `Rejected` it skips
+    /// straight to the refund. Either way it removes the pending entry,
+    /// schedules a refund where the outcome is an error, and calls
+    /// `promise_yield_resume(data_id, FinalOutcome)` as the LAST step of the
+    /// receipt — so a rejected quote is resolved *immediately*, not at the
+    /// timeout. Only `Err(PromiseError::Failed)` (no verdict — verifier
+    /// unreachable or crashed) is logged and returned early WITHOUT resuming or
+    /// removing the pending entry; `on_attestation_verified` owns that cleanup
+    /// on its `Err(PromiseError::Failed)` branch, so we must not race the
+    /// timeout for it. State mutations in this receipt are visible to the
     /// yield-callback that fires next; if any line below `promise_yield_resume`
-    /// panicked or OOG'd, the entire receipt would roll back atomically
-    /// (no partial state commits) and the runtime's ~200-block yield-timeout
-    /// would still fire `on_attestation_verified` with
-    /// `Err(PromiseError::Failed)` for cleanup.
+    /// panicked or OOG'd, the entire receipt would roll back atomically (no
+    /// partial state commits) and the runtime's ~200-block yield-timeout would
+    /// still fire `on_attestation_verified` with `Err(PromiseError::Failed)`
+    /// for cleanup.
     ///
     /// Same architectural shape as [`pending_requests::resolve_yields_for`][pending-requests-mod]
     /// in the sign-request flow: the response-side function owns the state
@@ -461,22 +488,27 @@ impl MpcContract {
     pub fn resolve_verification(
         &mut self,
         account_id: AccountId,
-        #[callback_result] result: Result<VerifiedReport, PromiseError>,
+        #[callback_result] result: Result<VerificationResult, PromiseError>,
     ) {
-        // Verifier-account-gone case: do nothing. The runtime's yield-timeout
-        // will fire `on_attestation_verified` with `Err(PromiseError::Failed)`
-        // and clean up the pending entry there. We must not call
-        // `promise_yield_resume` here, or we'd race the timeout for ownership
-        // of the cleanup path.
         let final_outcome = match result {
-            // A rejected quote and a gone/failed verifier both arrive here as
-            // `PromiseError::Failed` (the verifier returns its error via
-            // `#[handle_result]`.
+            // No verdict: the verifier was unreachable, panicked, or ran out of
+            // gas. Do nothing — the runtime's yield-timeout will fire
+            // `on_attestation_verified` with `Err(PromiseError::Failed)` and
+            // clean up the pending entry there. We must not call
+            // `promise_yield_resume` here, or we'd race the timeout for
+            // ownership of the cleanup path.
             Err(promise_err) => {
-                log!("verifier promise failed for {account_id}: {promise_err:?}");
+                log!("verifier did not answer for {account_id}: {promise_err:?}");
                 return;
             }
-            Ok(report) => {
+            // The verifier ran and rejected the quote. A definitive verdict:
+            // refund and resume now, with the reason, rather than waiting for
+            // the timeout.
+            Ok(VerificationResult::Rejected(reason)) => {
+                log!("verifier rejected quote for {account_id}: {reason}");
+                FinalOutcome::Err(format!("verifier: {reason}"))
+            }
+            Ok(VerificationResult::Verified(report)) => {
                 let pending = self.pending_attestations.get(&account_id).expect(
                     "PendingAttestation must exist while resolve_verification holds the yield",
                 );
@@ -513,15 +545,17 @@ impl MpcContract {
 
     /// Yield-callback. Same shape as the sign-request callback
     /// [`return_signature_and_clean_state_on_success`][sign-yield-callback]: the
-    /// success and verifier-responded-error branches were already finalized by
-    /// `resolve_verification` (which removed the pending entry and scheduled any
-    /// refund before calling `promise_yield_resume`), so this body just returns
-    /// the outcome to the caller.
+    /// `Verified` and `Rejected` outcomes (every case where the verifier
+    /// answered) were already finalized by `resolve_verification` (which removed
+    /// the pending entry and scheduled any refund before calling
+    /// `promise_yield_resume`), so this body just returns the outcome to the
+    /// caller.
     ///
     /// The only branch that does real work is `Err(PromiseError::Failed)`, fired
     /// by the runtime ~200 blocks after submit if no `promise_yield_resume` has
-    /// landed (verifier account gone, OOM, never responded, or `resolve_verification`
-    /// itself rolled back). On that branch the pending entry is still present, so
+    /// landed: the verifier was unreachable / never responded so
+    /// `resolve_verification` deliberately returned early, or it ran but rolled
+    /// back (OOM / panic). On that branch the pending entry is still present, so
     /// it removes the entry and schedules a deposit refund.
     #[private]
     pub fn on_attestation_verified(
@@ -571,11 +605,11 @@ pub struct PendingAttestation {
 
 ## Testing
 
-The yield-resume split adds four branches the synchronous version never had: three of them live in `resolve_verification` (verifier returned `Err`, verifier returned `Ok` but post-DCAP failed, verifier returned `Ok` and post-DCAP passed) and one lives in `on_attestation_verified` (the yield-resume timeout fired with `Err(PromiseError::Failed)` — covering both verifier infrastructure failure and a `resolve_verification` receipt that rolled back). Each one needs test coverage, and exercising the failure branches requires the verifier to return specific responses on demand — or, for the timeout branch, the test driver to advance the chain past the yield-resume window without resuming.
+The yield-resume split adds four resolution branches the synchronous version never had. Three do their work in `resolve_verification`, each from a distinct verifier answer: `Verified` + post-DCAP pass (store + resume `Ok`), `Verified` + post-DCAP fail (refund + resume `Err`), and `Rejected` (refund + resume `Err`, immediately — the path that recovers the synchronous-rejection behavior the split would otherwise lose). The fourth lives in `on_attestation_verified`, on its `Err(PromiseError::Failed)` branch, reached when the verifier gave no verdict — unreachable, panicked, or no resume landed within ~200 blocks (verifier silent, or a `resolve_verification` receipt that rolled back). That no-verdict case re-enters `resolve_verification`, which logs and returns early without resuming, so its cleanup happens in `on_attestation_verified`. Each branch needs test coverage, and exercising them requires the verifier to return specific answers on demand — a `Verified` or `Rejected` value for the three `resolve_verification` branches, and for the no-verdict path either an unreachable account or the test driver advancing the chain past the yield-resume window without resuming.
 
 The verifier-rotation design changes the test surface in three ways. First, the expiration window itself: an entry whose `expiry_timestamp_seconds` is in the past must be rejected by `re_verify` even when every post-DCAP allowlist invariant still holds, and an entry within the (shortened) window must still pass — this is the existing expiry check, now exercised against the lowered `DEFAULT_EXPIRATION_DURATION_SECONDS`. Second, rotation routing: after `vote_tee_verifier_change` crosses threshold, the next `submit_participant_info` must call `verify_quote` on the new `tee_verifier_account_id`, and existing stored entries must remain present (no purge) until they expire. Third, the in-flight case: a verification scheduled against the old verifier that resolves after the vote crosses threshold must still be stored as a normal entry — it is not treated specially and ages out via the same expiration window as any other entry.
 
-To make that practical, we introduce a stub `tee-verifier` crate: same `tee-verifier-interface` DTOs as the real verifier, but `verify_quote` returns whatever `Ok(VerifiedReport)` or `Err(VerifierError)` the test asks for. Sandbox tests deploy the stub like any other verifier candidate — lock its account, then call `propose_tee_verifier_change` + `vote_tee_verifier_change` from the test setup to point `mpc-contract` at the stub. This runs the same code path as production; nothing in `mpc-contract` knows or cares whether it's talking to the real verifier or the stub.
+To make that practical, we introduce a stub `tee-verifier` crate: same `tee-verifier-interface` DTOs as the real verifier, but `verify_quote` returns whatever `VerificationResult` (`Verified` or `Rejected`) the test asks for — and a stub that panics, or an undeployed account, covers the no-verdict path. Sandbox tests deploy the stub like any other verifier candidate — lock its account, then call `vote_tee_verifier_change` from the test setup to point `mpc-contract` at the stub. This runs the same code path as production; nothing in `mpc-contract` knows or cares whether it's talking to the real verifier or the stub.
 
 E2E tests in `crates/e2e-tests` deploy either the real `tee-verifier` (when the test wants real `dcap-qvl` against a fixture quote) or the stub (for everything else). The change is one extra `deploy` call in the setup helper.
 
