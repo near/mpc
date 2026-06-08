@@ -8,6 +8,18 @@ use thiserror::Error;
 const GET_TRANSACTIONS_PATH: &str = "transactions";
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 
+/// Query-parameter names for the v3 `/transactions` endpoint.
+const ACCOUNT_QUERY_PARAM: &str = "account";
+const HASH_QUERY_PARAM: &str = "hash";
+const INCLUDE_MSGS_QUERY_PARAM: &str = "include_msgs";
+const LIMIT_QUERY_PARAM: &str = "limit";
+
+/// We need the message bodies (the ext-out log payloads), so request them.
+const INCLUDE_MSGS_VALUE: &str = "true";
+/// A transaction is uniquely identified by `account` + `hash`, so a single
+/// result is all we ever expect or need.
+const LIMIT_VALUE: &str = "1";
+
 pub trait TonRpcClient: Send + Sync {
     /// Fetch the transaction identified by `tx_hash_hex` on `account_hash`
     /// (within `workchain`) from the TON HTTP API v3 `/transactions` endpoint.
@@ -121,10 +133,10 @@ fn build_get_transactions_url(base_url: &url::Url, account: &str, tx_hash_hex: &
     let new_path = format!("{}{}", url.path(), GET_TRANSACTIONS_PATH);
     url.set_path(&new_path);
     url.query_pairs_mut()
-        .append_pair("account", account)
-        .append_pair("hash", tx_hash_hex)
-        .append_pair("include_msgs", "true")
-        .append_pair("limit", "1");
+        .append_pair(ACCOUNT_QUERY_PARAM, account)
+        .append_pair(HASH_QUERY_PARAM, tx_hash_hex)
+        .append_pair(INCLUDE_MSGS_QUERY_PARAM, INCLUDE_MSGS_VALUE)
+        .append_pair(LIMIT_QUERY_PARAM, LIMIT_VALUE);
     url
 }
 
