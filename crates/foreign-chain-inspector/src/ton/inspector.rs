@@ -7,6 +7,10 @@ use foreign_chain_rpc_interfaces::ton::{TonMessage, TonTransaction};
 use near_mpc_contract_interface::types::{Hash256, TonAddress, TonLog};
 use tonlib_core::types::TonAddress as RpcTonAddress;
 
+/// The only TON workchain supported in v1: the basechain. The masterchain
+/// (`-1`) and any future workchains are rejected before any RPC round-trip.
+const BASECHAIN_WORKCHAIN: i8 = 0;
+
 /// TON chain inspector.
 ///
 /// Verifies a TON transaction via the TON HTTP API v3 `/transactions` endpoint and
@@ -40,7 +44,7 @@ impl<Client: TonRpcClient> ForeignChainInspector for TonInspector<Client> {
             tx_hash,
         } = tx_id;
 
-        if workchain != 0 {
+        if workchain != BASECHAIN_WORKCHAIN {
             return Err(TonInspectionError::UnsupportedWorkchain { got: workchain }.into());
         }
 
@@ -293,7 +297,7 @@ mod tests {
     /// a 4-byte payload cell.
     fn happy_tx() -> TonTransaction {
         TonTransaction {
-            account: ton_address(0, &account_hash()),
+            account: ton_address(BASECHAIN_WORKCHAIN, &account_hash()),
             hash: STANDARD.encode(tx_hash_bytes()),
             mc_block_seqno: Some(12345),
             description: TonTransactionDescription {
@@ -304,7 +308,7 @@ mod tests {
                 }),
             },
             out_msgs: vec![TonMessage {
-                source: Some(ton_address(0, &account_hash())),
+                source: Some(ton_address(BASECHAIN_WORKCHAIN, &account_hash())),
                 destination: None, // ext-out
                 created_lt: Some("100".to_string()),
                 message_content: Some(TonCellBoc {
@@ -327,7 +331,7 @@ mod tests {
 
     fn tx_id() -> TonTransactionId {
         TonTransactionId {
-            workchain: 0,
+            workchain: BASECHAIN_WORKCHAIN,
             account: account_hash(),
             tx_hash: tx_hash_bytes(),
         }
@@ -349,7 +353,7 @@ mod tests {
         assert_eq!(
             log.from_address,
             TonAddress {
-                workchain: 0,
+                workchain: BASECHAIN_WORKCHAIN,
                 hash: Hash256(account_hash()),
             }
         );
@@ -451,7 +455,7 @@ mod tests {
     #[tokio::test]
     async fn extract__should_reject_on_account_mismatch() {
         let mut tx = happy_tx();
-        tx.account = ton_address(0, &[0x22; 32]); // different account
+        tx.account = ton_address(BASECHAIN_WORKCHAIN, &[0x22; 32]); // different account
         let inspector = inspector_from_tx(tx);
 
         let err = inspector
@@ -536,8 +540,8 @@ mod tests {
         let ext_out = tx.out_msgs.pop().unwrap();
         tx.out_msgs = vec![
             TonMessage {
-                source: Some(ton_address(0, &account_hash())),
-                destination: Some(ton_address(0, &[0x33; 32])),
+                source: Some(ton_address(BASECHAIN_WORKCHAIN, &account_hash())),
+                destination: Some(ton_address(BASECHAIN_WORKCHAIN, &[0x33; 32])),
                 // Internal messages aren't required to carry created_lt for
                 // ordering — the inspector filters them out before the sort.
                 created_lt: None,
@@ -569,13 +573,13 @@ mod tests {
         let earlier_body = encode_cell(vec![0xaa; 4], 32, vec![]);
         tx.out_msgs = vec![
             TonMessage {
-                source: Some(ton_address(0, &account_hash())),
+                source: Some(ton_address(BASECHAIN_WORKCHAIN, &account_hash())),
                 destination: None,
                 created_lt: Some("200".to_string()),
                 message_content: Some(TonCellBoc { body: later_body }),
             },
             TonMessage {
-                source: Some(ton_address(0, &account_hash())),
+                source: Some(ton_address(BASECHAIN_WORKCHAIN, &account_hash())),
                 destination: None,
                 created_lt: Some("100".to_string()),
                 message_content: Some(TonCellBoc { body: earlier_body }),
@@ -657,7 +661,7 @@ mod tests {
         let mut tx = happy_tx();
         let other_body = encode_cell(vec![0xaa; 4], 32, vec![]);
         tx.out_msgs.push(TonMessage {
-            source: Some(ton_address(0, &account_hash())),
+            source: Some(ton_address(BASECHAIN_WORKCHAIN, &account_hash())),
             destination: None,
             created_lt: tx.out_msgs[0].created_lt.clone(),
             message_content: Some(TonCellBoc { body: other_body }),
