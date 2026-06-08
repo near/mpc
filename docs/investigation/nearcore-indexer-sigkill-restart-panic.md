@@ -37,7 +37,7 @@ operational scenario is real production:
 ## Affected versions
 
 - nearcore tag **`2.12.0`** (final) — resolved commit `1144e31`. Mode-A panic
-  reproduced on the rebased PR #3362 branch in a CI run on commit
+  reproduced on the rebased near/mpc#3362 branch in a CI run on commit
   `3a2ceafe`; the panic backtrace is inlined in the test failure message
   via the diagnostic in [near/mpc#3362](https://github.com/near/mpc/pull/3362).
 - nearcore tags **`2.12.0-rc.1`** and **`2.12.0-rc.2`** — earlier investigation.
@@ -69,7 +69,7 @@ that embed `near-indexer` will hit (1) whenever they ship a similar two-tx
 pattern, (2) is normal operational background, and (3) happens every time
 anyone runs out of memory, reboots a host, etc.
 
-### Reproduction rate: latent on `main`, ~70–80% on PR #3362
+### Reproduction rate: latent on `main`, ~70–80% on near/mpc#3362
 
 The same back-migration e2e test exists on both `main` and on
 [near/mpc#3362](https://github.com/near/mpc/pull/3362):
@@ -77,13 +77,13 @@ The same back-migration e2e test exists on both `main` and on
 | Branch | Trigger present? | Fail rate observed |
 |---|---|---|
 | `main` | No | **rarely** — single-digit %, very occasional failures the team has not been able to attribute, no consistent panic stack |
-| PR #3362 (`barak/2121-contract-stale-attestation-test`) | Yes | **~70–80%** — every failure carries the same mode-A panic stack at `streamer/mod.rs:207` (or, less commonly, mode B at `client_actor.rs:217`) |
+| near/mpc#3362 (`barak/2121-contract-stale-attestation-test`) | Yes | **~70–80%** — every failure carries the same mode-A panic stack at `streamer/mod.rs:207` (or, less commonly, mode B at `client_actor.rs:217`) |
 
 The qualitative difference between "rare and shapeless" on `main` and
-"frequent with a consistent stack" on PR #3362 is the load-bearing evidence
-that the trigger (the two-tx pattern added by PR #3362's
+"frequent with a consistent stack" on near/mpc#3362 is the load-bearing evidence
+that the trigger (the two-tx pattern added by near/mpc#3362's
 `submit_attestation_before_concluding_migration` function) is what makes
-this nearcore race reliably reachable. Once PR #3362 merges, every CI run
+this nearcore race reliably reachable. Once near/mpc#3362 merges, every CI run
 of this test on `main` will be at the ~70–80% rate — i.e. the panic will
 become the dominant cause of test failure in this file.
 
@@ -151,11 +151,11 @@ code expects to find.
 
 ## Reproduction
 
-The bug is reachable from near/mpc PR [`#3362`](https://github.com/near/mpc/pull/3362),
-which adds a node-side fix for an unrelated issue (#2121 — stale attestation in
+The bug is reachable from near/mpc PR [near/mpc#3362](https://github.com/near/mpc/pull/3362),
+which adds a node-side fix for an unrelated issue (near/mpc#2121 — stale attestation in
 back-migration). The fix happens to produce a transaction pattern that makes
 the underlying nearcore receipt-graph race reach a ~70–80% per-run repro rate.
-PR `#3362` is still open at time of filing; the repro therefore lives on its
+near/mpc#3362 is still open at time of filing; the repro therefore lives on its
 branch.
 
 ### Failing test
@@ -182,15 +182,15 @@ A single test fires the bug:
 
 ### Reproduction via CI
 
-The easiest way to reproduce is to push to PR #3362's branch and let GitHub
+The easiest way to reproduce is to push to near/mpc#3362's branch and let GitHub
 Actions run the test. CI builds everything from scratch and runs the test
 once; you can get N data points by pushing N times.
 
 ```bash
-# 1. Authorize a push to PR #3362 or create a sister branch.
+# 1. Authorize a push to near/mpc#3362 or create a sister branch.
 git clone git@github.com:near/mpc.git
 cd mpc
-git checkout barak/2121-contract-stale-attestation-test    # head of PR #3362
+git checkout barak/2121-contract-stale-attestation-test    # head of near/mpc#3362
 git push origin HEAD:refs/heads/my-repro-branch            # forks to a branch you own
 gh workflow run CI --ref my-repro-branch                   # triggers the CI workflow
 
@@ -214,7 +214,7 @@ gh run watch <run-id>
 git clone git@github.com:near/mpc.git
 cd mpc
 git checkout barak/2121-contract-stale-attestation-test
-# Branch shape: stacked on near/mpc PRs #3410 (SIGTERM handler) + #3486
+# Branch shape: stacked on near/mpc#3410 (SIGTERM handler) + near/mpc#3486
 # (full indexer drain). The trigger is on top as commit `0c02d27a`.
 # nearcore is resolved to 2.12.0 (final) via main's Cargo.lock.
 
@@ -294,7 +294,7 @@ closed most of that gap, though one slice remains open — see "Caveat" below.
 
 We installed a SIGTERM handler in mpc-node that routes into the existing
 internal shutdown channel and calls `near_async::shutdown_all_actors()`
-before exit (commit landed in [PR #3410](https://github.com/near/mpc/pull/3410)
+before exit (commit landed in [near/mpc#3410](https://github.com/near/mpc/pull/3410)
 on near/mpc, addressing [issue #3409](https://github.com/near/mpc/issues/3409)).
 With this handler, the diagnostic emits `mpc-node pid=X exited gracefully
 100ms after SIGTERM` in 5/5 observed runs — nearcore's actor system was given
@@ -435,7 +435,7 @@ Worth checking:
 We don't have a working test-side workaround. Options we evaluated:
 
 - **Install a SIGTERM handler in mpc-node so nearcore's actor system gets a
-  clean stop** ([PR #3410](https://github.com/near/mpc/pull/3410),
+  clean stop** ([near/mpc#3410](https://github.com/near/mpc/pull/3410),
   [issue #3409](https://github.com/near/mpc/issues/3409)). Real production
   improvement on its own, but **does not** prevent the panic — see the
   "Strongest evidence" section above. 4/5 still fail with the handler.
@@ -465,7 +465,7 @@ run's log), so the upstream panic stack is right there.
 
 ## References
 
-- near/mpc PR exposing the bug: [`#3362`](https://github.com/near/mpc/pull/3362)
+- near/mpc PR exposing the bug: [near/mpc#3362](https://github.com/near/mpc/pull/3362)
 - near/mpc revert-experiment PR (isolates the trigger as our two-tx pattern,
   not a defect in our code): [`#3373`](https://github.com/near/mpc/pull/3373) — `chore:` PR
 - near/mpc SIGTERM-handler PR (proves that adding a real graceful path on the
