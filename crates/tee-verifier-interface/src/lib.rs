@@ -10,6 +10,14 @@
 //! `dcap-qvl` dependency; the `From<dcap_qvl::...>` conversions live in
 //! the `tee-verifier` contract crate, the only crate that depends on
 //! both.
+//!
+//! Borsh-only on purpose. The verifier is reached only over a cross-contract
+//! call (Borsh ABI), so there is no JSON wire and serde would just add
+//! dependencies. The payload is mostly binary anyway (a multi-KB quote
+//! plus collateral), which Borsh sends as raw bytes where JSON would inflate
+//! it into integer arrays. Byte fields stay plain `Vec<u8>` / arrays rather
+//! than serde/hex wrappers, which also keeps the layout a field-for-field
+//! Borsh mirror of `dcap_qvl`.
 
 #![no_std]
 
