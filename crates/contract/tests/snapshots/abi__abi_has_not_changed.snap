@@ -3863,7 +3863,7 @@ expression: abi
           }
         },
         "ProposedThresholdParameters": {
-          "description": "A proposed set of threshold parameters submitted to `vote_new_parameters`. Carries the new [`ThresholdParameters`] plus an optional per-domain `ReconstructionThreshold` overlay for the resharing it would trigger.",
+          "description": "A proposed set of threshold parameters submitted to `vote_new_parameters`. Carries the proposed [`ThresholdParameters`] (participant set and threshold) plus an optional per-domain `ReconstructionThreshold` overlay for the resharing it would trigger.",
           "type": "object",
           "required": [
             "participants",

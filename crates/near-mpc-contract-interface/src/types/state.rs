@@ -145,8 +145,9 @@ pub struct ThresholdParameters {
 }
 
 /// A proposed set of threshold parameters submitted to `vote_new_parameters`.
-/// Carries the new [`ThresholdParameters`] plus an optional per-domain
-/// `ReconstructionThreshold` overlay for the resharing it would trigger.
+/// Carries the proposed [`ThresholdParameters`] (participant set and threshold)
+/// plus an optional per-domain `ReconstructionThreshold` overlay for the
+/// resharing it would trigger.
 //
 // `per_domain_thresholds` proposes an updated `ReconstructionThreshold` for the
 // listed domains. An empty map means "keep current per-domain thresholds"; a
