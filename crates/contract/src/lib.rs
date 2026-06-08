@@ -1615,7 +1615,7 @@ impl MpcContract {
     }
 
     /// Cleans update votes from non-participants after resharing.
-    /// Can be called by any participant or triggered automatically via promise.
+    /// Can only be called by participants or by the contract itself.
     #[handle_result]
     pub fn remove_non_participant_update_votes(&mut self) -> Result<(), Error> {
         log!(
