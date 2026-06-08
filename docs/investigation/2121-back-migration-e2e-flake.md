@@ -6,9 +6,10 @@ The `back-migration` E2E test on PR #3362 fails with two distinct nearcore panic
 
 The bug is upstream in nearcore — confirmed empirically with maximal embedder-side mitigation:
 
-- PR #3362's branch is now stacked on **PR #3410** (real SIGTERM handler) + **PR #3486** (full indexer-thread drain — `block_until_all_instances_are_dropped()` returns cleanly in 2–6 s, all `Arc<RocksDB>` refs released, indexer's tokio runtime dropped). nearcore is resolved to `2.12.0` (the final tag).
-- Even with that maximal graceful-shutdown stack, the back-migration test still panics ~80 % per run on the prototype branch's `607e3e21`. See "Real SIGTERM handler in mpc-node — also does not fix it" below.
-- The bug is **latent on current `main`** because the trigger (`submit_attestation_before_concluding_migration`, in PR #3362) hasn't merged. A 5/5 confirmation campaign on `main` + PR #3486 (no #3362 trigger) showed **0/5 fail**, re-confirming PR #3373's revert-experiment result.
+- PR #3362's branch is now stacked on **PR #3410** (real SIGTERM handler) + **PR #3486** (full indexer-thread drain — `block_until_all_instances_are_dropped()` returns cleanly in 2–6 s, all `Arc<RocksDB>` refs released, indexer's tokio runtime dropped). nearcore is resolved to `2.12.0` (the final tag, commit `1144e31`).
+- **Latest CI run confirms the bug reproduces on this exact stack.** Commit `3a2ceafe` (PR #3362 head after the rebase), e2e job: the back-migration test failed at `migration_service.rs:771` with the upstream nearcore mode-A panic — `streamer/mod.rs:207` `` `receipt` must be present at this moment `` — captured in full via the new pre/post-restart stdout/stderr diagnostic.
+- Earlier, on the prototype branch's `607e3e21` (against nearcore `2.12.0-rc.2`), a 5-run campaign showed 1/5 pass, 4/5 fail with the same panic even after a verified 2–6 s clean graceful shutdown. See "Real SIGTERM handler in mpc-node — also does not fix it" below.
+- The bug is **latent on current `main`** because the trigger (`submit_attestation_before_concluding_migration`, in PR #3362) hasn't merged. A 5-run confirmation campaign on `main` + PR #3486 (no #3362 trigger) showed **0/5 fail**, re-confirming PR #3373's revert-experiment result.
 - Upstream-bug write-up is in [`nearcore-indexer-sigkill-restart-panic.md`](./nearcore-indexer-sigkill-restart-panic.md), ready to file against `near/nearcore`.
 
 > **Headline statistics.**

@@ -31,16 +31,18 @@ operational scenario is real production:
 
 ## Affected versions
 
-- nearcore tags `2.12.0-rc.1` and `2.12.0-rc.2`. Specific resolved commits we've
-  observed the panic on: `aab31b0e` and `fadb5c1` (both within the `2.12.0-rc.1`
-  tag at different points after a `Cargo.lock` bump in our workspace).
-- nearcore `2.12.0` (final) is functionally the same on the panic site —
-  `chain/indexer/src/streamer/mod.rs:207` and `chain/client/src/client_actor.rs:217`
-  are unchanged between `2.12.0-rc.1` and `2.12.0`. Only `chain/chain/src/{chain,
-  runtime,types}.rs` and VM/cache code differ. We've not run a 5-run campaign on
-  the `2.12.0` final tag directly because the trigger (see "Reproduction") is
-  on a branch that hasn't been rebased onto `2.12.0` final; we expect the same
-  rate since the panic-site code is identical.
+- nearcore tag **`2.12.0`** (final) — resolved commit `1144e31`. Mode-A panic
+  reproduced on the rebased PR #3362 branch in a CI run on commit
+  `3a2ceafe`; the panic backtrace is inlined in the test failure message
+  via the diagnostic in [near/mpc#3362](https://github.com/near/mpc/pull/3362).
+- nearcore tags **`2.12.0-rc.1`** and **`2.12.0-rc.2`** — earlier investigation.
+  Specific resolved commits we observed the panic on: `aab31b0e` and `fadb5c1`
+  (both within the `2.12.0-rc.1` tag at different points after a `Cargo.lock`
+  bump in our workspace).
+- The panic-site code in `chain/indexer/src/streamer/mod.rs:207` and
+  `chain/client/src/client_actor.rs:217` is **unchanged between `2.12.0-rc.1`
+  and `2.12.0` final**. Only `chain/chain/src/{chain,runtime,types}.rs` and
+  VM/cache code differ across those tags.
 
 ## When this bug is reachable in practice
 
