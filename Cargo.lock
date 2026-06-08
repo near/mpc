@@ -6008,6 +6008,7 @@ dependencies = [
  "anyhow",
  "assert_matches",
  "async-trait",
+ "average",
  "axum",
  "backon",
  "backtrace",

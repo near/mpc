@@ -156,6 +156,24 @@ tag-existence and release-existence checks together guard against
 silently re-pointing `:X.Y.Z` at a different commit once it has been
 released.
 
+### Docker push fails with `blob unknown to registry`
+
+If a Build Docker image workflow fails (deterministically, even on re-run)
+with:
+
+```
+writing manifest ...: blob unknown to registry
+```
+
+the registry holds an orphaned blob from an earlier push that was
+interrupted mid-upload. Launcher/node images share base-image layer blobs
+across tags, so skopeo's blob `HEAD` checks see the orphaned blob as
+"present" and skip re-uploading it, then Docker Hub rejects the manifest
+because it can't link that blob.
+
+To recover, wait for Docker Hub's background garbage collection to drop
+the orphaned blob (usually a few minutes) and re-run.
+
 ## Creating a new release branch
 
 When a minor line needs its own branch (typically just before or just

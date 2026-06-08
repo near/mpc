@@ -1,8 +1,9 @@
 name: Release Node Docker Image
 
+# cancel-in-progress is false to avoid orphaning blobs mid-push; see RELEASES.md.
 concurrency:
   group: retag-node-${{ inputs.repository }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 on:
   workflow_dispatch:

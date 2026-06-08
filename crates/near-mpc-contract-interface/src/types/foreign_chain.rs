@@ -20,7 +20,7 @@ pub const TON_CELL_MAX_DATA_BITS: u16 = 1023;
 /// Maximum number of data bytes in a TON Cell: ⌈1023/8⌉ = 128 bytes, the
 /// byte-padded length of a cell holding the maximal [`TON_CELL_MAX_DATA_BITS`].
 ///
-/// See <https://docs.ton.org/foundations/serialization/cells#standard-cell-representation-and-its-hash>.
+/// See <https://docs.ton.org/blockchain-basics/primitives/serialization/cells#basic-structure>.
 pub const TON_CELL_MAX_DATA_BYTES: usize = 128;
 
 /// Maximum number of references a TON Cell may hold.
@@ -397,26 +397,45 @@ pub enum TonExtractor {
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct TonCellBody {
-    bits: TonCellData,
+    bytes: TonCellData,
     bit_length: u16,
 }
 
 impl TonCellBody {
     /// Builds a cell body from `bits` (significant bits packed big-endian into bytes) and
-    /// the significant `bit_length`, enforcing `bit_length <= `[`TON_CELL_MAX_DATA_BITS`]
-    /// and `bits.len() == ⌈bit_length / 8⌉`.
-    pub fn new(bits: TonCellData, bit_length: u16) -> Result<Self, TonCellBodyError> {
+    /// the significant `bit_length`, enforcing `bit_length <= `[`TON_CELL_MAX_DATA_BITS`],
+    /// `bits.len() == ⌈bit_length / 8⌉`, and that the final byte's unused low bits (the
+    /// `8 * bits.len() - bit_length` bits beyond `bit_length`) are zero, so that the byte
+    /// representation is canonical for a given `bit_length`.
+    pub fn new(bytes: TonCellData, bit_length: u16) -> Result<Self, TonCellBodyError> {
         if bit_length > TON_CELL_MAX_DATA_BITS {
             return Err(TonCellBodyError::BitLengthTooLarge { bit_length });
         }
         let expected_bytes = usize::from(bit_length.div_ceil(8));
-        if bits.len() != expected_bytes {
+        if bytes.len() != expected_bytes {
             return Err(TonCellBodyError::BitLengthByteMismatch {
                 bit_length,
-                byte_len: bits.len(),
+                byte_len: bytes.len(),
             });
         }
-        Ok(Self { bits, bit_length })
+        // When `bit_length` is not byte-aligned, the final byte's low `unused_bits` bits lie
+        // beyond the significant data and must be zero. Otherwise two bodies sharing a
+        // `bit_length` but differing in padding would be distinct under `Eq`/`Hash` and
+        // hash differently under `compute_msg_hash`, despite encoding the same cell.
+        let unused_bits = (8 - (bit_length % 8)) % 8;
+        if unused_bits != 0 {
+            let last_byte = *bytes
+                .last()
+                .expect("non-zero bit_length implies a final byte");
+            let padding_mask = (1u8 << unused_bits) - 1;
+            if last_byte & padding_mask != 0 {
+                return Err(TonCellBodyError::TrailingBitsNotZero {
+                    bit_length,
+                    last_byte,
+                });
+            }
+        }
+        Ok(Self { bytes, bit_length })
     }
 }
 
@@ -424,7 +443,7 @@ impl TonCellBody {
 /// field layout and the routing through [`TonCellBody::new`] live in one place.
 #[derive(Deserialize, BorshDeserialize)]
 struct TonCellBodyRepr {
-    bits: TonCellData,
+    cell_data: TonCellData,
     bit_length: u16,
 }
 
@@ -432,7 +451,7 @@ impl TryFrom<TonCellBodyRepr> for TonCellBody {
     type Error = TonCellBodyError;
 
     fn try_from(repr: TonCellBodyRepr) -> Result<Self, Self::Error> {
-        Self::new(repr.bits, repr.bit_length)
+        Self::new(repr.cell_data, repr.bit_length)
     }
 }
 
@@ -463,6 +482,8 @@ pub enum TonCellBodyError {
     BitLengthTooLarge { bit_length: u16 },
     /// The byte count does not match `bit_length` rounded up to whole bytes.
     BitLengthByteMismatch { bit_length: u16, byte_len: usize },
+    /// The final byte's unused low bits (beyond `bit_length`) are not zero.
+    TrailingBitsNotZero { bit_length: u16, last_byte: u8 },
 }
 
 impl core::fmt::Display for TonCellBodyError {
@@ -479,6 +500,13 @@ impl core::fmt::Display for TonCellBodyError {
                 f,
                 "TON cell bit_length {bit_length} requires {} body bytes but found {byte_len}",
                 bit_length.div_ceil(8)
+            ),
+            Self::TrailingBitsNotZero {
+                bit_length,
+                last_byte,
+            } => write!(
+                f,
+                "TON cell with bit_length {bit_length} has non-zero unused padding bits in final byte {last_byte:#04x}"
             ),
         }
     }
@@ -1658,7 +1686,8 @@ mod tests {
     #[case::single_bit(vec![0x80], 1)]
     #[case::byte_aligned(vec![0xde, 0xad], 16)]
     #[case::non_byte_aligned(vec![0xde, 0xa0], 12)]
-    #[case::max(vec![0xff; 128], TON_CELL_MAX_DATA_BITS)]
+    // 1023 bits => final byte's low bit is unused, so it must be zero (0xfe, not 0xff).
+    #[case::max([vec![0xff; 127], vec![0xfe]].concat(), TON_CELL_MAX_DATA_BITS)]
     fn ton_cell_body_new__should_accept_consistent_body(
         #[case] bits: Vec<u8>,
         #[case] bit_length: u16,
@@ -1709,6 +1738,31 @@ mod tests {
         );
     }
 
+    #[rstest]
+    // 12 significant bits => final byte's low 4 bits must be zero; 0x01 sets one of them.
+    #[case::non_byte_aligned(vec![0xde, 0x01], 12, 0x01)]
+    // 1 significant bit => only the top bit is significant; any low bit set is rejected.
+    #[case::single_bit(vec![0x01], 1, 0x01)]
+    // 1015 bits => final byte's low bit is unused; 0xff sets it.
+    #[case::near_max(vec![0xff; 127], 1015, 0xff)]
+    fn ton_cell_body_new__should_reject_non_zero_padding_bits(
+        #[case] bits: Vec<u8>,
+        #[case] bit_length: u16,
+        #[case] last_byte: u8,
+    ) {
+        // When
+        let result = TonCellBody::new(bits.try_into().unwrap(), bit_length);
+
+        // Then
+        assert_eq!(
+            result,
+            Err(TonCellBodyError::TrailingBitsNotZero {
+                bit_length,
+                last_byte,
+            })
+        );
+    }
+
     #[test]
     fn ton_cell_body_borsh_deserialize__should_reject_inconsistent_body() {
         // Given: borsh bytes for a 1-byte buffer claiming 16 significant bits.
@@ -1747,8 +1801,10 @@ mod tests {
                     finality: TonFinality::MasterchainIncluded,
                     extractors: vec![TonExtractor::Log { message_index: 0 }],
                 }),
+                // 0xfe (not 0xff) so the body stays canonical at 7 bits, where the final
+                // byte's low bit is unused padding and must be zero.
                 values: vec![ExtractedValue::TonExtractedValue(TonExtractedValue::Log(
-                    ton_log_with_body(vec![0xff], body_bit_length),
+                    ton_log_with_body(vec![0xfe], body_bit_length),
                 ))],
             })
         };
