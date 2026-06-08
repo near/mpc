@@ -5,6 +5,7 @@ mod sign;
 use std::{collections::HashMap, sync::Arc};
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use mpc_primitives::ReconstructionThreshold;
 use mpc_primitives::domain::DomainId;
 use near_mpc_contract_interface::types::KeyEventId;
 use threshold_signatures::confidential_key_derivation::{
@@ -43,7 +44,15 @@ pub struct CKDProvider {
     mpc_config: Arc<MpcConfig>,
     client: Arc<MeshNetworkClient>,
     ckd_request_store: Arc<CKDRequestStorage>,
-    keyshares: HashMap<DomainId, KeygenOutput>,
+    per_domain_data: HashMap<DomainId, PerDomainData>,
+}
+
+#[derive(Clone)]
+pub(super) struct PerDomainData {
+    pub keyshare: KeygenOutput,
+    /// Per-domain reconstruction threshold `t`, used as the CKD threshold and
+    /// active-signer-set size — see #3164.
+    pub reconstruction_threshold: ReconstructionThreshold,
 }
 
 impl CKDProvider {
@@ -53,14 +62,36 @@ impl CKDProvider {
         client: Arc<MeshNetworkClient>,
         ckd_request_store: Arc<CKDRequestStorage>,
         keyshares: HashMap<DomainId, KeygenOutput>,
-    ) -> Self {
-        Self {
+        reconstruction_thresholds: HashMap<DomainId, ReconstructionThreshold>,
+    ) -> anyhow::Result<Self> {
+        let mut per_domain_data = HashMap::new();
+        for (domain_id, keyshare) in keyshares {
+            let reconstruction_threshold =
+                *reconstruction_thresholds.get(&domain_id).ok_or_else(|| {
+                    anyhow::anyhow!("No reconstruction threshold for domain {:?}", domain_id)
+                })?;
+            per_domain_data.insert(
+                domain_id,
+                PerDomainData {
+                    keyshare,
+                    reconstruction_threshold,
+                },
+            );
+        }
+        Ok(Self {
             config,
             mpc_config,
             client,
             ckd_request_store,
-            keyshares,
-        }
+            per_domain_data,
+        })
+    }
+
+    pub(super) fn domain_data(&self, domain_id: DomainId) -> anyhow::Result<PerDomainData> {
+        self.per_domain_data
+            .get(&domain_id)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("No keyshare for domain {:?}", domain_id))
     }
 }
 

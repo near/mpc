@@ -5,7 +5,7 @@ use crate::primitives::UniqueId;
 use crate::protocol::run_protocol;
 use crate::providers::robust_ecdsa::{
     EcdsaMessageHash, KeygenOutput, PresignatureStorage, RobustEcdsaSignatureProvider,
-    RobustEcdsaTaskId, translate_threshold,
+    RobustEcdsaTaskId,
 };
 use crate::types::SignatureId;
 use anyhow::Context;
@@ -38,9 +38,8 @@ impl RobustEcdsaSignatureProvider {
             },
             presignature.participants,
         )?;
-        let number_of_participants = self.mpc_config.participants.participants.len();
-        let threshold = self.mpc_config.participants.threshold.try_into()?;
-        let robust_ecdsa_threshold = translate_threshold(threshold, number_of_participants)?;
+        let (_num_signers, robust_ecdsa_threshold) =
+            super::presign::compute_thresholds(domain_data.reconstruction_threshold)?;
 
         let msg_hash = *sign_request
             .payload
@@ -89,9 +88,8 @@ impl RobustEcdsaSignatureProvider {
         metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_LOOKUP_SUCCEEDED.inc();
 
         let domain_data = self.domain_data(sign_request.domain)?;
-        let number_of_participants = self.mpc_config.participants.participants.len();
-        let threshold = self.mpc_config.participants.threshold.try_into()?;
-        let robust_ecdsa_threshold = translate_threshold(threshold, number_of_participants)?;
+        let (_num_signers, robust_ecdsa_threshold) =
+            super::presign::compute_thresholds(domain_data.reconstruction_threshold)?;
 
         let msg_hash = *sign_request
             .payload
