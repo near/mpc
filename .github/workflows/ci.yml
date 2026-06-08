@@ -173,11 +173,40 @@ jobs:
         with:
           save: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: Build mpc-contract (reproducible)
-        run: nix build -L .#mpc-contract
+      # Reproducible build that carries NEP-330 metadata; this is what the
+      # release artifact uses and what sourcescan.io / nearblocks replay.
+      - name: Build mpc-contract (reproducible, cargo-near)
+        run: nix develop --command cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
 
       - name: Check contract WASM size
-        run: nix develop --command bash scripts/check-contract-wasm-size.sh
+        run: nix develop --command bash scripts/check-contract-wasm-size.sh target/near/mpc_contract/mpc_contract.wasm
+
+  # Independent reproducible path: the Nix derivation produces the contract WASM
+  # without a third-party Docker image. Kept exercised alongside the cargo-near
+  # build; see docs/reproducible-builds.md.
+  nix-build-mpc-contract:
+    name: "Nix build mpc-contract"
+    needs: changes
+    if: ${{ always() && needs.changes.outputs.code_changed != 'false' }}
+    runs-on: warp-ubuntu-2404-x64-16x
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+
+      - name: Restore /nix from cache
+        uses: ./.github/actions/restore-nix-cache
+
+      - name: Build mpc-contract (Nix)
+        run: nix build -L .#mpc-contract
 
   nix-build-mpc-node:
     name: "Nix build mpc-node"
@@ -254,9 +283,9 @@ jobs:
       - name: Build mpc-contract reproducibly
         if: github.ref == 'refs/heads/main'
         run: |
-          nix build -L .#mpc-contract
+          nix develop --command cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
           mkdir -p target/wasm32-unknown-unknown/release-contract
-          cp result/mpc_contract.wasm target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
+          cp target/near/mpc_contract/mpc_contract.wasm target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
 
       - name: Build test-parallel-contract
         run: nix develop --command cargo make build-test-parallel-contract-optimized
