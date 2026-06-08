@@ -14,6 +14,11 @@ the panic** at a meaningful rate. The panic site reads state that was written
 during normal block production (not during shutdown), so the fix needs to be
 in nearcore's recovery path, not in how embedders stop the process.
 
+This was discovered during end-to-end testing of NEAR's MPC node
+back-migration flow (A → B → A), which by design requires stopping the
+old participant node and then restarting it before the back-migration
+round.
+
 ## Operational impact
 
 This is not a test-only flake. We hit it via an e2e test, but the underlying
