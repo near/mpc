@@ -52,7 +52,7 @@ SIGKILL+restart. In our setup it requires:
 1. **A two-tx pattern**: two function-call transactions in adjacent blocks,
    signed by the same access key, both touching overlapping contract state
    (`tee_state` and the participant set in our case). This is what the
-   embedder PR introduces — see "Reproduction" below.
+   embedder PR introduces — see "Reproduction via CI" below.
 2. **Sustained background activity** during the kill window — both sign and
    CKD-style requests, pre- and post-forward-migration. Drop any one of the
    four and the rate falls from ~70% to ~10–30%; drop two and it's near zero.
@@ -61,13 +61,26 @@ SIGKILL+restart. In our setup it requires:
 
 This is not a contrived test setup. Production operators of TSS networks
 that embed `near-indexer` will hit (1) whenever they ship a similar two-tx
-pattern, and (2) is normal operational background, and (3) happens every
-time anyone runs out of memory, reboots a host, etc.
+pattern, (2) is normal operational background, and (3) happens every time
+anyone runs out of memory, reboots a host, etc.
 
-The current `main` branch of `near/mpc` does not yet contain the two-tx
-pattern (the PR introducing it is still under review). The panic is
-therefore latent on `main` but will be reachable as soon as that PR
-merges — unless this nearcore bug is fixed first.
+### Reproduction rate: latent on `main`, ~70–80% on PR #3362
+
+The same back-migration e2e test exists on both `main` and on
+[near/mpc#3362](https://github.com/near/mpc/pull/3362):
+
+| Branch | Trigger present? | Fail rate observed |
+|---|---|---|
+| `main` | No | **rarely** — single-digit %, very occasional failures the team has not been able to attribute, no consistent panic stack |
+| PR #3362 (`barak/2121-contract-stale-attestation-test`) | Yes | **~70–80%** — every failure carries the same mode-A panic stack at `streamer/mod.rs:207` (or, less commonly, mode B at `client_actor.rs:217`) |
+
+The qualitative difference between "rare and shapeless" on `main` and
+"frequent with a consistent stack" on PR #3362 is the load-bearing evidence
+that the trigger (the two-tx pattern added by PR #3362's
+`submit_attestation_before_concluding_migration` function) is what makes
+this nearcore race reliably reachable. Once PR #3362 merges, every CI run
+of this test on `main` will be at the ~70–80% rate — i.e. the panic will
+become the dominant cause of test failure in this file.
 
 ## Symptoms — two distinct panic modes
 
@@ -136,42 +149,99 @@ code expects to find.
 The bug is reachable from near/mpc PR [`#3362`](https://github.com/near/mpc/pull/3362),
 which adds a node-side fix for an unrelated issue (#2121 — stale attestation in
 back-migration). The fix happens to produce a transaction pattern that makes
-the underlying nearcore receipt-graph race reach a ~65–70% per-run repro rate.
+the underlying nearcore receipt-graph race reach a ~70–80% per-run repro rate.
 PR `#3362` is still open at time of filing; the repro therefore lives on its
 branch.
 
-### Quick repro
+### Failing test
+
+A single test fires the bug:
+
+- **Test:** `migration_service__should_handle_back_migration_a_to_b_to_a`
+- **File:** `crates/e2e-tests/tests/migration_service.rs`
+- **What it does:** Sets up a 2-of-2 MPC cluster (A0, A1) plus a back-migration
+  target B0. Performs forward migration A0 → B0 (this submits the two-tx
+  pattern from the trigger). Then SIGKILLs A0 and restarts it. Then performs
+  back-migration B0 → A0.
+- **Symptom of the bug:** When A0 is restarted (step "Stop A0 + start A0"),
+  its `near-indexer` panics with mode A (or rarely mode B) and the process
+  exits. The test's `wait_for_node_indexer_height_above` polls A0's
+  `indexer_latest_block_height` Prometheus metric for 60s, never sees it
+  advance past the pre-kill height (because the indexer is dead), and times
+  out at `migration_service.rs:771` with:
+  ```
+  A0's indexer did not resume + advance within 60s after restart:
+    node 0 indexer did not advance past height N within 60s
+  ```
+- **Test runtime:** ~100–110s on a failing run, ~50–60s on a passing run.
+
+### Reproduction via CI (recommended)
+
+The easiest way to reproduce is to push to PR #3362's branch and let GitHub
+Actions run the test. CI builds everything from scratch and runs the test
+once; you can get N data points by pushing N times (or by fanning out to
+sister branches — see "Campaign protocol" below).
 
 ```bash
-# 1. Check out the investigation branch (= PR #3362 + the SIGTERM-handler +
-#    indexer-drain work that proves graceful shutdown doesn't help).
+# 1. Authorize a push to PR #3362 or create a sister branch.
+git clone git@github.com:near/mpc.git
+cd mpc
+git checkout barak/2121-contract-stale-attestation-test    # head of PR #3362
+git push origin HEAD:refs/heads/my-repro-branch            # forks to a branch you own
+gh workflow run CI --ref my-repro-branch                   # triggers the CI workflow
+
+# 2. Watch the run.
+gh run watch <run-id>
+
+# 3. On failure, the test panic message inline-dumps the failing node's
+#    pre-restart stdout, pre-restart stderr, post-restart stdout, and
+#    post-restart stderr (each 16 KB). The upstream panic stack appears in
+#    the post-restart stderr.log block. Search the job log for:
+#
+#       last 16KB of node 0 stderr.log (post-restart stderr; upstream
+#       nearcore panic stack typically here)
+#
+#    or just `streamer/mod.rs:207` to jump right to the panic site.
+```
+
+#### Campaign protocol — getting multiple data points in parallel
+
+CI's per-branch concurrency setting cancels in-progress runs on the same
+ref. To run N parallel CI campaigns of the same SHA, push the SHA to N
+sister branches:
+
+```bash
+SHA=$(git rev-parse HEAD)
+for i in 1 2 3 4 5; do
+  git push origin "$SHA:refs/heads/my-repro-campaign-run-$i"
+  gh workflow run CI --ref "my-repro-campaign-run-$i"
+done
+```
+
+Across recent 5-run campaigns, the back-migration test on PR #3362's head
+fails ~70–80%, with every failure carrying the same mode-A panic stack.
+
+### Local reproduction
+
+```bash
 git clone git@github.com:near/mpc.git
 cd mpc
 git checkout barak/2121-contract-stale-attestation-test
 # Branch shape: stacked on near/mpc PRs #3410 (SIGTERM handler) + #3486
-# (full indexer drain — block_until_all_instances_are_dropped() returns
-# cleanly in 2–6 s on shutdown). The trigger is on top as commit
-# `0c02d27a` (refresh attestation before concluding back-migration, #2121).
-# nearcore is resolved to 2.12.0 (the final tag) via main's Cargo.lock.
+# (full indexer drain). The trigger is on top as commit `0c02d27a`.
+# nearcore is resolved to 2.12.0 (final) via main's Cargo.lock.
 
-# 2. Build the e2e test binaries (~5 min cold).
+# Build the e2e test binaries (~5 min cold).
 cargo make e2e-tests-skip-build  # builds then skips on subsequent runs
 
-# 3. Run the back-migration test. It executes the forward migration A→B with
-#    the trigger TX pattern + surrounding sign/CKD activity, then stops node
-#    A and restarts it for the back-migration.
+# Run just the failing test:
 cargo nextest run --cargo-profile=test-release -p e2e-tests --all-features \
   --locked --profile ci-e2e \
   migration_service__should_handle_back_migration_a_to_b_to_a
 
-# 4. Expected outcome: ~70–80% of runs fail with the mode A panic on restart.
-#    Failing runs print the panic stack via the test framework's stderr-tail
-#    diagnostic — search for "last 16KB of node 0 stderr.log" in the output.
-#    The cleanest 5-run campaign data point: 1/5 pass, 4/5 fail with the panic
-#    even after a verified 2–6 s clean graceful nearcore shutdown (indexer
-#    runtime dropped, all Arc<RocksDB> refs released, block_until_all_instances_are_dropped()
-#    returned). See PR #3486 for the graceful-shutdown machinery and that
-#    campaign's CI run IDs.
+# Expected: fails ~70–80% with the mode-A panic on restart. On the rare
+# pass, the run finishes in ~50–60 s. On fail, ~100–110 s (the test
+# waits 60 s for the indexer to recover before giving up).
 ```
 
 ### What this PR adds that makes the bug strongly reproducible
