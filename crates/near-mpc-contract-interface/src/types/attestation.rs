@@ -185,6 +185,8 @@ pub enum MockAttestation {
     },
 }
 
+/// TODO(#3494): superseded by `tee_verifier_interface::Collateral`; remove
+/// this serde-carrying copy once `mpc-contract` consumes the Borsh mirrors.
 #[derive(
     Debug,
     Clone,
