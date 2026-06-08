@@ -16,7 +16,7 @@ near-mpc-bounded-collections = { workspace = true }
 near-mpc-contract-interface = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-tonlib_core = { workspace = true }
+tonlib-core = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
