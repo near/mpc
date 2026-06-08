@@ -23,6 +23,7 @@ ignore = [
   "RUSTSEC-2022-0054", # wee_alloc is unmaintained
   "RUSTSEC-2025-0134", # rustls-pemfile is unmaintained
   "RUSTSEC-2024-0370", # proc-macro-error is unmaintained
+  "RUSTSEC-2026-0173", # proc-macro-error2 is unmaintained — same situation as RUSTSEC-2024-0370, pulled in transitively
   "RUSTSEC-2024-0436", # paste is unmaintained
   "RUSTSEC-2024-0384", # instant is unmaintained
   "RUSTSEC-2026-0009", # TODO(#1999): Remove once MSVR is bumped to 1.88
