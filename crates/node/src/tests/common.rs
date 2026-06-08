@@ -23,8 +23,13 @@ impl TransactionSender for MockTransactionSender {
 
     async fn send_and_wait(
         &self,
-        _transaction: ChainSendTransactionRequest,
+        transaction: ChainSendTransactionRequest,
     ) -> Result<TransactionStatus, TransactionProcessorError> {
-        unimplemented!()
+        // Forward to `send` so the test still observes the transaction on the
+        // `transaction_sender` channel, then report it as `Executed`. This is
+        // enough for callers like `submit_remote_attestation` that gate on
+        // `Executed` vs `NotExecuted` rather than the actual on-chain effect.
+        self.send(transaction).await?;
+        Ok(TransactionStatus::Executed)
     }
 }

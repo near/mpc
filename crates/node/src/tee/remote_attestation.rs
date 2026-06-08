@@ -22,6 +22,16 @@ use near_account_id::AccountId;
 use near_mpc_contract_interface::types::NodeId;
 use tokio::sync::watch;
 
+/// Upper bound on how long
+/// `submit_attestation_before_concluding_migration` will keep retrying its
+/// underlying `submit_remote_attestation` call. The helper is documented as
+/// best-effort and non-fatal (the caller swallows its errors); bounding here
+/// prevents an unresponsive `TransactionSender` (e.g. the test mock) from
+/// hanging the onboarding flow indefinitely. `MAX_RETRY_DURATION` (12 h)
+/// would be the long-running production behavior for the other callers of
+/// `submit_remote_attestation`, which we keep unchanged.
+const SUBMIT_ATTESTATION_BEFORE_CONCLUDE_TIMEOUT: Duration = Duration::from_secs(30);
+
 const MIN_BACKOFF_DURATION: Duration = Duration::from_millis(100);
 const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
 const MAX_RETRY_DURATION: Duration = Duration::from_secs(60 * 60 * 12); // 12 hours.
@@ -114,7 +124,17 @@ pub async fn submit_attestation_before_concluding_migration(
         .await
         .map_err(|e| anyhow::anyhow!(e))
         .context("generate fresh attestation for conclude_node_migration")?;
-    submit_remote_attestation(tx_sender, attestation, tls_public_key).await
+    tokio::time::timeout(
+        SUBMIT_ATTESTATION_BEFORE_CONCLUDE_TIMEOUT,
+        submit_remote_attestation(tx_sender, attestation, tls_public_key),
+    )
+    .await
+    .map_err(|_| {
+        anyhow::anyhow!(
+            "submit_remote_attestation did not complete within {SUBMIT_ATTESTATION_BEFORE_CONCLUDE_TIMEOUT:?}; \
+             best-effort attestation refresh giving up"
+        )
+    })?
 }
 
 fn validate_remote_attestation(
