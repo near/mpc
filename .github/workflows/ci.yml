@@ -276,16 +276,16 @@ jobs:
       - name: Build mpc-node
         run: nix develop --command cargo make build-mpc-node-network-hardship-simulation
 
+      # Both build paths emit target/near/mpc_contract/mpc_contract.wasm, which
+      # MPC_CONTRACT_WASM points at. On main we exercise the fully reproducible
+      # (docker) build; on PRs the faster non-reproducible cargo-near build.
       - name: Build mpc-contract
         if: github.ref != 'refs/heads/main'
         run: nix develop --command cargo make build-mpc-contract-optimized
 
       - name: Build mpc-contract reproducibly
         if: github.ref == 'refs/heads/main'
-        run: |
-          nix develop --command cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
-          mkdir -p target/wasm32-unknown-unknown/release-contract
-          cp target/near/mpc_contract/mpc_contract.wasm target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
+        run: nix develop --command cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
 
       - name: Build test-parallel-contract
         run: nix develop --command cargo make build-test-parallel-contract-optimized
