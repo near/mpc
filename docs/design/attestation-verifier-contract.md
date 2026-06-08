@@ -255,8 +255,10 @@ impl TeeVerifier {
     /// Verify a TDX quote against Intel collateral.
     ///
     /// Calls `dcap_qvl::verify::verify` with the current block timestamp and
-    /// returns the parsed `VerifiedReport` on success, or a structured
-    /// `VerifierError` on failure.
+    /// returns the parsed `VerifiedReport` on success. On failure it returns
+    /// `Err(VerifierError)` via `#[handle_result]`, which the runtime turns
+    /// into a failed receipt — the caller sees `PromiseError::Failed`.
+    #[handle_result]
     pub fn verify_quote(
         &self,
         quote: QuoteBytes,
@@ -265,7 +267,7 @@ impl TeeVerifier {
 }
 ```
 
-The wire DTOs (`QuoteBytes`, `Collateral`, `VerifiedReport`, `VerifierError`, and the nested report types) live in the DTO-only `tee-verifier-interface` crate so callers depend on the same definitions. They are field-for-field Borsh mirrors of the corresponding `dcap_qvl` types. `VerifierError` has one variant per `dcap_qvl::verify::verify` failure category (quote-malformed, collateral-expired, tcb-revoked, signature-mismatch, etc.), plus a fallback `Other(String)` for upstream errors that don't fit cleanly.
+The wire DTOs (`QuoteBytes`, `Collateral`, `VerifiedReport`, and the nested report types) live in the DTO-only `tee-verifier-interface` crate so callers depend on the same definitions. They are field-for-field Borsh mirrors of the corresponding `dcap_qvl` types.
 
 ### Voting on the trusted verifier in `mpc-contract`
 
@@ -459,7 +461,7 @@ impl MpcContract {
     pub fn resolve_verification(
         &mut self,
         account_id: AccountId,
-        #[callback_result] result: Result<Result<VerifiedReport, VerifierError>, PromiseError>,
+        #[callback_result] result: Result<VerifiedReport, PromiseError>,
     ) {
         // Verifier-account-gone case: do nothing. The runtime's yield-timeout
         // will fire `on_attestation_verified` with `Err(PromiseError::Failed)`
@@ -467,15 +469,14 @@ impl MpcContract {
         // `promise_yield_resume` here, or we'd race the timeout for ownership
         // of the cleanup path.
         let final_outcome = match result {
+            // A rejected quote and a gone/failed verifier both arrive here as
+            // `PromiseError::Failed` (the verifier returns its error via
+            // `#[handle_result]`.
             Err(promise_err) => {
                 log!("verifier promise failed for {account_id}: {promise_err:?}");
                 return;
             }
-            Ok(Err(verifier_err)) => {
-                log!("verifier rejected quote for {account_id}: {verifier_err:?}");
-                FinalOutcome::Err(format!("verifier rejected: {verifier_err:?}"))
-            }
-            Ok(Ok(report)) => {
+            Ok(report) => {
                 let pending = self.pending_attestations.get(&account_id).expect(
                     "PendingAttestation must exist while resolve_verification holds the yield",
                 );
