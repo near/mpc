@@ -40,10 +40,11 @@ impl ForeignChainAvailability {
         chains: dtos::AvailableForeignChains,
     ) {
         if let Some(old_key) = self.tls_key_by_account.get(&account_id)
-            && *old_key != tls_key {
-                let old_key = old_key.clone();
-                self.available_foreign_chains_by_node.remove(&old_key);
-            }
+            && *old_key != tls_key
+        {
+            let old_key = old_key.clone();
+            self.available_foreign_chains_by_node.remove(&old_key);
+        }
         self.tls_key_by_account.insert(account_id, tls_key.clone());
         self.available_foreign_chains_by_node
             .insert(tls_key, chains);
