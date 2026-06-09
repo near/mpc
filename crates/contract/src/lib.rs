@@ -1048,9 +1048,8 @@ impl MpcContract {
             .get_mut()
             .available_foreign_chains = chain_to_supporter_count
             .into_iter()
-            .filter(|(_, count)| *count >= threshold)
-            .map(|(chain, _)| chain)
-            .collect::<BTreeSet<dtos::ForeignChain>>()
+            .filter_map(|(chain, count)| (count >= threshold).then_some(chain))
+            .collect::<BTreeSet<_>>()
             .into();
     }
 
