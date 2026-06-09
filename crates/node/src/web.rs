@@ -280,19 +280,12 @@ pub async fn start_web_server(
 ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
     tracing::info!(?bind_address, "attempting to bind web server to address");
 
-    // The web server owns the recent-transactions buffer and records the
-    // completed transactions sent by the indexer's transaction processor in a
-    // background drain task, so the page stays available regardless of the
-    // node's running state.
+    // The web server owns the recent-transactions buffer; a background task
+    // (spawned after a successful bind, below) drains the completed transactions
+    // sent by the indexer's transaction processor into it, so the page stays
+    // available regardless of the node's running state.
     let recent_transactions = Arc::new(Mutex::new(RecentTransactions::default()));
-    {
-        let recent_transactions = recent_transactions.clone();
-        tokio::spawn(async move {
-            while let Some(transaction) = recent_tx_receiver.recv().await {
-                recent_transactions.lock().unwrap().record(transaction);
-            }
-        });
-    }
+    let recent_transactions_drain = recent_transactions.clone();
 
     let router = axum::Router::new()
         .route("/metrics", axum::routing::get(metrics))
@@ -323,6 +316,20 @@ pub async fn start_web_server(
     let tcp_listener = TcpListener::bind(&bind_address).await?;
 
     tracing::info!(address = %bind_address,"Successfully bound to address");
+
+    // Spawn only after the bind succeeds, so we don't leak a task on the error
+    // path above. Plain `tokio::spawn`, like the indexer's other process-lifetime
+    // monitors (`indexer/real.rs`, `run.rs`): `start_web_server` runs outside a
+    // tracking scope in production, and the drain lives for the whole process
+    // (it exits cleanly once the sender side is dropped and the channel closes).
+    tokio::spawn(async move {
+        while let Some(transaction) = recent_tx_receiver.recv().await {
+            recent_transactions_drain
+                .lock()
+                .unwrap()
+                .record(transaction);
+        }
+    });
 
     Ok(async move {
         tracing::info!("Starting to serve requests...");
