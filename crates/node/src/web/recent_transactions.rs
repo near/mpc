@@ -7,19 +7,6 @@
 //! aggregated into a prometheus counter. This buffer keeps a per-transaction
 //! record (txid, nonce, signer access key, ...) so an operator can debug
 //! failures such as out-of-order nonce rejections.
-//!
-//! Unlike the other debug pages (recent blocks/signatures/CKDs), which pull
-//! their data from the MPC client on demand and so only work while the node is
-//! `Running`, this buffer is owned by the web server and fed by the always-on
-//! transaction processor (see `crate::indexer::tx_sender`) over an `mpsc`
-//! channel of [`SubmittedTransaction`]s. The web server drains the channel into
-//! this buffer in a background task; the processor only builds and sends a
-//! completed record and never touches the buffer itself, which keeps the
-//! low-level submission path decoupled from the debug surface. The node submits
-//! transactions even while not `Running` (e.g. `vote_pk` while `Initializing`),
-//! and those states are exactly when an operator needs to inspect submission
-//! failures, so owning the buffer in the web server keeps the page available
-//! regardless of the node's running state.
 
 use near_account_id::AccountId;
 use near_crypto::Signature;
@@ -36,18 +23,11 @@ use std::fmt::Write;
 /// once the buffer is full.
 const NUM_RECENT_TRANSACTIONS_TO_KEEP: usize = 2000;
 
-/// Capacity of the channel carrying [`SubmittedTransaction`] records from the
-/// transaction processor to the web server's drain task. Sized like the
-/// transaction processor's own work queue, so the producer's `try_send`
-/// effectively never drops in practice (it sends one record per transaction)
-/// while still capping worst-case memory.
+/// Capacity of the channel that carries [`SubmittedTransaction`] records from
+/// the indexer's transaction processor to the web server's drain task.
 pub const RECENT_TRANSACTIONS_CHANNEL_SIZE: usize = 10000;
 
-/// The observed lifecycle outcome of a submitted transaction. Every variant is
-/// recorded as an `outcome` label on the `MPC_OUTGOING_TRANSACTION_OUTCOMES`
-/// metric (in `crate::indexer::tx_sender`'s `ensure_send_transaction`), so the
-/// page and the metric stay in step. A record is only created once its outcome
-/// is known, so there is no pending/in-flight state.
+/// The observed lifecycle outcome of a submitted transaction.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SubmittedTransactionStatus {
     /// Building, signing, or routing the transaction failed locally; it never
@@ -115,9 +95,9 @@ pub struct SubmittedTxMetadata {
 
 impl SubmittedTransaction {
     /// A record for a transaction that was successfully built and routed, with
-    /// its observed on-chain `status` (`Executed`/`NotExecuted`/`Unknown`/
-    /// `ObserveError`). `submitted_at` is the time the transaction was routed,
-    /// captured by the caller before it waited to observe the outcome.
+    /// its observed on-chain [`SubmittedTransactionStatus`]. `submitted_at` is
+    /// the time the transaction was routed, captured by the caller before it
+    /// waited to observe the outcome.
     pub fn submitted(
         signer: SignerContext,
         metadata: SubmittedTxMetadata,
@@ -164,14 +144,7 @@ impl SubmittedTransaction {
 ///
 /// A row is recorded once, after its outcome is observed (or after a local
 /// submit failure), so every row carries its final [`SubmittedTransactionStatus`]
-/// and rows are never mutated in place. The buffer therefore faithfully lists
-/// every submission the node made (see issue #2890), without merging or
-/// deduplicating.
-///
-/// Not internally synchronized: it is owned by the web server as
-/// `Arc<Mutex<RecentTransactions>>` and every method runs under the caller's
-/// lock, so the drain task's `record` and the request handler's `snapshot` are
-/// serialized.
+/// and rows are never mutated in place.
 #[derive(Default)]
 pub struct RecentTransactions {
     /// One row per submission, front oldest / back newest.
@@ -188,10 +161,7 @@ impl RecentTransactions {
         self.rows.push_back(transaction);
     }
 
-    /// Clones the retained entries, newest first, for rendering. The clone lets
-    /// the caller drop the lock before doing the (potentially non-trivial)
-    /// string formatting, so it does not block concurrent `record` writes from
-    /// the drain task.
+    /// Clones the retained entries, newest first, for rendering.
     pub fn snapshot(&self) -> Vec<SubmittedTransaction> {
         self.rows.iter().rev().cloned().collect()
     }
@@ -373,24 +343,25 @@ mod tests {
         let rendered = render(&buffer.snapshot());
 
         // Then
-        assert!(
-            rendered.contains("(none)"),
-            "empty buffer must render `(none)`: {rendered}"
+        let expected = format!(
+            "Recently submitted transactions (newest first, up to {NUM_RECENT_TRANSACTIONS_TO_KEEP} retained):\n  (none)\n"
         );
+        assert_eq!(rendered, expected);
     }
 
     #[test]
     fn snapshot__should_return_entries_newest_first() {
         // Given
+        let oldest = test_transaction_with_hash("respond", hash(1));
+        let newest = test_transaction_with_hash("respond_ckd", hash(2));
         let mut buffer = RecentTransactions::default();
-        buffer.record(test_transaction_with_hash("respond", hash(1)));
-        buffer.record(test_transaction_with_hash("respond_ckd", hash(2)));
+        buffer.record(oldest.clone());
+        buffer.record(newest.clone());
 
         // When
         let snapshot = buffer.snapshot();
 
         // Then
-        let methods: Vec<&str> = snapshot.iter().map(|tx| tx.method).collect();
-        assert_eq!(methods, vec!["respond_ckd", "respond"]);
+        assert_eq!(snapshot, vec![newest, oldest]);
     }
 }

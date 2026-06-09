@@ -317,11 +317,8 @@ pub async fn start_web_server(
 
     tracing::info!(address = %bind_address,"Successfully bound to address");
 
-    // Spawn only after the bind succeeds, so we don't leak a task on the error
-    // path above. Plain `tokio::spawn`, like the indexer's other process-lifetime
-    // monitors (`indexer/real.rs`, `run.rs`): `start_web_server` runs outside a
-    // tracking scope in production, and the drain lives for the whole process
-    // (it exits cleanly once the sender side is dropped and the channel closes).
+    // Spawn the drain only after a successful bind so it can't leak on the error
+    // path above. Runs for the whole process; warns on exit.
     tokio::spawn(async move {
         while let Some(transaction) = recent_tx_receiver.recv().await {
             recent_transactions_drain
@@ -329,6 +326,10 @@ pub async fn start_web_server(
                 .unwrap()
                 .record(transaction);
         }
+        tracing::warn!(
+            target: "mpc",
+            "recent-transactions drain task exiting; /debug/recent_transactions will stop updating"
+        );
     });
 
     Ok(async move {

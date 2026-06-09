@@ -82,10 +82,27 @@ impl TransactionProcessorHandle {
                     )
                     .await;
 
-                    // Best-effort: the recent-transactions page is debug-only, so
-                    // we never block the submission path on a slow drain. Drop on
-                    // a full or closed channel.
-                    let _ = recent_tx_sender.try_send(recent_transaction);
+                    // Fire-and-forget: feeding the debug-only
+                    // `/debug/recent_transactions` page must never block
+                    // transaction processing, so use non-blocking `try_send` and
+                    // drop the record if the channel is full or the web server
+                    // has gone away. Warn so dropped records are visible in logs
+                    // rather than only as missing rows on the page.
+                    match recent_tx_sender.try_send(recent_transaction) {
+                        Ok(()) => {}
+                        Err(mpsc::error::TrySendError::Full(_)) => {
+                            tracing::warn!(
+                                target: "mpc",
+                                "recent-transactions channel full; dropping debug record"
+                            );
+                        }
+                        Err(mpsc::error::TrySendError::Closed(_)) => {
+                            tracing::warn!(
+                                target: "mpc",
+                                "recent-transactions drain task gone; dropping debug record"
+                            );
+                        }
+                    }
 
                     if let Some(tx_response_channel) = tx_response_channel {
                         let _ = tx_response_channel.send(transaction_status);
