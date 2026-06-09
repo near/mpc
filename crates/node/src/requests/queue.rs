@@ -4,6 +4,7 @@ use crate::indexer::types::ChainRespondArgs;
 use crate::primitives::ParticipantId;
 use crate::requests::metrics;
 use crate::types::{self, Request, RequestId, RequestsUpdate};
+use chain_gateway::types::BlockHeight;
 use k256::sha2::Sha256;
 use near_indexer_primitives::CryptoHash;
 use near_indexer_primitives::types::NumBlocks;
@@ -86,8 +87,8 @@ struct IndexedRespondTx {
     // TODO(#3318): We could share the `block_height` through the same guard as
     // `block_status`, however, that's a larger refactor and this change will only truly make sense
     // once we start improving the metrics with #3318, so we defer it to later and accept to hold a
-    // u64 for each response.
-    block_height: u64,
+    // `BlockHeight` for each response.
+    block_height: BlockHeight,
 }
 
 impl Default for IndexedRespondTxs {
@@ -144,7 +145,7 @@ enum AggregateResponseStatus {
     /// Indicates that one of the responses is included in a block that was finalized on chain.
     Resolved {
         received_at: near_time::Instant,
-        block_height: u64,
+        block_height: BlockHeight,
     },
 }
 
@@ -157,7 +158,7 @@ pub(super) struct QueuedRequest<RequestType: Request, ChainRespondArgsType: Chai
     /// Respond transactions for this request observed in indexed blocks.
     indexed_respond_txs: IndexedRespondTxs,
 
-    pub block_height: u64,
+    pub block_height: BlockHeight,
 
     /// A pre-computed order of participants that we consider for leader selection.
     /// The leader for the request would be the first in this list that is eligible
@@ -252,7 +253,7 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
     pub fn new(
         clock: &near_time::Clock,
         request: RequestType,
-        block_height: u64,
+        block_height: BlockHeight,
         status: BlockStatusHandle,
         all_participants: &[ParticipantId],
         time_indexed: near_time::Instant,
@@ -328,7 +329,7 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
         self.active_attempt.strong_count() > 0
     }
 
-    fn is_older_than(&self, cutoff_block: u64) -> bool {
+    fn is_older_than(&self, cutoff_block: BlockHeight) -> bool {
         cutoff_block > self.block_height
     }
 
@@ -344,7 +345,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
         &mut self,
         my_participant_id: ParticipantId,
         eligible_leaders: &HashSet<ParticipantId>,
-        cutoff_block: u64,
+        cutoff_block: BlockHeight,
         now: near_time::Instant,
     ) -> RequestStatus<RequestType, ChainRespondArgsType> {
         if !self.update_next_check_due(now) {
@@ -416,7 +417,7 @@ enum RequestStatus<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
     Attempt(Arc<GenerationAttempt<RequestType, ChainRespondArgsType>>),
     Resolve {
         received_at: near_time::Instant,
-        block_height: u64,
+        block_height: BlockHeight,
     },
 }
 
@@ -601,7 +602,8 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
         let mut requests_to_remove: Vec<(RequestId, Removal)> = Vec::new();
 
         // any request strictly older than `cutoff_block` will be considered expired
-        let cutoff_block = maximum_height.saturating_sub(REQUEST_EXPIRATION_BLOCKS) + 1;
+        let cutoff_block: BlockHeight =
+            (maximum_height.saturating_sub(REQUEST_EXPIRATION_BLOCKS) + 1).into();
 
         for (id, request) in &mut self.requests {
             let _span = tracing::debug_span!(
@@ -609,7 +611,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 "process_request",
                 request_type = %RequestType::get_type(),
                 request_id = %request.request.get_id(),
-                block_height = request.block_height,
+                block_height = %request.block_height,
             )
             .entered();
             match request.process(self.my_participant_id, &eligible_leaders, cutoff_block, now) {
@@ -634,7 +636,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 } => {
                     mpc_pending_queue_finalized_responses.inc();
                     // Response block ≥ request block by construction; saturate just in case.
-                    let latency_blocks = block_height.saturating_sub(request.block_height);
+                    let latency_blocks = block_height.blocks_since(request.block_height);
                     let latency_duration = received_at.signed_duration_since(request.time_indexed);
 
                     request_response_latency_blocks.observe(latency_blocks as f64);
@@ -661,7 +663,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 };
                 self.recently_completed_requests
                     .add_completed_request(CompletedRequest {
-                        indexed_block_height: request.block_height,
+                        indexed_block_height: request.block_height.into(),
                         request: request.request,
                         progress: request.computation_progress,
                         completion_delay,
@@ -897,7 +899,7 @@ mod tests {
             let update = RequestsUpdate {
                 requests: self.requests_to_submit.clone(),
                 completed_requests: self.responses_to_submit.clone(),
-                block_height: new_height,
+                block_height: new_height.into(),
                 block_status,
             };
             self.requests_to_submit = Vec::new();
@@ -924,7 +926,7 @@ mod tests {
             let update = RequestsUpdate {
                 requests: self.requests_to_submit.clone(),
                 completed_requests: self.responses_to_submit.clone(),
-                block_height: new_height,
+                block_height: new_height.into(),
                 block_status,
             };
             self.requests_to_submit = Vec::new();

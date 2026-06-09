@@ -246,11 +246,19 @@ expression: abi
                       10,
                       "Ton",
                       "ForeignChain__Ton"
+                    ],
+                    [
+                      11,
+                      "Aptos",
+                      "ForeignChain__Aptos"
                     ]
                   ]
                 }
               },
               "ForeignChain__Abstract": {
+                "Struct": null
+              },
+              "ForeignChain__Aptos": {
                 "Struct": null
               },
               "ForeignChain__Arbitrum": {
@@ -2111,11 +2119,19 @@ expression: abi
                           10,
                           "Ton",
                           "ForeignChain__Ton"
+                        ],
+                        [
+                          11,
+                          "Aptos",
+                          "ForeignChain__Aptos"
                         ]
                       ]
                     }
                   },
                   "ForeignChain__Abstract": {
+                    "Struct": null
+                  },
+                  "ForeignChain__Aptos": {
                     "Struct": null
                   },
                   "ForeignChain__Arbitrum": {
@@ -2260,6 +2276,64 @@ expression: abi
               }
             }
           }
+        },
+        "AptosExtractor": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "Event"
+              ],
+              "properties": {
+                "Event": {
+                  "type": "object",
+                  "required": [
+                    "event_index"
+                  ],
+                  "properties": {
+                    "event_index": {
+                      "type": "integer",
+                      "format": "uint64",
+                      "minimum": 0.0
+                    }
+                  }
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "AptosFinality": {
+          "type": "string",
+          "enum": [
+            "Committed"
+          ]
+        },
+        "AptosRpcRequest": {
+          "type": "object",
+          "required": [
+            "extractors",
+            "finality",
+            "tx_id"
+          ],
+          "properties": {
+            "extractors": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/AptosExtractor"
+              }
+            },
+            "finality": {
+              "$ref": "#/definitions/AptosFinality"
+            },
+            "tx_id": {
+              "$ref": "#/definitions/AptosTxId"
+            }
+          }
+        },
+        "AptosTxId": {
+          "type": "string",
+          "pattern": "^(?:[0-9A-Fa-f]{2})*$"
         },
         "AttemptId": {
           "description": "Attempt identifier within a key event. Incremented for each attempt within the same epoch and domain.",
@@ -2950,7 +3024,8 @@ expression: abi
             "Starknet",
             "Polygon",
             "HyperEvm",
-            "Ton"
+            "Ton",
+            "Aptos"
           ]
         },
         "ForeignChainConfiguration": {
@@ -3090,6 +3165,18 @@ expression: abi
               "properties": {
                 "Ton": {
                   "$ref": "#/definitions/TonRpcRequest"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Aptos"
+              ],
+              "properties": {
+                "Aptos": {
+                  "$ref": "#/definitions/AptosRpcRequest"
                 }
               },
               "additionalProperties": false

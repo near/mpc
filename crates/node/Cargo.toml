@@ -18,6 +18,7 @@ base64 = { workspace = true }
 borsh = { workspace = true }
 bs58 = { workspace = true }
 bytes = { workspace = true }
+chain-gateway = { workspace = true }
 clap = { workspace = true }
 derive_more = { workspace = true }
 ed25519-dalek = { workspace = true }
