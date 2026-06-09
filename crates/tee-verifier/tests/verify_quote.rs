@@ -9,7 +9,7 @@
 //! - an invalid quote yields [`VerificationResult::Rejected`], returned as
 //!   the value of a successful call rather than a panic.
 
-#![allow(non_snake_case)]
+#![expect(non_snake_case)]
 
 use near_sdk::{test_utils::VMContextBuilder, testing_env};
 use std::time::Duration;
