@@ -980,21 +980,19 @@ impl MpcContract {
     /// (Re)registers the foreign chains this participant currently covers, feeding the available
     /// set ([`Self::get_available_foreign_chains`]). Idempotent.
     //
-    // Note: `voter_or_panic` accepts callers in `Initializing` and `Resharing` phases, so a
-    // registration in those phases will be written to `available_foreign_chains_by_node` but
-    // the cache (`available_foreign_chains`) is not refreshed until the next `Running`-state
-    // recompute (e.g. `clean_foreign_chain_data` after `vote_reshared`, or the next call to
-    // this method once the contract is `Running`).
+    // Note: registrations made while the contract is not in `Running` state are stored but do not
+    // update the cached available set until the next `Running`-state recompute.
     #[handle_result]
     pub fn register_available_foreign_chains_config(
         &mut self,
         available_foreign_chains: dtos::AvailableForeignChains,
     ) -> Result<(), Error> {
-        let account_id = self.voter_or_panic();
+        self.assert_caller_is_attested_participant_and_protocol_active();
+        let account_id = env::signer_account_id();
         let tls_key = self
             .protocol_state
             .tls_key_for_account(&account_id)
-            .unwrap_or_else(|| env::panic_str("voter has no TLS key in participants list"));
+            .unwrap_or_else(|| env::panic_str("caller has no TLS key in participants list"));
 
         self.foreign_chain_availability.get_mut().register(
             account_id,
