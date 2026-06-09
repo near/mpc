@@ -46,7 +46,8 @@ impl ForeignChainAvailability {
             }
         }
         self.tls_key_by_account.insert(account_id, tls_key.clone());
-        self.available_foreign_chains_by_node.insert(tls_key, chains);
+        self.available_foreign_chains_by_node
+            .insert(tls_key, chains);
     }
 
     pub(crate) fn snapshot_by_node(

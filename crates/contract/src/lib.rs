@@ -996,9 +996,11 @@ impl MpcContract {
             .tls_key_for_account(&account_id)
             .unwrap_or_else(|| env::panic_str("voter has no TLS key in participants list"));
 
-        self.foreign_chain_availability
-            .get_mut()
-            .register(account_id, tls_key, available_foreign_chains);
+        self.foreign_chain_availability.get_mut().register(
+            account_id,
+            tls_key,
+            available_foreign_chains,
+        );
         self.recompute_available_foreign_chains();
 
         Ok(())
@@ -1027,7 +1029,11 @@ impl MpcContract {
                 continue;
             };
             for chain in chains.iter() {
-                if self.foreign_chain_rpc_whitelist.entries.is_whitelisted(chain) {
+                if self
+                    .foreign_chain_rpc_whitelist
+                    .entries
+                    .is_whitelisted(chain)
+                {
                     *chain_to_supporter_count.entry(*chain).or_default() += 1;
                 }
             }
