@@ -991,11 +991,14 @@ impl MpcContract {
         available_foreign_chains: dtos::AvailableForeignChains,
     ) -> Result<(), Error> {
         let account_id = self.voter_or_panic();
+        let tls_key = self
+            .protocol_state
+            .tls_key_for_account(&account_id)
+            .unwrap_or_else(|| env::panic_str("voter has no TLS key in participants list"));
 
         self.foreign_chain_availability
             .get_mut()
-            .available_foreign_chains_by_node
-            .insert(account_id, available_foreign_chains);
+            .register(account_id, tls_key, available_foreign_chains);
         self.recompute_available_foreign_chains();
 
         Ok(())
@@ -1007,38 +1010,24 @@ impl MpcContract {
     /// No-op outside `Running`: only that state has a single [`ThresholdParameters`] where
     /// threshold and participants are consistent (during `Resharing` they disagree).
     fn recompute_available_foreign_chains(&mut self) {
-        let (threshold, active_participant_account_ids) = {
-            let ProtocolContractState::Running(state) = &self.protocol_state else {
-                return;
-            };
-            let threshold = state.parameters.threshold().value();
-            let active = state
-                .parameters
-                .participants()
-                .participants()
-                .iter()
-                .map(|(account_id, _, _)| account_id.clone())
-                .collect::<BTreeSet<_>>();
-            (threshold, active)
+        let ProtocolContractState::Running(state) = &self.protocol_state else {
+            return;
         };
+        let threshold = state.parameters.threshold().value();
+        let participants = state.parameters.participants().participants().clone();
 
         let mut chain_to_supporter_count: BTreeMap<dtos::ForeignChain, u64> = BTreeMap::new();
-        // Count supported chains that are also whitelisted.
-        for (account_id, chains) in self
-            .foreign_chain_availability
-            .get()
-            .available_foreign_chains_by_node
-            .iter()
-        {
-            if !active_participant_account_ids.contains(account_id) {
+        for (_, _, info) in &participants {
+            let Some(chains) = self
+                .foreign_chain_availability
+                .get()
+                .available_foreign_chains_by_node
+                .get(&info.tls_public_key)
+            else {
                 continue;
-            }
+            };
             for chain in chains.iter() {
-                if self
-                    .foreign_chain_rpc_whitelist
-                    .entries
-                    .is_whitelisted(chain)
-                {
+                if self.foreign_chain_rpc_whitelist.entries.is_whitelisted(chain) {
                     *chain_to_supporter_count.entry(*chain).or_default() += 1;
                 }
             }
@@ -1786,6 +1775,12 @@ impl MpcContract {
             .map(|(account_id, _, _)| account_id.clone())
             .collect();
 
+        let participant_tls_keys: std::collections::HashSet<dtos::Ed25519PublicKey> = participants
+            .participants()
+            .iter()
+            .map(|(_, _, info)| info.tls_public_key.clone())
+            .collect();
+
         let non_participant_configs: Vec<dtos::AccountId> = self
             .node_foreign_chain_support
             .foreign_chain_support_by_node
@@ -1800,19 +1795,19 @@ impl MpcContract {
         }
 
         // Same cleanup for the available-set per-node map.
-        let non_participant_available: Vec<dtos::AccountId> = self
+        let non_participant_available: Vec<dtos::Ed25519PublicKey> = self
             .foreign_chain_availability
             .get()
             .available_foreign_chains_by_node
             .keys()
-            .filter(|account| !participant_accounts.contains(*account))
+            .filter(|key| !participant_tls_keys.contains(*key))
             .cloned()
             .collect();
-        for account in &non_participant_available {
+        for key in &non_participant_available {
             self.foreign_chain_availability
                 .get_mut()
                 .available_foreign_chains_by_node
-                .remove(account);
+                .remove(key);
         }
 
         self.foreign_chain_rpc_whitelist.votes.retain(participants);
@@ -2125,7 +2120,7 @@ impl MpcContract {
     /// available-set computation ([`Self::get_available_foreign_chains`]) and coverage alerting.
     pub fn get_available_foreign_chains_by_node(
         &self,
-    ) -> BTreeMap<dtos::AccountId, dtos::AvailableForeignChains> {
+    ) -> BTreeMap<dtos::Ed25519PublicKey, dtos::AvailableForeignChains> {
         self.foreign_chain_availability.get().snapshot_by_node()
     }
 

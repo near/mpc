@@ -32,4 +32,5 @@ pub enum StorageKey {
     ForeignChainProviderVotesByProposalV1,
     AvailableForeignChainsByNode,
     ForeignChainAvailability,
+    TlsKeyByAccount,
 }
