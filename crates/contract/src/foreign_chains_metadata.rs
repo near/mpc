@@ -68,11 +68,70 @@ impl ForeignChainsMetadata {
             .insert(tls_key, foreign_chains_config);
     }
 
+    pub(crate) fn tls_key_by_account_remove(&mut self, account_id: &dtos::AccountId) {
+        self.tls_key_by_account.remove(account_id);
+    }
+
     pub(crate) fn snapshot_by_node(&self) -> dtos::ForeignChainsConfigs {
         self.foreign_chains_configs
             .iter()
             .map(|(id, chains)| (id.clone(), chains.clone()))
             .collect::<std::collections::BTreeMap<_, _>>()
             .into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use near_sdk::test_utils::VMContextBuilder;
+    use near_sdk::testing_env;
+
+    use super::*;
+
+    fn make_tls_key(byte: u8) -> dtos::Ed25519PublicKey {
+        dtos::Ed25519PublicKey([byte; 32])
+    }
+
+    fn make_account(name: &str) -> dtos::AccountId {
+        name.parse().unwrap()
+    }
+
+    fn empty_config() -> dtos::ForeignChainsConfig {
+        BTreeSet::new().into()
+    }
+
+    fn setup() -> ForeignChainsMetadata {
+        testing_env!(VMContextBuilder::new().build());
+        ForeignChainsMetadata::default()
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn register__should_panic_when_different_account_uses_same_tls_key() {
+        // Given
+        let mut meta = setup();
+        let tls_key = make_tls_key(1);
+        meta.register(make_account("alice.near"), tls_key.clone(), empty_config());
+
+        // When / Then
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            meta.register(make_account("bob.near"), tls_key, empty_config());
+        }));
+        assert!(result.is_err(), "expected panic for duplicate TLS key");
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn register__should_allow_same_account_to_re_register_with_same_tls_key() {
+        // Given
+        let mut meta = setup();
+        let account = make_account("alice.near");
+        let tls_key = make_tls_key(1);
+        meta.register(account.clone(), tls_key.clone(), empty_config());
+
+        // When / Then — no panic
+        meta.register(account, tls_key, empty_config());
     }
 }

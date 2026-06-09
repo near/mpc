@@ -125,28 +125,70 @@ impl FakeMpcContractState {
         account_id: AccountId,
         foreign_chains_config: dtos::ForeignChainsConfig,
     ) {
-        let ProtocolContractState::Running(state) = &self.state else {
-            tracing::info!("register_foreign_chains_config ignored: contract not in running state");
-            return;
+        // The real contract accepts registrations in any active protocol state (Running,
+        // Resharing, Initializing) and only skips the available-set recompute in non-Running
+        // states. The fake mirrors that: store the registration regardless of state, but only
+        // recompute when Running (no recompute path exists for other states in the fake).
+        let (threshold, active_participant_ids) = match &self.state {
+            ProtocolContractState::Running(state) => {
+                let threshold = state.parameters.threshold().value();
+                let ids = state
+                    .parameters
+                    .participants()
+                    .participants()
+                    .iter()
+                    .map(|(id, _, _)| id.clone())
+                    .collect::<BTreeSet<AccountId>>();
+                (threshold, ids)
+            }
+            ProtocolContractState::Resharing(state) => {
+                let is_participant = state
+                    .resharing_key
+                    .proposed_parameters()
+                    .participants()
+                    .participants()
+                    .iter()
+                    .any(|(id, _, _)| id == &account_id);
+                if !is_participant {
+                    tracing::info!(
+                        "register_foreign_chains_config ignored: signer is not a participant"
+                    );
+                    return;
+                }
+                self.available_foreign_chains_by_node
+                    .insert(account_id, foreign_chains_config);
+                return; // no recompute during Resharing
+            }
+            ProtocolContractState::Initializing(state) => {
+                let is_participant = state
+                    .generating_key
+                    .proposed_parameters()
+                    .participants()
+                    .participants()
+                    .iter()
+                    .any(|(id, _, _)| id == &account_id);
+                if !is_participant {
+                    tracing::info!(
+                        "register_foreign_chains_config ignored: signer is not a participant"
+                    );
+                    return;
+                }
+                self.available_foreign_chains_by_node
+                    .insert(account_id, foreign_chains_config);
+                return; // no recompute during Initializing
+            }
+            ProtocolContractState::NotInitialized => {
+                tracing::info!(
+                    "register_foreign_chains_config ignored: contract not initialized"
+                );
+                return;
+            }
         };
-        let is_participant = state
-            .parameters
-            .participants()
-            .participants()
-            .iter()
-            .any(|(id, _, _)| id == &account_id);
+        let is_participant = active_participant_ids.contains(&account_id);
         if !is_participant {
             tracing::info!("register_foreign_chains_config ignored: signer is not a participant");
             return;
         }
-        let threshold = state.parameters.threshold().value();
-        let active_participant_ids: BTreeSet<AccountId> = state
-            .parameters
-            .participants()
-            .participants()
-            .iter()
-            .map(|(id, _, _)| id.clone())
-            .collect();
 
         self.available_foreign_chains_by_node
             .insert(account_id, foreign_chains_config);

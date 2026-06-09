@@ -90,10 +90,11 @@ and serves two roles:
 
 Registration reflects each node's *current* config.
 
-The methods were previously named `register_foreign_chain_config` and
-`get_foreign_chain_support_by_node`. The old names are kept as thin wrappers, deprecated and
-removed once node and contract have both migrated — the same independent node/contract rollout
-used for the view methods, so the rename needs no flag-day coordination.
+`register_foreign_chains_config` and `get_foreign_chains_configs` are new methods that write to
+a separate TLS-key-keyed store (`foreign_chains_configs`, keyed by `Ed25519PublicKey`) and coexist
+with the legacy `register_foreign_chain_support` / `get_foreign_chain_support_by_node` methods
+(AccountId-keyed, writing to `node_foreign_chain_support`). The legacy methods remain active until
+node and contract have both migrated to the new API.
 
 ## Guarantees preserved
 

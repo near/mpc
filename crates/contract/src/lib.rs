@@ -1786,13 +1786,15 @@ impl MpcContract {
             self.node_foreign_chain_support
                 .foreign_chain_support_by_node
                 .remove(account);
+            // Also clean up the reverse TLS-key lookup for departed accounts. Since the node
+            // coordinator sends both legacy and new registrations on startup, any departed account
+            // that used the new API also has a legacy entry — so this loop covers the common case.
+            self.foreign_chains
+                .get_mut()
+                .tls_key_by_account_remove(account);
         }
 
         // Same cleanup for the available-set per-node map.
-        // Note: tls_key_by_account (the reverse AccountId→TLS map) is a LookupMap and cannot be
-        // iterated, so orphaned entries for departed accounts accumulate there. The functional
-        // impact is benign — register() overwrites on re-entry — but it is a slow storage leak.
-        // Fixing it requires either making tls_key_by_account iterable or accepting the cost here.
         let non_participant_available: Vec<dtos::Ed25519PublicKey> = self
             .foreign_chains
             .get()
