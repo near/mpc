@@ -9,17 +9,22 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_contract_interface::types::{Metrics, VerifyForeignTransactionRequest};
-use near_sdk::{env, store::LookupMap};
+use near_sdk::{
+    env,
+    store::{Lazy, LookupMap},
+};
 
 use crate::{
     Config, SupportedForeignChainsByNode,
     foreign_chain_rpc::ForeignChainRpcWhitelist,
+    foreign_chains_metadata::ForeignChainsMetadata,
     node_migrations::NodeMigrations,
     primitives::{
         ckd::CKDRequest,
         signature::{SignatureRequest, YieldIndex},
     },
     state::ProtocolContractState,
+    storage_keys::StorageKey,
     tee::tee_state::TeeState,
     update::ProposedUpdates,
 };
@@ -61,7 +66,13 @@ impl From<MpcContract> for crate::MpcContract {
             accept_requests: old.accept_requests,
             node_migrations: old.node_migrations,
             metrics: old.metrics,
-            foreign_chain_rpc_whitelist: old.foreign_chain_rpc_whitelist,
+            // New in this revision; the whitelist is carried over from the old state. The
+            // per-node configs self-populate on the first `register_foreign_chains_config`
+            // after upgrade.
+            foreign_chains: Lazy::new(
+                StorageKey::ForeignChainAvailability,
+                ForeignChainsMetadata::with_rpc_whitelist(old.foreign_chain_rpc_whitelist),
+            ),
         }
     }
 }

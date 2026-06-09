@@ -594,12 +594,34 @@ expression: abi
         }
       },
       {
+        "name": "get_available_foreign_chains",
+        "doc": " The **available** foreign chains: whitelisted chains that are supported\n by at least the signing threshold of active participants.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/AvailableForeignChains"
+          }
+        }
+      },
+      {
         "name": "get_foreign_chain_support_by_node",
         "kind": "view",
         "result": {
           "serialization_type": "json",
           "type_schema": {
             "$ref": "#/definitions/ForeignChainSupportByNode"
+          }
+        }
+      },
+      {
+        "name": "get_foreign_chains_configs",
+        "doc": " Per-participant view of which foreign chains each node currently covers. Feeds the\n available-set computation ([`Self::get_available_foreign_chains`]) and coverage alerting.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/ForeignChainsConfigs"
           }
         }
       },
@@ -1151,6 +1173,28 @@ expression: abi
               "name": "foreign_chain_support",
               "type_schema": {
                 "$ref": "#/definitions/SupportedForeignChains"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "register_foreign_chains_config",
+        "doc": " (Re)registers the foreign chains this participant currently covers, feeding the available\n set ([`Self::get_available_foreign_chains`]). Idempotent.\n\n Registrations are accepted in any active protocol state (Running, Resharing,\n Initializing). The available-chain cache is only refreshed in Running state;\n registrations made in other states are stored and take effect on the next\n Running-state recompute.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "foreign_chains_config",
+              "type_schema": {
+                "$ref": "#/definitions/ForeignChainsConfig"
               }
             }
           ]
@@ -2334,6 +2378,14 @@ expression: abi
             }
           ]
         },
+        "AvailableForeignChains": {
+          "description": "The set of foreign chains available across the threshold of active participants. Returned by `get_available_foreign_chains`; computed from the per-node [`ForeignChainsConfig`] reports.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ForeignChain"
+          },
+          "uniqueItems": true
+        },
         "BackupServiceInfo": {
           "type": "object",
           "required": [
@@ -3140,6 +3192,21 @@ expression: abi
                 "$ref": "#/definitions/SupportedForeignChains"
               }
             }
+          }
+        },
+        "ForeignChainsConfig": {
+          "description": "The set of foreign chains a node reports it can currently serve. Submitted by each node via `register_foreign_chains_config`; aggregated into [`AvailableForeignChains`] by the contract.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ForeignChain"
+          },
+          "uniqueItems": true
+        },
+        "ForeignChainsConfigs": {
+          "description": "Per-node foreign-chain configs as reported via `register_foreign_chains_config`, keyed by each node's TLS public key. Returned by `get_foreign_chains_configs`.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/ForeignChainsConfig"
           }
         },
         "Hash256": {
