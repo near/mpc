@@ -702,8 +702,8 @@ chain_id = "$CHAIN_ID"            # "testnet" or "mainnet"
 boot_nodes = "$BOOT_NODES"        # comma-separated; see the curl snippet below
 download_genesis = true
 download_config = "rpc"
-# tier3_public_addr = "$IP:24567"
-# external_storage_fallback_threshold = 0
+# tier3_public_addr = "$IP:24567"   # uncomment + set your node's external IP; required on multi-IP
+external_storage_fallback_threshold = 100
 
 [mpc_node_config.secrets]
 secret_store_key_hex = "$SECRET_STORE_KEY"
@@ -736,8 +736,8 @@ Adjust the variables as per your environment.
 * `mpc_contract_id` — **v1.signer-prod.testnet** for testnet, **v1.signer** for mainnet
 * `migration_web_ui` — bind address for the migration HTTP endpoint, used by the [Node Migration](./node-migration-guide.md) flow. Required. Keep at `0.0.0.0:8079` to match the port-forward and the `--mpc-node-address …:8079` form the migration guide uses.
 * `port_mappings` — port forwarding rules for the MPC container. These should be a subset of the port forwarding for the CVM defined in the [Using the Web Interface](#using-the-web-interface) section.
-* `tier3_public_addr` *(optional for single-node; required when running [multiple nodes on one host](./running-multiple-mpc-nodes-on-one-host.md); lives under `[mpc_node_config.near_init]`)* — `IP:24567` the node advertises for Tier3 state-sync responses. Applied at first init only; changing later requires a CVM redeploy via the [Node Migration](./node-migration-guide.md) flow.
-* `external_storage_fallback_threshold` *(optional, under `[mpc_node_config.near_init]`)* — DSS attempts per state part before falling back to the external storage bucket. `0` = bucket-only. Same first-init-only constraint as `tier3_public_addr`.
+* `tier3_public_addr` *(under `[mpc_node_config.near_init]`)* — `IP:24567` the node advertises for DSS (Tier3) state-sync responses. **Set this on any host with more than one external IP, or when running [multiple nodes on one host](./running-multiple-mpc-nodes-on-one-host.md)** — otherwise the node may advertise an IP that DSS peers can't reach and state sync stalls. Optional only on a single-node host with a single external IP. Applied at first init only; changing later requires a CVM redeploy via the [Node Migration](./node-migration-guide.md) flow.
+* `external_storage_fallback_threshold` *(under `[mpc_node_config.near_init]`)* — DSS (decentralized state sync) attempts per state part before falling back to the external storage bucket. Defaults to `100` (DSS-first, bucket as safety net); set `0` for bucket-only. Same first-init-only constraint as `tier3_public_addr`. DSS-first relies on `tier3_public_addr` being reachable — see its note above.
 * `near_init.boot_nodes` — comma-separated NEAR boot-node list. The testnet template at `deployment/cvm-deployment/user-config.toml` already ships with a working testnet boot-node list, so testnet operators usually don't need to fetch a fresh one. For **mainnet** (or to refresh testnet), select boot nodes from the Testnet/Mainnet RPC endpoints and copy at least 4-5 of them into this field.
   **Important:** Boot nodes must not contain duplicate addresses or peer IDs. Duplicates will cause the node to crash on startup. The command below deduplicates automatically:
 
