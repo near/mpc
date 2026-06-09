@@ -5918,6 +5918,7 @@ dependencies = [
  "tempfile",
  "test-log",
  "thiserror 2.0.18",
+ "thread-priority",
  "threshold-signatures",
  "tikv-jemallocator",
  "time",

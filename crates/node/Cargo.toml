@@ -74,6 +74,7 @@ socket2 = { workspace = true }
 tee-authority = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
+thread-priority = { workspace = true }
 threshold-signatures = { workspace = true }
 tikv-jemallocator = { workspace = true }
 time = { workspace = true }

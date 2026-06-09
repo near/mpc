@@ -520,6 +520,7 @@ mod testing {
             keygen: KeygenConfig { timeout_sec: 60 },
             foreign_chains: ForeignChainsConfig::default(),
             cores: Some(4),
+            separate_asset_generation_runtime: true,
         }
     }
 }

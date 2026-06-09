@@ -92,6 +92,7 @@ struct NodeConfigResponse {
     ckd: CKDConfig,
     keygen: KeygenConfig,
     cores: Option<usize>,
+    separate_asset_generation_runtime: bool,
 }
 
 impl From<ConfigFile> for NodeConfigResponse {
@@ -110,6 +111,7 @@ impl From<ConfigFile> for NodeConfigResponse {
             ckd: config.ckd,
             keygen: config.keygen,
             cores: config.cores,
+            separate_asset_generation_runtime: config.separate_asset_generation_runtime,
         }
     }
 }
@@ -444,6 +446,7 @@ mod tests {
                 )),
             },
             cores: Some(4),
+            separate_asset_generation_runtime: true,
         }
     }
 
