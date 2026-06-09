@@ -14,6 +14,9 @@ pub enum TonBocError {
     #[error("failed to parse TON BoC: {0}")]
     Parse(TonCellError),
 
+    #[error("panicked while parsing TON BoC (malformed cell structure)")]
+    ParsePanicked,
+
     #[error("TON BoC is not a single-root BoC (expected exactly one root)")]
     NotSingleRoot,
 
@@ -88,7 +91,16 @@ impl TonInspectionError {
 /// bodies are accepted — TON message bodies are byte-aligned in practice, and
 /// rejecting the rest keeps the signed payload unambiguous across nodes.
 pub fn normalize_body_boc(body_boc_b64: &str) -> Result<(TonCellBody, TonCellRefs), TonBocError> {
-    let boc = BagOfCells::parse_base64(body_boc_b64).map_err(TonBocError::Parse)?;
+    // The BoC is attacker-controlled (it comes from a semi-trusted RPC
+    // provider). `tonlib_core`'s deserializer resolves cell/root indices with
+    // unchecked arithmetic, so a crafted BoC with an out-of-range reference can
+    // panic instead of returning an error. A panic here would unwind through
+    // the `FanOut`'s `JoinSet`, turning one bad provider into a failed
+    // verification rather than a disagreeing verdict that the fan-out can
+    // outvote — so catch it and surface it as an ordinary (substantive) error.
+    let boc = std::panic::catch_unwind(|| BagOfCells::parse_base64(body_boc_b64))
+        .map_err(|_| TonBocError::ParsePanicked)?
+        .map_err(TonBocError::Parse)?;
 
     let root = boc.single_root().map_err(|_| TonBocError::NotSingleRoot)?;
 
@@ -258,5 +270,24 @@ mod tests {
         let garbage = base64::engine::general_purpose::STANDARD.encode([0xff, 0xff, 0xff, 0xff]);
         let err = normalize_body_boc(&garbage).unwrap_err();
         assert_matches!(err, TonBocError::Parse(_));
+    }
+
+    #[test]
+    fn normalize_body_boc__should_not_panic_on_out_of_range_root_index() {
+        // A hand-crafted BoC declaring one cell but a root index of 5. tonlib
+        // resolves roots with unchecked `cells[num_cells - 1 - root]`, which
+        // underflows and panics on this input; `normalize_body_boc` must turn
+        // that into an error rather than unwinding.
+        //
+        // Layout: magic(b5ee9c72) | flags=size:1 | off_bytes:1 | cells:1 |
+        // roots:1 | absent:0 | tot_cells_size:2 | root_list:[5] |
+        // cell:(d1=0,d2=0 => empty, no refs).
+        let bytes = [
+            0xb5, 0xee, 0x9c, 0x72, 0x01, 0x01, 0x01, 0x01, 0x00, 0x02, 0x05, 0x00, 0x00,
+        ];
+        let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+
+        let err = normalize_body_boc(&b64).unwrap_err();
+        assert_matches!(err, TonBocError::ParsePanicked);
     }
 }

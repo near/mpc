@@ -42,6 +42,14 @@ pub struct TonTransactionDescription {
     pub destroyed: bool,
     #[serde(default)]
     pub compute_ph: Option<TonComputePhase>,
+    /// Action phase, where outbound messages (including the ext-out logs we
+    /// attest) are actually sent. The compute phase can succeed while the
+    /// action phase fails (e.g. too many output actions, insufficient funds for
+    /// fwd fees), in which case the emitted messages are *not* committed — so a
+    /// failed action phase must be treated as a failed transaction even when
+    /// `aborted` is not set.
+    #[serde(default)]
+    pub action: Option<TonActionPhase>,
 }
 
 /// Compute phase subset. `success` is absent when the phase was skipped (e.g.
@@ -52,13 +60,31 @@ pub struct TonComputePhase {
     pub success: Option<bool>,
 }
 
+/// Action phase subset. `success` is absent when the phase did not run, which
+/// we do not treat as a failure; an explicit `Some(false)` means the outbound
+/// messages were not committed.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TonActionPhase {
+    #[serde(default)]
+    pub success: Option<bool>,
+}
+
 /// An outbound message of a transaction.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TonMessage {
     #[serde(default)]
     pub source: Option<TonAddress>,
-    /// `None` marks an ext-out (logging) message; `Some` marks an internal
-    /// message to another contract.
+    /// The inspector treats a `None` destination as the marker of an ext-out
+    /// (logging) message and `Some` as an internal message to another contract.
+    ///
+    /// This relies on the v3 API serializing the external destination of an
+    /// ext-out message (a TON `addr_extern`/`addr_none`) as JSON `null` rather
+    /// than as a populated address. That holds for the contracts we attest,
+    /// which emit logs to the empty external address, and is exercised by the
+    /// live-provider test in `tests/ton_rpc_manual.rs`. A provider that instead
+    /// rendered a non-empty external destination here would have its ext-outs
+    /// misclassified as internal and skipped — validate this against any
+    /// provider before whitelisting it.
     #[serde(default)]
     pub destination: Option<TonAddress>,
     /// Logical time the message was created, as a decimal string. Used to order

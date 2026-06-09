@@ -176,8 +176,7 @@ async fn read_body_limited(
 /// the canonical on-chain representation the v3 API accepts in its query
 /// parameters.
 pub(crate) fn format_ton_account(workchain: TonWorkchain, account_hash: &[u8; 32]) -> String {
-    let work_chain_as_digit: i32 = workchain.into();
-    format!("{work_chain_as_digit}:{}", hex::encode(account_hash))
+    format!("{}:{}", workchain.id(), hex::encode(account_hash))
 }
 
 /// Build the `GET /api/v3/transactions?...` URL.

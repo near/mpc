@@ -340,6 +340,9 @@ pub enum ForeignChain {
     Arbitrum,
     Abstract,
     Starknet,
+    Polygon,
+    HyperEvm,
+    Ton,
     // Future chains...
 }
 ```

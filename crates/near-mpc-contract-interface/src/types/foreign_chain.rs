@@ -430,6 +430,9 @@ pub enum TonFinality {
 #[repr(u8)]
 #[borsh(use_discriminant = true)]
 pub enum TonExtractor {
+    // Discriminant `1` mirrors the `Log` variant of the EVM/Starknet extractors
+    // (whose `BlockHash` occupies `0`), reserving `0` for a future block-level
+    // TON extractor so the wire encoding stays aligned across chains.
     Log { message_index: u64 } = 1,
 }
 

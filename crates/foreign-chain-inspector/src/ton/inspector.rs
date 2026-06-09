@@ -117,10 +117,7 @@ fn ensure_account_matches(
     expected_hash: &[u8; 32],
     rpc_account: &RpcTonAddress,
 ) -> Result<(), ForeignChainInspectionError> {
-    let expected_workchain: i32 = workchain.into();
-
-    if rpc_account.workchain == expected_workchain
-        && rpc_account.hash_part.as_slice() == expected_hash
+    if rpc_account.workchain == workchain.id() && rpc_account.hash_part.as_slice() == expected_hash
     {
         Ok(())
     } else {
@@ -180,6 +177,15 @@ fn ensure_transaction_succeeded(tx: &TonTransaction) -> Result<(), ForeignChainI
     }
     if let Some(compute_ph) = &tx.description.compute_ph
         && compute_ph.success == Some(false)
+    {
+        return Err(ForeignChainInspectionError::TransactionFailed);
+    }
+    // A successful compute phase does not imply the outbound messages were
+    // committed: the action phase can still fail (and `aborted` is not always
+    // set when it does), in which case the ext-out logs we would attest never
+    // actually went out. Reject those transactions too.
+    if let Some(action) = &tx.description.action
+        && action.success == Some(false)
     {
         return Err(ForeignChainInspectionError::TransactionFailed);
     }
@@ -246,8 +252,8 @@ mod tests {
     use crate::ton::rpc_client::{ReqwestTonClient, TonRpcError};
     use assert_matches::assert_matches;
     use foreign_chain_rpc_interfaces::ton::{
-        GetTransactionsResponse, TonCellBoc, TonComputePhase, TonMessage, TonTransaction,
-        TonTransactionDescription,
+        GetTransactionsResponse, TonActionPhase, TonCellBoc, TonComputePhase, TonMessage,
+        TonTransaction, TonTransactionDescription,
     };
     use near_mpc_contract_interface::types::TonCellBody;
     use std::sync::Mutex;
@@ -295,7 +301,7 @@ mod tests {
     }
 
     fn ton_address(workchain: TonWorkchain, hash: &[u8; 32]) -> RpcTonAddress {
-        RpcTonAddress::new(workchain.into(), tonlib_core::types::TonHash::from(*hash))
+        RpcTonAddress::new(workchain.id(), tonlib_core::types::TonHash::from(*hash))
     }
 
     fn cell_body(bits: Vec<u8>, bit_length: u16) -> TonCellBody {
@@ -313,6 +319,9 @@ mod tests {
                 aborted: false,
                 destroyed: false,
                 compute_ph: Some(TonComputePhase {
+                    success: Some(true),
+                }),
+                action: Some(TonActionPhase {
                     success: Some(true),
                 }),
             },
@@ -439,6 +448,46 @@ mod tests {
             .await
             .unwrap_err();
         assert_matches!(err, ForeignChainInspectionError::TransactionFailed);
+    }
+
+    #[tokio::test]
+    async fn extract__should_reject_action_phase_failure() {
+        // Compute phase succeeded but the action phase did not commit the
+        // outbound messages — the log we would attest never went out.
+        let mut tx = happy_tx();
+        tx.description.action = Some(TonActionPhase {
+            success: Some(false),
+        });
+        let inspector = inspector_from_tx(tx);
+
+        let err = inspector
+            .extract(
+                tx_id(),
+                TonFinality::MasterchainIncluded,
+                vec![TonExtractor::Log { message_index: 0 }],
+            )
+            .await
+            .unwrap_err();
+        assert_matches!(err, ForeignChainInspectionError::TransactionFailed);
+    }
+
+    #[tokio::test]
+    async fn extract__should_accept_when_action_phase_absent() {
+        // A skipped/absent action phase is not a failure (e.g. a transaction
+        // with no outbound actions); `None` must not be treated as failure.
+        let mut tx = happy_tx();
+        tx.description.action = None;
+        let inspector = inspector_from_tx(tx);
+
+        let values = inspector
+            .extract(
+                tx_id(),
+                TonFinality::MasterchainIncluded,
+                vec![TonExtractor::Log { message_index: 0 }],
+            )
+            .await
+            .unwrap();
+        assert_eq!(values.len(), 1);
     }
 
     #[tokio::test]

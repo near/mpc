@@ -27,10 +27,21 @@ pub struct TonAddress {
     pub hash: Hash256,
 }
 
+/// TON workchain id, modelled as the `int8` the TON `addr_std` format and the
+/// contract DTO use, so the two enums encode the same value identically (e.g. a
+/// future masterchain `= -1`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, IntoPrimitive, TryFromPrimitive)]
-#[repr(i32)]
+#[repr(i8)]
 pub enum TonWorkchain {
     Basechain = 0,
+}
+
+impl TonWorkchain {
+    /// The workchain id widened to the `i32` `tonlib_core` uses at its API
+    /// boundary (`TonAddress::workchain`). Lossless: every `i8` fits in `i32`.
+    pub(crate) fn id(self) -> i32 {
+        i32::from(i8::from(self))
+    }
 }
 
 /// A TON outbound log message extracted by the inspector. The cell payload
