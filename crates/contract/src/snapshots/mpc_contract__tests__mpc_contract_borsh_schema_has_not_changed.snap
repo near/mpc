@@ -120,16 +120,6 @@ BorshSchemaContainer {
                 ],
             ),
         },
-        "AllowedProviders": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "entries",
-                        "IterableMap",
-                    ),
-                ],
-            ),
-        },
         "AttemptId": Struct {
             fields: UnnamedFields(
                 [
@@ -375,20 +365,6 @@ BorshSchemaContainer {
                 ],
             ),
         },
-        "ForeignChainRpcWhitelist": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "entries",
-                        "AllowedProviders",
-                    ),
-                    (
-                        "votes",
-                        "ProviderVotes",
-                    ),
-                ],
-            ),
-        },
         "HashSet<AuthenticatedAccountId>": Sequence {
             length_width: 4,
             length_range: 0..=4294967295,
@@ -588,6 +564,16 @@ BorshSchemaContainer {
                 ],
             ),
         },
+        "Lazy": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "storage_key",
+                        "Vec<u8>",
+                    ),
+                ],
+            ),
+        },
         "LookupMap": Struct {
             fields: NamedFields(
                 [
@@ -699,8 +685,8 @@ BorshSchemaContainer {
                         "Metrics",
                     ),
                     (
-                        "foreign_chain_rpc_whitelist",
-                        "ForeignChainRpcWhitelist",
+                        "foreign_chains",
+                        "Lazy",
                     ),
                 ],
             ),
@@ -929,16 +915,6 @@ BorshSchemaContainer {
         },
         "Protocol__Frost": Struct {
             fields: Empty,
-        },
-        "ProviderVotes": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "pending",
-                        "Votes<(AuthenticatedParticipantId, ForeignChain)>",
-                    ),
-                ],
-            ),
         },
         "PublicKey": Struct {
             fields: NamedFields(
@@ -1242,20 +1218,6 @@ BorshSchemaContainer {
                     (
                         "values",
                         "IndexMap",
-                    ),
-                ],
-            ),
-        },
-        "Votes<(AuthenticatedParticipantId, ForeignChain)>": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "proposal_by_voter",
-                        "IterableMap",
-                    ),
-                    (
-                        "votes_by_proposal",
-                        "IterableMap",
                     ),
                 ],
             ),
