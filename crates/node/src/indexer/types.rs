@@ -8,7 +8,7 @@ use k256::{
 use mpc_primitives::domain::DomainId;
 use near_indexer_primitives::types::Gas;
 use near_mpc_contract_interface::method_names::{
-    CONCLUDE_NODE_MIGRATION, REGISTER_AVAILABLE_FOREIGN_CHAIN_CONFIG, RESPOND, RESPOND_CKD,
+    CONCLUDE_NODE_MIGRATION, REGISTER_AVAILABLE_FOREIGN_CHAINS_CONFIG, RESPOND, RESPOND_CKD,
     RESPOND_VERIFY_FOREIGN_TX, START_KEYGEN_INSTANCE, START_RESHARE_INSTANCE,
     SUBMIT_PARTICIPANT_INFO, VERIFY_TEE, VOTE_ABORT_KEY_EVENT_INSTANCE, VOTE_PK, VOTE_RESHARED,
 };
@@ -191,6 +191,7 @@ pub enum ChainSendTransactionRequest {
     VotePk(ChainVotePkArgs),
     StartKeygen(ChainStartKeygenArgs),
     VoteReshared(ChainVoteResharedArgs),
+    // TODO(#3485): Remove after contract upgrade to 3.12.
     // Legacy registration. Sent alongside `RegisterAvailableForeignChainConfig` so a node
     // works against both the current contract and one upgraded for #3475. Remove once the
     // contract is upgraded and the whitelist is voted in.
@@ -224,7 +225,7 @@ impl ChainSendTransactionRequest {
                 REGISTER_FOREIGN_CHAIN_CONFIG
             }
             ChainSendTransactionRequest::RegisterAvailableForeignChainConfig(_) => {
-                REGISTER_AVAILABLE_FOREIGN_CHAIN_CONFIG
+                REGISTER_AVAILABLE_FOREIGN_CHAINS_CONFIG
             }
             ChainSendTransactionRequest::StartReshare(_) => START_RESHARE_INSTANCE,
             ChainSendTransactionRequest::StartKeygen(_) => START_KEYGEN_INSTANCE,

@@ -659,7 +659,7 @@ pub struct SupportedForeignChains(BTreeSet<ForeignChain>);
 
 /// The set of foreign chains a node reports it can currently serve (cover). The available-set
 /// analog of [`SupportedForeignChains`]; submitted by nodes via
-/// `register_available_foreign_chain_config`.
+/// `register_available_foreign_chains_config`.
 #[derive(
     Debug,
     Clone,

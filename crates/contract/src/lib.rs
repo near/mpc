@@ -161,11 +161,11 @@ pub struct MpcContract {
     // TODO(#2937): Remove via state migration.
     metrics: Metrics,
     foreign_chain_rpc_whitelist: ForeignChainRpcWhitelist,
-    available_foreign_chains_by_node: AvailableForeignChainsByNode,
     /// Cached set of chains that at least the signing threshold of active participants support,
     /// recomputed on every registration. `get_available_foreign_chains` intersects it with the
     /// on-chain whitelist to produce the available set, keeping that read cheap.
     available_foreign_chains: dtos::AvailableForeignChains,
+    available_foreign_chains_by_node: AvailableForeignChainsByNode,
 }
 
 #[near(serializers=[borsh])]
@@ -1004,14 +1004,14 @@ impl MpcContract {
 
     /// (Re)registers the foreign chains this participant currently covers, feeding the available
     /// set ([`Self::get_available_foreign_chains`]). Idempotent.
-    ///
-    /// Note: `voter_or_panic` accepts callers in `Initializing` and `Resharing` phases, so a
-    /// registration in those phases will be written to `available_foreign_chains_by_node` but
-    /// the cache (`available_foreign_chains`) is not refreshed until the next `Running`-state
-    /// recompute (e.g. `clean_foreign_chain_data` after `vote_reshared`, or the next call to
-    /// this method once the contract is `Running`).
+    //
+    // Note: `voter_or_panic` accepts callers in `Initializing` and `Resharing` phases, so a
+    // registration in those phases will be written to `available_foreign_chains_by_node` but
+    // the cache (`available_foreign_chains`) is not refreshed until the next `Running`-state
+    // recompute (e.g. `clean_foreign_chain_data` after `vote_reshared`, or the next call to
+    // this method once the contract is `Running`).
     #[handle_result]
-    pub fn register_available_foreign_chain_config(
+    pub fn register_available_foreign_chains_config(
         &mut self,
         available_foreign_chains: dtos::AvailableForeignChains,
     ) -> Result<(), Error> {
@@ -2136,7 +2136,7 @@ impl MpcContract {
 
     /// Per-participant view of which foreign chains each node currently covers. Feeds the
     /// available-set computation ([`Self::get_available_foreign_chains`]) and coverage alerting.
-    pub fn get_available_foreign_chain_by_node(
+    pub fn get_available_foreign_chains_by_node(
         &self,
     ) -> BTreeMap<dtos::AccountId, dtos::AvailableForeignChains> {
         self.available_foreign_chains_by_node.snapshot()
@@ -6795,7 +6795,7 @@ mod tests {
             chains.into_iter().collect::<BTreeSet<_>>().into();
         let _env = Environment::new(None, Some(account_id.clone()), None);
         contract
-            .register_available_foreign_chain_config(available_foreign_chains)
+            .register_available_foreign_chains_config(available_foreign_chains)
             .expect("register should succeed");
     }
 

@@ -422,7 +422,7 @@ where
             )
             .await
         {
-            tracing::warn!(error = ?err, "failed to send register_available_foreign_chain_config transaction");
+            tracing::warn!(error = ?err, "failed to send register_available_foreign_chains_config transaction, this is expected until contract version 3.12");
         }
 
         tracing::info!("Creating tls mesh");

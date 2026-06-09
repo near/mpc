@@ -296,18 +296,18 @@ async fn observe_tx_result(
             // exposes the new methods — we do not assert the write landed.  All view errors are
             // swallowed: MethodNotFound is expected before the contract is upgraded for #3475,
             // and any other transient view failure (network blip, indexer lag) is non-actionable
-            // because the registration already fire-and-forgot.
+            // because the registration already fire-and-forget.
             if let Err(err) = indexer_state
                 .view_client
-                .get_available_foreign_chain_by_node(&indexer_state.mpc_contract_id)
+                .get_available_foreign_chains_by_node(&indexer_state.mpc_contract_id)
                 .await
             {
                 if is_method_not_found(&err) {
                     tracing::warn!(
                         target: "mpc",
-                        "register_available_foreign_chain_config is not available on the contract yet \
+                        "register_available_foreign_chains_config is not available on the contract yet \
                          (MethodNotFound); the contract has likely not been upgraded for #3475. \
-                         Foreign-chain registration will take effect after the upgrade."
+                         Foreign-chain registration will take effect after the contract upgrade to 3.12."
                     );
                 } else {
                     tracing::warn!(
@@ -323,14 +323,14 @@ async fn observe_tx_result(
         // The legacy
         // `RegisterForeignChainConfig` stays fire-and-forget, the new
         // `RegisterAvailableForeignChainConfig` above is the one we probe + warn on.
-        RegisterForeignChainConfig(_)
-        | StartKeygen(_)
+        StartKeygen(_)
         | StartReshare(_)
         | VotePk(_)
         | VoteReshared(_)
         | VoteAbortKeyEventInstance(_)
         | VerifyTee()
-        | ConcludeNodeMigration(_) => Ok(TransactionStatus::Unknown),
+        | ConcludeNodeMigration(_)
+        | RegisterForeignChainConfig(_) => Ok(TransactionStatus::Unknown),
     }
 }
 

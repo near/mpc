@@ -52,7 +52,7 @@ pub struct FakeMpcContractState {
     pub pending_verify_foreign_txs: BTreeMap<dtos::ForeignChainRpcRequest, VerifyForeignTxId>,
     supported_foreign_chains: dtos::SupportedForeignChains,
     supported_foreign_chains_by_node: dtos::ForeignChainSupportByNode,
-    /// Per-node map for the new `register_available_foreign_chain_config` API.
+    /// Per-node map for the new `register_available_foreign_chains_config` API.
     available_foreign_chains_by_node: BTreeMap<AccountId, dtos::AvailableForeignChains>,
     /// Cached available set recomputed via threshold semantics (mirrors the real contract).
     available_foreign_chains: dtos::AvailableForeignChains,
@@ -120,14 +120,14 @@ impl FakeMpcContractState {
         self.record_node_chains(account_id, chains);
     }
 
-    pub fn register_available_foreign_chain_config(
+    pub fn register_available_foreign_chains_config(
         &mut self,
         account_id: AccountId,
         available_foreign_chains: dtos::AvailableForeignChains,
     ) {
         let ProtocolContractState::Running(state) = &self.state else {
             tracing::info!(
-                "register_available_foreign_chain_config ignored: contract not in running state"
+                "register_available_foreign_chains_config ignored: contract not in running state"
             );
             return;
         };
@@ -139,7 +139,7 @@ impl FakeMpcContractState {
             .any(|(id, _, _)| id == &account_id);
         if !is_participant {
             tracing::info!(
-                "register_available_foreign_chain_config ignored: signer is not a participant"
+                "register_available_foreign_chains_config ignored: signer is not a participant"
             );
             return;
         }
@@ -753,7 +753,7 @@ impl FakeIndexerCore {
                     }
                     ChainSendTransactionRequest::RegisterAvailableForeignChainConfig(args) => {
                         let mut contract = contract.lock().await;
-                        contract.register_available_foreign_chain_config(
+                        contract.register_available_foreign_chains_config(
                             account_id,
                             args.available_foreign_chains,
                         );

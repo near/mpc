@@ -133,8 +133,8 @@ async fn supported_foreign_chains__should_require_all_participants_to_register()
     .expect("timed out waiting for Solana to be reported as supported");
 }
 
-/// Each node auto-registers the chains it covers via `register_available_foreign_chain_config`
-/// on startup; `get_available_foreign_chain_by_node` should reflect those per-node sets.
+/// Each node auto-registers the chains it covers via `register_available_foreign_chains_config`
+/// on startup; `get_available_foreign_chains_by_node` should reflect those per-node sets.
 ///
 /// 3-node cluster: nodes 0 and 1 are configured with Solana, node 2 has none.
 #[tokio::test]

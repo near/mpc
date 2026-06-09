@@ -578,7 +578,7 @@ expression: abi
         }
       },
       {
-        "name": "get_available_foreign_chain_by_node",
+        "name": "get_available_foreign_chains_by_node",
         "doc": " Per-participant view of which foreign chains each node currently covers. Feeds the\n available-set computation ([`Self::get_available_foreign_chains`]) and coverage alerting.",
         "kind": "view",
         "result": {
@@ -1107,7 +1107,7 @@ expression: abi
         }
       },
       {
-        "name": "register_available_foreign_chain_config",
+        "name": "register_available_foreign_chains_config",
         "doc": " (Re)registers the foreign chains this participant currently covers, feeding the available\n set ([`Self::get_available_foreign_chains`]). Idempotent.\n\n Note: `voter_or_panic` accepts callers in `Initializing` and `Resharing` phases, so a\n registration in those phases will be written to `available_foreign_chains_by_node` but\n the cache (`available_foreign_chains`) is not refreshed until the next `Running`-state\n recompute (e.g. `clean_foreign_chain_data` after `vote_reshared`, or the next call to\n this method once the contract is `Running`).",
         "kind": "call",
         "params": {
@@ -2292,7 +2292,7 @@ expression: abi
           ]
         },
         "AvailableForeignChains": {
-          "description": "The set of foreign chains a node reports it can currently serve (cover). The available-set analog of [`SupportedForeignChains`]; submitted by nodes via `register_available_foreign_chain_config`.",
+          "description": "The set of foreign chains a node reports it can currently serve (cover). The available-set analog of [`SupportedForeignChains`]; submitted by nodes via `register_available_foreign_chains_config`.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/ForeignChain"
