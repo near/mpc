@@ -156,23 +156,39 @@ args = [
   "--locked",
 ]
 
+# Build via cargo-near, the same tool that produces the deployed/reproducible
+# artifact. It sets `--cfg near` (required by near-sdk's host bindings — e.g.
+# `env::panic_str` -> `panic_utf8`) and runs wasm-opt. A plain `cargo build`
+# omits `--cfg near`, which makes contract panics compile to raw `unreachable`
+# traps instead of readable errors. Output: target/near/<crate>/<crate>.wasm.
 [tasks.build-mpc-contract-optimized]
 description = "Build the mpc-contract WASM used by the E2E tests"
 condition = { env_not_set = ["E2E_SKIP_BUILD"] }
-# `--enable-bulk-memory` and `--enable-nontrapping-float-to-int` mirror what
-# `cargo near build` passes to wasm-opt; rustc >= 1.87 emits both feature
-# sets by default, so wasm-opt must accept them to validate the input.
-script = [
-  "cargo build -p mpc-contract --target=wasm32-unknown-unknown --profile=release-contract --locked",
-  "wasm-opt -Oz --enable-bulk-memory --enable-nontrapping-float-to-int target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm -o target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm",
+command = "cargo"
+args = [
+  "near",
+  "build",
+  "non-reproducible-wasm",
+  "--no-abi",
+  "--profile=release-contract",
+  "--manifest-path",
+  "crates/contract/Cargo.toml",
+  "--locked",
 ]
 
 [tasks.build-test-parallel-contract-optimized]
 description = "Build the test-parallel-contract WASM used by the E2E tests"
 condition = { env_not_set = ["E2E_SKIP_BUILD"] }
-script = [
-  "cargo build -p test-parallel-contract --target=wasm32-unknown-unknown --profile=release-contract --locked",
-  "wasm-opt -Oz --enable-bulk-memory --enable-nontrapping-float-to-int target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm -o target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm",
+command = "cargo"
+args = [
+  "near",
+  "build",
+  "non-reproducible-wasm",
+  "--no-abi",
+  "--profile=release-contract",
+  "--manifest-path",
+  "crates/test-parallel-contract/Cargo.toml",
+  "--locked",
 ]
 
 [tasks.build-backup-cli]
@@ -214,8 +230,8 @@ args = [
 ]
 
 [tasks._run-e2e-logic.env]
-MPC_CONTRACT_WASM = "${CARGO_MAKE_WORKING_DIRECTORY}/target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm"
-MPC_PARALLEL_CONTRACT_WASM = "${CARGO_MAKE_WORKING_DIRECTORY}/target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm"
+MPC_CONTRACT_WASM = "${CARGO_MAKE_WORKING_DIRECTORY}/target/near/mpc_contract/mpc_contract.wasm"
+MPC_PARALLEL_CONTRACT_WASM = "${CARGO_MAKE_WORKING_DIRECTORY}/target/near/test_parallel_contract/test_parallel_contract.wasm"
 
 # Build the mpc-node binary and both contract WASMs, then run the E2E tests.
 [tasks.e2e-tests]
