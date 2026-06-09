@@ -643,7 +643,7 @@ mod tests {
             body_refs: vec![dtos::Hash256([0x01; 32])].try_into().unwrap(),
         };
         let inspector = TonExtractedValue::Log(log);
-        let contract = dtos::TonExtractedValue::try_from(inspector.clone()).unwrap();
+        let contract = dtos::TonExtractedValue::from(inspector.clone());
         let back = TonExtractedValue::try_from(contract).unwrap();
         assert_eq!(inspector, back);
     }
