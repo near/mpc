@@ -578,6 +578,17 @@ expression: abi
         }
       },
       {
+        "name": "get_available_foreign_chains",
+        "doc": " The **available** foreign chains: whitelisted chains that are supported\n by at least the signing threshold of active participants.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/AvailableForeignChains"
+          }
+        }
+      },
+      {
         "name": "get_available_foreign_chains_by_node",
         "doc": " Per-participant view of which foreign chains each node currently covers. Feeds the\n available-set computation ([`Self::get_available_foreign_chains`]) and coverage alerting.",
         "kind": "view",
@@ -588,17 +599,6 @@ expression: abi
             "additionalProperties": {
               "$ref": "#/definitions/AvailableForeignChains"
             }
-          }
-        }
-      },
-      {
-        "name": "get_available_foreign_chains",
-        "doc": " The **available** foreign chains: whitelisted chains that are supported\n by at least the signing threshold of active participants.",
-        "kind": "view",
-        "result": {
-          "serialization_type": "json",
-          "type_schema": {
-            "$ref": "#/definitions/AvailableForeignChains"
           }
         }
       },
@@ -1108,7 +1108,7 @@ expression: abi
       },
       {
         "name": "register_available_foreign_chains_config",
-        "doc": " (Re)registers the foreign chains this participant currently covers, feeding the available\n set ([`Self::get_available_foreign_chains`]). Idempotent.\n\n Note: `voter_or_panic` accepts callers in `Initializing` and `Resharing` phases, so a\n registration in those phases will be written to `available_foreign_chains_by_node` but\n the cache (`available_foreign_chains`) is not refreshed until the next `Running`-state\n recompute (e.g. `clean_foreign_chain_data` after `vote_reshared`, or the next call to\n this method once the contract is `Running`).",
+        "doc": " (Re)registers the foreign chains this participant currently covers, feeding the available\n set ([`Self::get_available_foreign_chains`]). Idempotent.",
         "kind": "call",
         "params": {
           "serialization_type": "json",
