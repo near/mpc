@@ -621,10 +621,7 @@ expression: abi
         "result": {
           "serialization_type": "json",
           "type_schema": {
-            "type": "object",
-            "additionalProperties": {
-              "$ref": "#/definitions/ForeignChainsConfig"
-            }
+            "$ref": "#/definitions/ForeignChainsConfigs"
           }
         }
       },
@@ -1189,7 +1186,7 @@ expression: abi
       },
       {
         "name": "register_foreign_chains_config",
-        "doc": " (Re)registers the foreign chains this participant currently covers, feeding the available\n set ([`Self::get_available_foreign_chains`]). Idempotent.",
+        "doc": " (Re)registers the foreign chains this participant currently covers, feeding the available\n set ([`Self::get_available_foreign_chains`]). Idempotent.\n\n Registrations are accepted in any active protocol state (Running, Resharing,\n Initializing). The available-chain cache is only refreshed in Running state;\n registrations made in other states are stored and take effect on the next\n Running-state recompute.",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -3204,6 +3201,13 @@ expression: abi
             "$ref": "#/definitions/ForeignChain"
           },
           "uniqueItems": true
+        },
+        "ForeignChainsConfigs": {
+          "description": "Per-node foreign-chain configs as reported via `register_foreign_chains_config`, keyed by each node's TLS public key. Returned by `get_foreign_chains_configs`.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/ForeignChainsConfig"
+          }
         },
         "Hash256": {
           "type": "string",

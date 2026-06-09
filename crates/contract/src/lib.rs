@@ -977,9 +977,11 @@ impl MpcContract {
 
     /// (Re)registers the foreign chains this participant currently covers, feeding the available
     /// set ([`Self::get_available_foreign_chains`]). Idempotent.
-    //
-    // Note: registrations made while the contract is not in `Running` state are stored but do not
-    // update the cached available set until the next `Running`-state recompute.
+    ///
+    /// Registrations are accepted in any active protocol state (Running, Resharing,
+    /// Initializing). The available-chain cache is only refreshed in Running state;
+    /// registrations made in other states are stored and take effect on the next
+    /// Running-state recompute.
     #[handle_result]
     pub fn register_foreign_chains_config(
         &mut self,
@@ -1787,6 +1789,10 @@ impl MpcContract {
         }
 
         // Same cleanup for the available-set per-node map.
+        // Note: tls_key_by_account (the reverse AccountId→TLS map) is a LookupMap and cannot be
+        // iterated, so orphaned entries for departed accounts accumulate there. The functional
+        // impact is benign — register() overwrites on re-entry — but it is a slow storage leak.
+        // Fixing it requires either making tls_key_by_account iterable or accepting the cost here.
         let non_participant_available: Vec<dtos::Ed25519PublicKey> = self
             .foreign_chains
             .get()
@@ -2109,9 +2115,7 @@ impl MpcContract {
 
     /// Per-participant view of which foreign chains each node currently covers. Feeds the
     /// available-set computation ([`Self::get_available_foreign_chains`]) and coverage alerting.
-    pub fn get_foreign_chains_configs(
-        &self,
-    ) -> BTreeMap<dtos::Ed25519PublicKey, dtos::ForeignChainsConfig> {
+    pub fn get_foreign_chains_configs(&self) -> dtos::ForeignChainsConfigs {
         self.foreign_chains.get().snapshot_by_node()
     }
 
@@ -6983,5 +6987,47 @@ mod tests {
         // Then: the cache is unchanged — recompute is skipped outside Running.
         let available_after = contract.get_available_foreign_chains();
         assert_eq!(available_before, available_after);
+    }
+
+    #[test]
+    fn register_foreign_chains_config__should_succeed_for_new_participant_during_resharing() {
+        // Given: Running contract; transition to Resharing whose proposed set adds a new participant
+        // not present in the old running set.
+        let (_context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let (new_account_id, new_info) = gen_participant(100);
+        let mut new_participants = contract
+            .protocol_state
+            .threshold_parameters()
+            .unwrap()
+            .participants()
+            .clone();
+        new_participants
+            .insert(new_account_id.clone(), new_info)
+            .expect("new participant should be inserted");
+        let new_params =
+            ThresholdParameters::new(new_participants.clone(), Threshold::new(3)).unwrap();
+
+        let resharing = {
+            let ProtocolContractState::Running(ref mut state) = contract.protocol_state else {
+                panic!("expected Running state");
+            };
+            state
+                .transition_to_resharing_no_checks(&new_params)
+                .expect("contract has at least one domain")
+        };
+        contract.protocol_state = ProtocolContractState::Resharing(resharing);
+        // Provide mocked attestations for every participant in the proposed new set,
+        // including the newly added one.
+        contract.tee_state = TeeState::with_mocked_participant_attestations(&new_participants);
+
+        // When: the new participant (not in the old running set) registers its foreign chain config.
+        let foreign_chains_config: dtos::ForeignChainsConfig =
+            BTreeSet::from([dtos::ForeignChain::Bitcoin]).into();
+        let _env = Environment::new(None, Some(new_account_id.clone()), None);
+        // Then: the call succeeds — tls_key_for_account now resolves against the proposed
+        // (new) participant set, consistent with assert_caller_is_attested_participant_and_protocol_active.
+        contract
+            .register_foreign_chains_config(foreign_chains_config)
+            .expect("new participant should be able to register during Resharing");
     }
 }

@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::near;
 use near_sdk::store::{IterableMap, LookupMap};
@@ -27,7 +25,7 @@ impl Default for ForeignChainsMetadata {
         Self {
             rpc_whitelist: Default::default(),
             available_foreign_chains: Default::default(),
-            foreign_chains_configs: IterableMap::new(StorageKey::AvailableForeignChainsByNode),
+            foreign_chains_configs: IterableMap::new(StorageKey::ForeignChainsConfigs),
             tls_key_by_account: LookupMap::new(StorageKey::TlsKeyByAccount),
         }
     }
@@ -56,17 +54,25 @@ impl ForeignChainsMetadata {
             let old_key = old_key.clone();
             self.foreign_chains_configs.remove(&old_key);
         }
+        // Two different accounts must never share a TLS key — the key uniquely identifies a node.
+        assert!(
+            !self.foreign_chains_configs.contains_key(&tls_key)
+                || self
+                    .tls_key_by_account
+                    .get(&account_id)
+                    .is_some_and(|k| *k == tls_key),
+            "TLS key already registered by a different account"
+        );
         self.tls_key_by_account.insert(account_id, tls_key.clone());
         self.foreign_chains_configs
             .insert(tls_key, foreign_chains_config);
     }
 
-    pub(crate) fn snapshot_by_node(
-        &self,
-    ) -> BTreeMap<dtos::Ed25519PublicKey, dtos::ForeignChainsConfig> {
+    pub(crate) fn snapshot_by_node(&self) -> dtos::ForeignChainsConfigs {
         self.foreign_chains_configs
             .iter()
             .map(|(id, chains)| (id.clone(), chains.clone()))
-            .collect()
+            .collect::<std::collections::BTreeMap<_, _>>()
+            .into()
     }
 }

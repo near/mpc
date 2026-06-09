@@ -9,8 +9,8 @@ use serde_with::{hex::Hex, serde_as};
 use sha2::Digest;
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::types::SignatureResponse;
 use crate::types::primitives::{AccountId, DomainId};
+use crate::types::{Ed25519PublicKey, SignatureResponse};
 
 /// Maximum number of significant data bits a TON Cell may hold.
 ///
@@ -1168,6 +1168,28 @@ pub struct SupportedForeignChains(BTreeSet<ForeignChain>);
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct ForeignChainsConfig(BTreeSet<ForeignChain>);
+
+/// Per-node foreign-chain configs as reported via `register_foreign_chains_config`, keyed by each
+/// node's TLS public key. Returned by `get_foreign_chains_configs`.
+#[derive(
+    Debug,
+    Clone,
+    Default,
+    Eq,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::From,
+    derive_more::Deref,
+    derive_more::DerefMut,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct ForeignChainsConfigs(BTreeMap<Ed25519PublicKey, ForeignChainsConfig>);
 
 /// The set of foreign chains available across the threshold of active participants. Returned by
 /// `get_available_foreign_chains`; computed from the per-node [`ForeignChainsConfig`] reports.

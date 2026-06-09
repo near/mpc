@@ -139,10 +139,10 @@ async fn supported_foreign_chains__should_require_all_participants_to_register()
 /// 3-node cluster: nodes 0 and 1 are configured with Solana, node 2 has none.
 #[tokio::test]
 #[expect(non_snake_case)]
-async fn available_foreign_chain_by_node__should_reflect_auto_registered_configs() {
+async fn foreign_chain_configs__should_reflect_auto_registered_configs() {
     // given — 3-node cluster with Solana on nodes 0 and 1 only
     let (cluster, _running) =
-        common::must_setup_cluster(common::AVAILABLE_FOREIGN_CHAINS_BY_NODE_PORT_SEED, |c| {
+        common::must_setup_cluster(common::FOREIGN_CHAINS_CONFIGS_PORT_SEED, |c| {
             c.node_foreign_chains_configs = vec![
                 solana_foreign_chains_config(), // node 0
                 solana_foreign_chains_config(), // node 1
@@ -157,7 +157,7 @@ async fn available_foreign_chain_by_node__should_reflect_auto_registered_configs
         BTreeSet::from([ForeignChain::Solana]).into();
     (|| async {
         let by_node = cluster
-            .view_available_foreign_chain_by_node()
+            .view_foreign_chain_configs()
             .await
             .expect("failed to view available foreign chains by node");
 
