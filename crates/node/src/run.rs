@@ -30,7 +30,7 @@ use std::{
     time::Duration,
 };
 use tee_authority::tee_authority::TeeAuthority;
-use tokio::signal::unix::{Signal, SignalKind, signal};
+use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::{RwLock, broadcast, mpsc, oneshot, watch};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
@@ -41,52 +41,6 @@ use crate::tee::{
 };
 
 pub const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hour
-
-/// Await a signal if its handle is present; if the handle is `None` (its
-/// install failed), park forever so the `tokio::select!` arm is effectively
-/// dead and the other (successfully-installed) signals still work.
-async fn await_optional_signal(handle: Option<&mut Signal>) {
-    match handle {
-        Some(h) => {
-            h.recv().await;
-        }
-        None => std::future::pending().await,
-    }
-}
-
-/// Install handlers for SIGTERM / SIGINT / SIGHUP and forward the first
-/// signal that arrives into `sender` so the main `select!` can drive a
-/// graceful shutdown. Spawned right after the runtime is built so signals
-/// arriving during early startup are also handled.
-async fn await_and_forward_shutdown_signal(sender: mpsc::Sender<()>) {
-    let install = |kind: SignalKind, name: &'static str| {
-        signal(kind)
-            .inspect_err(|e| tracing::warn!(error = %e, signal = name, "failed to install shutdown-signal handler"))
-            .ok()
-    };
-    let mut sigterm = install(SignalKind::terminate(), "SIGTERM");
-    let mut sigint = install(SignalKind::interrupt(), "SIGINT");
-    let mut sighup = install(SignalKind::hangup(), "SIGHUP");
-    if sigterm.is_none() && sigint.is_none() && sighup.is_none() {
-        tracing::error!(
-            "no shutdown-signal handlers could be installed; graceful shutdown disabled"
-        );
-        return;
-    }
-    let signal_name = tokio::select! {
-        _ = await_optional_signal(sigterm.as_mut()) => "SIGTERM",
-        _ = await_optional_signal(sigint.as_mut()) => "SIGINT",
-        _ = await_optional_signal(sighup.as_mut()) => "SIGHUP",
-    };
-    tracing::warn!(
-        signal = signal_name,
-        "shutdown signal received, initiating graceful shutdown"
-    );
-    // `send` returns Err only if the receiver has been dropped (the main
-    // `select!` already exited via a different arm); we're shutting down
-    // anyway, so it's fine to ignore.
-    let _ = sender.send(()).await;
-}
 
 pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     init_logging(&config.log);
@@ -124,13 +78,21 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
 
     let _tokio_enter_guard = root_runtime.enter();
 
-    // Two independent shutdown sources, each owns its own channel so the main
-    // `select!` can give them distinct exit semantics: a graceful operator stop
-    // (SIGTERM/SIGINT/SIGHUP) exits cleanly with code 0; the image-hash watcher
-    // exits non-zero on the rare error conditions that cause it to bail.
-    let (signal_shutdown_sender, mut signal_shutdown_receiver) = mpsc::channel(1);
-    let (image_hash_shutdown_sender, mut image_hash_shutdown_receiver) = mpsc::channel(1);
-    root_runtime.spawn(await_and_forward_shutdown_signal(signal_shutdown_sender));
+    // Install the SIGTERM handler as the first thing after the runtime is
+    // built, BEFORE any expensive startup (indexer bootstrap, contract
+    // state fetch, attestation generation). A SIGTERM arriving during
+    // that window would otherwise hit the process with no handler
+    // installed and the OS would terminate us immediately — functionally
+    // identical to SIGKILL.
+    //
+    // If install fails (which would only happen if the host's signal
+    // subsystem is fundamentally broken — in which case nothing else
+    // about the node is going to work either), we log and degrade to
+    // the pre-handler baseline: SIGTERM OS-default-terminates. The rest
+    // of the node still runs.
+    let mut sigterm_handle = signal(SignalKind::terminate())
+        .inspect_err(|e| tracing::error!(error = %e, "failed to install SIGTERM handler — graceful shutdown disabled"))
+        .ok();
 
     // Load configuration and initialize persistent secrets
     let node_config = config.node.clone();
@@ -241,6 +203,12 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     let image_hash_storage =
         AllowedImageHashesFile::from(config.tee.latest_allowed_hash_file_path.clone());
 
+    // Dedicated shutdown channel for the image-hash watcher. The watcher's
+    // Drop fires this on its rare exceptional exits (storage I/O failure
+    // or indexer's contract-state channel closed); the main `select!`
+    // arm below converts that into a non-zero process exit.
+    let (image_hash_shutdown_sender, mut image_hash_shutdown_receiver) = mpsc::channel(1);
+
     let image_hash_watcher_handle = root_runtime.spawn(monitor_allowed_image_hashes(
         cancellation_token.child_token(),
         *config.tee.image_hash,
@@ -270,8 +238,16 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
         indexer_exit_response = indexer_exit_receiver => {
             indexer_exit_response.context("Indexer thread dropped response channel.")?
         }
-        Some(()) = signal_shutdown_receiver.recv() => {
-            info!("shutdown signal received; exiting cleanly");
+        // Race SIGTERM directly. If install above failed, `sigterm_handle`
+        // is `None` and this arm is parked on `pending()` forever — i.e.
+        // effectively absent — so the other arms still drive the loop.
+        _ = async {
+            match sigterm_handle.as_mut() {
+                Some(s) => { s.recv().await; }
+                None => std::future::pending().await,
+            }
+        } => {
+            info!(signal = "SIGTERM", "shutdown signal received; exiting cleanly");
             Ok(())
         }
         Some(()) = image_hash_shutdown_receiver.recv() => {

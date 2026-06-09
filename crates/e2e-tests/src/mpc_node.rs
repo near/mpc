@@ -39,10 +39,13 @@ impl MpcNode {
         self.setup
     }
 
-    /// Send SIGTERM to the node and wait up to `grace` for it to exit on its
-    /// own. Returns the child's `ExitStatus` on graceful exit; errors if the
-    /// grace period elapses (in which case `self.process`'s Drop will SIGKILL
-    /// it as a fallback). Used to exercise the production SIGTERM handler.
+    /// Send SIGTERM and wait up to `grace` for the node to exit. If grace
+    /// expires before the process exits on its own, send SIGKILL and wait
+    /// for it explicitly (instead of relying on `ProcessGuard::Drop` to do
+    /// the same). Either way, returns the child's `ExitStatus`:
+    /// `status.success()` ⇒ graceful exit via mpc-node's SIGTERM handler;
+    /// `status.signal() == Some(9)` ⇒ SIGKILL fallback fired. Used to
+    /// exercise the production SIGTERM handler.
     pub fn terminate_with_sigterm(
         mut self,
         grace: std::time::Duration,
@@ -65,9 +68,19 @@ impl MpcNode {
                 Some(status) => return Ok((status, self.setup)),
                 None => {
                     if start.elapsed() >= grace {
-                        anyhow::bail!(
-                            "mpc-node pid {pid} did not exit within {grace:?} after SIGTERM"
-                        );
+                        // Grace expired: explicit SIGKILL fallback, then wait
+                        // for the child to actually exit so we return a real
+                        // `ExitStatus` rather than bailing.
+                        self.process
+                            .0
+                            .kill()
+                            .context("SIGKILL fallback on grace-period expiry failed")?;
+                        let status = self
+                            .process
+                            .0
+                            .wait()
+                            .context("wait after SIGKILL fallback failed")?;
+                        return Ok((status, self.setup));
                     }
                     std::thread::sleep(poll_interval);
                 }
