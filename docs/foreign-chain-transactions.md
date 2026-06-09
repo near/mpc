@@ -309,7 +309,7 @@ back here rather than redefining them.
   observation. Distinct from the RPC quorum.
 - **A node covers (supports) a chain `C`** — the node's local RPC config has at least `rpc_quorum(C)`
   of `C`'s whitelisted providers configured (enough to reach the RPC quorum on its own). Reported
-  on-chain via `register_available_foreign_chain_config`. *"Covers" and "supports" are interchangeable; this
+  on-chain via `register_foreign_chains_config`. *"Covers" and "supports" are interchangeable; this
   doc prefers* covers.
 - **Available chain** — a whitelisted chain that at least `signing_threshold` active participants
   currently cover, so the network can serve it now. Computed dynamically from per-node reports;
@@ -325,11 +325,9 @@ back here rather than redefining them.
 The **whitelisted** set is derived from the **on-chain RPC whitelist** (`foreign_chain_rpc_whitelist`): a chain is whitelisted iff the network has voted in a `ChainEntry` for it, exposed by `get_whitelisted_foreign_chains()`. The **available** set — the chains ≥ signing threshold active nodes currently cover — is computed from the per-participant registrations and exposed by `get_available_foreign_chains()`; `verify_foreign_transaction` gates on it. The per-participant registration also drives alerting (detecting an active node that does not cover a whitelisted chain). See [Calculating the whitelisted and available foreign-chain sets](design/calculating-supported-foreign-chains.md).
 
 ```rust
-pub struct ForeignChainSupportByNode {
-    pub foreign_chain_support_by_node: BTreeMap<AccountId, SupportedForeignChains>,
-}
+pub struct ForeignChainsConfigs(pub BTreeMap<Ed25519PublicKey, ForeignChainsConfig>);
 
-pub struct SupportedForeignChains(pub BTreeSet<ForeignChain>);
+pub struct ForeignChainsConfig(pub BTreeSet<ForeignChain>);
 
 pub enum ForeignChain {
     Solana,
@@ -346,10 +344,10 @@ pub enum ForeignChain {
 
 Relevant contract methods:
 
-* `register_available_foreign_chain_config(foreign_chain_configuration: ForeignChainConfiguration)` — call method (formerly `register_foreign_chain_config`; old name kept as a deprecated wrapper). The authenticated participant (re)registers its per-chain provider set. The call is idempotent.
+* `register_foreign_chains_config(foreign_chains_config: ForeignChainsConfig)` — call method. The authenticated participant (re)registers the set of foreign chains it currently covers. Idempotent; accepted in any active protocol state (Running, Resharing, Initializing). The available-chain cache is only refreshed in Running state; registrations made in other states take effect on the next Running-state recompute.
 * `get_whitelisted_foreign_chains() -> WhitelistedForeignChains` — view method. Returns the chains present in the on-chain RPC whitelist (`foreign_chain_rpc_whitelist`). (`get_supported_foreign_chains()` is superseded by these two views and will be removed; see [Migration](design/calculating-supported-foreign-chains.md#migration).)
 * `get_available_foreign_chains() -> AvailableForeignChains` — view method. Returns the chains that ≥ signing threshold active nodes currently cover; `verify_foreign_transaction` gates on this set.
-* `get_available_foreign_chain_by_node() -> ForeignChainSupportByNode` — view method (formerly `get_foreign_chain_support_by_node`; old name kept as a deprecated wrapper). Returns each participant's registered set of covered chains. Feeds the available-set computation and the coverage alerting (does every active node cover every whitelisted chain?).
+* `get_foreign_chains_configs() -> ForeignChainsConfigs` — view method. Returns each node's registered set of covered chains, keyed by the node's TLS public key (`Ed25519PublicKey`). Feeds the available-set computation and coverage alerting (does every active node cover every whitelisted chain?).
 
 ## On-chain RPC Provider Whitelist
 
@@ -576,7 +574,7 @@ flowchart TD
     AVAILABLE["**Available Chains**
       _Whitelisted chains ≥ signing threshold of active nodes currently cover._"]
 
-    NODE -->|"1. register_available_foreign_chain_config(local_config)"| SC
+    NODE -->|"1. register_foreign_chains_config(local_config)"| SC
     SC -->|"2. feeds availability (recomputed on view)"| AVAILABLE
 
     NODE@{ shape: proc}
@@ -590,10 +588,10 @@ See "Contract State (Foreign Chain Configurations)" above.
 ## Node Configuration and Contract Registration
 
 * Node config contains chain RPC providers and timeouts (API keys stay local).
-* On startup, each node submits a single `register_available_foreign_chain_config` transaction derived from its local configuration. The call is idempotent.
+* On startup, each node submits a single `register_foreign_chains_config` transaction derived from its local configuration. The call is idempotent.
 * Nodes do **not** vote, poll, or wait for network-wide consensus — the transaction is sent and startup continues.
 * `get_whitelisted_foreign_chains()` returns the on-chain RPC whitelist's chains, not these registrations: a chain is *whitelisted* once the network votes in a `ChainEntry`, and no single node can change it. It is *available* — actually served — only while ≥ signing threshold active nodes cover it (`get_available_foreign_chains()`); `verify_foreign_transaction` early-rejects a whitelisted-but-unavailable chain. See [Calculating the whitelisted and available foreign-chain sets](design/calculating-supported-foreign-chains.md).
-* `get_available_foreign_chain_by_node()` exposes per-participant registrations, which feed the availability check and the coverage alerting.
+* `get_foreign_chains_configs()` exposes per-participant registrations, which feed the availability check and the coverage alerting.
 
 ### Configuration (Node)
 

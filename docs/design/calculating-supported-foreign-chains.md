@@ -77,8 +77,8 @@ participants were chosen for liveness, not chain coverage.
 
 ## Per-node registration
 
-Per-node registration (`register_available_foreign_chain_config` /
-`get_available_foreign_chain_by_node`) reports which chains each node currently covers,
+Per-node registration (`register_foreign_chains_config` /
+`get_foreign_chains_configs`) reports which chains each node currently covers,
 and serves two roles:
 
 - it **feeds the available set** — the contract counts, per chain, how many active
@@ -90,12 +90,11 @@ and serves two roles:
 
 Registration reflects each node's *current* config.
 
-Because this data now feeds the *available* set, the methods are renamed to reflect that:
-`register_foreign_chain_config` → `register_available_foreign_chain_config` and
-`get_foreign_chain_support_by_node` → `get_available_foreign_chain_by_node`. The old names are kept as thin
-wrappers delegating to the new ones, then deprecated and removed once node and contract have both
-migrated — the same independent node/contract rollout used for the view methods, so the rename needs
-no flag-day coordination.
+`register_foreign_chains_config` and `get_foreign_chains_configs` are new methods that write to
+a separate TLS-key-keyed store (`foreign_chains_configs`, keyed by `Ed25519PublicKey`) and coexist
+with the legacy `register_foreign_chain_support` / `get_foreign_chain_support_by_node` methods
+(AccountId-keyed, writing to `node_foreign_chain_support`). The legacy methods remain active until
+node and contract have both migrated to the new API.
 
 ## Guarantees preserved
 

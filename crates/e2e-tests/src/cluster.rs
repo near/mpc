@@ -837,6 +837,16 @@ impl MpcCluster {
             .await
     }
 
+    /// View the per-node foreign-chain configs registered on the contract (the set each
+    /// node reported via `register_foreign_chains_config`).
+    pub async fn view_foreign_chain_configs(
+        &self,
+    ) -> anyhow::Result<near_mpc_contract_interface::types::ForeignChainsConfigs> {
+        self.contract
+            .view(method_names::GET_FOREIGN_CHAINS_CONFIGS)
+            .await
+    }
+
     /// Register foreign chain support on the contract for a specific node.
     pub async fn register_foreign_chain_config(
         &self,
