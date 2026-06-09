@@ -9,9 +9,9 @@ derive_more = { workspace = true }
 ethereum-types = { workspace = true }
 jsonrpsee = { workspace = true }
 mpc-primitives = { workspace = true }
+reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-reqwest = { workspace = true }
 thiserror = { workspace = true }
 
 [lints]

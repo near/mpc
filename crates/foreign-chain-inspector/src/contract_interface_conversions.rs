@@ -374,6 +374,7 @@ mod tests {
     use crate::starknet::StarknetBlockHash;
     use assert_matches::assert_matches;
     use foreign_chain_rpc_interfaces::evm::Log;
+    use near_mpc_contract_interface::types::{AptosAddress, AptosEvent};
 
     #[test]
     fn block_confirmations_roundtrip() {
@@ -597,17 +598,13 @@ mod tests {
     fn aptos_extractor_roundtrip() {
         let inspector = AptosExtractor::Event { event_index: 3 };
         let contract = dtos::AptosExtractor::try_from(inspector.clone()).unwrap();
-        assert!(matches!(
-            contract,
-            dtos::AptosExtractor::Event { event_index: 3 }
-        ));
+        assert_matches!(contract, dtos::AptosExtractor::Event { event_index: 3 });
         let back = AptosExtractor::try_from(contract).unwrap();
         assert_eq!(inspector, back);
     }
 
     #[test]
     fn aptos_extracted_value_roundtrip() {
-        use near_mpc_contract_interface::types::{AptosAddress, AptosEvent};
         let inspector = AptosExtractedValue::Event(AptosEvent {
             account_address: AptosAddress([0x01; 32]),
             sequence_number: 5,

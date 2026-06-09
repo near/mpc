@@ -169,6 +169,7 @@ fn parse_aptos_address(s: &str) -> Result<AptosAddress, String> {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use assert_matches::assert_matches;
     use foreign_chain_rpc_interfaces::aptos::{
         AptosEventResponse, AptosRpcError, EventGuid, TransactionResponse,
     };
@@ -295,10 +296,7 @@ mod tests {
             .await;
 
         // Then
-        assert!(matches!(
-            result,
-            Err(ForeignChainInspectionError::TransactionFailed)
-        ));
+        assert_matches!(result, Err(ForeignChainInspectionError::TransactionFailed));
     }
 
     #[tokio::test]
@@ -318,10 +316,10 @@ mod tests {
             .await;
 
         // Then
-        assert!(matches!(
+        assert_matches!(
             result,
             Err(ForeignChainInspectionError::LogIndexOutOfBounds)
-        ));
+        );
     }
 
     #[tokio::test]
@@ -336,10 +334,7 @@ mod tests {
             .await;
 
         // Then — transient, so the fan-out keeps retrying until it commits.
-        assert!(matches!(
-            result,
-            Err(ForeignChainInspectionError::NotFinalized)
-        ));
+        assert_matches!(result, Err(ForeignChainInspectionError::NotFinalized));
         assert!(result.unwrap_err().is_transient());
     }
 
@@ -386,10 +381,10 @@ mod tests {
             .await;
 
         // Then — non-transient so the node does not retry indefinitely
-        assert!(matches!(
+        assert_matches!(
             result,
             Err(ForeignChainInspectionError::TransactionNotFound)
-        ));
+        );
         assert!(!result.unwrap_err().is_transient());
     }
 
@@ -405,10 +400,10 @@ mod tests {
             .await;
 
         // Then — transient so the node retries
-        assert!(matches!(
+        assert_matches!(
             result,
             Err(ForeignChainInspectionError::RpcRequestFailed(_))
-        ));
+        );
         assert!(result.unwrap_err().is_transient());
     }
 
@@ -421,9 +416,9 @@ mod tests {
     #[test]
     fn ensure_hash_matches__should_reject_different_hashes() {
         // Given / When / Then
-        assert!(matches!(
+        assert_matches!(
             ensure_hash_matches("0xabcd", "0xef01"),
             Err(ForeignChainInspectionError::InconsistentRpcResponse { .. })
-        ));
+        );
     }
 }
