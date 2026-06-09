@@ -704,7 +704,7 @@ mod tests {
     use crate::tests::into_participant_ids;
     use crate::types::{RequestsUpdate, SignatureRequest};
     use chain_gateway::event_subscriber::recent_blocks_tracker::RecentBlocksTracker;
-    use chain_gateway::event_subscriber::recent_blocks_tracker::tests::{
+    use chain_gateway::event_subscriber::recent_blocks_tracker::test_utils::{
         TestBlock, TestBlockMaker,
     };
     use mpc_primitives::domain::DomainId;

@@ -1789,7 +1789,7 @@ dependencies = [
  "near-sdk",
  "near-store",
  "nearcore",
- "prometheus 0.14.0",
+ "prometheus",
  "rand 0.8.6",
  "rstest",
  "serde",

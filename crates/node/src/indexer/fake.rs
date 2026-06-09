@@ -16,7 +16,7 @@ use crate::types::SignatureId;
 use crate::types::{CKDId, VerifyForeignTxId};
 use anyhow::Context;
 use assert_matches::assert_matches;
-use chain_gateway::event_subscriber::recent_blocks_tracker::tests::TestBlockMaker;
+use chain_gateway::event_subscriber::recent_blocks_tracker::test_utils::TestBlockMaker;
 use derive_more::From;
 use ed25519_dalek::VerifyingKey;
 use mpc_contract::node_migrations::NodeMigrations;

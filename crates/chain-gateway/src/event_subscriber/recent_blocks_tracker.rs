@@ -566,7 +566,7 @@ impl Debug for RecentBlocksTracker {
 }
 
 #[cfg(any(test, feature = "test-utils"))]
-pub mod tests {
+pub mod test_utils {
     use super::super::block_events::BlockContext;
     use super::{BlockStatus, BlockStatusHandle, RecentBlocksTracker};
     use crate::types::BlockEntropy;
@@ -577,13 +577,8 @@ pub mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::{Arc, Mutex};
 
-    #[cfg(test)]
-    use super::AtomicBlockStatus;
-    #[cfg(test)]
-    use std::sync::atomic::AtomicU8;
-
     pub struct TestBlock {
-        hash: CryptoHash,
+        pub(super) hash: CryptoHash,
         height: u64,
         entropy: BlockEntropy,
         timestamp_nanosec: u64,
@@ -720,14 +715,14 @@ pub mod tests {
 
     pub struct Tester {
         maker: Arc<TestBlockMaker>,
-        tracker: RecentBlocksTracker,
+        pub(super) tracker: RecentBlocksTracker,
         parents_of_added_blocks: HashSet<CryptoHash>,
         /// When adding a block to the tracker via [`Tester::add`], we debug-print the tracker and
         /// append the output to [`Tester::evolution`]. This allows us to inspect how adding a block
         /// influences finality and canonical status of tracked blocks.
         /// The resulting string can be compared against snapshots, allowing the unittests to catch
         /// regressions.
-        evolution: String,
+        pub(super) evolution: String,
     }
 
     impl From<u8> for BlockStatus {
@@ -784,6 +779,14 @@ pub mod tests {
             result.block_status
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::test_utils::Tester;
+    use super::{AtomicBlockStatus, BlockStatus};
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicU8;
 
     #[test]
     fn test_no_forks() {
