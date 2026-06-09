@@ -6974,19 +6974,20 @@ mod tests {
         let available_before = contract.get_available_foreign_chains();
         assert!(available_before.contains(&dtos::ForeignChain::Bitcoin));
 
-        // Transition to Resharing by swapping protocol_state.
+        // Transition to Resharing by swapping protocol_state. Use the same participant set so
+        // all mocked attestations remain valid and the call below can pass the attestation check.
         let resharing = {
             let ProtocolContractState::Running(ref mut state) = contract.protocol_state else {
                 panic!("expected Running state");
             };
-            let proposal = crate::state::test_utils::gen_valid_params_proposal(&state.parameters);
+            let proposal = state.parameters.clone();
             state
                 .transition_to_resharing_no_checks(&proposal)
                 .expect("contract has at least one domain")
         };
         contract.protocol_state = ProtocolContractState::Resharing(resharing);
 
-        // When: a participant (valid in the previous running state) registers chains during Resharing.
+        // When: a participant registers chains during Resharing.
         register_coverage(
             &mut contract,
             &participants[0],
