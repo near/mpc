@@ -7,7 +7,7 @@ use crate::{
     db::SecretDB,
     indexer::{
         IndexerAPI, ReadSupportedForeignChain, real::spawn_real_indexer,
-        recent_transactions::RecentTransactions, tx_sender::TransactionSender,
+        tx_sender::TransactionSender,
     },
     keyshare::{GcpPermanentKeyStorageConfig, KeyStorageConfig, KeyshareStorage},
     migration_service::spawn_recovery_server_and_run_onboarding,
@@ -15,7 +15,11 @@ use crate::{
     providers::ecdsa::triple::migrate_legacy_triples_to_v2,
     tracing::init_logging,
     tracking::{self, start_root_task},
-    web::{DebugRequest, start_web_server, static_web_data},
+    web::{
+        DebugRequest,
+        recent_transactions::{RECENT_TRANSACTIONS_CHANNEL_SIZE, SubmittedTransaction},
+        start_web_server, static_web_data,
+    },
 };
 use anyhow::{Context, anyhow};
 use itertools::Itertools;
@@ -153,11 +157,12 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
 
     let (migration_state_sender, migration_state_receiver) = watch::channel((0, BTreeMap::new()));
 
-    // Shared buffer of recently submitted transactions, surfaced on
-    // `/debug/recent_transactions`. Created here so it can be shared between the
-    // web server (started below) and the indexer's transaction processor
-    // (spawned afterwards).
-    let recent_transactions = Arc::new(Mutex::new(RecentTransactions::default()));
+    // Channel carrying completed recent-transaction records, surfaced on
+    // `/debug/recent_transactions`. The sender goes to the indexer's
+    // transaction processor (spawned below); the receiver is drained into the
+    // buffer owned by the web server (started below).
+    let (recent_tx_sender, recent_tx_receiver) =
+        mpsc::channel::<SubmittedTransaction>(RECENT_TRANSACTIONS_CHANNEL_SIZE);
 
     let web_server = root_runtime
         .block_on(start_web_server(
@@ -168,7 +173,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
             protocol_state_receiver,
             migration_state_receiver,
             config.node.clone(),
-            recent_transactions.clone(),
+            recent_tx_receiver,
         ))
         .context("Failed to create web server.")?;
 
@@ -187,7 +192,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
         migration_state_sender,
         *tls_public_key,
         node_config.foreign_chains.clone(),
-        recent_transactions,
+        recent_tx_sender,
     );
 
     let (shutdown_signal_sender, mut shutdown_signal_receiver) = mpsc::channel(1);

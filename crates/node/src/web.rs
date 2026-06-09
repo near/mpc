@@ -1,6 +1,5 @@
 use crate::config::SecretsConfig;
 use crate::indexer::migrations::ContractMigrationInfo;
-use crate::indexer::recent_transactions::{self, RecentTransactions};
 use crate::tracking::TaskHandle;
 use axum::body::Body;
 use axum::extract::State;
@@ -19,11 +18,14 @@ use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use node_types::http_server::StaticWebData;
 use prometheus::{Encoder, TextEncoder, default_registry};
+use recent_transactions::{RecentTransactions, SubmittedTransaction};
 use serde::Serialize;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, OnceLock};
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc, watch};
+
+pub mod recent_transactions;
 
 /// Wrapper to make Axum understand how to convert anyhow::Error into a 500
 /// response.
@@ -66,10 +68,12 @@ struct WebServerState {
     migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
     static_web_data: StaticWebData,
     node_config: NodeConfigResponse,
-    /// Buffer of recently submitted transactions, populated by the indexer's
-    /// transaction processor. Read directly here rather than via the
-    /// debug-request broadcast; see [`crate::indexer::recent_transactions`] for
-    /// why this keeps the page available regardless of the node's running state.
+    /// Buffer of recently submitted transactions, owned by the web server and
+    /// fed by the indexer's transaction processor over a channel (drained into
+    /// it by a background task spawned in [`start_web_server`]). Read directly
+    /// here rather than via the debug-request broadcast; see
+    /// [`recent_transactions`] for why this keeps the page available regardless
+    /// of the node's running state.
     recent_transactions: Arc<Mutex<RecentTransactions>>,
 }
 
@@ -197,7 +201,7 @@ async fn contract_state(state: State<WebServerState>) -> String {
 
 async fn debug_recent_transactions(State(state): State<WebServerState>) -> String {
     // Clone the entries under the lock, then format after releasing it, so we
-    // don't block the transaction processor's writes while rendering.
+    // don't block the drain task's writes while rendering.
     let snapshot = state.recent_transactions.lock().unwrap().snapshot();
     recent_transactions::render(&snapshot)
 }
@@ -272,9 +276,23 @@ pub async fn start_web_server(
     protocol_state_receiver: watch::Receiver<ProtocolContractState>,
     migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
     config: ConfigFile,
-    recent_transactions: Arc<Mutex<RecentTransactions>>,
+    mut recent_tx_receiver: mpsc::Receiver<SubmittedTransaction>,
 ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
     tracing::info!(?bind_address, "attempting to bind web server to address");
+
+    // The web server owns the recent-transactions buffer and records the
+    // completed transactions sent by the indexer's transaction processor in a
+    // background drain task, so the page stays available regardless of the
+    // node's running state.
+    let recent_transactions = Arc::new(Mutex::new(RecentTransactions::default()));
+    {
+        let recent_transactions = recent_transactions.clone();
+        tokio::spawn(async move {
+            while let Some(transaction) = recent_tx_receiver.recv().await {
+                recent_transactions.lock().unwrap().record(transaction);
+            }
+        });
+    }
 
     let router = axum::Router::new()
         .route("/metrics", axum::routing::get(metrics))

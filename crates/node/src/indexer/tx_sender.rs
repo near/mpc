@@ -1,20 +1,20 @@
 use super::ChainSendTransactionRequest::{self, *};
 use super::IndexerState;
-use super::recent_transactions::{
-    RecentTransactions, SignerContext, SubmittedTransaction, SubmittedTransactionStatus,
-    SubmittedTxMetadata, TransactionRecordId,
-};
 use super::tx_signer::{TransactionSigner, TransactionSigners};
 use crate::config::RespondConfig;
 use crate::metrics;
+use crate::web::recent_transactions::{
+    SignerContext, SubmittedTransaction, SubmittedTransactionStatus, SubmittedTxMetadata,
+};
 use anyhow::Context;
 use ed25519_dalek::SigningKey;
 use mpc_attestation::attestation::DEFAULT_EXPIRATION_DURATION_SECONDS;
 use near_account_id::AccountId;
 use near_indexer_primitives::types::Gas;
 use near_mpc_contract_interface::types::{Attestation, Ed25519PublicKey, VerifiedAttestation};
+use near_time::Clock;
 use std::future::Future;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::{mpsc, oneshot};
 use tokio::time;
@@ -52,7 +52,7 @@ impl TransactionProcessorHandle {
         owner_secret_key: SigningKey,
         config: RespondConfig,
         indexer_state: Arc<IndexerState>,
-        recent_transactions: Arc<Mutex<RecentTransactions>>,
+        recent_tx_sender: mpsc::Sender<SubmittedTransaction>,
     ) -> anyhow::Result<impl TransactionSender> {
         let mut signers = TransactionSigners::new(config, owner_account_id, owner_secret_key)
             .context("Failed to initialize transaction signers")?;
@@ -67,21 +67,25 @@ impl TransactionProcessorHandle {
 
                 let tx_signer = signers.signer_for(&tx_request);
                 let indexer_state = indexer_state.clone();
-                let recent_transactions = recent_transactions.clone();
+                let recent_tx_sender = recent_tx_sender.clone();
                 tokio::spawn(async move {
                     let Ok(txn_json) = serde_json::to_string(&tx_request) else {
                         tracing::error!(target: "mpc", "Failed to serialize response args");
                         return;
                     };
                     tracing::debug!(target = "mpc", "tx args {:?}", txn_json);
-                    let transaction_status = ensure_send_transaction(
+                    let (transaction_status, recent_transaction) = ensure_send_transaction(
                         tx_signer.clone(),
                         indexer_state,
                         tx_request,
                         txn_json,
-                        recent_transactions,
                     )
                     .await;
+
+                    // Best-effort: the recent-transactions page is debug-only, so
+                    // we never block the submission path on a slow drain. Drop on
+                    // a full or closed channel.
+                    let _ = recent_tx_sender.try_send(recent_transaction);
 
                     if let Some(tx_response_channel) = tx_response_channel {
                         let _ = tx_response_channel.send(transaction_status);
@@ -320,16 +324,17 @@ async fn observe_tx_result(
     }
 }
 
-/// Attempts to ensure that a function call with given method and args is included on-chain.
-/// If the submitted transaction is not observed by the indexer before the `timeout`, tries again.
-/// Will make up to `num_attempts` attempts.
+/// Submits a function call with the given method and args, waits
+/// `TRANSACTION_TIMEOUT` for it to be included, then observes whether it had its
+/// intended on-chain effect. Returns the resulting [`TransactionStatus`] along
+/// with a [`SubmittedTransaction`] record (carrying the final status) for the
+/// `/debug/recent_transactions` page.
 async fn ensure_send_transaction(
     tx_signer: Arc<TransactionSigner>,
     indexer_state: Arc<IndexerState>,
     request: ChainSendTransactionRequest,
     params_ser: String,
-    recent_transactions: Arc<Mutex<RecentTransactions>>,
-) -> TransactionStatus {
+) -> (TransactionStatus, SubmittedTransaction) {
     let method = request.method();
     let signer = SignerContext {
         account_id: tx_signer.account_id().clone(),
@@ -345,6 +350,10 @@ async fn ensure_send_transaction(
     )
     .await;
 
+    // Stamp the submission time now, before the observation wait below, so the
+    // debug page reflects when the transaction was actually routed.
+    let submitted_at = Clock::real().now_utc();
+
     let metadata = match submitted_metadata {
         Ok(metadata) => metadata,
         Err(err) => {
@@ -352,18 +361,12 @@ async fn ensure_send_transaction(
                 .with_label_values(&[method, "local_error"])
                 .inc();
             tracing::error!(%err, "Failed to forward transaction {:?}", request);
-            recent_transactions
-                .lock()
-                .unwrap()
-                .record_submitted(SubmittedTransaction::submit_failed(signer));
-            return TransactionStatus::NotExecuted;
+            return (
+                TransactionStatus::NotExecuted,
+                SubmittedTransaction::submit_failed(signer, submitted_at),
+            );
         }
     };
-
-    let record_id: TransactionRecordId = recent_transactions
-        .lock()
-        .unwrap()
-        .record_submitted(SubmittedTransaction::submitting(signer, metadata));
 
     // Allow time for the transaction to be included
     time::sleep(TRANSACTION_TIMEOUT).await;
@@ -385,10 +388,11 @@ async fn ensure_send_transaction(
     metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
         .with_label_values(&[method, outcome_label])
         .inc();
-    recent_transactions
-        .lock()
-        .unwrap()
-        .update_status(record_id, recorded_status);
 
-    transaction_status.unwrap_or(TransactionStatus::Unknown)
+    let recent_transaction =
+        SubmittedTransaction::submitted(signer, metadata, recorded_status, submitted_at);
+    (
+        transaction_status.unwrap_or(TransactionStatus::Unknown),
+        recent_transaction,
+    )
 }
