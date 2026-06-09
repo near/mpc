@@ -233,7 +233,7 @@ where
                         break;
                     };
 
-                    self.client.update_indexer_height(block_update.block.height);
+                    self.client.update_indexer_height(block_update.block.height.into());
 
                     let AddBlockResult{ block_status } = recent_blocks.add_block(&block_update.block);
 
