@@ -54,22 +54,10 @@ async fn await_optional_signal(handle: Option<&mut Signal>) {
     }
 }
 
-/// Listen for SIGTERM / SIGINT / SIGHUP and forward the first arrival into
-/// `sender`. Operators stopping the node via dstack CVM stop / `docker stop`
-/// / `kubectl delete` / `systemctl stop` (or a dev pressing Ctrl-C) hit this
-/// path; routing into the same channel that `monitor_allowed_image_hashes`
-/// uses lets the main `select!` exit gracefully.
-///
-/// Logs a per-signal warning if any individual install fails; if none can be
-/// installed (rare), logs an error and exits without ever forwarding —
-/// graceful shutdown via signals is disabled in that case but the rest of
-/// the node keeps running.
-///
-/// Spawned as the first thing after the tokio runtime is built so signals
-/// arriving during early startup (indexer bootstrap, contract state fetch,
-/// attestation generation) are also handled gracefully — otherwise they'd
-/// hit the process with no handler installed and the OS would terminate it
-/// immediately, functionally identical to SIGKILL.
+/// Install handlers for SIGTERM / SIGINT / SIGHUP and forward the first
+/// signal that arrives into `sender` so the main `select!` can drive a
+/// graceful shutdown. Spawned right after the runtime is built so signals
+/// arriving during early startup are also handled.
 async fn await_and_forward_shutdown_signal(sender: mpsc::Sender<()>) {
     let install = |kind: SignalKind, name: &'static str| {
         signal(kind)
@@ -136,10 +124,13 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
 
     let _tokio_enter_guard = root_runtime.enter();
 
-    let (shutdown_signal_sender, mut shutdown_signal_receiver) = mpsc::channel(1);
-    root_runtime.spawn(await_and_forward_shutdown_signal(
-        shutdown_signal_sender.clone(),
-    ));
+    // Two independent shutdown sources, each owns its own channel so the main
+    // `select!` can give them distinct exit semantics: a graceful operator stop
+    // (SIGTERM/SIGINT/SIGHUP) exits cleanly with code 0; the image-hash watcher
+    // exits non-zero on the rare error conditions that cause it to bail.
+    let (signal_shutdown_sender, mut signal_shutdown_receiver) = mpsc::channel(1);
+    let (image_hash_shutdown_sender, mut image_hash_shutdown_receiver) = mpsc::channel(1);
+    root_runtime.spawn(await_and_forward_shutdown_signal(signal_shutdown_sender));
 
     // Load configuration and initialize persistent secrets
     let node_config = config.node.clone();
@@ -255,7 +246,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
         *config.tee.image_hash,
         allowed_hashes_in_contract,
         image_hash_storage,
-        shutdown_signal_sender.clone(),
+        image_hash_shutdown_sender,
     ));
 
     let home_dir = config.home_dir.clone();
@@ -272,15 +263,22 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
 
     let root_task = root_runtime.spawn(start_root_task("root", root_future).0);
 
-    let exit_reason = tokio::select! {
+    let exit_reason: anyhow::Result<()> = tokio::select! {
         root_task_result = root_task => {
             root_task_result?
         }
         indexer_exit_response = indexer_exit_receiver => {
             indexer_exit_response.context("Indexer thread dropped response channel.")?
         }
-        Some(()) = shutdown_signal_receiver.recv() => {
-            Err(anyhow!("TEE allowed image hashes watcher is sending shutdown signal."))
+        Some(()) = signal_shutdown_receiver.recv() => {
+            info!("shutdown signal received; exiting cleanly");
+            Ok(())
+        }
+        Some(()) = image_hash_shutdown_receiver.recv() => {
+            // The specific `ExitError` (storage I/O failure or indexer's
+            // contract-state channel closed) is logged a few lines below via
+            // `info!(?exit_result, "Image hash watcher exited.")`.
+            Err(anyhow!("TEE allowed-image-hashes watcher exited unexpectedly."))
         }
     };
 
@@ -292,18 +290,11 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     info!(?exit_result, "Image hash watcher exited.");
 
     // Stop nearcore's actor system so its tasks have a chance to commit any
-    // in-flight RocksDB batches before the process exits. We deliberately do
-    // NOT then call `near_store::db::RocksDB::block_until_all_instances_are_dropped()`
-    // (which neard's standalone binary does next) — our embedded indexer
-    // runs in a separate `std::thread::spawn`'d closure whose `block_on`
-    // never returns, because the spawned monitor tasks hold
-    // `Arc<IndexerState>` → `Arc<RocksDB>` references that nothing
-    // currently cancels. Calling `block_until_all_instances_are_dropped`
-    // here would hang the SIGTERM path past any reasonable grace period;
-    // the orchestrator would then SIGKILL us and we'd land in the exact
-    // uncommitted-RocksDB state this handler was supposed to prevent.
-    // RocksDB's WAL still guarantees committed data survives a kill; this
-    // call mostly closes a smaller flush window.
+    // in-flight RocksDB batches before the process exits. We deliberately
+    // skip `RocksDB::block_until_all_instances_are_dropped()` here (which
+    // neard's standalone binary calls next): in this embedding it would
+    // hang past any reasonable grace period, and the orchestrator would
+    // SIGKILL us before the graceful path completes.
     info!("Stopping nearcore actor system.");
     near_async::shutdown_all_actors();
 
