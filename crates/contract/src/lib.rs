@@ -992,11 +992,9 @@ impl MpcContract {
             .tls_key_for_account(&account_id)
             .unwrap_or_else(|| env::panic_str("caller has no TLS key in participants list"));
 
-        self.foreign_chains.get_mut().register(
-            account_id,
-            tls_key,
-            foreign_chains_config,
-        );
+        self.foreign_chains
+            .get_mut()
+            .register(account_id, tls_key, foreign_chains_config);
         self.recompute_available_foreign_chains();
 
         Ok(())
@@ -1585,11 +1583,11 @@ impl MpcContract {
             .expect("voter_or_panic() above already errors on NotInitialized");
 
         let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
-        let applied =
-            self.foreign_chains
-                .get_mut()
-                .rpc_whitelist
-                .vote(participant, votes, threshold_parameters)?;
+        let applied = self.foreign_chains.get_mut().rpc_whitelist.vote(
+            participant,
+            votes,
+            threshold_parameters,
+        )?;
         log!(
             "vote_update_foreign_chain_providers: applied chains={:?}",
             applied,
@@ -1804,7 +1802,11 @@ impl MpcContract {
                 .remove(key);
         }
 
-        self.foreign_chains.get_mut().rpc_whitelist.votes.retain(participants);
+        self.foreign_chains
+            .get_mut()
+            .rpc_whitelist
+            .votes
+            .retain(participants);
 
         // The active set just changed; refresh the cache against the new participants/threshold.
         self.recompute_available_foreign_chains();
@@ -2102,10 +2104,7 @@ impl MpcContract {
     /// The **available** foreign chains: whitelisted chains that are supported
     /// by at least the signing threshold of active participants.
     pub fn get_available_foreign_chains(&self) -> dtos::AvailableForeignChains {
-        self.foreign_chains
-            .get()
-            .available_foreign_chains
-            .clone()
+        self.foreign_chains.get().available_foreign_chains.clone()
     }
 
     /// Per-participant view of which foreign chains each node currently covers. Feeds the

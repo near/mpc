@@ -57,7 +57,8 @@ impl ForeignChainsMetadata {
             self.foreign_chains_configs.remove(&old_key);
         }
         self.tls_key_by_account.insert(account_id, tls_key.clone());
-        self.foreign_chains_configs.insert(tls_key, foreign_chains_config);
+        self.foreign_chains_configs
+            .insert(tls_key, foreign_chains_config);
     }
 
     pub(crate) fn snapshot_by_node(
