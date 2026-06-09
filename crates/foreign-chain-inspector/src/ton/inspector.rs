@@ -13,10 +13,6 @@ use near_mpc_contract_interface::types::Hash256;
 use tonlib_core::types::TonAddress as RpcTonAddress;
 
 /// TON chain inspector.
-///
-/// Verifies a TON transaction via the TON HTTP API v3 `/transactions` endpoint and
-/// extracts the requested values (currently ext-out log messages). Only the
-/// basechain (`workchain == 0`) is supported in v1.
 pub struct TonInspector<Client> {
     client: Client,
 }
