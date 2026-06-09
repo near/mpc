@@ -178,9 +178,7 @@ impl FakeMpcContractState {
                 return; // no recompute during Initializing
             }
             ProtocolContractState::NotInitialized => {
-                tracing::info!(
-                    "register_foreign_chains_config ignored: contract not initialized"
-                );
+                tracing::info!("register_foreign_chains_config ignored: contract not initialized");
                 return;
             }
         };
