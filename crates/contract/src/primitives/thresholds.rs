@@ -12,9 +12,7 @@ const MIN_THRESHOLD_ABSOLUTE: u64 = 2;
 
 /// Stores the threshold key parameters: the owners of key shares
 /// (`participants`) and the cryptographic `threshold`. This is the stored,
-/// always-current shape. Per-domain reconstruction-threshold *proposals* are
-/// carried separately by [`ProposedThresholdParameters`], so this type can
-/// never hold meaningless pending threshold updates.
+/// always-current shape.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct ThresholdParameters {
