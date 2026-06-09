@@ -1,4 +1,4 @@
-use crate::RpcAuthentication;
+use crate::{RpcAuthentication, ton::types::TonWorkchain};
 use foreign_chain_rpc_interfaces::ton::GetTransactionsResponse;
 use http::HeaderMap;
 use reqwest::Client;
@@ -25,7 +25,7 @@ pub trait TonRpcClient: Send + Sync {
     /// (within `workchain`) from the TON HTTP API v3 `/transactions` endpoint.
     fn get_transaction(
         &self,
-        workchain: i8,
+        workchain: TonWorkchain,
         account_hash: &[u8; 32],
         tx_hash_hex: &str,
     ) -> impl Future<Output = Result<GetTransactionsResponse, TonRpcError>> + Send;
@@ -90,7 +90,7 @@ impl ReqwestTonClient {
 impl TonRpcClient for ReqwestTonClient {
     async fn get_transaction(
         &self,
-        workchain: i8,
+        workchain: TonWorkchain,
         account_hash: &[u8; 32],
         tx_hash_hex: &str,
     ) -> Result<GetTransactionsResponse, TonRpcError> {
@@ -120,7 +120,7 @@ impl TonRpcClient for ReqwestTonClient {
 /// Format a basechain/workchain address as `"<workchain>:<lowercase-hex>"` —
 /// the canonical on-chain representation the v3 API accepts in its query
 /// parameters.
-pub(crate) fn format_ton_account(workchain: i8, account_hash: &[u8; 32]) -> String {
+pub(crate) fn format_ton_account(workchain: TonWorkchain, account_hash: &[u8; 32]) -> String {
     format!("{workchain}:{}", hex::encode(account_hash))
 }
 
@@ -158,18 +158,11 @@ mod tests {
     #[test]
     fn format_ton_account__should_emit_lowercase_hex_for_workchain_0() {
         let hash = [0xab; 32];
-        let got = format_ton_account(0, &hash);
+        let got = format_ton_account(TonWorkchain::Basechain, &hash);
         assert_eq!(
             got,
             "0:abababababababababababababababababababababababababababababababab"
         );
-    }
-
-    #[test]
-    fn format_ton_account__should_emit_minus_1_for_masterchain() {
-        let hash = [0x00; 32];
-        let got = format_ton_account(-1, &hash);
-        assert!(got.starts_with("-1:"));
     }
 
     #[test]

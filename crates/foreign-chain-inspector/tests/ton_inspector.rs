@@ -15,6 +15,7 @@ use foreign_chain_inspector::ton::inspector::TonInspector;
 use foreign_chain_inspector::ton::rpc_client::{ReqwestTonClient, build_ton_http_client};
 use foreign_chain_inspector::ton::types::{
     TonAddress, TonExtractedValue, TonExtractor, TonFinality, TonLog, TonTransactionId,
+    TonWorkchain,
 };
 use foreign_chain_inspector::{
     ForeignChainInspectionError, ForeignChainInspector, RpcAuthentication,
@@ -43,7 +44,7 @@ fn hash_b64() -> String {
 
 fn tx_id() -> TonTransactionId {
     TonTransactionId {
-        workchain: 0,
+        workchain: TonWorkchain::Basechain,
         account: ACCOUNT_HASH,
         tx_hash: TX_HASH,
     }
@@ -164,7 +165,7 @@ async fn extract__should_return_log_via_http_rpc_client() {
         extracted,
         vec![TonExtractedValue::Log(TonLog {
             from_address: TonAddress {
-                workchain: 0,
+                workchain: TonWorkchain::Basechain,
                 hash: Hash256(ACCOUNT_HASH),
             },
             body: TonCellBody::new(vec![0x99, 0x00, 0x00, 0x01].try_into().unwrap(), 32).unwrap(),
@@ -198,7 +199,7 @@ async fn extract__should_extract_reference_cell_hashes_via_http_rpc_client() {
         extracted,
         vec![TonExtractedValue::Log(TonLog {
             from_address: TonAddress {
-                workchain: 0,
+                workchain: TonWorkchain::Basechain,
                 hash: Hash256(ACCOUNT_HASH),
             },
             body: TonCellBody::new(vec![0xde, 0xad].try_into().unwrap(), 16).unwrap(),

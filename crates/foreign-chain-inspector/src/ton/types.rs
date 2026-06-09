@@ -1,11 +1,12 @@
 use near_mpc_contract_interface::types::{Hash256, TonCellBody, TonCellRefs};
+use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 /// Identifies a TON transaction to inspect: the (basechain) account that
 /// produced it plus the transaction hash. The workchain is carried explicitly
 /// so non-basechain requests can be rejected before any RPC round-trip.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TonTransactionId {
-    pub workchain: i8,
+    pub workchain: TonWorkchain,
     pub account: [u8; 32],
     pub tx_hash: [u8; 32],
 }
@@ -20,17 +21,18 @@ pub enum TonExtractor {
     Log { message_index: usize },
 }
 
-/// A TON address as seen by the inspector. The workchain is a plain `i8` (the
-/// value carried by the request); the contract-facing [`TonWorkchain`] enum
-/// form is applied at the conversion boundary in
-/// [`crate::contract_interface_conversions`], mirroring how the other chains
-/// keep inspector-side types separate from the contract DTOs.
-///
-/// [`TonWorkchain`]: near_mpc_contract_interface::types::TonWorkchain
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TonAddress {
-    pub workchain: i8,
+    pub workchain: TonWorkchain,
     pub hash: Hash256,
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, IntoPrimitive, TryFromPrimitive, derive_more::Display,
+)]
+#[repr(i32)]
+pub enum TonWorkchain {
+    Basechain = 0,
 }
 
 /// A TON outbound log message extracted by the inspector. The cell payload

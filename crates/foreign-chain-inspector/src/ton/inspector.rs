@@ -1,17 +1,16 @@
+use core::convert::Into;
+
 use super::types::{
     TonAddress, TonExtractedValue, TonExtractor, TonFinality, TonLog, TonTransactionId,
 };
 use super::{TonInspectionError, empty_body, normalize_body_boc};
 use crate::ton::rpc_client::TonRpcClient;
+use crate::ton::types::TonWorkchain;
 use crate::{ForeignChainInspectionError, ForeignChainInspector};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use foreign_chain_rpc_interfaces::ton::{TonMessage, TonTransaction};
 use near_mpc_contract_interface::types::Hash256;
 use tonlib_core::types::TonAddress as RpcTonAddress;
-
-/// The only TON workchain supported in v1: the basechain. The masterchain
-/// (`-1`) and any future workchains are rejected before any RPC round-trip.
-const BASECHAIN_WORKCHAIN: i8 = 0;
 
 /// TON chain inspector.
 ///
@@ -45,10 +44,6 @@ impl<Client: TonRpcClient> ForeignChainInspector for TonInspector<Client> {
             account,
             tx_hash,
         } = tx_id;
-
-        if workchain != BASECHAIN_WORKCHAIN {
-            return Err(TonInspectionError::UnsupportedWorkchain { got: workchain }.into());
-        }
 
         let tx_hash_hex = hex::encode(tx_hash);
 
@@ -123,11 +118,12 @@ fn message_created_lt(msg: &TonMessage) -> Result<u64, ForeignChainInspectionErr
 }
 
 fn ensure_account_matches(
-    workchain: i8,
+    workchain: TonWorkchain,
     expected_hash: &[u8; 32],
     rpc_account: &RpcTonAddress,
 ) -> Result<(), ForeignChainInspectionError> {
     let expected_workchain: i32 = workchain.into();
+
     if rpc_account.workchain == expected_workchain
         && rpc_account.hash_part.as_slice() == expected_hash
     {
@@ -185,7 +181,7 @@ fn ensure_transaction_succeeded(tx: &TonTransaction) -> Result<(), ForeignChainI
 
 fn extract_value(
     extractor: &TonExtractor,
-    workchain: i8,
+    workchain: TonWorkchain,
     expected_account_hash: &[u8; 32],
     ext_out_msgs: &[&TonMessage],
 ) -> Result<TonExtractedValue, ForeignChainInspectionError> {
@@ -266,7 +262,7 @@ mod tests {
     impl TonRpcClient for StubClient {
         async fn get_transaction(
             &self,
-            _workchain: i8,
+            _workchain: TonWorkchain,
             _account_hash: &[u8; 32],
             _tx_hash_hex: &str,
         ) -> Result<GetTransactionsResponse, TonRpcError> {
@@ -291,7 +287,7 @@ mod tests {
         [0xde; 32]
     }
 
-    fn ton_address(workchain: i8, hash: &[u8; 32]) -> RpcTonAddress {
+    fn ton_address(workchain: TonWorkchain, hash: &[u8; 32]) -> RpcTonAddress {
         RpcTonAddress::new(workchain.into(), tonlib_core::types::TonHash::from(*hash))
     }
 
@@ -303,7 +299,7 @@ mod tests {
     /// a 4-byte payload cell.
     fn happy_tx() -> TonTransaction {
         TonTransaction {
-            account: ton_address(BASECHAIN_WORKCHAIN, &account_hash()),
+            account: ton_address(TonWorkchain::Basechain, &account_hash()),
             hash: STANDARD.encode(tx_hash_bytes()),
             mc_block_seqno: Some(12345),
             description: TonTransactionDescription {
@@ -314,7 +310,7 @@ mod tests {
                 }),
             },
             out_msgs: vec![TonMessage {
-                source: Some(ton_address(BASECHAIN_WORKCHAIN, &account_hash())),
+                source: Some(ton_address(TonWorkchain::Basechain, &account_hash())),
                 destination: None, // ext-out
                 created_lt: Some("100".to_string()),
                 message_content: Some(TonCellBoc {
@@ -337,7 +333,7 @@ mod tests {
 
     fn tx_id() -> TonTransactionId {
         TonTransactionId {
-            workchain: BASECHAIN_WORKCHAIN,
+            workchain: TonWorkchain::Basechain,
             account: account_hash(),
             tx_hash: tx_hash_bytes(),
         }
@@ -359,7 +355,7 @@ mod tests {
         assert_eq!(
             log.from_address,
             TonAddress {
-                workchain: BASECHAIN_WORKCHAIN,
+                workchain: TonWorkchain::Basechain,
                 hash: Hash256(account_hash()),
             }
         );
@@ -461,7 +457,7 @@ mod tests {
     #[tokio::test]
     async fn extract__should_reject_on_account_mismatch() {
         let mut tx = happy_tx();
-        tx.account = ton_address(BASECHAIN_WORKCHAIN, &[0x22; 32]); // different account
+        tx.account = ton_address(TonWorkchain::Basechain, &[0x22; 32]); // different account
         let inspector = inspector_from_tx(tx);
 
         let err = inspector
@@ -502,28 +498,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn extract__should_reject_non_basechain_workchain() {
-        let inspector = inspector_from_tx(happy_tx());
-
-        let err = inspector
-            .extract(
-                TonTransactionId {
-                    workchain: -1,
-                    account: account_hash(),
-                    tx_hash: [0xde; 32],
-                },
-                TonFinality::MasterchainIncluded,
-                vec![TonExtractor::Log { message_index: 0 }],
-            )
-            .await
-            .unwrap_err();
-        assert_matches!(
-            err,
-            ForeignChainInspectionError::Ton(TonInspectionError::UnsupportedWorkchain { got: -1 })
-        );
-    }
-
-    #[tokio::test]
     async fn extract__should_reject_out_of_range_message_index() {
         let inspector = inspector_from_tx(happy_tx());
 
@@ -546,8 +520,8 @@ mod tests {
         let ext_out = tx.out_msgs.pop().unwrap();
         tx.out_msgs = vec![
             TonMessage {
-                source: Some(ton_address(BASECHAIN_WORKCHAIN, &account_hash())),
-                destination: Some(ton_address(BASECHAIN_WORKCHAIN, &[0x33; 32])),
+                source: Some(ton_address(TonWorkchain::Basechain, &account_hash())),
+                destination: Some(ton_address(TonWorkchain::Basechain, &[0x33; 32])),
                 // Internal messages aren't required to carry created_lt for
                 // ordering — the inspector filters them out before the sort.
                 created_lt: None,
@@ -579,13 +553,13 @@ mod tests {
         let earlier_body = encode_cell(vec![0xaa; 4], 32, vec![]);
         tx.out_msgs = vec![
             TonMessage {
-                source: Some(ton_address(BASECHAIN_WORKCHAIN, &account_hash())),
+                source: Some(ton_address(TonWorkchain::Basechain, &account_hash())),
                 destination: None,
                 created_lt: Some("200".to_string()),
                 message_content: Some(TonCellBoc { body: later_body }),
             },
             TonMessage {
-                source: Some(ton_address(BASECHAIN_WORKCHAIN, &account_hash())),
+                source: Some(ton_address(TonWorkchain::Basechain, &account_hash())),
                 destination: None,
                 created_lt: Some("100".to_string()),
                 message_content: Some(TonCellBoc { body: earlier_body }),
@@ -667,7 +641,7 @@ mod tests {
         let mut tx = happy_tx();
         let other_body = encode_cell(vec![0xaa; 4], 32, vec![]);
         tx.out_msgs.push(TonMessage {
-            source: Some(ton_address(BASECHAIN_WORKCHAIN, &account_hash())),
+            source: Some(ton_address(TonWorkchain::Basechain, &account_hash())),
             destination: None,
             created_lt: tx.out_msgs[0].created_lt.clone(),
             message_content: Some(TonCellBoc { body: other_body }),

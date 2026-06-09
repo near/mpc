@@ -2,6 +2,7 @@ use foreign_chain_inspector::ton::inspector::TonInspector;
 use foreign_chain_inspector::ton::rpc_client::build_ton_http_client;
 use foreign_chain_inspector::ton::types::{
     TonAddress, TonExtractedValue, TonExtractor, TonFinality, TonLog, TonTransactionId,
+    TonWorkchain,
 };
 use foreign_chain_inspector::{ForeignChainInspector, RpcAuthentication};
 use near_mpc_contract_interface::types::{Hash256, TonCellBody};
@@ -35,7 +36,7 @@ async fn inspector_extracts_log_against_live_rpc_provider() {
     // given
     let account = hash32(TX_ACCOUNT_HEX);
     let tx_id = TonTransactionId {
-        workchain: 0,
+        workchain: TonWorkchain::Basechain,
         account,
         tx_hash: hash32(TX_HASH_HEX),
     };
@@ -58,7 +59,7 @@ async fn inspector_extracts_log_against_live_rpc_provider() {
         extracted_values,
         vec![TonExtractedValue::Log(TonLog {
             from_address: TonAddress {
-                workchain: 0,
+                workchain: TonWorkchain::Basechain,
                 hash: Hash256(account),
             },
             body: TonCellBody::new(
