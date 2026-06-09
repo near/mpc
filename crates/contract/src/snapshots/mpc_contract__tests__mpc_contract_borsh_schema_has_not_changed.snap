@@ -810,12 +810,12 @@ BorshSchemaContainer {
                         "ForeignChainRpcWhitelist",
                     ),
                     (
-                        "available_foreign_chains_by_node",
-                        "AvailableForeignChainsByNode",
-                    ),
-                    (
                         "available_foreign_chains",
                         "AvailableForeignChains",
+                    ),
+                    (
+                        "available_foreign_chains_by_node",
+                        "AvailableForeignChainsByNode",
                     ),
                 ],
             ),
