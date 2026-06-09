@@ -291,38 +291,7 @@ async fn observe_tx_result(
                 Ok(TransactionStatus::NotExecuted)
             }
         }
-        RegisterAvailableForeignChainConfig(_) => {
-            // Registration is idempotent and best-effort; we only probe whether the contract
-            // exposes the new methods — we do not assert the write landed.  All view errors are
-            // swallowed: MethodNotFound is expected before the contract is upgraded for #3475,
-            // and any other transient view failure (network blip, indexer lag) is non-actionable
-            // because the registration already fire-and-forget.
-            if let Err(err) = indexer_state
-                .view_client
-                .get_available_foreign_chains_by_node(&indexer_state.mpc_contract_id)
-                .await
-            {
-                if is_method_not_found(&err) {
-                    tracing::warn!(
-                        target: "mpc",
-                        "register_available_foreign_chains_config is not available on the contract yet \
-                         (MethodNotFound); the contract has likely not been upgraded for #3475. \
-                         Foreign-chain registration will take effect after the contract upgrade to 3.12."
-                    );
-                } else {
-                    tracing::warn!(
-                        target: "mpc",
-                        error = ?err,
-                        "probe view call failed after foreign-chain registration; ignoring transient error"
-                    );
-                }
-            }
-            Ok(TransactionStatus::Unknown)
-        }
         // We don't care. The contract state change will handle this.
-        // The legacy
-        // `RegisterForeignChainConfig` stays fire-and-forget, the new
-        // `RegisterAvailableForeignChainConfig` above is the one we probe + warn on.
         StartKeygen(_)
         | StartReshare(_)
         | VotePk(_)
@@ -330,15 +299,10 @@ async fn observe_tx_result(
         | VoteAbortKeyEventInstance(_)
         | VerifyTee()
         | ConcludeNodeMigration(_)
-        | RegisterForeignChainConfig(_) => Ok(TransactionStatus::Unknown),
+        // TODO(#3475) drop this after contract version 3.12 lands.
+        | RegisterForeignChainConfig(_)
+        | RegisterAvailableForeignChainConfig(_) => Ok(TransactionStatus::Unknown),
     }
-}
-
-/// Whether `err` is the contract reporting that the called method does not exist, i.e. the
-/// contract has not yet been upgraded to include it.
-/// Checks only that the method is resolvable, not that any write from this node landed.
-pub(super) fn is_method_not_found(err: &anyhow::Error) -> bool {
-    format!("{err:?}").contains("MethodResolveError(MethodNotFound)")
 }
 
 /// Attempts to ensure that a function call with given method and args is included on-chain.

@@ -26,7 +26,7 @@ use near_indexer_primitives::{
 };
 use near_mpc_contract_interface::method_names::{
     ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_FOREIGN_CHAIN_PROVIDERS, ALLOWED_LAUNCHER_COMPOSE_HASHES,
-    GET_ATTESTATION, GET_AVAILABLE_FOREIGN_CHAINS_BY_NODE, GET_PENDING_CKD_REQUEST,
+    GET_ATTESTATION, GET_PENDING_CKD_REQUEST,
     GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, GET_SUPPORTED_FOREIGN_CHAINS,
     GET_TEE_ACCOUNTS, MIGRATION_INFO, STATE,
 };
@@ -269,23 +269,6 @@ impl IndexerViewClient {
             .get_mpc_state(mpc_contract_id.clone(), GET_SUPPORTED_FOREIGN_CHAINS)
             .await?;
         Ok(policy)
-    }
-
-    /// Per-participant view of which foreign chains each node currently covers. Used to confirm
-    /// `register_available_foreign_chains_config` landed; errors with MethodNotFound on a contract
-    /// not yet upgraded for #3475.
-    pub(crate) async fn get_available_foreign_chains_by_node(
-        &self,
-        mpc_contract_id: &AccountId,
-    ) -> anyhow::Result<std::collections::BTreeMap<dtos::AccountId, dtos::AvailableForeignChains>>
-    {
-        let (_height, by_node) = self
-            .get_mpc_state(
-                mpc_contract_id.clone(),
-                GET_AVAILABLE_FOREIGN_CHAINS_BY_NODE,
-            )
-            .await?;
-        Ok(by_node)
     }
 
     /// Borsh-decoding view-fn query (`get_mpc_state` is JSON-only).
