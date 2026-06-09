@@ -9,6 +9,7 @@ use crate::types::VerifyForeignTxId;
 use borsh::{BorshDeserialize, BorshSerialize};
 use foreign_chain_inspector::FanOut;
 use foreign_chain_inspector::abstract_chain::inspector::AbstractInspector;
+use foreign_chain_inspector::aptos::inspector::AptosInspector;
 use foreign_chain_inspector::arbitrum::inspector::ArbitrumInspector;
 use foreign_chain_inspector::base::inspector::BaseInspector;
 use foreign_chain_inspector::bitcoin::inspector::BitcoinInspector;
@@ -17,6 +18,7 @@ use foreign_chain_inspector::http_client::HttpClient;
 use foreign_chain_inspector::hyperevm::inspector::HyperEvmInspector;
 use foreign_chain_inspector::polygon::inspector::PolygonInspector;
 use foreign_chain_inspector::starknet::inspector::StarknetInspector;
+use foreign_chain_rpc_interfaces::aptos::ReqwestAptosClient;
 use mpc_node_config::{ConfigFile, ForeignChainConfig, ForeignChainsConfig};
 use near_mpc_contract_interface::types as dtos;
 use std::sync::Arc;
@@ -38,6 +40,7 @@ pub(crate) struct ForeignChainInspectors<Client> {
     pub arbitrum: Option<FanOut<ArbitrumInspector<Client>>>,
     pub hyper_evm: Option<FanOut<HyperEvmInspector<Client>>>,
     pub polygon: Option<FanOut<PolygonInspector<Client>>>,
+    pub aptos: Option<FanOut<AptosInspector<ReqwestAptosClient>>>,
 }
 
 impl ForeignChainInspectors<HttpClient> {
@@ -58,6 +61,19 @@ impl ForeignChainInspectors<HttpClient> {
             Ok(Some(FanOut::new(inspectors)))
         }
 
+        fn build_aptos_fanout(
+            chain_config: Option<&ForeignChainConfig>,
+        ) -> anyhow::Result<Option<FanOut<AptosInspector<ReqwestAptosClient>>>> {
+            let Some(c) = chain_config else {
+                return Ok(None);
+            };
+            let inspectors = c.providers.try_map_to_vec(|_, p| {
+                let client = ReqwestAptosClient::new(p.rpc_url.clone());
+                Ok::<_, anyhow::Error>(AptosInspector::new(client))
+            })?;
+            Ok(Some(FanOut::new(inspectors)))
+        }
+
         Ok(Self {
             bitcoin: build_fanout(config.bitcoin.as_ref(), BitcoinInspector::new)?,
             abstract_chain: build_fanout(config.abstract_chain.as_ref(), AbstractInspector::new)?,
@@ -67,6 +83,7 @@ impl ForeignChainInspectors<HttpClient> {
             arbitrum: build_fanout(config.arbitrum.as_ref(), ArbitrumInspector::new)?,
             hyper_evm: build_fanout(config.hyper_evm.as_ref(), HyperEvmInspector::new)?,
             polygon: build_fanout(config.polygon.as_ref(), PolygonInspector::new)?,
+            aptos: build_aptos_fanout(config.aptos.as_ref())?,
         })
     }
 }

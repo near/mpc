@@ -3,6 +3,8 @@ use near_mpc_contract_interface::types as dtos;
 
 use crate::BlockConfirmations;
 use crate::EthereumFinality;
+use crate::aptos::AptosExtractedValue;
+use crate::aptos::inspector::{AptosExtractor, AptosFinality};
 use crate::bitcoin::BitcoinExtractedValue;
 use crate::bitcoin::inspector::BitcoinExtractor;
 use crate::evm::inspector::{EvmChain, EvmExtractedValue, EvmExtractor};
@@ -282,6 +284,85 @@ impl From<StarknetExtractedValue> for dtos::ExtractedValue {
     }
 }
 
+impl From<AptosFinality> for dtos::AptosFinality {
+    fn from(value: AptosFinality) -> Self {
+        match value {
+            AptosFinality::Committed => dtos::AptosFinality::Committed,
+        }
+    }
+}
+
+impl TryFrom<dtos::AptosFinality> for AptosFinality {
+    type Error = ConversionError;
+    fn try_from(value: dtos::AptosFinality) -> Result<Self, Self::Error> {
+        match value {
+            dtos::AptosFinality::Committed => Ok(AptosFinality::Committed),
+            _ => Err(ConversionError::UnsupportedVariant {
+                context: "AptosFinality",
+            }),
+        }
+    }
+}
+
+impl TryFrom<AptosExtractor> for dtos::AptosExtractor {
+    type Error = ConversionError;
+    fn try_from(value: AptosExtractor) -> Result<Self, Self::Error> {
+        match value {
+            AptosExtractor::Event { event_index } => Ok(dtos::AptosExtractor::Event {
+                event_index: u64::try_from(event_index).map_err(|_| {
+                    ConversionError::IntegerOverflow {
+                        context: "AptosExtractor::Event event_index exceeds u64",
+                    }
+                })?,
+            }),
+        }
+    }
+}
+
+impl TryFrom<dtos::AptosExtractor> for AptosExtractor {
+    type Error = ConversionError;
+    fn try_from(value: dtos::AptosExtractor) -> Result<Self, Self::Error> {
+        match value {
+            dtos::AptosExtractor::Event { event_index } => Ok(AptosExtractor::Event {
+                event_index: usize::try_from(event_index).map_err(|_| {
+                    ConversionError::IntegerOverflow {
+                        context: "AptosExtractor::Event event_index exceeds platform usize",
+                    }
+                })?,
+            }),
+            _ => Err(ConversionError::UnsupportedVariant {
+                context: "AptosExtractor",
+            }),
+        }
+    }
+}
+
+impl From<AptosExtractedValue> for dtos::AptosExtractedValue {
+    fn from(value: AptosExtractedValue) -> Self {
+        match value {
+            AptosExtractedValue::Event(event) => dtos::AptosExtractedValue::Event(event),
+        }
+    }
+}
+
+impl TryFrom<dtos::AptosExtractedValue> for AptosExtractedValue {
+    type Error = ConversionError;
+    fn try_from(value: dtos::AptosExtractedValue) -> Result<Self, Self::Error> {
+        match value {
+            dtos::AptosExtractedValue::Event(event) => Ok(AptosExtractedValue::Event(event)),
+            _ => Err(ConversionError::UnsupportedVariant {
+                context: "AptosExtractedValue",
+            }),
+        }
+    }
+}
+
+impl From<AptosExtractedValue> for dtos::ExtractedValue {
+    fn from(value: AptosExtractedValue) -> Self {
+        dtos::ExtractedValue::AptosExtractedValue(value.into())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -497,6 +578,44 @@ mod tests {
         let inspector = StarknetExtractedValue::BlockHash(hash);
         let contract = dtos::StarknetExtractedValue::from(inspector.clone());
         let back = StarknetExtractedValue::try_from(contract).unwrap();
+        assert_eq!(inspector, back);
+    }
+
+    #[test]
+    fn aptos_finality_roundtrip() {
+        assert_eq!(
+            dtos::AptosFinality::Committed,
+            dtos::AptosFinality::from(AptosFinality::Committed)
+        );
+        assert_eq!(
+            AptosFinality::Committed,
+            AptosFinality::try_from(dtos::AptosFinality::Committed).unwrap()
+        );
+    }
+
+    #[test]
+    fn aptos_extractor_roundtrip() {
+        let inspector = AptosExtractor::Event { event_index: 3 };
+        let contract = dtos::AptosExtractor::try_from(inspector.clone()).unwrap();
+        assert!(matches!(
+            contract,
+            dtos::AptosExtractor::Event { event_index: 3 }
+        ));
+        let back = AptosExtractor::try_from(contract).unwrap();
+        assert_eq!(inspector, back);
+    }
+
+    #[test]
+    fn aptos_extracted_value_roundtrip() {
+        use near_mpc_contract_interface::types::{AptosAddress, AptosEvent};
+        let inspector = AptosExtractedValue::Event(AptosEvent {
+            account_address: AptosAddress([0x01; 32]),
+            sequence_number: 5,
+            type_tag: "0x1::bridge::Transfer".to_string(),
+            data: "{\"amount\":\"42\"}".to_string(),
+        });
+        let contract = dtos::AptosExtractedValue::from(inspector.clone());
+        let back = AptosExtractedValue::try_from(contract).unwrap();
         assert_eq!(inspector, back);
     }
 }
