@@ -842,7 +842,7 @@ impl MpcCluster {
     pub async fn view_available_foreign_chain_by_node(
         &self,
     ) -> anyhow::Result<
-        HashMap<ContractAccountId, near_mpc_contract_interface::types::AvailableForeignChains>,
+        HashMap<Ed25519PublicKey, near_mpc_contract_interface::types::AvailableForeignChains>,
     > {
         self.contract
             .view(method_names::GET_AVAILABLE_FOREIGN_CHAINS_BY_NODE)
