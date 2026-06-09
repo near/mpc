@@ -6,7 +6,7 @@ use crate::indexer::participants::{
     ContractKeyEventInstance, ContractResharingState, ContractRunningState, ContractState,
 };
 use crate::indexer::types::{
-    ChainRegisterAvailableForeignChainConfigArgs, ChainRegisterForeignChainConfigArgs,
+    ChainRegisterForeignChainConfigArgs, ChainRegisterForeignChainsConfigArgs,
     ChainSendTransactionRequest,
 };
 use crate::indexer::{IndexerAPI, ReadSupportedForeignChain, tx_sender};
@@ -393,7 +393,7 @@ where
 
         // Send both registrations so the node works whether or not the contract is upgraded.
         let foreign_chain_configuration = config_file.foreign_chains.configured_chains();
-        let available_foreign_chains = foreign_chain_configuration
+        let foreign_chains_config = foreign_chain_configuration
             .keys()
             .copied()
             .collect::<std::collections::BTreeSet<_>>()
@@ -413,16 +413,14 @@ where
         }
 
         if let Err(err) = chain_txn_sender
-            .send(
-                ChainSendTransactionRequest::RegisterAvailableForeignChainConfig(
-                    ChainRegisterAvailableForeignChainConfigArgs {
-                        available_foreign_chains,
-                    },
-                ),
-            )
+            .send(ChainSendTransactionRequest::RegisterForeignChainsConfig(
+                ChainRegisterForeignChainsConfigArgs {
+                    foreign_chains_config,
+                },
+            ))
             .await
         {
-            tracing::warn!(error = ?err, "failed to send register_available_foreign_chains_config transaction, this is expected until contract version 3.12");
+            tracing::warn!(error = ?err, "failed to send register_foreign_chains_config transaction");
         }
 
         tracing::info!("Creating tls mesh");

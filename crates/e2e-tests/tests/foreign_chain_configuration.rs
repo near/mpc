@@ -8,7 +8,7 @@ use e2e_tests::CLUSTER_WAIT_TIMEOUT;
 use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::types::{
-    AvailableForeignChains, ForeignChain, SupportedForeignChains,
+    ForeignChain, ForeignChainsConfig as ContractForeignChainsConfig, SupportedForeignChains,
 };
 
 const SOLANA_PROVIDER_NAME: &str = "public";
@@ -133,8 +133,8 @@ async fn supported_foreign_chains__should_require_all_participants_to_register()
     .expect("timed out waiting for Solana to be reported as supported");
 }
 
-/// Each node auto-registers the chains it covers via `register_available_foreign_chains_config`
-/// on startup; `get_available_foreign_chains_by_node` should reflect those per-node sets.
+/// Each node auto-registers the chains it covers via `register_foreign_chains_config`
+/// on startup; `get_foreign_chains_configs` should reflect those per-node sets.
 ///
 /// 3-node cluster: nodes 0 and 1 are configured with Solana, node 2 has none.
 #[tokio::test]
@@ -153,7 +153,7 @@ async fn available_foreign_chain_by_node__should_reflect_auto_registered_configs
 
     // then — every node auto-registers (node 2 with an empty set), and the per-node available
     // view reflects it: nodes 0 and 1 cover exactly Solana, node 2 is empty.
-    let expected_node_available: AvailableForeignChains =
+    let expected_node_config: ContractForeignChainsConfig =
         BTreeSet::from([ForeignChain::Solana]).into();
     (|| async {
         let by_node = cluster
@@ -168,7 +168,7 @@ async fn available_foreign_chain_by_node__should_reflect_auto_registered_configs
         );
         let covering_solana = by_node
             .values()
-            .filter(|chains| **chains == expected_node_available)
+            .filter(|chains| **chains == expected_node_config)
             .count();
         anyhow::ensure!(
             covering_solana == 2,

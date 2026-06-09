@@ -12,7 +12,7 @@ use crate::storage_keys::StorageKey;
 pub(crate) struct ForeignChainAvailability {
     pub(crate) available_foreign_chains: dtos::AvailableForeignChains,
     pub(crate) available_foreign_chains_by_node:
-        IterableMap<dtos::Ed25519PublicKey, dtos::AvailableForeignChains>,
+        IterableMap<dtos::Ed25519PublicKey, dtos::ForeignChainsConfig>,
     /// Reverse map from account ID to its most-recently registered TLS key, used to remove
     /// stale `available_foreign_chains_by_node` entries when a node rotates its TLS key.
     tls_key_by_account: LookupMap<dtos::AccountId, dtos::Ed25519PublicKey>,
@@ -37,7 +37,7 @@ impl ForeignChainAvailability {
         &mut self,
         account_id: dtos::AccountId,
         tls_key: dtos::Ed25519PublicKey,
-        chains: dtos::AvailableForeignChains,
+        foreign_chains_config: dtos::ForeignChainsConfig,
     ) {
         if let Some(old_key) = self.tls_key_by_account.get(&account_id)
             && *old_key != tls_key
@@ -47,12 +47,12 @@ impl ForeignChainAvailability {
         }
         self.tls_key_by_account.insert(account_id, tls_key.clone());
         self.available_foreign_chains_by_node
-            .insert(tls_key, chains);
+            .insert(tls_key, foreign_chains_config);
     }
 
     pub(crate) fn snapshot_by_node(
         &self,
-    ) -> BTreeMap<dtos::Ed25519PublicKey, dtos::AvailableForeignChains> {
+    ) -> BTreeMap<dtos::Ed25519PublicKey, dtos::ForeignChainsConfig> {
         self.available_foreign_chains_by_node
             .iter()
             .map(|(id, chains)| (id.clone(), chains.clone()))

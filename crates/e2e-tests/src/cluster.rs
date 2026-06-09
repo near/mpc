@@ -837,15 +837,15 @@ impl MpcCluster {
             .await
     }
 
-    /// View the per-node available-foreign-chain registrations on the contract (the set each
-    /// node reported via `register_available_foreign_chains_config`).
+    /// View the per-node foreign-chain configs registered on the contract (the set each
+    /// node reported via `register_foreign_chains_config`).
     pub async fn view_available_foreign_chain_by_node(
         &self,
     ) -> anyhow::Result<
-        HashMap<Ed25519PublicKey, near_mpc_contract_interface::types::AvailableForeignChains>,
+        HashMap<Ed25519PublicKey, near_mpc_contract_interface::types::ForeignChainsConfig>,
     > {
         self.contract
-            .view(method_names::GET_AVAILABLE_FOREIGN_CHAINS_BY_NODE)
+            .view(method_names::GET_FOREIGN_CHAINS_CONFIGS)
             .await
     }
 

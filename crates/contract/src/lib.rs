@@ -983,9 +983,9 @@ impl MpcContract {
     // Note: registrations made while the contract is not in `Running` state are stored but do not
     // update the cached available set until the next `Running`-state recompute.
     #[handle_result]
-    pub fn register_available_foreign_chains_config(
+    pub fn register_foreign_chains_config(
         &mut self,
-        available_foreign_chains: dtos::AvailableForeignChains,
+        foreign_chains_config: dtos::ForeignChainsConfig,
     ) -> Result<(), Error> {
         self.assert_caller_is_attested_participant_and_protocol_active();
         let account_id = env::signer_account_id();
@@ -997,7 +997,7 @@ impl MpcContract {
         self.foreign_chain_availability.get_mut().register(
             account_id,
             tls_key,
-            available_foreign_chains,
+            foreign_chains_config,
         );
         self.recompute_available_foreign_chains();
 
@@ -2122,9 +2122,9 @@ impl MpcContract {
 
     /// Per-participant view of which foreign chains each node currently covers. Feeds the
     /// available-set computation ([`Self::get_available_foreign_chains`]) and coverage alerting.
-    pub fn get_available_foreign_chains_by_node(
+    pub fn get_foreign_chains_configs(
         &self,
-    ) -> BTreeMap<dtos::Ed25519PublicKey, dtos::AvailableForeignChains> {
+    ) -> BTreeMap<dtos::Ed25519PublicKey, dtos::ForeignChainsConfig> {
         self.foreign_chain_availability.get().snapshot_by_node()
     }
 
@@ -6772,18 +6772,16 @@ mod tests {
         }
     }
 
-    /// Registers `chains` as covered by `account_id` via the new
-    /// `register_available_foreign_chain_config` entry point.
     fn register_coverage(
         contract: &mut MpcContract,
         account_id: &AccountId,
         chains: impl IntoIterator<Item = dtos::ForeignChain>,
     ) {
-        let available_foreign_chains: dtos::AvailableForeignChains =
+        let foreign_chains_config: dtos::ForeignChainsConfig =
             chains.into_iter().collect::<BTreeSet<_>>().into();
         let _env = Environment::new(None, Some(account_id.clone()), None);
         contract
-            .register_available_foreign_chains_config(available_foreign_chains)
+            .register_foreign_chains_config(foreign_chains_config)
             .expect("register should succeed");
     }
 

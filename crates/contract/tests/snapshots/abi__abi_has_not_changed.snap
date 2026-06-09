@@ -597,7 +597,17 @@ expression: abi
         }
       },
       {
-        "name": "get_available_foreign_chains_by_node",
+        "name": "get_foreign_chain_support_by_node",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/ForeignChainSupportByNode"
+          }
+        }
+      },
+      {
+        "name": "get_foreign_chains_configs",
         "doc": " Per-participant view of which foreign chains each node currently covers. Feeds the\n available-set computation ([`Self::get_available_foreign_chains`]) and coverage alerting.",
         "kind": "view",
         "result": {
@@ -605,18 +615,8 @@ expression: abi
           "type_schema": {
             "type": "object",
             "additionalProperties": {
-              "$ref": "#/definitions/AvailableForeignChains"
+              "$ref": "#/definitions/ForeignChainsConfig"
             }
-          }
-        }
-      },
-      {
-        "name": "get_foreign_chain_support_by_node",
-        "kind": "view",
-        "result": {
-          "serialization_type": "json",
-          "type_schema": {
-            "$ref": "#/definitions/ForeignChainSupportByNode"
           }
         }
       },
@@ -1115,28 +1115,6 @@ expression: abi
         }
       },
       {
-        "name": "register_available_foreign_chains_config",
-        "doc": " (Re)registers the foreign chains this participant currently covers, feeding the available\n set ([`Self::get_available_foreign_chains`]). Idempotent.",
-        "kind": "call",
-        "params": {
-          "serialization_type": "json",
-          "args": [
-            {
-              "name": "available_foreign_chains",
-              "type_schema": {
-                "$ref": "#/definitions/AvailableForeignChains"
-              }
-            }
-          ]
-        },
-        "result": {
-          "serialization_type": "json",
-          "type_schema": {
-            "type": "null"
-          }
-        }
-      },
-      {
         "name": "register_backup_service",
         "doc": " Registers or updates the backup service information for the caller account.\n\n The caller (`signer_account_id`) must be an existing or prospective participant.\n Otherwise, the transaction will fail.\n\n # Notes\n - A deposit requirement may be added in the future.",
         "kind": "call",
@@ -1190,6 +1168,28 @@ expression: abi
               "name": "foreign_chain_support",
               "type_schema": {
                 "$ref": "#/definitions/SupportedForeignChains"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "register_foreign_chains_config",
+        "doc": " (Re)registers the foreign chains this participant currently covers, feeding the available\n set ([`Self::get_available_foreign_chains`]). Idempotent.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "foreign_chains_config",
+              "type_schema": {
+                "$ref": "#/definitions/ForeignChainsConfig"
               }
             }
           ]
@@ -2308,7 +2308,7 @@ expression: abi
           ]
         },
         "AvailableForeignChains": {
-          "description": "The set of foreign chains a node reports it can currently serve (cover). The available-set analog of [`SupportedForeignChains`]; submitted by nodes via `register_available_foreign_chains_config`.",
+          "description": "The set of foreign chains available across the threshold of active participants. Returned by `get_available_foreign_chains`; computed from the per-node [`ForeignChainsConfig`] reports.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/ForeignChain"
@@ -3109,6 +3109,14 @@ expression: abi
               }
             }
           }
+        },
+        "ForeignChainsConfig": {
+          "description": "The set of foreign chains a node reports it can currently serve. Submitted by each node via `register_foreign_chains_config`; aggregated into [`AvailableForeignChains`] by the contract.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ForeignChain"
+          },
+          "uniqueItems": true
         },
         "Hash256": {
           "type": "string",

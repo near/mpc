@@ -52,8 +52,8 @@ pub struct FakeMpcContractState {
     pub pending_verify_foreign_txs: BTreeMap<dtos::ForeignChainRpcRequest, VerifyForeignTxId>,
     supported_foreign_chains: dtos::SupportedForeignChains,
     supported_foreign_chains_by_node: dtos::ForeignChainSupportByNode,
-    /// Per-node map for the new `register_available_foreign_chains_config` API.
-    available_foreign_chains_by_node: BTreeMap<AccountId, dtos::AvailableForeignChains>,
+    /// Per-node map for the `register_foreign_chains_config` API.
+    available_foreign_chains_by_node: BTreeMap<AccountId, dtos::ForeignChainsConfig>,
     /// Cached available set recomputed via threshold semantics (mirrors the real contract).
     available_foreign_chains: dtos::AvailableForeignChains,
     pub migration_service: NodeMigrations,
@@ -93,7 +93,7 @@ impl FakeMpcContractState {
             supported_foreign_chains: dtos::SupportedForeignChains::default(),
             supported_foreign_chains_by_node: dtos::ForeignChainSupportByNode::default(),
             available_foreign_chains_by_node: BTreeMap::new(),
-            available_foreign_chains: dtos::AvailableForeignChains::default(),
+            available_foreign_chains: Default::default(),
             migration_service: NodeMigrations::default(),
         }
     }
@@ -120,15 +120,13 @@ impl FakeMpcContractState {
         self.record_node_chains(account_id, chains);
     }
 
-    pub fn register_available_foreign_chains_config(
+    pub fn register_foreign_chains_config(
         &mut self,
         account_id: AccountId,
-        available_foreign_chains: dtos::AvailableForeignChains,
+        foreign_chains_config: dtos::ForeignChainsConfig,
     ) {
         let ProtocolContractState::Running(state) = &self.state else {
-            tracing::info!(
-                "register_available_foreign_chains_config ignored: contract not in running state"
-            );
+            tracing::info!("register_foreign_chains_config ignored: contract not in running state");
             return;
         };
         let is_participant = state
@@ -138,9 +136,7 @@ impl FakeMpcContractState {
             .iter()
             .any(|(id, _, _)| id == &account_id);
         if !is_participant {
-            tracing::info!(
-                "register_available_foreign_chains_config ignored: signer is not a participant"
-            );
+            tracing::info!("register_foreign_chains_config ignored: signer is not a participant");
             return;
         }
         let threshold = state.parameters.threshold().value();
@@ -153,7 +149,7 @@ impl FakeMpcContractState {
             .collect();
 
         self.available_foreign_chains_by_node
-            .insert(account_id, available_foreign_chains);
+            .insert(account_id, foreign_chains_config);
 
         // Recompute using threshold semantics: a chain is available when ≥ threshold active
         // participants cover it.  (Unlike the real contract this does not intersect with an
@@ -750,12 +746,10 @@ impl FakeIndexerCore {
                             args.foreign_chain_configuration,
                         );
                     }
-                    ChainSendTransactionRequest::RegisterAvailableForeignChainConfig(args) => {
+                    ChainSendTransactionRequest::RegisterForeignChainsConfig(args) => {
                         let mut contract = contract.lock().await;
-                        contract.register_available_foreign_chains_config(
-                            account_id,
-                            args.available_foreign_chains,
-                        );
+                        contract
+                            .register_foreign_chains_config(account_id, args.foreign_chains_config);
                     }
                     ChainSendTransactionRequest::StartKeygen(start) => {
                         // TODO: timeout logic in fake indexer?

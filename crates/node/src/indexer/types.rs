@@ -8,7 +8,7 @@ use k256::{
 use mpc_primitives::domain::DomainId;
 use near_indexer_primitives::types::Gas;
 use near_mpc_contract_interface::method_names::{
-    CONCLUDE_NODE_MIGRATION, REGISTER_AVAILABLE_FOREIGN_CHAINS_CONFIG, RESPOND, RESPOND_CKD,
+    CONCLUDE_NODE_MIGRATION, REGISTER_FOREIGN_CHAINS_CONFIG, RESPOND, RESPOND_CKD,
     RESPOND_VERIFY_FOREIGN_TX, START_KEYGEN_INSTANCE, START_RESHARE_INSTANCE,
     SUBMIT_PARTICIPANT_INFO, VERIFY_TEE, VOTE_ABORT_KEY_EVENT_INSTANCE, VOTE_PK, VOTE_RESHARED,
 };
@@ -159,8 +159,8 @@ pub struct ChainRegisterForeignChainConfigArgs {
 }
 
 #[derive(Serialize, Debug)]
-pub struct ChainRegisterAvailableForeignChainConfigArgs {
-    pub available_foreign_chains: dtos::AvailableForeignChains,
+pub struct ChainRegisterForeignChainsConfigArgs {
+    pub foreign_chains_config: dtos::ForeignChainsConfig,
 }
 
 #[derive(Serialize, Debug)]
@@ -192,11 +192,11 @@ pub enum ChainSendTransactionRequest {
     StartKeygen(ChainStartKeygenArgs),
     VoteReshared(ChainVoteResharedArgs),
     // TODO(#3485): Remove after contract upgrade to 3.12.
-    // Legacy registration. Sent alongside `RegisterAvailableForeignChainConfig` so a node
+    // Legacy registration. Sent alongside `RegisterForeignChainsConfig` so a node
     // works against both the current contract and one upgraded for #3475. Remove once the
     // contract is upgraded and the whitelist is voted in.
     RegisterForeignChainConfig(ChainRegisterForeignChainConfigArgs),
-    RegisterAvailableForeignChainConfig(ChainRegisterAvailableForeignChainConfigArgs),
+    RegisterForeignChainsConfig(ChainRegisterForeignChainsConfigArgs),
     StartReshare(ChainStartReshareArgs),
     VoteAbortKeyEventInstance(ChainVoteAbortKeyEventInstanceArgs),
     VerifyTee(),
@@ -224,8 +224,8 @@ impl ChainSendTransactionRequest {
                 #[expect(deprecated)]
                 REGISTER_FOREIGN_CHAIN_CONFIG
             }
-            ChainSendTransactionRequest::RegisterAvailableForeignChainConfig(_) => {
-                REGISTER_AVAILABLE_FOREIGN_CHAINS_CONFIG
+            ChainSendTransactionRequest::RegisterForeignChainsConfig(_) => {
+                REGISTER_FOREIGN_CHAINS_CONFIG
             }
             ChainSendTransactionRequest::StartReshare(_) => START_RESHARE_INSTANCE,
             ChainSendTransactionRequest::StartKeygen(_) => START_KEYGEN_INSTANCE,
@@ -248,7 +248,7 @@ impl ChainSendTransactionRequest {
             | Self::VotePk(_)
             | Self::VoteReshared(_)
             | Self::RegisterForeignChainConfig(_)
-            | Self::RegisterAvailableForeignChainConfig(_)
+            | Self::RegisterForeignChainsConfig(_)
             | Self::StartReshare(_)
             | Self::StartKeygen(_)
             | Self::VoteAbortKeyEventInstance(_)

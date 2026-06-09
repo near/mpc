@@ -68,7 +68,7 @@ impl From<MpcContract> for crate::MpcContract {
             metrics: old.metrics,
             foreign_chain_rpc_whitelist: old.foreign_chain_rpc_whitelist,
             // New in this revision; self-populates on the first
-            // `register_available_foreign_chains_config` after upgrade.
+            // `register_foreign_chains_config` after upgrade.
             foreign_chain_availability: Lazy::new(
                 StorageKey::ForeignChainAvailability,
                 ForeignChainAvailability::default(),
