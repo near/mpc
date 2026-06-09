@@ -2,6 +2,7 @@
 #![expect(deprecated, reason = "ForeignChainConfiguration is being deprecated")]
 #![doc = include_str!("../README.md")]
 
+pub mod available_foreign_chains;
 pub mod config;
 pub mod crypto_shared;
 pub mod errors;
@@ -35,6 +36,7 @@ use std::{
 };
 
 use crate::{
+    available_foreign_chains::ForeignChainAvailability,
     dto_mapping::{
         IntoContractType, IntoInterfaceType, TryIntoContractType,
         args_into_verify_foreign_tx_request,
@@ -72,7 +74,7 @@ use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash};
 use near_sdk::{
     AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue, env,
     log, near,
-    store::{IterableMap, LookupMap},
+    store::{IterableMap, Lazy, LookupMap},
 };
 use node_migrations::NodeMigrations;
 use primitives::{
@@ -161,11 +163,10 @@ pub struct MpcContract {
     // TODO(#2937): Remove via state migration.
     metrics: Metrics,
     foreign_chain_rpc_whitelist: ForeignChainRpcWhitelist,
-    /// Cached set of chains that at least the signing threshold of active participants support,
-    /// recomputed on every registration. `get_available_foreign_chains` intersects it with the
-    /// on-chain whitelist to produce the available set, keeping that read cheap.
-    available_foreign_chains: dtos::AvailableForeignChains,
-    available_foreign_chains_by_node: AvailableForeignChainsByNode,
+    /// Lazily-loaded foreign-chain availability state (cached available set + per-node coverage
+    /// map). Only deserialized on methods that touch foreign-chain data, keeping unrelated calls
+    /// cheap.
+    foreign_chain_availability: Lazy<ForeignChainAvailability>,
 }
 
 #[near(serializers=[borsh])]
@@ -195,32 +196,6 @@ impl SupportedForeignChainsByNode {
         dtos::ForeignChainSupportByNode {
             foreign_chain_support_by_node: foreign_chain_configuration_by_node,
         }
-    }
-}
-
-/// Per-node map of the chains each participant reports covering, feeding the available set.
-#[near(serializers=[borsh])]
-#[derive(Debug)]
-struct AvailableForeignChainsByNode {
-    available_foreign_chain_by_node: IterableMap<dtos::AccountId, dtos::AvailableForeignChains>,
-}
-
-impl Default for AvailableForeignChainsByNode {
-    fn default() -> Self {
-        Self {
-            available_foreign_chain_by_node: IterableMap::new(
-                StorageKey::AvailableForeignChainsByNode,
-            ),
-        }
-    }
-}
-
-impl AvailableForeignChainsByNode {
-    fn snapshot(&self) -> BTreeMap<dtos::AccountId, dtos::AvailableForeignChains> {
-        self.available_foreign_chain_by_node
-            .iter()
-            .map(|(account_id, available)| (account_id.clone(), available.clone()))
-            .collect()
     }
 }
 
@@ -1017,8 +992,9 @@ impl MpcContract {
     ) -> Result<(), Error> {
         let account_id = self.voter_or_panic();
 
-        self.available_foreign_chains_by_node
-            .available_foreign_chain_by_node
+        self.foreign_chain_availability
+            .get_mut()
+            .available_foreign_chains_by_node
             .insert(account_id, available_foreign_chains);
         self.recompute_available_foreign_chains();
 
@@ -1049,8 +1025,9 @@ impl MpcContract {
         let mut chain_to_supporter_count: BTreeMap<dtos::ForeignChain, u64> = BTreeMap::new();
         // Count supported chains that are also whitelisted.
         for (account_id, chains) in self
+            .foreign_chain_availability
+            .get()
             .available_foreign_chains_by_node
-            .available_foreign_chain_by_node
             .iter()
         {
             if !active_participant_account_ids.contains(account_id) {
@@ -1067,7 +1044,9 @@ impl MpcContract {
             }
         }
 
-        self.available_foreign_chains = chain_to_supporter_count
+        self.foreign_chain_availability
+            .get_mut()
+            .available_foreign_chains = chain_to_supporter_count
             .into_iter()
             .filter(|(_, count)| *count >= threshold)
             .map(|(chain, _)| chain)
@@ -1823,15 +1802,17 @@ impl MpcContract {
 
         // Same cleanup for the available-set per-node map.
         let non_participant_available: Vec<dtos::AccountId> = self
+            .foreign_chain_availability
+            .get()
             .available_foreign_chains_by_node
-            .available_foreign_chain_by_node
             .keys()
             .filter(|account| !participant_accounts.contains(*account))
             .cloned()
             .collect();
         for account in &non_participant_available {
-            self.available_foreign_chains_by_node
-                .available_foreign_chain_by_node
+            self.foreign_chain_availability
+                .get_mut()
+                .available_foreign_chains_by_node
                 .remove(account);
         }
 
@@ -1890,8 +1871,10 @@ impl MpcContract {
             metrics: Default::default(),
             node_foreign_chain_support: Default::default(),
             foreign_chain_rpc_whitelist: Default::default(),
-            available_foreign_chains_by_node: Default::default(),
-            available_foreign_chains: Default::default(),
+            foreign_chain_availability: Lazy::new(
+                StorageKey::ForeignChainAvailability,
+                ForeignChainAvailability::default(),
+            ),
         })
     }
 
@@ -1960,8 +1943,10 @@ impl MpcContract {
             metrics: Default::default(),
             node_foreign_chain_support: Default::default(),
             foreign_chain_rpc_whitelist: Default::default(),
-            available_foreign_chains_by_node: Default::default(),
-            available_foreign_chains: Default::default(),
+            foreign_chain_availability: Lazy::new(
+                StorageKey::ForeignChainAvailability,
+                ForeignChainAvailability::default(),
+            ),
         })
     }
 
@@ -2131,7 +2116,10 @@ impl MpcContract {
     /// The **available** foreign chains: whitelisted chains that are supported
     /// by at least the signing threshold of active participants.
     pub fn get_available_foreign_chains(&self) -> dtos::AvailableForeignChains {
-        self.available_foreign_chains.clone()
+        self.foreign_chain_availability
+            .get()
+            .available_foreign_chains
+            .clone()
     }
 
     /// Per-participant view of which foreign chains each node currently covers. Feeds the
@@ -2139,7 +2127,7 @@ impl MpcContract {
     pub fn get_available_foreign_chains_by_node(
         &self,
     ) -> BTreeMap<dtos::AccountId, dtos::AvailableForeignChains> {
-        self.available_foreign_chains_by_node.snapshot()
+        self.foreign_chain_availability.get().snapshot_by_node()
     }
 
     // contract version
@@ -4186,8 +4174,10 @@ mod tests {
                 node_migrations: Default::default(),
                 metrics: Default::default(),
                 foreign_chain_rpc_whitelist: Default::default(),
-                available_foreign_chains_by_node: Default::default(),
-                available_foreign_chains: Default::default(),
+                foreign_chain_availability: Lazy::new(
+                    StorageKey::ForeignChainAvailability,
+                    ForeignChainAvailability::default(),
+                ),
             }
         }
     }

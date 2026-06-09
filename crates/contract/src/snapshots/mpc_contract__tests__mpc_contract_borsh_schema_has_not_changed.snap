@@ -151,23 +151,6 @@ BorshSchemaContainer {
                 ],
             ),
         },
-        "AvailableForeignChains": Struct {
-            fields: UnnamedFields(
-                [
-                    "BTreeSet<ForeignChain>",
-                ],
-            ),
-        },
-        "AvailableForeignChainsByNode": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "available_foreign_chain_by_node",
-                        "IterableMap",
-                    ),
-                ],
-            ),
-        },
         "BTreeMap<AuthenticatedAccountId, ThresholdParameters>": Sequence {
             length_width: 4,
             length_range: 0..=4294967295,
@@ -197,11 +180,6 @@ BorshSchemaContainer {
             length_width: 4,
             length_range: 0..=4294967295,
             elements: "AuthenticatedParticipantId",
-        },
-        "BTreeSet<ForeignChain>": Sequence {
-            length_width: 4,
-            length_range: 0..=4294967295,
-            elements: "ForeignChain",
         },
         "Bls12381G2PublicKey": Struct {
             fields: UnnamedFields(
@@ -397,61 +375,6 @@ BorshSchemaContainer {
                 ],
             ),
         },
-        "ForeignChain": Enum {
-            tag_width: 1,
-            variants: [
-                (
-                    0,
-                    "Solana",
-                    "ForeignChain__Solana",
-                ),
-                (
-                    1,
-                    "Bitcoin",
-                    "ForeignChain__Bitcoin",
-                ),
-                (
-                    2,
-                    "Ethereum",
-                    "ForeignChain__Ethereum",
-                ),
-                (
-                    3,
-                    "Base",
-                    "ForeignChain__Base",
-                ),
-                (
-                    4,
-                    "Bnb",
-                    "ForeignChain__Bnb",
-                ),
-                (
-                    5,
-                    "Arbitrum",
-                    "ForeignChain__Arbitrum",
-                ),
-                (
-                    6,
-                    "Abstract",
-                    "ForeignChain__Abstract",
-                ),
-                (
-                    7,
-                    "Starknet",
-                    "ForeignChain__Starknet",
-                ),
-                (
-                    8,
-                    "Polygon",
-                    "ForeignChain__Polygon",
-                ),
-                (
-                    9,
-                    "HyperEvm",
-                    "ForeignChain__HyperEvm",
-                ),
-            ],
-        },
         "ForeignChainRpcWhitelist": Struct {
             fields: NamedFields(
                 [
@@ -465,36 +388,6 @@ BorshSchemaContainer {
                     ),
                 ],
             ),
-        },
-        "ForeignChain__Abstract": Struct {
-            fields: Empty,
-        },
-        "ForeignChain__Arbitrum": Struct {
-            fields: Empty,
-        },
-        "ForeignChain__Base": Struct {
-            fields: Empty,
-        },
-        "ForeignChain__Bitcoin": Struct {
-            fields: Empty,
-        },
-        "ForeignChain__Bnb": Struct {
-            fields: Empty,
-        },
-        "ForeignChain__Ethereum": Struct {
-            fields: Empty,
-        },
-        "ForeignChain__HyperEvm": Struct {
-            fields: Empty,
-        },
-        "ForeignChain__Polygon": Struct {
-            fields: Empty,
-        },
-        "ForeignChain__Solana": Struct {
-            fields: Empty,
-        },
-        "ForeignChain__Starknet": Struct {
-            fields: Empty,
         },
         "HashSet<AuthenticatedAccountId>": Sequence {
             length_width: 4,
@@ -695,6 +588,16 @@ BorshSchemaContainer {
                 ],
             ),
         },
+        "Lazy": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "storage_key",
+                        "Vec<u8>",
+                    ),
+                ],
+            ),
+        },
         "LookupMap": Struct {
             fields: NamedFields(
                 [
@@ -810,12 +713,8 @@ BorshSchemaContainer {
                         "ForeignChainRpcWhitelist",
                     ),
                     (
-                        "available_foreign_chains",
-                        "AvailableForeignChains",
-                    ),
-                    (
-                        "available_foreign_chains_by_node",
-                        "AvailableForeignChainsByNode",
+                        "foreign_chain_availability",
+                        "Lazy",
                     ),
                 ],
             ),
