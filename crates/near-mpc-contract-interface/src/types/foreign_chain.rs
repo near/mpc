@@ -343,7 +343,6 @@ pub struct TonTxId(#[serde_as(as = "Hex")] pub [u8; 32]);
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(borsh::BorshSchema)
 )]
-#[non_exhaustive]
 // Workchain is represented as i8 according to TON spec
 #[repr(i8)]
 #[borsh(use_discriminant = true)]
