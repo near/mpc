@@ -8,7 +8,7 @@ use crate::bitcoin::inspector::BitcoinExtractor;
 use crate::evm::inspector::{EvmChain, EvmExtractedValue, EvmExtractor};
 use crate::starknet::StarknetExtractedValue;
 use crate::starknet::inspector::{StarknetExtractor, StarknetFinality};
-use crate::ton::types::{TonExtractedValue, TonExtractor, TonFinality};
+use crate::ton::types::{TonAddress, TonExtractedValue, TonExtractor, TonFinality, TonLog};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConversionError {
@@ -336,12 +336,54 @@ impl TryFrom<dtos::TonExtractor> for TonExtractor {
     }
 }
 
-impl From<TonExtractedValue> for dtos::TonExtractedValue {
-    fn from(value: TonExtractedValue) -> Self {
+/// Maps the inspector's plain `i8` workchain onto the contract's
+/// [`dtos::TonWorkchain`] enum, rejecting any workchain the contract doesn't
+/// model (only the basechain is supported today).
+fn ton_workchain_to_dto(workchain: i8) -> Result<dtos::TonWorkchain, ConversionError> {
+    match workchain {
+        0 => Ok(dtos::TonWorkchain::Basechain),
+        _ => Err(ConversionError::UnsupportedVariant {
+            context: "TonAddress workchain",
+        }),
+    }
+}
+
+fn ton_workchain_from_dto(workchain: dtos::TonWorkchain) -> Result<i8, ConversionError> {
+    match workchain {
+        dtos::TonWorkchain::Basechain => Ok(0),
+        _ => Err(ConversionError::UnsupportedVariant {
+            context: "TonWorkchain",
+        }),
+    }
+}
+
+fn ton_log_to_dto(log: TonLog) -> Result<dtos::TonLog, ConversionError> {
+    Ok(dtos::TonLog {
+        from_address: dtos::TonAddress {
+            workchain: ton_workchain_to_dto(log.from_address.workchain)?,
+            hash: log.from_address.hash,
+        },
+        body: log.body,
+        body_refs: log.body_refs,
+    })
+}
+
+fn ton_log_from_dto(log: dtos::TonLog) -> Result<TonLog, ConversionError> {
+    Ok(TonLog {
+        from_address: TonAddress {
+            workchain: ton_workchain_from_dto(log.from_address.workchain)?,
+            hash: log.from_address.hash,
+        },
+        body: log.body,
+        body_refs: log.body_refs,
+    })
+}
+
+impl TryFrom<TonExtractedValue> for dtos::TonExtractedValue {
+    type Error = ConversionError;
+    fn try_from(value: TonExtractedValue) -> Result<Self, Self::Error> {
         match value {
-            // The inspector's `TonLog` is the contract DTO type, so this is a
-            // direct passthrough.
-            TonExtractedValue::Log(log) => dtos::TonExtractedValue::Log(log),
+            TonExtractedValue::Log(log) => Ok(dtos::TonExtractedValue::Log(ton_log_to_dto(log)?)),
         }
     }
 }
@@ -350,7 +392,7 @@ impl TryFrom<dtos::TonExtractedValue> for TonExtractedValue {
     type Error = ConversionError;
     fn try_from(value: dtos::TonExtractedValue) -> Result<Self, Self::Error> {
         match value {
-            dtos::TonExtractedValue::Log(log) => Ok(TonExtractedValue::Log(log)),
+            dtos::TonExtractedValue::Log(log) => Ok(TonExtractedValue::Log(ton_log_from_dto(log)?)),
             _ => Err(ConversionError::UnsupportedVariant {
                 context: "TonExtractedValue",
             }),
@@ -358,9 +400,10 @@ impl TryFrom<dtos::TonExtractedValue> for TonExtractedValue {
     }
 }
 
-impl From<TonExtractedValue> for dtos::ExtractedValue {
-    fn from(value: TonExtractedValue) -> Self {
-        dtos::ExtractedValue::TonExtractedValue(value.into())
+impl TryFrom<TonExtractedValue> for dtos::ExtractedValue {
+    type Error = ConversionError;
+    fn try_from(value: TonExtractedValue) -> Result<Self, Self::Error> {
+        Ok(dtos::ExtractedValue::TonExtractedValue(value.try_into()?))
     }
 }
 
@@ -601,8 +644,8 @@ mod tests {
 
     #[test]
     fn ton_extracted_value_roundtrip() {
-        let log = dtos::TonLog {
-            from_address: dtos::TonAddress {
+        let log = TonLog {
+            from_address: TonAddress {
                 workchain: 0,
                 hash: dtos::Hash256([0xaa; 32]),
             },
@@ -610,8 +653,23 @@ mod tests {
             body_refs: vec![dtos::Hash256([0x01; 32])].try_into().unwrap(),
         };
         let inspector = TonExtractedValue::Log(log);
-        let contract = dtos::TonExtractedValue::from(inspector.clone());
+        let contract = dtos::TonExtractedValue::try_from(inspector.clone()).unwrap();
         let back = TonExtractedValue::try_from(contract).unwrap();
         assert_eq!(inspector, back);
+    }
+
+    #[test]
+    fn ton_extracted_value_rejects_unsupported_workchain() {
+        // A non-basechain workchain has no inspector→contract mapping.
+        let log = TonLog {
+            from_address: TonAddress {
+                workchain: -1,
+                hash: dtos::Hash256([0xaa; 32]),
+            },
+            body: dtos::TonCellBody::new(vec![].try_into().unwrap(), 0).unwrap(),
+            body_refs: vec![].try_into().unwrap(),
+        };
+        let result = dtos::TonExtractedValue::try_from(TonExtractedValue::Log(log));
+        assert_matches!(result, Err(ConversionError::UnsupportedVariant { .. }));
     }
 }

@@ -24,7 +24,7 @@ use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
     Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
     SupportedForeignChains, TonAddress, TonCellBody, TonExtractedValue, TonExtractor, TonFinality,
-    TonLog, TonRpcRequest, TonTxId,
+    TonLog, TonRpcRequest, TonTxId, TonWorkchain,
 };
 use near_mpc_contract_interface::{
     method_names,
@@ -802,7 +802,7 @@ pub fn bogus_ton_log_extracted_value() -> Vec<ExtractedValue> {
     vec![ExtractedValue::TonExtractedValue(TonExtractedValue::Log(
         TonLog {
             from_address: TonAddress {
-                workchain: 0,
+                workchain: TonWorkchain::Basechain,
                 hash: Hash256([1; 32]),
             },
             body: TonCellBody::new(vec![].try_into().unwrap(), 0).unwrap(),
@@ -857,7 +857,7 @@ pub fn ton_request() -> ForeignChainRpcRequest {
         extractors: vec![TonExtractor::Log { message_index: 0 }],
         finality: TonFinality::MasterchainIncluded,
         account: TonAddress {
-            workchain: 0,
+            workchain: TonWorkchain::Basechain,
             hash: Hash256([1; 32]),
         },
     })

@@ -14,13 +14,13 @@ use foreign_chain_inspector::ton::TonInspectionError;
 use foreign_chain_inspector::ton::inspector::TonInspector;
 use foreign_chain_inspector::ton::rpc_client::{ReqwestTonClient, build_ton_http_client};
 use foreign_chain_inspector::ton::types::{
-    TonExtractedValue, TonExtractor, TonFinality, TonTransactionId,
+    TonAddress, TonExtractedValue, TonExtractor, TonFinality, TonLog, TonTransactionId,
 };
 use foreign_chain_inspector::{
     ForeignChainInspectionError, ForeignChainInspector, RpcAuthentication,
 };
 use httpmock::prelude::*;
-use near_mpc_contract_interface::types::{Hash256, TonAddress, TonCellBody, TonLog};
+use near_mpc_contract_interface::types::{Hash256, TonCellBody};
 use serde_json::{Value, json};
 use tonlib_core::cell::{ArcCell, BagOfCells, Cell};
 

@@ -4621,7 +4621,7 @@ expression: abi
             },
             "workchain": {
               "type": "integer",
-              "format": "int32"
+              "format": "int8"
             }
           }
         },

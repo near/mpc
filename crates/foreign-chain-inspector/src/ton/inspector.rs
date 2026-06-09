@@ -1,10 +1,12 @@
-use super::types::{TonExtractedValue, TonExtractor, TonFinality, TonTransactionId};
+use super::types::{
+    TonAddress, TonExtractedValue, TonExtractor, TonFinality, TonLog, TonTransactionId,
+};
 use super::{TonInspectionError, empty_body, normalize_body_boc};
 use crate::ton::rpc_client::TonRpcClient;
 use crate::{ForeignChainInspectionError, ForeignChainInspector};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use foreign_chain_rpc_interfaces::ton::{TonMessage, TonTransaction};
-use near_mpc_contract_interface::types::{Hash256, TonAddress, TonLog};
+use near_mpc_contract_interface::types::Hash256;
 use tonlib_core::types::TonAddress as RpcTonAddress;
 
 /// The only TON workchain supported in v1: the basechain. The masterchain
@@ -192,32 +194,36 @@ fn extract_value(
             let msg = ext_out_msgs
                 .get(*message_index)
                 .ok_or(ForeignChainInspectionError::LogIndexOutOfBounds)?;
-            // Defense in depth: the filter should have already dropped
-            // non-ext-out messages. A non-`None` destination here would be a
-            // filter bug, not a user error — report it precisely rather than
-            // as a cell error downstream.
-            if msg.destination.is_some() {
-                return Err(TonInspectionError::NotAnExtOutMessage {
-                    index: *message_index as u64,
-                }
-                .into());
-            }
+            // `ordered_ext_out_msgs` only yields destination-less (ext-out)
+            // messages, so this always holds; assert it in debug builds rather
+            // than carrying an unreachable error branch into production.
+            debug_assert!(
+                msg.destination.is_none(),
+                "ordered_ext_out_msgs must only yield ext-out messages",
+            );
 
-            let body_b64 = msg
-                .message_content
-                .as_ref()
-                .map(|c| c.body.as_str())
-                .unwrap_or_default();
+            // A missing `message_content` is the provider omitting data, which
+            // is not the same as an explicitly empty body cell — treating it as
+            // empty would let the network sign an empty log in place of the
+            // real one. Reject it; only an explicit empty `body` maps to
+            // `empty_body()`.
+            let content =
+                msg.message_content
+                    .as_ref()
+                    .ok_or(TonInspectionError::MessageMissingContent {
+                        index: *message_index,
+                    })?;
 
-            // Empty body is a valid ext-out (rare but permitted): treat it as a
-            // zero-bit cell with no references.
-            let (body, body_refs) = if body_b64.is_empty() {
+            let (body, body_refs) = if content.body.is_empty() {
                 empty_body().map_err(TonInspectionError::from)?
             } else {
-                normalize_body_boc(body_b64).map_err(TonInspectionError::from)?
+                normalize_body_boc(&content.body).map_err(TonInspectionError::from)?
             };
 
             Ok(TonExtractedValue::Log(TonLog {
+                // Carry the request's workchain through unchanged; mapping it to
+                // the contract's `TonWorkchain` enum happens at the conversion
+                // boundary, not here.
                 from_address: TonAddress {
                     workchain,
                     hash: Hash256(*expected_account_hash),
@@ -715,5 +721,53 @@ mod tests {
             err,
             ForeignChainInspectionError::Ton(TonInspectionError::RpcError(_))
         );
+    }
+
+    #[tokio::test]
+    async fn extract__should_reject_when_ext_out_has_no_message_content() {
+        // A missing `message_content` is the provider omitting data, not an
+        // empty log; it must be rejected rather than signed as an empty body.
+        let mut tx = happy_tx();
+        tx.out_msgs[0].message_content = None;
+        let inspector = inspector_from_tx(tx);
+
+        let err = inspector
+            .extract(
+                tx_id(),
+                TonFinality::MasterchainIncluded,
+                vec![TonExtractor::Log { message_index: 0 }],
+            )
+            .await
+            .unwrap_err();
+        assert_matches!(
+            err,
+            ForeignChainInspectionError::Ton(TonInspectionError::MessageMissingContent {
+                index: 0
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn extract__should_extract_empty_body_when_message_content_body_is_empty() {
+        // An explicitly empty `body` string is the provider affirming the body
+        // is empty, so it maps to a zero-bit cell with no references.
+        let mut tx = happy_tx();
+        tx.out_msgs[0].message_content = Some(TonCellBoc {
+            body: String::new(),
+        });
+        let inspector = inspector_from_tx(tx);
+
+        let values = inspector
+            .extract(
+                tx_id(),
+                TonFinality::MasterchainIncluded,
+                vec![TonExtractor::Log { message_index: 0 }],
+            )
+            .await
+            .unwrap();
+        assert_eq!(values.len(), 1);
+        let TonExtractedValue::Log(log) = &values[0];
+        assert_eq!(log.body, cell_body(vec![], 0));
+        assert!(log.body_refs.is_empty());
     }
 }

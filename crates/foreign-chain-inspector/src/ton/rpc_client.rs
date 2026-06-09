@@ -94,10 +94,11 @@ impl TonRpcClient for ReqwestTonClient {
         account_hash: &[u8; 32],
         tx_hash_hex: &str,
     ) -> Result<GetTransactionsResponse, TonRpcError> {
-        // The v3 API treats `account` and `hash` case-insensitively, but MPC
-        // nodes compare each other's RPC responses byte-for-byte — so all
-        // nodes must send the identical lowercase form to get identical
-        // responses.
+        // The v3 API treats `account` and `hash` case-insensitively. We build a
+        // canonical lowercase form (hex of the raw bytes) so every node issues
+        // a byte-identical request and providers/caches behave deterministically.
+        // Cross-node consensus itself is reached on the extracted `TonLog`
+        // (canonicalized via `normalize_body_boc`), not on the raw response.
         let account = format_ton_account(workchain, account_hash);
         let url = build_get_transactions_url(&self.base_url, &account, tx_hash_hex);
 

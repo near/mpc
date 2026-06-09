@@ -44,8 +44,8 @@ pub enum TonInspectionError {
     #[error("TON transaction hash mismatch: request asked for {expected}, RPC returned {got}")]
     HashMismatch { expected: String, got: String },
 
-    #[error("TON message at index {index} is not an ext-out message")]
-    NotAnExtOutMessage { index: u64 },
+    #[error("TON ext-out message at index {index} has no message content")]
+    MessageMissingContent { index: usize },
 
     #[error(
         "TON workchain {got} is not supported in v1 (only workchain 0 / basechain is supported)"

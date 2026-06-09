@@ -315,6 +315,57 @@ pub struct TonRpcRequest {
 )]
 pub struct TonTxId(#[serde_as(as = "Hex")] pub [u8; 32]);
 
+/// TON workchain id. Only the basechain (workchain `0`) is supported; modelling
+/// it as an enum lets the contract reject any unsupported workchain at
+/// deserialization time, rather than accepting an arbitrary `i8` and validating
+/// deep in request handling.
+///
+/// Serialized as an `i8` discriminant (matching the TON `addr_std`
+/// `workchain_id:int8`), so the wire form stays a plain number: JSON `0` and a
+/// single Borsh byte. The `JsonSchema` impl delegates to `i8` because schemars
+/// doesn't understand `serde_repr`; keep schema and serialization in sync so the
+/// ABI snapshot test captures breaking changes.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    serde_repr::Serialize_repr,
+    serde_repr::Deserialize_repr,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(borsh::BorshSchema)
+)]
+#[non_exhaustive]
+// Workchain is represented as i8 according to TON spec
+#[repr(i8)]
+#[borsh(use_discriminant = true)]
+pub enum TonWorkchain {
+    Basechain = 0,
+}
+
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+impl schemars::JsonSchema for TonWorkchain {
+    fn schema_name() -> String {
+        i8::schema_name()
+    }
+
+    fn is_referenceable() -> bool {
+        false
+    }
+
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        i8::json_schema(generator)
+    }
+}
+
 #[derive(
     Debug,
     Clone,
@@ -333,7 +384,7 @@ pub struct TonTxId(#[serde_as(as = "Hex")] pub [u8; 32]);
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct TonAddress {
-    pub workchain: i8,
+    pub workchain: TonWorkchain,
     pub hash: Hash256,
 }
 
@@ -1553,7 +1604,7 @@ mod tests {
         ForeignChainRpcRequest::Ton(TonRpcRequest {
             tx_id: TonTxId([0; 32]),
             account: TonAddress {
-                workchain: 0,
+                workchain: TonWorkchain::Basechain,
                 hash: Hash256([0; 32]),
             },
             finality: TonFinality::MasterchainIncluded,
@@ -1642,7 +1693,7 @@ mod tests {
             request: ForeignChainRpcRequest::Ton(TonRpcRequest {
                 tx_id: TonTxId([0x99; 32]),
                 account: TonAddress {
-                    workchain: 0,
+                    workchain: TonWorkchain::Basechain,
                     hash: Hash256([0xaa; 32]),
                 },
                 finality: TonFinality::MasterchainIncluded,
@@ -1651,7 +1702,7 @@ mod tests {
             values: vec![ExtractedValue::TonExtractedValue(TonExtractedValue::Log(
                 TonLog {
                     from_address: TonAddress {
-                        workchain: 0,
+                        workchain: TonWorkchain::Basechain,
                         hash: Hash256([0xaa; 32]),
                     },
                     body: TonCellBody::new(vec![0xde, 0xad, 0xbe, 0xef].try_into().unwrap(), 32)
@@ -1673,7 +1724,7 @@ mod tests {
     fn ton_log_with_body(body_bits: Vec<u8>, body_bit_length: u16) -> TonLog {
         TonLog {
             from_address: TonAddress {
-                workchain: 0,
+                workchain: TonWorkchain::Basechain,
                 hash: Hash256([0xaa; 32]),
             },
             body: TonCellBody::new(body_bits.try_into().unwrap(), body_bit_length).unwrap(),
@@ -1795,7 +1846,7 @@ mod tests {
                 request: ForeignChainRpcRequest::Ton(TonRpcRequest {
                     tx_id: TonTxId([0x99; 32]),
                     account: TonAddress {
-                        workchain: 0,
+                        workchain: TonWorkchain::Basechain,
                         hash: Hash256([0xaa; 32]),
                     },
                     finality: TonFinality::MasterchainIncluded,
