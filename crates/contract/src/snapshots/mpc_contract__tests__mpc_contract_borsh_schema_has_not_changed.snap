@@ -120,16 +120,6 @@ BorshSchemaContainer {
                 ],
             ),
         },
-        "AllowedProviders": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "entries",
-                        "IterableMap",
-                    ),
-                ],
-            ),
-        },
         "AttemptId": Struct {
             fields: UnnamedFields(
                 [
@@ -372,20 +362,6 @@ BorshSchemaContainer {
             fields: UnnamedFields(
                 [
                     "u64",
-                ],
-            ),
-        },
-        "ForeignChainRpcWhitelist": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "entries",
-                        "AllowedProviders",
-                    ),
-                    (
-                        "votes",
-                        "ProviderVotes",
-                    ),
                 ],
             ),
         },
@@ -709,11 +685,7 @@ BorshSchemaContainer {
                         "Metrics",
                     ),
                     (
-                        "foreign_chain_rpc_whitelist",
-                        "ForeignChainRpcWhitelist",
-                    ),
-                    (
-                        "foreign_chain_availability",
+                        "foreign_chains",
                         "Lazy",
                     ),
                 ],
@@ -943,16 +915,6 @@ BorshSchemaContainer {
         },
         "Protocol__Frost": Struct {
             fields: Empty,
-        },
-        "ProviderVotes": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "pending",
-                        "Votes<(AuthenticatedParticipantId, ForeignChain)>",
-                    ),
-                ],
-            ),
         },
         "PublicKey": Struct {
             fields: NamedFields(
@@ -1256,20 +1218,6 @@ BorshSchemaContainer {
                     (
                         "values",
                         "IndexMap",
-                    ),
-                ],
-            ),
-        },
-        "Votes<(AuthenticatedParticipantId, ForeignChain)>": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "proposal_by_voter",
-                        "IterableMap",
-                    ),
-                    (
-                        "votes_by_proposal",
-                        "IterableMap",
                     ),
                 ],
             ),

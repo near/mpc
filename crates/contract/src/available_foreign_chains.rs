@@ -4,35 +4,46 @@ use near_mpc_contract_interface::types as dtos;
 use near_sdk::near;
 use near_sdk::store::{IterableMap, LookupMap};
 
+use crate::foreign_chain_rpc::ForeignChainRpcWhitelist;
 use crate::storage_keys::StorageKey;
 
-/// Cached available foreign-chain set and the per-node coverage map that feeds it.
+/// All foreign-chain state: the RPC provider whitelist, the per-node config reports, and the
+/// cached available-chain set derived from them. Stored behind `Lazy<>` in `MpcContract` so it
+/// is only deserialized when foreign-chain methods are called.
 #[near(serializers=[borsh])]
 #[derive(Debug)]
-pub(crate) struct ForeignChainAvailability {
+pub(crate) struct ForeignChainsMetadata {
+    pub(crate) rpc_whitelist: ForeignChainRpcWhitelist,
     pub(crate) available_foreign_chains: dtos::AvailableForeignChains,
-    pub(crate) available_foreign_chains_by_node:
+    pub(crate) foreign_chains_configs:
         IterableMap<dtos::Ed25519PublicKey, dtos::ForeignChainsConfig>,
     /// Reverse map from account ID to its most-recently registered TLS key, used to remove
-    /// stale `available_foreign_chains_by_node` entries when a node rotates its TLS key.
+    /// stale `foreign_chains_configs` entries when a node rotates its TLS key.
     tls_key_by_account: LookupMap<dtos::AccountId, dtos::Ed25519PublicKey>,
 }
 
-impl Default for ForeignChainAvailability {
+impl Default for ForeignChainsMetadata {
     fn default() -> Self {
         Self {
+            rpc_whitelist: Default::default(),
             available_foreign_chains: Default::default(),
-            available_foreign_chains_by_node: IterableMap::new(
-                StorageKey::AvailableForeignChainsByNode,
-            ),
+            foreign_chains_configs: IterableMap::new(StorageKey::AvailableForeignChainsByNode),
             tls_key_by_account: LookupMap::new(StorageKey::TlsKeyByAccount),
         }
     }
 }
 
-impl ForeignChainAvailability {
-    /// Registers `chains` for the given account, keyed by `tls_key`. If the account previously
-    /// registered with a different TLS key, the stale entry is removed first.
+impl ForeignChainsMetadata {
+    /// Creates a new instance carrying over an existing `rpc_whitelist`; all other fields default.
+    pub(crate) fn with_rpc_whitelist(rpc_whitelist: ForeignChainRpcWhitelist) -> Self {
+        Self {
+            rpc_whitelist,
+            ..Default::default()
+        }
+    }
+
+    /// Registers `foreign_chains_config` for the given account, keyed by `tls_key`. If the
+    /// account previously registered with a different TLS key, the stale entry is removed first.
     pub(crate) fn register(
         &mut self,
         account_id: dtos::AccountId,
@@ -43,17 +54,16 @@ impl ForeignChainAvailability {
             && *old_key != tls_key
         {
             let old_key = old_key.clone();
-            self.available_foreign_chains_by_node.remove(&old_key);
+            self.foreign_chains_configs.remove(&old_key);
         }
         self.tls_key_by_account.insert(account_id, tls_key.clone());
-        self.available_foreign_chains_by_node
-            .insert(tls_key, foreign_chains_config);
+        self.foreign_chains_configs.insert(tls_key, foreign_chains_config);
     }
 
     pub(crate) fn snapshot_by_node(
         &self,
     ) -> BTreeMap<dtos::Ed25519PublicKey, dtos::ForeignChainsConfig> {
-        self.available_foreign_chains_by_node
+        self.foreign_chains_configs
             .iter()
             .map(|(id, chains)| (id.clone(), chains.clone()))
             .collect()

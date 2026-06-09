@@ -16,7 +16,7 @@ use near_sdk::{
 
 use crate::{
     Config, SupportedForeignChainsByNode,
-    available_foreign_chains::ForeignChainAvailability,
+    available_foreign_chains::ForeignChainsMetadata,
     foreign_chain_rpc::ForeignChainRpcWhitelist,
     node_migrations::NodeMigrations,
     primitives::{
@@ -66,12 +66,12 @@ impl From<MpcContract> for crate::MpcContract {
             accept_requests: old.accept_requests,
             node_migrations: old.node_migrations,
             metrics: old.metrics,
-            foreign_chain_rpc_whitelist: old.foreign_chain_rpc_whitelist,
-            // New in this revision; self-populates on the first
-            // `register_foreign_chains_config` after upgrade.
-            foreign_chain_availability: Lazy::new(
+            // New in this revision; the whitelist is carried over from the old state. The
+            // per-node configs self-populate on the first `register_foreign_chains_config`
+            // after upgrade.
+            foreign_chains: Lazy::new(
                 StorageKey::ForeignChainAvailability,
-                ForeignChainAvailability::default(),
+                ForeignChainsMetadata::with_rpc_whitelist(old.foreign_chain_rpc_whitelist),
             ),
         }
     }
