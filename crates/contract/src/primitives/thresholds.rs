@@ -14,7 +14,7 @@ const MIN_THRESHOLD_ABSOLUTE: u64 = 2;
 /// (`participants`) and the cryptographic `threshold`. This is the stored,
 /// always-current shape. Per-domain reconstruction-threshold *proposals* are
 /// carried separately by [`ProposedThresholdParameters`], so this type can
-/// never hold a meaningless overlay.
+/// never hold meaningless pending threshold updates.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct ThresholdParameters {
@@ -169,15 +169,16 @@ impl ThresholdParameters {
 }
 
 /// A proposed set of threshold parameters submitted to `vote_new_parameters`:
-/// the new [`ThresholdParameters`] plus an optional per-domain
-/// `ReconstructionThreshold` overlay for the resharing it would trigger.
+/// the new [`ThresholdParameters`] plus an optional map of per-domain
+/// `ReconstructionThreshold` updates for the resharing it would trigger.
 ///
-/// The overlay is meaningful only while a proposal is in flight — it is applied
-/// to the [`super::domain::DomainRegistry`] when resharing completes and the
-/// stored [`ThresholdParameters`] is taken from [`Self::parameters`], so the
-/// overlay is structurally dropped rather than scrubbed at runtime.
+/// These threshold updates are meaningful only while a proposal is in flight —
+/// they are applied to the [`super::domain::DomainRegistry`] when resharing
+/// completes and the stored [`ThresholdParameters`] is taken from
+/// [`Self::parameters`], so they are structurally dropped rather than scrubbed
+/// at runtime.
 ///
-/// An empty overlay means "keep current per-domain thresholds"; a populated map
+/// An empty map means "keep current per-domain thresholds"; a populated map
 /// must reference only existing domains (validated in
 /// `RunningContractState::process_new_parameters_proposal`).
 #[near(serializers=[borsh, json])]
@@ -200,7 +201,7 @@ impl ProposedThresholdParameters {
     }
 
     /// Builder-style helper: replace the per-domain reconstruction-threshold
-    /// overlay. Convenient for constructing proposals (notably in tests).
+    /// updates. Convenient for constructing proposals (notably in tests).
     #[cfg(test)]
     pub fn with_per_domain_thresholds(
         mut self,
@@ -215,7 +216,7 @@ impl ProposedThresholdParameters {
         &self.parameters
     }
 
-    /// The proposed per-domain reconstruction-threshold overlay.
+    /// The proposed per-domain reconstruction-threshold updates.
     pub fn per_domain_thresholds(&self) -> &BTreeMap<DomainId, ReconstructionThreshold> {
         &self.per_domain_thresholds
     }

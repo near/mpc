@@ -58,8 +58,9 @@ pub fn gen_valid_params_proposal(params: &ThresholdParameters) -> ProposedThresh
 
     let threshold = ((new_participants.len() as f64) * 0.6).ceil() as u64;
     let parameters = ThresholdParameters::new(new_participants, Threshold::new(threshold)).unwrap();
-    // Valid proposals carry an empty (no-change) per-domain overlay by default;
-    // tests that exercise overlays attach one via `with_per_domain_thresholds`.
+    // Valid proposals carry an empty (no-change) set of per-domain threshold
+    // updates by default; tests that exercise them attach a map via
+    // `with_per_domain_thresholds`.
     ProposedThresholdParameters::new(parameters, BTreeMap::new())
 }
 

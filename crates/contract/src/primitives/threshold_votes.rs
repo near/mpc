@@ -4,7 +4,7 @@ use near_sdk::{log, near};
 use std::collections::BTreeMap;
 
 /// Tracks votes for proposed threshold parameters (new participants, threshold,
-/// and per-domain overlay). Each current participant can maintain one vote.
+/// and per-domain threshold updates). Each current participant can maintain one vote.
 // TODO(#2825): Replace with Votes<AuthenticatedAccountId> from votes.rs
 // once this type is moved out of RunningContractState (which requires Clone + PartialEq + JSON).
 #[near(serializers=[borsh, json])]
@@ -108,7 +108,7 @@ mod tests {
 
     #[test]
     #[expect(non_snake_case)]
-    fn vote__should_tally_distinct_per_domain_overlays_separately() {
+    fn vote__should_tally_distinct_per_domain_threshold_updates_separately() {
         // Given two voters and two proposals identical except for per_domain_thresholds
         let mut participants = Participants::default();
         let (p0, p1) = (gen_participant(0), gen_participant(1));
@@ -128,12 +128,12 @@ mod tests {
         };
 
         let base = gen_proposed_threshold_params(30);
-        let mut overlay_a = BTreeMap::new();
-        overlay_a.insert(DomainId(0), ReconstructionThreshold::new(2));
-        let mut overlay_b = BTreeMap::new();
-        overlay_b.insert(DomainId(0), ReconstructionThreshold::new(3));
-        let proposal_a = base.clone().with_per_domain_thresholds(overlay_a);
-        let proposal_b = base.with_per_domain_thresholds(overlay_b);
+        let mut updates_a = BTreeMap::new();
+        updates_a.insert(DomainId(0), ReconstructionThreshold::new(2));
+        let mut updates_b = BTreeMap::new();
+        updates_b.insert(DomainId(0), ReconstructionThreshold::new(3));
+        let proposal_a = base.clone().with_per_domain_thresholds(updates_a);
+        let proposal_b = base.with_per_domain_thresholds(updates_b);
 
         // When each voter casts a different proposal
         let mut votes = ThresholdParametersVotes::default();

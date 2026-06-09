@@ -164,7 +164,8 @@ pub fn gen_threshold_params(max_n: usize) -> ThresholdParameters {
 }
 
 /// Like [`gen_threshold_params`] but wrapped as a proposal with an empty
-/// (no-change) per-domain overlay — the shape `vote_new_parameters` accepts.
+/// (no-change) set of per-domain threshold updates — the shape
+/// `vote_new_parameters` accepts.
 pub fn gen_proposed_threshold_params(max_n: usize) -> ProposedThresholdParameters {
     ProposedThresholdParameters::new(gen_threshold_params(max_n), BTreeMap::new())
 }

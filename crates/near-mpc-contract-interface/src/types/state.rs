@@ -146,43 +146,21 @@ pub struct ThresholdParameters {
 
 /// A proposed set of threshold parameters submitted to `vote_new_parameters`.
 /// Carries the proposed [`ThresholdParameters`] (participant set and threshold)
-/// plus an optional per-domain `ReconstructionThreshold` overlay for the
+/// plus an optional map of per-domain `ReconstructionThreshold` updates for the
 /// resharing it would trigger.
+///
+/// `per_domain_thresholds` proposes a new threshold for the listed domains; an
+/// empty map keeps the current ones. A populated map must reference only
+/// existing domains (validated by the contract), is applied to the
+/// `DomainRegistry` when resharing completes, and never persists onto the
+/// stored [`ThresholdParameters`].
 //
-// `per_domain_thresholds` proposes an updated `ReconstructionThreshold` for the
-// listed domains. An empty map means "keep current per-domain thresholds"; a
-// populated map must reference only existing domains (validated by the
-// contract). The overlay is applied to the `DomainRegistry` when resharing
-// completes and never persists onto the stored `ThresholdParameters`.
-//
-// ## Wire contract and the `serde(flatten)` migration path
-//
-// The frozen wire contract is the flat object `{ participants, threshold,
-// per_domain_thresholds }` (and the positional borsh layout `[participants,
-// threshold, per_domain_thresholds]`). `serde(flatten)` is merely *how* that
-// flat JSON is produced today — by reusing `ThresholdParameters` as a named
-// sub-field — and is an implementation detail, not part of the contract.
-// `serde(default)` parses a payload lacking `per_domain_thresholds` as empty,
-// so pre-3.11 callers keep submitting `{ participants, threshold }` unchanged.
-//
-// To drop `serde(flatten)` later (e.g. after 3.12, to allow
-// `#[serde(deny_unknown_fields)]` or to escape flatten's `Content`-buffering
-// quirks), inline the two `parameters` fields:
-//
-//     pub participants: Participants,
-//     pub threshold: Threshold,
-//     #[serde(default)]
-//     pub per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
-//
-// That is byte-identical for JSON, borsh, and the generated ABI: borsh is
-// positional and ignores serde attributes, and the inlined JSON keys match. So
-// it needs no compat struct and no migration — only the conversion impls in
-// `dto_mapping.rs` that read `.parameters` must follow the field move. The
-// `proposed_threshold_parameters__*` wire-lock tests below pin this shape so a
-// non-equivalent change fails loudly. Changing the *shape itself* (e.g. nesting
-// the params under a `parameters` key) WOULD be wire-breaking and would instead
-// require a compat deserializer accepting both the old flat and new nested
-// forms across a transition window.
+// Wire contract: the flat object `{ participants, threshold,
+// per_domain_thresholds }` (positional in borsh). `serde(flatten)` is just how
+// that flat shape is produced today; it can be dropped later by inlining the
+// two `parameters` fields, which is byte-identical for JSON/borsh/ABI — only
+// the `.parameters` readers in `dto_mapping.rs` would need to follow the move.
+// The `proposed_threshold_parameters__*` tests below lock the wire shape.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -193,7 +171,7 @@ pub struct ProposedThresholdParameters {
     pub parameters: ThresholdParameters,
     // TODO(#3495): drop `serde(default)` after the 3.12 release. It exists only
     // so pre-3.11 `vote_new_parameters` payloads (which omit this field) still
-    // deserialize as an empty overlay; once all callers populate it explicitly
+    // deserialize as an empty map; once all callers populate it explicitly
     // the field should be mandatory so legacy/malformed payloads fail loudly.
     #[serde(default)]
     pub per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
@@ -299,7 +277,7 @@ pub struct ResharingContractState {
     pub reshared_keys: Vec<KeyForDomain>,
     pub resharing_key: KeyEvent,
     pub cancellation_requests: HashSet<AuthenticatedAccountId>,
-    /// Per-domain `ReconstructionThreshold` overlay carried from the accepted
+    /// Per-domain `ReconstructionThreshold` updates carried from the accepted
     /// proposal. Applied to the `DomainRegistry` when resharing completes.
     #[serde(default)]
     pub per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
@@ -477,7 +455,7 @@ mod tests {
         assert_eq!(output, "Contract is not initialized\n");
     }
 
-    /// A proposal carrying a non-empty per-domain overlay, used by the
+    /// A proposal carrying non-empty per-domain threshold updates, used by the
     /// `ProposedThresholdParameters` wire-lock tests.
     fn sample_proposal() -> ProposedThresholdParameters {
         let participants = Participants {
@@ -510,7 +488,7 @@ mod tests {
     #[test]
     #[expect(non_snake_case)]
     fn proposed_threshold_parameters__serializes_to_flat_keys() {
-        // Given a proposal carrying a non-empty per-domain overlay.
+        // Given a proposal carrying non-empty per-domain threshold updates.
         let proposal = sample_proposal();
 
         // When serialized to JSON.
@@ -531,13 +509,13 @@ mod tests {
 
     /// TODO(#3495): Pre-3.11 callers submit `{ participants, threshold }` with no
     /// `per_domain_thresholds`. `serde(default)` must keep parsing that as an
-    /// empty (no-change) overlay — the backward-compat guarantee that let the
+    /// empty (no-change) map — the backward-compat guarantee that let the
     /// field be added without a wire break. Removed alongside the
     /// `serde(default)` it guards.
     #[test]
     #[expect(non_snake_case)]
-    fn proposed_threshold_parameters__legacy_payload_omitting_overlay__parses_as_empty() {
-        // Given a legacy proposal value with the overlay field absent.
+    fn proposed_threshold_parameters__legacy_payload_omitting_field__parses_as_empty() {
+        // Given a legacy proposal value with the per_domain_thresholds field absent.
         let mut legacy = serde_json::to_value(sample_proposal()).unwrap();
         legacy
             .as_object_mut()
@@ -547,7 +525,7 @@ mod tests {
         // When deserialized.
         let parsed: ProposedThresholdParameters = serde_json::from_value(legacy).unwrap();
 
-        // Then the overlay defaults to empty.
+        // Then the per-domain threshold updates default to empty.
         assert!(parsed.per_domain_thresholds.is_empty());
     }
 
@@ -558,7 +536,7 @@ mod tests {
     #[test]
     #[expect(non_snake_case)]
     fn proposed_threshold_parameters__borsh_round_trips() {
-        // Given a proposal carrying a non-empty per-domain overlay.
+        // Given a proposal carrying non-empty per-domain threshold updates.
         let proposal = sample_proposal();
 
         // When borsh round-tripped.

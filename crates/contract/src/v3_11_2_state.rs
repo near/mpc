@@ -38,9 +38,9 @@ use crate::{
 /// between 3.11.2 and the current layout, so no shadow is needed for it — the
 /// real type decodes old bytes directly. Only the vote *value* type changed:
 /// votes now carry [`ProposedThresholdParameters`], which appends a
-/// `per_domain_thresholds` overlay. Borsh is positional, so old vote bytes are
-/// decoded into the real `ThresholdParameters` and mapped to a proposal with an
-/// empty (no-change) overlay.
+/// `per_domain_thresholds` map of threshold updates. Borsh is positional, so old
+/// vote bytes are decoded into the real `ThresholdParameters` and mapped to a
+/// proposal with an empty (no-change) map.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 struct OldThresholdParametersVotes {
     proposal_by_account: BTreeMap<AuthenticatedAccountId, ThresholdParameters>,
@@ -53,7 +53,7 @@ impl From<OldThresholdParametersVotes> for ThresholdParametersVotes {
                 .proposal_by_account
                 .into_iter()
                 // Pre-migration votes didn't carry per-domain thresholds, so the
-                // migrated proposal gets an empty (no-change) overlay.
+                // migrated proposal gets an empty (no-change) map.
                 .map(|(acc, params)| {
                     (
                         acc,
@@ -160,12 +160,13 @@ mod tests {
     /// in the OLD 3.11.2 layout (vote values are bare `ThresholdParameters`, with no
     /// `per_domain_thresholds`), decode it via [`OldThresholdParametersVotes`], run the
     /// real [`From`] migration, and assert each migrated vote becomes a
-    /// `ProposedThresholdParameters` carrying an empty (no-change) overlay.
+    /// `ProposedThresholdParameters` carrying an empty (no-change) map of
+    /// threshold updates.
     ///
     /// This exercises both the shadow's `BorshDeserialize` and the conversion impl, so
-    /// it fails if either the old layout or the overlay-defaulting logic regresses.
+    /// it fails if either the old layout or the empty-map-defaulting logic regresses.
     #[test]
-    fn old_threshold_parameter_votes__should_migrate_into_empty_overlay() {
+    fn old_threshold_parameter_votes__should_migrate_into_empty_threshold_updates() {
         // Given a participant set with one member installed as the signer, so we can
         // mint an `AuthenticatedAccountId` to key the vote by.
         let participants = gen_participants(NUM_PROTOCOLS);
@@ -190,7 +191,7 @@ mod tests {
         let migrated: ThresholdParametersVotes = decoded.into();
 
         // Then the single migrated vote retains the original threshold and gains an
-        // empty per-domain overlay.
+        // empty per-domain threshold-updates map.
         let proposal = migrated
             .proposal_by_account
             .get(&voter)

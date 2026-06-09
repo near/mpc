@@ -298,7 +298,7 @@ pub struct MpcVoteNewParametersCmd {
     /// The indices of the voters; leave empty to vote from every other participant.
     #[clap(long, value_delimiter = ',')]
     pub voters: Vec<usize>,
-    /// Optional per-domain reconstruction-threshold overlay, given as a
+    /// Optional per-domain reconstruction-threshold updates, given as a
     /// comma-separated list of `DOMAIN_ID:THRESHOLD` pairs (e.g.
     /// `--per-domain-threshold 0:6,1:5`).
     /// Omitting it preserves every domain's existing threshold; supplying it

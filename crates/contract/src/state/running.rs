@@ -89,8 +89,8 @@ impl RunningContractState {
         } else {
             // New parameters were proposed, but we have no keys, so directly
             // transition into Running state but bump the EpochId. With no
-            // domains the per-domain overlay has nothing to apply to and is
-            // dropped.
+            // domains the per-domain threshold updates have nothing to apply to
+            // and are dropped.
             *self = RunningContractState::new(
                 self.domains.clone(),
                 Keyset::new(self.keyset.epoch_id.next(), Vec::new()),
@@ -149,22 +149,22 @@ impl RunningContractState {
             .validate_incoming_proposal(proposal.parameters())?;
 
         // Validate effective per-domain thresholds against the proposed new
-        // participant count. Domains not present in the overlay keep their
-        // existing threshold; overlay entries override. An overlay entry
+        // participant count. Domains not present in the threshold updates keep
+        // their existing threshold; update entries override. An update entry
         // referencing an unknown domain ID is rejected.
         let new_num_participants = u64::try_from(proposal.participants().len()).map_err(|e| {
             ConversionError::DataConversion {
                 reason: format!("participant count does not fit in u64: {e}"),
             }
         })?;
-        let overlay = proposal.per_domain_thresholds();
-        // `with_overlaid_thresholds` re-runs this same guard at the final
+        let threshold_updates = proposal.per_domain_thresholds();
+        // `with_threshold_updates` re-runs this same guard at the final
         // resharing transition, so this is intentionally redundant. We check it
         // here too to fail fast at vote acceptance: the threshold-validation
-        // loop below iterates the existing domains (not the overlay keys), so
+        // loop below iterates the existing domains (not the update keys), so
         // without this guard an entry for an unknown domain ID would be
         // silently ignored now and only rejected at transition time.
-        for id in overlay.keys() {
+        for id in threshold_updates.keys() {
             if self.domains.get_domain_by_domain_id(*id).is_none() {
                 return Err(DomainError::UnknownDomainInProposal { domain_id: *id }.into());
             }
@@ -174,7 +174,7 @@ impl RunningContractState {
             .domains()
             .iter()
             .map(|domain| {
-                let effective_threshold = overlay
+                let effective_threshold = threshold_updates
                     .get(&domain.id)
                     .copied()
                     .unwrap_or(domain.reconstruction_threshold);
@@ -187,11 +187,12 @@ impl RunningContractState {
         for domain in &effective_domains {
             validate_domain_threshold(domain, new_num_participants)?;
         }
-        // 3.11-transition lock: the overlay can rewrite per-domain thresholds,
-        // so it could leave CaitSith domains with differing thresholds — which
-        // `vote_add_domains` forbids and the legacy `DBCol::Triple` mirror
-        // (#3292) requires. Fail fast here; `with_overlaid_thresholds` re-runs
-        // this same check at the final resharing transition.
+        // 3.11-transition lock: the threshold updates can rewrite per-domain
+        // thresholds, so they could leave CaitSith domains with differing
+        // thresholds — which `vote_add_domains` forbids and the legacy
+        // `DBCol::Triple` mirror (#3292) requires. Fail fast here;
+        // `with_threshold_updates` re-runs this same check at the final
+        // resharing transition.
         validate_caitsith_uniform_threshold(&effective_domains)?;
 
         // ensure the signer is a proposed participant
@@ -561,7 +562,7 @@ pub mod running_tests {
     use std::collections::BTreeMap;
 
     #[test]
-    fn process_new_parameters_proposal__should_accept_empty_per_domain_overlay() {
+    fn process_new_parameters_proposal__should_accept_empty_per_domain_threshold_updates() {
         // Given a running state where existing thresholds are valid under the
         // proposed participant count
         let mut state = gen_running_state(1);
@@ -591,21 +592,24 @@ pub mod running_tests {
         let res = state.vote_new_parameters(state.keyset.epoch_id.next(), &proposal);
 
         // Then the vote is recorded without error
-        assert!(res.is_ok(), "Expected accept with empty overlay: {res:?}");
+        assert!(
+            res.is_ok(),
+            "Expected accept with empty threshold updates: {res:?}"
+        );
     }
 
     #[test]
-    fn process_new_parameters_proposal__should_reject_overlay_with_unknown_domain_id() {
+    fn process_new_parameters_proposal__should_reject_threshold_update_with_unknown_domain_id() {
         // Given a running state with one domain
         let mut state = gen_running_state(1);
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
         let proposal = gen_valid_params_proposal(&state.parameters);
 
-        // When voting with an overlay referencing a non-existent domain ID
-        let mut overlay = BTreeMap::new();
-        overlay.insert(DomainId(9999), ReconstructionThreshold::new(2));
-        let proposal = proposal.with_per_domain_thresholds(overlay);
+        // When voting with a threshold update referencing a non-existent domain ID
+        let mut threshold_updates = BTreeMap::new();
+        threshold_updates.insert(DomainId(9999), ReconstructionThreshold::new(2));
+        let proposal = proposal.with_per_domain_thresholds(threshold_updates);
         let err = state
             .vote_new_parameters(state.keyset.epoch_id.next(), &proposal)
             .unwrap_err();
@@ -705,29 +709,29 @@ pub mod running_tests {
     }
 
     #[test]
-    fn process_new_parameters_proposal__should_apply_overlay_to_threshold_validation() {
+    fn process_new_parameters_proposal__should_apply_threshold_update_to_validation() {
         // Given a running state with one domain whose existing threshold would
-        // remain valid under the new participants, but the overlay swaps it
-        // for an invalid (too-low) value.
+        // remain valid under the new participants, but the threshold update
+        // swaps it for an invalid (too-low) value.
         let mut state = gen_running_state(1);
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
         let proposal = gen_valid_params_proposal(&state.parameters);
 
-        // When voting with an overlay that violates the universal lower bound
+        // When voting with a threshold update that violates the universal lower bound
         let domain_id = state.domains.domains()[0].id;
-        let mut overlay = BTreeMap::new();
-        overlay.insert(domain_id, ReconstructionThreshold::new(1));
-        let proposal = proposal.with_per_domain_thresholds(overlay);
+        let mut threshold_updates = BTreeMap::new();
+        threshold_updates.insert(domain_id, ReconstructionThreshold::new(1));
+        let proposal = proposal.with_per_domain_thresholds(threshold_updates);
         let err = state
             .vote_new_parameters(state.keyset.epoch_id.next(), &proposal)
             .unwrap_err();
 
-        // Then the overlay's value (not the stored value) is validated and rejected
+        // Then the updated value (not the stored value) is validated and rejected
         assert!(
             err.to_string()
                 .contains("Reconstruction threshold must be at least"),
-            "Expected ReconstructionThresholdTooLow on overlay value, got: {err}"
+            "Expected ReconstructionThresholdTooLow on updated value, got: {err}"
         );
     }
 

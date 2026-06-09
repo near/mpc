@@ -1605,7 +1605,7 @@ impl MpcContract {
                 .expect("Require valid threshold parameters"); // this should never happen.
                 current_params.validate_incoming_proposal(&threshold_parameters)?;
                 // TEE-driven resharing only changes the participant set, so the
-                // per-domain reconstruction-threshold overlay is empty.
+                // per-domain reconstruction-threshold updates map is empty.
                 let proposed_parameters =
                     ProposedThresholdParameters::new(threshold_parameters, BTreeMap::new());
                 let res = running_state.transition_to_resharing_no_checks(&proposed_parameters);

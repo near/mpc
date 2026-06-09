@@ -71,7 +71,7 @@ pub fn validate_domain_threshold(
     Ok(())
 }
 
-/// Enforces the 3.11-transition lock: every CaitSith domain (ForeignTx
+/// TODO(#3306): Enforces the 3.11-transition lock: every CaitSith domain (ForeignTx
 /// included) must share a single `reconstruction_threshold` so the legacy
 /// unprefixed `DBCol::Triple` mirror (#3292) can't collide. Domains using
 /// other protocols are unconstrained. The first CaitSith domain encountered
@@ -205,23 +205,24 @@ impl DomainRegistry {
     }
 
     /// Returns a new registry whose domains have their
-    /// `reconstruction_threshold` rewritten from `overlay`. Domain IDs in
-    /// `overlay` that are not present in the registry are rejected with
-    /// [`DomainError::UnknownDomainInProposal`]. Domains absent from
-    /// `overlay` retain their existing threshold. An empty overlay returns a
-    /// structurally identical clone.
+    /// `reconstruction_threshold` rewritten from `threshold_updates`, a sparse
+    /// map of the per-domain reconstruction thresholds a proposal wants to
+    /// change. Domain IDs in `threshold_updates` that are not present in the
+    /// registry are rejected with [`DomainError::UnknownDomainInProposal`].
+    /// Domains absent from `threshold_updates` retain their existing threshold.
+    /// An empty map returns a structurally identical clone (no change).
     ///
     /// The resulting registry is re-checked against the 3.11-transition lock
-    /// (see [`validate_caitsith_uniform_threshold`]): because the overlay can
-    /// rewrite per-domain thresholds, it could otherwise leave CaitSith
+    /// (see [`validate_caitsith_uniform_threshold`]): because the updates can
+    /// rewrite per-domain thresholds, they could otherwise leave CaitSith
     /// domains with differing thresholds. This is the authoritative chokepoint
     /// — no resharing transition can produce a registry that violates the
     /// invariant.
-    pub fn with_overlaid_thresholds(
+    pub fn with_threshold_updates(
         &self,
-        overlay: &BTreeMap<DomainId, ReconstructionThreshold>,
+        threshold_updates: &BTreeMap<DomainId, ReconstructionThreshold>,
     ) -> Result<DomainRegistry, Error> {
-        for id in overlay.keys() {
+        for id in threshold_updates.keys() {
             if !self.domains.iter().any(|d| d.id == *id) {
                 return Err(DomainError::UnknownDomainInProposal { domain_id: *id }.into());
             }
@@ -230,7 +231,7 @@ impl DomainRegistry {
             .domains
             .iter()
             .map(|d| {
-                let reconstruction_threshold = overlay
+                let reconstruction_threshold = threshold_updates
                     .get(&d.id)
                     .copied()
                     .unwrap_or(d.reconstruction_threshold);
@@ -645,8 +646,8 @@ pub mod tests {
     }
 
     #[test]
-    fn with_overlaid_thresholds__should_be_identity_when_overlay_is_empty() {
-        // Given a non-empty registry and an empty overlay
+    fn with_threshold_updates__should_be_identity_when_updates_is_empty() {
+        // Given a non-empty registry and no threshold updates
         let registry = registry_of(vec![
             DomainConfig {
                 id: DomainId(0),
@@ -661,18 +662,18 @@ pub mod tests {
                 purpose: DomainPurpose::Sign,
             },
         ]);
-        let overlay = BTreeMap::new();
+        let threshold_updates = BTreeMap::new();
 
-        // When applying the overlay
-        let result = registry.with_overlaid_thresholds(&overlay).unwrap();
+        // When applying the threshold updates
+        let result = registry.with_threshold_updates(&threshold_updates).unwrap();
 
         // Then the registry is structurally identical
         assert_eq!(result, registry);
     }
 
     #[test]
-    fn with_overlaid_thresholds__should_apply_per_domain_updates() {
-        // Given a registry with two domains and an overlay targeting one
+    fn with_threshold_updates__should_apply_per_domain_updates() {
+        // Given a registry with two domains and threshold updates targeting one
         let registry = registry_of(vec![
             DomainConfig {
                 id: DomainId(0),
@@ -687,11 +688,11 @@ pub mod tests {
                 purpose: DomainPurpose::Sign,
             },
         ]);
-        let mut overlay = BTreeMap::new();
-        overlay.insert(DomainId(0), ReconstructionThreshold::new(5));
+        let mut threshold_updates = BTreeMap::new();
+        threshold_updates.insert(DomainId(0), ReconstructionThreshold::new(5));
 
-        // When applying the overlay
-        let result = registry.with_overlaid_thresholds(&overlay).unwrap();
+        // When applying the threshold updates
+        let result = registry.with_threshold_updates(&threshold_updates).unwrap();
 
         // Then only the targeted domain's threshold changes
         assert_eq!(
@@ -705,19 +706,19 @@ pub mod tests {
     }
 
     #[test]
-    fn with_overlaid_thresholds__should_reject_unknown_domain_id() {
-        // Given a registry with one domain and an overlay referencing a different ID
+    fn with_threshold_updates__should_reject_unknown_domain_id() {
+        // Given a registry with one domain and a threshold update referencing a different ID
         let registry = registry_of(vec![DomainConfig {
             id: DomainId(0),
             protocol: Protocol::CaitSith,
             reconstruction_threshold: ReconstructionThreshold::new(3),
             purpose: DomainPurpose::Sign,
         }]);
-        let mut overlay = BTreeMap::new();
-        overlay.insert(DomainId(42), ReconstructionThreshold::new(5));
+        let mut threshold_updates = BTreeMap::new();
+        threshold_updates.insert(DomainId(42), ReconstructionThreshold::new(5));
 
-        // When applying the overlay
-        let err = registry.with_overlaid_thresholds(&overlay).unwrap_err();
+        // When applying the threshold updates
+        let err = registry.with_threshold_updates(&threshold_updates).unwrap_err();
 
         // Then unknown-domain guard rejects
         assert!(
@@ -727,10 +728,10 @@ pub mod tests {
     }
 
     #[test]
-    fn with_overlaid_thresholds__should_reject_overlay_that_diverges_caitsith_thresholds() {
+    fn with_threshold_updates__should_reject_updates_that_diverge_caitsith_thresholds() {
         // Given a registry with two CaitSith domains sharing one threshold
-        // (the 3.11-transition lock invariant) and an overlay that rewrites
-        // only one of them to a different value.
+        // (the 3.11-transition lock invariant) and threshold updates that
+        // rewrite only one of them to a different value.
         let registry = registry_of(vec![
             DomainConfig {
                 id: DomainId(0),
@@ -745,11 +746,11 @@ pub mod tests {
                 purpose: DomainPurpose::Sign,
             },
         ]);
-        let mut overlay = BTreeMap::new();
-        overlay.insert(DomainId(0), ReconstructionThreshold::new(5));
+        let mut threshold_updates = BTreeMap::new();
+        threshold_updates.insert(DomainId(0), ReconstructionThreshold::new(5));
 
-        // When applying the overlay
-        let err = registry.with_overlaid_thresholds(&overlay).unwrap_err();
+        // When applying the threshold updates
+        let err = registry.with_threshold_updates(&threshold_updates).unwrap_err();
 
         // Then the 3.11-transition lock rejects the divergence
         assert!(
@@ -759,9 +760,9 @@ pub mod tests {
     }
 
     #[test]
-    fn with_overlaid_thresholds__should_accept_overlay_that_keeps_caitsith_thresholds_uniform() {
-        // Given two CaitSith domains and a Frost domain, with an overlay
-        // that moves both CaitSith domains to the same new threshold.
+    fn with_threshold_updates__should_accept_updates_that_keep_caitsith_thresholds_uniform() {
+        // Given two CaitSith domains and a Frost domain, with threshold updates
+        // that move both CaitSith domains to the same new threshold.
         let registry = registry_of(vec![
             DomainConfig {
                 id: DomainId(0),
@@ -782,12 +783,12 @@ pub mod tests {
                 purpose: DomainPurpose::Sign,
             },
         ]);
-        let mut overlay = BTreeMap::new();
-        overlay.insert(DomainId(0), ReconstructionThreshold::new(5));
-        overlay.insert(DomainId(1), ReconstructionThreshold::new(5));
+        let mut threshold_updates = BTreeMap::new();
+        threshold_updates.insert(DomainId(0), ReconstructionThreshold::new(5));
+        threshold_updates.insert(DomainId(1), ReconstructionThreshold::new(5));
 
-        // When applying the overlay
-        let result = registry.with_overlaid_thresholds(&overlay).unwrap();
+        // When applying the threshold updates
+        let result = registry.with_threshold_updates(&threshold_updates).unwrap();
 
         // Then both CaitSith domains move together and Frost is untouched
         assert_eq!(

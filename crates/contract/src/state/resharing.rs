@@ -32,7 +32,7 @@ pub struct ResharingContractState {
     pub reshared_keys: Vec<KeyForDomain>,
     pub resharing_key: KeyEvent,
     pub cancellation_requests: HashSet<AuthenticatedAccountId>,
-    /// Per-domain `ReconstructionThreshold` overlay carried from the accepted
+    /// Per-domain `ReconstructionThreshold` updates carried from the accepted
     /// proposal. Applied to the [`DomainRegistry`](crate::primitives::domain::DomainRegistry)
     /// when resharing completes; empty means "keep current per-domain thresholds".
     pub per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
@@ -144,14 +144,14 @@ impl ResharingContractState {
                     self.resharing_key.proposed_parameters().clone(),
                 );
             } else {
-                // Resharing complete: fold the per-domain overlay into the
-                // registry and store the proposed parameters. The overlay lives
-                // only on this resharing state, so it is structurally dropped
+                // Resharing complete: fold the per-domain threshold updates into
+                // the registry and store the proposed parameters. The updates live
+                // only on this resharing state, so they are structurally dropped
                 // here rather than scrubbed off the stored parameters.
                 let new_domains = self
                     .previous_running_state
                     .domains
-                    .with_overlaid_thresholds(&self.per_domain_thresholds)?;
+                    .with_threshold_updates(&self.per_domain_thresholds)?;
                 return Ok(Some(RunningContractState::new(
                     new_domains,
                     Keyset::new(self.prospective_epoch_id(), self.reshared_keys.clone()),
@@ -422,7 +422,7 @@ pub mod tests {
             .subset(new_participants_1.len() - old_participants.len()..new_participants_1.len());
         let new_params_1 = ThresholdParameters::new(new_participants_1, new_threshold).unwrap();
         let new_params_2 = ThresholdParameters::new(new_participants_2, new_threshold).unwrap();
-        // Proposals carry an empty (no-change) per-domain overlay.
+        // Proposals carry an empty (no-change) set of per-domain threshold updates.
         let proposed_1 = ProposedThresholdParameters::new(new_params_1.clone(), BTreeMap::new());
         let proposed_2 = ProposedThresholdParameters::new(new_params_2.clone(), BTreeMap::new());
         state
@@ -487,10 +487,10 @@ pub mod tests {
     }
 
     /// On successful resharing transition, the proposal's
-    /// `per_domain_thresholds` overlay must be applied to the new
-    /// `DomainRegistry`. The overlay lives only on the proposal /
+    /// `per_domain_thresholds` updates must be applied to the new
+    /// `DomainRegistry`. The updates live only on the proposal /
     /// resharing state, so the stored `RunningContractState.parameters`
-    /// (a plain `ThresholdParameters`) cannot carry it at all.
+    /// (a plain `ThresholdParameters`) cannot carry them at all.
     ///
     /// The fixture is deterministic on purpose: it keeps the participant
     /// set unchanged (a key-refresh resharing) so the proposed participant
@@ -502,11 +502,11 @@ pub mod tests {
     /// 3 participants.
     #[expect(non_snake_case)]
     #[test]
-    fn vote_reshared__final_transition__should_apply_overlay_to_registry() {
+    fn vote_reshared__final_transition__should_apply_threshold_updates_to_registry() {
         // Given a running state with a single CaitSith domain at the default
         // reconstruction threshold (2), and a resharing proposal over the
-        // same participant set carrying an overlay that moves that domain to
-        // `n` — a value valid for `n` participants and distinct from 2.
+        // same participant set carrying a threshold update that moves that
+        // domain to `n` — a value valid for `n` participants and distinct from 2.
         let mut env = Environment::new(Some(100), None, None);
         let mut running = gen_running_state(1);
         let current_params = running.parameters.clone();
@@ -519,13 +519,14 @@ pub mod tests {
         let original_threshold = running.domains.domains()[0].reconstruction_threshold;
         let new_threshold = ReconstructionThreshold::new(n);
         assert_ne!(new_threshold, original_threshold);
-        let mut overlay = BTreeMap::new();
-        overlay.insert(domain_id, new_threshold);
-        let proposal = ProposedThresholdParameters::new(current_params.clone(), overlay);
+        let mut threshold_updates = BTreeMap::new();
+        threshold_updates.insert(domain_id, new_threshold);
+        let proposal =
+            ProposedThresholdParameters::new(current_params.clone(), threshold_updates);
 
         // Drive the proposal to acceptance so we transition into Resharing
         // through the real vote path (which also exercises the fail-fast
-        // overlay validation in `process_new_parameters_proposal`).
+        // threshold-update validation in `process_new_parameters_proposal`).
         let prospective_epoch_id = running.prospective_epoch_id();
         let mut state = None;
         for (account, _, _) in proposal.participants().participants() {
@@ -559,9 +560,9 @@ pub mod tests {
             new_running = state.vote_reshared(key_event_id).unwrap();
         }
 
-        // Then the new running state's registry carries the overlay's
+        // Then the new running state's registry carries the updated
         // threshold. (The stored parameters are a plain `ThresholdParameters`
-        // and structurally cannot carry an overlay.)
+        // and structurally cannot carry pending threshold updates.)
         let new_running = new_running.expect("resharing should have transitioned to Running");
         assert_eq!(
             new_running.domains.domains()[0].reconstruction_threshold,
