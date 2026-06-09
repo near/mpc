@@ -62,10 +62,13 @@ boot_nodes = "ed25519:2956bsTqWmXcVmXDSovLYS4HRpdyh51euNCiuQjy1h8Y@65.108.141.23
 download_genesis = true
 download_config = "rpc"
 # IP:24567 the node advertises for DSS (Tier3) state-sync responses.
-# Set this if the host has more than one external IP, or when running
-# multiple nodes on one host — otherwise DSS may advertise an unreachable
-# IP and stall. Use the IP your dstack port-forward exposes for :24567.
-# tier3_public_addr = "10.10.10.10:24567"
+# REQUIRED — replace with the public IP your dstack port-forward exposes
+# for :24567. DSS-first (below) needs a reachable advertised address;
+# leaving this placeholder makes the node fail to start. Especially
+# critical on hosts with more than one external IP, or when running
+# multiple nodes on one host, where auto-discovery would otherwise
+# advertise an unreachable IP and state sync would stall silently.
+tier3_public_addr = "REPLACE_WITH_NODE_PUBLIC_IP:24567"
 # DSS (decentralized state sync) attempts per state part before falling
 # back to the external storage bucket. Default here is DSS-first (100)
 # with the bucket as a safety net; set to 0 for bucket-only (never run DSS).
