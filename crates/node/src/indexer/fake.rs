@@ -167,7 +167,7 @@ impl FakeMpcContractState {
                 *chain_count.entry(chain).or_default() += 1;
             }
         }
-        self.available_foreign_chains = chain_to_supporter_count
+        self.available_foreign_chains = chain_count
             .into_iter()
             .filter_map(|(chain, count)| (count >= threshold).then_some(chain))
             .collect::<BTreeSet<_>>()
