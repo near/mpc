@@ -1,5 +1,8 @@
+use reqwest::Url;
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde::Deserialize;
 use std::future::Future;
+use std::time::Duration;
 
 /// Response from `GET /v1/transactions/by_hash/{txn_hash}`, modelled leniently.
 ///
@@ -67,15 +70,51 @@ pub trait AptosRpcClient: Send + Sync {
 
 #[derive(Clone)]
 pub struct ReqwestAptosClient {
-    base_url: String,
+    /// REST API base, e.g. `https://fullnode.mainnet.aptoslabs.com/v1`. It includes the API
+    /// version segment and any path-embedded API key; the per-request resource path is appended
+    /// to it by `build_request_url`.
+    base: Url,
     client: reqwest::Client,
 }
 
 impl ReqwestAptosClient {
-    pub fn new(base_url: String) -> Self {
-        let client = reqwest::Client::new();
-        Self { base_url, client }
+    /// Builds a client for the given REST `base_url`.
+    ///
+    /// `auth_header`, when present, is installed as a default header on every request (for
+    /// `Header`-style provider auth); `Path`/`Query` auth is expected to already be baked into
+    /// `base_url` by the caller (via `auth_config_to_rpc_auth`). `timeout` bounds each request.
+    pub fn new(
+        base_url: String,
+        auth_header: Option<(HeaderName, HeaderValue)>,
+        timeout: Duration,
+    ) -> Self {
+        let mut headers = HeaderMap::new();
+        if let Some((name, value)) = auth_header {
+            headers.insert(name, value);
+        }
+        let client = reqwest::Client::builder()
+            .default_headers(headers)
+            .timeout(timeout)
+            .build()
+            .expect("reqwest client construction with static config should not fail");
+        let base = Url::parse(&base_url)
+            .expect("Aptos rpc_url is validated as a URL by node-config before reaching here");
+        Self { base, client }
     }
+}
+
+/// Appends the `transactions/by_hash/{tx_hash_hex}` resource path to `base`, preserving `base`'s
+/// existing path (the `/v1` version segment and any path-embedded API key) and query string (e.g.
+/// a `?api_key=…` query-auth param). The version segment is taken from `base` rather than
+/// hard-coded, so a configured base that already ends in `/v1` does not produce a doubled
+/// `/v1/v1/...` path.
+fn build_request_url(base: &Url, tx_hash_hex: &str) -> Url {
+    let mut url = base.clone();
+    url.path_segments_mut()
+        .expect("an http(s) base URL always supports path segments")
+        .pop_if_empty()
+        .extend(["transactions", "by_hash", tx_hash_hex]);
+    url
 }
 
 impl AptosRpcClient for ReqwestAptosClient {
@@ -83,14 +122,10 @@ impl AptosRpcClient for ReqwestAptosClient {
         &self,
         tx_hash_hex: &str,
     ) -> impl Future<Output = Result<TransactionResponse, AptosRpcError>> + Send {
-        let url = format!(
-            "{}/v1/transactions/by_hash/{}",
-            self.base_url.trim_end_matches('/'),
-            tx_hash_hex
-        );
+        let url = build_request_url(&self.base, tx_hash_hex);
         let client = self.client.clone();
         async move {
-            let response = client.get(&url).send().await?;
+            let response = client.get(url).send().await?;
             let status = response.status();
             if !status.is_success() {
                 let body = response.text().await.unwrap_or_default();
@@ -141,6 +176,51 @@ fn sort_keys(v: serde_json::Value) -> serde_json::Value {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn build_request_url__appends_resource_path_to_versioned_base() {
+        // Given a base that already includes the `/v1` version segment (as the config provides).
+        let base = Url::parse("https://fullnode.mainnet.aptoslabs.com/v1").unwrap();
+
+        // When
+        let url = build_request_url(&base, "0xabc");
+
+        // Then — the version segment is not doubled.
+        assert_eq!(
+            url.as_str(),
+            "https://fullnode.mainnet.aptoslabs.com/v1/transactions/by_hash/0xabc"
+        );
+    }
+
+    #[test]
+    fn build_request_url__handles_trailing_slash_in_base() {
+        // Given a base with a trailing slash (as in the node-config fixtures).
+        let base = Url::parse("https://aptos-mainnet.nodereal.io/v1/").unwrap();
+
+        // When
+        let url = build_request_url(&base, "0xabc");
+
+        // Then — no empty path segment, no doubled `/v1`.
+        assert_eq!(
+            url.as_str(),
+            "https://aptos-mainnet.nodereal.io/v1/transactions/by_hash/0xabc"
+        );
+    }
+
+    #[test]
+    fn build_request_url__preserves_query_auth_param() {
+        // Given a base carrying a query-auth param (as produced by `auth_config_to_rpc_auth`).
+        let base = Url::parse("https://host/v1?api_key=secret").unwrap();
+
+        // When
+        let url = build_request_url(&base, "0xabc");
+
+        // Then — the resource path is inserted into the path, leaving the query intact.
+        assert_eq!(
+            url.as_str(),
+            "https://host/v1/transactions/by_hash/0xabc?api_key=secret"
+        );
+    }
 
     #[test]
     fn deserialize_transaction__should_parse_committed_user_transaction_with_type_tag() {

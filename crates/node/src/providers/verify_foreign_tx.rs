@@ -7,7 +7,6 @@ use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
 use crate::storage::VerifyForeignTransactionRequestStorage;
 use crate::types::VerifyForeignTxId;
 use borsh::{BorshDeserialize, BorshSerialize};
-use foreign_chain_inspector::FanOut;
 use foreign_chain_inspector::abstract_chain::inspector::AbstractInspector;
 use foreign_chain_inspector::aptos::inspector::AptosInspector;
 use foreign_chain_inspector::arbitrum::inspector::ArbitrumInspector;
@@ -18,10 +17,12 @@ use foreign_chain_inspector::http_client::HttpClient;
 use foreign_chain_inspector::hyperevm::inspector::HyperEvmInspector;
 use foreign_chain_inspector::polygon::inspector::PolygonInspector;
 use foreign_chain_inspector::starknet::inspector::StarknetInspector;
+use foreign_chain_inspector::{FanOut, RpcAuthentication};
 use foreign_chain_rpc_interfaces::aptos::ReqwestAptosClient;
 use mpc_node_config::{ConfigFile, ForeignChainConfig, ForeignChainsConfig};
 use near_mpc_contract_interface::types as dtos;
 use std::sync::Arc;
+use std::time::Duration;
 use threshold_signatures::ReconstructionLowerBound;
 use threshold_signatures::ecdsa::{KeygenOutput, Signature};
 use threshold_signatures::frost_secp256k1::VerifyingKey;
@@ -67,8 +68,19 @@ impl ForeignChainInspectors<HttpClient> {
             let Some(c) = chain_config else {
                 return Ok(None);
             };
+            let timeout = Duration::from_secs(c.timeout_sec.get());
             let inspectors = c.providers.try_map_to_vec(|_, p| {
-                let client = ReqwestAptosClient::new(p.rpc_url.clone());
+                // Resolve provider auth the same way as the jsonrpsee chains (`build_fanout`):
+                // `Path`/`Query` auth is baked into `url`; `Header` auth becomes a default header.
+                let mut url = p.rpc_url.clone();
+                let auth_header = match auth_config_to_rpc_auth(p.auth.clone(), &mut url)? {
+                    RpcAuthentication::KeyInUrl => None,
+                    RpcAuthentication::CustomHeader {
+                        header_name,
+                        header_value,
+                    } => Some((header_name, header_value)),
+                };
+                let client = ReqwestAptosClient::new(url, auth_header, timeout);
                 Ok::<_, anyhow::Error>(AptosInspector::new(client))
             })?;
             Ok(Some(FanOut::new(inspectors)))

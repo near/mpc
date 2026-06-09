@@ -138,6 +138,12 @@ impl AptosExtractor {
                             ))
                         })?;
 
+                // The Move struct tag (e.g. `0x<addr>::omni_bridge::InitTransfer`) is taken
+                // verbatim. A vanilla fullnode returns the address in canonical short form, so
+                // providers agree; if a gateway re-canonicalized it differently the values would
+                // diverge and FanOut would reject (fail-closed, not a forgery). Canonical handling
+                // of the address inside the tag is deferred to the BCS migration noted on
+                // `normalize_event_data`.
                 let type_tag = event.event_type.clone();
                 let data = normalize_event_data(&event.data);
 
@@ -156,6 +162,9 @@ impl AptosExtractor {
 /// Short addresses like "0x1" are zero-padded to 32 bytes.
 fn parse_aptos_address(s: &str) -> Result<AptosAddress, String> {
     let hex_str = s.strip_prefix("0x").unwrap_or(s);
+    if hex_str.is_empty() {
+        return Err(format!("empty Aptos address: {s:?}"));
+    }
     if hex_str.len() > 64 {
         return Err(format!("address hex string too long: {s}"));
     }
@@ -322,6 +331,82 @@ mod tests {
         );
     }
 
+    fn event_response(type_tag: &str, data: serde_json::Value) -> AptosEventResponse {
+        AptosEventResponse {
+            guid: EventGuid {
+                creation_number: "0".to_string(),
+                account_address: "0x0".to_string(),
+            },
+            sequence_number: "0".to_string(),
+            event_type: type_tag.to_string(),
+            data,
+        }
+    }
+
+    #[tokio::test]
+    async fn extract__should_extract_multiple_events_by_index() {
+        // Given a committed tx with two events.
+        let tx = TransactionResponse {
+            hash: HASH.to_string(),
+            success: Some(true),
+            events: vec![
+                event_response("0x1::bridge::A", serde_json::json!({ "n": "1" })),
+                event_response("0x2::bridge::B", serde_json::json!({ "n": "2" })),
+            ],
+        };
+        let inspector = AptosInspector::new(MockAptosClient::success(tx));
+        let tx_id = tx_id_from_hex(HASH);
+
+        // When — request both events out of order, exercising the extractor loop and indexing.
+        let values = inspector
+            .extract(
+                tx_id,
+                AptosFinality::Committed,
+                vec![
+                    AptosExtractor::Event { event_index: 1 },
+                    AptosExtractor::Event { event_index: 0 },
+                ],
+            )
+            .await
+            .unwrap();
+
+        // Then
+        assert_eq!(values.len(), 2);
+        match (&values[0], &values[1]) {
+            (AptosExtractedValue::Event(first), AptosExtractedValue::Event(second)) => {
+                assert_eq!(first.type_tag, "0x2::bridge::B");
+                assert_eq!(second.type_tag, "0x1::bridge::A");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn extract__should_fail_when_committed_tx_has_no_events() {
+        // Given a committed tx whose events array is empty.
+        let tx = TransactionResponse {
+            hash: HASH.to_string(),
+            success: Some(true),
+            events: vec![],
+        };
+        let inspector = AptosInspector::new(MockAptosClient::success(tx));
+        let tx_id = tx_id_from_hex(HASH);
+
+        // When
+        let result = inspector
+            .extract(
+                tx_id,
+                AptosFinality::Committed,
+                vec![AptosExtractor::Event { event_index: 0 }],
+            )
+            .await;
+
+        // Then
+        assert_matches!(
+            result,
+            Err(ForeignChainInspectionError::LogIndexOutOfBounds)
+        );
+    }
+
     #[tokio::test]
     async fn extract__should_return_not_finalized_for_pending_transaction() {
         // Given — the tx exists but is still in the mempool (no execution result yet).
@@ -367,6 +452,19 @@ mod tests {
                 .unwrap()
                 .as_slice()
         );
+    }
+
+    #[test]
+    fn parse_aptos_address__should_reject_empty_address() {
+        // `""` and `"0x"` would otherwise be zero-padded into the all-zeros address.
+        parse_aptos_address("").unwrap_err();
+        parse_aptos_address("0x").unwrap_err();
+    }
+
+    #[test]
+    fn parse_aptos_address__should_reject_overlong_address() {
+        let too_long = format!("0x{}", "a".repeat(65));
+        parse_aptos_address(&too_long).unwrap_err();
     }
 
     #[tokio::test]
