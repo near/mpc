@@ -86,7 +86,6 @@ impl ContractBuilder {
             } else {
                 Some(self.features.join(","))
             },
-            skip_rust_version_check: true,
             ..Default::default()
         };
 
