@@ -51,6 +51,7 @@ use tokio::time::timeout;
 
 pub mod common;
 
+mod asset_generation_signing_contention;
 mod basic_cluster;
 mod changing_participant_details;
 mod faulty;
