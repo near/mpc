@@ -58,7 +58,7 @@ impl TeeVerifier {
         match dcap_qvl::verify::verify(&quote_bytes, &collateral, now_seconds) {
             Ok(report) => VerificationResult::Verified(report.into_interface_type()),
             Err(err) => {
-                VerificationResult::Rejected(VerifierError::DcapVerification(format!("{err}")))
+                VerificationResult::Rejected(VerifierError::DcapVerification(err.to_string()))
             }
         }
     }

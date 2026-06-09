@@ -50,7 +50,9 @@ fn make_quote_bytes() -> QuoteBytes {
 /// Sets a VM context whose block timestamp makes the fixture's collateral
 /// current, so DCAP verification of the valid fixture succeeds.
 fn set_valid_timestamp_context() {
-    let block_timestamp_ns = Duration::from_secs(VALID_ATTESTATION_TIMESTAMP).as_nanos() as u64;
+    let block_timestamp_ns =
+        u64::try_from(Duration::from_secs(VALID_ATTESTATION_TIMESTAMP).as_nanos())
+            .expect("fixture timestamp in nanoseconds fits in u64");
     testing_env!(
         VMContextBuilder::new()
             .block_timestamp(block_timestamp_ns)
