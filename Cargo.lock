@@ -11359,6 +11359,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "tee-verifier-interface"
+version = "3.11.0"
+dependencies = [
+ "borsh",
+ "derive_more 2.1.1",
+ "rstest",
+]
+
+[[package]]
 name = "tempfile"
 version = "3.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
