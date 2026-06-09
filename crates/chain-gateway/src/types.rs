@@ -13,6 +13,34 @@ pub struct NoArgs {}
 )]
 pub struct BlockHeight(u64);
 
+impl BlockHeight {
+    pub fn saturating_add(self, delta: u64) -> Self {
+        BlockHeight(self.0.saturating_add(delta))
+    }
+    pub fn saturating_sub(self, delta: u64) -> Self {
+        BlockHeight(self.0.saturating_sub(delta))
+    }
+    /// Block distance from `earlier` to `self`. Saturates to `0` if `earlier > self`.
+    pub fn blocks_since(self, earlier: BlockHeight) -> u64 {
+        self.0.saturating_sub(earlier.0)
+    }
+}
+
+#[derive(Clone, Into, Debug)]
+pub struct BlockEntropy([u8; 32]);
+
+impl BlockEntropy {
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl From<CryptoHash> for BlockEntropy {
+    fn from(value: CryptoHash) -> Self {
+        BlockEntropy(value.into())
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ObservedState<T = Vec<u8>> {
     pub observed_at: BlockHeight,

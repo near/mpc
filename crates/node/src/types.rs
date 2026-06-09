@@ -1,5 +1,6 @@
 use std::fmt;
 
+use chain_gateway::{event_subscriber::block_events::BlockContext, types::BlockHeight};
 use mpc_primitives::domain::DomainId;
 use near_indexer_primitives::CryptoHash;
 use near_mpc_contract_interface::types::{Payload, Tweak};
@@ -12,19 +13,19 @@ use crate::{
     indexer::handler::{
         CKDRequestFromChain, SignatureRequestFromChain, VerifyForeignTxRequestFromChain,
     },
-    requests::recent_blocks_tracker::{BlockStatusHandle, BlockViewLite},
+    requests::recent_blocks_tracker::BlockStatusHandle,
 };
 
 pub(crate) struct RequestsUpdate<T> {
     pub(crate) requests: Vec<T>,
     pub(crate) completed_requests: Vec<RequestId>,
-    pub(crate) block_height: u64,
+    pub(crate) block_height: BlockHeight,
     pub(crate) block_status: BlockStatusHandle,
 }
 
 impl<T> RequestsUpdate<T> {
     pub(crate) fn from_chain<U>(
-        block: &BlockViewLite,
+        block: &BlockContext,
         block_status: BlockStatusHandle,
         new_requests: Vec<U>,
         completed_requests: Vec<RequestId>,
@@ -81,11 +82,11 @@ pub struct CKDRequest {
 }
 
 pub(crate) trait FromChain<T> {
-    fn from_chain(chain_value: T, block: &BlockViewLite) -> Self;
+    fn from_chain(chain_value: T, block: &BlockContext) -> Self;
 }
 
 impl FromChain<CKDRequestFromChain> for CKDRequest {
-    fn from_chain(chain_value: CKDRequestFromChain, block: &BlockViewLite) -> Self {
+    fn from_chain(chain_value: CKDRequestFromChain, block: &BlockContext) -> Self {
         let CKDRequestFromChain {
             ckd_id,
             receipt_id,
@@ -119,7 +120,7 @@ pub struct SignatureRequest {
 }
 
 impl FromChain<SignatureRequestFromChain> for SignatureRequest {
-    fn from_chain(chain_value: SignatureRequestFromChain, block: &BlockViewLite) -> Self {
+    fn from_chain(chain_value: SignatureRequestFromChain, block: &BlockContext) -> Self {
         let SignatureRequestFromChain {
             signature_id,
             receipt_id,
@@ -164,7 +165,7 @@ pub struct VerifyForeignTxRequest {
 }
 
 impl FromChain<VerifyForeignTxRequestFromChain> for VerifyForeignTxRequest {
-    fn from_chain(chain_value: VerifyForeignTxRequestFromChain, block: &BlockViewLite) -> Self {
+    fn from_chain(chain_value: VerifyForeignTxRequestFromChain, block: &BlockContext) -> Self {
         let VerifyForeignTxRequestFromChain {
             verify_foreign_tx_id,
             receipt_id,
