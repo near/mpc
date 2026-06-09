@@ -2,11 +2,11 @@
 #![expect(deprecated, reason = "ForeignChainConfiguration is being deprecated")]
 #![doc = include_str!("../README.md")]
 
-pub mod available_foreign_chains;
 pub mod config;
 pub mod crypto_shared;
 pub mod errors;
 pub mod foreign_chain_rpc;
+pub mod foreign_chains_metadata;
 pub mod node_migrations;
 pub mod primitives;
 pub mod state;
@@ -36,12 +36,12 @@ use std::{
 };
 
 use crate::{
-    available_foreign_chains::ForeignChainsMetadata,
     dto_mapping::{
         IntoContractType, IntoInterfaceType, TryIntoContractType,
         args_into_verify_foreign_tx_request,
     },
     errors::{Error, RequestError},
+    foreign_chains_metadata::ForeignChainsMetadata,
     primitives::{
         ckd::{CKDRequest, app_public_key_check, ckd_output_check},
         domain::AddDomainsVotes,
