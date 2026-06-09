@@ -27,9 +27,7 @@ pub struct TonAddress {
     pub hash: Hash256,
 }
 
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, IntoPrimitive, TryFromPrimitive, derive_more::Display,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, IntoPrimitive, TryFromPrimitive)]
 #[repr(i32)]
 pub enum TonWorkchain {
     Basechain = 0,

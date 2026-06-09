@@ -12,7 +12,9 @@ use std::sync::Arc;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use foreign_chain_inspector::ton::TonInspectionError;
 use foreign_chain_inspector::ton::inspector::TonInspector;
-use foreign_chain_inspector::ton::rpc_client::{ReqwestTonClient, build_ton_http_client};
+use foreign_chain_inspector::ton::rpc_client::{
+    ReqwestTonClient, TonRpcError, build_ton_http_client,
+};
 use foreign_chain_inspector::ton::types::{
     TonAddress, TonExtractedValue, TonExtractor, TonFinality, TonLog, TonTransactionId,
     TonWorkchain,
@@ -267,6 +269,32 @@ async fn extract__should_reject_when_no_transaction_found() {
         result,
         Err(ForeignChainInspectionError::Ton(
             TonInspectionError::TransactionNotFound { .. }
+        ))
+    );
+}
+
+#[tokio::test]
+async fn extract__should_reject_response_body_exceeding_size_cap() {
+    // Given a provider streaming a response body past the 10 MiB cap.
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/api/v3/transactions");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body("x".repeat(10 * 1024 * 1024 + 1));
+    });
+    let inspector = inspector_for(&server);
+
+    // When
+    let result = inspector
+        .extract(tx_id(), TonFinality::MasterchainIncluded, log_extractor())
+        .await;
+
+    // Then the body is not buffered or parsed; the request fails as too large.
+    assert_matches::assert_matches!(
+        result,
+        Err(ForeignChainInspectionError::Ton(
+            TonInspectionError::RpcError(TonRpcError::ResponseTooLarge { .. })
         ))
     );
 }

@@ -8,6 +8,16 @@ use thiserror::Error;
 const GET_TRANSACTIONS_PATH: &str = "transactions";
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 
+/// Cap on the bytes buffered from a response body, so a misbehaving provider
+/// cannot make the node buffer an arbitrarily large payload. Matches the
+/// default maximum response size of the `jsonrpsee` clients used by the other
+/// chain inspectors.
+const MAX_RESPONSE_SIZE_BYTES: usize = 10 * 1024 * 1024;
+
+/// Cap on the error-body excerpt embedded in [`TonRpcError::BadStatus`];
+/// these end up in logs, so keep them short.
+const MAX_ERROR_BODY_BYTES: usize = 1024;
+
 /// Query-parameter names for the v3 `/transactions` endpoint.
 const ACCOUNT_QUERY_PARAM: &str = "account";
 const HASH_QUERY_PARAM: &str = "hash";
@@ -45,9 +55,13 @@ pub enum TonRpcError {
 
     #[error("failed to parse TON RPC JSON response: {0}")]
     Parse(serde_json::Error),
+
+    #[error("TON RPC response body exceeds the {limit}-byte limit")]
+    ResponseTooLarge { limit: usize },
 }
 
 /// `reqwest`-based [`TonRpcClient`] implementation.
+#[derive(Clone)]
 pub struct ReqwestTonClient {
     base_url: url::Url,
     client: Client,
@@ -105,23 +119,65 @@ impl TonRpcClient for ReqwestTonClient {
         let response = self.client.get(url).send().await?;
         let status = response.status();
         if !status.is_success() {
-            let body = response.text().await.unwrap_or_default();
+            // Truncated and lossy: this is a log-friendly excerpt for triage,
+            // not data we act on.
+            let body = match read_body_limited(response, MAX_ERROR_BODY_BYTES).await {
+                Ok(LimitedBody::Complete(bytes) | LimitedBody::Truncated(bytes)) => {
+                    String::from_utf8_lossy(&bytes).into_owned()
+                }
+                Err(_) => String::new(),
+            };
             return Err(TonRpcError::BadStatus {
                 status: status.as_u16(),
                 body,
             });
         }
 
-        let bytes = response.bytes().await?;
-        serde_json::from_slice::<GetTransactionsResponse>(&bytes).map_err(TonRpcError::Parse)
+        match read_body_limited(response, MAX_RESPONSE_SIZE_BYTES).await? {
+            // A truncated JSON document must not be parsed.
+            LimitedBody::Truncated(_) => Err(TonRpcError::ResponseTooLarge {
+                limit: MAX_RESPONSE_SIZE_BYTES,
+            }),
+            LimitedBody::Complete(bytes) => {
+                serde_json::from_slice::<GetTransactionsResponse>(&bytes)
+                    .map_err(TonRpcError::Parse)
+            }
+        }
     }
+}
+
+/// A response body buffered up to a byte limit.
+enum LimitedBody {
+    Complete(Vec<u8>),
+    /// The body exceeded the limit; carries the prefix read so far and the
+    /// rest of the stream was dropped.
+    Truncated(Vec<u8>),
+}
+
+/// Buffer at most `limit` bytes of the response body, never holding more than
+/// that in memory regardless of what the provider streams.
+async fn read_body_limited(
+    mut response: reqwest::Response,
+    limit: usize,
+) -> Result<LimitedBody, reqwest::Error> {
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await? {
+        let remaining = limit.saturating_sub(bytes.len());
+        if chunk.len() > remaining {
+            bytes.extend_from_slice(chunk.get(..remaining).unwrap_or_default());
+            return Ok(LimitedBody::Truncated(bytes));
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok(LimitedBody::Complete(bytes))
 }
 
 /// Format a basechain/workchain address as `"<workchain>:<lowercase-hex>"` —
 /// the canonical on-chain representation the v3 API accepts in its query
 /// parameters.
 pub(crate) fn format_ton_account(workchain: TonWorkchain, account_hash: &[u8; 32]) -> String {
-    format!("{workchain}:{}", hex::encode(account_hash))
+    let work_chain_as_digit: i32 = workchain.into();
+    format!("{work_chain_as_digit}:{}", hex::encode(account_hash))
 }
 
 /// Build the `GET /api/v3/transactions?...` URL.

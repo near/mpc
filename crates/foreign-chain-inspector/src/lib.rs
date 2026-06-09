@@ -54,7 +54,8 @@ pub trait ForeignChainInspector {
 ///
 /// Variant-level comparison is used for non-transient errors, so inspectors that all report
 /// the same failure mode (e.g. `NonCanonicalBlock`) are considered to agree even if the
-/// inner fields differ.
+/// inner fields differ. See [`ForeignChainInspectionError::same_failure_mode`] for the exact
+/// agreement relation (TON errors, all wrapped in one variant, are compared one level deeper).
 #[derive(Clone, derive_more::Constructor)]
 pub struct FanOut<Inspector> {
     inspectors: NonEmptyVec<Inspector>,
@@ -141,11 +142,10 @@ where
             return Ok(first);
         }
 
-        if let Some(first_non_transient_error) = non_transient_errors.first() {
-            let first_variant = std::mem::discriminant(&first_non_transient_error.1);
+        if let Some((_, first_non_transient_error)) = non_transient_errors.first() {
             let all_failures_have_same_variant = non_transient_errors
                 .iter()
-                .all(|(_, e)| std::mem::discriminant(e) == first_variant);
+                .all(|(_, e)| first_non_transient_error.same_failure_mode(e));
             if !all_failures_have_same_variant {
                 tracing::error!(
                     errors = ?non_transient_errors,
@@ -253,6 +253,19 @@ pub enum ForeignChainInspectionError {
 }
 
 impl ForeignChainInspectionError {
+    /// Whether two non-transient errors represent the same failure mode for
+    /// the [`FanOut`] agreement check. Compared at variant level, so errors
+    /// that differ only in their inner fields agree. TON-specific errors are
+    /// all wrapped in the single [`Self::Ton`] variant, so those are compared
+    /// one level deeper — otherwise two providers failing for entirely
+    /// different TON reasons would count as agreeing.
+    pub fn same_failure_mode(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Ton(a), Self::Ton(b)) => std::mem::discriminant(a) == std::mem::discriminant(b),
+            _ => std::mem::discriminant(self) == std::mem::discriminant(other),
+        }
+    }
+
     pub fn is_transient(&self) -> bool {
         match self {
             Self::ClientError(_)

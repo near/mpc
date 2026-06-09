@@ -47,11 +47,6 @@ pub enum TonInspectionError {
     #[error("TON ext-out message at index {index} has no message content")]
     MessageMissingContent { index: usize },
 
-    #[error(
-        "TON workchain {got} is not supported in v1 (only workchain 0 / basechain is supported)"
-    )]
-    UnsupportedWorkchain { got: i8 },
-
     #[error(transparent)]
     BocError(#[from] crate::ton::TonBocError),
 
@@ -70,11 +65,17 @@ pub enum TonInspectionError {
 }
 
 impl TonInspectionError {
-    /// Whether this error is a transient failure (a failed RPC round-trip) as
-    /// opposed to a substantive verdict about the transaction. See
+    /// Whether this error is a transient failure as opposed to a substantive
+    /// verdict about the transaction. See
     /// [`crate::ForeignChainInspectionError::is_transient`].
+    ///
+    /// [`Self::TransactionNotFound`] is transient: a provider that has not yet
+    /// indexed the transaction is indistinguishable from one that never will,
+    /// exactly like [`crate::ForeignChainInspectionError::NotFinalized`] — a
+    /// lagging provider in a [`crate::FanOut`] must be tolerated, not treated
+    /// as a disagreeing verdict.
     pub fn is_transient(&self) -> bool {
-        matches!(self, Self::RpcError(_))
+        matches!(self, Self::RpcError(_) | Self::TransactionNotFound { .. })
     }
 }
 
@@ -97,7 +98,11 @@ pub fn normalize_body_boc(body_boc_b64: &str) -> Result<(TonCellBody, TonCellRef
     }
     let byte_len = bit_len / 8;
 
-    // Top-level cell's inline data, packed to `bit_len / 8` bytes.
+    // Top-level cell's inline data, packed to `bit_len / 8` bytes. For
+    // byte-aligned cells tonlib yields exactly `byte_len` data bytes; slice
+    // defensively anyway — if a tonlib regression ever yields fewer bytes, the
+    // fallback's length mismatch is rejected by `TonCellBody::new`
+    // (`BitLengthByteMismatch`) below.
     let body_bits = root.data().get(..byte_len).unwrap_or(root.data()).to_vec();
     let bit_length =
         u16::try_from(bit_len).map_err(|_| TonBocError::BitLengthTooLarge { bit_len })?;
@@ -208,6 +213,27 @@ mod tests {
         let (body, refs) = empty_body().unwrap();
         assert_eq!(body, cell_body(vec![], 0));
         assert!(refs.is_empty());
+    }
+
+    #[test]
+    fn is_transient__should_treat_transaction_not_found_as_transient() {
+        // A provider that has not indexed the transaction yet must be tolerated
+        // by the fan-out, like a not-yet-finalized transaction.
+        let err = TonInspectionError::TransactionNotFound {
+            tx_hash_hex: "de".repeat(32),
+        };
+
+        assert!(err.is_transient());
+    }
+
+    #[test]
+    fn is_transient__should_treat_account_mismatch_as_substantive() {
+        let err = TonInspectionError::AccountMismatch {
+            expected: "0:aa".to_string(),
+            got: "0:bb".to_string(),
+        };
+
+        assert!(!err.is_transient());
     }
 
     #[test]
