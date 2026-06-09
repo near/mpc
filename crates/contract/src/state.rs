@@ -15,7 +15,7 @@ use crate::primitives::{
 };
 use initializing::InitializingContractState;
 use near_account_id::AccountId;
-use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId};
+use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, Ed25519PublicKey};
 use near_sdk::near;
 use resharing::ResharingContractState;
 use running::RunningContractState;
@@ -236,6 +236,29 @@ impl ProtocolContractState {
             }
         };
         Ok(())
+    }
+
+    /// Returns the TLS public key registered for `account_id` in the participants list
+    /// relevant to the current protocol state, or `None` if not found.
+    pub fn tls_key_for_account(&self, account_id: &AccountId) -> Option<Ed25519PublicKey> {
+        // Uses the same participant set as `active_participants()` so that callers
+        // authenticated by `assert_caller_is_attested_participant_and_protocol_active`
+        // (which calls `active_participants()`) can always resolve their TLS key here.
+        let participants = match self {
+            ProtocolContractState::Initializing(state) => {
+                state.generating_key.proposed_parameters().participants()
+            }
+            ProtocolContractState::Running(state) => state.parameters.participants(),
+            ProtocolContractState::Resharing(state) => {
+                state.resharing_key.proposed_parameters().participants()
+            }
+            ProtocolContractState::NotInitialized => return None,
+        };
+        participants
+            .participants()
+            .iter()
+            .find(|(id, _, _)| id == account_id)
+            .map(|(_, _, info)| info.tls_public_key.clone())
     }
 
     /// Returns a reference to the relevant `Participants` list
