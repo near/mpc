@@ -521,8 +521,7 @@ pub mod tests {
         assert_ne!(new_threshold, original_threshold);
         let mut threshold_updates = BTreeMap::new();
         threshold_updates.insert(domain_id, new_threshold);
-        let proposal =
-            ProposedThresholdParameters::new(current_params.clone(), threshold_updates);
+        let proposal = ProposedThresholdParameters::new(current_params.clone(), threshold_updates);
 
         // Drive the proposal to acceptance so we transition into Resharing
         // through the real vote path (which also exercises the fail-fast

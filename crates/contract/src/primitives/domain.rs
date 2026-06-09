@@ -718,7 +718,9 @@ pub mod tests {
         threshold_updates.insert(DomainId(42), ReconstructionThreshold::new(5));
 
         // When applying the threshold updates
-        let err = registry.with_threshold_updates(&threshold_updates).unwrap_err();
+        let err = registry
+            .with_threshold_updates(&threshold_updates)
+            .unwrap_err();
 
         // Then unknown-domain guard rejects
         assert!(
@@ -750,7 +752,9 @@ pub mod tests {
         threshold_updates.insert(DomainId(0), ReconstructionThreshold::new(5));
 
         // When applying the threshold updates
-        let err = registry.with_threshold_updates(&threshold_updates).unwrap_err();
+        let err = registry
+            .with_threshold_updates(&threshold_updates)
+            .unwrap_err();
 
         // Then the 3.11-transition lock rejects the divergence
         assert!(
