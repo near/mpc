@@ -70,8 +70,7 @@ impl ForeignChainInspectors<HttpClient> {
             };
             let timeout = Duration::from_secs(c.timeout_sec.get());
             let inspectors = c.providers.try_map_to_vec(|_, p| {
-                // Resolve provider auth the same way as the jsonrpsee chains (`build_fanout`):
-                // `Path`/`Query` auth is baked into `url`; `Header` auth becomes a default header.
+                // Resolve auth like `build_fanout`: `Path`/`Query` into `url`, `Header` into a header.
                 let mut url = p.rpc_url.clone();
                 let auth_header = match auth_config_to_rpc_auth(p.auth.clone(), &mut url)? {
                     RpcAuthentication::KeyInUrl => None,

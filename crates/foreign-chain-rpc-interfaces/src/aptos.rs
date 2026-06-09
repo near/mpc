@@ -4,36 +4,23 @@ use serde::Deserialize;
 use std::future::Future;
 use std::time::Duration;
 
-/// Response from `GET /v1/transactions/by_hash/{txn_hash}`, modelled leniently.
+/// Response from `GET /v1/transactions/by_hash/{txn_hash}`.
 ///
-/// On a vanilla Aptos fullnode the `Transaction` payload is a union discriminated by a `type`
-/// field (`user_transaction`, `pending_transaction`, `block_metadata_transaction`, …), but RPC
-/// providers do not reproduce that schema identically: a fullnode includes `type` and the full
-/// field set, whereas some gateways (e.g. Alchemy) return a flat object with `type` absent and
-/// every field optional. Depending on the `type` tag would make deserialization fail on those
-/// providers and break the fan-out quorum.
-///
-/// Since the signed payload is derived solely from `events`, we model only the fields we actually
-/// verify and treat each as optional. Committed-ness is inferred from the presence of `success`
-/// (a pending, still-in-mempool transaction carries no execution result), so we never rely on the
-/// `type` discriminator. This parses a fullnode response, an Alchemy-style flat response, and a
-/// pending transaction alike, all reducing to the same extracted event.
-///
-/// See <https://aptos.dev/en/build/apis/fullnode-rest-api>.
+/// Modelled leniently and *without* the `type` discriminator: providers diverge on the envelope
+/// (a fullnode tags it and includes every field; gateways like Alchemy omit `type` and make
+/// fields optional), so we keep only the fields we verify and infer committed-ness from the
+/// presence of `success` — a pending mempool tx has no execution result.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct TransactionResponse {
-    /// 0x-prefixed SHA3-256 transaction hash. Present on every transaction kind (it is the
-    /// resource key the endpoint is queried by), so it is required.
     pub hash: String,
-    /// VM execution result. `Some` iff the transaction is committed; `None` for a pending tx.
+    /// `Some` iff committed; `None` for a pending tx.
     #[serde(default)]
     pub success: Option<bool>,
-    /// Events emitted by the transaction, in accumulator order. Empty/absent for a pending tx.
+    /// Events in accumulator order; empty for a pending tx.
     #[serde(default)]
     pub events: Vec<AptosEventResponse>,
 }
 
-/// One event as returned in the events array of a transaction response.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct AptosEventResponse {
     pub guid: EventGuid,
@@ -43,8 +30,7 @@ pub struct AptosEventResponse {
     pub data: serde_json::Value,
 }
 
-/// GUID identifying an event stream.
-/// For module events (event::emit), account_address is "0x0" and creation_number is "0".
+/// For module events, `account_address` is `"0x0"` and `creation_number` is `"0"`.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct EventGuid {
     pub creation_number: String,
@@ -70,19 +56,14 @@ pub trait AptosRpcClient: Send + Sync {
 
 #[derive(Clone)]
 pub struct ReqwestAptosClient {
-    /// REST API base, e.g. `https://fullnode.mainnet.aptoslabs.com/v1`. It includes the API
-    /// version segment and any path-embedded API key; the per-request resource path is appended
-    /// to it by `build_request_url`.
+    /// REST base including the `/v1` segment; the resource path is appended per request.
     base: Url,
     client: reqwest::Client,
 }
 
 impl ReqwestAptosClient {
-    /// Builds a client for the given REST `base_url`.
-    ///
-    /// `auth_header`, when present, is installed as a default header on every request (for
-    /// `Header`-style provider auth); `Path`/`Query` auth is expected to already be baked into
-    /// `base_url` by the caller (via `auth_config_to_rpc_auth`). `timeout` bounds each request.
+    /// `auth_header` is installed as a default header (for `Header` auth); `Path`/`Query` auth is
+    /// already baked into `base_url` by the caller.
     pub fn new(
         base_url: String,
         auth_header: Option<(HeaderName, HeaderValue)>,
@@ -103,11 +84,8 @@ impl ReqwestAptosClient {
     }
 }
 
-/// Appends the `transactions/by_hash/{tx_hash_hex}` resource path to `base`, preserving `base`'s
-/// existing path (the `/v1` version segment and any path-embedded API key) and query string (e.g.
-/// a `?api_key=…` query-auth param). The version segment is taken from `base` rather than
-/// hard-coded, so a configured base that already ends in `/v1` does not produce a doubled
-/// `/v1/v1/...` path.
+/// Appends `transactions/by_hash/{hash}` to `base`, preserving its path and query string (so a
+/// `/v1` already in `base` isn't doubled, and a query-auth param survives).
 fn build_request_url(base: &Url, tx_hash_hex: &str) -> Url {
     let mut url = base.clone();
     url.path_segments_mut()
@@ -140,15 +118,10 @@ impl AptosRpcClient for ReqwestAptosClient {
     }
 }
 
-/// Serialize a serde_json::Value to a canonical byte string by sorting all object keys.
+/// Canonical string form of the event `data`: object keys sorted recursively so all nodes hash
+/// identically regardless of provider key ordering.
 ///
-/// The Aptos REST API returns event data as a decoded JSON object. Field ordering may
-/// differ between providers, so we normalize to a deterministic representation before
-/// storing in the sign payload. All MPC nodes querying the same provider receive
-/// identical JSON; the FanOut mechanism detects cross-provider disagreement.
-///
-/// TODO: migrate to BCS-encoded responses (via Accept: application/x-bcs) once provider
-/// support is confirmed, which would remove the JSON normalization dependency.
+/// TODO: migrate to BCS-encoded responses (via Accept: application/x-bcs) to drop this dependency.
 pub fn normalize_event_data(value: &serde_json::Value) -> String {
     serde_json::to_string(&sort_keys(value.clone()))
         .expect("serde_json serialization of Value is infallible")

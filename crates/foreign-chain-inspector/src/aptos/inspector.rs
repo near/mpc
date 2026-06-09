@@ -48,30 +48,21 @@ where
             .get_transaction_by_hash(&tx_hash_hex)
             .await
             .map_err(|e| match e {
-                // A 404 is a definitive "this transaction does not exist" — non-transient,
-                // so the fan-out treats it as a substantive verdict rather than retrying.
+                // 404 = definitively absent → a non-transient verdict, not a retry.
                 AptosRpcError::ApiError { status: 404, .. } => {
                     ForeignChainInspectionError::TransactionNotFound
                 }
-                // Transport failures and malformed responses are transient, matching how
-                // the jsonrpsee-based chains treat `ClientError`.
                 other => ForeignChainInspectionError::RpcRequestFailed(other.to_string()),
             })?;
 
-        // Guard against a backend returning a different transaction than the one we queried.
-        // `hash` is present on every kind (committed or pending), so this always runs.
         ensure_hash_matches(&tx_hash_hex, &tx.hash)?;
 
         match finality {
-            // Committed-ness is signalled by the presence of an execution result: a committed
-            // transaction carries `success`, a pending (mempool) one does not. We key off this
-            // rather than the `type` tag because providers disagree on whether they include it.
             AptosFinality::Committed => {
+                // Committed iff the tx carries an execution result; a pending tx does not.
                 let Some(success) = tx.success else {
-                    // No execution result yet → not committed → transient (retry until it lands).
                     return Err(ForeignChainInspectionError::NotFinalized);
                 };
-
                 if !success {
                     return Err(ForeignChainInspectionError::TransactionFailed);
                 }
@@ -87,9 +78,7 @@ where
     }
 }
 
-/// Confirms the RPC backend returned the transaction we asked for. A mismatch maps to the
-/// shared [`ForeignChainInspectionError::InconsistentRpcResponse`] used by the other chains.
-/// Comparison is case-insensitive since providers may differ on hex casing.
+/// Rejects a backend that returned a different transaction than queried (case-insensitive).
 fn ensure_hash_matches(requested: &str, returned: &str) -> Result<(), ForeignChainInspectionError> {
     if requested.to_lowercase() != returned.to_lowercase() {
         return Err(ForeignChainInspectionError::InconsistentRpcResponse {
@@ -100,8 +89,7 @@ fn ensure_hash_matches(requested: &str, returned: &str) -> Result<(), ForeignCha
     Ok(())
 }
 
-/// Decodes a `0x`-prefixed hex string into [`HexBytes`] for error reporting, falling back to
-/// an empty buffer if the provider returned a non-hex value.
+/// Best-effort hex decode for error messages; empty on non-hex input.
 fn hex_str_to_bytes(s: &str) -> HexBytes {
     HexBytes(hex::decode(s.strip_prefix("0x").unwrap_or(s)).unwrap_or_default())
 }
@@ -118,9 +106,8 @@ impl AptosExtractor {
                     .get(*event_index)
                     .ok_or(ForeignChainInspectionError::LogIndexOutOfBounds)?;
 
-                // A field we can't parse means the provider returned a malformed response;
-                // treat it as a transient RPC failure, consistent with the deserialization
-                // errors the jsonrpsee chains surface through `ClientError`.
+                // An unparseable field → transient, so one malformed provider drops from the
+                // quorum rather than blocking signing.
                 let account_address =
                     parse_aptos_address(&event.guid.account_address).map_err(|reason| {
                         ForeignChainInspectionError::RpcRequestFailed(format!(
@@ -138,12 +125,8 @@ impl AptosExtractor {
                             ))
                         })?;
 
-                // The Move struct tag (e.g. `0x<addr>::omni_bridge::InitTransfer`) is taken
-                // verbatim. A vanilla fullnode returns the address in canonical short form, so
-                // providers agree; if a gateway re-canonicalized it differently the values would
-                // diverge and FanOut would reject (fail-closed, not a forgery). Canonical handling
-                // of the address inside the tag is deferred to the BCS migration noted on
-                // `normalize_event_data`.
+                // Verbatim: providers are assumed to agree on the struct-tag's address form
+                // (fullnodes return canonical short form). Canonicalization deferred to BCS.
                 let type_tag = event.event_type.clone();
                 let data = normalize_event_data(&event.data);
 
