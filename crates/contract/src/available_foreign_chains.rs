@@ -6,9 +6,7 @@ use near_sdk::store::{IterableMap, LookupMap};
 
 use crate::storage_keys::StorageKey;
 
-/// Combined lazy state for foreign-chain availability: the cached available set and the
-/// per-node coverage map that feeds it. Stored behind a `Lazy` in `MpcContract` so it is
-/// only deserialized when methods that touch foreign-chain data are called.
+/// Cached available foreign-chain set and the per-node coverage map that feeds it.
 #[near(serializers=[borsh])]
 #[derive(Debug)]
 pub(crate) struct ForeignChainAvailability {
