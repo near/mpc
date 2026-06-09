@@ -227,8 +227,13 @@ impl MpcCluster {
         let root_secret_key: near_kit::SecretKey = SANDBOX_ROOT_SECRET_KEY
             .parse()
             .context("invalid sandbox root secret key")?;
-        let blockchain =
-            NearBlockchain::new(&sandbox.rpc_url(), SANDBOX_ROOT_ACCOUNT, root_secret_key)?;
+        let chain_id = sandbox.chain_id()?;
+        let blockchain = NearBlockchain::new(
+            &sandbox.rpc_url(),
+            &chain_id,
+            SANDBOX_ROOT_ACCOUNT,
+            root_secret_key,
+        )?;
 
         let contract_key = generate_deterministic_key(255);
         let contract_account: AccountId = format!("mpc.{SANDBOX_ROOT_ACCOUNT}").parse()?;

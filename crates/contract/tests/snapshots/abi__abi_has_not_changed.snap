@@ -241,6 +241,11 @@ expression: abi
                       9,
                       "HyperEvm",
                       "ForeignChain__HyperEvm"
+                    ],
+                    [
+                      10,
+                      "Ton",
+                      "ForeignChain__Ton"
                     ]
                   ]
                 }
@@ -273,6 +278,9 @@ expression: abi
                 "Struct": null
               },
               "ForeignChain__Starknet": {
+                "Struct": null
+              },
+              "ForeignChain__Ton": {
                 "Struct": null
               },
               "NonEmptyBTreeMap<ProviderId, ProviderConfig>": {
@@ -1126,6 +1134,7 @@ expression: abi
       },
       {
         "name": "register_foreign_chain_support",
+        "doc": " Registers the set of foreign chains the calling node supports.\n\n Must be called directly from the participant's own NEAR account\n (`voter_or_panic` requires `signer == predecessor`, blocking calls forwarded\n through another contract). Callable by a participant in any active protocol phase\n (Initializing, Running, or Resharing — authenticated against that phase's participant\n set); panics in `NotInitialized` or when the caller is not a participant. Entries for\n accounts that are no longer participants are pruned after resharing by\n [`Self::clean_foreign_chain_data`].",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -1693,7 +1702,7 @@ expression: abi
       },
       {
         "name": "vote_new_parameters",
-        "doc": " Propose a new set of parameters (participants and threshold) for the MPC network.\n If a threshold number of votes are reached on the exact same proposal, this will transition\n the contract into the Resharing state.\n\n The epoch_id must be equal to 1 plus the current epoch ID (if Running) or prospective epoch\n ID (if Resharing). Otherwise the vote is ignored. This is to prevent late transactions from\n accidentally voting on outdated proposals.",
+        "doc": " Propose a new set of parameters (participants and threshold) for the MPC network.\n If a threshold number of votes are reached on the exact same proposal, this will transition\n the contract into the Resharing state.\n\n The epoch_id must be equal to 1 plus the current epoch ID (if Running) or prospective epoch\n ID (if Resharing). Otherwise the vote is ignored. This is to prevent late transactions from\n accidentally voting on outdated proposals.\n\n Like the other governance voting methods, this must be called directly from the\n participant's own NEAR account: `assert_caller_is_signer()` requires\n `signer_account_id == predecessor_account_id`, so calls forwarded through another\n contract are rejected.",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -2050,6 +2059,11 @@ expression: abi
                           9,
                           "HyperEvm",
                           "ForeignChain__HyperEvm"
+                        ],
+                        [
+                          10,
+                          "Ton",
+                          "ForeignChain__Ton"
                         ]
                       ]
                     }
@@ -2082,6 +2096,9 @@ expression: abi
                     "Struct": null
                   },
                   "ForeignChain__Starknet": {
+                    "Struct": null
+                  },
+                  "ForeignChain__Ton": {
                     "Struct": null
                   },
                   "NonEmptyBTreeMap<ForeignChain, ChainEntry>": {
@@ -2877,7 +2894,8 @@ expression: abi
             "Abstract",
             "Starknet",
             "Polygon",
-            "HyperEvm"
+            "HyperEvm",
+            "Ton"
           ]
         },
         "ForeignChainConfiguration": {
@@ -3005,6 +3023,18 @@ expression: abi
               "properties": {
                 "HyperEvm": {
                   "$ref": "#/definitions/EvmRpcRequest"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Ton"
+              ],
+              "properties": {
+                "Ton": {
+                  "$ref": "#/definitions/TonRpcRequest"
                 }
               },
               "additionalProperties": false
@@ -4578,6 +4608,84 @@ expression: abi
               }
             }
           }
+        },
+        "TonAddress": {
+          "type": "object",
+          "required": [
+            "hash",
+            "workchain"
+          ],
+          "properties": {
+            "hash": {
+              "$ref": "#/definitions/Hash256"
+            },
+            "workchain": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        },
+        "TonExtractor": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "Log"
+              ],
+              "properties": {
+                "Log": {
+                  "type": "object",
+                  "required": [
+                    "message_index"
+                  ],
+                  "properties": {
+                    "message_index": {
+                      "type": "integer",
+                      "format": "uint64",
+                      "minimum": 0.0
+                    }
+                  }
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "TonFinality": {
+          "type": "string",
+          "enum": [
+            "MasterchainIncluded"
+          ]
+        },
+        "TonRpcRequest": {
+          "type": "object",
+          "required": [
+            "account",
+            "extractors",
+            "finality",
+            "tx_id"
+          ],
+          "properties": {
+            "account": {
+              "$ref": "#/definitions/TonAddress"
+            },
+            "extractors": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/TonExtractor"
+              }
+            },
+            "finality": {
+              "$ref": "#/definitions/TonFinality"
+            },
+            "tx_id": {
+              "$ref": "#/definitions/TonTxId"
+            }
+          }
+        },
+        "TonTxId": {
+          "type": "string",
+          "pattern": "^(?:[0-9A-Fa-f]{2})*$"
         },
         "Tweak": {
           "type": "array",

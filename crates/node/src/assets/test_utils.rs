@@ -42,11 +42,6 @@ pub fn triple_v2_key(t: ReconstructionThreshold, id: UniqueId) -> Vec<u8> {
     key
 }
 
-/// On-disk key for a `DBCol::Triple` (legacy) entry: just `borsh(UniqueId)`.
-pub fn legacy_triple_key(id: UniqueId) -> Vec<u8> {
-    borsh::to_vec(&id).unwrap()
-}
-
 /// Generates a 4-participant test fixture with threshold 3. Returns the epoch
 /// data, the local participant's ID, and the threshold so callers don't have
 /// to restate the magic number alongside the fixture.
@@ -80,6 +75,9 @@ pub struct TestContext {
     pub my_participant_id: ParticipantId,
     pub alive_participants: Arc<Mutex<Vec<ParticipantId>>>,
     pub presign_domain_ids: Vec<DomainId>,
+    /// Threshold whose `TripleV2` prefix `populate`/`assert_owned` operate on;
+    /// matches the fixture from [`gen_four_participants`].
+    pub triple_threshold: ReconstructionThreshold,
 }
 
 pub fn make_triple(participants: &[ParticipantId]) -> PairedTriple {
@@ -133,7 +131,12 @@ impl TestContext {
             my_participant_id,
             alive_participants,
             presign_domain_ids: [DomainId(0), DomainId(1)].to_vec(),
+            triple_threshold: ReconstructionThreshold::new(3),
         }
+    }
+
+    fn triple_prefix(&self) -> Vec<u8> {
+        self.triple_threshold.inner().to_be_bytes().to_vec()
     }
 
     pub fn new_store<T>(&self, db_col: DBCol, prefix: Vec<u8>) -> DistributedAssetStorage<T>
@@ -145,7 +148,6 @@ impl TestContext {
             self.db.clone(),
             db_col,
             prefix,
-            None,
             self.my_participant_id,
             |cond, val| val.is_subset_of_active_participants(cond),
             {
@@ -157,8 +159,8 @@ impl TestContext {
     }
 
     pub fn populate(&self, participants: &[ParticipantId]) {
-        // Mirror cleanup's view of triples: legacy column has no prefix.
-        let store = self.new_store::<PairedTriple>(DBCol::Triple, Vec::new());
+        // Mirror cleanup's view of triples: per-`t` TripleV2 column.
+        let store = self.new_store::<PairedTriple>(DBCol::TripleV2, self.triple_prefix());
         let id = store.generate_and_reserve_id();
         store.add_owned(id, make_triple(participants));
 
@@ -173,7 +175,7 @@ impl TestContext {
     }
 
     pub fn assert_owned(&self, expected: usize) {
-        let store = self.new_store::<PairedTriple>(DBCol::Triple, Vec::new());
+        let store = self.new_store::<PairedTriple>(DBCol::TripleV2, self.triple_prefix());
         assert_eq!(store.num_owned(), expected);
 
         for &d in &self.presign_domain_ids {

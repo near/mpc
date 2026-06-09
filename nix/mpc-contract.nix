@@ -64,15 +64,8 @@ let
   # The Nix sandbox provides the hermetic environment (toolchain, vendored
   # registry, fixed SOURCE_DATE_EPOCH), and cargo-near drives the build —
   # `non-reproducible-wasm` inside a hermetic environment becomes reproducible.
-  # Bypass cargo-near's rustc >= 1.87 refusal: the bulk-memory
-  # incompatibility with the nearcore contract VM it guards against has been
-  # resolved upstream, so the check is now obsolete and would otherwise block
-  # the build with the workspace's current toolchain. Mirrors the matching
-  # workaround in crates/test-utils/src/contract_build.rs.
-  # Drop `--skip-rust-version-check` once cargo-near removes the obsolete check.
   cargoNearArgs = [
     "non-reproducible-wasm"
-    "--skip-rust-version-check"
     "--locked"
     "--profile=release-contract"
     "--features"

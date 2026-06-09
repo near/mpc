@@ -1,0 +1,49 @@
+---
+source: crates/node/src/requests/recent_blocks_tracker.rs
+expression: tester.evolution
+---
+--- after add(6PyYZre) ---
+   Recent blocks: (Window = 1 to 1, GC limit 0)
+CH └─[1] C   6PyYZre5wDzWv93t1qiH8xz5MsLtpkpboPwZN7UEbMpV 
+
+--- after add(F1BKWCC) ---
+   Recent blocks: (Window = 1 to 2, GC limit 0)
+   └─[1] C   6PyYZre5wDzWv93t1qiH8xz5MsLtpkpboPwZN7UEbMpV 
+CH   [2] C   F1BKWCCxzv7PtiVZxLMx3HQuuxDGcrtPRT2FaGgRggpA 
+
+--- after add(7wk1ewk) ---
+   Recent blocks: (Window = 1 to 3, GC limit 1)
+FH └─[1] C F 6PyYZre5wDzWv93t1qiH8xz5MsLtpkpboPwZN7UEbMpV 
+     [2] C   F1BKWCCxzv7PtiVZxLMx3HQuuxDGcrtPRT2FaGgRggpA 
+CH   [3] C   7wk1ewkZKmCNLRRhCrjFuoYy1K94dis9qAUv7JUKzCkG 
+
+--- after add(8FoDbEf) ---
+   Recent blocks: (Window = 1 to 3, GC limit 1)
+FH └─[1] C F 6PyYZre5wDzWv93t1qiH8xz5MsLtpkpboPwZN7UEbMpV 
+     [2] C   F1BKWCCxzv7PtiVZxLMx3HQuuxDGcrtPRT2FaGgRggpA 
+CH   ├─[3] C   7wk1ewkZKmCNLRRhCrjFuoYy1K94dis9qAUv7JUKzCkG 
+     └─[3]     8FoDbEfMuYmtr7SXRPiscHR4mQ6m5nCyuca43eAopktY 
+
+--- after add(DTYziqM) ---
+   Recent blocks: (Window = 1 to 4, GC limit 1)
+   └─[1] C F 6PyYZre5wDzWv93t1qiH8xz5MsLtpkpboPwZN7UEbMpV 
+FH   [2] C F F1BKWCCxzv7PtiVZxLMx3HQuuxDGcrtPRT2FaGgRggpA 
+     ├─[3] C   7wk1ewkZKmCNLRRhCrjFuoYy1K94dis9qAUv7JUKzCkG 
+CH   │ [4] C   DTYziqMhQ9i2wbruEfoNiWZNp34dzVYto6FLy3FUZKwt 
+     └─[3]     8FoDbEfMuYmtr7SXRPiscHR4mQ6m5nCyuca43eAopktY 
+
+--- after add(8jRJjsy) ---
+   Recent blocks: (Window = 1 to 4, GC limit 1)
+   └─[1] C F 6PyYZre5wDzWv93t1qiH8xz5MsLtpkpboPwZN7UEbMpV 
+FH   [2] C F F1BKWCCxzv7PtiVZxLMx3HQuuxDGcrtPRT2FaGgRggpA 
+     ├─[3] C   7wk1ewkZKmCNLRRhCrjFuoYy1K94dis9qAUv7JUKzCkG 
+CH   │ [4] C   DTYziqMhQ9i2wbruEfoNiWZNp34dzVYto6FLy3FUZKwt 
+     └─[3]     8FoDbEfMuYmtr7SXRPiscHR4mQ6m5nCyuca43eAopktY 
+       [4]     8jRJjsyqjoAbyWbjLXTjFNiKTwT8s4xspouvRaZGfh6R 
+
+--- after add(4q6agzf) ---
+   Recent blocks: (Window = 2 to 5, GC limit 2)
+   └─[2] C F F1BKWCCxzv7PtiVZxLMx3HQuuxDGcrtPRT2FaGgRggpA 
+FH   [3] C F 7wk1ewkZKmCNLRRhCrjFuoYy1K94dis9qAUv7JUKzCkG 
+     [4] C   DTYziqMhQ9i2wbruEfoNiWZNp34dzVYto6FLy3FUZKwt 
+CH   [5] C   4q6agzf1AcZWcVbNnULR8969K8MhmPCEJ7pKapjmEGmA
