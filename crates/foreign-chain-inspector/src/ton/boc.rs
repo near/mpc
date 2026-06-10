@@ -19,13 +19,18 @@ pub enum BocError {
 
 /// The root cell of a decoded BoC: its data bits (packed big-endian, length
 /// `⌈bit_len / 8⌉`, any non-byte-aligned tail's unused low bits zeroed), its
-/// significant `bit_len`, and the representation hashes of its direct children
-/// in order.
+/// significant `bit_len`, the representation hashes of its direct children in
+/// order, and the cell's own representation hash.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DecodedCell {
     pub data: Vec<u8>,
     pub bit_len: u16,
     pub ref_hashes: Vec<[u8; 32]>,
+    /// This cell's own representation hash. Not needed by
+    /// [`super::normalize_body_boc`] (which carries the body bits and child
+    /// hashes), but the TON HTTP API reports the same value as a message body's
+    /// `message_content.hash`, making it a convenient cross-check oracle.
+    pub hash: [u8; 32],
 }
 
 /// A cell as read from the stream: its raw descriptor bytes and data (already in
@@ -159,6 +164,7 @@ fn resolve(cells: &[RawCell], root: usize) -> DecodedCell {
         data,
         bit_len,
         ref_hashes,
+        hash: hashes[root],
     }
 }
 
@@ -272,7 +278,10 @@ mod tests {
     // Golden vectors captured from `tonlib_core` 0.26.11 before it was removed:
     // base64 BoC, the root cell's representation hash, and any child hashes.
     const EMPTY: &str = "te6ccgEBAQEAAgAAAA==";
+    const EMPTY_HASH: &str = "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7";
     const BYTE_ALIGNED: &str = "te6ccgEBAQEABgAACJkAAAE="; // data 0x99000001, 32 bits
+    const BYTE_ALIGNED_HASH: &str =
+        "62a994bfc5f15d5bd325e6390812a0dfc7c8fdef24a39135a34e558d9885257f";
     const NON_BYTE_ALIGNED: &str = "te6ccgEBAQEABAAAA96o"; // data 0xdea0, 12 bits
     const ONE_REF: &str = "te6ccgEBAgEACAABBN6tAQACqg=="; // 0xdead/16 -> child 0xaa/8
     const ONE_REF_CHILD_HASH: &str =
@@ -287,6 +296,7 @@ mod tests {
         assert_eq!(cell.data, vec![0x99, 0x00, 0x00, 0x01]);
         assert_eq!(cell.bit_len, 32);
         assert!(cell.ref_hashes.is_empty());
+        assert_eq!(hex::encode(cell.hash), BYTE_ALIGNED_HASH);
     }
 
     #[test]
@@ -294,6 +304,7 @@ mod tests {
         let cell = parse_single_root_boc(EMPTY).unwrap();
         assert_eq!(cell.data, Vec::<u8>::new());
         assert_eq!(cell.bit_len, 0);
+        assert_eq!(hex::encode(cell.hash), EMPTY_HASH);
     }
 
     #[test]
