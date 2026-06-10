@@ -15,6 +15,7 @@ futures = { workspace = true }
 hex = { workspace = true }
 httpmock = { workspace = true }
 launcher-interface = { workspace = true }
+libc = { workspace = true }
 mpc-node-config = { workspace = true }
 near-account-id = { workspace = true }
 near-indexer-primitives = { workspace = true }

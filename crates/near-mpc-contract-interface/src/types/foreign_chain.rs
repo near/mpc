@@ -179,6 +179,7 @@ pub enum ForeignChainRpcRequest {
     Polygon(EvmRpcRequest),
     HyperEvm(EvmRpcRequest),
     Ton(TonRpcRequest),
+    Aptos(AptosRpcRequest),
 }
 
 impl ForeignChainRpcRequest {
@@ -195,6 +196,7 @@ impl ForeignChainRpcRequest {
             Self::Polygon(_) => ForeignChain::Polygon,
             Self::HyperEvm(_) => ForeignChain::HyperEvm,
             Self::Ton(_) => ForeignChain::Ton,
+            Self::Aptos(_) => ForeignChain::Aptos,
         }
     }
 }
@@ -561,6 +563,167 @@ pub enum TonExtractedValue {
     Log(TonLog),
 }
 
+#[serde_as]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::Into,
+    derive_more::From,
+    derive_more::AsRef,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct AptosTxId(#[serde_as(as = "Hex")] pub [u8; 32]);
+
+#[serde_as]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::Into,
+    derive_more::From,
+    derive_more::AsRef,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct AptosAddress(#[serde_as(as = "Hex")] pub [u8; 32]);
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct AptosRpcRequest {
+    pub tx_id: AptosTxId,
+    pub finality: AptosFinality,
+    pub extractors: Vec<AptosExtractor>,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+#[non_exhaustive]
+pub enum AptosFinality {
+    Committed,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+#[non_exhaustive]
+#[repr(u8)]
+#[borsh(use_discriminant = true)]
+pub enum AptosExtractor {
+    Event { event_index: u64 } = 1,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct AptosEvent {
+    pub account_address: AptosAddress,
+    pub sequence_number: u64,
+    pub type_tag: String,
+    pub data: String,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+#[non_exhaustive]
+pub enum AptosExtractedValue {
+    Event(AptosEvent),
+}
+
 #[derive(
     Debug,
     Clone,
@@ -829,6 +992,7 @@ pub enum ExtractedValue {
     EvmExtractedValue(EvmExtractedValue),
     StarknetExtractedValue(StarknetExtractedValue),
     TonExtractedValue(TonExtractedValue),
+    AptosExtractedValue(AptosExtractedValue),
 }
 
 #[derive(
@@ -929,6 +1093,7 @@ pub enum ForeignChain {
     Polygon,
     HyperEvm,
     Ton,
+    Aptos,
 }
 
 #[derive(
@@ -1561,6 +1726,14 @@ mod tests {
         }),
         ForeignChain::Ton,
     )]
+    #[case::aptos(
+        ForeignChainRpcRequest::Aptos(AptosRpcRequest {
+            tx_id: AptosTxId([0; 32]),
+            finality: AptosFinality::Committed,
+            extractors: vec![],
+        }),
+        ForeignChain::Aptos,
+    )]
     fn foreign_chain_rpc_request_chain__should_return_correct_chain(
         #[case] request: ForeignChainRpcRequest,
         #[case] expected_chain: ForeignChain,
@@ -1661,6 +1834,32 @@ mod tests {
                         .unwrap(),
                 },
             ))],
+        });
+
+        // When
+        let hash = payload.compute_msg_hash().unwrap();
+
+        // Then
+        insta::assert_json_snapshot!(hex::encode(hash.0));
+    }
+
+    #[test]
+    fn foreign_tx_sign_payload_v1_aptos__should_have_consistent_hash() {
+        // Given
+        let payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
+            request: ForeignChainRpcRequest::Aptos(AptosRpcRequest {
+                tx_id: AptosTxId([0xcc; 32]),
+                finality: AptosFinality::Committed,
+                extractors: vec![AptosExtractor::Event { event_index: 0 }],
+            }),
+            values: vec![ExtractedValue::AptosExtractedValue(
+                AptosExtractedValue::Event(AptosEvent {
+                    account_address: AptosAddress([0x00; 32]),
+                    sequence_number: 0,
+                    type_tag: "0xdeadbeef::omni_bridge::InitTransfer".to_string(),
+                    data: "{\"amount\":\"100\"}".to_string(),
+                }),
+            )],
         });
 
         // When
