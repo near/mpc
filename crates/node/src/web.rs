@@ -116,43 +116,47 @@ impl From<ConfigFile> for NodeConfigResponse {
     }
 }
 
+fn is_zero(v: &usize) -> bool {
+    *v == 0
+}
+
 #[derive(Clone, Serialize)]
 struct ForeignChainsProviderCounts {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    solana: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    bitcoin: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    ethereum: Option<usize>,
-    #[serde(rename = "abstract", skip_serializing_if = "Option::is_none")]
-    abstract_chain: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    starknet: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    bnb: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    base: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    arbitrum: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    hyper_evm: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    polygon: Option<usize>,
+    #[serde(skip_serializing_if = "is_zero")]
+    solana: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    bitcoin: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    ethereum: usize,
+    #[serde(rename = "abstract", skip_serializing_if = "is_zero")]
+    abstract_chain: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    starknet: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    bnb: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    base: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    arbitrum: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    hyper_evm: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    polygon: usize,
 }
 
 impl From<ForeignChainsConfig> for ForeignChainsProviderCounts {
     fn from(config: ForeignChainsConfig) -> Self {
         Self {
-            solana: config.solana.map(|c| c.providers.len()),
-            bitcoin: config.bitcoin.map(|c| c.providers.len()),
-            ethereum: config.ethereum.map(|c| c.providers.len()),
-            abstract_chain: config.abstract_chain.map(|c| c.providers.len()),
-            starknet: config.starknet.map(|c| c.providers.len()),
-            bnb: config.bnb.map(|c| c.providers.len()),
-            base: config.base.map(|c| c.providers.len()),
-            arbitrum: config.arbitrum.map(|c| c.providers.len()),
-            hyper_evm: config.hyper_evm.map(|c| c.providers.len()),
-            polygon: config.polygon.map(|c| c.providers.len()),
+            solana: config.solana.map_or(0, |c| c.providers.len()),
+            bitcoin: config.bitcoin.map_or(0, |c| c.providers.len()),
+            ethereum: config.ethereum.map_or(0, |c| c.providers.len()),
+            abstract_chain: config.abstract_chain.map_or(0, |c| c.providers.len()),
+            starknet: config.starknet.map_or(0, |c| c.providers.len()),
+            bnb: config.bnb.map_or(0, |c| c.providers.len()),
+            base: config.base.map_or(0, |c| c.providers.len()),
+            arbitrum: config.arbitrum.map_or(0, |c| c.providers.len()),
+            hyper_evm: config.hyper_evm.map_or(0, |c| c.providers.len()),
+            polygon: config.polygon.map_or(0, |c| c.providers.len()),
         }
     }
 }
@@ -491,7 +495,7 @@ mod tests {
     }
 
     #[test]
-    fn node_config_response_json__should_not_leak_foreign_chain_info() {
+    fn node_config_response_json____should_expose_provider_counts_but_no_sensitive_info() {
         // Given
         let config = test_config();
 
