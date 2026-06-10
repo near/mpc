@@ -237,12 +237,14 @@ mod tests {
         primitives::{
             participants::{ParticipantId, Participants},
             test_utils::{gen_participant, gen_participants, gen_threshold_params},
-            thresholds::{Threshold, ThresholdParameters},
+            thresholds::{ProposedThresholdParameters, Threshold, ThresholdParameters},
         },
         state::test_utils::gen_valid_params_proposal,
     };
     use assert_matches::assert_matches;
+    use near_mpc_contract_interface::types::{DomainId, ReconstructionThreshold};
     use rand::Rng;
+    use std::collections::BTreeMap;
 
     #[test]
     fn test_threshold() {
@@ -554,5 +556,79 @@ mod tests {
             params.validate_incoming_proposal(&proposal).unwrap_err(),
             Error::from(InvalidCandidateSet::NewParticipantIdsTooHigh)
         );
+    }
+
+    #[test]
+    fn proposed_threshold_parameters__should_expose_parameters_threshold_and_updates() {
+        // Given a proposal carrying per-domain reconstruction-threshold updates
+        let params = gen_threshold_params(10);
+        let mut updates = BTreeMap::new();
+        updates.insert(DomainId(0), ReconstructionThreshold::new(3));
+        updates.insert(DomainId(2), ReconstructionThreshold::new(4));
+        let proposal = ProposedThresholdParameters::new(params.clone(), updates.clone());
+
+        // When / Then the accessors expose the wrapped parameters and the updates,
+        // and the participants/threshold delegates match the wrapped parameters.
+        assert_eq!(proposal.parameters(), &params);
+        assert_eq!(proposal.participants(), params.participants());
+        assert_eq!(proposal.threshold(), params.threshold());
+        assert_eq!(proposal.per_domain_thresholds(), &updates);
+    }
+
+    #[test]
+    fn proposed_threshold_parameters__should_default_per_domain_thresholds_when_field_absent_in_json()
+    {
+        // Given a serialized proposal with the `per_domain_thresholds` field
+        // stripped out — the shape an older client predating per-domain
+        // reconstruction thresholds would submit to `vote_new_parameters`.
+        let params = gen_threshold_params(10);
+        let proposal = ProposedThresholdParameters::new(params, BTreeMap::new());
+        let mut json = serde_json::to_value(&proposal).unwrap();
+        json.as_object_mut()
+            .unwrap()
+            .remove("per_domain_thresholds")
+            .expect("empty map should still serialize as a field");
+
+        // When deserializing the field-less JSON
+        let parsed: ProposedThresholdParameters = serde_json::from_value(json).unwrap();
+
+        // Then the missing field defaults to an empty (no-change) map and the
+        // rest of the proposal is preserved.
+        assert!(parsed.per_domain_thresholds().is_empty());
+        assert_eq!(parsed.parameters(), proposal.parameters());
+    }
+
+    #[test]
+    fn proposed_threshold_parameters__should_round_trip_per_domain_thresholds_through_json() {
+        // Given a proposal with a populated per-domain threshold map
+        let params = gen_threshold_params(10);
+        let mut updates = BTreeMap::new();
+        updates.insert(DomainId(0), ReconstructionThreshold::new(3));
+        updates.insert(DomainId(2), ReconstructionThreshold::new(4));
+        let proposal = ProposedThresholdParameters::new(params, updates);
+
+        // When serializing to JSON and back
+        let json = serde_json::to_string(&proposal).unwrap();
+        let parsed: ProposedThresholdParameters = serde_json::from_str(&json).unwrap();
+
+        // Then the proposal round-trips unchanged
+        assert_eq!(parsed, proposal);
+    }
+
+    #[test]
+    fn proposed_threshold_parameters__should_round_trip_per_domain_thresholds_through_borsh() {
+        // Given a proposal with a populated per-domain threshold map
+        let params = gen_threshold_params(10);
+        let mut updates = BTreeMap::new();
+        updates.insert(DomainId(0), ReconstructionThreshold::new(3));
+        updates.insert(DomainId(2), ReconstructionThreshold::new(4));
+        let proposal = ProposedThresholdParameters::new(params, updates);
+
+        // When serializing to borsh and back
+        let bytes = borsh::to_vec(&proposal).unwrap();
+        let parsed: ProposedThresholdParameters = borsh::from_slice(&bytes).unwrap();
+
+        // Then the proposal round-trips unchanged
+        assert_eq!(parsed, proposal);
     }
 }

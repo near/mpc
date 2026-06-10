@@ -736,6 +736,117 @@ pub mod running_tests {
     }
 
     #[test]
+    fn process_new_parameters_proposal__should_accept_valid_per_domain_threshold_update() {
+        // Given a running state with one CaitSith domain at the fixture default
+        // t = 2.
+        let mut state = gen_running_state(1);
+        let mut env = Environment::new(None, None, None);
+        let proposal = gen_valid_params_proposal(&state.parameters);
+        // Sign as a participant present in BOTH the current and proposed sets
+        // (see the empty-updates test for why an arbitrary participant won't do).
+        let signer = proposal
+            .participants()
+            .participants()
+            .iter()
+            .map(|(account_id, _, _)| account_id.clone())
+            .find(|account_id| {
+                state
+                    .parameters
+                    .participants()
+                    .is_participant_given_account_id(account_id)
+            })
+            .expect("proposal must retain at least one current participant");
+        env.set_signer(&signer);
+
+        // When voting with an update raising t to 3. The proposed participant
+        // count is always >= 3, so the raised threshold stays within bounds, and
+        // the single CaitSith domain trivially keeps the uniform-threshold lock.
+        let domain_id = state.domains.domains()[0].id;
+        let mut threshold_updates = BTreeMap::new();
+        threshold_updates.insert(domain_id, ReconstructionThreshold::new(3));
+        let proposal = proposal.with_per_domain_thresholds(threshold_updates);
+        let res = state.vote_new_parameters(state.keyset.epoch_id.next(), &proposal);
+
+        // Then the vote is recorded without error
+        assert!(
+            res.is_ok(),
+            "Expected accept with valid threshold update: {res:?}"
+        );
+    }
+
+    #[test]
+    fn process_new_parameters_proposal__should_reject_threshold_update_exceeding_participant_count()
+    {
+        // Given a running state with one domain
+        let mut state = gen_running_state(1);
+        let mut env = Environment::new(None, None, None);
+        env.set_signer(&state.parameters.participants().participants()[0].0);
+        let proposal = gen_valid_params_proposal(&state.parameters);
+
+        // When the update sets t above the proposed participant count
+        let domain_id = state.domains.domains()[0].id;
+        let new_num_participants = proposal.participants().len() as u64;
+        let mut threshold_updates = BTreeMap::new();
+        threshold_updates.insert(
+            domain_id,
+            ReconstructionThreshold::new(new_num_participants + 1),
+        );
+        let proposal = proposal.with_per_domain_thresholds(threshold_updates);
+        let err = state
+            .vote_new_parameters(state.keyset.epoch_id.next(), &proposal)
+            .unwrap_err();
+
+        // Then the updated value is validated against the proposed participants
+        // and rejected.
+        assert!(
+            err.to_string().contains("exceeds participant count"),
+            "Expected ReconstructionThresholdExceedsParticipants, got: {err}"
+        );
+    }
+
+    #[test]
+    fn process_new_parameters_proposal__should_reject_threshold_update_breaking_caitsith_lock() {
+        // Given a running state with two CaitSith domains, both at the fixture
+        // default t = 2 (the protocols cycle, so 5 domains yields two CaitSith).
+        let mut state = gen_running_state(5);
+        let mut env = Environment::new(None, None, None);
+        env.set_signer(&state.parameters.participants().participants()[0].0);
+        assert!(
+            state
+                .domains
+                .domains()
+                .iter()
+                .filter(|d| d.protocol == Protocol::CaitSith)
+                .count()
+                >= 2,
+            "fixture must contain at least two CaitSith domains"
+        );
+        let proposal = gen_valid_params_proposal(&state.parameters);
+
+        // When an update raises only one CaitSith domain's threshold, leaving the
+        // CaitSith domains non-uniform.
+        let caitsith_id = state
+            .domains
+            .domains()
+            .iter()
+            .find(|d| d.protocol == Protocol::CaitSith)
+            .map(|d| d.id)
+            .expect("fixture has a CaitSith domain");
+        let mut threshold_updates = BTreeMap::new();
+        threshold_updates.insert(caitsith_id, ReconstructionThreshold::new(3));
+        let proposal = proposal.with_per_domain_thresholds(threshold_updates);
+        let err = state
+            .vote_new_parameters(state.keyset.epoch_id.next(), &proposal)
+            .unwrap_err();
+
+        // Then the 3.11-transition CaitSith uniform-threshold lock rejects it.
+        assert!(
+            err.to_string().contains("CaitSith threshold mismatch"),
+            "Expected CaitsithThresholdMismatch, got: {err}"
+        );
+    }
+
+    #[test]
     fn vote_add_domains__should_accept_caitsith_threshold_matching_existing() {
         // Given a Running state with a CaitSith domain at t = 2 (fixture
         // default) and a matching proposal.
