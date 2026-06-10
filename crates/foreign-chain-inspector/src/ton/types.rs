@@ -37,8 +37,6 @@ pub enum TonWorkchain {
 }
 
 impl TonWorkchain {
-    /// The workchain id widened to the `i32` `tonlib_core` uses at its API
-    /// boundary (`TonAddress::workchain`). Lossless: every `i8` fits in `i32`.
     pub(crate) fn id(self) -> i32 {
         i32::from(i8::from(self))
     }

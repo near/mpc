@@ -16,7 +16,6 @@ allow = [
   "CC0-1.0",
   "CDLA-Permissive-2.0",
   "CDDL-1.0",
-  "LGPL-3.0+",
 ]
 
 [advisories]

@@ -1,0 +1,361 @@
+//! Minimal decoder for a TON
+//! [Bag of Cells](https://docs.ton.org/blockchain-basics/primitives/serialization/boc):
+//! enough to pull a message body's data bits and the
+//! [representation hashes](https://docs.ton.org/foundations/serialization/cells#standard-cell-representation-and-its-hash)
+//! of its child cells, which is all [`super::normalize_body_boc`] needs.
+
+use sha2::{Digest, Sha256};
+
+/// Generic BoC magic prefix (`serialized_boc#b5ee9c72`).
+const GENERIC_BOC_MAGIC: u32 = 0xb5ee_9c72;
+
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum BocError {
+    #[error("invalid base64 in TON BoC")]
+    Base64,
+    #[error("malformed TON BoC: {0}")]
+    Malformed(&'static str),
+}
+
+/// The root cell of a decoded BoC: its data bits (packed big-endian, length
+/// `⌈bit_len / 8⌉`, any non-byte-aligned tail's unused low bits zeroed), its
+/// significant `bit_len`, and the representation hashes of its direct children
+/// in order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DecodedCell {
+    pub data: Vec<u8>,
+    pub bit_len: u16,
+    pub ref_hashes: Vec<[u8; 32]>,
+}
+
+/// A cell as read from the stream: its raw descriptor bytes and data (already in
+/// the standard-representation form the hash consumes) plus its references'
+/// indices.
+struct RawCell {
+    d1: u8,
+    d2: u8,
+    data: Vec<u8>,
+    refs: Vec<usize>,
+}
+
+/// Parse a base64 single-root BoC and return its root cell with every child
+/// reference resolved to a representation hash.
+pub fn parse_single_root_boc(body_boc_b64: &str) -> Result<DecodedCell, BocError> {
+    let bytes = base64::Engine::decode(
+        &base64::engine::general_purpose::STANDARD,
+        body_boc_b64.as_bytes(),
+    )
+    .map_err(|_| BocError::Base64)?;
+
+    let mut r = Reader::new(&bytes);
+
+    if r.u32()? != GENERIC_BOC_MAGIC {
+        return Err(BocError::Malformed("unsupported magic"));
+    }
+    let flags = r.u8()?;
+    let has_idx = flags & 0b1000_0000 != 0;
+    let ref_size = usize::from(flags & 0b0000_0111);
+    let off_size = usize::from(r.u8()?);
+
+    let cell_count = r.var(ref_size)?;
+    let root_count = r.var(ref_size)?;
+    let _absent = r.var(ref_size)?;
+    let _tot_size = r.var(off_size)?;
+
+    if root_count != 1 {
+        return Err(BocError::Malformed("expected a single root"));
+    }
+    let root = r.var(ref_size)?;
+    if root >= cell_count {
+        return Err(BocError::Malformed("root index out of range"));
+    }
+
+    if has_idx {
+        for _ in 0..cell_count {
+            r.var(off_size)?;
+        }
+    }
+
+    let mut cells = Vec::with_capacity(cell_count);
+    for index in 0..cell_count {
+        cells.push(read_cell(&mut r, ref_size, index, cell_count)?);
+    }
+
+    Ok(resolve(&cells, root))
+}
+
+fn read_cell(
+    r: &mut Reader,
+    ref_size: usize,
+    index: usize,
+    cell_count: usize,
+) -> Result<RawCell, BocError> {
+    let d1 = r.u8()?;
+    let d2 = r.u8()?;
+
+    if d1 & 0b0001_0000 != 0 {
+        // `with_hashes`: stored hashes precede the data. Providers never emit
+        // this; rejecting it keeps the reader straightforward.
+        return Err(BocError::Malformed("stored cell hashes unsupported"));
+    }
+
+    let ref_count = usize::from(d1 & 0b0000_0111);
+    let data_len = usize::from((d2 >> 1) + (d2 & 1));
+    let data = r.bytes(data_len)?.to_vec();
+
+    let mut refs = Vec::with_capacity(ref_count);
+    for _ in 0..ref_count {
+        let to = r.var(ref_size)?;
+        if to >= cell_count {
+            return Err(BocError::Malformed("reference index out of range"));
+        }
+        // References must point strictly forward (BoC's canonical ordering).
+        // This rules out cycles, so hashing can run bottom-up without recursion.
+        if to <= index {
+            return Err(BocError::Malformed("non-forward reference"));
+        }
+        refs.push(to);
+    }
+
+    Ok(RawCell { d1, d2, data, refs })
+}
+
+/// Compute each cell's representation hash and depth bottom-up (forward
+/// references guarantee a child is done before its parent), then return the root.
+fn resolve(cells: &[RawCell], root: usize) -> DecodedCell {
+    let mut hashes = vec![[0u8; 32]; cells.len()];
+    let mut depths = vec![0u16; cells.len()];
+
+    for index in (0..cells.len()).rev() {
+        let cell = &cells[index];
+
+        let depth = cell
+            .refs
+            .iter()
+            .map(|&c| depths[c].saturating_add(1))
+            .max()
+            .unwrap_or(0);
+        depths[index] = depth;
+
+        // Standard representation: d1 ‖ d2 ‖ data ‖ child depths ‖ child hashes.
+        // `d1`, `d2` and `data` are reused verbatim from the stream — that is
+        // already the standard-representation form.
+        let mut hasher = Sha256::new();
+        hasher.update([cell.d1, cell.d2]);
+        hasher.update(&cell.data);
+        for &c in &cell.refs {
+            hasher.update(depths[c].to_be_bytes());
+        }
+        for &c in &cell.refs {
+            hasher.update(hashes[c]);
+        }
+        hashes[index] = hasher.finalize().into();
+    }
+
+    let root_cell = &cells[root];
+    let (data, bit_len) = root_body(root_cell);
+    let ref_hashes = root_cell.refs.iter().map(|&c| hashes[c]).collect();
+    DecodedCell {
+        data,
+        bit_len,
+        ref_hashes,
+    }
+}
+
+/// The root's significant data bits and length. A byte-aligned cell is taken
+/// as-is; a non-byte-aligned one has its augmentation `1` bit (and the zero
+/// padding after it) stripped so the bytes are canonical.
+fn root_body(cell: &RawCell) -> (Vec<u8>, u16) {
+    // `data.len() <= 128`, so `len * 8 <= 1024` always fits in u16.
+    let bits = (cell.data.len() as u16) * 8;
+    if cell.d2 & 1 == 0 {
+        return (cell.data.clone(), bits);
+    }
+    let mut data = cell.data.clone();
+    match data.last() {
+        // Degenerate augmentation; bit_len stays a multiple of 8 so the caller
+        // rejects it as non-byte-aligned rather than acting on it.
+        Some(&0) | None => (data, bits),
+        Some(&last) => {
+            let trailing = last.trailing_zeros() as u16;
+            *data.last_mut().expect("last is Some") &= !(1u8 << trailing);
+            (data, bits - (trailing + 1))
+        }
+    }
+}
+
+/// A bounds-checked, big-endian byte reader: every accessor returns
+/// [`BocError::Malformed`] rather than panicking when the buffer is exhausted.
+struct Reader<'a> {
+    buf: &'a [u8],
+    pos: usize,
+}
+
+impl<'a> Reader<'a> {
+    fn new(buf: &'a [u8]) -> Self {
+        Self { buf, pos: 0 }
+    }
+
+    fn bytes(&mut self, n: usize) -> Result<&'a [u8], BocError> {
+        let end = self
+            .pos
+            .checked_add(n)
+            .ok_or(BocError::Malformed("length overflow"))?;
+        let slice = self
+            .buf
+            .get(self.pos..end)
+            .ok_or(BocError::Malformed("unexpected end of input"))?;
+        self.pos = end;
+        Ok(slice)
+    }
+
+    fn u8(&mut self) -> Result<u8, BocError> {
+        Ok(self.bytes(1)?[0])
+    }
+
+    fn u32(&mut self) -> Result<u32, BocError> {
+        let b = self.bytes(4)?;
+        Ok(u32::from_be_bytes([b[0], b[1], b[2], b[3]]))
+    }
+
+    /// Read an `n`-byte big-endian unsigned integer as a `usize` (`n <= 8`).
+    fn var(&mut self, n: usize) -> Result<usize, BocError> {
+        if n > 8 {
+            return Err(BocError::Malformed("oversized length field"));
+        }
+        let mut value: u64 = 0;
+        for &byte in self.bytes(n)? {
+            value = (value << 8) | u64::from(byte);
+        }
+        usize::try_from(value).map_err(|_| BocError::Malformed("length too large"))
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn encode_single_leaf_boc(data: &[u8], bit_len: u16) -> String {
+    // Serialize one ref-less leaf cell as a generic BoC. Used by tests to build
+    // message bodies; the golden test below pins it against tonlib's output.
+    let full_bytes = usize::from(bit_len / 8);
+    let rem = bit_len % 8;
+    let mut cell_data = data.to_vec();
+    let d2 = if rem == 0 {
+        2 * full_bytes
+    } else {
+        *cell_data.last_mut().expect("rem != 0 implies a final byte") |= 0x80u8 >> rem;
+        2 * full_bytes + 1
+    } as u8;
+
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&GENERIC_BOC_MAGIC.to_be_bytes());
+    bytes.extend_from_slice(&[
+        0x01,                        // flags: no idx/crc/cache, ref_size = 1
+        0x01,                        // off_size = 1
+        0x01,                        // cell count
+        0x01,                        // root count
+        0x00,                        // absent
+        (2 + cell_data.len()) as u8, // total cell-data size
+        0x00,                        // root index
+        0x00,                        // d1: no refs, ordinary, level 0
+        d2,
+    ]);
+    bytes.extend_from_slice(&cell_data);
+
+    base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes)
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::*;
+    use assert_matches::assert_matches;
+
+    // Golden vectors captured from `tonlib_core` 0.26.11 before it was removed:
+    // base64 BoC, the root cell's representation hash, and any child hashes.
+    const EMPTY: &str = "te6ccgEBAQEAAgAAAA==";
+    const BYTE_ALIGNED: &str = "te6ccgEBAQEABgAACJkAAAE="; // data 0x99000001, 32 bits
+    const NON_BYTE_ALIGNED: &str = "te6ccgEBAQEABAAAA96o"; // data 0xdea0, 12 bits
+    const ONE_REF: &str = "te6ccgEBAgEACAABBN6tAQACqg=="; // 0xdead/16 -> child 0xaa/8
+    const ONE_REF_CHILD_HASH: &str =
+        "08da99aa8eb36c5c627a221005ca60f004f392de79b18e90be10c0cb420ab332";
+    const NESTED: &str = "te6ccgEBAwEACwABAf8BAQKZAgACQg=="; // 0xfe/7 -> 0x99/8 -> 0x42/8
+    const NESTED_CHILD_HASH: &str =
+        "23ae53d421a4cc4a2f249bd082bb0c6a774deb7974832993b813d6b6553e89f1";
+
+    #[test]
+    fn parse_single_root_boc__should_decode_byte_aligned_cell() {
+        let cell = parse_single_root_boc(BYTE_ALIGNED).unwrap();
+        assert_eq!(cell.data, vec![0x99, 0x00, 0x00, 0x01]);
+        assert_eq!(cell.bit_len, 32);
+        assert!(cell.ref_hashes.is_empty());
+    }
+
+    #[test]
+    fn parse_single_root_boc__should_decode_empty_cell() {
+        let cell = parse_single_root_boc(EMPTY).unwrap();
+        assert_eq!(cell.data, Vec::<u8>::new());
+        assert_eq!(cell.bit_len, 0);
+    }
+
+    #[test]
+    fn parse_single_root_boc__should_strip_augmentation_of_non_byte_aligned_cell() {
+        let cell = parse_single_root_boc(NON_BYTE_ALIGNED).unwrap();
+        assert_eq!(cell.data, vec![0xde, 0xa0]);
+        assert_eq!(cell.bit_len, 12);
+    }
+
+    #[test]
+    fn parse_single_root_boc__should_resolve_reference_hashes() {
+        let cell = parse_single_root_boc(ONE_REF).unwrap();
+        assert_eq!(cell.data, vec![0xde, 0xad]);
+        assert_eq!(
+            cell.ref_hashes.iter().map(hex::encode).collect::<Vec<_>>(),
+            vec![ONE_REF_CHILD_HASH],
+        );
+    }
+
+    #[test]
+    fn parse_single_root_boc__should_hash_nested_references_recursively() {
+        // The direct child's hash depends on the grandchild's, so matching the
+        // golden proves the bottom-up hashing is correct.
+        let cell = parse_single_root_boc(NESTED).unwrap();
+        assert_eq!(
+            cell.ref_hashes.iter().map(hex::encode).collect::<Vec<_>>(),
+            vec![NESTED_CHILD_HASH],
+        );
+    }
+
+    #[test]
+    fn encode_single_leaf_boc__should_match_tonlib_serialization() {
+        assert_eq!(encode_single_leaf_boc(&[], 0), EMPTY);
+        assert_eq!(
+            encode_single_leaf_boc(&[0x99, 0x00, 0x00, 0x01], 32),
+            BYTE_ALIGNED
+        );
+        assert_eq!(encode_single_leaf_boc(&[0xde, 0xa0], 12), NON_BYTE_ALIGNED);
+    }
+
+    #[test]
+    fn parse_single_root_boc__should_reject_invalid_base64() {
+        assert_matches!(parse_single_root_boc("!!!"), Err(BocError::Base64));
+    }
+
+    #[test]
+    fn parse_single_root_boc__should_reject_garbage_without_panicking() {
+        let b64 = base64::Engine::encode(
+            &base64::engine::general_purpose::STANDARD,
+            [0xff, 0xff, 0xff, 0xff],
+        );
+        assert_matches!(parse_single_root_boc(&b64), Err(BocError::Malformed(_)));
+    }
+
+    #[test]
+    fn parse_single_root_boc__should_reject_out_of_range_root_index_without_panicking() {
+        // One cell declared, but root index 5 — the shape that makes tonlib
+        // underflow and panic. We must return an error instead.
+        let bytes = [
+            0xb5, 0xee, 0x9c, 0x72, 0x01, 0x01, 0x01, 0x01, 0x00, 0x02, 0x05, 0x00, 0x00,
+        ];
+        let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes);
+        assert_matches!(parse_single_root_boc(&b64), Err(BocError::Malformed(_)));
+    }
+}

@@ -7,8 +7,6 @@
 //! exercise request-URL construction and deserialization of realistic TON HTTP
 //! API v3 `/transactions` JSON, on top of the extraction logic.
 
-use std::sync::Arc;
-
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use foreign_chain_inspector::ton::TonInspectionError;
 use foreign_chain_inspector::ton::inspector::TonInspector;
@@ -25,10 +23,23 @@ use foreign_chain_inspector::{
 use httpmock::prelude::*;
 use near_mpc_contract_interface::types::{Hash256, TonCellBody};
 use serde_json::{Value, json};
-use tonlib_core::cell::{ArcCell, BagOfCells, Cell};
 
 const ACCOUNT_HASH: [u8; 32] = [0x11; 32];
 const TX_HASH: [u8; 32] = [0xde; 32];
+
+// Golden message-body BoCs (base64) captured from tonlib, with their decoded
+// contents, so this test needs no BoC library of its own.
+//
+// A 4-byte (32-bit) body cell `0x99000001` with no references.
+const BYTE_ALIGNED_BODY: &str = "te6ccgEBAQEABgAACJkAAAE=";
+// A 2-byte (16-bit) body cell `0xdead` referencing one child cell `0xaa` (8 bits).
+const ONE_REF_BODY: &str = "te6ccgEBAgEACAABBN6tAQACqg==";
+// The representation hash of that child cell.
+const ONE_REF_CHILD_HASH: &str = "08da99aa8eb36c5c627a221005ca60f004f392de79b18e90be10c0cb420ab332";
+
+fn hash32(hex_str: &str) -> [u8; 32] {
+    hex::decode(hex_str).unwrap().try_into().unwrap()
+}
 
 fn account_str() -> String {
     format!("0:{}", hex::encode(ACCOUNT_HASH))
@@ -54,13 +65,6 @@ fn tx_id() -> TonTransactionId {
 
 fn log_extractor() -> Vec<TonExtractor> {
     vec![TonExtractor::Log { message_index: 0 }]
-}
-
-/// Serialize a cell as a base64 single-root BoC, matching the `body` field the
-/// v3 API emits for a message's `message_content`.
-fn encode_cell(data: Vec<u8>, bit_len: usize, refs: Vec<ArcCell>) -> String {
-    let cell = Arc::new(Cell::new(data, bit_len, refs, false).unwrap());
-    STANDARD.encode(BagOfCells::new(&[cell]).serialize(false).unwrap())
 }
 
 /// A realistic TON HTTP API v3 `/transactions` response carrying a single
@@ -147,11 +151,10 @@ fn mock_transactions(server: &MockServer, status: u16, body: Value) -> httpmock:
 async fn extract__should_return_log_via_http_rpc_client() {
     // Given a finalized, successful tx whose ext-out carries a 4-byte body cell.
     let server = MockServer::start();
-    let body_b64 = encode_cell(vec![0x99, 0x00, 0x00, 0x01], 32, vec![]);
     let mock = mock_transactions(
         &server,
         200,
-        v3_response(&body_b64, json!(12345), true, false),
+        v3_response(BYTE_ALIGNED_BODY, json!(12345), true, false),
     );
     let inspector = inspector_for(&server);
 
@@ -180,12 +183,10 @@ async fn extract__should_return_log_via_http_rpc_client() {
 async fn extract__should_extract_reference_cell_hashes_via_http_rpc_client() {
     // Given an ext-out body cell that references a child cell.
     let server = MockServer::start();
-    let child = Arc::new(Cell::new(vec![0xaa], 8, vec![], false).unwrap());
-    let body_b64 = encode_cell(vec![0xde, 0xad], 16, vec![child.clone()]);
     let mock = mock_transactions(
         &server,
         200,
-        v3_response(&body_b64, json!(12345), true, false),
+        v3_response(ONE_REF_BODY, json!(12345), true, false),
     );
     let inspector = inspector_for(&server);
 
@@ -205,7 +206,9 @@ async fn extract__should_extract_reference_cell_hashes_via_http_rpc_client() {
                 hash: Hash256(ACCOUNT_HASH),
             },
             body: TonCellBody::new(vec![0xde, 0xad].try_into().unwrap(), 16).unwrap(),
-            body_refs: vec![Hash256(child.cell_hash().into())].try_into().unwrap(),
+            body_refs: vec![Hash256(hash32(ONE_REF_CHILD_HASH))]
+                .try_into()
+                .unwrap(),
         })],
     );
 }
@@ -214,11 +217,10 @@ async fn extract__should_extract_reference_cell_hashes_via_http_rpc_client() {
 async fn extract__should_reject_when_not_included_in_masterchain() {
     // Given a tx that is not yet referenced by a masterchain block.
     let server = MockServer::start();
-    let body_b64 = encode_cell(vec![0x99, 0x00, 0x00, 0x01], 32, vec![]);
     mock_transactions(
         &server,
         200,
-        v3_response(&body_b64, Value::Null, true, false),
+        v3_response(BYTE_ALIGNED_BODY, Value::Null, true, false),
     );
     let inspector = inspector_for(&server);
 
@@ -235,11 +237,10 @@ async fn extract__should_reject_when_not_included_in_masterchain() {
 async fn extract__should_reject_when_compute_phase_failed() {
     // Given a tx whose compute phase reports failure.
     let server = MockServer::start();
-    let body_b64 = encode_cell(vec![0x99, 0x00, 0x00, 0x01], 32, vec![]);
     mock_transactions(
         &server,
         200,
-        v3_response(&body_b64, json!(12345), false, false),
+        v3_response(BYTE_ALIGNED_BODY, json!(12345), false, false),
     );
     let inspector = inspector_for(&server);
 

@@ -6,9 +6,8 @@ use crate::ton::rpc_client::TonRpcClient;
 use crate::ton::types::TonWorkchain;
 use crate::{ForeignChainInspectionError, ForeignChainInspector};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use foreign_chain_rpc_interfaces::ton::{TonMessage, TonTransaction};
+use foreign_chain_rpc_interfaces::ton::{TonMessage, TonRawAddress, TonTransaction};
 use near_mpc_contract_interface::types::Hash256;
-use tonlib_core::types::TonAddress as RpcTonAddress;
 
 /// TON chain inspector.
 #[derive(Clone)]
@@ -115,10 +114,9 @@ fn message_created_lt(msg: &TonMessage) -> Result<u64, ForeignChainInspectionErr
 fn ensure_account_matches(
     workchain: TonWorkchain,
     expected_hash: &[u8; 32],
-    rpc_account: &RpcTonAddress,
+    rpc_account: &TonRawAddress,
 ) -> Result<(), ForeignChainInspectionError> {
-    if rpc_account.workchain == workchain.id() && rpc_account.hash_part.as_slice() == expected_hash
-    {
+    if rpc_account.workchain == workchain.id() && rpc_account.hash == *expected_hash {
         Ok(())
     } else {
         Err(TonInspectionError::AccountMismatch {
@@ -249,6 +247,7 @@ fn extract_value(
 mod tests {
     use super::*;
     use crate::RpcAuthentication;
+    use crate::ton::boc::encode_single_leaf_boc;
     use crate::ton::rpc_client::{ReqwestTonClient, TonRpcError};
     use assert_matches::assert_matches;
     use foreign_chain_rpc_interfaces::ton::{
@@ -257,7 +256,6 @@ mod tests {
     };
     use near_mpc_contract_interface::types::TonCellBody;
     use std::sync::Mutex;
-    use tonlib_core::cell::{ArcCell, BagOfCells, Cell};
 
     /// In-memory stub client that returns a canned response.
     struct StubClient {
@@ -300,8 +298,11 @@ mod tests {
         [0xde; 32]
     }
 
-    fn ton_address(workchain: TonWorkchain, hash: &[u8; 32]) -> RpcTonAddress {
-        RpcTonAddress::new(workchain.id(), tonlib_core::types::TonHash::from(*hash))
+    fn ton_address(workchain: TonWorkchain, hash: &[u8; 32]) -> TonRawAddress {
+        TonRawAddress {
+            workchain: workchain.id(),
+            hash: *hash,
+        }
     }
 
     fn cell_body(bits: Vec<u8>, bit_length: u16) -> TonCellBody {
@@ -330,15 +331,16 @@ mod tests {
                 destination: None, // ext-out
                 created_lt: Some("100".to_string()),
                 message_content: Some(TonCellBoc {
-                    body: encode_cell(vec![0x99, 0x00, 0x00, 0x01], 32, vec![]),
+                    body: encode_cell(vec![0x99, 0x00, 0x00, 0x01], 32),
                 }),
             }],
         }
     }
 
-    fn encode_cell(data: Vec<u8>, bit_len: usize, refs: Vec<ArcCell>) -> String {
-        let cell = std::sync::Arc::new(Cell::new(data, bit_len, refs, false).unwrap());
-        STANDARD.encode(BagOfCells::new(&[cell]).serialize(false).unwrap())
+    /// Serialize a ref-less leaf cell as a base64 BoC, matching the `body` field
+    /// the v3 API emits for a message's `message_content`.
+    fn encode_cell(data: Vec<u8>, bit_len: u16) -> String {
+        encode_single_leaf_boc(&data, bit_len)
     }
 
     fn inspector_from_tx(tx: TonTransaction) -> TonInspector<StubClient> {
@@ -605,8 +607,8 @@ mod tests {
         // a hypothetical provider that does not preserve TVM emission order.
         // The inspector must still index them in created_lt order.
         let mut tx = happy_tx();
-        let later_body = encode_cell(vec![0xbb; 4], 32, vec![]);
-        let earlier_body = encode_cell(vec![0xaa; 4], 32, vec![]);
+        let later_body = encode_cell(vec![0xbb; 4], 32);
+        let earlier_body = encode_cell(vec![0xaa; 4], 32);
         tx.out_msgs = vec![
             TonMessage {
                 source: Some(ton_address(TonWorkchain::Basechain, &account_hash())),
@@ -695,7 +697,7 @@ mod tests {
         // buggy provider could emit it. Sort order would then depend on the
         // upstream JSON's array order, which differs across providers/nodes.
         let mut tx = happy_tx();
-        let other_body = encode_cell(vec![0xaa; 4], 32, vec![]);
+        let other_body = encode_cell(vec![0xaa; 4], 32);
         tx.out_msgs.push(TonMessage {
             source: Some(ton_address(TonWorkchain::Basechain, &account_hash())),
             destination: None,

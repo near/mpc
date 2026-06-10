@@ -2,11 +2,65 @@
 //! REST interface implemented by TON RPC providers.
 //!
 //! Only the subset of fields the inspector consumes is modelled; unknown fields
-//! in the JSON are ignored. Addresses use [`tonlib_core::types::TonAddress`],
-//! which deserializes from the v3 API's raw `"<workchain>:<hex>"` form.
+//! in the JSON are ignored. Addresses use [`TonRawAddress`], which
+//! (de)serializes the v3 API's raw `"<workchain>:<hex>"` form.
 
-use serde::{Deserialize, Serialize};
-use tonlib_core::types::TonAddress;
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as _};
+use std::fmt;
+
+/// A TON account address in raw form, as the v3 API renders it:
+/// `"<workchain>:<64 lowercase hex>"` (e.g. `"0:3e5f…5588"`).
+///
+/// Replaces the third-party `tonlib_core::types::TonAddress` so the crate parses
+/// this attacker-influenced field with a small, audited implementation rather
+/// than pulling in (and trusting) an external library. Only the raw form is
+/// accepted — the user-friendly base64 form some providers also emit is not used
+/// by the v3 `/transactions` endpoint for these fields.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TonRawAddress {
+    /// Workchain id (`int8` in the TON address format; `0` for the basechain,
+    /// `-1` for the masterchain).
+    pub workchain: i32,
+    /// The 256-bit account identifier within the workchain.
+    pub hash: [u8; 32],
+}
+
+impl TonRawAddress {
+    /// The canonical raw string form, `"<workchain>:<lowercase hex>"`.
+    pub fn to_hex(&self) -> String {
+        format!("{}:{}", self.workchain, hex::encode(self.hash))
+    }
+}
+
+impl fmt::Display for TonRawAddress {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.to_hex())
+    }
+}
+
+impl Serialize for TonRawAddress {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.to_hex())
+    }
+}
+
+impl<'de> Deserialize<'de> for TonRawAddress {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let raw = String::deserialize(deserializer)?;
+        let (workchain, hash_hex) = raw
+            .split_once(':')
+            .ok_or_else(|| D::Error::custom("TON address missing ':' separator"))?;
+        let workchain: i32 = workchain
+            .parse()
+            .map_err(|_| D::Error::custom("TON address has a non-numeric workchain"))?;
+        let bytes =
+            hex::decode(hash_hex).map_err(|_| D::Error::custom("TON address hash is not hex"))?;
+        let hash: [u8; 32] = bytes
+            .try_into()
+            .map_err(|_| D::Error::custom("TON address hash is not 32 bytes"))?;
+        Ok(TonRawAddress { workchain, hash })
+    }
+}
 
 /// Response of `GET /api/v3/transactions`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -18,7 +72,7 @@ pub struct GetTransactionsResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TonTransaction {
     /// Account the transaction belongs to.
-    pub account: TonAddress,
+    pub account: TonRawAddress,
     /// Base64-encoded transaction hash, as returned by the v3 API.
     pub hash: String,
     /// Seqno of the masterchain block this transaction was committed under.
@@ -73,7 +127,7 @@ pub struct TonActionPhase {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TonMessage {
     #[serde(default)]
-    pub source: Option<TonAddress>,
+    pub source: Option<TonRawAddress>,
     /// The inspector treats a `None` destination as the marker of an ext-out
     /// (logging) message and `Some` as an internal message to another contract.
     ///
@@ -86,7 +140,7 @@ pub struct TonMessage {
     /// misclassified as internal and skipped — validate this against any
     /// provider before whitelisting it.
     #[serde(default)]
-    pub destination: Option<TonAddress>,
+    pub destination: Option<TonRawAddress>,
     /// Logical time the message was created, as a decimal string. Used to order
     /// ext-out messages deterministically.
     #[serde(default)]

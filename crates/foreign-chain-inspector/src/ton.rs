@@ -1,9 +1,10 @@
+use crate::ton::boc::BocError;
 use near_mpc_bounded_collections::BoundedVecOutOfBounds;
 use near_mpc_contract_interface::types::{
     Hash256, TonCellBody, TonCellBodyError, TonCellData, TonCellRefs,
 };
-use tonlib_core::cell::{BagOfCells, TonCellError};
 
+pub mod boc;
 pub mod inspector;
 pub mod rpc_client;
 pub mod types;
@@ -11,20 +12,11 @@ pub mod types;
 /// Errors raised during [BoC](https://docs.ton.org/blockchain-basics/primitives/serialization/boc) cell normalization.
 #[derive(Debug, thiserror::Error)]
 pub enum TonBocError {
-    #[error("failed to parse TON BoC: {0}")]
-    Parse(TonCellError),
-
-    #[error("panicked while parsing TON BoC (malformed cell structure)")]
-    ParsePanicked,
-
-    #[error("TON BoC is not a single-root BoC (expected exactly one root)")]
-    NotSingleRoot,
+    #[error("failed to decode TON BoC: {0}")]
+    Boc(#[from] BocError),
 
     #[error("TON cell body is not byte-aligned (bit_len={bit_len}, must be divisible by 8)")]
-    NonByteAlignedBody { bit_len: usize },
-
-    #[error("TON cell bit length {bit_len} does not fit in u16")]
-    BitLengthTooLarge { bit_len: usize },
+    NonByteAlignedBody { bit_len: u16 },
 
     #[error("TON cell body is not a valid contract cell body: {0}")]
     InvalidCellBody(TonCellBodyError),
@@ -86,47 +78,24 @@ impl TonInspectionError {
 /// canonical [`TonCellBody`] / [`TonCellRefs`] representation.
 ///
 /// The cell's inline data becomes the [`TonCellBody`]; each child cell is
-/// represented by its 256-bit representation hash ([`tonlib_core::cell::Cell::cell_hash`]),
+/// represented by its 256-bit
+/// [representation hash](https://docs.ton.org/foundations/serialization/cells#standard-cell-representation-and-its-hash),
 /// matching the contract's `body_refs: `[`TonCellRefs`] shape. Only byte-aligned
 /// bodies are accepted — TON message bodies are byte-aligned in practice, and
 /// rejecting the rest keeps the signed payload unambiguous across nodes.
 pub fn normalize_body_boc(body_boc_b64: &str) -> Result<(TonCellBody, TonCellRefs), TonBocError> {
-    // The BoC is attacker-controlled (it comes from a semi-trusted RPC
-    // provider). `tonlib_core`'s deserializer resolves cell/root indices with
-    // unchecked arithmetic, so a crafted BoC with an out-of-range reference can
-    // panic instead of returning an error. A panic here would unwind through
-    // the `FanOut`'s `JoinSet`, turning one bad provider into a failed
-    // verification rather than a disagreeing verdict that the fan-out can
-    // outvote — so catch it and surface it as an ordinary (substantive) error.
-    let boc = std::panic::catch_unwind(|| BagOfCells::parse_base64(body_boc_b64))
-        .map_err(|_| TonBocError::ParsePanicked)?
-        .map_err(TonBocError::Parse)?;
+    let cell = boc::parse_single_root_boc(body_boc_b64)?;
 
-    let root = boc.single_root().map_err(|_| TonBocError::NotSingleRoot)?;
-
-    let bit_len = root.bit_len();
-    if bit_len % 8 != 0 {
-        return Err(TonBocError::NonByteAlignedBody { bit_len });
+    if cell.bit_len % 8 != 0 {
+        return Err(TonBocError::NonByteAlignedBody {
+            bit_len: cell.bit_len,
+        });
     }
-    let byte_len = bit_len / 8;
-
-    // Top-level cell's inline data, packed to `bit_len / 8` bytes. For
-    // byte-aligned cells tonlib yields exactly `byte_len` data bytes; slice
-    // defensively anyway — if a tonlib regression ever yields fewer bytes, the
-    // fallback's length mismatch is rejected by `TonCellBody::new`
-    // (`BitLengthByteMismatch`) below.
-    let body_bits = root.data().get(..byte_len).unwrap_or(root.data()).to_vec();
-    let bit_length =
-        u16::try_from(bit_len).map_err(|_| TonBocError::BitLengthTooLarge { bit_len })?;
-    let body = ton_cell_body(body_bits, bit_length)?;
+    let body = ton_cell_body(cell.data, cell.bit_len)?;
 
     // Each reference is identified by its representation hash — the canonical,
     // deterministic 32-byte identity TON uses for child cells.
-    let ref_hashes: Vec<Hash256> = root
-        .references()
-        .iter()
-        .map(|r| Hash256(r.cell_hash().into()))
-        .collect();
+    let ref_hashes: Vec<Hash256> = cell.ref_hashes.into_iter().map(Hash256).collect();
     let body_refs: TonCellRefs = ref_hashes.try_into().map_err(TonBocError::OutOfBounds)?;
 
     Ok((body, body_refs))
@@ -152,72 +121,53 @@ fn ton_cell_body(bits: Vec<u8>, bit_length: u16) -> Result<TonCellBody, TonBocEr
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use base64::Engine;
-    use tonlib_core::cell::{ArcCell, Cell};
-
-    fn cell_from_bytes(data: Vec<u8>, bit_len: usize, refs: Vec<ArcCell>) -> ArcCell {
-        std::sync::Arc::new(Cell::new(data, bit_len, refs, false).unwrap())
-    }
-
-    fn encode_boc(root: ArcCell) -> String {
-        base64::engine::general_purpose::STANDARD
-            .encode(BagOfCells::new(&[root]).serialize(false).unwrap())
-    }
 
     fn cell_body(bits: Vec<u8>, bit_length: u16) -> TonCellBody {
         TonCellBody::new(bits.try_into().unwrap(), bit_length).unwrap()
     }
 
-    #[test]
-    fn normalize_body_boc__should_return_empty_body_and_no_refs_for_empty_cell() {
-        let root = cell_from_bytes(vec![], 0, vec![]);
-        let b64 = encode_boc(root);
-
-        let (body, refs) = normalize_body_boc(&b64).unwrap();
-        assert_eq!(body, cell_body(vec![], 0));
-        assert!(refs.is_empty());
-    }
+    // A byte-aligned 4-byte body cell `0x99000001` (32 bits), no references.
+    const BYTE_ALIGNED_BODY: &str = "te6ccgEBAQEABgAACJkAAAE=";
+    // A 2-byte body cell `0xdead` (16 bits) referencing one child cell `0xaa`.
+    const ONE_REF_BODY: &str = "te6ccgEBAgEACAABBN6tAQACqg==";
+    const ONE_REF_CHILD_HASH: &str =
+        "08da99aa8eb36c5c627a221005ca60f004f392de79b18e90be10c0cb420ab332";
+    // A non-byte-aligned body cell (12 bits).
+    const NON_BYTE_ALIGNED_BODY: &str = "te6ccgEBAQEABAAAA96o";
 
     #[test]
     fn normalize_body_boc__should_return_inline_bytes_for_byte_aligned_body() {
-        // 4 bytes of payload: op=0x99000001 style.
-        let payload = vec![0x99, 0x00, 0x00, 0x01];
-        let root = cell_from_bytes(payload.clone(), payload.len() * 8, vec![]);
-        let b64 = encode_boc(root);
-
-        let (body, refs) = normalize_body_boc(&b64).unwrap();
-        assert_eq!(body, cell_body(payload, 32));
+        let (body, refs) = normalize_body_boc(BYTE_ALIGNED_BODY).unwrap();
+        assert_eq!(body, cell_body(vec![0x99, 0x00, 0x00, 0x01], 32));
         assert!(refs.is_empty());
     }
 
     #[test]
-    fn normalize_body_boc__should_return_reference_cell_hashes() {
-        let ref1 = cell_from_bytes(vec![0xaa, 0xbb], 16, vec![]);
-        let ref2 = cell_from_bytes(vec![0x01, 0x02, 0x03], 24, vec![]);
-        let root = cell_from_bytes(vec![0xde, 0xad], 16, vec![ref1.clone(), ref2.clone()]);
-
-        let b64 = encode_boc(root);
-        let (body, refs) = normalize_body_boc(&b64).unwrap();
-
+    fn normalize_body_boc__should_map_references_to_their_cell_hashes() {
+        let (body, refs) = normalize_body_boc(ONE_REF_BODY).unwrap();
         assert_eq!(body, cell_body(vec![0xde, 0xad], 16));
-        // Refs are the children's representation hashes, in cell order.
-        let expected = vec![
-            Hash256(ref1.cell_hash().into()),
-            Hash256(ref2.cell_hash().into()),
-        ];
-        assert_eq!(refs.as_slice(), expected.as_slice());
+        assert_eq!(
+            refs.as_slice(),
+            &[Hash256(
+                hex::decode(ONE_REF_CHILD_HASH).unwrap().try_into().unwrap()
+            )],
+        );
     }
 
     #[test]
-    fn normalize_body_boc__should_be_deterministic_across_runs() {
-        // Same input ⇒ identical output (the determinism guarantee MPC relies on).
-        let ref1 = cell_from_bytes(vec![0xaa], 8, vec![]);
-        let root = cell_from_bytes(vec![0xde, 0xad, 0xbe, 0xef], 32, vec![ref1]);
-        let b64 = encode_boc(root);
+    fn normalize_body_boc__should_reject_non_byte_aligned_body() {
+        let err = normalize_body_boc(NON_BYTE_ALIGNED_BODY).unwrap_err();
+        assert_matches!(err, TonBocError::NonByteAlignedBody { bit_len: 12 });
+    }
 
-        let first = normalize_body_boc(&b64).unwrap();
-        let second = normalize_body_boc(&b64).unwrap();
-        assert_eq!(first, second);
+    #[test]
+    fn normalize_body_boc__should_surface_decode_errors_as_boc_error() {
+        // Malformed input must produce an error (never a panic — the production
+        // binary aborts on panic).
+        assert_matches!(
+            normalize_body_boc("!!!not base64!!!"),
+            Err(TonBocError::Boc(_))
+        );
     }
 
     #[test]
@@ -246,48 +196,5 @@ mod tests {
         };
 
         assert!(!err.is_transient());
-    }
-
-    #[test]
-    fn normalize_body_boc__should_reject_non_byte_aligned_body() {
-        // 12 bits of data isn't byte-aligned.
-        let root = cell_from_bytes(vec![0xab, 0xc0], 12, vec![]);
-        let b64 = encode_boc(root);
-
-        let err = normalize_body_boc(&b64).unwrap_err();
-        assert_matches!(err, TonBocError::NonByteAlignedBody { bit_len: 12 });
-    }
-
-    #[test]
-    fn normalize_body_boc__should_reject_malformed_base64() {
-        let err = normalize_body_boc("!!!not base64!!!").unwrap_err();
-        assert_matches!(err, TonBocError::Parse(_));
-    }
-
-    #[test]
-    fn normalize_body_boc__should_reject_non_cell_bytes() {
-        // Valid base64 but not a valid BoC.
-        let garbage = base64::engine::general_purpose::STANDARD.encode([0xff, 0xff, 0xff, 0xff]);
-        let err = normalize_body_boc(&garbage).unwrap_err();
-        assert_matches!(err, TonBocError::Parse(_));
-    }
-
-    #[test]
-    fn normalize_body_boc__should_not_panic_on_out_of_range_root_index() {
-        // A hand-crafted BoC declaring one cell but a root index of 5. tonlib
-        // resolves roots with unchecked `cells[num_cells - 1 - root]`, which
-        // underflows and panics on this input; `normalize_body_boc` must turn
-        // that into an error rather than unwinding.
-        //
-        // Layout: magic(b5ee9c72) | flags=size:1 | off_bytes:1 | cells:1 |
-        // roots:1 | absent:0 | tot_cells_size:2 | root_list:[5] |
-        // cell:(d1=0,d2=0 => empty, no refs).
-        let bytes = [
-            0xb5, 0xee, 0x9c, 0x72, 0x01, 0x01, 0x01, 0x01, 0x00, 0x02, 0x05, 0x00, 0x00,
-        ];
-        let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
-
-        let err = normalize_body_boc(&b64).unwrap_err();
-        assert_matches!(err, TonBocError::ParsePanicked);
     }
 }
