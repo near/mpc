@@ -89,6 +89,8 @@ impl EcdsaSignatureProvider {
         presignature_id: UniqueId,
         sign_request: SignatureRequest,
     ) -> anyhow::Result<()> {
+        // The presignature must be owned by the leader, never one of ours.
+        presignature_id.validate_owned_by(channel.sender().get_leader())?;
         let domain_data = self.domain_data(sign_request.domain)?;
         let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
         let threshold = ReconstructionLowerBound::from(threshold);
