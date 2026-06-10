@@ -18,6 +18,9 @@ use elliptic_curve::ops::Reduce;
 
 use crate::crypto::constants::NEAR_RANDOM_OT_EXTENSION_HASH_CTX;
 
+/// How many hash-to-scalar iterations to run between yield points.
+const YIELD_EVERY: usize = 64;
+
 fn hash_to_scalar(i: usize, v: &BitVector) -> Scalar {
     let mut hasher = Sha256::new();
     let i64 = u64::try_from(i).expect("failed to convert usize to u64");
@@ -126,6 +129,11 @@ pub async fn random_ot_extension_sender(
         let v0_i = hash_to_scalar(i, q_i);
         let v1_i = hash_to_scalar(i, &(q_i ^ delta));
         out.push((v0_i, v1_i));
+
+        // Hashing is cheap; yielding every iteration would be all overhead.
+        if (i + 1) % YIELD_EVERY == 0 {
+            chan.yield_point().await;
+        }
     }
 
     Ok(out)
@@ -199,13 +207,15 @@ pub async fn random_ot_extension_receiver(
     chan.send(wait1, &(small_x, small_t))?;
 
     // Step 15
-    let out: Vec<_> = b
-        .bits()
-        .zip(t.rows())
-        .take(params.batch_size)
-        .enumerate()
-        .map(|(i, (b_i, t_i))| (b_i, hash_to_scalar(i, t_i)))
-        .collect();
+    let mut out = Vec::with_capacity(params.batch_size);
+    for (i, (b_i, t_i)) in b.bits().zip(t.rows()).take(params.batch_size).enumerate() {
+        out.push((b_i, hash_to_scalar(i, t_i)));
+
+        // Hashing is cheap; yielding every iteration would be all overhead.
+        if (i + 1) % YIELD_EVERY == 0 {
+            chan.yield_point().await;
+        }
+    }
 
     Ok(out)
 }

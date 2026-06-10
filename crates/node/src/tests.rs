@@ -59,6 +59,7 @@ mod faulty;
 mod foreign_chain_configuration;
 mod multidomain;
 mod onboarding;
+mod protocol_yielding;
 mod resharing;
 
 const DEFAULT_BLOCK_TIME: std::time::Duration = std::time::Duration::from_millis(300);
