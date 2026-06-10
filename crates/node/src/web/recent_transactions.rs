@@ -174,10 +174,9 @@ impl RecentTransactions {
     }
 }
 
-/// Shared handle to a [`RecentTransactions`] buffer: a cheap-to-clone owner of
-/// the `Arc<Mutex<_>>` that the web server's drain task writes to and the
-/// request handler reads from. Encapsulates the locking so callers never touch
-/// the mutex directly.
+/// Shared handle to a [`RecentTransactions`] buffer that the web server's drain
+/// task writes to and the request handler reads from, with the synchronization
+/// encapsulated so callers just `record` and `snapshot`.
 #[derive(Clone, Default)]
 pub struct SharedRecentTransactions(Arc<Mutex<RecentTransactions>>);
 
@@ -185,13 +184,16 @@ impl SharedRecentTransactions {
     /// Records one submitted (or submit-failed) transaction. See
     /// [`RecentTransactions::record`].
     pub fn record(&self, transaction: SubmittedTransaction) {
-        self.0.lock().unwrap().record(transaction);
+        self.0
+            .lock()
+            .expect("lock must not be poisoned")
+            .record(transaction);
     }
 
     /// Returns the retained entries, newest first. See
     /// [`RecentTransactions::snapshot`].
     pub fn snapshot(&self) -> Vec<SubmittedTransaction> {
-        self.0.lock().unwrap().snapshot()
+        self.0.lock().expect("lock must not be poisoned").snapshot()
     }
 }
 
