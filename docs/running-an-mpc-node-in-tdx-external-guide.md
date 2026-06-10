@@ -703,7 +703,7 @@ boot_nodes = "$BOOT_NODES"        # comma-separated; see the curl snippet below
 download_genesis = true
 download_config = "rpc"
 tier3_public_addr = "$IP:24567"   # required — your node's public IP; DSS-first needs a reachable advertised address
-external_storage_fallback_threshold = 100
+external_storage_fallback_threshold = 100   # required — do not change
 
 [mpc_node_config.secrets]
 secret_store_key_hex = "$SECRET_STORE_KEY"
@@ -739,7 +739,7 @@ Adjust the variables as per your environment.
 * `migration_web_ui` — bind address for the migration HTTP endpoint, used by the [Node Migration](./node-migration-guide.md) flow. Required. Keep at `0.0.0.0:8079` to match the port-forward and the `--mpc-node-address …:8079` form the migration guide uses.
 * `port_mappings` — port forwarding rules for the MPC container. These should be a subset of the port forwarding for the CVM defined in the [Using the Web Interface](#using-the-web-interface) section.
 * `tier3_public_addr` *(under `[mpc_node_config.near_init]`)* — `IP:24567` the node advertises for DSS (Tier3) state-sync responses. **The template ships this as a `REPLACE_WITH_…` placeholder you must set before first start** — an un-replaced value makes the node fail to start (intentionally, so DSS-first never silently runs with an unreachable advertised address). It is especially critical on any host with more than one external IP, or when running [multiple nodes on one host](./running-multiple-mpc-nodes-on-one-host.md): otherwise the node auto-discovers its advertised address as the host's default-route outbound IP, which DSS peers may not be able to reach, and state sync stalls. Applied at first init only; changing later requires a CVM redeploy via the [Node Migration](./node-migration-guide.md) flow.
-* `external_storage_fallback_threshold` *(under `[mpc_node_config.near_init]`)* — DSS (decentralized state sync) attempts per state part before falling back to the external storage bucket. This template sets `100` (DSS-first, with the bucket as a safety net); set `0` for bucket-only. If the field is omitted, the launcher's config patching sets it to `0` (bucket-only). Same first-init-only constraint as `tier3_public_addr`. DSS-first relies on `tier3_public_addr` being reachable — see its note above.
+* `external_storage_fallback_threshold` *(under `[mpc_node_config.near_init]`)* — controls DSS (decentralized state sync). **Leave at `100` — do not change.** Applied at first init only, like `tier3_public_addr`.
 * `near_init.boot_nodes` — comma-separated NEAR boot-node list. The testnet template at `deployment/cvm-deployment/user-config.toml` already ships with a working testnet boot-node list, so testnet operators usually don't need to fetch a fresh one. For **mainnet** (or to refresh testnet), select boot nodes from the Testnet/Mainnet RPC endpoints and copy at least 4-5 of them into this field.
   **Important:** Boot nodes must not contain duplicate addresses or peer IDs. Duplicates will cause the node to crash on startup. The command below deduplicates automatically:
 

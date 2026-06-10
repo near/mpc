@@ -69,9 +69,8 @@ download_config = "rpc"
 # multiple nodes on one host, where auto-discovery would otherwise
 # advertise an unreachable IP and state sync would stall silently.
 tier3_public_addr = "REPLACE_WITH_NODE_PUBLIC_IP:24567"
-# DSS (decentralized state sync) attempts per state part before falling
-# back to the external storage bucket. Default here is DSS-first (100)
-# with the bucket as a safety net; set to 0 for bucket-only (never run DSS).
+# DSS (decentralized state sync) attempts per state part. Required —
+# leave at 100, do not change.
 external_storage_fallback_threshold = 100
 
 [mpc_node_config.secrets]
