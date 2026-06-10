@@ -40,10 +40,11 @@ pub async fn run_protocol<T>(
     //    inefficient, so instead we put messages into queues, indexed by the recipient, and have
     //    a parallel task for each recipient that sends the messages.
     //  - We need the sending task to be a separate spawn from the computation task because while
-    //    we're computing, we would not be able to cooperatively run any other tasks, and that can
-    //    unnecessarily block sending. It is OK to have the receiving side blocked by computation,
-    //    because on the receiving side, the network channel already provides us with a buffer
-    //    dedicated to our task.
+    //    we're computing, we would not be able to cooperatively run any other tasks (computation
+    //    only yields at the protocol's explicit yield points), and that can unnecessarily block
+    //    sending. It is OK to have the receiving side blocked by computation, because on the
+    //    receiving side, the network channel already provides us with a buffer dedicated to our
+    //    task.
     let sending_handle = {
         let counters = counters.clone();
         let sender = channel.sender();
@@ -74,11 +75,21 @@ pub async fn run_protocol<T>(
     let participants = channel.participants().to_vec();
     let my_participant_id = channel.my_participant_id();
     let computation_handle = async move {
+        /// How a poke burst ended, deciding what to do after flushing messages.
+        enum PokeOutcome<T> {
+            Wait,
+            Yield,
+            Return(T),
+        }
+
         loop {
             let mut messages_to_send: HashMap<ParticipantId, _> = HashMap::new();
-            let done = loop {
+            let outcome = loop {
                 match protocol.poke()? {
-                    Action::Wait => break None,
+                    Action::Wait => break PokeOutcome::Wait,
+                    // Flush the accumulated messages before yielding, so peers can make
+                    // progress while we give other tasks a chance to run.
+                    Action::Yield => break PokeOutcome::Yield,
                     Action::SendMany(vec) => {
                         for participant in &participants {
                             if participant == &my_participant_id {
@@ -99,7 +110,7 @@ pub async fn run_protocol<T>(
                     Action::Return(result) => {
                         // Warning: we cannot return immediately!! There may be some important
                         // messages to send to others to enable others to complete their computation.
-                        break Some(result);
+                        break PokeOutcome::Return(result);
                     }
                 }
             };
@@ -118,17 +129,21 @@ pub async fn run_protocol<T>(
                 queue_senders.get(&p).unwrap().send(messages)?;
             }
 
-            if let Some(result) = done {
-                return anyhow::Ok(result);
-            }
+            match outcome {
+                PokeOutcome::Return(result) => return anyhow::Ok(result),
+                // The protocol can continue without a message; let other tasks run, then
+                // keep poking. Waiting on channel.receive() here would stall the protocol.
+                PokeOutcome::Yield => tokio::task::yield_now().await,
+                PokeOutcome::Wait => {
+                    counters.set_receiving();
 
-            counters.set_receiving();
+                    let msg = channel.receive().await?;
+                    counters.received(msg.from, msg.data.len());
 
-            let msg = channel.receive().await?;
-            counters.received(msg.from, msg.data.len());
-
-            for one_msg in msg.data {
-                protocol.message(msg.from.into(), one_msg)?;
+                    for one_msg in msg.data {
+                        protocol.message(msg.from.into(), one_msg)?;
+                    }
+                }
             }
         }
     };
@@ -236,5 +251,93 @@ impl MessageCounters {
                 "computing"
             },
         ));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::run_protocol;
+    use crate::network::testing::run_test_clients;
+    use crate::network::{MeshNetworkClient, NetworkTaskChannel};
+    use crate::primitives::UniqueId;
+    use crate::providers::ecdsa::EcdsaTaskId;
+    use crate::tests::into_participant_ids;
+    use crate::tracking;
+    use std::collections::VecDeque;
+    use std::sync::Arc;
+    use std::time::Duration;
+    use threshold_signatures::errors::{MessageError, ProtocolError};
+    use threshold_signatures::participants::Participant;
+    use threshold_signatures::protocol::{Action, MessageData, Protocol};
+    use threshold_signatures::test_utils::generate_participants;
+    use tokio::sync::mpsc;
+
+    /// Protocol stub that replays a fixed sequence of actions.
+    struct ScriptedProtocol {
+        script: VecDeque<Action<u32>>,
+    }
+
+    impl Protocol for ScriptedProtocol {
+        type Output = u32;
+
+        fn poke(&mut self) -> Result<Action<u32>, ProtocolError> {
+            Ok(self.script.pop_front().unwrap_or(Action::Wait))
+        }
+
+        fn message(&mut self, _from: Participant, _data: MessageData) -> Result<(), MessageError> {
+            Ok(())
+        }
+    }
+
+    #[test_log::test(tokio::test)]
+    #[expect(non_snake_case)]
+    async fn run_protocol__should_keep_poking_after_yield() {
+        tracking::testing::start_root_task_with_periodic_dump(async {
+            // Given - a two-party network where the leader's protocol yields twice
+            // before returning, without ever needing a message
+            let results = run_test_clients(
+                into_participant_ids(&generate_participants(2)),
+                run_one_client,
+            )
+            .await
+            .unwrap();
+
+            // Then - the leader's protocol completed (it would hang waiting for a
+            // message if a yield were treated like a wait)
+            assert!(results.contains(&Some(42)));
+        })
+        .await;
+    }
+
+    async fn run_one_client(
+        client: Arc<MeshNetworkClient>,
+        mut channel_receiver: mpsc::UnboundedReceiver<NetworkTaskChannel>,
+    ) -> anyhow::Result<Option<u32>> {
+        let my_id = client.my_participant_id();
+        let mut ids = client.all_participant_ids();
+        ids.sort();
+        if my_id == ids[0] {
+            let task_id = EcdsaTaskId::ManyTriples {
+                start: UniqueId::new(my_id, 0, 0),
+                count: 2,
+            };
+            let mut channel = client.new_channel_for_task(task_id, ids)?;
+            let protocol = ScriptedProtocol {
+                script: [Action::Yield, Action::Yield, Action::Return(42)].into(),
+            };
+
+            // When - running the protocol with a deadline
+            let result = tokio::time::timeout(
+                Duration::from_secs(5),
+                run_protocol("scripted", &mut channel, protocol),
+            )
+            .await
+            .expect("run_protocol must keep poking after Action::Yield, not wait for a message")?;
+            Ok(Some(result))
+        } else {
+            // Accept the leader's channel so its Start message has a destination.
+            let _channel = channel_receiver.recv().await;
+            Ok(None)
+        }
     }
 }
