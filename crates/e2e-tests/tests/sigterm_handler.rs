@@ -1,4 +1,6 @@
+use std::io::{Read, Seek, SeekFrom};
 use std::os::unix::process::ExitStatusExt;
+use std::path::Path;
 use std::time::Duration;
 
 use crate::common;
@@ -25,11 +27,41 @@ async fn sigterm_handler__should_exit_cleanly_instead_of_default_terminating() {
         .terminate_node_with_sigterm(0, Duration::from_secs(30))
         .expect("node did not exit within the SIGTERM grace period");
 
-    // Then: the process exited cleanly with code 0.
+    // Then: the process exited cleanly with code 0. On failure, inline the
+    // tails of node 0's stdout/stderr so the panic message carries
+    // mpc-node's last log lines — tracing → stdout, panics/eprintln →
+    // stderr. The test's tempdir is cleaned on exit, so without this dump
+    // CI only sees the exit signal and we can't tell e.g. a tokio-task
+    // panic that aborted the process during shutdown from a clean failure.
+    let home = cluster.nodes[0].home_dir();
+    let stdout_tail = read_log_tail(&home.join("stdout.log"), 16_384);
+    let stderr_tail = read_log_tail(&home.join("stderr.log"), 16_384);
     assert!(
         status.success(),
-        "mpc-node did not exit cleanly after SIGTERM: code={:?} signal={:?}",
+        "mpc-node did not exit cleanly after SIGTERM: code={:?} signal={:?}\n\
+         --- last 16KB of node 0 stdout.log (mpc-node tracing) ---\n{stdout_tail}\n\
+         --- end stdout.log ---\n\
+         --- last 16KB of node 0 stderr.log (panic backtraces) ---\n{stderr_tail}\n\
+         --- end stderr.log ---",
         status.code(),
         status.signal()
     );
+}
+
+/// Best-effort read of the last `max_bytes` of a log file. Returns a
+/// synthetic placeholder string if the file can't be opened/read.
+fn read_log_tail(path: &Path, max_bytes: usize) -> String {
+    let Ok(mut f) = std::fs::File::open(path) else {
+        return format!("(could not open {})", path.display());
+    };
+    let len = f.metadata().map(|m| m.len()).unwrap_or(0);
+    let skip = len.saturating_sub(max_bytes as u64);
+    if f.seek(SeekFrom::Start(skip)).is_err() {
+        return format!("(seek failed on {})", path.display());
+    }
+    let mut buf = Vec::with_capacity(max_bytes);
+    if f.read_to_end(&mut buf).is_err() {
+        return format!("(read failed on {})", path.display());
+    }
+    String::from_utf8_lossy(&buf).into_owned()
 }
