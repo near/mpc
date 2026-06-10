@@ -81,6 +81,8 @@ impl RobustEcdsaSignatureProvider {
         presignature_id: UniqueId,
     ) -> anyhow::Result<()> {
         metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_RECEIVED.inc();
+        // The presignature must be owned by the leader, never one of ours.
+        presignature_id.validate_owned_by(channel.sender().get_leader())?;
         let sign_request = timeout(
             Duration::from_secs(self.config.signature.timeout_sec),
             self.sign_request_store.get(id),
