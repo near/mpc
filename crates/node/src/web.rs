@@ -10,8 +10,8 @@ use futures::FutureExt;
 use futures::future::BoxFuture;
 use mpc_attestation::attestation::Attestation;
 use mpc_node_config::{
-    CKDConfig, ConfigFile, IndexerConfig, KeygenConfig, PresignatureConfig, SignatureConfig,
-    TripleConfig,
+    CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, PresignatureConfig,
+    SignatureConfig, TripleConfig,
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
@@ -91,6 +91,7 @@ struct NodeConfigResponse {
     signature: SignatureConfig,
     ckd: CKDConfig,
     keygen: KeygenConfig,
+    foreign_chains_provider_counts: ForeignChainsProviderCounts,
     cores: Option<usize>,
 }
 
@@ -109,7 +110,49 @@ impl From<ConfigFile> for NodeConfigResponse {
             signature: config.signature,
             ckd: config.ckd,
             keygen: config.keygen,
+            foreign_chains_provider_counts: config.foreign_chains.into(),
             cores: config.cores,
+        }
+    }
+}
+
+#[derive(Clone, Serialize)]
+struct ForeignChainsProviderCounts {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    solana: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bitcoin: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ethereum: Option<usize>,
+    #[serde(rename = "abstract", skip_serializing_if = "Option::is_none")]
+    abstract_chain: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    starknet: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bnb: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    base: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    arbitrum: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hyper_evm: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    polygon: Option<usize>,
+}
+
+impl From<ForeignChainsConfig> for ForeignChainsProviderCounts {
+    fn from(config: ForeignChainsConfig) -> Self {
+        Self {
+            solana: config.solana.map(|c| c.providers.len()),
+            bitcoin: config.bitcoin.map(|c| c.providers.len()),
+            ethereum: config.ethereum.map(|c| c.providers.len()),
+            abstract_chain: config.abstract_chain.map(|c| c.providers.len()),
+            starknet: config.starknet.map(|c| c.providers.len()),
+            bnb: config.bnb.map(|c| c.providers.len()),
+            base: config.base.map(|c| c.providers.len()),
+            arbitrum: config.arbitrum.map(|c| c.providers.len()),
+            hyper_evm: config.hyper_evm.map(|c| c.providers.len()),
+            polygon: config.polygon.map(|c| c.providers.len()),
         }
     }
 }
@@ -455,22 +498,29 @@ mod tests {
         // When
         let json = serde_json::to_string(&NodeConfigResponse::from(config)).unwrap();
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
-
-        // Then — the structural invariant: the public debug response must
-        // not carry a `foreign_chains` field at all.
         let object = value
             .as_object()
             .expect("response must serialize as a JSON object");
-        assert!(
-            !object.contains_key("foreign_chains"),
-            "response must not contain a `foreign_chains` key, got: {json}"
-        );
 
-        // Defense in depth: catch a regression that re-introduces RPC
-        // provider data under a different field name. Each needle below is
-        // a value present only in the foreign-chain test fixture, so its
-        // appearance anywhere in the serialized response is unambiguous
-        // evidence of a leak.
+        // Then — provider counts are safe to expose; sensitive details are not.
+        let counts = object
+            .get("foreign_chains_provider_counts")
+            .expect("response must contain `foreign_chains_provider_counts`")
+            .as_object()
+            .expect("`foreign_chains_provider_counts` must be an object");
+
+        // test_config gives each chain exactly one provider
+        for chain in ["solana", "bitcoin", "ethereum", "abstract", "starknet",
+                       "bnb", "base", "arbitrum", "hyper_evm", "polygon"] {
+            assert_eq!(
+                counts.get(chain).and_then(|v| v.as_u64()),
+                Some(1),
+                "expected 1 provider for chain `{chain}`, got: {counts:?}"
+            );
+        }
+
+        // Defense in depth: no provider name, URL, auth token, or env-var name
+        // must appear anywhere in the serialized response.
         let forbidden = [
             PROVIDER_ALCHEMY,
             PROVIDER_ANKR,
