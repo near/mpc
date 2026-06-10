@@ -510,8 +510,18 @@ mod tests {
             .expect("`foreign_chains_provider_counts` must be an object");
 
         // test_config gives each chain exactly one provider
-        for chain in ["solana", "bitcoin", "ethereum", "abstract", "starknet",
-                       "bnb", "base", "arbitrum", "hyper_evm", "polygon"] {
+        for chain in [
+            "solana",
+            "bitcoin",
+            "ethereum",
+            "abstract",
+            "starknet",
+            "bnb",
+            "base",
+            "arbitrum",
+            "hyper_evm",
+            "polygon",
+        ] {
             assert_eq!(
                 counts.get(chain).and_then(|v| v.as_u64()),
                 Some(1),
