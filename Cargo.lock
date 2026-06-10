@@ -3161,6 +3161,7 @@ dependencies = [
  "hex",
  "httpmock",
  "launcher-interface",
+ "libc",
  "mpc-node-config",
  "mpc-primitives",
  "near-account-id 2.6.0",
@@ -11360,6 +11361,21 @@ dependencies = [
  "toml 1.1.2+spec-1.1.0",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "tee-verifier"
+version = "3.11.0"
+dependencies = [
+ "borsh",
+ "dcap-qvl",
+ "getrandom 0.2.17",
+ "hex",
+ "near-sdk",
+ "rstest",
+ "tee-verifier",
+ "tee-verifier-interface",
+ "test-utils",
 ]
 
 [[package]]
