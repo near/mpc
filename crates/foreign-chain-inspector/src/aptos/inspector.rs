@@ -17,6 +17,7 @@ impl<Client> AptosInspector<Client> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
 pub enum AptosFinality {
     Committed,
 }
@@ -55,7 +56,7 @@ where
                 other => ForeignChainInspectionError::RpcRequestFailed(other.to_string()),
             })?;
 
-        ensure_hash_matches(&tx_hash_hex, &tx.hash)?;
+        ensure_hash_matches(&tx_id, &tx.hash)?;
 
         if tx.transaction_type == "pending_transaction" {
             return Err(ForeignChainInspectionError::NotFinalized);
@@ -84,20 +85,26 @@ where
     }
 }
 
-/// Rejects a backend that returned a different transaction than queried (case-insensitive).
-fn ensure_hash_matches(requested: &str, returned: &str) -> Result<(), ForeignChainInspectionError> {
-    if requested.to_lowercase() != returned.to_lowercase() {
+/// Rejects a backend that returned a different transaction than queried. A non-hex `returned`
+/// hash is a malformed response (transient); a well-formed but different hash is a hard
+/// inconsistency.
+fn ensure_hash_matches(
+    requested: &[u8; 32],
+    returned: &str,
+) -> Result<(), ForeignChainInspectionError> {
+    let returned_bytes =
+        hex::decode(returned.strip_prefix("0x").unwrap_or(returned)).map_err(|e| {
+            ForeignChainInspectionError::RpcRequestFailed(format!(
+                "non-hex transaction hash in response: {e}"
+            ))
+        })?;
+    if returned_bytes.as_slice() != requested.as_slice() {
         return Err(ForeignChainInspectionError::InconsistentRpcResponse {
-            requested_hash: hex_str_to_bytes(requested),
-            returned_hash: hex_str_to_bytes(returned),
+            requested_hash: HexBytes(requested.to_vec()),
+            returned_hash: HexBytes(returned_bytes),
         });
     }
     Ok(())
-}
-
-/// Best-effort hex decode for error messages; empty on non-hex input.
-fn hex_str_to_bytes(s: &str) -> HexBytes {
-    HexBytes(hex::decode(s.strip_prefix("0x").unwrap_or(s)).unwrap_or_default())
 }
 
 impl AptosExtractor {
@@ -638,15 +645,27 @@ mod tests {
     #[test]
     fn ensure_hash_matches__should_accept_same_hash_different_case() {
         // Given / When / Then
-        ensure_hash_matches("0xABCD", "0xabcd").unwrap();
+        ensure_hash_matches(&[0xab; 32], &format!("0x{}", "AB".repeat(32))).unwrap();
     }
 
     #[test]
     fn ensure_hash_matches__should_reject_different_hashes() {
         // Given / When / Then
         assert_matches!(
-            ensure_hash_matches("0xabcd", "0xef01"),
+            ensure_hash_matches(&[0xab; 32], &format!("0x{}", "cd".repeat(32))),
             Err(ForeignChainInspectionError::InconsistentRpcResponse { .. })
+        );
+    }
+
+    #[test]
+    fn ensure_hash_matches__should_reject_non_hex_hash_as_malformed_response() {
+        // Given / When
+        let result = ensure_hash_matches(&[0xab; 32], "0xnot-hex");
+
+        // Then — a malformed field, not a hash mismatch.
+        assert_matches!(
+            result,
+            Err(ForeignChainInspectionError::RpcRequestFailed(_))
         );
     }
 }
