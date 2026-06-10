@@ -577,7 +577,7 @@ mod tests {
 
     #[test]
     fn proposed_threshold_parameters__should_default_per_domain_thresholds_when_field_absent_in_json()
-    {
+     {
         // Given a serialized proposal with the `per_domain_thresholds` field
         // stripped out — the shape an older client predating per-domain
         // reconstruction thresholds would submit to `vote_new_parameters`.
