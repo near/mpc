@@ -6,12 +6,15 @@ use std::time::Duration;
 
 /// Response from `GET /v1/transactions/by_hash/{txn_hash}`.
 ///
-/// Modelled leniently and *without* the `type` discriminator: providers diverge on the envelope
-/// (a fullnode tags it and includes every field; gateways like Alchemy omit `type` and make
-/// fields optional), so we keep only the fields we verify and infer committed-ness from the
-/// presence of `success` — a pending mempool tx has no execution result.
+/// The Aptos `Transaction` payload is a union discriminated by `type`
+/// (`pending_transaction`, `user_transaction`, `genesis_transaction`, …). We keep the
+/// discriminant as a plain string (rather than a serde-tagged enum) plus only the fields we
+/// verify, so every kind — including ones added to the API later — deserializes and the
+/// inspector decides what to do with it.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct TransactionResponse {
+    #[serde(rename = "type")]
+    pub transaction_type: String,
     pub hash: String,
     /// `Some` iff committed; `None` for a pending tx.
     #[serde(default)]
@@ -225,6 +228,7 @@ mod tests {
         let tx: TransactionResponse = serde_json::from_value(json).unwrap();
 
         // Then
+        assert_eq!(tx.transaction_type, "user_transaction");
         assert_eq!(tx.success, Some(true));
         assert_eq!(tx.hash, "0xabcdef1234");
         assert_eq!(tx.events.len(), 1);
@@ -232,36 +236,24 @@ mod tests {
     }
 
     #[test]
-    fn deserialize_transaction__should_parse_committed_transaction_without_type_tag() {
-        // Given — an Alchemy-style flat response: NO `type` field, the committed field set plus
-        // `changes`. This is the case that broke the strict, tag-discriminated model.
+    fn deserialize_transaction__should_parse_non_user_transaction_kind() {
+        // Given — a committed system transaction kind. It must deserialize like any other
+        // committed kind rather than erroring on parse.
         let json = serde_json::json!({
-            "version": "134911660",
-            "hash": "0xbe9e71660e128e0e3e1f082c394f7b1bd2f4cb9c52207fe63cf4c8e7eb080e9d",
-            "state_change_hash": "0x0b0ad6",
-            "event_root_hash": "0xb5731d",
-            "state_checkpoint_hash": null,
-            "gas_used": "57",
+            "type": "block_metadata_transaction",
+            "hash": "0xbe9e71",
+            "epoch": "7510",
+            "round": "42",
             "success": true,
             "vm_status": "Executed successfully",
-            "accumulator_root_hash": "0xa51fbb",
-            "changes": [],
-            "events": [
-                {
-                    "guid": { "creation_number": "2", "account_address": "0x1" },
-                    "sequence_number": "0",
-                    "type": "0x1::omni_bridge::InitTransfer",
-                    "data": { "amount": "100" }
-                }
-            ]
+            "events": []
         });
 
         // When
         let tx: TransactionResponse = serde_json::from_value(json).unwrap();
 
-        // Then — parses fine despite the missing `type` tag.
-        assert_eq!(tx.success, Some(true));
-        assert_eq!(tx.events.len(), 1);
+        // Then
+        assert_eq!(tx.transaction_type, "block_metadata_transaction");
     }
 
     #[test]
@@ -283,7 +275,8 @@ mod tests {
         // When
         let tx: TransactionResponse = serde_json::from_value(json).unwrap();
 
-        // Then — no execution result, so `success` is absent (the inspector reads this as pending).
+        // Then
+        assert_eq!(tx.transaction_type, "pending_transaction");
         assert_eq!(tx.success, None);
         assert!(tx.events.is_empty());
     }

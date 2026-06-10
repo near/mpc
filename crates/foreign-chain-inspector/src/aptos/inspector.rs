@@ -57,11 +57,17 @@ where
 
         ensure_hash_matches(&tx_hash_hex, &tx.hash)?;
 
+        if tx.transaction_type == "pending_transaction" {
+            return Err(ForeignChainInspectionError::NotFinalized);
+        }
+
         match finality {
             AptosFinality::Committed => {
-                // Committed iff the tx carries an execution result; a pending tx does not.
+                // A committed transaction always carries an execution result.
                 let Some(success) = tx.success else {
-                    return Err(ForeignChainInspectionError::NotFinalized);
+                    return Err(ForeignChainInspectionError::RpcRequestFailed(
+                        "committed transaction is missing the success field".to_string(),
+                    ));
                 };
                 if !success {
                     return Err(ForeignChainInspectionError::TransactionFailed);
@@ -216,6 +222,7 @@ mod tests {
 
     fn sample_tx(hash: &str, success: bool) -> TransactionResponse {
         TransactionResponse {
+            transaction_type: "user_transaction".to_string(),
             hash: hash.to_string(),
             success: Some(success),
             events: vec![AptosEventResponse {
@@ -233,6 +240,7 @@ mod tests {
     /// A pending transaction: present but not yet committed, so it carries no execution result.
     fn pending_tx() -> TransactionResponse {
         TransactionResponse {
+            transaction_type: "pending_transaction".to_string(),
             hash: HASH.to_string(),
             success: None,
             events: vec![],
@@ -330,6 +338,7 @@ mod tests {
     async fn extract__should_extract_multiple_events_by_index() {
         // Given a committed tx with two events.
         let tx = TransactionResponse {
+            transaction_type: "user_transaction".to_string(),
             hash: HASH.to_string(),
             success: Some(true),
             events: vec![
@@ -367,6 +376,7 @@ mod tests {
     async fn extract__should_fail_when_committed_tx_has_no_events() {
         // Given a committed tx whose events array is empty.
         let tx = TransactionResponse {
+            transaction_type: "user_transaction".to_string(),
             hash: HASH.to_string(),
             success: Some(true),
             events: vec![],
@@ -404,6 +414,40 @@ mod tests {
         // Then — transient, so the fan-out keeps retrying until it commits.
         assert_matches!(result, Err(ForeignChainInspectionError::NotFinalized));
         assert!(result.unwrap_err().is_transient());
+    }
+
+    #[tokio::test]
+    async fn extract__should_accept_non_user_committed_kinds() {
+        // Given — a committed system transaction (block metadata) with an event. The inspector
+        // attests any committed kind; event-type policy belongs to the payload's consumer.
+        let tx = TransactionResponse {
+            transaction_type: "block_metadata_transaction".to_string(),
+            hash: HASH.to_string(),
+            success: Some(true),
+            events: vec![event_response(
+                "0x1::block::NewBlockEvent",
+                serde_json::json!({ "epoch": "7510" }),
+            )],
+        };
+        let inspector = AptosInspector::new(MockAptosClient::success(tx));
+        let tx_id = tx_id_from_hex(HASH);
+
+        // When
+        let values = inspector
+            .extract(
+                tx_id,
+                AptosFinality::Committed,
+                vec![AptosExtractor::Event { event_index: 0 }],
+            )
+            .await
+            .unwrap();
+
+        // Then
+        match &values[0] {
+            AptosExtractedValue::Event(event) => {
+                assert_eq!(event.type_tag, "0x1::block::NewBlockEvent");
+            }
+        }
     }
 
     #[test]
