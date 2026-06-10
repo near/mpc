@@ -3863,27 +3863,23 @@ expression: abi
           }
         },
         "ProposedThresholdParameters": {
-          "description": "A proposed set of threshold parameters submitted to `vote_new_parameters`. Carries the proposed [`ThresholdParameters`] (participant set and threshold) plus an optional per-domain `ReconstructionThreshold` overlay for the resharing it would trigger.",
+          "description": "A proposed set of threshold parameters submitted to `vote_new_parameters`. Carries the proposed [`ThresholdParameters`] (participant set and threshold) plus an optional map of per-domain `ReconstructionThreshold` updates for the resharing it would trigger.\n\n`per_domain_thresholds` proposes a new threshold for the listed domains; an empty map keeps the current ones. A populated map must reference only existing domains (validated by the contract), is applied to the `DomainRegistry` when resharing completes, and never persists onto the stored [`ThresholdParameters`].",
           "type": "object",
           "required": [
-            "participants",
-            "threshold"
+            "parameters",
+            "per_domain_thresholds"
           ],
           "properties": {
-            "participants": {
-              "$ref": "#/definitions/Participants"
+            "parameters": {
+              "$ref": "#/definitions/ThresholdParameters"
             },
             "per_domain_thresholds": {
-              "default": {},
               "type": "object",
               "additionalProperties": {
                 "type": "integer",
                 "format": "uint64",
                 "minimum": 0.0
               }
-            },
-            "threshold": {
-              "$ref": "#/definitions/Threshold"
             }
           }
         },
@@ -4186,7 +4182,7 @@ expression: abi
               "uniqueItems": true
             },
             "per_domain_thresholds": {
-              "description": "Per-domain `ReconstructionThreshold` overlay carried from the accepted proposal. Applied to the `DomainRegistry` when resharing completes.",
+              "description": "Per-domain `ReconstructionThreshold` updates carried from the accepted proposal. Applied to the `DomainRegistry` when resharing completes.",
               "default": {},
               "type": "object",
               "additionalProperties": {
