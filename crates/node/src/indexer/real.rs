@@ -12,7 +12,7 @@ use crate::indexer::tee::{
     monitor_allowed_launcher_compose_hashes, monitor_tee_accounts,
 };
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
-use crate::web::recent_transactions::SubmittedTransaction;
+use crate::types::TransactionLogger;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_node_config::IndexerConfig;
 use near_account_id::AccountId;
@@ -61,7 +61,7 @@ pub fn spawn_real_indexer(
     migration_state_sender: watch::Sender<(u64, ContractMigrationInfo)>,
     tls_public_key: VerifyingKey,
     foreign_chains: mpc_node_config::ForeignChainsConfig,
-    recent_tx_sender: mpsc::Sender<SubmittedTransaction>,
+    tx_logger: impl TransactionLogger,
 ) -> IndexerAPI<impl TransactionSender, RealForeignChainPolicyReader> {
     let (contract_state_sender_oneshot, contract_state_receiver_oneshot) = oneshot::channel();
     let (migration_info_sender_oneshot, migration_info_receiver_oneshot) = oneshot::channel();
@@ -117,7 +117,7 @@ pub fn spawn_real_indexer(
                 account_secret_key.clone(),
                 respond_config_clone,
                 Arc::clone(&indexer_state),
-                recent_tx_sender,
+                tx_logger,
             );
 
             let Ok(txn_sender) = txn_sender_result else {

@@ -18,7 +18,7 @@ use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use node_types::http_server::StaticWebData;
 use prometheus::{Encoder, TextEncoder, default_registry};
-use recent_transactions::{SharedRecentTransactions, SubmittedTransaction};
+use recent_transactions::SharedRecentTransactions;
 use serde::Serialize;
 use std::net::SocketAddr;
 use std::sync::{Arc, OnceLock};
@@ -68,12 +68,12 @@ struct WebServerState {
     migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
     static_web_data: StaticWebData,
     node_config: NodeConfigResponse,
-    /// Buffer of recently submitted transactions, owned by the web server and
-    /// fed by the indexer's transaction processor over a channel (drained into
-    /// it by a background task spawned in [`start_web_server`]). Read directly
-    /// here rather than via the debug-request broadcast; see
-    /// [`recent_transactions`] for why this keeps the page available regardless
-    /// of the node's running state.
+    /// Buffer of recently submitted transactions. Created in `run.rs`, fed over a
+    /// channel by the indexer's `RecentTransactionsLogger` and drained into it by
+    /// a task spawned in `run.rs`; read here to render the page. Read directly
+    /// rather than via the debug-request broadcast; see [`recent_transactions`]
+    /// for why this keeps the page available regardless of the node's running
+    /// state.
     recent_transactions: SharedRecentTransactions,
 }
 
@@ -276,16 +276,9 @@ pub async fn start_web_server(
     protocol_state_receiver: watch::Receiver<ProtocolContractState>,
     migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
     config: ConfigFile,
-    mut recent_tx_receiver: mpsc::Receiver<SubmittedTransaction>,
+    recent_transactions: SharedRecentTransactions,
 ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
     tracing::info!(?bind_address, "attempting to bind web server to address");
-
-    // The web server owns the recent-transactions buffer; a background task
-    // (spawned after a successful bind, below) drains the completed transactions
-    // sent by the indexer's transaction processor into it, so the page stays
-    // available regardless of the node's running state.
-    let recent_transactions = SharedRecentTransactions::default();
-    let recent_transactions_drain = recent_transactions.clone();
 
     let router = axum::Router::new()
         .route("/metrics", axum::routing::get(metrics))
@@ -316,18 +309,6 @@ pub async fn start_web_server(
     let tcp_listener = TcpListener::bind(&bind_address).await?;
 
     tracing::info!(address = %bind_address,"Successfully bound to address");
-
-    // Spawn the drain only after a successful bind so it can't leak on the error
-    // path above. Runs for the whole process; warns on exit.
-    tokio::spawn(async move {
-        while let Some(transaction) = recent_tx_receiver.recv().await {
-            recent_transactions_drain.record(transaction);
-        }
-        tracing::warn!(
-            target: "mpc",
-            "recent-transactions drain task exiting; /debug/recent_transactions will stop updating"
-        );
-    });
 
     Ok(async move {
         tracing::info!("Starting to serve requests...");

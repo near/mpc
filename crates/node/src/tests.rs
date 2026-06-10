@@ -11,7 +11,7 @@ use rand::rngs::OsRng;
 use std::collections::BTreeMap;
 use std::net::{Ipv4Addr, SocketAddr};
 
-use tokio::sync::{RwLock, mpsc, watch};
+use tokio::sync::{RwLock, watch};
 
 use crate::config::{ParticipantsConfig, PersistentSecrets, SecretsConfig};
 use crate::coordinator::Coordinator;
@@ -33,7 +33,7 @@ use mpc_node_config::{
 use crate::primitives::ParticipantId;
 use crate::tests::common::MockTransactionSender;
 use crate::tracking::{self, AutoAbortTask, start_root_task};
-use crate::web::recent_transactions::RECENT_TRANSACTIONS_CHANNEL_SIZE;
+use crate::web::recent_transactions::SharedRecentTransactions;
 use crate::web::{start_web_server, static_web_data};
 use assert_matches::assert_matches;
 use mpc_primitives::domain::{Curve, Protocol};
@@ -111,10 +111,7 @@ impl OneNodeTestConfig {
                 let (_, dummy_protocol_state_receiver) =
                     watch::channel(ProtocolContractState::NotInitialized);
                 let (_, dummy_migration_state_receiver) = watch::channel((0, BTreeMap::new()));
-                // The fake indexer never records, so the sender is dropped; the
-                // drain task just sees the channel close.
-                let (_recent_tx_sender, recent_tx_receiver) =
-                    mpsc::channel(RECENT_TRANSACTIONS_CHANNEL_SIZE);
+                // The fake indexer never records, so the buffer stays empty.
                 let web_server = start_web_server(
                     root_task.into(),
                     debug_request_sender.clone(),
@@ -123,7 +120,7 @@ impl OneNodeTestConfig {
                     dummy_protocol_state_receiver,
                     dummy_migration_state_receiver,
                     self.config.clone(),
-                    recent_tx_receiver,
+                    SharedRecentTransactions::default(),
                 )
                 .await?;
                 let _web_server = tracking::spawn_checked("web server", web_server);

@@ -3,8 +3,9 @@ use super::IndexerState;
 use super::tx_signer::{TransactionSigner, TransactionSigners};
 use crate::config::RespondConfig;
 use crate::metrics;
-use crate::web::recent_transactions::{
+use crate::types::{
     SignerContext, SubmittedTransaction, SubmittedTransactionStatus, SubmittedTxMetadata,
+    TransactionLogger,
 };
 use anyhow::Context;
 use ed25519_dalek::SigningKey;
@@ -52,7 +53,7 @@ impl TransactionProcessorHandle {
         owner_secret_key: SigningKey,
         config: RespondConfig,
         indexer_state: Arc<IndexerState>,
-        recent_tx_sender: mpsc::Sender<SubmittedTransaction>,
+        tx_logger: impl TransactionLogger,
     ) -> anyhow::Result<impl TransactionSender> {
         let mut signers = TransactionSigners::new(config, owner_account_id, owner_secret_key)
             .context("Failed to initialize transaction signers")?;
@@ -67,7 +68,7 @@ impl TransactionProcessorHandle {
 
                 let tx_signer = signers.signer_for(&tx_request);
                 let indexer_state = indexer_state.clone();
-                let recent_tx_sender = recent_tx_sender.clone();
+                let tx_logger = tx_logger.clone();
                 tokio::spawn(async move {
                     let Ok(txn_json) = serde_json::to_string(&tx_request) else {
                         tracing::error!(target: "mpc", "Failed to serialize response args");
@@ -82,27 +83,12 @@ impl TransactionProcessorHandle {
                     )
                     .await;
 
-                    // Fire-and-forget: feeding the debug-only
-                    // `/debug/recent_transactions` page must never block
-                    // transaction processing, so use non-blocking `try_send` and
-                    // drop the record if the channel is full or the web server
-                    // has gone away. Warn so dropped records are visible in logs
-                    // rather than only as missing rows on the page.
-                    match recent_tx_sender.try_send(recent_transaction) {
-                        Ok(()) => {}
-                        Err(mpsc::error::TrySendError::Full(_)) => {
-                            tracing::warn!(
-                                target: "mpc",
-                                "recent-transactions channel full; dropping debug record"
-                            );
-                        }
-                        Err(mpsc::error::TrySendError::Closed(_)) => {
-                            tracing::warn!(
-                                target: "mpc",
-                                "recent-transactions drain task gone; dropping debug record"
-                            );
-                        }
-                    }
+                    // Fire-and-forget into the debug-only
+                    // `/debug/recent_transactions` buffer. `TransactionLogger`
+                    // is infallible and owns its own bounded buffering, so
+                    // recording can never block or fail transaction processing
+                    // here.
+                    tx_logger.log_transaction(recent_transaction);
 
                     if let Some(tx_response_channel) = tx_response_channel {
                         let _ = tx_response_channel.send(transaction_status);
