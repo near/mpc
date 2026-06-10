@@ -12,12 +12,12 @@ use tee_verifier_interface::{
 };
 
 /// Converts an interface type into its `dcap_qvl` counterpart `T`.
-pub(crate) trait IntoDcapType<T> {
+pub trait IntoDcapType<T> {
     fn into_dcap_type(self) -> T;
 }
 
 /// Converts a `dcap_qvl` type into its `tee-verifier-interface` counterpart `T`.
-pub(crate) trait IntoInterfaceType<T> {
+pub trait IntoInterfaceType<T> {
     fn into_interface_type(self) -> T;
 }
 
@@ -41,6 +41,23 @@ impl IntoDcapType<dcap_qvl::QuoteCollateralV3> for Collateral {
 impl IntoDcapType<Vec<u8>> for QuoteBytes {
     fn into_dcap_type(self) -> Vec<u8> {
         self.0
+    }
+}
+
+impl IntoInterfaceType<Collateral> for dcap_qvl::QuoteCollateralV3 {
+    fn into_interface_type(self) -> Collateral {
+        Collateral {
+            pck_crl_issuer_chain: self.pck_crl_issuer_chain,
+            root_ca_crl: self.root_ca_crl,
+            pck_crl: self.pck_crl,
+            tcb_info_issuer_chain: self.tcb_info_issuer_chain,
+            tcb_info: self.tcb_info,
+            tcb_info_signature: self.tcb_info_signature,
+            qe_identity_issuer_chain: self.qe_identity_issuer_chain,
+            qe_identity: self.qe_identity,
+            qe_identity_signature: self.qe_identity_signature,
+            pck_certificate_chain: self.pck_certificate_chain,
+        }
     }
 }
 

@@ -41,6 +41,7 @@ getrandom = { workspace = true, features = ["custom"] }
 
 [dev-dependencies]
 hex = { workspace = true }
+mpc-attestation = { workspace = true, features = ["test-utils"] }
 rstest = { workspace = true }
 tee-verifier = { path = ".", features = ["test-utils"] }
 test-utils = { workspace = true }
