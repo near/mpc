@@ -124,7 +124,9 @@ impl AptosRpcClient for ReqwestAptosClient {
 /// Canonical string form of the event `data`: object keys sorted recursively so all nodes hash
 /// identically regardless of provider key ordering.
 ///
-/// TODO: migrate to BCS-encoded responses (via Accept: application/x-bcs) to drop this dependency.
+/// The explicit sort is load-bearing even though `serde_json` maps are BTreeMap-backed (sorted)
+/// by default: the `preserve_order` feature switches them to insertion order, and it is enabled
+/// in the mpc-node dependency graph (by near-sdk and dcap-qvl) through cargo feature unification.
 pub fn normalize_event_data(value: &serde_json::Value) -> String {
     serde_json::to_string(&sort_keys(value.clone()))
         .expect("serde_json serialization of Value is infallible")
