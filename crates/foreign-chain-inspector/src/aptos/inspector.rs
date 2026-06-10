@@ -131,9 +131,9 @@ impl AptosExtractor {
                             ))
                         })?;
 
-                // Verbatim: providers are assumed to agree on the struct-tag's address form
-                // (fullnodes return canonical short form). Canonicalization deferred to BCS.
-                let type_tag = event.event_type.clone();
+                // Providers may differ on the address form inside the struct tag (`0x1` vs
+                // zero-padded long form); normalize so the quorum agrees byte-for-byte.
+                let type_tag = normalize_type_tag(&event.event_type);
                 let data = normalize_event_data(&event.data);
 
                 Ok(AptosExtractedValue::Event(AptosEvent {
@@ -145,6 +145,48 @@ impl AptosExtractor {
             }
         }
     }
+}
+
+/// Rewrites every address inside a Move struct tag — the leading one and any inside type
+/// arguments — to the API's canonical hex-literal form: lowercase with leading zeros trimmed
+/// (`0x0000…01` → `0x1`), matching what spec-conforming fullnodes emit. Addresses are
+/// recognized as `0x<hex>` tokens that start the tag or follow `<`, `,` or a space, and are
+/// immediately followed by `::`; everything else (identifiers, primitive type args) is copied
+/// verbatim.
+fn normalize_type_tag(tag: &str) -> String {
+    let bytes = tag.as_bytes();
+    let mut out = String::with_capacity(tag.len());
+    let mut segment_start = 0;
+    let mut i = 0;
+    while i < bytes.len() {
+        let at_address_position = i == 0 || matches!(bytes[i - 1], b'<' | b',' | b' ');
+        if at_address_position && bytes[i] == b'0' && bytes.get(i + 1) == Some(&b'x') {
+            let hex_start = i + 2;
+            let mut hex_end = hex_start;
+            while hex_end < bytes.len() && bytes[hex_end].is_ascii_hexdigit() {
+                hex_end += 1;
+            }
+            let is_address = hex_end > hex_start
+                && hex_end - hex_start <= 64
+                && bytes[hex_end..].starts_with(b"::");
+            if is_address {
+                out.push_str(&tag[segment_start..i]);
+                out.push_str("0x");
+                let trimmed = tag[hex_start..hex_end].trim_start_matches('0');
+                if trimmed.is_empty() {
+                    out.push('0');
+                } else {
+                    out.extend(trimmed.chars().map(|c| c.to_ascii_lowercase()));
+                }
+                segment_start = hex_end;
+                i = hex_end;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    out.push_str(&tag[segment_start..]);
+    out
 }
 
 /// Parse an Aptos address string (0x-prefixed hex, possibly short) into AptosAddress.
@@ -171,6 +213,7 @@ mod tests {
     use foreign_chain_rpc_interfaces::aptos::{
         AptosEventResponse, AptosRpcError, EventGuid, TransactionResponse,
     };
+    use rstest::rstest;
 
     struct MockAptosClient {
         response: Result<TransactionResponse, AptosRpcError>,
@@ -492,6 +535,66 @@ mod tests {
     fn parse_aptos_address__should_reject_overlong_address() {
         let too_long = format!("0x{}", "a".repeat(65));
         parse_aptos_address(&too_long).unwrap_err();
+    }
+
+    #[rstest]
+    #[case::short_form_is_untouched(
+        "0xdeadbeef::bridge::InitTransfer",
+        "0xdeadbeef::bridge::InitTransfer"
+    )]
+    #[case::long_form_is_trimmed(
+        "0x0000000000000000000000000000000000000000000000000000000000000001::coin::Coin",
+        "0x1::coin::Coin"
+    )]
+    #[case::uppercase_is_lowered(
+        "0xDEADbeef::bridge::InitTransfer",
+        "0xdeadbeef::bridge::InitTransfer"
+    )]
+    #[case::zero_address("0x000::m::S", "0x0::m::S")]
+    #[case::nested_generics(
+        "0x1::coin::CoinStore<0x000a::lp::LP<0x0B::x::Y, u64>>",
+        "0x1::coin::CoinStore<0xa::lp::LP<0xb::x::Y, u64>>"
+    )]
+    #[case::hex_inside_identifier_is_untouched("0x1::m0x01::S", "0x1::m0x01::S")]
+    fn normalize_type_tag__should_canonicalize_addresses(
+        #[case] input: &str,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(normalize_type_tag(input), expected);
+    }
+
+    #[tokio::test]
+    async fn extract__should_normalize_long_form_address_in_type_tag() {
+        // Given — a provider returning the struct-tag address in long form.
+        let long_tag = format!("0x{}deadbeef::bridge::InitTransfer", "0".repeat(56));
+        let tx = TransactionResponse {
+            transaction_type: "user_transaction".to_string(),
+            hash: HASH.to_string(),
+            success: Some(true),
+            events: vec![event_response(
+                &long_tag,
+                serde_json::json!({ "amount": "100" }),
+            )],
+        };
+        let inspector = AptosInspector::new(MockAptosClient::success(tx));
+        let tx_id = tx_id_from_hex(HASH);
+
+        // When
+        let values = inspector
+            .extract(
+                tx_id,
+                AptosFinality::Committed,
+                vec![AptosExtractor::Event { event_index: 0 }],
+            )
+            .await
+            .unwrap();
+
+        // Then — the signed payload carries the canonical short form.
+        match &values[0] {
+            AptosExtractedValue::Event(event) => {
+                assert_eq!(event.type_tag, "0xdeadbeef::bridge::InitTransfer");
+            }
+        }
     }
 
     #[tokio::test]
