@@ -48,53 +48,81 @@ impl ForeignChainInspectors<HttpClient> {
     fn build(config: &ForeignChainsConfig) -> anyhow::Result<Self> {
         fn build_fanout<I>(
             chain_config: Option<&ForeignChainConfig>,
-            new_inspector: impl Fn(HttpClient) -> I,
+            new_inspector: impl Fn(String, RpcAuthentication, Duration) -> anyhow::Result<I>,
         ) -> anyhow::Result<Option<FanOut<I>>> {
-            let Some(c) = chain_config else {
-                return Ok(None);
-            };
-            let inspectors = c.providers.try_map_to_vec(|_, p| {
-                let mut url = p.rpc_url.clone();
-                let rpc_auth = auth_config_to_rpc_auth(p.auth.clone(), &mut url)?;
-                let client = foreign_chain_inspector::build_http_client(url, rpc_auth)?;
-                Ok::<_, anyhow::Error>(new_inspector(client))
-            })?;
-            Ok(Some(FanOut::new(inspectors)))
-        }
-
-        fn build_aptos_fanout(
-            chain_config: Option<&ForeignChainConfig>,
-        ) -> anyhow::Result<Option<FanOut<AptosInspector<ReqwestAptosClient>>>> {
             let Some(c) = chain_config else {
                 return Ok(None);
             };
             let timeout = Duration::from_secs(c.timeout_sec.get());
             let inspectors = c.providers.try_map_to_vec(|_, p| {
-                // Resolve auth like `build_fanout`: `Path`/`Query` into `url`, `Header` into a header.
+                // `Path`/`Query` auth is substituted into `url`; `Header` auth is returned
+                // as `RpcAuthentication::CustomHeader` for the client to install.
                 let mut url = p.rpc_url.clone();
-                let auth_header = match auth_config_to_rpc_auth(p.auth.clone(), &mut url)? {
-                    RpcAuthentication::KeyInUrl => None,
-                    RpcAuthentication::CustomHeader {
-                        header_name,
-                        header_value,
-                    } => Some((header_name, header_value)),
-                };
-                let client = ReqwestAptosClient::new(url, auth_header, timeout);
-                Ok::<_, anyhow::Error>(AptosInspector::new(client))
+                let rpc_auth = auth_config_to_rpc_auth(p.auth.clone(), &mut url)?;
+                new_inspector(url, rpc_auth, timeout)
             })?;
             Ok(Some(FanOut::new(inspectors)))
         }
 
+        /// Adapts an inspector constructor over a jsonrpsee [`HttpClient`] to `build_fanout`'s
+        /// closure shape. The timeout is unused: the jsonrpsee chains rely on the inspection
+        /// deadline in the signing flow, as they did before this adapter existed.
+        fn with_http_client<I>(
+            new_inspector: impl Fn(HttpClient) -> I,
+        ) -> impl Fn(String, RpcAuthentication, Duration) -> anyhow::Result<I> {
+            move |url, rpc_auth, _timeout| {
+                let client = foreign_chain_inspector::build_http_client(url, rpc_auth)?;
+                Ok(new_inspector(client))
+            }
+        }
+
+        fn new_aptos_inspector(
+            url: String,
+            rpc_auth: RpcAuthentication,
+            timeout: Duration,
+        ) -> anyhow::Result<AptosInspector<ReqwestAptosClient>> {
+            let auth_header = match rpc_auth {
+                RpcAuthentication::KeyInUrl => None,
+                RpcAuthentication::CustomHeader {
+                    header_name,
+                    header_value,
+                } => Some((header_name, header_value)),
+            };
+            Ok(AptosInspector::new(ReqwestAptosClient::new(
+                url,
+                auth_header,
+                timeout,
+            )))
+        }
+
         Ok(Self {
-            bitcoin: build_fanout(config.bitcoin.as_ref(), BitcoinInspector::new)?,
-            abstract_chain: build_fanout(config.abstract_chain.as_ref(), AbstractInspector::new)?,
-            base: build_fanout(config.base.as_ref(), BaseInspector::new)?,
-            bnb: build_fanout(config.bnb.as_ref(), BnbInspector::new)?,
-            starknet: build_fanout(config.starknet.as_ref(), StarknetInspector::new)?,
-            arbitrum: build_fanout(config.arbitrum.as_ref(), ArbitrumInspector::new)?,
-            hyper_evm: build_fanout(config.hyper_evm.as_ref(), HyperEvmInspector::new)?,
-            polygon: build_fanout(config.polygon.as_ref(), PolygonInspector::new)?,
-            aptos: build_aptos_fanout(config.aptos.as_ref())?,
+            bitcoin: build_fanout(
+                config.bitcoin.as_ref(),
+                with_http_client(BitcoinInspector::new),
+            )?,
+            abstract_chain: build_fanout(
+                config.abstract_chain.as_ref(),
+                with_http_client(AbstractInspector::new),
+            )?,
+            base: build_fanout(config.base.as_ref(), with_http_client(BaseInspector::new))?,
+            bnb: build_fanout(config.bnb.as_ref(), with_http_client(BnbInspector::new))?,
+            starknet: build_fanout(
+                config.starknet.as_ref(),
+                with_http_client(StarknetInspector::new),
+            )?,
+            arbitrum: build_fanout(
+                config.arbitrum.as_ref(),
+                with_http_client(ArbitrumInspector::new),
+            )?,
+            hyper_evm: build_fanout(
+                config.hyper_evm.as_ref(),
+                with_http_client(HyperEvmInspector::new),
+            )?,
+            polygon: build_fanout(
+                config.polygon.as_ref(),
+                with_http_client(PolygonInspector::new),
+            )?,
+            aptos: build_fanout(config.aptos.as_ref(), new_aptos_inspector)?,
         })
     }
 }
