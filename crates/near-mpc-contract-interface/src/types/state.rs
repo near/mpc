@@ -155,26 +155,77 @@ pub struct ThresholdParameters {
 /// `DomainRegistry` when resharing completes, and never persists onto the
 /// stored [`ThresholdParameters`].
 //
-// Wire contract: the flat object `{ participants, threshold,
-// per_domain_thresholds }` (positional in borsh). `serde(flatten)` is just how
-// that flat shape is produced today; it can be dropped later by inlining the
-// two `parameters` fields, which is byte-identical for JSON/borsh/ABI — only
-// the `.parameters` readers in `dto_mapping.rs` would need to follow the move.
-// The `proposed_threshold_parameters__*` tests below lock the wire shape.
+// This is the *native* nested shape. serde is routed through
+// [`ProposedThresholdParametersCompat`] purely for wire back-compat (flat JSON
+// object + tolerating pre-3.11 payloads); borsh is unaffected and stays
+// positional `[participants, threshold, per_domain_thresholds]`. See that
+// struct for the deletion plan. The `proposed_threshold_parameters__*` tests
+// below lock the current wire shape.
+//
+// The generated ABI schema reflects this native nested shape (a `parameters`
+// sub-object), NOT the flat JSON the compat bridge actually produces — serde's
+// `from`/`into` are invisible to schemars. This divergence is intentional and
+// goes away with the compat struct after 3.11.2; the ABI is partner-node-only.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[serde(
+    from = "ProposedThresholdParametersCompat",
+    into = "ProposedThresholdParametersCompat"
+)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
 pub struct ProposedThresholdParameters {
-    #[serde(flatten)]
     pub parameters: ThresholdParameters,
-    // TODO(#3495): drop `serde(default)` after the 3.12 release. It exists only
-    // so pre-3.11 `vote_new_parameters` payloads (which omit this field) still
-    // deserialize as an empty map; once all callers populate it explicitly
-    // the field should be mandatory so legacy/malformed payloads fail loudly.
-    #[serde(default)]
     pub per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
+}
+
+// TODO(#3495): delete this struct and its two `From` bridges in the next SC
+// version (after 3.11.2). At that point `ProposedThresholdParameters`
+// serializes to its native nested shape `{ parameters, per_domain_thresholds }`
+// — a deliberate wire break, acceptable because only partner nodes consume it.
+//
+// Flat serde mirror of [`ProposedThresholdParameters`], existing only for wire
+// back-compat. It (a) `serde(flatten)`s `parameters` to the top level so the
+// public JSON object stays flat — `{ participants, threshold,
+// per_domain_thresholds }` — and (b) defaults `per_domain_thresholds` to empty
+// so pre-3.11 `vote_new_parameters` payloads (which omit the field) still
+// deserialize. Keeping all serde shaping confined here means the public type
+// carries none of it. borsh and schemars are intentionally NOT derived — the
+// bridge is serde-only, and the ABI schema is generated from the public type's
+// own fields instead.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct ProposedThresholdParametersCompat {
+    #[serde(flatten)]
+    parameters: ThresholdParameters,
+    #[serde(default)]
+    per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
+}
+
+impl From<ProposedThresholdParametersCompat> for ProposedThresholdParameters {
+    fn from(compat: ProposedThresholdParametersCompat) -> Self {
+        let ProposedThresholdParametersCompat {
+            parameters,
+            per_domain_thresholds,
+        } = compat;
+        Self {
+            parameters,
+            per_domain_thresholds,
+        }
+    }
+}
+
+impl From<ProposedThresholdParameters> for ProposedThresholdParametersCompat {
+    fn from(value: ProposedThresholdParameters) -> Self {
+        let ProposedThresholdParameters {
+            parameters,
+            per_domain_thresholds,
+        } = value;
+        Self {
+            parameters,
+            per_domain_thresholds,
+        }
+    }
 }
 
 // =============================================================================
@@ -480,11 +531,31 @@ mod tests {
         }
     }
 
+    /// The serde bridge must be lossless and must actually take the compat
+    /// path: native nested serialization would emit a `parameters` sub-object,
+    /// so its absence proves `into`/`from` route through the flattened
+    /// `ProposedThresholdParametersCompat`.
+    #[test]
+    #[expect(non_snake_case)]
+    fn proposed_threshold_parameters__json_round_trips_through_flat_compat() {
+        // Given a proposal carrying non-empty per-domain threshold updates.
+        let proposal = sample_proposal();
+
+        // When serialized and deserialized again.
+        let json = serde_json::to_string(&proposal).unwrap();
+        let back: ProposedThresholdParameters = serde_json::from_str(&json).unwrap();
+
+        // Then the JSON is flat (no nested `parameters`) and the value survives.
+        assert!(!json.contains("\"parameters\""), "got: {json}");
+        assert_eq!(back, proposal);
+    }
+
     /// Wire-format lock: the public contract for `ProposedThresholdParameters` is
     /// the flat JSON object `{ participants, threshold, per_domain_thresholds }`,
-    /// not the `#[serde(flatten)]` mechanism that currently produces it. Pinning
-    /// the shape here means dropping `flatten` later (by inlining the `parameters`
-    /// fields) can be proven byte-identical rather than taken on faith.
+    /// not the `ProposedThresholdParametersCompat` bridge that currently produces
+    /// it. Pinning the shape here means deleting the compat struct later (letting
+    /// the type serialize to its native nested shape) is a known, tested wire
+    /// break rather than a silent one.
     #[test]
     #[expect(non_snake_case)]
     fn proposed_threshold_parameters__serializes_to_flat_keys() {
@@ -508,10 +579,10 @@ mod tests {
     }
 
     /// TODO(#3495): Pre-3.11 callers submit `{ participants, threshold }` with no
-    /// `per_domain_thresholds`. `serde(default)` must keep parsing that as an
-    /// empty (no-change) map — the backward-compat guarantee that let the
-    /// field be added without a wire break. Removed alongside the
-    /// `serde(default)` it guards.
+    /// `per_domain_thresholds`. The `serde(default)` on
+    /// `ProposedThresholdParametersCompat` must keep parsing that as an empty
+    /// (no-change) map — the backward-compat guarantee that let the field be
+    /// added without a wire break. Removed alongside the compat struct.
     #[test]
     #[expect(non_snake_case)]
     fn proposed_threshold_parameters__legacy_payload_omitting_field__parses_as_empty() {
@@ -529,10 +600,10 @@ mod tests {
         assert!(parsed.per_domain_thresholds.is_empty());
     }
 
-    /// borsh is positional and ignores serde attributes, so the stored layout is
-    /// `[participants, threshold, per_domain_thresholds]` regardless of `flatten`.
-    /// A round-trip locks that the type stays borsh-stable across the eventual
-    /// inlining.
+    /// borsh is positional and ignores the serde compat bridge, so the stored
+    /// layout is `[participants, threshold, per_domain_thresholds]` regardless of
+    /// the JSON shaping. A round-trip locks that the type stays borsh-stable
+    /// across the eventual removal of the compat struct.
     #[test]
     #[expect(non_snake_case)]
     fn proposed_threshold_parameters__borsh_round_trips() {
