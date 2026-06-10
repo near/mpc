@@ -18,10 +18,10 @@ use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use node_types::http_server::StaticWebData;
 use prometheus::{Encoder, TextEncoder, default_registry};
-use recent_transactions::{RecentTransactions, SubmittedTransaction};
+use recent_transactions::{SharedRecentTransactions, SubmittedTransaction};
 use serde::Serialize;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock};
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc, watch};
 
@@ -74,7 +74,7 @@ struct WebServerState {
     /// here rather than via the debug-request broadcast; see
     /// [`recent_transactions`] for why this keeps the page available regardless
     /// of the node's running state.
-    recent_transactions: Arc<Mutex<RecentTransactions>>,
+    recent_transactions: SharedRecentTransactions,
 }
 
 /// API-safe view of [`ConfigFile`] served by `/debug/node_config`.
@@ -200,9 +200,9 @@ async fn contract_state(state: State<WebServerState>) -> String {
 }
 
 async fn debug_recent_transactions(State(state): State<WebServerState>) -> String {
-    // Clone the entries under the lock, then format after releasing it, so we
-    // don't block the drain task's writes while rendering.
-    let snapshot = state.recent_transactions.lock().unwrap().snapshot();
+    // Clone the entries (snapshot takes the lock briefly, then releases it), so
+    // formatting below doesn't block the drain task's writes.
+    let snapshot = state.recent_transactions.snapshot();
     recent_transactions::render(&snapshot)
 }
 
@@ -284,7 +284,7 @@ pub async fn start_web_server(
     // (spawned after a successful bind, below) drains the completed transactions
     // sent by the indexer's transaction processor into it, so the page stays
     // available regardless of the node's running state.
-    let recent_transactions = Arc::new(Mutex::new(RecentTransactions::default()));
+    let recent_transactions = SharedRecentTransactions::default();
     let recent_transactions_drain = recent_transactions.clone();
 
     let router = axum::Router::new()
@@ -321,10 +321,7 @@ pub async fn start_web_server(
     // path above. Runs for the whole process; warns on exit.
     tokio::spawn(async move {
         while let Some(transaction) = recent_tx_receiver.recv().await {
-            recent_transactions_drain
-                .lock()
-                .unwrap()
-                .record(transaction);
+            recent_transactions_drain.record(transaction);
         }
         tracing::warn!(
             target: "mpc",

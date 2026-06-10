@@ -18,6 +18,7 @@ use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_time::Utc;
 use std::collections::VecDeque;
 use std::fmt::Write;
+use std::sync::{Arc, Mutex};
 
 /// The most recent submitted transactions to retain; older entries are evicted
 /// once the buffer is full.
@@ -170,6 +171,27 @@ impl RecentTransactions {
     #[cfg(test)]
     fn len(&self) -> usize {
         self.rows.len()
+    }
+}
+
+/// Shared handle to a [`RecentTransactions`] buffer: a cheap-to-clone owner of
+/// the `Arc<Mutex<_>>` that the web server's drain task writes to and the
+/// request handler reads from. Encapsulates the locking so callers never touch
+/// the mutex directly.
+#[derive(Clone, Default)]
+pub struct SharedRecentTransactions(Arc<Mutex<RecentTransactions>>);
+
+impl SharedRecentTransactions {
+    /// Records one submitted (or submit-failed) transaction. See
+    /// [`RecentTransactions::record`].
+    pub fn record(&self, transaction: SubmittedTransaction) {
+        self.0.lock().unwrap().record(transaction);
+    }
+
+    /// Returns the retained entries, newest first. See
+    /// [`RecentTransactions::snapshot`].
+    pub fn snapshot(&self) -> Vec<SubmittedTransaction> {
+        self.0.lock().unwrap().snapshot()
     }
 }
 
