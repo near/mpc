@@ -83,11 +83,6 @@ impl TransactionProcessorHandle {
                     )
                     .await;
 
-                    // Fire-and-forget into the debug-only
-                    // `/debug/recent_transactions` buffer. `TransactionLogger`
-                    // is infallible and owns its own bounded buffering, so
-                    // recording can never block or fail transaction processing
-                    // here.
                     tx_logger.log_transaction(recent_transaction);
 
                     if let Some(tx_response_channel) = tx_response_channel {
@@ -327,11 +322,10 @@ async fn observe_tx_result(
     }
 }
 
-/// Submits a function call with the given method and args, waits
-/// `TRANSACTION_TIMEOUT` for it to be included, then observes whether it had its
-/// intended on-chain effect. Returns the resulting [`TransactionStatus`] along
-/// with a [`SubmittedTransaction`] record (carrying the final status) for the
-/// `/debug/recent_transactions` page.
+/// Attempts to ensure that a function call with the given method and args is
+/// included on-chain. Submits the transaction, waits `TRANSACTION_TIMEOUT` for
+/// it to be included, then observes once whether it had its intended on-chain
+/// effect.
 async fn ensure_send_transaction(
     tx_signer: Arc<TransactionSigner>,
     indexer_state: Arc<IndexerState>,
@@ -392,10 +386,8 @@ async fn ensure_send_transaction(
         .with_label_values(&[method, outcome_label])
         .inc();
 
-    let recent_transaction =
-        SubmittedTransaction::submitted(signer, metadata, recorded_status, submitted_at);
     (
         transaction_status.unwrap_or(TransactionStatus::Unknown),
-        recent_transaction,
+        SubmittedTransaction::submitted(signer, metadata, recorded_status, submitted_at),
     )
 }

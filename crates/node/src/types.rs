@@ -376,10 +376,11 @@ impl SubmittedTransaction {
     }
 }
 
-/// Sink for completed-transaction records produced by the indexer's transaction
-/// processor and surfaced on `/debug/recent_transactions`. Infallible and
-/// non-blocking by contract: the implementation owns all buffering and eviction
-/// and must never block or fail transaction processing.
+/// Receives a record of each transaction the indexer submitted (with its
+/// outcome), to show on the `/debug/recent_transactions` page. It's a trait so
+/// the indexer needn't know where the records go, and `log_transaction` can't
+/// fail or block — recording is best-effort and never slows transaction
+/// processing.
 pub trait TransactionLogger: Clone + Send + Sync + 'static {
     fn log_transaction(&self, transaction: SubmittedTransaction);
 }

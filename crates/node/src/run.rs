@@ -179,8 +179,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
 
     // Buffer behind the recent-transactions debug page. The indexer forwards
     // records over `recent_tx_sender`; the drain task records them into the
-    // buffer, which the web server reads for snapshots. The drain is aborted on
-    // shutdown.
+    // buffer, which the web server reads for snapshots.
     let (recent_tx_sender, recent_tx_receiver) =
         mpsc::channel::<SubmittedTransaction>(RECENT_TRANSACTIONS_CHANNEL_SIZE);
     let recent_transactions = SharedRecentTransactions::default();

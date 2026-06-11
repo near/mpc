@@ -68,12 +68,7 @@ struct WebServerState {
     migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
     static_web_data: StaticWebData,
     node_config: NodeConfigResponse,
-    /// Buffer of recently submitted transactions. Created in `run.rs`, fed over a
-    /// channel by the indexer's `RecentTransactionsLogger` and drained into it by
-    /// a task spawned in `run.rs`; read here to render the page. Read directly
-    /// rather than via the debug-request broadcast; see [`recent_transactions`]
-    /// for why this keeps the page available regardless of the node's running
-    /// state.
+    /// In-memory log behind the `/debug/recent_transactions` handler.
     recent_transactions: SharedRecentTransactions,
 }
 
@@ -247,8 +242,6 @@ async fn contract_state(state: State<WebServerState>) -> String {
 }
 
 async fn debug_recent_transactions(State(state): State<WebServerState>) -> String {
-    // Clone the entries (snapshot takes the lock briefly, then releases it), so
-    // formatting below doesn't block the drain task's writes.
     let snapshot = state.recent_transactions.snapshot();
     recent_transactions::render(&snapshot)
 }

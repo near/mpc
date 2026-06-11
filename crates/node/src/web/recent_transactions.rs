@@ -1,18 +1,18 @@
 //! In-memory storage and rendering for the `/debug/recent_transactions` web
-//! page. The record types live in `crate::types`, so neither the indexer nor
-//! this module depends on the other.
+//! page.
 //!
-//! A successful submission only means the RPC accepted the transaction, not
-//! that it was included in a block or had its intended effect. That effect is
-//! observed later (see `crate::indexer::tx_sender`) but otherwise only
-//! aggregated into a prometheus counter. This buffer keeps a per-transaction
-//! record (txid, nonce, signer access key, ...) so an operator can debug
-//! failures such as out-of-order nonce rejections.
+//! The node submits transactions to the chain (e.g. `respond`, `vote_pk`) and
+//! later observes whether each took effect. This module keeps a rolling,
+//! purely diagnostic log of those submissions — txid, nonce, signer key, and
+//! final outcome — so an operator can open the page and see what the node sent
+//! and how each one turned out.
 
 use crate::types::{SubmittedTransaction, TransactionLogger};
-use std::collections::VecDeque;
-use std::fmt::Write;
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::VecDeque,
+    fmt::Write,
+    sync::{Arc, Mutex},
+};
 use tokio::sync::mpsc;
 
 /// The most recent submitted transactions to retain; older entries are evicted
@@ -20,19 +20,14 @@ use tokio::sync::mpsc;
 const NUM_RECENT_TRANSACTIONS_TO_KEEP: usize = 2000;
 
 /// Capacity of the channel carrying [`SubmittedTransaction`] records from the
-/// indexer's transaction processor to the drain task spawned in `run.rs`. One
-/// record per submitted transaction, so a full channel (a dropped record) is
-/// not expected in practice; sized to cap worst-case memory.
+/// indexer's transaction processor to the drain task. One record per submitted
+/// transaction, so the channel is not expected to fill (and drop records) in
+/// practice; sized to cap worst-case memory.
 pub const RECENT_TRANSACTIONS_CHANNEL_SIZE: usize = 10000;
 
 /// A bounded log of recently submitted transactions, one row per submission.
 /// Newest entries are at the back; the oldest are evicted once the buffer is
 /// full.
-///
-/// A row is recorded once, after its outcome is observed (or after a local
-/// submit failure), so every row carries its final
-/// [`SubmittedTransactionStatus`](crate::types::SubmittedTransactionStatus) and
-/// rows are never mutated in place.
 #[derive(Default)]
 pub struct RecentTransactions {
     /// One row per submission, front oldest / back newest.
@@ -61,17 +56,11 @@ impl RecentTransactions {
     }
 }
 
-/// Shared handle to a [`RecentTransactions`] buffer. It is fed over a bounded
-/// channel by the indexer's [`RecentTransactionsLogger`], drained into it by the
-/// task [`spawn_recent_transactions_drain`] starts in `run.rs`, and read by the
-/// request handler, with the synchronization encapsulated so callers just
-/// `record` and `snapshot`.
 #[derive(Clone, Default)]
 pub struct SharedRecentTransactions(Arc<Mutex<RecentTransactions>>);
 
 impl SharedRecentTransactions {
-    /// Records one submitted (or submit-failed) transaction. See
-    /// [`RecentTransactions::record`].
+    /// Adds a transaction to the log.
     pub fn record(&self, transaction: SubmittedTransaction) {
         self.0
             .lock()
@@ -79,15 +68,14 @@ impl SharedRecentTransactions {
             .record(transaction);
     }
 
-    /// Returns the retained entries, newest first. See
-    /// [`RecentTransactions::snapshot`].
+    /// Returns a copy of the logged transactions, newest first.
     pub fn snapshot(&self) -> Vec<SubmittedTransaction> {
         self.0.lock().expect("lock must not be poisoned").snapshot()
     }
 }
 
 /// [`TransactionLogger`] that forwards records over a bounded channel to the
-/// drain task spawned in `run.rs`.
+/// drain task.
 #[derive(Clone)]
 pub struct RecentTransactionsLogger {
     sender: mpsc::Sender<SubmittedTransaction>,
@@ -121,10 +109,9 @@ impl TransactionLogger for RecentTransactionsLogger {
     }
 }
 
-/// Spawns the task that drains the recent-transactions channel into `buffer`,
-/// recording each record the indexer's [`RecentTransactionsLogger`] forwards.
-/// The loop ends if every sender drops (`recv` returns `None`); at shutdown the
-/// task is usually just aborted when the runtime is dropped. Must be called
+/// Spawns a task that moves each record from the channel into
+/// [`SharedRecentTransactions`], recording what the indexer's
+/// [`RecentTransactionsLogger`] sends until the channel closes. Must be called
 /// within a Tokio runtime.
 pub fn spawn_recent_transactions_drain(
     mut receiver: mpsc::Receiver<SubmittedTransaction>,

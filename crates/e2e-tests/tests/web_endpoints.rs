@@ -8,8 +8,6 @@ use mpc_primitives::domain::Protocol;
 use near_mpc_contract_interface::types::DomainPurpose;
 use rand::SeedableRng;
 
-/// GETs `url` and returns the response body, erroring on a transport failure or
-/// a non-success status.
 async fn fetch_body(client: &reqwest::Client, node: usize, url: &str) -> anyhow::Result<String> {
     client
         .get(url)
@@ -40,10 +38,8 @@ async fn ensure_body_contains(
     Ok(())
 }
 
-/// Polls `url` until a 200 response body satisfies `done`, or fails after
-/// `timeout`. Used for endpoints that populate asynchronously (e.g. the
-/// recent-transactions page, which only records a row after the node observes
-/// the transaction's outcome).
+/// Polls the URL until a successful response body satisfies the predicate, or
+/// fails once the timeout elapses.
 async fn wait_for_body(
     client: &reqwest::Client,
     node: usize,
@@ -65,25 +61,19 @@ async fn wait_for_body(
     }
 }
 
-/// Anchored regex matching one rendered `/debug/recent_transactions` row for a
-/// node's keygen `vote_pk` submission. We key on `vote_pk` because every node
-/// submits it during keygen, so the test can assert per-node, unlike `respond`
-/// (leader-only); and because those rows land early in keygen, the poll catches
-/// them on the first attempt. Deterministic tokens (status, method, signer
-/// account, signer key) are matched exactly; run-dependent values (timestamp,
-/// txid, nonce, block, sig) only by shape.
+/// Regex matching one rendered recent-transactions row for a node's keygen
+/// `vote_pk` submission (which every node makes, so we can assert per-node).
+/// Stable tokens (status, method, signer, key) are matched exactly; run-specific
+/// ones (timestamp, txid, nonce, block, sig) are matched by pattern only.
 fn vote_pk_row_regex(signer_account_id: &str, signer_key: &str) -> regex::Regex {
-    // Shared value shapes. The txid (a `CryptoHash`) and the keys/signatures all
-    // render as base58.
     let base58 = r"[1-9A-HJ-NP-Za-km-z]+";
     let int = r"\d+";
-
-    // `submitted_at`, e.g. "2026-06-10 09:22:59.0 +00:00:00".
     let date = r"\d{4}-\d{2}-\d{2}";
     let time = r"\d{2}:\d{2}:\d{2}\.\d+";
     let offset = r"\+00:00:00";
-    let timestamp = format!("{date} {time} {offset}");
 
+    // `submitted_at`, e.g. "2026-06-10 09:22:59.0 +00:00:00".
+    let timestamp = format!("{date} {time} {offset}");
     let status = "Unknown +";
     let method = "method=vote_pk +";
 
@@ -101,15 +91,6 @@ fn vote_pk_row_regex(signer_account_id: &str, signer_key: &str) -> regex::Regex 
         "^  {timestamp}  {status}{method}{signer_key}  {metadata}$"
     ))
     .expect("valid regex")
-}
-
-/// True if `body` is a `/debug/recent_transactions` page whose first line is the
-/// header and which lists at least `expected_rows` rows matching `row` (a node's
-/// per-domain keygen `vote_pk` rows)
-fn lists_vote_pk_row_per_domain(body: &str, row: &regex::Regex, expected_rows: usize) -> bool {
-    const HEADER: &str = "Recently submitted transactions (newest first, up to 2000 retained):";
-    let mut lines = body.lines();
-    lines.next() == Some(HEADER) && lines.filter(|line| row.is_match(line)).count() >= expected_rows
 }
 
 #[tokio::test]
@@ -218,11 +199,11 @@ async fn test_web_endpoints() {
         .await
         .expect("debug/contract endpoint failed");
 
-        // A record is emitted only after the node observes the transaction's
-        // outcome (`ensure_send_transaction` waits `TRANSACTION_TIMEOUT` first),
-        // so poll rather than check once. Expect the header plus one `vote_pk`
-        // row per keygen domain (every node votes once per domain; see
-        // `vote_pk_row_regex`).
+        // Check the recent-transactions page lists this node's transactions.
+        // During keygen every node submits one `vote_pk` transaction per domain,
+        // so the page should show the header plus exactly one matching row per
+        // domain. We poll because a row only appears after the node observes the
+        // transaction's outcome, which takes a few seconds.
         let row = vote_pk_row_regex(
             node.setup().account_id().as_ref(),
             &node.setup().near_signer_public_key_str(),
@@ -233,7 +214,13 @@ async fn test_web_endpoints() {
             i,
             &format!("http://{web_addr}/debug/recent_transactions"),
             Duration::from_secs(15),
-            |body| lists_vote_pk_row_per_domain(body, &row, expected_vote_pk_rows),
+            |body| {
+                const HEADER: &str =
+                    "Recently submitted transactions (newest first, up to 2000 retained):";
+                let mut lines = body.lines();
+                lines.next() == Some(HEADER)
+                    && lines.filter(|line| row.is_match(line)).count() == expected_vote_pk_rows
+            },
         )
         .await
         .expect("debug/recent_transactions never rendered a vote_pk row per keygen domain");

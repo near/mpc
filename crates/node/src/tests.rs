@@ -112,6 +112,7 @@ impl OneNodeTestConfig {
                     watch::channel(ProtocolContractState::NotInitialized);
                 let (_, dummy_migration_state_receiver) = watch::channel((0, BTreeMap::new()));
                 // The fake indexer never records, so the buffer stays empty.
+                // TODO(#3522): wire it into the fake indexer and assert on it.
                 let web_server = start_web_server(
                     root_task.into(),
                     debug_request_sender.clone(),
