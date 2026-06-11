@@ -7,13 +7,6 @@ use crate::{ForeignChainInspectionError, ForeignChainInspector};
 use foreign_chain_rpc_interfaces::ton::{TonMessage, TonTransaction};
 use near_mpc_contract_interface::types::{Hash256, TonAddress, TonCellBody, TonCellRefs, TonLog};
 
-/// TON chain inspector.
-///
-/// Trust model: the response of an agreeing set of RPC providers is taken at
-/// face value (see [`crate::FanOut`]). The inspector does not re-validate the
-/// response against the request or against TON protocol rules; in particular,
-/// ext-out messages are indexed in the order the provider returned them, so
-/// providers that disagree on ordering simply fail the fan-out agreement check.
 #[derive(Clone)]
 pub struct TonInspector<Client> {
     client: Client,
@@ -74,14 +67,6 @@ impl<Client: TonRpcClient> ForeignChainInspector for TonInspector<Client> {
     }
 }
 
-/// `mc_block_seqno` is set once the transaction's shard block is referenced by
-/// a masterchain block, which under TON's BFT consensus cannot be reverted.
-///
-/// Unlike the EVM/Starknet/Bitcoin inspectors, no second RPC call cross-checks
-/// this: masterchain inclusion is irreversible, so there is no reorg to detect,
-/// and the field itself is provider-asserted either way. A provider lying about
-/// inclusion is covered by the [`crate::FanOut`] agreement check, the same
-/// trust model under which those inspectors accept receipt contents.
 fn ensure_finalized(
     tx: &TonTransaction,
     finality: &TonFinality,
@@ -97,10 +82,6 @@ fn ensure_finalized(
     }
 }
 
-/// `destroyed: true` (account destroyed at the end of the transaction, e.g.
-/// send mode 32) does not by itself mean the transaction's ext-outs are
-/// invalid, but v1 conservatively refuses to attest logs from a transaction
-/// that destroyed its emitter.
 fn ensure_transaction_succeeded(tx: &TonTransaction) -> Result<(), ForeignChainInspectionError> {
     if tx.description.aborted || tx.description.destroyed {
         return Err(ForeignChainInspectionError::TransactionFailed);
