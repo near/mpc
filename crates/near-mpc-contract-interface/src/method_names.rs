@@ -55,12 +55,17 @@ pub const CLEAN_TEE_STATUS: &str = "clean_tee_status";
 pub const CLEAN_INVALID_ATTESTATIONS: &str = "clean_invalid_attestations";
 pub const CLEAN_FOREIGN_CHAIN_DATA: &str = "clean_foreign_chain_data";
 
+// TEE verifier contract (the method `mpc-contract` calls cross-contract)
+pub const VERIFY_QUOTE: &str = "verify_quote";
+
 // Callbacks (used in promise_yield_create and indexed by the node)
 pub const RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS: &str =
     "return_signature_and_clean_state_on_success";
 pub const RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS: &str = "return_ck_and_clean_state_on_success";
 pub const RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS: &str =
     "return_verify_foreign_tx_and_clean_state_on_success";
+pub const RESOLVE_VERIFICATION: &str = "resolve_verification";
+pub const ON_ATTESTATION_VERIFIED: &str = "on_attestation_verified";
 
 // View methods
 pub const STATE: &str = "state";

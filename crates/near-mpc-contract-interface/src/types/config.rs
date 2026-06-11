@@ -47,6 +47,12 @@ pub struct InitConfig {
     pub remove_non_participant_update_votes_tera_gas: Option<u64>,
     /// Prepaid gas for a `clean_foreign_chain_data` call.
     pub clean_foreign_chain_data_tera_gas: Option<u64>,
+    /// Gas attached to the cross-contract `verify_quote` call on the verifier.
+    pub verifier_tera_gas: Option<u64>,
+    /// Prepaid gas for the `resolve_verification` callback.
+    pub resolve_verification_tera_gas: Option<u64>,
+    /// Prepaid gas for the `on_attestation_verified` yield-callback.
+    pub on_attestation_verified_tera_gas: Option<u64>,
     /// The account whose `verify_quote` method the contract trusts for TEE
     /// attestation verification. Fresh deploys may set it here; otherwise the
     /// contract starts with a placeholder and participants vote one in via
@@ -100,6 +106,12 @@ pub struct Config {
     pub remove_non_participant_update_votes_tera_gas: u64,
     /// Prepaid gas for a `clean_foreign_chain_data` call.
     pub clean_foreign_chain_data_tera_gas: u64,
+    /// Gas attached to the cross-contract `verify_quote` call on the verifier.
+    pub verifier_tera_gas: u64,
+    /// Prepaid gas for the `resolve_verification` callback.
+    pub resolve_verification_tera_gas: u64,
+    /// Prepaid gas for the `on_attestation_verified` yield-callback.
+    pub on_attestation_verified_tera_gas: u64,
 }
 
 #[cfg(test)]
@@ -123,6 +135,9 @@ mod tests {
             cleanup_orphaned_node_migrations_tera_gas: Some(3),
             remove_non_participant_update_votes_tera_gas: Some(5),
             clean_foreign_chain_data_tera_gas: Some(5),
+            verifier_tera_gas: Some(100),
+            resolve_verification_tera_gas: Some(60),
+            on_attestation_verified_tera_gas: Some(10),
             tee_verifier_account_id: Some("verifier.near".parse().unwrap()),
         };
         let json = serde_json::to_string(&original_config).unwrap();
@@ -173,6 +188,9 @@ mod tests {
             cleanup_orphaned_node_migrations_tera_gas: None,
             remove_non_participant_update_votes_tera_gas: None,
             clean_foreign_chain_data_tera_gas: None,
+            verifier_tera_gas: None,
+            resolve_verification_tera_gas: None,
+            on_attestation_verified_tera_gas: None,
             tee_verifier_account_id: None,
         };
 

@@ -77,6 +77,7 @@ __abi-generate = ["abi", "near-sdk/__abi-generate"]
 
 [dependencies]
 assert_matches = { workspace = true }
+attestation = { workspace = true }
 blstrs = { workspace = true }
 borsh = { workspace = true }
 curve25519-dalek = { workspace = true }
@@ -90,9 +91,7 @@ k256 = { workspace = true, features = [
     "arithmetic",
     "expose-field",
 ] }
-# TODO(L4): drop `local-verify` once `submit_participant_info` offloads DCAP to
-# the `tee-verifier` contract; that removes `dcap-qvl` from the contract WASM.
-mpc-attestation = { workspace = true, features = ["local-verify"] }
+mpc-attestation = { workspace = true }
 mpc-primitives = { workspace = true }
 near-account-id = { workspace = true, features = ["serde"] }
 near-mpc-bounded-collections = { workspace = true }
@@ -107,6 +106,7 @@ rand = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
+tee-verifier-interface = { workspace = true }
 thiserror = { workspace = true }
 threshold-signatures = { workspace = true, optional = true }
 

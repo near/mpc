@@ -29,6 +29,12 @@ pub struct PendingAttestation {
     /// from the callback receipt, so it is stashed here: consumed for storage
     /// staking on success, refunded on failure.
     pub attached_deposit: NearToken,
+    /// Whether the submitter was a non-participant at submit time. Together with
+    /// "is this a new attestation", this decides whether the caller pays for
+    /// storage (preserving the synchronous contract's charging rule). Captured
+    /// at submit time because participant status is re-derived from the caller,
+    /// which the callback receipt no longer is.
+    pub caller_is_not_participant: bool,
     /// Yield handle from `env::promise_yield_create`. The resolution callback
     /// reads it back to `promise_yield_resume` with the final outcome.
     pub data_id: CryptoHash,

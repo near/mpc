@@ -472,6 +472,15 @@ impl From<near_mpc_contract_interface::types::InitConfig> for Config {
         if let Some(v) = config_ext.clean_foreign_chain_data_tera_gas {
             config.clean_foreign_chain_data_tera_gas = v;
         }
+        if let Some(v) = config_ext.verifier_tera_gas {
+            config.verifier_tera_gas = v;
+        }
+        if let Some(v) = config_ext.resolve_verification_tera_gas {
+            config.resolve_verification_tera_gas = v;
+        }
+        if let Some(v) = config_ext.on_attestation_verified_tera_gas {
+            config.on_attestation_verified_tera_gas = v;
+        }
 
         config
     }
@@ -499,6 +508,9 @@ impl From<&Config> for near_mpc_contract_interface::types::Config {
             remove_non_participant_update_votes_tera_gas: value
                 .remove_non_participant_update_votes_tera_gas,
             clean_foreign_chain_data_tera_gas: value.clean_foreign_chain_data_tera_gas,
+            verifier_tera_gas: value.verifier_tera_gas,
+            resolve_verification_tera_gas: value.resolve_verification_tera_gas,
+            on_attestation_verified_tera_gas: value.on_attestation_verified_tera_gas,
         }
     }
 }
@@ -525,6 +537,9 @@ impl From<near_mpc_contract_interface::types::Config> for Config {
             remove_non_participant_update_votes_tera_gas: value
                 .remove_non_participant_update_votes_tera_gas,
             clean_foreign_chain_data_tera_gas: value.clean_foreign_chain_data_tera_gas,
+            verifier_tera_gas: value.verifier_tera_gas,
+            resolve_verification_tera_gas: value.resolve_verification_tera_gas,
+            on_attestation_verified_tera_gas: value.on_attestation_verified_tera_gas,
         }
     }
 }

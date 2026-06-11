@@ -209,6 +209,33 @@ impl Attestation {
         }
     }
 
+    /// Verifies a `Mock` attestation. Pure and always compiled (no DCAP, no
+    /// `local-verify` feature), so the contract can verify mock submissions
+    /// synchronously without linking `dcap-qvl`.
+    ///
+    /// Returns an error for `Dstack` attestations: those require real DCAP
+    /// verification, which is not available on this path.
+    pub fn verify_mock_only(
+        &self,
+        current_timestamp_seconds: u64,
+        allowed_mpc_docker_image_hashes: &[NodeImageHash],
+        allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
+        accepted_measurements: &[ExpectedMeasurements],
+    ) -> Result<AcceptedAttestation, VerificationError> {
+        match self {
+            Self::Mock(mock_attestation) => verify_mock(
+                mock_attestation,
+                allowed_mpc_docker_image_hashes,
+                allowed_launcher_docker_compose_hashes,
+                accepted_measurements,
+                current_timestamp_seconds,
+            ),
+            Self::Dstack(_) => Err(VerificationError::Custom(
+                "verify_mock_only called on a Dstack attestation".to_string(),
+            )),
+        }
+    }
+
     /// Full local verification: runs DCAP (`dcap_qvl::verify::verify`) and then
     /// the post-DCAP checks. Off-chain only (the `local-verify` feature pulls
     /// in `dcap-qvl`).

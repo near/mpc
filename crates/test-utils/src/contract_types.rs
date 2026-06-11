@@ -14,5 +14,8 @@ pub fn dummy_config(value: u64) -> near_mpc_contract_interface::types::Config {
         cleanup_orphaned_node_migrations_tera_gas: value + 10,
         remove_non_participant_update_votes_tera_gas: value + 11,
         clean_foreign_chain_data_tera_gas: value + 12,
+        verifier_tera_gas: value + 13,
+        resolve_verification_tera_gas: value + 14,
+        on_attestation_verified_tera_gas: value + 15,
     }
 }

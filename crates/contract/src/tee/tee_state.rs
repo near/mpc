@@ -11,13 +11,17 @@ use crate::{
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_attestation::{
-    attestation::{self, AcceptedAttestation, Attestation, VerifiedAttestation},
+    attestation::{
+        self, AcceptedAttestation, Attestation, DstackAttestation, MockAttestation,
+        VerifiedAttestation,
+    },
     report_data::{ReportData, ReportDataV1},
 };
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash};
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_sdk::{env, near, store::IterableMap};
 use std::time::Duration;
+use tee_verifier_interface::VerifiedReport;
 
 pub use near_mpc_contract_interface::types::NodeId;
 
@@ -142,29 +146,47 @@ impl TeeState {
         current_time_milliseconds / 1_000
     }
 
-    /// Adds a participant attestation for the given node iff the attestation succeeds verification.
+    /// Test-only dispatch kept for the many existing tests that call
+    /// `add_participant` with a `Mock` fixture. Production code uses
+    /// [`Self::add_mock_participant`] (sync) or [`Self::finish_dstack_verify`]
+    /// (post-verifier) directly. Panics on `Dstack`, which has no synchronous
+    /// path; no test exercises that.
+    #[cfg(test)]
     pub(crate) fn add_participant(
         &mut self,
         node_id: NodeId,
         attestation: Attestation,
         tee_upgrade_deadline_duration: Duration,
     ) -> Result<ParticipantInsertion, AttestationSubmissionError> {
-        let expected_report_data: ReportData = ReportDataV1::new(
-            *node_id.tls_public_key.as_bytes(),
-            *node_id.account_public_key.as_bytes(),
-        )
-        .into();
+        match attestation {
+            Attestation::Mock(mock) => {
+                self.add_mock_participant(node_id, mock, tee_upgrade_deadline_duration)
+            }
+            Attestation::Dstack(_) => {
+                panic!("add_participant test helper does not support Dstack attestations")
+            }
+        }
+    }
 
+    /// Verifies and stores a `Mock` attestation synchronously.
+    ///
+    /// Mock attestations have no real quote, so there is no DCAP step and no
+    /// verifier round-trip — verification is local and immediate, unlike the
+    /// `Dstack` path which goes through [`Self::finish_dstack_verify`] after the
+    /// verifier contract responds.
+    pub(crate) fn add_mock_participant(
+        &mut self,
+        node_id: NodeId,
+        mock: MockAttestation,
+        tee_upgrade_deadline_duration: Duration,
+    ) -> Result<ParticipantInsertion, AttestationSubmissionError> {
         let accepted_measurements = self.get_accepted_measurements();
-        // TODO(L4): this synchronous DCAP-in-contract path is replaced by the
-        // cross-contract call to `tee-verifier` + `verify_with_report`, which
-        // removes `dcap-qvl` from the contract WASM. Until then the contract
-        // keeps verifying locally so L1 stays behavior-neutral.
+        // Pure, always-compiled mock verification: no DCAP, so the contract does
+        // not link `dcap-qvl`.
         let AcceptedAttestation {
             attestation: verified_attestation,
             advisory_ids,
-        } = attestation.verify_locally(
-            expected_report_data.into(),
+        } = Attestation::Mock(mock).verify_mock_only(
             Self::current_time_seconds(),
             &self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration),
             &self.get_allowed_launcher_compose_hashes(),
@@ -172,7 +194,54 @@ impl TeeState {
         )?;
 
         log_informational_advisory_ids(&advisory_ids);
+        self.store_verified_attestation(node_id, verified_attestation)
+    }
 
+    /// Runs the post-DCAP checks for a `Dstack` attestation against the
+    /// `VerifiedReport` the verifier contract returned, then stores the result.
+    /// Called from `resolve_verification` once the cross-contract `verify_quote`
+    /// succeeds; the DCAP cryptographic verification has already happened in the
+    /// verifier contract.
+    pub(crate) fn finish_dstack_verify(
+        &mut self,
+        node_id: NodeId,
+        dstack: DstackAttestation,
+        report: &VerifiedReport,
+        tee_upgrade_deadline_duration: Duration,
+    ) -> Result<ParticipantInsertion, AttestationSubmissionError> {
+        let expected_report_data = Self::expected_report_data(&node_id);
+        let accepted_measurements = self.get_accepted_measurements();
+        let AcceptedAttestation {
+            attestation: verified_attestation,
+            advisory_ids,
+        } = Attestation::Dstack(dstack).verify_with_report(
+            report,
+            expected_report_data,
+            Self::current_time_seconds(),
+            &self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration),
+            &self.get_allowed_launcher_compose_hashes(),
+            &accepted_measurements,
+        )?;
+
+        log_informational_advisory_ids(&advisory_ids);
+        self.store_verified_attestation(node_id, verified_attestation)
+    }
+
+    fn expected_report_data(node_id: &NodeId) -> ::attestation::report_data::ReportData {
+        let report_data: ReportData = ReportDataV1::new(
+            *node_id.tls_public_key.as_bytes(),
+            *node_id.account_public_key.as_bytes(),
+        )
+        .into();
+        report_data.into()
+    }
+
+    /// Stores an already-verified attestation, enforcing TLS-key ownership.
+    fn store_verified_attestation(
+        &mut self,
+        node_id: NodeId,
+        verified_attestation: VerifiedAttestation,
+    ) -> Result<ParticipantInsertion, AttestationSubmissionError> {
         let tls_pk = node_id.tls_public_key.clone();
 
         // Authorization: a TLS key registered to one account must not be

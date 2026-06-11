@@ -5769,6 +5769,7 @@ version = "3.11.0"
 dependencies = [
  "anyhow",
  "assert_matches",
+ "attestation",
  "blstrs",
  "borsh",
  "cargo-near-build",
@@ -5803,6 +5804,7 @@ dependencies = [
  "serde_with",
  "sha2 0.10.9",
  "signature",
+ "tee-verifier-interface",
  "test-utils",
  "thiserror 2.0.18",
  "threshold-signatures",
