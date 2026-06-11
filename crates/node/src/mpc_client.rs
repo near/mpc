@@ -16,7 +16,6 @@ use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
 use crate::requests::queue::{
     CHECK_EACH_REQUEST_INTERVAL, PendingRequests, REQUEST_EXPIRATION_BLOCKS,
 };
-use crate::requests::recent_blocks_tracker::{AddBlockResult, RecentBlocksTracker};
 use crate::storage::{
     CKDRequestStorage, SignRequestStorage, VerifyForeignTransactionRequestStorage,
 };
@@ -24,6 +23,7 @@ use crate::tracking::{self, AutoAbortTaskCollection};
 use crate::types::SignatureRequest;
 use crate::types::{CKDRequest, RequestsUpdate, VerifyForeignTxRequest};
 use crate::web::{DebugRequest, DebugRequestKind};
+use chain_gateway::event_subscriber::recent_blocks_tracker::{AddBlockResult, RecentBlocksTracker};
 use mpc_node_config::ConfigFile;
 
 use mpc_primitives::domain::{DomainId, Protocol};
