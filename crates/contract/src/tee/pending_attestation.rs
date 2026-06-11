@@ -11,12 +11,17 @@
 //! here so the state field and storage key land first.
 
 use mpc_attestation::attestation::DstackAttestation;
+use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_contract_interface::types::Ed25519PublicKey;
-use near_sdk::{CryptoHash, NearToken, near};
+use near_sdk::{CryptoHash, NearToken};
 
 /// One in-flight verification per submitter account.
-#[near(serializers=[borsh])]
-#[derive(Debug)]
+//
+// Plain borsh (not `#[near(serializers=[borsh])]`): this is internal contract
+// state that never appears in a public method signature, so it does not need a
+// `BorshSchema` for ABI generation — and avoiding it keeps `DstackAttestation`
+// out of the ABI schema requirement.
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct PendingAttestation {
     /// The submitted `Dstack` payload — RTMR3 event log, app-compose, and the
     /// quote/collateral — that the post-DCAP checks consume once the verifier
@@ -42,8 +47,7 @@ pub struct PendingAttestation {
 
 /// Outcome the resolution callback resumes the yielded promise with. The
 /// yield-callback maps it back to a `Result` for the original caller.
-#[near(serializers=[borsh])]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub enum FinalOutcome {
     Ok,
     Err(String),
