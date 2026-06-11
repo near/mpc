@@ -568,4 +568,97 @@ pub mod tests {
             new_threshold,
         );
     }
+
+    /// End-to-end companion to the single-domain test above, covering the
+    /// genuinely per-domain case: two domains end the resharing with
+    /// *different* reconstruction thresholds. We update only the Frost domain
+    /// (leaving CaitSith at the default `2`), which also keeps clear of the
+    /// CaitSith uniform-threshold lock since there is only one CaitSith domain.
+    ///
+    /// Same deterministic fixture rationale as the single-domain test: the
+    /// participant set is unchanged (a key-refresh resharing), so the proposed
+    /// count equals the running count (`n >= 3`), making `n` a valid threshold
+    /// that always differs from the default `2`.
+    #[expect(non_snake_case)]
+    #[test]
+    fn vote_reshared__final_transition__should_apply_distinct_thresholds_per_domain() {
+        // Given a running state with a CaitSith domain (index 0) and a Frost
+        // domain (index 1), both at the default reconstruction threshold (2),
+        // and a resharing proposal that moves only the Frost domain to `n`.
+        let mut env = Environment::new(Some(100), None, None);
+        let mut running = gen_running_state(2);
+        let current_params = running.parameters.clone();
+        let n = current_params.participants().len() as u64;
+        assert!(
+            n >= 3,
+            "gen_running_state guarantees at least 3 participants"
+        );
+        let caitsith_id = running.domains.domains()[0].id;
+        let frost_id = running.domains.domains()[1].id;
+        let default_threshold = running.domains.domains()[0].reconstruction_threshold;
+        let frost_new_threshold = ReconstructionThreshold::new(n);
+        assert_ne!(frost_new_threshold, default_threshold);
+        let mut threshold_updates = BTreeMap::new();
+        threshold_updates.insert(frost_id, frost_new_threshold);
+        let proposal = ProposedThresholdParameters::new(current_params.clone(), threshold_updates);
+
+        // Drive the proposal to acceptance so we transition into Resharing
+        // through the real vote path.
+        let prospective_epoch_id = running.prospective_epoch_id();
+        let mut state = None;
+        for (account, _, _) in proposal.participants().participants() {
+            env.set_signer(account);
+            state = running
+                .vote_new_parameters(prospective_epoch_id, &proposal)
+                .unwrap();
+        }
+        let mut state = state.expect("Should've transitioned into resharing");
+
+        // When every domain is resharing-completed in order.
+        let candidates: Vec<_> = state
+            .resharing_key
+            .proposed_parameters()
+            .participants()
+            .participants()
+            .iter()
+            .map(|(acc, _, _)| acc.clone())
+            .collect();
+        let num_domains = state.previous_running_state.domains.domains().len();
+        let mut new_running = None;
+        for i in 0..num_domains {
+            let domain_id = state
+                .previous_running_state
+                .domains
+                .get_domain_by_index(i)
+                .unwrap()
+                .id;
+            let leader = find_leader(&state.resharing_key);
+            env.set_signer(&leader.0);
+            let key_event_id = KeyEventId {
+                attempt_id: AttemptId::new(),
+                domain_id,
+                epoch_id: state.prospective_epoch_id(),
+            };
+            state.start(key_event_id, 0).unwrap();
+            for account in &candidates {
+                env.set_signer(account);
+                new_running = state.vote_reshared(key_event_id).unwrap();
+            }
+        }
+
+        // Then each domain carries its own threshold: the untouched CaitSith
+        // domain keeps `2`, while the updated Frost domain holds `n`.
+        let new_running = new_running.expect("resharing should have transitioned to Running");
+        let threshold_for = |id| {
+            new_running
+                .domains
+                .domains()
+                .iter()
+                .find(|d| d.id == id)
+                .unwrap()
+                .reconstruction_threshold
+        };
+        assert_eq!(threshold_for(caitsith_id), default_threshold);
+        assert_eq!(threshold_for(frost_id), frost_new_threshold);
+    }
 }
