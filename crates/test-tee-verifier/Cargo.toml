@@ -1,0 +1,26 @@
+[package]
+name = "test-tee-verifier"
+version = { workspace = true }
+license = { workspace = true }
+edition = { workspace = true }
+
+# A test-only stub of the `tee-verifier` contract: `verify_quote` returns a
+# response the test chose at init, instead of running real `dcap-qvl`. Lets the
+# `mpc-contract` sandbox tests drive every branch of the async attestation flow
+# (Verified / Rejected / post-DCAP failure / no-verdict) deterministically.
+# Speaks the same `tee-verifier-interface` Borsh DTOs as the real verifier, so
+# `mpc-contract` cannot tell them apart.
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+borsh = { workspace = true }
+near-sdk = { workspace = true }
+tee-verifier-interface = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { workspace = true, features = ["custom"] }
+
+[lints]
+workspace = true

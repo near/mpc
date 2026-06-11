@@ -126,3 +126,21 @@ pub async fn vote_add_launcher_hash(
     all_receipts_successful(result)?;
     Ok(())
 }
+
+pub async fn vote_tee_verifier_change(
+    account: &Account,
+    contract: &Contract,
+    candidate_account_id: &near_workspaces::AccountId,
+    expected_code_hash: [u8; 32],
+) -> anyhow::Result<()> {
+    let result = account
+        .call(contract.id(), method_names::VOTE_TEE_VERIFIER_CHANGE)
+        .args_json(serde_json::json!({
+            "candidate_account_id": candidate_account_id,
+            "expected_code_hash": expected_code_hash,
+        }))
+        .transact()
+        .await?;
+    all_receipts_successful(result)?;
+    Ok(())
+}
