@@ -464,6 +464,7 @@ impl MpcNodeSetup {
                 migration_web_ui: format!("127.0.0.1:{}", self.ports.migration_web_ui).parse()?,
                 pprof_bind_address: format!("127.0.0.1:{}", self.ports.pprof).parse()?,
                 cores: Some(4),
+                separate_asset_generation_runtime: true,
                 indexer: IndexerConfig {
                     validate_genesis: true,
                     concurrency: std::num::NonZeroU16::new(1).unwrap(),

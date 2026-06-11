@@ -1,12 +1,12 @@
-use chain_gateway::event_subscriber::block_events::BlockContext;
-use chain_gateway::types::BlockHeight;
 use near_indexer_primitives::CryptoHash;
 use std::collections::{HashMap, VecDeque};
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 
-use super::metrics::{MPC_BLOCKS_INDEXED, MPC_FINALIZED_BLOCKS_INDEXED};
+use crate::event_subscriber::block_events::BlockContext;
+use crate::event_subscriber::metrics::{MPC_BLOCKS_INDEXED, MPC_FINALIZED_BLOCKS_INDEXED};
+use crate::types::BlockHeight;
 
 /// Tracks the topology of the recent blocks, using the blocks given by the indexer.
 ///
@@ -565,26 +565,24 @@ impl Debug for RecentBlocksTracker {
     }
 }
 
-#[cfg(test)]
-pub mod tests {
-    use crate::requests::recent_blocks_tracker::{AtomicBlockStatus, BlockStatusHandle};
-
-    use super::{BlockStatus, RecentBlocksTracker};
-    use chain_gateway::event_subscriber::block_events::BlockContext;
-    use chain_gateway::types::BlockEntropy;
+#[cfg(any(test, feature = "test-utils"))]
+pub mod test_utils {
+    use super::super::block_events::BlockContext;
+    use super::{BlockStatus, BlockStatusHandle, RecentBlocksTracker};
+    use crate::types::BlockEntropy;
     use near_indexer::near_primitives::hash::hash;
     use near_indexer_primitives::CryptoHash;
     use std::collections::HashSet;
     use std::fmt::Write;
-    use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::{Arc, Mutex};
 
     pub struct TestBlock {
-        hash: CryptoHash,
+        pub(super) hash: CryptoHash,
         height: u64,
         entropy: BlockEntropy,
         timestamp_nanosec: u64,
-        pub(crate) parent: Option<Arc<TestBlock>>,
+        pub parent: Option<Arc<TestBlock>>,
         tester: Arc<TestBlockMaker>,
         next_fork_seed: AtomicU64,
     }
@@ -717,14 +715,14 @@ pub mod tests {
 
     pub struct Tester {
         maker: Arc<TestBlockMaker>,
-        tracker: RecentBlocksTracker,
+        pub(super) tracker: RecentBlocksTracker,
         parents_of_added_blocks: HashSet<CryptoHash>,
         /// When adding a block to the tracker via [`Tester::add`], we debug-print the tracker and
         /// append the output to [`Tester::evolution`]. This allows us to inspect how adding a block
         /// influences finality and canonical status of tracked blocks.
         /// The resulting string can be compared against snapshots, allowing the unittests to catch
         /// regressions.
-        evolution: String,
+        pub(super) evolution: String,
     }
 
     impl From<u8> for BlockStatus {
@@ -781,6 +779,14 @@ pub mod tests {
             result.block_status
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::test_utils::Tester;
+    use super::{AtomicBlockStatus, BlockStatus};
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicU8;
 
     #[test]
     fn test_no_forks() {
