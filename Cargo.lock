@@ -5898,6 +5898,7 @@ dependencies = [
  "near-mpc-crypto-types",
  "near-o11y 2.12.0",
  "near-sdk",
+ "near-store",
  "near-time 2.12.0",
  "node-types",
  "num_enum",
