@@ -126,7 +126,6 @@ fn convert_download_config(dt: DownloadConfigType) -> near_config_utils::Downloa
     }
 }
 
-/// Applies post-init patches to the NEAR node `config.json`, matching the
 /// Decentralized state sync requires the node to advertise a reachable
 /// address; without it the node may advertise an unreachable (e.g.
 /// NAT/SLIRP-internal) address and state sync stalls silently. Enforced at
@@ -144,6 +143,7 @@ fn require_tier3_public_addr(near_init: &NearInitConfig) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Applies post-init patches to the NEAR node `config.json`, matching the
 /// behaviour of `update_near_node_config()` in `start.sh`.
 fn patch_near_config(
     config_path: &Path,
