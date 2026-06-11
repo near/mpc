@@ -14,6 +14,11 @@ edition = { workspace = true }
 [lib]
 crate-type = ["cdylib", "lib"]
 
+[features]
+# Enabled by `cargo near build` / `--all-features` for ABI generation, mirroring
+# the real `tee-verifier`: pulls in the borsh schema for the wire DTOs.
+abi = ["borsh/unstable__schema", "tee-verifier-interface/borsh-schema"]
+
 [dependencies]
 borsh = { workspace = true }
 near-sdk = { workspace = true }

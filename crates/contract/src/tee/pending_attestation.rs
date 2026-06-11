@@ -47,7 +47,16 @@ pub struct PendingAttestation {
 
 /// Outcome the resolution callback resumes the yielded promise with. The
 /// yield-callback maps it back to a `Result` for the original caller.
+//
+// `FinalOutcome` reaches ABI generation as the `#[callback_result]` argument
+// type of `on_attestation_verified`, so it needs a `BorshSchema` under `abi`
+// (unlike `PendingAttestation`, which is pure state). Both its variants are
+// schema-able (`()` and `String`).
 #[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(borsh::BorshSchema)
+)]
 pub enum FinalOutcome {
     Ok,
     Err(String),

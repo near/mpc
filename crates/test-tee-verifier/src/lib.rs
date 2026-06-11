@@ -26,6 +26,10 @@ getrandom::register_custom_getrandom!(randomness_unsupported);
 /// What the stub's `verify_quote` should do, chosen by the test at deploy time.
 #[expect(clippy::large_enum_variant)]
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(borsh::BorshSchema)
+)]
 pub enum StubResponse {
     /// Return `VerificationResult::Verified` with this exact report. Tests that
     /// want the post-DCAP checks to pass supply the report obtained from the

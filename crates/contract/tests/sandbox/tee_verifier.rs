@@ -42,7 +42,10 @@ use test_utils::attestation::{mock_dto_dstack_attestation, p2p_tls_key};
 #[expect(clippy::large_enum_variant)]
 #[derive(BorshSerialize)]
 enum StubResponse {
-    #[allow(dead_code)]
+    // The Verified branch is exercised by the (deferred) post-DCAP-pass test; it
+    // is part of the stub's wire contract, so keep the variant even though no
+    // current test constructs it.
+    #[expect(dead_code)]
     Verified(tee_verifier_interface::VerifiedReport),
     Rejected(String),
     Panic,
