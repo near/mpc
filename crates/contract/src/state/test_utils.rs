@@ -16,6 +16,8 @@ use crate::primitives::{
 use rand::Rng;
 use std::collections::BTreeMap;
 
+/// Generates a valid resharing proposal from `params` with empty (no-change)
+/// per-domain threshold updates.
 pub fn gen_valid_params_proposal(params: &ThresholdParameters) -> ProposedThresholdParameters {
     let mut rng = rand::thread_rng();
     let current_k = params.threshold().value() as usize;
@@ -58,9 +60,7 @@ pub fn gen_valid_params_proposal(params: &ThresholdParameters) -> ProposedThresh
 
     let threshold = ((new_participants.len() as f64) * 0.6).ceil() as u64;
     let parameters = ThresholdParameters::new(new_participants, Threshold::new(threshold)).unwrap();
-    // Valid proposals carry an empty (no-change) set of per-domain threshold
-    // updates by default; tests that exercise them attach a map via
-    // `with_per_domain_thresholds`.
+    // Empty per-domain threshold updates (no change); see the doc comment.
     ProposedThresholdParameters::new(parameters, BTreeMap::new())
 }
 
