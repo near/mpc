@@ -48,12 +48,29 @@ where
             .client
             .get_transaction_by_hash(&tx_hash_hex)
             .await
-            .map_err(|e| match e {
-                // 404 = definitively absent → a non-transient verdict, not a retry.
-                AptosRpcError::ApiError { status: 404, .. } => {
-                    ForeignChainInspectionError::TransactionNotFound
+            .map_err(|e| {
+                let msg = e.to_string();
+                match e {
+                    // 404 = definitively absent → a non-transient verdict.
+                    AptosRpcError::ApiError { status: 404, .. } => {
+                        ForeignChainInspectionError::TransactionNotFound
+                    }
+                    // Rate limits and server errors are provider hiccups → transient, so the
+                    // affected provider is dropped from the quorum instead of blocking it.
+                    AptosRpcError::ApiError {
+                        status: 408 | 429, ..
+                    } => ForeignChainInspectionError::RpcRequestFailed(msg),
+                    AptosRpcError::ApiError { status, .. } if status >= 500 => {
+                        ForeignChainInspectionError::RpcRequestFailed(msg)
+                    }
+                    // Remaining 4xx (400/401/403/410, …) are deterministic rejections —
+                    // retrying cannot change them, so they count as substantive verdicts.
+                    AptosRpcError::ApiError { .. } => {
+                        ForeignChainInspectionError::RpcRequestRejected(msg)
+                    }
+                    // Transport failures, including timeouts.
+                    AptosRpcError::Http(_) => ForeignChainInspectionError::RpcRequestFailed(msg),
                 }
-                other => ForeignChainInspectionError::RpcRequestFailed(other.to_string()),
             })?;
 
         ensure_hash_matches(&tx_id, &tx.hash)?;
@@ -66,7 +83,7 @@ where
             AptosFinality::Committed => {
                 // A committed transaction always carries an execution result.
                 let Some(success) = tx.success else {
-                    return Err(ForeignChainInspectionError::RpcRequestFailed(
+                    return Err(ForeignChainInspectionError::MalformedRpcResponse(
                         "committed transaction is missing the success field".to_string(),
                     ));
                 };
@@ -86,15 +103,14 @@ where
 }
 
 /// Rejects a backend that returned a different transaction than queried. A non-hex `returned`
-/// hash is a malformed response (transient); a well-formed but different hash is a hard
-/// inconsistency.
+/// hash is a malformed response; a well-formed but different hash is a hard inconsistency.
 fn ensure_hash_matches(
     requested: &[u8; 32],
     returned: &str,
 ) -> Result<(), ForeignChainInspectionError> {
     let returned_bytes =
         hex::decode(returned.strip_prefix("0x").unwrap_or(returned)).map_err(|e| {
-            ForeignChainInspectionError::RpcRequestFailed(format!(
+            ForeignChainInspectionError::MalformedRpcResponse(format!(
                 "non-hex transaction hash in response: {e}"
             ))
         })?;
@@ -119,11 +135,11 @@ impl AptosExtractor {
                     .get(*event_index)
                     .ok_or(ForeignChainInspectionError::LogIndexOutOfBounds)?;
 
-                // An unparseable field → transient, so one malformed provider drops from the
-                // quorum rather than blocking signing.
+                // An unparseable field is a deterministic property of the response, not a
+                // hiccup — a substantive (non-transient) verdict for the fan-out.
                 let account_address =
                     parse_aptos_address(&event.guid.account_address).map_err(|reason| {
-                        ForeignChainInspectionError::RpcRequestFailed(format!(
+                        ForeignChainInspectionError::MalformedRpcResponse(format!(
                             "failed to parse event account_address: {reason}"
                         ))
                     })?;
@@ -133,7 +149,7 @@ impl AptosExtractor {
                         .sequence_number
                         .parse()
                         .map_err(|e: std::num::ParseIntError| {
-                            ForeignChainInspectionError::RpcRequestFailed(format!(
+                            ForeignChainInspectionError::MalformedRpcResponse(format!(
                                 "failed to parse event sequence_number: {e}"
                             ))
                         })?;
@@ -231,20 +247,11 @@ mod tests {
             Self { response: Ok(tx) }
         }
 
-        fn not_found() -> Self {
+        fn api_error(status: u16) -> Self {
             Self {
                 response: Err(AptosRpcError::ApiError {
-                    status: 404,
-                    body: "transaction not found".to_string(),
-                }),
-            }
-        }
-
-        fn server_error() -> Self {
-            Self {
-                response: Err(AptosRpcError::ApiError {
-                    status: 500,
-                    body: "internal server error".to_string(),
+                    status,
+                    body: format!("http {status}"),
                 }),
             }
         }
@@ -607,7 +614,7 @@ mod tests {
     #[tokio::test]
     async fn extract__should_return_transaction_not_found_on_404() {
         // Given
-        let inspector = AptosInspector::new(MockAptosClient::not_found());
+        let inspector = AptosInspector::new(MockAptosClient::api_error(404));
         let tx_id = tx_id_from_hex(HASH);
 
         // When
@@ -615,7 +622,7 @@ mod tests {
             .extract(tx_id, AptosFinality::Committed, vec![])
             .await;
 
-        // Then — non-transient so the node does not retry indefinitely
+        // Then — a substantive (non-transient) verdict.
         assert_matches!(
             result,
             Err(ForeignChainInspectionError::TransactionNotFound)
@@ -623,10 +630,15 @@ mod tests {
         assert!(!result.unwrap_err().is_transient());
     }
 
+    #[rstest]
+    #[case::request_timeout(408)]
+    #[case::rate_limited(429)]
+    #[case::internal_error(500)]
+    #[case::service_unavailable(503)]
     #[tokio::test]
-    async fn extract__should_return_transient_error_on_server_error() {
+    async fn extract__should_return_transient_error_on_provider_hiccup(#[case] status: u16) {
         // Given
-        let inspector = AptosInspector::new(MockAptosClient::server_error());
+        let inspector = AptosInspector::new(MockAptosClient::api_error(status));
         let tx_id = tx_id_from_hex(HASH);
 
         // When
@@ -634,12 +646,62 @@ mod tests {
             .extract(tx_id, AptosFinality::Committed, vec![])
             .await;
 
-        // Then — transient so the node retries
+        // Then — transient, so the provider is dropped from the quorum.
         assert_matches!(
             result,
             Err(ForeignChainInspectionError::RpcRequestFailed(_))
         );
         assert!(result.unwrap_err().is_transient());
+    }
+
+    #[rstest]
+    #[case::bad_request(400)]
+    #[case::unauthorized(401)]
+    #[case::forbidden(403)]
+    #[case::gone(410)]
+    #[tokio::test]
+    async fn extract__should_reject_deterministic_client_errors(#[case] status: u16) {
+        // Given
+        let inspector = AptosInspector::new(MockAptosClient::api_error(status));
+        let tx_id = tx_id_from_hex(HASH);
+
+        // When
+        let result = inspector
+            .extract(tx_id, AptosFinality::Committed, vec![])
+            .await;
+
+        // Then — non-transient: retrying cannot change a deterministic rejection, and the
+        // fan-out must not validate on the remaining providers alone.
+        assert_matches!(
+            result,
+            Err(ForeignChainInspectionError::RpcRequestRejected(_))
+        );
+        assert!(!result.unwrap_err().is_transient());
+    }
+
+    #[tokio::test]
+    async fn extract__should_reject_committed_tx_missing_success_as_malformed() {
+        // Given — a committed kind whose execution result is absent, violating the API spec.
+        let tx = TransactionResponse {
+            transaction_type: "user_transaction".to_string(),
+            hash: HASH.to_string(),
+            success: None,
+            events: vec![],
+        };
+        let inspector = AptosInspector::new(MockAptosClient::success(tx));
+        let tx_id = tx_id_from_hex(HASH);
+
+        // When
+        let result = inspector
+            .extract(tx_id, AptosFinality::Committed, vec![])
+            .await;
+
+        // Then
+        assert_matches!(
+            result,
+            Err(ForeignChainInspectionError::MalformedRpcResponse(_))
+        );
+        assert!(!result.unwrap_err().is_transient());
     }
 
     #[test]
@@ -665,7 +727,7 @@ mod tests {
         // Then — a malformed field, not a hash mismatch.
         assert_matches!(
             result,
-            Err(ForeignChainInspectionError::RpcRequestFailed(_))
+            Err(ForeignChainInspectionError::MalformedRpcResponse(_))
         );
     }
 }
