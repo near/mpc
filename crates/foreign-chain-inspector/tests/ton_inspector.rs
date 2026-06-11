@@ -7,12 +7,13 @@
 //! exercise request-URL construction and deserialization of realistic TON HTTP
 //! API v3 `/transactions` JSON, on top of the extraction logic.
 
+pub mod common;
+
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use common::hash32;
 use foreign_chain_inspector::ton::TonInspectionError;
 use foreign_chain_inspector::ton::inspector::TonInspector;
-use foreign_chain_inspector::ton::rpc_client::{
-    ReqwestTonClient, TonRpcError, build_ton_http_client,
-};
+use foreign_chain_inspector::ton::rpc_client::{ReqwestTonClient, TonRpcError};
 use foreign_chain_inspector::ton::types::{
     TonAddress, TonExtractedValue, TonExtractor, TonFinality, TonLog, TonTransactionId,
     TonWorkchain,
@@ -28,7 +29,8 @@ const ACCOUNT_HASH: [u8; 32] = [0x11; 32];
 const TX_HASH: [u8; 32] = [0xde; 32];
 
 // Golden message-body BoCs (base64) captured from tonlib, with their decoded
-// contents, so this test needs no BoC library of its own.
+// contents, so this test needs no BoC library of its own. (They mirror the
+// `src/ton/test_support.rs` goldens, which a `tests/` binary cannot import.)
 //
 // A 4-byte (32-bit) body cell `0x99000001` with no references.
 const BYTE_ALIGNED_BODY: &str = "te6ccgEBAQEABgAACJkAAAE=";
@@ -36,10 +38,6 @@ const BYTE_ALIGNED_BODY: &str = "te6ccgEBAQEABgAACJkAAAE=";
 const ONE_REF_BODY: &str = "te6ccgEBAgEACAABBN6tAQACqg==";
 // The representation hash of that child cell.
 const ONE_REF_CHILD_HASH: &str = "08da99aa8eb36c5c627a221005ca60f004f392de79b18e90be10c0cb420ab332";
-
-fn hash32(hex_str: &str) -> [u8; 32] {
-    hex::decode(hex_str).unwrap().try_into().unwrap()
-}
 
 fn account_str() -> String {
     format!("0:{}", hex::encode(ACCOUNT_HASH))
@@ -58,8 +56,8 @@ fn hash_b64() -> String {
 fn tx_id() -> TonTransactionId {
     TonTransactionId {
         workchain: TonWorkchain::Basechain,
-        account: ACCOUNT_HASH,
-        tx_hash: TX_HASH,
+        account: ACCOUNT_HASH.into(),
+        tx_hash: TX_HASH.into(),
     }
 }
 
@@ -71,12 +69,7 @@ fn log_extractor() -> Vec<TonExtractor> {
 /// transaction with one ext-out (`destination: null`) message. Includes the
 /// surrounding fields a real provider returns so the test proves the DTOs
 /// tolerate (ignore) everything the inspector doesn't consume.
-fn v3_response(
-    body_b64: &str,
-    mc_block_seqno: Value,
-    compute_success: bool,
-    aborted: bool,
-) -> Value {
+fn v3_response(body_b64: &str, mc_block_seqno: Value) -> Value {
     json!({
         "transactions": [{
             "account": account_str(),
@@ -90,13 +83,13 @@ fn v3_response(
             "total_fees": "1000",
             "description": {
                 "type": "ord",
-                "aborted": aborted,
+                "aborted": false,
                 "destroyed": false,
                 "credit_first": true,
                 "compute_ph": {
                     "type": "vm",
                     "skipped": false,
-                    "success": compute_success,
+                    "success": true,
                     "gas_used": "3308",
                     "exit_code": 0,
                     "vm_steps": 39
@@ -127,7 +120,7 @@ fn v3_response(
 
 fn inspector_for(server: &MockServer) -> TonInspector<ReqwestTonClient> {
     let client =
-        build_ton_http_client(server.url("/api/v3/"), RpcAuthentication::KeyInUrl).unwrap();
+        ReqwestTonClient::new(server.url("/api/v3/"), RpcAuthentication::KeyInUrl).unwrap();
     TonInspector::new(client)
 }
 
@@ -151,11 +144,7 @@ fn mock_transactions(server: &MockServer, status: u16, body: Value) -> httpmock:
 async fn extract__should_return_log_via_http_rpc_client() {
     // Given a finalized, successful tx whose ext-out carries a 4-byte body cell.
     let server = MockServer::start();
-    let mock = mock_transactions(
-        &server,
-        200,
-        v3_response(BYTE_ALIGNED_BODY, json!(12345), true, false),
-    );
+    let mock = mock_transactions(&server, 200, v3_response(BYTE_ALIGNED_BODY, json!(12345)));
     let inspector = inspector_for(&server);
 
     // When
@@ -183,11 +172,7 @@ async fn extract__should_return_log_via_http_rpc_client() {
 async fn extract__should_extract_reference_cell_hashes_via_http_rpc_client() {
     // Given an ext-out body cell that references a child cell.
     let server = MockServer::start();
-    let mock = mock_transactions(
-        &server,
-        200,
-        v3_response(ONE_REF_BODY, json!(12345), true, false),
-    );
+    let mock = mock_transactions(&server, 200, v3_response(ONE_REF_BODY, json!(12345)));
     let inspector = inspector_for(&server);
 
     // When
@@ -213,15 +198,14 @@ async fn extract__should_extract_reference_cell_hashes_via_http_rpc_client() {
     );
 }
 
+// The verdict logic itself (finality, failed phases, missing transaction, ...)
+// is covered by the `StubClient` unit tests in `src/ton/inspector.rs`; this one
+// case stays as the representative for deserializing a JSON `null` field.
 #[tokio::test]
 async fn extract__should_reject_when_not_included_in_masterchain() {
     // Given a tx that is not yet referenced by a masterchain block.
     let server = MockServer::start();
-    mock_transactions(
-        &server,
-        200,
-        v3_response(BYTE_ALIGNED_BODY, Value::Null, true, false),
-    );
+    mock_transactions(&server, 200, v3_response(BYTE_ALIGNED_BODY, Value::Null));
     let inspector = inspector_for(&server);
 
     // When
@@ -231,47 +215,6 @@ async fn extract__should_reject_when_not_included_in_masterchain() {
 
     // Then
     assert_matches::assert_matches!(result, Err(ForeignChainInspectionError::NotFinalized));
-}
-
-#[tokio::test]
-async fn extract__should_reject_when_compute_phase_failed() {
-    // Given a tx whose compute phase reports failure.
-    let server = MockServer::start();
-    mock_transactions(
-        &server,
-        200,
-        v3_response(BYTE_ALIGNED_BODY, json!(12345), false, false),
-    );
-    let inspector = inspector_for(&server);
-
-    // When
-    let result = inspector
-        .extract(tx_id(), TonFinality::MasterchainIncluded, log_extractor())
-        .await;
-
-    // Then
-    assert_matches::assert_matches!(result, Err(ForeignChainInspectionError::TransactionFailed));
-}
-
-#[tokio::test]
-async fn extract__should_reject_when_no_transaction_found() {
-    // Given an empty result set (provider knows of no such tx).
-    let server = MockServer::start();
-    mock_transactions(&server, 200, json!({ "transactions": [] }));
-    let inspector = inspector_for(&server);
-
-    // When
-    let result = inspector
-        .extract(tx_id(), TonFinality::MasterchainIncluded, log_extractor())
-        .await;
-
-    // Then
-    assert_matches::assert_matches!(
-        result,
-        Err(ForeignChainInspectionError::Ton(
-            TonInspectionError::TransactionNotFound { .. }
-        ))
-    );
 }
 
 #[tokio::test]

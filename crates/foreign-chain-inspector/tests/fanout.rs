@@ -11,7 +11,7 @@
 use std::{io, sync::Arc};
 
 use assert_matches::assert_matches;
-use foreign_chain_inspector::ton::TonInspectionError;
+use foreign_chain_inspector::ton::{TonBocError, TonInspectionError};
 use foreign_chain_inspector::{
     BlockConfirmations, FanOut, ForeignChainInspectionError, ForeignChainInspector,
 };
@@ -342,20 +342,14 @@ mod non_transient_agree {
 
     #[tokio::test]
     async fn fan_out__should_treat_same_ton_inner_variant_with_different_fields_as_agreement() {
-        // Given: both inspectors report a TON AccountMismatch, with different
-        // inner fields. The TON agreement check compares the inner variant, so
-        // these agree.
+        // Given: both inspectors report a TON MessageMissingContent, with
+        // different inner fields. The TON agreement check compares the inner
+        // variant, so these agree.
         let a = mock_returning(err(|| {
-            ForeignChainInspectionError::Ton(TonInspectionError::AccountMismatch {
-                expected: "0:aa".to_string(),
-                got: "0:bb".to_string(),
-            })
+            ForeignChainInspectionError::Ton(TonInspectionError::MessageMissingContent { index: 0 })
         }));
         let b = mock_returning(err(|| {
-            ForeignChainInspectionError::Ton(TonInspectionError::AccountMismatch {
-                expected: "0:aa".to_string(),
-                got: "0:cc".to_string(),
-            })
+            ForeignChainInspectionError::Ton(TonInspectionError::MessageMissingContent { index: 1 })
         }));
         let fan_out = fan_out_of(vec![a, b]);
 
@@ -366,7 +360,7 @@ mod non_transient_agree {
         assert_matches!(
             result,
             Err(ForeignChainInspectionError::Ton(
-                TonInspectionError::AccountMismatch { .. }
+                TonInspectionError::MessageMissingContent { .. }
             ))
         );
     }
@@ -435,10 +429,9 @@ mod non_transient_disagree {
         // Given: both errors share the outer `Ton` variant but report entirely
         // different TON failure modes — that is a disagreement, not agreement.
         let a = mock_returning(err(|| {
-            ForeignChainInspectionError::Ton(TonInspectionError::AccountMismatch {
-                expected: "0:aa".to_string(),
-                got: "0:bb".to_string(),
-            })
+            ForeignChainInspectionError::Ton(TonInspectionError::BocError(
+                TonBocError::NonByteAlignedBody { bit_len: 12 },
+            ))
         }));
         let b = mock_returning(err(|| {
             ForeignChainInspectionError::Ton(TonInspectionError::MessageMissingContent { index: 0 })

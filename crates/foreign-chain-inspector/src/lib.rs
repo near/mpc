@@ -55,7 +55,7 @@ pub trait ForeignChainInspector {
 /// Variant-level comparison is used for non-transient errors, so inspectors that all report
 /// the same failure mode (e.g. `NonCanonicalBlock`) are considered to agree even if the
 /// inner fields differ. See [`ForeignChainInspectionError::same_failure_mode`] for the exact
-/// agreement relation (TON errors, all wrapped in one variant, are compared one level deeper).
+/// agreement relation.
 #[derive(Clone, derive_more::Constructor)]
 pub struct FanOut<Inspector> {
     inspectors: NonEmptyVec<Inspector>,
@@ -180,6 +180,23 @@ pub enum RpcAuthentication {
     },
 }
 
+impl RpcAuthentication {
+    /// The default request headers this authentication method requires.
+    pub(crate) fn into_header_map(self) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        match self {
+            RpcAuthentication::KeyInUrl => {}
+            RpcAuthentication::CustomHeader {
+                header_name,
+                header_value,
+            } => {
+                headers.insert(header_name, header_value);
+            }
+        }
+        headers
+    }
+}
+
 #[derive(From, Debug, Display, Clone, Copy, Deref, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BlockConfirmations(u64);
 
@@ -255,13 +272,13 @@ pub enum ForeignChainInspectionError {
 impl ForeignChainInspectionError {
     /// Whether two non-transient errors represent the same failure mode for
     /// the [`FanOut`] agreement check. Compared at variant level, so errors
-    /// that differ only in their inner fields agree. TON-specific errors are
-    /// all wrapped in the single [`Self::Ton`] variant, so those are compared
-    /// one level deeper — otherwise two providers failing for entirely
-    /// different TON reasons would count as agreeing.
+    /// that differ only in their inner fields agree. Chain-specific errors
+    /// wrapped in a single variant (e.g. [`Self::Ton`]) delegate to the inner
+    /// type's own `same_failure_mode` — otherwise two providers failing for
+    /// entirely different chain-level reasons would count as agreeing.
     pub fn same_failure_mode(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::Ton(a), Self::Ton(b)) => std::mem::discriminant(a) == std::mem::discriminant(b),
+            (Self::Ton(a), Self::Ton(b)) => a.same_failure_mode(b),
             _ => std::mem::discriminant(self) == std::mem::discriminant(other),
         }
     }
@@ -284,21 +301,7 @@ pub fn build_http_client(
     base_url: String,
     rpc_authentication: RpcAuthentication,
 ) -> Result<HttpClient, jsonrpsee::core::client::error::Error> {
-    let mut headers = HeaderMap::new();
-
-    match rpc_authentication {
-        RpcAuthentication::KeyInUrl => {}
-        RpcAuthentication::CustomHeader {
-            header_name,
-            header_value,
-        } => {
-            headers.insert(header_name, header_value);
-        }
-    }
-
-    let client = HttpClientBuilder::default()
-        .set_headers(headers)
-        .build(&base_url)?;
-
-    Ok(client)
+    HttpClientBuilder::default()
+        .set_headers(rpc_authentication.into_header_map())
+        .build(&base_url)
 }

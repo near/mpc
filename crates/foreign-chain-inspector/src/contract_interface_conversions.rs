@@ -8,8 +8,7 @@ use crate::bitcoin::inspector::BitcoinExtractor;
 use crate::evm::inspector::{EvmChain, EvmExtractedValue, EvmExtractor};
 use crate::starknet::StarknetExtractedValue;
 use crate::starknet::inspector::{StarknetExtractor, StarknetFinality};
-use crate::ton::types::TonWorkchain;
-use crate::ton::types::{TonAddress, TonExtractedValue, TonExtractor, TonFinality, TonLog};
+use crate::ton::types::{TonExtractedValue, TonExtractor, TonFinality};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConversionError {
@@ -337,44 +336,10 @@ impl TryFrom<dtos::TonExtractor> for TonExtractor {
     }
 }
 
-fn ton_workchain_to_dto(workchain: TonWorkchain) -> dtos::TonWorkchain {
-    match workchain {
-        TonWorkchain::Basechain => dtos::TonWorkchain::Basechain,
-    }
-}
-
-fn ton_workchain_from_dto(workchain: dtos::TonWorkchain) -> TonWorkchain {
-    match workchain {
-        dtos::TonWorkchain::Basechain => TonWorkchain::Basechain,
-    }
-}
-
-fn ton_log_to_dto(log: TonLog) -> dtos::TonLog {
-    dtos::TonLog {
-        from_address: dtos::TonAddress {
-            workchain: ton_workchain_to_dto(log.from_address.workchain),
-            hash: log.from_address.hash,
-        },
-        body: log.body,
-        body_refs: log.body_refs,
-    }
-}
-
-fn ton_log_from_dto(log: dtos::TonLog) -> TonLog {
-    TonLog {
-        from_address: TonAddress {
-            workchain: ton_workchain_from_dto(log.from_address.workchain),
-            hash: log.from_address.hash,
-        },
-        body: log.body,
-        body_refs: log.body_refs,
-    }
-}
-
 impl From<TonExtractedValue> for dtos::TonExtractedValue {
     fn from(value: TonExtractedValue) -> Self {
         match value {
-            TonExtractedValue::Log(log) => dtos::TonExtractedValue::Log(ton_log_to_dto(log)),
+            TonExtractedValue::Log(log) => dtos::TonExtractedValue::Log(log),
         }
     }
 }
@@ -383,7 +348,7 @@ impl TryFrom<dtos::TonExtractedValue> for TonExtractedValue {
     type Error = ConversionError;
     fn try_from(value: dtos::TonExtractedValue) -> Result<Self, Self::Error> {
         match value {
-            dtos::TonExtractedValue::Log(log) => Ok(TonExtractedValue::Log(ton_log_from_dto(log))),
+            dtos::TonExtractedValue::Log(log) => Ok(TonExtractedValue::Log(log)),
             _ => Err(ConversionError::UnsupportedVariant {
                 context: "TonExtractedValue",
             }),
@@ -634,9 +599,9 @@ mod tests {
 
     #[test]
     fn ton_extracted_value_roundtrip() {
-        let log = TonLog {
-            from_address: TonAddress {
-                workchain: TonWorkchain::Basechain,
+        let log = dtos::TonLog {
+            from_address: dtos::TonAddress {
+                workchain: dtos::TonWorkchain::Basechain,
                 hash: dtos::Hash256([0xaa; 32]),
             },
             body: dtos::TonCellBody::new(vec![0xde, 0xad].try_into().unwrap(), 16).unwrap(),

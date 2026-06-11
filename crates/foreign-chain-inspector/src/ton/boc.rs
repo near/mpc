@@ -34,12 +34,12 @@ pub struct DecodedCell {
 }
 
 /// A cell as read from the stream: its raw descriptor bytes and data (already in
-/// the standard-representation form the hash consumes) plus its references'
-/// indices.
-struct RawCell {
+/// the standard-representation form the hash consumes, borrowed from the input
+/// buffer) plus its references' indices.
+struct RawCell<'a> {
     d1: u8,
     d2: u8,
-    data: Vec<u8>,
+    data: &'a [u8],
     refs: Vec<usize>,
 }
 
@@ -89,12 +89,12 @@ pub fn parse_single_root_boc(body_boc_b64: &str) -> Result<DecodedCell, BocError
     Ok(resolve(&cells, root))
 }
 
-fn read_cell(
-    r: &mut Reader,
+fn read_cell<'a>(
+    r: &mut Reader<'a>,
     ref_size: usize,
     index: usize,
     cell_count: usize,
-) -> Result<RawCell, BocError> {
+) -> Result<RawCell<'a>, BocError> {
     let d1 = r.u8()?;
     let d2 = r.u8()?;
 
@@ -106,7 +106,7 @@ fn read_cell(
 
     let ref_count = usize::from(d1 & 0b0000_0111);
     let data_len = usize::from((d2 >> 1) + (d2 & 1));
-    let data = r.bytes(data_len)?.to_vec();
+    let data = r.bytes(data_len)?;
 
     let mut refs = Vec::with_capacity(ref_count);
     for _ in 0..ref_count {
@@ -127,7 +127,7 @@ fn read_cell(
 
 /// Compute each cell's representation hash and depth bottom-up (forward
 /// references guarantee a child is done before its parent), then return the root.
-fn resolve(cells: &[RawCell], root: usize) -> DecodedCell {
+fn resolve(cells: &[RawCell<'_>], root: usize) -> DecodedCell {
     let mut hashes = vec![[0u8; 32]; cells.len()];
     let mut depths = vec![0u16; cells.len()];
 
@@ -147,7 +147,7 @@ fn resolve(cells: &[RawCell], root: usize) -> DecodedCell {
         // already the standard-representation form.
         let mut hasher = Sha256::new();
         hasher.update([cell.d1, cell.d2]);
-        hasher.update(&cell.data);
+        hasher.update(cell.data);
         for &c in &cell.refs {
             hasher.update(depths[c].to_be_bytes());
         }
@@ -171,23 +171,24 @@ fn resolve(cells: &[RawCell], root: usize) -> DecodedCell {
 /// The root's significant data bits and length. A byte-aligned cell is taken
 /// as-is; a non-byte-aligned one has its augmentation `1` bit (and the zero
 /// padding after it) stripped so the bytes are canonical.
-fn root_body(cell: &RawCell) -> (Vec<u8>, u16) {
+fn root_body(cell: &RawCell<'_>) -> (Vec<u8>, u16) {
     // `data.len() <= 128`, so `len * 8 <= 1024` always fits in u16.
     let bits = (cell.data.len() as u16) * 8;
     if cell.d2 & 1 == 0 {
-        return (cell.data.clone(), bits);
+        return (cell.data.to_vec(), bits);
     }
-    let mut data = cell.data.clone();
-    match data.last() {
-        // Degenerate augmentation; bit_len stays a multiple of 8 so the caller
-        // rejects it as non-byte-aligned rather than acting on it.
-        Some(&0) | None => (data, bits),
-        Some(&last) => {
-            let trailing = last.trailing_zeros() as u16;
-            *data.last_mut().expect("last is Some") &= !(1u8 << trailing);
-            (data, bits - (trailing + 1))
-        }
+    let mut data = cell.data.to_vec();
+    if let Some(last) = data.last_mut()
+        && *last != 0
+    {
+        let trailing = last.trailing_zeros() as u16;
+        *last &= !(1u8 << trailing);
+        return (data, bits - (trailing + 1));
     }
+    // Degenerate augmentation (no data or all-zero final byte); bit_len stays a
+    // multiple of 8 so the caller rejects it as non-byte-aligned rather than
+    // acting on it.
+    (data, bits)
 }
 
 /// A bounds-checked, big-endian byte reader: every accessor returns
@@ -273,22 +274,11 @@ pub(crate) fn encode_single_leaf_boc(data: &[u8], bit_len: u16) -> String {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use crate::ton::test_support::{
+        BYTE_ALIGNED, BYTE_ALIGNED_HASH, EMPTY, EMPTY_HASH, NESTED, NESTED_CHILD_HASH,
+        NON_BYTE_ALIGNED, ONE_REF, ONE_REF_CHILD_HASH,
+    };
     use assert_matches::assert_matches;
-
-    // Golden vectors captured from `tonlib_core` 0.26.11 before it was removed:
-    // base64 BoC, the root cell's representation hash, and any child hashes.
-    const EMPTY: &str = "te6ccgEBAQEAAgAAAA==";
-    const EMPTY_HASH: &str = "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7";
-    const BYTE_ALIGNED: &str = "te6ccgEBAQEABgAACJkAAAE="; // data 0x99000001, 32 bits
-    const BYTE_ALIGNED_HASH: &str =
-        "62a994bfc5f15d5bd325e6390812a0dfc7c8fdef24a39135a34e558d9885257f";
-    const NON_BYTE_ALIGNED: &str = "te6ccgEBAQEABAAAA96o"; // data 0xdea0, 12 bits
-    const ONE_REF: &str = "te6ccgEBAgEACAABBN6tAQACqg=="; // 0xdead/16 -> child 0xaa/8
-    const ONE_REF_CHILD_HASH: &str =
-        "08da99aa8eb36c5c627a221005ca60f004f392de79b18e90be10c0cb420ab332";
-    const NESTED: &str = "te6ccgEBAwEACwABAf8BAQKZAgACQg=="; // 0xfe/7 -> 0x99/8 -> 0x42/8
-    const NESTED_CHILD_HASH: &str =
-        "23ae53d421a4cc4a2f249bd082bb0c6a774deb7974832993b813d6b6553e89f1";
 
     #[test]
     fn parse_single_root_boc__should_decode_byte_aligned_cell() {

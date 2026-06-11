@@ -7,6 +7,13 @@ use jsonrpsee::core::{
 };
 use serde::{Deserialize, Serialize};
 
+pub fn hash32(hex_str: &str) -> [u8; 32] {
+    hex::decode(hex_str)
+        .expect("valid hex")
+        .try_into()
+        .expect("32 bytes")
+}
+
 /// A client that always returns a hard-coded response.
 /// Useful for tests.
 /// Note: We have to hold a closure and not just the response

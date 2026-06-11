@@ -20,27 +20,21 @@ use std::fmt;
 pub struct TonRawAddress {
     /// Workchain id (`int8` in the TON address format; `0` for the basechain,
     /// `-1` for the masterchain).
-    pub workchain: i32,
+    pub workchain: i8,
     /// The 256-bit account identifier within the workchain.
     pub hash: [u8; 32],
 }
 
-impl TonRawAddress {
-    /// The canonical raw string form, `"<workchain>:<lowercase hex>"`.
-    pub fn to_hex(&self) -> String {
-        format!("{}:{}", self.workchain, hex::encode(self.hash))
-    }
-}
-
+/// The canonical raw string form, `"<workchain>:<lowercase hex>"`.
 impl fmt::Display for TonRawAddress {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.to_hex())
+        write!(f, "{}:{}", self.workchain, hex::encode(self.hash))
     }
 }
 
 impl Serialize for TonRawAddress {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(&self.to_hex())
+        serializer.collect_str(self)
     }
 }
 
@@ -50,9 +44,9 @@ impl<'de> Deserialize<'de> for TonRawAddress {
         let (workchain, hash_hex) = raw
             .split_once(':')
             .ok_or_else(|| D::Error::custom("TON address missing ':' separator"))?;
-        let workchain: i32 = workchain
+        let workchain: i8 = workchain
             .parse()
-            .map_err(|_| D::Error::custom("TON address has a non-numeric workchain"))?;
+            .map_err(|_| D::Error::custom("TON address workchain is not an int8"))?;
         let bytes =
             hex::decode(hash_hex).map_err(|_| D::Error::custom("TON address hash is not hex"))?;
         let hash: [u8; 32] = bytes
@@ -71,10 +65,6 @@ pub struct GetTransactionsResponse {
 /// A single transaction entry from `GET /api/v3/transactions`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TonTransaction {
-    /// Account the transaction belongs to.
-    pub account: TonRawAddress,
-    /// Base64-encoded transaction hash, as returned by the v3 API.
-    pub hash: String,
     /// Seqno of the masterchain block this transaction was committed under.
     /// `None` until the transaction is referenced by a masterchain block —
     /// the signal we use for [`crate::ton`]-style finality.
@@ -126,8 +116,6 @@ pub struct TonActionPhase {
 /// An outbound message of a transaction.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TonMessage {
-    #[serde(default)]
-    pub source: Option<TonRawAddress>,
     /// The inspector treats a `None` destination as the marker of an ext-out
     /// (logging) message and `Some` as an internal message to another contract.
     ///
@@ -141,10 +129,6 @@ pub struct TonMessage {
     /// provider before whitelisting it.
     #[serde(default)]
     pub destination: Option<TonRawAddress>,
-    /// Logical time the message was created, as a decimal string. Used to order
-    /// ext-out messages deterministically.
-    #[serde(default)]
-    pub created_lt: Option<String>,
     #[serde(default)]
     pub message_content: Option<TonCellBoc>,
 }
@@ -153,4 +137,39 @@ pub struct TonMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TonCellBoc {
     pub body: String,
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ton_raw_address__should_display_as_workchain_and_lowercase_hex() {
+        let address = TonRawAddress {
+            workchain: 0,
+            hash: [0xab; 32],
+        };
+
+        assert_eq!(
+            address.to_string(),
+            "0:abababababababababababababababababababababababababababababababab"
+        );
+    }
+
+    #[test]
+    fn ton_raw_address__should_roundtrip_through_serde() {
+        let json = "\"-1:abababababababababababababababababababababababababababababababab\"";
+
+        let address: TonRawAddress = serde_json::from_str(json).unwrap();
+
+        assert_eq!(
+            address,
+            TonRawAddress {
+                workchain: -1,
+                hash: [0xab; 32],
+            }
+        );
+        assert_eq!(serde_json::to_string(&address).unwrap(), json);
+    }
 }

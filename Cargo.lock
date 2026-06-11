@@ -3836,7 +3836,6 @@ dependencies = [
  "mpc-primitives",
  "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
- "num_enum",
  "reqwest 0.13.4",
  "rstest",
  "serde",

@@ -1,15 +1,19 @@
 use super::types::{
-    TonAddress, TonExtractedValue, TonExtractor, TonFinality, TonLog, TonTransactionId,
+    TonAccountHash, TonExtractedValue, TonExtractor, TonFinality, TonTransactionId, TonWorkchain,
 };
-use super::{TonInspectionError, empty_body, normalize_body_boc};
+use super::{TonInspectionError, normalize_body_boc};
 use crate::ton::rpc_client::TonRpcClient;
-use crate::ton::types::TonWorkchain;
 use crate::{ForeignChainInspectionError, ForeignChainInspector};
-use base64::{Engine as _, engine::general_purpose::STANDARD};
-use foreign_chain_rpc_interfaces::ton::{TonMessage, TonRawAddress, TonTransaction};
-use near_mpc_contract_interface::types::Hash256;
+use foreign_chain_rpc_interfaces::ton::{TonMessage, TonTransaction};
+use near_mpc_contract_interface::types::{Hash256, TonAddress, TonCellBody, TonCellRefs, TonLog};
 
 /// TON chain inspector.
+///
+/// Trust model: the response of an agreeing set of RPC providers is taken at
+/// face value (see [`crate::FanOut`]). The inspector does not re-validate the
+/// response against the request or against TON protocol rules; in particular,
+/// ext-out messages are indexed in the order the provider returned them, so
+/// providers that disagree on ordering simply fail the fan-out agreement check.
 #[derive(Clone)]
 pub struct TonInspector<Client> {
     client: Client,
@@ -39,107 +43,35 @@ impl<Client: TonRpcClient> ForeignChainInspector for TonInspector<Client> {
             tx_hash,
         } = tx_id;
 
-        let tx_hash_hex = hex::encode(tx_hash);
-
         let response = self
             .client
-            .get_transaction(workchain, &account, &tx_hash_hex)
+            .get_transaction(workchain, account, tx_hash)
             .await
             .map_err(TonInspectionError::from)?;
 
-        let tx = response.transactions.into_iter().next().ok_or(
+        let tx = response.transactions.into_iter().next().ok_or_else(|| {
             TonInspectionError::TransactionNotFound {
-                tx_hash_hex: tx_hash_hex.clone(),
-            },
-        )?;
+                tx_hash_hex: tx_hash.to_string(),
+            }
+        })?;
 
-        ensure_account_matches(workchain, &account, &tx.account)?;
-        ensure_hash_matches(&tx_hash, &tx.hash)?;
         ensure_finalized(&tx, &finality)?;
         ensure_transaction_succeeded(&tx)?;
 
-        let ext_out_msgs = ordered_ext_out_msgs(&tx.out_msgs)?;
+        // Ext-out (destination-less) messages carry the contract's emitted
+        // logs; internal messages are skipped. Indexing follows the provider's
+        // `out_msgs` order.
+        let ext_out_msgs: Vec<&TonMessage> = tx
+            .out_msgs
+            .iter()
+            .filter(|m| m.destination.is_none())
+            .collect();
 
         extractors
             .iter()
-            .map(|extractor| extract_value(extractor, workchain, &account, &ext_out_msgs))
+            .map(|extractor| extract_value(extractor, workchain, account, &ext_out_msgs))
             .collect()
     }
-}
-
-/// Filter out internal (non-ext-out) messages and return the remainder sorted
-/// by parsed `created_lt` (ascending).
-///
-/// Sorting by `created_lt` makes ext-out indexing deterministic across MPC
-/// nodes regardless of how the upstream v3 API provider chose to order
-/// the `out_msgs` array in its JSON. Within a single TON transaction, every
-/// emitted message has a distinct, monotonically increasing `created_lt` —
-/// this is a TON protocol invariant (the TVM bumps `lt` on each
-/// `SENDRAWMSG`), so sorting by it preserves the natural emission order.
-///
-/// If any ext-out message is missing or has an unparseable `created_lt`, the
-/// caller's whole request is rejected: an inability to establish a
-/// deterministic order would make consensus on `message_index` impossible.
-fn ordered_ext_out_msgs(
-    out_msgs: &[TonMessage],
-) -> Result<Vec<&TonMessage>, ForeignChainInspectionError> {
-    let mut ext_outs_with_lt: Vec<(u64, &TonMessage)> = out_msgs
-        .iter()
-        .filter(|m| m.destination.is_none())
-        .map(|m| message_created_lt(m).map(|lt| (lt, m)))
-        .collect::<Result<_, _>>()?;
-    ext_outs_with_lt.sort_by_key(|(lt, _)| *lt);
-    // TON guarantees distinct `created_lt` per emitted message, but a
-    // misbehaving provider could violate that — equal lt values would leave
-    // ordering up to the upstream JSON's array order, producing different
-    // `message_index` assignments across MPC nodes.
-    if let Some(window) = ext_outs_with_lt.windows(2).find(|w| w[0].0 == w[1].0) {
-        return Err(TonInspectionError::MessageDuplicateCreatedLt { value: window[0].0 }.into());
-    }
-    Ok(ext_outs_with_lt.into_iter().map(|(_, m)| m).collect())
-}
-
-fn message_created_lt(msg: &TonMessage) -> Result<u64, ForeignChainInspectionError> {
-    let raw = msg
-        .created_lt
-        .as_deref()
-        .ok_or(TonInspectionError::MessageMissingCreatedLt)?;
-    raw.parse::<u64>()
-        .map_err(|_| TonInspectionError::MessageMalformedCreatedLt {
-            value: raw.to_string(),
-        })
-        .map_err(Into::into)
-}
-
-fn ensure_account_matches(
-    workchain: TonWorkchain,
-    expected_hash: &[u8; 32],
-    rpc_account: &TonRawAddress,
-) -> Result<(), ForeignChainInspectionError> {
-    if rpc_account.workchain == workchain.id() && rpc_account.hash == *expected_hash {
-        Ok(())
-    } else {
-        Err(TonInspectionError::AccountMismatch {
-            expected: crate::ton::rpc_client::format_ton_account(workchain, expected_hash),
-            got: rpc_account.to_hex(),
-        }
-        .into())
-    }
-}
-
-fn ensure_hash_matches(
-    expected: &[u8; 32],
-    rpc_hash_b64: &str,
-) -> Result<(), ForeignChainInspectionError> {
-    let mismatch = || TonInspectionError::HashMismatch {
-        expected: hex::encode(expected),
-        got: rpc_hash_b64.to_string(),
-    };
-    let decoded = STANDARD.decode(rpc_hash_b64).map_err(|_| mismatch())?;
-    if decoded.as_slice() != expected.as_slice() {
-        return Err(mismatch().into());
-    }
-    Ok(())
 }
 
 /// `mc_block_seqno` is set once the transaction's shard block is referenced by
@@ -193,7 +125,7 @@ fn ensure_transaction_succeeded(tx: &TonTransaction) -> Result<(), ForeignChainI
 fn extract_value(
     extractor: &TonExtractor,
     workchain: TonWorkchain,
-    expected_account_hash: &[u8; 32],
+    account: TonAccountHash,
     ext_out_msgs: &[&TonMessage],
 ) -> Result<TonExtractedValue, ForeignChainInspectionError> {
     match extractor {
@@ -201,19 +133,12 @@ fn extract_value(
             let msg = ext_out_msgs
                 .get(*message_index)
                 .ok_or(ForeignChainInspectionError::LogIndexOutOfBounds)?;
-            // `ordered_ext_out_msgs` only yields destination-less (ext-out)
-            // messages, so this always holds; assert it in debug builds rather
-            // than carrying an unreachable error branch into production.
-            debug_assert!(
-                msg.destination.is_none(),
-                "ordered_ext_out_msgs must only yield ext-out messages",
-            );
 
             // A missing `message_content` is the provider omitting data, which
             // is not the same as an explicitly empty body cell — treating it as
             // empty would let the network sign an empty log in place of the
-            // real one. Reject it; only an explicit empty `body` maps to
-            // `empty_body()`.
+            // real one. Reject it; only an explicit empty `body` maps to the
+            // empty cell.
             let content =
                 msg.message_content
                     .as_ref()
@@ -222,18 +147,15 @@ fn extract_value(
                     })?;
 
             let (body, body_refs) = if content.body.is_empty() {
-                empty_body().map_err(TonInspectionError::from)?
+                (TonCellBody::default(), TonCellRefs::default())
             } else {
                 normalize_body_boc(&content.body).map_err(TonInspectionError::from)?
             };
 
             Ok(TonExtractedValue::Log(TonLog {
-                // Carry the request's workchain through unchanged; mapping it to
-                // the contract's `TonWorkchain` enum happens at the conversion
-                // boundary, not here.
                 from_address: TonAddress {
                     workchain,
-                    hash: Hash256(*expected_account_hash),
+                    hash: Hash256(account.into()),
                 },
                 body,
                 body_refs,
@@ -249,72 +171,46 @@ mod tests {
     use crate::RpcAuthentication;
     use crate::ton::boc::encode_single_leaf_boc;
     use crate::ton::rpc_client::{ReqwestTonClient, TonRpcError};
+    use crate::ton::test_support::cell_body;
+    use crate::ton::types::TonTransactionHash;
     use assert_matches::assert_matches;
     use foreign_chain_rpc_interfaces::ton::{
         GetTransactionsResponse, TonActionPhase, TonCellBoc, TonComputePhase, TonMessage,
-        TonTransaction, TonTransactionDescription,
+        TonRawAddress, TonTransaction, TonTransactionDescription,
     };
-    use near_mpc_contract_interface::types::TonCellBody;
-    use std::sync::Mutex;
 
     /// In-memory stub client that returns a canned response.
     struct StubClient {
-        response: Mutex<Option<GetTransactionsResponse>>,
-    }
-
-    impl StubClient {
-        fn new(response: GetTransactionsResponse) -> Self {
-            Self {
-                response: Mutex::new(Some(response)),
-            }
-        }
+        response: GetTransactionsResponse,
     }
 
     impl TonRpcClient for StubClient {
         async fn get_transaction(
             &self,
             _workchain: TonWorkchain,
-            _account_hash: &[u8; 32],
-            _tx_hash_hex: &str,
+            _account: TonAccountHash,
+            _tx_hash: TonTransactionHash,
         ) -> Result<GetTransactionsResponse, TonRpcError> {
-            Ok(self
-                .response
-                .lock()
-                .unwrap()
-                .take()
-                .unwrap_or_else(|| GetTransactionsResponse {
-                    transactions: vec![],
-                }))
+            Ok(self.response.clone())
         }
     }
 
-    fn account_hash() -> [u8; 32] {
-        [0x11; 32]
-    }
+    const ACCOUNT_HASH: [u8; 32] = [0x11; 32];
+    const TX_HASH: [u8; 32] = [0xde; 32];
 
-    /// The tx hash the request asks for; `happy_tx()`'s response echoes its
-    /// base64 form so `ensure_hash_matches` is satisfied.
-    fn tx_hash_bytes() -> [u8; 32] {
-        [0xde; 32]
-    }
-
-    fn ton_address(workchain: TonWorkchain, hash: &[u8; 32]) -> TonRawAddress {
-        TonRawAddress {
-            workchain: workchain.id(),
-            hash: *hash,
+    fn ext_out_with_body(body: &[u8]) -> TonMessage {
+        TonMessage {
+            destination: None, // ext-out
+            message_content: Some(TonCellBoc {
+                body: encode_single_leaf_boc(body, 8 * body.len() as u16),
+            }),
         }
-    }
-
-    fn cell_body(bits: Vec<u8>, bit_length: u16) -> TonCellBody {
-        TonCellBody::new(bits.try_into().unwrap(), bit_length).unwrap()
     }
 
     /// Build a valid, finalized, successful transaction with one ext-out carrying
     /// a 4-byte payload cell.
     fn happy_tx() -> TonTransaction {
         TonTransaction {
-            account: ton_address(TonWorkchain::Basechain, &account_hash()),
-            hash: STANDARD.encode(tx_hash_bytes()),
             mc_block_seqno: Some(12345),
             description: TonTransactionDescription {
                 aborted: false,
@@ -326,55 +222,51 @@ mod tests {
                     success: Some(true),
                 }),
             },
-            out_msgs: vec![TonMessage {
-                source: Some(ton_address(TonWorkchain::Basechain, &account_hash())),
-                destination: None, // ext-out
-                created_lt: Some("100".to_string()),
-                message_content: Some(TonCellBoc {
-                    body: encode_cell(vec![0x99, 0x00, 0x00, 0x01], 32),
-                }),
-            }],
+            out_msgs: vec![ext_out_with_body(&[0x99, 0x00, 0x00, 0x01])],
         }
     }
 
-    /// Serialize a ref-less leaf cell as a base64 BoC, matching the `body` field
-    /// the v3 API emits for a message's `message_content`.
-    fn encode_cell(data: Vec<u8>, bit_len: u16) -> String {
-        encode_single_leaf_boc(&data, bit_len)
-    }
-
     fn inspector_from_tx(tx: TonTransaction) -> TonInspector<StubClient> {
-        TonInspector::new(StubClient::new(GetTransactionsResponse {
-            transactions: vec![tx],
-        }))
+        TonInspector::new(StubClient {
+            response: GetTransactionsResponse {
+                transactions: vec![tx],
+            },
+        })
     }
 
     fn tx_id() -> TonTransactionId {
         TonTransactionId {
             workchain: TonWorkchain::Basechain,
-            account: account_hash(),
-            tx_hash: tx_hash_bytes(),
+            account: ACCOUNT_HASH.into(),
+            tx_hash: TX_HASH.into(),
         }
     }
 
-    #[tokio::test]
-    async fn extract__should_return_log_for_happy_tx() {
-        let inspector = inspector_from_tx(happy_tx());
-        let values = inspector
+    /// Run the inspector over `tx` with the single `Log { message_index: 0 }`
+    /// extractor almost every test uses.
+    async fn extract_log0(
+        tx: TonTransaction,
+    ) -> Result<Vec<TonExtractedValue>, ForeignChainInspectionError> {
+        inspector_from_tx(tx)
             .extract(
                 tx_id(),
                 TonFinality::MasterchainIncluded,
                 vec![TonExtractor::Log { message_index: 0 }],
             )
             .await
-            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn extract__should_return_log_for_happy_tx() {
+        let values = extract_log0(happy_tx()).await.unwrap();
+
         assert_eq!(values.len(), 1);
         let TonExtractedValue::Log(log) = &values[0];
         assert_eq!(
             log.from_address,
             TonAddress {
                 workchain: TonWorkchain::Basechain,
-                hash: Hash256(account_hash()),
+                hash: Hash256(ACCOUNT_HASH),
             }
         );
         assert_eq!(log.body, cell_body(vec![0x99, 0x00, 0x00, 0x01], 32));
@@ -385,16 +277,9 @@ mod tests {
     async fn extract__should_reject_when_mc_block_seqno_is_none() {
         let mut tx = happy_tx();
         tx.mc_block_seqno = None;
-        let inspector = inspector_from_tx(tx);
 
-        let err = inspector
-            .extract(
-                tx_id(),
-                TonFinality::MasterchainIncluded,
-                vec![TonExtractor::Log { message_index: 0 }],
-            )
-            .await
-            .unwrap_err();
+        let err = extract_log0(tx).await.unwrap_err();
+
         assert_matches!(err, ForeignChainInspectionError::NotFinalized);
     }
 
@@ -403,16 +288,9 @@ mod tests {
         // Genesis seqno is 0; must be treated as finalized (not `> 0`).
         let mut tx = happy_tx();
         tx.mc_block_seqno = Some(0);
-        let inspector = inspector_from_tx(tx);
 
-        let values = inspector
-            .extract(
-                tx_id(),
-                TonFinality::MasterchainIncluded,
-                vec![TonExtractor::Log { message_index: 0 }],
-            )
-            .await
-            .unwrap();
+        let values = extract_log0(tx).await.unwrap();
+
         assert_eq!(values.len(), 1);
     }
 
@@ -420,16 +298,9 @@ mod tests {
     async fn extract__should_reject_aborted_transaction() {
         let mut tx = happy_tx();
         tx.description.aborted = true;
-        let inspector = inspector_from_tx(tx);
 
-        let err = inspector
-            .extract(
-                tx_id(),
-                TonFinality::MasterchainIncluded,
-                vec![TonExtractor::Log { message_index: 0 }],
-            )
-            .await
-            .unwrap_err();
+        let err = extract_log0(tx).await.unwrap_err();
+
         assert_matches!(err, ForeignChainInspectionError::TransactionFailed);
     }
 
@@ -439,16 +310,9 @@ mod tests {
         tx.description.compute_ph = Some(TonComputePhase {
             success: Some(false),
         });
-        let inspector = inspector_from_tx(tx);
 
-        let err = inspector
-            .extract(
-                tx_id(),
-                TonFinality::MasterchainIncluded,
-                vec![TonExtractor::Log { message_index: 0 }],
-            )
-            .await
-            .unwrap_err();
+        let err = extract_log0(tx).await.unwrap_err();
+
         assert_matches!(err, ForeignChainInspectionError::TransactionFailed);
     }
 
@@ -460,16 +324,9 @@ mod tests {
         tx.description.action = Some(TonActionPhase {
             success: Some(false),
         });
-        let inspector = inspector_from_tx(tx);
 
-        let err = inspector
-            .extract(
-                tx_id(),
-                TonFinality::MasterchainIncluded,
-                vec![TonExtractor::Log { message_index: 0 }],
-            )
-            .await
-            .unwrap_err();
+        let err = extract_log0(tx).await.unwrap_err();
+
         assert_matches!(err, ForeignChainInspectionError::TransactionFailed);
     }
 
@@ -479,24 +336,19 @@ mod tests {
         // with no outbound actions); `None` must not be treated as failure.
         let mut tx = happy_tx();
         tx.description.action = None;
-        let inspector = inspector_from_tx(tx);
 
-        let values = inspector
-            .extract(
-                tx_id(),
-                TonFinality::MasterchainIncluded,
-                vec![TonExtractor::Log { message_index: 0 }],
-            )
-            .await
-            .unwrap();
+        let values = extract_log0(tx).await.unwrap();
+
         assert_eq!(values.len(), 1);
     }
 
     #[tokio::test]
     async fn extract__should_reject_when_no_transaction_found() {
-        let inspector = TonInspector::new(StubClient::new(GetTransactionsResponse {
-            transactions: vec![],
-        }));
+        let inspector = TonInspector::new(StubClient {
+            response: GetTransactionsResponse {
+                transactions: vec![],
+            },
+        });
 
         let err = inspector
             .extract(
@@ -506,6 +358,7 @@ mod tests {
             )
             .await
             .unwrap_err();
+
         assert_matches!(
             err,
             ForeignChainInspectionError::Ton(TonInspectionError::TransactionNotFound { .. })
@@ -513,53 +366,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn extract__should_reject_on_account_mismatch() {
-        let mut tx = happy_tx();
-        tx.account = ton_address(TonWorkchain::Basechain, &[0x22; 32]); // different account
-        let inspector = inspector_from_tx(tx);
-
-        let err = inspector
-            .extract(
-                tx_id(),
-                TonFinality::MasterchainIncluded,
-                vec![TonExtractor::Log { message_index: 0 }],
-            )
-            .await
-            .unwrap_err();
-        assert_matches!(
-            err,
-            ForeignChainInspectionError::Ton(TonInspectionError::AccountMismatch { .. })
-        );
-    }
-
-    #[tokio::test]
-    async fn extract__should_reject_when_response_hash_does_not_match_request() {
-        // Same account, but the response transaction's hash differs from what
-        // the request asked for (e.g. provider regression that ignores the
-        // hash filter).
-        let mut tx = happy_tx();
-        tx.hash = STANDARD.encode([0x55; 32]);
-        let inspector = inspector_from_tx(tx);
-
-        let err = inspector
-            .extract(
-                tx_id(),
-                TonFinality::MasterchainIncluded,
-                vec![TonExtractor::Log { message_index: 0 }],
-            )
-            .await
-            .unwrap_err();
-        assert_matches!(
-            err,
-            ForeignChainInspectionError::Ton(TonInspectionError::HashMismatch { .. })
-        );
-    }
-
-    #[tokio::test]
     async fn extract__should_reject_out_of_range_message_index() {
-        let inspector = inspector_from_tx(happy_tx());
-
-        let err = inspector
+        let err = inspector_from_tx(happy_tx())
             .extract(
                 tx_id(),
                 TonFinality::MasterchainIncluded,
@@ -567,6 +375,7 @@ mod tests {
             )
             .await
             .unwrap_err();
+
         assert_matches!(err, ForeignChainInspectionError::LogIndexOutOfBounds);
     }
 
@@ -578,54 +387,28 @@ mod tests {
         let ext_out = tx.out_msgs.pop().unwrap();
         tx.out_msgs = vec![
             TonMessage {
-                source: Some(ton_address(TonWorkchain::Basechain, &account_hash())),
-                destination: Some(ton_address(TonWorkchain::Basechain, &[0x33; 32])),
-                // Internal messages aren't required to carry created_lt for
-                // ordering — the inspector filters them out before the sort.
-                created_lt: None,
+                destination: Some(TonRawAddress {
+                    workchain: 0,
+                    hash: [0x33; 32],
+                }),
                 message_content: None,
             },
             ext_out,
         ];
-        let inspector = inspector_from_tx(tx);
 
-        let values = inspector
-            .extract(
-                tx_id(),
-                TonFinality::MasterchainIncluded,
-                vec![TonExtractor::Log { message_index: 0 }],
-            )
-            .await
-            .unwrap();
+        let values = extract_log0(tx).await.unwrap();
+
         assert_eq!(values.len(), 1);
     }
 
     #[tokio::test]
-    async fn extract__should_sort_ext_out_messages_by_created_lt() {
-        // Two ext-out messages with bodies tagged distinctively. The "later"
-        // message (higher created_lt) is placed first in the JSON to mimic
-        // a hypothetical provider that does not preserve TVM emission order.
-        // The inspector must still index them in created_lt order.
+    async fn extract__should_index_ext_out_messages_in_provider_order() {
+        // Two ext-out messages with bodies tagged distinctively; indexes must
+        // follow the provider's `out_msgs` order.
         let mut tx = happy_tx();
-        let later_body = encode_cell(vec![0xbb; 4], 32);
-        let earlier_body = encode_cell(vec![0xaa; 4], 32);
-        tx.out_msgs = vec![
-            TonMessage {
-                source: Some(ton_address(TonWorkchain::Basechain, &account_hash())),
-                destination: None,
-                created_lt: Some("200".to_string()),
-                message_content: Some(TonCellBoc { body: later_body }),
-            },
-            TonMessage {
-                source: Some(ton_address(TonWorkchain::Basechain, &account_hash())),
-                destination: None,
-                created_lt: Some("100".to_string()),
-                message_content: Some(TonCellBoc { body: earlier_body }),
-            },
-        ];
-        let inspector = inspector_from_tx(tx);
+        tx.out_msgs = vec![ext_out_with_body(&[0xaa; 4]), ext_out_with_body(&[0xbb; 4])];
 
-        let values = inspector
+        let values = inspector_from_tx(tx)
             .extract(
                 tx_id(),
                 TonFinality::MasterchainIncluded,
@@ -636,98 +419,21 @@ mod tests {
             )
             .await
             .unwrap();
+
         assert_eq!(values.len(), 2);
         let TonExtractedValue::Log(first) = &values[0];
         let TonExtractedValue::Log(second) = &values[1];
-        assert_eq!(
-            first.body,
-            cell_body(vec![0xaa; 4], 32),
-            "earlier lt should come first"
-        );
-        assert_eq!(
-            second.body,
-            cell_body(vec![0xbb; 4], 32),
-            "later lt should come second"
-        );
-    }
-
-    #[tokio::test]
-    async fn extract__should_reject_when_ext_out_is_missing_created_lt() {
-        let mut tx = happy_tx();
-        tx.out_msgs[0].created_lt = None;
-        let inspector = inspector_from_tx(tx);
-
-        let err = inspector
-            .extract(
-                tx_id(),
-                TonFinality::MasterchainIncluded,
-                vec![TonExtractor::Log { message_index: 0 }],
-            )
-            .await
-            .unwrap_err();
-        assert_matches!(
-            err,
-            ForeignChainInspectionError::Ton(TonInspectionError::MessageMissingCreatedLt)
-        );
-    }
-
-    #[tokio::test]
-    async fn extract__should_reject_when_ext_out_has_unparseable_created_lt() {
-        let mut tx = happy_tx();
-        tx.out_msgs[0].created_lt = Some("not-a-number".to_string());
-        let inspector = inspector_from_tx(tx);
-
-        let err = inspector
-            .extract(
-                tx_id(),
-                TonFinality::MasterchainIncluded,
-                vec![TonExtractor::Log { message_index: 0 }],
-            )
-            .await
-            .unwrap_err();
-        assert_matches!(
-            err,
-            ForeignChainInspectionError::Ton(TonInspectionError::MessageMalformedCreatedLt { .. })
-        );
-    }
-
-    #[tokio::test]
-    async fn extract__should_reject_when_two_ext_outs_share_created_lt() {
-        // Two ext-outs with identical lt — TON protocol forbids it, but a
-        // buggy provider could emit it. Sort order would then depend on the
-        // upstream JSON's array order, which differs across providers/nodes.
-        let mut tx = happy_tx();
-        let other_body = encode_cell(vec![0xaa; 4], 32);
-        tx.out_msgs.push(TonMessage {
-            source: Some(ton_address(TonWorkchain::Basechain, &account_hash())),
-            destination: None,
-            created_lt: tx.out_msgs[0].created_lt.clone(),
-            message_content: Some(TonCellBoc { body: other_body }),
-        });
-        let inspector = inspector_from_tx(tx);
-
-        let err = inspector
-            .extract(
-                tx_id(),
-                TonFinality::MasterchainIncluded,
-                vec![TonExtractor::Log { message_index: 0 }],
-            )
-            .await
-            .unwrap_err();
-        assert_matches!(
-            err,
-            ForeignChainInspectionError::Ton(TonInspectionError::MessageDuplicateCreatedLt { .. })
-        );
+        assert_eq!(first.body, cell_body(vec![0xaa; 4], 32));
+        assert_eq!(second.body, cell_body(vec![0xbb; 4], 32));
     }
 
     #[tokio::test]
     async fn extract__should_return_empty_when_no_extractors_requested() {
-        let inspector = inspector_from_tx(happy_tx());
-
-        let values = inspector
+        let values = inspector_from_tx(happy_tx())
             .extract(tx_id(), TonFinality::MasterchainIncluded, vec![])
             .await
             .unwrap();
+
         assert!(values.is_empty());
     }
 
@@ -749,6 +455,7 @@ mod tests {
             )
             .await
             .unwrap_err();
+
         assert_matches!(
             err,
             ForeignChainInspectionError::Ton(TonInspectionError::RpcError(_))
@@ -761,16 +468,9 @@ mod tests {
         // empty log; it must be rejected rather than signed as an empty body.
         let mut tx = happy_tx();
         tx.out_msgs[0].message_content = None;
-        let inspector = inspector_from_tx(tx);
 
-        let err = inspector
-            .extract(
-                tx_id(),
-                TonFinality::MasterchainIncluded,
-                vec![TonExtractor::Log { message_index: 0 }],
-            )
-            .await
-            .unwrap_err();
+        let err = extract_log0(tx).await.unwrap_err();
+
         assert_matches!(
             err,
             ForeignChainInspectionError::Ton(TonInspectionError::MessageMissingContent {
@@ -787,16 +487,9 @@ mod tests {
         tx.out_msgs[0].message_content = Some(TonCellBoc {
             body: String::new(),
         });
-        let inspector = inspector_from_tx(tx);
 
-        let values = inspector
-            .extract(
-                tx_id(),
-                TonFinality::MasterchainIncluded,
-                vec![TonExtractor::Log { message_index: 0 }],
-            )
-            .await
-            .unwrap();
+        let values = extract_log0(tx).await.unwrap();
+
         assert_eq!(values.len(), 1);
         let TonExtractedValue::Log(log) = &values[0];
         assert_eq!(log.body, cell_body(vec![], 0));

@@ -16,10 +16,13 @@
 //!   encodings — is strong evidence the hand-rolled decoder is correct without
 //!   hand-curating expected bytes per case.
 
+pub mod common;
+
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use common::hash32;
 use foreign_chain_inspector::ton::boc;
 use foreign_chain_inspector::ton::inspector::TonInspector;
-use foreign_chain_inspector::ton::rpc_client::build_ton_http_client;
+use foreign_chain_inspector::ton::rpc_client::ReqwestTonClient;
 use foreign_chain_inspector::ton::types::{
     TonAddress, TonExtractedValue, TonExtractor, TonFinality, TonLog, TonTransactionId,
     TonWorkchain,
@@ -57,11 +60,11 @@ async fn inspector_extracts_log_against_live_rpc_provider() {
     let account = hash32(TX_ACCOUNT_HEX);
     let tx_id = TonTransactionId {
         workchain: TonWorkchain::Basechain,
-        account,
-        tx_hash: hash32(TX_HASH_HEX),
+        account: account.into(),
+        tx_hash: hash32(TX_HASH_HEX).into(),
     };
     let client =
-        build_ton_http_client(PUBLIC_TON_V3_URL.to_string(), RpcAuthentication::KeyInUrl).unwrap();
+        ReqwestTonClient::new(PUBLIC_TON_V3_URL.to_string(), RpcAuthentication::KeyInUrl).unwrap();
     let inspector = TonInspector::new(client);
 
     // when
@@ -210,11 +213,4 @@ async fn fetch_transaction(account_hex: &str, tx_hash_hex: &str) -> serde_json::
         eprintln!("attempt {attempt} for {tx_hash_hex} did not return a transaction; retrying");
     }
     panic!("could not fetch transaction {tx_hash_hex} from {PUBLIC_TON_V3_URL}");
-}
-
-fn hash32(hex_str: &str) -> [u8; 32] {
-    hex::decode(hex_str)
-        .expect("valid hex")
-        .try_into()
-        .expect("32 bytes")
 }

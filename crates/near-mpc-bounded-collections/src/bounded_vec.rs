@@ -118,6 +118,22 @@ impl<T, const U: usize> BoundedVec<T, 0, U, witnesses::PossiblyEmpty<U>> {
         }
     }
 
+    /// Creates an empty [`BoundedVec`]. An empty vector is always within a
+    /// possibly-empty bound, so unlike [`Self::from_vec`] this cannot fail.
+    ///
+    /// # Example
+    /// ```
+    /// use near_mpc_bounded_collections::EmptyBoundedVec;
+    /// let data: EmptyBoundedVec<u8, 8> = EmptyBoundedVec::new_empty();
+    /// assert!(data.is_empty());
+    /// ```
+    pub const fn new_empty() -> Self {
+        BoundedVec {
+            inner: Vec::new(),
+            witness: witnesses::possibly_empty::<U>(),
+        }
+    }
+
     /// Returns the first element of the vector, or [`None`] if it is empty
     ///
     /// # Example
@@ -161,6 +177,12 @@ impl<T, const U: usize> BoundedVec<T, 0, U, witnesses::PossiblyEmpty<U>> {
     /// ```
     pub fn last(&self) -> Option<&T> {
         self.inner.last()
+    }
+}
+
+impl<T, const U: usize> Default for BoundedVec<T, 0, U, witnesses::PossiblyEmpty<U>> {
+    fn default() -> Self {
+        Self::new_empty()
     }
 }
 

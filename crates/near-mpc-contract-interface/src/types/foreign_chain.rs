@@ -343,7 +343,6 @@ pub struct TonTxId(#[serde_as(as = "Hex")] pub [u8; 32]);
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(borsh::BorshSchema)
 )]
-// Workchain is represented as i8 according to TON spec
 #[repr(i8)]
 #[borsh(use_discriminant = true)]
 pub enum TonWorkchain {
@@ -475,11 +474,12 @@ impl TonCellBody {
         // beyond the significant data and must be zero. Otherwise two bodies sharing a
         // `bit_length` but differing in padding would be distinct under `Eq`/`Hash` and
         // hash differently under `compute_msg_hash`, despite encoding the same cell.
+        // (`unused_bits != 0` implies a non-empty `bytes` per the length check above,
+        // so the `last()` lookup always succeeds.)
         let unused_bits = (8 - (bit_length % 8)) % 8;
-        if unused_bits != 0 {
-            let last_byte = *bytes
-                .last()
-                .expect("non-zero bit_length implies a final byte");
+        if unused_bits != 0
+            && let Some(&last_byte) = bytes.last()
+        {
             let padding_mask = (1u8 << unused_bits) - 1;
             if last_byte & padding_mask != 0 {
                 return Err(TonCellBodyError::TrailingBitsNotZero {
@@ -489,6 +489,17 @@ impl TonCellBody {
             }
         }
         Ok(Self { bytes, bit_length })
+    }
+}
+
+/// The empty cell body: no bytes and zero significant bits. Trivially satisfies
+/// every [`TonCellBody::new`] invariant.
+impl Default for TonCellBody {
+    fn default() -> Self {
+        Self {
+            bytes: TonCellData::default(),
+            bit_length: 0,
+        }
     }
 }
 
@@ -1747,6 +1758,18 @@ mod tests {
     ) {
         // Given / When / Then
         TonCellBody::new(bits.try_into().unwrap(), bit_length).unwrap();
+    }
+
+    #[test]
+    fn ton_cell_body_default__should_equal_the_explicit_empty_body() {
+        // Given / When
+        let default = TonCellBody::default();
+
+        // Then
+        assert_eq!(
+            default,
+            TonCellBody::new(vec![].try_into().unwrap(), 0).unwrap()
+        );
     }
 
     #[test]
