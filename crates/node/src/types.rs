@@ -9,11 +9,10 @@ use serde::{Deserialize, Serialize};
 
 use near_mpc_contract_interface::types as dtos;
 
-use crate::{
-    indexer::handler::{
-        CKDRequestFromChain, SignatureRequestFromChain, VerifyForeignTxRequestFromChain,
-    },
-    requests::recent_blocks_tracker::BlockStatusHandle,
+use chain_gateway::event_subscriber::recent_blocks_tracker::BlockStatusHandle;
+
+use crate::indexer::handler::{
+    CKDRequestFromChain, SignatureRequestFromChain, VerifyForeignTxRequestFromChain,
 };
 
 pub(crate) struct RequestsUpdate<T> {

@@ -1615,7 +1615,7 @@ impl MpcContract {
     }
 
     /// Cleans update votes from non-participants after resharing.
-    /// Can be called by any participant or triggered automatically via promise.
+    /// Can only be called by participants or by the contract itself.
     #[handle_result]
     pub fn remove_non_participant_update_votes(&mut self) -> Result<(), Error> {
         log!(
@@ -1629,6 +1629,16 @@ impl MpcContract {
                 return Err(InvalidState::ProtocolStateNotRunning.into());
             }
         };
+
+        // Authorize the caller: allow self-calls (the cleanup promise spawned after a
+        // successful resharing, where the predecessor is the contract account) and
+        // direct calls from a current participant. Reject everyone else so that
+        // non-participants cannot drive this cleanup.
+        let caller = env::predecessor_account_id();
+        let is_self_call = caller == env::current_account_id();
+        if !is_self_call && !participants.is_participant_given_account_id(&caller) {
+            return Err(InvalidState::NotParticipant { account_id: caller }.into());
+        }
 
         self.proposed_updates
             .remove_non_participant_votes(participants);
@@ -4948,60 +4958,108 @@ mod tests {
         assert!(contract.vote_update(update_id).unwrap());
     }
 
-    /// Test that `remove_non_participant_update_votes` successfully removes votes from non-participants
-    /// (simulating post-resharing cleanup).
-    #[test]
-    pub fn test_remove_non_participant_update_votes() {
+    /// Callers authorized to drive `remove_non_participant_update_votes`.
+    enum AuthorizedCaller {
+        /// The contract calling itself (the cleanup promise spawned after resharing).
+        ContractItself,
+        /// A current participant calling directly.
+        Participant,
+    }
+
+    /// An authorized caller (the contract itself or a current participant) drives the cleanup,
+    /// leaving only the participant votes (simulating post-resharing cleanup).
+    #[rstest]
+    #[case::contract_itself(AuthorizedCaller::ContractItself)]
+    #[case::participant(AuthorizedCaller::Participant)]
+    fn remove_non_participant_update_votes__should_clean_when_called_by_authorized_caller(
+        #[case] caller_kind: AuthorizedCaller,
+    ) {
+        // Given: a running state with update votes from both participants and non-participants.
         let running_state = gen_running_state(NUM_DOMAINS);
         let participants = running_state.parameters.participants().clone();
         let mut contract =
             MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
 
-        // Propose an update with 2 non-participant votes (from propose_and_vote)
+        // propose_and_vote_code adds 2 non-participant votes.
         let update_id_u64 = 0;
-        let test_update = propose_and_vote_code(update_id_u64, &mut contract);
+        let _ = propose_and_vote_code(update_id_u64, &mut contract);
         let update_id: UpdateId = update_id_u64.into();
 
-        let non_participants: HashSet<AccountId> = test_update.votes.iter().cloned().collect();
-
-        // Add votes from 2 current participants
+        // Add votes from 2 current participants.
         let participants = participants.participants();
         let (p1, p2) = (participants[0].0.clone(), participants[1].0.clone());
         contract.proposed_updates.vote(&update_id, p1.clone());
         contract.proposed_updates.vote(&update_id, p2.clone());
 
-        // Sanity check: verify exact set of voters before cleanup
-        let expected_voters_before: HashSet<_> = [p1.clone(), p2.clone()]
-            .into_iter()
-            .chain(non_participants.clone())
-            .collect();
+        // Resolve the caller account for this case. The contract account differs from any
+        // participant account, so the self-call and participant branches are distinct.
+        let caller = match caller_kind {
+            AuthorizedCaller::ContractItself => env::current_account_id(),
+            AuthorizedCaller::Participant => p1.clone(),
+        };
 
-        let actual_voters_before: HashSet<_> =
-            contract.proposed_updates.voters().into_iter().collect();
-        assert_eq!(actual_voters_before, expected_voters_before);
-
-        // verify the update entry reflects participant + non-participant votes
-        assert_proposed_update_has_expected_voters(
-            &contract.proposed_updates,
-            update_id,
-            &expected_voters_before,
-        );
-
-        // when: calling remove_non_participant_update_votes
+        // When: the authorized caller invokes the cleanup directly.
         testing_env!(
             VMContextBuilder::new()
                 .current_account_id(env::current_account_id())
-                .predecessor_account_id(env::current_account_id())
+                .predecessor_account_id(caller.clone())
+                .signer_account_id(caller)
                 .build()
         );
         contract.remove_non_participant_update_votes().unwrap();
 
-        // then: only the 2 participant votes remain
-        let expected_voters_after = HashSet::from([p1.clone(), p2.clone()]);
+        // Then: only the 2 participant votes remain.
+        let participant_voters = HashSet::from([p1, p2]);
         assert_proposed_update_has_expected_voters(
             &contract.proposed_updates,
             update_id,
-            &expected_voters_after,
+            &participant_voters,
+        );
+    }
+
+    /// A caller that is neither the contract itself nor a current participant is rejected with
+    /// `NotParticipant`, and the votes are left untouched.
+    #[test]
+    fn remove_non_participant_update_votes__should_reject_unauthorized_caller() {
+        // Given: a running state with update votes from both participants and non-participants.
+        let running_state = gen_running_state(NUM_DOMAINS);
+        let participants = running_state.parameters.participants().clone();
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+
+        let update_id_u64 = 0;
+        let test_update = propose_and_vote_code(update_id_u64, &mut contract);
+        let update_id: UpdateId = update_id_u64.into();
+        let non_participants: HashSet<AccountId> = test_update.votes.iter().cloned().collect();
+
+        let participants = participants.participants();
+        let (p1, p2) = (participants[0].0.clone(), participants[1].0.clone());
+        contract.proposed_updates.vote(&update_id, p1.clone());
+        contract.proposed_updates.vote(&update_id, p2.clone());
+
+        let voters_before: HashSet<_> = [p1, p2].into_iter().chain(non_participants).collect();
+
+        // When: an account that is neither the contract nor a participant calls the cleanup.
+        let outsider = gen_account_id();
+        testing_env!(
+            VMContextBuilder::new()
+                .current_account_id(env::current_account_id())
+                .predecessor_account_id(outsider.clone())
+                .signer_account_id(outsider.clone())
+                .build()
+        );
+        let result = contract.remove_non_participant_update_votes();
+
+        // Then: the call is rejected with NotParticipant and the votes are left untouched.
+        assert_matches!(
+            result,
+            Err(Error::InvalidState(InvalidState::NotParticipant { account_id }))
+                if account_id == outsider
+        );
+        assert_proposed_update_has_expected_voters(
+            &contract.proposed_updates,
+            update_id,
+            &voters_before,
         );
     }
 
