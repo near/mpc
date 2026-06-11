@@ -166,19 +166,11 @@ impl ThresholdParameters {
     }
 }
 
-/// A proposed set of threshold parameters submitted to `vote_new_parameters`:
-/// the new [`ThresholdParameters`] plus an optional map of per-domain
-/// `ReconstructionThreshold` updates for the resharing it would trigger.
-///
-/// These threshold updates are meaningful only while a proposal is in flight —
-/// they are applied to the [`super::domain::DomainRegistry`] when resharing
-/// completes and the stored [`ThresholdParameters`] is taken from
-/// [`Self::parameters`], so they are structurally dropped rather than scrubbed
-/// at runtime.
-///
-/// An empty map means "keep current per-domain thresholds"; a populated map
-/// must reference only existing domains (validated in
-/// `RunningContractState::process_new_parameters_proposal`).
+/// A proposal submitted to `vote_new_parameters`: the new [`ThresholdParameters`]
+/// plus per-domain `ReconstructionThreshold` updates applied to the
+/// [`super::domain::DomainRegistry`] when resharing completes. An empty map keeps
+/// the current thresholds; a populated map must reference only existing domains
+/// (validated in `RunningContractState::process_new_parameters_proposal`).
 #[near(serializers=[borsh, json])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct ProposedThresholdParameters {
