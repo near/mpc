@@ -97,9 +97,13 @@ pub fn spawn_real_indexer(
                 .load_near_config()
                 .expect("near config is present");
 
-            let near_node = Indexer::start_near_node(&near_indexer_config, near_config.clone())
-                .await
-                .expect("near node has started");
+            let near_node = Indexer::start_near_node(
+                &near_indexer_config,
+                near_config.clone(),
+                near_async::ActorSystem::new(),
+            )
+            .await
+            .expect("near node has started");
 
             let indexer = Indexer::from_near_node(near_indexer_config, near_config, &near_node);
 
