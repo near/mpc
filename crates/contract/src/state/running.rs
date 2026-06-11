@@ -207,12 +207,7 @@ impl RunningContractState {
 
         // finally, vote.
         let n_votes = self.parameters_votes.vote(proposal, candidate);
-        let num_participants = u64::try_from(proposal.participants().len()).map_err(|e| {
-            ConversionError::DataConversion {
-                reason: format!("participant count does not fit in u64: {e}"),
-            }
-        })?;
-        Ok(num_participants == n_votes)
+        Ok(new_num_participants == n_votes)
     }
 
     /// Casts a vote for the signer participant to add new domains, replacing any previous vote.
