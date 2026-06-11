@@ -36,7 +36,6 @@ members = [
     "crates/test-utils",
     "crates/threshold-signatures",
     "crates/tls",
-    "crates/utilities",
 ]
 
 [workspace.package]
@@ -72,7 +71,6 @@ tee-verifier-interface = { path = "crates/tee-verifier-interface" }
 test-port-allocator = { path = "crates/test-port-allocator" }
 test-utils = { path = "crates/test-utils" }
 threshold-signatures = { path = "crates/threshold-signatures" }
-utilities = { path = "crates/utilities" }
 
 aes-gcm = "0.10.3"
 anyhow = "1.0.102"
@@ -180,10 +178,15 @@ mockall = "0.14.0"
 named-lock = "0.4.1"
 near-abi = "0.4.4"
 near-account-id = "2.6.0"
-near-jsonrpc-client = "0.20.0"
-near-jsonrpc-primitives = "0.34.6"
+# crates.io release of `near-crypto`; the plain `near-crypto` name is taken by
+# the git nearcore crate below, which the node's indexer stack requires.
+# Must be bumped in lockstep with `near-primitives`: its types appear in
+# near-primitives' transaction API but are not re-exported there.
+near-crypto-public = { version = "0.36.0", package = "near-crypto" }
+near-jsonrpc-client = "0.21.1"
+near-jsonrpc-primitives = "0.36.0"
 near-kit = { version = "0.11.0", default-features = false }
-near-primitives = "0.34.6"
+near-primitives = "0.36.0"
 near-sandbox = "0.3.11"
 near-sdk = { version = "5.28.0", features = [
     "legacy",
@@ -269,9 +272,6 @@ nearcore = { git = "https://github.com/near/nearcore", tag = "2.12.0" }
 ## Outdated dependencies we cannot upgrade ##
 # Version 0.8.3 requires rustc 1.88
 httpmock = "0.8.2"
-
-# This can be removed once the workspace `utilities` crate is removed
-near-account-id-v1 = { version = "1.1.4", package = "near-account-id" }
 
 prometheus = { version = "0.14.0", default-features = false }
 
