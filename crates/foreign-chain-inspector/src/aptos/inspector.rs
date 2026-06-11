@@ -4,6 +4,7 @@ use foreign_chain_rpc_interfaces::aptos::{
     AptosRpcClient, AptosRpcError, TransactionResponse, normalize_event_data,
 };
 use near_mpc_contract_interface::types::{AptosAddress, AptosEvent};
+use std::borrow::Cow;
 
 #[derive(Clone)]
 pub struct AptosInspector<Client> {
@@ -170,46 +171,47 @@ impl AptosExtractor {
     }
 }
 
-/// Rewrites every address inside a Move struct tag — the leading one and any inside type
-/// arguments — to the API's canonical hex-literal form: lowercase with leading zeros trimmed
-/// (`0x0000…01` → `0x1`), matching what spec-conforming fullnodes emit. Addresses are
-/// recognized as `0x<hex>` tokens that start the tag or follow `<`, `,` or a space, and are
-/// immediately followed by `::`; everything else (identifiers, primitive type args) is copied
-/// verbatim.
+/// Rewrites every address inside a Move struct tag to the canonical hex-literal form the
+/// Aptos API emits — lowercase with leading zeros trimmed — so providers that return
+/// long-form addresses converge to the same signed payload.
+///
+/// Examples:
+/// - `0x0000…0001::coin::Coin` → `0x1::coin::Coin`
+/// - `0xDEADbeef::bridge::InitTransfer` → `0xdeadbeef::bridge::InitTransfer`
+/// - `0x1::coin::CoinStore<0x000a::lp::LP<0x0B::x::Y, u64>>` →
+///   `0x1::coin::CoinStore<0xa::lp::LP<0xb::x::Y, u64>>`
+///
+/// Addresses appear at the start of the tag or of a generic type argument — that is, right
+/// after `<`, `,` or a space — and are always followed by `::`. Splitting on those delimiters
+/// (keeping them) yields pieces that each begin at a potential address position, so only a
+/// leading `0x<hex>::` of a piece is rewritten; anything else (identifiers that merely contain
+/// `0x` such as a module named `m0x01`, primitive type args, …) is copied verbatim.
 fn normalize_type_tag(tag: &str) -> String {
-    let bytes = tag.as_bytes();
-    let mut out = String::with_capacity(tag.len());
-    let mut segment_start = 0;
-    let mut i = 0;
-    while i < bytes.len() {
-        let at_address_position = i == 0 || matches!(bytes[i - 1], b'<' | b',' | b' ');
-        if at_address_position && bytes[i] == b'0' && bytes.get(i + 1) == Some(&b'x') {
-            let hex_start = i + 2;
-            let mut hex_end = hex_start;
-            while hex_end < bytes.len() && bytes[hex_end].is_ascii_hexdigit() {
-                hex_end += 1;
-            }
-            let is_address = hex_end > hex_start
-                && hex_end - hex_start <= 64
-                && bytes[hex_end..].starts_with(b"::");
-            if is_address {
-                out.push_str(&tag[segment_start..i]);
-                out.push_str("0x");
-                let trimmed = tag[hex_start..hex_end].trim_start_matches('0');
-                if trimmed.is_empty() {
-                    out.push('0');
-                } else {
-                    out.extend(trimmed.chars().map(|c| c.to_ascii_lowercase()));
-                }
-                segment_start = hex_end;
-                i = hex_end;
-                continue;
-            }
-        }
-        i += 1;
+    tag.split_inclusive(['<', ',', ' '])
+        .map(normalize_leading_address)
+        .collect()
+}
+
+/// If `piece` begins with an address followed by `::` (e.g. `0x000A::m::S<`), rewrites that
+/// address to trimmed lowercase (`0xa::m::S<`); any other piece is returned unchanged.
+fn normalize_leading_address(piece: &str) -> Cow<'_, str> {
+    let Some(stripped) = piece.strip_prefix("0x") else {
+        return Cow::Borrowed(piece);
+    };
+    let Some((hex, rest)) = stripped.split_once("::") else {
+        return Cow::Borrowed(piece);
+    };
+    let is_address =
+        !hex.is_empty() && hex.len() <= 64 && hex.bytes().all(|b| b.is_ascii_hexdigit());
+    if !is_address {
+        return Cow::Borrowed(piece);
     }
-    out.push_str(&tag[segment_start..]);
-    out
+    let trimmed = hex.trim_start_matches('0');
+    if trimmed.is_empty() {
+        Cow::Owned(format!("0x0::{rest}"))
+    } else {
+        Cow::Owned(format!("0x{}::{rest}", trimmed.to_ascii_lowercase()))
+    }
 }
 
 /// Parse an Aptos address string (0x-prefixed hex, possibly short) into AptosAddress.
