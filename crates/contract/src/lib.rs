@@ -1767,12 +1767,6 @@ impl MpcContract {
     /// Private endpoint to clean up foreign chain policy votes and node configurations
     /// for non-participants after resharing.
     /// Called after key resharing concludes (from vote_reshared).
-    /// TODO(anodar): add comment in commit explaining there is a race condition where
-    /// node operator wants to migrate a node to different node, spins up a new node
-    /// which registers new config, but then key resharing happens unrelated to that
-    /// that would cleanup new config. Node restart solves that.
-    /// Alternative is to not clean up but we probably don't want to accumulate
-    /// stale tls key -> config entries.
     #[private]
     #[handle_result]
     pub fn clean_foreign_chain_data(&mut self) -> Result<(), Error> {

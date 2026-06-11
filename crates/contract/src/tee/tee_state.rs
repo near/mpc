@@ -120,7 +120,6 @@ impl TeeState {
             let node_id = NodeId {
                 account_id: account_id.clone(),
                 tls_public_key: tls_public_key.clone(),
-                // TODO(anodar): add comment in PR explaining we need unique signer account pks.
                 account_public_key: tls_public_key.clone(),
             };
 

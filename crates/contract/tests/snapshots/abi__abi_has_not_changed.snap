@@ -401,7 +401,7 @@ expression: abi
       },
       {
         "name": "clean_foreign_chain_data",
-        "doc": " Private endpoint to clean up foreign chain policy votes and node configurations\n for non-participants after resharing.\n Called after key resharing concludes (from vote_reshared).\n TODO(anodar): add comment in commit explaining there is a race condition where\n node operator wants to migrate a node to different node, spins up a new node\n which registers new config, but then key resharing happens unrelated to that\n that would cleanup new config. Node restart solves that.\n Alternative is to not clean up but we probably don't want to accumulate\n stale tls key -> config entries.",
+        "doc": " Private endpoint to clean up foreign chain policy votes and node configurations\n for non-participants after resharing.\n Called after key resharing concludes (from vote_reshared).",
         "kind": "call",
         "modifiers": [
           "private"
