@@ -182,7 +182,7 @@ impl RunningContractState {
         for domain in &effective_domains {
             validate_domain_threshold(domain, new_num_participants)?;
         }
-        // TODO(#3306): eliminate this after issue is closed 
+        // TODO(#3306): eliminate this after issue is closed
         // 3.11-transition lock: the threshold updates can rewrite per-domain
         // thresholds, so they could leave CaitSith domains with differing
         // thresholds — which `vote_add_domains` forbids and the legacy
@@ -226,7 +226,7 @@ impl RunningContractState {
             crate::primitives::domain::validate_domain_purpose(domain)?;
             crate::primitives::domain::validate_domain_threshold(domain, num_participants)?;
         }
-        // TODO(#3306): eliminate this after issue is closed 
+        // TODO(#3306): eliminate this after issue is closed
         // 3.11-transition lock: all CaitSith domains (ForeignTx included) must
         // share one `reconstruction_threshold` so the legacy unprefixed
         // `DBCol::Triple` mirror (#3292) can't collide. If no CaitSith domain
