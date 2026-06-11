@@ -542,29 +542,13 @@ mod tests {
     /// Wire-format lock: the public contract for `ProposedThresholdParameters` is
     /// the flat JSON object `{ participants, threshold, per_domain_thresholds }`,
     /// not the `ProposedThresholdParametersCompat` bridge that currently produces
-    /// it. Pinning the shape here means deleting the compat struct later (letting
-    /// the type serialize to its native nested shape) is a known, tested wire
-    /// break rather than a silent one.
+    /// it. The snapshot pins the full shape, so deleting the compat struct later
+    /// (letting the type serialize to its native nested `parameters` sub-object)
+    /// surfaces as a snapshot diff rather than a silent wire break.
     #[test]
     #[expect(non_snake_case)]
-    fn proposed_threshold_parameters__serializes_to_flat_keys() {
-        // Given a proposal carrying non-empty per-domain threshold updates.
-        let proposal = sample_proposal();
-
-        // When serialized to JSON.
-        let value: serde_json::Value =
-            serde_json::from_str(&serde_json::to_string(&proposal).unwrap()).unwrap();
-
-        // Then the object is flat: `participants`/`threshold` sit at the top level
-        // alongside `per_domain_thresholds`, with no nested `parameters` key.
-        let mut keys: Vec<&str> = value
-            .as_object()
-            .unwrap()
-            .keys()
-            .map(String::as_str)
-            .collect();
-        keys.sort_unstable();
-        assert_eq!(keys, ["participants", "per_domain_thresholds", "threshold"]);
+    fn proposed_threshold_parameters__serializes_to_flat_wire_shape() {
+        insta::assert_json_snapshot!(sample_proposal());
     }
 
     /// TODO(#3495): Pre-3.11 callers submit `{ participants, threshold }` with no
