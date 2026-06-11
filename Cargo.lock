@@ -336,7 +336,7 @@ dependencies = [
  "ruint",
  "rustc-hash 2.1.2",
  "serde",
- "sha3",
+ "sha3 0.10.9",
 ]
 
 [[package]]
@@ -462,7 +462,7 @@ dependencies = [
  "proc-macro-error2",
  "proc-macro2",
  "quote",
- "sha3",
+ "sha3 0.10.9",
  "syn 2.0.117",
  "syn-solidity",
 ]
@@ -1880,7 +1880,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "sha3",
+ "sha3 0.12.0",
 ]
 
 [[package]]
@@ -5269,6 +5269,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "keccak"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9e24a010dd405bd7ed803e5253182815b41bf2e6a80cc3bfc066658e03a198aa"
+dependencies = [
+ "cfg-if 1.0.4",
+ "cpufeatures 0.3.0",
+]
+
+[[package]]
 name = "keccak-asm"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5738,7 +5748,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "sha3",
+ "sha3 0.12.0",
  "test-utils",
 ]
 
@@ -5899,7 +5909,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "serial_test",
- "sha3",
+ "sha3 0.12.0",
  "socket2",
  "tee-authority",
  "tempfile",
@@ -6534,7 +6544,7 @@ dependencies = [
  "schemars 0.8.22",
  "serde",
  "serde_with",
- "sha3",
+ "sha3 0.10.9",
 ]
 
 [[package]]
@@ -6551,7 +6561,7 @@ dependencies = [
  "near-sdk-env",
  "serde",
  "serde_with",
- "sha3",
+ "sha3 0.10.9",
 ]
 
 [[package]]
@@ -6802,7 +6812,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
- "sha3",
+ "sha3 0.12.0",
  "thiserror 2.0.18",
 ]
 
@@ -7004,7 +7014,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
- "sha3",
+ "sha3 0.10.9",
  "smallvec",
  "smart-default",
  "strum 0.24.1",
@@ -7047,7 +7057,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
- "sha3",
+ "sha3 0.10.9",
  "smallvec",
  "smart-default",
  "strum 0.24.1",
@@ -7264,7 +7274,7 @@ dependencies = [
  "near-sys",
  "ripemd",
  "sha2 0.10.9",
- "sha3",
+ "sha3 0.10.9",
 ]
 
 [[package]]
@@ -7486,7 +7496,7 @@ dependencies = [
  "rustix 1.1.4",
  "serde",
  "sha2 0.10.9",
- "sha3",
+ "sha3 0.10.9",
  "strum 0.24.1",
  "tempfile",
  "thiserror 2.0.18",
@@ -7536,7 +7546,7 @@ dependencies = [
  "rustix 1.1.4",
  "serde",
  "sha2 0.10.9",
- "sha3",
+ "sha3 0.10.9",
  "strum 0.24.1",
  "tempfile",
  "thiserror 2.0.18",
@@ -10615,12 +10625,23 @@ dependencies = [
 
 [[package]]
 name = "sha3"
-version = "0.10.8"
+version = "0.10.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75872d278a8f37ef87fa0ddbda7802605cb18344497949862c0d4dcb291eba60"
+checksum = "77fd7028345d415a4034cf8777cd4f8ab1851274233b45f84e3d955502d93874"
 dependencies = [
  "digest 0.10.7",
- "keccak",
+ "keccak 0.1.6",
+]
+
+[[package]]
+name = "sha3"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc9bad02c26382724b2d2692c6f179285e4b54eeecd7968f52a50059c3c11759"
+dependencies = [
+ "digest 0.11.2",
+ "keccak 0.2.0",
+ "sponge-cursor",
 ]
 
 [[package]]
@@ -10781,6 +10802,12 @@ dependencies = [
  "base64ct",
  "der",
 ]
+
+[[package]]
+name = "sponge-cursor"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3a0219bd7d979d58245a4f41f695e1ac9f8befdffadd7f61f1bae9e39abc6620"
 
 [[package]]
 name = "stable_deref_trait"
@@ -11325,7 +11352,7 @@ dependencies = [
  "insta",
  "itertools 0.14.0",
  "k256",
- "keccak",
+ "keccak 0.1.6",
  "pairing",
  "rand 0.8.6",
  "rand_chacha 0.3.1",
@@ -11338,7 +11365,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "sha2 0.10.9",
- "sha3",
+ "sha3 0.12.0",
  "subtle",
  "thiserror 2.0.18",
  "threshold-signatures",
