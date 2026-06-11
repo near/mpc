@@ -24,6 +24,7 @@ fn randomness_unsupported(_buf: &mut [u8]) -> Result<(), getrandom::Error> {
 getrandom::register_custom_getrandom!(randomness_unsupported);
 
 /// What the stub's `verify_quote` should do, chosen by the test at deploy time.
+#[expect(clippy::large_enum_variant)]
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
 pub enum StubResponse {
     /// Return `VerificationResult::Verified` with this exact report. Tests that

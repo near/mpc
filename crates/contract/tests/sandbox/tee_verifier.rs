@@ -39,6 +39,7 @@ use test_utils::attestation::{mock_dto_dstack_attestation, p2p_tls_key};
 /// Mirror of `test_tee_verifier::StubResponse`. Re-declared here (rather than
 /// depending on the stub crate) so the test only needs its Borsh encoding to
 /// initialize the deployed stub.
+#[expect(clippy::large_enum_variant)]
 #[derive(BorshSerialize)]
 enum StubResponse {
     #[allow(dead_code)]
