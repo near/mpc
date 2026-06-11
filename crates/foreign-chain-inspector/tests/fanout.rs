@@ -11,6 +11,7 @@
 use std::{io, sync::Arc};
 
 use assert_matches::assert_matches;
+use foreign_chain_inspector::ton::{TonBocError, TonInspectionError};
 use foreign_chain_inspector::{
     BlockConfirmations, FanOut, ForeignChainInspectionError, ForeignChainInspector,
 };
@@ -340,6 +341,31 @@ mod non_transient_agree {
     }
 
     #[tokio::test]
+    async fn fan_out__should_treat_same_ton_inner_variant_with_different_fields_as_agreement() {
+        // Given: both inspectors report a TON MessageMissingContent, with
+        // different inner fields. The TON agreement check compares the inner
+        // variant, so these agree.
+        let a = mock_returning(err(|| {
+            ForeignChainInspectionError::Ton(TonInspectionError::MessageMissingContent { index: 0 })
+        }));
+        let b = mock_returning(err(|| {
+            ForeignChainInspectionError::Ton(TonInspectionError::MessageMissingContent { index: 1 })
+        }));
+        let fan_out = fan_out_of(vec![a, b]);
+
+        // When
+        let result = fan_out.extract((), (), vec![]).await;
+
+        // Then
+        assert_matches!(
+            result,
+            Err(ForeignChainInspectionError::Ton(
+                TonInspectionError::MessageMissingContent { .. }
+            ))
+        );
+    }
+
+    #[tokio::test]
     async fn fan_out__should_propagate_non_transient_when_transient_errors_are_also_present() {
         // Given: two inspectors report TransactionFailed (non-transient), one
         // reports NotFinalized (transient). Transient errors are tolerated, so
@@ -387,6 +413,30 @@ mod non_transient_disagree {
             ForeignChainInspectionError::EventLogFailedBorshSerialization(io::Error::other("borsh"))
         }));
         let fan_out = fan_out_of(vec![a, b, c]);
+
+        // When
+        let result = fan_out.extract((), (), vec![]).await;
+
+        // Then
+        assert_matches!(
+            result,
+            Err(ForeignChainInspectionError::InspectorResponseMismatch)
+        );
+    }
+
+    #[tokio::test]
+    async fn fan_out__should_return_mismatch_when_ton_inner_variants_disagree() {
+        // Given: both errors share the outer `Ton` variant but report entirely
+        // different TON failure modes — that is a disagreement, not agreement.
+        let a = mock_returning(err(|| {
+            ForeignChainInspectionError::Ton(TonInspectionError::BocError(
+                TonBocError::NonByteAlignedBody { bit_len: 12 },
+            ))
+        }));
+        let b = mock_returning(err(|| {
+            ForeignChainInspectionError::Ton(TonInspectionError::MessageMissingContent { index: 0 })
+        }));
+        let fan_out = fan_out_of(vec![a, b]);
 
         // When
         let result = fan_out.extract((), (), vec![]).await;
@@ -512,5 +562,26 @@ mod tolerate_transient {
 
         // Then
         assert_eq!(result.unwrap(), vec![99]);
+    }
+
+    #[tokio::test]
+    async fn fan_out__should_tolerate_ton_transaction_not_found_when_another_inspector_succeeds() {
+        // Given: one provider has indexed the transaction, the other lags and
+        // reports TransactionNotFound. Not-found is transient (the lagging
+        // provider may simply not have caught up), so the success wins instead
+        // of the fan-out reporting a verdict mismatch.
+        let succeeding = mock_returning(ok(vec![7]));
+        let lagging = mock_returning(err(|| {
+            ForeignChainInspectionError::Ton(TonInspectionError::TransactionNotFound {
+                tx_hash_hex: "de".repeat(32),
+            })
+        }));
+        let fan_out = fan_out_of(vec![succeeding, lagging]);
+
+        // When
+        let result = fan_out.extract((), (), vec![]).await;
+
+        // Then
+        assert_eq!(result.unwrap(), vec![7]);
     }
 }

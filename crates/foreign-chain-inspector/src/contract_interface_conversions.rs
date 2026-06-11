@@ -8,6 +8,7 @@ use crate::bitcoin::inspector::BitcoinExtractor;
 use crate::evm::inspector::{EvmChain, EvmExtractedValue, EvmExtractor};
 use crate::starknet::StarknetExtractedValue;
 use crate::starknet::inspector::{StarknetExtractor, StarknetFinality};
+use crate::ton::types::{TonExtractedValue, TonExtractor, TonFinality};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConversionError {
@@ -282,6 +283,85 @@ impl From<StarknetExtractedValue> for dtos::ExtractedValue {
     }
 }
 
+impl From<TonFinality> for dtos::TonFinality {
+    fn from(value: TonFinality) -> Self {
+        match value {
+            TonFinality::MasterchainIncluded => dtos::TonFinality::MasterchainIncluded,
+        }
+    }
+}
+
+impl TryFrom<dtos::TonFinality> for TonFinality {
+    type Error = ConversionError;
+    fn try_from(value: dtos::TonFinality) -> Result<Self, Self::Error> {
+        match value {
+            dtos::TonFinality::MasterchainIncluded => Ok(TonFinality::MasterchainIncluded),
+            _ => Err(ConversionError::UnsupportedVariant {
+                context: "TonFinality",
+            }),
+        }
+    }
+}
+
+impl TryFrom<TonExtractor> for dtos::TonExtractor {
+    type Error = ConversionError;
+    fn try_from(value: TonExtractor) -> Result<Self, Self::Error> {
+        match value {
+            TonExtractor::Log { message_index } => Ok(dtos::TonExtractor::Log {
+                message_index: u64::try_from(message_index).map_err(|_| {
+                    ConversionError::IntegerOverflow {
+                        context: "TonExtractor::Log message_index exceeds u64",
+                    }
+                })?,
+            }),
+        }
+    }
+}
+
+impl TryFrom<dtos::TonExtractor> for TonExtractor {
+    type Error = ConversionError;
+    fn try_from(value: dtos::TonExtractor) -> Result<Self, Self::Error> {
+        match value {
+            dtos::TonExtractor::Log { message_index } => Ok(TonExtractor::Log {
+                message_index: usize::try_from(message_index).map_err(|_| {
+                    ConversionError::IntegerOverflow {
+                        context: "TonExtractor::Log message_index exceeds platform usize",
+                    }
+                })?,
+            }),
+            _ => Err(ConversionError::UnsupportedVariant {
+                context: "TonExtractor",
+            }),
+        }
+    }
+}
+
+impl From<TonExtractedValue> for dtos::TonExtractedValue {
+    fn from(value: TonExtractedValue) -> Self {
+        match value {
+            TonExtractedValue::Log(log) => dtos::TonExtractedValue::Log(log),
+        }
+    }
+}
+
+impl TryFrom<dtos::TonExtractedValue> for TonExtractedValue {
+    type Error = ConversionError;
+    fn try_from(value: dtos::TonExtractedValue) -> Result<Self, Self::Error> {
+        match value {
+            dtos::TonExtractedValue::Log(log) => Ok(TonExtractedValue::Log(log)),
+            _ => Err(ConversionError::UnsupportedVariant {
+                context: "TonExtractedValue",
+            }),
+        }
+    }
+}
+
+impl From<TonExtractedValue> for dtos::ExtractedValue {
+    fn from(value: TonExtractedValue) -> Self {
+        dtos::ExtractedValue::TonExtractedValue(value.into())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -497,6 +577,39 @@ mod tests {
         let inspector = StarknetExtractedValue::BlockHash(hash);
         let contract = dtos::StarknetExtractedValue::from(inspector.clone());
         let back = StarknetExtractedValue::try_from(contract).unwrap();
+        assert_eq!(inspector, back);
+    }
+
+    #[test]
+    fn ton_finality_roundtrip() {
+        let inspector = TonFinality::MasterchainIncluded;
+        let contract = dtos::TonFinality::from(inspector.clone());
+        let back = TonFinality::try_from(contract).unwrap();
+        assert_eq!(inspector, back);
+    }
+
+    #[test]
+    fn ton_extractor_roundtrip() {
+        let inspector = TonExtractor::Log { message_index: 7 };
+        let contract = dtos::TonExtractor::try_from(inspector.clone()).unwrap();
+        assert_matches!(contract, dtos::TonExtractor::Log { message_index: 7 });
+        let back = TonExtractor::try_from(contract).unwrap();
+        assert_eq!(inspector, back);
+    }
+
+    #[test]
+    fn ton_extracted_value_roundtrip() {
+        let log = dtos::TonLog {
+            from_address: dtos::TonAddress {
+                workchain: dtos::TonWorkchain::Basechain,
+                hash: dtos::Hash256([0xaa; 32]),
+            },
+            body: dtos::TonCellBody::new(vec![0xde, 0xad].try_into().unwrap(), 16).unwrap(),
+            body_refs: vec![dtos::Hash256([0x01; 32])].try_into().unwrap(),
+        };
+        let inspector = TonExtractedValue::Log(log);
+        let contract = dtos::TonExtractedValue::from(inspector.clone());
+        let back = TonExtractedValue::try_from(contract).unwrap();
         assert_eq!(inspector, back);
     }
 }

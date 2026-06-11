@@ -19,6 +19,7 @@ pub mod evm;
 pub mod hyperevm;
 pub mod polygon;
 pub mod starknet;
+pub mod ton;
 
 pub trait ForeignChainInspector {
     type TransactionId;
@@ -53,7 +54,8 @@ pub trait ForeignChainInspector {
 ///
 /// Variant-level comparison is used for non-transient errors, so inspectors that all report
 /// the same failure mode (e.g. `NonCanonicalBlock`) are considered to agree even if the
-/// inner fields differ.
+/// inner fields differ. See [`ForeignChainInspectionError::same_failure_mode`] for the exact
+/// agreement relation.
 #[derive(Clone, derive_more::Constructor)]
 pub struct FanOut<Inspector> {
     inspectors: NonEmptyVec<Inspector>,
@@ -140,11 +142,10 @@ where
             return Ok(first);
         }
 
-        if let Some(first_non_transient_error) = non_transient_errors.first() {
-            let first_variant = std::mem::discriminant(&first_non_transient_error.1);
+        if let Some((_, first_non_transient_error)) = non_transient_errors.first() {
             let all_failures_have_same_variant = non_transient_errors
                 .iter()
-                .all(|(_, e)| std::mem::discriminant(e) == first_variant);
+                .all(|(_, e)| first_non_transient_error.same_failure_mode(e));
             if !all_failures_have_same_variant {
                 tracing::error!(
                     errors = ?non_transient_errors,
@@ -177,6 +178,23 @@ pub enum RpcAuthentication {
         header_name: HeaderName,
         header_value: HeaderValue,
     },
+}
+
+impl RpcAuthentication {
+    /// The default request headers this authentication method requires.
+    pub(crate) fn into_header_map(self) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        match self {
+            RpcAuthentication::KeyInUrl => {}
+            RpcAuthentication::CustomHeader {
+                header_name,
+                header_value,
+            } => {
+                headers.insert(header_name, header_value);
+            }
+        }
+        headers
+    }
 }
 
 #[derive(From, Debug, Display, Clone, Copy, Deref, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -247,14 +265,32 @@ pub enum ForeignChainInspectionError {
     EventLogFailedBorshSerialization(std::io::Error),
     #[error("inspector clients returned mismatching extracted values")]
     InspectorResponseMismatch,
+    #[error(transparent)]
+    Ton(#[from] crate::ton::TonInspectionError),
 }
 
 impl ForeignChainInspectionError {
+    /// Whether two non-transient errors represent the same failure mode for
+    /// the [`FanOut`] agreement check. Compared at variant level, so errors
+    /// that differ only in their inner fields agree. Chain-specific errors
+    /// wrapped in a single variant (e.g. [`Self::Ton`]) delegate to the inner
+    /// type's own `same_failure_mode` — otherwise two providers failing for
+    /// entirely different chain-level reasons would count as agreeing.
+    pub fn same_failure_mode(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Ton(a), Self::Ton(b)) => a.same_failure_mode(b),
+            _ => std::mem::discriminant(self) == std::mem::discriminant(other),
+        }
+    }
+
     pub fn is_transient(&self) -> bool {
-        matches!(
-            self,
-            Self::ClientError(_) | Self::NotFinalized | Self::NotEnoughBlockConfirmations { .. }
-        )
+        match self {
+            Self::ClientError(_)
+            | Self::NotFinalized
+            | Self::NotEnoughBlockConfirmations { .. } => true,
+            Self::Ton(error) => error.is_transient(),
+            _ => false,
+        }
     }
 }
 
@@ -265,21 +301,7 @@ pub fn build_http_client(
     base_url: String,
     rpc_authentication: RpcAuthentication,
 ) -> Result<HttpClient, jsonrpsee::core::client::error::Error> {
-    let mut headers = HeaderMap::new();
-
-    match rpc_authentication {
-        RpcAuthentication::KeyInUrl => {}
-        RpcAuthentication::CustomHeader {
-            header_name,
-            header_value,
-        } => {
-            headers.insert(header_name, header_value);
-        }
-    }
-
-    let client = HttpClientBuilder::default()
-        .set_headers(headers)
-        .build(&base_url)?;
-
-    Ok(client)
+    HttpClientBuilder::default()
+        .set_headers(rpc_authentication.into_header_map())
+        .build(&base_url)
 }

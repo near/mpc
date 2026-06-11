@@ -3694,6 +3694,7 @@ name = "foreign-chain-inspector"
 version = "3.11.0"
 dependencies = [
  "assert_matches",
+ "base64 0.22.1",
  "derive_more 2.1.1",
  "ethereum-types",
  "foreign-chain-rpc-interfaces",
@@ -3705,12 +3706,16 @@ dependencies = [
  "mpc-primitives",
  "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
+ "reqwest 0.13.4",
  "rstest",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
+ "test-utils",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
+ "url",
 ]
 
 [[package]]
@@ -3719,6 +3724,7 @@ version = "3.11.0"
 dependencies = [
  "derive_more 2.1.1",
  "ethereum-types",
+ "hex",
  "jsonrpsee",
  "mpc-primitives",
  "serde",
@@ -11482,6 +11488,7 @@ dependencies = [
 name = "test-utils"
 version = "3.11.0"
 dependencies = [
+ "base64 0.22.1",
  "cargo-near-build",
  "hex",
  "mpc-attestation",

@@ -5,6 +5,7 @@ license = { workspace = true }
 edition = { workspace = true }
 
 [dependencies]
+base64 = { workspace = true }
 cargo-near-build = { workspace = true }
 hex = { workspace = true }
 mpc-attestation = { workspace = true, features = ["test-utils"] }
