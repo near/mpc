@@ -1001,6 +1001,12 @@ impl MpcContract {
             .map_err(|_| InvalidState::NotParticipant {
                 account_id: signer_account_id.clone(),
             })?;
+        if node_id.account_id != signer_account_id {
+            return Err(InvalidState::NotParticipant {
+                account_id: signer_account_id,
+            }
+            .into());
+        }
         let is_participant = self
             .protocol_state
             .is_existing_or_prospective_participant(&node_id.account_id)?;
@@ -1123,6 +1129,7 @@ impl MpcContract {
 
         if let Some(new_state) = self.protocol_state.vote_pk(key_event_id, extended_key)? {
             self.protocol_state = new_state;
+            self.recompute_available_foreign_chains();
         }
 
         Ok(())
@@ -7152,11 +7159,22 @@ mod tests {
             .tls_public_key
             .clone();
         let mut env = Environment::new(None, Some(new_account_id.clone()), None);
-        env.set_pk(near_sdk::PublicKey::from(new_tls_key));
+        // Set the signer pk to the new participant's TLS key, which is also its account_public_key
+        // in the mocked attestation, so lookup_node_id_by_signer_pk finds exactly this participant.
+        env.set_pk(near_sdk::PublicKey::from(new_tls_key.clone()));
+
         // Then: the call succeeds — new participant is in the proposed set.
         contract
             .register_foreign_chains_config(foreign_chains_config)
             .expect("new participant should be able to register during Resharing");
+        assert!(
+            contract
+                .foreign_chains
+                .get()
+                .foreign_chains_configs
+                .contains_key(&new_tls_key),
+            "config should be stored under the new participant's TLS key"
+        );
     }
 
     #[test]

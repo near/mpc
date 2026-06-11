@@ -15,7 +15,7 @@ pub(crate) struct ForeignChainsMetadata {
     pub(crate) foreign_chains_configs:
         IterableMap<dtos::Ed25519PublicKey, dtos::ForeignChainsConfig>,
 
-    /// Map of node's tls key to signer account public key. Same node operator can have multiple nodes, therefore multiple tls key.
+    /// Map of node's tls key per signer account public key. Same node operator can have multiple nodes, therefore multiple tls key.
     tls_key_by_signer_pk: IterableMap<dtos::Ed25519PublicKey, dtos::Ed25519PublicKey>,
 }
 
