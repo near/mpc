@@ -231,6 +231,7 @@ impl ProposedThresholdParameters {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use crate::{
         errors::{Error, InvalidCandidateSet},
