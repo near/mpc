@@ -47,6 +47,11 @@ pub struct InitConfig {
     pub remove_non_participant_update_votes_tera_gas: Option<u64>,
     /// Prepaid gas for a `clean_foreign_chain_data` call.
     pub clean_foreign_chain_data_tera_gas: Option<u64>,
+    /// The account whose `verify_quote` method the contract trusts for TEE
+    /// attestation verification. Fresh deploys may set it here; otherwise the
+    /// contract starts with a placeholder and participants vote one in via
+    /// `vote_tee_verifier_change`.
+    pub tee_verifier_account_id: Option<mpc_primitives::AccountId>,
 }
 
 /// Configuration parameters of the contract.
@@ -118,6 +123,7 @@ mod tests {
             cleanup_orphaned_node_migrations_tera_gas: Some(3),
             remove_non_participant_update_votes_tera_gas: Some(5),
             clean_foreign_chain_data_tera_gas: Some(5),
+            tee_verifier_account_id: Some("verifier.near".parse().unwrap()),
         };
         let json = serde_json::to_string(&original_config).unwrap();
         let serialized_and_deserialized_config: InitConfig = serde_json::from_str(&json).unwrap();
@@ -167,6 +173,7 @@ mod tests {
             cleanup_orphaned_node_migrations_tera_gas: None,
             remove_non_participant_update_votes_tera_gas: None,
             clean_foreign_chain_data_tera_gas: None,
+            tee_verifier_account_id: None,
         };
 
         assert_eq!(default_config, config_with_all_values_as_none);

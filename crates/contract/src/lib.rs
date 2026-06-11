@@ -82,7 +82,9 @@ use primitives::{
     thresholds::{Threshold, ThresholdParameters},
 };
 use tee::measurements::{ContractExpectedMeasurements, MeasurementVoteAction, MeasurementVotes};
+use tee::pending_attestation::PendingAttestation;
 use tee::proposal::{CodeHashesVotes, LauncherHashVotes};
+use tee::verifier_votes::{TeeVerifierVotes, VerifierChangeProposal};
 
 use state::{ProtocolContractState, running::RunningContractState};
 use tee::{
@@ -103,6 +105,24 @@ const MINIMUM_CKD_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 /// Entries to scan in the post-reshare `clean_invalid_attestations` sweep. External
 /// callers may pick a different value; this only governs the automatic invocation.
 const RESHARE_CLEAN_INVALID_ATTESTATIONS_MAX_SCAN: u32 = 100;
+
+/// Placeholder `tee_verifier_account_id` used when no real verifier has been
+/// chosen yet (fresh `init` without one, or migration from a pre-verifier
+/// contract). It is not a deployed contract; `Dstack` `submit_participant_info`
+/// is rejected until participants vote in a real verifier via
+/// `vote_tee_verifier_change`.
+const UNSET_TEE_VERIFIER_ACCOUNT: &str = "unset.tee-verifier.invalid";
+
+/// The `tee_verifier_account_id` to start from, given an optional value
+/// supplied at init time. Falls back to the [`UNSET_TEE_VERIFIER_ACCOUNT`]
+/// placeholder.
+pub(crate) fn initial_tee_verifier_account_id(configured: Option<dtos::AccountId>) -> AccountId {
+    configured.unwrap_or_else(|| {
+        UNSET_TEE_VERIFIER_ACCOUNT
+            .parse()
+            .expect("placeholder verifier account id must be valid")
+    })
+}
 
 /// Checks that the caller attached at least `minimum_deposit` and refunds any excess.
 ///
@@ -159,6 +179,17 @@ pub struct MpcContract {
     // TODO(#2937): Remove via state migration.
     metrics: Metrics,
     foreign_chain_rpc_whitelist: ForeignChainRpcWhitelist,
+    /// The locked account `mpc-contract` trusts as the TEE quote verifier.
+    /// `submit_participant_info` calls `verify_quote` on it. Mutated only by a
+    /// threshold `vote_tee_verifier_change`; the mutation re-routes future
+    /// submissions and never touches already-stored attestations.
+    tee_verifier_account_id: AccountId,
+    /// Pending participant votes for changing `tee_verifier_account_id`.
+    tee_verifier_votes: TeeVerifierVotes,
+    /// In-flight `Dstack` attestation verifications, keyed by submitter. Holds
+    /// the yield handle and the data the resolution callback needs. (Consumed
+    /// by the async `submit_participant_info` flow in a later step.)
+    pending_attestations: LookupMap<AccountId, PendingAttestation>,
 }
 
 #[near(serializers=[borsh])]
@@ -1530,6 +1561,72 @@ impl MpcContract {
         Ok(applied)
     }
 
+    /// Vote for `(candidate_account_id, expected_code_hash)` as the trusted TEE
+    /// verifier. Re-voting from the same caller replaces the previous vote; see
+    /// [`Self::withdraw_tee_verifier_vote`] to withdraw without replacing. When
+    /// the threshold is reached, `tee_verifier_account_id` is updated and all
+    /// pending verifier votes are cleared. Every subsequent
+    /// `submit_participant_info` is then verified by the new verifier; entries
+    /// the previous verifier produced are not purged — they age out via the
+    /// attestation expiration window enforced in `re_verify`.
+    ///
+    /// `expected_code_hash` binds each yes-vote to the code the voter audited
+    /// off-chain; voters who name the same account with different hashes land in
+    /// different buckets and neither reaches threshold alone.
+    #[handle_result]
+    pub fn vote_tee_verifier_change(
+        &mut self,
+        candidate_account_id: AccountId,
+        expected_code_hash: CryptoHash,
+    ) -> Result<(), Error> {
+        log!(
+            "vote_tee_verifier_change: signer={}, candidate={}, expected_code_hash={}",
+            env::signer_account_id(),
+            candidate_account_id,
+            hex::encode(expected_code_hash),
+        );
+        self.voter_or_panic();
+
+        let threshold_parameters = self
+            .protocol_state
+            .threshold_parameters()
+            .expect("voter_or_panic() above already errors on NotInitialized");
+        let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
+
+        let proposal = VerifierChangeProposal {
+            candidate_account_id,
+            expected_code_hash,
+        };
+        if let Some(new_verifier) =
+            self.tee_verifier_votes
+                .vote(proposal, participant, threshold_parameters)?
+        {
+            log!("vote_tee_verifier_change: new verifier = {}", new_verifier);
+            self.tee_verifier_account_id = new_verifier;
+        }
+        Ok(())
+    }
+
+    /// Withdraw the caller's current vote on any pending verifier-change
+    /// proposal, if any. No-op if the caller has not voted.
+    #[handle_result]
+    pub fn withdraw_tee_verifier_vote(&mut self) -> Result<(), Error> {
+        log!(
+            "withdraw_tee_verifier_vote: signer={}",
+            env::signer_account_id(),
+        );
+        self.voter_or_panic();
+
+        let threshold_parameters = self
+            .protocol_state
+            .threshold_parameters()
+            .expect("voter_or_panic() above already errors on NotInitialized");
+        let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
+
+        self.tee_verifier_votes.withdraw(&participant);
+        Ok(())
+    }
+
     /// On-chain RPC provider whitelist keyed by `ForeignChain`. Nodes read this at
     /// startup to validate their local `foreign_chains.yaml`. Borsh-encoded result.
     #[result_serializer(borsh)]
@@ -1723,6 +1820,9 @@ impl MpcContract {
         }
 
         self.foreign_chain_rpc_whitelist.votes.retain(participants);
+        // Drop verifier-change votes from accounts that lost participant status,
+        // same as the foreign-chain provider votes above.
+        self.tee_verifier_votes.retain(participants);
 
         Ok(())
     }
@@ -1767,6 +1867,13 @@ impl MpcContract {
                 StorageKey::PendingVerifyForeignTxRequestsV2,
             ),
             proposed_updates: ProposedUpdates::default(),
+            tee_verifier_account_id: initial_tee_verifier_account_id(
+                init_config
+                    .as_ref()
+                    .and_then(|c| c.tee_verifier_account_id.clone()),
+            ),
+            tee_verifier_votes: TeeVerifierVotes::default(),
+            pending_attestations: LookupMap::new(StorageKey::PendingAttestationsV1),
             config: init_config.map(Into::into).unwrap_or_default(),
             tee_state,
             accept_requests: true,
@@ -1823,6 +1930,13 @@ impl MpcContract {
         let tee_state = TeeState::with_mocked_participant_attestations(initial_participants);
 
         Ok(MpcContract {
+            tee_verifier_account_id: initial_tee_verifier_account_id(
+                init_config
+                    .as_ref()
+                    .and_then(|c| c.tee_verifier_account_id.clone()),
+            ),
+            tee_verifier_votes: TeeVerifierVotes::default(),
+            pending_attestations: LookupMap::new(StorageKey::PendingAttestationsV1),
             config: init_config.map(Into::into).unwrap_or_default(),
             protocol_state: ProtocolContractState::Running(RunningContractState::new(
                 domains,
@@ -4052,6 +4166,9 @@ mod tests {
                 node_migrations: Default::default(),
                 metrics: Default::default(),
                 foreign_chain_rpc_whitelist: Default::default(),
+                tee_verifier_account_id: initial_tee_verifier_account_id(None),
+                tee_verifier_votes: Default::default(),
+                pending_attestations: LookupMap::new(StorageKey::PendingAttestationsV1),
             }
         }
     }

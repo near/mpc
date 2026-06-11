@@ -1,0 +1,59 @@
+//! State for an in-flight `Dstack` attestation submission.
+//!
+//! `submit_participant_info` for a `Dstack` attestation is asynchronous: it
+//! yields, fires a cross-contract `verify_quote` call to the trusted verifier,
+//! and resumes from the response callback. Everything the callback needs that
+//! is not re-readable from contract state at callback time is stashed here,
+//! keyed by the submitter's `AccountId`, until the verification resolves (or
+//! the yield times out).
+//!
+//! Used in a later step (the async `submit_participant_info` flip); defined
+//! here so the state field and storage key land first.
+
+use mpc_attestation::attestation::DstackAttestation;
+use near_mpc_contract_interface::types::Ed25519PublicKey;
+use near_sdk::{CryptoHash, NearToken, near};
+
+/// One in-flight verification per submitter account.
+#[near(serializers=[borsh])]
+#[derive(Debug)]
+pub struct PendingAttestation {
+    /// The submitted `Dstack` payload — RTMR3 event log, app-compose, and the
+    /// quote/collateral — that the post-DCAP checks consume once the verifier
+    /// returns its report.
+    pub dstack: DstackAttestation,
+    /// The submitter's TLS public key, hashed with its account public key and
+    /// compared against the quote's report-data during the post-DCAP checks.
+    pub tls_public_key: Ed25519PublicKey,
+    /// Deposit attached at submit time. `env::attached_deposit()` is not visible
+    /// from the callback receipt, so it is stashed here: consumed for storage
+    /// staking on success, refunded on failure.
+    pub attached_deposit: NearToken,
+    /// Yield handle from `env::promise_yield_create`. The resolution callback
+    /// reads it back to `promise_yield_resume` with the final outcome.
+    pub data_id: CryptoHash,
+}
+
+/// Outcome the resolution callback resumes the yielded promise with. The
+/// yield-callback maps it back to a `Result` for the original caller.
+#[near(serializers=[borsh])]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FinalOutcome {
+    Ok,
+    Err(String),
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn final_outcome__should_round_trip_borsh() {
+        for original in [FinalOutcome::Ok, FinalOutcome::Err("rejected".to_string())] {
+            let bytes = borsh::to_vec(&original).expect("serialize");
+            let decoded: FinalOutcome = borsh::from_slice(&bytes).expect("deserialize");
+            assert_eq!(original, decoded);
+        }
+    }
+}

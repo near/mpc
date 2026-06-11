@@ -14,13 +14,15 @@ use near_sdk::{env, store::LookupMap};
 use crate::{
     Config, SupportedForeignChainsByNode,
     foreign_chain_rpc::ForeignChainRpcWhitelist,
+    initial_tee_verifier_account_id,
     node_migrations::NodeMigrations,
     primitives::{
         ckd::CKDRequest,
         signature::{SignatureRequest, YieldIndex},
     },
     state::ProtocolContractState,
-    tee::tee_state::TeeState,
+    storage_keys::StorageKey,
+    tee::{tee_state::TeeState, verifier_votes::TeeVerifierVotes},
     update::ProposedUpdates,
 };
 
@@ -62,6 +64,12 @@ impl From<MpcContract> for crate::MpcContract {
             node_migrations: old.node_migrations,
             metrics: old.metrics,
             foreign_chain_rpc_whitelist: old.foreign_chain_rpc_whitelist,
+            // No verifier was chosen by the pre-verifier contract: start from the
+            // placeholder, empty votes, and an empty pending map. Participants
+            // vote in a real verifier via `vote_tee_verifier_change`.
+            tee_verifier_account_id: initial_tee_verifier_account_id(None),
+            tee_verifier_votes: TeeVerifierVotes::default(),
+            pending_attestations: LookupMap::new(StorageKey::PendingAttestationsV1),
         }
     }
 }
