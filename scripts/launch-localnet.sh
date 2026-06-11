@@ -32,7 +32,7 @@ cleanup() {
   echo "Running clean-up"
   read -rp "Press Enter to tear-down the processes..."
   for pid in "${pids[@]}"; do
-    kill_process "${pid}"
+    kill_process "${pid}" || true
   done
 
   read -rp "Press Enter to delete the logs..."
@@ -282,7 +282,7 @@ kill_process() {
   fi
 
   echo "Sending SIGTERM to $pid (grace ${grace}s)..."
-  kill "$pid" 2>/dev/null
+  kill "$pid" 2>/dev/null || true
 
   for ((s = 0; s < grace; s++)); do
     if ! kill -0 "$pid" 2>/dev/null; then
@@ -293,7 +293,11 @@ kill_process() {
   done
 
   echo "Process $pid still alive after ${grace}s; sending SIGKILL." >&2
-  kill -9 "$pid" 2>/dev/null
+  kill -9 "$pid" 2>/dev/null || true
+
+  if kill -0 "$pid" 2>/dev/null; then
+    echo "Warning: Process $pid still alive after SIGKILL." >&2
+  fi
 }
 
 run_bg() {
