@@ -140,6 +140,11 @@ pub struct ConfigFile {
     /// This value is only considered when the node is run in normal node. It defines the number of
     /// working threads for the runtime.
     pub cores: Option<usize>,
+    /// When true (the default), asset generation (triples and presignatures)
+    /// runs on a separate, lower-OS-priority runtime so it does not starve
+    /// signing. Set to false to run it on the main MPC runtime.
+    #[serde(default = "default_true")]
+    pub separate_asset_generation_runtime: bool,
 }
 
 impl ConfigFile {
@@ -176,6 +181,10 @@ pub fn load_config_file(home_dir: &Path) -> anyhow::Result<ConfigFile> {
 
 fn default_pprof_bind_address() -> SocketAddr {
     (Ipv4Addr::UNSPECIFIED, DEFAULT_PPROF_PORT).into()
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn deserialize_to_socket_addr<'de, D>(deserializer: D) -> Result<SocketAddr, D::Error>
