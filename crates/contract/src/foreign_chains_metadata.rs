@@ -6,8 +6,7 @@ use crate::foreign_chain_rpc::ForeignChainRpcWhitelist;
 use crate::storage_keys::StorageKey;
 
 /// All foreign-chain state: the RPC provider whitelist, the per-node config reports, and the
-/// cached available-chain set derived from them. Stored behind `Lazy<>` in `MpcContract` so it
-/// is only deserialized when foreign-chain methods are called.
+/// cached available-chain set derived from them.
 #[near(serializers=[borsh])]
 #[derive(Debug)]
 pub(crate) struct ForeignChainsMetadata {
