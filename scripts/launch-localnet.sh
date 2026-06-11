@@ -295,9 +295,16 @@ kill_process() {
   echo "Process $pid still alive after ${grace}s; sending SIGKILL." >&2
   kill -9 "$pid" 2>/dev/null || true
 
-  if kill -0 "$pid" 2>/dev/null; then
-    echo "Warning: Process $pid still alive after SIGKILL." >&2
-  fi
+  # A direct child lingers as a zombie until bash reaps it, so poll briefly
+  # before concluding the process actually survived SIGKILL.
+  for ((s = 0; s < 5; s++)); do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo "Warning: Process $pid still alive after SIGKILL." >&2
 }
 
 run_bg() {
