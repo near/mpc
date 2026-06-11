@@ -569,22 +569,16 @@ pub mod tests {
         );
     }
 
-    /// End-to-end companion to the single-domain test above, covering the
-    /// genuinely per-domain case: two domains end the resharing with
-    /// *different* reconstruction thresholds. We update only the Frost domain
-    /// (leaving CaitSith at the default `2`), which also keeps clear of the
-    /// CaitSith uniform-threshold lock since there is only one CaitSith domain.
-    ///
-    /// Same deterministic fixture rationale as the single-domain test: the
-    /// participant set is unchanged (a key-refresh resharing), so the proposed
-    /// count equals the running count (`n >= 3`), making `n` a valid threshold
-    /// that always differs from the default `2`.
+    /// End-to-end companion to the single-domain test above: two domains end the
+    /// resharing with *different* thresholds. Only the Frost domain is updated,
+    /// leaving CaitSith at the default `2` (and clear of the single-CaitSith
+    /// uniform-threshold lock). Key-refresh resharing (unchanged participants)
+    /// keeps `n >= 3`, so `n` is a valid threshold distinct from `2`.
     #[expect(non_snake_case)]
     #[test]
     fn vote_reshared__final_transition__should_apply_distinct_thresholds_per_domain() {
-        // Given a running state with a CaitSith domain (index 0) and a Frost
-        // domain (index 1), both at the default reconstruction threshold (2),
-        // and a resharing proposal that moves only the Frost domain to `n`.
+        // Given CaitSith (index 0) and Frost (index 1) domains, both at default
+        // threshold 2, and a proposal moving only the Frost domain to `n`.
         let mut env = Environment::new(Some(100), None, None);
         let mut running = gen_running_state(2);
         let current_params = running.parameters.clone();
