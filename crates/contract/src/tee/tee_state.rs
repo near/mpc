@@ -156,10 +156,14 @@ impl TeeState {
         .into();
 
         let accepted_measurements = self.get_accepted_measurements();
+        // TODO(L4): this synchronous DCAP-in-contract path is replaced by the
+        // cross-contract call to `tee-verifier` + `verify_with_report`, which
+        // removes `dcap-qvl` from the contract WASM. Until then the contract
+        // keeps verifying locally so L1 stays behavior-neutral.
         let AcceptedAttestation {
             attestation: verified_attestation,
             advisory_ids,
-        } = attestation.verify(
+        } = attestation.verify_locally(
             expected_report_data.into(),
             Self::current_time_seconds(),
             &self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration),

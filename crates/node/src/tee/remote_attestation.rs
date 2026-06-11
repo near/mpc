@@ -103,7 +103,7 @@ fn validate_remote_attestation(
         .unwrap()
         .as_secs();
     attestation
-        .verify(
+        .verify_locally(
             expected_report_data.into(),
             now,
             allowed_docker_image_hashes,

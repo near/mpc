@@ -17,6 +17,7 @@ use core::fmt;
 use derive_more::Constructor;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256, Sha384};
+use tee_verifier_interface::{TDReport10, VerifiedReport};
 
 /// Expected TCB status for a successfully verified TEE quote.
 const EXPECTED_QUOTE_STATUS: &str = "UpToDate";
@@ -30,6 +31,11 @@ pub(crate) const KEY_PROVIDER_EVENT: &str = "key-provider";
 
 const RTMR3_INDEX: u32 = 3;
 
+// `quote` and `collateral` are the `tee-verifier-interface` mirrors; their
+// serde impls come from that crate's off-by-default `serde` feature, which
+// `attestation` enables. Serde is needed because `DstackAttestation` is
+// embedded (via `mpc_attestation::Attestation`) in the node's serde-serialized
+// `/public_data` HTTP payload.
 #[derive(Clone, Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 pub struct DstackAttestation {
     pub quote: QuoteBytes,
@@ -123,33 +129,30 @@ impl fmt::Debug for DstackAttestation {
 }
 
 impl DstackAttestation {
-    /// Checks whether this attestation is valid
-    /// with respect to expected values of:
-    /// - report_data: must be measured correctly in RTMR3
-    /// - timestamp_seconds: current UNIX time in seconds
-    /// - accepted_measurements: set of accepted RTMRs and key-provider event digest.
-    ///   If any element in the set is valid, the function accepts the attestation as
-    ///   valid.
+    /// Runs the post-DCAP checks against an already-verified report.
     ///
-    /// On success, returns the matched measurements along with any informational
-    /// advisory IDs surfaced alongside an `UpToDate` TCB status.
-    pub fn verify(
+    /// Pure: no `dcap-qvl`, no host calls. The DCAP cryptographic verification
+    /// (`dcap_qvl::verify::verify`) is done elsewhere — by the `tee-verifier`
+    /// contract on-chain, or by [`verify_locally`](Self::verify_locally)
+    /// off-chain — and its `VerifiedReport` is passed in here. This is the
+    /// function both the contract and the off-chain helper share.
+    ///
+    /// `report` must be the verifier's output for *this* attestation's quote
+    /// and collateral; the checks below bind it to the expected report data,
+    /// the embedded TCB info, and the accepted measurement sets.
+    pub fn verify_with_report(
         &self,
+        report: &VerifiedReport,
         expected_report_data: ReportData,
-        timestamp_seconds: u64,
         accepted_measurements: &[ExpectedMeasurements],
     ) -> Result<AcceptedDstackAttestation, VerificationError> {
-        let verification_result =
-            dcap_qvl::verify::verify(&self.quote, &self.collateral, timestamp_seconds)
-                .map_err(|e| VerificationError::DcapVerification(e.to_string()))?;
-
-        let report_data = verification_result
+        let report_data = report
             .report
             .as_td10()
             .ok_or(VerificationError::ReportNotTd10)?;
 
         // Verify all attestation components
-        let advisory_ids = Self::verify_tcb_status(&verification_result)?;
+        let advisory_ids = Self::verify_tcb_status(report)?;
         self.verify_report_data(&expected_report_data, report_data)?;
 
         self.verify_rtmr3(report_data, &self.tcb_info)?;
@@ -161,6 +164,45 @@ impl DstackAttestation {
             measurements,
             advisory_ids,
         })
+    }
+
+    /// Full local verification: runs `dcap_qvl::verify::verify` and then the
+    /// post-DCAP checks via [`verify_with_report`](Self::verify_with_report).
+    ///
+    /// Off-chain only (the `local-verify` feature pulls in `dcap-qvl`). Used by
+    /// the node, `tee-authority`, and `attestation-cli` to verify an
+    /// attestation end-to-end without the verifier contract. On-chain,
+    /// `mpc-contract` instead calls the verifier contract for the DCAP step and
+    /// then `verify_with_report` directly.
+    #[cfg(feature = "local-verify")]
+    pub fn verify_locally(
+        &self,
+        expected_report_data: ReportData,
+        timestamp_seconds: u64,
+        accepted_measurements: &[ExpectedMeasurements],
+    ) -> Result<AcceptedDstackAttestation, VerificationError> {
+        let report = self.dcap_report(timestamp_seconds)?;
+        self.verify_with_report(&report, expected_report_data, accepted_measurements)
+    }
+
+    /// Runs only the DCAP step (`dcap_qvl::verify::verify`) and returns the
+    /// resulting report as the `tee-verifier-interface` mirror — the same value
+    /// the `tee-verifier` contract returns on-chain. Off-chain only.
+    ///
+    /// This is the boundary between the DCAP verification (which the contract
+    /// offloads to the verifier) and the post-DCAP checks
+    /// ([`verify_with_report`](Self::verify_with_report)).
+    #[cfg(feature = "local-verify")]
+    pub fn dcap_report(&self, timestamp_seconds: u64) -> Result<VerifiedReport, VerificationError> {
+        use crate::dcap_conversions::{IntoDcapType as _, IntoInterfaceType as _};
+
+        let quote: Vec<u8> = self.quote.clone().into_dcap_type();
+        let collateral = self.collateral.clone().into_dcap_type();
+        Ok(
+            dcap_qvl::verify::verify(&quote, &collateral, timestamp_seconds)
+                .map_err(|e| VerificationError::DcapVerification(e.to_string()))?
+                .into_interface_type(),
+        )
     }
 
     /// Replays RTMR3 from the event log by hashing all relevant events together and verifies all
@@ -241,21 +283,18 @@ impl DstackAttestation {
     ///      after a product's Extended Servicing Updates date). These may appear with
     ///      `UpToDate` and do not indicate a vulnerability; they are returned so the
     ///      caller can log/expose them.
-    fn verify_tcb_status(
-        verification_result: &dcap_qvl::verify::VerifiedReport,
-    ) -> Result<Vec<String>, VerificationError> {
-        (verification_result.status == EXPECTED_QUOTE_STATUS).or_err(|| {
-            VerificationError::TcbStatusNotUpToDate(verification_result.status.clone())
-        })?;
+    fn verify_tcb_status(report: &VerifiedReport) -> Result<Vec<String>, VerificationError> {
+        (report.status == EXPECTED_QUOTE_STATUS)
+            .or_err(|| VerificationError::TcbStatusNotUpToDate(report.status.clone()))?;
 
-        Ok(verification_result.advisory_ids.clone())
+        Ok(report.advisory_ids.clone())
     }
 
     /// Verifies report data matches expected values.
     fn verify_report_data(
         &self,
         expected: &ReportData,
-        actual: &dcap_qvl::quote::TDReport10,
+        actual: &TDReport10,
     ) -> Result<(), VerificationError> {
         // Check if sha384(tls_public_key) matches the hash in report_data. This check effectively
         // proves that tls_public_key was included in the quote's report_data by an app running
@@ -267,7 +306,7 @@ impl DstackAttestation {
     /// On success, returns the matched measurements.
     fn verify_any_measurements(
         &self,
-        report_data: &dcap_qvl::quote::TDReport10,
+        report_data: &TDReport10,
         tcb_info: &TcbInfo,
         accepted_measurements: &[ExpectedMeasurements],
     ) -> Result<ExpectedMeasurements, VerificationError> {
@@ -292,7 +331,7 @@ impl DstackAttestation {
     /// Verifies static RTMRs match expected values.
     fn verify_static_rtmrs(
         &self,
-        report_data: &dcap_qvl::quote::TDReport10,
+        report_data: &TDReport10,
         tcb_info: &TcbInfo,
         expected_measurements: &ExpectedMeasurements,
     ) -> Result<(), VerificationError> {
@@ -346,7 +385,7 @@ impl DstackAttestation {
     /// Verifies RTMR3 by replaying event log.
     fn verify_rtmr3(
         &self,
-        report_data: &dcap_qvl::quote::TDReport10,
+        report_data: &TDReport10,
         tcb_info: &TcbInfo,
     ) -> Result<(), VerificationError> {
         compare_hashes("rtmr3", tcb_info.rtmr3.as_slice(), &report_data.rt_mr3)?;
@@ -489,10 +528,8 @@ mod tests {
     use super::*;
 
     use alloc::{string::ToString, vec, vec::Vec};
-    use dcap_qvl::{
-        quote::{EnclaveReport, Report},
-        tcb_info::{TcbStatus, TcbStatusWithAdvisory},
-        verify::VerifiedReport,
+    use tee_verifier_interface::{
+        EnclaveReport, Report, TcbStatus, TcbStatusWithAdvisory, VerifiedReport,
     };
 
     fn verified_report(status: &str, advisory_ids: Vec<String>) -> VerifiedReport {
@@ -516,8 +553,14 @@ mod tests {
                 report_data: [0u8; 64],
             }),
             ppid: Vec::new(),
-            qe_status: TcbStatusWithAdvisory::new(TcbStatus::UpToDate, Vec::new()),
-            platform_status: TcbStatusWithAdvisory::new(TcbStatus::UpToDate, Vec::new()),
+            qe_status: TcbStatusWithAdvisory {
+                status: TcbStatus::UpToDate,
+                advisory_ids: Vec::new(),
+            },
+            platform_status: TcbStatusWithAdvisory {
+                status: TcbStatus::UpToDate,
+                advisory_ids: Vec::new(),
+            },
         }
     }
 

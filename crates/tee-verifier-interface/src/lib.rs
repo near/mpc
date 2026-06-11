@@ -43,6 +43,14 @@ use borsh::{BorshDeserialize, BorshSerialize};
     derive_more::Into,
 )]
 #[cfg_attr(feature = "borsh-schema", derive(borsh::BorshSchema))]
+// The `serde` feature is off by default and exists only for MPC-internal
+// off-chain callers (e.g. the node's HTTP `/public_data` payload) that embed
+// `QuoteBytes` in a serde struct. External teams and the verifier contract,
+// which talk to the verifier only over the Borsh cross-contract ABI, never
+// enable it and never compile serde. Only the verifier *input* types
+// (`QuoteBytes`, `Collateral`) carry it; the report/output types stay
+// Borsh-only.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct QuoteBytes(pub Vec<u8>);
 
 /// Quote collateral, mirroring `dcap_qvl::QuoteCollateralV3`.
@@ -51,6 +59,9 @@ pub struct QuoteBytes(pub Vec<u8>);
 /// encoding of `QuoteCollateralV3`.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "borsh-schema", derive(borsh::BorshSchema))]
+// See the note on [`QuoteBytes`]: the off-by-default `serde` feature is for
+// MPC-internal off-chain callers only and covers just the verifier input types.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Collateral {
     pub pck_crl_issuer_chain: String,
     pub root_ca_crl: Vec<u8>,

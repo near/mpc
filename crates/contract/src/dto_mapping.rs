@@ -10,7 +10,7 @@ use mpc_attestation::{
         Attestation, DstackAttestation, ExpectedMeasurements, Measurements, MockAttestation,
         VerifiedAttestation,
     },
-    collateral::{Collateral, QuoteCollateralV3},
+    collateral::Collateral,
     tcb_info::{EventLog, HexBytes, TcbInfo},
 };
 use near_mpc_contract_interface::types as dtos;
@@ -124,7 +124,9 @@ impl IntoContractType<Collateral> for dtos::Collateral {
             pck_certificate_chain,
         } = self;
 
-        Collateral::from(QuoteCollateralV3 {
+        // TODO(#3494): drop this conversion once `dtos::DstackAttestation`
+        // carries `tee_verifier_interface::Collateral` directly (L4).
+        Collateral {
             pck_crl_issuer_chain,
             root_ca_crl: root_ca_crl.into(),
             pck_crl: pck_crl.into(),
@@ -135,7 +137,7 @@ impl IntoContractType<Collateral> for dtos::Collateral {
             qe_identity,
             qe_identity_signature: qe_identity_signature.into(),
             pck_certificate_chain,
-        })
+        }
     }
 }
 
@@ -311,8 +313,9 @@ impl IntoInterfaceType<dtos::DstackAttestation> for DstackAttestation {
 
 impl IntoInterfaceType<dtos::Collateral> for Collateral {
     fn into_dto_type(self) -> dtos::Collateral {
-        // Collateral is a newtype wrapper around QuoteCollateralV3
-        let QuoteCollateralV3 {
+        // TODO(#3494): drop this conversion once `dtos` carries the interface
+        // `Collateral` directly (L4).
+        let Collateral {
             pck_crl_issuer_chain,
             root_ca_crl,
             pck_crl,
@@ -323,7 +326,7 @@ impl IntoInterfaceType<dtos::Collateral> for Collateral {
             qe_identity,
             qe_identity_signature,
             pck_certificate_chain,
-        } = self.into();
+        } = self;
 
         dtos::Collateral {
             pck_crl_issuer_chain,
