@@ -3721,8 +3721,10 @@ dependencies = [
  "ethereum-types",
  "jsonrpsee",
  "mpc-primitives",
+ "reqwest 0.13.4",
  "serde",
  "serde_json",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -5866,6 +5868,7 @@ dependencies = [
  "elliptic-curve",
  "flume",
  "foreign-chain-inspector",
+ "foreign-chain-rpc-interfaces",
  "futures",
  "gcloud-sdk",
  "hex",
