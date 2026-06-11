@@ -23,7 +23,7 @@ use crate::{
         key_state::{AuthenticatedAccountId, EpochId, Keyset},
         signature::{SignatureRequest, YieldIndex},
         threshold_votes::ThresholdParametersVotes,
-        thresholds::{ProposedThresholdParameters, ThresholdParameters},
+        thresholds::ThresholdParameters,
     },
     state::{
         ProtocolContractState, initializing::InitializingContractState,
@@ -38,30 +38,27 @@ use crate::{
 /// between 3.11.2 and the current layout, so no shadow is needed for it — the
 /// real type decodes old bytes directly. Only the vote *value* type changed:
 /// votes now carry [`ProposedThresholdParameters`], which appends a
-/// `per_domain_thresholds` map of threshold updates. Borsh is positional, so old
-/// vote bytes are decoded into the real `ThresholdParameters` and mapped to a
-/// proposal with an empty (no-change) map.
+/// `per_domain_thresholds` map. We still need this shadow to consume the old
+/// positional vote bytes, but the migration **drops** all pending votes rather
+/// than carrying them forward.
+///
+/// Carrying them forward isn't faithful: old resharing reset every domain's
+/// reconstruction threshold to the (global) governance threshold, so a correct
+/// migration would have to materialize that per-domain — not the "keep current
+/// thresholds" that an empty map denotes. Reconstructing the historically
+/// correct value isn't worth the complexity. Dropping in-flight votes is
+/// operationally fine: voters simply resubmit `vote_new_parameters` after the
+/// upgrade.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 struct OldThresholdParametersVotes {
     proposal_by_account: BTreeMap<AuthenticatedAccountId, ThresholdParameters>,
 }
 
 impl From<OldThresholdParametersVotes> for ThresholdParametersVotes {
-    fn from(old: OldThresholdParametersVotes) -> Self {
-        ThresholdParametersVotes {
-            proposal_by_account: old
-                .proposal_by_account
-                .into_iter()
-                // Pre-migration votes didn't carry per-domain thresholds, so the
-                // migrated proposal gets an empty (no-change) map.
-                .map(|(acc, params)| {
-                    (
-                        acc,
-                        ProposedThresholdParameters::new(params, BTreeMap::new()),
-                    )
-                })
-                .collect(),
-        }
+    /// Drops all pending parameter-change votes on migration. See
+    /// [`OldThresholdParametersVotes`] for why we don't carry them forward.
+    fn from(_old: OldThresholdParametersVotes) -> Self {
+        ThresholdParametersVotes::default()
     }
 }
 
@@ -156,17 +153,17 @@ mod tests {
     use crate::primitives::thresholds::Threshold;
     use near_sdk::{test_utils::VMContextBuilder, testing_env};
 
-    /// Borsh round-trip *through the shadow type*: write a `ThresholdParametersVotes`
-    /// in the OLD 3.11.2 layout (vote values are bare `ThresholdParameters`, with no
-    /// `per_domain_thresholds`), decode it via [`OldThresholdParametersVotes`], run the
-    /// real [`From`] migration, and assert each migrated vote becomes a
-    /// `ProposedThresholdParameters` carrying an empty (no-change) map of
-    /// threshold updates.
+    /// Migration drops any pending parameter-change votes. The old 3.11.2 votes
+    /// carried bare `ThresholdParameters` with no per-domain thresholds; carrying
+    /// them forward would require materializing per-domain thresholds (the old
+    /// governance threshold for every domain), which isn't worth reconstructing —
+    /// see [`OldThresholdParametersVotes`]. Voters simply resubmit after the upgrade.
     ///
-    /// This exercises both the shadow's `BorshDeserialize` and the conversion impl, so
-    /// it fails if either the old layout or the empty-map-defaulting logic regresses.
+    /// This decodes a non-empty old-layout votes map through the shadow type and
+    /// asserts the migration yields an empty `ThresholdParametersVotes`, so it
+    /// fails if either the old layout or the vote-dropping logic regresses.
     #[test]
-    fn old_threshold_parameter_votes__should_migrate_into_empty_threshold_updates() {
+    fn old_threshold_parameter_votes__should_be_dropped_on_migration() {
         // Given a participant set with one member installed as the signer, so we can
         // mint an `AuthenticatedAccountId` to key the vote by.
         let participants = gen_participants(NUM_PROTOCOLS);
@@ -182,7 +179,7 @@ mod tests {
         // `ThresholdParameters` (the 3.11.2 vote shape).
         let params = ThresholdParameters::new(participants, Threshold::new(n)).unwrap();
         let old = OldThresholdParametersVotes {
-            proposal_by_account: BTreeMap::from([(voter.clone(), params)]),
+            proposal_by_account: BTreeMap::from([(voter, params)]),
         };
         let bytes = borsh::to_vec(&old).unwrap();
 
@@ -190,13 +187,7 @@ mod tests {
         let decoded: OldThresholdParametersVotes = borsh::from_slice(&bytes).unwrap();
         let migrated: ThresholdParametersVotes = decoded.into();
 
-        // Then the single migrated vote retains the original threshold and gains an
-        // empty per-domain threshold-updates map.
-        let proposal = migrated
-            .proposal_by_account
-            .get(&voter)
-            .expect("migrated vote should be keyed by the original voter");
-        assert!(proposal.per_domain_thresholds().is_empty());
-        assert_eq!(proposal.threshold().value(), n);
+        // Then all pending votes are dropped.
+        assert!(migrated.proposal_by_account.is_empty());
     }
 }
