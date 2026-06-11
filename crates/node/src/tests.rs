@@ -132,6 +132,15 @@ impl OneNodeTestConfig {
                         .expect("require keystore for integration tests"),
                 ));
 
+                let account_public_key = (&self
+                    .secrets
+                    .persistent_secrets
+                    .near_signer_key
+                    .verifying_key())
+                    .into();
+                let tee_authority = tee_authority::tee_authority::TeeAuthority::from(
+                    tee_authority::tee_authority::LocalTeeAuthorityConfig::default(),
+                );
                 spawn_recovery_server_and_run_onboarding(
                     self.config.migration_web_ui,
                     (&self.secrets).into(),
@@ -140,6 +149,8 @@ impl OneNodeTestConfig {
                     self.indexer.my_migration_info_receiver.clone(),
                     self.indexer.contract_state_receiver.clone(),
                     self.indexer.txn_sender.clone(),
+                    tee_authority,
+                    account_public_key,
                 )
                 .await
                 .unwrap();

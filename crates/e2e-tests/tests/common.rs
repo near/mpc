@@ -1,3 +1,4 @@
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -206,7 +207,28 @@ pub async fn wait_for_node_indexer_height_above(
     )
     .await
     .with_context(|| {
-        format!("node {idx} indexer did not advance past height {min_height} within {timeout:?}")
+        // On failure, dump the tails of the node's stdout/stderr log files —
+        // both the pre-restart copy (rotated to `.previous` by `MpcNodeSetup::start`)
+        // and the current copy. mpc-node's `tracing` output goes to stdout;
+        // panic backtraces and `eprintln!` go to stderr. The post-restart
+        // `stderr.log` is where the upstream nearcore panic stack lives
+        // (see `docs/investigation/nearcore-indexer-sigkill-restart-panic.md`).
+        let home = cluster.nodes[idx].home_dir();
+        let stdout_previous = read_log_tail(&home.join("stdout.log.previous"), 16_384);
+        let stderr_previous = read_log_tail(&home.join("stderr.log.previous"), 16_384);
+        let stdout_current = read_log_tail(&home.join("stdout.log"), 16_384);
+        let stderr_current = read_log_tail(&home.join("stderr.log"), 16_384);
+        format!(
+            "node {idx} indexer did not advance past height {min_height} within {timeout:?}\n\
+             --- last 16KB of node {idx} stdout.log.previous (pre-restart mpc-node tracing) ---\n{stdout_previous}\n\
+             --- end stdout.log.previous ---\n\
+             --- last 16KB of node {idx} stderr.log.previous (pre-restart stderr; panic from pre-restart process if any) ---\n{stderr_previous}\n\
+             --- end stderr.log.previous ---\n\
+             --- last 16KB of node {idx} stdout.log (post-restart mpc-node tracing) ---\n{stdout_current}\n\
+             --- end stdout.log ---\n\
+             --- last 16KB of node {idx} stderr.log (post-restart stderr; upstream nearcore panic stack typically here) ---\n{stderr_current}\n\
+             --- end stderr.log ---"
+        )
     })?;
     let elapsed = start.elapsed();
     tracing::info!(
@@ -218,6 +240,27 @@ pub async fn wait_for_node_indexer_height_above(
         "indexer advanced past pre-kill height"
     );
     Ok(())
+}
+
+/// Best-effort read of the last `max_bytes` of a log file. Returns a synthetic
+/// placeholder string if the file can't be opened/read. Used to inline a
+/// node's log tail into the test panic message when a kill+restart wait
+/// helper times out, so CI logs surface the upstream panic stack right next
+/// to the test failure rather than leaving us to dig through saved artifacts.
+fn read_log_tail(path: &Path, max_bytes: usize) -> String {
+    let Ok(mut f) = std::fs::File::open(path) else {
+        return format!("(could not open {})", path.display());
+    };
+    let len = f.metadata().map(|m| m.len()).unwrap_or(0);
+    let skip = len.saturating_sub(max_bytes as u64);
+    if f.seek(SeekFrom::Start(skip)).is_err() {
+        return format!("(seek failed on {})", path.display());
+    }
+    let mut buf = Vec::with_capacity(max_bytes);
+    if f.read_to_end(&mut buf).is_err() {
+        return format!("(read failed on {})", path.display());
+    }
+    String::from_utf8_lossy(&buf).into_owned()
 }
 
 /// Read node `idx`'s current indexer block height. Returns `Ok(None)` if
