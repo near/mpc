@@ -1164,7 +1164,7 @@ expression: abi
       },
       {
         "name": "remove_non_participant_update_votes",
-        "doc": " Cleans update votes from non-participants after resharing.\n Can be called by any participant or triggered automatically via promise.",
+        "doc": " Cleans update votes from non-participants after resharing.\n Can only be called by participants or by the contract itself.",
         "kind": "call",
         "result": {
           "serialization_type": "json",
