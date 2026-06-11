@@ -231,10 +231,10 @@ const PCCS_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 /// 7 days is stricter than Intel's 30-day `nextUpdate` window but
 /// more permissive than any default PCCS refresh schedule (Intel
 /// reference and Phala both refresh ~daily), so legitimate operators
-/// have ample headroom. The choice aligns with the contract's
-/// `DEFAULT_EXPIRATION_DURATION_SECONDS`: any attestation accepted by
-/// the contract is ≤7 days old *and* backed by collateral whose Intel
-/// signature is ≤7 days old.
+/// have ample headroom. This is the freshness bound on the collateral's
+/// Intel signature and is independent of the contract's attestation
+/// expiry (`DEFAULT_EXPIRATION_DURATION_SECONDS`, now 1 day); the two
+/// windows serve different purposes and are not required to match.
 ///
 /// Applies uniformly to the three periodically re-signed pieces of
 /// collateral that share Intel's 30-day window: `tcb_info.issueDate`,
