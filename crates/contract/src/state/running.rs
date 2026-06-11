@@ -148,22 +148,17 @@ impl RunningContractState {
         self.parameters
             .validate_incoming_proposal(proposal.parameters())?;
 
-        // Validate effective per-domain thresholds against the proposed new
-        // participant count. Domains not present in the threshold updates keep
-        // their existing threshold; update entries override. An update entry
-        // referencing an unknown domain ID is rejected.
+        // Validate effective per-domain thresholds (updates override, absent
+        // domains keep theirs) against the proposed participant count.
         let new_num_participants = u64::try_from(proposal.participants().len()).map_err(|e| {
             ConversionError::DataConversion {
                 reason: format!("participant count does not fit in u64: {e}"),
             }
         })?;
         let threshold_updates = proposal.per_domain_thresholds();
-        // `with_threshold_updates` re-runs this same guard at the final
-        // resharing transition, so this is intentionally redundant. We check it
-        // here too to fail fast at vote acceptance: the threshold-validation
-        // loop below iterates the existing domains (not the update keys), so
-        // without this guard an entry for an unknown domain ID would be
-        // silently ignored now and only rejected at transition time.
+        // Reject unknown domain IDs: the loop below iterates existing domains, so
+        // an unknown ID would otherwise be silently ignored here (it's caught at
+        // the resharing transition, but we fail fast at vote acceptance).
         for id in threshold_updates.keys() {
             if self.domains.get_domain_by_domain_id(*id).is_none() {
                 return Err(DomainError::UnknownDomainInProposal { domain_id: *id }.into());

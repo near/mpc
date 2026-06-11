@@ -144,28 +144,17 @@ pub struct ThresholdParameters {
     pub threshold: Threshold,
 }
 
-/// A proposed set of threshold parameters submitted to `vote_new_parameters`.
-/// Carries the proposed [`ThresholdParameters`] (participant set and threshold)
-/// plus an optional map of per-domain `ReconstructionThreshold` updates for the
-/// resharing it would trigger.
-///
-/// `per_domain_thresholds` proposes a new threshold for the listed domains; an
-/// empty map keeps the current ones. A populated map must reference only
-/// existing domains (validated by the contract), is applied to the
-/// `DomainRegistry` when resharing completes, and never persists onto the
-/// stored [`ThresholdParameters`].
+/// A proposed set of threshold parameters submitted to `vote_new_parameters`:
+/// the proposed [`ThresholdParameters`] plus per-domain `ReconstructionThreshold`
+/// updates for the resharing it would trigger. An empty `per_domain_thresholds`
+/// keeps the current ones; a populated map must reference only existing domains
+/// (contract-validated), is applied to the `DomainRegistry` on resharing, and
+/// never persists onto the stored [`ThresholdParameters`].
 //
-// This is the *native* nested shape. serde is routed through
-// [`ProposedThresholdParametersCompat`] purely for wire back-compat (flat JSON
-// object + tolerating pre-3.11 payloads); borsh is unaffected and stays
-// positional `[participants, threshold, per_domain_thresholds]`. See that
-// struct for the deletion plan. The `proposed_threshold_parameters__*` tests
-// below lock the current wire shape.
-//
-// The generated ABI schema reflects this native nested shape (a `parameters`
-// sub-object), NOT the flat JSON the compat bridge actually produces — serde's
-// `from`/`into` are invisible to schemars. This divergence is intentional and
-// goes away with the compat struct after 3.11.2; the ABI is partner-node-only.
+// Native nested shape; serde is routed through
+// [`ProposedThresholdParametersCompat`] for wire back-compat (flat JSON), borsh
+// stays positional. The ABI reflects this nested shape, not the flat compat JSON
+// (schemars can't see serde `from`/`into`) — intentional, gone after 3.11.2.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[serde(
     from = "ProposedThresholdParametersCompat",
