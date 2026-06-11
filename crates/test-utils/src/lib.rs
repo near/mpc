@@ -1,6 +1,7 @@
 pub mod attestation;
 pub mod contract_build;
 pub mod contract_types;
+pub mod ton;
 
 /// Sandbox binary version passed to `near_workspaces::sandbox_with_version`.
 /// Single source of truth shared by the e2e-tests crate and the contract test crates.

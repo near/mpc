@@ -3841,6 +3841,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "test-utils",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -11745,6 +11746,7 @@ dependencies = [
 name = "test-utils"
 version = "3.11.0"
 dependencies = [
+ "base64 0.22.1",
  "cargo-near-build",
  "hex",
  "mpc-attestation",

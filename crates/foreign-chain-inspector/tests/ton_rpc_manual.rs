@@ -16,10 +16,7 @@
 //!   encodings — is strong evidence the hand-rolled decoder is correct without
 //!   hand-curating expected bytes per case.
 
-pub mod common;
-
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use common::hash32;
 use foreign_chain_inspector::ton::boc;
 use foreign_chain_inspector::ton::inspector::TonInspector;
 use foreign_chain_inspector::ton::rpc_client::ReqwestTonClient;
@@ -29,6 +26,7 @@ use foreign_chain_inspector::ton::types::{
 };
 use foreign_chain_inspector::{ForeignChainInspector, RpcAuthentication};
 use near_mpc_contract_interface::types::{Hash256, TonCellBody};
+use test_utils::ton::hash32;
 
 /// A public TON HTTP API v3 instance. Any provider that implements the v3 spec
 /// works here; this one needs no API key (rate-limited).

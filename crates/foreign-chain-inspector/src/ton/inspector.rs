@@ -169,15 +169,14 @@ fn extract_value(
 mod tests {
     use super::*;
     use crate::RpcAuthentication;
-    use crate::ton::boc::encode_single_leaf_boc;
     use crate::ton::rpc_client::{ReqwestTonClient, TonRpcError};
-    use crate::ton::test_support::cell_body;
     use crate::ton::types::TonTransactionHash;
     use assert_matches::assert_matches;
     use foreign_chain_rpc_interfaces::ton::{
         GetTransactionsResponse, TonActionPhase, TonCellBoc, TonComputePhase, TonMessage,
         TonRawAddress, TonTransaction, TonTransactionDescription,
     };
+    use test_utils::ton::{cell_body, encode_single_leaf_boc};
 
     /// In-memory stub client that returns a canned response.
     struct StubClient {

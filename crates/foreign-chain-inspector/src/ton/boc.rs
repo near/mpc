@@ -239,46 +239,14 @@ impl<'a> Reader<'a> {
 }
 
 #[cfg(test)]
-pub(crate) fn encode_single_leaf_boc(data: &[u8], bit_len: u16) -> String {
-    // Serialize one ref-less leaf cell as a generic BoC. Used by tests to build
-    // message bodies; the golden test below pins it against tonlib's output.
-    let full_bytes = usize::from(bit_len / 8);
-    let rem = bit_len % 8;
-    let mut cell_data = data.to_vec();
-    let d2 = if rem == 0 {
-        2 * full_bytes
-    } else {
-        *cell_data.last_mut().expect("rem != 0 implies a final byte") |= 0x80u8 >> rem;
-        2 * full_bytes + 1
-    } as u8;
-
-    let mut bytes = Vec::new();
-    bytes.extend_from_slice(&GENERIC_BOC_MAGIC.to_be_bytes());
-    bytes.extend_from_slice(&[
-        0x01,                        // flags: no idx/crc/cache, ref_size = 1
-        0x01,                        // off_size = 1
-        0x01,                        // cell count
-        0x01,                        // root count
-        0x00,                        // absent
-        (2 + cell_data.len()) as u8, // total cell-data size
-        0x00,                        // root index
-        0x00,                        // d1: no refs, ordinary, level 0
-        d2,
-    ]);
-    bytes.extend_from_slice(&cell_data);
-
-    base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes)
-}
-
-#[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use crate::ton::test_support::{
+    use assert_matches::assert_matches;
+    use test_utils::ton::{
         BYTE_ALIGNED, BYTE_ALIGNED_HASH, EMPTY, EMPTY_HASH, NESTED, NESTED_CHILD_HASH,
         NON_BYTE_ALIGNED, ONE_REF, ONE_REF_CHILD_HASH,
     };
-    use assert_matches::assert_matches;
 
     #[test]
     fn parse_single_root_boc__should_decode_byte_aligned_cell() {
@@ -323,16 +291,6 @@ mod tests {
             cell.ref_hashes.iter().map(hex::encode).collect::<Vec<_>>(),
             vec![NESTED_CHILD_HASH],
         );
-    }
-
-    #[test]
-    fn encode_single_leaf_boc__should_match_tonlib_serialization() {
-        assert_eq!(encode_single_leaf_boc(&[], 0), EMPTY);
-        assert_eq!(
-            encode_single_leaf_boc(&[0x99, 0x00, 0x00, 0x01], 32),
-            BYTE_ALIGNED
-        );
-        assert_eq!(encode_single_leaf_boc(&[0xde, 0xa0], 12), NON_BYTE_ALIGNED);
     }
 
     #[test]

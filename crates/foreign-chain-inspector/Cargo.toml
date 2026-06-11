@@ -29,6 +29,7 @@ httpmock = { workspace = true }
 mockall = { workspace = true }
 rstest = { workspace = true }
 serde = { workspace = true }
+test-utils = { workspace = true }
 tokio = { workspace = true }
 
 [lints]

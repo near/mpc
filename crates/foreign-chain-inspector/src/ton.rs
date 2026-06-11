@@ -7,8 +7,6 @@ use near_mpc_contract_interface::types::{
 pub mod boc;
 pub mod inspector;
 pub mod rpc_client;
-#[cfg(test)]
-pub(crate) mod test_support;
 pub mod types;
 
 /// Errors raised during [BoC](https://docs.ton.org/blockchain-basics/primitives/serialization/boc) cell normalization.
@@ -100,11 +98,9 @@ fn ton_cell_body(bits: Vec<u8>, bit_length: u16) -> Result<TonCellBody, TonBocEr
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::test_support::{
-        BYTE_ALIGNED, NON_BYTE_ALIGNED, ONE_REF, ONE_REF_CHILD_HASH, cell_body,
-    };
     use super::*;
     use assert_matches::assert_matches;
+    use test_utils::ton::{BYTE_ALIGNED, NON_BYTE_ALIGNED, ONE_REF, ONE_REF_CHILD_HASH, cell_body};
 
     #[test]
     fn normalize_body_boc__should_return_inline_bytes_for_byte_aligned_body() {

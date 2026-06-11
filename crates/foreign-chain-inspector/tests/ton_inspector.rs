@@ -7,10 +7,7 @@
 //! exercise request-URL construction and deserialization of realistic TON HTTP
 //! API v3 `/transactions` JSON, on top of the extraction logic.
 
-pub mod common;
-
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use common::hash32;
 use foreign_chain_inspector::ton::TonInspectionError;
 use foreign_chain_inspector::ton::inspector::TonInspector;
 use foreign_chain_inspector::ton::rpc_client::{ReqwestTonClient, TonRpcError};
@@ -24,20 +21,10 @@ use foreign_chain_inspector::{
 use httpmock::prelude::*;
 use near_mpc_contract_interface::types::{Hash256, TonCellBody};
 use serde_json::{Value, json};
+use test_utils::ton::{BYTE_ALIGNED, ONE_REF, ONE_REF_CHILD_HASH, hash32};
 
 const ACCOUNT_HASH: [u8; 32] = [0x11; 32];
 const TX_HASH: [u8; 32] = [0xde; 32];
-
-// Golden message-body BoCs (base64) captured from tonlib, with their decoded
-// contents, so this test needs no BoC library of its own. (They mirror the
-// `src/ton/test_support.rs` goldens, which a `tests/` binary cannot import.)
-//
-// A 4-byte (32-bit) body cell `0x99000001` with no references.
-const BYTE_ALIGNED_BODY: &str = "te6ccgEBAQEABgAACJkAAAE=";
-// A 2-byte (16-bit) body cell `0xdead` referencing one child cell `0xaa` (8 bits).
-const ONE_REF_BODY: &str = "te6ccgEBAgEACAABBN6tAQACqg==";
-// The representation hash of that child cell.
-const ONE_REF_CHILD_HASH: &str = "08da99aa8eb36c5c627a221005ca60f004f392de79b18e90be10c0cb420ab332";
 
 fn account_str() -> String {
     format!("0:{}", hex::encode(ACCOUNT_HASH))
@@ -144,7 +131,7 @@ fn mock_transactions(server: &MockServer, status: u16, body: Value) -> httpmock:
 async fn extract__should_return_log_via_http_rpc_client() {
     // Given a finalized, successful tx whose ext-out carries a 4-byte body cell.
     let server = MockServer::start();
-    let mock = mock_transactions(&server, 200, v3_response(BYTE_ALIGNED_BODY, json!(12345)));
+    let mock = mock_transactions(&server, 200, v3_response(BYTE_ALIGNED, json!(12345)));
     let inspector = inspector_for(&server);
 
     // When
@@ -172,7 +159,7 @@ async fn extract__should_return_log_via_http_rpc_client() {
 async fn extract__should_extract_reference_cell_hashes_via_http_rpc_client() {
     // Given an ext-out body cell that references a child cell.
     let server = MockServer::start();
-    let mock = mock_transactions(&server, 200, v3_response(ONE_REF_BODY, json!(12345)));
+    let mock = mock_transactions(&server, 200, v3_response(ONE_REF, json!(12345)));
     let inspector = inspector_for(&server);
 
     // When
@@ -205,7 +192,7 @@ async fn extract__should_extract_reference_cell_hashes_via_http_rpc_client() {
 async fn extract__should_reject_when_not_included_in_masterchain() {
     // Given a tx that is not yet referenced by a masterchain block.
     let server = MockServer::start();
-    mock_transactions(&server, 200, v3_response(BYTE_ALIGNED_BODY, Value::Null));
+    mock_transactions(&server, 200, v3_response(BYTE_ALIGNED, Value::Null));
     let inspector = inspector_for(&server);
 
     // When
