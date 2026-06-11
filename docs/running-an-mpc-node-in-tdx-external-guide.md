@@ -702,8 +702,7 @@ chain_id = "$CHAIN_ID"            # "testnet" or "mainnet"
 boot_nodes = "$BOOT_NODES"        # comma-separated; see the curl snippet below
 download_genesis = true
 download_config = "rpc"
-tier3_public_addr = "$IP:24567"   # required — your node's public IP; DSS-first needs a reachable advertised address
-external_storage_fallback_threshold = 100   # required — do not change
+tier3_public_addr = "$IP:24567"   # required — your node's public IP; state sync needs a reachable advertised address
 
 [mpc_node_config.secrets]
 secret_store_key_hex = "$SECRET_STORE_KEY"
@@ -729,7 +728,7 @@ filter = "mpc=debug,info"
 
 The snippet above shows only the fields you are likely to change. Required fields not shown (e.g. `number_of_responder_keys`, `web_ui`, and the `triple` / `presignature` / `signature` / `ckd` / `foreign_chains` blocks) and inline `# mainnet: …` swap hints are inherited from the [`user-config.toml`](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/user-config.toml) template — always start from that file and edit the highlighted fields rather than building a config from this snippet alone.
 
-> **⚠️ Set `tier3_public_addr` before first start.** State sync now defaults to DSS-first (`external_storage_fallback_threshold = 100`), which requires the node to advertise a **publicly reachable** `IP:24567`. The template ships `tier3_public_addr` as a `REPLACE_WITH_…` placeholder that fails startup if left unset — replace it with the IP your dstack port-forward exposes for `:24567`. This matters most on hosts with more than one external IP or running multiple nodes, where auto-discovery would advertise an unreachable address and state sync would stall. It is applied at first init only, so getting it right up front avoids a CVM redeploy later.
+> **⚠️ Set `tier3_public_addr` before first start.** State sync is decentralized (peer-to-peer) and requires the node to advertise a **publicly reachable** `IP:24567`. The template ships `tier3_public_addr` as a `REPLACE_WITH_…` placeholder and the node **fails to start if it's left unset** — replace it with the IP your dstack port-forward exposes for `:24567`. This matters most on hosts with more than one external IP or running multiple nodes, where auto-discovery would advertise an unreachable address and state sync would stall. It is applied at first init only, so getting it right up front avoids a CVM redeploy later.
 
 Adjust the variables as per your environment.
 
@@ -738,8 +737,7 @@ Adjust the variables as per your environment.
 * `mpc_contract_id` — **v1.signer-prod.testnet** for testnet, **v1.signer** for mainnet
 * `migration_web_ui` — bind address for the migration HTTP endpoint, used by the [Node Migration](./node-migration-guide.md) flow. Required. Keep at `0.0.0.0:8079` to match the port-forward and the `--mpc-node-address …:8079` form the migration guide uses.
 * `port_mappings` — port forwarding rules for the MPC container. These should be a subset of the port forwarding for the CVM defined in the [Using the Web Interface](#using-the-web-interface) section.
-* `tier3_public_addr` *(under `[mpc_node_config.near_init]`)* — `IP:24567` the node advertises for DSS (Tier3) state-sync responses. **The template ships this as a `REPLACE_WITH_…` placeholder you must set before first start** — an un-replaced value makes the node fail to start (intentionally, so DSS-first never silently runs with an unreachable advertised address). It is especially critical on any host with more than one external IP, or when running [multiple nodes on one host](./running-multiple-mpc-nodes-on-one-host.md): otherwise the node auto-discovers its advertised address as the host's default-route outbound IP, which DSS peers may not be able to reach, and state sync stalls. Applied at first init only; changing later requires a CVM redeploy via the [Node Migration](./node-migration-guide.md) flow.
-* `external_storage_fallback_threshold` *(under `[mpc_node_config.near_init]`)* — controls DSS (decentralized state sync). **Leave at `100` — do not change.** Applied at first init only, like `tier3_public_addr`.
+* `tier3_public_addr` *(under `[mpc_node_config.near_init]`)* — `IP:24567` the node advertises for decentralized (Tier3) state-sync responses. **Required — the template ships this as a `REPLACE_WITH_…` placeholder and the node fails to start if it's left unset** (intentionally, so state sync never silently runs with an unreachable advertised address). It is especially critical on any host with more than one external IP, or when running [multiple nodes on one host](./running-multiple-mpc-nodes-on-one-host.md): otherwise the node auto-discovers its advertised address as the host's default-route outbound IP, which peers may not be able to reach, and state sync stalls. Applied at first init only; changing later requires a CVM redeploy via the [Node Migration](./node-migration-guide.md) flow.
 * `near_init.boot_nodes` — comma-separated NEAR boot-node list. The testnet template at `deployment/cvm-deployment/user-config.toml` already ships with a working testnet boot-node list, so testnet operators usually don't need to fetch a fresh one. For **mainnet** (or to refresh testnet), select boot nodes from the Testnet/Mainnet RPC endpoints and copy at least 4-5 of them into this field.
   **Important:** Boot nodes must not contain duplicate addresses or peer IDs. Duplicates will cause the node to crash on startup. The command below deduplicates automatically:
 
