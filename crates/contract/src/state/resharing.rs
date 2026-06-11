@@ -596,8 +596,7 @@ pub mod tests {
         threshold_updates.insert(frost_id, frost_new_threshold);
         let proposal = ProposedThresholdParameters::new(current_params.clone(), threshold_updates);
 
-        // Drive the proposal to acceptance so we transition into Resharing
-        // through the real vote path.
+        // Drive the proposal to acceptance via the real vote path.
         let prospective_epoch_id = running.prospective_epoch_id();
         let mut state = None;
         for (account, _, _) in proposal.participants().participants() {
@@ -640,8 +639,7 @@ pub mod tests {
             }
         }
 
-        // Then each domain carries its own threshold: the untouched CaitSith
-        // domain keeps `2`, while the updated Frost domain holds `n`.
+        // Then each domain carries its own threshold: CaitSith keeps `2`, Frost holds `n`.
         let new_running = new_running.expect("resharing should have transitioned to Running");
         let threshold_for = |id| {
             new_running
