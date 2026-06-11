@@ -71,7 +71,10 @@ impl From<MpcContract> for crate::MpcContract {
             // after upgrade.
             foreign_chains: Lazy::new(
                 StorageKey::ForeignChainAvailability,
-                ForeignChainsMetadata::with_rpc_whitelist(old.foreign_chain_rpc_whitelist),
+                ForeignChainsMetadata {
+                    rpc_whitelist: old.foreign_chain_rpc_whitelist,
+                    ..Default::default()
+                },
             ),
         }
     }

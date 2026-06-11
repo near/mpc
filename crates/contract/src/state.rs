@@ -238,7 +238,6 @@ impl ProtocolContractState {
         Ok(())
     }
 
-
     /// Returns a reference to the relevant `Participants` list
     /// based on the current protocol phase.
     ///

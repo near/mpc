@@ -120,7 +120,8 @@ impl TeeState {
             let node_id = NodeId {
                 account_id: account_id.clone(),
                 tls_public_key: tls_public_key.clone(),
-                account_public_key: Ed25519PublicKey::from([0u8; 32]),
+                // TODO(anodar): add comment in PR explaining we need unique signer account pks.
+                account_public_key: tls_public_key.clone(),
             };
 
             tee_state.stored_attestations.insert(
@@ -442,17 +443,17 @@ impl TeeState {
             .map(|node_attestation| node_attestation.node_id.clone())
     }
 
-    pub(crate) fn lookup_tls_key_by_signer_pk(
+    /// Finds the `NodeId` (account_id + tls_public_key) for the node whose attested
+    /// account public key matches `signer_account_pk`.
+    pub(crate) fn lookup_node_id_by_signer_pk(
         &self,
         signer_account_pk: &Ed25519PublicKey,
-    ) -> Result<&Ed25519PublicKey, AttestationCheckError> {
-        let tls_key = self
-            .stored_attestations
+    ) -> Result<&NodeId, AttestationCheckError> {
+        self.stored_attestations
             .iter()
             .find(|(_, attestation)| attestation.node_id.account_public_key == *signer_account_pk)
-            .map(|(tls_key, _)| tls_key)
-            .ok_or(AttestationCheckError::AttestationNotFound)?;
-        Ok(tls_key)
+            .map(|(_, attestation)| &attestation.node_id)
+            .ok_or(AttestationCheckError::AttestationNotFound)
     }
 
     /// Returns Ok(()) if the caller has at least one participant entry

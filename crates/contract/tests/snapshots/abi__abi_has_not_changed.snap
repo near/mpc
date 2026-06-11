@@ -401,7 +401,7 @@ expression: abi
       },
       {
         "name": "clean_foreign_chain_data",
-        "doc": " Private endpoint to clean up foreign chain policy votes and node configurations\n for non-participants after resharing.\n This can only be called by the contract itself via a promise.",
+        "doc": " Private endpoint to clean up foreign chain policy votes and node configurations\n for non-participants after resharing.\n Called after key resharing concludes (from vote_reshared).\n TODO(anodar): add comment in commit explaining there is a race condition where\n node operator wants to migrate a node to different node, spins up a new node\n which registers new config, but then key resharing happens unrelated to that\n that would cleanup new config. Node restart solves that.\n Alternative is to not clean up but we probably don't want to accumulate\n stale tls key -> config entries.",
         "kind": "call",
         "modifiers": [
           "private"
@@ -1186,7 +1186,7 @@ expression: abi
       },
       {
         "name": "register_foreign_chains_config",
-        "doc": " (Re)registers the foreign chains this participant currently covers, feeding the available\n set ([`Self::get_available_foreign_chains`]). Idempotent.\n\n Registrations are accepted in any active protocol state (Running, Resharing,\n Initializing). The available-chain cache is only refreshed in Running state;\n registrations made in other states are stored and take effect on the next\n Running-state recompute.",
+        "doc": " (Re)registers the foreign chains this node currently covers.\n\n Registrations are accepted from existing or prospective participant\n in any active protocol state (Running, Resharing,\n Initializing) but only takes effect when in Running-state.",
         "kind": "call",
         "params": {
           "serialization_type": "json",
