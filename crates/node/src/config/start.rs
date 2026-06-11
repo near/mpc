@@ -181,9 +181,7 @@ fn apply_near_config_patches(
     if near_init.chain_id.is_localnet() {
         config["state_sync_enabled"] = serde_json::Value::Bool(false);
     } else {
-        // Use decentralized (peer-to-peer) state sync. Centralized/bucket state
-        // sync is deprecated, so force the `Peers` variant — this also replaces
-        // any `ExternalStorage` block inherited from the downloaded config.
+        // Decentralized (peer-to-peer) state sync; replaces any inherited ExternalStorage block.
         config["state_sync"]["sync"] = serde_json::json!("Peers");
     }
 
