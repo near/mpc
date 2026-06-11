@@ -23,6 +23,7 @@ use std::sync::Arc;
 #[cfg(feature = "network-hardship-simulation")]
 use std::time::Duration;
 use tokio::sync::{Mutex, mpsc, oneshot, watch};
+use tokio_util::sync::CancellationToken;
 
 #[cfg(feature = "network-hardship-simulation")]
 pub async fn check_block_processing(process_blocks_sender: watch::Sender<bool>, home_dir: PathBuf) {
@@ -62,6 +63,7 @@ pub fn spawn_real_indexer(
     tls_public_key: VerifyingKey,
     foreign_chains: mpc_node_config::ForeignChainsConfig,
     tx_logger: impl TransactionLogger,
+    shutdown_token: CancellationToken,
 ) -> IndexerAPI<impl TransactionSender, RealForeignChainPolicyReader> {
     let (contract_state_sender_oneshot, contract_state_receiver_oneshot) = oneshot::channel();
     let (migration_info_sender_oneshot, migration_info_receiver_oneshot) = oneshot::channel();
@@ -208,27 +210,46 @@ pub fn spawn_real_indexer(
                 )
             };
 
-            // below function runs indefinitely and only returns in case of an error.
+            // `listen_blocks` runs indefinitely and only returns in case of an
+            // error. To shut the indexer thread down cleanly on SIGTERM we
+            // race it against `shutdown_token.cancelled()`: when the parent
+            // cancels the token, the select! arm completes, `block_on`
+            // returns, the indexer's tokio runtime drops, and every
+            // `tokio::spawn`'d monitor task (each holding
+            // `Arc<IndexerState>` → `Arc<RocksDB>`) is aborted as the
+            // runtime is dropped. That's what lets
+            // `RocksDB::block_until_all_instances_are_dropped()` in `run.rs`
+            // actually return on the SIGTERM path.
             #[cfg(feature = "network-hardship-simulation")]
-            let indexer_result = listen_blocks(
-                stream,
-                mpc_indexer_config.concurrency,
-                Arc::clone(&indexer_state.stats),
-                mpc_indexer_config.mpc_contract_id,
-                block_update_sender,
-                process_blocks_receiver,
-            )
-            .await;
+            let indexer_result = tokio::select! {
+                res = listen_blocks(
+                    stream,
+                    mpc_indexer_config.concurrency,
+                    Arc::clone(&indexer_state.stats),
+                    mpc_indexer_config.mpc_contract_id,
+                    block_update_sender,
+                    process_blocks_receiver,
+                ) => res,
+                _ = shutdown_token.cancelled() => {
+                    tracing::info!("Indexer thread received shutdown signal; exiting listen_blocks.");
+                    Ok(())
+                }
+            };
 
             #[cfg(not(feature = "network-hardship-simulation"))]
-            let indexer_result = listen_blocks(
-                stream,
-                mpc_indexer_config.concurrency,
-                Arc::clone(&indexer_state.stats),
-                mpc_indexer_config.mpc_contract_id,
-                block_update_sender,
-            )
-            .await;
+            let indexer_result = tokio::select! {
+                res = listen_blocks(
+                    stream,
+                    mpc_indexer_config.concurrency,
+                    Arc::clone(&indexer_state.stats),
+                    mpc_indexer_config.mpc_contract_id,
+                    block_update_sender,
+                ) => res,
+                _ = shutdown_token.cancelled() => {
+                    tracing::info!("Indexer thread received shutdown signal; exiting listen_blocks.");
+                    Ok(())
+                }
+            };
 
             if indexer_exit_sender.send(indexer_result).is_err() {
                 tracing::error!("Indexer thread could not send result back to main driver.")
