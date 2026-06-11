@@ -256,16 +256,16 @@ zeroize = { version = "1.8.2", features = ["zeroize_derive"] }
 zstd = "0.13.3"
 
 # NEAR CORE DEPENDENCIES:
-near-async = { git = "https://github.com/near/nearcore", tag = "2.12.0" }
-near-client = { git = "https://github.com/near/nearcore", tag = "2.12.0" }
-near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.12.0" }
-near-crypto = { git = "https://github.com/near/nearcore", tag = "2.12.0" }
-near-indexer = { git = "https://github.com/near/nearcore", tag = "2.12.0" }
-near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.12.0" }
-near-o11y = { git = "https://github.com/near/nearcore", tag = "2.12.0" }
-near-store = { git = "https://github.com/near/nearcore", tag = "2.12.0" }
-near-time = { git = "https://github.com/near/nearcore", tag = "2.12.0" }
-nearcore = { git = "https://github.com/near/nearcore", tag = "2.12.0" }
+near-async = { git = "https://github.com/near/nearcore", branch = "slavas/fix-no-chunk-extra-at-memtrie-load" }
+near-client = { git = "https://github.com/near/nearcore", branch = "slavas/fix-no-chunk-extra-at-memtrie-load" }
+near-config-utils = { git = "https://github.com/near/nearcore", branch = "slavas/fix-no-chunk-extra-at-memtrie-load" }
+near-crypto = { git = "https://github.com/near/nearcore", branch = "slavas/fix-no-chunk-extra-at-memtrie-load" }
+near-indexer = { git = "https://github.com/near/nearcore", branch = "slavas/fix-no-chunk-extra-at-memtrie-load" }
+near-indexer-primitives = { git = "https://github.com/near/nearcore", branch = "slavas/fix-no-chunk-extra-at-memtrie-load" }
+near-o11y = { git = "https://github.com/near/nearcore", branch = "slavas/fix-no-chunk-extra-at-memtrie-load" }
+near-store = { git = "https://github.com/near/nearcore", branch = "slavas/fix-no-chunk-extra-at-memtrie-load" }
+near-time = { git = "https://github.com/near/nearcore", branch = "slavas/fix-no-chunk-extra-at-memtrie-load" }
+nearcore = { git = "https://github.com/near/nearcore", branch = "slavas/fix-no-chunk-extra-at-memtrie-load" }
 
 ## Outdated dependencies we cannot upgrade ##
 # Version 0.8.3 requires rustc 1.88
