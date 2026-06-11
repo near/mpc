@@ -2570,7 +2570,7 @@ mod tests {
         KeyProviderEventDigest, MrtdHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash,
     };
     use crate::tee::proposal::{LauncherVoteAction, get_docker_compose_hash};
-    use crate::tee::tee_state::NodeId;
+    use crate::tee::tee_state::{NodeAttestation, NodeId};
     use assert_matches::assert_matches;
     use dtos::{Attestation, Ed25519PublicKey, ForeignTxSignPayload, MockAttestation};
     use dtos::{Curve, DomainConfig, DomainId, Payload, Protocol, ReconstructionThreshold, Tweak};
@@ -2578,7 +2578,7 @@ mod tests {
     use elliptic_curve::Group;
     use k256::{self, Secp256k1, ecdsa::SigningKey, elliptic_curve};
     use mpc_attestation::attestation::{
-        Attestation as MpcAttestation, MockAttestation as MpcMockAttestation,
+        Attestation as MpcAttestation, MockAttestation as MpcMockAttestation, VerifiedAttestation,
     };
     use mpc_primitives::hash::DockerImageHash;
     use near_mpc_bounded_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet};
@@ -6803,10 +6803,6 @@ mod tests {
     // Node operator of 4th node migrates node to new node, and new node becomes participant,
     // then all 4 chains should be supported.
     fn get_available_foreign_chains__should_not_count_non_participant_node_config() {
-        use crate::primitives::participants::ParticipantInfo;
-        use crate::tee::tee_state::{NodeAttestation, NodeId};
-        use mpc_attestation::attestation::{MockAttestation, VerifiedAttestation};
-
         // Given: 4 participants, threshold 4 (all must agree); 4 chains whitelisted.
         let (_context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
         let all_chains = [
@@ -6860,7 +6856,7 @@ mod tests {
                     tls_public_key: new_tls_key.clone(),
                     account_public_key: new_signer_pk.clone(),
                 },
-                verified_attestation: VerifiedAttestation::Mock(MockAttestation::Valid),
+                verified_attestation: VerifiedAttestation::Mock(MpcMockAttestation::Valid),
             },
         );
         let foreign_chains_config: dtos::ForeignChainsConfig =
@@ -7166,9 +7162,6 @@ mod tests {
     #[test]
     fn register_foreign_chains_config__should_allow_two_nodes_from_same_operator_to_register_config()
      {
-        use crate::tee::tee_state::{NodeAttestation, NodeId};
-        use mpc_attestation::attestation::{MockAttestation, VerifiedAttestation};
-
         // Given: Running contract; pick one operator account.
         let (_context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
         let participants = contract
@@ -7191,7 +7184,7 @@ mod tests {
                     tls_public_key: tls_key_b.clone(),
                     account_public_key: signer_pk_b.clone(),
                 },
-                verified_attestation: VerifiedAttestation::Mock(MockAttestation::Valid),
+                verified_attestation: VerifiedAttestation::Mock(MpcMockAttestation::Valid),
             },
         );
 
