@@ -17,13 +17,18 @@ group = { workspace = true }
 hex = { workspace = true }
 mpc-primitives = { workspace = true }
 near-account-id = { workspace = true }
+near-crypto-public = { workspace = true }
+near-jsonrpc-client = { workspace = true }
+near-jsonrpc-primitives = { workspace = true }
 near-mpc-bounded-collections = { workspace = true }
 near-mpc-contract-interface = { workspace = true, features = [
     "blstrs",
     "ed25519-dalek",
     "near",
 ] }
-near-sdk = { workspace = true }
+# `test_utils` provides the `SignedTransaction` convenience constructors.
+near-primitives = { workspace = true, features = ["test_utils"] }
+near-sdk = { workspace = true, features = ["non-contract-usage"] }
 node-types = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
@@ -32,13 +37,6 @@ serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
-utilities = { workspace = true }
-
-# TODO(#657): use workspace versions
-near-crypto = "0.28.0"
-near-jsonrpc-client = "0.15.1"
-near-jsonrpc-primitives = "0.28.0"
-near-primitives = "0.28.0"
 
 [lints]
 workspace = true
