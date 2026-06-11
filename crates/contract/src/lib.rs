@@ -857,7 +857,9 @@ impl MpcContract {
             }))
     }
 
-    /// Propose a new set of parameters (participants and threshold) for the MPC network.
+    /// Propose new parameters for the MPC network: participants, governance
+    /// threshold, and optional per-domain `ReconstructionThreshold` updates
+    /// (empty map keeps the current ones), applied on resharing completion.
     /// If a threshold number of votes are reached on the exact same proposal, this will transition
     /// the contract into the Resharing state.
     ///
