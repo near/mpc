@@ -442,6 +442,19 @@ impl TeeState {
             .map(|node_attestation| node_attestation.node_id.clone())
     }
 
+    pub(crate) fn lookup_tls_key_by_signer_pk(
+        &self,
+        signer_account_pk: &Ed25519PublicKey,
+    ) -> Result<&Ed25519PublicKey, AttestationCheckError> {
+        let tls_key = self
+            .stored_attestations
+            .iter()
+            .find(|(_, attestation)| attestation.node_id.account_public_key == *signer_account_pk)
+            .map(|(tls_key, _)| tls_key)
+            .ok_or(AttestationCheckError::AttestationNotFound)?;
+        Ok(tls_key)
+    }
+
     /// Returns Ok(()) if the caller has at least one participant entry
     /// whose TLS key matches an attested node belonging to the caller account.
     ///

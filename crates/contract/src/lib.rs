@@ -61,6 +61,7 @@ use errors::{
     DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError, TeeError,
 };
 use k256::elliptic_curve::PrimeField;
+use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_mpc_contract_interface::types::kdf::derive_tweak;
 use near_mpc_contract_interface::types::{
     self as dtos, CKDResponse, Metrics, VerifyForeignTransactionRequest,
@@ -989,10 +990,15 @@ impl MpcContract {
     ) -> Result<(), Error> {
         self.assert_caller_is_attested_participant_and_protocol_active();
         let account_id = env::signer_account_id();
+        let signer_account_pk = env::signer_account_pk();
+        let signer_account_ed25519_pk = Ed25519PublicKey::try_from(&signer_account_pk)
+            .unwrap_or_else(|_| env::panic_str("signer account key must be Ed25519"));
         let tls_key = self
-            .protocol_state
-            .tls_key_for_account(&account_id)
-            .unwrap_or_else(|| env::panic_str("caller has no TLS key in participants list"));
+            .tee_state
+            .lookup_tls_key_by_signer_pk(&signer_account_ed25519_pk)
+            // Should never happen as we assert_caller_is_attested_participant_and_protocol_active already.
+            .unwrap_or_else(|e| env::panic_str(&format!("Caller is not signer account: {e:?}")))
+            .clone();
 
         self.foreign_chains
             .get_mut()
@@ -7026,8 +7032,7 @@ mod tests {
         let foreign_chains_config: dtos::ForeignChainsConfig =
             BTreeSet::from([dtos::ForeignChain::Bitcoin]).into();
         let _env = Environment::new(None, Some(new_account_id.clone()), None);
-        // Then: the call succeeds — tls_key_for_account now resolves against the proposed
-        // (new) participant set, consistent with assert_caller_is_attested_participant_and_protocol_active.
+        // Then: the call succeeds — lookup_tls_key_by_signer_pk finds the attestation for the new participant.
         contract
             .register_foreign_chains_config(foreign_chains_config)
             .expect("new participant should be able to register during Resharing");
