@@ -12,6 +12,7 @@ use crate::storage_keys::StorageKey;
 pub(crate) struct ForeignChainsMetadata {
     pub(crate) rpc_whitelist: ForeignChainRpcWhitelist,
     pub(crate) available_foreign_chains: dtos::AvailableForeignChains,
+    // Stores tls key -> foreign chain config mapping.
     pub(crate) foreign_chains_configs:
         IterableMap<dtos::Ed25519PublicKey, dtos::ForeignChainsConfig>,
 

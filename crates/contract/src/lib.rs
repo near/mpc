@@ -2514,6 +2514,7 @@ impl MpcContract {
         running_state
             .parameters
             .update_info(account_id, contract_participant_info)?;
+        self.recompute_available_foreign_chains();
         Ok(())
     }
 
@@ -6901,6 +6902,98 @@ mod tests {
         contract.recompute_available_foreign_chains();
 
         // Then: all 4 chains are now available.
+        let available = contract.get_available_foreign_chains();
+        assert_eq!(available.len(), 4);
+    }
+
+    #[test]
+    fn conclude_node_migration__should_recompute_available_foreign_chains() {
+        // Given: 4 participants, threshold 4; 4 chains whitelisted.
+        // Node 4 supports only 2 chains.
+        // Node 4's operator migrates to a new node that supports all 4 chains.
+        // After conclude_node_migration the cache must reflect 4 chains without a manual recompute.
+        let (_context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let all_chains = [
+            dtos::ForeignChain::Bitcoin,
+            dtos::ForeignChain::Ethereum,
+            dtos::ForeignChain::Solana,
+            dtos::ForeignChain::Bnb,
+        ];
+        let partial_chains = [dtos::ForeignChain::Bitcoin, dtos::ForeignChain::Ethereum];
+        for chain in all_chains {
+            whitelist_chain(&mut contract, chain);
+        }
+        {
+            let ProtocolContractState::Running(ref mut state) = contract.protocol_state else {
+                panic!("expected Running");
+            };
+            state.parameters = ThresholdParameters::new(
+                state.parameters.participants().clone(),
+                Threshold::new(4),
+            )
+            .unwrap();
+        }
+        let participant_ids = participant_account_ids(&contract);
+        for account_id in participant_ids.iter().take(3) {
+            register_foreign_chain_config(&mut contract, account_id, all_chains);
+        }
+        let operator4 = &participant_ids[3];
+        register_foreign_chain_config(&mut contract, operator4, partial_chains);
+
+        let available = contract.get_available_foreign_chains();
+        assert_eq!(
+            available.len(),
+            2,
+            "only partial chains available before migration"
+        );
+
+        // When: operator 4 migrates to a new node that supports all 4 chains.
+        let (_, new_participant_info) = gen_participant(100);
+        let new_tls_key = new_participant_info.tls_public_key.clone();
+        let new_signer_pk = bogus_ed25519_public_key();
+        let new_signer_near_pk = near_sdk::PublicKey::from(new_signer_pk.clone());
+        let destination_node_info = DestinationNodeInfo {
+            signer_account_pk: new_signer_pk.clone(),
+            destination_node_info: new_participant_info.into(),
+        };
+
+        // Add attestation for the new node (mirrors what ConcludeNodeMigrationTestSetup::setup does).
+        contract
+            .tee_state
+            .add_participant(
+                NodeId {
+                    account_id: operator4.clone(),
+                    tls_public_key: new_tls_key.clone(),
+                    account_public_key: new_signer_pk.clone(),
+                },
+                mpc_attestation::attestation::Attestation::Mock(MpcMockAttestation::Valid),
+                Duration::from_secs(contract.config.tee_upgrade_deadline_duration_seconds),
+            )
+            .expect("attestation insertion should succeed");
+
+        // New node pre-registers its config.
+        let mut env = Environment::new(None, Some(operator4.clone()), None);
+        env.set_pk(new_signer_near_pk.clone());
+        let full_config: dtos::ForeignChainsConfig =
+            all_chains.into_iter().collect::<BTreeSet<_>>().into();
+        contract
+            .register_foreign_chains_config(full_config)
+            .expect("new node should be able to register");
+
+        let keyset = match &contract.protocol_state {
+            ProtocolContractState::Running(s) => s.keyset.clone(),
+            _ => panic!("expected Running"),
+        };
+        contract
+            .node_migrations
+            .set_destination_node_info(operator4.clone(), destination_node_info);
+        let mut env = Environment::new(None, Some(operator4.clone()), None);
+        env.set_pk(new_signer_near_pk);
+        contract
+            .conclude_node_migration(&keyset)
+            .expect("migration should succeed");
+
+        // Then: all 4 chains available — no manual recompute needed.
         let available = contract.get_available_foreign_chains();
         assert_eq!(available.len(), 4);
     }
