@@ -46,7 +46,7 @@ pub struct DstackAttestation {
     pub tcb_info: TcbInfo,
 }
 
-/// Result of a successful [`DstackAttestation::verify`] call.
+/// Result of a successful [`DstackAttestation::verify_with_report`] call.
 #[derive(Clone, Debug)]
 pub struct AcceptedDstackAttestation {
     pub measurements: ExpectedMeasurements,

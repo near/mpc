@@ -47,7 +47,7 @@ pub enum VerifiedAttestation {
     Mock(MockAttestation),
 }
 
-/// Result of a successful [`Attestation::verify`] call.
+/// Result of a successful [`Attestation::verify_with_report`] call.
 #[derive(Clone, Debug)]
 pub struct AcceptedAttestation {
     pub attestation: VerifiedAttestation,

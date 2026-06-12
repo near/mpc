@@ -939,7 +939,7 @@ impl MpcContract {
     }
 
     /// `.then` bridge between the verifier's `verify_quote` response and the
-    /// yield that [`Self::submit_dstack_attestation`] registered. Owns every
+    /// yield that the `Dstack` submission registered. Owns every
     /// outcome where the verifier *answered*:
     /// - `Verified` → run post-DCAP checks against fresh policy; on pass store +
     ///   resume `Ok`, on fail refund + resume `Err`.

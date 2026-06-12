@@ -2,14 +2,14 @@
 //! `tee-verifier-interface`, for the off-chain `verify_locally` path only.
 //!
 //! This is an intentional sibling of the identical conversions in the
-//! `tee-verifier` contract crate ([`tee-verifier/src/conversions.rs`]). They
+//! `tee-verifier` contract crate (`tee-verifier/src/conversions.rs`). They
 //! are NOT shared through a common crate on purpose: sharing would force the
 //! deliberately-minimal verifier contract (`dcap-qvl` + interface only) to
 //! depend on `attestation` and drag in its `serde`/`serde_json`/`sha2`/
 //! `dstack-sdk-types` closure. Both copies are pinned against `dcap_qvl` drift
 //! by their respective byte-equal Borsh-layout tests.
 //!
-//! Mapped with local [`IntoDcapType`] / [`IntoInterfaceType`] traits because
+//! Mapped with local `IntoDcapType` / `IntoInterfaceType` traits because
 //! the orphan rule forbids `From`/`Into` impls between two foreign types.
 
 use alloc::vec::Vec;
