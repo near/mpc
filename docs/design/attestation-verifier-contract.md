@@ -6,7 +6,7 @@
 > described below, the verifier-change vote is in place, and `dcap-qvl` is no
 > longer linked into `mpc-contract`. Two follow-ups remain: collapsing the
 > JSON-facing `near-mpc-contract-interface::Collateral` into the interface type
-> (TODO(#3494) — an API-wire migration deferred to its own change), and a sandbox
+> (issue #3494 — an API-wire migration deferred to its own change), and a sandbox
 > test for the `Verified` + post-DCAP-pass branch (the other branches are
 > covered).
 

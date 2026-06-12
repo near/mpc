@@ -12,7 +12,7 @@
 //!
 //! The `Verified` + post-DCAP-pass path (attestation stored) additionally needs
 //! a stub report matching the fixture's post-DCAP expectations; it is a planned
-//! follow-up (TODO(#3265)) once the off-chain report helper is wired into the
+//! follow-up (see issue #3265) once the off-chain report helper is wired into the
 //! sandbox harness. The post-DCAP logic itself is unit-tested in `mpc-attestation`.
 //!
 //! They require the cross-contract runtime, so they live in sandbox rather than
