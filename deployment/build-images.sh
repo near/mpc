@@ -8,8 +8,10 @@
 # requested derivations, prints the binary hashes and manifest digests, and
 # optionally pushes the images.
 #
-# Requirements: nix (with flakes enabled), git
-# Extra requirements if using --push: skopeo, logged in to the registry
+# Requirements: nix (with flakes enabled), git — nothing else; skopeo is
+# run through `nix run .#skopeo`.
+# Extra requirements if using --push: logged in to the registry, e.g.
+#   nix run .#skopeo -- login docker.io
 #
 # Usage:
 #   ./deployment/build-images.sh [--node] [--node-gcp] [--rust-launcher] [--push]
@@ -67,10 +69,6 @@ require_cmds() {
 
 require_cmds nix git
 
-if $USE_PUSH; then
-    require_cmds skopeo
-fi
-
 if [ ! "$(pwd)" = "$(git rev-parse --show-toplevel)" ]; then
     die "Must be called from project root!"
 fi
@@ -85,6 +83,12 @@ GIT_COMMIT_HASH=$(git rev-parse HEAD)
 # stderr; only the path lands on stdout.
 nix_out() {
     nix build --no-link --print-out-paths ".#$1"
+}
+
+# The flake-pinned skopeo — the same one image-dir.nix used to produce the
+# layouts being pushed, and no system install needed.
+skopeo() {
+    nix run .#skopeo -- "$@"
 }
 
 if $USE_NODE || $USE_NODE_GCP; then

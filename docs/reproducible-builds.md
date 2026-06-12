@@ -11,7 +11,9 @@ The image builds are driven entirely by Nix. The flake's package set produces bo
 
 - [Nix](https://nixos.org/download/) with flakes enabled
 - `git`
-- `skopeo` — only needed for pushing images to a registry
+
+No other tooling is needed: skopeo (used for pushing) is pinned in the flake
+and invoked via `nix run .#skopeo`.
 
 **Requirements for building the MPC contract** (either path works):
 
@@ -60,15 +62,15 @@ Same for `node-gcp-image-manifest-digest` and `rust-launcher-image-manifest-dige
 
 ## Pushing to Docker Hub
 
-`./deployment/build-images.sh --push` pushes every image it built. To push a single locally-built tarball by hand, use `skopeo`, preserving the manifest digest you just verified:
+`./deployment/build-images.sh --push` pushes every image it built. To push a single image by hand, copy its `dir:` layout — the exact bytes the manifest digest was computed from — with the flake-pinned skopeo:
 
 ```bash
-nix run nixpkgs#skopeo -- copy --preserve-digests \
-  docker-archive:$(nix build --print-out-paths .#node-image) \
+nix run .#skopeo -- copy --preserve-digests \
+  dir:$(nix build --no-link --print-out-paths .#node-image-dir) \
   docker://docker.io/nearone/mpc-node:<tag>
 ```
 
-Substitute `node-gcp-image` / `rust-launcher-image` and the matching destination repo as needed. Skopeo must be authenticated to the registry beforehand (`nix run nixpkgs#skopeo -- login docker.io`).
+Substitute `node-gcp-image-dir` / `rust-launcher-image-dir` and the matching destination repo as needed. Skopeo must be authenticated to the registry beforehand (`nix run .#skopeo -- login docker.io`).
 
 ## mpc-contract
 

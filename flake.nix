@@ -87,6 +87,12 @@
         {
           inherit mpc-node tee-launcher;
 
+          # Registry copy/push tool, re-exported so `nix run .#skopeo` works
+          # without any system-installed tooling. Pinned through flake.lock,
+          # so it's the exact same skopeo that image-dir.nix used to produce
+          # the layouts being pushed.
+          inherit (pkgs) skopeo;
+
           mpc-contract = pkgs.callPackage ./nix/mpc-contract.nix {
             cargo-near = pkgs.callPackage ./nix/cargo-near.nix { };
           };
