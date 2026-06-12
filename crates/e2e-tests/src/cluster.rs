@@ -1065,6 +1065,13 @@ impl MpcNodeState {
             MpcNodeState::Stopped(s) => s.near_signer_public_key_str(),
         }
     }
+
+    pub fn home_dir(&self) -> &std::path::Path {
+        match self {
+            MpcNodeState::Running(n) => n.setup().home_dir(),
+            MpcNodeState::Stopped(s) => s.home_dir(),
+        }
+    }
 }
 
 fn create_test_dir(home_base: &Option<PathBuf>) -> anyhow::Result<tempfile::TempDir> {
