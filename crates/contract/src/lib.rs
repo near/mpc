@@ -6,6 +6,7 @@ pub mod config;
 pub mod crypto_shared;
 pub mod errors;
 pub mod foreign_chain_rpc;
+pub mod foreign_chains_metadata;
 pub mod node_migrations;
 pub mod primitives;
 pub mod state;
@@ -40,7 +41,7 @@ use crate::{
         args_into_verify_foreign_tx_request,
     },
     errors::{Error, RequestError},
-    foreign_chain_rpc::ForeignChainRpcWhitelist,
+    foreign_chains_metadata::ForeignChainsMetadata,
     primitives::{
         ckd::{CKDRequest, app_public_key_check, ckd_output_check},
         domain::AddDomainsVotes,
@@ -60,6 +61,7 @@ use errors::{
     DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError, TeeError,
 };
 use k256::elliptic_curve::PrimeField;
+use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_mpc_contract_interface::types::kdf::derive_tweak;
 use near_mpc_contract_interface::types::{
     self as dtos, CKDResponse, Metrics, VerifyForeignTransactionRequest,
@@ -72,7 +74,7 @@ use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash};
 use near_sdk::{
     AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue, env,
     log, near,
-    store::{IterableMap, LookupMap},
+    store::{IterableMap, Lazy, LookupMap},
 };
 use node_migrations::NodeMigrations;
 use primitives::{
@@ -151,6 +153,8 @@ pub struct MpcContract {
     pending_ckd_requests: LookupMap<CKDRequest, Vec<YieldIndex>>,
     pending_verify_foreign_tx_requests: LookupMap<VerifyForeignTransactionRequest, Vec<YieldIndex>>,
     proposed_updates: ProposedUpdates,
+    // TODO(#3475): drop this once we upgrade the contract and nodes start using
+    // the new API.
     node_foreign_chain_support: SupportedForeignChainsByNode,
     config: Config,
     tee_state: TeeState,
@@ -158,7 +162,7 @@ pub struct MpcContract {
     node_migrations: NodeMigrations,
     // TODO(#2937): Remove via state migration.
     metrics: Metrics,
-    foreign_chain_rpc_whitelist: ForeignChainRpcWhitelist,
+    foreign_chains: Lazy<ForeignChainsMetadata>,
 }
 
 #[near(serializers=[borsh])]
@@ -969,6 +973,71 @@ impl MpcContract {
         Ok(())
     }
 
+    /// (Re)registers the foreign chains this node currently covers.
+    #[handle_result]
+    pub fn register_foreign_chains_config(
+        &mut self,
+        foreign_chains_config: dtos::ForeignChainsConfig,
+    ) -> Result<(), Error> {
+        Self::assert_caller_is_signer();
+        let signer_account_id = env::signer_account_id();
+        let signer_account_pk = env::signer_account_pk();
+        let signer_account_ed25519_pk =
+            Ed25519PublicKey::try_from(&signer_account_pk).map_err(|_| {
+                InvalidParameters::InvalidTeeRemoteAttestation {
+                    reason: "signer account key must be Ed25519".to_string(),
+                }
+            })?;
+        let node_id = self
+            .tee_state
+            .lookup_node_id_by_signer_pk(&signer_account_ed25519_pk)
+            .map_err(|_| InvalidState::NotParticipant {
+                account_id: signer_account_id.clone(),
+            })?;
+        if node_id.account_id != signer_account_id {
+            return Err(InvalidState::NotParticipant {
+                account_id: signer_account_id,
+            }
+            .into());
+        }
+        let is_participant = self
+            .protocol_state
+            .is_existing_or_prospective_participant(&node_id.account_id)?;
+        if !is_participant {
+            return Err(InvalidState::NotParticipant {
+                account_id: node_id.account_id.clone(),
+            }
+            .into());
+        }
+        let tls_key = node_id.tls_public_key.clone();
+        let signer_pk = node_id.account_public_key.clone();
+
+        self.foreign_chains
+            .get_mut()
+            .register(signer_pk, tls_key, foreign_chains_config);
+        self.recompute_available_foreign_chains();
+
+        Ok(())
+    }
+
+    /// No-op when `NotInitialized`. For `Resharing`, uses the embedded previous running-state
+    /// parameters (the set that is still actively signing).
+    fn recompute_available_foreign_chains(&mut self) {
+        let Ok(params) = self.protocol_state.threshold_parameters() else {
+            return;
+        };
+        let threshold = params.threshold().value();
+        let active_tls_keys: Vec<_> = params
+            .participants()
+            .participants()
+            .iter()
+            .map(|(_, _, info)| info.tls_public_key.clone())
+            .collect();
+        self.foreign_chains
+            .get_mut()
+            .update_cache(&active_tls_keys, threshold);
+    }
+
     #[deprecated(
         note = "https://github.com/near/mpc/issues/3079. Node will be upgraded to use register_foreign_chain_support instead"
     )]
@@ -1039,6 +1108,7 @@ impl MpcContract {
 
         if let Some(new_state) = self.protocol_state.vote_pk(key_event_id, extended_key)? {
             self.protocol_state = new_state;
+            self.recompute_available_foreign_chains();
         }
 
         Ok(())
@@ -1520,13 +1590,18 @@ impl MpcContract {
             .expect("voter_or_panic() above already errors on NotInitialized");
 
         let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
-        let applied =
-            self.foreign_chain_rpc_whitelist
-                .vote(participant, votes, threshold_parameters)?;
+        let applied = self.foreign_chains.get_mut().rpc_whitelist.vote(
+            participant,
+            votes,
+            threshold_parameters,
+        )?;
         log!(
             "vote_update_foreign_chain_providers: applied chains={:?}",
             applied,
         );
+        if !applied.is_empty() {
+            self.recompute_available_foreign_chains();
+        }
         Ok(applied)
     }
 
@@ -1537,7 +1612,7 @@ impl MpcContract {
         &self,
     ) -> std::collections::BTreeMap<dtos::ForeignChain, dtos::ChainEntry> {
         log!("allowed_foreign_chain_providers");
-        self.foreign_chain_rpc_whitelist.entries.snapshot()
+        self.foreign_chains.get().rpc_whitelist.entries.snapshot()
     }
 
     /// Returns all accounts that have TEE attestations stored in the contract.
@@ -1687,7 +1762,6 @@ impl MpcContract {
 
     /// Private endpoint to clean up foreign chain policy votes and node configurations
     /// for non-participants after resharing.
-    /// This can only be called by the contract itself via a promise.
     #[private]
     #[handle_result]
     pub fn clean_foreign_chain_data(&mut self) -> Result<(), Error> {
@@ -1709,6 +1783,12 @@ impl MpcContract {
             .map(|(account_id, _, _)| account_id.clone())
             .collect();
 
+        let active_tls_keys: std::collections::BTreeSet<dtos::Ed25519PublicKey> = participants
+            .participants()
+            .iter()
+            .map(|(_, _, info)| info.tls_public_key.clone())
+            .collect();
+
         let non_participant_configs: Vec<dtos::AccountId> = self
             .node_foreign_chain_support
             .foreign_chain_support_by_node
@@ -1722,7 +1802,19 @@ impl MpcContract {
                 .remove(account);
         }
 
-        self.foreign_chain_rpc_whitelist.votes.retain(participants);
+        // Remove foreign chain configs and their reverse-map entries for departed nodes.
+        self.foreign_chains
+            .get_mut()
+            .remove_stale_configs(&active_tls_keys);
+
+        self.foreign_chains
+            .get_mut()
+            .rpc_whitelist
+            .votes
+            .retain(participants);
+
+        // The active set just changed; refresh the cache against the new participants/threshold.
+        self.recompute_available_foreign_chains();
 
         Ok(())
     }
@@ -1773,7 +1865,10 @@ impl MpcContract {
             node_migrations: NodeMigrations::default(),
             metrics: Default::default(),
             node_foreign_chain_support: Default::default(),
-            foreign_chain_rpc_whitelist: Default::default(),
+            foreign_chains: Lazy::new(
+                StorageKey::ForeignChainAvailability,
+                ForeignChainsMetadata::default(),
+            ),
         })
     }
 
@@ -1841,7 +1936,10 @@ impl MpcContract {
             node_migrations: NodeMigrations::default(),
             metrics: Default::default(),
             node_foreign_chain_support: Default::default(),
-            foreign_chain_rpc_whitelist: Default::default(),
+            foreign_chains: Lazy::new(
+                StorageKey::ForeignChainAvailability,
+                ForeignChainsMetadata::default(),
+            ),
         })
     }
 
@@ -2006,6 +2104,18 @@ impl MpcContract {
 
     pub fn get_foreign_chain_support_by_node(&self) -> dtos::ForeignChainSupportByNode {
         self.node_foreign_chain_support.to_dto()
+    }
+
+    /// The **available** foreign chains: whitelisted chains that are supported
+    /// by at least the signing threshold of active participants.
+    pub fn get_available_foreign_chains(&self) -> dtos::AvailableForeignChains {
+        self.foreign_chains.get().available_foreign_chains.clone()
+    }
+
+    /// Per-participant view of which foreign chains each node currently covers. Feeds the
+    /// available-set computation ([`Self::get_available_foreign_chains`]) and coverage alerting.
+    pub fn get_foreign_chains_configs(&self) -> dtos::ForeignChainsConfigs {
+        self.foreign_chains.get().snapshot_by_node()
     }
 
     // contract version
@@ -2390,6 +2500,7 @@ impl MpcContract {
         running_state
             .parameters
             .update_info(account_id, contract_participant_info)?;
+        self.recompute_available_foreign_chains();
         Ok(())
     }
 
@@ -2453,7 +2564,7 @@ mod tests {
         KeyProviderEventDigest, MrtdHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash,
     };
     use crate::tee::proposal::{LauncherVoteAction, get_docker_compose_hash};
-    use crate::tee::tee_state::NodeId;
+    use crate::tee::tee_state::{NodeAttestation, NodeId};
     use assert_matches::assert_matches;
     use dtos::{Attestation, Ed25519PublicKey, ForeignTxSignPayload, MockAttestation};
     use dtos::{Curve, DomainConfig, DomainId, Payload, Protocol, ReconstructionThreshold, Tweak};
@@ -2461,7 +2572,7 @@ mod tests {
     use elliptic_curve::Group;
     use k256::{self, Secp256k1, ecdsa::SigningKey, elliptic_curve};
     use mpc_attestation::attestation::{
-        Attestation as MpcAttestation, MockAttestation as MpcMockAttestation,
+        Attestation as MpcAttestation, MockAttestation as MpcMockAttestation, VerifiedAttestation,
     };
     use mpc_primitives::hash::DockerImageHash;
     use near_mpc_bounded_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet};
@@ -2704,11 +2815,15 @@ mod tests {
             .node_id
             .clone();
 
-        // Build a new simulated environment with this node as caller
+        // Build a new simulated environment with this node as caller.
+        // Set signer_account_pk to match the mock attestation (account_public_key == tls_public_key).
         let mut ctx_builder = VMContextBuilder::new();
         ctx_builder
             .signer_account_id(node_id.account_id.clone())
             .predecessor_account_id(node_id.account_id.clone())
+            .signer_account_pk(near_sdk::PublicKey::from(
+                node_id.account_public_key.clone(),
+            ))
             .attached_deposit(NearToken::from_yoctonear(1));
 
         testing_env!(ctx_builder.build());
@@ -4051,7 +4166,10 @@ mod tests {
                 tee_state: Default::default(),
                 node_migrations: Default::default(),
                 metrics: Default::default(),
-                foreign_chain_rpc_whitelist: Default::default(),
+                foreign_chains: Lazy::new(
+                    StorageKey::ForeignChainAvailability,
+                    ForeignChainsMetadata::default(),
+                ),
             }
         }
     }
@@ -6653,5 +6771,589 @@ mod tests {
                 .build()
         );
         let _ = contract.vote_update_foreign_chain_providers(batch);
+    }
+
+    fn participant_account_ids(contract: &MpcContract) -> Vec<AccountId> {
+        contract
+            .protocol_state
+            .threshold_parameters()
+            .unwrap()
+            .participants()
+            .participants()
+            .iter()
+            .map(|(account_id, _, _)| account_id.clone())
+            .collect()
+    }
+
+    /// Votes `chain` into the on-chain RPC whitelist using the signing threshold of
+    /// participants (so the chain becomes whitelisted).
+    fn whitelist_chain(contract: &mut MpcContract, chain: dtos::ForeignChain) {
+        let entry = dtos::ChainEntry {
+            providers: NonEmptyBTreeMap::new(
+                dtos::ProviderId("alchemy".to_string()),
+                dtos::ProviderConfig {
+                    base_url: "https://provider.example.com".to_string(),
+                    auth_scheme: dtos::AuthScheme::None,
+                    chain_routing: dtos::ChainRouting::Embedded,
+                },
+            ),
+            quorum: 1,
+        };
+        let batch = NonEmptyBTreeMap::new(chain, entry);
+        let threshold = contract.threshold().unwrap().value() as usize;
+        for account_id in participant_account_ids(contract).iter().take(threshold) {
+            testing_env!(
+                VMContextBuilder::new()
+                    .signer_account_id(account_id.clone())
+                    .predecessor_account_id(account_id.clone())
+                    .build()
+            );
+            contract
+                .vote_update_foreign_chain_providers(batch.clone())
+                .expect("vote should succeed");
+        }
+    }
+
+    fn register_foreign_chain_config(
+        contract: &mut MpcContract,
+        account_id: &AccountId,
+        chains: impl IntoIterator<Item = dtos::ForeignChain>,
+    ) {
+        let foreign_chains_config: dtos::ForeignChainsConfig =
+            chains.into_iter().collect::<BTreeSet<_>>().into();
+        // In mock setup, account_public_key == tls_public_key.
+        let tls_key = contract
+            .protocol_state
+            .threshold_parameters()
+            .unwrap()
+            .participants()
+            .info(account_id)
+            .expect("account must be a participant")
+            .tls_public_key
+            .clone();
+        let mut env = Environment::new(None, Some(account_id.clone()), None);
+        env.set_pk(near_sdk::PublicKey::from(tls_key));
+        contract
+            .register_foreign_chains_config(foreign_chains_config)
+            .expect("register should succeed");
+    }
+
+    #[test]
+    // Setup with 4 participants, first 3 supporting 4 chains, 4th one supports only 2.
+    // Node operator of 4th node spins up new node, and registers config that supports all 4 chains.
+    // Available chains should still be 2.
+    // Node operator of 4th node migrates node to new node, and new node becomes participant,
+    // then all 4 chains should be supported.
+    fn get_available_foreign_chains__should_not_count_non_participant_node_config() {
+        // Given: 4 participants, threshold 4 (all must agree); 4 chains whitelisted.
+        let (_context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let all_chains = [
+            dtos::ForeignChain::Bitcoin,
+            dtos::ForeignChain::Ethereum,
+            dtos::ForeignChain::Solana,
+            dtos::ForeignChain::Bnb,
+        ];
+        let partial_chains = [dtos::ForeignChain::Bitcoin, dtos::ForeignChain::Ethereum];
+        for chain in all_chains {
+            whitelist_chain(&mut contract, chain);
+        }
+
+        // Raise threshold to 4 so all participants must cover a chain for it to be available.
+        {
+            let ProtocolContractState::Running(ref mut state) = contract.protocol_state else {
+                panic!("expected Running");
+            };
+            state.parameters = ThresholdParameters::new(
+                state.parameters.participants().clone(),
+                Threshold::new(4),
+            )
+            .unwrap();
+        }
+
+        let participants = contract
+            .protocol_state
+            .threshold_parameters()
+            .unwrap()
+            .participants()
+            .clone();
+        let participant_ids = participant_account_ids(&contract);
+
+        // Nodes 1-3 cover all 4 chains.
+        for account_id in participant_ids.iter().take(3) {
+            register_foreign_chain_config(&mut contract, account_id, all_chains);
+        }
+
+        // Node 4 (active participant) only covers 2 chains.
+        let operator4 = &participant_ids[3];
+        register_foreign_chain_config(&mut contract, operator4, partial_chains);
+
+        // Operator 4's new migration node (not yet a participant) covers all 4 chains and registers.
+        let new_tls_key = dtos::Ed25519PublicKey([99u8; 32]);
+        let new_signer_pk = dtos::Ed25519PublicKey([98u8; 32]);
+        contract.tee_state.stored_attestations.insert(
+            new_tls_key.clone(),
+            NodeAttestation {
+                node_id: NodeId {
+                    account_id: operator4.clone(),
+                    tls_public_key: new_tls_key.clone(),
+                    account_public_key: new_signer_pk.clone(),
+                },
+                verified_attestation: VerifiedAttestation::Mock(MpcMockAttestation::Valid),
+            },
+        );
+        let foreign_chains_config: dtos::ForeignChainsConfig =
+            all_chains.into_iter().collect::<BTreeSet<_>>().into();
+        let mut env = Environment::new(None, Some(operator4.clone()), None);
+        env.set_pk(near_sdk::PublicKey::from(new_signer_pk));
+        contract
+            .register_foreign_chains_config(foreign_chains_config)
+            .expect("new node of same operator should be able to register");
+
+        // Then: only 2 chains available — new node's config doesn't count since it's not a participant.
+        let available = contract.get_available_foreign_chains();
+        assert_eq!(available.len(), 2);
+        assert!(available.contains(&dtos::ForeignChain::Bitcoin));
+        assert!(available.contains(&dtos::ForeignChain::Ethereum));
+
+        // When: migration completes — participant 4's TLS key is updated to the new node.
+        let old_info = participants.info(operator4).unwrap().clone();
+        let new_info = ParticipantInfo {
+            tls_public_key: new_tls_key,
+            ..old_info
+        };
+        {
+            let ProtocolContractState::Running(ref mut state) = contract.protocol_state else {
+                panic!("expected Running");
+            };
+            // Reconstruct ThresholdParameters with the updated participants.
+            let mut updated_participants = state.parameters.participants().clone();
+            updated_participants
+                .update_info(operator4.clone(), new_info)
+                .unwrap();
+            state.parameters =
+                ThresholdParameters::new(updated_participants, Threshold::new(4)).unwrap();
+        }
+        contract.recompute_available_foreign_chains();
+
+        // Then: all 4 chains are now available.
+        let available = contract.get_available_foreign_chains();
+        assert_eq!(available.len(), 4);
+    }
+
+    #[test]
+    fn conclude_node_migration__should_recompute_available_foreign_chains() {
+        // Given: 4 participants, threshold 4; 4 chains whitelisted.
+        // Node 4 supports only 2 chains.
+        // Node 4's operator migrates to a new node that supports all 4 chains.
+        // After conclude_node_migration the cache must reflect 4 chains without a manual recompute.
+        let (_context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let all_chains = [
+            dtos::ForeignChain::Bitcoin,
+            dtos::ForeignChain::Ethereum,
+            dtos::ForeignChain::Solana,
+            dtos::ForeignChain::Bnb,
+        ];
+        let partial_chains = [dtos::ForeignChain::Bitcoin, dtos::ForeignChain::Ethereum];
+        for chain in all_chains {
+            whitelist_chain(&mut contract, chain);
+        }
+        {
+            let ProtocolContractState::Running(ref mut state) = contract.protocol_state else {
+                panic!("expected Running");
+            };
+            state.parameters = ThresholdParameters::new(
+                state.parameters.participants().clone(),
+                Threshold::new(4),
+            )
+            .unwrap();
+        }
+        let participant_ids = participant_account_ids(&contract);
+        for account_id in participant_ids.iter().take(3) {
+            register_foreign_chain_config(&mut contract, account_id, all_chains);
+        }
+        let operator4 = &participant_ids[3];
+        register_foreign_chain_config(&mut contract, operator4, partial_chains);
+
+        let available = contract.get_available_foreign_chains();
+        assert_eq!(
+            available.len(),
+            2,
+            "only partial chains available before migration"
+        );
+
+        // When: operator 4 migrates to a new node that supports all 4 chains.
+        let (_, new_participant_info) = gen_participant(100);
+        let new_tls_key = new_participant_info.tls_public_key.clone();
+        let new_signer_pk = bogus_ed25519_public_key();
+        let new_signer_near_pk = near_sdk::PublicKey::from(new_signer_pk.clone());
+        let destination_node_info = DestinationNodeInfo {
+            signer_account_pk: new_signer_pk.clone(),
+            destination_node_info: new_participant_info.into(),
+        };
+
+        // Add attestation for the new node (mirrors what ConcludeNodeMigrationTestSetup::setup does).
+        contract
+            .tee_state
+            .add_participant(
+                NodeId {
+                    account_id: operator4.clone(),
+                    tls_public_key: new_tls_key.clone(),
+                    account_public_key: new_signer_pk.clone(),
+                },
+                mpc_attestation::attestation::Attestation::Mock(MpcMockAttestation::Valid),
+                Duration::from_secs(contract.config.tee_upgrade_deadline_duration_seconds),
+            )
+            .expect("attestation insertion should succeed");
+
+        // New node pre-registers its config.
+        let mut env = Environment::new(None, Some(operator4.clone()), None);
+        env.set_pk(new_signer_near_pk.clone());
+        let full_config: dtos::ForeignChainsConfig =
+            all_chains.into_iter().collect::<BTreeSet<_>>().into();
+        contract
+            .register_foreign_chains_config(full_config)
+            .expect("new node should be able to register");
+
+        let keyset = match &contract.protocol_state {
+            ProtocolContractState::Running(s) => s.keyset.clone(),
+            _ => panic!("expected Running"),
+        };
+        contract
+            .node_migrations
+            .set_destination_node_info(operator4.clone(), destination_node_info);
+        let mut env = Environment::new(None, Some(operator4.clone()), None);
+        env.set_pk(new_signer_near_pk);
+        contract
+            .conclude_node_migration(&keyset)
+            .expect("migration should succeed");
+
+        // Then: all 4 chains available — no manual recompute needed.
+        let available = contract.get_available_foreign_chains();
+        assert_eq!(available.len(), 4);
+    }
+
+    #[test]
+    fn get_available_foreign_chains__should_include_chain_when_at_least_threshold_participants_cover_it()
+     {
+        // Given: 4 participants, signing threshold 3; Bitcoin whitelisted.
+        let (_context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let participants = participant_account_ids(&contract);
+        whitelist_chain(&mut contract, dtos::ForeignChain::Bitcoin);
+
+        // When: exactly the threshold (3) of 4 participants cover Bitcoin — one node does not.
+        for account_id in participants.iter().take(3) {
+            register_foreign_chain_config(&mut contract, account_id, [dtos::ForeignChain::Bitcoin]);
+        }
+
+        // Then: Bitcoin is available. A single non-covering node cannot take it down — the
+        // regression the legacy intersection rule had.
+        let available = contract.get_available_foreign_chains();
+        assert!(available.contains(&dtos::ForeignChain::Bitcoin));
+        assert_eq!(available.len(), 1);
+    }
+
+    #[test]
+    fn get_available_foreign_chains__should_exclude_chain_when_fewer_than_threshold_cover_it() {
+        // Given: 4 participants, threshold 3; Bitcoin whitelisted.
+        let (_context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let participants = participant_account_ids(&contract);
+        whitelist_chain(&mut contract, dtos::ForeignChain::Bitcoin);
+
+        // When: only 2 of 4 (< threshold) cover Bitcoin.
+        for account_id in participants.iter().take(2) {
+            register_foreign_chain_config(&mut contract, account_id, [dtos::ForeignChain::Bitcoin]);
+        }
+
+        // Then: Bitcoin is not available.
+        let available = contract.get_available_foreign_chains();
+        assert!(!available.contains(&dtos::ForeignChain::Bitcoin));
+        assert!(available.is_empty());
+    }
+
+    #[test]
+    fn get_available_foreign_chains__should_exclude_chain_that_is_covered_but_not_whitelisted() {
+        // Given: 4 participants, threshold 3; Bitcoin is NOT whitelisted.
+        let (_context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let participants = participant_account_ids(&contract);
+
+        // When: all 4 participants cover Bitcoin.
+        for account_id in &participants {
+            register_foreign_chain_config(&mut contract, account_id, [dtos::ForeignChain::Bitcoin]);
+        }
+
+        // Then: Bitcoin is still not available — `available` is a subset of `whitelisted`.
+        let available = contract.get_available_foreign_chains();
+        assert!(available.is_empty());
+    }
+
+    #[test]
+    fn get_available_foreign_chains__should_only_include_whitelisted_chains_with_threshold_coverage()
+     {
+        // Given: 4 participants, threshold 3. Bitcoin and Ethereum are whitelisted; Solana is not.
+        let (_context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let participants = participant_account_ids(&contract);
+        whitelist_chain(&mut contract, dtos::ForeignChain::Bitcoin);
+        whitelist_chain(&mut contract, dtos::ForeignChain::Ethereum);
+
+        // When (each participant registers its full covered set in one call, since a
+        // registration replaces the participant's previously reported set):
+        // - Bitcoin: covered by 3 participants (whitelisted + threshold) -> available.
+        // - Ethereum: covered by 1 participant (whitelisted but under threshold) -> not available.
+        // - Solana: covered by all 4 (threshold met but not whitelisted) -> not available.
+        register_foreign_chain_config(
+            &mut contract,
+            &participants[0],
+            [
+                dtos::ForeignChain::Bitcoin,
+                dtos::ForeignChain::Ethereum,
+                dtos::ForeignChain::Solana,
+            ],
+        );
+        register_foreign_chain_config(
+            &mut contract,
+            &participants[1],
+            [dtos::ForeignChain::Bitcoin, dtos::ForeignChain::Solana],
+        );
+        register_foreign_chain_config(
+            &mut contract,
+            &participants[2],
+            [dtos::ForeignChain::Bitcoin, dtos::ForeignChain::Solana],
+        );
+        register_foreign_chain_config(
+            &mut contract,
+            &participants[3],
+            [dtos::ForeignChain::Solana],
+        );
+
+        // Then: only Bitcoin is available.
+        let available = contract.get_available_foreign_chains();
+        assert!(available.contains(&dtos::ForeignChain::Bitcoin));
+        assert!(!available.contains(&dtos::ForeignChain::Ethereum));
+        assert!(!available.contains(&dtos::ForeignChain::Solana));
+        assert_eq!(available.len(), 1);
+    }
+
+    #[test]
+    fn vote_update_foreign_chain_providers__should_populate_available_set_when_whitelisting_covered_chain()
+     {
+        // Given: 4 participants, threshold 3. Bitcoin is NOT yet whitelisted.
+        let (_context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let participants = participant_account_ids(&contract);
+
+        // Threshold (3) participants already cover Bitcoin — but the chain is not whitelisted,
+        // so the cache must be empty.
+        for account_id in participants.iter().take(3) {
+            register_foreign_chain_config(&mut contract, account_id, [dtos::ForeignChain::Bitcoin]);
+        }
+        assert!(contract.get_available_foreign_chains().is_empty());
+
+        // When: whitelist Bitcoin (vote_update_foreign_chain_providers triggers a recompute).
+        whitelist_chain(&mut contract, dtos::ForeignChain::Bitcoin);
+
+        // Then: cache flips from empty to populated.
+        let available = contract.get_available_foreign_chains();
+        assert!(available.contains(&dtos::ForeignChain::Bitcoin));
+        assert_eq!(available.len(), 1);
+    }
+
+    #[test]
+    fn clean_foreign_chain_data__should_drop_departed_participant_contribution_from_cache() {
+        // Given: 4 participants, threshold 3, Bitcoin whitelisted.
+        // Exactly 3 participants (0, 1, 2) cover Bitcoin → threshold met → available.
+        let (_context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let participants = participant_account_ids(&contract);
+        whitelist_chain(&mut contract, dtos::ForeignChain::Bitcoin);
+        for account_id in participants.iter().take(3) {
+            register_foreign_chain_config(&mut contract, account_id, [dtos::ForeignChain::Bitcoin]);
+        }
+        assert!(
+            contract
+                .get_available_foreign_chains()
+                .contains(&dtos::ForeignChain::Bitcoin)
+        );
+
+        // Simulate resharing completion: the new Running state drops participant[2] and keeps
+        // participant[3] (who has not registered any chain).  Participant[2]'s registration
+        // entry is still in foreign_chains_configs — this is the stale data that
+        // clean_foreign_chain_data must remove.
+        let (domains, keyset) = {
+            let ProtocolContractState::Running(ref state) = contract.protocol_state else {
+                panic!("expected Running state");
+            };
+            (state.domains.clone(), state.keyset.clone())
+        };
+        let mut new_participants = {
+            let ProtocolContractState::Running(ref state) = contract.protocol_state else {
+                panic!("expected Running state");
+            };
+            state.parameters.participants().clone()
+        };
+        new_participants.remove(&participants[2]);
+        // New Running: participants {0, 1, 3}, threshold 3.  Only 0 and 1 cover Bitcoin → 2 < 3.
+        let new_params = ThresholdParameters::new_unvalidated(new_participants, Threshold::new(3));
+        contract.protocol_state = ProtocolContractState::Running(RunningContractState::new(
+            domains,
+            keyset,
+            new_params,
+            AddDomainsVotes::default(),
+        ));
+
+        // When: clean_foreign_chain_data prunes participant[2]'s stale entry and recomputes.
+        contract
+            .clean_foreign_chain_data()
+            .expect("clean should succeed");
+
+        // Then: 2 participants cover Bitcoin (< threshold 3) → no longer available.
+        let available = contract.get_available_foreign_chains();
+        assert!(!available.contains(&dtos::ForeignChain::Bitcoin));
+        assert!(available.is_empty());
+    }
+
+    #[test]
+    fn recompute_available_foreign_chains__should_update_cache_during_resharing() {
+        // Given: Running contract with Bitcoin whitelisted; threshold 3, only 2 participants
+        // registered → Bitcoin not yet available.
+        let (_context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let participants = participant_account_ids(&contract);
+        whitelist_chain(&mut contract, dtos::ForeignChain::Bitcoin);
+        for account_id in participants.iter().take(2) {
+            register_foreign_chain_config(&mut contract, account_id, [dtos::ForeignChain::Bitcoin]);
+        }
+        assert!(contract.get_available_foreign_chains().is_empty());
+
+        // Transition to Resharing. Use the same participant set so mocked attestations remain valid.
+        let resharing = {
+            let ProtocolContractState::Running(ref mut state) = contract.protocol_state else {
+                panic!("expected Running state");
+            };
+            let proposal = state.parameters.clone();
+            state
+                .transition_to_resharing_no_checks(&proposal)
+                .expect("contract has at least one domain")
+        };
+        contract.protocol_state = ProtocolContractState::Resharing(resharing);
+
+        // When: the 3rd participant (from the old running set) registers during Resharing.
+        register_foreign_chain_config(
+            &mut contract,
+            &participants[2],
+            [dtos::ForeignChain::Bitcoin],
+        );
+
+        // Then: cache updated using the embedded previous running-state — Bitcoin now available.
+        assert!(
+            contract
+                .get_available_foreign_chains()
+                .contains(&dtos::ForeignChain::Bitcoin)
+        );
+    }
+
+    #[test]
+    fn register_foreign_chains_config__should_succeed_for_new_participant_during_resharing() {
+        // Given: Running contract; transition to Resharing whose proposed set adds a new participant
+        // not present in the old running set.
+        let (_context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let (new_account_id, new_info) = gen_participant(100);
+        let mut new_participants = contract
+            .protocol_state
+            .threshold_parameters()
+            .unwrap()
+            .participants()
+            .clone();
+        new_participants
+            .insert(new_account_id.clone(), new_info)
+            .expect("new participant should be inserted");
+        let new_params =
+            ThresholdParameters::new(new_participants.clone(), Threshold::new(3)).unwrap();
+
+        let resharing = {
+            let ProtocolContractState::Running(ref mut state) = contract.protocol_state else {
+                panic!("expected Running state");
+            };
+            state
+                .transition_to_resharing_no_checks(&new_params)
+                .expect("contract has at least one domain")
+        };
+        contract.protocol_state = ProtocolContractState::Resharing(resharing);
+        // Provide mocked attestations for every participant in the proposed new set,
+        // including the newly added one.
+        contract.tee_state = TeeState::with_mocked_participant_attestations(&new_participants);
+
+        // When: the new participant (not in the old running set) registers its foreign chain config.
+        let foreign_chains_config: dtos::ForeignChainsConfig =
+            BTreeSet::from([dtos::ForeignChain::Bitcoin]).into();
+        let new_tls_key = new_participants
+            .info(&new_account_id)
+            .unwrap()
+            .tls_public_key
+            .clone();
+        let mut env = Environment::new(None, Some(new_account_id.clone()), None);
+        // Set the signer pk to the new participant's TLS key, which is also its account_public_key
+        // in the mocked attestation, so lookup_node_id_by_signer_pk finds exactly this participant.
+        env.set_pk(near_sdk::PublicKey::from(new_tls_key.clone()));
+
+        // Then: the call succeeds — new participant is in the proposed set.
+        contract
+            .register_foreign_chains_config(foreign_chains_config)
+            .expect("new participant should be able to register during Resharing");
+        assert!(
+            contract
+                .foreign_chains
+                .get()
+                .foreign_chains_configs
+                .contains_key(&new_tls_key),
+            "config should be stored under the new participant's TLS key"
+        );
+    }
+
+    #[test]
+    fn register_foreign_chains_config__should_allow_two_nodes_from_same_operator_to_register_config()
+     {
+        // Given: Running contract; pick one operator account.
+        let (_context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let participants = contract
+            .protocol_state
+            .threshold_parameters()
+            .unwrap()
+            .participants()
+            .clone();
+        let (operator_account, _, info) = participants.participants().iter().next().unwrap();
+        let tls_key_a = info.tls_public_key.clone();
+
+        // Simulate a second node for the same operator with a distinct TLS key and signer pk.
+        let tls_key_b = dtos::Ed25519PublicKey([99u8; 32]);
+        let signer_pk_b = dtos::Ed25519PublicKey([98u8; 32]);
+        contract.tee_state.stored_attestations.insert(
+            tls_key_b.clone(),
+            NodeAttestation {
+                node_id: NodeId {
+                    account_id: operator_account.clone(),
+                    tls_public_key: tls_key_b.clone(),
+                    account_public_key: signer_pk_b.clone(),
+                },
+                verified_attestation: VerifiedAttestation::Mock(MpcMockAttestation::Valid),
+            },
+        );
+
+        // When: node A (the registered participant node) registers its config.
+        register_foreign_chain_config(
+            &mut contract,
+            operator_account,
+            [dtos::ForeignChain::Bitcoin],
+        );
+
+        // When: node B (the migration candidate, same operator) registers its config.
+        let foreign_chains_config: dtos::ForeignChainsConfig =
+            BTreeSet::from([dtos::ForeignChain::Bitcoin]).into();
+        let mut env = Environment::new(None, Some(operator_account.clone()), None);
+        env.set_pk(near_sdk::PublicKey::from(signer_pk_b));
+        contract
+            .register_foreign_chains_config(foreign_chains_config)
+            .expect("second node from same operator should be able to register");
+
+        // Then: both nodes' configs exist independently.
+        let configs = &contract.foreign_chains.get().foreign_chains_configs;
+        assert!(configs.contains_key(&tls_key_a), "node A config must exist");
+        assert!(configs.contains_key(&tls_key_b), "node B config must exist");
     }
 }
