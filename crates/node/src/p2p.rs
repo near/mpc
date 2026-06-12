@@ -8,8 +8,8 @@ use crate::network::conn::{
 };
 use crate::network::constants::{MAX_MESSAGE_SIZE_BYTES, MESSAGE_READ_TIMEOUT_DURATION};
 use crate::network::handshake::{
-    p2p_handshake_dialer, p2p_handshake_listener, DialerData, HandshakeOutcome, ListenerData,
-    MIN_EXPECTED_CONNECTION_ID,
+    DialerData, HandshakeOutcome, ListenerData, MIN_EXPECTED_CONNECTION_ID, p2p_handshake_dialer,
+    p2p_handshake_listener,
 };
 use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
 use crate::primitives::{
@@ -18,7 +18,7 @@ use crate::primitives::{
 };
 use crate::protocol_version::CURRENT_PROTOCOL_VERSION;
 use crate::tracking::{self, AutoAbortTask, AutoAbortTaskCollection};
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use async_trait::async_trait;
 use borsh::{BorshDeserialize, BorshSerialize};
 use bytes::Bytes;
@@ -305,15 +305,15 @@ impl OutgoingConnection {
 
                 // Peer closing without close_notify is normal in P2P networks (task aborts,
                 // reconnections, process restarts). Treat it as a clean close, not an error.
-                if let Err(err) = &result {
-                    if is_tls_close_notify_error(err) {
-                        tracing::debug!(
-                            err = %err,
-                            peer_id = %peer_id,
-                            "peer closed connection without TLS close_notify"
-                        );
-                        return Ok(());
-                    }
+                if let Err(err) = &result
+                    && is_tls_close_notify_error(err)
+                {
+                    tracing::debug!(
+                        err = %err,
+                        peer_id = %peer_id,
+                        "peer closed connection without TLS close_notify"
+                    );
+                    return Ok(());
                 }
 
                 // Send TLS close_notify before dropping the connection so
@@ -468,8 +468,8 @@ pub async fn new_tls_mesh_network(
     config: &MpcConfig,
     p2p_private_key: &ed25519_dalek::SigningKey,
 ) -> anyhow::Result<(
-    impl MeshNetworkTransportSender,
-    impl MeshNetworkTransportReceiver,
+    impl MeshNetworkTransportSender + use<>,
+    impl MeshNetworkTransportReceiver + use<>,
 )> {
     let (server_config, client_config) = mpc_tls::tls::configure_tls(p2p_private_key)?;
 
@@ -540,30 +540,20 @@ pub async fn new_tls_mesh_network(
     let incoming_connections_task =
         tracking::spawn("incoming connection handler tls mesh network", async move {
             let mut tasks = AutoAbortTaskCollection::new();
-            loop {
-                match tcp_listener.accept().await {
-                    Ok((tcp_stream, _)) => {
-                        let message_sender = message_sender.clone();
-                        let participant_identities = participant_identities.clone();
-                        let tls_acceptor = tls_acceptor.clone();
-                        let connectivities = connectivities_clone.clone();
-                        tasks.spawn_checked::<_, ()>(
-                            "new connection handler tls mesh network",
-                            incoming_connection_handler(
-                                message_sender,
-                                connectivities,
-                                tcp_stream,
-                                tls_acceptor,
-                                participant_identities,
-                                my_id,
-                            ),
-                        );
-                    }
-                    Err(err) => {
-                        tracing::error!("error accepting tcp stream: {}", err);
-                    }
-                }
-            }
+            run_accept_loop(listener_accept_stream(tcp_listener), |tcp_stream| {
+                tasks.spawn_checked::<_, ()>(
+                    "new connection handler tls mesh network",
+                    incoming_connection_handler(
+                        message_sender.clone(),
+                        connectivities_clone.clone(),
+                        tcp_stream,
+                        tls_acceptor.clone(),
+                        participant_identities.clone(),
+                        my_id,
+                    ),
+                );
+            })
+            .await;
         });
 
     let sender = TlsMeshSender {
@@ -740,15 +730,15 @@ async fn incoming_connection_handler(
 
     // Peer closing without close_notify is normal in P2P networks (task aborts,
     // reconnections, process restarts). Treat it as a clean close, not an error.
-    if let Err(err) = &result {
-        if is_tls_close_notify_error(err) {
-            tracing::debug!(
-                err = %err,
-                peer_id = %peer_id,
-                "peer closed connection without TLS close_notify"
-            );
-            return Ok(());
-        }
+    if let Err(err) = &result
+        && is_tls_close_notify_error(err)
+    {
+        tracing::debug!(
+            err = %err,
+            peer_id = %peer_id,
+            "peer closed connection without TLS close_notify"
+        );
+        return Ok(());
     }
 
     // Send TLS close_notify before dropping the connection so
@@ -759,6 +749,34 @@ async fn incoming_connection_handler(
     }
 
     result
+}
+
+/// Adapts a `TcpListener` into a `Stream` of accepted connections, so that the
+/// accept loop can be tested by substituting a fake stream of results.
+fn listener_accept_stream(
+    listener: TcpListener,
+) -> impl futures::Stream<Item = std::io::Result<TcpStream>> {
+    futures::stream::poll_fn(move |cx| {
+        listener
+            .poll_accept(cx)
+            .map(|res| Some(res.map(|(stream, _)| stream)))
+    })
+}
+
+/// Drives `accept_stream` to completion, dispatching each successful item to
+/// `on_connection`. Errors are logged and the loop keeps running so the listener
+/// task does not silently die on a transient accept failure.
+async fn run_accept_loop<S>(
+    accept_stream: impl futures::Stream<Item = std::io::Result<S>>,
+    mut on_connection: impl FnMut(S),
+) {
+    let mut accept_stream = std::pin::pin!(accept_stream);
+    while let Some(result) = accept_stream.next().await {
+        match result {
+            Ok(stream) => on_connection(stream),
+            Err(err) => tracing::error!("error accepting tcp stream: {}", err),
+        }
+    }
 }
 
 /// Checks whether an error is caused by the peer closing the TLS connection
@@ -777,12 +795,11 @@ async fn incoming_connection_handler(
 /// other I/O layers (e.g. LengthDelimitedCodec truncated frame headers).
 fn is_tls_close_notify_error(err: &anyhow::Error) -> bool {
     for cause in err.chain() {
-        if let Some(io_err) = cause.downcast_ref::<std::io::Error>() {
-            if io_err.kind() == std::io::ErrorKind::UnexpectedEof
-                && io_err.to_string().contains("close_notify")
-            {
-                return true;
-            }
+        if let Some(io_err) = cause.downcast_ref::<std::io::Error>()
+            && io_err.kind() == std::io::ErrorKind::UnexpectedEof
+            && io_err.to_string().contains("close_notify")
+        {
+            return true;
         }
     }
     false
@@ -916,7 +933,7 @@ pub mod testing {
         // The base port number used, hoping the OS is not using ports in this range
         pub const BASE_PORT: u16 = 10000;
         // This constant must be equal to the total number of ports defined below
-        pub const TOTAL_DEFINED_PORTS: u16 = 22;
+        pub const TOTAL_DEFINED_PORTS: u16 = 23;
         // Maximum number of nodes that can be handled without port collisions
         pub const MAX_NODES: u16 = 10;
         // Maximum number of cases that can be handled without port collisions
@@ -989,6 +1006,7 @@ pub mod testing {
         pub const RECONNECTION_TEST: Self = Self::new(19);
         pub const FOREIGN_CHAIN_POLICY_TEST: Self = Self::new(20);
         pub const BACKUP_CLI_WEBSERVER_PUT_KEYSHARES_HOSTNAME: Self = Self::new(21);
+        pub const ASSET_GENERATION_SIGNING_CONTENTION_TEST: Self = Self::new(22);
     }
 
     pub fn generate_test_p2p_configs(
@@ -1042,17 +1060,18 @@ pub mod testing {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use crate::config::MpcConfig;
     use crate::network::conn::ConnectionVersion;
     use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
-    use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
+    use crate::p2p::testing::{PortSeed, generate_test_p2p_configs};
     use crate::primitives::{
         ChannelId, MpcMessage, MpcStartMessage, MpcTaskId, ParticipantId, PeerMessage, UniqueId,
     };
     use crate::providers::EcdsaTaskId;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
-    use mpc_primitives::{domain::DomainId, AttemptId, EpochId, KeyEventId};
+    use mpc_primitives::{AttemptId, EpochId, KeyEventId, domain::DomainId};
     use rand::Rng;
     use std::time::Duration;
     use tokio::time::timeout;
@@ -1087,9 +1106,9 @@ mod tests {
 
             for _ in 0..100 {
                 // TODO: adjust test?
-                let domain_id = rand::thread_rng().gen();
-                let epoch_id = rand::thread_rng().gen();
-                let n_attempts = rand::thread_rng().gen::<usize>() % 100;
+                let domain_id = rand::thread_rng().r#gen();
+                let epoch_id = rand::thread_rng().r#gen();
+                let n_attempts = rand::thread_rng().r#gen::<usize>() % 100;
                 let mut attempt_id = AttemptId::new();
                 for _ in 0..n_attempts {
                     attempt_id = attempt_id.next();
@@ -1327,9 +1346,11 @@ mod tests {
             bob_initial.wait_for_ready(2, &participants).await.unwrap();
 
             assert!(alice.connectivity(bob_id).is_bidirectionally_connected());
-            assert!(bob_initial
-                .connectivity(alice_id)
-                .is_bidirectionally_connected());
+            assert!(
+                bob_initial
+                    .connectivity(alice_id)
+                    .is_bidirectionally_connected()
+            );
 
             let alice_connection_versions = alice.connectivity(bob_id).connection_version();
             assert_eq!(
@@ -1358,9 +1379,11 @@ mod tests {
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
             // bob_new will never connect bidirectionally with Alice
-            assert!(!bob_new
-                .connectivity(alice_id)
-                .is_bidirectionally_connected());
+            assert!(
+                !bob_new
+                    .connectivity(alice_id)
+                    .is_bidirectionally_connected()
+            );
 
             let bob_new_version = bob_new.connectivity(alice_id).connection_version();
             assert_eq!(
@@ -1370,10 +1393,41 @@ mod tests {
                     incoming: 1
                 }
             );
-            assert!(bob_initial
-                .connectivity(alice_id)
-                .is_bidirectionally_connected());
+            assert!(
+                bob_initial
+                    .connectivity(alice_id)
+                    .is_bidirectionally_connected()
+            );
         })
         .await;
+    }
+
+    /// Regression test to ensure that
+    /// the incoming-connections accept loop keeps running after an
+    /// `accept()` error, including across a burst of consecutive errors as can
+    /// happen under FD exhaustion or other transient conditions.
+    #[tokio::test]
+    async fn run_accept_loop__should_continue_after_accept_error() {
+        // Given a stream that interleaves Errs and Oks, including a burst of
+        // consecutive Errs before any Ok.
+        fn err() -> std::io::Result<()> {
+            Err(std::io::Error::other("simulated accept error"))
+        }
+        let accept_stream = futures::stream::iter([err(), err(), Ok(()), err(), Ok(())]);
+        let (on_connection_tx, mut on_connection_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+
+        // When run_accept_loop is driven against that stream.
+        super::run_accept_loop(accept_stream, move |_| {
+            on_connection_tx.send(()).unwrap();
+        })
+        .await;
+
+        // Then `on_connection` is invoked for every Ok in the stream, proving
+        // the loop survived both the leading burst of Errs and the Err between
+        // the two Oks. A final `None` confirms the loop also terminated cleanly
+        // on stream end (i.e. dropped the sender) rather than getting stuck.
+        assert_eq!(on_connection_rx.recv().await, Some(()));
+        assert_eq!(on_connection_rx.recv().await, Some(()));
+        assert_eq!(on_connection_rx.recv().await, None);
     }
 }

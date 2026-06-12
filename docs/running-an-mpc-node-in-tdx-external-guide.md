@@ -43,9 +43,12 @@ Note - we currently only support bare metal and do not support virtualized TDX s
 
 * Intel Xeon 5th/6th Generation CPU (TDX Support) and 8 RAM slots filled
   See [Intel TDX HW requirements](https://cc-enabling.trustedservices.intel.com/intel-tdx-enabling-guide/03/hardware_selection/)
-* Memory - 64GB
-* (v)Cores - 8
-* Disk space - 500GB, SSD NVMe or similar performance
+
+The memory, cores, and disk below are the resources consumed by a single MPC CVM. Because you may need to run two CVMs concurrently while migrating to a new launcher version, size your TDX host for at least **2x** these values, plus some margin.
+
+* Memory - 64GB per CVM
+* (v)Cores - 8 per CVM
+* Disk space - 1TB (1000 GB) per CVM, SSD NVMe or similar performance
 
 For a list of supported cloud providers offering bare metal servers with Intel TDX, see [Cloud Providers Supporting Bare Metal Servers with Intel TDX](./cloud-providers-tdx.md).
 
@@ -105,8 +108,12 @@ The instructions are based on the [dstack deployment guide](https://github.com/D
 
 ```bash
 sudo apt update
-sudo apt install build-essential qemu-system-x86=1:8.2.2* docker.io
+sudo apt install build-essential qemu-system-x86=1:8.2.2* docker.io docker-compose-v2 docker-buildx
 ```
+
+> **Note:** `docker-compose-v2` and `docker-buildx` are required by the
+> key-provider build (`key-provider-build/run.sh` runs `docker compose up
+> --build`); the `docker.io` package alone does not include them.
 
 > **Note:** The QEMU version is pinned to **8.2.2** because TDX attestation measurements
 > (MRTD/RTMR0) depend on the QEMU version. Using a different version will produce different
@@ -139,7 +146,11 @@ Note that after running this command you might need to restart the shell.
 All steps below assume the current user is `mpc` and the current directory is
 `/opt/mpc`.
 
-1. **Clone the dstack repository:**
+> **dstack versions.** `dstack-vmm` and the **guest OS image** are both
+> **v0.5.8** (their `MRTD`/`RTMR0-2` are pinned on-chain, so use exactly that
+> version). Only the **`key-provider-build/`** recipe is taken from dstack
+> **v0.5.11** (see the [key-provider step](#3-local-gramine-sealing-key-provider-setup)),
+> which builds a reproducible `mr_enclave` from build-args.
 
    ```bash
    git clone https://github.com/Dstack-TEE/dstack
@@ -149,7 +160,7 @@ All steps below assume the current user is `mpc` and the current directory is
 
    ```bash
    cd dstack
-   git checkout v0.5.8 # Should point to commit `368c62e7de5d4016bd75332824aa7f2ef1d7d19e`
+   git checkout 368c62e7de5d4016bd75332824aa7f2ef1d7d19e # dstack v0.5.8
 
    cargo build --release -p dstack-vmm -p supervisor
    mkdir -p vmm-data
@@ -405,7 +416,11 @@ Create a Dockerfile file with the following contents:
 ```shell
 # Dockerfile
 FROM rust:1.86.0@sha256:300ec56abce8cc9448ddea2172747d048ed902a3090e6b57babb2bf19f754081 AS kms-builder
-ARG DSTACK_REV
+# Pinned to a commit (immutable) rather than a tag (which can be moved). This is
+# the dstack v0.5.8 commit — matches the guest OS image this guide uses (the
+# `dstack-0.5.8/` dir you cd into below). For a different OS-image version,
+# override with the matching commit: --build-arg DSTACK_REV=<commit>
+ARG DSTACK_REV=368c62e7de5d4016bd75332824aa7f2ef1d7d19e
 WORKDIR /build
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -417,21 +432,33 @@ RUN apt-get update && \
     libprotobuf-dev \
     clang \
     libclang-dev
-RUN git clone https://github.com/Dstack-TEE/dstack.git && \
-    cd dstack
+RUN git clone https://github.com/Dstack-TEE/dstack.git
 RUN rustup target add x86_64-unknown-linux-musl
-RUN cd dstack && cargo build --release -p dstack-mr-cli --target x86_64-unknown-linux-musl
+# Build dstack-mr from the SAME dstack version as your guest OS image (DSTACK_REV).
+# Building from master is not reproducible: the measurement logic changes between
+# releases and may compute different MRTD/RTMR values than the on-chain set was
+# generated with.
+RUN cd dstack && git checkout "${DSTACK_REV}" && \
+    cargo build --release -p dstack-mr-cli --target x86_64-unknown-linux-musl
 
-FROM kvin/kms:latest
+# kvin/kms supplies the `dstack-acpi-tables` helper (feeds RTMR0). Pinned by digest
+# (not the moving `:latest`) for reproducible measurements: this digest reproduces
+# the MRTD/RTMR0-2 published on-chain in `v1.signer`'s `allowed_os_measurements`
+# (the same values shown in the example output below), so an operator can re-check
+# it. It is a third-party image; a NEAR/Dstack-owned published image would be a
+# better long-term trust root.
+FROM kvin/kms@sha256:ad6a8c5c43aed7278e665cd0960ae5be95060847f7d517633be685cabda95a3d
 COPY --from=kms-builder /build/dstack/target/x86_64-unknown-linux-musl/release/dstack-mr /usr/local/bin/
 ENTRYPOINT ["dstack-mr"]
 CMD []
 ```
 
-Build:
+Build. Pass `DSTACK_REV` = the **commit** matching your guest OS image's dstack
+version (here the v0.5.8 commit), so `dstack-mr`'s measurement logic matches the
+image and the on-chain values:
 
 ```bash
-docker build . -t dstack-mr
+docker build --build-arg DSTACK_REV=368c62e7de5d4016bd75332824aa7f2ef1d7d19e -t dstack-mr .
 ```
 
 Run:
@@ -511,67 +538,57 @@ For more information, see [local-key-provider-from-phala](https://github.com/Dst
 
 1. Follow the [canonical/tdx setup](#1-tdx-bare-metal-server-setup) if not already completed — especially step 9.1–2 (establishing an SGX PCCS: Provisioning Certification Caching Service).
 
-2. **Patch `Dockerfile.key-provider` to pin transitive deps.** This is a
-   temporary build-reproducibility patch; the structural fix is tracked in
-   [#3153](https://github.com/near/mpc/issues/3153). The upstream
-   Dockerfile leaves apt dependencies and the Rust toolchain version
-   under-pinned, so a fresh build on a different date produces a different
-   `mr_enclave` and your CVM fails attestation. After completing the
-   v0.5.8 dstack checkout from
-   [§2 *Dstack Setup and Configuration*](#2-dstack-setup-and-configuration),
-   edit `/opt/mpc/dstack/key-provider-build/Dockerfile.key-provider`:
-
-   - Replace the original apt block, which reads:
-
-     ```dockerfile
-     RUN apt-get update && apt-get install -y \
-         git=1:2.34.1-1ubuntu1.17 \
-         build-essential=12.9ubuntu3 \
-         && rm -rf /var/lib/apt/lists/*
-     ```
-
-     with this snapshot-pinned version, which points apt at a fixed
-     Ubuntu archive date by rewriting `/etc/apt/sources.list`:
-
-     ```dockerfile
-     RUN { \
-           echo 'deb https://snapshot.ubuntu.com/ubuntu/20260423T000000Z jammy main universe restricted multiverse'; \
-           echo 'deb https://snapshot.ubuntu.com/ubuntu/20260423T000000Z jammy-updates main universe restricted multiverse'; \
-           echo 'deb https://snapshot.ubuntu.com/ubuntu/20260423T000000Z jammy-security main universe restricted multiverse'; \
-         } > /etc/apt/sources.list \
-      && rm -rf /etc/apt/sources.list.d/* \
-      && apt-get update && apt-get install -y \
-           git=1:2.34.1-1ubuntu1.17 \
-           build-essential=12.9ubuntu3 \
-      && rm -rf /var/lib/apt/lists/*
-     ```
-
-     Paste this block exactly as shown — the snapshot date
-     `20260423T000000Z` is the specific value that produces the canonical
-     `mr_enclave`. Any change will produce a different one.
-
-   - On the `rustup` line, change `--default-toolchain 1.85` to
-     `--default-toolchain 1.85.1`. (`1.85` resolves to whatever 1.85.x is
-     current when rustup runs; pinning the exact patch version makes the
-     build deterministic.)
-
-   After running `./run.sh` in the next step, the `mr_enclave` you see in
-   step 4 should match `6b5ed02e…`. If it doesn't, the patch wasn't
-   applied correctly — re-check both edits.
-
-   <!-- TODO(#3153): remove this manual patch once the structural fix lands. -->
-   <!-- Requires snapshot.ubuntu.com to be reachable from the build host. -->
-
-
-3. Deploy an instance of `gramine-sealing-key-provider` on the host machine.
+2. Deploy an instance of `gramine-sealing-key-provider` on the host machine.
    * On the TDX server, run the script [run.sh](https://github.com/Dstack-TEE/dstack/blob/master/key-provider-build/run.sh)
    > **Prerequisite:** Docker must be installed.
 
+   Build the key provider with the canonical apt snapshot date so the resulting
+   `mr_enclave` is reproducible and matches the value attested by the contract.
+   Pass the date via the `APT_SNAPSHOT` build-arg (the Rust toolchain version and
+   `rustup-init` are pinned inside the recipe).
+
+   The `APT_SNAPSHOT` build-arg is available in `key-provider-build/` as of
+   dstack **v0.5.11**. Since `dstack-vmm` and the OS image stay on v0.5.8, add a
+   v0.5.11 worktree just for this build (it does not change your vmm or image):
+
     ```bash
-    cd /opt/mpc/dstack/key-provider-build
-    ./run.sh
+    cd /opt/mpc/dstack
+    git worktree add ../dstack-v0.5.11 v0.5.11
+    cd /opt/mpc/dstack-v0.5.11/key-provider-build
+    APT_SNAPSHOT=20260423T000000Z ./run.sh
     ```
-4. To find the `mr_enclave` value of the SGX key provider, run:
+
+   > The snapshot date `20260423T000000Z` is the specific value that reproduces
+   > the canonical `mr_enclave` below; the build host must be able to reach
+   > `snapshot.ubuntu.com`. Don't change it — it changes the key provider's
+   > `mr_enclave`, which is measured and attested on-chain.
+
+   **Quote collateral / PCCS.** The key provider's `aesmd` fetches this
+   platform's PCK certificate via `key-provider-build/sgx_default_qcnl.conf`,
+   which defaults to **Phala's public PCCS** (`pccs.phala.network`).
+
+   **Recommended for production: point this at your own local PCCS instead.**
+   Relying on a third-party public PCCS to boot the CVM puts an external service
+   on the critical attestation-collateral path — a single point of failure for a
+   step that gates the CVM's disk-encryption key. Running your own PCCS (step
+   9.1–2 / [Appendix: Self-hosting a local PCCS](#appendix-self-hosting-a-local-pccs))
+   removes that dependency. Save the following into
+   `key-provider-build/sgx_default_qcnl.conf` (replacing its contents) **before**
+   running `./run.sh`:
+
+    ```json
+    {
+      "pccs_url": "https://localhost:8081/sgx/certification/v4/",
+      "use_secure_cert": false,
+      "retry_times": 6,
+      "retry_delay": 10,
+      "pck_cache_expire_hours": 168,
+      "verify_collateral_cache_expire_hours": 168,
+      "local_cache_only": false
+    }
+    ```
+
+3. To find the `mr_enclave` value of the SGX key provider, run:
 
    ```bash
    docker logs gramine-sealing-key-provider 2>&1 | grep mr_enclave | head -n 1
@@ -584,6 +601,20 @@ For more information, see [local-key-provider-from-phala](https://github.com/Dst
    ```
 
  **Note**: As part of the mutual attestation between the CVM and the key provider, the CVM will check that the key provider’s `mr_enclave` matches the above hash.
+
+4. Verify both key-provider containers are running:
+
+   ```bash
+   docker ps --filter name=aesmd --filter name=gramine-sealing-key-provider \
+     --format 'table {{.Names}}\t{{.Status}}'
+   ```
+
+   Both should show `Up` (`gramine-sealing-key-provider` listens on
+   `127.0.0.1:3443`). The bundled `sgx_default_qcnl.conf` works for any platform
+   **registered with Intel** (step 9.2); if `gramine-sealing-key-provider`
+   instead crash-loops (`Restarting`) with `AESM service returned error 44`, the
+   platform is almost always not registered — see
+   [Troubleshooting](#gramine-sealing-key-provider-crash-loops-with-aesm-service-returned-error-44).
 
 ## MPC Node Setup and Deployment
 
@@ -841,8 +872,8 @@ Use the following custom settings for MPC:
 
 1. Launcher docker compose file - provided above.
 2. VM HW setting (use exactly those settings, since vCPU/Memory are measured):
-    vCPU number=8, Memory = 64GB, disk = 500 GB
-3. Pre script - empty.
+    vCPU number=8, Memory = 64GB, disk = 1000 GB
+3. Pre-launch Script and Init Script - both must be empty (a non-empty script fails attestation). Caution: the Pre-launch Script may not be empty by default - clear it before deploying.
 4. user-config - provided above
 5. Toggles:
    - KMS = disable
@@ -1086,13 +1117,17 @@ This section shows how to add the MPC node's public key (from the previous secti
 * **`MPC_NODE_PUBLIC_KEY`** → The public key of the MPC node you want to add.
   Example: `ed25519:ABCDEFG...`
 
-* **`METHOD_NAMES`** → The list of contract methods the MPC node is allowed to call:
+* **Allowed methods** → The key is granted access to **all** methods on the MPC
+  contract (an empty `--function-names` list). The key is still a function-call
+  key scoped to the MPC contract (`--contract-account-id`) with an allowance, so
+  it cannot transfer funds or call other contracts.
 
-  ```txt
-  respond,respond_ckd,respond_verify_foreign_tx,vote_pk,start_keygen_instance,vote_reshared,vote_foreign_chain_policy,start_reshare_instance,vote_abort_key_event_instance,verify_tee,submit_participant_info,conclude_node_migration
-  ```
-
-  > **Note:** This must be a single comma-separated string with no spaces or newlines.
+  > **Why allow all methods instead of an explicit list?** The set of methods an
+  > MPC node must call changes across releases (e.g. `register_foreign_chain_config`
+  > was added for foreign-chain support). A hand-maintained method list silently
+  > drifts out of date, and the node then fails — with no obvious error — on any
+  > new method the key was never granted. Allowing all methods on the contract
+  > avoids this class of breakage while keeping the key scoped to the MPC contract.
 
 * **`ALLOWANCE`** → Use `unlimited`. A finite allowance just means the node
   will eventually stop being able to submit `respond*` transactions once the
@@ -1107,7 +1142,7 @@ near account add-key $ACCOUNT_ID \
   grant-function-call-access \
   --allowance unlimited \
   --contract-account-id $MPC_CONTRACT_ID \
-  --function-names $METHOD_NAMES \
+  --function-names '' \
   use-manually-provided-public-key $MPC_NODE_PUBLIC_KEY \
   network-config testnet \
   sign-with-keychain \
@@ -1128,15 +1163,15 @@ MPC_NODE_PUBLIC_KEY="ed25519:YOUR_PUBLIC_KEY_HERE"
 ALLOWANCE="unlimited"
 NETWORK="testnet"   # or "mainnet"
 
-# Methods the MPC node is allowed to call
-METHOD_NAMES="respond,respond_ckd,respond_verify_foreign_tx,vote_pk,start_keygen_instance,vote_reshared,vote_foreign_chain_policy,start_reshare_instance,vote_abort_key_event_instance,verify_tee,submit_participant_info,conclude_node_migration"
+# The key is granted access to all methods on the MPC contract (empty list),
+# while staying scoped to the contract via --contract-account-id.
 
 # === Add Access Key ===
 near account add-key $ACCOUNT_ID \
   grant-function-call-access \
   --allowance "$ALLOWANCE" \
   --contract-account-id $MPC_CONTRACT_ID \
-  --function-names $METHOD_NAMES \
+  --function-names '' \
   use-manually-provided-public-key $MPC_NODE_PUBLIC_KEY \
   network-config $NETWORK \
   sign-with-keychain \
@@ -1154,6 +1189,50 @@ near account list-keys $ACCOUNT_ID \
   network-config $NETWORK \
   now
 ```
+
+The key you just added should appear with `permission` listing the MPC contract
+as the receiver and an **empty** `method_names` list — an empty list means the
+key may call **all** methods on that contract.
+
+---
+
+#### Updating an Existing Key to Allow All Methods
+
+If your node's key was previously added with a restricted `method_names` list
+(e.g. an older guide granted an explicit list), the node will fail — with no
+obvious error — on any contract method that was not in that list. A symptom of
+this is the node being unable to call `register_foreign_chain_config`, so the
+contract reports no foreign chains supported by your node.
+
+Access-key permissions are **immutable** in NEAR: you cannot edit an existing
+key's allowed methods. Instead, delete the restricted key and re-add the same
+public key with an empty `--function-names` list.
+
+```bash
+# 1. Delete the existing (restricted) key. Use the SAME public key the node uses.
+near account delete-keys $ACCOUNT_ID \
+  public-keys $MPC_NODE_PUBLIC_KEY \
+  network-config $NETWORK \
+  sign-with-keychain \
+  send
+
+# 2. Re-add it granting access to all methods on the MPC contract.
+near account add-key $ACCOUNT_ID \
+  grant-function-call-access \
+  --allowance unlimited \
+  --contract-account-id $MPC_CONTRACT_ID \
+  --function-names '' \
+  use-manually-provided-public-key $MPC_NODE_PUBLIC_KEY \
+  network-config $NETWORK \
+  sign-with-keychain \
+  send
+```
+
+> **Note:** Delete and re-add each affected key (e.g. both the node key and the
+> responder key). Verify with `near account list-keys $ACCOUNT_ID` that each key
+> now shows an empty `method_names` list.
+
+After the key is fixed, **restart the node** so foreign-chain registration runs again.
 
 ## Joining the MPC Cluster
 
@@ -1779,6 +1858,37 @@ Reviewers — please add here more scenarios (with or without solutions)
 * How to see what MPC node hash is expected by the launcher (docker-compose v.s file on disk)
 * Recovery — how to erase the indexer state (e.g data folder)
 * …..
+
+### `gramine-sealing-key-provider` crash-loops with `AESM service returned error 44`
+
+Symptom: the `gramine-sealing-key-provider` container keeps `Restarting`, and
+`docker logs gramine-sealing-key-provider` shows:
+
+```
+error: AESM service returned error 44; this may indicate that infrastructure for the DCAP attestation requested by Gramine is missing on this machine
+error: load_enclave() failed with error: Operation not permitted (EPERM)
+```
+
+This means the key provider can't get an SGX quote because its PCK certificate
+collateral is unavailable — **the usual cause is that the host platform is not
+registered with Intel's provisioning service.** PCK certs are only issued for
+registered platforms, so the quote (and thus the key provider) fails.
+
+**Fix — register the platform:** enable **SGX Auto MP Registration** (and **SGX
+Factory Reset** to force a fresh registration) in BIOS, reboot, and confirm
+`/var/log/mpa_registration.log` shows a fresh
+`PLATFORM_ESTABLISHMENT … passed successfully` (canonical TDX guide §9.2 step 10).
+After that the QE's `GET /pckcert…` succeeds against whichever PCCS it uses
+(Phala by default, or your local one).
+
+To pinpoint, check the PCCS the `aesmd` queries (its `sgx_default_qcnl.conf`).
+If it's a local PCCS, its log (`sudo journalctl -u pccs` or
+`/opt/intel/sgx-dcap-pccs/logs/pccs_server.log`) shows the failing request:
+
+- **`Intel PCS server returns error(404) … No cache data for this platform`** —
+  platform not registered (404, not 401, so the API key is fine). Register as above.
+- **`401` / "API key"** — the local PCCS Intel PCS API key is missing/invalid;
+  set it via `sudo /usr/bin/pccs-configure` and `sudo systemctl restart pccs`.
 
 ### `submit_participant_info` failures
 

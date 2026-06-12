@@ -1,12 +1,12 @@
-use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::NetworkTaskChannel;
+use crate::network::computation::MpcLeaderCentricComputation;
 use crate::protocol::run_protocol;
 use crate::providers::eddsa::EddsaSignatureProvider;
 use rand::rngs::OsRng;
+use threshold_signatures::ReconstructionLowerBound;
 use threshold_signatures::frost::eddsa::KeygenOutput;
 use threshold_signatures::frost_ed25519::Ed25519Sha512;
 use threshold_signatures::participants::Participant;
-use threshold_signatures::ReconstructionLowerBound;
 
 impl EddsaSignatureProvider {
     pub(super) async fn run_key_generation_client_internal(
@@ -38,7 +38,7 @@ impl MpcLeaderCentricComputation<KeygenOutput> for KeyGenerationComputation {
             .map(Participant::from)
             .collect::<Vec<_>>();
         let me = channel.my_participant_id();
-        let protocol = threshold_signatures::keygen::<Ed25519Sha512>(
+        let protocol = threshold_signatures::keygen::<Ed25519Sha512, _, _>(
             &cs_participants,
             me.into(),
             self.threshold,
@@ -57,16 +57,16 @@ mod tests {
     use crate::network::computation::MpcLeaderCentricComputation;
     use crate::network::testing::run_test_clients;
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-    use crate::providers::eddsa::key_generation::KeyGenerationComputation;
     use crate::providers::eddsa::EddsaTaskId;
+    use crate::providers::eddsa::key_generation::KeyGenerationComputation;
     use crate::tests::into_participant_ids;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use mpc_primitives::domain::DomainId;
     use near_mpc_contract_interface::types::{AttemptId, EpochId, KeyEventId};
     use std::sync::Arc;
+    use threshold_signatures::ReconstructionLowerBound;
     use threshold_signatures::frost::eddsa::KeygenOutput;
     use threshold_signatures::test_utils::generate_participants;
-    use threshold_signatures::ReconstructionLowerBound;
     use tokio::sync::mpsc;
 
     #[tokio::test]

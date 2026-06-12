@@ -1,11 +1,11 @@
 use crate::confidential_key_derivation::{
-    hash_app_id_with_pk, ElementG1, ElementG2, Signature, VerifyingKey,
+    ElementG1, ElementG2, Signature, VerifyingKey, hash_app_id_with_pk,
 };
 use crate::crypto::ciphersuite::{BytesOrder, ScalarSerializationFormat};
 use crate::crypto::constants::NEAR_CKD_DOMAIN;
 use blstrs::{G1Affine, G2Affine};
 use elliptic_curve::group::prime::PrimeCurveAffine;
-use elliptic_curve::hash2curve::{hash_to_field, ExpandMsgXmd};
+use elliptic_curve::hash2curve::{ExpandMsgXmd, hash_to_field};
 use pairing::{MillerLoopResult as _, MultiMillerLoop as _};
 use rand_core::{CryptoRng, RngCore};
 use sha2::Sha256;
@@ -293,16 +293,19 @@ pub(crate) fn multi_miller_loop(points: &[(ElementG1, ElementG2)]) -> bool {
 #[cfg(test)]
 mod tests {
     use digest::generic_array::GenericArray;
-    use elliptic_curve::{hash2curve::FromOkm, Field, Group};
+    use elliptic_curve::{Field, Group, hash2curve::FromOkm};
     use rand_core::SeedableRng;
 
-    use crate::confidential_key_derivation::scalar_wrapper::ScalarWrapper;
     use crate::confidential_key_derivation::Scalar;
-    use crate::confidential_key_derivation::{
-        ciphersuite::{verify_signature, BLS12381SHA256},
-        hash_app_id_with_pk, ElementG2, VerifyingKey,
-    };
+    use crate::confidential_key_derivation::scalar_wrapper::ScalarWrapper;
     use crate::test_utils::MockCryptoRng;
+    use crate::{
+        confidential_key_derivation::{
+            ElementG2, VerifyingKey,
+            ciphersuite::{BLS12381SHA256, verify_signature},
+            hash_app_id_with_pk,
+        },
+    };
 
     // Taken from https://github.com/ZcashFoundation/frost/blob/3ffc19d8f473d5bc4e07ed41bc884bdb42d6c29f/frost-secp256k1/tests/common_traits_tests.rs#L9
     #[allow(clippy::unnecessary_literal_unwrap)]

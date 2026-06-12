@@ -1,22 +1,22 @@
 use crate::{
     config::{
-        generate_and_write_backup_encryption_key_to_disk, start::TeeAuthorityImpl as _,
         PersistentSecrets, RespondConfig, SecretsConfig,
+        generate_and_write_backup_encryption_key_to_disk, start::TeeAuthorityImpl as _,
     },
     coordinator::Coordinator,
     db::SecretDB,
     indexer::{
-        real::spawn_real_indexer, tx_sender::TransactionSender, IndexerAPI,
-        ReadSupportedForeignChain,
+        IndexerAPI, ReadSupportedForeignChain, real::spawn_real_indexer,
+        tx_sender::TransactionSender,
     },
     keyshare::{GcpPermanentKeyStorageConfig, KeyStorageConfig, KeyshareStorage},
     migration_service::spawn_recovery_server_and_run_onboarding,
     profiler,
     tracing::init_logging,
     tracking::{self, start_root_task},
-    web::{start_web_server, static_web_data, DebugRequest},
+    web::{DebugRequest, start_web_server, static_web_data},
 };
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use itertools::Itertools;
 use mpc_attestation::report_data::ReportDataV1;
 use mpc_node_config::{ConfigFile, StartConfig};
@@ -30,14 +30,13 @@ use std::{
     time::Duration,
 };
 use tee_authority::tee_authority::TeeAuthority;
-use tokio::sync::{broadcast, mpsc, oneshot, watch, RwLock};
+use tokio::sync::{RwLock, broadcast, mpsc, oneshot, watch};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 use crate::tee::{
-    monitor_allowed_image_hashes,
+    AllowedImageHashesFile, monitor_allowed_image_hashes,
     remote_attestation::{monitor_attestation_removal, periodic_attestation_submission},
-    AllowedImageHashesFile,
 };
 
 pub const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hour
@@ -178,6 +177,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
         protocol_state_sender,
         migration_state_sender,
         *tls_public_key,
+        node_config.foreign_chains.clone(),
     );
 
     let (shutdown_signal_sender, mut shutdown_signal_receiver) = mpsc::channel(1);

@@ -7,8 +7,8 @@ use subtle::ConditionallySelectable;
 use crate::{
     crypto::constants::NEAR_BATCH_RANDOM_OT_HASH,
     ecdsa::{
-        ot_based_ecdsa::triples::bits::SEC_PARAM_64, CoefficientCommitment, Field, ProjectivePoint,
-        Secp256K1ScalarField,
+        CoefficientCommitment, Field, ProjectivePoint, Secp256K1ScalarField,
+        ot_based_ecdsa::triples::bits::SEC_PARAM_64,
     },
     errors::ProtocolError,
     protocol::internal::PrivateChannel,
@@ -16,7 +16,7 @@ use crate::{
 
 use crate::crypto::constants::SECURITY_PARAMETER;
 use crate::ecdsa::ot_based_ecdsa::triples::bits::{
-    BitMatrix, BitVector, SquareBitMatrix, SEC_PARAM_8,
+    BitMatrix, BitVector, SEC_PARAM_8, SquareBitMatrix,
 };
 
 fn hash(
@@ -410,8 +410,8 @@ mod test {
     use super::*;
     use crate::ecdsa::ot_based_ecdsa::triples::test::run_batch_random_ot;
     use crate::participants::Participant;
-    use crate::protocol::internal::{make_protocol, Comms};
-    use crate::test_utils::{run_two_party_protocol, MockCryptoRng};
+    use crate::protocol::internal::{Comms, make_protocol};
+    use crate::test_utils::{MockCryptoRng, run_two_party_protocol};
 
     #[test]
     fn test_batch_random_ot() {

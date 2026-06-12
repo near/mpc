@@ -13,10 +13,9 @@ use near_account_id::AccountId;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::UpdateHash;
 use near_sdk::{
-    env, near,
+    Gas, NearToken, Promise, env, near,
     serde::{Deserialize, Serialize},
     store::IterableMap,
-    Gas, NearToken, Promise,
 };
 
 #[cfg_attr(
@@ -304,7 +303,7 @@ mod tests {
     use crate::{
         dto_mapping::IntoInterfaceType,
         primitives::test_utils::{gen_account_id, gen_participants},
-        update::{bytes_used, ProposedUpdates, Update, UpdateEntry, UpdateId},
+        update::{ProposedUpdates, Update, UpdateEntry, UpdateId, bytes_used},
     };
     use near_account_id::AccountId;
     use near_sdk::Gas;
@@ -365,9 +364,11 @@ mod tests {
     fn test_proposed_updates_vote_update_empty() {
         let mut proposed_updates = ProposedUpdates::default();
         let account_id = gen_account_id();
-        assert!(proposed_updates
-            .vote(&UpdateId(0), account_id.clone())
-            .is_none());
+        assert!(
+            proposed_updates
+                .vote(&UpdateId(0), account_id.clone())
+                .is_none()
+        );
 
         let expected = TestUpdateVotes {
             id: 0,
@@ -532,9 +533,11 @@ mod tests {
         let found: TestUpdateVotes = (&proposed_updates).try_into().unwrap();
         assert_eq!(found, expected);
 
-        assert!(proposed_updates
-            .vote(&100.into(), account_id.clone())
-            .is_none());
+        assert!(
+            proposed_updates
+                .vote(&100.into(), account_id.clone())
+                .is_none()
+        );
 
         expected.votes = BTreeMap::new();
         let found: TestUpdateVotes = (&proposed_updates).try_into().unwrap();

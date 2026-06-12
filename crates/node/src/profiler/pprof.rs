@@ -2,12 +2,12 @@ use pprof::{ProfilerGuardBuilder, Report};
 use regex::Regex;
 use std::{sync::LazyLock, time::Duration};
 use thiserror::Error;
-use tokio::task::{spawn_blocking, JoinError};
+use tokio::task::{JoinError, spawn_blocking};
 
 static THREAD_ID_SUFFIX_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[_-]\d+$").unwrap());
 
 macro_rules! define_block_list {
-    (common: [$($common:expr),*], macos_extra: [$($macos:expr),*]) => {
+    (common: [$($common:expr_2021),*], macos_extra: [$($macos:expr_2021),*]) => {
         &[
             $($common),*,
             // macOS specific entries

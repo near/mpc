@@ -34,7 +34,7 @@ mod mta;
 mod multiplication;
 mod random_ot_extension;
 
-pub use generation::{generate_triple, generate_triple_many, TripleGenerationOutput};
+pub use generation::{TripleGenerationOutput, generate_triple, generate_triple_many};
 
 #[cfg(test)]
 pub(crate) mod test;
@@ -43,9 +43,9 @@ use serde::{Deserialize, Serialize};
 use zeroize::ZeroizeOnDrop;
 
 use crate::{
+    ReconstructionLowerBound,
     ecdsa::{AffinePoint, Scalar},
     participants::Participant,
-    ReconstructionLowerBound,
 };
 
 /// Represents the public part of a triple.

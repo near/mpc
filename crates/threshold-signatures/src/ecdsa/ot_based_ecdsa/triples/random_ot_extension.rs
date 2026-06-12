@@ -11,7 +11,7 @@ use crate::{
 use crate::crypto::constants::SECURITY_PARAMETER;
 use crate::ecdsa::ot_based_ecdsa::triples::{
     bits::{BitMatrix, BitVector, ChoiceVector, DoubleBitVector, SquareBitMatrix},
-    correlated_ot_extension::{correlated_ot_receiver, correlated_ot_sender, CorrelatedOtParams},
+    correlated_ot_extension::{CorrelatedOtParams, correlated_ot_receiver, correlated_ot_sender},
 };
 
 use elliptic_curve::ops::Reduce;
@@ -216,8 +216,8 @@ mod test {
         ecdsa::ot_based_ecdsa::triples::test::run_batch_random_ot,
         errors::ProtocolError,
         participants::Participant,
-        protocol::internal::{make_protocol, Comms},
-        test_utils::{run_two_party_protocol, MockCryptoRng},
+        protocol::internal::{Comms, make_protocol},
+        test_utils::{MockCryptoRng, run_two_party_protocol},
     };
 
     use super::*;

@@ -20,6 +20,8 @@ Scripts for deploying and testing MPC nodes with the launcher on localnet (TDX C
 | `node.conf.localnet.toml.tpl` / `node.conf.testnet.toml.tpl` | TOML config templates rendered by the deploy scripts via `envsubst` (one per `MODE`). |
 | `test-verify-and-upgrade.sh` | Cluster verification and rolling upgrade test (localnet). |
 | `test-hash-override.sh` | Test `mpc_hash_override` TOML config parameter (positive and negative cases). |
+| `test-migration.sh` | End-to-end `backup-cli` node-migration test (A→B forward, B→A back) on real-TDX localnet. Brings up a third CVM that shares the source's NEAR account but has its own P2P key; drives the migration handshake in both directions with ECDSA sign verification each direction. |
+| `common.sh` | **Sourced, not executed.** Shared helpers used by the test scripts: coloured logging (`log`/`warn`/`err`/`pass`/`fatal`), `HOST_PROFILE` → IP layout (alice / bob), `ip_for_i`, `ports_to_toml`, `$CLI` for the dstack vmm-cli, and `near_call_ro`/`near_call_tx` + `extract_json_ro`/`extract_json_tx` wrappers. |
 | `create-and-sweep-to-treasury.sh` | **(testnet only)** Faucet a fresh account and sweep it to a treasury. Useful before a `MODE=testnet` deploy when your `FUNDER_ACCOUNT` is short on NEAR (faucet caps at ~10 NEAR per account). |
 
 ## Quick Start
@@ -55,6 +57,9 @@ bash localnet/tee/scripts/rust-launcher/test-hash-override.sh override <64-hex-h
 
 # Test override rejection (unapproved hash — launcher should exit with error)
 bash localnet/tee/scripts/rust-launcher/test-hash-override.sh override-reject
+
+# End-to-end backup-cli migration (A → B forward, B → A back, with ECDSA sign each direction)
+bash localnet/tee/scripts/rust-launcher/test-migration.sh both
 ```
 
 ## Collecting Test Assets

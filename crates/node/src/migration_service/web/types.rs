@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use ed25519_dalek::VerifyingKey;
-use tokio::sync::{watch, RwLock};
+use tokio::sync::{RwLock, watch};
 use tokio_util::sync::CancellationToken;
 
 use crate::{

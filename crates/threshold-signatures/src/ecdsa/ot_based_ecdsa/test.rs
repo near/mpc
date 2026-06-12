@@ -1,15 +1,15 @@
 use super::{
+    PresignArguments, PresignOutput, RerandomizedPresignOutput,
     presign::presign,
     sign::sign,
-    triples::{generate_triple_many, test::deal, TriplePub, TripleShare},
-    PresignArguments, PresignOutput, RerandomizedPresignOutput,
+    triples::{TriplePub, TripleShare, generate_triple_many, test::deal},
 };
 use crate::test_utils::{
-    assert_public_key_invariant, check_one_coordinator_output, generate_participants,
-    generate_participants_with_random_ids, run_keygen, run_protocol, run_refresh, run_reshare,
-    run_sign, GenOutput, GenProtocol, MockCryptoRng,
+    GenOutput, GenProtocol, MockCryptoRng, assert_public_key_invariant,
+    check_one_coordinator_output, generate_participants, generate_participants_with_random_ids,
+    run_keygen, run_protocol, run_refresh, run_reshare, run_sign,
 };
-use crate::{protocol::Protocol, Participant, ReconstructionLowerBound};
+use crate::{Participant, ReconstructionLowerBound, protocol::Protocol};
 
 use crate::crypto::hash::test::scalar_hash_secp256k1;
 use crate::ecdsa::{
@@ -481,7 +481,7 @@ where
     // Generate triples with 6 participants
     for &p in &participants {
         let rng_p = R::seed_from_u64(rng.next_u64());
-        let protocol = generate_triple_many::<2>(&participants, p, threshold, rng_p);
+        let protocol = generate_triple_many::<2, _, _>(&participants, p, threshold, rng_p);
         let protocol = protocol.unwrap();
         protocols.push((p, Box::new(protocol)));
     }

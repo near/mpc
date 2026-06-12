@@ -65,8 +65,8 @@ mod test {
     use super::*;
     use crate::ecdsa::ot_based_ecdsa::triples::test::run_batch_random_ot;
     use crate::participants::Participant;
-    use crate::protocol::internal::{make_protocol, Comms};
-    use crate::test_utils::{run_two_party_protocol, MockCryptoRng};
+    use crate::protocol::internal::{Comms, make_protocol};
+    use crate::test_utils::{MockCryptoRng, run_two_party_protocol};
     use rand::SeedableRng;
 
     /// Run the correlated OT protocol between two parties.

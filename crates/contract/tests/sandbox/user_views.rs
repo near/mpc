@@ -73,8 +73,8 @@ async fn test_derived_public_key() -> anyhow::Result<()> {
 
 #[tokio::test]
 #[expect(non_snake_case)]
-async fn vote_update_foreign_chain_providers__should_apply_chain_state_after_threshold(
-) -> anyhow::Result<()> {
+async fn vote_update_foreign_chain_providers__should_apply_chain_state_after_threshold()
+-> anyhow::Result<()> {
     let SandboxTestSetup {
         contract,
         mpc_signer_accounts,

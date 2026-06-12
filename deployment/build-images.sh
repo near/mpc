@@ -158,11 +158,14 @@ if $USE_NODE || $USE_NODE_GCP; then
     # psABI) but are universally available on v3-capable hardware. Adding
     # them explicitly keeps rocksdb's PCLMUL-accelerated CRC32C path
     # compiled in. Match nix/mpc-node.nix and flake.nix.
+    # BUILT_OVERRIDE_mpc_node_GIT_VERSION pins built's GIT_VERSION so local git
+    # tags aren't embedded in the binary (which would break reproducibility).
     SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH \
     JEMALLOC_SYS_WITH_LG_VADDR=48 \
     JEMALLOC_SYS_WITH_LG_PAGE=12 \
     JEMALLOC_SYS_WITH_LG_HUGEPAGE=21 \
     GIT_CEILING_DIRECTORIES=/build/target \
+    BUILT_OVERRIDE_mpc_node_GIT_VERSION="${GIT_COMMIT_HASH:0:7}" \
     CFLAGS="-march=x86-64-v3 -mpclmul -maes" \
     CXXFLAGS="-march=x86-64-v3 -mpclmul -maes" \
     repro-env build \
@@ -171,6 +174,7 @@ if $USE_NODE || $USE_NODE_GCP; then
       --env JEMALLOC_SYS_WITH_LG_PAGE \
       --env JEMALLOC_SYS_WITH_LG_HUGEPAGE \
       --env GIT_CEILING_DIRECTORIES \
+      --env BUILT_OVERRIDE_mpc_node_GIT_VERSION \
       --env CFLAGS \
       --env CXXFLAGS \
       -- cargo build -p mpc-node --profile reproducible --locked
@@ -198,7 +202,10 @@ if $USE_PUSH; then
     fi
     sanitized_branch_name="${branch_name//\//-}"
 
-    short_hash=$(git rev-parse --short HEAD)
+    # Fixed 7-char truncation (not `git rev-parse --short`) so the tag is a
+    # pure function of the SHA — the Release workflow computes the same
+    # string via `${SHA::7}` when looking up the image to retag.
+    short_hash="${GIT_COMMIT_HASH:0:7}"
     image_tag="$sanitized_branch_name-$short_hash"
     echo "Using branch-hash tag: $image_tag"
 

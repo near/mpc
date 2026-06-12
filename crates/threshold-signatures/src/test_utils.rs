@@ -44,6 +44,6 @@ pub use protocol::{
 };
 pub use sign::{check_one_coordinator_output, run_sign};
 pub use simulator_bench::{
-    bench_simulation, run_simulation, BenchConfig, LatencyModel, SimulationMetrics,
+    BenchConfig, LatencyModel, SimulationMetrics, bench_simulation, run_simulation,
 };
 pub use snapshot::ProtocolSnapshot;

@@ -108,8 +108,8 @@ fn hash_to_curve(bytes: &[u8]) -> G1Projective {
 mod tests {
     use super::*;
     use blstrs::Scalar;
-    use elliptic_curve::group::Curve as _;
     use elliptic_curve::Field as _;
+    use elliptic_curve::group::Curve as _;
     use threshold_signatures::confidential_key_derivation::{self as ckd, ElementG2, VerifyingKey};
 
     #[test]

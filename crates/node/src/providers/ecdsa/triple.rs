@@ -1,43 +1,48 @@
 use crate::assets::DistributedAssetStorage;
 use crate::background::InFlightGenerationTracker;
 use crate::config::MpcConfig;
-use crate::db::SecretDB;
+use crate::db::{DBCol, SecretDB};
 use crate::metrics;
 use crate::metrics::tokio_task_metrics::ECDSA_TASK_MONITORS;
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{ParticipantId, UniqueId};
 use crate::protocol::run_protocol;
-use crate::providers::ecdsa::{EcdsaSignatureProvider, EcdsaTaskId};
 use crate::providers::HasParticipants;
+use crate::providers::ecdsa::{EcdsaSignatureProvider, EcdsaTaskId};
 use crate::tracking::AutoAbortTaskCollection;
 use mpc_node_config::TripleConfig;
-use mpc_primitives::domain::DomainId;
+use mpc_primitives::ReconstructionThreshold;
 use near_time::Clock;
 use rand::rngs::OsRng;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
+use threshold_signatures::ReconstructionLowerBound;
 use threshold_signatures::ecdsa::ot_based_ecdsa::triples::TripleGenerationOutput;
 use threshold_signatures::participants::Participant;
-use threshold_signatures::ReconstructionLowerBound;
 
+/// Per-`t` triple store. Holds triples generated with `n = t` participants
+/// (cait-sith triples are generated with exactly `t` parties, so the
+/// participant count and the Shamir degree `t − 1` are equivalent
+/// identifiers).
+///
+/// Backed by [`DBCol::TripleV2`] under prefix `t.inner().to_be_bytes()` (8 BE).
 pub struct TripleStorage(DistributedAssetStorage<PairedTriple>);
 
-// IMPORTANT: if we add domain_ids as an identifier to triples, ensure to also update the asset cleanup mechanism on startup (the other place where this constant is used).
-pub const TRIPLE_STORE_DOMAIN_ID: Option<DomainId> = None;
 impl TripleStorage {
     pub fn new(
         clock: Clock,
         db: Arc<SecretDB>,
         my_participant_id: ParticipantId,
         alive_participant_ids_query: Arc<dyn Fn() -> Vec<ParticipantId> + Send + Sync>,
+        threshold: ReconstructionThreshold,
     ) -> anyhow::Result<Self> {
         Ok(Self(DistributedAssetStorage::<PairedTriple>::new(
             clock,
             db,
-            crate::db::DBCol::Triple,
-            TRIPLE_STORE_DOMAIN_ID,
+            DBCol::TripleV2,
+            threshold.inner().to_be_bytes().to_vec(),
             my_participant_id,
             |participants, pair| pair.is_subset_of_active_participants(participants),
             alive_participant_ids_query,
@@ -82,6 +87,11 @@ impl EcdsaSignatureProvider {
             .collect();
 
         loop {
+            // TODO(#3164): once per-`t` background generation lands and runs
+            // alongside this loop for other thresholds, these gauges will be
+            // overwritten by whichever generator ticks last. Either lift the
+            // updates into a single task that sums across `triple_stores`, or
+            // add a `t` label so each store reports independently.
             metrics::MPC_OWNED_NUM_TRIPLES_ONLINE.set(triple_store.num_owned_ready() as i64);
             metrics::MPC_OWNED_NUM_TRIPLES_WITH_OFFLINE_PARTICIPANT
                 .set(triple_store.num_owned_offline() as i64);
@@ -153,8 +163,10 @@ impl EcdsaSignatureProvider {
                             .await?;
 
                             for (i, paired_triple) in triples.into_iter().enumerate() {
-                                triple_store
-                                    .add_owned(id_start.add_to_counter(i as u32)?, paired_triple);
+                                triple_store.add_owned(
+                                    id_start.add_to_counter(i.try_into()?)?,
+                                    paired_triple,
+                                );
                             }
 
                             anyhow::Ok(())
@@ -187,16 +199,22 @@ impl EcdsaSignatureProvider {
         count: u32,
     ) -> anyhow::Result<()> {
         start.validate_owned_by(channel.sender().get_leader())?;
-        if count as usize != SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE {
+        let count: usize = count.try_into()?;
+        if count != SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE {
             return Err(anyhow::anyhow!(
                 "Unsupported batch size for triple generation"
             ));
         }
-        let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
+        // Cait-sith triple generation runs with exactly `t` participants, so we
+        // can derive the store's `t` from the channel's participant list
+        // without a wire-format change to `EcdsaTaskId::ManyTriples`.
+        let threshold_usize: usize = channel.participants().len();
+        let threshold = ReconstructionThreshold::new(threshold_usize.try_into()?);
+        let triple_store = self.triple_store_for_t(threshold)?;
         FollowerManyTripleGenerationComputation::<SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE> {
-            threshold: ReconstructionLowerBound::from(threshold),
+            threshold: ReconstructionLowerBound::from(threshold_usize),
             out_triple_id_start: start,
-            out_triple_store: self.triple_store.clone(),
+            out_triple_store: triple_store,
         }
         .perform_leader_centric_computation(
             channel,
@@ -244,6 +262,8 @@ impl<const N: usize> MpcLeaderCentricComputation<Vec<PairedTriple>>
         let me = channel.my_participant_id();
         let protocol = threshold_signatures::ecdsa::ot_based_ecdsa::triples::generate_triple_many::<
             N,
+            _,
+            _,
         >(&cs_participants, me.into(), self.threshold, OsRng)?;
         let _timer = metrics::MPC_TRIPLES_GENERATION_TIME_ELAPSED.start_timer();
         let triples = run_protocol("many triple gen", channel, protocol).await?;
@@ -285,7 +305,7 @@ impl<const N: usize> MpcLeaderCentricComputation<()>
         .await?;
         for (i, paired_triple) in triples.into_iter().enumerate() {
             self.out_triple_store.add_unowned(
-                self.out_triple_id_start.add_to_counter(i as u32)?,
+                self.out_triple_id_start.add_to_counter(i.try_into()?)?,
                 paired_triple,
             );
         }
@@ -313,19 +333,23 @@ pub fn participants_from_triples(
 
 #[cfg(test)]
 mod tests {
-    use super::{ManyTripleGenerationComputation, PairedTriple};
+    use super::{
+        ManyTripleGenerationComputation, PairedTriple, ReconstructionThreshold, TripleStorage,
+    };
+    use crate::assets::test_utils::{make_triple, triple_v2_key};
+    use crate::db::{DBCol, SecretDB};
     use crate::network::computation::MpcLeaderCentricComputation;
     use crate::network::testing::run_test_clients;
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-    use crate::primitives::{MpcTaskId, UniqueId};
+    use crate::primitives::{MpcTaskId, ParticipantId, UniqueId};
     use crate::providers::ecdsa::EcdsaTaskId;
     use crate::tests::into_participant_ids;
     use crate::tracking;
-    use futures::{stream, StreamExt};
+    use futures::{FutureExt, StreamExt, stream};
     use std::collections::HashMap;
     use std::sync::Arc;
-    use threshold_signatures::test_utils::generate_participants;
     use threshold_signatures::ReconstructionLowerBound;
+    use threshold_signatures::test_utils::generate_participants;
     use tokio::sync::mpsc;
 
     const NUM_PARTICIPANTS: usize = 4;
@@ -459,5 +483,124 @@ mod tests {
             .into_iter()
             .chain(passive_triples.await.unwrap().into_iter())
             .collect())
+    }
+
+    fn new_triple_store(
+        db: Arc<SecretDB>,
+        my_participant_id: ParticipantId,
+        threshold: ReconstructionThreshold,
+        alive: Vec<ParticipantId>,
+    ) -> TripleStorage {
+        TripleStorage::new(
+            near_time::FakeClock::default().clock(),
+            db,
+            my_participant_id,
+            Arc::new(move || alive.clone()),
+            threshold,
+        )
+        .unwrap()
+    }
+
+    /// Snapshot test pinning the on-disk DB key layout for the triple store.
+    ///
+    /// The exact byte layout is load-bearing: any drift in how
+    /// `ReconstructionThreshold` or `UniqueId` serialize would silently change
+    /// the on-disk format. The snapshot makes the layout an explicit, reviewed
+    /// artifact — if it diffs, you're changing on-disk format and must think
+    /// about migration.
+    #[test]
+    #[expect(non_snake_case)]
+    fn db_key_layout__is_stable() {
+        // Fixed inputs chosen so every byte position carries a visibly distinct
+        // value (helps eyeball the snapshot).
+        let t = ReconstructionThreshold::new(0x0102_0304_0506_0708);
+        let participant = ParticipantId::from_raw(0xAABB_CCDD);
+        let id = UniqueId::new(participant, 0x1122_3344_5566_7788, 0xDEAD_BEEF);
+
+        let v2_key = triple_v2_key(t, id);
+
+        insta::assert_snapshot!(format!("v2_key: {}", hex::encode(&v2_key)));
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn triple_storage__should_isolate_per_t_stores() {
+        // Given two per-`t` stores backed by the same DB.
+        let dir = tempfile::tempdir().unwrap();
+        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let me = ParticipantId::from_raw(42);
+        let participants = vec![me];
+        let store_a = new_triple_store(
+            db.clone(),
+            me,
+            ReconstructionThreshold::new(3),
+            participants.clone(),
+        );
+        let store_b = new_triple_store(
+            db.clone(),
+            me,
+            ReconstructionThreshold::new(7),
+            participants.clone(),
+        );
+
+        let id_a = store_a.generate_and_reserve_id();
+        store_a.add_owned(id_a, make_triple(&participants));
+        let id_b = store_b.generate_and_reserve_id();
+        store_b.add_owned(id_b, make_triple(&participants));
+
+        // When taking from `t = 3`.
+        let (taken_id, _) = store_a.take_owned().now_or_never().unwrap();
+
+        // Then `t = 7`'s store is unaffected.
+        assert_eq!(taken_id, id_a);
+        assert_eq!(store_a.num_owned(), 0);
+        assert_eq!(store_b.num_owned(), 1);
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn triple_storage_add_owned__should_write_to_triple_v2_column() {
+        // Given a TripleStorage for `t = 3`.
+        let dir = tempfile::tempdir().unwrap();
+        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let me = ParticipantId::from_raw(42);
+        let participants = vec![me];
+        let t = ReconstructionThreshold::new(3);
+        let store = new_triple_store(db.clone(), me, t, participants.clone());
+        let id = store.generate_and_reserve_id();
+
+        // When adding an owned triple.
+        store.add_owned(id, make_triple(&participants));
+
+        // Then it is persisted under the per-`t` TripleV2 key.
+        assert!(
+            db.get(DBCol::TripleV2, &triple_v2_key(t, id))
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn triple_storage_take_owned__should_delete_from_triple_v2_column() {
+        // Given a triple present in the per-`t` TripleV2 column.
+        let dir = tempfile::tempdir().unwrap();
+        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let me = ParticipantId::from_raw(42);
+        let participants = vec![me];
+        let t = ReconstructionThreshold::new(3);
+        let store = new_triple_store(db.clone(), me, t, participants.clone());
+        let id = store.generate_and_reserve_id();
+        store.add_owned(id, make_triple(&participants));
+
+        // When the triple is consumed.
+        let _ = store.take_owned().now_or_never().unwrap();
+
+        // Then it is gone from the TripleV2 column.
+        assert!(
+            db.get(DBCol::TripleV2, &triple_v2_key(t, id))
+                .unwrap()
+                .is_none()
+        );
     }
 }

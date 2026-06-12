@@ -14,7 +14,7 @@
 //! directly, so the queue policy lives in one place.
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use near_sdk::{env, store::LookupMap, CryptoHash};
+use near_sdk::{CryptoHash, env, store::LookupMap};
 
 use crate::{
     errors::{Error, InvalidParameters, RequestError},

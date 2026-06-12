@@ -10,13 +10,13 @@ use rand::seq::SliceRandom as _;
 use rand_core::OsRng;
 
 use threshold_signatures::{
-    self,
+    self, Ciphersuite, Element, KeygenOutput, ReconstructionLowerBound, Scalar,
     errors::ProtocolError,
     frost_core::VerifyingKey,
     keygen,
     participants::Participant,
     protocol::{Action, Protocol},
-    reshare, Ciphersuite, Element, KeygenOutput, ReconstructionLowerBound, Scalar,
+    reshare,
 };
 
 pub type GenProtocol<C> = Vec<(Participant, Box<dyn Protocol<Output = C>>)>;
@@ -92,7 +92,7 @@ where
         .iter()
         .map(|p| {
             let protocol: Box<dyn Protocol<Output = KeygenOutput<C>>> =
-                Box::new(keygen::<C>(participants, *p, threshold, OsRng).unwrap());
+                Box::new(keygen::<C, _, _>(participants, *p, threshold, OsRng).unwrap());
             (*p, protocol)
         })
         .collect();

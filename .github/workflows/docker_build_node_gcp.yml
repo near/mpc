@@ -1,13 +1,15 @@
 name: Build Docker Node GCP Image
 
+# cancel-in-progress is false to avoid orphaning blobs mid-push; see RELEASES.md.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 on:
   push:
     branches:
       - main
+      - 'release/v*'
   workflow_dispatch:
 
 jobs:

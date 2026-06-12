@@ -8,11 +8,11 @@ use anyhow::Context;
 use futures::StreamExt;
 use mpc_primitives::domain::DomainId;
 use near_account_id::AccountId;
+use near_indexer_primitives::CryptoHash;
 use near_indexer_primitives::types::FunctionArgs;
 use near_indexer_primitives::views::{
     ActionView, ExecutionOutcomeWithIdView, ExecutionStatusView, ReceiptEnumView, ReceiptView,
 };
-use near_indexer_primitives::CryptoHash;
 use near_mpc_contract_interface::method_names::{
     FAIL_ON_TIMEOUT, REQUEST_APP_PRIVATE_KEY, RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS,
     RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS,
@@ -26,7 +26,7 @@ use near_mpc_crypto_types::ckd::CKDRequest;
 use near_mpc_crypto_types::sign::SignRequestArgs;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct UnvalidatedSignArgs {
@@ -172,76 +172,75 @@ async fn handle_message(
 
             if let Some(next_receipt_id) =
                 try_extract_next_receipt_id(&execution_outcome, mpc_contract_id)
+                && let Some((args, method_name)) = try_extract_function_call_args(&receipt)
             {
-                if let Some((args, method_name)) = try_extract_function_call_args(&receipt) {
-                    match method_name.as_str() {
-                        SIGN => {
-                            if let Some((signature_id, sign_args)) =
-                                try_get_sign_args(&receipt, next_receipt_id, args, method_name)
-                            {
-                                signature_requests.push(SignatureRequestFromChain {
-                                    signature_id,
-                                    receipt_id: receipt.receipt_id,
-                                    request: sign_args,
-                                    predecessor_id: receipt.predecessor_id.clone(),
-                                });
-                                metrics::MPC_NUM_SIGN_REQUESTS_INDEXED.inc();
-                            }
+                match method_name.as_str() {
+                    SIGN => {
+                        if let Some((signature_id, sign_args)) =
+                            try_get_sign_args(&receipt, next_receipt_id, args, method_name)
+                        {
+                            signature_requests.push(SignatureRequestFromChain {
+                                signature_id,
+                                receipt_id: receipt.receipt_id,
+                                request: sign_args,
+                                predecessor_id: receipt.predecessor_id.clone(),
+                            });
+                            metrics::MPC_NUM_SIGN_REQUESTS_INDEXED.inc();
                         }
-                        REQUEST_APP_PRIVATE_KEY => {
-                            if let Some((ckd_id, ckd_args)) =
-                                try_get_ckd_args(&receipt, next_receipt_id, args, method_name)
-                            {
-                                ckd_requests.push(CKDRequestFromChain {
-                                    ckd_id,
-                                    receipt_id: receipt.receipt_id,
-                                    request: ckd_args,
-                                });
-                                metrics::MPC_NUM_CKD_REQUESTS_INDEXED.inc();
-                            }
-                        }
-                        VERIFY_FOREIGN_TRANSACTION => {
-                            if let Some((verify_foreign_tx_id, verify_foreign_tx_args)) =
-                                try_get_verify_foreign_tx_args(
-                                    &receipt,
-                                    next_receipt_id,
-                                    args,
-                                    method_name,
-                                )
-                            {
-                                verify_foreign_tx_requests.push(VerifyForeignTxRequestFromChain {
-                                    verify_foreign_tx_id,
-                                    receipt_id: receipt.receipt_id,
-                                    request: verify_foreign_tx_args,
-                                });
-                                metrics::MPC_NUM_VERIFY_FOREIGN_TX_REQUESTS_INDEXED.inc();
-                            }
-                        }
-                        _ => {}
                     }
+                    REQUEST_APP_PRIVATE_KEY => {
+                        if let Some((ckd_id, ckd_args)) =
+                            try_get_ckd_args(&receipt, next_receipt_id, args, method_name)
+                        {
+                            ckd_requests.push(CKDRequestFromChain {
+                                ckd_id,
+                                receipt_id: receipt.receipt_id,
+                                request: ckd_args,
+                            });
+                            metrics::MPC_NUM_CKD_REQUESTS_INDEXED.inc();
+                        }
+                    }
+                    VERIFY_FOREIGN_TRANSACTION => {
+                        if let Some((verify_foreign_tx_id, verify_foreign_tx_args)) =
+                            try_get_verify_foreign_tx_args(
+                                &receipt,
+                                next_receipt_id,
+                                args,
+                                method_name,
+                            )
+                        {
+                            verify_foreign_tx_requests.push(VerifyForeignTxRequestFromChain {
+                                verify_foreign_tx_id,
+                                receipt_id: receipt.receipt_id,
+                                request: verify_foreign_tx_args,
+                            });
+                            metrics::MPC_NUM_VERIFY_FOREIGN_TX_REQUESTS_INDEXED.inc();
+                        }
+                    }
+                    _ => {}
                 }
             }
 
-            if let Some(request_id) = try_get_request_completion(&receipt, mpc_contract_id) {
-                if let Some((_, method_name)) = try_extract_function_call_args(&receipt) {
-                    match method_name.as_str() {
-                        RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS => {
-                            completed_signatures.push(request_id);
-                            metrics::MPC_NUM_SIGN_RESPONSES_INDEXED.inc();
-                        }
-                        RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS => {
-                            completed_ckds.push(request_id);
-                            metrics::MPC_NUM_CKD_RESPONSES_INDEXED.inc();
-                        }
-                        RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS => {
-                            completed_verify_foreign_txs.push(request_id);
-                            metrics::MPC_NUM_VERIFY_FOREIGN_TX_RESPONSES_INDEXED.inc();
-                        }
-                        FAIL_ON_TIMEOUT => {
-                            metrics::MPC_NUM_TIMEOUTS_INDEXED.inc();
-                        }
-                        _ => {}
+            if let Some(request_id) = try_get_request_completion(&receipt, mpc_contract_id)
+                && let Some((_, method_name)) = try_extract_function_call_args(&receipt)
+            {
+                match method_name.as_str() {
+                    RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS => {
+                        completed_signatures.push(request_id);
+                        metrics::MPC_NUM_SIGN_RESPONSES_INDEXED.inc();
                     }
+                    RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS => {
+                        completed_ckds.push(request_id);
+                        metrics::MPC_NUM_CKD_RESPONSES_INDEXED.inc();
+                    }
+                    RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS => {
+                        completed_verify_foreign_txs.push(request_id);
+                        metrics::MPC_NUM_VERIFY_FOREIGN_TX_RESPONSES_INDEXED.inc();
+                    }
+                    FAIL_ON_TIMEOUT => {
+                        metrics::MPC_NUM_TIMEOUTS_INDEXED.inc();
+                    }
+                    _ => {}
                 }
             }
         }

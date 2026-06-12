@@ -1,7 +1,7 @@
 use super::Keyshare;
 use anyhow::Context;
 use k256::{AffinePoint, Scalar};
-use mpc_primitives::{domain::DomainId, EpochId};
+use mpc_primitives::{EpochId, domain::DomainId};
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -125,15 +125,15 @@ impl PermanentKeyStorage {
 
         // Migrate legacy data if necessary.
         let existing_data = ret.backend.load().await?;
-        if let Some(data) = existing_data {
-            if serde_json::from_slice::<PermanentKeyshareData>(&data).is_err() {
-                tracing::info!(
-                    "Existing permanent keyshare data is not in the expected format, attempting to migrate..."
-                );
-                let legacy_data = serde_json::from_slice::<LegacyRootKeyshareData>(&data)?;
-                let new_data = PermanentKeyshareData::from_legacy(&legacy_data);
-                ret.store_unchecked(&new_data).await?;
-            }
+        if let Some(data) = existing_data
+            && serde_json::from_slice::<PermanentKeyshareData>(&data).is_err()
+        {
+            tracing::info!(
+                "Existing permanent keyshare data is not in the expected format, attempting to migrate..."
+            );
+            let legacy_data = serde_json::from_slice::<LegacyRootKeyshareData>(&data)?;
+            let new_data = PermanentKeyshareData::from_legacy(&legacy_data);
+            ret.store_unchecked(&new_data).await?;
         }
         Ok(ret)
     }
@@ -255,15 +255,15 @@ mod tests {
         LegacyRootKeyshareData, PermanentKeyStorage, PermanentKeyStorageBackend,
     };
     use crate::keyshare::test_utils::{
-        generate_dummy_keyshare, generate_dummy_keyshares, make_key_id, KeysetBuilder,
+        KeysetBuilder, generate_dummy_keyshare, generate_dummy_keyshares, make_key_id,
     };
     use crate::keyshare::{Keyshare, KeyshareData};
     use k256::elliptic_curve::Field;
     use k256::{AffinePoint, Scalar};
     use mpc_primitives::EpochId;
     use rand::SeedableRng as _;
-    use threshold_signatures::frost_secp256k1::keys::SigningShare;
     use threshold_signatures::frost_secp256k1::VerifyingKey;
+    use threshold_signatures::frost_secp256k1::keys::SigningShare;
 
     #[tokio::test]
     async fn test_load_store() {
