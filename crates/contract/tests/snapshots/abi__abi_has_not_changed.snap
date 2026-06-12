@@ -1304,7 +1304,7 @@ expression: abi
       },
       {
         "name": "resolve_verification",
-        "doc": " `.then` bridge between the verifier's `verify_quote` response and the\n yield that [`Self::submit_dstack_attestation`] registered. Owns every\n outcome where the verifier *answered*:\n - `Verified` → run post-DCAP checks against fresh policy; on pass store +\n   resume `Ok`, on fail refund + resume `Err`.\n - `Rejected` → refund + resume `Err` immediately (a definitive verdict).\n\n `Err(PromiseError)` (verifier unreachable / crashed) is deliberately not\n resolved here: it logs and returns, leaving cleanup to the yield timeout\n in [`Self::on_attestation_verified`]. `promise_yield_resume` is the last\n host call, so a panic anywhere above rolls the whole receipt back and the\n timeout still fires.",
+        "doc": " `.then` bridge between the verifier's `verify_quote` response and the\n yield that the `Dstack` submission registered. Owns every\n outcome where the verifier *answered*:\n - `Verified` → run post-DCAP checks against fresh policy; on pass store +\n   resume `Ok`, on fail refund + resume `Err`.\n - `Rejected` → refund + resume `Err` immediately (a definitive verdict).\n\n `Err(PromiseError)` (verifier unreachable / crashed) is deliberately not\n resolved here: it logs and returns, leaving cleanup to the yield timeout\n in [`Self::on_attestation_verified`]. `promise_yield_resume` is the last\n host call, so a panic anywhere above rolls the whole receipt back and the\n timeout still fires.",
         "kind": "call",
         "modifiers": [
           "private"
