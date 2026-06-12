@@ -942,7 +942,8 @@ impl MpcContract {
         &self,
         proposal: &ProposedThresholdParameters,
     ) -> Result<(), Error> {
-        let num_participants = proposal.participants().len() as u64;
+        let num_participants = u64::try_from(proposal.participants().len())
+            .expect("participant list should be wayyyy smaller than u64::MAX");
 
         let threshold = proposal.threshold().value();
         if threshold > num_participants {
