@@ -559,6 +559,40 @@ expression: abi
         }
       },
       {
+        "name": "fail_on_attestation_timeout",
+        "doc": " Fails the original `submit_participant_info` transaction with `reason`.\n Called only as the final receipt of [`Self::on_attestation_verified`]'s\n failure paths, so the panic does not roll back the cleanup done there.",
+        "kind": "view",
+        "modifiers": [
+          "private"
+        ],
+        "params": {
+          "serialization_type": "borsh",
+          "args": [
+            {
+              "name": "reason",
+              "type_schema": {
+                "declaration": "String",
+                "definitions": {
+                  "String": {
+                    "Sequence": {
+                      "length_width": 4,
+                      "length_range": {
+                        "start": 0,
+                        "end": 4294967295
+                      },
+                      "elements": "u8"
+                    }
+                  },
+                  "u8": {
+                    "Primitive": 1
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
         "name": "fail_on_timeout",
         "kind": "view",
         "modifiers": [
@@ -900,7 +934,7 @@ expression: abi
       },
       {
         "name": "on_attestation_verified",
-        "doc": " Yield-callback fired by the runtime once `resolve_verification` resumes\n the yield, or after the ~200-block timeout if no resume landed. The\n answered cases were already finalized by `resolve_verification`, so this\n only routes the outcome back to the caller; the `Err(PromiseError)`\n branch (verifier unreachable / silent timeout, where the pending entry is\n still present) does the deferred cleanup.",
+        "doc": " Yield-callback fired by the runtime once `resolve_verification` resumes\n the yield, or after the ~200-block timeout if no resume landed.\n\n On a resumed `Ok` the submission succeeded. The two failure paths must\n fail the submitter's transaction *without* rolling back any state this\n callback mutates — so, like the sign-request callback\n [`Self::return_signature_and_clean_state_on_success`], they do their work\n in this receipt and then signal failure by chaining to\n `fail_on_attestation_timeout` in a separate receipt (returning a panic\n directly would roll this receipt back):\n\n - `Ok(FinalOutcome::Err)` — the verifier answered and `resolve_verification`\n   already cleaned up; just propagate the reason.\n - `Err(PromiseError)` — no resume landed within the timeout (verifier\n   unreachable, or `resolve_verification` rolled back): the pending entry\n   is still present, so remove it and refund here, then fail.",
         "kind": "call",
         "modifiers": [
           "private"
@@ -987,7 +1021,7 @@ expression: abi
         "result": {
           "serialization_type": "json",
           "type_schema": {
-            "type": "null"
+            "$ref": "#/definitions/PromiseOrValueNull"
           }
         }
       },
@@ -2043,7 +2077,7 @@ expression: abi
       },
       {
         "name": "submit_participant_info",
-        "doc": " (Prospective) Participants can submit their tee participant information through this\n endpoint.\n Submit a participant's TEE attestation.\n\n `Mock` attestations are verified synchronously (no DCAP) and stored\n immediately, returning `Value(())`. `Dstack` attestations are verified\n asynchronously: the method registers a yielded promise, fires a\n cross-contract `verify_quote` call to the trusted `tee_verifier_account_id`,\n and resolves from [`Self::resolve_verification`]. The returned `Promise`\n settles when the verifier answers or, failing that, after the runtime's\n ~200-block yield timeout (handled by [`Self::on_attestation_verified`]).",
+        "doc": " (Prospective) participants submit their TEE attestation through this\n endpoint.\n\n `Mock` attestations are verified synchronously (no DCAP) and stored\n immediately, returning `Value(())`. `Dstack` attestations are verified\n asynchronously: the method registers a yielded promise, fires a\n cross-contract `verify_quote` call to the trusted `tee_verifier_account_id`,\n and resolves from [`Self::resolve_verification`]. The returned `Promise`\n settles when the verifier answers or, failing that, after the runtime's\n ~200-block yield timeout (handled by [`Self::on_attestation_verified`]).",
         "kind": "call",
         "modifiers": [
           "payable"
