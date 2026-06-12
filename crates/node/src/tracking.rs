@@ -49,7 +49,18 @@ where
     F: Future<Output = R> + Send + 'static,
     R: Send + 'static,
 {
-    tokio::spawn(current_task().scope(description, f)).into()
+    spawn_on(&tokio::runtime::Handle::current(), description, f)
+}
+
+/// Like `spawn`, but spawns onto the given runtime `handle` instead of the
+/// current runtime. The tracking context is still inherited from the current
+/// task.
+pub fn spawn_on<F, R>(handle: &tokio::runtime::Handle, description: &str, f: F) -> AutoAbortTask<R>
+where
+    F: Future<Output = R> + Send + 'static,
+    R: Send + 'static,
+{
+    handle.spawn(current_task().scope(description, f)).into()
 }
 
 /// Like `spawn`, but if the task resolves to an error result, logs the result.
@@ -60,7 +71,23 @@ where
     F: Future<Output = anyhow::Result<R>> + Send + 'static,
     R: Send + 'static,
 {
-    tokio::spawn(current_task().scope_checked(description, f)).into()
+    spawn_checked_on(&tokio::runtime::Handle::current(), description, f)
+}
+
+/// Like `spawn_checked`, but spawns onto the given runtime `handle` instead of
+/// the current runtime. See [`spawn_on`].
+pub fn spawn_checked_on<F, R>(
+    handle: &tokio::runtime::Handle,
+    description: &str,
+    f: F,
+) -> AutoAbortTask<()>
+where
+    F: Future<Output = anyhow::Result<R>> + Send + 'static,
+    R: Send + 'static,
+{
+    handle
+        .spawn(current_task().scope_checked(description, f))
+        .into()
 }
 
 /// A collection of tasks that should all be aborted when the collection itself
@@ -91,6 +118,24 @@ impl AutoAbortTaskCollection<()> {
     {
         self.join_set
             .spawn(current_task().scope_checked(description, f));
+        // JoinSet itself keeps expired tasks until they are joined on. So we do
+        // some cleanup here to join any tasks that have already completed.
+        while self.join_set.try_join_next().is_some() {}
+    }
+
+    /// Like `spawn_checked`, but spawns onto the given runtime `handle` instead
+    /// of the current runtime. See [`spawn_on`].
+    pub fn spawn_checked_on<F, R>(
+        &mut self,
+        handle: &tokio::runtime::Handle,
+        description: &str,
+        f: F,
+    ) where
+        R: Send + 'static,
+        F: Future<Output = anyhow::Result<R>> + Send + 'static,
+    {
+        self.join_set
+            .spawn_on(current_task().scope_checked(description, f), handle);
         // JoinSet itself keeps expired tasks until they are joined on. So we do
         // some cleanup here to join any tasks that have already completed.
         while self.join_set.try_join_next().is_some() {}
@@ -378,6 +423,73 @@ impl Debug for TaskStatusReport {
             Ok(())
         }
         fmt_inner(self, f, 0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn named_runtime(name: &'static str) -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .thread_name(name)
+            .enable_all()
+            .build()
+            .unwrap()
+    }
+
+    // These are synchronous tests so the test-only runtimes are dropped outside
+    // an async context (dropping a runtime inside one panics).
+    #[test]
+    #[expect(non_snake_case)]
+    fn spawn_on__should_run_task_on_provided_runtime() {
+        // Given a separate runtime with a distinctly named worker thread,
+        let target = named_runtime("spawn-on-target");
+        let handle = target.handle().clone();
+
+        // When we spawn a task onto it via `spawn_on` from within a tracked task,
+        let (root, _handle) = start_root_task("test-root", async move {
+            spawn_on(&handle, "child", async {
+                std::thread::current()
+                    .name()
+                    .unwrap_or_default()
+                    .to_string()
+            })
+            .await
+            .unwrap()
+        });
+        let thread_name = target.block_on(root);
+
+        // Then the task ran on the provided runtime's worker thread.
+        assert_eq!(thread_name, "spawn-on-target");
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn spawn_checked_on__should_run_task_on_provided_runtime() {
+        // Given a separate runtime with a distinctly named worker thread,
+        let target = named_runtime("spawn-checked-on-target");
+        let handle = target.handle().clone();
+
+        // When we spawn a checked task onto it via `spawn_checked_on`,
+        let (root, _handle) = start_root_task("test-root", async move {
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            let _task = spawn_checked_on(&handle, "child", async move {
+                let _ = tx.send(
+                    std::thread::current()
+                        .name()
+                        .unwrap_or_default()
+                        .to_string(),
+                );
+                anyhow::Ok(())
+            });
+            rx.await.unwrap()
+        });
+        let thread_name = target.block_on(root);
+
+        // Then the task ran on the provided runtime's worker thread.
+        assert_eq!(thread_name, "spawn-checked-on-target");
     }
 }
 
