@@ -88,7 +88,8 @@ impl From<OldConfig> for Config {
             fail_on_timeout_tera_gas: old.fail_on_timeout_tera_gas,
             clean_tee_status_tera_gas: old.clean_tee_status_tera_gas,
             clean_invalid_attestations_tera_gas: old.clean_invalid_attestations_tera_gas,
-            cleanup_orphaned_node_migrations_tera_gas: old.cleanup_orphaned_node_migrations_tera_gas,
+            cleanup_orphaned_node_migrations_tera_gas: old
+                .cleanup_orphaned_node_migrations_tera_gas,
             remove_non_participant_update_votes_tera_gas: old
                 .remove_non_participant_update_votes_tera_gas,
             clean_foreign_chain_data_tera_gas: old.clean_foreign_chain_data_tera_gas,

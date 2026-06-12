@@ -170,7 +170,9 @@ mod tests {
     use crate::report_data::ReportData;
     use test_utils::attestation::{account_key, p2p_tls_key};
     #[cfg(feature = "local-verify")]
-    use {alloc::vec::Vec, dcap_qvl::quote::Quote, test_utils::attestation::quote as quote_fixture};
+    use {
+        alloc::vec::Vec, dcap_qvl::quote::Quote, test_utils::attestation::quote as quote_fixture,
+    };
 
     // Parses a real quote with `dcap-qvl`, so it is off-chain only.
     #[cfg(feature = "local-verify")]

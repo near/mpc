@@ -10,8 +10,8 @@
 //! Used in a later step (the async `submit_participant_info` flip); defined
 //! here so the state field and storage key land first.
 
-use mpc_attestation::attestation::DstackAttestation;
 use borsh::{BorshDeserialize, BorshSerialize};
+use mpc_attestation::attestation::DstackAttestation;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_sdk::{CryptoHash, NearToken};
 
