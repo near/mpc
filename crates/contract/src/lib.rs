@@ -1627,9 +1627,25 @@ impl MpcContract {
             } => {
                 let threshold = current_params.threshold().value() as usize;
                 let remaining = participants_with_valid_attestation.len();
-                if threshold > remaining {
+                // Defense in depth: the surviving participant set must cover every
+                // threshold the network is bound to — the governance threshold and
+                // each domain's reconstruction threshold (the kickout keeps the
+                // existing per-domain thresholds). Resharing into a smaller set
+                // would leave a key un-signable, so we refuse and wait for manual
+                // intervention.
+                let max_reconstruction_threshold = running_state
+                    .domains
+                    .domains()
+                    .iter()
+                    .map(|domain| domain.reconstruction_threshold.inner() as usize)
+                    .max()
+                    .unwrap_or(0);
+                let required = threshold.max(max_reconstruction_threshold);
+                if required > remaining {
                     log!(
-                        "Less than `threshold` participants are left with a valid TEE status. This requires manual intervention. We will not accept new signature requests as a safety precaution."
+                        "Fewer than the required number of participants ({}) are left with a valid TEE status ({}). This requires manual intervention. We will not accept new signature requests as a safety precaution.",
+                        required,
+                        remaining,
                     );
                     self.accept_requests = false;
                     return Ok(false);
@@ -5383,6 +5399,80 @@ mod tests {
         };
 
         assert_eq!(*resharing_state, expected_resharing_state);
+    }
+
+    /// Tests that [`MpcContract::verify_tee`] refuses to reshare when a TEE
+    /// kickout would leave fewer participants than a domain's reconstruction
+    /// threshold, even though the remaining set still meets the governance
+    /// threshold. The contract stays Running and stops accepting requests.
+    #[test]
+    fn verify_tee__should_refuse_kickout_below_domain_reconstruction_threshold() {
+        const PARTICIPANT_COUNT: usize = 5;
+        const ATTESTATION_EXPIRY_SECONDS: u64 = 5;
+        const TEE_UPGRADE_DURATION: Duration = Duration::MAX;
+
+        // Given: 5 participants, governance threshold 3, and one domain whose
+        // reconstruction threshold is 5 (every participant is needed to sign).
+        let participants = gen_participants(PARTICIPANT_COUNT);
+        let parameters = ThresholdParameters::new(participants.clone(), Threshold::new(3)).unwrap();
+        let domain_id = DomainId::default();
+        let domains = vec![DomainConfig {
+            id: domain_id,
+            protocol: Protocol::CaitSith,
+            reconstruction_threshold: ReconstructionThreshold::new(5),
+            purpose: DomainPurpose::Sign,
+        }];
+        let (pk, _) = make_public_key_for_curve(Curve::Secp256k1, &mut OsRng);
+        let keyset = Keyset::new(
+            EpochId::new(0),
+            vec![KeyForDomain {
+                domain_id,
+                key: pk.try_into().unwrap(),
+                attempt: AttemptId::new(),
+            }],
+        );
+        let mut contract =
+            MpcContract::init_running(domains, 1, keyset, (&parameters).into_dto_type(), None)
+                .unwrap();
+
+        // Expire the last participant's attestation so a kickout drops the set to 4.
+        let participant_list: Vec<_> = participants.participants().to_vec();
+        let (target_account_id, _, target_participant_info) =
+            &participant_list[PARTICIPANT_COUNT - 1];
+        let node_id = NodeId {
+            account_id: target_account_id.clone(),
+            tls_public_key: target_participant_info.tls_public_key.clone(),
+            account_public_key: bogus_ed25519_public_key(),
+        };
+        let expiring_attestation = MpcAttestation::Mock(MpcMockAttestation::WithConstraints {
+            mpc_docker_image_hash: None,
+            launcher_docker_compose_hash: None,
+            expiry_timestamp_seconds: Some(ATTESTATION_EXPIRY_SECONDS),
+            expected_measurements: None,
+        });
+        contract
+            .tee_state
+            .add_participant(node_id, expiring_attestation, TEE_UPGRADE_DURATION)
+            .expect("mock attestation is not yet expired and valid");
+
+        let (first_account_id, _, _) = &participant_list[0];
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(first_account_id.clone())
+                .predecessor_account_id(first_account_id.clone())
+                .block_timestamp(ATTESTATION_EXPIRY_SECONDS * 1_000_000_000) // nanoseconds
+                .build()
+        );
+
+        // When
+        let result = contract.verify_tee();
+
+        // Then: the 4 surviving participants meet the governance threshold (3) but
+        // not the domain's reconstruction threshold (5), so verify_tee refuses to
+        // reshare, stays Running, and stops accepting requests.
+        assert_matches!(result, Ok(false));
+        assert_matches!(contract.protocol_state, ProtocolContractState::Running(_));
+        assert!(!contract.accept_requests);
     }
 
     /// Sets up a complete TEE test environment with contract, accounts, mock dstack attestation, TLS key and the node's near public key.
