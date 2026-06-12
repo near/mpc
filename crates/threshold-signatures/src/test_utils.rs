@@ -17,8 +17,8 @@ mod sign;
 pub mod simulator_bench;
 mod snapshot;
 
-use crate::participants::Participant;
 use crate::KeygenOutput;
+use crate::participants::Participant;
 
 /// Type representing DKG output keys
 pub type GenOutput<C> = Vec<(Participant, KeygenOutput<C>)>;

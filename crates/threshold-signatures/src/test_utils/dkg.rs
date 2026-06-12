@@ -1,4 +1,4 @@
-use frost_core::{keys::SigningShare, Group};
+use frost_core::{Group, keys::SigningShare};
 use rand::SeedableRng;
 use rand_core::CryptoRngCore;
 

@@ -492,8 +492,7 @@ mod test {
         EDDSA_SIGN_V2_MAX_INCOMING_PARTICIPANT_ENTRIES, fut_wrapper_v1, fut_wrapper_v2,
     };
     use crate::test_utils::{
-        MockCryptoRng,
-        assert_buffer_capacity, assert_public_key_invariant,
+        MockCryptoRng, assert_buffer_capacity, assert_public_key_invariant,
         build_frost_key_packages_with_dealer, check_one_coordinator_output,
         expected_buffer_by_role, generate_participants, generate_participants_with_random_ids,
         run_keygen, run_refresh, run_reshare,
