@@ -32,6 +32,18 @@ const DEFAULT_CLEANUP_ORPHANED_NODE_MIGRATIONS_TERA_GAS: u64 = 4;
 const DEFAULT_REMOVE_NON_PARTICIPANT_UPDATE_VOTES_TERA_GAS: u64 = 5;
 /// Prepaid gas for a `clean_foreign_chain_data` call
 const DEFAULT_CLEAN_FOREIGN_CHAIN_DATA_TERA_GAS: u64 = 5;
+/// Gas attached to the cross-contract `verify_quote` call on the TEE verifier.
+/// Dominated by ECDSA verifications + X.509 chain walking inside
+/// `dcap_qvl::verify::verify`. TODO(#3265): benchmark.
+const DEFAULT_VERIFIER_TERA_GAS: u64 = 100;
+/// Prepaid gas for the `resolve_verification` callback. Carries the bulk of the
+/// contract-side work (post-DCAP checks + `stored_attestations` insert), so it
+/// gets the largest budget. TODO(#3265): benchmark.
+const DEFAULT_RESOLVE_VERIFICATION_TERA_GAS: u64 = 60;
+/// Prepaid gas for the `on_attestation_verified` yield-callback. Only a
+/// `LookupMap::remove` + a refund Promise on the timeout branch, so it can be
+/// small. TODO(#3265): benchmark.
+const DEFAULT_ON_ATTESTATION_VERIFIED_TERA_GAS: u64 = 10;
 
 /// Config for V2 of the contract.
 #[near(serializers=[borsh, json])]
@@ -64,6 +76,12 @@ pub(crate) struct Config {
     pub(crate) remove_non_participant_update_votes_tera_gas: u64,
     /// Prepaid gas for a `clean_foreign_chain_data` call.
     pub(crate) clean_foreign_chain_data_tera_gas: u64,
+    /// Gas attached to the cross-contract `verify_quote` call on the verifier.
+    pub(crate) verifier_tera_gas: u64,
+    /// Prepaid gas for the `resolve_verification` callback.
+    pub(crate) resolve_verification_tera_gas: u64,
+    /// Prepaid gas for the `on_attestation_verified` yield-callback.
+    pub(crate) on_attestation_verified_tera_gas: u64,
 }
 
 impl Default for Config {
@@ -88,6 +106,9 @@ impl Default for Config {
             remove_non_participant_update_votes_tera_gas:
                 DEFAULT_REMOVE_NON_PARTICIPANT_UPDATE_VOTES_TERA_GAS,
             clean_foreign_chain_data_tera_gas: DEFAULT_CLEAN_FOREIGN_CHAIN_DATA_TERA_GAS,
+            verifier_tera_gas: DEFAULT_VERIFIER_TERA_GAS,
+            resolve_verification_tera_gas: DEFAULT_RESOLVE_VERIFICATION_TERA_GAS,
+            on_attestation_verified_tera_gas: DEFAULT_ON_ATTESTATION_VERIFIED_TERA_GAS,
         }
     }
 }

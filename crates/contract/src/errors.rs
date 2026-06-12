@@ -28,6 +28,18 @@ pub enum TeeError {
         "Due to previously failed TEE validation, the network is not accepting new requests at this point in time. Try again later."
     )]
     TeeValidationFailed,
+    #[error(
+        "A Dstack attestation verification is already in flight for this account; wait for it to finish before resubmitting."
+    )]
+    VerificationAlreadyPending,
+    #[error(
+        "No TEE verifier is configured yet. Participants must vote one in via vote_tee_verifier_change before Dstack attestations can be submitted."
+    )]
+    VerifierNotConfigured,
+    #[error(
+        "The placeholder verifier account cannot be voted in as the trusted verifier; it denotes the unconfigured state."
+    )]
+    VerifierCandidateIsPlaceholder,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

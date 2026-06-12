@@ -264,6 +264,18 @@ BorshSchemaContainer {
                         "clean_foreign_chain_data_tera_gas",
                         "u64",
                     ),
+                    (
+                        "verifier_tera_gas",
+                        "u64",
+                    ),
+                    (
+                        "resolve_verification_tera_gas",
+                        "u64",
+                    ),
+                    (
+                        "on_attestation_verified_tera_gas",
+                        "u64",
+                    ),
                 ],
             ),
         },
@@ -712,6 +724,18 @@ BorshSchemaContainer {
                     (
                         "foreign_chain_rpc_whitelist",
                         "ForeignChainRpcWhitelist",
+                    ),
+                    (
+                        "tee_verifier_account_id",
+                        "AccountId",
+                    ),
+                    (
+                        "tee_verifier_votes",
+                        "TeeVerifierVotes",
+                    ),
+                    (
+                        "pending_attestations",
+                        "LookupMap",
                     ),
                 ],
             ),
@@ -1176,6 +1200,16 @@ BorshSchemaContainer {
                 ],
             ),
         },
+        "TeeVerifierVotes": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "pending",
+                        "Votes<AuthenticatedParticipantId>",
+                    ),
+                ],
+            ),
+        },
         "Threshold": Struct {
             fields: UnnamedFields(
                 [
@@ -1276,6 +1310,20 @@ BorshSchemaContainer {
             ),
         },
         "Votes<(AuthenticatedParticipantId, ForeignChain)>": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "proposal_by_voter",
+                        "IterableMap",
+                    ),
+                    (
+                        "votes_by_proposal",
+                        "IterableMap",
+                    ),
+                ],
+            ),
+        },
+        "Votes<AuthenticatedParticipantId>": Struct {
             fields: NamedFields(
                 [
                     (

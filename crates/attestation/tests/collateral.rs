@@ -1,8 +1,5 @@
-use std::str::FromStr;
-
 use assert_matches::assert_matches;
-use attestation::collateral::{Collateral, CollateralError};
-use dcap_qvl::QuoteCollateralV3;
+use attestation::collateral::{CollateralError, collateral_from_json, collateral_from_str};
 use serde_json::json;
 use test_utils::attestation::collateral;
 
@@ -12,7 +9,7 @@ fn test_collateral_missing_field() {
     // Remove a required field
     json_value.as_object_mut().unwrap().remove("tcb_info");
 
-    let result = Collateral::try_from_json(json_value);
+    let result = collateral_from_json(json_value);
 
     assert_matches!(result, Err(CollateralError::MissingField(field)) => {
         assert_eq!(field, "tcb_info");
@@ -25,7 +22,7 @@ fn test_collateral_invalid_hex() {
     // Set invalid hex value
     json_value["tcb_info_signature"] = json!("not_valid_hex");
 
-    let result = Collateral::try_from_json(json_value);
+    let result = collateral_from_json(json_value);
 
     assert_matches!(result, Err(CollateralError::HexDecode { field, ..}) => {
         assert_eq!(field, "tcb_info_signature");
@@ -38,7 +35,7 @@ fn test_collateral_null_field() {
     // Set field to null
     json_value["qe_identity"] = json!(null);
 
-    let result = Collateral::try_from_json(json_value);
+    let result = collateral_from_json(json_value);
 
     assert_matches!(result, Err(CollateralError::MissingField(field)) => {
         assert_eq!(field, "qe_identity");
@@ -51,7 +48,7 @@ fn test_collateral_wrong_type_field() {
     // Set field to wrong type (number instead of string)
     json_value["tcb_info_issuer_chain"] = json!(12345);
 
-    let result = Collateral::try_from_json(json_value);
+    let result = collateral_from_json(json_value);
 
     assert_matches!(result, Err(CollateralError::MissingField(field)) => {
         assert_eq!(field, "tcb_info_issuer_chain");
@@ -61,32 +58,26 @@ fn test_collateral_wrong_type_field() {
 #[test]
 fn test_hex_signature_lengths() {
     let json_value = collateral();
-    let collateral = Collateral::try_from_json(json_value).unwrap();
+    let collateral = collateral_from_json(json_value).unwrap();
 
-    // TCB info signature should be 64 hex chars (32 bytes)
+    // The signatures are hex-decoded into raw bytes: a 64-byte ECDSA signature
+    // is 128 hex chars in the JSON.
     assert_eq!(collateral.tcb_info_signature.len(), 64);
-    // QE identity signature should be 64 hex chars (32 bytes)
     assert_eq!(collateral.qe_identity_signature.len(), 64);
 }
 
 #[test]
-fn test_derive_traits() {
+fn test_collateral_parses_expected_fields() {
     let json_value = collateral();
-    let collateral = Collateral::try_from_json(json_value.clone()).unwrap();
+    let collateral = collateral_from_json(json_value).unwrap();
 
-    // Test From trait (should work through derive_more)
-    let quote_collateral_v3: QuoteCollateralV3 = collateral.into();
-    assert!(quote_collateral_v3.tcb_info.contains("\"id\":\"TDX\""));
-
-    // Test creating from QuoteCollateralV3
-    let new_collateral = Collateral::from(quote_collateral_v3);
-    assert!(new_collateral.tcb_info.contains("\"id\":\"TDX\""));
+    assert!(collateral.tcb_info.contains("\"id\":\"TDX\""));
 }
 
 #[test]
 fn test_from_str_valid_json() {
     let json_str = serde_json::to_string(&collateral()).unwrap();
-    let collateral = Collateral::from_str(&json_str).unwrap();
+    let collateral = collateral_from_str(&json_str).unwrap();
 
     assert!(collateral.tcb_info.contains("\"id\":\"TDX\""));
 }
@@ -94,7 +85,7 @@ fn test_from_str_valid_json() {
 #[test]
 fn test_from_str_invalid_json() {
     let invalid_json = "{ invalid json }";
-    let result = Collateral::from_str(invalid_json);
+    let result = collateral_from_str(invalid_json);
 
     assert_matches!(result, Err(CollateralError::InvalidJson));
 }

@@ -10,7 +10,7 @@ use mpc_attestation::{
         Attestation, DstackAttestation, ExpectedMeasurements, Measurements, MockAttestation,
         VerifiedAttestation,
     },
-    collateral::{Collateral, QuoteCollateralV3},
+    collateral::Collateral,
     tcb_info::{EventLog, HexBytes, TcbInfo},
 };
 use near_mpc_contract_interface::types as dtos;
@@ -124,7 +124,9 @@ impl IntoContractType<Collateral> for dtos::Collateral {
             pck_certificate_chain,
         } = self;
 
-        Collateral::from(QuoteCollateralV3 {
+        // TODO(#3494): drop this conversion once `dtos::DstackAttestation`
+        // carries `tee_verifier_interface::Collateral` directly (L4).
+        Collateral {
             pck_crl_issuer_chain,
             root_ca_crl: root_ca_crl.into(),
             pck_crl: pck_crl.into(),
@@ -135,7 +137,7 @@ impl IntoContractType<Collateral> for dtos::Collateral {
             qe_identity,
             qe_identity_signature: qe_identity_signature.into(),
             pck_certificate_chain,
-        })
+        }
     }
 }
 
@@ -329,8 +331,9 @@ impl IntoInterfaceType<dtos::DstackAttestation> for DstackAttestation {
 
 impl IntoInterfaceType<dtos::Collateral> for Collateral {
     fn into_dto_type(self) -> dtos::Collateral {
-        // Collateral is a newtype wrapper around QuoteCollateralV3
-        let QuoteCollateralV3 {
+        // TODO(#3494): drop this conversion once `dtos` carries the interface
+        // `Collateral` directly (L4).
+        let Collateral {
             pck_crl_issuer_chain,
             root_ca_crl,
             pck_crl,
@@ -341,7 +344,7 @@ impl IntoInterfaceType<dtos::Collateral> for Collateral {
             qe_identity,
             qe_identity_signature,
             pck_certificate_chain,
-        } = self.into();
+        } = self;
 
         dtos::Collateral {
             pck_crl_issuer_chain,
@@ -487,6 +490,15 @@ impl From<near_mpc_contract_interface::types::InitConfig> for Config {
         if let Some(v) = config_ext.clean_foreign_chain_data_tera_gas {
             config.clean_foreign_chain_data_tera_gas = v;
         }
+        if let Some(v) = config_ext.verifier_tera_gas {
+            config.verifier_tera_gas = v;
+        }
+        if let Some(v) = config_ext.resolve_verification_tera_gas {
+            config.resolve_verification_tera_gas = v;
+        }
+        if let Some(v) = config_ext.on_attestation_verified_tera_gas {
+            config.on_attestation_verified_tera_gas = v;
+        }
 
         config
     }
@@ -514,6 +526,9 @@ impl From<&Config> for near_mpc_contract_interface::types::Config {
             remove_non_participant_update_votes_tera_gas: value
                 .remove_non_participant_update_votes_tera_gas,
             clean_foreign_chain_data_tera_gas: value.clean_foreign_chain_data_tera_gas,
+            verifier_tera_gas: value.verifier_tera_gas,
+            resolve_verification_tera_gas: value.resolve_verification_tera_gas,
+            on_attestation_verified_tera_gas: value.on_attestation_verified_tera_gas,
         }
     }
 }
@@ -540,6 +555,9 @@ impl From<near_mpc_contract_interface::types::Config> for Config {
             remove_non_participant_update_votes_tera_gas: value
                 .remove_non_participant_update_votes_tera_gas,
             clean_foreign_chain_data_tera_gas: value.clean_foreign_chain_data_tera_gas,
+            verifier_tera_gas: value.verifier_tera_gas,
+            resolve_verification_tera_gas: value.resolve_verification_tera_gas,
+            on_attestation_verified_tera_gas: value.on_attestation_verified_tera_gas,
         }
     }
 }

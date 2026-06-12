@@ -29,6 +29,8 @@ pub const VOTE_CANCEL_RESHARING: &str = "vote_cancel_resharing";
 pub const VOTE_ABORT_KEY_EVENT_INSTANCE: &str = "vote_abort_key_event_instance";
 pub const VOTE_UPDATE: &str = "vote_update";
 pub const VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS: &str = "vote_update_foreign_chain_providers";
+pub const VOTE_TEE_VERIFIER_CHANGE: &str = "vote_tee_verifier_change";
+pub const WITHDRAW_TEE_VERIFIER_VOTE: &str = "withdraw_tee_verifier_vote";
 pub const REMOVE_UPDATE_VOTE: &str = "remove_update_vote";
 pub const REMOVE_NON_PARTICIPANT_UPDATE_VOTES: &str = "remove_non_participant_update_votes";
 
@@ -53,12 +55,18 @@ pub const CLEAN_TEE_STATUS: &str = "clean_tee_status";
 pub const CLEAN_INVALID_ATTESTATIONS: &str = "clean_invalid_attestations";
 pub const CLEAN_FOREIGN_CHAIN_DATA: &str = "clean_foreign_chain_data";
 
+// TEE verifier contract (the method `mpc-contract` calls cross-contract)
+pub const VERIFY_QUOTE: &str = "verify_quote";
+
 // Callbacks (used in promise_yield_create and indexed by the node)
 pub const RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS: &str =
     "return_signature_and_clean_state_on_success";
 pub const RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS: &str = "return_ck_and_clean_state_on_success";
 pub const RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS: &str =
     "return_verify_foreign_tx_and_clean_state_on_success";
+pub const RESOLVE_VERIFICATION: &str = "resolve_verification";
+pub const ON_ATTESTATION_VERIFIED: &str = "on_attestation_verified";
+pub const FAIL_ON_ATTESTATION_TIMEOUT: &str = "fail_on_attestation_timeout";
 
 // View methods
 pub const STATE: &str = "state";

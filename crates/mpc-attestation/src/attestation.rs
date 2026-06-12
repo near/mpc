@@ -11,6 +11,7 @@ use attestation::{
 
 use include_measurements::include_measurements;
 use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash};
+use tee_verifier_interface::VerifiedReport;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use launcher_interface::MPC_IMAGE_HASH_EVENT;
@@ -21,7 +22,13 @@ use crate::alloc::format;
 use crate::alloc::string::{String, ToString};
 
 // TODO(#1639): extract timestamp from certificate itself
-pub const DEFAULT_EXPIRATION_DURATION_SECONDS: u64 = 60 * 60 * 24 * 7; // 7 days
+//
+// 1 day (lowered from 7) bounds how long a wrongly-accepted attestation — e.g.
+// one a since-rotated, buggy verifier let through — stays trusted before it
+// ages out via `re_verify`, without a sweep. The window stays well above the
+// node's hourly `periodic_attestation_submission` cadence, so honest nodes
+// refresh with comfortable margin.
+pub const DEFAULT_EXPIRATION_DURATION_SECONDS: u64 = 60 * 60 * 24; // 1 day
 
 #[expect(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
@@ -40,7 +47,7 @@ pub enum VerifiedAttestation {
     Mock(MockAttestation),
 }
 
-/// Result of a successful [`Attestation::verify`] call.
+/// Result of a successful [`Attestation::verify_with_report`] call.
 #[derive(Clone, Debug)]
 pub struct AcceptedAttestation {
     pub attestation: VerifiedAttestation,
@@ -145,10 +152,99 @@ pub fn default_measurements() -> &'static [ExpectedMeasurements] {
 }
 
 impl Attestation {
-    /// Verifies the attestation.
+    /// Verifies the attestation given an already-DCAP-verified report.
+    ///
+    /// Pure: no `dcap-qvl`, no host calls. For a `Dstack` attestation the DCAP
+    /// cryptographic verification is done elsewhere — by the `tee-verifier`
+    /// contract on-chain, or by [`verify_locally`](Self::verify_locally)
+    /// off-chain — and its [`VerifiedReport`] is passed in here. This is the
+    /// function `mpc-contract` calls from its verifier callback.
+    ///
+    /// `report` is ignored for `Mock` attestations (they have no real quote);
+    /// pass any value (e.g. a default) — callers that hold a `Mock` should use
+    /// the synchronous path rather than going through the verifier.
     ///
     /// On success, returns an [`AcceptedAttestation`].
-    pub fn verify(
+    pub fn verify_with_report(
+        &self,
+        report: &VerifiedReport,
+        expected_report_data: ReportData,
+        current_timestamp_seconds: u64,
+        allowed_mpc_docker_image_hashes: &[NodeImageHash],
+        allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
+        accepted_measurements: &[ExpectedMeasurements],
+    ) -> Result<AcceptedAttestation, VerificationError> {
+        match self {
+            Self::Dstack(dstack_attestation) => {
+                let (mpc_image_hash, launcher_compose_hash) = verify_dstack_mpc_hashes(
+                    dstack_attestation,
+                    allowed_mpc_docker_image_hashes,
+                    allowed_launcher_docker_compose_hashes,
+                )?;
+
+                let AcceptedDstackAttestation {
+                    measurements,
+                    advisory_ids,
+                } = dstack_attestation.verify_with_report(
+                    report,
+                    expected_report_data,
+                    accepted_measurements,
+                )?;
+
+                Ok(accepted_dstack_attestation(
+                    mpc_image_hash,
+                    launcher_compose_hash,
+                    measurements,
+                    advisory_ids,
+                    current_timestamp_seconds,
+                ))
+            }
+            Self::Mock(mock_attestation) => verify_mock(
+                mock_attestation,
+                allowed_mpc_docker_image_hashes,
+                allowed_launcher_docker_compose_hashes,
+                accepted_measurements,
+                current_timestamp_seconds,
+            ),
+        }
+    }
+
+    /// Verifies a `Mock` attestation. Pure and always compiled (no DCAP, no
+    /// `local-verify` feature), so the contract can verify mock submissions
+    /// synchronously without linking `dcap-qvl`.
+    ///
+    /// Returns an error for `Dstack` attestations: those require real DCAP
+    /// verification, which is not available on this path.
+    pub fn verify_mock_only(
+        &self,
+        current_timestamp_seconds: u64,
+        allowed_mpc_docker_image_hashes: &[NodeImageHash],
+        allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
+        accepted_measurements: &[ExpectedMeasurements],
+    ) -> Result<AcceptedAttestation, VerificationError> {
+        match self {
+            Self::Mock(mock_attestation) => verify_mock(
+                mock_attestation,
+                allowed_mpc_docker_image_hashes,
+                allowed_launcher_docker_compose_hashes,
+                accepted_measurements,
+                current_timestamp_seconds,
+            ),
+            Self::Dstack(_) => Err(VerificationError::Custom(
+                "verify_mock_only called on a Dstack attestation".to_string(),
+            )),
+        }
+    }
+
+    /// Full local verification: runs DCAP (`dcap_qvl::verify::verify`) and then
+    /// the post-DCAP checks. Off-chain only (the `local-verify` feature pulls
+    /// in `dcap-qvl`).
+    ///
+    /// Used by the node, `tee-authority`, and `attestation-cli`. On-chain,
+    /// `mpc-contract` instead calls the verifier contract for DCAP and then
+    /// [`verify_with_report`](Self::verify_with_report).
+    #[cfg(feature = "local-verify")]
+    pub fn verify_locally(
         &self,
         expected_report_data: ReportData,
         current_timestamp_seconds: u64,
@@ -158,87 +254,128 @@ impl Attestation {
     ) -> Result<AcceptedAttestation, VerificationError> {
         match self {
             Self::Dstack(dstack_attestation) => {
-                // Makes MPC related attestation verification first
-                let mpc_image_hash: NodeImageHash = {
-                    let mpc_image_hash_payload = &dstack_attestation
-                        .tcb_info
-                        .get_single_event(MPC_IMAGE_HASH_EVENT)?
-                        .event_payload;
-
-                    // TODO(#2478): decode raw bytes
-                    let mpc_image_hash_bytes: Vec<u8> = hex::decode(mpc_image_hash_payload)
-                        .map_err(|err| {
-                            VerificationError::Custom(format!(
-                                "provided mpc image is not hex encoded: {:?}",
-                                err
-                            ))
-                        })?;
-                    let mpc_image_hash_bytes: [u8; 32] =
-                        mpc_image_hash_bytes.try_into().map_err(|_| {
-                            VerificationError::Custom(
-                                "The provided MPC image hash is not 32 bytes".to_string(),
-                            )
-                        })?;
-                    NodeImageHash::from(mpc_image_hash_bytes)
-                };
-
-                let () = verify_mpc_hash(&mpc_image_hash, allowed_mpc_docker_image_hashes)?;
-
-                let launcher_compose_hash: LauncherDockerComposeHash = {
-                    let app_compose: AppCompose =
-                        serde_json::from_str(&dstack_attestation.tcb_info.app_compose)
-                            .map_err(|e| VerificationError::AppComposeParsing(e.to_string()))?;
-
-                    let launcher_compose_hash_bytes: [u8; 32] =
-                        Sha256::digest(app_compose.docker_compose_file.as_bytes()).into();
-
-                    LauncherDockerComposeHash::from(launcher_compose_hash_bytes)
-                };
-
-                let () = verify_launcher_compose_hash(
-                    &launcher_compose_hash,
+                let (mpc_image_hash, launcher_compose_hash) = verify_dstack_mpc_hashes(
+                    dstack_attestation,
+                    allowed_mpc_docker_image_hashes,
                     allowed_launcher_docker_compose_hashes,
                 )?;
 
                 let AcceptedDstackAttestation {
                     measurements,
                     advisory_ids,
-                } = dstack_attestation.verify(
+                } = dstack_attestation.verify_locally(
                     expected_report_data,
                     current_timestamp_seconds,
                     accepted_measurements,
                 )?;
 
-                // TODO(#1639): extract timestamp from certificate itself
-                let expiration_timestamp_seconds =
-                    current_timestamp_seconds + DEFAULT_EXPIRATION_DURATION_SECONDS;
-                Ok(AcceptedAttestation {
-                    attestation: VerifiedAttestation::Dstack(ValidatedDstackAttestation {
-                        mpc_image_hash,
-                        launcher_compose_hash,
-                        expiry_timestamp_seconds: expiration_timestamp_seconds,
-                        measurements,
-                    }),
+                Ok(accepted_dstack_attestation(
+                    mpc_image_hash,
+                    launcher_compose_hash,
+                    measurements,
                     advisory_ids,
-                })
-            }
-            Self::Mock(mock_attestation) => {
-                // Override attestation verification for this case
-                let () = verify_mock_attestation(
-                    mock_attestation,
-                    allowed_mpc_docker_image_hashes,
-                    allowed_launcher_docker_compose_hashes,
-                    accepted_measurements,
                     current_timestamp_seconds,
-                )?;
-
-                Ok(AcceptedAttestation {
-                    attestation: VerifiedAttestation::Mock(mock_attestation.clone()),
-                    advisory_ids: Vec::new(),
-                })
+                ))
             }
+            Self::Mock(mock_attestation) => verify_mock(
+                mock_attestation,
+                allowed_mpc_docker_image_hashes,
+                allowed_launcher_docker_compose_hashes,
+                accepted_measurements,
+                current_timestamp_seconds,
+            ),
         }
     }
+}
+
+/// Extracts and allowlist-checks the MPC image hash and launcher compose hash
+/// from a `Dstack` attestation's TCB info / app-compose. Independent of the
+/// DCAP report, so shared by both verification entry points.
+fn verify_dstack_mpc_hashes(
+    dstack_attestation: &DstackAttestation,
+    allowed_mpc_docker_image_hashes: &[NodeImageHash],
+    allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
+) -> Result<(NodeImageHash, LauncherDockerComposeHash), VerificationError> {
+    let mpc_image_hash: NodeImageHash = {
+        let mpc_image_hash_payload = &dstack_attestation
+            .tcb_info
+            .get_single_event(MPC_IMAGE_HASH_EVENT)?
+            .event_payload;
+
+        // TODO(#2478): decode raw bytes
+        let mpc_image_hash_bytes: Vec<u8> = hex::decode(mpc_image_hash_payload).map_err(|err| {
+            VerificationError::Custom(format!("provided mpc image is not hex encoded: {:?}", err))
+        })?;
+        let mpc_image_hash_bytes: [u8; 32] = mpc_image_hash_bytes.try_into().map_err(|_| {
+            VerificationError::Custom("The provided MPC image hash is not 32 bytes".to_string())
+        })?;
+        NodeImageHash::from(mpc_image_hash_bytes)
+    };
+
+    let () = verify_mpc_hash(&mpc_image_hash, allowed_mpc_docker_image_hashes)?;
+
+    let launcher_compose_hash: LauncherDockerComposeHash = {
+        let app_compose: AppCompose =
+            serde_json::from_str(&dstack_attestation.tcb_info.app_compose)
+                .map_err(|e| VerificationError::AppComposeParsing(e.to_string()))?;
+
+        let launcher_compose_hash_bytes: [u8; 32] =
+            Sha256::digest(app_compose.docker_compose_file.as_bytes()).into();
+
+        LauncherDockerComposeHash::from(launcher_compose_hash_bytes)
+    };
+
+    let () = verify_launcher_compose_hash(
+        &launcher_compose_hash,
+        allowed_launcher_docker_compose_hashes,
+    )?;
+
+    Ok((mpc_image_hash, launcher_compose_hash))
+}
+
+/// Assembles the [`AcceptedAttestation`] for a verified `Dstack` attestation,
+/// stamping the expiry. Shared by both verification entry points.
+fn accepted_dstack_attestation(
+    mpc_image_hash: NodeImageHash,
+    launcher_compose_hash: LauncherDockerComposeHash,
+    measurements: ExpectedMeasurements,
+    advisory_ids: Vec<String>,
+    current_timestamp_seconds: u64,
+) -> AcceptedAttestation {
+    // TODO(#1639): extract timestamp from certificate itself
+    let expiration_timestamp_seconds =
+        current_timestamp_seconds + DEFAULT_EXPIRATION_DURATION_SECONDS;
+    AcceptedAttestation {
+        attestation: VerifiedAttestation::Dstack(ValidatedDstackAttestation {
+            mpc_image_hash,
+            launcher_compose_hash,
+            expiry_timestamp_seconds: expiration_timestamp_seconds,
+            measurements,
+        }),
+        advisory_ids,
+    }
+}
+
+/// Verifies a `Mock` attestation. No DCAP, so identical on both entry points.
+fn verify_mock(
+    mock_attestation: &MockAttestation,
+    allowed_mpc_docker_image_hashes: &[NodeImageHash],
+    allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
+    accepted_measurements: &[ExpectedMeasurements],
+    current_timestamp_seconds: u64,
+) -> Result<AcceptedAttestation, VerificationError> {
+    let () = verify_mock_attestation(
+        mock_attestation,
+        allowed_mpc_docker_image_hashes,
+        allowed_launcher_docker_compose_hashes,
+        accepted_measurements,
+        current_timestamp_seconds,
+    )?;
+
+    Ok(AcceptedAttestation {
+        attestation: VerifiedAttestation::Mock(mock_attestation.clone()),
+        advisory_ids: Vec::new(),
+    })
 }
 
 /// Verifies MPC node image hash is in allowed list.
