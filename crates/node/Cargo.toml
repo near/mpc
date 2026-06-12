@@ -24,6 +24,7 @@ derive_more = { workspace = true }
 ed25519-dalek = { workspace = true }
 flume = { workspace = true }
 foreign-chain-inspector = { workspace = true }
+foreign-chain-rpc-interfaces = { workspace = true }
 futures = { workspace = true }
 gcloud-sdk = { workspace = true }
 hex = { workspace = true }
@@ -75,6 +76,7 @@ socket2 = { workspace = true }
 tee-authority = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
+thread-priority = { workspace = true }
 threshold-signatures = { workspace = true }
 tikv-jemallocator = { workspace = true }
 time = { workspace = true }
@@ -108,6 +110,7 @@ built = { workspace = true }
 assert_matches = { workspace = true }
 average = { workspace = true }
 blstrs = { workspace = true }
+chain-gateway = { workspace = true, features = ["test-utils"] }
 elliptic-curve = { workspace = true }
 insta = { workspace = true }
 itertools = { workspace = true }

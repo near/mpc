@@ -200,6 +200,7 @@ impl IntegrationTestSetup {
         for (i, (_, p2p_key)) in p2p_configs.into_iter().enumerate() {
             let config = ConfigFile {
                 cores: Some(4),
+                separate_asset_generation_runtime: true,
                 // Indexer config is just a dummy.
                 indexer: IndexerConfig {
                     concurrency: 1.try_into().unwrap(),

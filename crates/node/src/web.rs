@@ -98,6 +98,7 @@ struct NodeConfigResponse {
     keygen: KeygenConfig,
     foreign_chains_provider_counts: ForeignChainsProviderCounts,
     cores: Option<usize>,
+    separate_asset_generation_runtime: bool,
 }
 
 impl From<ConfigFile> for NodeConfigResponse {
@@ -117,6 +118,7 @@ impl From<ConfigFile> for NodeConfigResponse {
             keygen: config.keygen,
             foreign_chains_provider_counts: config.foreign_chains.into(),
             cores: config.cores,
+            separate_asset_generation_runtime: config.separate_asset_generation_runtime,
         }
     }
 }
@@ -388,6 +390,7 @@ mod tests {
     const ARBITRUM_RPC_URL: &str = "https://arbitrum.publicnode.com";
     const HYPER_EVM_RPC_URL: &str = "https://rpc.hyperliquid.xyz/evm";
     const POLYGON_RPC_URL: &str = "https://polygon-bor-rpc.publicnode.com";
+    const APTOS_RPC_URL: &str = "https://aptos-mainnet.nodereal.io/v1/";
 
     const SOLANA_BEARER_TOKEN: &str = "sk-SUPER-SECRET-KEY";
     const BITCOIN_PATH_TOKEN: &str = "ankr-secret-token";
@@ -506,8 +509,10 @@ mod tests {
                     POLYGON_RPC_URL,
                     AuthConfig::None,
                 )),
+                aptos: Some(test_chain(PROVIDER_PUBLIC, APTOS_RPC_URL, AuthConfig::None)),
             },
             cores: Some(4),
+            separate_asset_generation_runtime: true,
         }
     }
 
@@ -567,6 +572,7 @@ mod tests {
             ARBITRUM_RPC_URL,
             HYPER_EVM_RPC_URL,
             POLYGON_RPC_URL,
+            APTOS_RPC_URL,
             SOLANA_BEARER_TOKEN,
             BITCOIN_PATH_TOKEN,
             STARKNET_QUERY_TOKEN,
