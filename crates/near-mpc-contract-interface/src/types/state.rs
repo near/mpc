@@ -192,9 +192,9 @@ impl TryFrom<ProposedThresholdParametersCompat> for ProposedThresholdParameters 
                 },
                 per_domain_thresholds: BTreeMap::new(),
             }),
-            (None, None, Some(parameters), Some(per_domain_thresholds)) => Ok(Self {
+            (None, None, Some(parameters), per_domain_thresholds) => Ok(Self {
                 parameters,
-                per_domain_thresholds,
+                per_domain_thresholds: per_domain_thresholds.unwrap_or(BTreeMap::new()),
             }),
             _ => Err(Self::Error::IncorrectShape),
         }
@@ -540,5 +540,26 @@ mod tests {
 
         // Then
         assert_eq!(parsed.per_domain_thresholds.len(), 1);
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn proposed_threshold_parameters__handles_current_proposal_payload_empty_per_domain_thresholds()
+    {
+        // Given
+        let participants = sample_participants();
+        let proposal = serde_json::from_value(serde_json::json!( {
+            "parameters": {
+                "participants": participants,
+        "threshold": Threshold::new(1),
+            }
+        }))
+        .unwrap();
+
+        // When
+        let parsed: ProposedThresholdParameters = serde_json::from_value(proposal).unwrap();
+
+        // Then
+        assert_eq!(parsed.per_domain_thresholds.len(), 0);
     }
 }
