@@ -7,7 +7,7 @@
 //! final outcome — so an operator can open the page and see what the node sent
 //! and how each one turned out.
 
-use crate::types::{SubmittedTransaction, TransactionLogger};
+use crate::types::{LogTransaction, SubmittedTransaction};
 use std::{
     collections::VecDeque,
     fmt::Write,
@@ -74,7 +74,7 @@ impl SharedRecentTransactions {
     }
 }
 
-/// [`TransactionLogger`] that forwards records over a bounded channel to the
+/// [`LogTransaction`] that forwards records over a bounded channel to the
 /// drain task.
 #[derive(Clone)]
 pub struct RecentTransactionsLogger {
@@ -89,7 +89,7 @@ impl RecentTransactionsLogger {
     }
 }
 
-impl TransactionLogger for RecentTransactionsLogger {
+impl LogTransaction for RecentTransactionsLogger {
     fn log_transaction(&self, transaction: SubmittedTransaction) {
         match self.sender.try_send(transaction) {
             Ok(()) => {}

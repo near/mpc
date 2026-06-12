@@ -4,8 +4,8 @@ use super::tx_signer::{TransactionSigner, TransactionSigners};
 use crate::config::RespondConfig;
 use crate::metrics;
 use crate::types::{
-    SignerContext, SubmittedTransaction, SubmittedTransactionStatus, SubmittedTxMetadata,
-    TransactionLogger,
+    LogTransaction, SignerContext, SubmittedTransaction, SubmittedTransactionStatus,
+    SubmittedTxMetadata,
 };
 use anyhow::Context;
 use ed25519_dalek::SigningKey;
@@ -53,7 +53,7 @@ impl TransactionProcessorHandle {
         owner_secret_key: SigningKey,
         config: RespondConfig,
         indexer_state: Arc<IndexerState>,
-        tx_logger: impl TransactionLogger,
+        tx_logger: impl LogTransaction,
     ) -> anyhow::Result<impl TransactionSender> {
         let mut signers = TransactionSigners::new(config, owner_account_id, owner_secret_key)
             .context("Failed to initialize transaction signers")?;

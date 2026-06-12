@@ -381,7 +381,7 @@ impl SubmittedTransaction {
 /// the indexer needn't know where the records go, and `log_transaction` can't
 /// fail or block — recording is best-effort and never slows transaction
 /// processing.
-pub trait TransactionLogger: Clone + Send + Sync + 'static {
+pub trait LogTransaction: Clone + Send + Sync + 'static {
     fn log_transaction(&self, transaction: SubmittedTransaction);
 }
 
