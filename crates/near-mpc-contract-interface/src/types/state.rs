@@ -156,65 +156,57 @@ pub struct ThresholdParameters {
 // stays positional. The ABI reflects this nested shape, not the flat compat JSON
 // (schemars can't see serde `from`/`into`) — intentional, gone after 3.11.2.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
-#[serde(
-    from = "ProposedThresholdParametersCompat",
-    into = "ProposedThresholdParametersCompat"
-)]
+#[serde(try_from = "ProposedThresholdParametersCompat")]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
 pub struct ProposedThresholdParameters {
     pub parameters: ThresholdParameters,
+    #[serde(default)]
     pub per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
 }
 
-// TODO(#3495): delete this struct and its two `From` bridges in the next SC
-// version (after 3.11.2). At that point `ProposedThresholdParameters`
-// serializes to its native nested shape `{ parameters, per_domain_thresholds }`
-// — a deliberate wire break, acceptable because only partner nodes consume it.
-//
-// Flat serde mirror of [`ProposedThresholdParameters`], existing only for wire
-// back-compat. It (a) `serde(flatten)`s `parameters` to the top level so the
-// public JSON object stays flat — `{ participants, threshold,
-// per_domain_thresholds }` — and (b) defaults `per_domain_thresholds` to empty
-// so pre-3.11 `vote_new_parameters` payloads (which omit the field) still
-// deserialize. Keeping all serde shaping confined here means the public type
-// carries none of it. borsh and schemars are intentionally NOT derived — the
-// bridge is serde-only, and the ABI schema is generated from the public type's
-// own fields instead.
+// TODO(#3495): delete this struct after version 3.12 is deployed.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct ProposedThresholdParametersCompat {
-    #[serde(flatten)]
-    parameters: ThresholdParameters,
-    #[serde(default)]
-    per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
+    participants: Option<Participants>,
+    threshold: Option<Threshold>,
+    parameters: Option<ThresholdParameters>,
+    per_domain_thresholds: Option<BTreeMap<DomainId, ReconstructionThreshold>>,
 }
 
-impl From<ProposedThresholdParametersCompat> for ProposedThresholdParameters {
-    fn from(compat: ProposedThresholdParametersCompat) -> Self {
-        let ProposedThresholdParametersCompat {
-            parameters,
-            per_domain_thresholds,
-        } = compat;
-        Self {
-            parameters,
-            per_domain_thresholds,
+impl TryFrom<ProposedThresholdParametersCompat> for ProposedThresholdParameters {
+    type Error = ProposedThresholdParametersDecodeError;
+    fn try_from(compat: ProposedThresholdParametersCompat) -> Result<Self, Self::Error> {
+        match (
+            compat.participants,
+            compat.threshold,
+            compat.parameters,
+            compat.per_domain_thresholds,
+        ) {
+            (Some(participants), Some(threshold), None, None) => Ok(Self {
+                parameters: ThresholdParameters {
+                    participants,
+                    threshold,
+                },
+                per_domain_thresholds: BTreeMap::new(),
+            }),
+            (None, None, Some(parameters), Some(per_domain_thresholds)) => Ok(Self {
+                parameters,
+                per_domain_thresholds,
+            }),
+            _ => Err(Self::Error::IncorrectShape),
         }
     }
 }
 
-impl From<ProposedThresholdParameters> for ProposedThresholdParametersCompat {
-    fn from(value: ProposedThresholdParameters) -> Self {
-        let ProposedThresholdParameters {
-            parameters,
-            per_domain_thresholds,
-        } = value;
-        Self {
-            parameters,
-            per_domain_thresholds,
-        }
-    }
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum ProposedThresholdParametersDecodeError {
+    #[error(
+        "ProposedThresholdParameters must be compatible with 3.11 ThresholdParameters or 3.12 ProposedThresholdParameters"
+    )]
+    IncorrectShape,
 }
 
 // =============================================================================
@@ -495,10 +487,8 @@ mod tests {
         assert_eq!(output, "Contract is not initialized\n");
     }
 
-    /// A proposal carrying non-empty per-domain threshold updates, used by the
-    /// `ProposedThresholdParameters` wire-lock tests.
-    fn sample_proposal() -> ProposedThresholdParameters {
-        let participants = Participants {
+    fn sample_participants() -> Participants {
+        Participants {
             next_id: ParticipantId(1),
             participants: vec![(
                 "alice.near".parse().unwrap(),
@@ -510,84 +500,45 @@ mod tests {
                         .unwrap(),
                 },
             )],
-        };
-        ProposedThresholdParameters {
+        }
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn proposed_threshold_parameters__handles_legacy_proposal_payload() {
+        // Given
+        let participants = sample_participants();
+        let legacy = serde_json::to_value(ThresholdParameters {
+            participants,
+            threshold: Threshold::new(1),
+        })
+        .unwrap();
+
+        // When
+        let parsed: ProposedThresholdParameters = serde_json::from_value(legacy).unwrap();
+
+        // Then
+        assert!(parsed.per_domain_thresholds.is_empty());
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn proposed_threshold_parameters__handles_current_proposal_payload() {
+        // Given
+        let participants = sample_participants();
+        let proposal = serde_json::to_value(ProposedThresholdParameters {
             parameters: ThresholdParameters {
                 participants,
                 threshold: Threshold::new(1),
             },
             per_domain_thresholds: BTreeMap::from([(DomainId(0), ReconstructionThreshold::new(1))]),
-        }
-    }
+        })
+        .unwrap();
 
-    /// The serde bridge must be lossless and must actually take the compat
-    /// path: native nested serialization would emit a `parameters` sub-object,
-    /// so its absence proves `into`/`from` route through the flattened
-    /// `ProposedThresholdParametersCompat`.
-    #[test]
-    #[expect(non_snake_case)]
-    fn proposed_threshold_parameters__json_round_trips_through_flat_compat() {
-        // Given a proposal carrying non-empty per-domain threshold updates.
-        let proposal = sample_proposal();
+        // When
+        let parsed: ProposedThresholdParameters = serde_json::from_value(proposal).unwrap();
 
-        // When serialized and deserialized again.
-        let json = serde_json::to_string(&proposal).unwrap();
-        let back: ProposedThresholdParameters = serde_json::from_str(&json).unwrap();
-
-        // Then the JSON is flat (no nested `parameters`) and the value survives.
-        assert!(!json.contains("\"parameters\""), "got: {json}");
-        assert_eq!(back, proposal);
-    }
-
-    /// Wire-format lock: the public contract for `ProposedThresholdParameters` is
-    /// the flat JSON object `{ participants, threshold, per_domain_thresholds }`,
-    /// not the `ProposedThresholdParametersCompat` bridge that currently produces
-    /// it. The snapshot pins the full shape, so deleting the compat struct later
-    /// (letting the type serialize to its native nested `parameters` sub-object)
-    /// surfaces as a snapshot diff rather than a silent wire break.
-    #[test]
-    #[expect(non_snake_case)]
-    fn proposed_threshold_parameters__serializes_to_flat_wire_shape() {
-        insta::assert_json_snapshot!(sample_proposal());
-    }
-
-    /// TODO(#3495): Pre-3.11 callers submit `{ participants, threshold }` with no
-    /// `per_domain_thresholds`. The `serde(default)` on
-    /// `ProposedThresholdParametersCompat` must keep parsing that as an empty
-    /// (no-change) map — the backward-compat guarantee that let the field be
-    /// added without a wire break. Removed alongside the compat struct.
-    #[test]
-    #[expect(non_snake_case)]
-    fn proposed_threshold_parameters__legacy_payload_omitting_field__parses_as_empty() {
-        // Given a legacy proposal value with the per_domain_thresholds field absent.
-        let mut legacy = serde_json::to_value(sample_proposal()).unwrap();
-        legacy
-            .as_object_mut()
-            .unwrap()
-            .remove("per_domain_thresholds");
-
-        // When deserialized.
-        let parsed: ProposedThresholdParameters = serde_json::from_value(legacy).unwrap();
-
-        // Then the per-domain threshold updates default to empty.
-        assert!(parsed.per_domain_thresholds.is_empty());
-    }
-
-    /// borsh is positional and ignores the serde compat bridge, so the stored
-    /// layout is `[participants, threshold, per_domain_thresholds]` regardless of
-    /// the JSON shaping. A round-trip locks that the type stays borsh-stable
-    /// across the eventual removal of the compat struct.
-    #[test]
-    #[expect(non_snake_case)]
-    fn proposed_threshold_parameters__borsh_round_trips() {
-        // Given a proposal carrying non-empty per-domain threshold updates.
-        let proposal = sample_proposal();
-
-        // When borsh round-tripped.
-        let bytes = borsh::to_vec(&proposal).unwrap();
-        let decoded: ProposedThresholdParameters = borsh::from_slice(&bytes).unwrap();
-
-        // Then it survives unchanged.
-        assert_eq!(decoded, proposal);
+        // Then
+        assert_eq!(parsed.per_domain_thresholds.len(), 1);
     }
 }
