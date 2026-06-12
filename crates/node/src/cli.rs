@@ -202,7 +202,6 @@ impl InitConfigArgs {
             rpc_addr: None,
             network_addr: None,
             tier3_public_addr: None,
-            external_storage_fallback_threshold: None,
         }
     }
 }

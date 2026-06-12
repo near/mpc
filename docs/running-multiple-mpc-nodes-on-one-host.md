@@ -166,7 +166,7 @@ for the right placement:
 auto-discovers its advertised address as the host's default-route
 outbound IP, which DSS peers may not be able to reach, and state sync
 stalls. See the
-[`tier3_public_addr` / `external_storage_fallback_threshold` bullets](./running-an-mpc-node-in-tdx-external-guide.md#prepare-mpc-node-configuration)
+[`tier3_public_addr` bullet](./running-an-mpc-node-in-tdx-external-guide.md#prepare-mpc-node-configuration)
 in the single-node guide for the full field semantics.
 
 ## Operational considerations
