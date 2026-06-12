@@ -3866,14 +3866,14 @@ expression: abi
           "description": "A proposed set of threshold parameters submitted to `vote_new_parameters`: the proposed [`ThresholdParameters`] plus per-domain `ReconstructionThreshold` updates for the resharing it would trigger. An empty `per_domain_thresholds` keeps the current ones; a populated map must reference only existing domains (contract-validated), is applied to the `DomainRegistry` on resharing, and never persists onto the stored [`ThresholdParameters`].",
           "type": "object",
           "required": [
-            "parameters",
-            "per_domain_thresholds"
+            "parameters"
           ],
           "properties": {
             "parameters": {
               "$ref": "#/definitions/ThresholdParameters"
             },
             "per_domain_thresholds": {
+              "default": {},
               "type": "object",
               "additionalProperties": {
                 "type": "integer",
