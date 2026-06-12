@@ -72,11 +72,7 @@ pub fn validate_domain_threshold(
 }
 
 /// TODO(#3306): Enforces the 3.11-transition lock: every CaitSith domain (ForeignTx
-/// included) must share a single `reconstruction_threshold` so the legacy
-/// unprefixed `DBCol::Triple` mirror (#3292) can't collide. Domains using
-/// other protocols are unconstrained. The first CaitSith domain encountered
-/// fixes the expected value; any later CaitSith domain with a different
-/// threshold is rejected. Remove once #3298 drops the mirror.
+/// included) must share a single `reconstruction_threshold`.
 pub fn validate_caitsith_uniform_threshold(domains: &[DomainConfig]) -> Result<(), Error> {
     let mut expected: Option<u64> = None;
     for domain in domains {
