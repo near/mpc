@@ -123,7 +123,7 @@ cargo install cargo-insta
 
 ## Reproducible Builds
 
-Both the node and launcher Docker images support reproducible builds, ensuring identical binaries from the same source. The build is driven by Nix; `nix build .#node-image` (or `.#rust-launcher-image`, etc.) produces an OCI tarball, and `nix build .#node-image-manifest-digest` prints the digest operators vote for.
+Both the node and launcher Docker images support reproducible builds, ensuring identical binaries from the same source. The build is driven by Nix: run `./deployment/build-images.sh` from the project root, or invoke the derivations directly — `nix build .#node-image` produces an OCI tarball and `nix build .#node-image-manifest-digest` prints the digest operators vote for.
 
 For prerequisites and the full set of derivations, see [docs/reproducible-builds.md](docs/reproducible-builds.md).
 
