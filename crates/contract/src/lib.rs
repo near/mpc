@@ -57,7 +57,8 @@ use crypto_shared::{
     types::{PublicKeyExtended, PublicKeyExtendedConversionError},
 };
 use errors::{
-    DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError, TeeError,
+    DomainError, InvalidParameters, InvalidState, InvalidThreshold, PublicKeyError, RespondError,
+    TeeError,
 };
 use k256::elliptic_curve::PrimeField;
 use near_mpc_contract_interface::types::kdf::derive_tweak;
@@ -885,6 +886,10 @@ impl MpcContract {
             proposal,
         );
 
+        // Defense in depth: never reshare into a participant set smaller than any
+        // threshold (see `assert_proposal_meets_all_thresholds`).
+        self.assert_proposal_meets_all_thresholds(&proposal)?;
+
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
@@ -925,6 +930,46 @@ impl MpcContract {
                 .into())
             }
         }
+    }
+
+    /// Defense-in-depth guard for [`Self::vote_new_parameters`]: rejects a
+    /// proposal whose participant set is smaller than the proposed signing
+    /// threshold or any domain's effective reconstruction threshold (proposed
+    /// override if present, else the domain's current value). Such a set would
+    /// leave a key un-signable or un-reconstructible. Redundant with
+    /// `RunningContractState::process_new_parameters_proposal`.
+    fn assert_proposal_meets_all_thresholds(
+        &self,
+        proposal: &ProposedThresholdParameters,
+    ) -> Result<(), Error> {
+        let num_participants = proposal.participants().len() as u64;
+
+        let threshold = proposal.threshold().value();
+        if threshold > num_participants {
+            return Err(InvalidThreshold::MaxRequirementFailed {
+                max: num_participants,
+                found: threshold,
+            }
+            .into());
+        }
+
+        let domains = self.protocol_state.domain_registry()?;
+        let updates = proposal.per_domain_thresholds();
+        for domain in domains.domains() {
+            let effective = updates
+                .get(&domain.id)
+                .copied()
+                .unwrap_or(domain.reconstruction_threshold)
+                .inner();
+            if effective > num_participants {
+                return Err(DomainError::ReconstructionThresholdExceedsParticipants {
+                    threshold: effective,
+                    participants: num_participants,
+                }
+                .into());
+            }
+        }
+        Ok(())
     }
 
     /// Propose adding a new set of domains for the MPC network.
@@ -3781,6 +3826,159 @@ mod tests {
             result.is_ok(),
             "Should succeed when participants have Valid or None TEE status (invalid attestations rejected)"
         );
+    }
+
+    /// Builds a Running contract with `num_participants` participants, signing
+    /// threshold `threshold`, and a single CaitSith `Sign` domain whose
+    /// reconstruction threshold is `reconstruction_threshold`.
+    fn setup_running_contract_with_domain(
+        num_participants: usize,
+        threshold: u64,
+        reconstruction_threshold: u64,
+    ) -> (MpcContract, Participants, AccountId, DomainId) {
+        let participants = gen_participants(num_participants);
+        let first_participant_id = participants.participants()[0].0.clone();
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(first_participant_id.clone())
+                .predecessor_account_id(first_participant_id.clone())
+                .attached_deposit(NearToken::from_near(1))
+                .build()
+        );
+
+        let parameters =
+            ThresholdParameters::new(participants.clone(), Threshold::new(threshold)).unwrap();
+        let domain_id = DomainId::default();
+        let domains = vec![DomainConfig {
+            id: domain_id,
+            protocol: Protocol::CaitSith,
+            reconstruction_threshold: ReconstructionThreshold::new(reconstruction_threshold),
+            purpose: DomainPurpose::Sign,
+        }];
+        let (pk, _) = make_public_key_for_curve(Curve::Secp256k1, &mut OsRng);
+        let keyset = Keyset::new(
+            EpochId::new(0),
+            vec![KeyForDomain {
+                domain_id,
+                key: pk.try_into().unwrap(),
+                attempt: AttemptId::new(),
+            }],
+        );
+        let contract =
+            MpcContract::init_running(domains, 1, keyset, (&parameters).into_dto_type(), None)
+                .unwrap();
+        (contract, participants, first_participant_id, domain_id)
+    }
+
+    /// Installs a voting context for `signer` and casts `proposal`.
+    fn vote_params(
+        contract: &mut MpcContract,
+        signer: &AccountId,
+        proposal: &ProposedThresholdParameters,
+    ) -> Result<(), Error> {
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(signer.clone())
+                .predecessor_account_id(signer.clone())
+                .attached_deposit(NearToken::from_yoctonear(0))
+                .build()
+        );
+        contract.vote_new_parameters(EpochId::new(1), proposal.into_dto_type())
+    }
+
+    #[test]
+    fn vote_new_parameters__should_reject_when_per_domain_threshold_exceeds_participants() {
+        // Given: a Running contract with 3 participants and one domain.
+        let (mut contract, participants, signer, domain_id) =
+            setup_running_contract_with_domain(3, 2, 2);
+        // ...and a proposal raising that domain's reconstruction threshold to 4.
+        let mut per_domain = BTreeMap::new();
+        per_domain.insert(domain_id, ReconstructionThreshold::new(4));
+        let proposal = ProposedThresholdParameters::new(
+            ThresholdParameters::new(participants, Threshold::new(2)).unwrap(),
+            per_domain,
+        );
+
+        // When
+        let result = vote_params(&mut contract, &signer, &proposal);
+
+        // Then: 4 > 3 participants, so the guard rejects it.
+        assert_matches!(
+            result.unwrap_err(),
+            Error::DomainError(DomainError::ReconstructionThresholdExceedsParticipants {
+                threshold: 4,
+                participants: 3,
+            })
+        );
+    }
+
+    #[test]
+    fn vote_new_parameters__should_reject_when_shrinking_below_unchanged_domain_threshold() {
+        // Given: a Running contract with 3 participants and a domain whose
+        // reconstruction threshold is 3.
+        let (mut contract, participants, signer, _domain_id) =
+            setup_running_contract_with_domain(3, 3, 3);
+        // ...and a proposal that shrinks the participant set to 2 without touching
+        // the per-domain thresholds.
+        let proposal = ProposedThresholdParameters::new(
+            ThresholdParameters::new(participants.subset(0..2), Threshold::new(2)).unwrap(),
+            BTreeMap::new(),
+        );
+
+        // When
+        let result = vote_params(&mut contract, &signer, &proposal);
+
+        // Then: the domain's unchanged threshold of 3 exceeds the 2 proposed
+        // participants, so the guard rejects it.
+        assert_matches!(
+            result.unwrap_err(),
+            Error::DomainError(DomainError::ReconstructionThresholdExceedsParticipants {
+                threshold: 3,
+                participants: 2,
+            })
+        );
+    }
+
+    #[test]
+    fn vote_new_parameters__should_reject_when_signing_threshold_exceeds_participants() {
+        // Given: a Running contract with 3 participants and one domain.
+        let (mut contract, participants, signer, _domain_id) =
+            setup_running_contract_with_domain(3, 2, 2);
+        // ...and a proposal whose signing threshold (4) exceeds the participant set.
+        let proposal = ProposedThresholdParameters::new(
+            ThresholdParameters::new_unvalidated(participants, Threshold::new(4)),
+            BTreeMap::new(),
+        );
+
+        // When
+        let result = vote_params(&mut contract, &signer, &proposal);
+
+        // Then
+        assert_matches!(
+            result.unwrap_err(),
+            Error::InvalidThreshold(InvalidThreshold::MaxRequirementFailed { max: 3, found: 4 })
+        );
+    }
+
+    #[test]
+    fn vote_new_parameters__should_accept_per_domain_threshold_within_participant_count() {
+        // Given: a Running contract with 3 participants and one domain.
+        let (mut contract, participants, signer, domain_id) =
+            setup_running_contract_with_domain(3, 2, 2);
+        // ...and a proposal raising the domain's reconstruction threshold to 3,
+        // which still fits the 3 participants.
+        let mut per_domain = BTreeMap::new();
+        per_domain.insert(domain_id, ReconstructionThreshold::new(3));
+        let proposal = ProposedThresholdParameters::new(
+            ThresholdParameters::new(participants, Threshold::new(2)).unwrap(),
+            per_domain,
+        );
+
+        // When: a single participant votes (no transition yet).
+        let result = vote_params(&mut contract, &signer, &proposal);
+
+        // Then: the guard passes and the vote is recorded.
+        assert_matches!(result, Ok(()));
     }
 
     #[test]
