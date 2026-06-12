@@ -298,15 +298,25 @@ mod tests {
 
     use crate::confidential_key_derivation::Scalar;
     use crate::confidential_key_derivation::scalar_wrapper::ScalarWrapper;
-    use crate::test_utils::MockCryptoRng;
-    use crate::{
-        confidential_key_derivation::{
-            ElementG2, VerifyingKey,
-            ciphersuite::{BLS12381SHA256, verify_signature},
-            hash_app_id_with_pk,
-        },
-        test_utils::check_common_traits_for_type,
+    use crate::confidential_key_derivation::{
+        ElementG2, VerifyingKey,
+        ciphersuite::{BLS12381SHA256, verify_signature},
+        hash_app_id_with_pk,
     };
+    use crate::test_utils::MockCryptoRng;
+
+    // Taken from https://github.com/ZcashFoundation/frost/blob/3ffc19d8f473d5bc4e07ed41bc884bdb42d6c29f/frost-secp256k1/tests/common_traits_tests.rs#L9
+    #[allow(clippy::unnecessary_literal_unwrap)]
+    fn check_common_traits_for_type<T: Clone + Eq + PartialEq + std::fmt::Debug>(v: &T) {
+        // Make sure can be debug-printed. This also catches if the Debug does not
+        // have an endless recursion (a popular mistake).
+        println!("{v:?}");
+        // Test Clone and Eq
+        assert_eq!(*v, v.clone());
+        // Make sure it can be unwrapped in a Result (which requires Debug).
+        let e: Result<T, ()> = Ok(v.clone());
+        assert_eq!(*v, e.unwrap());
+    }
 
     #[test]
     fn check_bls12381_g2_sha256_common_traits() {

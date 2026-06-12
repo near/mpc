@@ -304,7 +304,7 @@ mod test {
         frost::redjubjub::{
             PresignOutput, SignatureOption, sign::sign, test::run_sign_with_presign,
         },
-        test_utils::{MockCryptoRng, one_coordinator_output},
+        test_utils::{MockCryptoRng, check_one_coordinator_output},
     };
     use frost_core::Field;
     use rand::{SeedableRng, seq::SliceRandom as _};
@@ -335,7 +335,7 @@ mod test {
                     msg_hash,
                 )
                 .unwrap();
-                one_coordinator_output(data, coordinator).unwrap();
+                check_one_coordinator_output(data, coordinator).unwrap();
             }
         }
     }
@@ -399,7 +399,7 @@ mod test {
             },
         )
         .unwrap();
-        let signature = one_coordinator_output(result, coordinator).unwrap();
+        let signature = check_one_coordinator_output(result, coordinator).unwrap();
         insta::assert_json_snapshot!(signature);
     }
 
