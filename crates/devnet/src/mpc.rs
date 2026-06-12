@@ -25,8 +25,8 @@ use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
     DomainConfig, DomainPurpose, EpochId, NodeImageHash, ParticipantId, ParticipantInfo,
-    Participants, Protocol, ProtocolContractState, ReconstructionThreshold, Threshold,
-    ThresholdParameters, protocol_state_to_string,
+    Participants, ProposedThresholdParameters, Protocol, ProtocolContractState,
+    ReconstructionThreshold, Threshold, ThresholdParameters, protocol_state_to_string,
 };
 use near_primitives::types::{BlockReference, Finality, FunctionArgs};
 use near_primitives::views::QueryRequest;
@@ -731,9 +731,22 @@ impl MpcVoteNewParametersCmd {
         } else {
             parameters.threshold
         };
-        let proposal = ThresholdParameters {
-            participants,
-            threshold,
+        let per_domain_thresholds: std::collections::BTreeMap<_, _> = self
+            .per_domain_thresholds
+            .iter()
+            .map(|(id, t)| {
+                (
+                    near_mpc_contract_interface::types::DomainId(*id),
+                    near_mpc_contract_interface::types::ReconstructionThreshold::new(*t),
+                )
+            })
+            .collect();
+        let proposal = ProposedThresholdParameters {
+            parameters: ThresholdParameters {
+                participants,
+                threshold,
+            },
+            per_domain_thresholds,
         };
 
         let from_accounts = get_voter_account_ids(mpc_setup, &self.voters);
@@ -883,7 +896,7 @@ pub async fn read_contract_state(
 #[derive(Serialize)]
 struct VoteNewParametersArgs {
     prospective_epoch_id: EpochId,
-    proposal: ThresholdParameters,
+    proposal: ProposedThresholdParameters,
 }
 
 #[derive(Serialize)]

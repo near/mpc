@@ -1,21 +1,25 @@
-use crate::primitives::thresholds::ThresholdParameters;
+use crate::primitives::thresholds::ProposedThresholdParameters;
 use crate::primitives::{key_state::AuthenticatedAccountId, participants::Participants};
 use near_sdk::{log, near};
 use std::collections::BTreeMap;
 
-/// Tracks votes for ThresholdParameters (new participants and threshold).
-/// Each current participant can maintain one vote.
+/// Tracks votes for proposed threshold parameters (new participants, threshold,
+/// and per-domain threshold updates). Each current participant can maintain one vote.
 // TODO(#2825): Replace with Votes<AuthenticatedAccountId> from votes.rs
 // once this type is moved out of RunningContractState (which requires Clone + PartialEq + JSON).
 #[near(serializers=[borsh, json])]
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ThresholdParametersVotes {
-    pub(crate) proposal_by_account: BTreeMap<AuthenticatedAccountId, ThresholdParameters>,
+    pub(crate) proposal_by_account: BTreeMap<AuthenticatedAccountId, ProposedThresholdParameters>,
 }
 
 impl ThresholdParametersVotes {
     /// return the number of votes for `proposal` cast by members of `participants`
-    pub fn n_votes(&self, proposal: &ThresholdParameters, participants: &Participants) -> u64 {
+    pub fn n_votes(
+        &self,
+        proposal: &ProposedThresholdParameters,
+        participants: &Participants,
+    ) -> u64 {
         u64::try_from(
             self.proposal_by_account
                 .iter()
@@ -36,7 +40,7 @@ impl ThresholdParametersVotes {
     /// vote).
     pub fn vote(
         &mut self,
-        proposal: &ThresholdParameters,
+        proposal: &ProposedThresholdParameters,
         participant: AuthenticatedAccountId,
     ) -> u64 {
         if self
@@ -62,9 +66,11 @@ mod tests {
     use crate::primitives::{
         key_state::AuthenticatedAccountId,
         participants::Participants,
-        test_utils::{gen_participant, gen_threshold_params},
+        test_utils::{gen_participant, gen_proposed_threshold_params},
     };
+    use near_mpc_contract_interface::types::{DomainId, ReconstructionThreshold};
     use near_sdk::{test_utils::VMContextBuilder, testing_env};
+    use std::collections::BTreeMap;
 
     #[test]
     fn test_voting_and_removal() {
@@ -76,11 +82,11 @@ mod tests {
         testing_env!(ctx.build());
         let participant =
             AuthenticatedAccountId::new(&participants).expect("expected authentication");
-        let params = gen_threshold_params(30);
+        let params = gen_proposed_threshold_params(30);
         let mut votes = ThresholdParametersVotes::default();
         assert_eq!(votes.vote(&params, participant.clone()), 1);
         assert_eq!(votes.n_votes(&params, &participants), 1);
-        let params2 = gen_threshold_params(30);
+        let params2 = gen_proposed_threshold_params(30);
         assert_eq!(votes.vote(&params2, participant), 1);
         assert_eq!(votes.n_votes(&params2, &participants), 1);
         assert_eq!(votes.n_votes(&params, &participants), 0);
@@ -98,6 +104,45 @@ mod tests {
         assert_eq!(votes.n_votes(&params2, &participants), 2);
         assert_eq!(votes.n_votes(&params2, params2.participants()), 0);
         assert_eq!(votes.n_votes(&params, &participants), 0);
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn vote__should_tally_distinct_per_domain_threshold_updates_separately() {
+        // Given two voters and two proposals identical except for per_domain_thresholds
+        let mut participants = Participants::default();
+        let (p0, p1) = (gen_participant(0), gen_participant(1));
+        participants.insert(p0.0.clone(), p0.1).unwrap();
+        participants.insert(p1.0.clone(), p1.1).unwrap();
+
+        let mut ctx = VMContextBuilder::new();
+        let auth_p0 = {
+            ctx.signer_account_id(p0.0);
+            testing_env!(ctx.build());
+            AuthenticatedAccountId::new(&participants).unwrap()
+        };
+        let auth_p1 = {
+            ctx.signer_account_id(p1.0);
+            testing_env!(ctx.build());
+            AuthenticatedAccountId::new(&participants).unwrap()
+        };
+
+        let base = gen_proposed_threshold_params(30);
+        let mut updates_a = BTreeMap::new();
+        updates_a.insert(DomainId(0), ReconstructionThreshold::new(2));
+        let mut updates_b = BTreeMap::new();
+        updates_b.insert(DomainId(0), ReconstructionThreshold::new(3));
+        let proposal_a = base.clone().with_per_domain_thresholds(updates_a);
+        let proposal_b = base.with_per_domain_thresholds(updates_b);
+
+        // When each voter casts a different proposal
+        let mut votes = ThresholdParametersVotes::default();
+        votes.vote(&proposal_a, auth_p0);
+        votes.vote(&proposal_b, auth_p1);
+
+        // Then the two proposals are tallied independently
+        assert_eq!(votes.n_votes(&proposal_a, &participants), 1);
+        assert_eq!(votes.n_votes(&proposal_b, &participants), 1);
     }
 
     #[test]
@@ -120,7 +165,7 @@ mod tests {
             AuthenticatedAccountId::new(&old_participants).unwrap()
         };
 
-        let params = gen_threshold_params(30);
+        let params = gen_proposed_threshold_params(30);
         let mut votes = ThresholdParametersVotes::default();
         votes.vote(&params, auth_p0);
         votes.vote(&params, auth_p1);
