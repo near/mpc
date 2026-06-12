@@ -18,11 +18,14 @@ use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use node_types::http_server::StaticWebData;
 use prometheus::{Encoder, TextEncoder, default_registry};
+use recent_transactions::SharedRecentTransactions;
 use serde::Serialize;
 use std::net::SocketAddr;
 use std::sync::{Arc, OnceLock};
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc, watch};
+
+pub mod recent_transactions;
 
 /// Wrapper to make Axum understand how to convert anyhow::Error into a 500
 /// response.
@@ -65,6 +68,8 @@ struct WebServerState {
     migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
     static_web_data: StaticWebData,
     node_config: NodeConfigResponse,
+    /// In-memory log behind the `/debug/recent_transactions` handler.
+    recent_transactions: SharedRecentTransactions,
 }
 
 /// API-safe view of [`ConfigFile`] served by `/debug/node_config`.
@@ -238,6 +243,11 @@ async fn contract_state(state: State<WebServerState>) -> String {
     near_mpc_contract_interface::types::protocol_state_to_string(&protocol_state)
 }
 
+async fn debug_recent_transactions(State(state): State<WebServerState>) -> String {
+    let snapshot = state.recent_transactions.snapshot();
+    recent_transactions::render(&snapshot)
+}
+
 async fn third_party_licenses() -> Html<&'static str> {
     Html(include_str!("../../../third-party-licenses/licenses.html"))
 }
@@ -299,6 +309,7 @@ async fn public_data(state: State<WebServerState>) -> Json<StaticWebData> {
 /// The returned future is the one that actually serves. It will be
 /// long-running, and is typically not expected to return. However, dropping
 /// the returned future will stop the web server.
+#[expect(clippy::too_many_arguments)]
 pub async fn start_web_server(
     root_task_handle: Arc<OnceLock<Arc<TaskHandle>>>,
     debug_request_sender: broadcast::Sender<DebugRequest>,
@@ -307,6 +318,7 @@ pub async fn start_web_server(
     protocol_state_receiver: watch::Receiver<ProtocolContractState>,
     migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
     config: ConfigFile,
+    recent_transactions: SharedRecentTransactions,
 ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
     tracing::info!(?bind_address, "attempting to bind web server to address");
 
@@ -317,6 +329,10 @@ pub async fn start_web_server(
         .route("/debug/signatures", axum::routing::get(debug_signatures))
         .route("/debug/ckds", axum::routing::get(debug_ckds))
         .route("/debug/contract", axum::routing::get(contract_state))
+        .route(
+            "/debug/recent_transactions",
+            axum::routing::get(debug_recent_transactions),
+        )
         .route("/debug/migrations", axum::routing::get(migrations))
         .route("/debug/node_config", axum::routing::get(debug_node_config))
         .route("/licenses", axum::routing::get(third_party_licenses))
@@ -329,6 +345,7 @@ pub async fn start_web_server(
             migration_state_receiver,
             static_web_data,
             node_config: NodeConfigResponse::from(config),
+            recent_transactions,
         });
 
     let tcp_listener = TcpListener::bind(&bind_address).await?;

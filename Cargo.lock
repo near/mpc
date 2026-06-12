@@ -3155,6 +3155,7 @@ dependencies = [
  "near-mpc-crypto-types",
  "near-sandbox",
  "rand 0.8.6",
+ "regex",
  "reqwest 0.13.4",
  "rstest",
  "serde",
