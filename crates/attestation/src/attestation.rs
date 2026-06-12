@@ -19,6 +19,9 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256, Sha384};
 use tee_verifier_interface::{TDReport10, VerifiedReport};
 
+#[cfg(feature = "local-verify")]
+use crate::dcap_conversions::{IntoDcapType as _, IntoInterfaceType as _};
+
 /// Expected TCB status for a successfully verified TEE quote.
 const EXPECTED_QUOTE_STATUS: &str = "UpToDate";
 
@@ -194,8 +197,6 @@ impl DstackAttestation {
     /// ([`verify_with_report`](Self::verify_with_report)).
     #[cfg(feature = "local-verify")]
     pub fn dcap_report(&self, timestamp_seconds: u64) -> Result<VerifiedReport, VerificationError> {
-        use crate::dcap_conversions::{IntoDcapType as _, IntoInterfaceType as _};
-
         let quote: Vec<u8> = self.quote.clone().into_dcap_type();
         let collateral = self.collateral.clone().into_dcap_type();
         Ok(

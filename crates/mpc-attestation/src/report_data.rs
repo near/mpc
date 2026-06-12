@@ -169,16 +169,14 @@ mod tests {
     use super::*;
     use crate::report_data::ReportData;
     use test_utils::attestation::{account_key, p2p_tls_key};
+    #[cfg(feature = "local-verify")]
+    use {alloc::vec::Vec, dcap_qvl::quote::Quote, test_utils::attestation::quote as quote_fixture};
 
     // Parses a real quote with `dcap-qvl`, so it is off-chain only.
     #[cfg(feature = "local-verify")]
     #[test]
     fn test_from_str_valid() {
-        use alloc::vec::Vec;
-        use dcap_qvl::quote::Quote;
-        use test_utils::attestation::quote;
-
-        let valid_quote: Vec<u8> = quote().into();
+        let valid_quote: Vec<u8> = quote_fixture().into();
         let quote = Quote::parse(&valid_quote).unwrap();
 
         let td_report = quote.report.as_td10().expect("Should be a TD 1.0 report");
