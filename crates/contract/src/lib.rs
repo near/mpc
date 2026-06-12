@@ -162,9 +162,6 @@ pub struct MpcContract {
     node_migrations: NodeMigrations,
     // TODO(#2937): Remove via state migration.
     metrics: Metrics,
-    /// Lazily-loaded foreign-chain state: RPC provider whitelist, per-node config reports, and
-    /// the cached available-chain set. Only deserialized on methods that touch foreign-chain data,
-    /// keeping unrelated calls cheap.
     foreign_chains: Lazy<ForeignChainsMetadata>,
 }
 
