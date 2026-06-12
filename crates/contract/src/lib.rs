@@ -350,8 +350,11 @@ impl MpcContract {
     /// Creates a yield-resume promise that calls back into `callback_method` with the
     /// pre-serialized `callback_args`, and stores the resulting yield id via `insert`.
     ///
-    /// This function calls `env::promise_return` and so must be the last operation performed
-    /// in the enclosing contract method.
+    /// This function calls `env::promise_return`, which fixes the enclosing
+    /// method's *return value* to the yielded promise. The caller must therefore
+    /// not return a different value afterwards, but it MAY keep issuing further
+    /// promises — e.g. `submit_dstack_attestation` enqueues the yield and then
+    /// dispatches the cross-contract `verify_quote` whose `.then` resumes it.
     fn enqueue_yield_request(
         &mut self,
         callback_method: &str,
@@ -796,10 +799,8 @@ impl MpcContract {
         )
     }
 
-    /// (Prospective) Participants can submit their tee participant information through this
+    /// (Prospective) participants submit their TEE attestation through this
     /// endpoint.
-    #[payable]
-    /// Submit a participant's TEE attestation.
     ///
     /// `Mock` attestations are verified synchronously (no DCAP) and stored
     /// immediately, returning `Value(())`. `Dstack` attestations are verified
@@ -808,6 +809,7 @@ impl MpcContract {
     /// and resolves from [`Self::resolve_verification`]. The returned `Promise`
     /// settles when the verifier answers or, failing that, after the runtime's
     /// ~200-block yield timeout (handled by [`Self::on_attestation_verified`]).
+    #[payable]
     #[handle_result]
     pub fn submit_participant_info(
         &mut self,
@@ -845,6 +847,11 @@ impl MpcContract {
             tls_public_key,
             account_public_key,
         };
+        // Frozen at submit time and consumed later in the resolution callback.
+        // The callback receipt's predecessor is the contract itself, so participant
+        // status cannot be re-derived there — capture it now. A resharing that
+        // drops this submitter mid-flight therefore won't reclassify the storage
+        // charge, which is acceptable (the alternative is unavailable).
         let caller_is_not_participant = self.voter_account().is_err();
 
         match proposed_participant_attestation {
@@ -893,6 +900,12 @@ impl MpcContract {
         if self.tee_verifier_account_id == initial_tee_verifier_account_id(None) {
             return Err(TeeError::VerifierNotConfigured.into());
         }
+
+        // DoS surface (acknowledged, not gated here): this path takes no minimum
+        // deposit, so a caller can fire many Dstack submits, each costing the
+        // contract a verifier round-trip before failing at the storage charge.
+        // The one-in-flight-per-account guard above caps concurrency per account;
+        // a global rate limit / minimum deposit is a possible future hardening.
 
         let (quote, collateral) = (dstack.quote.clone(), dstack.collateral.clone());
         let attached_deposit = env::attached_deposit();
@@ -959,6 +972,18 @@ impl MpcContract {
         result: Result<VerificationResult, PromiseError>,
     ) {
         let account_id = node_id.account_id.clone();
+
+        // A late verifier response can arrive after the ~200-block yield timeout
+        // has already fired and `on_attestation_verified` cleaned up the pending
+        // entry. The yield is then already resolved, so there is nothing to do:
+        // log and return rather than panic on a missing entry or resume twice.
+        if !self.pending_attestations.contains_key(&account_id) {
+            log!(
+                "resolve_verification: no pending attestation for {account_id} (late response or already cleaned up); ignoring"
+            );
+            return;
+        }
+
         let final_outcome = match result {
             Err(promise_err) => {
                 // No verdict; let the yield timeout clean up. Do NOT resume, or
@@ -971,14 +996,14 @@ impl MpcContract {
                 FinalOutcome::Err(format!("verifier rejected quote: {reason}"))
             }
             Ok(VerificationResult::Verified(report)) => {
-                self.finish_verified_attestation(node_id, &report)
+                self.finish_verified_attestation(&node_id, &report)
             }
         };
 
         let pending = self
             .pending_attestations
             .remove(&account_id)
-            .expect("PendingAttestation must exist while resolve_verification holds the yield");
+            .expect("checked contains_key above, and no host call clears it in between");
         if matches!(final_outcome, FinalOutcome::Err(_)) {
             refund_attestation_deposit(&account_id, pending.attached_deposit);
         }
@@ -995,30 +1020,34 @@ impl MpcContract {
     /// the attestation and charges storage. Returns the `FinalOutcome` to resume
     /// the yield with. Does not remove the pending entry or resume — the caller
     /// (`resolve_verification`) owns those.
+    ///
+    /// `resolve_verification` has already confirmed the `PendingAttestation`
+    /// exists.
     fn finish_verified_attestation(
         &mut self,
-        node_id: NodeId,
+        node_id: &NodeId,
         report: &VerifiedReport,
     ) -> FinalOutcome {
         let account_id = node_id.account_id.clone();
         let pending = self
             .pending_attestations
             .get(&account_id)
-            .expect("PendingAttestation must exist while resolve_verification holds the yield");
+            .expect("resolve_verification confirmed the pending entry before calling us");
         let dstack = pending.dstack.clone();
         let caller_is_not_participant = pending.caller_is_not_participant;
         let attached_deposit = pending.attached_deposit;
+        let tls_public_key = node_id.tls_public_key.clone();
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
         let initial_storage = env::storage_usage();
-        let insertion = match self.tee_state.finish_dstack_verify(
-            node_id,
+        let (insertion, previous) = match self.tee_state.finish_dstack_verify(
+            node_id.clone(),
             dstack,
             report,
             tee_upgrade_deadline_duration,
         ) {
-            Ok(insertion) => insertion,
+            Ok(result) => result,
             Err(err) => {
                 log!("post-DCAP check failed for {account_id}: {err}");
                 return FinalOutcome::Err(format!("post-DCAP check failed: {err}"));
@@ -1033,36 +1062,71 @@ impl MpcContract {
             attached_deposit,
         ) {
             Ok(()) => FinalOutcome::Ok,
-            Err(err) => FinalOutcome::Err(format!("{err:?}")),
+            Err(err) => {
+                // This receipt commits even though we resume the yield with an
+                // error, so the store above is NOT rolled back automatically
+                // (unlike the synchronous path). Undo it explicitly, or the
+                // caller would get storage for free plus a full refund.
+                self.tee_state
+                    .revert_dstack_store(&tls_public_key, previous);
+                FinalOutcome::Err(err.to_string())
+            }
         }
     }
 
     /// Yield-callback fired by the runtime once `resolve_verification` resumes
-    /// the yield, or after the ~200-block timeout if no resume landed. The
-    /// answered cases were already finalized by `resolve_verification`, so this
-    /// only routes the outcome back to the caller; the `Err(PromiseError)`
-    /// branch (verifier unreachable / silent timeout, where the pending entry is
-    /// still present) does the deferred cleanup.
+    /// the yield, or after the ~200-block timeout if no resume landed.
+    ///
+    /// On a resumed `Ok` the submission succeeded. The two failure paths must
+    /// fail the submitter's transaction *without* rolling back any state this
+    /// callback mutates — so, like the sign-request callback
+    /// [`Self::return_signature_and_clean_state_on_success`], they do their work
+    /// in this receipt and then signal failure by chaining to
+    /// `fail_on_attestation_timeout` in a separate receipt (returning a panic
+    /// directly would roll this receipt back):
+    ///
+    /// - `Ok(FinalOutcome::Err)` — the verifier answered and `resolve_verification`
+    ///   already cleaned up; just propagate the reason.
+    /// - `Err(PromiseError)` — no resume landed within the timeout (verifier
+    ///   unreachable, or `resolve_verification` rolled back): the pending entry
+    ///   is still present, so remove it and refund here, then fail.
     #[private]
-    #[handle_result]
     pub fn on_attestation_verified(
         &mut self,
         #[serializer(borsh)] account_id: AccountId,
         #[serializer(borsh)]
         #[callback_result]
         result: Result<FinalOutcome, PromiseError>,
-    ) -> Result<(), String> {
-        match result {
-            Ok(FinalOutcome::Ok) => Ok(()),
-            Ok(FinalOutcome::Err(reason)) => Err(reason),
+    ) -> PromiseOrValue<()> {
+        let reason = match result {
+            Ok(FinalOutcome::Ok) => return PromiseOrValue::Value(()),
+            Ok(FinalOutcome::Err(reason)) => reason,
             Err(_promise_err) => {
                 if let Some(pending) = self.pending_attestations.remove(&account_id) {
                     refund_attestation_deposit(&account_id, pending.attached_deposit);
                     log!("yield timeout for {account_id}: refunded and cleaned up");
                 }
-                Err("verifier did not respond within the yield-resume window".to_string())
+                "verifier did not respond within the yield-resume window".to_string()
             }
-        }
+        };
+
+        // Fail the submitter's transaction from a separate receipt so the
+        // cleanup above commits (a panic here would roll it back).
+        let promise = Promise::new(env::current_account_id()).function_call(
+            method_names::FAIL_ON_ATTESTATION_TIMEOUT.to_string(),
+            borsh::to_vec(&reason).expect("borsh serialization of reason must succeed"),
+            NearToken::from_near(0),
+            Gas::from_tgas(self.config.fail_on_timeout_tera_gas),
+        );
+        PromiseOrValue::Promise(promise.as_return())
+    }
+
+    /// Fails the original `submit_participant_info` transaction with `reason`.
+    /// Called only as the final receipt of [`Self::on_attestation_verified`]'s
+    /// failure paths, so the panic does not roll back the cleanup done there.
+    #[private]
+    pub fn fail_on_attestation_timeout(#[serializer(borsh)] reason: String) {
+        env::panic_str(&reason);
     }
 
     /// Charges the submitter for the storage their attestation occupies,

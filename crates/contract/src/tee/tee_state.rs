@@ -194,7 +194,12 @@ impl TeeState {
         )?;
 
         log_informational_advisory_ids(&advisory_ids);
-        self.store_verified_attestation(node_id, verified_attestation)
+        // Synchronous path: the deposit is charged in the same receipt as the
+        // store, so a charge failure rolls the store back automatically — no
+        // need for the displaced previous entry the async path captures.
+        let (insertion, _previous) =
+            self.store_verified_attestation(node_id, verified_attestation)?;
+        Ok(insertion)
     }
 
     /// Runs the post-DCAP checks for a `Dstack` attestation against the
@@ -208,7 +213,7 @@ impl TeeState {
         dstack: DstackAttestation,
         report: &VerifiedReport,
         tee_upgrade_deadline_duration: Duration,
-    ) -> Result<ParticipantInsertion, AttestationSubmissionError> {
+    ) -> Result<(ParticipantInsertion, Option<NodeAttestation>), AttestationSubmissionError> {
         let expected_report_data = Self::expected_report_data(&node_id);
         let accepted_measurements = self.get_accepted_measurements();
         let AcceptedAttestation {
@@ -237,11 +242,18 @@ impl TeeState {
     }
 
     /// Stores an already-verified attestation, enforcing TLS-key ownership.
+    ///
+    /// Returns the insertion result and, when an existing entry was displaced,
+    /// the previous [`NodeAttestation`]. The caller (the async `Dstack` flow)
+    /// uses that previous entry to [`Self::revert_dstack_store`] if the storage
+    /// charge fails — the synchronous path relied on the receipt rolling back,
+    /// but the callback receipt commits regardless, so the rollback must be
+    /// explicit.
     fn store_verified_attestation(
         &mut self,
         node_id: NodeId,
         verified_attestation: VerifiedAttestation,
-    ) -> Result<ParticipantInsertion, AttestationSubmissionError> {
+    ) -> Result<(ParticipantInsertion, Option<NodeAttestation>), AttestationSubmissionError> {
         let tls_pk = node_id.tls_public_key.clone();
 
         // Authorization: a TLS key registered to one account must not be
@@ -254,7 +266,7 @@ impl TeeState {
             return Err(AttestationSubmissionError::TlsKeyOwnedByOtherAccount);
         }
 
-        let insertion = self.stored_attestations.insert(
+        let previous = self.stored_attestations.insert(
             tls_pk,
             NodeAttestation {
                 node_id,
@@ -262,10 +274,31 @@ impl TeeState {
             },
         );
 
-        Ok(match insertion {
-            Some(_previous_attestation) => ParticipantInsertion::UpdatedExistingParticipant,
+        let insertion = match previous {
+            Some(_) => ParticipantInsertion::UpdatedExistingParticipant,
             None => ParticipantInsertion::NewlyInsertedParticipant,
-        })
+        };
+        Ok((insertion, previous))
+    }
+
+    /// Undoes a [`Self::finish_dstack_verify`] store: restores the displaced
+    /// previous entry, or removes the newly-inserted one if there was none.
+    /// Used by the async flow when the storage charge fails after the store, so
+    /// a caller can't get storage for free in a receipt that still commits.
+    pub(crate) fn revert_dstack_store(
+        &mut self,
+        tls_public_key: &Ed25519PublicKey,
+        previous: Option<NodeAttestation>,
+    ) {
+        match previous {
+            Some(previous) => {
+                self.stored_attestations
+                    .insert(tls_public_key.clone(), previous);
+            }
+            None => {
+                self.stored_attestations.remove(tls_public_key);
+            }
+        }
     }
 
     /// reverifies stored participant attestations.

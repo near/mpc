@@ -12,8 +12,8 @@
 //!
 //! The `Verified` + post-DCAP-pass path (attestation stored) additionally needs
 //! a stub report matching the fixture's post-DCAP expectations; it is a planned
-//! follow-up (see issue #3265) once the off-chain report helper is wired into the
-//! sandbox harness. The post-DCAP logic itself is unit-tested in `mpc-attestation`.
+//! follow-up once the off-chain report helper is wired into the sandbox harness.
+//! The post-DCAP logic itself is unit-tested in `mpc-attestation`.
 //!
 //! They require the cross-contract runtime, so they live in sandbox rather than
 //! the in-process tests. The WASM build needs the contract toolchain; these run
@@ -26,15 +26,20 @@ use crate::sandbox::{
         consts::ALL_PROTOCOLS,
         contract_build::stub_tee_verifier_contract,
         mpc_contract::{
-            get_participant_attestation, submit_participant_info, vote_tee_verifier_change,
+            get_participant_attestation, has_pending_attestation, submit_participant_info,
+            submit_participant_info_with_deposit, vote_tee_verifier_change,
         },
     },
 };
 use anyhow::Result;
 use borsh::BorshSerialize;
 use near_mpc_contract_interface::types::{self as dtos, Attestation};
-use near_workspaces::{Account, Contract, Worker, network::Sandbox};
+use near_workspaces::{Account, Contract, Worker, network::Sandbox, types::NearToken};
 use test_utils::attestation::{mock_dto_dstack_attestation, p2p_tls_key};
+
+/// Blocks to fast-forward past the ~200-block yield-resume timeout so the
+/// runtime fires `on_attestation_verified`'s timeout branch.
+const YIELD_TIMEOUT_BLOCKS: u64 = 250;
 
 /// Mirror of `test_tee_verifier::StubResponse`. Re-declared here (rather than
 /// depending on the stub crate) so the test only needs its Borsh encoding to
@@ -125,6 +130,7 @@ async fn submit_participant_info__refunds_and_stores_nothing_on_verifier_rejecti
         ..
     } = SandboxTestSetup::builder()
         .with_protocols(ALL_PROTOCOLS)
+        .with_sandbox_test_methods()
         .build()
         .await;
     deploy_and_trust_stub(
@@ -135,24 +141,34 @@ async fn submit_participant_info__refunds_and_stores_nothing_on_verifier_rejecti
     )
     .await?;
 
-    // When: a participant submits a Dstack attestation.
+    // When: a participant submits a Dstack attestation with a 1 NEAR deposit.
     let submitter = &mpc_signer_accounts[0];
-    let _ =
-        submit_participant_info(submitter, &contract, &dstack_attestation(), &tls_key()).await?;
+    let balance_before = submitter.view_account().await?.balance;
+    let _ = submit_participant_info_with_deposit(
+        submitter,
+        &contract,
+        &dstack_attestation(),
+        &tls_key(),
+        NearToken::from_near(1),
+    )
+    .await?;
 
-    // Then: the rejected quote is not stored. (The rejection is resolved in the
-    // yield-resume receipt, not the original call, so we assert the observable
-    // state invariant rather than the outer transaction's success flag, whose
-    // semantics under yield-resume are runtime-dependent.)
+    // Then: nothing is stored, the pending entry is cleaned up, and the deposit
+    // is refunded. (The rejection resolves in the yield-resume receipt, not the
+    // original call, so we assert observable state rather than the outer tx flag.)
     let stored = get_participant_attestation(&contract, &tls_key()).await?;
     assert!(stored.is_none(), "a rejected quote must not be stored");
+    assert!(
+        !has_pending_attestation(&contract, submitter.id()).await?,
+        "the pending entry must be cleaned up on rejection"
+    );
+    assert_deposit_refunded(submitter, balance_before).await?;
     Ok(())
 }
 
 #[tokio::test]
 async fn submit_participant_info__cleans_up_on_verifier_crash() -> Result<()> {
-    // Given: a contract whose trusted verifier panics (no verdict). The yield
-    // times out after ~200 blocks; the test advances the chain to trigger it.
+    // Given: a contract whose trusted verifier panics (no verdict).
     let SandboxTestSetup {
         worker,
         mpc_signer_accounts,
@@ -160,6 +176,7 @@ async fn submit_participant_info__cleans_up_on_verifier_crash() -> Result<()> {
         ..
     } = SandboxTestSetup::builder()
         .with_protocols(ALL_PROTOCOLS)
+        .with_sandbox_test_methods()
         .build()
         .await;
     deploy_and_trust_stub(
@@ -170,21 +187,47 @@ async fn submit_participant_info__cleans_up_on_verifier_crash() -> Result<()> {
     )
     .await?;
 
-    // When: a participant submits and the verifier crashes.
-    let _ = submit_participant_info(
-        &mpc_signer_accounts[0],
+    // When: a participant submits, the verifier crashes (no resume lands), and
+    // the chain advances past the ~200-block yield timeout so the runtime fires
+    // `on_attestation_verified`'s timeout branch.
+    let submitter = &mpc_signer_accounts[0];
+    let balance_before = submitter.view_account().await?.balance;
+    let _ = submit_participant_info_with_deposit(
+        submitter,
         &contract,
         &dstack_attestation(),
         &tls_key(),
+        NearToken::from_near(1),
     )
     .await?;
+    worker.fast_forward(YIELD_TIMEOUT_BLOCKS).await?;
 
-    // Then: nothing is stored — a crashing verifier never produces a verdict, so
-    // the post-DCAP store never runs (cleanup happens via the yield timeout).
+    // Then: nothing is stored, and the timeout cleanup actually committed — the
+    // pending entry is gone and the deposit refunded. (Guards the regression
+    // where the cleanup was rolled back by a panic in the same receipt, leaking
+    // the entry and locking the account out of resubmitting.)
     let stored = get_participant_attestation(&contract, &tls_key()).await?;
     assert!(
         stored.is_none(),
         "nothing should be stored when the verifier crashes"
+    );
+    assert!(
+        !has_pending_attestation(&contract, submitter.id()).await?,
+        "the pending entry must be cleaned up after the yield timeout"
+    );
+    assert_deposit_refunded(submitter, balance_before).await?;
+    Ok(())
+}
+
+/// Asserts the 1 NEAR storage deposit was returned: the net spend since
+/// `balance_before` is well under 1 NEAR (only gas), rather than the full
+/// deposit being retained by the contract.
+async fn assert_deposit_refunded(account: &Account, balance_before: NearToken) -> Result<()> {
+    let balance_after = account.view_account().await?.balance;
+    let net_spent = balance_before.saturating_sub(balance_after);
+    assert!(
+        net_spent < NearToken::from_near(1),
+        "deposit should be refunded (net spent {net_spent} should be < 1 NEAR, gas only)"
     );
     Ok(())
 }

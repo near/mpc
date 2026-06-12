@@ -66,6 +66,7 @@ pub const RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS: &str =
     "return_verify_foreign_tx_and_clean_state_on_success";
 pub const RESOLVE_VERIFICATION: &str = "resolve_verification";
 pub const ON_ATTESTATION_VERIFIED: &str = "on_attestation_verified";
+pub const FAIL_ON_ATTESTATION_TIMEOUT: &str = "fail_on_attestation_timeout";
 
 // View methods
 pub const STATE: &str = "state";
