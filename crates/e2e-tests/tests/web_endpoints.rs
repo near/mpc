@@ -8,6 +8,19 @@ use mpc_primitives::domain::Protocol;
 use near_mpc_contract_interface::types::DomainPurpose;
 use rand::SeedableRng;
 
+async fn fetch_body(client: &reqwest::Client, node: usize, url: &str) -> anyhow::Result<String> {
+    client
+        .get(url)
+        .send()
+        .await
+        .with_context(|| format!("node {node}: GET {url} failed"))?
+        .error_for_status()
+        .with_context(|| format!("node {node}: {url} returned non-success"))?
+        .text()
+        .await
+        .with_context(|| format!("node {node}: reading body from {url} failed"))
+}
+
 /// Fetch a URL and ensure the response body contains all of `expected`.
 async fn ensure_body_contains(
     client: &reqwest::Client,
@@ -15,20 +28,7 @@ async fn ensure_body_contains(
     url: &str,
     expected: &[&str],
 ) -> anyhow::Result<()> {
-    let resp = client
-        .get(url)
-        .send()
-        .await
-        .with_context(|| format!("node {node}: GET {url} failed"))?;
-    let status = resp.status();
-    anyhow::ensure!(
-        status == reqwest::StatusCode::OK,
-        "node {node}: {url} unexpected status {status}"
-    );
-    let body = resp
-        .text()
-        .await
-        .with_context(|| format!("node {node}: reading body from {url} failed"))?;
+    let body = fetch_body(client, node, url).await?;
     for s in expected {
         anyhow::ensure!(
             body.contains(s),
@@ -36,6 +36,61 @@ async fn ensure_body_contains(
         );
     }
     Ok(())
+}
+
+/// Polls the URL until a successful response body satisfies the predicate, or
+/// fails once the timeout elapses.
+async fn wait_for_body(
+    client: &reqwest::Client,
+    node: usize,
+    url: &str,
+    timeout: Duration,
+    done: impl Fn(&str) -> bool,
+) -> anyhow::Result<()> {
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        let body = fetch_body(client, node, url).await?;
+        if done(&body) {
+            return Ok(());
+        }
+        anyhow::ensure!(
+            tokio::time::Instant::now() < deadline,
+            "node {node}: {url} body did not match within {timeout:?}"
+        );
+        tokio::time::sleep(common::POLL_INTERVAL).await;
+    }
+}
+
+/// Regex matching one rendered recent-transactions row for a node's keygen
+/// `vote_pk` submission. Stable tokens (status, method, signer, key) are matched
+/// exactly; run-specific ones (timestamp, txid, nonce, block, sig) are matched by
+/// pattern only.
+fn vote_pk_row_regex(signer_account_id: &str, signer_key: &str) -> regex::Regex {
+    let base58 = r"[1-9A-HJ-NP-Za-km-z]+";
+    let int = r"\d+";
+    let date = r"\d{4}-\d{2}-\d{2}";
+    let time = r"\d{2}:\d{2}:\d{2}\.\d+";
+    let offset = r"\+00:00:00";
+
+    // `submitted_at`, e.g. "2026-06-10 09:22:59.0 +00:00:00".
+    let timestamp = format!("{date} {time} {offset}");
+    let status = "Unknown +";
+    let method = "method=vote_pk +";
+
+    let signer = regex::escape(signer_account_id);
+    let key = regex::escape(signer_key);
+    let signer_key = format!("signer={signer} key={key}");
+
+    let txid = format!("txid={base58}");
+    let nonce = format!("nonce={int}");
+    let block = format!("block={int}");
+    let sig = format!("sig=ed25519:{base58}");
+    let metadata = format!("{txid}  {nonce}  {block}  {sig}");
+
+    regex::Regex::new(&format!(
+        "^  {timestamp}  {status}{method}{signer_key}  {metadata}$"
+    ))
+    .expect("valid regex")
 }
 
 #[tokio::test]
@@ -143,6 +198,32 @@ async fn test_web_endpoints() {
         )
         .await
         .expect("debug/contract endpoint failed");
+
+        // Check the recent-transactions page lists this node's transactions.
+        // During keygen every node submits one `vote_pk` transaction per domain,
+        // so the page should show the header plus exactly one matching row per
+        // domain. We poll because a row only appears after the node observes the
+        // transaction's outcome, which takes a few seconds.
+        let row = vote_pk_row_regex(
+            node.setup().account_id().as_ref(),
+            &node.setup().near_signer_public_key_str(),
+        );
+        let expected_vote_pk_rows = running.domains.domains.len();
+        wait_for_body(
+            &client,
+            i,
+            &format!("http://{web_addr}/debug/recent_transactions"),
+            Duration::from_secs(15),
+            |body| {
+                const HEADER: &str =
+                    "Recently submitted transactions (newest first, up to 2000 retained):";
+                let mut lines = body.lines();
+                lines.next() == Some(HEADER)
+                    && lines.filter(|line| row.is_match(line)).count() == expected_vote_pk_rows
+            },
+        )
+        .await
+        .expect("debug/recent_transactions never rendered a vote_pk row per keygen domain");
 
         // pprof flamegraph: verify the endpoint is reachable and returns either a
         // valid SVG (200) or no-content (204 — zero CPU samples captured because all

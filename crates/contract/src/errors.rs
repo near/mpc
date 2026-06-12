@@ -269,6 +269,10 @@ pub enum DomainError {
         "Reconstruction threshold {threshold} overflowed when computing the DamgardEtAl bound."
     )]
     ReconstructionThresholdOverflow { threshold: u64 },
+    #[error(
+        "Resharing proposal references domain ID {domain_id}, which is not in the current registry."
+    )]
+    UnknownDomainInProposal { domain_id: DomainId },
     #[error("CaitSith threshold mismatch: expected {expected}, found {found}.")]
     CaitsithThresholdMismatch { expected: u64, found: u64 },
 }
