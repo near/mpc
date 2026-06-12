@@ -35,3 +35,42 @@ impl Threshold {
         self.0
     }
 }
+
+/// Per-domain `t` in a t-of-n threshold scheme: shares needed to reconstruct
+/// the secret. Distinct from the network-wide governance threshold.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+#[serde(transparent)]
+pub struct ReconstructionThreshold(u64);
+
+impl ReconstructionThreshold {
+    pub const fn new(value: u64) -> Self {
+        Self(value)
+    }
+
+    pub fn inner(self) -> u64 {
+        self.0
+    }
+}
+
+impl From<Threshold> for ReconstructionThreshold {
+    fn from(value: Threshold) -> Self {
+        Self(value.value())
+    }
+}

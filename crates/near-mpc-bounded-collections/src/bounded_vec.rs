@@ -223,12 +223,12 @@ impl<T, const L: usize, const U: usize, W> BoundedVec<T, L, U, W> {
     }
 
     /// Returns an iterator
-    pub fn iter(&self) -> Iter<T> {
+    pub fn iter(&self) -> Iter<'_, T> {
         self.inner.iter()
     }
 
     /// Returns an iterator that allows to modify each value
-    pub fn iter_mut(&mut self) -> IterMut<T> {
+    pub fn iter_mut(&mut self) -> IterMut<'_, T> {
         self.inner.iter_mut()
     }
 }
@@ -687,11 +687,11 @@ mod serde_impl {
                 generator: &mut schemars::r#gen::SchemaGenerator,
             ) -> schemars::schema::Schema {
                 let mut schema = <Vec<T>>::json_schema(generator);
-                if let schemars::schema::Schema::Object(ref mut obj) = schema {
-                    if let Some(ref mut array) = obj.array {
-                        array.min_items = u32::try_from(L).ok();
-                        array.max_items = u32::try_from(U).ok();
-                    }
+                if let schemars::schema::Schema::Object(ref mut obj) = schema
+                    && let Some(ref mut array) = obj.array
+                {
+                    array.min_items = u32::try_from(L).ok();
+                    array.max_items = u32::try_from(U).ok();
                 }
                 schema
             }

@@ -70,14 +70,26 @@
             inherit crane prodCFlags;
           };
 
-          mpc-node = pkgs.callPackage ./nix/mpc-node.nix { inherit buildRustBin; };
+          mpc-node = pkgs.callPackage ./nix/mpc-node.nix {
+            inherit buildRustBin;
+            # The Nix sandbox strips `.git`, so the `built` crate can't read
+            # the commit at compile time. Hand it the flake's own revision so
+            # `mpc-node --version` / the build-info metrics keep reporting it.
+            # Falls back to "unknown" for dirty trees without a usable rev.
+            gitCommitHashShort = self.shortRev or self.dirtyShortRev or "unknown";
+          };
           tee-launcher = pkgs.callPackage ./nix/tee-launcher.nix { inherit buildRustBin; };
 
+          mkImageDir = image: pkgs.callPackage ./nix/image-dir.nix { inherit image; };
           mkManifestDigest =
-            image: pkgs.callPackage ./nix/image-manifest-digest.nix { inherit image; };
+            imageDir: pkgs.callPackage ./nix/image-manifest-digest.nix { inherit imageDir; };
         in
         {
           inherit mpc-node tee-launcher;
+
+          mpc-contract = pkgs.callPackage ./nix/mpc-contract.nix {
+            cargo-near = pkgs.callPackage ./nix/cargo-near.nix { };
+          };
         }
         # `dockerTools.buildLayeredImage` produces a Linux container image,
         # so only expose the image / digest derivations on Linux builders.
@@ -88,13 +100,26 @@
             rust-launcher-image = pkgs.callPackage ./nix/rust-launcher-image.nix {
               inherit tee-launcher;
             };
+
+            # `dir:` layouts with compressed blobs — the artifacts that get
+            # pushed; the manifest digests are hashes of these exact bytes.
+            node-image-dir = mkImageDir node-image;
+            node-gcp-image-dir = mkImageDir node-gcp-image;
+            rust-launcher-image-dir = mkImageDir rust-launcher-image;
           in
           {
-            inherit node-image node-gcp-image rust-launcher-image;
+            inherit
+              node-image
+              node-gcp-image
+              rust-launcher-image
+              node-image-dir
+              node-gcp-image-dir
+              rust-launcher-image-dir
+              ;
 
-            node-image-manifest-digest = mkManifestDigest node-image;
-            node-gcp-image-manifest-digest = mkManifestDigest node-gcp-image;
-            rust-launcher-image-manifest-digest = mkManifestDigest rust-launcher-image;
+            node-image-manifest-digest = mkManifestDigest node-image-dir;
+            node-gcp-image-manifest-digest = mkManifestDigest node-gcp-image-dir;
+            rust-launcher-image-manifest-digest = mkManifestDigest rust-launcher-image-dir;
           }
         )
       );
@@ -198,17 +223,10 @@
             cargo-near
           ];
 
-          pythonTools = with pkgs; [
-            python311
-            python311Packages.keyring
-            python311Packages.tree-sitter
-            python311Packages.tree-sitter-rust
-            ruff # linter and formatter
-          ];
-
           miscTools = with pkgs; [
             git
             binaryen
+            ast-grep  # structural lints, e.g. lints/no-use-in-fn.yml
             editorconfig-checker
             jq
             perl
@@ -256,7 +274,6 @@
               llvmTools ++
               rustTools ++
               cargoTools ++
-              pythonTools ++
               nearTools ++
               miscTools ++
               buildLibs;

@@ -2,19 +2,19 @@ use rand::SeedableRng;
 use rand_core::CryptoRngCore;
 
 use super::{
-    batch_random_ot::{BatchRandomOTOutputReceiver, BatchRandomOTOutputSender},
     TriplePub, TripleShare,
+    batch_random_ot::{BatchRandomOTOutputReceiver, BatchRandomOTOutputSender},
 };
 
 use crate::{
+    ReconstructionLowerBound,
     ecdsa::{Field, Polynomial, ProjectivePoint, Secp256K1ScalarField},
     test_utils::MockCryptoRng,
-    ReconstructionLowerBound,
 };
 
 use crate::errors::ProtocolError;
 use crate::participants::Participant;
-use crate::protocol::internal::{make_protocol, Comms};
+use crate::protocol::internal::{Comms, make_protocol};
 use crate::test_utils::run_two_party_protocol;
 
 /// Create a new triple from scratch.
@@ -59,8 +59,8 @@ pub fn deal(
 }
 
 /// Run the batch random OT protocol between two parties.
-pub fn run_batch_random_ot(
-) -> Result<(BatchRandomOTOutputSender, BatchRandomOTOutputReceiver), ProtocolError> {
+pub fn run_batch_random_ot()
+-> Result<(BatchRandomOTOutputSender, BatchRandomOTOutputReceiver), ProtocolError> {
     let mut rng = MockCryptoRng::seed_from_u64(42);
     let s = Participant::from(0u32);
     let r = Participant::from(1u32);

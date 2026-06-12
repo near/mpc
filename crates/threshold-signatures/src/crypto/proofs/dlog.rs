@@ -1,4 +1,5 @@
 use crate::{
+    Ciphersuite, Element, Scalar,
     crypto::{
         constants::{
             NEAR_DLOG_CHALLENGE_LABEL, NEAR_DLOG_COMMITMENT_LABEL, NEAR_DLOG_ENCODE_LABEL_PUBLIC,
@@ -7,9 +8,8 @@ use crate::{
         proofs::strobe_transcript::TranscriptRng,
     },
     errors::ProtocolError,
-    Ciphersuite, Element, Scalar,
 };
-use frost_core::{serialization::SerializableScalar, Group};
+use frost_core::{Group, serialization::SerializableScalar};
 use subtle::ConstantTimeEq;
 use zeroize::Zeroize;
 

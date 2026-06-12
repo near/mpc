@@ -1,0 +1,50 @@
+[package]
+name = "tee-verifier"
+version = { workspace = true }
+license = { workspace = true }
+edition = { workspace = true }
+
+[package.metadata.near.reproducible_build]
+image = "sourcescan/cargo-near:0.21.1-rust-1.93.0"
+image_digest = "sha256:79b789c81ba19ec30794a6b1046b02dcaf5c055994b22cc7c9af67ab5096b095"
+passed_env = []
+container_build_command = [
+    "cargo",
+    "near",
+    "build",
+    "non-reproducible-wasm",
+    "--locked",
+    "--profile=release-contract",
+    "--features",
+    "abi",
+]
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[features]
+# Enabled by `cargo near build` (via `--features near-sdk/__abi-generate`)
+# and required for ABI / Borsh schema generation. Pulls in
+# `borsh/unstable__schema` and `BorshSchema` derives on the wire types.
+abi = ["borsh/unstable__schema", "tee-verifier-interface/borsh-schema"]
+# Enables `near_sdk::testing_env!` for tests; the workspace `near-sdk`
+# dependency no longer turns on `unit-testing` by default.
+test-utils = ["near-sdk/unit-testing"]
+
+[dependencies]
+borsh = { workspace = true }
+dcap-qvl = { workspace = true }
+near-sdk = { workspace = true }
+tee-verifier-interface = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { workspace = true, features = ["custom"] }
+
+[dev-dependencies]
+hex = { workspace = true }
+rstest = { workspace = true }
+tee-verifier = { path = ".", features = ["test-utils"] }
+test-utils = { workspace = true }
+
+[lints]
+workspace = true

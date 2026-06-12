@@ -1,15 +1,15 @@
 #![allow(clippy::indexing_slicing)]
 
-use criterion::{criterion_group, Criterion};
+use criterion::{Criterion, criterion_group};
 mod bench_utils;
 use crate::bench_utils::{
-    ot_ecdsa_prepare_presign, ot_ecdsa_prepare_sign, ot_ecdsa_prepare_triples, MAX_MALICIOUS,
-    SAMPLE_SIZE,
+    MAX_MALICIOUS, SAMPLE_SIZE, ot_ecdsa_prepare_presign, ot_ecdsa_prepare_sign,
+    ot_ecdsa_prepare_triples,
 };
 use rand_core::SeedableRng;
 use threshold_signatures::{
-    test_utils::{run_protocol, MockCryptoRng},
     ReconstructionLowerBound,
+    test_utils::{MockCryptoRng, run_protocol},
 };
 
 fn threshold() -> ReconstructionLowerBound {

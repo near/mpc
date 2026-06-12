@@ -12,20 +12,20 @@ The indexer is a NEAR node that tracks the shard where the signing smart contrac
 
 ### MPC Signing
 
-The node supports multiple threshold signature schemes, organized into *domains*. Each domain has a unique ID, a signature scheme, and a purpose (signing, foreign-chain transactions, or confidential key derivation). All schemes share the same [FROST](https://eprint.iacr.org/2020/852)-based distributed key generation (DKG) but differ in their signing workflows.
+The node supports multiple threshold signature schemes, organized into *domains*. Each domain has a unique ID, a signature scheme, and a purpose (signing, foreign-chain transactions, or confidential key derivation). All schemes share the same curve-independent [distributed key generation (DKG)](crates/threshold-signatures/docs/dkg.md) but differ in their signing workflows.
 
 #### Supported schemes
 
-**OT-based ECDSA** (Secp256k1) — Originally derived from [Cait-Sith](https://github.com/cronokirby/cait-sith). Uses an offline phase with two protocols:
+**[OT-based ECDSA](crates/threshold-signatures/docs/ecdsa/ot_based_ecdsa/intro.md)** (Secp256k1) — Originally derived from [Cait-Sith](https://github.com/cronokirby/cait-sith). Uses an offline phase with two protocols:
   - *Triple generation*: runs continuously in the background (target: up to 1M Beaver triples per node).
   - *Presignature generation*: also runs in the background; each presignature consumes two triples.
   - *Signing*: one round of communication using a presignature.
 
-**Robust ECDSA** (Secp256k1) — Based on [DJNPO20](https://eprint.iacr.org/2020/501). Skips triple generation entirely:
+**[Robust ECDSA](crates/threshold-signatures/docs/ecdsa/robust_ecdsa/signing.md)** (Secp256k1) — Based on [DJNPO20](https://eprint.iacr.org/2020/501). Skips triple generation entirely:
   - *Presignature generation*: a single 3-round protocol using degree-2t polynomials.
   - *Signing*: one round, same as OT-based ECDSA.
 
-**EdDSA** (Ed25519) — Based on [FROST](https://eprint.iacr.org/2020/852) threshold signatures:
+**[EdDSA](crates/threshold-signatures/docs/eddsa/signing.md)** (Ed25519) — Based on [FROST](https://eprint.iacr.org/2020/852) threshold signatures:
   - *Presignature generation*: participants exchange nonce commitments.
   - *Signing*: one round using a presignature.
 
@@ -33,7 +33,7 @@ For each scheme, the participating set is fixed from the offline phase through t
 
 #### Other capabilities
 
-**Confidential Key Derivation** (BLS12-381) — Derives application-specific keys without revealing the master secret. Takes an application ID and an ephemeral public key, and produces a deterministic secret using threshold BLS signatures and ElGamal encryption. Two variants are supported: *privately verifiable* (app verifies after decryption) and *publicly verifiable* (anyone can verify the encrypted result on-chain without knowing the app's secret key).
+**[Confidential Key Derivation](crates/threshold-signatures/docs/confidential_key_derivation/confidential-key-derivation.md)** (BLS12-381) — Derives application-specific keys without revealing the master secret. Takes an application ID and an ephemeral public key, and produces a deterministic secret using threshold BLS signatures and ElGamal encryption. Two variants are supported: *privately verifiable* (app verifies after decryption) and *publicly verifiable* (anyone can verify the encrypted result on-chain without knowing the app's secret key).
 
 **Foreign chain transaction verification** — The network can verify transactions on foreign chains (Ethereum, Solana, Bitcoin, etc.) before signing. Nodes independently query configured RPC providers, run deterministic extractors over the results, and produce a threshold signature over the observed values. This enables NEAR contracts to react to external chain events without a trusted relayer. See [docs/foreign-chain-transactions.md](docs/foreign-chain-transactions.md) for the full design.
 
@@ -153,10 +153,9 @@ We run several checks in CI that require tools beyond the default Rust toolchain
 - [`cargo-shear`](https://github.com/Boshen/cargo-shear)
 - [`cargo-deny`](https://github.com/EmbarkStudios/cargo-deny)
 - [`zizmor`](https://github.com/woodruffw/zizmor)
-- [`ruff`](https://github.com/astral-sh/ruff)
 - [`lychee`](https://github.com/lycheeverse/lychee)
 - [`editorconfig-checker`](https://github.com/editorconfig-checker/editorconfig-checker)
-- [`python`](https://www.python.org/) (3.11) with [`tree-sitter`](https://pypi.org/project/tree-sitter/) and [`tree-sitter-rust`](https://pypi.org/project/tree-sitter-rust/)
+- [`ast-grep`](https://github.com/ast-grep/ast-grep)
 
 This set does not include all checks, but only the most common reasons for CI
 failures. Therefore, we suggest running these checks locally before opening a

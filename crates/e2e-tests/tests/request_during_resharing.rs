@@ -2,7 +2,7 @@ use crate::common;
 
 use mpc_primitives::domain::{Curve, DomainId};
 use near_mpc_contract_interface::types::{
-    DomainConfig, DomainPurpose, Protocol, ProtocolContractState,
+    DomainConfig, DomainPurpose, Protocol, ProtocolContractState, ReconstructionThreshold,
 };
 use rand::SeedableRng;
 
@@ -28,8 +28,8 @@ async fn test_request_during_resharing() {
             c.presignatures_to_buffer = 2;
             c.domains.push(DomainConfig {
                 id: DomainId(c.domains.len() as u64),
-                curve: Curve::Secp256k1,
                 protocol: Protocol::DamgardEtAl,
+                reconstruction_threshold: ReconstructionThreshold::new(3),
                 purpose: DomainPurpose::Sign,
             });
         })
@@ -51,7 +51,7 @@ async fn test_request_during_resharing() {
         .domains
         .iter()
         .find(|d| {
-            d.curve == Curve::Secp256k1
+            Curve::from(d.protocol) == Curve::Secp256k1
                 && d.protocol == Protocol::CaitSith
                 && d.purpose == DomainPurpose::Sign
         })
@@ -66,7 +66,9 @@ async fn test_request_during_resharing() {
         .domains
         .domains
         .iter()
-        .find(|d| d.curve == Curve::Edwards25519 && d.purpose == DomainPurpose::Sign)
+        .find(|d| {
+            Curve::from(d.protocol) == Curve::Edwards25519 && d.purpose == DomainPurpose::Sign
+        })
         .expect("no Edwards25519 Sign domain");
     let ckd_domain = contract_state
         .domains

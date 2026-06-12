@@ -7,16 +7,31 @@ use near_mpc_bounded_collections::BoundedVec;
 use near_mpc_contract_interface::{
     method_names,
     types::{
-        Bls12381G1PublicKey, CKDAppPublicKey, CKDRequestArgs, DomainConfig, Payload, Protocol,
-        SignRequestArgs, EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
-        EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
+        Bls12381G1PublicKey, CKDAppPublicKey, CKDRequestArgs, DomainConfig,
+        EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES, Payload,
+        Protocol, SignRequestArgs,
     },
 };
 use near_primitives::action::Action;
-use rand::rngs::OsRng;
+use near_primitives::types::{Balance, Gas};
 use rand::Rng;
 use rand::RngCore;
+use rand::rngs::OsRng;
 use serde::Serialize;
+
+/// Gas attached to a `sign` (or legacy `sign`) request. Matches the e2e
+/// test cluster's `SIGN_GAS` and the contract's
+/// `sign_call_gas_attachment_requirement_tera_gas` minimum.
+const SIGN_TGAS: u64 = 15;
+/// Gas attached to a `request_app_private_key` (CKD) call. Matches the
+/// e2e cluster's `CKD_PV_GAS`. CKD is more expensive than `sign` because
+/// `AppPublicKeyPV` does an on-chain bls12381 pairing check before
+/// yielding.
+const CKD_TGAS: u64 = 100;
+/// Gas attached to a `make_parallel_sign_calls` invocation on the
+/// parallel-sign helper contract. The helper schedules up to ~10
+/// sub-calls into the MPC contract, so this needs the full block budget.
+const PARALLEL_SIGN_TGAS: u64 = 300;
 
 #[derive(Clone)]
 pub struct ActionCall {
@@ -86,7 +101,7 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
                         seed: rand::random(),
                     })
                     .unwrap(),
-                    300,
+                    PARALLEL_SIGN_TGAS,
                     1,
                 )],
             }
@@ -103,7 +118,7 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
                     },
                 })
                 .unwrap(),
-                300,
+                SIGN_TGAS,
                 1,
             )],
         },
@@ -119,7 +134,7 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
                     },
                 })
                 .unwrap(),
-                300,
+                SIGN_TGAS,
                 1,
             )],
         },
@@ -135,7 +150,7 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
                     },
                 })
                 .unwrap(),
-                300,
+                CKD_TGAS,
                 1,
             )],
         },
@@ -212,7 +227,7 @@ fn make_action(method: &str, args: &[u8], tgas: u64, deposit: u128) -> Action {
     Action::FunctionCall(Box::new(near_primitives::action::FunctionCallAction {
         method_name: method.to_string(),
         args: args.to_vec(),
-        gas: tgas * 1_000_000_000_000,
-        deposit,
+        gas: Gas::from_teragas(tgas),
+        deposit: Balance::from_yoctonear(deposit),
     }))
 }

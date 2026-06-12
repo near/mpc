@@ -1,22 +1,22 @@
+use super::IndexerAPI;
+use super::ReadSupportedForeignChain;
 use super::handler::{ChainBlockUpdate, SignatureRequestFromChain};
 use super::migrations::ContractMigrationInfo;
 use super::participants::ContractState;
 use super::types::{
     ChainSendTransactionRequest, ChainSignatureRespondArgs, ConcludeNodeMigrationArgs,
 };
-use super::IndexerAPI;
-use super::ReadSupportedForeignChain;
 use crate::config::{self, ParticipantsConfig};
 use crate::indexer::handler::{CKDRequestFromChain, VerifyForeignTxRequestFromChain};
 use crate::indexer::types::{ChainCKDRespondArgs, ChainVerifyForeignTransactionRespondArgs};
 use crate::migration_service::types::MigrationInfo;
-use crate::requests::recent_blocks_tracker::tests::TestBlockMaker;
 use crate::tests::common::MockTransactionSender;
 use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};
 use crate::types::SignatureId;
 use crate::types::{CKDId, VerifyForeignTxId};
 use anyhow::Context;
 use assert_matches::assert_matches;
+use chain_gateway::event_subscriber::recent_blocks_tracker::test_utils::TestBlockMaker;
 use derive_more::From;
 use ed25519_dalek::VerifyingKey;
 use mpc_contract::node_migrations::NodeMigrations;
@@ -28,15 +28,16 @@ use mpc_contract::primitives::{
     thresholds::{Threshold, ThresholdParameters},
 };
 use mpc_contract::state::{
-    initializing::InitializingContractState, key_event::tests::Environment, key_event::KeyEvent,
-    resharing::ResharingContractState, running::RunningContractState, ProtocolContractState,
+    ProtocolContractState, initializing::InitializingContractState, key_event::KeyEvent,
+    key_event::tests::Environment, resharing::ResharingContractState,
+    running::RunningContractState,
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_crypto_types::Payload;
 use near_time::{Clock, Duration};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
-use std::sync::{atomic::AtomicBool, Arc};
+use std::sync::{Arc, atomic::AtomicBool};
 use tokio::sync::{broadcast, mpsc, watch};
 
 /// A simplification of the real MPC contract state for testing.
@@ -228,6 +229,7 @@ impl FakeMpcContractState {
                 participants_config_to_threshold_parameters(&new_participants),
             ),
             cancellation_requests: HashSet::new(),
+            per_domain_thresholds: std::collections::BTreeMap::new(),
         });
     }
 
@@ -863,48 +865,50 @@ impl FakeIndexerOneNode {
             ..
         } = self;
         let shutdown_clone = shutdown.clone();
-        let monitor_state_changes = AutoAbortTask::from(tokio::spawn(async move {
-            loop {
-                let state = core_state_change_receiver.recv().await.unwrap();
-                let state = if shutdown_clone.load(std::sync::atomic::Ordering::Relaxed) {
-                    ContractState::Invalid
-                } else {
-                    state
-                };
-
-                api_state_sender.send_if_modified(|watched_state| {
-                    let state_changed = *watched_state != state;
-
-                    if state_changed {
-                        tracing::info!("State changed: {:?}", state);
-                        *watched_state = state;
-                        true
+        let monitor_state_changes: AutoAbortTask<()> =
+            AutoAbortTask::from(tokio::spawn(async move {
+                loop {
+                    let state = core_state_change_receiver.recv().await.unwrap();
+                    let state = if shutdown_clone.load(std::sync::atomic::Ordering::Relaxed) {
+                        ContractState::Invalid
                     } else {
-                        false
-                    }
-                });
-            }
-        }));
-        let monitor_migration_state_changes = AutoAbortTask::from(tokio::spawn(async move {
-            loop {
-                let state = core_migration_change_receiver.recv().await.unwrap();
-                let state =
-                    MigrationInfo::from_contract_state(&account_id, &p2p_public_key, &state);
+                        state
+                    };
 
-                api_migration_info_sender.send_if_modified(|watched_state| {
-                    let state_changed = *watched_state != state;
+                    api_state_sender.send_if_modified(|watched_state| {
+                        let state_changed = *watched_state != state;
 
-                    if state_changed {
-                        tracing::info!("State changed: {:?}", state);
-                        *watched_state = state;
-                        true
-                    } else {
-                        false
-                    }
-                });
-            }
-        }));
-        let monitor_requests = AutoAbortTask::from(tokio::spawn(async move {
+                        if state_changed {
+                            tracing::info!("State changed: {:?}", state);
+                            *watched_state = state;
+                            true
+                        } else {
+                            false
+                        }
+                    });
+                }
+            }));
+        let monitor_migration_state_changes: AutoAbortTask<()> =
+            AutoAbortTask::from(tokio::spawn(async move {
+                loop {
+                    let state = core_migration_change_receiver.recv().await.unwrap();
+                    let state =
+                        MigrationInfo::from_contract_state(&account_id, &p2p_public_key, &state);
+
+                    api_migration_info_sender.send_if_modified(|watched_state| {
+                        let state_changed = *watched_state != state;
+
+                        if state_changed {
+                            tracing::info!("State changed: {:?}", state);
+                            *watched_state = state;
+                            true
+                        } else {
+                            false
+                        }
+                    });
+                }
+            }));
+        let monitor_requests: AutoAbortTask<()> = AutoAbortTask::from(tokio::spawn(async move {
             loop {
                 let request = block_update_receiver.recv().await.unwrap();
                 indexer_suspended
@@ -914,11 +918,12 @@ impl FakeIndexerOneNode {
                 api_block_update_sender.send(request).unwrap();
             }
         }));
-        let forward_txn_requests = AutoAbortTask::from(tokio::spawn(async move {
-            while let Some(txn) = api_txn_receiver.recv().await {
-                core_txn_sender.send((txn, uid)).unwrap();
-            }
-        }));
+        let forward_txn_requests: AutoAbortTask<()> =
+            AutoAbortTask::from(tokio::spawn(async move {
+                while let Some(txn) = api_txn_receiver.recv().await {
+                    core_txn_sender.send((txn, uid)).unwrap();
+                }
+            }));
 
         monitor_state_changes.await.unwrap();
         monitor_migration_state_changes.await.unwrap();

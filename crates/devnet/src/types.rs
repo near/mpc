@@ -159,6 +159,10 @@ pub struct RpcConfig {
     pub rate_limit: usize,
     /// Maximum number of in-flight requests that the RPC server will allow.
     pub max_concurrency: usize,
+    /// Optional API key sent as `Authorization: Bearer <value>` on every
+    /// request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_key: Option<String>,
 }
 
 pub struct ParsedConfig {
@@ -182,13 +186,13 @@ pub async fn load_config() -> ParsedConfig {
 
 /// 1. We need to serialize the keys with [`bs58`] encoding, to maintain
 ///    backwards compatibility with the binary version previous to <https://github.com/near/mpc/issues/880>
-///    which removes [`near_crypto`] representation of keys on the node in favor of the [`ed25519_dalek`] crate.
+///    which removes [`near_crypto_public`] representation of keys on the node in favor of the [`ed25519_dalek`] crate.
 ///
 /// 2. [`serde_yaml`] serialization will fail as [`SigningKey`] and [`VerifyingKey`] serialize into bytes, and [`serde_yaml`] does
 ///    not allow values to be defined as bytes.
 pub mod near_crypto_compatible_serialization {
     use ed25519_dalek::{SigningKey, VerifyingKey};
-    use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
     const ED25519_PREFIX: &str = "ed25519";
 
     pub mod signing_keys {

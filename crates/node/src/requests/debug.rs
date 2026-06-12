@@ -10,7 +10,8 @@ use std::sync::{Arc, Mutex};
 
 const NUM_COMPLETED_REQUESTS_TO_KEEP: usize = 100;
 
-/// A completed request, for exporting to /debug/requests.
+/// A completed request, kept for surfacing on the queue's debug
+/// endpoints (`/debug/signatures`, `/debug/ckds`).
 pub(super) struct CompletedRequest<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> {
     pub request: RequestType,
     pub progress: Arc<Mutex<ComputationProgress<ChainRespondArgsType>>>,
@@ -20,8 +21,9 @@ pub(super) struct CompletedRequest<RequestType: Request, ChainRespondArgsType: C
     pub completion_delay: Option<(NumBlocks, near_time::Duration)>,
 }
 
-/// A buffer of completed requests, for exporting to /debug/requests.
-/// Keeps the most recent `NUM_COMPLETED_REQUESTS_TO_KEEP` requests.
+/// A buffer of completed requests, surfaced on the queue's debug
+/// endpoints (`/debug/signatures`, `/debug/ckds`). Keeps the most
+/// recent `NUM_COMPLETED_REQUESTS_TO_KEEP` requests.
 pub(super) struct CompletedRequests<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> {
     /// Min-heap, so that the oldest requests are at the front to be removed.
     requests: BinaryHeap<CompletedRequest<RequestType, ChainRespondArgsType>>,
@@ -144,18 +146,20 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
         .unwrap();
         if self.active_attempt.strong_count() > 0 {
             write!(&mut output, " computing").unwrap();
-        } else if let Some(time) = self
-            .computation_progress
-            .lock()
-            .unwrap()
-            .last_response_submission
-        {
-            write!(
-                &mut output,
-                " responded: {}s",
-                clock.now().duration_since(time).as_secs()
-            )
-            .unwrap();
+        } else {
+            let last_response_submission = self
+                .computation_progress
+                .lock()
+                .unwrap()
+                .last_response_submission;
+            if let Some(time) = last_response_submission {
+                write!(
+                    &mut output,
+                    " responded: {}s",
+                    clock.now().duration_since(time).as_secs()
+                )
+                .unwrap();
+            }
         }
         write!(&mut output, " elect:").unwrap();
         for participant in self.leader_selection_order.iter() {
@@ -181,7 +185,11 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs> Debug
         for request in self.requests.values() {
             let debug_line =
                 request.debug_print(&self.clock, self.my_participant_id, &eligible_leaders);
-            request_lines.push((request.block_height, request.request.get_id(), debug_line));
+            request_lines.push((
+                request.block_height.into(),
+                request.request.get_id(),
+                debug_line,
+            ));
         }
 
         for completed in &self.recently_completed_requests.requests {

@@ -1,7 +1,9 @@
 use crate::account::OperatingAccounts;
 use crate::rpc::NearRpcClients;
 use crate::types::{DevnetSetupRepository, LoadtestSetup, MpcNetworkSetup};
+use futures::FutureExt;
 use near_jsonrpc_client::methods;
+use near_primitives::types::{BlockReference, Finality};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -28,17 +30,25 @@ impl OperatingDevnetSetup {
         }
         let setup_data = std::fs::read_to_string(Self::SETUP_FILENAME).unwrap();
         let setup: DevnetSetupRepository = serde_yaml::from_str(&setup_data).unwrap();
+        // Retry the initial block fetch: a transient RPC failure (e.g. a 429
+        // from a rate-limited provider) shouldn't kill an otherwise long-
+        // running CLI invocation.
         let recent_block_hash = tokio::time::timeout(
-            Duration::from_secs(5),
-            client.submit(methods::block::RpcBlockRequest {
-                block_reference: near_primitives::types::BlockReference::Finality(
-                    near_primitives::types::Finality::Final,
-                ),
+            Duration::from_secs(30),
+            client.with_retry(5, |rpc| {
+                async move {
+                    rpc.call(methods::block::RpcBlockRequest {
+                        block_reference: BlockReference::Finality(Finality::Final),
+                    })
+                    .await
+                    .map_err(anyhow::Error::from)
+                }
+                .boxed()
             }),
         )
         .await
-        .expect("Timed out while waiting for block finality; expected RPC node to be reachable and responsive within 5 seconds.")
-        .unwrap()
+        .expect("Timed out while waiting for block finality; expected RPC node to be reachable and responsive within 30 seconds.")
+        .expect("Failed to fetch a recent block hash from the RPC after retries.")
         .header
         .hash;
 

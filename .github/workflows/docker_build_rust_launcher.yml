@@ -1,19 +1,22 @@
 name: Build Docker Rust Launcher Image
 
+# cancel-in-progress is false to avoid orphaning blobs mid-push; see RELEASES.md.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 on:
   push:
     branches:
       - main
+      - 'release/v*'
   workflow_dispatch:
 
 jobs:
   build-and-push-images:
     name: "Build and push Rust launcher Docker image with commit hash"
     runs-on: warp-ubuntu-2404-x64-32x
+    environment: production
     permissions:
       contents: read
 
@@ -34,24 +37,10 @@ jobs:
       - name: Login to Docker Hub
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ secrets.DOCKERHUB_USER }}
+          password: ${{ secrets.DOCKERHUB_PAT }}
 
       - name: Build and push Rust launcher image
-        env:
-          IMAGE_NAME: mpc-launcher
         run: |
-          set -euo pipefail
-
-          branch="${GITHUB_REF_NAME//\//-}"
-          short_sha=$(git rev-parse --short HEAD)
-          tag="${branch}-${short_sha}"
-          echo "Pushing as tag: ${tag}"
-
-          archive=$(nix build --no-link --print-out-paths .#rust-launcher-image)
-          digest_file=$(nix build --no-link --print-out-paths .#rust-launcher-image-manifest-digest)
-          echo "Manifest digest: $(cat "$digest_file")"
-
-          skopeo copy --preserve-digests \
-            "docker-archive:${archive}" \
-            "docker://docker.io/nearone/${IMAGE_NAME}:${tag}"
+          export RUST_LAUNCHER_IMAGE_NAME=mpc-launcher
+          ./deployment/build-images.sh --rust-launcher --push

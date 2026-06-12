@@ -13,9 +13,15 @@ export BASE_PATH=/mnt/data/barak/dstack_latest/meta-dstack/dstack
 export VMM_RPC=http://127.0.0.1:10000
 
 export MPC_IMAGE=nearone/mpc-node
-# Manifest digest of the MPC node image (for DEFAULT_IMAGE_DIGEST and voting).
+# Manifest digest of the MPC node image (filled into the launcher compose
+# template and voted in as the allowed code hash).
 # Get with: docker pull nearone/mpc-node:<tag> 2>&1 | grep Digest
-export MPC_MANIFEST_DIGEST=sha256:5d1e604dcf3197f8b465c854f8073eaa89b9733f646248d59f86a15b81110ef5
+export MPC_MANIFEST_DIGEST=sha256:2d399b135910f1c92696c7675d7e95c02e0da3766b39a1943087757e73386a61
+
+# Manifest digest of the launcher image (filled into the launcher compose
+# template and voted in as the allowed launcher hash).
+# Get with: docker pull nearone/mpc-launcher:<tag> 2>&1 | grep Digest
+export LAUNCHER_MANIFEST_DIGEST=sha256:8940a8169c02df46e9afd7489e8721cc813567088b06720b51d06277aab0420d
 
 export NEAR_NETWORK_CONFIG=mpc-localnet
 export NEAR_RPC_URL=http://127.0.0.1:3030
@@ -25,6 +31,12 @@ export FUNDER_ACCOUNT=test.near
 export FUNDER_PRIVATE_KEY="$(jq -r '.secret_key' ~/.near/mpc-localnet/validator_key.json)"
 
 export MAX_NODES_TO_FUND=2
+
+# Migration test drives a lot of operator txns (add-key x2 for the target,
+# register_backup_service, start_node_migration) — 1 NEAR per node runs
+# out. Give each node 10 NEAR and the root enough to cover.
+export NODE_INITIAL_BALANCE="10 NEAR"
+export ROOT_INITIAL_BALANCE="45 NEAR"
 
 export NEAR_TX_SLEEP_SEC=1
 export NEAR_RETRY_SLEEP_SEC=2

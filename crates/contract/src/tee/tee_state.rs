@@ -11,7 +11,7 @@ use crate::{
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_attestation::{
-    attestation::{self, Attestation, VerifiedAttestation},
+    attestation::{self, AcceptedAttestation, Attestation, VerifiedAttestation},
     report_data::{ReportData, ReportDataV1},
 };
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash};
@@ -37,6 +37,10 @@ pub enum TeeQuoteStatus {
 pub(crate) enum AttestationSubmissionError {
     #[error("the submitted attestation failed verification, reason: {:?}", .0)]
     InvalidAttestation(#[from] attestation::VerificationError),
+    #[error(
+        "TLS public key is already registered to a different account; only the owning account may update it"
+    )]
+    TlsKeyOwnedByOtherAccount,
 }
 
 #[derive(Debug)]
@@ -152,7 +156,10 @@ impl TeeState {
         .into();
 
         let accepted_measurements = self.get_accepted_measurements();
-        let verified_attestation = attestation.verify(
+        let AcceptedAttestation {
+            attestation: verified_attestation,
+            advisory_ids,
+        } = attestation.verify(
             expected_report_data.into(),
             Self::current_time_seconds(),
             &self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration),
@@ -160,7 +167,19 @@ impl TeeState {
             &accepted_measurements,
         )?;
 
+        log_informational_advisory_ids(&advisory_ids);
+
         let tls_pk = node_id.tls_public_key.clone();
+
+        // Authorization: a TLS key registered to one account must not be
+        // overwritten by a submission from a different account. Without this,
+        // any caller could replace any participant's stored attestation, since
+        // the entry is keyed only by `tls_public_key`.
+        if let Some(existing) = self.stored_attestations.get(&tls_pk)
+            && existing.node_id.account_id != node_id.account_id
+        {
+            return Err(AttestationSubmissionError::TlsKeyOwnedByOtherAccount);
+        }
 
         let insertion = self.stored_attestations.insert(
             tls_pk,
@@ -459,6 +478,31 @@ impl TeeState {
     }
 }
 
+/// Maximum number of advisory IDs to inline in the attestation-acceptance log.
+/// PCS collateral is externally controlled, so we cap the rendered list to keep
+/// receipt size predictable; the full count is always reported.
+const MAX_LOGGED_ADVISORY_IDS: usize = 8;
+
+fn log_informational_advisory_ids(advisory_ids: &[String]) {
+    if advisory_ids.is_empty() {
+        return;
+    }
+    let total = advisory_ids.len();
+    let shown = advisory_ids
+        .iter()
+        .take(MAX_LOGGED_ADVISORY_IDS)
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join(", ");
+    let suffix = match total.checked_sub(MAX_LOGGED_ADVISORY_IDS) {
+        Some(extra) if extra > 0 => format!(" (+{extra} more)"),
+        _ => String::new(),
+    };
+    env::log_str(&format!(
+        "attestation accepted with {total} informational advisory ID(s): {shown}{suffix}",
+    ));
+}
+
 #[derive(Debug)]
 pub(crate) enum AttestationCheckError {
     CallerNotParticipant,
@@ -550,13 +594,17 @@ mod tests {
         // Then: attestations are left untouched (attestation cleanup is a separate path).
         assert_eq!(tee_state.stored_attestations.len(), 4);
         for node_id in &participant_nodes {
-            assert!(tee_state
-                .stored_attestations
-                .contains_key(&node_id.tls_public_key));
+            assert!(
+                tee_state
+                    .stored_attestations
+                    .contains_key(&node_id.tls_public_key)
+            );
         }
-        assert!(tee_state
-            .stored_attestations
-            .contains_key(&non_participant_uid.tls_public_key));
+        assert!(
+            tee_state
+                .stored_attestations
+                .contains_key(&non_participant_uid.tls_public_key)
+        );
     }
 
     #[test]
@@ -609,12 +657,16 @@ mod tests {
 
         // Then: only the expired entry is removed.
         assert_eq!(removed, 1);
-        assert!(tee_state
-            .stored_attestations
-            .contains_key(&fresh_node.tls_public_key));
-        assert!(!tee_state
-            .stored_attestations
-            .contains_key(&stale_node.tls_public_key));
+        assert!(
+            tee_state
+                .stored_attestations
+                .contains_key(&fresh_node.tls_public_key)
+        );
+        assert!(
+            !tee_state
+                .stored_attestations
+                .contains_key(&stale_node.tls_public_key)
+        );
     }
 
     #[test]
@@ -692,9 +744,11 @@ mod tests {
 
         // Then: nothing is removed.
         assert_eq!(removed, 0);
-        assert!(tee_state
-            .stored_attestations
-            .contains_key(&node_id.tls_public_key));
+        assert!(
+            tee_state
+                .stored_attestations
+                .contains_key(&node_id.tls_public_key)
+        );
     }
 
     #[test]
@@ -848,12 +902,16 @@ mod tests {
 
         // then
         assert_eq!(tee_state.stored_attestations.len(), 2);
-        assert!(tee_state
-            .stored_attestations
-            .contains_key(&node_1.tls_public_key));
-        assert!(tee_state
-            .stored_attestations
-            .contains_key(&node_2.tls_public_key));
+        assert!(
+            tee_state
+                .stored_attestations
+                .contains_key(&node_1.tls_public_key)
+        );
+        assert!(
+            tee_state
+                .stored_attestations
+                .contains_key(&node_2.tls_public_key)
+        );
     }
 
     #[test]
@@ -915,11 +973,14 @@ mod tests {
             .unwrap();
 
         // when
-        testing_env!(VMContextBuilder::new()
-            .block_timestamp(
-                Duration::from_secs(EXPIRY_TIMESTAMP_SECONDS + ELAPSED_SECONDS).as_nanos() as u64
-            )
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .block_timestamp(
+                    Duration::from_secs(EXPIRY_TIMESTAMP_SECONDS + ELAPSED_SECONDS).as_nanos()
+                        as u64
+                )
+                .build()
+        );
 
         let status = tee_state.reverify_participants(&node_id, Duration::from_secs(0));
 
@@ -939,9 +1000,11 @@ mod tests {
 
         const EXPIRY_TIMESTAMP_SECONDS: u64 = 1000;
 
-        testing_env!(VMContextBuilder::new()
-            .block_timestamp(Duration::from_secs(0).as_nanos() as u64)
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .block_timestamp(Duration::from_secs(0).as_nanos() as u64)
+                .build()
+        );
 
         let attestation = Attestation::Mock(MockAttestation::WithConstraints {
             mpc_docker_image_hash: None,
@@ -1287,6 +1350,93 @@ mod tests {
             TeeValidationResult::Full,
             "All participants should be valid before expiry"
         );
+    }
+
+    #[test]
+    fn add_participant__should_reject_tls_key_owned_by_other_account() {
+        // Given: an existing attestation registered to `alice.near` under some TLS key.
+        const TEE_UPGRADE_DURATION: Duration = Duration::from_secs(10_000);
+
+        let mut tee_state = TeeState::default();
+        let tls_public_key = bogus_ed25519_public_key();
+
+        let alice_node = NodeId {
+            account_id: "alice.near".parse().unwrap(),
+            tls_public_key: tls_public_key.clone(),
+            account_public_key: bogus_ed25519_public_key(),
+        };
+        tee_state
+            .add_participant(
+                alice_node.clone(),
+                Attestation::Mock(MockAttestation::Valid),
+                TEE_UPGRADE_DURATION,
+            )
+            .expect("initial insertion should succeed");
+
+        // When: a different account submits an attestation for the same TLS key.
+        let attacker_node = NodeId {
+            account_id: "attacker.near".parse().unwrap(),
+            tls_public_key: tls_public_key.clone(),
+            account_public_key: bogus_ed25519_public_key(),
+        };
+        let result = tee_state.add_participant(
+            attacker_node,
+            Attestation::Mock(MockAttestation::Valid),
+            TEE_UPGRADE_DURATION,
+        );
+
+        // Then: the overwrite is rejected and the original entry is untouched.
+        assert_matches!(
+            result,
+            Err(AttestationSubmissionError::TlsKeyOwnedByOtherAccount)
+        );
+        let stored = tee_state
+            .stored_attestations
+            .get(&tls_public_key)
+            .expect("entry must still be present");
+        assert_eq!(stored.node_id, alice_node);
+    }
+
+    #[test]
+    fn add_participant__should_allow_same_account_to_update_its_own_entry() {
+        // Given: an existing attestation registered to `alice.near`.
+        const TEE_UPGRADE_DURATION: Duration = Duration::from_secs(10_000);
+
+        let mut tee_state = TeeState::default();
+        let tls_public_key = bogus_ed25519_public_key();
+
+        let initial_node = NodeId {
+            account_id: "alice.near".parse().unwrap(),
+            tls_public_key: tls_public_key.clone(),
+            account_public_key: bogus_ed25519_public_key(),
+        };
+        tee_state
+            .add_participant(
+                initial_node,
+                Attestation::Mock(MockAttestation::Valid),
+                TEE_UPGRADE_DURATION,
+            )
+            .expect("initial insertion should succeed");
+
+        // When: the same account resubmits with a rotated account_public_key.
+        let rotated_node = NodeId {
+            account_id: "alice.near".parse().unwrap(),
+            tls_public_key,
+            account_public_key: bogus_ed25519_public_key(),
+        };
+        let result = tee_state.add_participant(
+            rotated_node.clone(),
+            Attestation::Mock(MockAttestation::Valid),
+            TEE_UPGRADE_DURATION,
+        );
+
+        // Then: the update is accepted and the stored entry reflects the new key.
+        assert_matches!(result, Ok(ParticipantInsertion::UpdatedExistingParticipant));
+        let stored = tee_state
+            .stored_attestations
+            .get(&rotated_node.tls_public_key)
+            .expect("entry must be present");
+        assert_eq!(stored.node_id, rotated_node);
     }
 
     #[test]

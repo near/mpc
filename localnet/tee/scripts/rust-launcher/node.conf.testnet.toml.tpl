@@ -18,6 +18,8 @@ chain_id = "testnet"
 boot_nodes = "${NEAR_BOOT_NODES}"
 download_genesis = true
 download_config = "rpc"
+tier3_public_addr = "${TIER3_PUBLIC_ADDR}"
+external_storage_fallback_threshold = ${EXTERNAL_STORAGE_FALLBACK_THRESHOLD}
 
 [mpc_node_config.secrets]
 secret_store_key_hex = "${MPC_SECRET_STORE_KEY}"
@@ -28,7 +30,7 @@ my_near_account_id = "${MPC_ACCOUNT_ID}"
 near_responder_account_id = "${MPC_ACCOUNT_ID}"
 number_of_responder_keys = 1
 web_ui = "0.0.0.0:8080"
-migration_web_ui = "0.0.0.0:8078"
+migration_web_ui = "0.0.0.0:8079"
 cores = 4
 
 [mpc_node_config.node.indexer]
@@ -37,6 +39,9 @@ sync_mode = "Latest"
 concurrency = 1
 mpc_contract_id = "${MPC_CONTRACT_ID}"
 finality = "optimistic"
+# Mirrors production: contract participant URLs may publish any port, but
+# the P2P/TLS listener always binds 80 inside the CVM.
+port_override = 80
 
 [mpc_node_config.node.triple]
 concurrency = 2

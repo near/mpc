@@ -2,216 +2,199 @@ name: Release
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 on:
-  push:
-    tags:
-      - '*.*.*'
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  release-info:
-    name: "Extract release info"
+  release:
+    name: "Promote built artifacts to a release"
     runs-on: warp-ubuntu-2404-x64-2x
-
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-      tag: ${{ steps.version.outputs.tag }}
-      short-sha: ${{ steps.version.outputs.short-sha }}
+    environment: production
+    permissions:
+      contents: write
+      actions: read
 
     steps:
-      - name: Extract version
-        id: version
+      - name: Checkout
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read release inputs from branch
+        id: inputs
         env:
-          TAG_REF: ${{ github.ref }}
-          TAG_SHA: ${{ github.sha }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          VERSION="${TAG_REF#refs/tags/}"
-          VERSION="${VERSION#v}"
-          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
-            echo "::error::Invalid semver: $VERSION"
+          set -euo pipefail
+          VERSION=$(awk -F'"' '/^version = "[0-9]+\.[0-9]+\.[0-9]+/ {print $2; exit}' Cargo.toml)
+          if [[ -z "$VERSION" ]]; then
+            echo "::error::Could not find workspace 'version = \"X.Y.Z\"' line in Cargo.toml"
             exit 1
           fi
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "tag=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "short-sha=${TAG_SHA::7}" >> "$GITHUB_OUTPUT"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+            echo "::error::Invalid semver in Cargo.toml: $VERSION"
+            exit 1
+          fi
 
-  retag-launcher:
-    name: "Retag mpc-launcher"
-    needs: release-info
-    uses: ./.github/workflows/docker_launcher_release.yml
-    with:
-      source-tag: "main-${{ needs.release-info.outputs.short-sha }}"
-      release-tag: ${{ needs.release-info.outputs.version }}
-    secrets:
-      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          SHA=$(git rev-parse HEAD)
+          SHORT_SHA="${SHA::7}"
+          BRANCH_TAG="${REF_NAME//\//-}-${SHORT_SHA}"
 
-  retag-node:
-    name: "Retag mpc-node"
-    needs: release-info
-    uses: ./.github/workflows/docker_node_release.yml
-    with:
-      source-tag: "main-${{ needs.release-info.outputs.short-sha }}"
-      release-tag: ${{ needs.release-info.outputs.version }}
-      repository: mpc-node
-    secrets:
-      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "branch-tag=$BRANCH_TAG" >> "$GITHUB_OUTPUT"
 
-  retag-node-gcp:
-    name: "Retag mpc-node-gcp"
-    needs: release-info
-    uses: ./.github/workflows/docker_node_release.yml
-    with:
-      source-tag: "main-${{ needs.release-info.outputs.short-sha }}"
-      release-tag: ${{ needs.release-info.outputs.version }}
-      repository: mpc-node-gcp
-    secrets:
-      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          echo "Releasing version $VERSION from $REF_NAME at $SHORT_SHA"
+          echo "Source image tag: $BRANCH_TAG"
 
-  collect-digests:
-    name: "Collect Docker image digests"
-    needs: [release-info, retag-launcher, retag-node, retag-node-gcp]
-    runs-on: warp-ubuntu-2404-x64-2x
+      - name: Refuse if git tag already exists
+        env:
+          VERSION: ${{ steps.inputs.outputs.version }}
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --tags origin "${VERSION}" >/dev/null 2>&1; then
+            echo "::error::Git tag ${VERSION} already exists on origin."
+            echo "::error::If this was an accidental orphan tag, delete it and re-run. Otherwise the release has already shipped."
+            exit 1
+          fi
 
-    outputs:
-      mpc_node_manifest_digest: ${{ steps.digests.outputs.mpc_node_manifest_digest }}
-      mpc_node_gcp_manifest_digest: ${{ steps.digests.outputs.mpc_node_gcp_manifest_digest }}
-      mpc_launcher_manifest_digest: ${{ steps.digests.outputs.mpc_launcher_manifest_digest }}
+      - name: Refuse if GitHub release already exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.inputs.outputs.version }}
+        run: |
+          set -euo pipefail
+          if gh release view "${VERSION}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "::error::A GitHub release (draft or published) for ${VERSION} already exists."
+            echo "::error::Delete it on the releases page before re-running."
+            exit 1
+          fi
 
-    steps:
+      - name: Extract changelog section
+        env:
+          VERSION: ${{ steps.inputs.outputs.version }}
+        run: |
+          set -euo pipefail
+          awk "/^## \\[${VERSION}\\]/{found=1; next} /^## \\[/{if(found) exit} found" CHANGELOG.md > release-notes-raw.md
+          if [ ! -s release-notes-raw.md ]; then
+            echo "::error::No changelog section found for version ${VERSION} in CHANGELOG.md"
+            exit 1
+          fi
+
       - name: Install skopeo
         run: |
           sudo apt-get update
           sudo apt-get install -y skopeo
 
-      - name: Get image digests
-        id: digests
+      - name: Login to Docker Hub
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USER }}
+          password: ${{ secrets.DOCKERHUB_PAT }}
+
+      - name: Verify source images exist
         env:
-          RELEASE_TAG: ${{ needs.release-info.outputs.version }}
+          BRANCH_TAG: ${{ steps.inputs.outputs.branch-tag }}
         run: |
           set -euo pipefail
-          for REPO in mpc-launcher mpc-node-gcp mpc-node; do
-            SAFE_NAME="${REPO//-/_}"
-            MANIFEST_DIGEST=$(skopeo inspect docker://nearone/$REPO:$RELEASE_TAG | jq -r '.Digest')
-            if [[ -z "$MANIFEST_DIGEST" ]]; then
-              echo "::error::Failed to get manifest digest for nearone/$REPO:$RELEASE_TAG"
+          for REPO in mpc-node mpc-node-gcp mpc-launcher; do
+            if ! skopeo inspect docker://nearone/$REPO:$BRANCH_TAG > /dev/null 2>&1; then
+              echo "::error::Source image nearone/$REPO:$BRANCH_TAG not found."
+              echo "::error::Has the build workflow finished for this commit? If a new commit was pushed after the build started, wait for the new build to complete."
               exit 1
             fi
-            echo "${SAFE_NAME}_manifest_digest=$MANIFEST_DIGEST" >> "$GITHUB_OUTPUT"
           done
 
-  build-contract:
-    name: "Build contract"
-    needs: release-info
-    runs-on: warp-ubuntu-2404-x64-16x
-
-    outputs:
-      contract-hash: ${{ steps.contract-hash.outputs.sha256 }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-        with:
-          ref: ${{ needs.release-info.outputs.tag }}
-          persist-credentials: false
-
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y liblzma-dev libudev-dev
-
-      - name: Install cargo-binstall
-        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
-        with:
-          tool: cargo-binstall
-
-      - name: Install cargo-near
-        run: |
-          cargo binstall --force --no-confirm --locked cargo-near@0.19.1 --pkg-url="{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }.{ archive-format }"
+      - name: Find contract build run
+        id: contract-run
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build contract
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ steps.inputs.outputs.sha }}
         run: |
-          cargo near build reproducible-wasm \
-            --manifest-path crates/contract/Cargo.toml
-
-      - name: Compute contract hash
-        id: contract-hash
-        run: |
-          CONTRACT_HASH=$(sha256sum target/near/mpc_contract/mpc_contract.wasm | awk '{print $1}')
-          echo "sha256=$CONTRACT_HASH" >> "$GITHUB_OUTPUT"
-
-      - name: Package contract artifacts
-        env:
-          VERSION: ${{ needs.release-info.outputs.version }}
-        run: |
-          cd target/near/mpc_contract/
-          mv mpc_contract.wasm "mpc-contract-v${VERSION}.wasm"
-          tar -czf "mpc-contract-v${VERSION}.tar.gz" "mpc-contract-v${VERSION}.wasm"
-
-      - name: Upload contract artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: mpc-contract
-          path: target/near/mpc_contract/mpc-contract-v${{ needs.release-info.outputs.version }}.tar.gz
-
-  create-release:
-    name: "Create draft GitHub release"
-    needs: [release-info, collect-digests, build-contract]
-    runs-on: warp-ubuntu-2404-x64-2x
-    permissions:
-      contents: write
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-        with:
-          ref: ${{ needs.release-info.outputs.tag }}
-          persist-credentials: false
-
-      - name: Extract changelog
-        env:
-          VERSION: ${{ needs.release-info.outputs.version }}
-        run: |
-          awk "/^## \\[${VERSION}\\]/{found=1; next} /^## \\[/{if(found) exit} found" CHANGELOG.md > release-notes-raw.md
-          if [ ! -s release-notes-raw.md ]; then
-            echo "::error::No changelog found for version ${VERSION} in CHANGELOG.md"
+          set -euo pipefail
+          RUN_ID=$(gh run list \
+            --repo "$GITHUB_REPOSITORY" \
+            --workflow=build_contract.yml \
+            --commit="$SHA" \
+            --status=success \
+            --limit=1 \
+            --json databaseId \
+            -q '.[0].databaseId')
+          if [[ -z "$RUN_ID" || "$RUN_ID" == "null" ]]; then
+            echo "::error::No successful build_contract.yml run found for SHA $SHA."
+            echo "::error::Has the contract build finished for this commit?"
             exit 1
           fi
+          echo "run-id=$RUN_ID" >> "$GITHUB_OUTPUT"
 
       - name: Download contract artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: mpc-contract
+          name: contract
+          run-id: ${{ steps.contract-run.outputs.run-id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: contract-artifact
 
-      - name: Compose release body
+      - name: Retag images and collect digests
+        id: digests
         env:
-          VERSION: ${{ needs.release-info.outputs.version }}
-          NODE_MANIFEST: ${{ needs.collect-digests.outputs.mpc_node_manifest_digest }}
-          NODE_GCP_MANIFEST: ${{ needs.collect-digests.outputs.mpc_node_gcp_manifest_digest }}
-          LAUNCHER_MANIFEST: ${{ needs.collect-digests.outputs.mpc_launcher_manifest_digest }}
-          CONTRACT_HASH: ${{ needs.build-contract.outputs.contract-hash }}
+          BRANCH_TAG: ${{ steps.inputs.outputs.branch-tag }}
+          VERSION: ${{ steps.inputs.outputs.version }}
         run: |
+          set -euo pipefail
+          for REPO in mpc-node mpc-node-gcp mpc-launcher; do
+            SAFE_NAME="${REPO//-/_}"
+            skopeo copy --preserve-digests --all \
+              docker://nearone/$REPO:$BRANCH_TAG \
+              docker://nearone/$REPO:$VERSION
+            DIGEST=$(skopeo inspect docker://nearone/$REPO:$VERSION | jq -r '.Digest')
+            if [[ -z "$DIGEST" || "$DIGEST" == "null" ]]; then
+              echo "::error::Failed to read manifest digest for nearone/$REPO:$VERSION"
+              exit 1
+            fi
+            echo "${SAFE_NAME}_digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          done
+
+      - name: Package contract artifact
+        id: contract
+        env:
+          VERSION: ${{ steps.inputs.outputs.version }}
+        run: |
+          set -euo pipefail
+          cd contract-artifact
+          mv mpc_contract.wasm "mpc-contract-v${VERSION}.wasm"
+          tar -czf "mpc-contract-v${VERSION}.tar.gz" "mpc-contract-v${VERSION}.wasm"
+          CONTRACT_HASH=$(sha256sum "mpc-contract-v${VERSION}.wasm" | awk '{print $1}')
+          echo "hash=$CONTRACT_HASH" >> "$GITHUB_OUTPUT"
+          echo "archive=$PWD/mpc-contract-v${VERSION}.tar.gz" >> "$GITHUB_OUTPUT"
+
+      - name: Compose release notes
+        env:
+          VERSION: ${{ steps.inputs.outputs.version }}
+          NODE_DIGEST: ${{ steps.digests.outputs.mpc_node_digest }}
+          NODE_GCP_DIGEST: ${{ steps.digests.outputs.mpc_node_gcp_digest }}
+          LAUNCHER_DIGEST: ${{ steps.digests.outputs.mpc_launcher_digest }}
+          CONTRACT_HASH: ${{ steps.contract.outputs.hash }}
+        run: |
+          set -euo pipefail
           cp release-notes-raw.md release-notes.md
           cat >> release-notes.md <<EOF
 
           ## Docker images
 
           - [nearone/mpc-node:${VERSION}](https://hub.docker.com/layers/nearone/mpc-node/${VERSION}/)
-            Manifest digest: \`${NODE_MANIFEST}\`
+            Manifest digest: \`${NODE_DIGEST}\`
 
           - [nearone/mpc-node-gcp:${VERSION}](https://hub.docker.com/layers/nearone/mpc-node-gcp/${VERSION}/)
-            Manifest digest: \`${NODE_GCP_MANIFEST}\`
+            Manifest digest: \`${NODE_GCP_DIGEST}\`
 
           - [nearone/mpc-launcher:${VERSION}](https://hub.docker.com/layers/nearone/mpc-launcher/${VERSION}/)
-            Manifest digest: \`${LAUNCHER_MANIFEST}\`
+            Manifest digest: \`${LAUNCHER_DIGEST}\`
 
           ## MPC contract
 
@@ -221,12 +204,17 @@ jobs:
       - name: Create draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ needs.release-info.outputs.tag }}
-          VERSION: ${{ needs.release-info.outputs.version }}
+          VERSION: ${{ steps.inputs.outputs.version }}
+          SHA: ${{ steps.inputs.outputs.sha }}
+          CONTRACT_ARCHIVE: ${{ steps.contract.outputs.archive }}
         run: |
-          gh release create "$TAG" \
+          set -euo pipefail
+          # The git tag is NOT created here. GitHub materializes the tag at
+          # target_commitish when the operator publishes the draft.
+          gh release create "$VERSION" \
             --repo "$GITHUB_REPOSITORY" \
             --title "MPC ${VERSION}" \
             --notes-file release-notes.md \
+            --target "$SHA" \
             --draft \
-            "mpc-contract-v${VERSION}.tar.gz"
+            "$CONTRACT_ARCHIVE"

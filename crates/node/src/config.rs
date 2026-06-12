@@ -147,10 +147,10 @@ impl ParticipantsConfig {
         account_id: &AccountId,
         p2p_public_key: &VerifyingKey,
     ) -> Option<ParticipantId> {
-        if let Some(participant_info) = self.get_info_by_account_id(account_id) {
-            if &participant_info.p2p_public_key == p2p_public_key {
-                return Some(participant_info.id);
-            }
+        if let Some(participant_info) = self.get_info_by_account_id(account_id)
+            && &participant_info.p2p_public_key == p2p_public_key
+        {
+            return Some(participant_info.id);
         };
         None
     }
@@ -315,16 +315,21 @@ impl PersistentSecrets {
             number_of_responder_keys > 0,
             "At least one access key must be provided"
         );
-        let secrets = if let Some(secrets) = Self::maybe_get_existing(home_dir)? {
-            tracing::debug!("p2p and near account secret key already exists. Using existing.");
-            secrets
-        } else {
-            tracing::debug!("p2p and near account secret key not found. Generating...");
-            Self::gen_secrets_and_write_to_disk(home_dir, number_of_responder_keys)?
+        let secrets = match Self::maybe_get_existing(home_dir)? {
+            Some(secrets) => {
+                tracing::debug!("p2p and near account secret key already exists. Using existing.");
+                secrets
+            }
+            _ => {
+                tracing::debug!("p2p and near account secret key not found. Generating...");
+                Self::gen_secrets_and_write_to_disk(home_dir, number_of_responder_keys)?
+            }
         };
 
         if secrets.near_responder_keys.len() != number_of_responder_keys {
-            tracing::warn!("Number of responder keys in secrets.json does not match number of responder keys specified.")
+            tracing::warn!(
+                "Number of responder keys in secrets.json does not match number of responder keys specified."
+            )
         }
 
         Ok(secrets)
@@ -456,9 +461,12 @@ pub fn auth_config_to_rpc_auth(
             scheme,
             token,
         } => {
-            let scheme = scheme.unwrap_or_else(|| "Bearer".to_string());
             let token_value = token.resolve()?;
-            let header_value = HeaderValue::from_str(&format!("{scheme} {token_value}"))?;
+            let header_value_str = match scheme {
+                Some(scheme) => format!("{scheme} {token_value}"),
+                None => token_value,
+            };
+            let header_value = HeaderValue::from_str(&header_value_str)?;
             Ok(RpcAuthentication::CustomHeader {
                 header_name,
                 header_value,
@@ -469,7 +477,16 @@ pub fn auth_config_to_rpc_auth(
             *rpc_url = rpc_url.replace(&placeholder, &token_value);
             Ok(RpcAuthentication::KeyInUrl)
         }
-        AuthConfig::Query { name: _, token: _ } => anyhow::bail!("this is not supported yet"),
+        AuthConfig::Query { name, token } => {
+            let token_value = token.resolve()?;
+            let mut parsed_rpc_url = url::Url::parse(rpc_url)
+                .with_context(|| format!("invalid RPC URL: `{rpc_url}`"))?;
+            parsed_rpc_url
+                .query_pairs_mut()
+                .append_pair(&name, &token_value);
+            *rpc_url = parsed_rpc_url.as_str().to_string();
+            Ok(RpcAuthentication::KeyInUrl)
+        }
     }
 }
 
@@ -479,9 +496,9 @@ pub mod tests {
     use assert_matches::assert_matches;
     use mpc_contract::primitives::test_utils::bogus_ed25519_near_public_key;
     use rand::{
+        Rng, RngCore,
         distributions::{Alphanumeric, Uniform},
         rngs::OsRng,
-        Rng, RngCore,
     };
     use std::net::{Ipv4Addr, SocketAddr};
 
@@ -536,7 +553,7 @@ pub mod tests {
         let address: String = (0..16).map(|_| rng.sample(Alphanumeric) as char).collect();
         let p2p_public_key =
             VerifyingKey::from_near_sdk_public_key(&bogus_ed25519_near_public_key()).unwrap();
-        let port: u16 = rng.gen();
+        let port: u16 = rng.r#gen();
         ParticipantInfo {
             id: ParticipantId::from_raw(participant_id),
             address,
@@ -894,5 +911,129 @@ cores: 4
         // Then
         assert_matches!(result, RpcAuthentication::CustomHeader { .. });
         assert_eq!(url, "https://rpc.example.com/v2/");
+    }
+
+    #[test]
+    fn auth_config_to_rpc_auth__header_auth_with_scheme_prepends_scheme() {
+        // Given
+        let auth = AuthConfig::Header {
+            name: http::HeaderName::from_static("authorization"),
+            scheme: Some("Bearer".to_string()),
+            token: TokenConfig::Val {
+                val: "secret".to_string(),
+            },
+        };
+        let mut url = "https://rpc.example.com".to_string();
+
+        // When
+        let result = auth_config_to_rpc_auth(auth, &mut url).unwrap();
+
+        // Then
+        let RpcAuthentication::CustomHeader { header_value, .. } = result else {
+            panic!("expected CustomHeader, got {result:?}");
+        };
+        assert_eq!(header_value.to_str().unwrap(), "Bearer secret");
+    }
+
+    #[test]
+    fn auth_config_to_rpc_auth__header_auth_without_scheme_uses_raw_token() {
+        // Given: providers like Tatum (`x-api-key`) and NowNodes (`api-key`) use
+        // the raw token as the header value, with no scheme prefix.
+        let auth = AuthConfig::Header {
+            name: http::HeaderName::from_static("x-api-key"),
+            scheme: None,
+            token: TokenConfig::Val {
+                val: "raw-token-value".to_string(),
+            },
+        };
+        let mut url = "https://gateway.example.com".to_string();
+
+        // When
+        let result = auth_config_to_rpc_auth(auth, &mut url).unwrap();
+
+        // Then
+        let RpcAuthentication::CustomHeader { header_value, .. } = result else {
+            panic!("expected CustomHeader, got {result:?}");
+        };
+        assert_eq!(header_value.to_str().unwrap(), "raw-token-value");
+    }
+
+    #[test]
+    fn auth_config_to_rpc_auth__query_auth_appends_param_to_url_without_query() {
+        // Given: providers like Helius use `?api-key=<KEY>` on a URL with no query.
+        let auth = AuthConfig::Query {
+            name: "api-key".to_string(),
+            token: TokenConfig::Val {
+                val: "my-secret-key".to_string(),
+            },
+        };
+        let mut url = "https://mainnet.helius-rpc.com/".to_string();
+
+        // When
+        let result = auth_config_to_rpc_auth(auth, &mut url).unwrap();
+
+        // Then
+        assert_matches!(result, RpcAuthentication::KeyInUrl);
+        assert_eq!(url, "https://mainnet.helius-rpc.com/?api-key=my-secret-key");
+    }
+
+    #[test]
+    fn auth_config_to_rpc_auth__query_auth_appends_param_to_url_with_existing_query() {
+        // Given: dRPC's `?network=ethereum&dkey=<KEY>` form — the URL already has
+        // query parameters and the auth key must be appended with `&`.
+        let auth = AuthConfig::Query {
+            name: "dkey".to_string(),
+            token: TokenConfig::Val {
+                val: "my-drpc-key".to_string(),
+            },
+        };
+        let mut url = "https://lb.drpc.org/ogrpc?network=ethereum".to_string();
+
+        // When
+        let result = auth_config_to_rpc_auth(auth, &mut url).unwrap();
+
+        // Then
+        assert_matches!(result, RpcAuthentication::KeyInUrl);
+        assert_eq!(
+            url,
+            "https://lb.drpc.org/ogrpc?network=ethereum&dkey=my-drpc-key"
+        );
+    }
+
+    #[test]
+    fn auth_config_to_rpc_auth__query_auth_url_encodes_special_characters() {
+        // Given: tokens may contain characters that must be URL-encoded.
+        let auth = AuthConfig::Query {
+            name: "api-key".to_string(),
+            token: TokenConfig::Val {
+                val: "a b+c".to_string(),
+            },
+        };
+        let mut url = "https://rpc.example.com/".to_string();
+
+        // When
+        let result = auth_config_to_rpc_auth(auth, &mut url).unwrap();
+
+        // Then
+        assert_matches!(result, RpcAuthentication::KeyInUrl);
+        assert_eq!(url, "https://rpc.example.com/?api-key=a+b%2Bc");
+    }
+
+    #[test]
+    fn auth_config_to_rpc_auth__query_auth_returns_error_for_invalid_url() {
+        // Given
+        let auth = AuthConfig::Query {
+            name: "api-key".to_string(),
+            token: TokenConfig::Val {
+                val: "secret".to_string(),
+            },
+        };
+        let mut url = "not a valid url".to_string();
+
+        // When
+        let result = auth_config_to_rpc_auth(auth, &mut url);
+
+        // Then
+        result.unwrap_err();
     }
 }

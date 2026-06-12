@@ -14,7 +14,7 @@ pub mod yield_index;
 pub use account_id::AccountId;
 pub use key_state::{AttemptId, EpochId, KeyEventId};
 pub use participant_id::ParticipantId;
-pub use threshold::Threshold;
+pub use threshold::{ReconstructionThreshold, Threshold};
 pub use yield_index::YieldIndex;
 
 /// Re-exports used by the [`define_hash!`] macro. Not part of the public API.

@@ -1,28 +1,28 @@
 #![allow(clippy::indexing_slicing)]
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use frost_secp256k1::VerifyingKey;
-use rand::{seq::SliceRandom as _, RngCore};
+use rand::{RngCore, seq::SliceRandom as _};
 use rand_core::SeedableRng;
 
 mod bench_utils;
 use crate::bench_utils::{
-    analyze_received_sizes, robust_ecdsa_prepare_presign, robust_ecdsa_prepare_sign,
-    PreparedOutputs, MAX_MALICIOUS, SAMPLE_SIZE,
+    MAX_MALICIOUS, PreparedOutputs, SAMPLE_SIZE, analyze_received_sizes,
+    robust_ecdsa_prepare_presign, robust_ecdsa_prepare_sign,
 };
 use threshold_signatures::{
     ecdsa::{
-        robust_ecdsa::{
-            presign::presign, sign::sign, PresignArguments, PresignOutput,
-            RerandomizedPresignOutput,
-        },
         KeygenOutput, SignatureOption,
+        robust_ecdsa::{
+            PresignArguments, PresignOutput, RerandomizedPresignOutput, presign::presign,
+            sign::sign,
+        },
     },
     participants::Participant,
     protocol::Protocol,
     test_utils::{
-        run_protocol, run_protocol_and_take_snapshots, run_simulated_protocol, MockCryptoRng,
-        Simulator,
+        MockCryptoRng, Simulator, run_protocol, run_protocol_and_take_snapshots,
+        run_simulated_protocol,
     },
 };
 

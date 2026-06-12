@@ -4,7 +4,7 @@ This guide provides step-by-step instructions for node operators to migrate thei
 
 ## Overview
 
-Node migration allows you to move your MPC node from one host to another without requiring a full network resharing. This is accomplished using the  `backup-cli` tool to securely backup and restore your node's keyshares.
+Node migration allows you to move your MPC node from one host to another without requiring a full network resharing. This is accomplished using the `backup-cli` tool to securely backup and restore your node's keyshares.
 
 **Important:** This guide covers the **Soft Launch** migration process. For information about the architecture and future Hard Launch implementation, see [migration-service.md](./migration-service.md).
 
@@ -106,7 +106,7 @@ near contract call-function as-transaction \
 
 Copy and run the generated command to register your backup-cli with the contract.
 
-**Note:** The "public key" in the registration corresponds to  the `p2p_private_key` created in Step 1.
+**Note:** The "public key" in the registration corresponds to the `p2p_private_key` created in Step 1.
 
 ### Verify Registration
 ```bash
@@ -118,7 +118,7 @@ near contract call-function as-read-only \
   now
 ```
 
-You should see your account and registered backup_cli  public key listed, something like this:
+You should see your account and registered backup_cli public key listed, something like this:
 
 
 ```json
@@ -147,7 +147,7 @@ For additional security, the backup and restore process encrypts keyshares durin
 export BACKUP_ENCRYPTION_KEY=$(cat $MPC_HOME_DIR/backup_encryption_key.hex)
 ```
 
-Copy this key and set it as the `BACKUP_ENCRYPTION_KEY` environment variable for  the backup-cli when running `get-keyshares`.
+Copy this key and set it as the `BACKUP_ENCRYPTION_KEY` environment variable for the backup-cli when running `get-keyshares`.
 
 
 
@@ -216,7 +216,7 @@ For the new node, add this to the `.env` file (replace `<value>` with the actual
 
 
 3. **Start the node and retrieve the new keys from the new node**: (P2P (TLS) key, NEAR account key)
-4. **add the node's near_signer_public_key to your account as an restricted access key**
+4. **Add the node's `near_signer_public_key` to your account as a restricted access key**
 
 
 See more details on extracting key from the node and adding the keys to your account, in the [running an MPC node in TDX external guide](https://github.com/near/mpc/blob/main/docs/running-an-mpc-node-in-tdx-external-guide.md#add-the-node-account-key-to-your-account)
@@ -232,19 +232,15 @@ export P2P_KEY=$(curl -s http://<IP>:8080/public_data | jq -r ".near_p2p_public_
 ### Check that the new node's attestation is registered on the contract
 
 ```bash
-near contract call-function as-transaction \
+near contract call-function as-read-only \
   $MPC_CONTRACT_ACCOUNT_ID \
   get_tee_accounts \
   json-args {} \
-  prepaid-gas '300.0 Tgas' \
-  attached-deposit '0 NEAR' \
-  sign-as $SIGNER_ACCOUNT_ID \
   network-config $NEAR_NETWORK \
-  sign-with-keychain \
-  send
+  now
 ```
 
-**note** - If the new node's attestation was submitted successfully, you should see 2 attestations registered on the contract - one for the old node and one for the new node.
+**Note:** If the new node's attestation was submitted successfully, you should see 2 attestations registered on the contract — one for the old node and one for the new node.
 
 Output should look like this:
 
@@ -357,9 +353,31 @@ Look for your account in the output. Once the migration is complete, there shoul
 
 After verifying the migration was successful:
 
-1. **Stop the old node** on the old host
-2. **Keep the backup** of keyshares (the contents of `$BACKUP_HOME_DIR`, including the `key` file and the `permanent_keys/` directory with `epoch_<...>_with_<...>_domains` files) for a reasonable period (in case you need to migrate again)
-3. **Securely delete** the old node's data once you're confident the new node is functioning correctly
+1. **Stop the old node** on the old host.
+
+2. **Revoke the old node's signer key.** The function-call key you added in Step 5 of the previous migration persists on your account with `unlimited` allowance on the MPC contract until explicitly removed. Use `list-keys` to find the old signer's public key (distinct from the one you just added in Step 5), then `delete-keys`:
+
+   ```bash
+   near account list-keys \
+     $SIGNER_ACCOUNT_ID \
+     network-config $NEAR_NETWORK \
+     now
+
+   near account delete-keys \
+     $SIGNER_ACCOUNT_ID \
+     public-keys <OLD_NODE_SIGNER_PUBLIC_KEY> \
+     network-config $NEAR_NETWORK \
+     sign-with-keychain \
+     send
+   ```
+
+   The `public-keys` argument is a comma-separated list (`<k1>,<k2>,…`), so if more than one stale function-call key has accumulated from earlier migrations, you can revoke them all in a single call.
+
+   Don't revoke the `backup-cli`'s registered key from Step 2 — that's the backup service registration, reused across migrations.
+
+3. **Keep the backup** of keyshares (the contents of `$BACKUP_HOME_DIR`, including the `key` file and the `permanent_keys/` directory with `epoch_<...>_with_<...>_domains` files) for a reasonable period (in case you need to migrate again).
+
+4. **Securely delete** the old node's data once you're confident the new node is functioning correctly.
 
 ## Troubleshooting
 
@@ -367,7 +385,6 @@ After verifying the migration was successful:
 
 If backup-cli cannot connect to your node:
 
-- **Verify firewall rules**: Ensure the backup service can reach the node's address
-port 8079  is open and accessible
+- **Verify firewall rules**: Ensure the backup service can reach the node's address and that port 8079 is open and accessible.
 
 

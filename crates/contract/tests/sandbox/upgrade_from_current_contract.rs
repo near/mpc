@@ -1,7 +1,7 @@
 use crate::sandbox::{
     common::{
-        execute_key_generation_and_add_random_state, propose_and_vote_contract_binary,
-        vote_update_till_completion, SandboxTestSetup,
+        SandboxTestSetup, execute_key_generation_and_add_random_state,
+        propose_and_vote_contract_binary, vote_update_till_completion,
     },
     utils::{
         consts::{
@@ -95,11 +95,13 @@ async fn test_propose_update_config() {
         .await
         .unwrap();
     dbg!(&execution);
-    assert!(execution
-        .into_result()
-        .unwrap_err()
-        .to_string()
-        .contains("not a voter"));
+    assert!(
+        execution
+            .into_result()
+            .unwrap_err()
+            .to_string()
+            .contains("not a voter")
+    );
 
     // have each participant propose a new update:
     let new_config = near_mpc_contract_interface::types::Config {
