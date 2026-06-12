@@ -36,6 +36,10 @@ pub enum TeeError {
         "No TEE verifier is configured yet. Participants must vote one in via vote_tee_verifier_change before Dstack attestations can be submitted."
     )]
     VerifierNotConfigured,
+    #[error(
+        "The placeholder verifier account cannot be voted in as the trusted verifier; it denotes the unconfigured state."
+    )]
+    VerifierCandidateIsPlaceholder,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

@@ -75,4 +75,19 @@ mod tests {
             assert_eq!(original, decoded);
         }
     }
+
+    /// Pin the exact wire bytes. `FinalOutcome` is serialized into a live
+    /// `promise_yield_resume` payload, so a variant reorder would flip the tag
+    /// and silently break callback receipts in flight across an upgrade — a
+    /// regression the round-trip test above cannot catch. The tag is the
+    /// variant index (`Ok` = 0, `Err` = 1); `String` is borsh-encoded as a
+    /// little-endian `u32` length followed by the UTF-8 bytes.
+    #[test]
+    fn final_outcome__should_have_pinned_borsh_layout() {
+        assert_eq!(borsh::to_vec(&FinalOutcome::Ok).unwrap(), vec![0]);
+        assert_eq!(
+            borsh::to_vec(&FinalOutcome::Err("x".to_string())).unwrap(),
+            vec![1, 1, 0, 0, 0, b'x'],
+        );
+    }
 }

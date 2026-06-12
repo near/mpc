@@ -1001,10 +1001,9 @@ impl MpcContract {
             }
         };
 
-        let pending = self
-            .pending_attestations
-            .remove(&account_id)
-            .expect("checked contains_key above, and no host call clears it in between");
+        let pending = self.pending_attestations.remove(&account_id).expect(
+            "checked contains_key above; no host call between mutates pending_attestations",
+        );
         if matches!(final_outcome, FinalOutcome::Err(_)) {
             refund_attestation_deposit(&account_id, pending.attached_deposit);
         }
@@ -1932,6 +1931,13 @@ impl MpcContract {
             hex::encode(expected_code_hash),
         );
         self.voter_or_panic();
+
+        // Reject the placeholder up front so a quorum can never roll the verifier
+        // back to the unconfigured state (where every Dstack submit fails with
+        // `VerifierNotConfigured`). Same comparison as `submit_dstack_attestation`.
+        if candidate_account_id == initial_tee_verifier_account_id(None) {
+            return Err(TeeError::VerifierCandidateIsPlaceholder.into());
+        }
 
         let threshold_parameters = self
             .protocol_state
@@ -4262,6 +4268,21 @@ mod tests {
             result.is_ok(),
             "Should succeed when participants have Valid or None TEE status (invalid attestations rejected)"
         );
+    }
+
+    /// A vote naming the placeholder account is rejected outright, so a quorum
+    /// can never roll `tee_verifier_account_id` back to the unconfigured state.
+    #[test]
+    fn vote_tee_verifier_change__should_reject_the_placeholder_candidate() {
+        // Given a running contract whose signer is an active participant.
+        let (mut contract, _participants, _first_participant_id) = setup_tee_test_contract(3, 2);
+
+        // When voting for the placeholder account as the trusted verifier.
+        let result =
+            contract.vote_tee_verifier_change(initial_tee_verifier_account_id(None), [0; 32]);
+
+        // Then the vote is rejected as the placeholder candidate.
+        assert_eq!(result, Err(TeeError::VerifierCandidateIsPlaceholder.into()));
     }
 
     /// Builds a Running contract with `num_participants` participants, signing

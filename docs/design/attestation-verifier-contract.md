@@ -8,7 +8,10 @@
 > JSON-facing `near-mpc-contract-interface::Collateral` into the interface type
 > (issue #3494 — an API-wire migration deferred to its own change), and a sandbox
 > test for the `Verified` + post-DCAP-pass branch (the other branches are
-> covered).
+> covered). The in-flight semantics of a verifier rotation — a verification
+> dispatched against the old verifier still lands and stores there, while every
+> new submission uses the freshly voted-in verifier — are detailed in
+> [Governance and upgrades](#governance-and-upgrades).
 
 This document outlines the design for moving on-chain TDX quote verification out of `mpc-contract`'s WASM into a standalone verifier contract.
 
