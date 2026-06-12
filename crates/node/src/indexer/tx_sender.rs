@@ -299,7 +299,9 @@ async fn observe_tx_result(
         | VoteAbortKeyEventInstance(_)
         | VerifyTee()
         | ConcludeNodeMigration(_)
-        | RegisterForeignChainConfig(_) => Ok(TransactionStatus::Unknown),
+        // TODO(#3475): drop this after contract version 3.12 lands.
+        | RegisterForeignChainConfig(_)
+        | RegisterForeignChainsConfig(_) => Ok(TransactionStatus::Unknown),
     }
 }
 
