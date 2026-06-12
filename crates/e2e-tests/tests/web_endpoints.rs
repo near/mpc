@@ -62,9 +62,9 @@ async fn wait_for_body(
 }
 
 /// Regex matching one rendered recent-transactions row for a node's keygen
-/// `vote_pk` submission (which every node makes, so we can assert per-node).
-/// Stable tokens (status, method, signer, key) are matched exactly; run-specific
-/// ones (timestamp, txid, nonce, block, sig) are matched by pattern only.
+/// `vote_pk` submission. Stable tokens (status, method, signer, key) are matched
+/// exactly; run-specific ones (timestamp, txid, nonce, block, sig) are matched by
+/// pattern only.
 fn vote_pk_row_regex(signer_account_id: &str, signer_key: &str) -> regex::Regex {
     let base58 = r"[1-9A-HJ-NP-Za-km-z]+";
     let int = r"\d+";
