@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::near;
 use near_sdk::store::IterableMap;
@@ -62,11 +64,35 @@ impl ForeignChainsMetadata {
             .insert(tls_key, foreign_chains_config);
     }
 
+    pub(crate) fn update_cache(
+        &mut self,
+        active_tls_keys: &[dtos::Ed25519PublicKey],
+        threshold: u64,
+    ) {
+        let mut chain_to_supporter_count: std::collections::BTreeMap<dtos::ForeignChain, u64> =
+            std::collections::BTreeMap::new();
+        for tls_key in active_tls_keys {
+            let Some(chains) = self.foreign_chains_configs.get(tls_key) else {
+                continue;
+            };
+            for chain in chains.iter() {
+                if self.rpc_whitelist.entries.is_whitelisted(chain) {
+                    *chain_to_supporter_count.entry(*chain).or_default() += 1;
+                }
+            }
+        }
+        self.available_foreign_chains = chain_to_supporter_count
+            .into_iter()
+            .filter_map(|(chain, count)| (count >= threshold).then_some(chain))
+            .collect::<BTreeSet<_>>()
+            .into();
+    }
+
     /// Removes all entries from `tls_key_by_signer_pk` and `foreign_chains_configs` whose TLS key
     /// is not in `active_tls_keys`. Called during participant set cleanup.
     pub(crate) fn remove_stale_configs(
         &mut self,
-        active_tls_keys: &std::collections::BTreeSet<dtos::Ed25519PublicKey>,
+        active_tls_keys: &BTreeSet<dtos::Ed25519PublicKey>,
     ) {
         let stale_signer_pks: Vec<dtos::Ed25519PublicKey> = self
             .tls_key_by_signer_pk

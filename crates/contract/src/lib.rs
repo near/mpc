@@ -974,10 +974,6 @@ impl MpcContract {
     }
 
     /// (Re)registers the foreign chains this node currently covers.
-    ///
-    /// Registrations are accepted from existing or prospective participant
-    /// in any active protocol state (Running, Resharing,
-    /// Initializing) but only takes effect when in Running-state.
     #[handle_result]
     pub fn register_foreign_chains_config(
         &mut self,
@@ -1024,35 +1020,22 @@ impl MpcContract {
         Ok(())
     }
 
-    /// Recomputes [`Self::available_foreign_chains`]: chains supported by ≥ the signing threshold
-    /// of active participants (stale non-participant reports excluded).
-    ///
-    /// No-op when `NotInitialized`.
+    /// No-op when `NotInitialized`. For `Resharing`, uses the embedded previous running-state
+    /// parameters (the set that is still actively signing).
     fn recompute_available_foreign_chains(&mut self) {
         let Ok(params) = self.protocol_state.threshold_parameters() else {
             return;
         };
         let threshold = params.threshold().value();
-        let participants = params.participants().participants().clone();
-
-        let fc = self.foreign_chains.get_mut();
-        let mut chain_to_supporter_count: BTreeMap<dtos::ForeignChain, u64> = BTreeMap::new();
-        for (_, _, info) in &participants {
-            let Some(chains) = fc.foreign_chains_configs.get(&info.tls_public_key) else {
-                continue;
-            };
-            for chain in chains.iter() {
-                if fc.rpc_whitelist.entries.is_whitelisted(chain) {
-                    *chain_to_supporter_count.entry(*chain).or_default() += 1;
-                }
-            }
-        }
-
-        fc.available_foreign_chains = chain_to_supporter_count
-            .into_iter()
-            .filter_map(|(chain, count)| (count >= threshold).then_some(chain))
-            .collect::<BTreeSet<_>>()
-            .into();
+        let active_tls_keys: Vec<_> = params
+            .participants()
+            .participants()
+            .iter()
+            .map(|(_, _, info)| info.tls_public_key.clone())
+            .collect();
+        self.foreign_chains
+            .get_mut()
+            .update_cache(&active_tls_keys, threshold);
     }
 
     #[deprecated(
@@ -1769,7 +1752,6 @@ impl MpcContract {
 
     /// Private endpoint to clean up foreign chain policy votes and node configurations
     /// for non-participants after resharing.
-    /// Called after key resharing concludes (from vote_reshared).
     #[private]
     #[handle_result]
     pub fn clean_foreign_chain_data(&mut self) -> Result<(), Error> {
@@ -1791,7 +1773,7 @@ impl MpcContract {
             .map(|(account_id, _, _)| account_id.clone())
             .collect();
 
-        let participant_tls_keys: std::collections::HashSet<dtos::Ed25519PublicKey> = participants
+        let active_tls_keys: std::collections::BTreeSet<dtos::Ed25519PublicKey> = participants
             .participants()
             .iter()
             .map(|(_, _, info)| info.tls_public_key.clone())
@@ -1811,8 +1793,6 @@ impl MpcContract {
         }
 
         // Remove foreign chain configs and their reverse-map entries for departed nodes.
-        let active_tls_keys: std::collections::BTreeSet<_> =
-            participant_tls_keys.iter().cloned().collect();
         self.foreign_chains
             .get_mut()
             .remove_stale_configs(&active_tls_keys);

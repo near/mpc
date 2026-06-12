@@ -1144,8 +1144,7 @@ pub struct ForeignChainConfiguration(BTreeMap<ForeignChain, NonEmptyBTreeSet<Rpc
 )]
 pub struct SupportedForeignChains(BTreeSet<ForeignChain>);
 
-/// The set of foreign chains a node reports it can currently serve. Submitted by each node via
-/// `register_foreign_chains_config`; aggregated into [`AvailableForeignChains`] by the contract.
+/// Set of foreign chains a node reports it can serve; aggregated into [`AvailableForeignChains`] by the contract.
 #[derive(
     Debug,
     Clone,
@@ -1169,8 +1168,7 @@ pub struct SupportedForeignChains(BTreeSet<ForeignChain>);
 )]
 pub struct ForeignChainsConfig(BTreeSet<ForeignChain>);
 
-/// Per-node foreign-chain configs as reported via `register_foreign_chains_config`, keyed by each
-/// node's TLS public key. Returned by `get_foreign_chains_configs`.
+/// Per-node foreign-chain configs, keyed by each node's TLS public key.
 #[derive(
     Debug,
     Clone,

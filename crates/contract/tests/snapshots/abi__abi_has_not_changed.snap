@@ -401,7 +401,7 @@ expression: abi
       },
       {
         "name": "clean_foreign_chain_data",
-        "doc": " Private endpoint to clean up foreign chain policy votes and node configurations\n for non-participants after resharing.\n Called after key resharing concludes (from vote_reshared).",
+        "doc": " Private endpoint to clean up foreign chain policy votes and node configurations\n for non-participants after resharing.",
         "kind": "call",
         "modifiers": [
           "private"
@@ -1186,7 +1186,7 @@ expression: abi
       },
       {
         "name": "register_foreign_chains_config",
-        "doc": " (Re)registers the foreign chains this node currently covers.\n\n Registrations are accepted from existing or prospective participant\n in any active protocol state (Running, Resharing,\n Initializing) but only takes effect when in Running-state.",
+        "doc": " (Re)registers the foreign chains this node currently covers.",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -3195,7 +3195,7 @@ expression: abi
           }
         },
         "ForeignChainsConfig": {
-          "description": "The set of foreign chains a node reports it can currently serve. Submitted by each node via `register_foreign_chains_config`; aggregated into [`AvailableForeignChains`] by the contract.",
+          "description": "Set of foreign chains a node reports it can serve; aggregated into [`AvailableForeignChains`] by the contract.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/ForeignChain"
@@ -3203,7 +3203,7 @@ expression: abi
           "uniqueItems": true
         },
         "ForeignChainsConfigs": {
-          "description": "Per-node foreign-chain configs as reported via `register_foreign_chains_config`, keyed by each node's TLS public key. Returned by `get_foreign_chains_configs`.",
+          "description": "Per-node foreign-chain configs, keyed by each node's TLS public key.",
           "type": "object",
           "additionalProperties": {
             "$ref": "#/definitions/ForeignChainsConfig"
