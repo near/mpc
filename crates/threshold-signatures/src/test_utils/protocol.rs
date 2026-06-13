@@ -88,8 +88,9 @@ pub fn run_two_party_protocol<T0: std::fmt::Debug, T1: std::fmt::Debug>(
                     prot1.message(p0, m)?;
                 }
                 Action::Return(out) => out0 = Some(out),
-                // Ignore other actions, which means sending private messages to other people.
-                Action::SendPrivate(..) => {}
+                // Keep poking on a yield (no executor here), and ignore
+                // private messages addressed to other people.
+                Action::Yield | Action::SendPrivate(..) => {}
             }
         } else {
             let action = prot1.poke()?;
@@ -102,8 +103,9 @@ pub fn run_two_party_protocol<T0: std::fmt::Debug, T1: std::fmt::Debug>(
                     prot0.message(p1, m)?;
                 }
                 Action::Return(out) => out1 = Some(out),
-                // Ignore other actions, which means sending private messages to other people.
-                Action::SendPrivate(..) => {}
+                // Keep poking on a yield (no executor here), and ignore
+                // private messages addressed to other people.
+                Action::Yield | Action::SendPrivate(..) => {}
             }
         }
     }
@@ -139,6 +141,8 @@ fn run_protocol_common<T>(
                 let action = ps[i].1.poke()?;
                 match action {
                     Action::Wait => false,
+                    // Keep poking; a yield needs no executor here.
+                    Action::Yield => true,
                     Action::SendMany(m) => {
                         for j in 0..size {
                             if i == j {
