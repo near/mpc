@@ -1038,6 +1038,13 @@ impl MpcNodeState {
         }
     }
 
+    pub fn home_dir(&self) -> &Path {
+        match self {
+            MpcNodeState::Running(n) => n.setup().home_dir(),
+            MpcNodeState::Stopped(s) => s.home_dir(),
+        }
+    }
+
     pub fn p2p_public_key(&self) -> Ed25519PublicKey {
         match self {
             MpcNodeState::Running(n) => n.setup().p2p_public_key(),
