@@ -58,7 +58,8 @@ use crypto_shared::{
     types::{PublicKeyExtended, PublicKeyExtendedConversionError},
 };
 use errors::{
-    DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError, TeeError,
+    DomainError, InvalidParameters, InvalidState, InvalidThreshold, PublicKeyError, RespondError,
+    TeeError,
 };
 use k256::elliptic_curve::PrimeField;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
@@ -81,7 +82,7 @@ use primitives::{
     domain::DomainRegistry,
     key_state::{AuthenticatedParticipantId, EpochId, KeyEventId, Keyset},
     signature::{SignRequestArgs, SignatureRequest, YieldIndex},
-    thresholds::{Threshold, ThresholdParameters},
+    thresholds::{ProposedThresholdParameters, Threshold, ThresholdParameters},
 };
 use tee::measurements::{ContractExpectedMeasurements, MeasurementVoteAction, MeasurementVotes};
 use tee::proposal::{CodeHashesVotes, LauncherHashVotes};
@@ -861,7 +862,9 @@ impl MpcContract {
             }))
     }
 
-    /// Propose a new set of parameters (participants and threshold) for the MPC network.
+    /// Propose new parameters for the MPC network: participants, governance
+    /// threshold, and optional per-domain `ReconstructionThreshold` updates
+    /// (empty map keeps the current ones), applied on resharing completion.
     /// If a threshold number of votes are reached on the exact same proposal, this will transition
     /// the contract into the Resharing state.
     ///
@@ -877,15 +880,19 @@ impl MpcContract {
     pub fn vote_new_parameters(
         &mut self,
         prospective_epoch_id: EpochId,
-        proposal: dtos::ThresholdParameters,
+        proposal: dtos::ProposedThresholdParameters,
     ) -> Result<(), Error> {
         Self::assert_caller_is_signer();
-        let proposal: ThresholdParameters = proposal.into_contract_type();
+        let proposal: ProposedThresholdParameters = proposal.into_contract_type();
         log!(
             "vote_new_parameters: signer={}, proposal={:?}",
             env::signer_account_id(),
             proposal,
         );
+
+        // Defense in depth: never reshare into a participant set smaller than any
+        // threshold (see `assert_proposal_meets_all_thresholds`).
+        self.assert_proposal_meets_all_thresholds(&proposal)?;
 
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
@@ -927,6 +934,47 @@ impl MpcContract {
                 .into())
             }
         }
+    }
+
+    /// Defense-in-depth guard for [`Self::vote_new_parameters`]: rejects a
+    /// proposal whose participant set is smaller than the proposed signing
+    /// threshold or any domain's effective reconstruction threshold (proposed
+    /// override if present, else the domain's current value). Such a set would
+    /// leave a key un-signable or un-reconstructible. Redundant with
+    /// `RunningContractState::process_new_parameters_proposal`.
+    fn assert_proposal_meets_all_thresholds(
+        &self,
+        proposal: &ProposedThresholdParameters,
+    ) -> Result<(), Error> {
+        let num_participants = u64::try_from(proposal.participants().len())
+            .expect("participant list should be wayyyy smaller than u64::MAX");
+
+        let threshold = proposal.threshold().value();
+        if threshold > num_participants {
+            return Err(InvalidThreshold::MaxRequirementFailed {
+                max: num_participants,
+                found: threshold,
+            }
+            .into());
+        }
+
+        let domains = self.protocol_state.domain_registry()?;
+        let updates = proposal.per_domain_thresholds();
+        for domain in domains.domains() {
+            let effective = updates
+                .get(&domain.id)
+                .copied()
+                .unwrap_or(domain.reconstruction_threshold)
+                .inner();
+            if effective > num_participants {
+                return Err(DomainError::ReconstructionThresholdExceedsParticipants {
+                    threshold: effective,
+                    participants: num_participants,
+                }
+                .into());
+            }
+        }
+        Ok(())
     }
 
     /// Propose adding a new set of domains for the MPC network.
@@ -1666,9 +1714,25 @@ impl MpcContract {
             } => {
                 let threshold = current_params.threshold().value() as usize;
                 let remaining = participants_with_valid_attestation.len();
-                if threshold > remaining {
+                // Defense in depth: the surviving participant set must cover every
+                // threshold the network is bound to — the governance threshold and
+                // each domain's reconstruction threshold (the kickout keeps the
+                // existing per-domain thresholds). Resharing into a smaller set
+                // would leave a key un-signable, so we refuse and wait for manual
+                // intervention.
+                let max_reconstruction_threshold = running_state
+                    .domains
+                    .domains()
+                    .iter()
+                    .map(|domain| domain.reconstruction_threshold.inner() as usize)
+                    .max()
+                    .unwrap_or(0);
+                let required = threshold.max(max_reconstruction_threshold);
+                if required > remaining {
                     log!(
-                        "Less than `threshold` participants are left with a valid TEE status. This requires manual intervention. We will not accept new signature requests as a safety precaution."
+                        "Fewer than the required number of participants ({}) are left with a valid TEE status ({}). This requires manual intervention. We will not accept new signature requests as a safety precaution.",
+                        required,
+                        remaining,
                     );
                     self.accept_requests = false;
                     return Ok(false);
@@ -1690,7 +1754,11 @@ impl MpcContract {
                 )
                 .expect("Require valid threshold parameters"); // this should never happen.
                 current_params.validate_incoming_proposal(&threshold_parameters)?;
-                let res = running_state.transition_to_resharing_no_checks(&threshold_parameters);
+                // This resharing only changes the participant set, so the
+                // per-domain reconstruction-threshold updates map is empty.
+                let proposed_parameters =
+                    ProposedThresholdParameters::new(threshold_parameters, BTreeMap::new());
+                let res = running_state.transition_to_resharing_no_checks(&proposed_parameters);
                 if let Some(resharing) = res {
                     self.protocol_state = ProtocolContractState::Resharing(resharing);
                 }
@@ -1701,7 +1769,7 @@ impl MpcContract {
     }
 
     /// Cleans update votes from non-participants after resharing.
-    /// Can be called by any participant or triggered automatically via promise.
+    /// Can only be called by participants or by the contract itself.
     #[handle_result]
     pub fn remove_non_participant_update_votes(&mut self) -> Result<(), Error> {
         log!(
@@ -1715,6 +1783,16 @@ impl MpcContract {
                 return Err(InvalidState::ProtocolStateNotRunning.into());
             }
         };
+
+        // Authorize the caller: allow self-calls (the cleanup promise spawned after a
+        // successful resharing, where the predecessor is the contract account) and
+        // direct calls from a current participant. Reject everyone else so that
+        // non-participants cannot drive this cleanup.
+        let caller = env::predecessor_account_id();
+        let is_self_call = caller == env::current_account_id();
+        if !is_self_call && !participants.is_participant_given_account_id(&caller) {
+            return Err(InvalidState::NotParticipant { account_id: caller }.into());
+        }
 
         self.proposed_updates
             .remove_non_participant_votes(participants);
@@ -3802,7 +3880,10 @@ mod tests {
             .build();
         testing_env!(voting_context);
 
-        let proposal = ThresholdParameters::new(participants, threshold).unwrap();
+        let proposal = ProposedThresholdParameters::new(
+            ThresholdParameters::new(participants, threshold).unwrap(),
+            BTreeMap::new(),
+        );
         contract.vote_new_parameters(EpochId::new(1), (&proposal).into_dto_type())
     }
 
@@ -3900,6 +3981,159 @@ mod tests {
         );
     }
 
+    /// Builds a Running contract with `num_participants` participants, signing
+    /// threshold `threshold`, and a single CaitSith `Sign` domain whose
+    /// reconstruction threshold is `reconstruction_threshold`.
+    fn setup_running_contract_with_domain(
+        num_participants: usize,
+        threshold: u64,
+        reconstruction_threshold: u64,
+    ) -> (MpcContract, Participants, AccountId, DomainId) {
+        let participants = gen_participants(num_participants);
+        let first_participant_id = participants.participants()[0].0.clone();
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(first_participant_id.clone())
+                .predecessor_account_id(first_participant_id.clone())
+                .attached_deposit(NearToken::from_near(1))
+                .build()
+        );
+
+        let parameters =
+            ThresholdParameters::new(participants.clone(), Threshold::new(threshold)).unwrap();
+        let domain_id = DomainId::default();
+        let domains = vec![DomainConfig {
+            id: domain_id,
+            protocol: Protocol::CaitSith,
+            reconstruction_threshold: ReconstructionThreshold::new(reconstruction_threshold),
+            purpose: DomainPurpose::Sign,
+        }];
+        let (pk, _) = make_public_key_for_curve(Curve::Secp256k1, &mut OsRng);
+        let keyset = Keyset::new(
+            EpochId::new(0),
+            vec![KeyForDomain {
+                domain_id,
+                key: pk.try_into().unwrap(),
+                attempt: AttemptId::new(),
+            }],
+        );
+        let contract =
+            MpcContract::init_running(domains, 1, keyset, (&parameters).into_dto_type(), None)
+                .unwrap();
+        (contract, participants, first_participant_id, domain_id)
+    }
+
+    /// Installs a voting context for `signer` and casts `proposal`.
+    fn vote_params(
+        contract: &mut MpcContract,
+        signer: &AccountId,
+        proposal: &ProposedThresholdParameters,
+    ) -> Result<(), Error> {
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(signer.clone())
+                .predecessor_account_id(signer.clone())
+                .attached_deposit(NearToken::from_yoctonear(0))
+                .build()
+        );
+        contract.vote_new_parameters(EpochId::new(1), proposal.into_dto_type())
+    }
+
+    #[test]
+    fn vote_new_parameters__should_reject_when_per_domain_threshold_exceeds_participants() {
+        // Given: a Running contract with 3 participants and one domain.
+        let (mut contract, participants, signer, domain_id) =
+            setup_running_contract_with_domain(3, 2, 2);
+        // ...and a proposal raising that domain's reconstruction threshold to 4.
+        let mut per_domain = BTreeMap::new();
+        per_domain.insert(domain_id, ReconstructionThreshold::new(4));
+        let proposal = ProposedThresholdParameters::new(
+            ThresholdParameters::new(participants, Threshold::new(2)).unwrap(),
+            per_domain,
+        );
+
+        // When
+        let result = vote_params(&mut contract, &signer, &proposal);
+
+        // Then: 4 > 3 participants, so the guard rejects it.
+        assert_matches!(
+            result.unwrap_err(),
+            Error::DomainError(DomainError::ReconstructionThresholdExceedsParticipants {
+                threshold: 4,
+                participants: 3,
+            })
+        );
+    }
+
+    #[test]
+    fn vote_new_parameters__should_reject_when_shrinking_below_unchanged_domain_threshold() {
+        // Given: a Running contract with 3 participants and a domain whose
+        // reconstruction threshold is 3.
+        let (mut contract, participants, signer, _domain_id) =
+            setup_running_contract_with_domain(3, 3, 3);
+        // ...and a proposal that shrinks the participant set to 2 without touching
+        // the per-domain thresholds.
+        let proposal = ProposedThresholdParameters::new(
+            ThresholdParameters::new(participants.subset(0..2), Threshold::new(2)).unwrap(),
+            BTreeMap::new(),
+        );
+
+        // When
+        let result = vote_params(&mut contract, &signer, &proposal);
+
+        // Then: the domain's unchanged threshold of 3 exceeds the 2 proposed
+        // participants, so the guard rejects it.
+        assert_matches!(
+            result.unwrap_err(),
+            Error::DomainError(DomainError::ReconstructionThresholdExceedsParticipants {
+                threshold: 3,
+                participants: 2,
+            })
+        );
+    }
+
+    #[test]
+    fn vote_new_parameters__should_reject_when_signing_threshold_exceeds_participants() {
+        // Given: a Running contract with 3 participants and one domain.
+        let (mut contract, participants, signer, _domain_id) =
+            setup_running_contract_with_domain(3, 2, 2);
+        // ...and a proposal whose signing threshold (4) exceeds the participant set.
+        let proposal = ProposedThresholdParameters::new(
+            ThresholdParameters::new_unvalidated(participants, Threshold::new(4)),
+            BTreeMap::new(),
+        );
+
+        // When
+        let result = vote_params(&mut contract, &signer, &proposal);
+
+        // Then
+        assert_matches!(
+            result.unwrap_err(),
+            Error::InvalidThreshold(InvalidThreshold::MaxRequirementFailed { max: 3, found: 4 })
+        );
+    }
+
+    #[test]
+    fn vote_new_parameters__should_accept_per_domain_threshold_within_participant_count() {
+        // Given: a Running contract with 3 participants and one domain.
+        let (mut contract, participants, signer, domain_id) =
+            setup_running_contract_with_domain(3, 2, 2);
+        // ...and a proposal raising the domain's reconstruction threshold to 3,
+        // which still fits the 3 participants.
+        let mut per_domain = BTreeMap::new();
+        per_domain.insert(domain_id, ReconstructionThreshold::new(3));
+        let proposal = ProposedThresholdParameters::new(
+            ThresholdParameters::new(participants, Threshold::new(2)).unwrap(),
+            per_domain,
+        );
+
+        // When: a single participant votes (no transition yet).
+        let result = vote_params(&mut contract, &signer, &proposal);
+
+        // Then: the guard passes and the vote is recorded.
+        assert_matches!(result, Ok(()));
+    }
+
     #[test]
     #[should_panic(expected = "Caller must be the signer account")]
     fn vote_new_parameters__should_panic_when_predecessor_differs_from_signer() {
@@ -3907,7 +4141,10 @@ mod tests {
         // so signer_account_id (the participant) != predecessor_account_id (the forwarder).
         let (mut contract, participants, first_participant_id) = setup_tee_test_contract(3, 2);
         let threshold = Threshold::new(2);
-        let proposal = ThresholdParameters::new(participants, threshold).unwrap();
+        let proposal = ProposedThresholdParameters::new(
+            ThresholdParameters::new(participants, threshold).unwrap(),
+            BTreeMap::new(),
+        );
 
         let ctx = VMContextBuilder::new()
             .signer_account_id(first_participant_id)
@@ -5077,60 +5314,108 @@ mod tests {
         assert!(contract.vote_update(update_id).unwrap());
     }
 
-    /// Test that `remove_non_participant_update_votes` successfully removes votes from non-participants
-    /// (simulating post-resharing cleanup).
-    #[test]
-    pub fn test_remove_non_participant_update_votes() {
+    /// Callers authorized to drive `remove_non_participant_update_votes`.
+    enum AuthorizedCaller {
+        /// The contract calling itself (the cleanup promise spawned after resharing).
+        ContractItself,
+        /// A current participant calling directly.
+        Participant,
+    }
+
+    /// An authorized caller (the contract itself or a current participant) drives the cleanup,
+    /// leaving only the participant votes (simulating post-resharing cleanup).
+    #[rstest]
+    #[case::contract_itself(AuthorizedCaller::ContractItself)]
+    #[case::participant(AuthorizedCaller::Participant)]
+    fn remove_non_participant_update_votes__should_clean_when_called_by_authorized_caller(
+        #[case] caller_kind: AuthorizedCaller,
+    ) {
+        // Given: a running state with update votes from both participants and non-participants.
         let running_state = gen_running_state(NUM_DOMAINS);
         let participants = running_state.parameters.participants().clone();
         let mut contract =
             MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
 
-        // Propose an update with 2 non-participant votes (from propose_and_vote)
+        // propose_and_vote_code adds 2 non-participant votes.
         let update_id_u64 = 0;
-        let test_update = propose_and_vote_code(update_id_u64, &mut contract);
+        let _ = propose_and_vote_code(update_id_u64, &mut contract);
         let update_id: UpdateId = update_id_u64.into();
 
-        let non_participants: HashSet<AccountId> = test_update.votes.iter().cloned().collect();
-
-        // Add votes from 2 current participants
+        // Add votes from 2 current participants.
         let participants = participants.participants();
         let (p1, p2) = (participants[0].0.clone(), participants[1].0.clone());
         contract.proposed_updates.vote(&update_id, p1.clone());
         contract.proposed_updates.vote(&update_id, p2.clone());
 
-        // Sanity check: verify exact set of voters before cleanup
-        let expected_voters_before: HashSet<_> = [p1.clone(), p2.clone()]
-            .into_iter()
-            .chain(non_participants.clone())
-            .collect();
+        // Resolve the caller account for this case. The contract account differs from any
+        // participant account, so the self-call and participant branches are distinct.
+        let caller = match caller_kind {
+            AuthorizedCaller::ContractItself => env::current_account_id(),
+            AuthorizedCaller::Participant => p1.clone(),
+        };
 
-        let actual_voters_before: HashSet<_> =
-            contract.proposed_updates.voters().into_iter().collect();
-        assert_eq!(actual_voters_before, expected_voters_before);
-
-        // verify the update entry reflects participant + non-participant votes
-        assert_proposed_update_has_expected_voters(
-            &contract.proposed_updates,
-            update_id,
-            &expected_voters_before,
-        );
-
-        // when: calling remove_non_participant_update_votes
+        // When: the authorized caller invokes the cleanup directly.
         testing_env!(
             VMContextBuilder::new()
                 .current_account_id(env::current_account_id())
-                .predecessor_account_id(env::current_account_id())
+                .predecessor_account_id(caller.clone())
+                .signer_account_id(caller)
                 .build()
         );
         contract.remove_non_participant_update_votes().unwrap();
 
-        // then: only the 2 participant votes remain
-        let expected_voters_after = HashSet::from([p1.clone(), p2.clone()]);
+        // Then: only the 2 participant votes remain.
+        let participant_voters = HashSet::from([p1, p2]);
         assert_proposed_update_has_expected_voters(
             &contract.proposed_updates,
             update_id,
-            &expected_voters_after,
+            &participant_voters,
+        );
+    }
+
+    /// A caller that is neither the contract itself nor a current participant is rejected with
+    /// `NotParticipant`, and the votes are left untouched.
+    #[test]
+    fn remove_non_participant_update_votes__should_reject_unauthorized_caller() {
+        // Given: a running state with update votes from both participants and non-participants.
+        let running_state = gen_running_state(NUM_DOMAINS);
+        let participants = running_state.parameters.participants().clone();
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+
+        let update_id_u64 = 0;
+        let test_update = propose_and_vote_code(update_id_u64, &mut contract);
+        let update_id: UpdateId = update_id_u64.into();
+        let non_participants: HashSet<AccountId> = test_update.votes.iter().cloned().collect();
+
+        let participants = participants.participants();
+        let (p1, p2) = (participants[0].0.clone(), participants[1].0.clone());
+        contract.proposed_updates.vote(&update_id, p1.clone());
+        contract.proposed_updates.vote(&update_id, p2.clone());
+
+        let voters_before: HashSet<_> = [p1, p2].into_iter().chain(non_participants).collect();
+
+        // When: an account that is neither the contract nor a participant calls the cleanup.
+        let outsider = gen_account_id();
+        testing_env!(
+            VMContextBuilder::new()
+                .current_account_id(env::current_account_id())
+                .predecessor_account_id(outsider.clone())
+                .signer_account_id(outsider.clone())
+                .build()
+        );
+        let result = contract.remove_non_participant_update_votes();
+
+        // Then: the call is rejected with NotParticipant and the votes are left untouched.
+        assert_matches!(
+            result,
+            Err(Error::InvalidState(InvalidState::NotParticipant { account_id }))
+                if account_id == outsider
+        );
+        assert_proposed_update_has_expected_voters(
+            &contract.proposed_updates,
+            update_id,
+            &voters_before,
         );
     }
 
@@ -5298,9 +5583,84 @@ mod tests {
                 expected_params,
             ),
             cancellation_requests: HashSet::new(),
+            per_domain_thresholds: BTreeMap::new(),
         };
 
         assert_eq!(*resharing_state, expected_resharing_state);
+    }
+
+    /// Tests that [`MpcContract::verify_tee`] refuses to reshare when a TEE
+    /// kickout would leave fewer participants than a domain's reconstruction
+    /// threshold, even though the remaining set still meets the governance
+    /// threshold. The contract stays Running and stops accepting requests.
+    #[test]
+    fn verify_tee__should_refuse_kickout_below_domain_reconstruction_threshold() {
+        const PARTICIPANT_COUNT: usize = 5;
+        const ATTESTATION_EXPIRY_SECONDS: u64 = 5;
+        const TEE_UPGRADE_DURATION: Duration = Duration::MAX;
+
+        // Given: 5 participants, governance threshold 3, and one domain whose
+        // reconstruction threshold is 5 (every participant is needed to sign).
+        let participants = gen_participants(PARTICIPANT_COUNT);
+        let parameters = ThresholdParameters::new(participants.clone(), Threshold::new(3)).unwrap();
+        let domain_id = DomainId::default();
+        let domains = vec![DomainConfig {
+            id: domain_id,
+            protocol: Protocol::CaitSith,
+            reconstruction_threshold: ReconstructionThreshold::new(5),
+            purpose: DomainPurpose::Sign,
+        }];
+        let (pk, _) = make_public_key_for_curve(Curve::Secp256k1, &mut OsRng);
+        let keyset = Keyset::new(
+            EpochId::new(0),
+            vec![KeyForDomain {
+                domain_id,
+                key: pk.try_into().unwrap(),
+                attempt: AttemptId::new(),
+            }],
+        );
+        let mut contract =
+            MpcContract::init_running(domains, 1, keyset, (&parameters).into_dto_type(), None)
+                .unwrap();
+
+        // Expire the last participant's attestation so a kickout drops the set to 4.
+        let participant_list: Vec<_> = participants.participants().to_vec();
+        let (target_account_id, _, target_participant_info) =
+            &participant_list[PARTICIPANT_COUNT - 1];
+        let node_id = NodeId {
+            account_id: target_account_id.clone(),
+            tls_public_key: target_participant_info.tls_public_key.clone(),
+            account_public_key: bogus_ed25519_public_key(),
+        };
+        let expiring_attestation = MpcAttestation::Mock(MpcMockAttestation::WithConstraints {
+            mpc_docker_image_hash: None,
+            launcher_docker_compose_hash: None,
+            expiry_timestamp_seconds: Some(ATTESTATION_EXPIRY_SECONDS),
+            expected_measurements: None,
+        });
+        contract
+            .tee_state
+            .add_participant(node_id, expiring_attestation, TEE_UPGRADE_DURATION)
+            .expect("mock attestation is not yet expired and valid");
+
+        let (first_account_id, _, _) = &participant_list[0];
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(first_account_id.clone())
+                .predecessor_account_id(first_account_id.clone())
+                .block_timestamp(ATTESTATION_EXPIRY_SECONDS * 1_000_000_000) // nanoseconds
+                .build()
+        );
+
+        // When
+        let result = contract.verify_tee();
+
+        // Then: the 4 surviving participants meet the governance threshold (3) but
+        // not the domain's reconstruction threshold (5), so verify_tee refuses to
+        // reshare, stays Running, and stops accepting requests.
+        assert_matches!(result, Ok(false));
+        assert_matches!(contract.protocol_state, ProtocolContractState::Running(_));
+        assert!(!contract.accept_requests);
     }
 
     /// Sets up a complete TEE test environment with contract, accounts, mock dstack attestation, TLS key and the node's near public key.
@@ -7199,7 +7559,8 @@ mod tests {
             let ProtocolContractState::Running(ref mut state) = contract.protocol_state else {
                 panic!("expected Running state");
             };
-            let proposal = state.parameters.clone();
+            let proposal =
+                ProposedThresholdParameters::new(state.parameters.clone(), BTreeMap::new());
             state
                 .transition_to_resharing_no_checks(&proposal)
                 .expect("contract has at least one domain")
@@ -7292,13 +7653,14 @@ mod tests {
             .expect("new participant should be inserted");
         let new_params =
             ThresholdParameters::new(new_participants.clone(), Threshold::new(3)).unwrap();
+        let new_proposal = ProposedThresholdParameters::new(new_params, BTreeMap::new());
 
         let resharing = {
             let ProtocolContractState::Running(ref mut state) = contract.protocol_state else {
                 panic!("expected Running state");
             };
             state
-                .transition_to_resharing_no_checks(&new_params)
+                .transition_to_resharing_no_checks(&new_proposal)
                 .expect("contract has at least one domain")
         };
         contract.protocol_state = ProtocolContractState::Resharing(resharing);

@@ -10,13 +10,13 @@ use crate::config::{self, ParticipantsConfig};
 use crate::indexer::handler::{CKDRequestFromChain, VerifyForeignTxRequestFromChain};
 use crate::indexer::types::{ChainCKDRespondArgs, ChainVerifyForeignTransactionRespondArgs};
 use crate::migration_service::types::MigrationInfo;
-use crate::requests::recent_blocks_tracker::tests::TestBlockMaker;
 use crate::tests::common::MockTransactionSender;
 use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};
 use crate::types::SignatureId;
 use crate::types::{CKDId, VerifyForeignTxId};
 use anyhow::Context;
 use assert_matches::assert_matches;
+use chain_gateway::event_subscriber::recent_blocks_tracker::test_utils::TestBlockMaker;
 use derive_more::From;
 use ed25519_dalek::VerifyingKey;
 use mpc_contract::node_migrations::NodeMigrations;
@@ -229,6 +229,7 @@ impl FakeMpcContractState {
                 participants_config_to_threshold_parameters(&new_participants),
             ),
             cancellation_requests: HashSet::new(),
+            per_domain_thresholds: std::collections::BTreeMap::new(),
         });
     }
 

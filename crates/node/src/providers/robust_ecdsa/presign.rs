@@ -285,8 +285,8 @@ impl MpcLeaderCentricComputation<PresignOutput> for PresignComputation {
 }
 
 /// Performs an MPC presignature operation as a follower.
-/// The difference is: we need to read the triples from the triple store (which may fail),
-/// and we need to write the presignature to the presignature store before completing.
+/// The difference is: we need to write the presignature to the presignature
+/// store before completing.
 pub struct FollowerPresignComputation {
     pub max_malicious: MaxMalicious,
     pub keygen_out: KeygenOutput,

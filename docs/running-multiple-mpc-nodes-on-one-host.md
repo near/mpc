@@ -162,10 +162,11 @@ for the right placement:
 | `tier3_public_addr` | `"203.0.113.10:24567"` (`IP_M`) | `"203.0.113.11:24567"` (`IP_T`) |
 | `my_near_account_id` | your mainnet account | your testnet account |
 
-`tier3_public_addr` is **required** here — without it the second
-node's auto-discovery would collapse to the host's default-route
-outbound IP and Tier3 state-sync would fail. See the
-[`tier3_public_addr` / `external_storage_fallback_threshold` bullets](./running-an-mpc-node-in-tdx-external-guide.md#prepare-mpc-node-configuration)
+`tier3_public_addr` is **required** here — without it the node
+auto-discovers its advertised address as the host's default-route
+outbound IP, which DSS peers may not be able to reach, and state sync
+stalls. See the
+[`tier3_public_addr` bullet](./running-an-mpc-node-in-tdx-external-guide.md#prepare-mpc-node-configuration)
 in the single-node guide for the full field semantics.
 
 ## Operational considerations
