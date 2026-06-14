@@ -1010,11 +1010,10 @@ impl MpcContract {
             .into());
         }
         let tls_key = node_id.tls_public_key.clone();
-        let signer_pk = node_id.account_public_key.clone();
 
         self.foreign_chains
             .get_mut()
-            .register(signer_pk, tls_key, foreign_chains_config);
+            .register(tls_key, foreign_chains_config);
         self.recompute_available_foreign_chains();
 
         Ok(())
