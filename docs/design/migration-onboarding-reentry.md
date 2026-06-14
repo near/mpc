@@ -150,8 +150,7 @@ the re-entered `Onboard` cycle (P2P mesh in `network.rs`/`p2p.rs`, triple
 + presignature pools in `db.rs`). A0 has been `Inactive` for its own key
 between forward and back migration, so the coordinator should have wound
 those down — but this is the one non-trivial invariant introduced by the
-change. Worth an explicit audit; tracking separately if anything is
-found.
+change. Tracked in [#3551](https://github.com/near/mpc/issues/3551).
 
 ## References
 
