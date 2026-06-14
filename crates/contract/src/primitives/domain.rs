@@ -84,6 +84,11 @@ impl DomainRegistry {
         &self.domains
     }
 
+    #[cfg(test)]
+    pub fn domains_mut(&mut self) -> &mut [DomainConfig] {
+        &mut self.domains
+    }
+
     /// Append `domain` at `next_domain_id`, returning its assigned DomainId.
     /// The caller's `domain.id` is ignored; the registry assigns the id
     /// monotonically. The caller is responsible for any validation
