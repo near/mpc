@@ -656,7 +656,7 @@ mod tests {
             participant_node.p2p_public_key,
         );
 
-        let (contract_state_sender, contract_state_receiver) = watch::channel(contract);
+        let (_contract_state_sender, contract_state_receiver) = watch::channel(contract);
         let (_my_migration_info_sender, my_migration_info_receiver) =
             watch::channel(INACTIVE_MIGRATION);
         let (_keyshare_sender, keyshare_receiver) = watch::channel(vec![]);
@@ -694,9 +694,6 @@ mod tests {
             "onboard() should keep looping past first Done; it must not return on Done"
         );
 
-        // Keep `contract_state_sender` alive until after the assertion so the
-        // loop's receiver channel doesn't close (which would make it exit).
-        drop(contract_state_sender);
         onboard_handle.abort();
     }
 }

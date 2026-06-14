@@ -1,5 +1,6 @@
 use std::{net::SocketAddr, sync::Arc};
 
+use anyhow::Context as _;
 use ed25519_dalek::SigningKey;
 use near_account_id::AccountId;
 use onboarding::onboard;
@@ -78,8 +79,10 @@ pub async fn spawn_recovery_server_and_run_onboarding(
         }
     });
 
-    // Err here = the spawned task dropped the sender; the panic/error is
-    // already logged above. Either way, startup proceeds.
-    let _ = first_done_rx.await;
+    // Propagate so startup fails if onboarding dies before signaling —
+    // otherwise the keyshare channel has no listener.
+    first_done_rx
+        .await
+        .context("onboarding task died before reaching first Done")?;
     Ok(())
 }
