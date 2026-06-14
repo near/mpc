@@ -7638,6 +7638,80 @@ mod tests {
     }
 
     #[test]
+    fn recompute_available_foreign_chains__should_use_max_threshold_across_foreign_tx_domains() {
+        // Given
+        // The lower-threshold domain is listed first so a regression to `.find()` would pick
+        // threshold=2, whereas `.max()` across both foreign-tx domains picks threshold=3.
+        let contract_account_id = AccountId::from_str("contract_account.near").unwrap();
+        testing_env!(
+            VMContextBuilder::new()
+                .attached_deposit(NearToken::from_yoctonear(1))
+                .predecessor_account_id(contract_account_id.clone())
+                .current_account_id(contract_account_id)
+                .build()
+        );
+        let foreign_tx_domain = |id: u64, threshold: u64| DomainConfig {
+            id: DomainId(id),
+            protocol: Protocol::CaitSith,
+            reconstruction_threshold: ReconstructionThreshold::new(threshold),
+            purpose: DomainPurpose::ForeignTx,
+        };
+        let domains = vec![foreign_tx_domain(0, 2), foreign_tx_domain(1, 3)];
+        let keys_for_domains = domains
+            .iter()
+            .map(|domain| {
+                let (pk, _sk) = make_public_key_for_curve(Curve::Secp256k1, &mut OsRng);
+                KeyForDomain {
+                    domain_id: domain.id,
+                    key: pk.try_into().unwrap(),
+                    attempt: AttemptId::new(),
+                }
+            })
+            .collect();
+        let keyset = Keyset::new(EpochId::new(0), keys_for_domains);
+        let parameters = ThresholdParameters::new(gen_participants(4), Threshold::new(3)).unwrap();
+        let mut contract =
+            MpcContract::init_running(domains, 2, keyset, (&parameters).into_dto_type(), None)
+                .unwrap();
+        let participants = participant_account_ids(&contract);
+        whitelist_chain(&mut contract, dtos::ForeignChain::Bitcoin);
+
+        // When
+        let bitcoin_available = |contract: &MpcContract| {
+            contract
+                .get_available_foreign_chains()
+                .contains(&dtos::ForeignChain::Bitcoin)
+        };
+        register_foreign_chain_config(
+            &mut contract,
+            &participants[0],
+            [dtos::ForeignChain::Bitcoin],
+        );
+        register_foreign_chain_config(
+            &mut contract,
+            &participants[1],
+            [dtos::ForeignChain::Bitcoin],
+        );
+        let available_below_threshold = bitcoin_available(&contract);
+        register_foreign_chain_config(
+            &mut contract,
+            &participants[2],
+            [dtos::ForeignChain::Bitcoin],
+        );
+        let available_at_threshold = bitcoin_available(&contract);
+
+        // Then
+        assert!(
+            !available_below_threshold,
+            "2 supporters is below the max foreign-tx threshold (3)"
+        );
+        assert!(
+            available_at_threshold,
+            "3 supporters meets the max foreign-tx threshold (3)"
+        );
+    }
+
+    #[test]
     fn register_foreign_chains_config__should_succeed_for_new_participant_during_resharing() {
         // Given: Running contract; transition to Resharing whose proposed set adds a new participant
         // not present in the old running set.
