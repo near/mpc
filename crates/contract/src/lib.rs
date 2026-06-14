@@ -1027,7 +1027,7 @@ impl MpcContract {
             return;
         };
         let threshold = params.threshold().value();
-        let active_tls_keys: Vec<_> = params
+        let active_tls_keys: BTreeSet<_> = params
             .participants()
             .participants()
             .iter()

@@ -1,8 +1,7 @@
 use std::collections::BTreeSet;
 
 use near_mpc_contract_interface::types as dtos;
-use near_sdk::near;
-use near_sdk::store::IterableMap;
+use near_sdk::{env, near, store::IterableMap};
 
 use crate::foreign_chain_rpc::ForeignChainRpcWhitelist;
 use crate::storage_keys::StorageKey;
@@ -51,14 +50,15 @@ impl ForeignChainsMetadata {
             self.foreign_chains_configs.remove(&old_key);
         }
         // Two different signer keys must never share a TLS key. TLS key uniquely identifies a node.
-        assert!(
-            !self.foreign_chains_configs.contains_key(&tls_key)
-                || self
-                    .tls_key_by_signer_pk
-                    .get(&signer_pk)
-                    .is_some_and(|k| *k == tls_key),
-            "TLS key already registered by a different signer"
-        );
+        if self.foreign_chains_configs.contains_key(&tls_key)
+            && self
+                .tls_key_by_signer_pk
+                .get(&signer_pk)
+                .is_none_or(|k| *k != tls_key)
+        {
+            env::panic_str("TLS key already registered by a different signer");
+        }
+
         self.tls_key_by_signer_pk.insert(signer_pk, tls_key.clone());
         self.foreign_chains_configs
             .insert(tls_key, foreign_chains_config);
@@ -66,7 +66,7 @@ impl ForeignChainsMetadata {
 
     pub(crate) fn update_cache(
         &mut self,
-        active_tls_keys: &[dtos::Ed25519PublicKey],
+        active_tls_keys: &BTreeSet<dtos::Ed25519PublicKey>,
         threshold: u64,
     ) {
         let mut chain_to_supporter_count: std::collections::BTreeMap<dtos::ForeignChain, u64> =

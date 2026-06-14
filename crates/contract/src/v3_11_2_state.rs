@@ -67,8 +67,8 @@ impl From<MpcContract> for crate::MpcContract {
             accept_requests: old.accept_requests,
             node_migrations: old.node_migrations,
             metrics: old.metrics,
-            // New in this revision; per-node configs self-populate on the first
-            // `register_foreign_chains_config` after upgrade.
+            // per-node configs self-populate on the first foreign chain
+            // registration call after the upgrade.
             foreign_chains: Lazy::new(
                 StorageKey::ForeignChainAvailability,
                 ForeignChainsMetadata::default(),
