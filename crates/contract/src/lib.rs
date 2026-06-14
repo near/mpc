@@ -1077,8 +1077,9 @@ impl MpcContract {
         let Some(threshold) = self.protocol_state.domain_registry().ok().and_then(|r| {
             r.domains()
                 .iter()
-                .find(|d| d.purpose == DomainPurpose::ForeignTx)
+                .filter(|d| d.purpose == DomainPurpose::ForeignTx)
                 .map(|d| d.reconstruction_threshold.inner())
+                .max()
         }) else {
             // No op if contract isn't in Running or Resharing state, or
             // there is no foreign tx domain registered.
