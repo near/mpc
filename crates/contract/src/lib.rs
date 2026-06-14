@@ -1073,7 +1073,8 @@ impl MpcContract {
         let Ok(params) = self.protocol_state.threshold_parameters() else {
             return;
         };
-        // Use the ForeignTx domain's reconstruction threshold.
+        // TODO(#3556): replace this with a per-scheme
+        // `required_active_signers(protocol, reconstruction_threshold)`.
         let Some(threshold) = self.protocol_state.domain_registry().ok().and_then(|r| {
             r.domains()
                 .iter()
