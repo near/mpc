@@ -36,7 +36,7 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#3486](https://github.com/near/mpc/pull/3486)(@barakeinav1): *(node)* Drain embedded near-indexer thread on graceful shutdown (#3486)
 
-- [#3491](https://github.com/near/mpc/pull/3491)(@DSharifi): *(contract)* Add auth check to `remove_non_participant_update_votes`  (#3491)
+- [#3491](https://github.com/near/mpc/pull/3491)(@DSharifi): *(contract)* Add auth check to `remove_non_participant_update_votes` (#3491)
 
 - [#3532](https://github.com/near/mpc/pull/3532)(@gilcu3): Make sure localnet launcher script kills processes successfully (#3532)
 
