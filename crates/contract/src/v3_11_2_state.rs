@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_contract_interface::types::{Metrics, VerifyForeignTransactionRequest};
-use near_sdk::{env, log, store::LookupMap};
+use near_sdk::{env, store::LookupMap};
 
 use crate::{
     Config, SupportedForeignChainsByNode,

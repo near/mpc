@@ -937,7 +937,7 @@ Resolved: the `GovernanceThreshold` is now constrained relative to the cryptogra
 - `max(t_i) <= GovernanceThreshold` — a governance majority can never approve a reshare into a set smaller than what any domain needs to reconstruct its key (keeps trust assumptions consistent).
 - `ceil(0.6*n) <= GovernanceThreshold <= max(ceil(0.6*n), floor(0.8*n))` — the existing 60% lower bound plus an 80%-floor upper cap so a minority that stops serving cannot lock the contract.
 
-These are enforced at every mutation point (governance threshold updates, reconstruction threshold updates, participant add, participant kick) and re-validated once on migration (logged, not panicked, to avoid bricking upgrades of pre-existing state). See `ThresholdParameters::validate_threshold` and `validate_governance_against_reconstruction` in `crates/contract/src/primitives/thresholds.rs`.
+These are enforced at every mutation point (governance threshold updates, reconstruction threshold updates, participant add, participant kick) and re-validated once on migration, where a violation hard-blocks the upgrade (panic) — state that breaks the relation must be corrected via `vote_new_parameters` before upgrading. See `ThresholdParameters::validate_threshold` and `validate_governance_against_reconstruction` in `crates/contract/src/primitives/thresholds.rs`.
 
 ### 7.2 Backward-Compatible View Methods
 
