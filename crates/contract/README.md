@@ -259,8 +259,9 @@ stateDiagram-v2
 
 | Function                                                                                     | Behavior                                                                                                 | Return Value               | Gas requirement | Effective Gas Cost |
 | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------- | --------------- | ------------------ |
-| `sign(request: SignRequestArgs)`                                                             | Submits a signature request to the contract. Requires a deposit of 1 yoctonear. Re-submitting the same request before the original request timed out or has been responded to may cause both requests to fail.             | deferred to promise        | `10 Tgas`       | `~7 Tgas`          |
-| `request_app_private_key(request: CKDRequestArgs)`                                           | Submits a confidential key derivation (ckd) request to the contract. Requires a deposit of 1 yoctonear. Re-submitting the same request before the original request timed out or has been responded to may cause both requests to fail. | deferred to promise        | `10 Tgas`       | `~7 Tgas`          |
+| `sign(request: SignRequestArgs)`                                                             | Submits a signature request to the contract. Requires a deposit of 1 yoctonear. Duplicate submissions of the same request (same caller, domain, path, and payload) while an earlier one is still pending are queued and all receive the same response when the MPC nodes reply; the queue is bounded — concurrent duplicates beyond that bound are rejected with `PendingRequestQueueFull`.             | deferred to promise        | `10 Tgas`       | `~7 Tgas`          |
+| `request_app_private_key(request: CKDRequestArgs)`                                           | Submits a confidential key derivation (ckd) request to the contract. Requires a deposit of 1 yoctonear. Duplicate submissions of the same request (same caller, domain, derivation path, and app public key) while an earlier one is still pending are queued and all receive the same response when the MPC nodes reply; the queue is bounded — concurrent duplicates beyond that bound are rejected with `PendingRequestQueueFull`. | deferred to promise        | `10 Tgas`       | `~7 Tgas`          |
+| `verify_foreign_transaction(request: VerifyForeignTransactionRequestArgs)`                   | Submits a foreign-chain transaction verification request to the contract. Requires a deposit of 1 yoctonear and that the requested foreign chain is in the contract's supported set. Duplicate submissions of the same request (same caller, domain, chain, and payload) while an earlier one is still pending are queued and all receive the same response when the MPC nodes reply; the queue is bounded — concurrent duplicates beyond that bound are rejected with `PendingRequestQueueFull`. | deferred to promise        | `10 Tgas`       | `~7 Tgas`          |
 | `public_key(domain: Option<DomainId>)`                                                       | Read-only function; returns the public key used for the given domain (defaulting to first).              | `Result<PublicKey, Error>` |                 |                    |
 | `derived_public_key(path: String, predecessor: Option<AccountId>, domain: Option<DomainId>)` | Generates a derived public key for a given path and account, for the given domain (defaulting to first). | `Result<PublicKey, Error>` |                 |                    |
 
@@ -294,6 +295,7 @@ These functions require the caller to be a participant or candidate.
 | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | --------------- | ------------------ |
 | `respond(request: SignatureRequest, response: SignatureResponse)`                   | Processes a response to a signature request, verifying its validity and ensuring proper state cleanup.                                                                                                                                  | `Result<(), Error>`       | 10Tgas          | ~6Tgas             |
 | `respond_ckd(request: CKDRequest, response: CKDResponse)`                           | Processes a response to a ckd request, ensuring proper state cleanup.                                                                                                                                                                   | `Result<(), Error>`       | 10Tgas          | ~6Tgas             |
+| `respond_verify_foreign_tx(request: VerifyForeignTransactionRequest, response: VerifyForeignTransactionResponse)` | Processes a response to a foreign-chain transaction verification request, ensuring proper state cleanup.                                                                                              | `Result<(), Error>`       | 10Tgas          | ~6Tgas             |
 | `vote_add_domains(domains: Vec<DomainConfig>)`                                      | Votes to add new domains (new keys) to the MPC network; newly proposed domain IDs must start from next_domain_id and be contiguous, and each domain must specify a `reconstruction_threshold` with `2 <= t <= n`.                       | `Result<(), Error>`       | TBD             | TBD                |
 | `vote_new_parameters(prospective_epoch_id: EpochId, proposal: ThresholdParameters)` | Votes to change the set of participants as well as the new threshold for the network. (Prospective epoch ID must be 1 plus current)                                                                                                     | `Result<(), Error>`       | TBD             | TBD                |
 | `vote_code_hash(code_hash: CodeHash)`                                               | Votes to add new whitelisted TEE Docker image code hashes.                                                                                                                                                                              | `Result<(), Error>`       | TBD             | TBD                |
@@ -338,11 +340,18 @@ During development, it's recommended to build non-deterministically using [cargo
 cargo near build non-reproducible-wasm --features abi --manifest-path crates/contract/Cargo.toml --locked
 ```
 
-The contract can also be built deterministically. This requires `docker` to be installed.
+The contract can also be built deterministically. The released artifact is the
+cargo-near reproducible build, which embeds NEP-330 metadata for third-party
+verifiers (requires `docker`):
 
 ```bash
-cargo near build reproducible-wasm --features abi --manifest-path crates/contract/Cargo.toml
+cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
+sha256sum target/near/mpc_contract/mpc_contract.wasm
 ```
+
+A Nix-based reproducible build is also available. See
+[reproducible-builds.md](../../docs/reproducible-builds.md#mpc-contract) for the
+full workflow and the difference between the two.
 
 ## TEE Specific information
 

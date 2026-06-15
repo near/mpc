@@ -1,13 +1,14 @@
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use rand::seq::SliceRandom as _;
 use rand_core::SeedableRng;
 
 mod bench_utils;
 use crate::bench_utils::{
-    analyze_received_sizes, prepare_dkg, PreparedOutputs, MAX_MALICIOUS, SAMPLE_SIZE,
+    MAX_MALICIOUS, PreparedOutputs, SAMPLE_SIZE, analyze_received_sizes, prepare_dkg,
 };
 
 use threshold_signatures::{
+    Ciphersuite, Element, KeygenOutput, ReconstructionLowerBound, Scalar,
     confidential_key_derivation::ciphersuite::BLS12381SHA256,
     frost_ed25519::Ed25519Sha512,
     frost_secp256k1::Secp256K1Sha256,
@@ -15,9 +16,8 @@ use threshold_signatures::{
     participants::Participant,
     protocol::Protocol,
     test_utils::{
-        run_protocol_and_take_snapshots, run_simulated_protocol, MockCryptoRng, Simulator,
+        MockCryptoRng, Simulator, run_protocol_and_take_snapshots, run_simulated_protocol,
     },
-    Ciphersuite, Element, KeygenOutput, ReconstructionLowerBound, Scalar,
 };
 
 fn threshold() -> ReconstructionLowerBound {
@@ -118,7 +118,7 @@ where
     Element<C>: Send,
     Scalar<C>: Send,
 {
-    let real_protocol = keygen::<C>(
+    let real_protocol = keygen::<C, _, _>(
         &setup.participants,
         setup.real_participant,
         threshold,

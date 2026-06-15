@@ -65,6 +65,7 @@ MPC_ENV="${MPC_ENV:-$NEAR_NETWORK_CONFIG}"
 MACHINE_IP="${MACHINE_IP:-}"
 
 : "${MPC_MANIFEST_DIGEST:?Must set MPC_MANIFEST_DIGEST (e.g. export MPC_MANIFEST_DIGEST=sha256:abc...)}"
+: "${LAUNCHER_MANIFEST_DIGEST:?Must set LAUNCHER_MANIFEST_DIGEST (e.g. export LAUNCHER_MANIFEST_DIGEST=sha256:abc...)}"
 
 # If set, use this funded testnet account instead of faucet to create/top-up the ROOT account.
 # Example: export FUNDER_ACCOUNT=barak_tee_test1.testnet
@@ -155,15 +156,16 @@ LOCAL_DEBUG_BASE=3031
 
 STATE_SYNC_PORT=24567
 MAIN_PORT=80
-FUTURE_PORT=13001
-FUTURE_BASE_PORT="${FUTURE_BASE_PORT:-13001}"   # host-side per-node future/N2N port base
-future_port_for_i() { echo $((FUTURE_BASE_PORT + $1)); }
+# Migration HTTP endpoint that backup-cli connects to for get/put-keyshares.
+# Container-side this matches `migration_web_ui` in node.conf.*.toml.tpl.
+# Uniform across all CVMs — per-IP isolation keeps them from colliding.
+MIGRATION_PORT=8079
 
 INTERNAL_PUBLIC_DEBUG_PORT=8080
 INTERNAL_LOCAL_DEBUG_PORT=3030
 INTERNAL_STATE_SYNC_PORT=24567
 INTERNAL_MAIN_PORT=80
-INTERNAL_FUTURE_PORT=13001
+INTERNAL_MIGRATION_PORT=8079
 
 OS_IMAGE="${OS_IMAGE:-dstack-dev-0.5.8}"
 SEALING_KEY_TYPE="${SEALING_KEY_TYPE:-SGX}"
@@ -172,7 +174,6 @@ VMM_RPC="${VMM_RPC:-http://127.0.0.1:10000}"
 # Repo-relative paths (assumes you're running from repo root)
 REPO_ROOT="$(pwd)"
 TEE_LAUNCHER_DIR="$REPO_ROOT/deployment/cvm-deployment"
-COMPOSE_YAML="$TEE_LAUNCHER_DIR/launcher_docker_compose.yaml"
 ADD_DOMAIN_JSON="$REPO_ROOT/docs/localnet/args/add_domain.json"
 
 MODE="${MODE:-localnet}"  # localnet|testnet
@@ -447,13 +448,11 @@ near_add_key_skip_if_exists() {
   local pk="$2"
   local label="$3"
 
-  # Use restricted function-call access key instead of full access.
-  # The key can only call node-facing methods on the MPC contract.
-  local node_methods="respond,respond_ckd,respond_verify_foreign_tx,vote_pk,start_keygen_instance,vote_reshared,register_foreign_chain_config,start_reshare_instance,vote_abort_key_event_instance,verify_tee,submit_participant_info,conclude_node_migration"
+  # Function-call key scoped to the MPC contract; empty --function-names allows all methods.
   local cmd=(near account add-key "$acct" grant-function-call-access
              --allowance unlimited
              --contract-account-id "$MPC_CONTRACT_ACCOUNT"
-             --function-names "$node_methods"
+             --function-names ''
              use-manually-provided-public-key "$pk"
              network-config "$NEAR_NETWORK_CONFIG" sign-with-keychain send)
 
@@ -714,13 +713,19 @@ preflight() {
   need_cmd python3
 
   [ -d "$TEE_LAUNCHER_DIR" ] || { err "Missing launcher dir at $TEE_LAUNCHER_DIR"; exit 1; }
-  [ -f "$COMPOSE_YAML" ] || { err "Missing $COMPOSE_YAML"; exit 1; }
   [ -f "$ADD_DOMAIN_JSON" ] || { err "Missing $ADD_DOMAIN_JSON"; exit 1; }
   [ -f "$ENV_TPL" ] || { err "Missing template $ENV_TPL"; exit 1; }
   [ -f "$CONF_TPL" ] || { err "Missing template $CONF_TPL"; exit 1; }
+  # The contract compose template — consumed by deploy-launcher.sh's sed
+  # render. Check it here so a missing template fails preflight rather than
+  # after account/contract setup has already run.
+  [ -f "$REPO_ROOT/crates/contract/assets/launcher_docker_compose.yaml.template" ] || {
+    err "Missing launcher compose template at $REPO_ROOT/crates/contract/assets/launcher_docker_compose.yaml.template"
+    exit 1
+  }
 
   log "Using IP range: ${IP_PREFIX}${IP_START_OCTET} .. ${IP_PREFIX}$((IP_START_OCTET + N - 1))"
-  log "Ports per node: main=$MAIN_PORT future_base=$FUTURE_BASE_PORT (per-node) state_sync=$STATE_SYNC_PORT public_data_base=$PUBLIC_DATA_BASE"
+  log "Ports per node: main=$MAIN_PORT migration=$MIGRATION_PORT state_sync=$STATE_SYNC_PORT public_data_base=$PUBLIC_DATA_BASE"
   log "Localhost per node: ssh_base=$SSH_BASE agent_base=$AGENT_BASE local_debug_base=$LOCAL_DEBUG_BASE"
 
   local any_fail=0
@@ -741,9 +746,8 @@ preflight() {
     p_ssh="$(ssh_port_for_i "$i")"
     p_agent="$(agent_port_for_i "$i")"
     p_ld="$(local_dbg_port_for_i "$i")"
-    p_future="$(future_port_for_i "$i")"
 
-    for port in "$MAIN_PORT" "$STATE_SYNC_PORT" "$p_pub" "$p_future"; do
+    for port in "$MAIN_PORT" "$STATE_SYNC_PORT" "$p_pub" "$MIGRATION_PORT"; do
       if port_free "$ip" "$port"; then
         echo "  ✅ free $ip:$port"
       else
@@ -805,7 +809,7 @@ render_node_files_range() {
     export VMM_RPC
     export SEALING_KEY_TYPE
     export OS_IMAGE
-    export DOCKER_COMPOSE_FILE_PATH="launcher_docker_compose.yaml"
+    export LAUNCHER_MANIFEST_DIGEST MPC_MANIFEST_DIGEST
     export USER_CONFIG_FILE_PATH="$conf_out"
     export DISK="${DISK:-500G}"
 
@@ -815,16 +819,21 @@ render_node_files_range() {
     export EXTERNAL_MPC_LOCAL_DEBUG_PORT="127.0.0.1:${local_dbg_port}"
     export EXTERNAL_MPC_DECENTRALIZED_STATE_SYNC="${ip}:${STATE_SYNC_PORT}"
     export EXTERNAL_MPC_MAIN_PORT="${ip}:${MAIN_PORT}"
-        local future_port
-    future_port="$(future_port_for_i "$i")"
 
-    export EXTERNAL_MPC_FUTURE_PORT="${ip}:${future_port}"
+    # DSS state-sync fields are only meaningful for testnet; localnet
+    # disables state sync entirely (apply_near_config_patches's localnet
+    # branch sets state_sync_enabled = false).
+    if [ "$MODE" = "testnet" ]; then
+        export TIER3_PUBLIC_ADDR="${ip}:${STATE_SYNC_PORT}"
+        export EXTERNAL_STORAGE_FALLBACK_THRESHOLD="${EXTERNAL_STORAGE_FALLBACK_THRESHOLD:-100}"
+    fi
+    export EXTERNAL_MPC_MIGRATION_PORT="${ip}:${MIGRATION_PORT}"
 
     export INTERNAL_MPC_PUBLIC_DEBUG_PORT="$INTERNAL_PUBLIC_DEBUG_PORT"
     export INTERNAL_MPC_LOCAL_DEBUG_PORT="$INTERNAL_LOCAL_DEBUG_PORT"
     export INTERNAL_MPC_DECENTRALIZED_STATE_SYNC="$INTERNAL_STATE_SYNC_PORT"
     export INTERNAL_MPC_MAIN_PORT="$INTERNAL_MAIN_PORT"
-    export INTERNAL_MPC_FUTURE_PORT="${future_port}"
+    export INTERNAL_MPC_MIGRATION_PORT="$INTERNAL_MIGRATION_PORT"
 
     export MPC_ENV
 
@@ -836,15 +845,29 @@ render_node_files_range() {
       # 24566 forwards the CVM's outbound to the host's localnet neard via the
       # QEMU slirp gateway (10.0.2.2). On testnet we don't run a host neard;
       # the CVM's indexer talks to real testnet peers on 24567 directly.
-      export PORTS="8080:8080,24566:24566,${future_port}:${future_port}"
+      # `port_override = 80` in the toml makes the MPC node bind P2P on
+      # container:80 regardless of the contract URL port, so we forward
+      # main(80) here for P2P and 8079 for the migration endpoint.
+      # PORTS is CVM-side:container-side (the launcher's port_mappings),
+      # NOT host:CVM — host:CVM forwarding is set up separately via the
+      # EXTERNAL_* env vars in deploy-launcher.sh. Both sides should use
+      # the CVM/container-internal port values.
+      export PORTS="${INTERNAL_MAIN_PORT}:${INTERNAL_MAIN_PORT},8080:8080,24566:24566,${INTERNAL_MIGRATION_PORT}:${INTERNAL_MIGRATION_PORT}"
       export NEAR_BOOT_NODES="ed25519:BGa4WiBj43Mr66f9Ehf6swKtR6wZmWuwCsV3s4PSR3nx@10.0.2.2:24566"
     else
-      export PORTS="8080:8080,${STATE_SYNC_PORT}:${STATE_SYNC_PORT},${future_port}:${future_port}"
+      export PORTS="${INTERNAL_MAIN_PORT}:${INTERNAL_MAIN_PORT},8080:8080,${STATE_SYNC_PORT}:${STATE_SYNC_PORT},${INTERNAL_MIGRATION_PORT}:${INTERNAL_MIGRATION_PORT}"
       export NEAR_BOOT_NODES="$bootnodes"
     fi
     export PORTS_TOML
     PORTS_TOML="$(ports_to_toml "$PORTS")"
 
+    # envsubst doesn't understand bash's ${VAR:?msg} fail-fast syntax — only
+    # plain $VAR / ${VAR} — so validate required template inputs here, before
+    # the substitution, where bash's :?msg form does work.
+    if [ "$MODE" = "testnet" ]; then
+        : "${TIER3_PUBLIC_ADDR:?TIER3_PUBLIC_ADDR must be set before rendering the testnet template}"
+        : "${EXTERNAL_STORAGE_FALLBACK_THRESHOLD:?EXTERNAL_STORAGE_FALLBACK_THRESHOLD must be set before rendering the testnet template}"
+    fi
     envsubst <"$ENV_TPL" >"$env_out"
     envsubst <"$CONF_TPL" >"$conf_out"
 
@@ -1054,13 +1077,15 @@ threshold = int("${threshold}")
 
 parts = []
 for k in keys:
-    url_port = 13001 + int(k["i"])
     parts.append([
         k["account"],
         k["i"],
         {
             "tls_public_key": k["tls_pk"],
-            "url": f"https://{k['ip']}:{url_port}",
+            # P2P/TLS listens on $MAIN_PORT(=80) inside the CVM. The toml
+            # sets `port_override = 80` so the node ignores the URL port
+            # and uses 80; we publish 80 here for clarity.
+            "url": f"https://{k['ip']}:80",
         },
     ])
 
@@ -1168,10 +1193,9 @@ extract_code_hash() {
 }
 
 extract_launcher_hash() {
-  local digest
-  digest="$(grep -E 'nearone/mpc-launcher@sha256:' "$COMPOSE_YAML" | head -n1 | sed -E 's/.*sha256:([0-9a-f]{64}).*/\1/')"
+  local digest="${LAUNCHER_MANIFEST_DIGEST#sha256:}"
   if [[ ! "$digest" =~ ^[0-9a-f]{64}$ ]]; then
-    err "Could not extract launcher image hash from $COMPOSE_YAML"
+    err "LAUNCHER_MANIFEST_DIGEST is not a valid sha256 digest: ${LAUNCHER_MANIFEST_DIGEST:-<unset>}"
     exit 1
   fi
   echo "$digest"
@@ -1382,8 +1406,9 @@ for k in new_keys:
     acct=k["account"]
     ip=k["ip"]
     tls_pk=k["tls_pk"]  # P2P key == tls_public_key
-    url_port = 13001 + int(k["i"])
-    new_parts.append([acct, next_id, {"tls_public_key": tls_pk, "url": f"https://127.0.0.1:{url_port}"}])
+    # `port_override = 80` in the toml makes the node bind P2P on 80
+    # regardless of this URL port; publish 80 explicitly.
+    new_parts.append([acct, next_id, {"tls_public_key": tls_pk, "url": f"https://{ip}:80"}])
     next_id += 1
 
 out={

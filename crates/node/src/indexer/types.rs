@@ -1,9 +1,9 @@
 use crate::types::{CKDRequest, SignatureRequest, VerifyForeignTxRequest};
 use anyhow::Context;
 use k256::{
-    ecdsa::RecoveryId,
-    elliptic_curve::{ops::Reduce, point::AffineCoordinates, Curve, CurveArithmetic},
     AffinePoint, Scalar, Secp256k1,
+    ecdsa::RecoveryId,
+    elliptic_curve::{Curve, CurveArithmetic, ops::Reduce, point::AffineCoordinates},
 };
 use mpc_primitives::domain::DomainId;
 use near_indexer_primitives::types::Gas;
@@ -27,16 +27,6 @@ use threshold_signatures::frost_secp256k1::VerifyingKey;
 use near_mpc_contract_interface::method_names::REGISTER_FOREIGN_CHAIN_CONFIG;
 
 const MAX_GAS: Gas = Gas::from_teragas(300);
-
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
-pub struct SerializableScalar {
-    pub scalar: Scalar,
-}
-
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
-struct SerializableAffinePoint {
-    pub affine_point: AffinePoint,
-}
 
 /* The format in which the chain signatures contract expects
  * to receive the details of the original request. `epsilon`
@@ -374,9 +364,9 @@ impl ChainVerifyForeignTransactionRespondArgs {
 #[cfg(test)]
 mod recovery_id_tests {
     use crate::indexer::types::ChainSignatureRespondArgs;
-    use k256::ecdsa::{RecoveryId, SigningKey};
-    use k256::elliptic_curve::{point::DecompressPoint, PrimeField};
     use k256::AffinePoint;
+    use k256::ecdsa::{RecoveryId, SigningKey};
+    use k256::elliptic_curve::{PrimeField, point::DecompressPoint};
     use rand::rngs::OsRng;
     use threshold_signatures::ecdsa::Signature;
 

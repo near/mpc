@@ -26,24 +26,6 @@ pub static MPC_PENDING_VERIFY_FOREIGN_TX_QUEUE_ATTEMPTS_GENERATED_TOTAL: LazyLoc
         )
         .unwrap()
 });
-pub static MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_BLOCKS_INDEXED_TOTAL: LazyLock<
-    prometheus::IntCounter,
-> = LazyLock::new(|| {
-    prometheus::register_int_counter!(
-        "mpc_pending_verify_foreign_txs_queue_blocks_indexed_total",
-        "Number of blocks indexed by the pending verify foreign tx queue"
-    )
-    .unwrap()
-});
-pub static MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_FINALIZED_BLOCKS_INDEXED_TOTAL: LazyLock<
-    prometheus::IntCounter,
-> = LazyLock::new(|| {
-    prometheus::register_int_counter!(
-        "mpc_pending_verify_foreign_txs_queue_finalized_blocks_indexed_total",
-        "Number of finalized blocks indexed by the pending verify foreign tx queue"
-    )
-    .unwrap()
-});
 pub static MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_REQUESTS_INDEXED_TOTAL: LazyLock<
     prometheus::IntCounter,
 > = LazyLock::new(|| {
@@ -58,7 +40,7 @@ pub static MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_RESPONSES_INDEXED_TOTAL: LazyLoc
 > = LazyLock::new(|| {
     prometheus::register_int_counter!(
         "mpc_pending_verify_foreign_txs_queue_responses_indexed_total",
-        "Number of verify foreign tx responses indexed by the pending verify foreign tx queue"
+        "Number of verify foreign tx responses indexed by the pending verify foreign tx queue. Note that not all of these may get finalized."
     )
     .unwrap()
 });
@@ -68,7 +50,17 @@ pub static MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_MATCHING_RESPONSES_INDEXED_TOTAL
     prometheus::register_int_counter!(
         "mpc_pending_verify_foreign_txs_queue_matching_responses_indexed_total",
         "Number of verify foreign tx responses that match previously indexed verify foreign tx requests,
-                 indexed by the pending verify foreign tx queue"
+                 indexed by the pending verify foreign tx queue. Note that not all of these may get finalized."
+    )
+    .unwrap()
+});
+pub static MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_FINALIZED_RESPONSES_INDEXED_TOTAL: LazyLock<
+    prometheus::IntCounter,
+> = LazyLock::new(|| {
+    prometheus::register_int_counter!(
+        "mpc_pending_verify_foreign_txs_queue_finalized_responses_indexed_total",
+        "Number of verify foreign tx responses that have been finalized,
+                 indexed by the pending verify foreign tx queue."
     )
     .unwrap()
 });
@@ -95,19 +87,11 @@ pub static VERIFY_FOREIGN_TXS_REQUEST_RESPONSE_LATENCY_SECONDS: LazyLock<prometh
             exponential_buckets(2.0, 1.5, 10).unwrap()
             ).unwrap()
     });
-pub static MPC_PENDING_CKDS_QUEUE_BLOCKS_INDEXED: LazyLock<prometheus::IntCounter> =
+pub static MPC_PENDING_CKDS_QUEUE_FINALIZED_RESPONSES_INDEXED: LazyLock<prometheus::IntCounter> =
     LazyLock::new(|| {
         prometheus::register_int_counter!(
-            "mpc_pending_ckds_queue_blocks_indexed",
-            "Number of blocks indexed by the pending ckds queue"
-        )
-        .unwrap()
-    });
-pub static MPC_PENDING_CKDS_QUEUE_FINALIZED_BLOCKS_INDEXED: LazyLock<prometheus::IntCounter> =
-    LazyLock::new(|| {
-        prometheus::register_int_counter!(
-            "mpc_pending_ckds_queue_finalized_blocks_indexed",
-            "Number of finalized blocks indexed by the pending ckds queue"
+            "mpc_pending_ckds_queue_finalized_responses_indexed",
+            "Number of ckd responses that have been finalized, indexed by the pending ckds queue."
         )
         .unwrap()
     });
@@ -123,7 +107,7 @@ pub static MPC_PENDING_CKDS_QUEUE_RESPONSES_INDEXED: LazyLock<prometheus::IntCou
     LazyLock::new(|| {
         prometheus::register_int_counter!(
             "mpc_pending_ckds_queue_responses_indexed",
-            "Number of ckd responses indexed by the pending ckds queue"
+            "Number of ckd responses indexed by the pending ckds queue. Note that not all of these may get finalized."
         )
         .unwrap()
     });
@@ -132,7 +116,7 @@ pub static MPC_PENDING_CKDS_QUEUE_MATCHING_RESPONSES_INDEXED: LazyLock<prometheu
         prometheus::register_int_counter!(
             "mpc_pending_ckds_queue_matching_responses_indexed",
             "Number of ckd responses that match previously indexed ckd requests,
-                 indexed by the pending ckds queue"
+                 indexed by the pending ckds queue. Note that not all of these may get finalized."
         )
         .unwrap()
     });
@@ -178,22 +162,15 @@ pub static MPC_PENDING_SIGNATURES_QUEUE_SIZE: LazyLock<prometheus::IntGauge> =
         )
         .unwrap()
     });
-pub static MPC_PENDING_SIGNATURES_QUEUE_BLOCKS_INDEXED: LazyLock<prometheus::IntCounter> =
-    LazyLock::new(|| {
-        prometheus::register_int_counter!(
-            "mpc_pending_signatures_queue_blocks_indexed",
-            "Number of blocks indexed by the pending signatures queue"
-        )
-        .unwrap()
-    });
-pub static MPC_PENDING_SIGNATURES_QUEUE_FINALIZED_BLOCKS_INDEXED: LazyLock<prometheus::IntCounter> =
-    LazyLock::new(|| {
-        prometheus::register_int_counter!(
-            "mpc_pending_signatures_queue_finalized_blocks_indexed",
-            "Number of finalized blocks indexed by the pending signatures queue"
-        )
-        .unwrap()
-    });
+pub static MPC_PENDING_SIGNATURES_QUEUE_FINALIZED_RESPONSES_INDEXED: LazyLock<
+    prometheus::IntCounter,
+> = LazyLock::new(|| {
+    prometheus::register_int_counter!(
+        "mpc_pending_signatures_queue_finalized_responses_indexed",
+        "Number of signature responses that have been finalized, indexed by the pending signatures queue."
+    )
+    .unwrap()
+});
 pub static MPC_PENDING_SIGNATURES_QUEUE_REQUESTS_INDEXED: LazyLock<prometheus::IntCounter> =
     LazyLock::new(|| {
         prometheus::register_int_counter!(
@@ -206,7 +183,7 @@ pub static MPC_PENDING_SIGNATURES_QUEUE_RESPONSES_INDEXED: LazyLock<prometheus::
     LazyLock::new(|| {
         prometheus::register_int_counter!(
             "mpc_pending_signatures_queue_responses_indexed",
-            "Number of signature responses indexed by the pending signatures queue"
+            "Number of signature responses indexed by the pending signatures queue. Note that not all of these may get finalized."
         )
         .unwrap()
     });
@@ -216,7 +193,7 @@ pub static MPC_PENDING_SIGNATURES_QUEUE_MATCHING_RESPONSES_INDEXED: LazyLock<
     prometheus::register_int_counter!(
         "mpc_pending_signatures_queue_matching_responses_indexed",
         "Number of signature responses that match previously indexed signature requests,
-                 indexed by the pending signatures queue"
+                 indexed by the pending signatures queue. Note that not all of these may get finalized."
     )
     .unwrap()
 });

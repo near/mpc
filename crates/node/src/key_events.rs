@@ -5,8 +5,8 @@ use crate::indexer::types::{
 };
 use crate::network::MeshNetworkClient;
 use crate::primitives::{MpcTaskId, ParticipantId};
-use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
 use crate::providers::EcdsaTaskId;
+use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
 use crate::tracking::AutoAbortTaskCollection;
 use crate::{
     config::ParticipantsConfig,
@@ -20,17 +20,17 @@ use crate::{
         CKDProvider, EcdsaSignatureProvider, RobustEcdsaSignatureProvider, SignatureProvider,
     },
 };
-use mpc_primitives::domain::Protocol;
 use mpc_primitives::KeyEventId;
+use mpc_primitives::domain::Protocol;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::DomainConfig;
 use near_mpc_crypto_types::{KeyForDomain, Keyset};
 use std::sync::Arc;
 use std::time::Duration;
 use threshold_signatures::{
-    confidential_key_derivation as ckd, frost_ed25519, frost_secp256k1, ReconstructionLowerBound,
+    ReconstructionLowerBound, confidential_key_derivation as ckd, frost_ed25519, frost_secp256k1,
 };
-use tokio::sync::{mpsc, watch, RwLock};
+use tokio::sync::{RwLock, mpsc, watch};
 use tokio::time::timeout;
 use tracing::{error, info};
 
@@ -724,7 +724,7 @@ mod tests {
     use crate::indexer::tx_sender::{TransactionProcessorError, TransactionStatus};
     use crate::keyshare::KeyStorageConfig;
     use assert_matches::assert_matches;
-    use mpc_primitives::domain::{Curve, DomainId};
+    use mpc_primitives::domain::DomainId;
     use mpc_primitives::{AttemptId, EpochId, KeyEventId};
     use near_mpc_contract_interface::types::{
         DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
@@ -786,8 +786,8 @@ mod tests {
     }
 
     #[test]
-    fn compare_to_expected_key_event_id__should_return_remote_behind_when_ids_match_but_not_started(
-    ) {
+    fn compare_to_expected_key_event_id__should_return_remote_behind_when_ids_match_but_not_started()
+     {
         // Given
         let key_event_id = make_key_event_id(6, 1, 1);
         let instance = make_key_event_instance(key_event_id, false);
@@ -886,7 +886,6 @@ mod tests {
             id: key_event_id,
             domain: DomainConfig {
                 id: key_event_id.domain_id,
-                curve: Curve::Secp256k1,
                 protocol: Protocol::CaitSith,
                 reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,

@@ -2,6 +2,7 @@ use rand::Rng;
 use rand_core::{CryptoRngCore, SeedableRng};
 
 use threshold_signatures::{
+    ReconstructionLowerBound,
     confidential_key_derivation::{
         self as ckd,
         ciphersuite::{Field as _, Group as _},
@@ -9,11 +10,10 @@ use threshold_signatures::{
     frost::eddsa,
     participants::Participant,
     protocol::Protocol,
-    test_utils::{generate_participants_with_random_ids, run_keygen, MockCryptoRng},
-    ReconstructionLowerBound,
+    test_utils::{MockCryptoRng, generate_participants_with_random_ids, run_keygen},
 };
 
-use super::{PreparedPresig, MAX_MALICIOUS};
+use super::{MAX_MALICIOUS, PreparedPresig};
 
 pub type PresignProtocols = Vec<(
     Participant,
@@ -33,7 +33,7 @@ pub fn ed25519_build_presign_protocols<R: CryptoRngCore + SeedableRng + Send + '
             participants,
             *p,
             &eddsa::PresignArguments {
-                keygen_out: keygen_out.clone(),
+                private_share: keygen_out.private_share,
                 threshold,
             },
             rng_p,

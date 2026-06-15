@@ -6,24 +6,25 @@ use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{ParticipantId, UniqueId};
 use crate::protocol::run_protocol;
+use crate::providers::HasParticipants;
 use crate::providers::ecdsa::triple::participants_from_triples;
 use crate::providers::ecdsa::{EcdsaSignatureProvider, EcdsaTaskId, KeygenOutput, TripleStorage};
-use crate::providers::HasParticipants;
 use crate::tracking::AutoAbortTaskCollection;
 use crate::{metrics, tracking};
 use mpc_node_config::PresignatureConfig;
+use mpc_primitives::ReconstructionThreshold;
 use mpc_primitives::domain::DomainId;
 use near_time::Clock;
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::time::Duration;
+use threshold_signatures::ReconstructionLowerBound;
 use threshold_signatures::ecdsa::ot_based_ecdsa::triples::TripleGenerationOutput;
 use threshold_signatures::ecdsa::ot_based_ecdsa::{
-    presign::presign, PresignArguments, PresignOutput,
+    PresignArguments, PresignOutput, presign::presign,
 };
 use threshold_signatures::participants::Participant;
-use threshold_signatures::ReconstructionLowerBound;
 
 #[derive(derive_more::Deref)]
 pub struct PresignatureStorage(DistributedAssetStorage<PresignOutputWithParticipants>);
@@ -42,7 +43,7 @@ impl PresignatureStorage {
             clock,
             db,
             crate::db::DBCol::Presignature,
-            Some(domain_id),
+            domain_id.0.to_be_bytes().to_vec(),
             my_participant_id,
             |participants, presignature| {
                 presignature.is_subset_of_active_participants(participants)
@@ -71,7 +72,7 @@ impl EcdsaSignatureProvider {
         domain_id: DomainId,
         presignature_store: Arc<PresignatureStorage>,
         keygen_out: KeygenOutput,
-    ) {
+    ) -> ! {
         let in_flight_generations = InFlightGenerationTracker::new();
         let progress_tracker = Arc::new(PresignatureGenerationProgressTracker {
             desired_presignatures_to_buffer: config.desired_presignatures_to_buffer,
@@ -171,14 +172,23 @@ impl EcdsaSignatureProvider {
         domain_id: DomainId,
         paired_triple_id: UniqueId,
     ) -> anyhow::Result<()> {
-        id.validate_owned_by(channel.sender().get_leader())?;
+        let leader = channel.sender().get_leader();
+        // Both the new presignature id and the triples it consumes must be
+        // owned by the leader, never one of ours.
+        id.validate_owned_by(leader)?;
+        paired_triple_id.validate_owned_by(leader)?;
         let domain_data = self.domain_data(domain_id)?;
 
-        let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
+        // Triple store to consume from is keyed by the presign's `t`, which
+        // equals the number of presign participants (same as triple
+        // participants — the leader pairs them).
+        let threshold_usize: usize = channel.participants().len();
+        let threshold = ReconstructionThreshold::new(threshold_usize.try_into()?);
+        let triple_store = self.triple_store_for_t(threshold)?;
         FollowerPresignComputation {
-            threshold: ReconstructionLowerBound::from(threshold),
+            threshold: ReconstructionLowerBound::from(threshold_usize),
             keygen_out: domain_data.keyshare,
-            triple_store: self.triple_store.clone(),
+            triple_store,
             paired_triple_id,
             out_presignature_store: domain_data.presignature_store,
             out_presignature_id: id,

@@ -1,4 +1,5 @@
 pub mod contract_configuration;
+pub mod duplicate_requests_fan_out;
 pub mod foreign_chain_configuration;
 pub mod foreign_chain_request;
 pub mod participants_gas;

@@ -1,7 +1,7 @@
 use crate::sandbox::{
     common::{
         call_contract_key_generation, execute_key_generation_and_add_random_state, gen_accounts,
-        init, propose_and_vote_contract_binary, submit_attestations, OldThresholdParameters,
+        init, propose_and_vote_contract_binary, submit_attestations,
     },
     utils::{
         consts::PARTICIPANT_LEN,
@@ -22,10 +22,10 @@ use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use near_mpc_contract_interface::types::{
-    CKDResponse, Curve, DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
+    CKDResponse, DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
 };
 use near_mpc_sdk::sign::SignatureRequestResponse;
-use near_workspaces::{network::Sandbox, Account, Contract, Worker};
+use near_workspaces::{Account, Contract, Worker, network::Sandbox};
 use rand_core::OsRng;
 use rstest::rstest;
 use std::collections::HashSet;
@@ -58,7 +58,7 @@ async fn init_old_contract(
     contract
         .call(method_names::INIT)
         .args_json(serde_json::json!({
-            "parameters": OldThresholdParameters::from(&threshold_parameters),
+            "parameters": &threshold_parameters,
         }))
         .transact()
         .await?
@@ -119,7 +119,7 @@ async fn migrate_and_assert_contract_code(contract: &Contract) -> anyhow::Result
 async fn back_compatibility_without_state(
     #[values(Network::Mainnet, Network::Testnet)] network: Network,
 ) -> anyhow::Result<()> {
-    let worker = near_workspaces::sandbox().await?;
+    let worker = near_workspaces::sandbox_with_version(test_utils::DEFAULT_SANDBOX_VERSION).await?;
 
     let contract = deploy_old(&worker, network).await?;
 
@@ -158,11 +158,15 @@ async fn back_compatibility_without_state(
 async fn propose_upgrade_from_production_to_current_binary(
     #[values(Network::Mainnet, Network::Testnet)] network: Network,
 ) {
-    let worker = near_workspaces::sandbox().await.unwrap();
+    let worker = near_workspaces::sandbox_with_version(test_utils::DEFAULT_SANDBOX_VERSION)
+        .await
+        .unwrap();
     let contract = deploy_old(&worker, network).await.unwrap();
     let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN)
         .await
         .unwrap();
+
+    submit_attestations(&contract, &accounts, &participants).await;
 
     // Add state so migration logic is exercised
     execute_key_generation_and_add_random_state(
@@ -204,7 +208,9 @@ async fn propose_upgrade_from_production_to_current_binary(
 async fn upgrade_preserves_state_and_requests(
     #[values(Network::Mainnet, Network::Testnet)] network: Network,
 ) {
-    let worker = near_workspaces::sandbox().await.unwrap();
+    let worker = near_workspaces::sandbox_with_version(test_utils::DEFAULT_SANDBOX_VERSION)
+        .await
+        .unwrap();
     let contract = deploy_old(&worker, network).await.unwrap();
     let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN)
         .await
@@ -263,7 +269,7 @@ async fn upgrade_preserves_state_and_requests(
 #[tokio::test]
 async fn all_participants_get_valid_mock_attestation_for_soft_launch_upgrade() -> anyhow::Result<()>
 {
-    let worker = near_workspaces::sandbox().await?;
+    let worker = near_workspaces::sandbox_with_version(test_utils::DEFAULT_SANDBOX_VERSION).await?;
     let contract = deploy_old(&worker, Network::Testnet).await?;
 
     let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN).await?;
@@ -327,7 +333,9 @@ async fn upgrade_allows_new_request_types(
 ) {
     let rng = &mut OsRng;
 
-    let worker = near_workspaces::sandbox().await.unwrap();
+    let worker = near_workspaces::sandbox_with_version(test_utils::DEFAULT_SANDBOX_VERSION)
+        .await
+        .unwrap();
     let contract = deploy_old(&worker, network).await.unwrap();
     let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN)
         .await
@@ -366,14 +374,12 @@ async fn upgrade_allows_new_request_types(
     let domains_to_add = [
         DomainConfig {
             id: first_available_domain_id.into(),
-            curve: Curve::Bls12381,
             protocol: Protocol::ConfidentialKeyDerivation,
             reconstruction_threshold: ReconstructionThreshold::new(6),
             purpose: DomainPurpose::CKD,
         },
         DomainConfig {
             id: (first_available_domain_id + 1).into(),
-            curve: Curve::Edwards25519,
             protocol: Protocol::Frost,
             reconstruction_threshold: ReconstructionThreshold::new(6),
             purpose: DomainPurpose::Sign,
@@ -489,7 +495,7 @@ async fn upgrade_preserves_per_node_foreign_chain_support(
 
     // Given: an old contract with participants and per-node foreign chain
     // configurations registered through the deprecated method.
-    let worker = near_workspaces::sandbox().await?;
+    let worker = near_workspaces::sandbox_with_version(test_utils::DEFAULT_SANDBOX_VERSION).await?;
     let contract = deploy_old(&worker, network).await?;
     let (accounts, _participants) =
         init_old_contract(&worker, &contract, per_node_chains.len()).await?;

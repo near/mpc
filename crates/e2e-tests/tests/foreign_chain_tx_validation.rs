@@ -5,13 +5,15 @@ use crate::common;
 use anyhow::{Context, bail};
 use backon::{ConstantBuilder, Retryable};
 use e2e_tests::CLUSTER_WAIT_TIMEOUT;
-use e2e_tests::foreign_chain_mock::{setup_bitcoin_mock, setup_evm_mock, setup_starknet_mock};
+use e2e_tests::foreign_chain_mock::{
+    MockServerExt, setup_bitcoin_mock, setup_evm_mock, setup_starknet_mock,
+};
 use httpmock::prelude::*;
 use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::types::{
-    BitcoinExtractor, BitcoinRpcRequest, BitcoinTxId, BlockConfirmations, Curve, DomainConfig,
-    DomainId, DomainPurpose, EvmExtractor, EvmFinality, EvmRpcRequest, EvmTxId, ForeignChain,
+    BitcoinExtractor, BitcoinRpcRequest, BitcoinTxId, BlockConfirmations, DomainConfig, DomainId,
+    DomainPurpose, EvmExtractor, EvmFinality, EvmRpcRequest, EvmTxId, ForeignChain,
     ForeignChainRpcRequest, ForeignTxPayloadVersion, Protocol, ReconstructionThreshold,
     StarknetExtractor, StarknetFelt, StarknetFinality, StarknetRpcRequest, StarknetTxId,
     VerifyForeignTransactionRequestArgs,
@@ -19,8 +21,11 @@ use near_mpc_contract_interface::types::{
 
 struct ForeignTxTestEnv {
     cluster: e2e_tests::MpcCluster,
-    secp_domain_id: DomainId,
+    foreign_tx_domain_id: DomainId,
     _mock_servers: Vec<MockServer>,
+    /// Polygon is configured with multiple RPC providers so the test can verify
+    /// that `FanOut` queries every one of them.
+    polygon_mocks: Vec<MockServerExt>,
 }
 
 struct MockServerUrls {
@@ -31,7 +36,7 @@ struct MockServerUrls {
     base: String,
     arbitrum: String,
     hyper_evm: String,
-    polygon: String,
+    polygon: Vec<String>,
 }
 
 fn build_foreign_chains_config(urls: &MockServerUrls) -> ForeignChainsConfig {
@@ -116,13 +121,29 @@ fn build_foreign_chains_config(urls: &MockServerUrls) -> ForeignChainsConfig {
         polygon: Some(ForeignChainConfig {
             timeout_sec: NonZeroU64::new(30).unwrap(),
             max_retries: NonZeroU64::new(3).unwrap(),
-            providers: NonEmptyBTreeMap::new(
-                "mock".to_string().into(),
-                ForeignChainProviderConfig {
-                    rpc_url: urls.polygon.clone(),
-                    auth: Default::default(),
-                },
-            ),
+            providers: {
+                let mut iter = urls.polygon.iter().enumerate();
+                let (i, first_url) = iter
+                    .next()
+                    .expect("at least one polygon provider must be configured");
+                let mut providers = NonEmptyBTreeMap::new(
+                    format!("mock-{i}").into(),
+                    ForeignChainProviderConfig {
+                        rpc_url: first_url.clone(),
+                        auth: Default::default(),
+                    },
+                );
+                for (i, url) in iter {
+                    providers.insert(
+                        format!("mock-{i}").into(),
+                        ForeignChainProviderConfig {
+                            rpc_url: url.clone(),
+                            auth: Default::default(),
+                        },
+                    );
+                }
+                providers
+            },
         }),
         ..Default::default()
     }
@@ -136,7 +157,6 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
     let base_server = MockServer::start();
     let arbitrum_server = MockServer::start();
     let hyper_evm_server = MockServer::start();
-    let polygon_server = MockServer::start();
 
     setup_bitcoin_mock(&bitcoin_server);
     setup_evm_mock(&abstract_server);
@@ -145,7 +165,16 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
     setup_evm_mock(&base_server);
     setup_evm_mock(&arbitrum_server);
     setup_evm_mock(&hyper_evm_server);
-    setup_evm_mock(&polygon_server);
+
+    // Polygon is configured with three RPC providers so the test can assert
+    // that `FanOut` queries every one of them.
+    let polygon_mocks: Vec<MockServerExt> = (0..3)
+        .map(|_| {
+            let server = MockServer::start();
+            let mock_id = setup_evm_mock(&server);
+            MockServerExt::new(server, mock_id)
+        })
+        .collect();
 
     let urls = MockServerUrls {
         bitcoin: bitcoin_server.url("/"),
@@ -155,7 +184,7 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
         base: base_server.url("/"),
         arbitrum: arbitrum_server.url("/"),
         hyper_evm: hyper_evm_server.url("/"),
-        polygon: polygon_server.url("/"),
+        polygon: polygon_mocks.iter().map(|m| m.server.url("/")).collect(),
     };
 
     let mock_servers = vec![
@@ -166,7 +195,6 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
         base_server,
         arbitrum_server,
         hyper_evm_server,
-        polygon_server,
     ];
 
     let fc_config = build_foreign_chains_config(&urls);
@@ -177,7 +205,6 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
             c.threshold = 2;
             c.domains = vec![DomainConfig {
                 id: DomainId(0),
-                curve: Curve::Secp256k1,
                 protocol: Protocol::CaitSith,
                 reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::ForeignTx,
@@ -232,18 +259,19 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
         near_mpc_contract_interface::types::ProtocolContractState::Running(r) => r,
         _ => bail!("expected Running state"),
     };
-    let secp_domain_id = running
+    let foreign_tx_domain_id = running
         .domains
         .domains
         .iter()
-        .find(|d| d.curve == Curve::Secp256k1)
-        .context("no Secp256k1 domain")?
+        .find(|d| d.purpose == DomainPurpose::ForeignTx)
+        .context("no ForeignTx domain")?
         .id;
 
     Ok(ForeignTxTestEnv {
         cluster,
-        secp_domain_id,
+        foreign_tx_domain_id,
         _mock_servers: mock_servers,
+        polygon_mocks,
     })
 }
 
@@ -296,7 +324,7 @@ async fn verify_bitcoin(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
             confirmations: BlockConfirmations(1),
             extractors: vec![BitcoinExtractor::BlockHash],
         }),
-        domain_id: env.secp_domain_id,
+        domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
     };
     let outcome = env
@@ -314,7 +342,7 @@ async fn verify_abstract(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
             extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }],
             finality: EvmFinality::Finalized,
         }),
-        domain_id: env.secp_domain_id,
+        domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
     };
     let outcome = env
@@ -332,7 +360,7 @@ async fn verify_bnb(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
             extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }],
             finality: EvmFinality::Finalized,
         }),
-        domain_id: env.secp_domain_id,
+        domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
     };
     let outcome = env
@@ -350,7 +378,7 @@ async fn verify_base(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
             extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }],
             finality: EvmFinality::Finalized,
         }),
-        domain_id: env.secp_domain_id,
+        domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
     };
     let outcome = env
@@ -368,7 +396,7 @@ async fn verify_starknet(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
             finality: StarknetFinality::AcceptedOnL1,
             extractors: vec![StarknetExtractor::BlockHash],
         }),
-        domain_id: env.secp_domain_id,
+        domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
     };
     let outcome = env
@@ -386,7 +414,7 @@ async fn verify_arbitrum(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
             extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }],
             finality: EvmFinality::Finalized,
         }),
-        domain_id: env.secp_domain_id,
+        domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
     };
     let outcome = env
@@ -404,7 +432,7 @@ async fn verify_hyper_evm(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
             extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }],
             finality: EvmFinality::Finalized,
         }),
-        domain_id: env.secp_domain_id,
+        domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
     };
     let outcome = env
@@ -415,6 +443,22 @@ async fn verify_hyper_evm(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
     verify_foreign_tx_response(&outcome)
 }
 
+/// Verifies that every Polygon RPC provider configured in the fan-out received
+/// at least one HTTP request during the preceding `verify_polygon` call.
+///
+/// A regression in `FanOut` (e.g. routing each verify request to a single
+/// provider instead of fanning out to all of them) would leave at least one
+/// mock untouched and this assertion would fail.
+fn assert_fan_out_queried_every_polygon_provider(env: &ForeignTxTestEnv) {
+    for (i, polygon) in env.polygon_mocks.iter().enumerate() {
+        let calls = polygon.calls();
+        assert!(
+            calls > 0,
+            "polygon provider #{i} was not queried by FanOut; expected >= 1 RPC hit, got {calls}"
+        );
+    }
+}
+
 async fn verify_polygon(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
     let request = VerifyForeignTransactionRequestArgs {
         request: ForeignChainRpcRequest::Polygon(EvmRpcRequest {
@@ -422,7 +466,7 @@ async fn verify_polygon(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
             extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }],
             finality: EvmFinality::Finalized,
         }),
-        domain_id: env.secp_domain_id,
+        domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
     };
     let outcome = env
@@ -468,6 +512,7 @@ async fn verify_foreign_transaction__should_sign_all_supported_chains() {
     verify_polygon(&env)
         .await
         .expect("polygon verification failed");
+    assert_fan_out_queried_every_polygon_provider(&env);
 
     // When — requesting Ethereum, which is not in the foreign chain config
     let request = VerifyForeignTransactionRequestArgs {
@@ -476,7 +521,7 @@ async fn verify_foreign_transaction__should_sign_all_supported_chains() {
             extractors: vec![EvmExtractor::BlockHash],
             finality: EvmFinality::Finalized,
         }),
-        domain_id: env.secp_domain_id,
+        domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
     };
     let outcome = env

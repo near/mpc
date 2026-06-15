@@ -1,7 +1,9 @@
 use super::key_state::AuthenticatedParticipantId;
 use crate::errors::{DomainError, Error};
 use crate::primitives::participants::Participants;
-use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, DomainPurpose, Protocol};
+use near_mpc_contract_interface::types::{
+    Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
+};
 use near_sdk::{log, near};
 use std::collections::BTreeMap;
 
@@ -22,19 +24,8 @@ pub fn is_valid_protocol_for_purpose(purpose: DomainPurpose, protocol: Protocol)
     )
 }
 
-/// Validates that a `DomainConfig` is internally consistent:
-///   - `curve` matches the curve derived from `protocol`, and
-///   - `protocol` is allowed for the requested `purpose`.
-pub fn validate_domain_consistency(domain: &DomainConfig) -> Result<(), Error> {
-    let expected = Curve::from(domain.protocol);
-    if domain.curve != expected {
-        return Err(DomainError::InconsistentCurveProtocol {
-            curve: domain.curve,
-            protocol: domain.protocol,
-            expected,
-        }
-        .into());
-    }
+/// Validates that `protocol` is allowed for the requested `purpose`.
+pub fn validate_domain_purpose(domain: &DomainConfig) -> Result<(), Error> {
     if !is_valid_protocol_for_purpose(domain.purpose, domain.protocol) {
         return Err(DomainError::InvalidProtocolPurposeCombination {
             protocol: domain.protocol,
@@ -80,6 +71,26 @@ pub fn validate_domain_threshold(
     Ok(())
 }
 
+/// TODO(#3306): Enforces the 3.11-transition lock: every CaitSith domain (ForeignTx
+/// included) must share a single `reconstruction_threshold`.
+pub fn validate_caitsith_uniform_threshold(domains: &[DomainConfig]) -> Result<(), Error> {
+    let mut expected: Option<u64> = None;
+    for domain in domains {
+        if domain.protocol != Protocol::CaitSith {
+            continue;
+        }
+        let found = domain.reconstruction_threshold.inner();
+        match expected {
+            None => expected = Some(found),
+            Some(expected) if expected != found => {
+                return Err(DomainError::CaitsithThresholdMismatch { expected, found }.into());
+            }
+            Some(_) => {}
+        }
+    }
+    Ok(())
+}
+
 /// All the domains present in the contract, as well as the next domain ID which is kept to ensure
 /// that we never reuse domain IDs. (Domains may be deleted in only one case: when we decided to
 /// add domains but ultimately canceled that process.)
@@ -98,7 +109,8 @@ impl DomainRegistry {
     /// Append `domain` at `next_domain_id`, returning its assigned DomainId.
     /// The caller's `domain.id` is ignored; the registry assigns the id
     /// monotonically. The caller is responsible for any validation
-    /// (curve/protocol consistency, etc.); this helper does no checks.
+    /// (protocol/purpose compatibility, threshold bounds, etc.); this
+    /// helper does no checks.
     fn add_domain(&mut self, domain: DomainConfig) -> DomainId {
         let assigned = DomainConfig {
             id: DomainId(self.next_domain_id),
@@ -116,7 +128,7 @@ impl DomainRegistry {
     pub fn add_domains(&self, domains: Vec<DomainConfig>) -> Result<DomainRegistry, Error> {
         let mut new_registry = self.clone();
         for domain in domains {
-            validate_domain_consistency(&domain)?;
+            validate_domain_purpose(&domain)?;
             let expected_id = domain.id;
             let new_domain_id = new_registry.add_domain(domain);
             if new_domain_id != expected_id {
@@ -145,13 +157,14 @@ impl DomainRegistry {
         self.domains.iter().find(|domain| domain.id == id)
     }
 
-    /// Returns the most recently added domain for the given protocol,
-    /// or None if no such domain exists.
+    /// Returns the most recently added domain for the given curve, or None
+    /// if no such domain exists. The curve is derived from each domain's
+    /// `protocol`.
     pub fn most_recent_domain_for_curve(&self, curve: Curve) -> Option<DomainId> {
         self.domains
             .iter()
             .rev()
-            .find(|domain| domain.curve == curve)
+            .find(|domain| Curve::from(domain.protocol) == curve)
             .map(|domain| domain.id)
     }
 
@@ -168,23 +181,67 @@ impl DomainRegistry {
             next_domain_id,
         };
         for domain in &registry.domains {
-            validate_domain_consistency(domain)?;
+            validate_domain_purpose(domain)?;
         }
         for (left, right) in registry.domains.iter().zip(registry.domains.iter().skip(1)) {
             if left.id.0 >= right.id.0 {
                 return Err(DomainError::InvalidDomains.into());
             }
         }
-        if let Some(largest_domain_id) = registry.domains.last().map(|domain| domain.id.0) {
-            if largest_domain_id >= registry.next_domain_id {
-                return Err(DomainError::InvalidDomains.into());
-            }
+        if let Some(largest_domain_id) = registry.domains.last().map(|domain| domain.id.0)
+            && largest_domain_id >= registry.next_domain_id
+        {
+            return Err(DomainError::InvalidDomains.into());
         }
         Ok(registry)
     }
 
     pub fn next_domain_id(&self) -> u64 {
         self.next_domain_id
+    }
+
+    /// Returns a new registry whose domains have their
+    /// `reconstruction_threshold` rewritten from `threshold_updates`, a sparse
+    /// map of the per-domain reconstruction thresholds a proposal wants to
+    /// change. Domain IDs in `threshold_updates` that are not present in the
+    /// registry are rejected with [`DomainError::UnknownDomainInProposal`].
+    /// Domains absent from `threshold_updates` retain their existing threshold.
+    /// An empty map returns a structurally identical clone (no change).
+    ///
+    /// The resulting registry is re-checked against the 3.11-transition lock
+    /// (see [`validate_caitsith_uniform_threshold`]): because the updates can
+    /// rewrite per-domain thresholds, they could otherwise leave CaitSith
+    /// domains with differing thresholds. This is the authoritative chokepoint
+    /// — no resharing transition can produce a registry that violates the
+    /// invariant.
+    pub fn with_threshold_updates(
+        &self,
+        threshold_updates: &BTreeMap<DomainId, ReconstructionThreshold>,
+    ) -> Result<DomainRegistry, Error> {
+        for id in threshold_updates.keys() {
+            if !self.domains.iter().any(|d| d.id == *id) {
+                return Err(DomainError::UnknownDomainInProposal { domain_id: *id }.into());
+            }
+        }
+        let domains: Vec<DomainConfig> = self
+            .domains
+            .iter()
+            .map(|d| {
+                let reconstruction_threshold = threshold_updates
+                    .get(&d.id)
+                    .copied()
+                    .unwrap_or(d.reconstruction_threshold);
+                DomainConfig {
+                    reconstruction_threshold,
+                    ..d.clone()
+                }
+            })
+            .collect();
+        validate_caitsith_uniform_threshold(&domains)?;
+        Ok(DomainRegistry {
+            domains,
+            next_domain_id: self.next_domain_id,
+        })
     }
 }
 
@@ -238,19 +295,21 @@ impl AddDomainsVotes {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 pub mod tests {
     use super::{
-        is_valid_protocol_for_purpose, validate_domain_consistency, AddDomainsVotes, Curve,
-        DomainConfig, DomainId, DomainPurpose, DomainRegistry, Participants, Protocol,
+        AddDomainsVotes, Curve, DomainConfig, DomainId, DomainPurpose, DomainRegistry,
+        Participants, Protocol, is_valid_protocol_for_purpose, validate_domain_purpose,
     };
     use crate::primitives::key_state::AuthenticatedParticipantId;
     use crate::primitives::test_utils::{
-        gen_participant, gen_participants, infer_purpose_from_curve,
+        gen_participant, gen_participants, infer_purpose_from_protocol,
     };
     use near_mpc_contract_interface::types::ReconstructionThreshold;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
     use rstest::rstest;
+    use std::collections::BTreeMap;
 
     #[test]
     fn test_add_domains() {
@@ -258,14 +317,12 @@ pub mod tests {
         let domains1 = vec![
             DomainConfig {
                 id: DomainId(0),
-                curve: Curve::Secp256k1,
                 protocol: Protocol::CaitSith,
                 reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(1),
-                curve: Curve::Edwards25519,
                 protocol: Protocol::Frost,
                 reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
@@ -277,14 +334,12 @@ pub mod tests {
         let domains2 = vec![
             DomainConfig {
                 id: DomainId(2),
-                curve: Curve::Bls12381,
                 protocol: Protocol::ConfidentialKeyDerivation,
                 reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::CKD,
             },
             DomainConfig {
                 id: DomainId(3),
-                curve: Curve::Secp256k1,
                 protocol: Protocol::DamgardEtAl,
                 reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
@@ -297,7 +352,6 @@ pub mod tests {
         // This fails because the domain ID does not start from next_domain_id.
         let domains3 = vec![DomainConfig {
             id: DomainId(5),
-            curve: Curve::Secp256k1,
             protocol: Protocol::CaitSith,
             reconstruction_threshold: ReconstructionThreshold::new(2),
             purpose: DomainPurpose::Sign,
@@ -308,14 +362,12 @@ pub mod tests {
         let domains4 = vec![
             DomainConfig {
                 id: DomainId(5),
-                curve: Curve::Secp256k1,
                 protocol: Protocol::CaitSith,
                 reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(4),
-                curve: Curve::Secp256k1,
                 protocol: Protocol::CaitSith,
                 reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
@@ -329,28 +381,24 @@ pub mod tests {
         let expected = vec![
             DomainConfig {
                 id: DomainId(0),
-                curve: Curve::Secp256k1,
                 protocol: Protocol::CaitSith,
                 reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(2),
-                curve: Curve::Edwards25519,
                 protocol: Protocol::Frost,
                 reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(3),
-                curve: Curve::Bls12381,
                 protocol: Protocol::ConfidentialKeyDerivation,
                 reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::CKD,
             },
             DomainConfig {
                 id: DomainId(4),
-                curve: Curve::Secp256k1,
                 protocol: Protocol::DamgardEtAl,
                 reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
@@ -376,21 +424,18 @@ pub mod tests {
             vec![
                 DomainConfig {
                     id: DomainId(0),
-                    curve: Curve::Secp256k1,
                     protocol: Protocol::CaitSith,
                     reconstruction_threshold: ReconstructionThreshold::new(2),
                     purpose: DomainPurpose::Sign,
                 },
                 DomainConfig {
                     id: DomainId(2),
-                    curve: Curve::Edwards25519,
                     protocol: Protocol::Frost,
                     reconstruction_threshold: ReconstructionThreshold::new(2),
                     purpose: DomainPurpose::Sign,
                 },
                 DomainConfig {
                     id: DomainId(3),
-                    curve: Curve::Secp256k1,
                     protocol: Protocol::CaitSith,
                     reconstruction_threshold: ReconstructionThreshold::new(2),
                     purpose: DomainPurpose::Sign,
@@ -410,37 +455,15 @@ pub mod tests {
     }
 
     #[rstest]
-    #[case(
-        r#"{"id":3,"curve":"Secp256k1","reconstruction_threshold":2,"purpose":"Sign"}"#,
-        Curve::Secp256k1,
-        DomainPurpose::Sign
-    )]
-    #[case(
-        r#"{"id":1,"curve":"Bls12381","reconstruction_threshold":2,"purpose":"CKD"}"#,
-        Curve::Bls12381,
-        DomainPurpose::CKD
-    )]
-    #[case(
-        r#"{"id":1,"curve":"Edwards25519","reconstruction_threshold":2,"purpose":"Sign"}"#,
-        Curve::Edwards25519,
-        DomainPurpose::Sign
-    )]
-    fn test_deserialize_domain_config(
-        #[case] json: &str,
-        #[case] expected_curve: Curve,
-        #[case] expected_purpose: DomainPurpose,
+    #[case(Protocol::CaitSith, DomainPurpose::Sign)]
+    #[case(Protocol::Frost, DomainPurpose::Sign)]
+    #[case(Protocol::DamgardEtAl, DomainPurpose::Sign)]
+    #[case(Protocol::ConfidentialKeyDerivation, DomainPurpose::CKD)]
+    fn test_infer_purpose_from_protocol(
+        #[case] protocol: Protocol,
+        #[case] expected: DomainPurpose,
     ) {
-        let config: DomainConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(config.curve, expected_curve);
-        assert_eq!(config.purpose, expected_purpose);
-    }
-
-    #[rstest]
-    #[case(Curve::Secp256k1, DomainPurpose::Sign)]
-    #[case(Curve::Edwards25519, DomainPurpose::Sign)]
-    #[case(Curve::Bls12381, DomainPurpose::CKD)]
-    fn test_infer_purpose_from_curve(#[case] curve: Curve, #[case] expected: DomainPurpose) {
-        assert_eq!(infer_purpose_from_curve(curve), expected);
+        assert_eq!(infer_purpose_from_protocol(protocol), expected);
     }
 
     #[rstest]
@@ -465,50 +488,27 @@ pub mod tests {
     }
 
     #[rstest]
-    // Canonical pairings (curve consistent with protocol AND protocol allowed for purpose)
-    #[case(Curve::Secp256k1, Protocol::CaitSith, DomainPurpose::Sign, true)]
-    #[case(Curve::Secp256k1, Protocol::CaitSith, DomainPurpose::ForeignTx, true)]
-    #[case(Curve::Secp256k1, Protocol::DamgardEtAl, DomainPurpose::Sign, true)]
-    #[case(Curve::Edwards25519, Protocol::Frost, DomainPurpose::Sign, true)]
-    #[case(
-        Curve::Bls12381,
-        Protocol::ConfidentialKeyDerivation,
-        DomainPurpose::CKD,
-        true
-    )]
-    // Curve/protocol mismatches
-    #[case(Curve::Secp256k1, Protocol::Frost, DomainPurpose::Sign, false)]
-    #[case(Curve::Edwards25519, Protocol::CaitSith, DomainPurpose::Sign, false)]
-    #[case(Curve::Bls12381, Protocol::DamgardEtAl, DomainPurpose::Sign, false)]
-    // Protocol/purpose mismatches (curve/protocol consistent, but protocol not allowed for purpose)
-    #[case(
-        Curve::Secp256k1,
-        Protocol::DamgardEtAl,
-        DomainPurpose::ForeignTx,
-        false
-    )]
-    #[case(Curve::Edwards25519, Protocol::Frost, DomainPurpose::ForeignTx, false)]
-    #[case(
-        Curve::Bls12381,
-        Protocol::ConfidentialKeyDerivation,
-        DomainPurpose::Sign,
-        false
-    )]
-    #[case(Curve::Secp256k1, Protocol::CaitSith, DomainPurpose::CKD, false)]
-    fn test_domain_consistency(
-        #[case] curve: Curve,
+    #[case(Protocol::CaitSith, DomainPurpose::Sign, true)]
+    #[case(Protocol::CaitSith, DomainPurpose::ForeignTx, true)]
+    #[case(Protocol::DamgardEtAl, DomainPurpose::Sign, true)]
+    #[case(Protocol::Frost, DomainPurpose::Sign, true)]
+    #[case(Protocol::ConfidentialKeyDerivation, DomainPurpose::CKD, true)]
+    #[case(Protocol::DamgardEtAl, DomainPurpose::ForeignTx, false)]
+    #[case(Protocol::Frost, DomainPurpose::ForeignTx, false)]
+    #[case(Protocol::ConfidentialKeyDerivation, DomainPurpose::Sign, false)]
+    #[case(Protocol::CaitSith, DomainPurpose::CKD, false)]
+    fn test_validate_domain_purpose(
         #[case] protocol: Protocol,
         #[case] purpose: DomainPurpose,
         #[case] expected_ok: bool,
     ) {
         let domain = DomainConfig {
             id: DomainId(0),
-            curve,
             protocol,
             reconstruction_threshold: ReconstructionThreshold::new(2),
             purpose,
         };
-        assert_eq!(validate_domain_consistency(&domain).is_ok(), expected_ok);
+        assert_eq!(validate_domain_purpose(&domain).is_ok(), expected_ok);
     }
 
     fn setup_participants(n: usize) -> (Participants, Vec<AuthenticatedParticipantId>) {
@@ -532,7 +532,6 @@ pub mod tests {
     fn sample_proposal() -> Vec<DomainConfig> {
         vec![DomainConfig {
             id: DomainId(0),
-            curve: Curve::Secp256k1,
             protocol: Protocol::CaitSith,
             reconstruction_threshold: ReconstructionThreshold::new(2),
             purpose: DomainPurpose::Sign,
@@ -612,14 +611,12 @@ pub mod tests {
         let (participants, auth_ids) = setup_participants(3);
         let proposal_a = vec![DomainConfig {
             id: DomainId(0),
-            curve: Curve::Secp256k1,
             protocol: Protocol::CaitSith,
             reconstruction_threshold: ReconstructionThreshold::new(2),
             purpose: DomainPurpose::Sign,
         }];
         let proposal_b = vec![DomainConfig {
             id: DomainId(0),
-            curve: Curve::Edwards25519,
             protocol: Protocol::Frost,
             reconstruction_threshold: ReconstructionThreshold::new(2),
             purpose: DomainPurpose::Sign,
@@ -637,5 +634,174 @@ pub mod tests {
         assert_eq!(remaining.proposal_by_account.len(), 2);
         assert_eq!(remaining.proposal_by_account[&auth_ids[0]], proposal_a);
         assert_eq!(remaining.proposal_by_account[&auth_ids[1]], proposal_b);
+    }
+
+    fn registry_of(domains: Vec<DomainConfig>) -> DomainRegistry {
+        let next_domain_id = domains.iter().map(|d| d.id.0).max().map_or(0, |m| m + 1);
+        DomainRegistry::from_raw_validated(domains, next_domain_id).unwrap()
+    }
+
+    #[test]
+    fn with_threshold_updates__should_be_identity_when_updates_is_empty() {
+        // Given a non-empty registry and no threshold updates
+        let registry = registry_of(vec![
+            DomainConfig {
+                id: DomainId(0),
+                protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(3),
+                purpose: DomainPurpose::Sign,
+            },
+            DomainConfig {
+                id: DomainId(1),
+                protocol: Protocol::Frost,
+                reconstruction_threshold: ReconstructionThreshold::new(2),
+                purpose: DomainPurpose::Sign,
+            },
+        ]);
+        let threshold_updates = BTreeMap::new();
+
+        // When applying the threshold updates
+        let result = registry.with_threshold_updates(&threshold_updates).unwrap();
+
+        // Then the registry is structurally identical
+        assert_eq!(result, registry);
+    }
+
+    #[test]
+    fn with_threshold_updates__should_apply_per_domain_updates() {
+        // Given a registry with two domains and threshold updates targeting one
+        let registry = registry_of(vec![
+            DomainConfig {
+                id: DomainId(0),
+                protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(3),
+                purpose: DomainPurpose::Sign,
+            },
+            DomainConfig {
+                id: DomainId(1),
+                protocol: Protocol::Frost,
+                reconstruction_threshold: ReconstructionThreshold::new(2),
+                purpose: DomainPurpose::Sign,
+            },
+        ]);
+        let mut threshold_updates = BTreeMap::new();
+        threshold_updates.insert(DomainId(0), ReconstructionThreshold::new(5));
+
+        // When applying the threshold updates
+        let result = registry.with_threshold_updates(&threshold_updates).unwrap();
+
+        // Then only the targeted domain's threshold changes
+        assert_eq!(
+            result.domains()[0].reconstruction_threshold,
+            ReconstructionThreshold::new(5)
+        );
+        assert_eq!(
+            result.domains()[1].reconstruction_threshold,
+            ReconstructionThreshold::new(2)
+        );
+    }
+
+    #[test]
+    fn with_threshold_updates__should_reject_unknown_domain_id() {
+        // Given a registry with one domain and a threshold update referencing a different ID
+        let registry = registry_of(vec![DomainConfig {
+            id: DomainId(0),
+            protocol: Protocol::CaitSith,
+            reconstruction_threshold: ReconstructionThreshold::new(3),
+            purpose: DomainPurpose::Sign,
+        }]);
+        let mut threshold_updates = BTreeMap::new();
+        threshold_updates.insert(DomainId(42), ReconstructionThreshold::new(5));
+
+        // When applying the threshold updates
+        let err = registry
+            .with_threshold_updates(&threshold_updates)
+            .unwrap_err();
+
+        // Then unknown-domain guard rejects
+        assert!(
+            err.to_string().contains("not in the current registry"),
+            "Expected UnknownDomainInProposal, got: {err}"
+        );
+    }
+
+    #[test]
+    fn with_threshold_updates__should_reject_updates_that_diverge_caitsith_thresholds() {
+        // Given a registry with two CaitSith domains sharing one threshold
+        // (the 3.11-transition lock invariant) and threshold updates that
+        // rewrite only one of them to a different value.
+        let registry = registry_of(vec![
+            DomainConfig {
+                id: DomainId(0),
+                protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(3),
+                purpose: DomainPurpose::Sign,
+            },
+            DomainConfig {
+                id: DomainId(1),
+                protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(3),
+                purpose: DomainPurpose::Sign,
+            },
+        ]);
+        let mut threshold_updates = BTreeMap::new();
+        threshold_updates.insert(DomainId(0), ReconstructionThreshold::new(5));
+
+        // When applying the threshold updates
+        let err = registry
+            .with_threshold_updates(&threshold_updates)
+            .unwrap_err();
+
+        // Then the 3.11-transition lock rejects the divergence
+        assert!(
+            err.to_string().contains("CaitSith threshold mismatch"),
+            "Expected CaitsithThresholdMismatch, got: {err}"
+        );
+    }
+
+    #[test]
+    fn with_threshold_updates__should_accept_updates_that_keep_caitsith_thresholds_uniform() {
+        // Given two CaitSith domains and a Frost domain, with threshold updates
+        // that move both CaitSith domains to the same new threshold.
+        let registry = registry_of(vec![
+            DomainConfig {
+                id: DomainId(0),
+                protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(3),
+                purpose: DomainPurpose::Sign,
+            },
+            DomainConfig {
+                id: DomainId(1),
+                protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(3),
+                purpose: DomainPurpose::Sign,
+            },
+            DomainConfig {
+                id: DomainId(2),
+                protocol: Protocol::Frost,
+                reconstruction_threshold: ReconstructionThreshold::new(2),
+                purpose: DomainPurpose::Sign,
+            },
+        ]);
+        let mut threshold_updates = BTreeMap::new();
+        threshold_updates.insert(DomainId(0), ReconstructionThreshold::new(5));
+        threshold_updates.insert(DomainId(1), ReconstructionThreshold::new(5));
+
+        // When applying the threshold updates
+        let result = registry.with_threshold_updates(&threshold_updates).unwrap();
+
+        // Then both CaitSith domains move together and Frost is untouched
+        assert_eq!(
+            result.domains()[0].reconstruction_threshold,
+            ReconstructionThreshold::new(5)
+        );
+        assert_eq!(
+            result.domains()[1].reconstruction_threshold,
+            ReconstructionThreshold::new(5)
+        );
+        assert_eq!(
+            result.domains()[2].reconstruction_threshold,
+            ReconstructionThreshold::new(2)
+        );
     }
 }

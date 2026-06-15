@@ -121,14 +121,14 @@ impl ProtocolSnapshot {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::SigningShare;
     use crate::ecdsa::{
-        robust_ecdsa::{presign::presign, PresignArguments, PresignOutput},
         KeygenOutput, Polynomial,
+        robust_ecdsa::{PresignArguments, PresignOutput, presign::presign},
     };
     use crate::test_utils::{
-        generate_participants, run_protocol_and_take_snapshots, GenProtocol, MockCryptoRng,
+        GenProtocol, MockCryptoRng, generate_participants, run_protocol_and_take_snapshots,
     };
-    use crate::SigningShare;
     use frost_secp256k1::VerifyingKey;
     use k256::ProjectivePoint;
     use rand::RngCore as _;
@@ -232,9 +232,11 @@ mod test {
         }
 
         // Check the results are the same
-        assert!(results[0]
-            .iter()
-            .all(|(p1, o1)| { results[1].iter().any(|(p2, o2)| p1 == p2 && o1 == o2) }));
+        assert!(
+            results[0]
+                .iter()
+                .all(|(p1, o1)| { results[1].iter().any(|(p2, o2)| p1 == p2 && o1 == o2) })
+        );
 
         // Check the messages sent per participants are the same
         for p in participants {

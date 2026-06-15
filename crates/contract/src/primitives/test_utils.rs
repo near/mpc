@@ -1,17 +1,17 @@
 use super::domain::DomainRegistry;
 use crate::{
-    crypto_shared::types::{serializable::SerializableEdwardsPoint, PublicKeyExtended},
+    crypto_shared::types::{PublicKeyExtended, serializable::SerializableEdwardsPoint},
     primitives::{
         participants::{ParticipantInfo, Participants},
-        thresholds::{Threshold, ThresholdParameters},
+        thresholds::{ProposedThresholdParameters, Threshold, ThresholdParameters},
     },
 };
 use curve25519_dalek::edwards::CompressedEdwardsY;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
-    Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
+    DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
 };
-use rand::{distributions::Uniform, Rng};
+use rand::{Rng, distributions::Uniform};
 use std::collections::BTreeMap;
 // Re-export for convenience
 
@@ -36,13 +36,11 @@ pub fn gen_domain_registry(num_domains: usize) -> DomainRegistry {
     let mut domains = Vec::new();
     for i in 0..num_domains {
         let protocol = ALL_PROTOCOLS[i % ALL_PROTOCOLS.len()];
-        let curve = Curve::from(protocol);
         domains.push(DomainConfig {
             id: DomainId(i as u64 * 2),
-            curve,
             protocol,
             reconstruction_threshold: DEFAULT_TEST_RECONSTRUCTION_THRESHOLD,
-            purpose: infer_purpose_from_curve(curve),
+            purpose: infer_purpose_from_protocol(protocol),
         });
     }
     DomainRegistry::from_raw_validated(domains, num_domains as u64 * 2).unwrap()
@@ -53,13 +51,11 @@ pub fn gen_domains_to_add(registry: &DomainRegistry, num_domains: usize) -> Vec<
     let mut new_domains = Vec::new();
     for i in 0..num_domains {
         let protocol = ALL_PROTOCOLS[i % ALL_PROTOCOLS.len()];
-        let curve = Curve::from(protocol);
         new_domains.push(DomainConfig {
             id: DomainId(registry.next_domain_id() + i as u64),
-            curve,
             protocol,
             reconstruction_threshold: DEFAULT_TEST_RECONSTRUCTION_THRESHOLD,
-            purpose: infer_purpose_from_curve(curve),
+            purpose: infer_purpose_from_protocol(protocol),
         });
     }
     new_domains
@@ -167,11 +163,18 @@ pub fn gen_threshold_params(max_n: usize) -> ThresholdParameters {
     ThresholdParameters::new(gen_participants(n), Threshold::new(k as u64)).unwrap()
 }
 
-/// Infer a default purpose from the curve.
+/// Like [`gen_threshold_params`] but wrapped as a proposal with an empty
+/// (no-change) set of per-domain threshold updates — the shape
+/// `vote_new_parameters` accepts.
+pub fn gen_proposed_threshold_params(max_n: usize) -> ProposedThresholdParameters {
+    ProposedThresholdParameters::new(gen_threshold_params(max_n), BTreeMap::new())
+}
+
+/// Infer a default purpose from the protocol.
 /// Used during migration from old state that lacks the `purpose` field.
-pub fn infer_purpose_from_curve(curve: Curve) -> DomainPurpose {
-    match curve {
-        Curve::Bls12381 => DomainPurpose::CKD,
-        _ => DomainPurpose::Sign,
+pub fn infer_purpose_from_protocol(protocol: Protocol) -> DomainPurpose {
+    match protocol {
+        Protocol::ConfidentialKeyDerivation => DomainPurpose::CKD,
+        Protocol::CaitSith | Protocol::Frost | Protocol::DamgardEtAl => DomainPurpose::Sign,
     }
 }

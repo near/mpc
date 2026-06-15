@@ -1,12 +1,12 @@
 #![allow(clippy::indexing_slicing)]
 
-use criterion::{criterion_group, Criterion};
+use criterion::{Criterion, criterion_group};
 mod bench_utils;
 use crate::bench_utils::{
-    robust_ecdsa_prepare_presign, robust_ecdsa_prepare_sign, MAX_MALICIOUS, SAMPLE_SIZE,
+    MAX_MALICIOUS, SAMPLE_SIZE, robust_ecdsa_prepare_presign, robust_ecdsa_prepare_sign,
 };
 use rand_core::SeedableRng;
-use threshold_signatures::test_utils::{run_protocol, MockCryptoRng};
+use threshold_signatures::test_utils::{MockCryptoRng, run_protocol};
 
 fn participants_num() -> usize {
     2 * *MAX_MALICIOUS + 1

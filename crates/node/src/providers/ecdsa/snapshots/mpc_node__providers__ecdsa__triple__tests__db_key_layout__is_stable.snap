@@ -1,0 +1,5 @@
+---
+source: crates/node/src/providers/ecdsa/triple.rs
+expression: "format!(\"v2_key: {}\", hex::encode(&v2_key))"
+---
+v2_key: 0102030405060708aabbccdd1122334455667788deadbeef

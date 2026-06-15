@@ -4,7 +4,7 @@ use mpc_node_config::{ConfigFile, DownloadConfigType, NearInitConfig, StartConfi
 use near_mpc_bounded_collections::NonEmptyVec;
 use std::path::Path;
 use tee_authority::tee_authority::{
-    validate_pccs_endpoints, DstackTeeAuthorityConfig, LocalTeeAuthorityConfig, TeeAuthority,
+    DstackTeeAuthorityConfig, LocalTeeAuthorityConfig, TeeAuthority, validate_pccs_endpoints,
 };
 
 pub trait TeeAuthorityImpl {
@@ -56,6 +56,8 @@ impl StartConfigExt for StartConfig {
             tracing::info!("NEAR node already initialized, skipping init");
             return Ok(());
         }
+
+        require_tier3_public_addr(near_init)?;
 
         tracing::info!(chain_id = %near_init.chain_id, "initializing NEAR node");
         run_near_init(near_init, &self.home_dir)?;
@@ -124,6 +126,23 @@ fn convert_download_config(dt: DownloadConfigType) -> near_config_utils::Downloa
     }
 }
 
+/// Decentralized state sync requires the node to advertise a reachable
+/// address; without it the node may advertise an unreachable (e.g.
+/// NAT/SLIRP-internal) address and state sync stalls silently. Enforced at
+/// first init only — existing nodes (whose `config.json` already exists) are
+/// grandfathered.
+fn require_tier3_public_addr(near_init: &NearInitConfig) -> anyhow::Result<()> {
+    if !near_init.chain_id.is_localnet() && near_init.tier3_public_addr.is_none() {
+        anyhow::bail!(
+            "tier3_public_addr must be set for {} state sync: decentralized state \
+             sync needs a reachable advertised IP:24567. Set tier3_public_addr in \
+             [mpc_node_config.near_init].",
+            near_init.chain_id
+        );
+    }
+    Ok(())
+}
+
 /// Applies post-init patches to the NEAR node `config.json`, matching the
 /// behaviour of `update_near_node_config()` in `start.sh`.
 fn patch_near_config(
@@ -138,27 +157,8 @@ fn patch_near_config(
     let mut config: serde_json::Value =
         serde_json::from_str(&raw).context("failed to parse NEAR config.json")?;
 
-    config["store"]["load_mem_tries_for_tracked_shards"] = serde_json::Value::Bool(true);
-
-    let is_localnet = near_init.chain_id.is_localnet();
-    if is_localnet {
-        config["state_sync_enabled"] = serde_json::Value::Bool(false);
-    } else {
-        config["state_sync"]["sync"]["ExternalStorage"]["external_storage_fallback_threshold"] =
-            serde_json::json!(0);
-    }
-
-    // Track the shard that hosts the MPC contract.
     let contract_id = node_config.indexer.mpc_contract_id.to_string();
-    config["tracked_shards_config"] = serde_json::json!({ "Accounts": [contract_id] });
-
-    // Override listen addresses when running multiple nodes on one machine.
-    if let Some(rpc_addr) = &near_init.rpc_addr {
-        config["rpc"]["addr"] = serde_json::Value::String(rpc_addr.clone());
-    }
-    if let Some(network_addr) = &near_init.network_addr {
-        config["network"]["addr"] = serde_json::Value::String(network_addr.clone());
-    }
+    apply_near_config_patches(&mut config, near_init, &contract_id);
 
     let patched =
         serde_json::to_string_pretty(&config).context("failed to re-serialize NEAR config.json")?;
@@ -167,4 +167,264 @@ fn patch_near_config(
 
     tracing::info!("NEAR node config.json patched successfully");
     Ok(())
+}
+
+/// Pure JSON-manipulation half of [`patch_near_config`], extracted so it can
+/// be unit-tested without filesystem I/O or constructing a full `ConfigFile`.
+fn apply_near_config_patches(
+    config: &mut serde_json::Value,
+    near_init: &NearInitConfig,
+    mpc_contract_id: &str,
+) {
+    config["store"]["load_mem_tries_for_tracked_shards"] = serde_json::Value::Bool(true);
+
+    if near_init.chain_id.is_localnet() {
+        config["state_sync_enabled"] = serde_json::Value::Bool(false);
+    } else {
+        // Decentralized (peer-to-peer) state sync; replaces any inherited ExternalStorage block.
+        config["state_sync"]["sync"] = serde_json::json!("Peers");
+    }
+
+    // Track the shard that hosts the MPC contract.
+    config["tracked_shards_config"] = serde_json::json!({ "Accounts": [mpc_contract_id] });
+
+    // Override listen addresses when running multiple nodes on one machine.
+    if let Some(rpc_addr) = &near_init.rpc_addr {
+        config["rpc"]["addr"] = serde_json::Value::String(rpc_addr.to_string());
+    }
+    if let Some(network_addr) = &near_init.network_addr {
+        config["network"]["addr"] = serde_json::Value::String(network_addr.to_string());
+    }
+    if let Some(tier3) = &near_init.tier3_public_addr {
+        config["network"]["experimental"]["tier3_public_addr"] =
+            serde_json::Value::String(tier3.to_string());
+    }
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)] // tests follow `<system_under_test>__should_<assertion>` convention
+mod tests {
+    use super::*;
+    use mpc_node_config::ChainId;
+
+    fn near_init(chain_id: ChainId) -> NearInitConfig {
+        NearInitConfig {
+            chain_id,
+            boot_nodes: None,
+            genesis_path: None,
+            download_config: None,
+            download_config_url: None,
+            download_genesis: false,
+            download_genesis_url: None,
+            download_genesis_records_url: None,
+            rpc_addr: None,
+            network_addr: None,
+            tier3_public_addr: None,
+        }
+    }
+
+    fn empty_config_json() -> serde_json::Value {
+        serde_json::json!({
+            "store": {},
+            "network": {},
+            "rpc": {},
+            "state_sync": { "sync": { "ExternalStorage": {} } }
+        })
+    }
+
+    #[test]
+    fn apply_near_config_patches__should_set_load_mem_tries() {
+        // Given
+        let mut config = empty_config_json();
+        let init = near_init(ChainId::Testnet);
+
+        // When
+        apply_near_config_patches(&mut config, &init, "v1.signer-prod.testnet");
+
+        // Then
+        assert_eq!(
+            config["store"]["load_mem_tries_for_tracked_shards"],
+            serde_json::json!(true)
+        );
+    }
+
+    #[test]
+    fn apply_near_config_patches__should_set_tracked_shards_to_contract_account() {
+        // Given
+        let mut config = empty_config_json();
+        let init = near_init(ChainId::Testnet);
+
+        // When
+        apply_near_config_patches(&mut config, &init, "v1.signer-prod.testnet");
+
+        // Then
+        assert_eq!(
+            config["tracked_shards_config"],
+            serde_json::json!({ "Accounts": ["v1.signer-prod.testnet"] })
+        );
+    }
+
+    #[test]
+    fn apply_near_config_patches__should_set_network_and_rpc_addr_when_provided() {
+        // Given
+        let mut config = empty_config_json();
+        let mut init = near_init(ChainId::Testnet);
+        init.network_addr = Some("51.68.219.13:24567".parse().unwrap());
+        init.rpc_addr = Some("0.0.0.0:13030".parse().unwrap());
+
+        // When
+        apply_near_config_patches(&mut config, &init, "v1.signer-prod.testnet");
+
+        // Then
+        assert_eq!(
+            config["network"]["addr"],
+            serde_json::json!("51.68.219.13:24567")
+        );
+        assert_eq!(config["rpc"]["addr"], serde_json::json!("0.0.0.0:13030"));
+    }
+
+    #[test]
+    fn apply_near_config_patches__should_preserve_existing_network_and_rpc_addr_when_unset() {
+        // Given — pre-populate network/rpc addr so we can prove the function
+        // leaves them alone when the operator hasn't set the override.
+        let mut config = empty_config_json();
+        config["network"]["addr"] = serde_json::json!("downloaded-network-addr:24567");
+        config["rpc"]["addr"] = serde_json::json!("downloaded-rpc-addr:3030");
+        let init = near_init(ChainId::Testnet);
+
+        // When
+        apply_near_config_patches(&mut config, &init, "v1.signer-prod.testnet");
+
+        // Then — sentinels survive (don't-clobber-downloaded-config contract).
+        assert_eq!(
+            config["network"]["addr"],
+            serde_json::json!("downloaded-network-addr:24567")
+        );
+        assert_eq!(
+            config["rpc"]["addr"],
+            serde_json::json!("downloaded-rpc-addr:3030")
+        );
+    }
+
+    #[test]
+    fn apply_near_config_patches__should_disable_state_sync_for_localnet() {
+        // is_localnet() returns true for both Localnet and Sandbox; cover both
+        // so a future split of the variants doesn't silently regress one arm.
+        for chain_id in [ChainId::Localnet, ChainId::Sandbox] {
+            // Given — pre-populate sync with a sentinel so the negative
+            // assertion below is meaningful (otherwise the test passes even if
+            // the function does nothing).
+            let mut config = empty_config_json();
+            config["state_sync"]["sync"] = serde_json::json!("SENTINEL");
+            let init = near_init(chain_id);
+
+            // When
+            apply_near_config_patches(&mut config, &init, "mpc-contract.test.near");
+
+            // Then
+            assert_eq!(config["state_sync_enabled"], serde_json::json!(false));
+            // Localnet branch must not touch sync — sentinel survives.
+            assert_eq!(config["state_sync"]["sync"], serde_json::json!("SENTINEL"));
+        }
+    }
+
+    #[test]
+    fn apply_near_config_patches__should_set_sync_to_peers_for_non_localnet() {
+        // Given
+        let mut config = empty_config_json();
+        let init = near_init(ChainId::Testnet);
+
+        // When
+        apply_near_config_patches(&mut config, &init, "v1.signer-prod.testnet");
+
+        // Then — non-localnet uses decentralized (peer-to-peer) state sync.
+        assert_eq!(config["state_sync"]["sync"], serde_json::json!("Peers"));
+    }
+
+    #[test]
+    fn apply_near_config_patches__should_replace_external_storage_block_with_peers() {
+        // Given — a downloaded config that ships an ExternalStorage block.
+        let mut config = empty_config_json();
+        config["state_sync"]["sync"] = serde_json::json!({
+            "ExternalStorage": {
+                "location": { "GCS": { "bucket": "near-state-parts" } },
+                "external_storage_fallback_threshold": 3
+            }
+        });
+        let init = near_init(ChainId::Mainnet);
+
+        // When
+        apply_near_config_patches(&mut config, &init, "v1.signer");
+
+        // Then — the whole block is replaced by the `Peers` variant.
+        assert_eq!(config["state_sync"]["sync"], serde_json::json!("Peers"));
+    }
+
+    #[test]
+    fn apply_near_config_patches__should_set_tier3_public_addr_when_provided() {
+        // Given
+        let mut config = empty_config_json();
+        let mut init = near_init(ChainId::Testnet);
+        init.tier3_public_addr = Some("46.105.87.136:24567".parse().unwrap());
+
+        // When
+        apply_near_config_patches(&mut config, &init, "v1.signer-prod.testnet");
+
+        // Then
+        assert_eq!(
+            config["network"]["experimental"]["tier3_public_addr"],
+            serde_json::json!("46.105.87.136:24567")
+        );
+    }
+
+    #[test]
+    fn apply_near_config_patches__should_omit_tier3_public_addr_when_unset() {
+        // Given
+        let mut config = empty_config_json();
+        let init = near_init(ChainId::Testnet);
+
+        // When
+        apply_near_config_patches(&mut config, &init, "v1.signer-prod.testnet");
+
+        // Then
+        assert!(
+            config["network"]["experimental"]
+                .get("tier3_public_addr")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn require_tier3_public_addr__should_err_for_non_localnet_when_unset() {
+        // Given
+        let init = near_init(ChainId::Testnet);
+
+        // When
+        let result = require_tier3_public_addr(&init);
+
+        // Then
+        let err = result.expect_err("non-localnet without tier3_public_addr must fail");
+        assert!(err.to_string().contains("tier3_public_addr"));
+    }
+
+    #[test]
+    fn require_tier3_public_addr__should_ok_for_non_localnet_when_set() {
+        // Given
+        let mut init = near_init(ChainId::Mainnet);
+        init.tier3_public_addr = Some("203.0.113.10:24567".parse().unwrap());
+
+        // When / Then
+        require_tier3_public_addr(&init).expect("set tier3_public_addr must pass");
+    }
+
+    #[test]
+    fn require_tier3_public_addr__should_ok_for_localnet_when_unset() {
+        // Given — localnet disables state sync, so tier3 is irrelevant.
+        for chain_id in [ChainId::Localnet, ChainId::Sandbox] {
+            let init = near_init(chain_id);
+
+            // When / Then
+            require_tier3_public_addr(&init).expect("localnet must not require tier3_public_addr");
+        }
+    }
 }

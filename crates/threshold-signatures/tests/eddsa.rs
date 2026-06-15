@@ -2,21 +2,20 @@
 mod common;
 
 use common::{
-    choose_coordinator_at_random, generate_participants, run_keygen, run_protocol, run_reshare,
-    GenProtocol,
+    GenProtocol, choose_coordinator_at_random, generate_participants, run_keygen, run_protocol,
+    run_reshare,
 };
 
 use rand_core::OsRng;
 
 use threshold_signatures::{
-    self,
+    self, ReconstructionLowerBound,
     frost::eddsa::{
-        sign::{sign_v1, sign_v2},
         Ed25519Sha512, PresignOutput, SignatureOption,
+        sign::{sign_v1, sign_v2},
     },
     participants::Participant,
     test_utils::frost_run_presignature,
-    ReconstructionLowerBound,
 };
 
 type C = Ed25519Sha512;

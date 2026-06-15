@@ -20,7 +20,7 @@ use mpc_contract::{
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
-    Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
+    DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
 };
 use near_sdk::Gas;
 use near_workspaces::{Account, Contract};
@@ -259,7 +259,9 @@ async fn setup_test_env_running(n_participants: usize) -> TestEnv {
 }
 
 async fn setup_test_env_with_state(n_participants: usize, running_state: bool) -> TestEnv {
-    let worker = near_workspaces::sandbox().await.unwrap();
+    let worker = near_workspaces::sandbox_with_version(test_utils::DEFAULT_SANDBOX_VERSION)
+        .await
+        .unwrap();
     let wasm = current_contract_with_bench_methods();
     let contract = worker.dev_deploy(wasm).await.unwrap();
     let account_ids: Vec<AccountId> = (0..n_participants)
@@ -273,7 +275,6 @@ async fn setup_test_env_with_state(n_participants: usize, running_state: bool) -
         let domain_id = DomainId(0);
         let domain = DomainConfig {
             id: domain_id,
-            curve: Curve::Secp256k1,
             protocol: Protocol::CaitSith,
             reconstruction_threshold: ReconstructionThreshold::new(2),
             purpose: DomainPurpose::Sign,

@@ -32,7 +32,7 @@ cleanup() {
   echo "Running clean-up"
   read -rp "Press Enter to tear-down the processes..."
   for pid in "${pids[@]}"; do
-    kill_process "${pid}"
+    kill_process "${pid}" || true
   done
 
   read -rp "Press Enter to delete the logs..."
@@ -174,9 +174,9 @@ EOF
     NODE_PUBKEY=$(curl -s localhost:$((BASE_WEB_UI_PORT + i))/public_data | jq -r ".near_signer_public_key")
     NODE_RESPONDER_KEY=$(curl -s localhost:$((BASE_WEB_UI_PORT + i))/public_data | jq -r ".near_responder_public_keys[0]")
 
-    NODE_METHODS="respond,respond_ckd,respond_verify_foreign_tx,vote_pk,start_keygen_instance,vote_reshared,register_foreign_chain_config,start_reshare_instance,vote_abort_key_event_instance,verify_tee,submit_participant_info,conclude_node_migration"
-    run_quiet_on_success "near account add-key $node_name grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names \"$NODE_METHODS\" use-manually-provided-public-key \"$NODE_PUBKEY\" network-config mpc-localnet sign-with-keychain send" && \
-    run_quiet_on_success "near account add-key $node_name grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names \"$NODE_METHODS\" use-manually-provided-public-key \"$NODE_RESPONDER_KEY\" network-config mpc-localnet sign-with-keychain send" &
+    # Function-call key scoped to the MPC contract; empty --function-names allows all methods.
+    run_quiet_on_success "near account add-key $node_name grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names '' use-manually-provided-public-key \"$NODE_PUBKEY\" network-config mpc-localnet sign-with-keychain send" && \
+    run_quiet_on_success "near account add-key $node_name grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names '' use-manually-provided-public-key \"$NODE_RESPONDER_KEY\" network-config mpc-localnet sign-with-keychain send" &
     pids_adding_keys+=($!)
   done
 
@@ -264,21 +264,47 @@ require_cmds() {
   [[ "${missing}" -eq 0 ]] || die "Please install the missing dependencies above."
 }
 
+# Send SIGTERM, wait up to GRACE seconds, then escalate to SIGKILL. mpc-node
+# now handles SIGTERM with a graceful shutdown that can be slow or hang, so a
+# single SIGTERM is no longer enough to reliably stop a node.
 kill_process() {
   local pid="$1"
+  local grace="${2:-5}"
 
   if [[ -z "$pid" ]]; then
     echo "Error: No PID provided." >&2
     return 1
   fi
 
-  if kill -0 "$pid" 2>/dev/null; then
-    echo "Killing process $pid..."
-    kill "$pid"
-    echo "Process $pid terminated." >&2
-  else
+  if ! kill -0 "$pid" 2>/dev/null; then
     echo "Warning: Process $pid does not exist. Skipping." >&2
+    return 0
   fi
+
+  echo "Sending SIGTERM to $pid (grace ${grace}s)..."
+  kill "$pid" 2>/dev/null || true
+
+  for ((s = 0; s < grace; s++)); do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      echo "Process $pid exited gracefully." >&2
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo "Process $pid still alive after ${grace}s; sending SIGKILL." >&2
+  kill -9 "$pid" 2>/dev/null || true
+
+  # A direct child lingers as a zombie until bash reaps it, so poll briefly
+  # before concluding the process actually survived SIGKILL.
+  for ((s = 0; s < 5; s++)); do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo "Warning: Process $pid still alive after SIGKILL." >&2
 }
 
 run_bg() {

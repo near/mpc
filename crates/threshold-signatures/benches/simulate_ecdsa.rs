@@ -7,6 +7,7 @@ mod bench_utils;
 use bench_utils::split_even_odd;
 
 use threshold_signatures::{
+    MaxMalicious, ReconstructionLowerBound,
     ecdsa::{
         self,
         ot_based_ecdsa::{self, triples::generate_triple_many},
@@ -15,10 +16,10 @@ use threshold_signatures::{
     participants::Participant,
     protocol::Protocol,
     test_utils::{
-        bench_simulation, ecdsa_generate_rerandpresig_args, generate_participants_with_random_ids,
-        run_keygen, run_simulation, BenchConfig, LatencyModel, MockCryptoRng, SimulationMetrics,
+        BenchConfig, LatencyModel, MockCryptoRng, SimulationMetrics, bench_simulation,
+        ecdsa_generate_rerandpresig_args, generate_participants_with_random_ids, run_keygen,
+        run_simulation,
     },
-    MaxMalicious, ReconstructionLowerBound,
 };
 
 type TriplePair = (
@@ -203,7 +204,7 @@ fn ot_run_triples(
         Vec::with_capacity(participants.len());
     for &p in participants {
         let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
-        let protocol = generate_triple_many::<2>(participants, p, threshold, rng_p)
+        let protocol = generate_triple_many::<2, _, _>(participants, p, threshold, rng_p)
             .expect("Triple generation should succeed");
         protocols.push((p, Box::new(protocol)));
     }

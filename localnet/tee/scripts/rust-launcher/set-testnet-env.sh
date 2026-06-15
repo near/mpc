@@ -14,10 +14,13 @@
 # a few times to consolidate ~30 NEAR onto it.
 export FUNDER_ACCOUNT="<your-funder>.testnet"
 
-# Manifest digest of the mpc-node image to deploy and vote in. Must match
-# the DEFAULT_IMAGE_DIGEST in deployment/cvm-deployment/launcher_docker_compose.yaml.
+# Manifest digest of the mpc-node image to deploy and vote in.
 # Get with: docker pull nearone/mpc-node:<tag> 2>&1 | grep Digest
 export MPC_MANIFEST_DIGEST="sha256:<digest>"
+
+# Manifest digest of the mpc-launcher image to deploy and vote in.
+# Get with: docker pull nearone/mpc-launcher:<tag> 2>&1 | grep Digest
+export LAUNCHER_MANIFEST_DIGEST="sha256:<digest>"
 
 # --- Cluster sizing ---
 
@@ -48,8 +51,18 @@ export VMM_RPC=http://127.0.0.1:10000
 export ROOT_INITIAL_BALANCE="20 NEAR"
 # (CONTRACT_INITIAL_BALANCE and NODE_INITIAL_BALANCE use the script's
 # defaults — 16 NEAR contract, 1 NEAR per node.)
+#
+# If you plan to run `test-migration.sh both` against this cluster, bump:
+#   export NODE_INITIAL_BALANCE="10 NEAR"     # was 1 NEAR by default
+#   export ROOT_INITIAL_BALANCE="45 NEAR"     # 16 contract + 2*10 nodes + buffer
+# Migration drives ~5 operator txns per node (add-key x2 for the target,
+# register_backup_service, start_node_migration, plus retries), and 1 NEAR
+# runs out mid-test. Cost note for testnet: real NEAR, not free —
+# expect ~25–30 NEAR per full prepare + forward + back cycle. The faucet
+# caps at ~10 NEAR per account, so you'll need to top up `$FUNDER_ACCOUNT`
+# via `create-and-sweep-to-treasury.sh` a few times before starting.
 
-# --- Image reference (no tag — manifest digest comes from the launcher compose) ---
+# --- Image reference (no tag — manifest digest is voted in separately) ---
 
 export MPC_IMAGE=nearone/mpc-node
 

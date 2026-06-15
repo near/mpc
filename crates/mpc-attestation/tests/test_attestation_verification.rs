@@ -2,8 +2,8 @@ use assert_matches::assert_matches;
 use attestation::attestation::VerificationError;
 use attestation::measurements::{ExpectedMeasurements, Measurements};
 use mpc_attestation::attestation::{
-    Attestation, DEFAULT_EXPIRATION_DURATION_SECONDS, MockAttestation, VerifiedAttestation,
-    default_measurements,
+    AcceptedAttestation, Attestation, DEFAULT_EXPIRATION_DURATION_SECONDS, MockAttestation,
+    VerifiedAttestation, default_measurements,
 };
 use mpc_attestation::report_data::{ReportData, ReportDataV1};
 use test_utils::attestation::{
@@ -22,7 +22,10 @@ fn valid_mock_attestation_succeeds_verification() {
 
     assert_matches!(
         valid_attestation.verify(report_data.into(), timestamp_s, &[], &[], &[]),
-        Ok(VerifiedAttestation::Mock(MockAttestation::Valid))
+        Ok(AcceptedAttestation {
+            attestation: VerifiedAttestation::Mock(MockAttestation::Valid),
+            advisory_ids,
+        }) if advisory_ids.is_empty()
     );
 }
 
@@ -60,7 +63,8 @@ fn validated_dstack_attestation_can_be_reverified() {
             &allowed_launcher_hashes,
             default_measurements(),
         )
-        .expect("Initial verification failed");
+        .expect("Initial verification failed")
+        .attestation;
 
     // when
     let re_verification_result = validated.re_verify(
@@ -93,7 +97,8 @@ fn validated_dstack_attestation_fails_reverification_when_expired() {
             &allowed_launcher_hashes,
             default_measurements(),
         )
-        .expect("Initial verification failed");
+        .expect("Initial verification failed")
+        .attestation;
 
     // when
     let re_verification_result = validated.re_verify(
@@ -119,7 +124,8 @@ fn validated_mock_attestation_passes_reverification() {
 
     let validated = valid_attestation
         .verify(report_data.into(), 0, &[], &[], &[])
-        .expect("Initial verification failed");
+        .expect("Initial verification failed")
+        .attestation;
 
     // Mock should generally pass re-verify
     assert_matches!(validated.re_verify(100, &[], &[], &[]), Ok(()));
@@ -145,7 +151,8 @@ fn validated_dstack_attestation_fails_reverification_with_rotated_hashes() {
             &allowed_launcher_hashes,
             default_measurements(),
         )
-        .expect("Initial verification should succeed");
+        .expect("Initial verification should succeed")
+        .attestation;
 
     let new_allowed_mpc_docker_image_hashes = [[42; 32].into()];
 
@@ -183,7 +190,8 @@ fn validated_dstack_attestation_fails_reverification_with_removed_measurements()
             &allowed_launcher_hashes,
             default_measurements(),
         )
-        .expect("Initial verification should succeed");
+        .expect("Initial verification should succeed")
+        .attestation;
 
     let different_measurements = [ExpectedMeasurements {
         rtmrs: Measurements {
@@ -226,7 +234,8 @@ fn validated_dstack_attestation_fails_reverification_with_empty_measurements() {
             &allowed_launcher_hashes,
             default_measurements(),
         )
-        .expect("Initial verification should succeed");
+        .expect("Initial verification should succeed")
+        .attestation;
 
     // when
     let result = validated.re_verify(
@@ -259,7 +268,8 @@ fn validated_dstack_attestation_passes_reverification_with_superset_measurements
             &allowed_launcher_hashes,
             default_measurements(),
         )
-        .expect("Initial verification should succeed");
+        .expect("Initial verification should succeed")
+        .attestation;
 
     let extra_measurement = ExpectedMeasurements {
         rtmrs: Measurements {

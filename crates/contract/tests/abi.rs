@@ -27,7 +27,7 @@ fn compile_project() -> (Vec<u8>, serde_json::Value) {
 #[tokio::test]
 async fn test_embedded_abi() -> anyhow::Result<()> {
     let (wasm, _abi) = compile_project();
-    let worker = near_workspaces::sandbox().await?;
+    let worker = near_workspaces::sandbox_with_version(test_utils::DEFAULT_SANDBOX_VERSION).await?;
     let contract = worker.dev_deploy(&wasm).await?;
 
     let res = contract.view("__contract_abi").await?;
@@ -47,6 +47,7 @@ fn test_abi_has_not_changed() {
     insta::assert_json_snapshot!(abi,
         {
         ".metadata.wasm_hash" => "[WASM_HASH]",
-        ".metadata.build.builder" => "[CARGO_NEAR_BUILD_VERSION]"
+        ".metadata.build.builder" => "[CARGO_NEAR_BUILD_VERSION]",
+        ".metadata.build.compiler" => "[RUSTC_VERSION]"
     });
 }

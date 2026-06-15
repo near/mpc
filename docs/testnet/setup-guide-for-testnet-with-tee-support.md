@@ -140,6 +140,8 @@ near account create-account sponsor-by-faucet-service $SAM_ACCOUNT autogenerate-
 
 ### Update Bootnodes and IPs
 
+> See [Running multiple MPC nodes on one host](../running-multiple-mpc-nodes-on-one-host.md) for the general framing of why each node needs its own host IP.
+
 Run this command to get the current testnet bootnodes.
 **Important:** Boot nodes must not contain duplicate addresses or peer IDs, as duplicates will cause the node to crash on startup. The command below deduplicates automatically:
 
@@ -254,23 +256,26 @@ export SAM_P2P_KEY=$(curl -s http://$SERVER_IP_2:18082/public_data | jq -r '.nea
 
 Add keys to each NEAR account:
 
-```bash
-NODE_METHODS="respond,respond_ckd,respond_verify_foreign_tx,vote_pk,start_keygen_instance,vote_reshared,register_foreign_chain_config,start_reshare_instance,vote_abort_key_event_instance,verify_tee,submit_participant_info,conclude_node_migration"
+The keys are granted access to all methods on the MPC contract (empty
+`--function-names` list) while staying scoped to it via `--contract-account-id`.
+This avoids the keys breaking whenever a release adds a method the node must call
+(e.g. `register_foreign_chain_config`).
 
+```bash
 near account add-key $FRODO_ACCOUNT grant-function-call-access \
-  --allowance unlimited --contract-account-id $MPC_CONTRACT_ACCOUNT --function-names "$NODE_METHODS" \
+  --allowance unlimited --contract-account-id $MPC_CONTRACT_ACCOUNT --function-names '' \
   use-manually-provided-public-key "$FRODO_PUBKEY" network-config testnet sign-with-keychain send
 
 near account add-key $FRODO_ACCOUNT grant-function-call-access \
-  --allowance unlimited --contract-account-id $MPC_CONTRACT_ACCOUNT --function-names "$NODE_METHODS" \
+  --allowance unlimited --contract-account-id $MPC_CONTRACT_ACCOUNT --function-names '' \
   use-manually-provided-public-key "$FRODO_RESPONDER_KEY" network-config testnet sign-with-keychain send
 
 near account add-key $SAM_ACCOUNT grant-function-call-access \
-  --allowance unlimited --contract-account-id $MPC_CONTRACT_ACCOUNT --function-names "$NODE_METHODS" \
+  --allowance unlimited --contract-account-id $MPC_CONTRACT_ACCOUNT --function-names '' \
   use-manually-provided-public-key "$SAM_PUBKEY" network-config testnet sign-with-keychain send
 
 near account add-key $SAM_ACCOUNT grant-function-call-access \
-  --allowance unlimited --contract-account-id $MPC_CONTRACT_ACCOUNT --function-names "$NODE_METHODS" \
+  --allowance unlimited --contract-account-id $MPC_CONTRACT_ACCOUNT --function-names '' \
   use-manually-provided-public-key "$SAM_RESPONDER_KEY" network-config testnet sign-with-keychain send
 ```
 
@@ -404,10 +409,16 @@ near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  allowed_docker
 ## Step 8: Vote Launcher Image Hash on Contract
 
 The launcher image hash must also be voted in for compose hashes to be derived and attestation to work.
-Extract it from the compose file:
+
+The previous steps had you set `LAUNCHER_MANIFEST_DIGEST` in `deployment/testnet/*.env` (uncommented in step 6 before running `deploy-launcher.sh`). The `.env` file is sourced by `deploy-launcher.sh` but not by your interactive shell, so re-export the value here. Either re-source the env file, or set the variable directly:
 
 ```bash
-export LAUNCHER_HASH=$(grep -E 'nearone/mpc-launcher@sha256:' deployment/cvm-deployment/launcher_docker_compose.yaml | head -n1 | sed -E 's/.*sha256:([0-9a-f]{64}).*/\1/')
+# Option A: pull from the env file you already edited
+set -a; source deployment/testnet/frodo.env; set +a   # or sam.env — both should match
+export LAUNCHER_HASH="${LAUNCHER_MANIFEST_DIGEST#sha256:}"
+
+# Option B: paste the same hex you put in the .env
+export LAUNCHER_HASH=<launcher digest (hex, no sha256: prefix)>
 ```
 
 ### Frodo votes
