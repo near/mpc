@@ -29,6 +29,12 @@ pub struct AllowedLauncherImage {
 
 An entry is **expired** when `max(added, last_attested) + TTL < now`.
 TTL is a new config field `launcher_hash_unused_ttl_seconds`, default **14 days**.
+Config validation enforces `launcher_hash_unused_ttl_seconds >=
+mpc_attestation::attestation::DEFAULT_EXPIRATION_DURATION_SECONDS` (the
+attestation validity window, currently 7 days) — see Safety invariants. Note
+this is the *attestation validity* constant, not the similarly-valued
+`DEFAULT_TEE_UPGRADE_DEADLINE_DURATION_SECONDS` (the MPC docker-image grace
+period).
 
 Three parts:
 
@@ -50,9 +56,12 @@ resets its `added` timestamp (threshold vote, not unanimity).
 
 ### Safety invariants
 
-- A hash backing a **valid attestation is never expired**: TTL (14d) >
-  attestation validity (7d), so any valid attestation refreshed its entry
-  within 7 days. Enforced as a config validation (`TTL > 7d`).
+- A hash backing a **valid attestation is never expired**: a valid attestation
+  was submitted within the last `DEFAULT_EXPIRATION_DURATION_SECONDS` (7d) and
+  refreshed its entry then, so `last_attested + TTL >= now` holds whenever
+  `TTL >= DEFAULT_EXPIRATION_DURATION_SECONDS`. Enforced by config validation
+  (`launcher_hash_unused_ttl_seconds >= DEFAULT_EXPIRATION_DURATION_SECONDS`);
+  the 14-day default leaves a 7-day margin.
 - The list is **never empty / never fully rejected** (sweep keeps newest,
   read fallback returns newest).
 
