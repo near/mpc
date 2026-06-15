@@ -123,7 +123,7 @@ impl TeeState {
                 // Use tls_public_key as account_public_key instead of hardcoded
                 // Ed25519PublicKey::from([0u8; 32]) so that same account public
                 // key isn't associated with different tls keys.
-                // This is not a fix for above TODO(#1087), which should be
+                // This is not a fix for above issue: #1087, which should be
                 // addressed outside this PR.
                 account_public_key: tls_public_key.clone(),
             };
