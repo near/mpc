@@ -571,9 +571,8 @@ pub mod tests {
 
     /// End-to-end companion to the single-domain test above: two domains end the
     /// resharing with *different* thresholds. Only the Frost domain is updated,
-    /// leaving CaitSith at the default `2` (and clear of the single-CaitSith
-    /// uniform-threshold lock). Key-refresh resharing (unchanged participants)
-    /// keeps `n >= 3`, so `n` is a valid threshold distinct from `2`.
+    /// leaving CaitSith at the default `2`. Key-refresh resharing (unchanged
+    /// participants) keeps `n >= 3`, so `n` is a valid threshold distinct from `2`.
     #[expect(non_snake_case)]
     #[test]
     fn vote_reshared__final_transition__should_apply_distinct_thresholds_per_domain() {

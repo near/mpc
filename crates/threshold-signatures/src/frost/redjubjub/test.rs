@@ -9,7 +9,7 @@ use crate::{
 
 use crate::test_utils::{
     GenProtocol, MockCryptoRng, assert_public_key_invariant, build_frost_key_packages_with_dealer,
-    generate_participants, generate_participants_with_random_ids, one_coordinator_output,
+    check_one_coordinator_output, generate_participants, generate_participants_with_random_ids,
     run_keygen, run_protocol, run_refresh, run_reshare,
 };
 
@@ -194,7 +194,7 @@ fn dkg_refresh_sign_test() {
             msg_hash,
         )
         .unwrap();
-        one_coordinator_output(data, coordinator).unwrap();
+        check_one_coordinator_output(data, coordinator).unwrap();
         key_packages = run_refresh(&participants, &key_packages, threshold, &mut rng);
     }
 }
@@ -223,7 +223,7 @@ fn dkg_reshare_more_participants_sign_test() {
             msg_hash,
         )
         .unwrap();
-        one_coordinator_output(data, coordinator).unwrap();
+        check_one_coordinator_output(data, coordinator).unwrap();
 
         new_participant.push(Participant::from(20u32 + i));
 
@@ -267,7 +267,7 @@ fn dkg_reshare_less_participants_sign_test() {
             msg_hash,
         )
         .unwrap();
-        one_coordinator_output(data, coordinator).unwrap();
+        check_one_coordinator_output(data, coordinator).unwrap();
 
         new_participant.pop();
 
