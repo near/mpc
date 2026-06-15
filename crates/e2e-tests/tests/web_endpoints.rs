@@ -3,7 +3,7 @@ use crate::common;
 use std::time::Duration;
 
 use anyhow::Context;
-use e2e_tests::MpcNodeState;
+use e2e_tests::{CLUSTER_WAIT_TIMEOUT, MpcNodeState};
 use mpc_primitives::domain::Protocol;
 use near_mpc_contract_interface::types::DomainPurpose;
 use rand::SeedableRng;
@@ -213,7 +213,7 @@ async fn test_web_endpoints() {
             &client,
             i,
             &format!("http://{web_addr}/debug/recent_transactions"),
-            Duration::from_secs(15),
+            CLUSTER_WAIT_TIMEOUT,
             |body| {
                 const HEADER: &str =
                     "Recently submitted transactions (newest first, up to 2000 retained):";
