@@ -2,7 +2,7 @@
 
 **Status:** Draft — for team review
 **Issue:** [#3381](https://github.com/near/mpc/issues/3381)
-**Related:** [Securing MPC with TEE](securing-mpc-with-tee-design-doc.md), [TEE Lifecycle](tee-lifecycle.md)
+**Related:** [Securing MPC with TEE](../securing-mpc-with-tee-design-doc.md), [TEE Lifecycle](../tee-lifecycle.md)
 
 ## Problem
 
