@@ -1,5 +1,5 @@
 use crate::{
-    ReconstructionLowerBound,
+    ReconstructionThreshold,
     errors::InitializationError,
     participants::{Participant, ParticipantList},
 };
@@ -7,7 +7,7 @@ use crate::{
 /// Verifies that the sign inputs are valid
 pub fn assert_sign_inputs(
     participants: &[Participant],
-    threshold: impl Into<ReconstructionLowerBound>,
+    threshold: impl Into<ReconstructionThreshold>,
     me: Participant,
     coordinator: Participant,
 ) -> Result<ParticipantList, InitializationError> {
