@@ -3,7 +3,7 @@ use crate::common;
 use std::time::Duration;
 
 use anyhow::Context;
-use e2e_tests::{CLUSTER_WAIT_TIMEOUT, MpcNodeState};
+use e2e_tests::MpcNodeState;
 use mpc_primitives::domain::Protocol;
 use near_mpc_contract_interface::types::DomainPurpose;
 use rand::SeedableRng;
@@ -55,7 +55,7 @@ async fn wait_for_body(
         }
         anyhow::ensure!(
             tokio::time::Instant::now() < deadline,
-            "node {node}: {url} body did not match within {timeout:?}"
+            "node {node}: {url} body did not match within {timeout:?}\nlast body:\n{body}"
         );
         tokio::time::sleep(common::POLL_INTERVAL).await;
     }
@@ -69,7 +69,9 @@ fn vote_pk_row_regex(signer_account_id: &str, signer_key: &str) -> regex::Regex 
     let base58 = r"[1-9A-HJ-NP-Za-km-z]+";
     let int = r"\d+";
     let date = r"\d{4}-\d{2}-\d{2}";
-    let time = r"\d{2}:\d{2}:\d{2}\.\d+";
+    // `time::OffsetDateTime` renders the hour unpadded (e.g. "7:44:16"), so the
+    // hour is 1-2 digits while minute and second are always zero-padded.
+    let time = r"\d{1,2}:\d{2}:\d{2}\.\d+";
     let offset = r"\+00:00:00";
 
     // `submitted_at`, e.g. "2026-06-10 09:22:59.0 +00:00:00".
@@ -213,7 +215,7 @@ async fn test_web_endpoints() {
             &client,
             i,
             &format!("http://{web_addr}/debug/recent_transactions"),
-            CLUSTER_WAIT_TIMEOUT,
+            Duration::from_secs(15),
             |body| {
                 const HEADER: &str =
                     "Recently submitted transactions (newest first, up to 2000 retained):";
