@@ -792,6 +792,12 @@ impl MpcContract {
             }
         })?;
 
+        // Only a current participant's attestation counts as "using" a launcher
+        // image for the refresh-on-use TTL. A prospective (non-participant) node
+        // must not be able to keep a launcher hash alive.
+        let caller_is_participant = self.voter_account().is_ok();
+        let tls_public_key_for_refresh = tls_public_key.clone();
+
         // Add the participant information to the contract state
         let attestation_insertion_result = self
             .tee_state
@@ -803,6 +809,7 @@ impl MpcContract {
                 },
                 proposed_participant_attestation,
                 tee_upgrade_deadline_duration,
+                Duration::from_secs(self.config.launcher_hash_unused_ttl_seconds),
             )
             .map_err(|err| {
                 let reason = match &err {
@@ -814,7 +821,13 @@ impl MpcContract {
                 InvalidParameters::InvalidTeeRemoteAttestation { reason }
             })?;
 
-        let caller_is_not_participant = self.voter_account().is_err();
+        // Refresh-on-use: only a current participant keeps its launcher hash alive.
+        if caller_is_participant {
+            self.tee_state
+                .refresh_launcher_usage(&tls_public_key_for_refresh);
+        }
+
+        let caller_is_not_participant = !caller_is_participant;
         let is_new_attestation = matches!(
             attestation_insertion_result,
             ParticipantInsertion::NewlyInsertedParticipant
@@ -902,6 +915,7 @@ impl MpcContract {
         let validation_result = self.tee_state.reverify_and_cleanup_participants(
             proposal.participants(),
             tee_upgrade_deadline_duration,
+            Duration::from_secs(self.config.launcher_hash_unused_ttl_seconds),
         );
 
         let proposed_participants = proposal.participants();
@@ -1699,12 +1713,25 @@ impl MpcContract {
         };
         let current_params = running_state.parameters.clone();
 
+        // Spawn a detached, self-call promise to physically evict launcher image
+        // hashes unused past their TTL. Safe to fail: read-time filtering already
+        // enforces expiry.
+        Promise::new(env::current_account_id())
+            .function_call(
+                method_names::CLEAN_EXPIRED_LAUNCHER_HASHES.to_string(),
+                vec![],
+                NearToken::from_yoctonear(0),
+                Gas::from_tgas(self.config.clean_expired_launcher_hashes_tera_gas),
+            )
+            .detach();
+
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
         match self.tee_state.reverify_and_cleanup_participants(
             current_params.participants(),
             tee_upgrade_deadline_duration,
+            Duration::from_secs(self.config.launcher_hash_unused_ttl_seconds),
         ) {
             TeeValidationResult::Full => {
                 self.accept_requests = true;
@@ -1818,6 +1845,21 @@ impl MpcContract {
         Ok(())
     }
 
+    /// Private endpoint to evict launcher image hashes unused past their TTL.
+    /// Spawned as a detached promise from `verify_tee`; safe to fail (read-time
+    /// filtering already enforces expiry).
+    #[private]
+    #[handle_result]
+    pub fn clean_expired_launcher_hashes(&mut self) -> Result<(), Error> {
+        log!(
+            "clean_expired_launcher_hashes: signer={}",
+            env::signer_account_id()
+        );
+        let ttl = Duration::from_secs(self.config.launcher_hash_unused_ttl_seconds);
+        self.tee_state.clean_expired_launcher_images(ttl);
+        Ok(())
+    }
+
     /// Prunes up to `max_scan` stored attestations that fail re-verification (expired or
     /// referencing stale whitelists). Returns the number of entries removed. Callable by
     /// anyone while the protocol is in `Running`.
@@ -1835,9 +1877,11 @@ impl MpcContract {
         }
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
-        Ok(self
-            .tee_state
-            .clean_invalid_attestations(tee_upgrade_deadline_duration, max_scan as usize))
+        Ok(self.tee_state.clean_invalid_attestations(
+            tee_upgrade_deadline_duration,
+            Duration::from_secs(self.config.launcher_hash_unused_ttl_seconds),
+            max_scan as usize,
+        ))
     }
 
     /// Private endpoint to clean up foreign chain policy votes and node configurations
@@ -2102,11 +2146,17 @@ impl MpcContract {
     }
 
     pub fn allowed_launcher_compose_hashes(&self) -> Vec<LauncherDockerComposeHash> {
-        self.tee_state.get_allowed_launcher_compose_hashes()
+        self.tee_state
+            .get_allowed_launcher_compose_hashes(Duration::from_secs(
+                self.config.launcher_hash_unused_ttl_seconds,
+            ))
     }
 
     pub fn allowed_launcher_image_hashes(&self) -> Vec<LauncherImageHash> {
-        self.tee_state.get_allowed_launcher_hashes()
+        self.tee_state
+            .get_allowed_launcher_hashes(Duration::from_secs(
+                self.config.launcher_hash_unused_ttl_seconds,
+            ))
     }
 
     /// Returns the current launcher hash votes, showing each participant's vote.
@@ -2345,7 +2395,11 @@ impl MpcContract {
 
     #[private]
     pub fn update_config(&mut self, config: dtos::Config) {
-        self.config = config.into();
+        let new_config: Config = config.into();
+        if let Err(e) = new_config.validate() {
+            env::panic_str(e);
+        }
+        self.config = new_config;
     }
 
     /// Get our own account id as a voter. Returns an error if we are not a participant.
@@ -2594,6 +2648,7 @@ impl MpcContract {
             self.tee_state.reverify_participants(
                 &node_id,
                 Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds),
+                Duration::from_secs(self.config.launcher_hash_unused_ttl_seconds),
             ),
             TeeQuoteStatus::Valid
         )) {
@@ -5052,6 +5107,7 @@ mod tests {
                 },
                 valid_participant_attestation,
                 tee_upgrade_duration,
+                Duration::from_secs(0),
             );
             assert_matches::assert_matches!(
                 insertion_result,
@@ -5705,7 +5761,12 @@ mod tests {
         });
         contract
             .tee_state
-            .add_participant(node_id, expiring_attestation, TEE_UPGRADE_DURATION)
+            .add_participant(
+                node_id,
+                expiring_attestation,
+                TEE_UPGRADE_DURATION,
+                Duration::from_secs(0),
+            )
             .expect("mock attestation is not yet expired and valid");
 
         // Capture the running state before verify_tee for comparison
@@ -5824,7 +5885,12 @@ mod tests {
         });
         contract
             .tee_state
-            .add_participant(node_id, expiring_attestation, TEE_UPGRADE_DURATION)
+            .add_participant(
+                node_id,
+                expiring_attestation,
+                TEE_UPGRADE_DURATION,
+                Duration::from_secs(0),
+            )
             .expect("mock attestation is not yet expired and valid");
 
         let (first_account_id, _, _) = &participant_list[0];
@@ -7512,6 +7578,7 @@ mod tests {
                 },
                 mpc_attestation::attestation::Attestation::Mock(MpcMockAttestation::Valid),
                 Duration::from_secs(contract.config.tee_upgrade_deadline_duration_seconds),
+                Duration::from_secs(contract.config.launcher_hash_unused_ttl_seconds),
             )
             .expect("attestation insertion should succeed");
 

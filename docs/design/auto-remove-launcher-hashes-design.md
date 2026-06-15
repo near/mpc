@@ -1,6 +1,6 @@
 # Auto-Removal of Unused Launcher Image Hashes
 
-**Status:** Draft — for team review
+**Status:** Implemented — see [#3564](https://github.com/near/mpc/pull/3564)
 **Issue:** [#3381](https://github.com/near/mpc/issues/3381)
 **Related:** [Securing MPC with TEE](../securing-mpc-with-tee-design-doc.md), [TEE Lifecycle](../tee-lifecycle.md)
 
@@ -8,8 +8,9 @@
 
 `allowed_launcher_image_hashes` accumulates entries forever; removal requires a
 **unanimous** vote (`vote_remove_launcher_hash`). MPC Docker image hashes, by
-contrast, auto-expire 7 days after a newer image lands. Testnet carries 3
-launcher hashes with only the newest in use.
+contrast, auto-expire 7 days after a newer image lands. In practice launcher
+hashes pile up — only the newest is typically in use — with no way to shed the
+old ones short of coordinating a unanimous vote.
 
 The insight: **not using a launcher is itself a vote.** Every node already
 resubmits an attestation hourly (`submit_participant_info`), proving which
@@ -23,7 +24,7 @@ pub struct AllowedLauncherImage {
     launcher_hash: LauncherImageHash,
     compose_hashes: Vec<LauncherDockerComposeHash>,
     added: Timestamp,          // NEW: when (last) voted in
-    last_attested: Timestamp,  // NEW: last successful attestation using this launcher
+    last_attested: Timestamp,  // NEW: last attestation by a *current participant* using this launcher
 }
 ```
 
@@ -41,6 +42,11 @@ Three parts:
 1. **Refresh on use** — after a successful verify in `submit_participant_info`
    (hourly per node), the contract sets `last_attested = now` on the entry
    owning the validated compose hash. No node-side changes.
+   **Only a current participant's submission refreshes the timestamp.**
+   `submit_participant_info` is also callable by prospective (non-participant)
+   nodes; letting them refresh would let any outside node keep a stale launcher
+   alive indefinitely, so the refresh is gated on the caller being a current
+   participant.
 2. **Read-time filtering** — all reads of the allowed set (verify, re-verify,
    views) skip expired entries, so an expired hash is rejected the moment its
    TTL lapses. If *all* entries are expired, the newest is still returned
@@ -65,9 +71,10 @@ resets its `added` timestamp (threshold vote, not unanimity).
 
 ### Safety invariants
 
-- A hash backing a **valid attestation is never expired**: a valid attestation
-  was submitted within the last `DEFAULT_EXPIRATION_DURATION_SECONDS` (7d) and
-  refreshed its entry then, so `last_attested + TTL >= now` holds whenever
+- A hash backing a **valid participant attestation is never expired**: a
+  current participant resubmits hourly, so its valid attestation (at most
+  `DEFAULT_EXPIRATION_DURATION_SECONDS` (7d) old) refreshed the entry within the
+  last 7d, and `last_attested + TTL >= now` holds whenever
   `TTL >= DEFAULT_EXPIRATION_DURATION_SECONDS`. Enforced by config validation
   (`launcher_hash_unused_ttl_seconds >= DEFAULT_EXPIRATION_DURATION_SECONDS`);
   the 14-day default leaves a 7-day margin.
@@ -134,7 +141,8 @@ New borsh fields ⇒ state migration: existing entries get
   avoid growing the already-large public API; the `#[private]` self-call
   covers the same need.
 
-## Open questions
+## Decisions
 
-1. **TTL = 14 days** implies *vote a launcher in at most 14 days before
-   migrating to it*. Acceptable, or prefer 30 days?
+- **TTL = 14 days** (`launcher_hash_unused_ttl_seconds`, operator-configurable).
+  This implies *vote a launcher in at most 14 days before migrating to it*;
+  if a hash expires unused, re-voting it (threshold) resets the clock.
