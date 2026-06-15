@@ -51,22 +51,84 @@
       # PCLMUL-accelerated CRC32C path is compiled in. Production node
       # fleet is all v3-capable (Haswell / Excavator and newer).
       #
-      # Shared between the reproducible mpc-node build (nix/mpc-node.nix)
-      # and the dev shell (devShells.default below) so feature-test macros
+      # Shared between the reproducible mpc-node / tee-launcher builds
+      # (nix/mpc-node.nix) and the dev shell (devShells.default below) so
+      # feature-test macros
       # in bindgen-parsed headers, cc-rs-compiled C/C++ deps, and the
       # rustc target-cpu line up across all build paths.
       prodCFlags = "-march=x86-64-v3 -mpclmul -maes";
 
     in
     {
-      packages = forAllSystems (pkgs: {
-        mpc-node = pkgs.callPackage ./nix/mpc-node.nix {
-          inherit crane prodCFlags;
-        };
-        mpc-contract = pkgs.callPackage ./nix/mpc-contract.nix {
-          cargo-near = pkgs.callPackage ./nix/cargo-near.nix { };
-        };
-      });
+      packages = forAllSystems (
+        pkgs:
+        let
+          # Shared Rust-binary builder. Each leaf in nix/<bin>.nix calls
+          # this with its crate-specific buildInputs / pname / cargoExtraArgs;
+          # see nix/rust-build-common.nix for what's shared.
+          buildRustBin = pkgs.callPackage ./nix/rust-build-common.nix {
+            inherit crane prodCFlags;
+          };
+
+          mpc-node = pkgs.callPackage ./nix/mpc-node.nix {
+            inherit buildRustBin;
+            # The Nix sandbox strips `.git`, so the `built` crate can't read
+            # the commit at compile time. Hand it the flake's own revision so
+            # `mpc-node --version` / the build-info metrics keep reporting it.
+            # Falls back to "unknown" for dirty trees without a usable rev.
+            gitCommitHashShort = self.shortRev or self.dirtyShortRev or "unknown";
+          };
+          tee-launcher = pkgs.callPackage ./nix/tee-launcher.nix { inherit buildRustBin; };
+
+          mkImageDir = image: pkgs.callPackage ./nix/image-dir.nix { inherit image; };
+          mkManifestDigest =
+            imageDir: pkgs.callPackage ./nix/image-manifest-digest.nix { inherit imageDir; };
+        in
+        {
+          inherit mpc-node tee-launcher;
+
+          # Registry copy/push tool, re-exported so `nix run .#skopeo` works
+          # without any system-installed tooling. Pinned through flake.lock,
+          # so it's the exact same skopeo that image-dir.nix used to produce
+          # the layouts being pushed.
+          inherit (pkgs) skopeo;
+
+          mpc-contract = pkgs.callPackage ./nix/mpc-contract.nix {
+            cargo-near = pkgs.callPackage ./nix/cargo-near.nix { };
+          };
+        }
+        # `dockerTools.buildLayeredImage` produces a Linux container image,
+        # so only expose the image / digest derivations on Linux builders.
+        // lib.optionalAttrs pkgs.stdenv.isLinux (
+          let
+            node-image = pkgs.callPackage ./nix/node-image.nix { inherit mpc-node; };
+            node-gcp-image = pkgs.callPackage ./nix/node-gcp-image.nix { inherit mpc-node; };
+            rust-launcher-image = pkgs.callPackage ./nix/rust-launcher-image.nix {
+              inherit tee-launcher;
+            };
+
+            # `dir:` layouts with compressed blobs — the artifacts that get
+            # pushed; the manifest digests are hashes of these exact bytes.
+            node-image-dir = mkImageDir node-image;
+            node-gcp-image-dir = mkImageDir node-gcp-image;
+            rust-launcher-image-dir = mkImageDir rust-launcher-image;
+          in
+          {
+            inherit
+              node-image
+              node-gcp-image
+              rust-launcher-image
+              node-image-dir
+              node-gcp-image-dir
+              rust-launcher-image-dir
+              ;
+
+            node-image-manifest-digest = mkManifestDigest node-image-dir;
+            node-gcp-image-manifest-digest = mkManifestDigest node-gcp-image-dir;
+            rust-launcher-image-manifest-digest = mkManifestDigest rust-launcher-image-dir;
+          }
+        )
+      );
 
       devShells = forAllSystems (
         pkgs:

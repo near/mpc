@@ -5,47 +5,72 @@ images, and for the on-chain MPC contract WASM. Reproducible builds ensure that
 the same source code always produces identical binaries, which is important for
 security and verification purposes.
 
+The image builds are driven entirely by Nix. The flake's package set produces both the bare binaries (verifiably bit-for-bit reproducible across builders) and the OCI image tarballs that wrap them.
+
 ## Prerequisites
 
-**Common requirements** (for both node and launcher Docker images):
-
-- `docker` with buildx support
-- `jq`
+- [Nix](https://nixos.org/download/) with flakes enabled
 - `git`
 
-**Additional requirements for building the node image**:
-
-- `repro-env` - Tool for reproducible build environments ([install here](https://github.com/kpcyrd/repro-env))
-- `podman`
+No other tooling is needed: skopeo (used for pushing) is pinned in the flake
+and invoked via `nix run .#skopeo`.
 
 **Requirements for building the MPC contract** (either path works):
 
-- [Nix](https://nixos.org/download/) with flakes enabled (Nix path), or
+- Nix (as above), or
 - `docker` and [`cargo-near`](https://github.com/near/cargo-near) (NEP-330 path)
 
-## Building Images
-
-The build script is located at `deployment/build-images.sh` and must be run from the project root directory.
-
-**Build both node and launcher images** (default behavior):
+## Building binaries
 
 ```bash
-./deployment/build-images.sh
+nix build .#mpc-node       # → result/bin/mpc-node
+nix build .#tee-launcher   # → result/bin/tee-launcher
 ```
 
-**Build only the node image**:
+The output binaries are bit-for-bit identical across builders. Hash with `sha256sum result/bin/<name>` if you want a quick receipt.
+
+## Building images
+
+Image derivations package the binaries above into OCI tarballs and are only available on Linux builders.
 
 ```bash
-./deployment/build-images.sh --node
+nix build .#node-image              # general node image
+nix build .#node-gcp-image          # node image with google-cloud-sdk
+nix build .#rust-launcher-image     # tee-launcher image
 ```
 
-**Build only the launcher image**:
+The `result` symlink points to a docker-archive tarball.
+
+Alternatively, `deployment/build-images.sh` wraps the derivations above. Run from the project root:
 
 ```bash
-./deployment/build-images.sh --rust-launcher
+./deployment/build-images.sh [--node] [--node-gcp] [--rust-launcher] [--push]
 ```
 
-The script will output the image hashes and other build information, which can be used to verify the reproducibility of the build.
+With no image flags it builds all three. It prints the binary hashes and manifest digests for every image it builds, and with `--push` uploads them to Docker Hub (digest-preserving). This is the same entry point the release workflows use.
+
+## Verifying a manifest digest
+
+The manifest digest is the value participants vote for. Each image has a companion derivation that computes it deterministically inside the Nix sandbox:
+
+```bash
+nix build .#node-image-manifest-digest && cat result
+# → sha256:<hex>
+```
+
+Same for `node-gcp-image-manifest-digest` and `rust-launcher-image-manifest-digest`. Two builders running the same Nix expression at the same revision must produce the same digest.
+
+## Pushing to Docker Hub
+
+`./deployment/build-images.sh --push` pushes every image it built. To push a single image by hand, copy its `dir:` layout — the exact bytes the manifest digest was computed from — with the flake-pinned skopeo:
+
+```bash
+nix run .#skopeo -- copy --preserve-digests \
+  dir:$(nix build --no-link --print-out-paths .#node-image-dir) \
+  docker://docker.io/nearone/mpc-node:<tag>
+```
+
+Substitute `node-gcp-image-dir` / `rust-launcher-image-dir` and the matching destination repo as needed. Skopeo must be authenticated to the registry beforehand (`nix run .#skopeo -- login docker.io`).
 
 ## mpc-contract
 

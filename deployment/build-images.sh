@@ -1,15 +1,22 @@
 #! /usr/bin/env bash
-# Script to reproducibly build the docker images for the node and launcher
+# Script to reproducibly build the docker images for the node and launcher.
 #
-# Requirements: docker, docker-buildx, git, find, touch, skopeo
-# Extra requirements if using --node or --rust-launcher: repro-env, podman
-# Extra requirements if using --push: docker must be logged in to registry
+# The heavy lifting happens in Nix: each image is a `dockerTools` derivation
+# (see nix/*-image.nix) and each has a companion `*-manifest-digest`
+# derivation that computes the registry manifest digest deterministically
+# inside the Nix sandbox. This script is a thin wrapper that builds the
+# requested derivations, prints the binary hashes and manifest digests, and
+# optionally pushes the images.
+#
+# Requirements: nix (with flakes enabled), git — nothing else; skopeo is
+# run through `nix run .#skopeo`.
+# Extra requirements if using --push: logged in to the registry, e.g.
+#   nix run .#skopeo -- login docker.io
 #
 # Usage:
 #   ./deployment/build-images.sh [--node] [--node-gcp] [--rust-launcher] [--push]
 # If no image flags are used, all images are built
-# Manifest digests are always computed and printed (skopeo required)
-
+# Manifest digests are always computed and printed
 
 set -euo pipefail
 
@@ -35,7 +42,7 @@ do
       ;;
     *)
       echo "Unknown parameter: $arg"
-      echo "Usage: $0 [--node] [--rust-launcher] [--push]"
+      echo "Usage: $0 [--node] [--node-gcp] [--rust-launcher] [--push]"
       exit 1
       ;;
   esac
@@ -60,141 +67,52 @@ require_cmds() {
   [[ "${missing}" -eq 0 ]] || die "Please install the missing dependencies above."
 }
 
-require_cmds docker git find touch skopeo
-
-if $USE_NODE || $USE_RUST_LAUNCHER; then
-    require_cmds repro-env podman
-fi
-
-if ! docker buildx &>/dev/null; then
-  die "Please install docker-buildx"
-fi
+require_cmds nix git
 
 if [ ! "$(pwd)" = "$(git rev-parse --show-toplevel)" ]; then
-    echo "Must be called from project root!"
-    exit 1
+    die "Must be called from project root!"
 fi
 
-DOCKERFILE_NODE=deployment/Dockerfile-node
 : "${NODE_IMAGE_NAME:=mpc-node}"
-
-DOCKERFILE_NODE_GCP=deployment/Dockerfile-node-gcp
 : "${NODE_GCP_IMAGE_NAME:=mpc-node-gcp}"
-
-DOCKERFILE_RUST_LAUNCHER=deployment/Dockerfile-rust-launcher
 : "${RUST_LAUNCHER_IMAGE_NAME:=mpc-rust-launcher}"
 
-
-SOURCE_DATE_EPOCH=0
 GIT_COMMIT_HASH=$(git rev-parse HEAD)
 
-# This might be necessary to fix reproducibility with old docker versions where
-# rewrite-timestamp is not working as expected
-# https://github.com/moby/buildkit/issues/4986
-find . \( -type f -o -type d \) -exec touch -d @"$SOURCE_DATE_EPOCH" {} +
-
-# Create our own builder (build env) to enable reproducible images
-
-buildkit_version="0.27.1"
-buildkit_image_name="buildkit_${buildkit_version}"
-
-if ! docker buildx inspect ${buildkit_image_name} &>/dev/null; then
-    docker buildx create --use --driver-opt image=moby/buildkit:v${buildkit_version} --name ${buildkit_image_name}
-fi
-
-
-build_reproducible_image() {
-  local image_name=$1
-  local dockerfile_path=$2
-  docker buildx build --builder "${buildkit_image_name}" --no-cache \
-    --build-arg SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" \
-    --output "type=docker,name=$image_name,rewrite-timestamp=true" \
-    --progress plain -f "$dockerfile_path" .
+# Build a flake attribute and print its store output path. Build logs go to
+# stderr; only the path lands on stdout.
+nix_out() {
+    nix build --no-link --print-out-paths ".#$1"
 }
 
-# Compress a locally built image via skopeo to a temp directory.
-# Prints the temp dir path to stdout. The manifest digest can be
-# computed from $dir/manifest.json.
-skopeo_compress() {
-    local image_name="$1"
-    local td
-    td=$(mktemp -d)
-    # Compress the built image to a local directory, which implicitly computes
-    # the manifest digest in $td/manifest.json
-    skopeo copy --all --dest-compress "docker-daemon:${image_name}:latest" "dir:$td" >&2
-    echo "$td"
+# The flake-pinned skopeo — the same one image-dir.nix used to produce the
+# layouts being pushed, and no system install needed.
+skopeo() {
+    nix run .#skopeo -- "$@"
 }
-
-manifest_digest_from_dir() {
-    echo "sha256:$(sha256sum "$1/manifest.json" | cut -d' ' -f1)"
-}
-
-if $USE_RUST_LAUNCHER; then
-    SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH repro-env build --env SOURCE_DATE_EPOCH -- cargo build -p tee-launcher --profile reproducible --locked
-    rust_launcher_binary_hash=$(sha256sum target/reproducible/tee-launcher | cut -d' ' -f1)
-
-    build_reproducible_image "$RUST_LAUNCHER_IMAGE_NAME" "$DOCKERFILE_RUST_LAUNCHER"
-    rust_launcher_skopeo_dir="$(skopeo_compress "$RUST_LAUNCHER_IMAGE_NAME")"
-    rust_launcher_manifest_digest="$(manifest_digest_from_dir "$rust_launcher_skopeo_dir")"
-fi
 
 if $USE_NODE || $USE_NODE_GCP; then
-    # Pin jemalloc's `./configure` auto-detected values so tikv-jemalloc-sys
-    # produces identical bytes across builders. See nix/mpc-node.nix for the
-    # full rationale; values match the standard x86_64 Linux ABI.
-    #
-    # GIT_CEILING_DIRECTORIES stops jemalloc's `./configure` from walking out
-    # of `target/` and finding the surrounding mpc repo's `.git/` — without
-    # it, `git describe HEAD` returns mpc's commit SHA, which is then baked
-    # into jemalloc's VERSION file (and the linked binary's `.rodata` and
-    # `smallocx_<sha>` exported symbol). The path is the in-container
-    # workspace mount (`/build`), not the host path.
-    # Pin the C/C++ ISA for cc-crate dependencies (rocksdb, snappy, zstd,
-    # jemalloc, ...) to match the rustc target-cpu set in .cargo/config.toml.
-    # Without this, the cc crate uses the container's default `-march`, which
-    # would diverge from the Rust code's ISA expectations.
-    #
-    # PCLMUL and AES are not part of the v3 micro-arch level (per System V
-    # psABI) but are universally available on v3-capable hardware. Adding
-    # them explicitly keeps rocksdb's PCLMUL-accelerated CRC32C path
-    # compiled in. Match nix/mpc-node.nix and flake.nix.
-    # BUILT_OVERRIDE_mpc_node_GIT_VERSION pins built's GIT_VERSION so local git
-    # tags aren't embedded in the binary (which would break reproducibility).
-    SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH \
-    JEMALLOC_SYS_WITH_LG_VADDR=48 \
-    JEMALLOC_SYS_WITH_LG_PAGE=12 \
-    JEMALLOC_SYS_WITH_LG_HUGEPAGE=21 \
-    GIT_CEILING_DIRECTORIES=/build/target \
-    BUILT_OVERRIDE_mpc_node_GIT_VERSION="${GIT_COMMIT_HASH:0:7}" \
-    CFLAGS="-march=x86-64-v3 -mpclmul -maes" \
-    CXXFLAGS="-march=x86-64-v3 -mpclmul -maes" \
-    repro-env build \
-      --env SOURCE_DATE_EPOCH \
-      --env JEMALLOC_SYS_WITH_LG_VADDR \
-      --env JEMALLOC_SYS_WITH_LG_PAGE \
-      --env JEMALLOC_SYS_WITH_LG_HUGEPAGE \
-      --env GIT_CEILING_DIRECTORIES \
-      --env BUILT_OVERRIDE_mpc_node_GIT_VERSION \
-      --env CFLAGS \
-      --env CXXFLAGS \
-      -- cargo build -p mpc-node --profile reproducible --locked
-    node_binary_hash=$(sha256sum target/reproducible/mpc-node | cut -d' ' -f1)
+    node_binary_hash=$(sha256sum "$(nix_out mpc-node)/bin/mpc-node" | cut -d' ' -f1)
 fi
 
 if $USE_NODE; then
-    build_reproducible_image "$NODE_IMAGE_NAME" "$DOCKERFILE_NODE"
-    node_skopeo_dir="$(skopeo_compress "$NODE_IMAGE_NAME")"
-    node_manifest_digest="$(manifest_digest_from_dir "$node_skopeo_dir")"
+    node_image_dir=$(nix_out node-image-dir)
+    node_manifest_digest=$(cat "$(nix_out node-image-manifest-digest)")
 fi
 
 if $USE_NODE_GCP; then
-    build_reproducible_image "$NODE_GCP_IMAGE_NAME" "$DOCKERFILE_NODE_GCP"
-    node_gcp_skopeo_dir="$(skopeo_compress "$NODE_GCP_IMAGE_NAME")"
-    node_gcp_manifest_digest="$(manifest_digest_from_dir "$node_gcp_skopeo_dir")"
+    node_gcp_image_dir=$(nix_out node-gcp-image-dir)
+    node_gcp_manifest_digest=$(cat "$(nix_out node-gcp-image-manifest-digest)")
+fi
+
+if $USE_RUST_LAUNCHER; then
+    rust_launcher_binary_hash=$(sha256sum "$(nix_out tee-launcher)/bin/tee-launcher" | cut -d' ' -f1)
+    rust_launcher_image_dir=$(nix_out rust-launcher-image-dir)
+    rust_launcher_manifest_digest=$(cat "$(nix_out rust-launcher-image-manifest-digest)")
 fi
 
 if $USE_PUSH; then
-    # This assumes that docker is logged-in dockerhub registry with nearone user
+    # This assumes that skopeo is logged-in to the dockerhub registry with the nearone user
 
     branch_name=$(git branch --show-current)
     if [ -z "$branch_name" ]; then
@@ -209,22 +127,25 @@ if $USE_PUSH; then
     image_tag="$sanitized_branch_name-$short_hash"
     echo "Using branch-hash tag: $image_tag"
 
-    # Push from the already-compressed local directory, preserving the manifest digest.
+    # Push the Nix-built `dir:` layouts. Their blobs are already compressed
+    # and their manifest is exactly what the `*-manifest-digest` derivations
+    # hashed, so with `--preserve-digests` the digest that lands in the
+    # registry is guaranteed to be the one printed below — independent of
+    # the skopeo version doing the pushing.
     if $USE_NODE; then
-        skopeo copy --preserve-digests "dir:$node_skopeo_dir" "docker://docker.io/nearone/$NODE_IMAGE_NAME:$image_tag"
+        skopeo copy --preserve-digests "dir:$node_image_dir" "docker://docker.io/nearone/$NODE_IMAGE_NAME:$image_tag"
     fi
 
     if $USE_NODE_GCP; then
-        skopeo copy --preserve-digests "dir:$node_gcp_skopeo_dir" "docker://docker.io/nearone/$NODE_GCP_IMAGE_NAME:$image_tag"
+        skopeo copy --preserve-digests "dir:$node_gcp_image_dir" "docker://docker.io/nearone/$NODE_GCP_IMAGE_NAME:$image_tag"
     fi
 
     if $USE_RUST_LAUNCHER; then
-        skopeo copy --preserve-digests "dir:$rust_launcher_skopeo_dir" "docker://docker.io/nearone/$RUST_LAUNCHER_IMAGE_NAME:$image_tag"
+        skopeo copy --preserve-digests "dir:$rust_launcher_image_dir" "docker://docker.io/nearone/$RUST_LAUNCHER_IMAGE_NAME:$image_tag"
     fi
 fi
 
 echo "commit hash: $GIT_COMMIT_HASH"
-echo "SOURCE_DATE_EPOCH used: $SOURCE_DATE_EPOCH"
 if $USE_NODE || $USE_NODE_GCP; then
     echo "node binary hash: $node_binary_hash"
 fi

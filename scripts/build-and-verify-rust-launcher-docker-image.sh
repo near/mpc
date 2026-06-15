@@ -7,11 +7,8 @@
 
 set -euo pipefail
 
-./deployment/build-images.sh --rust-launcher
-
-temp_dir=$(mktemp -d)
-trap 'rm -rf "$temp_dir"' EXIT
-echo "using $temp_dir"
-skopeo copy --all --dest-compress docker-daemon:mpc-rust-launcher:latest dir:"$temp_dir"
-built_hex="$(sha256sum "$temp_dir/manifest.json" | cut -d' ' -f1)"
-echo "Built launcher image hash: sha256:${built_hex}"
+# The `*-manifest-digest` derivation hashes the manifest of the pushed
+# `dir:` layout (built by skopeo inside the Nix sandbox), so the digest is
+# deterministic across builders and the only output is a `sha256:HEX` line.
+nix build .#rust-launcher-image-manifest-digest --out-link result-rust-launcher-digest -L
+echo "Built launcher image hash: $(cat result-rust-launcher-digest)"
