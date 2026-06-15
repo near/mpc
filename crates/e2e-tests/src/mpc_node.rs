@@ -39,6 +39,55 @@ impl MpcNode {
         self.setup
     }
 
+    /// Send SIGTERM and wait up to `grace` for the node to exit. If grace
+    /// expires before the process exits on its own, send SIGKILL and wait
+    /// for it explicitly (instead of relying on `ProcessGuard::Drop` to do
+    /// the same). Either way, returns the child's `ExitStatus`:
+    /// `status.success()` ⇒ graceful exit via mpc-node's SIGTERM handler;
+    /// `status.signal() == Some(9)` ⇒ SIGKILL fallback fired. Used to
+    /// exercise the production SIGTERM handler.
+    pub fn terminate_with_sigterm(
+        mut self,
+        grace: std::time::Duration,
+    ) -> anyhow::Result<(std::process::ExitStatus, MpcNodeSetup)> {
+        let pid = self.process.0.id() as libc::pid_t;
+        // SAFETY: `libc::kill` with `SIGTERM` and a pid Rust's Child reports
+        // for a live child is well-defined. We make no assumptions beyond
+        // that the pid is the child we spawned.
+        let rc = unsafe { libc::kill(pid, libc::SIGTERM) };
+        anyhow::ensure!(
+            rc == 0,
+            "libc::kill({pid}, SIGTERM) failed: {}",
+            std::io::Error::last_os_error()
+        );
+
+        let start = std::time::Instant::now();
+        let poll_interval = std::time::Duration::from_millis(100);
+        loop {
+            match self.process.0.try_wait()? {
+                Some(status) => return Ok((status, self.setup)),
+                None => {
+                    if start.elapsed() >= grace {
+                        // Grace expired: explicit SIGKILL fallback, then wait
+                        // for the child to actually exit so we return a real
+                        // `ExitStatus` rather than bailing.
+                        self.process
+                            .0
+                            .kill()
+                            .context("SIGKILL fallback on grace-period expiry failed")?;
+                        let status = self
+                            .process
+                            .0
+                            .wait()
+                            .context("wait after SIGKILL fallback failed")?;
+                        return Ok((status, self.setup));
+                    }
+                    std::thread::sleep(poll_interval);
+                }
+            }
+        }
+    }
+
     /// Kill then start. New process, same config and data directory.
     pub fn restart(self) -> anyhow::Result<MpcNode> {
         self.kill().start()
@@ -405,7 +454,6 @@ impl MpcNodeSetup {
                 rpc_addr: Some(SocketAddr::from(([0, 0, 0, 0], self.ports.near_rpc))),
                 network_addr: Some(SocketAddr::from(([0, 0, 0, 0], self.ports.near_network))),
                 tier3_public_addr: None,
-                external_storage_fallback_threshold: None,
             }),
             node: ConfigFile {
                 my_near_account_id: signer.clone(),
@@ -415,6 +463,7 @@ impl MpcNodeSetup {
                 migration_web_ui: format!("127.0.0.1:{}", self.ports.migration_web_ui).parse()?,
                 pprof_bind_address: format!("127.0.0.1:{}", self.ports.pprof).parse()?,
                 cores: Some(4),
+                separate_asset_generation_runtime: true,
                 indexer: IndexerConfig {
                     validate_genesis: true,
                     concurrency: std::num::NonZeroU16::new(1).unwrap(),

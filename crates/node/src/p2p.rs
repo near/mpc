@@ -150,6 +150,12 @@ impl OutgoingConnection {
     /// the connection is considered not successful.
     const HANDSHAKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 
+    /// Maximum time to establish the TCP connection and complete the TLS
+    /// handshake. Without this bound, a middlebox that accepts the TCP
+    /// connection but never sends a byte back would hang the dial — and the
+    /// persistent-connection retry loop awaiting it — forever.
+    const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
     /// Makes a TLS/TCP connection to the given address, authenticating the
     /// other side as the given participant.
     async fn new(
@@ -159,16 +165,20 @@ impl OutgoingConnection {
         participant_identities: &ParticipantIdentities,
         sender_connection_id: u32,
     ) -> anyhow::Result<OutgoingConnection> {
-        let tcp_stream = TcpStream::connect(target_address)
-            .await
-            .context("failed to establish tcp stream")?;
-        let tcp_stream =
-            configure_tcp_stream(tcp_stream).context("failed to configure tcp stream")?;
+        let mut tls_stream = timeout(Self::CONNECT_TIMEOUT, async {
+            let tcp_stream = TcpStream::connect(target_address)
+                .await
+                .context("failed to establish tcp stream")?;
+            let tcp_stream =
+                configure_tcp_stream(tcp_stream).context("failed to configure tcp stream")?;
 
-        let mut tls_stream = tokio_rustls::TlsConnector::from(client_config)
-            .connect("dummy".try_into().unwrap(), tcp_stream)
-            .await
-            .context("failed to establish tls stream")?;
+            tokio_rustls::TlsConnector::from(client_config)
+                .connect("dummy".try_into().unwrap(), tcp_stream)
+                .await
+                .context("failed to establish tls stream")
+        })
+        .await
+        .context("timed out establishing tls connection")??;
 
         let peer_id = verify_peer_identity(tls_stream.get_ref().1, participant_identities)
             .context("verify server identity")?;
@@ -1062,8 +1072,11 @@ pub mod testing {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
+    use super::{
+        IncomingConnection, OutgoingConnection, ParticipantIdentities, PersistentConnection,
+    };
     use crate::config::MpcConfig;
-    use crate::network::conn::ConnectionVersion;
+    use crate::network::conn::{AllNodeConnectivities, ConnectionVersion};
     use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
     use crate::p2p::testing::{PortSeed, generate_test_p2p_configs};
     use crate::primitives::{
@@ -1072,7 +1085,8 @@ mod tests {
     use crate::providers::EcdsaTaskId;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use mpc_primitives::{AttemptId, EpochId, KeyEventId, domain::DomainId};
-    use rand::Rng;
+    use rand::{Rng, SeedableRng};
+    use std::sync::Arc;
     use std::time::Duration;
     use tokio::time::timeout;
 
@@ -1429,5 +1443,109 @@ mod tests {
         assert_eq!(on_connection_rx.recv().await, Some(()));
         assert_eq!(on_connection_rx.recv().await, Some(()));
         assert_eq!(on_connection_rx.recv().await, None);
+    }
+
+    /// Spawns a listener that accepts TCP connections, reports each accept on
+    /// the returned channel, and never sends a byte back (holding the streams
+    /// open). This mimics a middlebox that ACKs the ClientHello but never
+    /// responds, hanging the dialer's TLS handshake.
+    async fn must_spawn_silent_listener() -> (
+        String,
+        tokio::sync::mpsc::UnboundedReceiver<()>,
+        tokio::task::JoinHandle<()>,
+    ) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let target_address = listener.local_addr().unwrap().to_string();
+        let (accept_tx, accept_rx) = tokio::sync::mpsc::unbounded_channel();
+        let listener_task = tokio::spawn(async move {
+            let mut held_streams = Vec::new();
+            loop {
+                let (stream, _) = listener.accept().await.unwrap();
+                accept_tx.send(()).unwrap();
+                held_streams.push(stream);
+            }
+        });
+        (target_address, accept_rx, listener_task)
+    }
+
+    fn must_make_client_config() -> Arc<rustls::ClientConfig> {
+        let signing_key =
+            ed25519_dalek::SigningKey::generate(&mut rand::rngs::StdRng::seed_from_u64(42));
+        let (_server_config, client_config) = mpc_tls::tls::configure_tls(&signing_key).unwrap();
+        Arc::new(client_config)
+    }
+
+    // Paused tokio time makes CONNECT_TIMEOUT elapse instantly once the dial
+    // hangs, so the test runs in milliseconds of real time.
+    #[tokio::test(start_paused = true)]
+    #[test_log::test]
+    async fn outgoing_connection__should_fail_dial_when_peer_accepts_tcp_but_never_responds() {
+        // Given a listener that accepts TCP connections but never responds.
+        let (target_address, _accept_rx, listener_task) = must_spawn_silent_listener().await;
+
+        // When dialing it (under an outer timeout so a regression fails the
+        // test instead of hanging it).
+        let result = timeout(
+            Duration::from_secs(60),
+            OutgoingConnection::new(
+                must_make_client_config(),
+                &target_address,
+                ParticipantId::from_raw(1),
+                &ParticipantIdentities::default(),
+                0,
+            ),
+        )
+        .await
+        .expect("dial did not terminate within bounded time");
+
+        // Then the dial fails with a timeout instead of hanging.
+        let Err(error) = result else {
+            panic!("dial unexpectedly succeeded");
+        };
+        assert!(
+            format!("{error:#}").contains("timed out"),
+            "unexpected error: {error:#}"
+        );
+        listener_task.abort();
+    }
+
+    #[tokio::test(start_paused = true)]
+    #[test_log::test]
+    async fn persistent_connection__should_keep_retrying_when_dial_attempt_hangs() {
+        // Given a listener that accepts TCP connections but never responds.
+        let (target_address, mut accept_rx, listener_task) = must_spawn_silent_listener().await;
+        let client_config = must_make_client_config();
+        let my_id = ParticipantId::from_raw(0);
+        let target_id = ParticipantId::from_raw(1);
+
+        start_root_task_with_periodic_dump(async move {
+            let connectivities =
+                AllNodeConnectivities::<OutgoingConnection, IncomingConnection>::new(
+                    my_id,
+                    &[my_id, target_id],
+                );
+
+            // When a persistent connection keeps dialing that listener.
+            let _connection = PersistentConnection::new(
+                client_config,
+                my_id,
+                target_address,
+                target_id,
+                Arc::new(ParticipantIdentities::default()),
+                connectivities.get(target_id).unwrap(),
+            )
+            .unwrap();
+
+            // Then each hung attempt times out and is retried, so the listener
+            // keeps receiving fresh dial attempts.
+            for _ in 0..3 {
+                timeout(Duration::from_secs(120), accept_rx.recv())
+                    .await
+                    .expect("retry loop stopped dialing after a hung attempt")
+                    .unwrap();
+            }
+        })
+        .await;
+        listener_task.abort();
     }
 }

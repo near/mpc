@@ -1,0 +1,18 @@
+[package]
+name = "tee-verifier-interface"
+version = { workspace = true }
+license = { workspace = true }
+edition = { workspace = true }
+
+[features]
+borsh-schema = ["borsh/unstable__schema"]
+
+[dependencies]
+borsh = { workspace = true }
+derive_more = { workspace = true }
+
+[dev-dependencies]
+rstest = { workspace = true }
+
+[lints]
+workspace = true

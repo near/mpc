@@ -15,6 +15,7 @@ futures = { workspace = true }
 hex = { workspace = true }
 httpmock = { workspace = true }
 launcher-interface = { workspace = true }
+libc = { workspace = true }
 mpc-node-config = { workspace = true }
 near-account-id = { workspace = true }
 near-indexer-primitives = { workspace = true }
@@ -38,6 +39,7 @@ contract-history = { workspace = true }
 group = { workspace = true }
 mpc-primitives = { workspace = true }
 near-mpc-bounded-collections = { workspace = true }
+regex = { workspace = true }
 rstest = { workspace = true }
 threshold-signatures = { workspace = true }
 tracing-subscriber = { workspace = true }

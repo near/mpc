@@ -1,5 +1,6 @@
 use anyhow::{Context, bail};
 use foreign_chain_inspector::abstract_chain::inspector::AbstractExtractor;
+use foreign_chain_inspector::aptos::inspector::{AptosExtractor, AptosFinality};
 use foreign_chain_inspector::arbitrum::inspector::ArbitrumExtractor;
 use foreign_chain_inspector::base::inspector::BaseExtractor;
 use foreign_chain_inspector::bitcoin::inspector::BitcoinExtractor;
@@ -298,6 +299,33 @@ where
 
                 let extracted_values = inspector
                     .extract(transaction_id, finality, extractors)
+                    .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
+                    .await
+                    .context("timed out during execution of foreign chain request")??;
+
+                extracted_values.into_iter().map(Into::into).collect()
+            }
+            dtos::ForeignChainRpcRequest::Ton(_request) => {
+                bail!("ForeignChainRpcRequest::Ton is unsupported")
+            }
+            dtos::ForeignChainRpcRequest::Aptos(request) => {
+                let inspector = self
+                    .inspectors
+                    .aptos
+                    .as_ref()
+                    .context("no inspector configured for Aptos")?;
+
+                let tx_id = request.tx_id.0.into();
+                let finality: AptosFinality = request.finality.clone().try_into()?;
+                let extractors: Vec<AptosExtractor> = request
+                    .extractors
+                    .iter()
+                    .cloned()
+                    .map(TryInto::try_into)
+                    .collect::<Result<_, _>>()?;
+
+                let extracted_values = inspector
+                    .extract(tx_id, finality, extractors)
                     .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                     .await
                     .context("timed out during execution of foreign chain request")??;

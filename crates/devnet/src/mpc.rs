@@ -25,8 +25,8 @@ use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
     DomainConfig, DomainPurpose, EpochId, NodeImageHash, ParticipantId, ParticipantInfo,
-    Participants, Protocol, ProtocolContractState, ReconstructionThreshold, Threshold,
-    ThresholdParameters, protocol_state_to_string,
+    Participants, ProposedThresholdParameters, Protocol, ProtocolContractState,
+    ReconstructionThreshold, Threshold, ThresholdParameters, protocol_state_to_string,
 };
 use near_primitives::types::{BlockReference, Finality, FunctionArgs};
 use near_primitives::views::QueryRequest;
@@ -36,7 +36,6 @@ use rand::rngs::OsRng;
 use reqwest::Client;
 use serde::Serialize;
 use std::sync::Arc;
-use utilities::AccountIdExtV2;
 
 impl ListMpcCmd {
     pub async fn run(&self, config: ParsedConfig) {
@@ -732,9 +731,22 @@ impl MpcVoteNewParametersCmd {
         } else {
             parameters.threshold
         };
-        let proposal = ThresholdParameters {
-            participants,
-            threshold,
+        let per_domain_thresholds: std::collections::BTreeMap<_, _> = self
+            .per_domain_thresholds
+            .iter()
+            .map(|(id, t)| {
+                (
+                    near_mpc_contract_interface::types::DomainId(*id),
+                    near_mpc_contract_interface::types::ReconstructionThreshold::new(*t),
+                )
+            })
+            .collect();
+        let proposal = ProposedThresholdParameters {
+            parameters: ThresholdParameters {
+                participants,
+                threshold,
+            },
+            per_domain_thresholds,
         };
 
         let from_accounts = get_voter_account_ids(mpc_setup, &self.voters);
@@ -854,7 +866,7 @@ pub async fn read_contract_state(
     let request = methods::query::RpcQueryRequest {
         block_reference: BlockReference::Finality(Finality::Final),
         request: QueryRequest::CallFunction {
-            account_id: contract.as_v1_account_id(),
+            account_id: contract.clone(),
             method_name: method_names::STATE.to_string(),
             args: FunctionArgs::from(b"{}".to_vec()),
         },
@@ -884,7 +896,7 @@ pub async fn read_contract_state(
 #[derive(Serialize)]
 struct VoteNewParametersArgs {
     prospective_epoch_id: EpochId,
-    proposal: ThresholdParameters,
+    proposal: ProposedThresholdParameters,
 }
 
 #[derive(Serialize)]
@@ -909,5 +921,35 @@ impl MpcDescribeCmd {
         println!();
 
         self.describe_terraform(name, &config).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::RpcConfig;
+
+    /// Exercises the upgraded RPC stack against the live testnet signer
+    /// contract. `read_contract_state` deserializes the response and panics on
+    /// any RPC or parse failure, so a clean return is the success criterion.
+    /// Ignored by default since it needs network; run with `--ignored`.
+    #[tokio::test]
+    #[ignore = "hits live testnet RPC"]
+    #[expect(non_snake_case)]
+    async fn read_contract_state__should_query_live_testnet_signer() {
+        // Given
+        let rpc = Arc::new(
+            NearRpcClients::new(vec![RpcConfig {
+                url: "https://rpc.testnet.near.org".to_string(),
+                rate_limit: 5,
+                max_concurrency: 2,
+                api_key: None,
+            }])
+            .await,
+        );
+        let contract: AccountId = TESTNET_CONTRACT_ACCOUNT_ID.parse().unwrap();
+
+        // When / Then
+        read_contract_state(&rpc, &contract).await;
     }
 }
