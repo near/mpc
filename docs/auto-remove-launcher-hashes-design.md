@@ -45,9 +45,18 @@ Three parts:
    views) skip expired entries, so an expired hash is rejected the moment its
    TTL lapses. If *all* entries are expired, the newest is still returned
    (disaster-recovery fallback, mirrors `AllowedDockerImageHashes`).
-3. **Lazy sweep** — `verify_tee` deletes expired entries from storage
-   (keeping at least the newest). Housekeeping only; expiry is already
-   enforced by (2).
+3. **Deferred sweep** — `verify_tee` spawns a detached self-call
+   (`Promise::new(env::current_account_id()).function_call(CLEAN_EXPIRED_LAUNCHER_HASHES, ...).detach()`)
+   to a new `#[private]` `clean_expired_launcher_hashes` method, which deletes
+   expired entries from storage (keeping at least the newest). The method is
+   `#[private]`, so only the contract's own self-call can invoke it — **no new
+   public API**. Running it in a detached promise means a failed or
+   out-of-gas sweep can never fail the host `verify_tee` transaction; expiry is
+   already enforced by (2), so the sweep is pure housekeeping and is safe to
+   fail (it simply retries on the next `verify_tee`). Gas is reserved via a new
+   config field `clean_expired_launcher_hashes_tera_gas`, mirroring the existing
+   `clean_tee_status_tera_gas` etc. used by the post-resharing cleanups in
+   `vote_reshared`.
 
 Counting from `added` means a hash voted in but **never adopted** (e.g. a
 newly voted launcher image no node ever migrated to) also expires after one
@@ -88,7 +97,9 @@ sequenceDiagram
     Note over C: B refreshed. A freezes once the last node leaves it
     Note over C: A.last_attested + 14d passes. A is rejected by all reads
     Ops->>C: verify_tee (routine)
-    Note over C: sweep deletes A from storage
+    Note over C: spawns detached self-call clean_expired_launcher_hashes
+    C-->>C: clean_expired_launcher_hashes (private, separate receipt)
+    Note over C: deletes A from storage
 ```
 
 ### Operator scenarios
@@ -114,17 +125,16 @@ New borsh fields ⇒ state migration: existing entries get
   window; a broken new launcher would need a re-vote under incident pressure.
 - **Exempting never-used hashes** — a forgotten/mistaken vote would linger
   forever, the very problem being solved.
-- **Detached-promise cleanup** (per issue AC) — only needed for unbounded
-  collections; this one is operator-curated, a handful of entries.
+- **Inline sweep in `verify_tee`** — simplest, and gas is trivial for this
+  tiny operator-curated list. Rejected in favor of the detached-promise sweep
+  (chosen above) to keep housekeeping from ever endangering the host
+  transaction, matching the post-resharing cleanup convention in
+  `vote_reshared`.
+- **Public cleanup method** (the issue AC also suggests this) — rejected to
+  avoid growing the already-large public API; the `#[private]` self-call
+  covers the same need.
 
 ## Open questions
 
 1. **TTL = 14 days** implies *vote a launcher in at most 14 days before
    migrating to it*. Acceptable, or prefer 30 days?
-2. **Inline sweep vs. detached promise** — the issue's acceptance criteria
-   suggest running cleanup in a detached promise, so that a mass-expiry can
-   never consume enough gas to fail the transaction it piggybacks on. This doc
-   instead sweeps inline in `verify_tee`, betting that
-   `allowed_launcher_images` stays tiny forever (entries only enter via rare
-   operator votes; sweeping ~4 entries is negligible gas). Does anyone see a
-   future where this list grows to many entries? If not, inline stands.
