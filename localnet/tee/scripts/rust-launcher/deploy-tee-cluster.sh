@@ -154,9 +154,6 @@ PUBLIC_DATA_BASE=18081
 LOCAL_DEBUG_BASE=3031
 
 STATE_SYNC_PORT=24567
-# MAIN_PORT is required by deploy-launcher.sh (passed to dstack-vmm as
-# host:80 → VM:80), but the MPC container in this flow doesn't bind
-# container:80 — see node.conf.testnet.toml.tpl. Vestigial; safe to keep.
 MAIN_PORT=80
 FUTURE_PORT=13001
 FUTURE_BASE_PORT="${FUTURE_BASE_PORT:-13001}"   # host-side per-node future/N2N port base
