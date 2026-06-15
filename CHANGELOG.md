@@ -9,6 +9,16 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 ### 🚀 Features
 
+- [#3327](https://github.com/near/mpc/pull/3327)(@anodar): Add foreign-chain whitelist verifier (#3327)
+
+- [#3389](https://github.com/near/mpc/pull/3389)(@pbeza): *(foreign-chain-inspector)* Canonical-chain check for Starknet (#3389)
+
+- [#3225](https://github.com/near/mpc/pull/3225)(@DSharifi): Fan out requests to all configured RPC providers (#3225)
+
+- [#3390](https://github.com/near/mpc/pull/3390)(@pbeza): *(foreign-chain-inspector)* Canonical-chain check for Bitcoin (#3390)
+
+- [#3244](https://github.com/near/mpc/pull/3244)(@DSharifi): TON support for foreign tx validation requests in mpc contract (#3244)
+
 - [#3235](https://github.com/near/mpc/pull/3235)(@pbeza): *(tee-verifier-interface)* Borsh DTOs for the verifier contract boundary (#3235)
 
 - [#3507](https://github.com/near/mpc/pull/3507)(@frolvanya): Aptos support for foreign tx validation requests in mpc contract (#3507)
@@ -28,6 +38,16 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 ### 🐛 Bug Fixes
 
+- [#3397](https://github.com/near/mpc/pull/3397)(@gilcu3): Bump prometheus, fix missing nearcore metrics (#3397)
+
+- [#3414](https://github.com/near/mpc/pull/3414)(@barakeinav1): *(attestation)* Reject non-empty app-compose init_script (#3414)
+
+- [#3439](https://github.com/near/mpc/pull/3439)(@netrome): Enforce signer=predecessor across all governance methods (#3439)
+
+- [#3420](https://github.com/near/mpc/pull/3420)(@barakeinav1): *(attestation)* Fail closed on unknown app-compose fields; reject tproxy_enabled (#3420)
+
+- [#3469](https://github.com/near/mpc/pull/3469)(@gilcu3): *(ci)* Avoid cancelling concurrent docker push jobs (#3469)
+
 - [#3410](https://github.com/near/mpc/pull/3410)(@barakeinav1): *(node)* Handle SIGTERM for graceful shutdown on operator stop (#3410)
 
 - [#3515](https://github.com/near/mpc/pull/3515)(@gilcu3): Add asset id checks for follower paths (#3515)
@@ -36,7 +56,7 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#3486](https://github.com/near/mpc/pull/3486)(@barakeinav1): *(node)* Drain embedded near-indexer thread on graceful shutdown (#3486)
 
-- [#3491](https://github.com/near/mpc/pull/3491)(@DSharifi): *(contract)* Add auth check to `remove_non_participant_update_votes` (#3491)
+- [#3491](https://github.com/near/mpc/pull/3491)(@DSharifi): *(contract)* Add auth check to `remove_non_participant_update_votes`  (#3491)
 
 - [#3532](https://github.com/near/mpc/pull/3532)(@gilcu3): Make sure localnet launcher script kills processes successfully (#3532)
 
@@ -45,7 +65,26 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#3560](https://github.com/near/mpc/pull/3560)(@gilcu3): *(test)* Remove time bomb from e2e tests (#3560)
 
 
+### 💼 Other
+
+- [#3441](https://github.com/near/mpc/pull/3441)(@gilcu3): Make mpc-node repro binary independent of local tags (#3441)
+
+- [#3479](https://github.com/near/mpc/pull/3479)(@gilcu3): *(ci)* Update tools using in CI (#3479)
+
+- [#3490](https://github.com/near/mpc/pull/3490)(@gilcu3): Bring back support for NEP-330 contract repro builds (#3490)
+
+
 ### 🚜 Refactor
+
+- [#3359](https://github.com/near/mpc/pull/3359)(@SimonRastikian): Presign args private share (#3359)
+
+- [#3455](https://github.com/near/mpc/pull/3455)(@kevindeforth): Drop `Result` from `RecentBlocksTracker::add_block` (#3455)
+
+- [#3343](https://github.com/near/mpc/pull/3343)(@SimonRastikian): Cleanup frost interface (#3343)
+
+- [#3330](https://github.com/near/mpc/pull/3330)(@kevindeforth): Share blocks tracker instance between queues (#3330)
+
+- [#3481](https://github.com/near/mpc/pull/3481)(@kevindeforth): Wrap `BlockStatus` in handle (#3481)
 
 - [#3497](https://github.com/near/mpc/pull/3497)(@kevindeforth): RecentBlocksTracker uses types from chain gateway crate (#3497)
 
@@ -56,6 +95,22 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 ### 📚 Documentation
 
+- [#3339](https://github.com/near/mpc/pull/3339)(@SimonRastikian): Documenting eddsa with presign (#3339)
+
+- [#3423](https://github.com/near/mpc/pull/3423)(@gilcu3): Add SAFETY notice in bls scalar zeroize block (#3423)
+
+- [#3431](https://github.com/near/mpc/pull/3431)(@anodar): Update documentation to allow all methods for added keys (#3431)
+
+- [#3376](https://github.com/near/mpc/pull/3376)(@pbeza): *(design)* Clarify verifier-rotation eviction in `attestation-verifier-contract.md` (#3376)
+
+- [#3443](https://github.com/near/mpc/pull/3443)(@barakeinav1): Build dstack-mr from a pinned DSTACK_REV (not master) (#3443)
+
+- [#3468](https://github.com/near/mpc/pull/3468)(@netrome): One-pager for node operators (#3468)
+
+- [#3436](https://github.com/near/mpc/pull/3436)(@anodar): Propose different way of calculating supported foreign chain set (#3436)
+
+- [#3408](https://github.com/near/mpc/pull/3408)(@barakeinav1): Use dstack v0.5.11 build-args for reproducible key-provider mr_enclave (#3408)
+
 - [#3458](https://github.com/near/mpc/pull/3458)(@barakeinav1): Require every CVM port (incl. migration `:8079`) bound to a dedicated IP (#3458)
 
 - [#3488](https://github.com/near/mpc/pull/3488)(@barakeinav1): Design doc for auto-removal of unused launcher image hashes (#3488)
@@ -63,7 +118,52 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#3558](https://github.com/near/mpc/pull/3558)(@SimonRastikian): Adding unsaid bits in the contract interface (#3558)
 
 
+### 🧪 Testing
+
+- [#3384](https://github.com/near/mpc/pull/3384)(@gilcu3): Add unit test for incoming connections task drop bug (#3384)
+
+- [#3399](https://github.com/near/mpc/pull/3399)(@SimonRastikian): Flaky test for DamgardEtAl (#3399)
+
+- [#3478](https://github.com/near/mpc/pull/3478)(@gilcu3): Verify participants below threshold are not kicked out when attestation fails (#3478)
+
+- [#3374](https://github.com/near/mpc/pull/3374)(@gilcu3): Showcase contention during asset generation, analyse problem and solutions (#3374)
+
+
 ### ⚙️ Miscellaneous Tasks
+
+- [#3391](https://github.com/near/mpc/pull/3391)(@gilcu3): Remove unneeded file (#3391)
+
+- [#3394](https://github.com/near/mpc/pull/3394)(@gilcu3): Bump cargo-near/cargo-near-build to 0.20.3, remove workaround (#3394)
+
+- [#3402](https://github.com/near/mpc/pull/3402)(@dependabot[bot]): Bump tar from 0.4.45 to 0.4.46 in the cargo group across 1 directory (#3402)
+
+- [#3416](https://github.com/near/mpc/pull/3416)(@netrome): Upgrade Hyper to 1.10.1 (#3416)
+
+- [#3418](https://github.com/near/mpc/pull/3418)(@gilcu3): Prevent dependabot updating nearcore pinned versions (#3418)
+
+- [#3419](https://github.com/near/mpc/pull/3419)(@gilcu3): Eliminate the need for python in the codebase (#3419)
+
+- [#3424](https://github.com/near/mpc/pull/3424)(@dependabot[bot]): Bump the rust-minor-and-patch group across 1 directory with 3 updates (#3424)
+
+- [#3427](https://github.com/near/mpc/pull/3427)(@gilcu3): Use upstream version of cache-nix-action (#3427)
+
+- [#3134](https://github.com/near/mpc/pull/3134)(@anodar): Deduplicate code with wait_for_debug_migration, elaborate comment on resitual race window (#3134)
+
+- [#3325](https://github.com/near/mpc/pull/3325)(@kevindeforth): Remove new final blocks from add block result and use snapshots for test (#3325)
+
+- [#3446](https://github.com/near/mpc/pull/3446)(@dependabot[bot]): Bump http from 1.4.0 to 1.4.1 in the rust-minor-and-patch group (#3446)
+
+- [#3447](https://github.com/near/mpc/pull/3447)(@dependabot[bot]): Bump near-kit from 0.7.2 to 0.9.1 (#3447)
+
+- [#3459](https://github.com/near/mpc/pull/3459)(@gilcu3): Delete triple migration steps from 3.11, clean legacy triples column (#3459)
+
+- [#3465](https://github.com/near/mpc/pull/3465)(@gilcu3): Bump nearcore to 2.12.0 (#3465)
+
+- [#3449](https://github.com/near/mpc/pull/3449)(@barakeinav1): *(deployment)* Clarify TDX HW requirements are per-CVM, bump disk to 1TB (#3449)
+
+- [#3470](https://github.com/near/mpc/pull/3470)(@gilcu3): Remove EpochData legacy cleanup behavior (#3470)
+
+- [#3483](https://github.com/near/mpc/pull/3483)(@SimonRastikian): Deployment of the contract to 3.11.2 (#3483)
 
 - [#3506](https://github.com/near/mpc/pull/3506)(@barakeinav1): *(tdx)* Default to DSS-first state sync in operator setup (#3506)
 
@@ -76,6 +176,9 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#3528](https://github.com/near/mpc/pull/3528)(@anodar): Bump protocol version in genesis for localnet deployment (#3528)
 
 - [#3168](https://github.com/near/mpc/pull/3168)(@barakeinav1): *(tee)* Address PR #3155 follow-up nits (#3168)
+
+- [#3565](https://github.com/near/mpc/pull/3565)(@pbeza): Release v3.12.0 (#3565)
+
 
 
 ## [3.11.0] - 2026-05-27
