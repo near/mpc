@@ -54,7 +54,7 @@ its internal types and these DTOs at its own boundary.
 ### Design rules
 A couple of conventions keep the crate lean and the wire format robust:
 
-1. **`near-sdk` is not a dependency.** The whole point of the crate is that
+1. **`near-sdk` is not a dependency.** This means that
    consumers (the node, SDKs, external tools) don't need the full contract
    stack. Types that genuinely need `near-sdk` are gated behind the `near`
    feature rather than pulled in unconditionally.
