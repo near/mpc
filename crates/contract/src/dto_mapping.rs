@@ -922,7 +922,9 @@ mod tests {
     use super::*;
     use crate::primitives::thresholds::Threshold;
     use assert_matches::assert_matches;
-
+    use crate::errors::InvalidThreshold;
+    use crate::primitives::test_utils::gen_participants;
+    
     const TEST_THRESHOLD: u64 = 2;
 
     fn test_participants() -> Participants {
@@ -1010,9 +1012,6 @@ mod tests {
     #[test]
     fn try_into_contract_type__should_reject_threshold_below_relative_requirement() {
         // Given a DTO with 5 participants and a threshold of 2 (below the 60% bound of 3).
-        use crate::errors::InvalidThreshold;
-        use crate::primitives::test_utils::gen_participants;
-
         let dto = dtos::ThresholdParameters {
             participants: (&gen_participants(5)).into_dto_type(),
             threshold: Threshold::new(2),
