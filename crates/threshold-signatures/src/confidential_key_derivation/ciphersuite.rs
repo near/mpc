@@ -298,15 +298,15 @@ mod tests {
 
     use crate::confidential_key_derivation::Scalar;
     use crate::confidential_key_derivation::scalar_wrapper::ScalarWrapper;
+    use crate::test_utils::MockCryptoRng;
     use crate::{
         confidential_key_derivation::{
             ElementG2, VerifyingKey,
             ciphersuite::{BLS12381SHA256, verify_signature},
             hash_app_id_with_pk,
         },
-        test_utils::check_common_traits_for_type
+        test_utils::check_common_traits_for_type,
     };
-    use crate::test_utils::MockCryptoRng;
 
     #[test]
     fn check_bls12381_g2_sha256_common_traits() {
