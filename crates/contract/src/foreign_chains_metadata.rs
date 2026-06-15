@@ -40,7 +40,7 @@ impl ForeignChainsMetadata {
             .insert(tls_key, foreign_chains_config);
     }
 
-    pub(crate) fn update_cache(
+    pub(crate) fn update_available_chains_config_cache(
         &mut self,
         active_tls_keys: &BTreeSet<dtos::Ed25519PublicKey>,
         threshold: u64,

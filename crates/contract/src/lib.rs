@@ -1096,7 +1096,7 @@ impl MpcContract {
             .collect();
         self.foreign_chains
             .get_mut()
-            .update_cache(&active_tls_keys, threshold);
+            .update_available_chains_config_cache(&active_tls_keys, threshold);
     }
 
     #[deprecated(
