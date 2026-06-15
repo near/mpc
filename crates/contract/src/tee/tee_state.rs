@@ -106,11 +106,11 @@ impl TeeState {
 
         for (account_id, _, participant_info) in participants.participants() {
             let tls_public_key = participant_info.tls_public_key.clone();
-            // TODO(#1087): replace this sentinel with a real account public
+            // TODO(#1087): account_public_key with a real account public
             // key passed in by the caller. `Participants` does not currently
             // carry the operator's account public key, so a mocked entry
-            // cannot record the real one and we store an all-zero placeholder
-            // that never matches a live signer. The mock keeps the
+            // cannot record the real one and we use the TLS key as a unique
+            // per-participant placeholder. The mock keeps the
             // participant from being kicked out of an empty `TeeState` until
             // a real `submit_participant_info` call replaces it (keyed by
             // TLS), but any caller-facing check that compares
@@ -120,6 +120,11 @@ impl TeeState {
             let node_id = NodeId {
                 account_id: account_id.clone(),
                 tls_public_key: tls_public_key.clone(),
+                // Use tls_public_key as account_public_key instead of hardcoded
+                // Ed25519PublicKey::from([0u8; 32]) so that same account public
+                // key isn't associated with different tls keys.
+                // This is not a fix for above TODO(#1087), which should be
+                // addressed outside this PR.
                 account_public_key: tls_public_key.clone(),
             };
 
