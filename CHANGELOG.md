@@ -5,6 +5,79 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.12.0] - 2026-06-15
+
+### 🚀 Features
+
+- [#3235](https://github.com/near/mpc/pull/3235)(@pbeza): *(tee-verifier-interface)* Borsh DTOs for the verifier contract boundary (#3235)
+
+- [#3507](https://github.com/near/mpc/pull/3507)(@frolvanya): Aptos support for foreign tx validation requests in mpc contract (#3507)
+
+- [#3237](https://github.com/near/mpc/pull/3237)(@pbeza): *(tee-verifier)* Stateless `dcap_qvl::verify` wrapper contract (#3237)
+
+- [#3525](https://github.com/near/mpc/pull/3525)(@anodar): Add debug info about the number of configured foreign chain RPC providers (#3525)
+
+- [#3504](https://github.com/near/mpc/pull/3504)(@gilcu3): Add a separate runtime for asset generation (#3504)
+
+- [#3508](https://github.com/near/mpc/pull/3508)(@frolvanya): Aptos foreign-chain inspector and node wiring (#3508)
+
+- [#3326](https://github.com/near/mpc/pull/3326)(@SimonRastikian): Adding resharing per-domain (#3326)
+
+- [#3435](https://github.com/near/mpc/pull/3435)(@pbeza): *(indexer)* Add `/debug/recent_transactions` page (#3435)
+
+
+### 🐛 Bug Fixes
+
+- [#3410](https://github.com/near/mpc/pull/3410)(@barakeinav1): *(node)* Handle SIGTERM for graceful shutdown on operator stop (#3410)
+
+- [#3515](https://github.com/near/mpc/pull/3515)(@gilcu3): Add asset id checks for follower paths (#3515)
+
+- [#3519](https://github.com/near/mpc/pull/3519)(@gilcu3): Outgoing connection hanging on unstable network (#3519)
+
+- [#3486](https://github.com/near/mpc/pull/3486)(@barakeinav1): *(node)* Drain embedded near-indexer thread on graceful shutdown (#3486)
+
+- [#3491](https://github.com/near/mpc/pull/3491)(@DSharifi): *(contract)* Add auth check to `remove_non_participant_update_votes`  (#3491)
+
+- [#3532](https://github.com/near/mpc/pull/3532)(@gilcu3): Make sure localnet launcher script kills processes successfully (#3532)
+
+- [#3533](https://github.com/near/mpc/pull/3533)(@barakeinav1): *(tdx)* Default state sync to Peers (DSS); require tier3_public_addr (#3533)
+
+- [#3560](https://github.com/near/mpc/pull/3560)(@gilcu3): *(test)* Remove time bomb from e2e tests (#3560)
+
+
+### 🚜 Refactor
+
+- [#3497](https://github.com/near/mpc/pull/3497)(@kevindeforth): RecentBlocksTracker uses types from chain gateway crate (#3497)
+
+- [#3498](https://github.com/near/mpc/pull/3498)(@kevindeforth): Move recent blocks tracker to chain-gateway crate (#3498)
+
+- [#3344](https://github.com/near/mpc/pull/3344)(@SimonRastikian): Cleaning up the test_utils.rs in threshold signatures crate (#3344)
+
+
+### 📚 Documentation
+
+- [#3458](https://github.com/near/mpc/pull/3458)(@barakeinav1): Require every CVM port (incl. migration `:8079`) bound to a dedicated IP (#3458)
+
+- [#3488](https://github.com/near/mpc/pull/3488)(@barakeinav1): Design doc for auto-removal of unused launcher image hashes (#3488)
+
+- [#3558](https://github.com/near/mpc/pull/3558)(@SimonRastikian): Adding unsaid bits in the contract interface (#3558)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- [#3506](https://github.com/near/mpc/pull/3506)(@barakeinav1): *(tdx)* Default to DSS-first state sync in operator setup (#3506)
+
+- [#3530](https://github.com/near/mpc/pull/3530)(@gilcu3): Align devnet with the workspace deps (#3530)
+
+- [#3544](https://github.com/near/mpc/pull/3544)(@dependabot[bot]): Bump thread-priority from 1.2.0 to 3.0.0 (#3544)
+
+- [#3542](https://github.com/near/mpc/pull/3542)(@dependabot[bot]): Bump the rust-minor-and-patch group across 1 directory with 4 updates (#3542)
+
+- [#3528](https://github.com/near/mpc/pull/3528)(@anodar): Bump protocol version in genesis for localnet deployment (#3528)
+
+- [#3168](https://github.com/near/mpc/pull/3168)(@barakeinav1): *(tee)* Address PR #3155 follow-up nits (#3168)
+
+
 ## [3.11.0] - 2026-05-27
 
 ### 🚀 Features
