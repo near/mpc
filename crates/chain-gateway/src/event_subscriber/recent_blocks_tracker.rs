@@ -1,13 +1,12 @@
-use derive_more::Into;
 use near_indexer_primitives::CryptoHash;
-use near_indexer_primitives::types::BlockHeight;
 use std::collections::{HashMap, VecDeque};
 use std::fmt::Debug;
-use std::ops::Add;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 
-use super::metrics::{MPC_BLOCKS_INDEXED, MPC_FINALIZED_BLOCKS_INDEXED};
+use crate::event_subscriber::block_events::BlockContext;
+use crate::event_subscriber::metrics::{MPC_BLOCKS_INDEXED, MPC_FINALIZED_BLOCKS_INDEXED};
+use crate::types::BlockHeight;
 
 /// Tracks the topology of the recent blocks, using the blocks given by the indexer.
 ///
@@ -208,7 +207,7 @@ pub struct AddBlockResult {
 /// Represents a block in the recent blockchain.
 struct BlockNode {
     hash: CryptoHash,
-    height: u64,
+    height: BlockHeight,
     /// Indicates the finality status of this block. Held as `Arc`.
     /// A [`BlockStatusHandle`] is handed out via [`AddBlockResult::block_status`] to consumers,
     /// allowing them to observe status changes and detect pruning.
@@ -295,32 +294,6 @@ impl BlockNode {
     }
 }
 
-#[derive(Clone, Into)]
-pub struct BlockEntropy([u8; 32]);
-
-impl BlockEntropy {
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.0
-    }
-}
-
-impl From<CryptoHash> for BlockEntropy {
-    fn from(value: CryptoHash) -> Self {
-        BlockEntropy(value.into())
-    }
-}
-
-/// A view of a block that is sufficient for the RecentBlocksTracker.
-#[derive(Clone)]
-pub struct BlockViewLite {
-    pub hash: CryptoHash,
-    pub height: u64,
-    pub prev_hash: CryptoHash,
-    pub last_final_block: CryptoHash,
-    pub entropy: BlockEntropy,
-    pub timestamp_nanosec: u64,
-}
-
 impl RecentBlocksTracker {
     pub fn new(window_size: u64) -> Self {
         Self {
@@ -328,14 +301,14 @@ impl RecentBlocksTracker {
             root_children: Vec::new(),
             canonical_head: Weak::new(),
             final_head: None,
-            maximum_height_available: 0,
+            maximum_height_available: 0.into(),
             hash_to_node: HashMap::new(),
         }
     }
 
     /// Adds a block to the tracker. This is expected to be called for EVERY block given by the
     /// indexer (whether or not it is interesting).
-    pub fn add_block(&mut self, block: &BlockViewLite) -> AddBlockResult {
+    pub fn add_block(&mut self, block: &BlockContext) -> AddBlockResult {
         if let Some(node) = self.hash_to_node.get(&block.hash) {
             tracing::error!(
                 target: "recent_blocks_tracker",
@@ -448,7 +421,7 @@ impl RecentBlocksTracker {
     /// to `subtrees_to_remove`
     fn update_roots(
         &mut self,
-        new_final_height: u64,
+        new_final_height: BlockHeight,
         subtrees_to_remove: &mut VecDeque<Arc<BlockNode>>,
     ) {
         let mut new_root_children = Vec::new();
@@ -524,14 +497,14 @@ impl RecentBlocksTracker {
     /// This is typically canonical_head.height - window_size + 1, but in case of delayed finality,
     /// we ensure that the final head is not pruned. Otherwise, not only would the logic be very
     /// messy, but also we would not be able to provide a contiguous stream of finalized blocks.
-    fn minimum_height_to_keep(&self) -> Option<u64> {
+    fn minimum_height_to_keep(&self) -> Option<BlockHeight> {
         let Some(final_head) = &self.final_head else {
             return None;
         };
         Some(
             self.maximum_height_available
                 .saturating_sub(self.window_size)
-                .add(1)
+                .saturating_add(1)
                 .min(final_head.height),
         )
     }
@@ -569,9 +542,9 @@ impl Debug for RecentBlocksTracker {
             "   Recent blocks: (Window = {} to {}, GC limit {})",
             self.maximum_height_available
                 .saturating_sub(self.window_size)
-                .add(1),
+                .saturating_add(1),
             self.maximum_height_available,
-            self.minimum_height_to_keep().unwrap_or(0)
+            self.minimum_height_to_keep().unwrap_or(0.into())
         )?;
         let final_head = self.final_head.as_ref().map(|n| n.hash);
         let canonical_head = self.canonical_head.upgrade().map(|n| n.hash);
@@ -592,24 +565,24 @@ impl Debug for RecentBlocksTracker {
     }
 }
 
-#[cfg(test)]
-pub mod tests {
-    use crate::requests::recent_blocks_tracker::{AtomicBlockStatus, BlockStatusHandle};
-
-    use super::{BlockEntropy, BlockStatus, BlockViewLite, RecentBlocksTracker};
+#[cfg(any(test, feature = "test-utils"))]
+pub mod test_utils {
+    use super::super::block_events::BlockContext;
+    use super::{BlockStatus, BlockStatusHandle, RecentBlocksTracker};
+    use crate::types::BlockEntropy;
     use near_indexer::near_primitives::hash::hash;
     use near_indexer_primitives::CryptoHash;
     use std::collections::HashSet;
     use std::fmt::Write;
-    use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::{Arc, Mutex};
 
     pub struct TestBlock {
-        hash: CryptoHash,
+        pub(super) hash: CryptoHash,
         height: u64,
         entropy: BlockEntropy,
         timestamp_nanosec: u64,
-        pub(crate) parent: Option<Arc<TestBlock>>,
+        pub parent: Option<Arc<TestBlock>>,
         tester: Arc<TestBlockMaker>,
         next_fork_seed: AtomicU64,
     }
@@ -633,7 +606,7 @@ pub mod tests {
             parent.last_final_block()
         }
 
-        pub fn to_block_view(&self) -> BlockViewLite {
+        pub fn to_block_view(&self) -> BlockContext {
             let parent_hash = match self.parent.clone() {
                 Some(parent) => parent.hash,
                 None => {
@@ -664,9 +637,9 @@ pub mod tests {
                 }
             };
 
-            BlockViewLite {
+            BlockContext {
                 hash: self.hash,
-                height: self.height,
+                height: self.height.into(),
                 entropy: self.entropy.clone(),
                 timestamp_nanosec: self.timestamp_nanosec,
                 prev_hash: parent_hash,
@@ -742,14 +715,14 @@ pub mod tests {
 
     pub struct Tester {
         maker: Arc<TestBlockMaker>,
-        tracker: RecentBlocksTracker,
+        pub(super) tracker: RecentBlocksTracker,
         parents_of_added_blocks: HashSet<CryptoHash>,
         /// When adding a block to the tracker via [`Tester::add`], we debug-print the tracker and
         /// append the output to [`Tester::evolution`]. This allows us to inspect how adding a block
         /// influences finality and canonical status of tracked blocks.
         /// The resulting string can be compared against snapshots, allowing the unittests to catch
         /// regressions.
-        evolution: String,
+        pub(super) evolution: String,
     }
 
     impl From<u8> for BlockStatus {
@@ -806,6 +779,14 @@ pub mod tests {
             result.block_status
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::test_utils::Tester;
+    use super::{AtomicBlockStatus, BlockStatus};
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicU8;
 
     #[test]
     fn test_no_forks() {
@@ -1097,7 +1078,7 @@ pub mod tests {
         tester.add(&b1);
         tester.add(&b2);
         tester.add(&b3);
-        assert_eq!(tester.tracker.minimum_height_to_keep(), Some(1))
+        assert_eq!(tester.tracker.minimum_height_to_keep(), Some(1.into()))
     }
 
     #[test]

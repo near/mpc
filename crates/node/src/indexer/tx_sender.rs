@@ -3,12 +3,17 @@ use super::IndexerState;
 use super::tx_signer::{TransactionSigner, TransactionSigners};
 use crate::config::RespondConfig;
 use crate::metrics;
+use crate::types::{
+    LogTransaction, SignerContext, SubmittedTransaction, SubmittedTransactionStatus,
+    SubmittedTxMetadata,
+};
 use anyhow::Context;
 use ed25519_dalek::SigningKey;
 use mpc_attestation::attestation::DEFAULT_EXPIRATION_DURATION_SECONDS;
 use near_account_id::AccountId;
 use near_indexer_primitives::types::Gas;
-use near_mpc_contract_interface::types::{Attestation, VerifiedAttestation};
+use near_mpc_contract_interface::types::{Attestation, Ed25519PublicKey, VerifiedAttestation};
+use near_time::Clock;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -48,6 +53,7 @@ impl TransactionProcessorHandle {
         owner_secret_key: SigningKey,
         config: RespondConfig,
         indexer_state: Arc<IndexerState>,
+        tx_logger: impl LogTransaction,
     ) -> anyhow::Result<impl TransactionSender> {
         let mut signers = TransactionSigners::new(config, owner_account_id, owner_secret_key)
             .context("Failed to initialize transaction signers")?;
@@ -62,19 +68,22 @@ impl TransactionProcessorHandle {
 
                 let tx_signer = signers.signer_for(&tx_request);
                 let indexer_state = indexer_state.clone();
+                let tx_logger = tx_logger.clone();
                 tokio::spawn(async move {
                     let Ok(txn_json) = serde_json::to_string(&tx_request) else {
                         tracing::error!(target: "mpc", "Failed to serialize response args");
                         return;
                     };
                     tracing::debug!(target = "mpc", "tx args {:?}", txn_json);
-                    let transaction_status = ensure_send_transaction(
+                    let (transaction_status, recent_transaction) = ensure_send_transaction(
                         tx_signer.clone(),
                         indexer_state,
                         tx_request,
                         txn_json,
                     )
                     .await;
+
+                    tx_logger.log_transaction(recent_transaction);
 
                     if let Some(tx_response_channel) = tx_response_channel {
                         let _ = tx_response_channel.send(transaction_status);
@@ -134,13 +143,14 @@ pub enum TransactionStatus {
 }
 
 /// Creates, signs, and submits a function call with the given method and serialized arguments.
+/// On success, returns the metadata of the submitted transaction for debugging.
 async fn submit_tx(
     tx_signer: Arc<TransactionSigner>,
     indexer_state: Arc<IndexerState>,
     method: String,
     params_ser: String,
     gas: Gas,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<SubmittedTxMetadata> {
     let block = indexer_state.view_client.latest_final_block().await?;
 
     let transaction = tx_signer.create_and_sign_function_call_tx(
@@ -153,15 +163,24 @@ async fn submit_tx(
     );
 
     let tx_hash = transaction.get_hash();
+    let nonce = transaction.transaction.nonce().nonce();
+    let signature = transaction.signature.clone();
     tracing::info!(
         target = "mpc",
         "sending tx {:?} with ak={:?} nonce={:?}",
         tx_hash,
         tx_signer.public_key(),
-        transaction.transaction.nonce(),
+        nonce,
     );
 
-    indexer_state.rpc_handler.submit_tx(transaction).await
+    indexer_state.rpc_handler.submit_tx(transaction).await?;
+
+    Ok(SubmittedTxMetadata {
+        tx_hash,
+        nonce,
+        signature,
+        block_height: block.header.height,
+    })
 }
 
 /// Confirms whether the intended effect of the transaction request has been observed on chain.
@@ -303,29 +322,47 @@ async fn observe_tx_result(
     }
 }
 
-/// Attempts to ensure that a function call with given method and args is included on-chain.
-/// If the submitted transaction is not observed by the indexer before the `timeout`, tries again.
-/// Will make up to `num_attempts` attempts.
+/// Attempts to ensure that a function call with the given method and args is
+/// included on-chain. Submits the transaction, waits `TRANSACTION_TIMEOUT` for
+/// it to be included, then observes once whether it had its intended on-chain
+/// effect.
 async fn ensure_send_transaction(
     tx_signer: Arc<TransactionSigner>,
     indexer_state: Arc<IndexerState>,
     request: ChainSendTransactionRequest,
     params_ser: String,
-) -> TransactionStatus {
-    if let Err(err) = submit_tx(
+) -> (TransactionStatus, SubmittedTransaction) {
+    let method = request.method();
+    let signer = SignerContext {
+        account_id: tx_signer.account_id().clone(),
+        public_key: Ed25519PublicKey::from(&tx_signer.public_key()),
+        method,
+    };
+    let submitted_metadata = submit_tx(
         tx_signer.clone(),
         indexer_state.clone(),
-        request.method().to_string(),
+        method.to_string(),
         params_ser.clone(),
         request.gas_required(),
     )
-    .await
-    {
-        metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
-            .with_label_values(&[request.method(), "local_error"])
-            .inc();
-        tracing::error!(%err, "Failed to forward transaction {:?}", request);
-        return TransactionStatus::NotExecuted;
+    .await;
+
+    // Stamp the submission time now, before the observation wait below, so the
+    // debug page reflects when the transaction was actually routed.
+    let submitted_at = Clock::real().now_utc();
+
+    let metadata = match submitted_metadata {
+        Ok(metadata) => metadata,
+        Err(err) => {
+            metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
+                .with_label_values(&[method, "local_error"])
+                .inc();
+            tracing::error!(%err, "Failed to forward transaction {:?}", request);
+            return (
+                TransactionStatus::NotExecuted,
+                SubmittedTransaction::submit_failed(signer, submitted_at),
+            );
+        }
     };
 
     // Allow time for the transaction to be included
@@ -334,29 +371,23 @@ async fn ensure_send_transaction(
     // Then try to check whether it had the intended effect
     let transaction_status = observe_tx_result(indexer_state.clone(), &request).await;
 
-    match &transaction_status {
-        Ok(TransactionStatus::Executed) => {
-            metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
-                .with_label_values(&[request.method(), "succeeded"])
-                .inc();
-        }
+    let (outcome_label, recorded_status) = match &transaction_status {
+        Ok(TransactionStatus::Executed) => ("succeeded", SubmittedTransactionStatus::Executed),
         Ok(TransactionStatus::NotExecuted) => {
-            metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
-                .with_label_values(&[request.method(), "timed_out"])
-                .inc();
+            ("timed_out", SubmittedTransactionStatus::NotExecuted)
         }
-        Ok(TransactionStatus::Unknown) => {
-            metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
-                .with_label_values(&[request.method(), "unknown"])
-                .inc();
-        }
+        Ok(TransactionStatus::Unknown) => ("unknown", SubmittedTransactionStatus::Unknown),
         Err(err) => {
-            metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
-                .with_label_values(&[request.method(), "unknown_err"])
-                .inc();
             tracing::warn!(target:"mpc", %err, "encountered error trying to confirm result of transaction {:?}", request);
+            ("unknown_err", SubmittedTransactionStatus::ObserveError)
         }
-    }
+    };
+    metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
+        .with_label_values(&[method, outcome_label])
+        .inc();
 
-    transaction_status.unwrap_or(TransactionStatus::Unknown)
+    (
+        transaction_status.unwrap_or(TransactionStatus::Unknown),
+        SubmittedTransaction::submitted(signer, metadata, recorded_status, submitted_at),
+    )
 }

@@ -33,6 +33,7 @@ use mpc_node_config::{
 use crate::primitives::ParticipantId;
 use crate::tests::common::MockTransactionSender;
 use crate::tracking::{self, AutoAbortTask, start_root_task};
+use crate::web::recent_transactions::SharedRecentTransactions;
 use crate::web::{start_web_server, static_web_data};
 use assert_matches::assert_matches;
 use mpc_primitives::domain::{Curve, Protocol};
@@ -51,6 +52,7 @@ use tokio::time::timeout;
 
 pub mod common;
 
+mod asset_generation_signing_contention;
 mod basic_cluster;
 mod changing_participant_details;
 mod faulty;
@@ -109,6 +111,8 @@ impl OneNodeTestConfig {
                 let (_, dummy_protocol_state_receiver) =
                     watch::channel(ProtocolContractState::NotInitialized);
                 let (_, dummy_migration_state_receiver) = watch::channel((0, BTreeMap::new()));
+                // The fake indexer never records, so the buffer stays empty.
+                // TODO(#3522): wire it into the fake indexer and assert on it.
                 let web_server = start_web_server(
                     root_task.into(),
                     debug_request_sender.clone(),
@@ -117,6 +121,7 @@ impl OneNodeTestConfig {
                     dummy_protocol_state_receiver,
                     dummy_migration_state_receiver,
                     self.config.clone(),
+                    SharedRecentTransactions::default(),
                 )
                 .await?;
                 let _web_server = tracking::spawn_checked("web server", web_server);
@@ -195,6 +200,7 @@ impl IntegrationTestSetup {
         for (i, (_, p2p_key)) in p2p_configs.into_iter().enumerate() {
             let config = ConfigFile {
                 cores: Some(4),
+                separate_asset_generation_runtime: true,
                 // Indexer config is just a dummy.
                 indexer: IndexerConfig {
                     concurrency: 1.try_into().unwrap(),
