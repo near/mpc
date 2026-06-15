@@ -1215,6 +1215,9 @@ impl MpcContract {
         if let Some(new_state) = self.protocol_state.vote_reshared(key_event_id)? {
             // Resharing has concluded, transition to running state
             self.protocol_state = new_state;
+            // update_cache iterates active_tls_keys only, so departed nodes' configs are
+            // already excluded — correct result even before cleanup promises run.
+            self.recompute_available_foreign_chains();
 
             // Spawn a promise to clean up votes from non-participants.
             // Note: MpcContract::vote_update uses filtering to ensure correctness even if this cleanup fails.
@@ -1893,9 +1896,6 @@ impl MpcContract {
             .rpc_whitelist
             .votes
             .retain(participants);
-
-        // The active set just changed; refresh the cache against the new participants/threshold.
-        self.recompute_available_foreign_chains();
 
         Ok(())
     }
