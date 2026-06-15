@@ -26,7 +26,7 @@ use mpc_primitives::ReconstructionThreshold;
 use mpc_primitives::domain::DomainId;
 use near_time::Clock;
 use std::sync::Arc;
-use threshold_signatures::ReconstructionThreshold;
+use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
 use threshold_signatures::ecdsa::KeygenOutput;
 use threshold_signatures::ecdsa::Signature;
 use threshold_signatures::frost_secp256k1::VerifyingKey;
@@ -193,14 +193,14 @@ impl SignatureProvider for EcdsaSignatureProvider {
     }
 
     async fn run_key_generation_client(
-        threshold: ReconstructionThreshold,
+        threshold: TSReconstructionThreshold,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
         EcdsaSignatureProvider::run_key_generation_client_internal(threshold, channel).await
     }
 
     async fn run_key_resharing_client(
-        new_threshold: ReconstructionThreshold,
+        new_threshold: TSReconstructionThreshold,
         my_share: Option<SigningShare>,
         public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
@@ -272,7 +272,7 @@ impl SignatureProvider for EcdsaSignatureProvider {
         // network-wide threshold.
         let threshold = ReconstructionThreshold::new(self.mpc_config.participants.threshold);
         let threshold_usize: usize = threshold.inner().try_into()?;
-        let threshold_bound = ReconstructionThreshold::from(threshold_usize);
+        let threshold_bound = TSReconstructionThreshold::from(threshold_usize);
         let triple_store = self.triple_store_for_t(threshold)?;
 
         let generate_triples = tracking::spawn(

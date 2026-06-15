@@ -731,6 +731,7 @@ mod tests {
     };
     use std::collections::BTreeSet;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
 
     #[rstest::rstest]
     #[tokio::test(start_paused = true)]
@@ -900,7 +901,7 @@ mod tests {
         Arc::new(ResharingArgs {
             previous_keyset: Keyset::new(EpochId::new(5), vec![]),
             existing_keyshares: None,
-            new_threshold: ReconstructionThreshold::from(3),
+            new_threshold: TSReconstructionThreshold::from(3),
             old_participants: ParticipantsConfig {
                 threshold: 3,
                 participants: vec![],
