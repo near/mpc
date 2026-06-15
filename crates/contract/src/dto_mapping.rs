@@ -921,6 +921,7 @@ pub fn args_into_verify_foreign_tx_request(
 mod tests {
     use super::*;
     use crate::primitives::thresholds::Threshold;
+    use assert_matches::assert_matches;
 
     const TEST_THRESHOLD: u64 = 2;
 
@@ -1021,7 +1022,7 @@ mod tests {
         let result: Result<ThresholdParameters, Error> = dto.try_into_contract_type();
 
         // Then conversion fails with the relative-threshold error.
-        assert!(matches!(
+        assert_matches!(
             result,
             Err(Error::InvalidThreshold(
                 InvalidThreshold::MinRelRequirementFailed {
@@ -1029,6 +1030,6 @@ mod tests {
                     found: 2
                 }
             ))
-        ));
+        );
     }
 }
