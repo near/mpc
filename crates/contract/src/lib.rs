@@ -7532,7 +7532,9 @@ mod tests {
             AddDomainsVotes::default(),
         ));
 
-        // When: clean_foreign_chain_data prunes participant[2]'s stale entry and recomputes.
+        // When: vote_reshared recomputes the cache, then clean_foreign_chain_data
+        // prunes participant[2]'s stale storage entry.
+        contract.recompute_available_foreign_chains();
         contract
             .clean_foreign_chain_data()
             .expect("clean should succeed");
