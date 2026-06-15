@@ -153,6 +153,12 @@ impl From<MpcContract> for crate::MpcContract {
 /// rules. A violation hard-blocks the migration (panic): we refuse to carry state
 /// that breaks the threshold relation into the new contract. Such state must be
 /// corrected (via `vote_new_parameters`) before upgrading.
+///
+/// TODO(#XXXX): remove together with this module once the 3.11.2 -> current
+/// migration is retired. The relation is enforced at every runtime mutation point
+/// (`assert_proposal_meets_all_thresholds`, `vote_add_domains`, `init_running`,
+/// `verify_tee`), so once no pre-existing violating state can reach this path the
+/// gate has no remaining job.
 fn validate_threshold_relation_on_migration(running: &RunningContractState) {
     let num_participants = running.parameters.participants().len() as u64;
     let max_reconstruction_threshold = running
