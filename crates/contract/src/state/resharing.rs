@@ -416,12 +416,18 @@ pub mod tests {
         // Reproposing with new_params_1 should succeed, but then reproposing with new_params_2
         // should be rejected, since all re-proposals must be valid against the original.
         let mut new_participants_1 = old_participants.clone();
+        // Threshold valid for the grown set (1.5x): old_len sits within
+        // [ceil(0.6 * 1.5n), floor(0.8 * 1.5n)].
         let new_threshold = Threshold::new(old_participants.len() as u64);
         new_participants_1.add_random_participants_till_n((old_participants.len() * 3).div_ceil(2));
         let new_participants_2 = new_participants_1
             .subset(new_participants_1.len() - old_participants.len()..new_participants_1.len());
         let new_params_1 = ThresholdParameters::new(new_participants_1, new_threshold).unwrap();
-        let new_params_2 = ThresholdParameters::new(new_participants_2, new_threshold).unwrap();
+        // new_params_2 has the same size as the old set, for which `new_threshold`
+        // (== old_len) would be k == n and exceed the upper cap; use a valid
+        // threshold for that size instead.
+        let new_threshold_2 = Threshold::new((3 * new_participants_2.len() as u64).div_ceil(5));
+        let new_params_2 = ThresholdParameters::new(new_participants_2, new_threshold_2).unwrap();
         // Proposals carry an empty (no-change) set of per-domain threshold updates.
         let proposed_1 = ProposedThresholdParameters::new(new_params_1.clone(), BTreeMap::new());
         let proposed_2 = ProposedThresholdParameters::new(new_params_2.clone(), BTreeMap::new());

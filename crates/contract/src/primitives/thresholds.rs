@@ -10,6 +10,14 @@ pub use near_mpc_contract_interface::types::Threshold;
 /// Minimum absolute threshold required.
 const MIN_THRESHOLD_ABSOLUTE: u64 = 2;
 
+/// Maximum fraction of participants the GovernanceThreshold may reach, expressed
+/// as `MAX_THRESHOLD_NUMERATOR / MAX_THRESHOLD_DENOMINATOR` (currently 80%). A
+/// GovernanceThreshold set too high would let a minority that stops serving lock
+/// the contract (it could no longer reshare, add/kick participants, or sign).
+/// Kept as an explicit fraction so the percentage and rounding are easy to tune.
+const MAX_THRESHOLD_NUMERATOR: u64 = 4;
+const MAX_THRESHOLD_DENOMINATOR: u64 = 5;
+
 /// Stores the threshold key parameters: the owners of key shares
 /// (`participants`) and the cryptographic `threshold`. This is the stored,
 /// always-current shape.
@@ -33,11 +41,15 @@ impl ThresholdParameters {
         }
     }
 
-    /// Ensures that the threshold `k` is sensible and meets the absolute and minimum requirements.
+    /// Ensures that the threshold `k` is sensible and meets the absolute and relative requirements.
     /// That is:
     /// - threshold must be at least `MIN_THRESHOLD_ABSOLUTE`
     /// - threshold can not exceed the number of shares `n_shares`.
     /// - threshold must be at least 60% of the number of shares (rounded upwards).
+    /// - threshold must not exceed `MAX_THRESHOLD_NUMERATOR / MAX_THRESHOLD_DENOMINATOR`
+    ///   of the number of shares (rounded downwards), so a minority that stops serving
+    ///   cannot lock the contract. This upper cap is clamped up to the 60% lower bound so
+    ///   the feasible window is never empty for small `n_shares`.
     pub fn validate_threshold(n_shares: u64, k: Threshold) -> Result<(), Error> {
         if k.value() > n_shares {
             return Err(InvalidThreshold::MaxRequirementFailed {
@@ -49,11 +61,43 @@ impl ThresholdParameters {
         if k.value() < MIN_THRESHOLD_ABSOLUTE {
             return Err(InvalidThreshold::MinAbsRequirementFailed.into());
         }
-        let percentage_bound = (3 * n_shares).div_ceil(5); // minimum 60%
-        if k.value() < percentage_bound {
+        let lower_relative_bound = (3 * n_shares).div_ceil(5); // minimum 60%
+        if k.value() < lower_relative_bound {
             return Err(InvalidThreshold::MinRelRequirementFailed {
-                required: percentage_bound,
+                required: lower_relative_bound,
                 found: k.value(),
+            }
+            .into());
+        }
+        // Clamp the upper cap up to the lower bound so the window stays non-empty for small n.
+        let upper_relative_bound =
+            (MAX_THRESHOLD_NUMERATOR * n_shares / MAX_THRESHOLD_DENOMINATOR).max(lower_relative_bound);
+        if k.value() > upper_relative_bound {
+            return Err(InvalidThreshold::MaxRelRequirementFailed {
+                max: upper_relative_bound,
+                found: k.value(),
+            }
+            .into());
+        }
+        Ok(())
+    }
+
+    /// Validates the GovernanceThreshold `k` against both the participant count and the
+    /// largest ReconstructionThreshold across all domains. Layers the cross-domain rule
+    /// `GovernanceThreshold >= max(ReconstructionThreshold)` on top of [`Self::validate_threshold`]:
+    /// the network must never be able to govern with fewer parties than are required to
+    /// reconstruct any domain's key. Call this at every point where the GovernanceThreshold,
+    /// a ReconstructionThreshold, or the participant set changes.
+    pub fn validate_governance_against_reconstruction(
+        num_participants: u64,
+        governance: Threshold,
+        max_reconstruction_threshold: u64,
+    ) -> Result<(), Error> {
+        Self::validate_threshold(num_participants, governance)?;
+        if governance.value() < max_reconstruction_threshold {
+            return Err(InvalidThreshold::BelowReconstructionThreshold {
+                reconstruction_threshold: max_reconstruction_threshold,
+                governance_threshold: governance.value(),
             }
             .into());
         }
@@ -228,10 +272,10 @@ impl ProposedThresholdParameters {
 #[expect(non_snake_case)]
 mod tests {
     use crate::{
-        errors::{Error, InvalidCandidateSet},
+        errors::{Error, InvalidCandidateSet, InvalidThreshold},
         primitives::{
             participants::{ParticipantId, Participants},
-            test_utils::{gen_participant, gen_participants, gen_threshold_params},
+            test_utils::{gen_participant, gen_participants, gen_threshold_params, max_threshold},
             thresholds::{ProposedThresholdParameters, Threshold, ThresholdParameters},
         },
         state::test_utils::gen_valid_params_proposal,
@@ -254,28 +298,38 @@ mod tests {
     fn test_validate_threshold() {
         let n = rand::thread_rng().gen_range(2..600) as u64;
         let min_threshold = ((n as f64) * 0.6).ceil() as u64;
+        // Upper cap is floor(0.8 * n), clamped up to the 60% lower bound.
+        let max_threshold = (4 * n / 5).max(min_threshold);
         for k in 0..min_threshold {
             let _ = ThresholdParameters::validate_threshold(n, Threshold::new(k)).unwrap_err();
         }
-        for k in min_threshold..(n + 1) {
+        for k in min_threshold..=max_threshold {
             ThresholdParameters::validate_threshold(n, Threshold::new(k)).unwrap();
         }
-        let _ = ThresholdParameters::validate_threshold(n, Threshold::new(n + 1)).unwrap_err();
+        // Anything above the upper cap (up to and beyond n) must be rejected.
+        for k in (max_threshold + 1)..=(n + 1) {
+            let _ = ThresholdParameters::validate_threshold(n, Threshold::new(k)).unwrap_err();
+        }
     }
 
     #[test]
     fn test_threshold_parameters_constructor() {
         let n: usize = rand::thread_rng().gen_range(2..600);
         let min_threshold = ((n as f64) * 0.6).ceil() as usize;
+        // Upper cap is floor(0.8 * n), clamped up to the 60% lower bound.
+        let max_threshold = (4 * n / 5).max(min_threshold);
 
         let participants = gen_participants(n);
         for k in 1..min_threshold {
             let invalid_threshold = Threshold::new(k as u64);
             let _ = ThresholdParameters::new(participants.clone(), invalid_threshold).unwrap_err();
         }
-        let _ = ThresholdParameters::new(participants.clone(), Threshold::new((n + 1) as u64))
-            .unwrap_err();
-        for k in min_threshold..(n + 1) {
+        // Thresholds above the upper cap (including up to n and beyond) are rejected.
+        for k in (max_threshold + 1)..=(n + 1) {
+            let invalid_threshold = Threshold::new(k as u64);
+            let _ = ThresholdParameters::new(participants.clone(), invalid_threshold).unwrap_err();
+        }
+        for k in min_threshold..=max_threshold {
             let threshold = Threshold::new(k as u64);
             let tp = ThresholdParameters::new(participants.clone(), threshold);
             let tp = tp.expect("Threshold parameters should be valid for the given threshold");
@@ -294,6 +348,56 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn validate_threshold__should_reject_governance_above_upper_cap() {
+        // Given 10 participants, the upper cap is floor(0.8 * 10) = 8.
+        let n = 10;
+        // When/Then thresholds within the window are accepted.
+        ThresholdParameters::validate_threshold(n, Threshold::new(8)).unwrap();
+        // ...and the first value above the cap is rejected.
+        assert_matches!(
+            ThresholdParameters::validate_threshold(n, Threshold::new(9)),
+            Err(Error::InvalidThreshold(
+                InvalidThreshold::MaxRelRequirementFailed { max: 8, found: 9 }
+            ))
+        );
+    }
+
+    #[test]
+    fn validate_threshold__should_not_produce_empty_window_for_small_n() {
+        // For small n the floor(0.8n) cap can dip below the ceil(0.6n) lower bound;
+        // the clamp must keep at least one valid threshold available.
+        for n in 2..=12u64 {
+            let lower = (3 * n).div_ceil(5);
+            let upper = max_threshold(n as usize) as u64;
+            assert!(upper >= lower, "empty window at n={n}: [{lower}, {upper}]");
+            // The clamped boundary value must validate.
+            ThresholdParameters::validate_threshold(n, Threshold::new(upper)).unwrap();
+        }
+    }
+
+    #[test]
+    fn validate_governance_against_reconstruction__should_reject_governance_below_max_reconstruction()
+    {
+        // Given 10 participants and a governance threshold of 6 (a valid value on its own).
+        let n = 10;
+        let governance = Threshold::new(6);
+        // When the largest reconstruction threshold is 7 (above governance).
+        // Then the relation is rejected.
+        assert_matches!(
+            ThresholdParameters::validate_governance_against_reconstruction(n, governance, 7),
+            Err(Error::InvalidThreshold(
+                InvalidThreshold::BelowReconstructionThreshold {
+                    reconstruction_threshold: 7,
+                    governance_threshold: 6,
+                }
+            ))
+        );
+        // ...but is accepted when governance meets or exceeds the max reconstruction threshold.
+        ThresholdParameters::validate_governance_against_reconstruction(n, governance, 6).unwrap();
+        ThresholdParameters::validate_governance_against_reconstruction(n, governance, 5).unwrap();
     }
 
     #[test]
@@ -445,8 +549,8 @@ mod tests {
     #[test]
     fn test_proposal_non_contiguous_new_ids_fail() {
         // Test that the lowest new id equals to the `next_id` of the previous set.
-        // Use a high threshold so adding one participant doesn't violate the 60% rule.
-        let params = ThresholdParameters::new(gen_participants(5), Threshold::new(5)).unwrap();
+        // Use a high (but capped) threshold so adding one participant doesn't violate the 60% rule.
+        let params = ThresholdParameters::new(gen_participants(5), Threshold::new(4)).unwrap();
 
         let wrong_id = params.participants.next_id().0 + 1;
 
@@ -470,7 +574,7 @@ mod tests {
 
     #[test]
     fn test_proposal_non_unique_ids() {
-        let params = ThresholdParameters::new(gen_participants(5), Threshold::new(5)).unwrap();
+        let params = ThresholdParameters::new(gen_participants(5), Threshold::new(4)).unwrap();
 
         // Create proposal with duplicate participants (doubled list)
         let tampered_participants = Participants::init(
@@ -501,9 +605,9 @@ mod tests {
     fn test_remove_only() {
         let params = ThresholdParameters::new(gen_participants(5), Threshold::new(3)).unwrap();
 
-        let new_participants = params
-            .participants
-            .subset(0..params.threshold.value() as usize);
+        // Shrink to 4 participants (not down to the threshold of 3): with the upper
+        // cap, k=3 requires at least 4 participants (floor(0.8*4) = 3).
+        let new_participants = params.participants.subset(0..4);
 
         let new_params = ThresholdParameters::new(new_participants, params.threshold).unwrap();
 
@@ -530,7 +634,7 @@ mod tests {
     fn test_new_participant_id_too_high() {
         // When proposal's next_id is higher than max_id + 1, it should fail with
         // NewParticipantIdsTooHigh.
-        let params = ThresholdParameters::new(gen_participants(5), Threshold::new(5)).unwrap();
+        let params = ThresholdParameters::new(gen_participants(5), Threshold::new(4)).unwrap();
         let next_id = params.participants.next_id();
 
         // Add one new participant with the correct next_id, but set the proposal's
@@ -539,13 +643,13 @@ mod tests {
         let mut new_participants_vec: Vec<_> = params.participants.participants().to_vec();
         new_participants_vec.push((new_account, next_id, new_info));
 
-        // 6 participants with threshold 5: validate_threshold passes (60% of 6 = 4 <= 5 <= 6)
+        // 6 participants with threshold 4: validate_threshold passes (60% of 6 = 4, upper cap = 4)
         let proposal = ThresholdParameters::new_unvalidated(
             Participants::init(
                 ParticipantId(next_id.get() + 2), // too high: should be next_id + 1
                 new_participants_vec,
             ),
-            Threshold::new(5),
+            Threshold::new(4),
         );
         assert_eq!(
             params.validate_incoming_proposal(&proposal).unwrap_err(),

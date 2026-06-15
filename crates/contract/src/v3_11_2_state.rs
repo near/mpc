@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_contract_interface::types::{Metrics, VerifyForeignTransactionRequest};
-use near_sdk::{env, store::LookupMap};
+use near_sdk::{env, log, store::LookupMap};
 
 use crate::{
     Config, SupportedForeignChainsByNode,
@@ -128,8 +128,11 @@ impl From<MpcContract> for crate::MpcContract {
             env::panic_str("Contract must be in running state when migrating.");
         };
 
+        let running: RunningContractState = running.into();
+        validate_threshold_relation_on_migration(&running);
+
         crate::MpcContract {
-            protocol_state: ProtocolContractState::Running(running.into()),
+            protocol_state: ProtocolContractState::Running(running),
             pending_signature_requests: old.pending_signature_requests,
             pending_ckd_requests: old.pending_ckd_requests,
             pending_verify_foreign_tx_requests: old.pending_verify_foreign_tx_requests,
@@ -142,6 +145,36 @@ impl From<MpcContract> for crate::MpcContract {
             metrics: old.metrics,
             foreign_chain_rpc_whitelist: old.foreign_chain_rpc_whitelist,
         }
+    }
+}
+
+/// One-time pass over migrated state: re-validate the GovernanceThreshold against
+/// the participant count and the largest ReconstructionThreshold under the current
+/// rules. Pre-existing state may have been written under looser rules (e.g. before
+/// the upper cap existed), so a violation is logged loudly rather than panicked —
+/// panicking here would brick the upgrade. The next `vote_new_parameters` enforces
+/// the rules going forward.
+fn validate_threshold_relation_on_migration(running: &RunningContractState) {
+    let num_participants = running.parameters.participants().len() as u64;
+    let max_reconstruction_threshold = running
+        .domains
+        .domains()
+        .iter()
+        .map(|domain| domain.reconstruction_threshold.inner())
+        .max()
+        .unwrap_or(0);
+    if let Err(err) = ThresholdParameters::validate_governance_against_reconstruction(
+        num_participants,
+        running.parameters.threshold(),
+        max_reconstruction_threshold,
+    ) {
+        log!(
+            "MIGRATION WARNING: existing state violates the GovernanceThreshold/ReconstructionThreshold relation ({:?}). num_participants={}, governance_threshold={}, max_reconstruction_threshold={}. This must be corrected via vote_new_parameters.",
+            err,
+            num_participants,
+            running.parameters.threshold().value(),
+            max_reconstruction_threshold,
+        );
     }
 }
 
@@ -177,7 +210,9 @@ mod tests {
 
         // and old-layout vote bytes: a single vote whose value is a bare
         // `ThresholdParameters` (the 3.11.2 vote shape).
-        let params = ThresholdParameters::new(participants, Threshold::new(n)).unwrap();
+        // A valid GovernanceThreshold (60% lower bound) — the exact value is irrelevant here.
+        let params =
+            ThresholdParameters::new(participants, Threshold::new((3 * n).div_ceil(5))).unwrap();
         let old = OldThresholdParametersVotes {
             proposal_by_account: BTreeMap::from([(voter, params)]),
         };

@@ -183,6 +183,17 @@ pub enum InvalidThreshold {
     MinRelRequirementFailed { required: u64, found: u64 },
     #[error("Threshold must not exceed number of participants: max {max}, found {found}")]
     MaxRequirementFailed { max: u64, found: u64 },
+    #[error(
+        "GovernanceThreshold does not meet the maximum relative requirement: max {max}, found {found}"
+    )]
+    MaxRelRequirementFailed { max: u64, found: u64 },
+    #[error(
+        "GovernanceThreshold {governance_threshold} is below the largest ReconstructionThreshold {reconstruction_threshold}"
+    )]
+    BelowReconstructionThreshold {
+        reconstruction_threshold: u64,
+        governance_threshold: u64,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
@@ -265,6 +276,13 @@ pub enum DomainError {
         "Resharing proposal references domain ID {domain_id}, which is not in the current registry."
     )]
     UnknownDomainInProposal { domain_id: DomainId },
+    #[error(
+        "ReconstructionThreshold {reconstruction_threshold} exceeds the GovernanceThreshold {governance_threshold}."
+    )]
+    ReconstructionThresholdExceedsGovernance {
+        reconstruction_threshold: u64,
+        governance_threshold: u64,
+    },
 }
 
 /// A list specifying general categories of MPC Contract errors.

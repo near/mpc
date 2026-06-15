@@ -133,6 +133,12 @@ pub fn min_thrershold(n: usize) -> usize {
     ((n as f64) * 0.6).ceil() as usize
 }
 
+/// Mirrors the contract's GovernanceThreshold upper cap: `floor(0.8 * n)`, clamped
+/// up to the 60% lower bound so the feasible window is never empty for small `n`.
+pub fn max_threshold(n: usize) -> usize {
+    (n * 4 / 5).max(min_thrershold(n))
+}
+
 pub fn gen_accounts_and_info(n: usize) -> BTreeMap<AccountId, ParticipantInfo> {
     (0..n).map(gen_participant).collect()
 }
@@ -159,7 +165,8 @@ pub fn gen_threshold_params(max_n: usize) -> ThresholdParameters {
     // `n >= 3` even at the minimum `t = 2`.
     let n: usize = rand::thread_rng().gen_range(3..max_n + 1);
     let k_min = min_thrershold(n);
-    let k = rand::thread_rng().gen_range(k_min..n + 1);
+    let k_max = max_threshold(n);
+    let k = rand::thread_rng().gen_range(k_min..k_max + 1);
     ThresholdParameters::new(gen_participants(n), Threshold::new(k as u64)).unwrap()
 }
 

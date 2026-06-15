@@ -57,8 +57,7 @@ use crypto_shared::{
     types::{PublicKeyExtended, PublicKeyExtendedConversionError},
 };
 use errors::{
-    DomainError, InvalidParameters, InvalidState, InvalidThreshold, PublicKeyError, RespondError,
-    TeeError,
+    DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError, TeeError,
 };
 use k256::elliptic_curve::PrimeField;
 use near_mpc_contract_interface::types::kdf::derive_tweak;
@@ -945,17 +944,9 @@ impl MpcContract {
         let num_participants = u64::try_from(proposal.participants().len())
             .expect("participant list should be wayyyy smaller than u64::MAX");
 
-        let threshold = proposal.threshold().value();
-        if threshold > num_participants {
-            return Err(InvalidThreshold::MaxRequirementFailed {
-                max: num_participants,
-                found: threshold,
-            }
-            .into());
-        }
-
         let domains = self.protocol_state.domain_registry()?;
         let updates = proposal.per_domain_thresholds();
+        let mut max_reconstruction_threshold = 0u64;
         for domain in domains.domains() {
             let effective = updates
                 .get(&domain.id)
@@ -969,8 +960,16 @@ impl MpcContract {
                 }
                 .into());
             }
+            max_reconstruction_threshold = max_reconstruction_threshold.max(effective);
         }
-        Ok(())
+
+        // Enforce the GovernanceThreshold bounds together with the relation
+        // `GovernanceThreshold >= max(ReconstructionThreshold)`.
+        ThresholdParameters::validate_governance_against_reconstruction(
+            num_participants,
+            proposal.threshold(),
+            max_reconstruction_threshold,
+        )
     }
 
     /// Propose adding a new set of domains for the MPC network.
@@ -1628,24 +1627,28 @@ impl MpcContract {
             } => {
                 let threshold = current_params.threshold().value() as usize;
                 let remaining = participants_with_valid_attestation.len();
-                // Defense in depth: the surviving participant set must cover every
-                // threshold the network is bound to — the governance threshold and
-                // each domain's reconstruction threshold (the kickout keeps the
-                // existing per-domain thresholds). Resharing into a smaller set
-                // would leave a key un-signable, so we refuse and wait for manual
-                // intervention.
+                // Defense in depth: the surviving participant set must keep the full
+                // threshold relation intact — the GovernanceThreshold must still sit
+                // within its bounds for the smaller set (in particular it must not
+                // exceed the remaining participant count or the upper cap) and must
+                // remain at least every domain's ReconstructionThreshold (the kickout
+                // keeps the existing per-domain thresholds). Otherwise we refuse and
+                // wait for manual intervention.
                 let max_reconstruction_threshold = running_state
                     .domains
                     .domains()
                     .iter()
-                    .map(|domain| domain.reconstruction_threshold.inner() as usize)
+                    .map(|domain| domain.reconstruction_threshold.inner())
                     .max()
                     .unwrap_or(0);
-                let required = threshold.max(max_reconstruction_threshold);
-                if required > remaining {
+                if let Err(err) = ThresholdParameters::validate_governance_against_reconstruction(
+                    remaining as u64,
+                    current_params.threshold(),
+                    max_reconstruction_threshold,
+                ) {
                     log!(
-                        "Fewer than the required number of participants ({}) are left with a valid TEE status ({}). This requires manual intervention. We will not accept new signature requests as a safety precaution.",
-                        required,
+                        "Kicking out participants with an invalid TEE status would break the threshold relation ({:?}); {} participants remain with a valid TEE status. This requires manual intervention. We will not accept new signature requests as a safety precaution.",
+                        err,
                         remaining,
                     );
                     self.accept_requests = false;
@@ -1872,9 +1875,18 @@ impl MpcContract {
         parameters.validate()?;
         let domains = DomainRegistry::from_raw_validated(domains, next_domain_id)?;
         let num_participants = parameters.participants().len() as u64;
+        let mut max_reconstruction_threshold = 0u64;
         for domain in domains.domains() {
             crate::primitives::domain::validate_domain_threshold(domain, num_participants)?;
+            max_reconstruction_threshold =
+                max_reconstruction_threshold.max(domain.reconstruction_threshold.inner());
         }
+        // Keep the GovernanceThreshold at least as large as the largest ReconstructionThreshold.
+        ThresholdParameters::validate_governance_against_reconstruction(
+            num_participants,
+            parameters.threshold(),
+            max_reconstruction_threshold,
+        )?;
 
         // Check that the domains match exactly those in the keyset.
         let domain_ids_from_domains = domains.domains().iter().map(|d| d.id).collect::<Vec<_>>();
@@ -2504,7 +2516,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::errors::NodeMigrationError;
+    use crate::errors::{InvalidThreshold, NodeMigrationError};
     use crate::pending_requests::MAX_PENDING_REQUEST_FAN_OUT;
     use crate::primitives::participants::{ParticipantId, ParticipantInfo, Participants};
     use crate::primitives::test_utils::{
@@ -3941,10 +3953,10 @@ mod tests {
 
     #[test]
     fn vote_new_parameters__should_reject_when_shrinking_below_unchanged_domain_threshold() {
-        // Given: a Running contract with 3 participants and a domain whose
-        // reconstruction threshold is 3.
+        // Given: a Running contract with 4 participants (GovernanceThreshold 3) and a
+        // domain whose reconstruction threshold is 3.
         let (mut contract, participants, signer, _domain_id) =
-            setup_running_contract_with_domain(3, 3, 3);
+            setup_running_contract_with_domain(4, 3, 3);
         // ...and a proposal that shrinks the participant set to 2 without touching
         // the per-domain thresholds.
         let proposal = ProposedThresholdParameters::new(
@@ -3989,15 +4001,15 @@ mod tests {
 
     #[test]
     fn vote_new_parameters__should_accept_per_domain_threshold_within_participant_count() {
-        // Given: a Running contract with 3 participants and one domain.
+        // Given: a Running contract with 5 participants (GovernanceThreshold 4) and one domain.
         let (mut contract, participants, signer, domain_id) =
-            setup_running_contract_with_domain(3, 2, 2);
-        // ...and a proposal raising the domain's reconstruction threshold to 3,
-        // which still fits the 3 participants.
+            setup_running_contract_with_domain(5, 4, 2);
+        // ...and a proposal raising the domain's reconstruction threshold to 4,
+        // which fits the 5 participants and does not exceed the GovernanceThreshold.
         let mut per_domain = BTreeMap::new();
-        per_domain.insert(domain_id, ReconstructionThreshold::new(3));
+        per_domain.insert(domain_id, ReconstructionThreshold::new(4));
         let proposal = ProposedThresholdParameters::new(
-            ThresholdParameters::new(participants, Threshold::new(2)).unwrap(),
+            ThresholdParameters::new(participants, Threshold::new(4)).unwrap(),
             per_domain,
         );
 
@@ -4006,6 +4018,55 @@ mod tests {
 
         // Then: the guard passes and the vote is recorded.
         assert_matches!(result, Ok(()));
+    }
+
+    #[test]
+    fn vote_new_parameters__should_reject_governance_below_max_reconstruction() {
+        // Given: a Running contract with 5 participants, GovernanceThreshold 4, and a
+        // domain whose reconstruction threshold is 4.
+        let (mut contract, participants, signer, _domain_id) =
+            setup_running_contract_with_domain(5, 4, 4);
+        // ...and a proposal lowering the GovernanceThreshold to 3 (valid on its own)
+        // while the domain keeps its reconstruction threshold of 4.
+        let proposal = ProposedThresholdParameters::new(
+            ThresholdParameters::new(participants, Threshold::new(3)).unwrap(),
+            BTreeMap::new(),
+        );
+
+        // When
+        let result = vote_params(&mut contract, &signer, &proposal);
+
+        // Then: the GovernanceThreshold (3) would fall below the domain's
+        // reconstruction threshold (4), so the proposal is rejected.
+        assert_matches!(
+            result.unwrap_err(),
+            Error::InvalidThreshold(InvalidThreshold::BelowReconstructionThreshold {
+                reconstruction_threshold: 4,
+                governance_threshold: 3,
+            })
+        );
+    }
+
+    #[test]
+    fn vote_new_parameters__should_reject_governance_above_upper_cap() {
+        // Given: a Running contract with 5 participants and one domain.
+        let (mut contract, participants, signer, _domain_id) =
+            setup_running_contract_with_domain(5, 4, 2);
+        // ...and a proposal raising the GovernanceThreshold to 5 (== n), which exceeds
+        // the upper cap of floor(0.8 * 5) = 4.
+        let proposal = ProposedThresholdParameters::new(
+            ThresholdParameters::new_unvalidated(participants, Threshold::new(5)),
+            BTreeMap::new(),
+        );
+
+        // When
+        let result = vote_params(&mut contract, &signer, &proposal);
+
+        // Then
+        assert_matches!(
+            result.unwrap_err(),
+            Error::InvalidThreshold(InvalidThreshold::MaxRelRequirementFailed { max: 4, found: 5 })
+        );
     }
 
     #[test]
@@ -5465,20 +5526,22 @@ mod tests {
     /// threshold, even though the remaining set still meets the governance
     /// threshold. The contract stays Running and stops accepting requests.
     #[test]
-    fn verify_tee__should_refuse_kickout_below_domain_reconstruction_threshold() {
+    fn verify_tee__should_refuse_kickout_when_remaining_breaks_threshold_relation() {
         const PARTICIPANT_COUNT: usize = 5;
         const ATTESTATION_EXPIRY_SECONDS: u64 = 5;
         const TEE_UPGRADE_DURATION: Duration = Duration::MAX;
 
-        // Given: 5 participants, governance threshold 3, and one domain whose
-        // reconstruction threshold is 5 (every participant is needed to sign).
+        // Given: 5 participants, GovernanceThreshold 4, and one domain whose
+        // reconstruction threshold is 4. Dropping to 4 participants would push the
+        // GovernanceThreshold above its upper cap (floor(0.8 * 4) = 3), breaking the
+        // threshold relation.
         let participants = gen_participants(PARTICIPANT_COUNT);
-        let parameters = ThresholdParameters::new(participants.clone(), Threshold::new(3)).unwrap();
+        let parameters = ThresholdParameters::new(participants.clone(), Threshold::new(4)).unwrap();
         let domain_id = DomainId::default();
         let domains = vec![DomainConfig {
             id: domain_id,
             protocol: Protocol::CaitSith,
-            reconstruction_threshold: ReconstructionThreshold::new(5),
+            reconstruction_threshold: ReconstructionThreshold::new(4),
             purpose: DomainPurpose::Sign,
         }];
         let (pk, _) = make_public_key_for_curve(Curve::Secp256k1, &mut OsRng);
@@ -5526,9 +5589,9 @@ mod tests {
         // When
         let result = contract.verify_tee();
 
-        // Then: the 4 surviving participants meet the governance threshold (3) but
-        // not the domain's reconstruction threshold (5), so verify_tee refuses to
-        // reshare, stays Running, and stops accepting requests.
+        // Then: with only 4 surviving participants the GovernanceThreshold of 4
+        // would exceed its upper cap, breaking the threshold relation, so verify_tee
+        // refuses to reshare, stays Running, and stops accepting requests.
         assert_matches!(result, Ok(false));
         assert_matches!(contract.protocol_state, ProtocolContractState::Running(_));
         assert!(!contract.accept_requests);
