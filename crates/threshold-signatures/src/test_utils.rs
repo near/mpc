@@ -29,6 +29,7 @@ pub use mockrng::MockCryptoRng;
 
 pub use ckd::generate_ckd_app_package;
 pub use dkg::{assert_public_key_invariant, run_keygen, run_refresh, run_reshare};
+#[cfg(test)]
 pub(crate) use dkg::{
     build_frost_key_packages_with_dealer, generate_test_keys, make_keygen_output,
 };
