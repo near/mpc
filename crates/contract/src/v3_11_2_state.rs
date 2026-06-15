@@ -150,10 +150,9 @@ impl From<MpcContract> for crate::MpcContract {
 
 /// One-time pass over migrated state: re-validate the GovernanceThreshold against
 /// the participant count and the largest ReconstructionThreshold under the current
-/// rules. Pre-existing state may have been written under looser rules (e.g. before
-/// the upper cap existed), so a violation is logged loudly rather than panicked —
-/// panicking here would brick the upgrade. The next `vote_new_parameters` enforces
-/// the rules going forward.
+/// rules. A violation hard-blocks the migration (panic): we refuse to carry state
+/// that breaks the threshold relation into the new contract. Such state must be
+/// corrected (via `vote_new_parameters`) before upgrading.
 fn validate_threshold_relation_on_migration(running: &RunningContractState) {
     let num_participants = running.parameters.participants().len() as u64;
     let max_reconstruction_threshold = running
@@ -168,13 +167,12 @@ fn validate_threshold_relation_on_migration(running: &RunningContractState) {
         running.parameters.threshold(),
         max_reconstruction_threshold,
     ) {
-        log!(
-            "MIGRATION WARNING: existing state violates the GovernanceThreshold/ReconstructionThreshold relation ({:?}). num_participants={}, governance_threshold={}, max_reconstruction_threshold={}. This must be corrected via vote_new_parameters.",
-            err,
+        env::panic_str(&format!(
+            "Migration aborted: existing state violates the GovernanceThreshold/ReconstructionThreshold relation ({err:?}). num_participants={}, governance_threshold={}, max_reconstruction_threshold={}. Correct it via vote_new_parameters before upgrading.",
             num_participants,
             running.parameters.threshold().value(),
             max_reconstruction_threshold,
-        );
+        ));
     }
 }
 

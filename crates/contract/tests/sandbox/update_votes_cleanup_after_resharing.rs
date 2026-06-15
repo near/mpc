@@ -76,13 +76,15 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
     );
 
     // when: resharing completes with new participants that exclude participant 0
-    // Reshare with threshold participants, excluding participant 0 who voted
+    // Reshare excluding participant 0 who voted, keeping the smallest valid set
+    // (n >= ceil(threshold * 5 / 4), so the GovernanceThreshold stays within its cap).
+    let retained = ((threshold.0 * 5).div_ceil(4)) as usize;
     let mut new_participants = Participants::new();
     for (account_id, participant_id, participant_info) in initial_participants
         .participants
         .iter()
-        .skip(1) // Skip participant 0, so participant 1-6 are included
-        .take(threshold.0 as usize)
+        .skip(1) // Skip participant 0
+        .take(retained)
     {
         new_participants
             .insert_with_id(
@@ -105,7 +107,7 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
 
     // when: resharing completes with new participants that exclude participant 0
     do_resharing(
-        &mpc_signer_accounts[1..threshold.0 as usize + 1],
+        &mpc_signer_accounts[1..retained + 1],
         &contract,
         new_threshold_parameters,
         prospective_epoch_id,
@@ -191,12 +193,15 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
     assert_eq!(running.add_domains_votes.proposal_by_account.len(), 2);
 
     // When
+    // Retain the smallest valid reduced set (n >= ceil(threshold * 5 / 4), so the
+    // GovernanceThreshold stays within its upper cap), excluding participant 0.
+    let retained = ((threshold.0 * 5).div_ceil(4)) as usize;
     let mut new_participants = Participants::new();
     for (account_id, participant_id, participant_info) in initial_participants
         .participants
         .iter()
         .skip(1)
-        .take(threshold.0 as usize)
+        .take(retained)
     {
         new_participants
             .insert_with_id(
@@ -218,7 +223,7 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
     let prospective_epoch_id = dtos::EpochId(6);
 
     do_resharing(
-        &mpc_signer_accounts[1..threshold.0 as usize + 1],
+        &mpc_signer_accounts[1..retained + 1],
         &contract,
         new_threshold_parameters,
         prospective_epoch_id,

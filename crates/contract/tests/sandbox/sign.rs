@@ -313,7 +313,7 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
     );
 
     let proposed_parameters =
-        ThresholdParameters::new(candidates(None), Threshold::new(3)).unwrap();
+        ThresholdParameters::new(candidates(None), Threshold::new(2)).unwrap();
     let result = contract
         .call(method_names::INIT)
         .args_json(serde_json::json!({

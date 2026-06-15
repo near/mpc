@@ -70,8 +70,8 @@ impl ThresholdParameters {
             .into());
         }
         // Clamp the upper cap up to the lower bound so the window stays non-empty for small n.
-        let upper_relative_bound =
-            (MAX_THRESHOLD_NUMERATOR * n_shares / MAX_THRESHOLD_DENOMINATOR).max(lower_relative_bound);
+        let upper_relative_bound = (MAX_THRESHOLD_NUMERATOR * n_shares / MAX_THRESHOLD_DENOMINATOR)
+            .max(lower_relative_bound);
         if k.value() > upper_relative_bound {
             return Err(InvalidThreshold::MaxRelRequirementFailed {
                 max: upper_relative_bound,
@@ -380,7 +380,7 @@ mod tests {
 
     #[test]
     fn validate_governance_against_reconstruction__should_reject_governance_below_max_reconstruction()
-    {
+     {
         // Given 10 participants and a governance threshold of 6 (a valid value on its own).
         let n = 10;
         let governance = Threshold::new(6);

@@ -101,12 +101,13 @@ async fn reshare__should_leave_valid_non_participant_attestations_in_storage() -
     let initial_and_non_participants = get_tee_accounts(&contract).await.unwrap();
     assert_eq!(initial_and_non_participants, expected_node_ids);
 
-    // Now, we do a resharing. We only retain `threshold` of the initial participants
+    // Now, we do a resharing. We retain the smallest participant set that keeps the
+    // GovernanceThreshold within its upper cap: n >= ceil(threshold * 5 / 4) so that
+    // threshold <= floor(0.8 * n).
+    let retained = ((threshold.0 * 5).div_ceil(4)) as usize;
     let mut new_participants = Participants::new();
-    for (account_id, participant_id, participant_info) in initial_participants
-        .participants
-        .iter()
-        .take(threshold.0 as usize)
+    for (account_id, participant_id, participant_info) in
+        initial_participants.participants.iter().take(retained)
     {
         new_participants
             .insert_with_id(
@@ -130,7 +131,7 @@ async fn reshare__should_leave_valid_non_participant_attestations_in_storage() -
     let prospective_epoch_id = dtos::EpochId(6);
 
     do_resharing(
-        &mpc_signer_accounts[..threshold.0 as usize],
+        &mpc_signer_accounts[..retained],
         &contract,
         new_threshold_parameters,
         prospective_epoch_id,
@@ -212,12 +213,13 @@ async fn reshare__should_evict_expired_attestations_via_post_reshare_sweep() -> 
     // sweep sees the outsider entry as invalid.
     worker.fast_forward(BLOCKS_TO_FAST_FORWARD).await?;
 
-    // Reshare to the threshold subset; this triggers the post-reshare cleanup promise.
+    // Reshare to the smallest valid reduced subset (n >= ceil(threshold * 5 / 4), so
+    // the GovernanceThreshold stays within its upper cap); this triggers the
+    // post-reshare cleanup promise.
+    let retained = ((threshold.0 * 5).div_ceil(4)) as usize;
     let mut new_participants = Participants::new();
-    for (account_id, participant_id, participant_info) in initial_participants
-        .participants
-        .iter()
-        .take(threshold.0 as usize)
+    for (account_id, participant_id, participant_info) in
+        initial_participants.participants.iter().take(retained)
     {
         new_participants
             .insert_with_id(
@@ -236,7 +238,7 @@ async fn reshare__should_evict_expired_attestations_via_post_reshare_sweep() -> 
     )
     .unwrap();
     do_resharing(
-        &mpc_signer_accounts[..threshold.0 as usize],
+        &mpc_signer_accounts[..retained],
         &contract,
         new_threshold_parameters,
         dtos::EpochId(6),

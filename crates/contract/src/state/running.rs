@@ -522,7 +522,10 @@ pub mod running_tests {
         let governance = state.parameters.threshold().value();
         let n = state.parameters.participants().len() as u64;
         // gen_threshold_params caps governance below n, so governance + 1 <= n here.
-        assert!(governance < n, "test requires governance below participant count");
+        assert!(
+            governance < n,
+            "test requires governance below participant count"
+        );
         let next_id = state.domains.next_domain_id();
         let proposal = vec![DomainConfig {
             id: DomainId(next_id),
