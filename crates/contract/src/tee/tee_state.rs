@@ -106,7 +106,7 @@ impl TeeState {
 
         for (account_id, _, participant_info) in participants.participants() {
             let tls_public_key = participant_info.tls_public_key.clone();
-            // TODO(#1087): account_public_key with a real account public
+            // TODO(#1087): replace account_public_key with a real account public
             // key passed in by the caller. `Participants` does not currently
             // carry the operator's account public key, so a mocked entry
             // cannot record the real one and we use the TLS key as a unique
