@@ -400,6 +400,20 @@ expression: abi
         }
       },
       {
+        "name": "clean_expired_launcher_hashes",
+        "doc": " Private endpoint to evict launcher image hashes unused past their TTL.\n Spawned as a detached promise from `verify_tee`; safe to fail (read-time\n filtering already enforces expiry).",
+        "kind": "call",
+        "modifiers": [
+          "private"
+        ],
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
         "name": "clean_foreign_chain_data",
         "doc": " Private endpoint to clean up foreign chain policy votes and node configurations\n for non-participants after resharing.",
         "kind": "call",
@@ -1005,6 +1019,14 @@ expression: abi
                       ],
                       [
                         "remove_non_participant_tee_verifier_votes_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "launcher_hash_unused_ttl_seconds",
+                        "u64"
+                      ],
+                      [
+                        "clean_expired_launcher_hashes_tera_gas",
                         "u64"
                       ]
                     ]
@@ -2709,6 +2731,7 @@ expression: abi
           "type": "object",
           "required": [
             "ckd_call_gas_attachment_requirement_tera_gas",
+            "clean_expired_launcher_hashes_tera_gas",
             "clean_foreign_chain_data_tera_gas",
             "clean_invalid_attestations_tera_gas",
             "clean_tee_status_tera_gas",
@@ -2716,6 +2739,7 @@ expression: abi
             "contract_upgrade_deposit_tera_gas",
             "fail_on_timeout_tera_gas",
             "key_event_timeout_blocks",
+            "launcher_hash_unused_ttl_seconds",
             "remove_non_participant_tee_verifier_votes_tera_gas",
             "remove_non_participant_update_votes_tera_gas",
             "return_ck_and_clean_state_on_success_call_tera_gas",
@@ -2726,6 +2750,12 @@ expression: abi
           "properties": {
             "ckd_call_gas_attachment_requirement_tera_gas": {
               "description": "Prepaid gas for a `return_signature_and_clean_state_on_success` call.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "clean_expired_launcher_hashes_tera_gas": {
+              "description": "Prepaid gas for a `clean_expired_launcher_hashes` call.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
@@ -2768,6 +2798,12 @@ expression: abi
             },
             "key_event_timeout_blocks": {
               "description": "If a key event attempt has not successfully completed within this many blocks, it is considered failed.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "launcher_hash_unused_ttl_seconds": {
+              "description": "TTL after which a launcher image hash unused by any participant is evicted.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
@@ -3329,6 +3365,15 @@ expression: abi
               "format": "uint64",
               "minimum": 0.0
             },
+            "clean_expired_launcher_hashes_tera_gas": {
+              "description": "Prepaid gas for a `clean_expired_launcher_hashes` call.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
             "clean_foreign_chain_data_tera_gas": {
               "description": "Prepaid gas for a `clean_foreign_chain_data` call.",
               "type": [
@@ -3385,6 +3430,15 @@ expression: abi
             },
             "key_event_timeout_blocks": {
               "description": "If a key event attempt has not successfully completed within this many blocks, it is considered failed.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "launcher_hash_unused_ttl_seconds": {
+              "description": "TTL after which a launcher image hash unused by any participant is evicted.",
               "type": [
                 "integer",
                 "null"

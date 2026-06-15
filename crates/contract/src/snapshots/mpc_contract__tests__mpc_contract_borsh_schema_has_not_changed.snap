@@ -89,6 +89,14 @@ BorshSchemaContainer {
                         "compose_hashes",
                         "Vec<LauncherDockerComposeHash>",
                     ),
+                    (
+                        "added",
+                        "Timestamp",
+                    ),
+                    (
+                        "last_attested",
+                        "Timestamp",
+                    ),
                 ],
             ),
         },
@@ -256,6 +264,14 @@ BorshSchemaContainer {
                     ),
                     (
                         "remove_non_participant_tee_verifier_votes_tera_gas",
+                        "u64",
+                    ),
+                    (
+                        "launcher_hash_unused_ttl_seconds",
+                        "u64",
+                    ),
+                    (
+                        "clean_expired_launcher_hashes_tera_gas",
                         "u64",
                     ),
                 ],

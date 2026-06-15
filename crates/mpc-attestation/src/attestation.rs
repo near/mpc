@@ -212,6 +212,18 @@ pub struct ValidatedDstackAttestation {
 }
 
 impl VerifiedAttestation {
+    /// The launcher compose hash this attestation was validated against, if it carries one.
+    pub fn launcher_compose_hash(&self) -> Option<LauncherDockerComposeHash> {
+        match self {
+            Self::Dstack(a) => Some(a.launcher_compose_hash),
+            Self::Mock(MockAttestation::WithConstraints {
+                launcher_docker_compose_hash,
+                ..
+            }) => *launcher_docker_compose_hash,
+            Self::Mock(_) => None,
+        }
+    }
+
     pub fn re_verify(
         &self,
         timestamp_seconds: u64,
