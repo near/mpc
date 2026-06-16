@@ -55,7 +55,7 @@ async fn wait_for_body(
         }
         anyhow::ensure!(
             tokio::time::Instant::now() < deadline,
-            "node {node}: {url} body did not match within {timeout:?}"
+            "node {node}: {url} body did not match within {timeout:?}\nlast body:\n{body}"
         );
         tokio::time::sleep(common::POLL_INTERVAL).await;
     }

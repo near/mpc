@@ -1,6 +1,7 @@
 use crate::indexer::fake::participant_info_from_config;
 use crate::indexer::participants::ContractState;
 use crate::p2p::testing::PortSeed;
+use crate::tests::dto_conversions::keyset_to_dto;
 use crate::tests::{DEFAULT_BLOCK_TIME, make_key_storage_config};
 use crate::tests::{
     DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME, IntegrationTestSetup,
@@ -96,7 +97,7 @@ async fn test_changing_participant_set_test_keyshare_import() {
         let mpc_contract::state::ProtocolContractState::Running(running) = &contract.state else {
             panic!("done");
         };
-        let keyset: near_mpc_contract_interface::types::Keyset = running.keyset.clone().into();
+        let keyset = keyset_to_dto(&running.keyset);
         let keyshares = get_keyshares(home_dir_first, local_encryption_key_first, &keyset)
             .await
             .unwrap();
