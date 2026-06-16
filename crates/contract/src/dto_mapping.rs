@@ -918,6 +918,7 @@ pub fn args_into_verify_foreign_tx_request(
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use super::*;
     use crate::errors::InvalidThreshold;
