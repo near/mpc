@@ -950,7 +950,7 @@ mod tests {
                     found: 2
                 }
             ))
-        ));
+        );
     }
 
     /// A threshold above the relative upper cap (> 80%) must be rejected at the
