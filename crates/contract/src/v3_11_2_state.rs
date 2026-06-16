@@ -168,10 +168,10 @@ fn validate_threshold_relation_on_migration(running: &RunningContractState) {
         max_reconstruction_threshold,
     ) {
         env::panic_str(&format!(
-            "Migration aborted: existing state violates the GovernanceThreshold/ReconstructionThreshold relation ({err:?}). num_participants={}, governance_threshold={}, max_reconstruction_threshold={}. Correct it via vote_new_parameters before upgrading.",
+            "Migration aborted: existing state violates the GovernanceThreshold/ReconstructionThreshold relation ({err:?}). num_participants={}, governance_threshold={}, max_reconstruction_threshold={:?}. Correct it via vote_new_parameters before upgrading.",
             num_participants,
             running.parameters.threshold().value(),
-            max_reconstruction_threshold,
+            max_reconstruction_threshold.map(|t| t.inner()),
         ));
     }
 }

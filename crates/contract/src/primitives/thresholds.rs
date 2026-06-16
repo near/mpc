@@ -28,7 +28,9 @@ const MAX_THRESHOLD_DENOMINATOR: u64 = 5;
 /// Lower bound on the GovernanceThreshold for `n` participants: 60% rounded up.
 /// Single source of truth shared by validation and test fixtures.
 pub(crate) fn governance_threshold_lower_bound(n: u64) -> u64 {
-    (MIN_THRESHOLD_NUMERATOR * n).div_ceil(MIN_THRESHOLD_DENOMINATOR)
+    MIN_THRESHOLD_NUMERATOR
+        .saturating_mul(n)
+        .div_ceil(MIN_THRESHOLD_DENOMINATOR)
 }
 
 /// Upper bound on the GovernanceThreshold for `n` participants:
@@ -36,7 +38,7 @@ pub(crate) fn governance_threshold_lower_bound(n: u64) -> u64 {
 /// `n`), clamped up to the lower bound so the feasible window is never empty for small
 /// `n`. Single source of truth shared by validation and test fixtures.
 pub(crate) fn governance_threshold_upper_bound(n: u64) -> u64 {
-    (MAX_THRESHOLD_NUMERATOR * n / MAX_THRESHOLD_DENOMINATOR)
+    (MAX_THRESHOLD_NUMERATOR.saturating_mul(n) / MAX_THRESHOLD_DENOMINATOR)
         .max(governance_threshold_lower_bound(n))
 }
 
@@ -112,15 +114,17 @@ impl ThresholdParameters {
     pub fn validate_governance_against_reconstruction(
         num_participants: u64,
         governance: Threshold,
-        max_reconstruction_threshold: u64,
+        max_reconstruction_threshold: Option<ReconstructionThreshold>,
     ) -> Result<(), Error> {
         Self::validate_threshold(num_participants, governance)?;
-        if governance.value() < max_reconstruction_threshold {
-            return Err(InvalidThreshold::BelowReconstructionThreshold {
-                reconstruction_threshold: max_reconstruction_threshold,
-                governance_threshold: governance.value(),
+        if let Some(max_reconstruction_threshold) = max_reconstruction_threshold {
+            if governance.value() < max_reconstruction_threshold.inner() {
+                return Err(InvalidThreshold::BelowReconstructionThreshold {
+                    reconstruction_threshold: max_reconstruction_threshold.inner(),
+                    governance_threshold: governance.value(),
+                }
+                .into());
             }
-            .into());
         }
         Ok(())
     }
@@ -393,7 +397,11 @@ mod tests {
         // When the largest reconstruction threshold is 7 (above governance).
         // Then the relation is rejected.
         assert_matches!(
-            ThresholdParameters::validate_governance_against_reconstruction(n, governance, 7),
+            ThresholdParameters::validate_governance_against_reconstruction(
+                n,
+                governance,
+                Some(ReconstructionThreshold::new(7))
+            ),
             Err(Error::InvalidThreshold(
                 InvalidThreshold::BelowReconstructionThreshold {
                     reconstruction_threshold: 7,
@@ -402,8 +410,18 @@ mod tests {
             ))
         );
         // ...but is accepted when governance meets or exceeds the max reconstruction threshold.
-        ThresholdParameters::validate_governance_against_reconstruction(n, governance, 6).unwrap();
-        ThresholdParameters::validate_governance_against_reconstruction(n, governance, 5).unwrap();
+        ThresholdParameters::validate_governance_against_reconstruction(
+            n,
+            governance,
+            Some(ReconstructionThreshold::new(6)),
+        )
+        .unwrap();
+        ThresholdParameters::validate_governance_against_reconstruction(
+            n,
+            governance,
+            Some(ReconstructionThreshold::new(5)),
+        )
+        .unwrap();
     }
 
     #[test]
