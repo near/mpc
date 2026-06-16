@@ -207,7 +207,7 @@ impl ResharingContractState {
 }
 #[cfg(test)]
 pub mod tests {
-    use crate::primitives::test_utils::NUM_PROTOCOLS;
+    use crate::primitives::test_utils::{NUM_PROTOCOLS, gen_participants};
     use crate::state::{
         key_event::tests::{Environment, find_leader},
         running::RunningContractState,
@@ -498,32 +498,21 @@ pub mod tests {
     /// resharing state, so the stored `RunningContractState.parameters`
     /// (a plain `ThresholdParameters`) cannot carry them at all.
     ///
-    /// The fixture is deterministic on purpose: it keeps the participant
-    /// set unchanged (a key-refresh resharing) so the proposed participant
-    /// count equals the running count (`n >= 3`, guaranteed by
-    /// `gen_running_state`). That guarantees `n` is itself a valid
-    /// reconstruction threshold and always differs from the default `2` —
-    /// avoiding the flakiness of deriving the new value from the random
-    /// cluster threshold, which lands on `2` whenever the proposal has 2 or
-    /// 3 participants.
+    /// Pins a participant set with GovernanceThreshold >= 3 (unchanged across the
+    /// resharing) and moves the domain to that threshold — the max reconstruction the
+    /// cross-domain invariant allows, deterministically distinct from the default 2.
     #[expect(non_snake_case)]
     #[test]
     fn vote_reshared__final_transition__should_apply_threshold_updates_to_registry() {
-        // Given a running state with a single CaitSith domain at the default
-        // reconstruction threshold (2), and a resharing proposal over the
-        // same participant set carrying a threshold update that moves that
-        // domain to `n` — a value valid for `n` participants and distinct from 2.
+        // Given a CaitSith domain at the default threshold 2 and a key-refresh proposal
+        // moving it to the GovernanceThreshold.
         let mut env = Environment::new(Some(100), None, None);
         let mut running = gen_running_state(1);
+        running.parameters = ThresholdParameters::new(gen_participants(5), Threshold::new(4)).unwrap();
         let current_params = running.parameters.clone();
-        let n = current_params.participants().len() as u64;
-        assert!(
-            n >= 3,
-            "gen_running_state guarantees at least 3 participants"
-        );
         let domain_id = running.domains.domains()[0].id;
         let original_threshold = running.domains.domains()[0].reconstruction_threshold;
-        let new_threshold = ReconstructionThreshold::new(n);
+        let new_threshold = ReconstructionThreshold::new(current_params.threshold().value());
         assert_ne!(new_threshold, original_threshold);
         let mut threshold_updates = BTreeMap::new();
         threshold_updates.insert(domain_id, new_threshold);
@@ -575,27 +564,22 @@ pub mod tests {
         );
     }
 
-    /// End-to-end companion to the single-domain test above: two domains end the
-    /// resharing with *different* thresholds. Only the Frost domain is updated,
-    /// leaving CaitSith at the default `2`. Key-refresh resharing (unchanged
-    /// participants) keeps `n >= 3`, so `n` is a valid threshold distinct from `2`.
+    /// Companion to the test above: two domains end the resharing with different
+    /// thresholds. Only Frost is moved (to the GovernanceThreshold); CaitSith keeps 2.
+    /// The pinned set keeps GovernanceThreshold >= 3 so the two values differ.
     #[expect(non_snake_case)]
     #[test]
     fn vote_reshared__final_transition__should_apply_distinct_thresholds_per_domain() {
-        // Given CaitSith (index 0) and Frost (index 1) domains, both at default
-        // threshold 2, and a proposal moving only the Frost domain to `n`.
+        // Given CaitSith (index 0) and Frost (index 1) at default threshold 2, and a
+        // proposal moving only Frost to the GovernanceThreshold.
         let mut env = Environment::new(Some(100), None, None);
         let mut running = gen_running_state(2);
+        running.parameters = ThresholdParameters::new(gen_participants(5), Threshold::new(4)).unwrap();
         let current_params = running.parameters.clone();
-        let n = current_params.participants().len() as u64;
-        assert!(
-            n >= 3,
-            "gen_running_state guarantees at least 3 participants"
-        );
         let caitsith_id = running.domains.domains()[0].id;
         let frost_id = running.domains.domains()[1].id;
         let default_threshold = running.domains.domains()[0].reconstruction_threshold;
-        let frost_new_threshold = ReconstructionThreshold::new(n);
+        let frost_new_threshold = ReconstructionThreshold::new(current_params.threshold().value());
         assert_ne!(frost_new_threshold, default_threshold);
         let mut threshold_updates = BTreeMap::new();
         threshold_updates.insert(frost_id, frost_new_threshold);
@@ -644,7 +628,7 @@ pub mod tests {
             }
         }
 
-        // Then each domain carries its own threshold: CaitSith keeps `2`, Frost holds `n`.
+        // Then each domain carries its own threshold: CaitSith keeps 2, Frost holds the update.
         let new_running = new_running.expect("resharing should have transitioned to Running");
         let threshold_for = |id| {
             new_running
