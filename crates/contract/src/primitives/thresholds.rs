@@ -117,14 +117,14 @@ impl ThresholdParameters {
         max_reconstruction_threshold: Option<ReconstructionThreshold>,
     ) -> Result<(), Error> {
         Self::validate_threshold(num_participants, governance)?;
-        if let Some(max_reconstruction_threshold) = max_reconstruction_threshold {
-            if governance.value() < max_reconstruction_threshold.inner() {
-                return Err(InvalidThreshold::BelowReconstructionThreshold {
-                    reconstruction_threshold: max_reconstruction_threshold.inner(),
-                    governance_threshold: governance.value(),
-                }
-                .into());
+        if let Some(max_reconstruction_threshold) = max_reconstruction_threshold
+            && governance.value() < max_reconstruction_threshold.inner()
+        {
+            return Err(InvalidThreshold::BelowReconstructionThreshold {
+                reconstruction_threshold: max_reconstruction_threshold.inner(),
+                governance_threshold: governance.value(),
             }
+            .into());
         }
         Ok(())
     }
