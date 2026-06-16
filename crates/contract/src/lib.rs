@@ -885,10 +885,6 @@ impl MpcContract {
             proposal,
         );
 
-        // Defense in depth: never reshare into a participant set smaller than any
-        // threshold (see `assert_proposal_meets_all_thresholds`).
-        self.assert_proposal_meets_all_thresholds(&proposal)?;
-
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
@@ -929,47 +925,6 @@ impl MpcContract {
                 .into())
             }
         }
-    }
-
-    /// Defense-in-depth guard for [`Self::vote_new_parameters`]: rejects a
-    /// proposal whose participant set is smaller than the proposed signing
-    /// threshold or any domain's effective reconstruction threshold (proposed
-    /// override if present, else the domain's current value). Such a set would
-    /// leave a key un-signable or un-reconstructible. Redundant with
-    /// `RunningContractState::process_new_parameters_proposal`.
-    fn assert_proposal_meets_all_thresholds(
-        &self,
-        proposal: &ProposedThresholdParameters,
-    ) -> Result<(), Error> {
-        let num_participants = u64::try_from(proposal.participants().len())
-            .expect("participant list should be wayyyy smaller than u64::MAX");
-
-        let domains = self.protocol_state.domain_registry()?;
-        let updates = proposal.per_domain_thresholds();
-        let mut max_reconstruction_threshold = 0u64;
-        for domain in domains.domains() {
-            let effective = updates
-                .get(&domain.id)
-                .copied()
-                .unwrap_or(domain.reconstruction_threshold)
-                .inner();
-            if effective > num_participants {
-                return Err(DomainError::ReconstructionThresholdExceedsParticipants {
-                    threshold: effective,
-                    participants: num_participants,
-                }
-                .into());
-            }
-            max_reconstruction_threshold = max_reconstruction_threshold.max(effective);
-        }
-
-        // Enforce the GovernanceThreshold bounds together with the relation
-        // `GovernanceThreshold >= max(ReconstructionThreshold)`.
-        ThresholdParameters::validate_governance_against_reconstruction(
-            num_participants,
-            proposal.threshold(),
-            max_reconstruction_threshold,
-        )
     }
 
     /// Propose adding a new set of domains for the MPC network.

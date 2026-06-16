@@ -277,8 +277,9 @@ pub mod running_tests {
     use super::RunningContractState;
     use crate::errors::{Error, InvalidThreshold};
     use crate::primitives::domain::AddDomainsVotes;
-    use crate::primitives::test_utils::{NUM_PROTOCOLS, gen_proposed_threshold_params};
+    use crate::primitives::test_utils::{NUM_PROTOCOLS, gen_participants, gen_proposed_threshold_params};
     use crate::primitives::threshold_votes::ThresholdParametersVotes;
+    use crate::primitives::thresholds::{Threshold, ThresholdParameters};
     use crate::state::key_event::tests::Environment;
     use crate::state::test_utils::{gen_running_state, gen_valid_params_proposal};
     use near_mpc_contract_interface::types::{
@@ -773,6 +774,9 @@ pub mod running_tests {
         // Given a running state with one CaitSith domain at the fixture default
         // t = 2.
         let mut state = gen_running_state(1);
+        // Pin a participant set so the generated proposal's GovernanceThreshold is >= 3;
+        // ReconstructionThreshold (3) must not exceed it.
+        state.parameters = ThresholdParameters::new(gen_participants(5), Threshold::new(4)).unwrap();
         let mut env = Environment::new(None, None, None);
         let proposal = gen_valid_params_proposal(&state.parameters);
         // Sign as a participant present in BOTH the current and proposed sets
@@ -791,8 +795,8 @@ pub mod running_tests {
             .expect("proposal must retain at least one current participant");
         env.set_signer(&signer);
 
-        // When voting with an update raising t to 3. The proposed participant
-        // count is always >= 3, so the raised threshold stays within bounds.
+        // When voting with an update raising t to 3, which stays within both the proposed
+        // participant count and the GovernanceThreshold (>= 3 by the pinned params above).
         let domain_id = state.domains.domains()[0].id;
         let mut threshold_updates = BTreeMap::new();
         threshold_updates.insert(domain_id, ReconstructionThreshold::new(3));
@@ -841,6 +845,9 @@ pub mod running_tests {
         // Given a running state with two CaitSith domains, both at the fixture
         // default t = 2 (the protocols cycle, so 5 domains yields two CaitSith).
         let mut state = gen_running_state(5);
+        // Pin a participant set so the generated proposal's GovernanceThreshold is >= 3;
+        // ReconstructionThreshold (3) must not exceed it.
+        state.parameters = ThresholdParameters::new(gen_participants(5), Threshold::new(4)).unwrap();
         let mut env = Environment::new(None, None, None);
         assert!(
             state

@@ -156,7 +156,7 @@ impl From<MpcContract> for crate::MpcContract {
 ///
 /// TODO(#XXXX): remove together with this module once the 3.11.2 -> current
 /// migration is retired. The relation is enforced at every runtime mutation point
-/// (`assert_proposal_meets_all_thresholds`, `vote_add_domains`, `init_running`,
+/// (`process_new_parameters_proposal`, `vote_add_domains`, `init_running`,
 /// `verify_tee`), so once no pre-existing violating state can reach this path the
 /// gate has no remaining job.
 fn validate_threshold_relation_on_migration(running: &RunningContractState) {
