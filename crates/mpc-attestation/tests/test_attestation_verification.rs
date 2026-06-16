@@ -53,7 +53,8 @@ fn invalid_mock_attestation_fails_verification() {
 /// report into `verify_with_report`, so it must yield exactly what a full local
 /// verify would. This runs DCAP once to obtain the report, then compares.
 #[test]
-fn verify_with_report_agrees_with_verify_locally() {
+#[expect(non_snake_case)]
+fn verify_with_report__should_agree_with_verify_locally() {
     let attestation = mock_dstack_attestation();
     let tls_key = p2p_tls_key();
     let account_key = account_key();

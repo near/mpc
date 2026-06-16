@@ -234,9 +234,11 @@ impl Attestation {
     /// the post-DCAP checks. Off-chain only (the `local-verify` feature pulls
     /// in `dcap-qvl`).
     ///
-    /// Used by the node, `tee-authority`, and `attestation-cli`. On-chain,
-    /// `mpc-contract` instead calls the verifier contract for DCAP and then
-    /// [`verify_with_report`](Self::verify_with_report).
+    /// Used by the node, `tee-authority`, and `attestation-cli`. `mpc-contract`
+    /// also calls this today (it enables `local-verify`); a planned follow-up
+    /// moves the DCAP step into a separate verifier contract, after which the
+    /// contract will call [`verify_with_report`](Self::verify_with_report)
+    /// directly instead.
     #[cfg(feature = "local-verify")]
     pub fn verify_locally(
         &self,

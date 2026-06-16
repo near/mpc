@@ -233,8 +233,8 @@ const PCCS_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 /// reference and Phala both refresh ~daily), so legitimate operators
 /// have ample headroom. This is the freshness bound on the collateral's
 /// Intel signature and is independent of the contract's attestation
-/// expiry (`DEFAULT_EXPIRATION_DURATION_SECONDS`, now 1 day); the two
-/// windows serve different purposes and are not required to match.
+/// expiry (`DEFAULT_EXPIRATION_DURATION_SECONDS`); the two windows serve
+/// different purposes and are not required to match.
 ///
 /// Applies uniformly to the three periodically re-signed pieces of
 /// collateral that share Intel's 30-day window: `tcb_info.issueDate`,

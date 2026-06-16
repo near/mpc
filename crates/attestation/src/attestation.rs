@@ -174,9 +174,10 @@ impl DstackAttestation {
     ///
     /// Off-chain only (the `local-verify` feature pulls in `dcap-qvl`). Used by
     /// the node, `tee-authority`, and `attestation-cli` to verify an
-    /// attestation end-to-end without the verifier contract. On-chain,
-    /// `mpc-contract` instead calls the verifier contract for the DCAP step and
-    /// then `verify_with_report` directly.
+    /// attestation end-to-end. `mpc-contract` also calls this today (it enables
+    /// `local-verify`); a planned follow-up moves the DCAP step into a separate
+    /// verifier contract, after which the contract will call
+    /// [`verify_with_report`](Self::verify_with_report) directly instead.
     #[cfg(feature = "local-verify")]
     pub fn verify_locally(
         &self,
@@ -197,10 +198,12 @@ impl DstackAttestation {
     /// ([`verify_with_report`](Self::verify_with_report)).
     #[cfg(feature = "local-verify")]
     pub fn dcap_report(&self, timestamp_seconds: u64) -> Result<VerifiedReport, VerificationError> {
-        let quote: Vec<u8> = self.quote.clone().into_dcap_type();
+        // Borrow the quote bytes directly (`QuoteBytes` is a `pub Vec<u8>`); the
+        // collateral clone is unavoidable since `QuoteCollateralV3` owns its
+        // fields and `into_dcap_type` consumes `self`.
         let collateral = self.collateral.clone().into_dcap_type();
         Ok(
-            dcap_qvl::verify::verify(&quote, &collateral, timestamp_seconds)
+            dcap_qvl::verify::verify(&self.quote.0, &collateral, timestamp_seconds)
                 .map_err(|e| VerificationError::DcapVerification(e.to_string()))?
                 .into_interface_type(),
         )
