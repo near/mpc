@@ -508,7 +508,8 @@ pub mod tests {
         // moving it to the GovernanceThreshold.
         let mut env = Environment::new(Some(100), None, None);
         let mut running = gen_running_state(1);
-        running.parameters = ThresholdParameters::new(gen_participants(5), Threshold::new(4)).unwrap();
+        running.parameters =
+            ThresholdParameters::new(gen_participants(5), Threshold::new(4)).unwrap();
         let current_params = running.parameters.clone();
         let domain_id = running.domains.domains()[0].id;
         let original_threshold = running.domains.domains()[0].reconstruction_threshold;
@@ -574,7 +575,8 @@ pub mod tests {
         // proposal moving only Frost to the GovernanceThreshold.
         let mut env = Environment::new(Some(100), None, None);
         let mut running = gen_running_state(2);
-        running.parameters = ThresholdParameters::new(gen_participants(5), Threshold::new(4)).unwrap();
+        running.parameters =
+            ThresholdParameters::new(gen_participants(5), Threshold::new(4)).unwrap();
         let current_params = running.parameters.clone();
         let caitsith_id = running.domains.domains()[0].id;
         let frost_id = running.domains.domains()[1].id;
