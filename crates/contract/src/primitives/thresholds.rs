@@ -10,6 +10,12 @@ pub use near_mpc_contract_interface::types::Threshold;
 /// Minimum absolute threshold required.
 const MIN_THRESHOLD_ABSOLUTE: u64 = 2;
 
+/// Minimum fraction of participants the GovernanceThreshold must reach, expressed
+/// as `MIN_THRESHOLD_NUMERATOR / MIN_THRESHOLD_DENOMINATOR` (currently 60%, rounded
+/// up) so a key stays reconstructible/signable by a robust majority.
+const MIN_THRESHOLD_NUMERATOR: u64 = 3;
+const MIN_THRESHOLD_DENOMINATOR: u64 = 5;
+
 /// Maximum fraction of participants the GovernanceThreshold may reach, expressed
 /// as `MAX_THRESHOLD_NUMERATOR / MAX_THRESHOLD_DENOMINATOR` (currently 80%). A
 /// GovernanceThreshold set too high would let a minority that stops serving lock
@@ -17,6 +23,20 @@ const MIN_THRESHOLD_ABSOLUTE: u64 = 2;
 /// Kept as an explicit fraction so the percentage and rounding are easy to tune.
 const MAX_THRESHOLD_NUMERATOR: u64 = 4;
 const MAX_THRESHOLD_DENOMINATOR: u64 = 5;
+
+/// Lower bound on the GovernanceThreshold for `n` participants: 60% rounded up.
+/// Single source of truth shared by validation and test fixtures.
+pub(crate) fn governance_threshold_lower_bound(n: u64) -> u64 {
+    (MIN_THRESHOLD_NUMERATOR * n).div_ceil(MIN_THRESHOLD_DENOMINATOR)
+}
+
+/// Upper bound on the GovernanceThreshold for `n` participants: 80% floored,
+/// clamped up to the lower bound so the feasible window is never empty for small
+/// `n`. Single source of truth shared by validation and test fixtures.
+pub(crate) fn governance_threshold_upper_bound(n: u64) -> u64 {
+    (MAX_THRESHOLD_NUMERATOR * n / MAX_THRESHOLD_DENOMINATOR)
+        .max(governance_threshold_lower_bound(n))
+}
 
 /// Stores the threshold key parameters: the owners of key shares
 /// (`participants`) and the cryptographic `threshold`. This is the stored,
@@ -61,7 +81,7 @@ impl ThresholdParameters {
         if k.value() < MIN_THRESHOLD_ABSOLUTE {
             return Err(InvalidThreshold::MinAbsRequirementFailed.into());
         }
-        let lower_relative_bound = (3 * n_shares).div_ceil(5); // minimum 60%
+        let lower_relative_bound = governance_threshold_lower_bound(n_shares);
         if k.value() < lower_relative_bound {
             return Err(InvalidThreshold::MinRelRequirementFailed {
                 required: lower_relative_bound,
@@ -69,9 +89,7 @@ impl ThresholdParameters {
             }
             .into());
         }
-        // Clamp the upper cap up to the lower bound so the window stays non-empty for small n.
-        let upper_relative_bound = (MAX_THRESHOLD_NUMERATOR * n_shares / MAX_THRESHOLD_DENOMINATOR)
-            .max(lower_relative_bound);
+        let upper_relative_bound = governance_threshold_upper_bound(n_shares);
         if k.value() > upper_relative_bound {
             return Err(InvalidThreshold::MaxRelRequirementFailed {
                 max: upper_relative_bound,
@@ -275,8 +293,11 @@ mod tests {
         errors::{Error, InvalidCandidateSet, InvalidThreshold},
         primitives::{
             participants::{ParticipantId, Participants},
-            test_utils::{gen_participant, gen_participants, gen_threshold_params, max_threshold},
-            thresholds::{ProposedThresholdParameters, Threshold, ThresholdParameters},
+            test_utils::{gen_participant, gen_participants, gen_threshold_params},
+            thresholds::{
+                ProposedThresholdParameters, Threshold, ThresholdParameters,
+                governance_threshold_lower_bound, governance_threshold_upper_bound,
+            },
         },
         state::test_utils::gen_valid_params_proposal,
     };
@@ -297,9 +318,8 @@ mod tests {
     #[test]
     fn test_validate_threshold() {
         let n = rand::thread_rng().gen_range(2..600) as u64;
-        let min_threshold = ((n as f64) * 0.6).ceil() as u64;
-        // Upper cap is floor(0.8 * n), clamped up to the 60% lower bound.
-        let max_threshold = (4 * n / 5).max(min_threshold);
+        let min_threshold = governance_threshold_lower_bound(n);
+        let max_threshold = governance_threshold_upper_bound(n);
         for k in 0..min_threshold {
             let _ = ThresholdParameters::validate_threshold(n, Threshold::new(k)).unwrap_err();
         }
@@ -315,9 +335,8 @@ mod tests {
     #[test]
     fn test_threshold_parameters_constructor() {
         let n: usize = rand::thread_rng().gen_range(2..600);
-        let min_threshold = ((n as f64) * 0.6).ceil() as usize;
-        // Upper cap is floor(0.8 * n), clamped up to the 60% lower bound.
-        let max_threshold = (4 * n / 5).max(min_threshold);
+        let min_threshold = governance_threshold_lower_bound(n as u64) as usize;
+        let max_threshold = governance_threshold_upper_bound(n as u64) as usize;
 
         let participants = gen_participants(n);
         for k in 1..min_threshold {
@@ -370,8 +389,8 @@ mod tests {
         // For small n the floor(0.8n) cap can dip below the ceil(0.6n) lower bound;
         // the clamp must keep at least one valid threshold available.
         for n in 2..=12u64 {
-            let lower = (3 * n).div_ceil(5);
-            let upper = max_threshold(n as usize) as u64;
+            let lower = governance_threshold_lower_bound(n);
+            let upper = governance_threshold_upper_bound(n);
             assert!(upper >= lower, "empty window at n={n}: [{lower}, {upper}]");
             // The clamped boundary value must validate.
             ThresholdParameters::validate_threshold(n, Threshold::new(upper)).unwrap();

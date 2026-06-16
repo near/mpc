@@ -3,7 +3,10 @@ use crate::{
     crypto_shared::types::{PublicKeyExtended, serializable::SerializableEdwardsPoint},
     primitives::{
         participants::{ParticipantInfo, Participants},
-        thresholds::{ProposedThresholdParameters, Threshold, ThresholdParameters},
+        thresholds::{
+            ProposedThresholdParameters, Threshold, ThresholdParameters,
+            governance_threshold_lower_bound, governance_threshold_upper_bound,
+        },
     },
 };
 use curve25519_dalek::edwards::CompressedEdwardsY;
@@ -129,16 +132,6 @@ pub fn gen_participant(i: usize) -> (AccountId, ParticipantInfo) {
     )
 }
 
-pub fn min_thrershold(n: usize) -> usize {
-    ((n as f64) * 0.6).ceil() as usize
-}
-
-/// Mirrors the contract's GovernanceThreshold upper cap: `floor(0.8 * n)`, clamped
-/// up to the 60% lower bound so the feasible window is never empty for small `n`.
-pub fn max_threshold(n: usize) -> usize {
-    (n * 4 / 5).max(min_thrershold(n))
-}
-
 pub fn gen_accounts_and_info(n: usize) -> BTreeMap<AccountId, ParticipantInfo> {
     (0..n).map(gen_participant).collect()
 }
@@ -164,8 +157,8 @@ pub fn gen_threshold_params(max_n: usize) -> ThresholdParameters {
     // every protocol — `DamgardEtAl` requires `n >= 2t - 1`, which forces
     // `n >= 3` even at the minimum `t = 2`.
     let n: usize = rand::thread_rng().gen_range(3..max_n + 1);
-    let k_min = min_thrershold(n);
-    let k_max = max_threshold(n);
+    let k_min = governance_threshold_lower_bound(n as u64) as usize;
+    let k_max = governance_threshold_upper_bound(n as u64) as usize;
     let k = rand::thread_rng().gen_range(k_min..k_max + 1);
     ThresholdParameters::new(gen_participants(n), Threshold::new(k as u64)).unwrap()
 }

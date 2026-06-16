@@ -11,7 +11,10 @@ use crate::primitives::{
     key_state::{EpochId, KeyForDomain, Keyset},
     participants::{ParticipantId, Participants},
     test_utils::{gen_participant, gen_threshold_params},
-    thresholds::{ProposedThresholdParameters, Threshold, ThresholdParameters},
+    thresholds::{
+        ProposedThresholdParameters, Threshold, ThresholdParameters,
+        governance_threshold_lower_bound,
+    },
 };
 use rand::Rng;
 use std::collections::BTreeMap;
@@ -58,7 +61,7 @@ pub fn gen_valid_params_proposal(params: &ThresholdParameters) -> ProposedThresh
         next_id = next_id.next();
     }
 
-    let threshold = ((new_participants.len() as f64) * 0.6).ceil() as u64;
+    let threshold = governance_threshold_lower_bound(new_participants.len() as u64);
     let parameters = ThresholdParameters::new(new_participants, Threshold::new(threshold)).unwrap();
     // Empty per-domain threshold updates (no change); see the doc comment.
     ProposedThresholdParameters::new(parameters, BTreeMap::new())
