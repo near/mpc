@@ -36,10 +36,10 @@ impl Ciphersuite for Secp256K1Sha256 {}
 mod test {
     use crate::{
         ecdsa::{KeygenOutput, Scalar, Secp256K1Sha256},
-        test_utils::{generate_participants, MockCryptoRng},
+        test_utils::{MockCryptoRng, generate_participants},
     };
 
-    use frost_core::{keys::SigningShare, SigningKey as FrostSigningKey};
+    use frost_core::{SigningKey as FrostSigningKey, keys::SigningShare};
     use rand::SeedableRng;
     type C = Secp256K1Sha256;
 

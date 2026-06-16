@@ -1,5 +1,5 @@
-use elliptic_curve::sec1::ToEncodedPoint;
 use elliptic_curve::PrimeField;
+use elliptic_curve::sec1::ToEncodedPoint;
 use frost_secp256k1::{Field, Secp256K1ScalarField};
 use hkdf::Hkdf;
 use k256::AffinePoint;
@@ -120,7 +120,7 @@ mod test {
     use crate::ecdsa::{Scalar, Secp256K1Sha256, Tweak};
     use crate::participants::ParticipantList;
     use crate::test_utils::{
-        ecdsa_generate_rerandpresig_args, generate_participants_with_random_ids, MockCryptoRng,
+        MockCryptoRng, ecdsa_generate_rerandpresig_args, generate_participants_with_random_ids,
     };
 
     use frost_core::Ciphersuite;

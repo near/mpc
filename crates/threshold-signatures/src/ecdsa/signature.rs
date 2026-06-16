@@ -61,11 +61,11 @@ mod test {
 
     use elliptic_curve::ops::{Invert, LinearCombination, Reduce};
     use k256::{
-        ecdsa::{signature::Verifier, SigningKey},
         ProjectivePoint, Secp256k1,
+        ecdsa::{SigningKey, signature::Verifier},
     };
     use rand::SeedableRng;
-    use sha2::{digest::FixedOutput, Digest, Sha256};
+    use sha2::{Digest, Sha256, digest::FixedOutput};
 
     #[test]
     fn test_verify() {

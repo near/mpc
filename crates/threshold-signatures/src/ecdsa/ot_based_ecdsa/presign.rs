@@ -1,3 +1,4 @@
+use crate::ReconstructionLowerBound;
 use crate::ecdsa::ot_based_ecdsa::triples::{TriplePub, TripleShare};
 use crate::ecdsa::{
     AffinePoint, KeygenOutput, ProjectivePoint, RerandomizationArguments, Scalar, Secp256K1Sha256,
@@ -9,7 +10,6 @@ use crate::protocol::{
     Protocol,
     internal::{Comms, SharedChannel, make_protocol},
 };
-use crate::ReconstructionLowerBound;
 use serde::{Deserialize, Serialize};
 use subtle::{Choice, ConstantTimeEq};
 use zeroize::ZeroizeOnDrop;

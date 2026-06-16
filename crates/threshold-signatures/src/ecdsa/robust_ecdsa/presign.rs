@@ -1,16 +1,16 @@
 use crate::participants::{Participant, ParticipantList, ParticipantMap};
 use crate::{
+    MaxMalicious, SigningShare,
     ecdsa::{
         AffinePoint, CoefficientCommitment, Field, KeygenOutput, Polynomial, PolynomialCommitment,
         RerandomizationArguments, Scalar, Secp256K1ScalarField, Secp256K1Sha256,
     },
     errors::{InitializationError, ProtocolError},
     protocol::{
-        helpers::recv_from_others,
-        internal::{make_protocol, Comms, SharedChannel},
         Protocol,
+        helpers::recv_from_others,
+        internal::{Comms, SharedChannel, make_protocol},
     },
-    MaxMalicious, SigningShare,
 };
 use frost_core::serialization::SerializableScalar;
 use frost_secp256k1::{Group, Secp256K1Group};
@@ -525,8 +525,8 @@ mod test {
     use rand::{RngCore, SeedableRng};
 
     use crate::test_utils::{
-        generate_participants, generate_test_keys, make_keygen_output, run_protocol, GenProtocol,
-        MockCryptoRng,
+        GenProtocol, MockCryptoRng, generate_participants, generate_test_keys, make_keygen_output,
+        run_protocol,
     };
     use rstest::rstest;
 
