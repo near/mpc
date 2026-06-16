@@ -7,15 +7,8 @@ use thiserror::Error;
 )]
 pub struct MaxMalicious(usize);
 
-<<<<<<< HEAD
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct ReconstructionThreshold(u64);
-=======
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, From, Into,
-)]
-pub struct ReconstructionThreshold(usize);
->>>>>>> main
 
 // ----- MaxMalicious conversions -----
 impl MaxMalicious {
@@ -25,15 +18,11 @@ impl MaxMalicious {
 }
 
 impl ReconstructionThreshold {
-<<<<<<< HEAD
     pub const fn new(value: u64) -> Self {
         Self(value)
     }
 
     pub fn inner(self) -> u64 {
-=======
-    pub fn value(self) -> usize {
->>>>>>> main
         self.0
     }
 
