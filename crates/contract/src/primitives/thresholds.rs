@@ -107,7 +107,7 @@ impl ThresholdParameters {
 
     /// Validates the GovernanceThreshold `k` against both the participant count and the
     /// largest ReconstructionThreshold across all domains. Layers the cross-domain rule
-    /// `GovernanceThreshold >= max(ReconstructionThreshold)` on top of [`Self::validate_threshold`]:
+    /// `GovernanceThreshold >= max(ReconstructionThreshold)` on top of `validate_threshold`:
     /// the network must never be able to govern with fewer parties than are required to
     /// reconstruct any domain's key. Call this at every point where the GovernanceThreshold,
     /// a ReconstructionThreshold, or the participant set changes.
