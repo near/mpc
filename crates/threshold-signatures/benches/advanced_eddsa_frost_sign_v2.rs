@@ -10,7 +10,7 @@ use crate::bench_utils::{
     analyze_received_sizes, ed25519_prepare_presign, ed25519_prepare_sign_v2,
 };
 use threshold_signatures::{
-    ReconstructionLowerBound,
+    ReconstructionThreshold,
     frost::eddsa::{
         KeygenOutput, PresignArguments, PresignOutput, SignatureOption, presign, sign::sign_v2,
     },
@@ -149,7 +149,7 @@ struct SignSetup {
 }
 
 /// Expensive one-time setup for sign: runs the full N-party protocol to capture snapshots
-fn setup_sign_snapshot(threshold: ReconstructionLowerBound) -> SignSetup {
+fn setup_sign_snapshot(threshold: ReconstructionThreshold) -> SignSetup {
     let mut rng = MockCryptoRng::seed_from_u64(41);
     let preps = ed25519_prepare_presign(threshold.value(), &mut rng);
     let result = run_protocol(preps.protocols).expect("Prepare sign should not fail");
@@ -182,7 +182,7 @@ fn setup_sign_snapshot(threshold: ReconstructionLowerBound) -> SignSetup {
 /// Cheap per-sample setup: creates fresh sign protocol and clones the cached simulator
 fn prepare_simulated_sign(
     setup: &SignSetup,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
 ) -> PreparedSimulatedSig {
     let real_protocol = sign_v2(
         &setup.participants,

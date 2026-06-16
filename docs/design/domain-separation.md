@@ -87,7 +87,7 @@ The node (`crates/node/`) imports types from **both** the internal contract crat
 ```
 Contract ThresholdParameters.threshold (Threshold(u64))
   → Coordinator extracts: threshold: usize = mpc_config.participants.threshold.try_into()?
-  → Converts to: ReconstructionLowerBound::from(threshold)
+  → Converts to: ReconstructionThreshold::from(threshold)
   → For CaitSith/FROST: passed directly to keygen/sign
   → For DamgardEtAl: translate_threshold() → MaxMalicious::from((n_signers - 1) / 2)
 ```
@@ -901,7 +901,7 @@ During resharing, each domain's key must be reshared with its own `Reconstructio
 ```rust
 // Current (hack):
 let threshold: usize = mpc_config.participants.threshold.try_into()?;
-let threshold = ReconstructionLowerBound::from(threshold);
+let threshold = ReconstructionThreshold::from(threshold);
 
 // Proposed (clean):
 let dk = distributed_key_registry.get(distributed_key_id);
@@ -911,7 +911,7 @@ let threshold = match dk.protocol {
         let max_malicious = MaxMalicious::from(dk.reconstruction_threshold.inner() - 1);
         // Use MaxMalicious directly, no translation needed
     }
-    _ => ReconstructionLowerBound::from(dk.reconstruction_threshold.inner()),
+    _ => ReconstructionThreshold::from(dk.reconstruction_threshold.inner()),
 };
 ```
 

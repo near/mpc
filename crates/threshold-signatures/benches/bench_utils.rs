@@ -24,7 +24,7 @@ use k256::AffinePoint;
 use std::{env, sync::LazyLock};
 
 use threshold_signatures::{
-    ReconstructionLowerBound,
+    ReconstructionThreshold,
     ecdsa::{self, Scalar},
     participants::Participant,
     protocol::Protocol,
@@ -47,8 +47,8 @@ pub static SAMPLE_SIZE: LazyLock<usize> = std::sync::LazyLock::new(|| {
         .unwrap_or(15)
 });
 
-pub static RECONSTRUCTION_LOWER_BOUND: LazyLock<ReconstructionLowerBound> =
-    LazyLock::new(|| ReconstructionLowerBound::from(*MAX_MALICIOUS + 1));
+pub static RECONSTRUCTION_LOWER_BOUND: LazyLock<ReconstructionThreshold> =
+    LazyLock::new(|| ReconstructionThreshold::from(*MAX_MALICIOUS + 1));
 
 /// This helps defining a generic type for the benchmarks prepared outputs
 pub struct PreparedOutputs<T> {

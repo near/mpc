@@ -2,7 +2,7 @@
 //!  into `cait-sith::Protocol` representation.
 use super::{KeygenOutput, PresignOutput, SignatureOption};
 use crate::{
-    Participant, ParticipantList, ReconstructionLowerBound,
+    Participant, ParticipantList, ReconstructionThreshold,
     errors::{InitializationError, ProtocolError},
     frost::assert_sign_inputs,
     protocol::{
@@ -56,7 +56,7 @@ pub fn sign_v1<T, R>(
     rng: R,
 ) -> Result<impl Protocol<Output = SignatureOption> + use<T, R>, InitializationError>
 where
-    T: Into<ReconstructionLowerBound>,
+    T: Into<ReconstructionThreshold>,
     R: CryptoRngCore + Send + 'static,
 {
     let threshold = threshold.into();
@@ -87,7 +87,7 @@ pub fn sign_v2<T>(
     message: Vec<u8>,
 ) -> Result<impl Protocol<Output = SignatureOption> + use<T>, InitializationError>
 where
-    T: Into<ReconstructionLowerBound> + Copy,
+    T: Into<ReconstructionThreshold> + Copy,
 {
     let participants = assert_sign_inputs(participants, threshold, me, coordinator)?;
 
@@ -118,7 +118,7 @@ where
 async fn do_sign_coordinator_v1(
     mut chan: SharedChannel,
     participants: ParticipantList,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     me: Participant,
     keygen_output: KeygenOutput,
     message: Vec<u8>,
@@ -205,7 +205,7 @@ async fn do_sign_coordinator_v1(
 async fn do_sign_coordinator_v2(
     mut chan: SharedChannel,
     participants: ParticipantList,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     me: Participant,
     keygen_output: KeygenOutput,
     presignature: &PresignOutput,
@@ -271,7 +271,7 @@ async fn do_sign_coordinator_v2(
 /// For reference, see how RFC 8032 handles "pre-hashing".
 async fn do_sign_participant_v1(
     mut chan: SharedChannel,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     me: Participant,
     coordinator: Participant,
     keygen_output: KeygenOutput,
@@ -351,7 +351,7 @@ async fn do_sign_participant_v1(
 /// For reference, see how RFC 8032 handles "pre-hashing".
 fn do_sign_participant_v2(
     mut chan: SharedChannel,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     me: Participant,
     coordinator: Participant,
     keygen_output: &KeygenOutput,
@@ -393,7 +393,7 @@ fn do_sign_participant_v2(
 /// A function that takes a signing share and a keygenOutput
 /// and construct a public key package used for frost signing
 fn construct_key_package(
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     me: Participant,
     signing_share: SigningShare,
     verifying_key: &VerifyingKey,
@@ -416,7 +416,7 @@ fn construct_key_package(
 async fn fut_wrapper_v1(
     chan: SharedChannel,
     participants: ParticipantList,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     me: Participant,
     coordinator: Participant,
     keygen_output: KeygenOutput,
@@ -452,7 +452,7 @@ async fn fut_wrapper_v1(
 async fn fut_wrapper_v2(
     chan: SharedChannel,
     participants: ParticipantList,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     me: Participant,
     coordinator: Participant,
     keygen_output: KeygenOutput,
