@@ -8,7 +8,7 @@ use mpc_contract::{
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantId, ParticipantInfo},
         test_utils::{bogus_ed25519_public_key, gen_participants},
-        thresholds::{Threshold, ThresholdParameters},
+        thresholds::{ProposedThresholdParameters, Threshold, ThresholdParameters},
     },
     tee::tee_state::NodeId,
 };
@@ -17,6 +17,7 @@ use near_mpc_contract_interface::types::{
     ReconstructionThreshold,
 };
 use near_mpc_contract_interface::types::{DomainConfig, DomainId, DomainPurpose};
+use std::collections::BTreeMap;
 
 use assert_matches::assert_matches;
 use near_account_id::AccountId;
@@ -186,9 +187,11 @@ impl TestSetupBuilder {
                     let context = create_context_for_participant(&node_id.account_id);
                     testing_env!(context);
 
+                    let proposal =
+                        ProposedThresholdParameters::new(parameters.clone(), BTreeMap::new());
                     setup
                         .contract
-                        .vote_new_parameters(EpochId::new(6), parameters.clone().into())
+                        .vote_new_parameters(EpochId::new(6), proposal.into())
                         .unwrap();
                 }
 

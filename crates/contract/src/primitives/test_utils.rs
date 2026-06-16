@@ -3,7 +3,7 @@ use crate::{
     crypto_shared::types::{PublicKeyExtended, serializable::SerializableEdwardsPoint},
     primitives::{
         participants::{ParticipantInfo, Participants},
-        thresholds::{Threshold, ThresholdParameters},
+        thresholds::{ProposedThresholdParameters, Threshold, ThresholdParameters},
     },
 };
 use curve25519_dalek::edwards::CompressedEdwardsY;
@@ -161,6 +161,13 @@ pub fn gen_threshold_params(max_n: usize) -> ThresholdParameters {
     let k_min = min_thrershold(n);
     let k = rand::thread_rng().gen_range(k_min..n + 1);
     ThresholdParameters::new(gen_participants(n), Threshold::new(k as u64)).unwrap()
+}
+
+/// Like [`gen_threshold_params`] but wrapped as a proposal with an empty
+/// (no-change) set of per-domain threshold updates — the shape
+/// `vote_new_parameters` accepts.
+pub fn gen_proposed_threshold_params(max_n: usize) -> ProposedThresholdParameters {
+    ProposedThresholdParameters::new(gen_threshold_params(max_n), BTreeMap::new())
 }
 
 /// Infer a default purpose from the protocol.

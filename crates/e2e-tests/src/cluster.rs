@@ -9,8 +9,9 @@ use near_kit::AccountId;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
     AccountId as ContractAccountId, CKDAppPublicKey, DomainConfig, DomainId, DomainPurpose,
-    Ed25519PublicKey, EpochId, ParticipantId, ParticipantInfo, Participants, Protocol,
-    ProtocolContractState, ReconstructionThreshold, Threshold, ThresholdParameters,
+    Ed25519PublicKey, EpochId, ParticipantId, ParticipantInfo, Participants,
+    ProposedThresholdParameters, Protocol, ProtocolContractState, ReconstructionThreshold,
+    Threshold, ThresholdParameters,
 };
 use rand::SeedableRng;
 use rand::rngs::StdRng;
@@ -227,8 +228,13 @@ impl MpcCluster {
         let root_secret_key: near_kit::SecretKey = SANDBOX_ROOT_SECRET_KEY
             .parse()
             .context("invalid sandbox root secret key")?;
-        let blockchain =
-            NearBlockchain::new(&sandbox.rpc_url(), SANDBOX_ROOT_ACCOUNT, root_secret_key)?;
+        let chain_id = sandbox.chain_id()?;
+        let blockchain = NearBlockchain::new(
+            &sandbox.rpc_url(),
+            &chain_id,
+            SANDBOX_ROOT_ACCOUNT,
+            root_secret_key,
+        )?;
 
         let contract_key = generate_deterministic_key(255);
         let contract_account: AccountId = format!("mpc.{SANDBOX_ROOT_ACCOUNT}").parse()?;
@@ -337,6 +343,33 @@ impl MpcCluster {
             self.nodes.insert(idx, new_state);
         }
         Ok(())
+    }
+
+    /// Send SIGTERM to a running node and wait up to `grace` for it to exit on
+    /// its own. Returns the exit status — `status.code().is_some()` indicates
+    /// the process exited cleanly via its own main() (i.e. our SIGTERM handler
+    /// ran), while `status.signal().is_some()` indicates the OS terminated it
+    /// (i.e. there was no handler).
+    pub fn terminate_node_with_sigterm(
+        &mut self,
+        idx: usize,
+        grace: std::time::Duration,
+    ) -> anyhow::Result<std::process::ExitStatus> {
+        anyhow::ensure!(
+            idx < self.nodes.len(),
+            "node index {idx} out of bounds (have {} nodes)",
+            self.nodes.len()
+        );
+        let state = self.nodes.remove(idx);
+        let (status, setup) = match state {
+            MpcNodeState::Running(node) => node.terminate_with_sigterm(grace)?,
+            MpcNodeState::Stopped(setup) => {
+                self.nodes.insert(idx, MpcNodeState::Stopped(setup));
+                anyhow::bail!("node {idx} already stopped; cannot SIGTERM");
+            }
+        };
+        self.nodes.insert(idx, MpcNodeState::Stopped(setup));
+        Ok(status)
     }
 
     pub fn start_nodes(&mut self, indices: &[usize]) -> anyhow::Result<()> {
@@ -502,9 +535,12 @@ impl MpcCluster {
 
         let participants =
             build_participants_from_nodes(new_participants, &self.nodes, current_participants);
-        let proposal = ThresholdParameters {
-            threshold: Threshold(new_threshold as u64),
-            participants,
+        let proposal = ProposedThresholdParameters {
+            parameters: ThresholdParameters {
+                threshold: Threshold(new_threshold as u64),
+                participants,
+            },
+            per_domain_thresholds: std::collections::BTreeMap::new(),
         };
 
         tracing::info!(?prospective_epoch_id, new_threshold, "voting for resharing");

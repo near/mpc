@@ -20,9 +20,8 @@ pub fn assert_participant_inputs(
             participants: participants.len(),
         });
     }
-    let Some(participants) = ParticipantList::new(participants) else {
-        return Err(InitializationError::DuplicateParticipants);
-    };
+    let participants =
+        ParticipantList::new(participants).ok_or(InitializationError::DuplicateParticipants)?;
 
     // ensure my presence in the participant list
     if !participants.contains(me) {

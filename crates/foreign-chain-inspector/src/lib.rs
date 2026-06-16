@@ -10,6 +10,7 @@ use thiserror::Error;
 pub use jsonrpsee::http_client;
 
 pub mod abstract_chain;
+pub mod aptos;
 pub mod arbitrum;
 pub mod base;
 pub mod bitcoin;
@@ -213,6 +214,16 @@ pub enum EthereumFinality {
 pub enum ForeignChainInspectionError {
     #[error("inner network client failed to fetch")]
     ClientError(#[from] jsonrpsee::core::client::error::Error),
+    /// Transient provider failure (transport error, timeout, rate limit, 5xx).
+    #[error("RPC request failed: {0}")]
+    RpcRequestFailed(String),
+    /// The provider rejected the request with a deterministic client error (4xx other than
+    /// 408/429); retrying cannot change the outcome.
+    #[error("RPC rejected the request: {0}")]
+    RpcRequestRejected(String),
+    /// The provider answered, but a field needed for verification is missing or unparseable.
+    #[error("malformed RPC response: {0}")]
+    MalformedRpcResponse(String),
     #[error(
         "transaction did not have enough block confirmations associated with it, expected: {expected} got: {got}"
     )]
@@ -241,6 +252,8 @@ pub enum ForeignChainInspectionError {
     },
     #[error("The transaction's status was not success")]
     TransactionFailed,
+    #[error("transaction not found")]
+    TransactionNotFound,
     #[error("provided log index is out of bounds")]
     LogIndexOutOfBounds,
     #[error("failed to borsh serialize log event")]
@@ -253,7 +266,10 @@ impl ForeignChainInspectionError {
     pub fn is_transient(&self) -> bool {
         matches!(
             self,
-            Self::ClientError(_) | Self::NotFinalized | Self::NotEnoughBlockConfirmations { .. }
+            Self::ClientError(_)
+                | Self::RpcRequestFailed(_)
+                | Self::NotFinalized
+                | Self::NotEnoughBlockConfirmations { .. }
         )
     }
 }

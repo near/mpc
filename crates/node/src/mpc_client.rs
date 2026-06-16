@@ -9,11 +9,14 @@ use crate::metrics;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
 use crate::providers::ckd::CKDProvider;
+use crate::providers::ecdsa::EcdsaTaskId;
 use crate::providers::eddsa::EddsaSignatureProvider;
-use crate::providers::robust_ecdsa::RobustEcdsaSignatureProvider;
+use crate::providers::robust_ecdsa::{RobustEcdsaSignatureProvider, RobustEcdsaTaskId};
 use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;
 use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
-use crate::requests::queue::{CHECK_EACH_REQUEST_INTERVAL, PendingRequests};
+use crate::requests::queue::{
+    CHECK_EACH_REQUEST_INTERVAL, PendingRequests, REQUEST_EXPIRATION_BLOCKS,
+};
 use crate::storage::{
     CKDRequestStorage, SignRequestStorage, VerifyForeignTransactionRequestStorage,
 };
@@ -21,6 +24,7 @@ use crate::tracking::{self, AutoAbortTaskCollection};
 use crate::types::SignatureRequest;
 use crate::types::{CKDRequest, RequestsUpdate, VerifyForeignTxRequest};
 use crate::web::{DebugRequest, DebugRequestKind};
+use chain_gateway::event_subscriber::recent_blocks_tracker::{AddBlockResult, RecentBlocksTracker};
 use mpc_node_config::ConfigFile;
 
 use mpc_primitives::domain::{DomainId, Protocol};
@@ -54,6 +58,32 @@ pub struct MpcClient<ForeignChainPolicyReader> {
     ckd_provider: Arc<CKDProvider>,
     verify_foreign_tx_provider: Arc<VerifyForeignTxProvider<ForeignChainPolicyReader>>,
     domain_to_protocol: HashMap<DomainId, Protocol>,
+    /// Lower-priority runtime for CPU-heavy asset generation.
+    gen_runtime_handle: tokio::runtime::Handle,
+}
+
+/// Whether a task is CPU-heavy asset generation that should run on the
+/// lower-priority gen runtime. Triples and presignatures qualify; signing,
+/// keygen, resharing, CKD, and foreign-tx verification stay on the main MPC
+/// runtime. Inner matches are exhaustive so a new task kind forces a decision.
+fn is_heavy_generation_task(task_id: &MpcTaskId) -> bool {
+    match task_id {
+        MpcTaskId::EcdsaTaskId(id) => match id {
+            EcdsaTaskId::ManyTriples { .. } | EcdsaTaskId::Presignature { .. } => true,
+            EcdsaTaskId::KeyGeneration { .. }
+            | EcdsaTaskId::KeyResharing { .. }
+            | EcdsaTaskId::Signature { .. } => false,
+        },
+        MpcTaskId::RobustEcdsaTaskId(id) => match id {
+            RobustEcdsaTaskId::Presignature { .. } => true,
+            RobustEcdsaTaskId::KeyGeneration { .. }
+            | RobustEcdsaTaskId::KeyResharing { .. }
+            | RobustEcdsaTaskId::Signature { .. } => false,
+        },
+        MpcTaskId::EddsaTaskId(_)
+        | MpcTaskId::CKDTaskId(_)
+        | MpcTaskId::VerifyForeignTxTaskId(_) => false,
+    }
 }
 
 impl<ForeignChainPolicyReader> MpcClient<ForeignChainPolicyReader>
@@ -73,6 +103,7 @@ where
         ckd_provider: Arc<CKDProvider>,
         verify_foreign_tx_provider: Arc<VerifyForeignTxProvider<ForeignChainPolicyReader>>,
         domain_to_protocol: HashMap<DomainId, Protocol>,
+        gen_runtime_handle: tokio::runtime::Handle,
     ) -> Self {
         Self {
             config,
@@ -86,6 +117,7 @@ where
             ckd_provider,
             verify_foreign_tx_provider,
             domain_to_protocol,
+            gen_runtime_handle,
         }
     }
 
@@ -147,28 +179,35 @@ where
             })
         };
 
-        let ecdsa_background_tasks = tracking::spawn(
+        // Background asset generation runs on the lower-priority gen runtime. The
+        // inner `tracking::spawn` calls in each provider inherit it via
+        // `Handle::current()`.
+        let ecdsa_background_tasks = tracking::spawn_on(
+            &self.gen_runtime_handle,
             "ecdsa_background_tasks",
             self.ecdsa_signature_provider
                 .clone()
                 .spawn_background_tasks(),
         );
 
-        let robust_ecdsa_background_tasks = tracking::spawn(
+        let robust_ecdsa_background_tasks = tracking::spawn_on(
+            &self.gen_runtime_handle,
             "robust_ecdsa_background_tasks",
             self.robust_ecdsa_signature_provider
                 .clone()
                 .spawn_background_tasks(),
         );
 
-        let eddsa_background_tasks = tracking::spawn(
+        let eddsa_background_tasks = tracking::spawn_on(
+            &self.gen_runtime_handle,
             "eddsa_background_tasks",
             self.eddsa_signature_provider
                 .clone()
                 .spawn_background_tasks(),
         );
 
-        let ckd_background_tasks = tracking::spawn(
+        let ckd_background_tasks = tracking::spawn_on(
+            &self.gen_runtime_handle,
             "ckd_background_tasks",
             self.ckd_provider.clone().spawn_background_tasks(),
         );
@@ -217,6 +256,7 @@ where
             self.client.clone(),
         );
 
+        let mut recent_blocks = RecentBlocksTracker::new(REQUEST_EXPIRATION_BLOCKS);
         let start_time = Clock::real().now();
         loop {
             tokio::select! {
@@ -229,9 +269,13 @@ where
                         break;
                     };
 
-                    self.client.update_indexer_height(block_update.block.height);
+                    self.client.update_indexer_height(block_update.block.height.into());
+
+                    let AddBlockResult{ block_status } = recent_blocks.add_block(&block_update.block);
+
                     let signature_requests : RequestsUpdate<SignatureRequest> = RequestsUpdate::from_chain(
                         &block_update.block,
+                        block_status.clone(),
                         block_update.signature_requests,
                         block_update.completed_signatures,
                     );
@@ -246,6 +290,7 @@ where
 
                     let ckd_requests: RequestsUpdate<CKDRequest> = RequestsUpdate::from_chain(
                         &block_update.block,
+                        block_status.clone(),
                         block_update.ckd_requests,
                         block_update.completed_ckds
                     );
@@ -257,6 +302,7 @@ where
 
                     let verify_foreign_tx_requests : RequestsUpdate<VerifyForeignTxRequest> = RequestsUpdate::from_chain(
                         &block_update.block,
+                        block_status,
                         block_update.verify_foreign_tx_requests,
                         block_update.completed_verify_foreign_txs
                     );
@@ -270,7 +316,7 @@ where
                     if let Ok(debug_request) = debug_request {
                         match debug_request.kind {
                             DebugRequestKind::RecentBlocks => {
-                                let debug_output = pending_signatures.debug_print_recent_blocks();
+                                let debug_output = format!("{:?}", recent_blocks);
                                 debug_request.respond(debug_output);
                             }
                             DebugRequestKind::RecentSignatures => {
@@ -607,10 +653,14 @@ where
         let mut tasks = AutoAbortTaskCollection::new();
         while let Some(channel) = channel_receiver.recv().await {
             let mpc_clone = mpc_client.clone();
-            tasks.spawn_checked(
-                &format!("passive task; task_id: {:?}", channel.task_id()),
-                async move { mpc_clone.process_channel_task(channel).await },
-            );
+            let task_id = channel.task_id();
+            let description = format!("passive task; task_id: {task_id:?}");
+            let task = async move { mpc_clone.process_channel_task(channel).await };
+            if is_heavy_generation_task(&task_id) {
+                tasks.spawn_checked_on(&mpc_client.gen_runtime_handle, &description, task);
+            } else {
+                tasks.spawn_checked(&description, task);
+            }
         }
 
         const EXIT_MESSAGE: &str =
@@ -653,5 +703,137 @@ where
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::primitives::{ParticipantId, UniqueId};
+    use crate::providers::ckd::CKDTaskId;
+    use crate::providers::eddsa::EddsaTaskId;
+    use crate::providers::verify_foreign_tx::VerifyForeignTxTaskId;
+    use mpc_primitives::{AttemptId, EpochId, KeyEventId};
+    use near_indexer_primitives::CryptoHash;
+
+    fn uid() -> UniqueId {
+        UniqueId::new(ParticipantId::from_raw(0), 1, 0)
+    }
+
+    fn key_event() -> KeyEventId {
+        KeyEventId::new(EpochId::new(0), DomainId(0), AttemptId(0))
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn is_heavy_generation_task__should_classify_generation_vs_other_tasks() {
+        // Given every task kind paired with whether it is CPU-heavy asset
+        // generation that must run on the lower-priority gen runtime.
+        let cases: [(MpcTaskId, bool); 12] = [
+            // ECDSA: triples and presignatures are heavy generation.
+            (
+                EcdsaTaskId::ManyTriples {
+                    start: uid(),
+                    count: 64,
+                }
+                .into(),
+                true,
+            ),
+            (
+                EcdsaTaskId::Presignature {
+                    id: uid(),
+                    domain_id: DomainId(0),
+                    paired_triple_id: uid(),
+                }
+                .into(),
+                true,
+            ),
+            // ECDSA: signing and key events stay on the main runtime.
+            (
+                EcdsaTaskId::Signature {
+                    id: CryptoHash::default(),
+                    presignature_id: uid(),
+                }
+                .into(),
+                false,
+            ),
+            (
+                EcdsaTaskId::KeyGeneration {
+                    key_event: key_event(),
+                }
+                .into(),
+                false,
+            ),
+            (
+                EcdsaTaskId::KeyResharing {
+                    key_event: key_event(),
+                }
+                .into(),
+                false,
+            ),
+            // RobustEcdsa: presignatures are heavy; signing and key events are not.
+            (
+                RobustEcdsaTaskId::Presignature {
+                    id: uid(),
+                    domain_id: DomainId(0),
+                }
+                .into(),
+                true,
+            ),
+            (
+                RobustEcdsaTaskId::Signature {
+                    id: CryptoHash::default(),
+                    presignature_id: uid(),
+                }
+                .into(),
+                false,
+            ),
+            (
+                RobustEcdsaTaskId::KeyGeneration {
+                    key_event: key_event(),
+                }
+                .into(),
+                false,
+            ),
+            (
+                RobustEcdsaTaskId::KeyResharing {
+                    key_event: key_event(),
+                }
+                .into(),
+                false,
+            ),
+            // EdDSA, CKD, and foreign-tx verification have no background generation.
+            (
+                EddsaTaskId::Signature {
+                    id: CryptoHash::default(),
+                }
+                .into(),
+                false,
+            ),
+            (
+                CKDTaskId::Ckd {
+                    id: CryptoHash::default(),
+                }
+                .into(),
+                false,
+            ),
+            (
+                VerifyForeignTxTaskId::VerifyForeignTx {
+                    id: CryptoHash::default(),
+                    presignature_id: uid(),
+                }
+                .into(),
+                false,
+            ),
+        ];
+
+        for (task_id, expected) in cases {
+            // When / Then
+            assert_eq!(
+                is_heavy_generation_task(&task_id),
+                expected,
+                "unexpected classification for {task_id:?}",
+            );
+        }
     }
 }

@@ -44,7 +44,6 @@ impl PresignatureStorage {
             db,
             crate::db::DBCol::Presignature,
             domain_id.0.to_be_bytes().to_vec(),
-            None,
             my_participant_id,
             |participants, presignature| {
                 presignature.is_subset_of_active_participants(participants)
@@ -173,7 +172,11 @@ impl EcdsaSignatureProvider {
         domain_id: DomainId,
         paired_triple_id: UniqueId,
     ) -> anyhow::Result<()> {
-        id.validate_owned_by(channel.sender().get_leader())?;
+        let leader = channel.sender().get_leader();
+        // Both the new presignature id and the triples it consumes must be
+        // owned by the leader, never one of ours.
+        id.validate_owned_by(leader)?;
+        paired_triple_id.validate_owned_by(leader)?;
         let domain_data = self.domain_data(domain_id)?;
 
         // Triple store to consume from is keyed by the presign's `t`, which

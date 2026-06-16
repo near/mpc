@@ -202,7 +202,6 @@ impl InitConfigArgs {
             rpc_addr: None,
             network_addr: None,
             tier3_public_addr: None,
-            external_storage_fallback_threshold: None,
         }
     }
 }
@@ -520,6 +519,7 @@ mod testing {
             keygen: KeygenConfig { timeout_sec: 60 },
             foreign_chains: ForeignChainsConfig::default(),
             cores: Some(4),
+            separate_asset_generation_runtime: true,
         }
     }
 }

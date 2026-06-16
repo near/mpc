@@ -352,13 +352,6 @@ where
     /// no prefix (i.e. the original layout where keys were just
     /// `borsh(UniqueId)`).
     prefix: Vec<u8>,
-    /// Optional companion column mirrored on every write/delete. Keys in
-    /// `legacy_col` are written WITHOUT the `prefix` (just `borsh(UniqueId)`).
-    /// Used during the per-`t` triple migration so a downgrade can still read
-    /// triples this binary wrote.
-    /// TODO(#3298): drop together with the legacy `DBCol::Triple` once 3.11 is
-    /// out across the network.
-    legacy_col: Option<DBCol>,
     my_participant_id: ParticipantId,
     owned_queue: DoubleQueue<T, Vec<ParticipantId>>,
     last_id: Mutex<Option<UniqueId>>,
@@ -374,8 +367,9 @@ where
 /// for `is_subset_of_active_participants(persistent_participants)`.
 ///
 /// The caller is responsible for committing `update_writer`. Sharing a writer
-/// across multiple calls lets a single cleanup pass (legacy + per-`t` +
-/// per-domain columns + epoch marker) be committed as one atomic batch.
+/// across multiple calls lets a single cleanup pass (per-`t` triple columns +
+/// per-domain presignature columns + epoch marker) be committed as one atomic
+/// batch.
 pub fn clean_db<T>(
     db: &Arc<SecretDB>,
     update_writer: &mut SecretDBUpdate,
@@ -403,13 +397,11 @@ impl<T> DistributedAssetStorage<T>
 where
     T: Serialize + DeserializeOwned + Send + 'static,
 {
-    #[expect(clippy::too_many_arguments)]
     pub fn new(
         clock: Clock,
         db: Arc<SecretDB>,
         col: DBCol,
         prefix: Vec<u8>,
-        legacy_col: Option<DBCol>,
         my_participant_id: ParticipantId,
         condition: fn(&Vec<ParticipantId>, &T) -> bool,
         alive_participant_ids_query: Arc<dyn Fn() -> Vec<ParticipantId> + Send + Sync>,
@@ -433,7 +425,6 @@ where
             db,
             col,
             prefix,
-            legacy_col,
             my_participant_id,
             owned_queue,
             last_id: Mutex::new(last_id),
@@ -455,11 +446,6 @@ where
         let mut key = self.prefix.clone();
         key.extend_from_slice(&borsh::to_vec(&id).unwrap());
         key
-    }
-
-    /// Key under the optional legacy mirror column: never prefixed.
-    fn make_legacy_key(id: UniqueId) -> Vec<u8> {
-        borsh::to_vec(&id).unwrap()
     }
 
     fn decode_key(key: &[u8], prefix_len: usize) -> anyhow::Result<UniqueId> {
@@ -512,9 +498,6 @@ where
         let (id, asset) = self.owned_queue.take_owned().await;
         let mut update = self.db.update();
         update.delete(self.col, &self.make_key(id));
-        if let Some(legacy_col) = self.legacy_col {
-            update.delete(legacy_col, &Self::make_legacy_key(id));
-        }
         update
             .commit()
             .expect("Unrecoverable error writing to database");
@@ -527,9 +510,6 @@ where
         let value_ser = serde_json::to_vec(&value).unwrap();
         let mut update = self.db.update();
         update.put(self.col, &key, &value_ser);
-        if let Some(legacy_col) = self.legacy_col {
-            update.put(legacy_col, &Self::make_legacy_key(id), &value_ser);
-        }
         update
             .commit()
             .expect("Unrecoverable error writing to database");
@@ -549,9 +529,6 @@ where
             let mut update = self.db.update();
             for id in removed_cold_ids {
                 update.delete(self.col, &self.make_key(id));
-                if let Some(legacy_col) = self.legacy_col {
-                    update.delete(legacy_col, &Self::make_legacy_key(id));
-                }
             }
             update
                 .commit()
@@ -565,9 +542,6 @@ where
         let value_ser = serde_json::to_vec(&value).unwrap();
         let mut update = self.db.update();
         update.put(self.col, &key, &value_ser);
-        if let Some(legacy_col) = self.legacy_col {
-            update.put(legacy_col, &Self::make_legacy_key(id), &value_ser);
-        }
         update
             .commit()
             .expect("Unrecoverable error writing to database");
@@ -602,9 +576,6 @@ where
         })?;
         let mut update = self.db.update();
         update.delete(self.col, &key);
-        if let Some(legacy_col) = self.legacy_col {
-            update.delete(legacy_col, &Self::make_legacy_key(id));
-        }
         update
             .commit()
             .expect("Unrecoverable error writing to database");
@@ -877,9 +848,8 @@ mod tests {
         let store = DistributedAssetStorage::<ParticipantsWithI32>::new(
             clock.clock(),
             db,
-            crate::db::DBCol::Triple,
+            crate::db::DBCol::TripleV2,
             Vec::new(),
-            None,
             ParticipantId::from_raw(42),
             |cond, val| val.is_subset_of_active_participants(cond),
             {
@@ -1013,9 +983,8 @@ mod tests {
         let store = DistributedAssetStorage::<u32>::new(
             FakeClock::default().clock(),
             db,
-            crate::db::DBCol::Triple,
+            crate::db::DBCol::TripleV2,
             Vec::new(),
-            None,
             ParticipantId::from_raw(42),
             |_, _| true,
             Arc::new(std::vec::Vec::new),
@@ -1061,9 +1030,8 @@ mod tests {
         let store = DistributedAssetStorage::<u32>::new(
             FakeClock::default().clock(),
             db.clone(),
-            crate::db::DBCol::Triple,
+            crate::db::DBCol::TripleV2,
             Vec::new(),
-            None,
             ParticipantId::from_raw(42),
             |_, _| true,
             Arc::new(std::vec::Vec::new),
@@ -1112,9 +1080,8 @@ mod tests {
         let store = DistributedAssetStorage::<u32>::new(
             FakeClock::default().clock(),
             db,
-            crate::db::DBCol::Triple,
+            crate::db::DBCol::TripleV2,
             Vec::new(),
-            None,
             ParticipantId::from_raw(42),
             |_, _| true,
             Arc::new(std::vec::Vec::new),
@@ -1131,9 +1098,8 @@ mod tests {
         let store = DistributedAssetStorage::<u32>::new(
             FakeClock::default().clock(),
             db,
-            crate::db::DBCol::Triple,
+            crate::db::DBCol::TripleV2,
             Vec::new(),
-            None,
             ParticipantId::from_raw(42),
             |_, _| true,
             Arc::new(std::vec::Vec::new),
@@ -1173,9 +1139,8 @@ mod tests {
         let store = DistributedAssetStorage::<u32>::new(
             FakeClock::default().clock(),
             db.clone(),
-            crate::db::DBCol::Triple,
+            crate::db::DBCol::TripleV2,
             Vec::new(),
-            None,
             myself,
             |_, _| true,
             Arc::new(std::vec::Vec::new),
@@ -1198,9 +1163,8 @@ mod tests {
         let store = DistributedAssetStorage::<u32>::new(
             FakeClock::default().clock(),
             db,
-            crate::db::DBCol::Triple,
+            crate::db::DBCol::TripleV2,
             Vec::new(),
-            None,
             myself,
             |_, _| true,
             Arc::new(std::vec::Vec::new),
@@ -1233,9 +1197,8 @@ mod tests {
         let store = DistributedAssetStorage::<u32>::new(
             FakeClock::default().clock(),
             db.clone(),
-            crate::db::DBCol::Triple,
+            crate::db::DBCol::TripleV2,
             Vec::new(),
-            None,
             myself,
             |_, x| *x != 1,
             Arc::new(Vec::new),
@@ -1255,9 +1218,8 @@ mod tests {
         let store = DistributedAssetStorage::<u32>::new(
             FakeClock::default().clock(),
             db,
-            crate::db::DBCol::Triple,
+            crate::db::DBCol::TripleV2,
             Vec::new(),
-            None,
             myself,
             |_, _| true,
             Arc::new(std::vec::Vec::new),
@@ -1281,7 +1243,6 @@ mod tests {
                 db.clone(),
                 crate::db::DBCol::Presignature,
                 domain_id_to_prefix(domain_id),
-                None,
                 myself,
                 |_, _| true,
                 Arc::new(std::vec::Vec::new),
@@ -1315,7 +1276,6 @@ mod tests {
                 db.clone(),
                 crate::db::DBCol::Presignature,
                 domain_id_to_prefix(domain_id),
-                None,
                 myself,
                 |_, _| true,
                 Arc::new(std::vec::Vec::new),
@@ -1369,7 +1329,6 @@ mod tests {
                 db.clone(),
                 db_col,
                 domain_id_to_prefix(domain_id),
-                None,
                 my_participant_id,
                 |cond, val| val.is_subset_of_active_participants(cond),
                 {
@@ -1384,7 +1343,7 @@ mod tests {
             assert_eq!(store.num_owned(), expected);
         };
         for domain_id in [None, Some(DomainId(0)), Some(DomainId(1))] {
-            for db_col in [crate::db::DBCol::Presignature, crate::db::DBCol::Triple] {
+            for db_col in [crate::db::DBCol::Presignature, crate::db::DBCol::TripleV2] {
                 assert_db_num_owned(db_col, domain_id, 0);
                 {
                     // populate the database

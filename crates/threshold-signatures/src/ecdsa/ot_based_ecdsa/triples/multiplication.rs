@@ -241,6 +241,8 @@ pub(super) async fn multiplication_many<const N: usize>(
                 }
             };
             tasks.push(fut);
+
+            comms.yield_point().await;
         }
     }
     let mut outs: Vec<Scalar> = av_iv_arc
@@ -249,6 +251,8 @@ pub(super) async fn multiplication_many<const N: usize>(
         .map(|(av_i, bv_i)| *av_i * *bv_i)
         .collect();
 
+    // TODO(#3517): try_join_all polls every ready child once per top-level poll, so one
+    // poke() still costs (#ready children x per-chunk work) despite the yield points.
     let mut results = futures::future::try_join_all(tasks)
         .await?
         .into_iter()

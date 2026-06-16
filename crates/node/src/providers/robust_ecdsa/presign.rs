@@ -47,7 +47,6 @@ impl PresignatureStorage {
             db,
             crate::db::DBCol::Presignature,
             domain_id.0.to_be_bytes().to_vec(),
-            None,
             my_participant_id,
             |participants, presignature| {
                 presignature.is_subset_of_active_participants(participants)
@@ -286,8 +285,8 @@ impl MpcLeaderCentricComputation<PresignOutput> for PresignComputation {
 }
 
 /// Performs an MPC presignature operation as a follower.
-/// The difference is: we need to read the triples from the triple store (which may fail),
-/// and we need to write the presignature to the presignature store before completing.
+/// The difference is: we need to write the presignature to the presignature
+/// store before completing.
 pub struct FollowerPresignComputation {
     pub max_malicious: MaxMalicious,
     pub keygen_out: KeygenOutput,

@@ -10,7 +10,6 @@ fn compile_project() -> (Vec<u8>, serde_json::Value) {
         out_dir: Some(to_utf8(out_dir.clone())),
         features: Some("abi".to_string()),
         profile: Some("release-contract".to_string()),
-        skip_rust_version_check: true,
         ..Default::default()
     };
 

@@ -5,9 +5,42 @@ license = { workspace = true }
 edition = { workspace = true }
 repository = "https://github.com/near/mpc"
 
-# Reproducible builds are produced by the Nix derivation at `nix/mpc-contract.nix`
-# (exposed as `packages.<system>.mpc-contract` in `flake.nix`). See
-# `docs/reproducible-builds.md` for instructions and hash verification.
+# Reproducible builds are produced by two coexisting paths
+# (see `docs/reproducible-builds.md`):
+#   1. The Nix derivation at `nix/mpc-contract.nix` (exposed as
+#      `packages.<system>.mpc-contract` in `flake.nix`).
+#   2. cargo-near, driven by the NEP-330 metadata below. The pinned
+#      `sourcescan/cargo-near` image lets third-party verifiers
+#      (sourcescan.io, nearblocks) replay and verify the on-chain WASM.
+
+# fields to configure build with WASM reproducibility, according to specs
+# in https://github.com/near/NEPs/blob/master/neps/nep-0330.md
+[package.metadata.near.reproducible_build]
+# docker image, descriptor of build environment; pinned to match
+# `rust-toolchain.toml` (1.93.0)
+image = "sourcescan/cargo-near:0.21.1-rust-1.93.0"
+# tag after colon above serves only descriptive purpose; image is identified by digest
+image_digest = "sha256:79b789c81ba19ec30794a6b1046b02dcaf5c055994b22cc7c9af67ab5096b095"
+# list of environment variables names, whose values, if set, will be used as external build parameters
+# in a reproducible manner
+# supported by `sourcescan/cargo-near:0.10.1-rust-1.82.0` image or later images
+passed_env = []
+# build command inside of docker container
+# if docker image from default gallery is used https://hub.docker.com/r/sourcescan/cargo-near/tags,
+# the command may be any combination of flags of `cargo-near`,
+# supported by respective version of binary inside the container besides `--no-locked` flag
+container_build_command = [
+    "cargo",
+    "near",
+    "build",
+    # this is counter intuitive, but it correctly follows the docs,
+    # the non-reproducible build inside a reproducible environment becomes reproducible
+    "non-reproducible-wasm",
+    "--locked",
+    "--profile=release-contract",
+    "--features",
+    "abi",
+]
 
 [lib]
 crate-type = ["cdylib", "lib"]
@@ -26,9 +59,6 @@ bench-contract-methods = []
 # length of a fan-out queue). Distinct from `bench-contract-methods` because these are
 # behavioral hooks, not gas-measurement hooks.
 sandbox-test-methods = []
-# Exposes constructors for DTO-to-internal type conversion in the node.
-# TODO(#381): Remove once the node no longer depends on the contract crate.
-compat = []
 dev-utils = ["rand", "threshold-signatures", "near-mpc-contract-interface/blstrs"]
 abi = [
     "borsh/unstable__schema",
@@ -95,7 +125,6 @@ ecdsa = { workspace = true }
 futures = { workspace = true }
 insta = { workspace = true }
 mpc-contract = { workspace = true, features = [
-    "compat",
     "sandbox-test-methods",
     "test-utils",
 ] }

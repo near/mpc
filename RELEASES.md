@@ -156,6 +156,24 @@ tag-existence and release-existence checks together guard against
 silently re-pointing `:X.Y.Z` at a different commit once it has been
 released.
 
+### Docker push fails with `blob unknown to registry`
+
+If a Build Docker image workflow fails (deterministically, even on re-run)
+with:
+
+```
+writing manifest ...: blob unknown to registry
+```
+
+the registry holds an orphaned blob from an earlier push that was
+interrupted mid-upload. Launcher/node images share base-image layer blobs
+across tags, so skopeo's blob `HEAD` checks see the orphaned blob as
+"present" and skip re-uploading it, then Docker Hub rejects the manifest
+because it can't link that blob.
+
+To recover, wait for Docker Hub's background garbage collection to drop
+the orphaned blob (usually a few minutes) and re-run.
+
 ## Creating a new release branch
 
 When a minor line needs its own branch (typically just before or just
@@ -192,11 +210,14 @@ We follow [Semantic Versioning](https://semver.org/) with these compatibility ru
 
 We use [`git-cliff`](https://git-cliff.org/) to maintain `CHANGELOG.md`.
 The `prepare-release.sh` script invokes `git-cliff --unreleased -t
-<VERSION>` which picks up commits since the last tag reachable from
-`HEAD`. This works for both minor releases on `main` (where the last
-reachable tag is the previous minor) and patch releases on
-`release/vX.Y` (where the last reachable tag is the previous patch on
-the line).
+<VERSION>` which picks up commits since the most recent **semver** tag
+(`X.Y.Z`). `cliff.toml` sets `tag_pattern` to a semver regex so git-cliff
+only treats version tags as release boundaries — without it,
+`--unreleased` anchors to the newest tag of *any* shape, so a stray
+non-version tag silently truncates the generated changelog to the commits
+after that tag. For both minor releases on `main` and patch releases on
+`release/vX.Y`, the baseline is the previous semver release, regardless of
+where unrelated tags point.
 
 If a previous patch was tagged off a release branch and its fixes were
 also cherry-picked to `main`, append the main-side cherry-pick commits

@@ -1,15 +1,15 @@
 use super::initializing::InitializingContractState;
 use super::key_event::KeyEvent;
 use super::resharing::ResharingContractState;
-use crate::errors::{DomainError, Error, InvalidParameters, VoteError};
+use crate::errors::{ConversionError, DomainError, Error, InvalidParameters, VoteError};
 use crate::primitives::{
-    domain::{AddDomainsVotes, DomainRegistry},
+    domain::{AddDomainsVotes, DomainRegistry, validate_domain_threshold},
     key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, Keyset},
     threshold_votes::ThresholdParametersVotes,
-    thresholds::ThresholdParameters,
+    thresholds::{ProposedThresholdParameters, ThresholdParameters},
 };
 use near_account_id::AccountId;
-use near_mpc_contract_interface::types::{DomainConfig, Protocol};
+use near_mpc_contract_interface::types::DomainConfig;
 use near_sdk::near;
 use std::collections::{BTreeSet, HashSet};
 
@@ -62,7 +62,7 @@ impl RunningContractState {
 
     pub fn transition_to_resharing_no_checks(
         &mut self,
-        proposal: &ThresholdParameters,
+        proposal: &ProposedThresholdParameters,
     ) -> Option<ResharingContractState> {
         if let Some(first_domain) = self.domains.get_domain_by_index(0) {
             let epoch_id = self.prospective_epoch_id();
@@ -75,16 +75,23 @@ impl RunningContractState {
                     self.add_domains_votes.clone(),
                 ),
                 reshared_keys: Vec::new(),
-                resharing_key: KeyEvent::new(epoch_id, first_domain.clone(), proposal.clone()),
+                resharing_key: KeyEvent::new(
+                    epoch_id,
+                    first_domain.clone(),
+                    proposal.parameters().clone(),
+                ),
                 cancellation_requests: HashSet::new(),
+                per_domain_thresholds: proposal.per_domain_thresholds().clone(),
             })
         } else {
-            // A new ThresholdParameters was proposed, but we have no keys, so directly
-            // transition into Running state but bump the EpochId.
+            // New parameters were proposed, but we have no keys, so directly
+            // transition into Running state but bump the EpochId. With no
+            // domains the per-domain threshold updates have nothing to apply to
+            // and are dropped.
             *self = RunningContractState::new(
                 self.domains.clone(),
                 Keyset::new(self.keyset.epoch_id.next(), Vec::new()),
-                proposal.clone(),
+                proposal.parameters().clone(),
                 self.add_domains_votes.clone(),
             );
             None
@@ -96,7 +103,7 @@ impl RunningContractState {
     pub fn vote_new_parameters(
         &mut self,
         prospective_epoch_id: EpochId,
-        proposal: &ThresholdParameters,
+        proposal: &ProposedThresholdParameters,
     ) -> Result<Option<ResharingContractState>, Error> {
         let expected_prospective_epoch_id = self.prospective_epoch_id();
 
@@ -132,24 +139,46 @@ impl RunningContractState {
     /// Returns true if all participants of the proposed parameters voted for it.
     pub(super) fn process_new_parameters_proposal(
         &mut self,
-        proposal: &ThresholdParameters,
+        proposal: &ProposedThresholdParameters,
     ) -> Result<bool, Error> {
         // ensure the proposal is valid against the current parameters
-        self.parameters.validate_incoming_proposal(proposal)?;
+        self.parameters
+            .validate_incoming_proposal(proposal.parameters())?;
 
-        // TODO(#3169): once resharing votes carry per-domain `t` (and the node
-        // honors per-domain reconstruction thresholds, #3164), this path must
-        // (1) reject proposals that would leave CaitSith domains with differing
-        // reconstruction_thresholds — the 3.11-transition lock that
-        // `vote_add_domains` already applies — and (2) re-enable the per-domain
-        // threshold check below. Both hold trivially today: the proposal
-        // carries only `ThresholdParameters` (per-domain `t` untouched) and the
-        // node signs every domain at the cluster threshold, so enabling (2) now
-        // would wrongly block legitimate resharings.
-        // let new_num_participants = proposal.participants().len() as u64;
-        // for domain in self.domains.domains() {
-        //     crate::primitives::domain::validate_domain_threshold(domain, new_num_participants)?;
-        // }
+        // Validate effective per-domain thresholds (updates override, absent
+        // domains keep theirs) against the proposed participant count.
+        let new_num_participants = u64::try_from(proposal.participants().len()).map_err(|e| {
+            ConversionError::DataConversion {
+                reason: format!("participant count does not fit in u64: {e}"),
+            }
+        })?;
+        let threshold_updates = proposal.per_domain_thresholds();
+        // Reject unknown domain IDs: the loop below iterates existing domains, so
+        // an unknown ID would otherwise be silently ignored here (it's caught at
+        // the resharing transition, but we fail fast at vote acceptance).
+        for id in threshold_updates.keys() {
+            if self.domains.get_domain_by_domain_id(*id).is_none() {
+                return Err(DomainError::UnknownDomainInProposal { domain_id: *id }.into());
+            }
+        }
+        let effective_domains: Vec<DomainConfig> = self
+            .domains
+            .domains()
+            .iter()
+            .map(|domain| {
+                let effective_threshold = threshold_updates
+                    .get(&domain.id)
+                    .copied()
+                    .unwrap_or(domain.reconstruction_threshold);
+                DomainConfig {
+                    reconstruction_threshold: effective_threshold,
+                    ..domain.clone()
+                }
+            })
+            .collect();
+        for domain in &effective_domains {
+            validate_domain_threshold(domain, new_num_participants)?;
+        }
 
         // ensure the signer is a proposed participant
         let candidate = AuthenticatedAccountId::new(proposal.participants())?;
@@ -167,7 +196,7 @@ impl RunningContractState {
 
         // finally, vote.
         let n_votes = self.parameters_votes.vote(proposal, candidate);
-        Ok(proposal.participants().len() as u64 == n_votes)
+        Ok(new_num_participants == n_votes)
     }
 
     /// Casts a vote for the signer participant to add new domains, replacing any previous vote.
@@ -185,31 +214,6 @@ impl RunningContractState {
         for domain in &domains {
             crate::primitives::domain::validate_domain_purpose(domain)?;
             crate::primitives::domain::validate_domain_threshold(domain, num_participants)?;
-        }
-        // 3.11-transition lock: all CaitSith domains (ForeignTx included) must
-        // share one `reconstruction_threshold` so the legacy unprefixed
-        // `DBCol::Triple` mirror (#3292) can't collide. If no CaitSith
-        // domain exists yet the first one is free to pick any valid `t`;
-        // any later CaitSith — in the same proposal or in future calls —
-        // must match it. Remove once #3298 drops the mirror.
-        let mut expected_caitsith_t = self
-            .domains
-            .domains()
-            .iter()
-            .find(|d| d.protocol == Protocol::CaitSith)
-            .map(|d| d.reconstruction_threshold.inner());
-        for domain in &domains {
-            if domain.protocol != Protocol::CaitSith {
-                continue;
-            }
-            let found = domain.reconstruction_threshold.inner();
-            match expected_caitsith_t {
-                None => expected_caitsith_t = Some(found),
-                Some(expected) if expected != found => {
-                    return Err(DomainError::CaitsithThresholdMismatch { expected, found }.into());
-                }
-                Some(_) => {}
-            }
         }
         let participant = AuthenticatedParticipantId::new(self.parameters.participants())?;
         let n_votes = self.add_domains_votes.vote(domains.clone(), &participant);
@@ -245,7 +249,7 @@ pub mod running_tests {
 
     use super::RunningContractState;
     use crate::primitives::domain::AddDomainsVotes;
-    use crate::primitives::test_utils::{NUM_PROTOCOLS, gen_threshold_params};
+    use crate::primitives::test_utils::{NUM_PROTOCOLS, gen_proposed_threshold_params};
     use crate::primitives::threshold_votes::ThresholdParametersVotes;
     use crate::state::key_event::tests::Environment;
     use crate::state::test_utils::{gen_running_state, gen_valid_params_proposal};
@@ -264,7 +268,7 @@ pub mod running_tests {
         let participants = state.parameters.participants().clone();
         // Assert that random proposals get rejected.
         for (account_id, _, _) in participants.participants() {
-            let ksp = gen_threshold_params(30);
+            let ksp = gen_proposed_threshold_params(30);
             env.set_signer(account_id);
             let _ = state
                 .vote_new_parameters(state.keyset.epoch_id.next(), &ksp)
@@ -368,7 +372,14 @@ pub mod running_tests {
                 resharing.prospective_epoch_id(),
                 state.keyset.epoch_id.next(),
             );
-            assert_eq!(resharing.resharing_key.proposed_parameters(), &proposal);
+            assert_eq!(
+                resharing.resharing_key.proposed_parameters(),
+                proposal.parameters()
+            );
+            assert_eq!(
+                resharing.per_domain_thresholds,
+                *proposal.per_domain_thresholds()
+            );
         }
     }
 
@@ -465,9 +476,7 @@ pub mod running_tests {
 
     #[test]
     fn vote_add_domains__should_accept_threshold_equal_to_participant_count() {
-        // Given a Frost proposal where t == n (boundary case). Frost — not
-        // CaitSith — because the 3.11 CaitSith threshold lock would reject
-        // any new CaitSith domain whose `t` differs from the fixture's.
+        // Given a Frost proposal where t == n (boundary case).
         let mut state = gen_running_state(1);
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
@@ -514,9 +523,71 @@ pub mod running_tests {
         );
     }
 
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn process_new_parameters_proposal__should_accept_empty_per_domain_threshold_updates() {
+        // Given a running state where existing thresholds are valid under the
+        // proposed participant count
+        let mut state = gen_running_state(1);
+        let mut env = Environment::new(None, None, None);
+        let proposal = gen_valid_params_proposal(&state.parameters);
+        // Sign as a participant present in BOTH the current and proposed sets:
+        // `gen_valid_params_proposal` keeps only a random subset of the current
+        // participants, so an arbitrary current participant may be absent from
+        // the proposal (rejected as a non-participant) and a freshly added one
+        // would be deferred as a pending newcomer. The retained overlap is
+        // non-empty (at least `threshold` current participants are kept).
+        let signer = proposal
+            .participants()
+            .participants()
+            .iter()
+            .map(|(account_id, _, _)| account_id.clone())
+            .find(|account_id| {
+                state
+                    .parameters
+                    .participants()
+                    .is_participant_given_account_id(account_id)
+            })
+            .expect("proposal must retain at least one current participant");
+        env.set_signer(&signer);
+
+        // When voting with an empty per_domain_thresholds map (legacy shape)
+        let res = state.vote_new_parameters(state.keyset.epoch_id.next(), &proposal);
+
+        // Then the vote is recorded without error
+        assert!(
+            res.is_ok(),
+            "Expected accept with empty threshold updates: {res:?}"
+        );
+    }
+
+    #[test]
+    fn process_new_parameters_proposal__should_reject_threshold_update_with_unknown_domain_id() {
+        // Given a running state with one domain
+        let mut state = gen_running_state(1);
+        let mut env = Environment::new(None, None, None);
+        env.set_signer(&state.parameters.participants().participants()[0].0);
+        let proposal = gen_valid_params_proposal(&state.parameters);
+
+        // When voting with a threshold update referencing a non-existent domain ID
+        let mut threshold_updates = BTreeMap::new();
+        threshold_updates.insert(DomainId(9999), ReconstructionThreshold::new(2));
+        let proposal = proposal.with_per_domain_thresholds(threshold_updates);
+        let err = state
+            .vote_new_parameters(state.keyset.epoch_id.next(), &proposal)
+            .unwrap_err();
+
+        // Then the unknown-domain guard rejects it
+        assert!(
+            err.to_string().contains("not in the current registry"),
+            "Expected UnknownDomainInProposal, got: {err}"
+        );
+    }
+
     /// Builds a `DomainConfig` for the next domain id with the given protocol,
     /// purpose, and reconstruction threshold.
-    fn caitsith_lock_test_proposal(
+    fn single_domain_proposal(
         state: &RunningContractState,
         protocol: Protocol,
         purpose: DomainPurpose,
@@ -531,35 +602,29 @@ pub mod running_tests {
     }
 
     #[test]
-    fn vote_add_domains__should_reject_caitsith_threshold_differing_from_existing() {
+    fn vote_add_domains__should_accept_caitsith_threshold_differing_from_existing() {
         // Given a Running state already holding a CaitSith domain at t = 2
         // (the fixture default) and a proposal for a second CaitSith at t = 3.
         let mut state = gen_running_state(1);
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
-        let proposal =
-            caitsith_lock_test_proposal(&state, Protocol::CaitSith, DomainPurpose::Sign, 3);
+        let proposal = single_domain_proposal(&state, Protocol::CaitSith, DomainPurpose::Sign, 3);
 
         // When
-        let err = state.vote_add_domains(proposal).unwrap_err();
+        let res = state.vote_add_domains(proposal);
 
-        // Then the lock rejects the mismatch.
-        assert!(
-            err.to_string().contains("CaitSith threshold mismatch"),
-            "Expected CaitsithThresholdMismatch, got: {err}"
-        );
+        // Then CaitSith domains may carry independent thresholds.
+        assert!(res.is_ok(), "Expected acceptance: {res:?}");
     }
 
     #[test]
     fn vote_add_domains__should_accept_first_caitsith_at_any_valid_threshold() {
-        // Given a Running state with no CaitSith domain: the first CaitSith
-        // is free to set the threshold.
+        // Given a Running state with no CaitSith domain.
         let mut state = gen_running_state(0);
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
         let n = state.parameters.participants().len() as u64;
-        let proposal =
-            caitsith_lock_test_proposal(&state, Protocol::CaitSith, DomainPurpose::Sign, n);
+        let proposal = single_domain_proposal(&state, Protocol::CaitSith, DomainPurpose::Sign, n);
 
         // When
         let res = state.vote_add_domains(proposal);
@@ -569,7 +634,7 @@ pub mod running_tests {
     }
 
     #[test]
-    fn vote_add_domains__should_reject_two_new_caitsith_with_differing_thresholds() {
+    fn vote_add_domains__should_accept_two_new_caitsith_with_differing_thresholds() {
         // Given a Running state with no existing CaitSith and a proposal
         // adding two CaitSith domains at different thresholds.
         let mut state = gen_running_state(0);
@@ -592,13 +657,156 @@ pub mod running_tests {
         ];
 
         // When
-        let err = state.vote_add_domains(proposal).unwrap_err();
+        let res = state.vote_add_domains(proposal);
 
         // Then
+        assert!(res.is_ok(), "Expected acceptance: {res:?}");
+    }
+
+    #[test]
+    fn process_new_parameters_proposal__should_apply_threshold_update_to_validation() {
+        // Given a running state with one domain whose existing threshold would
+        // remain valid under the new participants, but the threshold update
+        // swaps it for an invalid (too-low) value.
+        let mut state = gen_running_state(1);
+        let mut env = Environment::new(None, None, None);
+        env.set_signer(&state.parameters.participants().participants()[0].0);
+        let proposal = gen_valid_params_proposal(&state.parameters);
+
+        // When voting with a threshold update that violates the universal lower bound
+        let domain_id = state.domains.domains()[0].id;
+        let mut threshold_updates = BTreeMap::new();
+        threshold_updates.insert(domain_id, ReconstructionThreshold::new(1));
+        let proposal = proposal.with_per_domain_thresholds(threshold_updates);
+        let err = state
+            .vote_new_parameters(state.keyset.epoch_id.next(), &proposal)
+            .unwrap_err();
+
+        // Then the updated value (not the stored value) is validated and rejected
         assert!(
-            err.to_string().contains("CaitSith threshold mismatch"),
-            "Expected CaitsithThresholdMismatch, got: {err}"
+            err.to_string()
+                .contains("Reconstruction threshold must be at least"),
+            "Expected ReconstructionThresholdTooLow on updated value, got: {err}"
         );
+    }
+
+    #[test]
+    fn process_new_parameters_proposal__should_accept_valid_per_domain_threshold_update() {
+        // Given a running state with one CaitSith domain at the fixture default
+        // t = 2.
+        let mut state = gen_running_state(1);
+        let mut env = Environment::new(None, None, None);
+        let proposal = gen_valid_params_proposal(&state.parameters);
+        // Sign as a participant present in BOTH the current and proposed sets
+        // (see the empty-updates test for why an arbitrary participant won't do).
+        let signer = proposal
+            .participants()
+            .participants()
+            .iter()
+            .map(|(account_id, _, _)| account_id.clone())
+            .find(|account_id| {
+                state
+                    .parameters
+                    .participants()
+                    .is_participant_given_account_id(account_id)
+            })
+            .expect("proposal must retain at least one current participant");
+        env.set_signer(&signer);
+
+        // When voting with an update raising t to 3. The proposed participant
+        // count is always >= 3, so the raised threshold stays within bounds.
+        let domain_id = state.domains.domains()[0].id;
+        let mut threshold_updates = BTreeMap::new();
+        threshold_updates.insert(domain_id, ReconstructionThreshold::new(3));
+        let proposal = proposal.with_per_domain_thresholds(threshold_updates);
+        let res = state.vote_new_parameters(state.keyset.epoch_id.next(), &proposal);
+
+        // Then the vote is recorded without error
+        assert!(
+            res.is_ok(),
+            "Expected accept with valid threshold update: {res:?}"
+        );
+    }
+
+    #[test]
+    fn process_new_parameters_proposal__should_reject_threshold_update_exceeding_participant_count()
+    {
+        // Given a running state with one domain
+        let mut state = gen_running_state(1);
+        let mut env = Environment::new(None, None, None);
+        env.set_signer(&state.parameters.participants().participants()[0].0);
+        let proposal = gen_valid_params_proposal(&state.parameters);
+
+        // When the update sets t above the proposed participant count
+        let domain_id = state.domains.domains()[0].id;
+        let new_num_participants = proposal.participants().len() as u64;
+        let mut threshold_updates = BTreeMap::new();
+        threshold_updates.insert(
+            domain_id,
+            ReconstructionThreshold::new(new_num_participants + 1),
+        );
+        let proposal = proposal.with_per_domain_thresholds(threshold_updates);
+        let err = state
+            .vote_new_parameters(state.keyset.epoch_id.next(), &proposal)
+            .unwrap_err();
+
+        // Then the updated value is validated against the proposed participants
+        // and rejected.
+        assert!(
+            err.to_string().contains("exceeds participant count"),
+            "Expected ReconstructionThresholdExceedsParticipants, got: {err}"
+        );
+    }
+
+    #[test]
+    fn process_new_parameters_proposal__should_accept_threshold_update_diverging_caitsith() {
+        // Given a running state with two CaitSith domains, both at the fixture
+        // default t = 2 (the protocols cycle, so 5 domains yields two CaitSith).
+        let mut state = gen_running_state(5);
+        let mut env = Environment::new(None, None, None);
+        assert!(
+            state
+                .domains
+                .domains()
+                .iter()
+                .filter(|d| d.protocol == Protocol::CaitSith)
+                .count()
+                >= 2,
+            "fixture must contain at least two CaitSith domains"
+        );
+        let proposal = gen_valid_params_proposal(&state.parameters);
+        // Sign as a participant present in BOTH the current and proposed sets
+        // (the proposal keeps a random subset of current participants).
+        let signer = proposal
+            .participants()
+            .participants()
+            .iter()
+            .map(|(account_id, _, _)| account_id.clone())
+            .find(|account_id| {
+                state
+                    .parameters
+                    .participants()
+                    .is_participant_given_account_id(account_id)
+            })
+            .expect("proposal must retain at least one current participant");
+        env.set_signer(&signer);
+
+        // When an update raises only one CaitSith domain's threshold, leaving the
+        // CaitSith domains non-uniform.
+        let caitsith_id = state
+            .domains
+            .domains()
+            .iter()
+            .find(|d| d.protocol == Protocol::CaitSith)
+            .map(|d| d.id)
+            .expect("fixture has a CaitSith domain");
+        let mut threshold_updates = BTreeMap::new();
+        threshold_updates.insert(caitsith_id, ReconstructionThreshold::new(3));
+        let proposal = proposal.with_per_domain_thresholds(threshold_updates);
+        let res = state.vote_new_parameters(state.keyset.epoch_id.next(), &proposal);
+
+        // Then CaitSith domains may diverge in threshold.
+        assert!(res.is_ok(), "Expected acceptance: {res:?}");
     }
 
     #[test]
@@ -608,8 +816,7 @@ pub mod running_tests {
         let mut state = gen_running_state(1);
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
-        let proposal =
-            caitsith_lock_test_proposal(&state, Protocol::CaitSith, DomainPurpose::Sign, 2);
+        let proposal = single_domain_proposal(&state, Protocol::CaitSith, DomainPurpose::Sign, 2);
 
         // When
         let res = state.vote_add_domains(proposal);
@@ -619,33 +826,13 @@ pub mod running_tests {
     }
 
     #[test]
-    fn vote_add_domains__should_apply_lock_to_foreign_tx_purpose_caitsith() {
-        // Given a Running state with a CaitSith/Sign at t = 2 and a proposal
-        // for a CaitSith/ForeignTx (CaitSith underneath) at t = 3.
-        let mut state = gen_running_state(1);
-        let mut env = Environment::new(None, None, None);
-        env.set_signer(&state.parameters.participants().participants()[0].0);
-        let proposal =
-            caitsith_lock_test_proposal(&state, Protocol::CaitSith, DomainPurpose::ForeignTx, 3);
-
-        // When
-        let err = state.vote_add_domains(proposal).unwrap_err();
-
-        // Then the lock fires even though purpose differs.
-        assert!(
-            err.to_string().contains("CaitSith threshold mismatch"),
-            "Expected CaitsithThresholdMismatch, got: {err}"
-        );
-    }
-
-    #[test]
-    fn vote_add_domains__should_allow_non_caitsith_domain_with_differing_threshold() {
+    fn vote_add_domains__should_accept_non_caitsith_domain_with_differing_threshold() {
         // Given a Running state with a CaitSith domain at t = 2 and a Frost
-        // proposal at a different threshold; the lock targets CaitSith only.
+        // proposal at a different threshold.
         let mut state = gen_running_state(1);
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
-        let proposal = caitsith_lock_test_proposal(&state, Protocol::Frost, DomainPurpose::Sign, 3);
+        let proposal = single_domain_proposal(&state, Protocol::Frost, DomainPurpose::Sign, 3);
 
         // When
         let res = state.vote_add_domains(proposal);

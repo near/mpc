@@ -1,10 +1,10 @@
 use crate::indexer::stats::IndexerStats;
 use crate::metrics;
-use crate::requests::recent_blocks_tracker::BlockViewLite;
 use crate::types::CKDId;
 use crate::types::SignatureId;
 use crate::types::VerifyForeignTxId;
 use anyhow::Context;
+use chain_gateway::event_subscriber::block_events::BlockContext;
 use futures::StreamExt;
 use mpc_primitives::domain::DomainId;
 use near_account_id::AccountId;
@@ -82,7 +82,7 @@ pub struct VerifyForeignTxRequestFromChain {
 
 #[derive(Clone)]
 pub struct ChainBlockUpdate {
-    pub block: BlockViewLite,
+    pub block: BlockContext,
     pub signature_requests: Vec<SignatureRequestFromChain>,
     pub completed_signatures: Vec<SignatureId>,
     pub ckd_requests: Vec<CKDRequestFromChain>,
@@ -250,9 +250,9 @@ async fn handle_message(
 
     block_update_sender
         .send(ChainBlockUpdate {
-            block: BlockViewLite {
+            block: BlockContext {
                 hash: streamer_message.block.header.hash,
-                height: streamer_message.block.header.height,
+                height: streamer_message.block.header.height.into(),
                 prev_hash: streamer_message.block.header.prev_hash,
                 last_final_block: streamer_message.block.header.last_final_block,
                 entropy: streamer_message.block.header.random_value.into(),

@@ -28,17 +28,18 @@ members = [
     "crates/tee-authority",
     "crates/tee-context",
     "crates/tee-launcher",
+    "crates/tee-verifier",
+    "crates/tee-verifier-interface",
     "crates/test-migration-contract",
     "crates/test-parallel-contract",
     "crates/test-port-allocator",
     "crates/test-utils",
     "crates/threshold-signatures",
     "crates/tls",
-    "crates/utilities",
 ]
 
 [workspace.package]
-version = "3.11.0"
+version = "3.12.0"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/near/mpc"
@@ -66,10 +67,10 @@ near-mpc-sdk = { path = "crates/near-mpc-sdk", version = "0.0.1" }
 near-mpc-signature-verifier = { path = "crates/near-mpc-signature-verifier", version = "0.0.1" }
 node-types = { path = "crates/node-types" }
 tee-authority = { path = "crates/tee-authority" }
+tee-verifier-interface = { path = "crates/tee-verifier-interface" }
 test-port-allocator = { path = "crates/test-port-allocator" }
 test-utils = { path = "crates/test-utils" }
 threshold-signatures = { path = "crates/threshold-signatures" }
-utilities = { path = "crates/utilities" }
 
 aes-gcm = "0.10.3"
 anyhow = "1.0.102"
@@ -87,7 +88,7 @@ bs58 = { version = "0.5.1" }
 built = { version = "0.8", features = ["git2", "chrono"] }
 byteorder = "1.5.0"
 bytes = { version = "1.11.1" }
-cargo-near-build = "0.11.1"
+cargo-near-build = "0.11.3"
 clap = { version = "4.6.1", features = ["derive", "env"] }
 criterion = { version = "0.8.2", features = ["html_reports"] }
 curve25519-dalek = { version = "4.1.3", features = [
@@ -150,7 +151,7 @@ gcloud-sdk = { version = "0.30.0", default-features = false, features = [
 group = "0.13"
 hex = { version = "0.4.3", features = ["serde"] }
 hkdf = "0.12.4"
-http = "1.4.0"
+http = "1.4.1"
 http-body-util = "0.1.3"
 humantime = "2.3.0"
 hyper = { version = "1.10.1", features = ["client", "server", "http1"] }
@@ -167,6 +168,7 @@ jemalloc_pprof = "0.4.2"
 jsonrpsee = { version = "0.26.0", features = ["http-client"] }
 k256 = "0.13.4"
 keccak = "0.1.5"
+libc = "0.2"
 lru = "0.18.0"
 # Re-exported by `jemalloc_pprof` (workspace sibling). Used to embed runtime
 # binary mappings into emitted pprof profiles so `pprof` can symbolicate
@@ -175,17 +177,22 @@ mappings = "0.5"
 mockall = "0.14.0"
 named-lock = "0.4.1"
 near-abi = "0.4.4"
-near-account-id = "2.5.0"
-near-jsonrpc-client = "0.20.0"
-near-jsonrpc-primitives = "0.34.6"
-near-kit = { version = "0.7.1", default-features = false }
-near-primitives = "0.34.6"
-near-sandbox = "0.3.9"
-near-sdk = { version = "5.26.1", features = [
+near-account-id = "2.6.0"
+# crates.io release of `near-crypto`; the plain `near-crypto` name is taken by
+# the git nearcore crate below, which the node's indexer stack requires.
+# Must be bumped in lockstep with `near-primitives`: its types appear in
+# near-primitives' transaction API but are not re-exported there.
+near-crypto-public = { version = "0.36.0", package = "near-crypto" }
+near-jsonrpc-client = "0.21.1"
+near-jsonrpc-primitives = "0.36.0"
+near-kit = { version = "0.11.0", default-features = false }
+near-primitives = "0.36.0"
+near-sandbox = "0.3.11"
+near-sdk = { version = "5.28.0", features = [
     "legacy",
     "unstable",
 ] }
-near-workspaces = { version = "0.22.1" }
+near-workspaces = { version = "0.22.2" }
 num_enum = { version = "0.7.6", features = ["complex-expressions"] }
 pairing = { version = "0.23.0" }
 pprof = { version = "0.15.0", features = [
@@ -226,6 +233,7 @@ syn = "2.0"
 tempfile = "3.27.0"
 test-log = "0.2.20"
 thiserror = "2.0.18"
+thread-priority = "3.0.0"
 tikv-jemallocator = { version = "0.5.4", features = [
     "profiling",
     "unprefixed_malloc_on_supported_platforms",
@@ -251,23 +259,20 @@ zeroize = { version = "1.8.2", features = ["zeroize_derive"] }
 zstd = "0.13.3"
 
 # NEAR CORE DEPENDENCIES:
-near-async = { git = "https://github.com/near/nearcore", tag = "2.12.0-rc.2" }
-near-client = { git = "https://github.com/near/nearcore", tag = "2.12.0-rc.2" }
-near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.12.0-rc.2" }
-near-crypto = { git = "https://github.com/near/nearcore", tag = "2.12.0-rc.2" }
-near-indexer = { git = "https://github.com/near/nearcore", tag = "2.12.0-rc.2" }
-near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.12.0-rc.2" }
-near-o11y = { git = "https://github.com/near/nearcore", tag = "2.12.0-rc.2" }
-near-store = { git = "https://github.com/near/nearcore", tag = "2.12.0-rc.2" }
-near-time = { git = "https://github.com/near/nearcore", tag = "2.12.0-rc.2" }
-nearcore = { git = "https://github.com/near/nearcore", tag = "2.12.0-rc.2" }
+near-async = { git = "https://github.com/near/nearcore", tag = "2.12.0" }
+near-client = { git = "https://github.com/near/nearcore", tag = "2.12.0" }
+near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.12.0" }
+near-crypto = { git = "https://github.com/near/nearcore", tag = "2.12.0" }
+near-indexer = { git = "https://github.com/near/nearcore", tag = "2.12.0" }
+near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.12.0" }
+near-o11y = { git = "https://github.com/near/nearcore", tag = "2.12.0" }
+near-store = { git = "https://github.com/near/nearcore", tag = "2.12.0" }
+near-time = { git = "https://github.com/near/nearcore", tag = "2.12.0" }
+nearcore = { git = "https://github.com/near/nearcore", tag = "2.12.0" }
 
 ## Outdated dependencies we cannot upgrade ##
 # Version 0.8.3 requires rustc 1.88
 httpmock = "0.8.2"
-
-# This can be removed once the workspace `utilities` crate is removed
-near-account-id-v1 = { version = "1.1.4", package = "near-account-id" }
 
 prometheus = { version = "0.14.0", default-features = false }
 

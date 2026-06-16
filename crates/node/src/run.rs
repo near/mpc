@@ -12,10 +12,17 @@ use crate::{
     keyshare::{GcpPermanentKeyStorageConfig, KeyStorageConfig, KeyshareStorage},
     migration_service::spawn_recovery_server_and_run_onboarding,
     profiler,
-    providers::ecdsa::triple::migrate_legacy_triples_to_v2,
     tracing::init_logging,
     tracking::{self, start_root_task},
-    web::{DebugRequest, start_web_server, static_web_data},
+    types::SubmittedTransaction,
+    web::{
+        DebugRequest,
+        recent_transactions::{
+            RECENT_TRANSACTIONS_CHANNEL_SIZE, RecentTransactionsLogger, SharedRecentTransactions,
+            spawn_recent_transactions_drain,
+        },
+        start_web_server, static_web_data,
+    },
 };
 use anyhow::{Context, anyhow};
 use itertools::Itertools;
@@ -31,6 +38,7 @@ use std::{
     time::Duration,
 };
 use tee_authority::tee_authority::TeeAuthority;
+use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::{RwLock, broadcast, mpsc, oneshot, watch};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
@@ -77,6 +85,22 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
         .build()?;
 
     let _tokio_enter_guard = root_runtime.enter();
+
+    // Install the SIGTERM handler as the first thing after the runtime is
+    // built, BEFORE any expensive startup (indexer bootstrap, contract
+    // state fetch, attestation generation). A SIGTERM arriving during
+    // that window would otherwise hit the process with no handler
+    // installed and the OS would terminate us immediately — functionally
+    // identical to SIGKILL.
+    //
+    // If install fails (which would only happen if the host's signal
+    // subsystem is fundamentally broken — in which case nothing else
+    // about the node is going to work either), we log and degrade to
+    // the pre-handler baseline: SIGTERM OS-default-terminates. The rest
+    // of the node still runs.
+    let mut sigterm_handle = signal(SignalKind::terminate())
+        .inspect_err(|e| tracing::error!(error = %e, "failed to install SIGTERM handler — graceful shutdown disabled"))
+        .ok();
 
     // Load configuration and initialize persistent secrets
     let node_config = config.node.clone();
@@ -152,6 +176,15 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
         watch::channel(ProtocolContractState::NotInitialized);
 
     let (migration_state_sender, migration_state_receiver) = watch::channel((0, BTreeMap::new()));
+
+    // Buffer behind the recent-transactions debug page. The indexer forwards
+    // records over `recent_tx_sender`; the drain task records them into the
+    // buffer, which the web server reads for snapshots.
+    let (recent_tx_sender, recent_tx_receiver) =
+        mpsc::channel::<SubmittedTransaction>(RECENT_TRANSACTIONS_CHANNEL_SIZE);
+    let recent_transactions = SharedRecentTransactions::default();
+    spawn_recent_transactions_drain(recent_tx_receiver, recent_transactions.clone());
+
     let web_server = root_runtime
         .block_on(start_web_server(
             root_task_handle.clone(),
@@ -161,6 +194,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
             protocol_state_receiver,
             migration_state_receiver,
             config.node.clone(),
+            recent_transactions.clone(),
         ))
         .context("Failed to create web server.")?;
 
@@ -168,6 +202,12 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
 
     // Create Indexer and wait for indexer to be synced.
     let (indexer_exit_sender, indexer_exit_receiver) = oneshot::channel();
+    // Dedicated cancellation token for the indexer thread. Cancelled after
+    // `shutdown_all_actors()` below so the indexer's terminal `listen_blocks`
+    // race exits, its tokio runtime drops, and the Arc<RocksDB> references
+    // held by its spawned monitor tasks are released — enabling
+    // `RocksDB::block_until_all_instances_are_dropped()` to return.
+    let indexer_shutdown_token = CancellationToken::new();
     let indexer_api = spawn_real_indexer(
         config.home_dir.clone(),
         node_config.indexer.clone(),
@@ -179,21 +219,28 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
         migration_state_sender,
         *tls_public_key,
         node_config.foreign_chains.clone(),
+        RecentTransactionsLogger::new(recent_tx_sender),
+        indexer_shutdown_token.clone(),
     );
 
-    let (shutdown_signal_sender, mut shutdown_signal_receiver) = mpsc::channel(1);
     let cancellation_token = CancellationToken::new();
 
     let allowed_hashes_in_contract = indexer_api.allowed_docker_images_receiver.clone();
     let image_hash_storage =
         AllowedImageHashesFile::from(config.tee.latest_allowed_hash_file_path.clone());
 
+    // Dedicated shutdown channel for the image-hash watcher. The watcher's
+    // Drop fires this on its rare exceptional exits (storage I/O failure
+    // or indexer's contract-state channel closed); the main `select!`
+    // arm below converts that into a non-zero process exit.
+    let (image_hash_shutdown_sender, mut image_hash_shutdown_receiver) = mpsc::channel(1);
+
     let image_hash_watcher_handle = root_runtime.spawn(monitor_allowed_image_hashes(
         cancellation_token.child_token(),
         *config.tee.image_hash,
         allowed_hashes_in_contract,
         image_hash_storage,
-        shutdown_signal_sender.clone(),
+        image_hash_shutdown_sender,
     ));
 
     let home_dir = config.home_dir.clone();
@@ -210,15 +257,30 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
 
     let root_task = root_runtime.spawn(start_root_task("root", root_future).0);
 
-    let exit_reason = tokio::select! {
+    let exit_reason: anyhow::Result<()> = tokio::select! {
         root_task_result = root_task => {
             root_task_result?
         }
         indexer_exit_response = indexer_exit_receiver => {
             indexer_exit_response.context("Indexer thread dropped response channel.")?
         }
-        Some(()) = shutdown_signal_receiver.recv() => {
-            Err(anyhow!("TEE allowed image hashes watcher is sending shutdown signal."))
+        // Race SIGTERM directly. If install above failed, `sigterm_handle`
+        // is `None` and this arm is parked on `pending()` forever — i.e.
+        // effectively absent — so the other arms still drive the loop.
+        _ = async {
+            match sigterm_handle.as_mut() {
+                Some(s) => { s.recv().await; }
+                None => std::future::pending().await,
+            }
+        } => {
+            info!(signal = "SIGTERM", "shutdown signal received; exiting cleanly");
+            Ok(())
+        }
+        Some(()) = image_hash_shutdown_receiver.recv() => {
+            // The specific `ExitError` (storage I/O failure or indexer's
+            // contract-state channel closed) is logged a few lines below via
+            // `info!(?exit_result, "Image hash watcher exited.")`.
+            Err(anyhow!("TEE allowed-image-hashes watcher exited unexpectedly."))
         }
     };
 
@@ -228,6 +290,26 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     info!("Waiting for image hash watcher to gracefully exit.");
     let exit_result = image_hash_watcher_handle.await;
     info!(?exit_result, "Image hash watcher exited.");
+
+    // Stop nearcore's actor system so its tasks have a chance to commit any
+    // in-flight RocksDB batches before the process exits.
+    info!("Stopping nearcore actor system.");
+    near_async::shutdown_all_actors();
+
+    // Cancel the indexer's terminal `listen_blocks` race; that lets the
+    // indexer thread's `block_on` return, its tokio runtime drop, and every
+    // spawned monitor task (each holding `Arc<IndexerState>` →
+    // `Arc<RocksDB>`) be aborted with the runtime.
+    info!("Cancelling indexer shutdown token.");
+    indexer_shutdown_token.cancel();
+
+    // Now block until every RocksDB instance has actually been dropped —
+    // mirroring what neard's standalone binary does on its SIGTERM path.
+    // Without the cancellation above this call would hang forever because
+    // the indexer thread's monitor tasks keep their Arc<RocksDB> alive.
+    info!("Waiting for RocksDB instances to gracefully shut down.");
+    near_store::db::RocksDB::block_until_all_instances_are_dropped();
+    info!("RocksDB shutdown complete.");
 
     exit_reason
 }
@@ -261,11 +343,6 @@ where
         Ed25519PublicKey::from(&secrets.persistent_secrets.near_signer_key.verifying_key());
 
     let secret_db = SecretDB::new(&home_dir.join("assets"), secrets.local_storage_aes_key)?;
-
-    // One-shot at process startup, before any TripleStorage is constructed
-    // for this DB. See `migrate_legacy_triples_to_v2`'s SAFETY note for why
-    // this can't run on every coordinator state transition.
-    migrate_legacy_triples_to_v2(&secret_db)?;
 
     let key_storage_config = KeyStorageConfig {
         home_dir: home_dir.clone(),

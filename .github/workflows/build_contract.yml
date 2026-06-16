@@ -31,11 +31,15 @@ jobs:
       - name: Restore /nix from cache
         uses: ./.github/actions/restore-nix-cache
 
+      # Reproducible build via cargo-near so the released WASM carries NEP-330
+      # build metadata that third-party verifiers (sourcescan.io, nearblocks)
+      # replay. cargo-near is provided by the dev shell; the build itself runs
+      # in the pinned sourcescan/cargo-near Docker image.
       - name: Build contract
-        run: nix build -L .#mpc-contract
+        run: nix develop --command cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
 
       - name: Stage contract artifact
-        run: cp result/mpc_contract.wasm ./mpc_contract.wasm
+        run: cp target/near/mpc_contract/mpc_contract.wasm ./mpc_contract.wasm
 
       - name: Upload contract artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

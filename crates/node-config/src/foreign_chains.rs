@@ -14,8 +14,6 @@ pub use auth::{AuthConfig, TokenConfig};
 mod auth;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-// TODO(#3002): only keep variants that are actually supported by the node binary
 pub struct ForeignChainsConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub solana: Option<ForeignChainConfig>,
@@ -38,6 +36,8 @@ pub struct ForeignChainsConfig {
     pub hyper_evm: Option<ForeignChainConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub polygon: Option<ForeignChainConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aptos: Option<ForeignChainConfig>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -152,6 +152,7 @@ impl ForeignChainsConfig {
             (self.arbitrum.as_ref(), dtos::ForeignChain::Arbitrum),
             (self.hyper_evm.as_ref(), dtos::ForeignChain::HyperEvm),
             (self.polygon.as_ref(), dtos::ForeignChain::Polygon),
+            (self.aptos.as_ref(), dtos::ForeignChain::Aptos),
         ]
         .into_iter()
         .filter_map(|(config, dto_identifier)| config.map(|config| (config, dto_identifier)))
@@ -317,7 +318,7 @@ foreign_chains:
     }
 
     #[test]
-    fn config_parsing__should_fail_when_foreign_chain_key_is_unknown() {
+    fn config_parsing__should_succeed_when_foreign_chain_key_is_unknown() {
         // Given
         let yaml = r#"
 my_near_account_id: test.near
@@ -376,7 +377,7 @@ foreign_chains:
         let result: Result<ConfigFile, _> = serde_yaml::from_str(yaml);
 
         // Then
-        result.unwrap_err();
+        result.expect("unknown foreign chain keys should be silently ignored");
     }
 
     #[test]
@@ -618,5 +619,131 @@ foreign_chains:
         // When/then
         let _config: ConfigFile =
             serde_yaml::from_str(yaml).expect("yaml serialization passes with `api_variant_field`");
+    }
+
+    #[test]
+    fn config_parsing__should_succeed_with_aptos_section() {
+        // Given
+        let yaml = r#"
+my_near_account_id: test.near
+near_responder_account_id: test.near
+number_of_responder_keys: 1
+web_ui:
+  host: localhost
+  port: 8080
+migration_web_ui:
+  host: localhost
+  port: 8081
+pprof_bind_address: 127.0.0.1:34001
+indexer:
+  validate_genesis: false
+  sync_mode: Latest
+  finality: optimistic
+  concurrency: 1
+  mpc_contract_id: mpc-contract.test.near
+triple:
+  concurrency: 1
+  desired_triples_to_buffer: 1
+  timeout_sec: 60
+  parallel_triple_generation_stagger_time_sec: 1
+presignature:
+  concurrency: 1
+  desired_presignatures_to_buffer: 1
+  timeout_sec: 60
+signature:
+  timeout_sec: 60
+ckd:
+  timeout_sec: 60
+foreign_chains:
+  aptos:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      nodereal:
+        rpc_url: "https://aptos-mainnet.nodereal.io/v1/"
+        auth:
+          kind: none
+"#;
+
+        // When
+        let config: ConfigFile =
+            serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
+
+        // Then
+        config
+            .validate()
+            .expect("config with aptos section should be valid");
+        assert!(config.foreign_chains.aptos.is_some());
+    }
+
+    #[test]
+    fn config_parsing__should_succeed_with_aptos_auth_providers() {
+        // Given — one provider with the API key in the URL path (Alchemy-style) and one
+        // with a header token (NOWNodes-style).
+        let yaml = r#"
+my_near_account_id: test.near
+near_responder_account_id: test.near
+number_of_responder_keys: 1
+web_ui:
+  host: localhost
+  port: 8080
+migration_web_ui:
+  host: localhost
+  port: 8081
+pprof_bind_address: 127.0.0.1:34001
+indexer:
+  validate_genesis: false
+  sync_mode: Latest
+  finality: optimistic
+  concurrency: 1
+  mpc_contract_id: mpc-contract.test.near
+triple:
+  concurrency: 1
+  desired_triples_to_buffer: 1
+  timeout_sec: 60
+  parallel_triple_generation_stagger_time_sec: 1
+presignature:
+  concurrency: 1
+  desired_presignatures_to_buffer: 1
+  timeout_sec: 60
+signature:
+  timeout_sec: 60
+ckd:
+  timeout_sec: 60
+foreign_chains:
+  aptos:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      alchemy:
+        rpc_url: "https://aptos-mainnet.g.alchemy.com/v2/{api_key}/v1"
+        auth:
+          kind: path
+          placeholder: "{api_key}"
+          token:
+            val: "alchemy-secret"
+      nownodes:
+        rpc_url: "https://aptos.nownodes.io/v1"
+        auth:
+          kind: header
+          name: api-key
+          token:
+            val: "nownodes-secret"
+"#;
+
+        // When
+        let config: ConfigFile =
+            serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
+
+        // Then
+        config
+            .validate()
+            .expect("config with authenticated aptos providers should be valid");
+        let aptos = config
+            .foreign_chains
+            .aptos
+            .as_ref()
+            .expect("aptos config should be present");
+        assert_eq!(aptos.providers.len(), 2);
     }
 }
