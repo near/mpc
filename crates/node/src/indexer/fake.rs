@@ -11,6 +11,7 @@ use crate::indexer::handler::{CKDRequestFromChain, VerifyForeignTxRequestFromCha
 use crate::indexer::types::{ChainCKDRespondArgs, ChainVerifyForeignTransactionRespondArgs};
 use crate::migration_service::types::MigrationInfo;
 use crate::tests::common::MockTransactionSender;
+use crate::tests::dto_conversions::keyset_to_dto;
 use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};
 use crate::types::SignatureId;
 use crate::types::{CKDId, VerifyForeignTxId};
@@ -387,8 +388,7 @@ impl FakeMpcContractState {
         let ProtocolContractState::Running(running_state) = &self.state else {
             panic!("only allow calling this in `running_state`");
         };
-        let dto_keyset: near_mpc_contract_interface::types::Keyset =
-            running_state.keyset.clone().into();
+        let dto_keyset = keyset_to_dto(&running_state.keyset);
         if dto_keyset != args.keyset {
             panic!("keyset mismatch");
         }

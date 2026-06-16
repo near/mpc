@@ -321,6 +321,10 @@ fn drain_poke<T>(
 
         match action {
             Action::Wait => break,
+            // Keep poking; yields still count toward the participant's clock.
+            Action::Yield => {
+                states[idx].clock += poke_elapsed_ns;
+            }
             Action::SendMany(data) => {
                 states[idx].clock += poke_elapsed_ns;
                 for &recipient in all_participants {

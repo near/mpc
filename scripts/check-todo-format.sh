@@ -12,7 +12,7 @@ CHECKED_EXTENSIONS=(
 # 4. The final grep -v -E filters out the two valid patterns
 INVALID_TODOS=$(git ls-files -z "${CHECKED_EXTENSIONS[@]}" | \
     xargs -0 grep -HinE "\btodo\b" | \
-    grep -vE ":.*(TODO\(#[0-9]+\):|TODO:)" || true)
+    grep -vE ":.*(TODO\(#[0-9]+\):|TODO\(#example_issue_number\):|TODO:)" || true)
 
 # Files/patterns excluded from the check (contain "todo" in identifiers, not as TODO comments).
 EXCLUDE_ARGS=(

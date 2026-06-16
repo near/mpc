@@ -151,6 +151,7 @@ pub mod tests {
     use crate::{
         config,
         indexer::{migrations::ContractMigrationInfo, participants::ContractState},
+        tests::dto_conversions::keyset_to_dto,
     };
 
     use super::{BackupServiceInfo, DestinationNodeInfo, MigrationInfo, OnboardingJob};
@@ -506,7 +507,7 @@ pub mod tests {
 
         (
             ContractCase::new(contract, onboarding_node_p2p_public_key),
-            running_state.keyset.into(),
+            keyset_to_dto(&running_state.keyset),
         )
     }
     pub(crate) fn make_initializing_contract_case(
