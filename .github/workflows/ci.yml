@@ -107,7 +107,11 @@ jobs:
   mpc-unittests:
     name: "Cargo test: ${{ matrix.group }}"
     needs: changes
-    if: ${{ always() && needs.changes.outputs.code_changed != 'false' }}
+    # Always start so GitHub expands the matrix and registers each check name
+    # ("Cargo test: node", etc.).
+    # Skipping at the job level only registers unexpanded template name and
+    # required checks will be stuck.
+    if: always()
     runs-on: ${{ matrix.runner || 'warp-ubuntu-2404-x64-16x' }}
     timeout-minutes: 60
     permissions:
@@ -128,18 +132,23 @@ jobs:
 
     steps:
       - name: Checkout repository
+        if: needs.changes.outputs.code_changed != 'false'
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
 
       - name: Install Nix
+        if: needs.changes.outputs.code_changed != 'false'
         uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
 
       - name: Restore /nix from cache
+        if: needs.changes.outputs.code_changed != 'false'
         uses: ./.github/actions/restore-nix-cache
 
       - run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
+        if: needs.changes.outputs.code_changed != 'false'
       - name: Cache Rust dependencies
+        if: needs.changes.outputs.code_changed != 'false'
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -147,6 +156,7 @@ jobs:
           prefix-key: v1-rust-tests-${{ matrix.group }}-week-${{ env.WEEK }}
 
       - name: Run cargo-nextest
+        if: needs.changes.outputs.code_changed != 'false'
         run: nix develop --command cargo nextest run --cargo-profile=test-release --all-features --locked ${{ matrix.nextest-args }}
 
   mpc-contract-reproducible-build:
