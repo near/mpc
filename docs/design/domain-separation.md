@@ -939,6 +939,8 @@ Resolved: the `GovernanceThreshold` is now constrained relative to the cryptogra
 
 These are enforced at every mutation point (governance threshold updates, reconstruction threshold updates, participant add, participant kick) and re-validated once on migration, where a violation hard-blocks the upgrade (panic) — state that breaks the relation must be corrected via `vote_new_parameters` before upgrading. See `ThresholdParameters::validate_threshold` and `validate_governance_against_reconstruction` in `crates/contract/src/primitives/thresholds.rs`.
 
+> **Operator note — the feasible window can be a single value.** When `ceil(0.6*n)` and `floor(0.8*n)` round to the same integer, exactly one `GovernanceThreshold` is legal and there is zero room to tune: this happens at `n = 2, 3, 4, 6, 7` (forced thresholds `2, 2, 3, 4, 5`), widening only from `n >= 8`. The `n = 2` case is degenerate — it forces `GovernanceThreshold = n` (unanimity), defeating the cap; permitted by validation but not a sensible configuration.
+
 ### 7.2 Backward-Compatible View Methods
 
 How long should the old `state()` view method be maintained alongside the new `state_v2()`? Should the old format be deprecated immediately or kept for N epochs? Are there external consumers (e.g., block explorers, SDK clients) that depend on the `state()` format?
