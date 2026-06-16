@@ -42,7 +42,7 @@ pub fn assert_participant_inputs(
 /// Verifies that the sign inputs are valid
 pub fn assert_sign_inputs(
     participants: &[Participant],
-    threshold: impl Into<ReconstructionLowerBound>,
+    threshold: impl Into<ReconstructionThreshold>,
     me: Participant,
     coordinator: Participant,
 ) -> Result<ParticipantList, InitializationError> {
