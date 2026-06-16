@@ -48,9 +48,10 @@ use futures::future::BoxFuture;
 use futures::lock::Mutex;
 use futures::task::noop_waker;
 use futures::{FutureExt, StreamExt};
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use sha2::{Digest, Sha256};
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::task::Context;
 use std::{collections::HashMap, error, future::Future, sync::Arc};
 
@@ -300,6 +301,10 @@ pub enum Message {
 pub struct Comms {
     incoming: MessageBuffer,
     outgoing: Arc<std::sync::Mutex<VecDeque<Message>>>,
+    /// Set by [`Self::yield_point`] while the protocol future is being polled,
+    /// consumed by the executor to distinguish a voluntary pause
+    /// ([`Action::Yield`]) from waiting on a message ([`Action::Wait`]).
+    yield_requested: Arc<AtomicBool>,
 }
 
 impl Comms {
@@ -308,7 +313,24 @@ impl Comms {
         Self {
             incoming: MessageBuffer::new(max_entries),
             outgoing: Arc::new(std::sync::Mutex::new(VecDeque::new())),
+            yield_requested: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    /// Pause the protocol so the executor's caller can run other tasks.
+    ///
+    /// The suspension must self-wake: nested executors like the
+    /// `FuturesUnordered` behind `try_join_all` only re-poll children whose
+    /// waker fired, so a plain pending return would never be polled again.
+    /// `futures_lite::future::yield_now` wakes before returning pending.
+    pub(crate) async fn yield_point(&self) {
+        self.yield_requested.store(true, Ordering::Relaxed);
+        futures_lite::future::yield_now().await;
+    }
+
+    /// Consume a pending yield request, returning whether one was set.
+    fn take_yield_request(&self) -> bool {
+        self.yield_requested.swap(false, Ordering::Relaxed)
     }
 
     fn outgoing(&self) -> Option<Message> {
@@ -442,6 +464,14 @@ impl SharedChannel {
     ) -> Result<(Participant, T), ProtocolError> {
         self.comms.recv(self.header.with_waitpoint(waitpoint)).await
     }
+
+    /// Pause the protocol, letting the executor's caller run other tasks.
+    ///
+    /// Call this between expensive computations so a single
+    /// [`Protocol::poke`] does not hog the caller's thread.
+    pub async fn yield_point(&self) {
+        self.comms.yield_point().await;
+    }
 }
 
 /// Represents a private channel.
@@ -490,11 +520,19 @@ impl PrivateChannel {
                 .recv(self.header.with_waitpoint(waitpoint))
                 .await?;
             if from != self.to {
-                futures_lite::future::yield_now().await;
+                self.comms.yield_point().await;
                 continue;
             }
             return Ok(data);
         }
+    }
+
+    /// Pause the protocol, letting the executor's caller run other tasks.
+    ///
+    /// Call this between expensive computations so a single
+    /// [`Protocol::poke`] does not hog the caller's thread.
+    pub async fn yield_point(&self) {
+        self.comms.yield_point().await;
     }
 }
 
@@ -524,16 +562,26 @@ impl<T> Protocol for ProtocolExecutor<T> {
     fn poke(&mut self) -> Result<Action<Self::Output>, ProtocolError> {
         let mut polled_once_already = false;
         loop {
-            // If there's outgoing messages, request to send them.
+            // If there's outgoing messages, request to send them. Checked before a pending
+            // yield request, so messages queued before a yield point reach the network first.
             if let Some(outgoing) = self.comms.outgoing() {
                 return Ok(match outgoing {
                     Message::Many(m) => Action::SendMany(m),
                     Message::Private(to, m) => Action::SendPrivate(to, m),
                 });
             }
-            // If we already have a return result, return it.
+            // If we already have a return result, return it. A completed protocol trumps a
+            // yield request from a concurrent sub-task, so drop any stale request.
             if let Some(result) = self.result.take() {
+                self.comms.take_yield_request();
                 return Ok(Action::Return(result?));
+            }
+            // If the last poll suspended at a yield point, surface it. Must be checked before
+            // the Wait early-out below: returning Wait here would make the caller block on a
+            // message that may never arrive. Consuming the flag means the next poke() falls
+            // through and re-polls the future, resuming the computation.
+            if self.comms.take_yield_request() {
+                return Ok(Action::Yield);
             }
             // If this is the second iteration, we already polled the future and there's no
             // progress that can be made.
@@ -573,6 +621,33 @@ pub fn make_protocol<T: Send>(
 mod tests {
     use super::*;
     use crate::participants::Participant;
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn poke__should_drain_sends_before_yield_and_resume_after() {
+        // Given - a protocol future that sends, yields, sends again, then returns
+        let comms = Comms::with_buffer_capacity(8);
+        let fut = {
+            let comms = comms.clone();
+            async move {
+                let mut chan = comms.shared_channel();
+                let wait0 = chan.next_waitpoint();
+                chan.send_many(wait0, &1u32)?;
+                chan.yield_point().await;
+                let wait1 = chan.next_waitpoint();
+                chan.send_many(wait1, &2u32)?;
+                Ok(42u32)
+            }
+        };
+        let mut protocol = ProtocolExecutor::new(comms, fut);
+
+        // When / Then - the message queued before the yield point surfaces first, the
+        // yield is reported, and the next poke resumes the computation to completion
+        assert_matches::assert_matches!(protocol.poke(), Ok(Action::SendMany(_)));
+        assert_matches::assert_matches!(protocol.poke(), Ok(Action::Yield));
+        assert_matches::assert_matches!(protocol.poke(), Ok(Action::SendMany(_)));
+        assert_matches::assert_matches!(protocol.poke(), Ok(Action::Return(42)));
+    }
 
     #[test]
     #[allow(clippy::significant_drop_tightening)]

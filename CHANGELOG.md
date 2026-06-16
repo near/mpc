@@ -5,6 +5,287 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.12.0] - 2026-06-15
+
+### 🚀 Features
+
+- [#3327](https://github.com/near/mpc/pull/3327)(@anodar): Add foreign-chain whitelist verifier (#3327)
+
+- [#3389](https://github.com/near/mpc/pull/3389)(@pbeza): *(foreign-chain-inspector)* Canonical-chain check for Starknet (#3389)
+
+- [#3225](https://github.com/near/mpc/pull/3225)(@DSharifi): Fan out requests to all configured RPC providers (#3225)
+
+- [#3390](https://github.com/near/mpc/pull/3390)(@pbeza): *(foreign-chain-inspector)* Canonical-chain check for Bitcoin (#3390)
+
+- [#3244](https://github.com/near/mpc/pull/3244)(@DSharifi): TON support for foreign tx validation requests in mpc contract (#3244)
+
+- [#3235](https://github.com/near/mpc/pull/3235)(@pbeza): *(tee-verifier-interface)* Borsh DTOs for the verifier contract boundary (#3235)
+
+- [#3507](https://github.com/near/mpc/pull/3507)(@frolvanya): Aptos support for foreign tx validation requests in mpc contract (#3507)
+
+- [#3237](https://github.com/near/mpc/pull/3237)(@pbeza): *(tee-verifier)* Stateless `dcap_qvl::verify` wrapper contract (#3237)
+
+- [#3525](https://github.com/near/mpc/pull/3525)(@anodar): Add debug info about the number of configured foreign chain RPC providers (#3525)
+
+- [#3504](https://github.com/near/mpc/pull/3504)(@gilcu3): Add a separate runtime for asset generation (#3504)
+
+- [#3508](https://github.com/near/mpc/pull/3508)(@frolvanya): Aptos foreign-chain inspector and node wiring (#3508)
+
+- [#3326](https://github.com/near/mpc/pull/3326)(@SimonRastikian): Adding resharing per-domain (#3326)
+
+- [#3435](https://github.com/near/mpc/pull/3435)(@pbeza): *(indexer)* Add `/debug/recent_transactions` page (#3435)
+
+
+### 🐛 Bug Fixes
+
+- [#3397](https://github.com/near/mpc/pull/3397)(@gilcu3): Bump prometheus, fix missing nearcore metrics (#3397)
+
+- [#3414](https://github.com/near/mpc/pull/3414)(@barakeinav1): *(attestation)* Reject non-empty app-compose init_script (#3414)
+
+- [#3439](https://github.com/near/mpc/pull/3439)(@netrome): Enforce signer=predecessor across all governance methods (#3439)
+
+- [#3420](https://github.com/near/mpc/pull/3420)(@barakeinav1): *(attestation)* Fail closed on unknown app-compose fields; reject tproxy_enabled (#3420)
+
+- [#3469](https://github.com/near/mpc/pull/3469)(@gilcu3): *(ci)* Avoid cancelling concurrent docker push jobs (#3469)
+
+- [#3410](https://github.com/near/mpc/pull/3410)(@barakeinav1): *(node)* Handle SIGTERM for graceful shutdown on operator stop (#3410)
+
+- [#3515](https://github.com/near/mpc/pull/3515)(@gilcu3): Add asset id checks for follower paths (#3515)
+
+- [#3519](https://github.com/near/mpc/pull/3519)(@gilcu3): Outgoing connection hanging on unstable network (#3519)
+
+- [#3486](https://github.com/near/mpc/pull/3486)(@barakeinav1): *(node)* Drain embedded near-indexer thread on graceful shutdown (#3486)
+
+- [#3491](https://github.com/near/mpc/pull/3491)(@DSharifi): *(contract)* Add auth check to `remove_non_participant_update_votes`  (#3491)
+
+- [#3532](https://github.com/near/mpc/pull/3532)(@gilcu3): Make sure localnet launcher script kills processes successfully (#3532)
+
+- [#3533](https://github.com/near/mpc/pull/3533)(@barakeinav1): *(tdx)* Default state sync to Peers (DSS); require tier3_public_addr (#3533)
+
+- [#3560](https://github.com/near/mpc/pull/3560)(@gilcu3): *(test)* Remove time bomb from e2e tests (#3560)
+
+
+### 💼 Other
+
+- [#3441](https://github.com/near/mpc/pull/3441)(@gilcu3): Make mpc-node repro binary independent of local tags (#3441)
+
+- [#3479](https://github.com/near/mpc/pull/3479)(@gilcu3): *(ci)* Update tools using in CI (#3479)
+
+- [#3490](https://github.com/near/mpc/pull/3490)(@gilcu3): Bring back support for NEP-330 contract repro builds (#3490)
+
+
+### 🚜 Refactor
+
+- [#3359](https://github.com/near/mpc/pull/3359)(@SimonRastikian): Presign args private share (#3359)
+
+- [#3455](https://github.com/near/mpc/pull/3455)(@kevindeforth): Drop `Result` from `RecentBlocksTracker::add_block` (#3455)
+
+- [#3343](https://github.com/near/mpc/pull/3343)(@SimonRastikian): Cleanup frost interface (#3343)
+
+- [#3330](https://github.com/near/mpc/pull/3330)(@kevindeforth): Share blocks tracker instance between queues (#3330)
+
+- [#3481](https://github.com/near/mpc/pull/3481)(@kevindeforth): Wrap `BlockStatus` in handle (#3481)
+
+- [#3497](https://github.com/near/mpc/pull/3497)(@kevindeforth): RecentBlocksTracker uses types from chain gateway crate (#3497)
+
+- [#3498](https://github.com/near/mpc/pull/3498)(@kevindeforth): Move recent blocks tracker to chain-gateway crate (#3498)
+
+- [#3344](https://github.com/near/mpc/pull/3344)(@SimonRastikian): Cleaning up the test_utils.rs in threshold signatures crate (#3344)
+
+
+### 📚 Documentation
+
+- [#3339](https://github.com/near/mpc/pull/3339)(@SimonRastikian): Documenting eddsa with presign (#3339)
+
+- [#3423](https://github.com/near/mpc/pull/3423)(@gilcu3): Add SAFETY notice in bls scalar zeroize block (#3423)
+
+- [#3431](https://github.com/near/mpc/pull/3431)(@anodar): Update documentation to allow all methods for added keys (#3431)
+
+- [#3376](https://github.com/near/mpc/pull/3376)(@pbeza): *(design)* Clarify verifier-rotation eviction in `attestation-verifier-contract.md` (#3376)
+
+- [#3443](https://github.com/near/mpc/pull/3443)(@barakeinav1): Build dstack-mr from a pinned DSTACK_REV (not master) (#3443)
+
+- [#3468](https://github.com/near/mpc/pull/3468)(@netrome): One-pager for node operators (#3468)
+
+- [#3436](https://github.com/near/mpc/pull/3436)(@anodar): Propose different way of calculating supported foreign chain set (#3436)
+
+- [#3408](https://github.com/near/mpc/pull/3408)(@barakeinav1): Use dstack v0.5.11 build-args for reproducible key-provider mr_enclave (#3408)
+
+- [#3458](https://github.com/near/mpc/pull/3458)(@barakeinav1): Require every CVM port (incl. migration `:8079`) bound to a dedicated IP (#3458)
+
+- [#3488](https://github.com/near/mpc/pull/3488)(@barakeinav1): Design doc for auto-removal of unused launcher image hashes (#3488)
+
+- [#3558](https://github.com/near/mpc/pull/3558)(@SimonRastikian): Adding unsaid bits in the contract interface (#3558)
+
+
+### 🧪 Testing
+
+- [#3384](https://github.com/near/mpc/pull/3384)(@gilcu3): Add unit test for incoming connections task drop bug (#3384)
+
+- [#3399](https://github.com/near/mpc/pull/3399)(@SimonRastikian): Flaky test for DamgardEtAl (#3399)
+
+- [#3478](https://github.com/near/mpc/pull/3478)(@gilcu3): Verify participants below threshold are not kicked out when attestation fails (#3478)
+
+- [#3374](https://github.com/near/mpc/pull/3374)(@gilcu3): Showcase contention during asset generation, analyse problem and solutions (#3374)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- [#3391](https://github.com/near/mpc/pull/3391)(@gilcu3): Remove unneeded file (#3391)
+
+- [#3394](https://github.com/near/mpc/pull/3394)(@gilcu3): Bump cargo-near/cargo-near-build to 0.20.3, remove workaround (#3394)
+
+- [#3402](https://github.com/near/mpc/pull/3402)(@dependabot[bot]): Bump tar from 0.4.45 to 0.4.46 in the cargo group across 1 directory (#3402)
+
+- [#3416](https://github.com/near/mpc/pull/3416)(@netrome): Upgrade Hyper to 1.10.1 (#3416)
+
+- [#3418](https://github.com/near/mpc/pull/3418)(@gilcu3): Prevent dependabot updating nearcore pinned versions (#3418)
+
+- [#3419](https://github.com/near/mpc/pull/3419)(@gilcu3): Eliminate the need for python in the codebase (#3419)
+
+- [#3424](https://github.com/near/mpc/pull/3424)(@dependabot[bot]): Bump the rust-minor-and-patch group across 1 directory with 3 updates (#3424)
+
+- [#3427](https://github.com/near/mpc/pull/3427)(@gilcu3): Use upstream version of cache-nix-action (#3427)
+
+- [#3134](https://github.com/near/mpc/pull/3134)(@anodar): Deduplicate code with wait_for_debug_migration, elaborate comment on resitual race window (#3134)
+
+- [#3325](https://github.com/near/mpc/pull/3325)(@kevindeforth): Remove new final blocks from add block result and use snapshots for test (#3325)
+
+- [#3446](https://github.com/near/mpc/pull/3446)(@dependabot[bot]): Bump http from 1.4.0 to 1.4.1 in the rust-minor-and-patch group (#3446)
+
+- [#3447](https://github.com/near/mpc/pull/3447)(@dependabot[bot]): Bump near-kit from 0.7.2 to 0.9.1 (#3447)
+
+- [#3459](https://github.com/near/mpc/pull/3459)(@gilcu3): Delete triple migration steps from 3.11, clean legacy triples column (#3459)
+
+- [#3465](https://github.com/near/mpc/pull/3465)(@gilcu3): Bump nearcore to 2.12.0 (#3465)
+
+- [#3449](https://github.com/near/mpc/pull/3449)(@barakeinav1): *(deployment)* Clarify TDX HW requirements are per-CVM, bump disk to 1TB (#3449)
+
+- [#3470](https://github.com/near/mpc/pull/3470)(@gilcu3): Remove EpochData legacy cleanup behavior (#3470)
+
+- [#3483](https://github.com/near/mpc/pull/3483)(@SimonRastikian): Deployment of the contract to 3.11.2 (#3483)
+
+- [#3506](https://github.com/near/mpc/pull/3506)(@barakeinav1): *(tdx)* Default to DSS-first state sync in operator setup (#3506)
+
+- [#3530](https://github.com/near/mpc/pull/3530)(@gilcu3): Align devnet with the workspace deps (#3530)
+
+- [#3544](https://github.com/near/mpc/pull/3544)(@dependabot[bot]): Bump thread-priority from 1.2.0 to 3.0.0 (#3544)
+
+- [#3542](https://github.com/near/mpc/pull/3542)(@dependabot[bot]): Bump the rust-minor-and-patch group across 1 directory with 4 updates (#3542)
+
+- [#3528](https://github.com/near/mpc/pull/3528)(@anodar): Bump protocol version in genesis for localnet deployment (#3528)
+
+- [#3168](https://github.com/near/mpc/pull/3168)(@barakeinav1): *(tee)* Address PR #3155 follow-up nits (#3168)
+
+- [#3565](https://github.com/near/mpc/pull/3565)(@pbeza): Release v3.12.0 (#3565)
+
+
+
+## [3.11.0] - 2026-05-27
+
+### 🚀 Features
+
+- [#3249](https://github.com/near/mpc/pull/3249)(@anodar): Implement voting for RPC providers (#3249)
+
+- [#3299](https://github.com/near/mpc/pull/3299)(@gilcu3): Split ecdsa triple pool per threshold (#3299)
+
+- [#3317](https://github.com/near/mpc/pull/3317)(@gilcu3): Lock all CaitSith domains to the same threshold (#3317)
+
+
+### 🐛 Bug Fixes
+
+- [#3291](https://github.com/near/mpc/pull/3291)(@andrei-near): Release workflow env and secrets (#3291)
+
+- [#3285](https://github.com/near/mpc/pull/3285)(@gilcu3): Make robust-ecdsa tasks infallible (#3285)
+
+- [#3296](https://github.com/near/mpc/pull/3296)(@pbeza): Decouple advisory-ID enforcement from tcbStatus check (#3296)
+
+- [#3337](https://github.com/near/mpc/pull/3337)(@netrome): Prevent overwriting other participant's attestations (#3337)
+
+
+### 💼 Other
+
+- [#3284](https://github.com/near/mpc/pull/3284)(@gilcu3): *(nix)* Remove stale neard flake (#3284)
+
+- [#3323](https://github.com/near/mpc/pull/3323)(@gilcu3): Add reproducible nix build for mpc-contract (#3323)
+
+
+### 🚜 Refactor
+
+- [#3286](https://github.com/near/mpc/pull/3286)(@kevindeforth): Split `get_requests_to_attempt` in queue.rs (#3286)
+
+- [#3319](https://github.com/near/mpc/pull/3319)(@kevindeforth): `RecentBlocksTracker` does no longer track block contents (#3319)
+
+
+### 📚 Documentation
+
+- [#3192](https://github.com/near/mpc/pull/3192)(@barakeinav1): Running multiple MPC nodes on one host (#3192)
+
+- [#3256](https://github.com/near/mpc/pull/3256)(@barakeinav1): Fill gaps in MPC image-hash voting section (#3256)
+
+- [#3254](https://github.com/near/mpc/pull/3254)(@barakeinav1): Add documentation for resharing log entries (#3254)
+
+- [#3253](https://github.com/near/mpc/pull/3253)(@barakeinav1): Submit_participant_info verification + errors (#3253)
+
+- [#3302](https://github.com/near/mpc/pull/3302)(@barakeinav1): *(operator-guide)* Standardize on bare `near` CLI invocation (#3302)
+
+- [#3297](https://github.com/near/mpc/pull/3297)(@barakeinav1): *(node-migration-guide)* Revoke OLD node's signer key after migration (#3297)
+
+- [#3308](https://github.com/near/mpc/pull/3308)(@barakeinav1): *(operator-guide)* Typography, heading, and copy sweep (#3308)
+
+- [#3310](https://github.com/near/mpc/pull/3310)(@barakeinav1): *(operator-guide)* Refresh dstack UI screenshots for 0.5.8 (#3310)
+
+- [#3311](https://github.com/near/mpc/pull/3311)(@pbeza): *(design)* Attestation verifier contract breakout (#3311)
+
+
+### 🧪 Testing
+
+- [#3346](https://github.com/near/mpc/pull/3346)(@barakeinav1): *(e2e)* Back-migration regression test (#3346)
+
+- [#3365](https://github.com/near/mpc/pull/3365)(@barakeinav1): *(e2e)* Wait for indexer progress in back-migration restart (fix flaky test) (#3365)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- [#3263](https://github.com/near/mpc/pull/3263)(@barakeinav1): *(cvm-deployment)* Align user-config.toml example with prod values (#3263)
+
+- [#3276](https://github.com/near/mpc/pull/3276)(@dependabot[bot]): Bump gcloud-sdk from 0.29.0 to 0.30.0 (#3276)
+
+- [#3275](https://github.com/near/mpc/pull/3275)(@anodar): Don't run CI tests on doc only change prs (#3275)
+
+- [#3287](https://github.com/near/mpc/pull/3287)(@andrei-near): Production environment for workflows (#3287)
+
+- [#3294](https://github.com/near/mpc/pull/3294)(@dependabot[bot]): Bump openssl from 0.10.79 to 0.10.80 in the cargo group across 1 directory (#3294)
+
+- [#3280](https://github.com/near/mpc/pull/3280)(@gilcu3): Remove migrations after 3.10 release (#3280)
+
+- [#3315](https://github.com/near/mpc/pull/3315)(@gilcu3): Remove legacy pending requests after 3.10 (#3315)
+
+- [#3314](https://github.com/near/mpc/pull/3314)(@gilcu3): Remove legacy-JSON compat for DomainConfig after 3.10 (#3314)
+
+- [#3328](https://github.com/near/mpc/pull/3328)(@gilcu3): Remove mpc-contract dep from backup-cli (#3328)
+
+- [#3354](https://github.com/near/mpc/pull/3354)(@gilcu3): Unify sanbox version across workspace (#3354)
+
+- [#3358](https://github.com/near/mpc/pull/3358)(@gilcu3): Update contract-history after 3.10.1 contract update (#3358)
+
+- [#3288](https://github.com/near/mpc/pull/3288)(@gilcu3): Update frost crates to 3.0 (#3288)
+
+- [#3332](https://github.com/near/mpc/pull/3332)(@gilcu3): Bump nix-installer-action to avoid node.js 20 warning (#3332)
+
+- [#3356](https://github.com/near/mpc/pull/3356)(@gilcu3): Use nix for contract reproducible builds (#3356)
+
+- [#3338](https://github.com/near/mpc/pull/3338)(@barakeinav1): *(tee/localnet)* Unify port_override with cvm-deployment + add migration smoke test (#3238) (#3338)
+
+- [#3321](https://github.com/near/mpc/pull/3321)(@gilcu3): Bump nearcore to 2.12 rc 1, bumps rust to 1.93 (#3321)
+
+- [#3367](https://github.com/near/mpc/pull/3367)(@dependabot[bot]): Bump the rust-minor-and-patch group with 2 updates (#3367)
+
+- [#3371](https://github.com/near/mpc/pull/3371)(@gilcu3): Update edition to 2024 in most crates (#3371)
+
+- [#3378](https://github.com/near/mpc/pull/3378)(@gilcu3): Bump to nearcore 2.12-rc2 (#3378)
+
+
 ## [3.10.0] - 2026-05-18
 
 ### 🚀 Features

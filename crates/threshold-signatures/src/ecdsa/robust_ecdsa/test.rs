@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use super::{presign::presign, sign::sign, PresignArguments, PresignOutput};
+use super::{PresignArguments, PresignOutput, presign::presign, sign::sign};
 
 use crate::crypto::hash::test::scalar_hash_secp256k1;
 use crate::ecdsa::robust_ecdsa::RerandomizedPresignOutput;
@@ -10,9 +10,9 @@ use crate::ecdsa::{
 use crate::participants::{Participant, ParticipantList};
 use crate::protocol::Protocol;
 use crate::test_utils::{
-    assert_public_key_invariant, check_one_coordinator_output, generate_participants,
-    generate_participants_with_random_ids, run_keygen, run_protocol, run_refresh, run_reshare,
-    run_sign, GenOutput, GenProtocol, MockCryptoRng,
+    GenOutput, GenProtocol, MockCryptoRng, assert_public_key_invariant,
+    check_one_coordinator_output, generate_participants, generate_participants_with_random_ids,
+    run_keygen, run_protocol, run_refresh, run_reshare, run_sign,
 };
 use crate::thresholds::MaxMalicious;
 
@@ -362,7 +362,7 @@ fn test_e2e_random_identifiers_with_rerandomization() -> Result<(), Box<dyn Erro
 }
 
 #[test]
-#[ignore] // this test is ignored because our scheme is not yet robust due to split-view attacks
+#[ignore = "scheme is not yet robust due to split-view attacks"]
 fn test_robustness_without_rerandomization() {
     let mut rng = MockCryptoRng::seed_from_u64(42);
     // Without robustness, the signature verification would fail
@@ -371,7 +371,7 @@ fn test_robustness_without_rerandomization() {
 }
 
 #[test]
-#[ignore] // this test is ignored because our scheme is not yet robust due to split-view attacks
+#[ignore = "scheme is not yet robust due to split-view attacks"]
 fn test_robustness_with_rerandomization() {
     let mut rng = MockCryptoRng::seed_from_u64(42);
     // Without robustness, the signature verification would fail

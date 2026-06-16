@@ -1,6 +1,6 @@
 use aes_gcm::{
-    aead::{Aead, OsRng},
     AeadCore, Aes256Gcm, KeyInit,
+    aead::{Aead, OsRng},
 };
 
 use crate::config::AesKey256;

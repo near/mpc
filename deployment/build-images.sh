@@ -100,28 +100,44 @@ buildkit_image_name="buildkit_${buildkit_version}"
 
 if ! docker buildx inspect ${buildkit_image_name} &>/dev/null; then
     docker buildx create --use --driver-opt image=moby/buildkit:v${buildkit_version} --name ${buildkit_image_name}
+else
+    # A reused builder may hold a stale local-context cache: buildkit keys
+    # context changes on (size, mtime), but the touch above resets mtime, so a
+    # changed file with unchanged size looks identical and the stale copy is
+    # reused. Prune only type=source.local to force a fresh read (base-image and
+    # apt caches are kept). A freshly created builder has no cache, so we only
+    # prune when reusing one. `|| true`: the builder's container is bootstrapped
+    # lazily on first build and may not exist yet, leaving nothing to prune.
+    docker buildx prune --builder "${buildkit_image_name}" --filter type=source.local -f >/dev/null 2>&1 || true
 fi
 
 
+# Build a reproducible image to a docker-archive tar, then load it into the
+# docker daemon. skopeo computes the manifest digest from the tar (not via the
+# docker-daemon transport), so a host daemon whose API is incompatible with the
+# skopeo version can't affect reproducibility. The daemon load is only for
+# downstream consumers (`docker run`, runtime checks) that need the image there.
 build_reproducible_image() {
   local image_name=$1
   local dockerfile_path=$2
+  local tar_path=$3
   docker buildx build --builder "${buildkit_image_name}" --no-cache \
     --build-arg SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" \
-    --output "type=docker,name=$image_name,rewrite-timestamp=true" \
+    --output "type=docker,name=$image_name,dest=$tar_path,rewrite-timestamp=true" \
     --progress plain -f "$dockerfile_path" .
+  docker load -i "$tar_path"
 }
 
-# Compress a locally built image via skopeo to a temp directory.
+# Compress a built image tar via skopeo to a temp directory.
 # Prints the temp dir path to stdout. The manifest digest can be
 # computed from $dir/manifest.json.
 skopeo_compress() {
-    local image_name="$1"
+    local tar_path="$1"
     local td
     td=$(mktemp -d)
-    # Compress the built image to a local directory, which implicitly computes
+    # Compress the image to a local directory, which implicitly computes
     # the manifest digest in $td/manifest.json
-    skopeo copy --all --dest-compress "docker-daemon:${image_name}:latest" "dir:$td" >&2
+    skopeo copy --all --dest-compress "docker-archive:${tar_path}" "dir:$td" >&2
     echo "$td"
 }
 
@@ -133,8 +149,9 @@ if $USE_RUST_LAUNCHER; then
     SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH repro-env build --env SOURCE_DATE_EPOCH -- cargo build -p tee-launcher --profile reproducible --locked
     rust_launcher_binary_hash=$(sha256sum target/reproducible/tee-launcher | cut -d' ' -f1)
 
-    build_reproducible_image "$RUST_LAUNCHER_IMAGE_NAME" "$DOCKERFILE_RUST_LAUNCHER"
-    rust_launcher_skopeo_dir="$(skopeo_compress "$RUST_LAUNCHER_IMAGE_NAME")"
+    rust_launcher_tar="$(mktemp --suffix=.tar)"
+    build_reproducible_image "$RUST_LAUNCHER_IMAGE_NAME" "$DOCKERFILE_RUST_LAUNCHER" "$rust_launcher_tar"
+    rust_launcher_skopeo_dir="$(skopeo_compress "$rust_launcher_tar")"
     rust_launcher_manifest_digest="$(manifest_digest_from_dir "$rust_launcher_skopeo_dir")"
 fi
 
@@ -158,11 +175,14 @@ if $USE_NODE || $USE_NODE_GCP; then
     # psABI) but are universally available on v3-capable hardware. Adding
     # them explicitly keeps rocksdb's PCLMUL-accelerated CRC32C path
     # compiled in. Match nix/mpc-node.nix and flake.nix.
+    # BUILT_OVERRIDE_mpc_node_GIT_VERSION pins built's GIT_VERSION so local git
+    # tags aren't embedded in the binary (which would break reproducibility).
     SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH \
     JEMALLOC_SYS_WITH_LG_VADDR=48 \
     JEMALLOC_SYS_WITH_LG_PAGE=12 \
     JEMALLOC_SYS_WITH_LG_HUGEPAGE=21 \
     GIT_CEILING_DIRECTORIES=/build/target \
+    BUILT_OVERRIDE_mpc_node_GIT_VERSION="${GIT_COMMIT_HASH:0:7}" \
     CFLAGS="-march=x86-64-v3 -mpclmul -maes" \
     CXXFLAGS="-march=x86-64-v3 -mpclmul -maes" \
     repro-env build \
@@ -171,6 +191,7 @@ if $USE_NODE || $USE_NODE_GCP; then
       --env JEMALLOC_SYS_WITH_LG_PAGE \
       --env JEMALLOC_SYS_WITH_LG_HUGEPAGE \
       --env GIT_CEILING_DIRECTORIES \
+      --env BUILT_OVERRIDE_mpc_node_GIT_VERSION \
       --env CFLAGS \
       --env CXXFLAGS \
       -- cargo build -p mpc-node --profile reproducible --locked
@@ -178,14 +199,16 @@ if $USE_NODE || $USE_NODE_GCP; then
 fi
 
 if $USE_NODE; then
-    build_reproducible_image "$NODE_IMAGE_NAME" "$DOCKERFILE_NODE"
-    node_skopeo_dir="$(skopeo_compress "$NODE_IMAGE_NAME")"
+    node_tar="$(mktemp --suffix=.tar)"
+    build_reproducible_image "$NODE_IMAGE_NAME" "$DOCKERFILE_NODE" "$node_tar"
+    node_skopeo_dir="$(skopeo_compress "$node_tar")"
     node_manifest_digest="$(manifest_digest_from_dir "$node_skopeo_dir")"
 fi
 
 if $USE_NODE_GCP; then
-    build_reproducible_image "$NODE_GCP_IMAGE_NAME" "$DOCKERFILE_NODE_GCP"
-    node_gcp_skopeo_dir="$(skopeo_compress "$NODE_GCP_IMAGE_NAME")"
+    node_gcp_tar="$(mktemp --suffix=.tar)"
+    build_reproducible_image "$NODE_GCP_IMAGE_NAME" "$DOCKERFILE_NODE_GCP" "$node_gcp_tar"
+    node_gcp_skopeo_dir="$(skopeo_compress "$node_gcp_tar")"
     node_gcp_manifest_digest="$(manifest_digest_from_dir "$node_gcp_skopeo_dir")"
 fi
 
@@ -198,7 +221,10 @@ if $USE_PUSH; then
     fi
     sanitized_branch_name="${branch_name//\//-}"
 
-    short_hash=$(git rev-parse --short HEAD)
+    # Fixed 7-char truncation (not `git rev-parse --short`) so the tag is a
+    # pure function of the SHA — the Release workflow computes the same
+    # string via `${SHA::7}` when looking up the image to retag.
+    short_hash="${GIT_COMMIT_HASH:0:7}"
     image_tag="$sanitized_branch_name-$short_hash"
     echo "Using branch-hash tag: $image_tag"
 

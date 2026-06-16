@@ -15,10 +15,10 @@ BorshSchemaContainer {
                 "ParticipantInfo",
             ],
         },
-        "(AuthenticatedAccountId, ThresholdParameters)": Tuple {
+        "(AuthenticatedAccountId, ProposedThresholdParameters)": Tuple {
             elements: [
                 "AuthenticatedAccountId",
-                "ThresholdParameters",
+                "ProposedThresholdParameters",
             ],
         },
         "(AuthenticatedParticipantId, DockerImageHash)": Tuple {
@@ -43,6 +43,12 @@ BorshSchemaContainer {
             elements: [
                 "AuthenticatedParticipantId",
                 "Vec<DomainConfig>",
+            ],
+        },
+        "(DomainId, ReconstructionThreshold)": Tuple {
+            elements: [
+                "DomainId",
+                "ReconstructionThreshold",
             ],
         },
         "AccountId": Struct {
@@ -151,10 +157,10 @@ BorshSchemaContainer {
                 ],
             ),
         },
-        "BTreeMap<AuthenticatedAccountId, ThresholdParameters>": Sequence {
+        "BTreeMap<AuthenticatedAccountId, ProposedThresholdParameters>": Sequence {
             length_width: 4,
             length_range: 0..=4294967295,
-            elements: "(AuthenticatedAccountId, ThresholdParameters)",
+            elements: "(AuthenticatedAccountId, ProposedThresholdParameters)",
         },
         "BTreeMap<AuthenticatedParticipantId, DockerImageHash>": Sequence {
             length_width: 4,
@@ -175,6 +181,11 @@ BorshSchemaContainer {
             length_width: 4,
             length_range: 0..=4294967295,
             elements: "(AuthenticatedParticipantId, Vec<DomainConfig>)",
+        },
+        "BTreeMap<DomainId, ReconstructionThreshold>": Sequence {
+            length_width: 4,
+            length_range: 0..=4294967295,
+            elements: "(DomainId, ReconstructionThreshold)",
         },
         "BTreeSet<AuthenticatedParticipantId>": Sequence {
             length_width: 4,
@@ -826,6 +837,20 @@ BorshSchemaContainer {
                 ],
             ),
         },
+        "ProposedThresholdParameters": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "parameters",
+                        "ThresholdParameters",
+                    ),
+                    (
+                        "per_domain_thresholds",
+                        "BTreeMap<DomainId, ReconstructionThreshold>",
+                    ),
+                ],
+            ),
+        },
         "ProposedUpdates": Struct {
             fields: NamedFields(
                 [
@@ -1030,6 +1055,10 @@ BorshSchemaContainer {
                         "cancellation_requests",
                         "HashSet<AuthenticatedAccountId>",
                     ),
+                    (
+                        "per_domain_thresholds",
+                        "BTreeMap<DomainId, ReconstructionThreshold>",
+                    ),
                 ],
             ),
         },
@@ -1173,7 +1202,7 @@ BorshSchemaContainer {
                 [
                     (
                         "proposal_by_account",
-                        "BTreeMap<AuthenticatedAccountId, ThresholdParameters>",
+                        "BTreeMap<AuthenticatedAccountId, ProposedThresholdParameters>",
                     ),
                 ],
             ),

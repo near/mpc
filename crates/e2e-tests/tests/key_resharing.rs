@@ -171,8 +171,9 @@ async fn test_multi_domain() {
         .await
         .expect("resharing failed");
 
-    // when: start keygen for a new domain (ID 7), kill the leader to stall it,
-    // then vote to cancel from the 3 remaining participants.
+    // when: start keygen for a new domain (ID 7) at `t = 3` to match the
+    // post-reshare cluster threshold, kill the leader to stall it, then vote to
+    // cancel from the 3 remaining participants.
     cluster
         .start_add_domains(vec![DomainConfig {
             id: DomainId(7),

@@ -1,4 +1,3 @@
-use frost_core::{Field, Group};
 use frost_secp256k1::Secp256K1Sha256;
 use k256::AffinePoint;
 use rand_core::CryptoRngCore;
@@ -6,10 +5,16 @@ use std::error::Error;
 
 use crate::ecdsa::{RerandomizationArguments, Tweak};
 use crate::frost;
-use crate::test_utils::{random_32_bytes, run_protocol, GenProtocol};
+use crate::test_utils::{GenProtocol, run_protocol};
 use crate::{
     Ciphersuite, Participant, ParticipantList, ReconstructionLowerBound, Scalar, VerifyingKey,
 };
+
+fn random_32_bytes(rng: &mut impl CryptoRngCore) -> [u8; 32] {
+    let mut bytes: [u8; 32] = [0u8; 32];
+    rng.fill_bytes(&mut bytes);
+    bytes
+}
 
 // +++++++++++++++++ ECDSA Presignature Rerandomization +++++++++++++++++ //
 /// Rerandomizes an ECDSA presignature.
@@ -50,9 +55,7 @@ pub fn frost_run_presignature<C>(
     mut rng: impl CryptoRngCore + Send + Clone + 'static,
 ) -> Result<Vec<(Participant, frost::PresignOutput<C>)>, BoxErr>
 where
-    C: Ciphersuite + Send,
-    <<<C as frost_core::Ciphersuite>::Group as Group>::Field as Field>::Scalar: Send,
-    <<C as frost_core::Ciphersuite>::Group as frost_core::Group>::Element: std::marker::Send,
+    C: Ciphersuite,
 {
     let mut protocols: GenProtocol<frost::PresignOutput<C>> =
         Vec::with_capacity(participants.len());
@@ -65,13 +68,13 @@ where
 
     for (participant, keygen_out) in participants.iter().take(actual_signers) {
         let args = crate::frost::PresignArguments {
-            keygen_out: keygen_out.clone(),
+            private_share: keygen_out.private_share,
             threshold: threshold.into(),
         };
         rng.next_u64();
         // run the signing scheme
         let protocol =
-            crate::frost::presign::<C>(&participants_list, *participant, &args, rng.clone())?;
+            crate::frost::presign::<C, _>(&participants_list, *participant, &args, rng.clone())?;
 
         protocols.push((*participant, Box::new(protocol)));
     }

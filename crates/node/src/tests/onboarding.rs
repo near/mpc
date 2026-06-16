@@ -9,9 +9,10 @@ use crate::indexer::participants::ContractState;
 use crate::migration_service;
 use crate::p2p::testing::PortSeed;
 use crate::tests::DEFAULT_BLOCK_TIME;
+use crate::tests::dto_conversions::keyset_to_dto;
 use crate::tests::{
-    get_keyshares, request_signature_and_await_response, IntegrationTestSetup,
-    DEFAULT_MAX_PROTOCOL_WAIT_TIME,
+    DEFAULT_MAX_PROTOCOL_WAIT_TIME, IntegrationTestSetup, get_keyshares,
+    request_signature_and_await_response,
 };
 use crate::tracking::AutoAbortTask;
 use ed25519_dalek::{SigningKey, VerifyingKey};
@@ -131,14 +132,16 @@ async fn test_onboarding() {
         .await
         .expect("timout waiting for running state");
 
-    assert!(request_signature_and_await_response(
-        &mut setup.indexer,
-        "user0",
-        &domain,
-        std::time::Duration::from_secs(60)
-    )
-    .await
-    .is_some());
+    assert!(
+        request_signature_and_await_response(
+            &mut setup.indexer,
+            "user0",
+            &domain,
+            std::time::Duration::from_secs(60)
+        )
+        .await
+        .is_some()
+    );
 
     {
         tracing::info!("sanity checking test setup");
@@ -199,7 +202,7 @@ async fn test_onboarding() {
         else {
             panic!("expect running");
         };
-        running.keyset.clone().into()
+        keyset_to_dto(&running.keyset)
     };
     let received_keyshares = {
         tracing::info!("Fetching keyshares from parting node.");
@@ -288,30 +291,36 @@ async fn test_onboarding() {
     setup.indexer.disable(0.into()).await;
 
     tracing::info!("sending signature requests as a sanity check");
-    assert!(request_signature_and_await_response(
-        &mut setup.indexer,
-        "user1",
-        &domain,
-        std::time::Duration::from_secs(60)
-    )
-    .await
-    .is_some());
+    assert!(
+        request_signature_and_await_response(
+            &mut setup.indexer,
+            "user1",
+            &domain,
+            std::time::Duration::from_secs(60)
+        )
+        .await
+        .is_some()
+    );
 
-    assert!(request_signature_and_await_response(
-        &mut setup.indexer,
-        "user2",
-        &domain,
-        std::time::Duration::from_secs(60)
-    )
-    .await
-    .is_some());
+    assert!(
+        request_signature_and_await_response(
+            &mut setup.indexer,
+            "user2",
+            &domain,
+            std::time::Duration::from_secs(60)
+        )
+        .await
+        .is_some()
+    );
 
-    assert!(request_signature_and_await_response(
-        &mut setup.indexer,
-        "user3",
-        &domain,
-        std::time::Duration::from_secs(60)
-    )
-    .await
-    .is_some());
+    assert!(
+        request_signature_and_await_response(
+            &mut setup.indexer,
+            "user3",
+            &domain,
+            std::time::Duration::from_secs(60)
+        )
+        .await
+        .is_some()
+    );
 }

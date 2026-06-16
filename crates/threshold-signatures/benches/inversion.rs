@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use frost_core::{Field, Group};
 use frost_secp256k1::{Secp256K1ScalarField, Secp256K1Sha256};
 use rand::SeedableRng;

@@ -2,15 +2,15 @@ use crate::crypto::constants::{BITS, SECURITY_PARAMETER};
 use crate::ecdsa::ot_based_ecdsa::triples::bits::{BitVector, ChoiceVector, SEC_PARAM_64};
 use crate::ecdsa::ot_based_ecdsa::triples::random_ot_extension::random_ot_extension_sender_helper;
 use crate::{
-    crypto::hash::{hash, HashOutput},
+    crypto::hash::{HashOutput, hash},
     ecdsa::{
+        Scalar,
         ot_based_ecdsa::triples::{
             batch_random_ot::{
                 batch_random_ot_receiver_random_helper, batch_random_ot_sender_helper,
             },
             mta::{mta_receiver_random_helper, mta_sender_random_helper},
         },
-        Scalar,
     },
     errors::ProtocolError,
     participants::{Participant, ParticipantList},
@@ -25,8 +25,8 @@ use super::{
     batch_random_ot::{batch_random_ot_receiver, batch_random_ot_sender},
     mta::{mta_receiver, mta_sender},
     random_ot_extension::{
-        random_ot_extension_receiver, random_ot_extension_receiver_helper,
-        random_ot_extension_sender, RandomOtExtensionParams,
+        RandomOtExtensionParams, random_ot_extension_receiver, random_ot_extension_receiver_helper,
+        random_ot_extension_sender,
     },
 };
 use std::collections::VecDeque;
@@ -241,6 +241,8 @@ pub(super) async fn multiplication_many<const N: usize>(
                 }
             };
             tasks.push(fut);
+
+            comms.yield_point().await;
         }
     }
     let mut outs: Vec<Scalar> = av_iv_arc
@@ -249,6 +251,8 @@ pub(super) async fn multiplication_many<const N: usize>(
         .map(|(av_i, bv_i)| *av_i * *bv_i)
         .collect();
 
+    // TODO(#3517): try_join_all polls every ready child once per top-level poll, so one
+    // poke() still costs (#ready children x per-chunk work) despite the yield points.
     let mut results = futures::future::try_join_all(tasks)
         .await?
         .into_iter()
@@ -278,8 +282,8 @@ mod test {
         crypto::hash::hash,
         ecdsa::ot_based_ecdsa::triples::multiplication::multiplication_many,
         participants::ParticipantList,
-        protocol::internal::{make_protocol, Comms},
-        test_utils::{generate_participants, run_protocol, GenProtocol, MockCryptoRng},
+        protocol::internal::{Comms, make_protocol},
+        test_utils::{GenProtocol, MockCryptoRng, generate_participants, run_protocol},
     };
 
     #[test]

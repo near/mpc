@@ -2,7 +2,7 @@
 name = "test-migration-contract"
 version = { workspace = true }
 license = { workspace = true }
-edition = "2021"
+edition = { workspace = true }
 
 [package.metadata.cargo-shear]
 ignored = ["borsh"]

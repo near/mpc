@@ -5,15 +5,14 @@ use rand_core::SeedableRng;
 
 use threshold_signatures::{
     confidential_key_derivation::{
-        self as ckd,
+        self as ckd, PublicVerificationKey,
         ciphersuite::{Field as _, Group as _},
-        PublicVerificationKey,
     },
     participants::Participant,
     protocol::Protocol,
     test_utils::{
-        bench_simulation, generate_participants_with_random_ids, run_keygen, run_simulation,
-        BenchConfig, LatencyModel, MockCryptoRng, SimulationMetrics,
+        BenchConfig, LatencyModel, MockCryptoRng, SimulationMetrics, bench_simulation,
+        generate_participants_with_random_ids, run_keygen, run_simulation,
     },
 };
 

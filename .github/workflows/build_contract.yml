@@ -1,0 +1,49 @@
+name: Build Contract
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    branches:
+      - main
+      - 'release/v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-contract:
+    name: "Build contract reproducibly"
+    runs-on: warp-ubuntu-2404-x64-16x
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+
+      - name: Restore /nix from cache
+        uses: ./.github/actions/restore-nix-cache
+
+      # Reproducible build via cargo-near so the released WASM carries NEP-330
+      # build metadata that third-party verifiers (sourcescan.io, nearblocks)
+      # replay. cargo-near is provided by the dev shell; the build itself runs
+      # in the pinned sourcescan/cargo-near Docker image.
+      - name: Build contract
+        run: nix develop --command cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
+
+      - name: Stage contract artifact
+        run: cp target/near/mpc_contract/mpc_contract.wasm ./mpc_contract.wasm
+
+      - name: Upload contract artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: contract
+          path: mpc_contract.wasm
+          if-no-files-found: error

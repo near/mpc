@@ -1,23 +1,24 @@
 use crate::{
-    crypto::hash::{hash, HashOutput},
-    frost::redjubjub::{sign::sign, KeygenOutput, PresignOutput, SignatureOption},
     Participant, ReconstructionLowerBound,
+    crypto::{
+        hash::{HashOutput, hash},
+        random::Randomness,
+    },
+    frost::redjubjub::{KeygenOutput, PresignOutput, SignatureOption, sign::sign},
 };
 
 use crate::test_utils::{
-    assert_public_key_invariant, build_frost_key_packages_with_dealer, generate_participants,
-    generate_participants_with_random_ids, one_coordinator_output, run_keygen, run_protocol,
-    run_refresh, run_reshare, GenProtocol, MockCryptoRng,
+    GenProtocol, MockCryptoRng, assert_public_key_invariant, build_frost_key_packages_with_dealer,
+    check_one_coordinator_output, generate_participants, generate_participants_with_random_ids,
+    run_keygen, run_protocol, run_refresh, run_reshare,
 };
 
 use std::error::Error;
 
-use frost_core::{Field, Scalar};
+use frost_core::Scalar;
 use rand::SeedableRng;
 use rand_core::CryptoRngCore;
-use reddsa::frost::redjubjub::{
-    keys::SigningShare, JubjubBlake2b512, JubjubScalarField, Randomizer, SigningKey, VerifyingKey,
-};
+use reddsa::frost::redjubjub::{JubjubBlake2b512, SigningKey, VerifyingKey, keys::SigningShare};
 
 type C = JubjubBlake2b512;
 
@@ -40,9 +41,7 @@ pub fn run_sign_with_presign(
     msg_hash: HashOutput,
 ) -> Result<Vec<(Participant, SignatureOption)>, Box<dyn Error>> {
     let mut rng = MockCryptoRng::seed_from_u64(644_221);
-    let randomizer_scalar = JubjubScalarField::random(&mut rng);
-    // only for testing
-    let randomizer = Randomizer::from_scalar(randomizer_scalar);
+    let randomizer_seed = Randomness::random(&mut rng);
 
     let mut protocols: GenProtocol<SignatureOption> = Vec::with_capacity(participants.len());
     let presig = run_presign(participants, threshold, actual_signers, rng)?;
@@ -60,7 +59,7 @@ pub fn run_sign_with_presign(
         assert_eq!(participant, participant_redundancy);
         let randomize = if *participant == coordinator {
             is_valid_coordinator = true;
-            Some(randomizer)
+            Some(randomizer_seed.clone())
         } else {
             None
         };
@@ -195,7 +194,7 @@ fn dkg_refresh_sign_test() {
             msg_hash,
         )
         .unwrap();
-        one_coordinator_output(data, coordinator).unwrap();
+        check_one_coordinator_output(data, coordinator).unwrap();
         key_packages = run_refresh(&participants, &key_packages, threshold, &mut rng);
     }
 }
@@ -224,7 +223,7 @@ fn dkg_reshare_more_participants_sign_test() {
             msg_hash,
         )
         .unwrap();
-        one_coordinator_output(data, coordinator).unwrap();
+        check_one_coordinator_output(data, coordinator).unwrap();
 
         new_participant.push(Participant::from(20u32 + i));
 
@@ -268,7 +267,7 @@ fn dkg_reshare_less_participants_sign_test() {
             msg_hash,
         )
         .unwrap();
-        one_coordinator_output(data, coordinator).unwrap();
+        check_one_coordinator_output(data, coordinator).unwrap();
 
         new_participant.pop();
 

@@ -3,8 +3,8 @@ use crate::sandbox::utils::{
     contract_build::current_contract,
     initializing_utils::{start_keygen_instance, vote_add_domains, vote_public_key},
     mpc_contract::{assert_running_return_threshold, get_state, submit_participant_info},
-    shared_key_utils::{make_key_for_domain, DomainKey},
-    sign_utils::{make_and_submit_requests, PendingSignRequest},
+    shared_key_utils::{DomainKey, make_key_for_domain},
+    sign_utils::{PendingSignRequest, make_and_submit_requests},
 };
 use digest::Digest;
 use dtos::ProtocolContractState;
@@ -22,8 +22,10 @@ use mpc_contract::{
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
-    Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
-    SupportedForeignChains,
+    AptosAddress, AptosEvent, AptosExtractedValue, AptosExtractor, AptosFinality, AptosRpcRequest,
+    AptosTxId, Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
+    SupportedForeignChains, TonAddress, TonCellBody, TonExtractedValue, TonExtractor, TonFinality,
+    TonLog, TonRpcRequest, TonTxId,
 };
 use near_mpc_contract_interface::{
     method_names,
@@ -36,8 +38,8 @@ use near_mpc_contract_interface::{
     },
 };
 use near_mpc_sdk::foreign_chain::{ExtractedValue, ForeignChainRpcRequest, Hash256};
-use near_workspaces::{network::Sandbox, result::ExecutionSuccess, Contract};
-use near_workspaces::{result::Execution, Account, Worker};
+use near_workspaces::{Account, Worker, result::Execution};
+use near_workspaces::{Contract, network::Sandbox, result::ExecutionSuccess};
 use rand_core::CryptoRngCore;
 use serde_json::json;
 use signature::hazmat::PrehashSigner;
@@ -102,7 +104,9 @@ pub async fn init() -> (Worker<Sandbox>, Contract) {
 }
 
 pub async fn init_with_wasm(wasm: &[u8]) -> (Worker<Sandbox>, Contract) {
-    let worker = near_workspaces::sandbox().await.unwrap();
+    let worker = near_workspaces::sandbox_with_version(test_utils::DEFAULT_SANDBOX_VERSION)
+        .await
+        .unwrap();
     let contract = worker.dev_deploy(wasm).await.unwrap();
     (worker, contract)
 }
@@ -795,6 +799,30 @@ pub fn starknet_extracted_values() -> Vec<ExtractedValue> {
     )]
 }
 
+pub fn bogus_ton_log_extracted_value() -> Vec<ExtractedValue> {
+    vec![ExtractedValue::TonExtractedValue(TonExtractedValue::Log(
+        TonLog {
+            from_address: TonAddress {
+                workchain: 0,
+                hash: Hash256([1; 32]),
+            },
+            body: TonCellBody::new(vec![].try_into().unwrap(), 0).unwrap(),
+            body_refs: vec![].try_into().unwrap(),
+        },
+    ))]
+}
+
+pub fn aptos_extracted_values() -> Vec<ExtractedValue> {
+    vec![ExtractedValue::AptosExtractedValue(
+        AptosExtractedValue::Event(AptosEvent {
+            account_address: AptosAddress([1; 32]),
+            sequence_number: 0,
+            type_tag: "0x1::omni_bridge::InitTransfer".to_string(),
+            data: r#"{"amount":"100"}"#.to_string(),
+        }),
+    )]
+}
+
 pub fn bnb_evm_request() -> ForeignChainRpcRequest {
     ForeignChainRpcRequest::Bnb(EvmRpcRequest {
         tx_id: EvmTxId([0xbb; 32]),
@@ -832,5 +860,25 @@ pub fn polygon_evm_request() -> ForeignChainRpcRequest {
         tx_id: EvmTxId([0xbb; 32]),
         extractors: vec![EvmExtractor::BlockHash],
         finality: EvmFinality::Finalized,
+    })
+}
+
+pub fn ton_request() -> ForeignChainRpcRequest {
+    ForeignChainRpcRequest::Ton(TonRpcRequest {
+        tx_id: TonTxId([0xbb; 32]),
+        extractors: vec![TonExtractor::Log { message_index: 0 }],
+        finality: TonFinality::MasterchainIncluded,
+        account: TonAddress {
+            workchain: 0,
+            hash: Hash256([1; 32]),
+        },
+    })
+}
+
+pub fn aptos_request() -> ForeignChainRpcRequest {
+    ForeignChainRpcRequest::Aptos(AptosRpcRequest {
+        tx_id: AptosTxId([0xbb; 32]),
+        finality: AptosFinality::Committed,
+        extractors: vec![AptosExtractor::Event { event_index: 0 }],
     })
 }

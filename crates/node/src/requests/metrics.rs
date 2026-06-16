@@ -26,28 +26,6 @@ pub static MPC_PENDING_VERIFY_FOREIGN_TX_QUEUE_ATTEMPTS_GENERATED_TOTAL: LazyLoc
         )
         .unwrap()
 });
-// TODO(#3316): remove — collapses into a single shared block-stream counter once the
-// tracker is shared across queues. https://github.com/near/mpc/issues/3316
-pub static MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_BLOCKS_INDEXED_TOTAL: LazyLock<
-    prometheus::IntCounter,
-> = LazyLock::new(|| {
-    prometheus::register_int_counter!(
-        "mpc_pending_verify_foreign_txs_queue_blocks_indexed_total",
-        "Number of blocks indexed by the pending verify foreign tx queue"
-    )
-    .unwrap()
-});
-// TODO(#3316): remove — collapses into a single shared finalized-blocks counter once the
-// tracker is shared across queues. https://github.com/near/mpc/issues/3316
-pub static MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_FINALIZED_BLOCKS_INDEXED_TOTAL: LazyLock<
-    prometheus::IntCounter,
-> = LazyLock::new(|| {
-    prometheus::register_int_counter!(
-        "mpc_pending_verify_foreign_txs_queue_finalized_blocks_indexed_total",
-        "Number of finalized blocks indexed by the pending verify foreign tx queue"
-    )
-    .unwrap()
-});
 pub static MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_REQUESTS_INDEXED_TOTAL: LazyLock<
     prometheus::IntCounter,
 > = LazyLock::new(|| {
@@ -108,26 +86,6 @@ pub static VERIFY_FOREIGN_TXS_REQUEST_RESPONSE_LATENCY_SECONDS: LazyLock<prometh
             // 2s - 3s - 4.5s .... - 115s
             exponential_buckets(2.0, 1.5, 10).unwrap()
             ).unwrap()
-    });
-// TODO(#3316): remove — collapses into a single shared block-stream counter once the
-// tracker is shared across queues. https://github.com/near/mpc/issues/3316
-pub static MPC_PENDING_CKDS_QUEUE_BLOCKS_INDEXED: LazyLock<prometheus::IntCounter> =
-    LazyLock::new(|| {
-        prometheus::register_int_counter!(
-            "mpc_pending_ckds_queue_blocks_indexed",
-            "Number of blocks indexed by the pending ckds queue"
-        )
-        .unwrap()
-    });
-// TODO(#3316): remove — collapses into a single shared finalized-blocks counter once the
-// tracker is shared across queues. https://github.com/near/mpc/issues/3316
-pub static MPC_PENDING_CKDS_QUEUE_FINALIZED_BLOCKS_INDEXED: LazyLock<prometheus::IntCounter> =
-    LazyLock::new(|| {
-        prometheus::register_int_counter!(
-            "mpc_pending_ckds_queue_finalized_blocks_indexed",
-            "Number of finalized blocks indexed by the pending ckds queue"
-        )
-        .unwrap()
     });
 pub static MPC_PENDING_CKDS_QUEUE_FINALIZED_RESPONSES_INDEXED: LazyLock<prometheus::IntCounter> =
     LazyLock::new(|| {
@@ -201,26 +159,6 @@ pub static MPC_PENDING_SIGNATURES_QUEUE_SIZE: LazyLock<prometheus::IntGauge> =
         prometheus::register_int_gauge!(
             "mpc_pending_signatures_queue_size",
             "Number of pending signature requests in the queue"
-        )
-        .unwrap()
-    });
-// TODO(#3316): remove — collapses into a single shared block-stream counter once the
-// tracker is shared across queues. https://github.com/near/mpc/issues/3316
-pub static MPC_PENDING_SIGNATURES_QUEUE_BLOCKS_INDEXED: LazyLock<prometheus::IntCounter> =
-    LazyLock::new(|| {
-        prometheus::register_int_counter!(
-            "mpc_pending_signatures_queue_blocks_indexed",
-            "Number of blocks indexed by the pending signatures queue"
-        )
-        .unwrap()
-    });
-// TODO(#3316): remove — collapses into a single shared finalized-blocks counter once the
-// tracker is shared across queues. https://github.com/near/mpc/issues/3316
-pub static MPC_PENDING_SIGNATURES_QUEUE_FINALIZED_BLOCKS_INDEXED: LazyLock<prometheus::IntCounter> =
-    LazyLock::new(|| {
-        prometheus::register_int_counter!(
-            "mpc_pending_signatures_queue_finalized_blocks_indexed",
-            "Number of finalized blocks indexed by the pending signatures queue"
         )
         .unwrap()
     });

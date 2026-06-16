@@ -2,7 +2,7 @@ use derive_more::{Deref, From};
 use near_account_id::AccountId;
 use near_indexer_primitives::CryptoHash;
 
-use crate::types::BlockHeight;
+use crate::types::{BlockEntropy, BlockHeight};
 
 /// The BlockUpdate returned by the Chain indexer.
 /// Similar to [`ChainBlockUpdate`](../../node/src/indexer/handler.rs) in the `mpc-node` crate.
@@ -13,14 +13,14 @@ pub struct BlockUpdate {
 }
 
 /// Context for a single block
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BlockContext {
     pub hash: CryptoHash,
     pub height: BlockHeight,
     pub prev_hash: CryptoHash,
     pub last_final_block: CryptoHash,
-    pub block_entropy: CryptoHash,
-    pub block_timestamp_nanosec: u64,
+    pub entropy: BlockEntropy,
+    pub timestamp_nanosec: u64,
 }
 
 #[derive(Debug)]

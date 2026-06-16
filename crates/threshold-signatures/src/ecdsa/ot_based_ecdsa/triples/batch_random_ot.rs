@@ -7,8 +7,8 @@ use subtle::ConditionallySelectable;
 use crate::{
     crypto::constants::NEAR_BATCH_RANDOM_OT_HASH,
     ecdsa::{
-        ot_based_ecdsa::triples::bits::SEC_PARAM_64, CoefficientCommitment, Field, ProjectivePoint,
-        Secp256K1ScalarField,
+        CoefficientCommitment, Field, ProjectivePoint, Secp256K1ScalarField,
+        ot_based_ecdsa::triples::bits::SEC_PARAM_64,
     },
     errors::ProtocolError,
     protocol::internal::PrivateChannel,
@@ -16,7 +16,7 @@ use crate::{
 
 use crate::crypto::constants::SECURITY_PARAMETER;
 use crate::ecdsa::ot_based_ecdsa::triples::bits::{
-    BitMatrix, BitVector, SquareBitMatrix, SEC_PARAM_8,
+    BitMatrix, BitVector, SEC_PARAM_8, SquareBitMatrix,
 };
 
 fn hash(
@@ -250,29 +250,28 @@ pub(super) async fn batch_random_ot_receiver(
     let big_y = big_y_verkey.value();
     // let delta = BitVector::random(&mut rng);
 
-    let out = delta
-        .bits()
-        .zip(x.iter())
-        .enumerate()
-        .map(|(i, (d_i, &x_i))| {
-            let mut chan = chan.child(i as u64);
-            let mut big_x_i = ProjectivePoint::GENERATOR * x_i;
-            big_x_i.conditional_assign(&(big_x_i + big_y), d_i);
+    let mut out = Vec::with_capacity(SEC_PARAM_64 * 64);
+    for (i, (d_i, &x_i)) in delta.bits().zip(x.iter()).enumerate() {
+        let mut sub_chan =
+            chan.child(u64::try_from(i).map_err(|_| ProtocolError::IntegerOverflow)?);
+        let mut big_x_i = ProjectivePoint::GENERATOR * x_i;
+        big_x_i.conditional_assign(&(big_x_i + big_y), d_i);
 
-            // Step 6
-            let wait0 = chan.next_waitpoint();
-            let big_x_i_verkey = CoefficientCommitment::new(big_x_i);
-            chan.send(wait0, &big_x_i_verkey)?;
+        // Step 6
+        let wait0 = sub_chan.next_waitpoint();
+        let big_x_i_verkey = CoefficientCommitment::new(big_x_i);
+        sub_chan.send(wait0, &big_x_i_verkey)?;
 
-            // Step 5
-            hash(
-                i,
-                &big_x_i_verkey,
-                &big_y_verkey,
-                &CoefficientCommitment::new(big_y * x_i),
-            )
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+        // Step 5
+        out.push(hash(
+            i,
+            &big_x_i_verkey,
+            &big_y_verkey,
+            &CoefficientCommitment::new(big_y * x_i),
+        )?);
+
+        chan.yield_point().await;
+    }
     let big_k: BitMatrix = out.into_iter().collect();
     let big_k = big_k
         .try_into()
@@ -410,8 +409,8 @@ mod test {
     use super::*;
     use crate::ecdsa::ot_based_ecdsa::triples::test::run_batch_random_ot;
     use crate::participants::Participant;
-    use crate::protocol::internal::{make_protocol, Comms};
-    use crate::test_utils::{run_two_party_protocol, MockCryptoRng};
+    use crate::protocol::internal::{Comms, make_protocol};
+    use crate::test_utils::{MockCryptoRng, run_two_party_protocol};
 
     #[test]
     fn test_batch_random_ot() {

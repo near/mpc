@@ -7,15 +7,16 @@ use near_mpc_bounded_collections::BoundedVec;
 use near_mpc_contract_interface::{
     method_names,
     types::{
-        Bls12381G1PublicKey, CKDAppPublicKey, CKDRequestArgs, DomainConfig, Payload, Protocol,
-        SignRequestArgs, EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
-        EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
+        Bls12381G1PublicKey, CKDAppPublicKey, CKDRequestArgs, DomainConfig,
+        EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES, Payload,
+        Protocol, SignRequestArgs,
     },
 };
 use near_primitives::action::Action;
-use rand::rngs::OsRng;
+use near_primitives::types::{Balance, Gas};
 use rand::Rng;
 use rand::RngCore;
+use rand::rngs::OsRng;
 use serde::Serialize;
 
 /// Gas attached to a `sign` (or legacy `sign`) request. Matches the e2e
@@ -226,7 +227,7 @@ fn make_action(method: &str, args: &[u8], tgas: u64, deposit: u128) -> Action {
     Action::FunctionCall(Box::new(near_primitives::action::FunctionCallAction {
         method_name: method.to_string(),
         args: args.to_vec(),
-        gas: tgas * 1_000_000_000_000,
-        deposit,
+        gas: Gas::from_teragas(tgas),
+        deposit: Balance::from_yoctonear(deposit),
     }))
 }

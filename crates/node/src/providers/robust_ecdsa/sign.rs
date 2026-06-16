@@ -1,25 +1,25 @@
 use crate::metrics;
-use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::NetworkTaskChannel;
+use crate::network::computation::MpcLeaderCentricComputation;
 use crate::primitives::UniqueId;
 use crate::protocol::run_protocol;
 use crate::providers::robust_ecdsa::{
-    translate_threshold, EcdsaMessageHash, KeygenOutput, PresignatureStorage,
-    RobustEcdsaSignatureProvider, RobustEcdsaTaskId,
+    EcdsaMessageHash, KeygenOutput, PresignatureStorage, RobustEcdsaSignatureProvider,
+    RobustEcdsaTaskId, translate_threshold,
 };
 use crate::types::SignatureId;
 use anyhow::Context;
-use k256::elliptic_curve::PrimeField;
 use k256::Scalar;
+use k256::elliptic_curve::PrimeField;
 use near_mpc_contract_interface::types::Tweak;
 use std::sync::Arc;
 use std::time::Duration;
+use threshold_signatures::MaxMalicious;
+use threshold_signatures::ParticipantList;
 use threshold_signatures::ecdsa::robust_ecdsa::{PresignOutput, RerandomizedPresignOutput};
 use threshold_signatures::ecdsa::{RerandomizationArguments, Signature, SignatureOption};
 use threshold_signatures::frost_secp256k1::VerifyingKey;
 use threshold_signatures::participants::Participant;
-use threshold_signatures::MaxMalicious;
-use threshold_signatures::ParticipantList;
 use tokio::time::timeout;
 
 impl RobustEcdsaSignatureProvider {
@@ -81,6 +81,8 @@ impl RobustEcdsaSignatureProvider {
         presignature_id: UniqueId,
     ) -> anyhow::Result<()> {
         metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_RECEIVED.inc();
+        // The presignature must be owned by the leader, never one of ours.
+        presignature_id.validate_owned_by(channel.sender().get_leader())?;
         let sign_request = timeout(
             Duration::from_secs(self.config.signature.timeout_sec),
             self.sign_request_store.get(id),

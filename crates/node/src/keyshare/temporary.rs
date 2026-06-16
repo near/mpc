@@ -174,10 +174,12 @@ mod tests {
             .start_generating_keyshare(key1.key_id)
             .await
             .unwrap();
-        assert!(storage
-            .start_generating_keyshare(key1.key_id)
-            .await
-            .is_err());
+        assert!(
+            storage
+                .start_generating_keyshare(key1.key_id)
+                .await
+                .is_err()
+        );
         handle1.commit_keyshare(key1.clone()).await.unwrap();
 
         let handle2 = storage

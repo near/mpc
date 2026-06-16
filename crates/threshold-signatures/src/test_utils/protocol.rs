@@ -5,7 +5,7 @@ use crate::test_utils::{ProtocolSnapshot, Simulator};
 use std::collections::HashMap;
 
 use crate::participants::ParticipantList;
-use crate::protocol::internal::{make_protocol, Comms};
+use crate::protocol::internal::{Comms, make_protocol};
 use crate::test_utils::{GenProtocol, MockCryptoRng};
 use rand::RngCore;
 use rand_core::SeedableRng;
@@ -22,6 +22,56 @@ pub fn run_protocol<T>(
     ps: Vec<(Participant, Box<dyn Protocol<Output = T>>)>,
 ) -> Result<Vec<(Participant, T)>, ProtocolError> {
     run_protocol_common(ps, false).map(|(v, _)| v)
+}
+
+/// Like [`run_protocol()`], but returns how many [`Action::Yield`]s the
+/// participants emitted while running to completion.
+///
+/// Lets a test assert that CPU-bound crypto cooperatively yields: a count of
+/// zero means the yield points were removed.
+pub fn run_protocol_counting_yields<T>(
+    mut ps: Vec<(Participant, Box<dyn Protocol<Output = T>>)>,
+) -> Result<usize, ProtocolError> {
+    let indices: HashMap<Participant, usize> =
+        ps.iter().enumerate().map(|(i, (p, _))| (*p, i)).collect();
+    let size = ps.len();
+    let mut completed = 0;
+    let mut yields = 0;
+    while completed < size {
+        for i in 0..size {
+            loop {
+                let keep_poking = match ps[i].1.poke()? {
+                    Action::Wait => false,
+                    Action::Yield => {
+                        yields += 1;
+                        true
+                    }
+                    Action::SendMany(m) => {
+                        for j in 0..size {
+                            if i != j {
+                                let from = ps[i].0;
+                                ps[j].1.message(from, m.clone())?;
+                            }
+                        }
+                        true
+                    }
+                    Action::SendPrivate(to, m) => {
+                        let from = ps[i].0;
+                        ps[indices[&to]].1.message(from, m.clone())?;
+                        true
+                    }
+                    Action::Return(_) => {
+                        completed += 1;
+                        false
+                    }
+                };
+                if !keep_poking {
+                    break;
+                }
+            }
+        }
+    }
+    Ok(yields)
 }
 
 /// Like [`run_protocol()`], except that it snapshots all the communication.
@@ -88,8 +138,9 @@ pub fn run_two_party_protocol<T0: std::fmt::Debug, T1: std::fmt::Debug>(
                     prot1.message(p0, m)?;
                 }
                 Action::Return(out) => out0 = Some(out),
-                // Ignore other actions, which means sending private messages to other people.
-                Action::SendPrivate(..) => {}
+                // Keep poking on a yield (no executor here), and ignore
+                // private messages addressed to other people.
+                Action::Yield | Action::SendPrivate(..) => {}
             }
         } else {
             let action = prot1.poke()?;
@@ -102,8 +153,9 @@ pub fn run_two_party_protocol<T0: std::fmt::Debug, T1: std::fmt::Debug>(
                     prot0.message(p1, m)?;
                 }
                 Action::Return(out) => out1 = Some(out),
-                // Ignore other actions, which means sending private messages to other people.
-                Action::SendPrivate(..) => {}
+                // Keep poking on a yield (no executor here), and ignore
+                // private messages addressed to other people.
+                Action::Yield | Action::SendPrivate(..) => {}
             }
         }
     }
@@ -139,6 +191,8 @@ fn run_protocol_common<T>(
                 let action = ps[i].1.poke()?;
                 match action {
                     Action::Wait => false,
+                    // Keep poking; a yield needs no executor here.
+                    Action::Yield => true,
                     Action::SendMany(m) => {
                         for j in 0..size {
                             if i == j {

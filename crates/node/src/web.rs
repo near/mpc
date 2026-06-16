@@ -5,24 +5,27 @@ use axum::body::Body;
 use axum::extract::State;
 use axum::http::{Response, StatusCode};
 use axum::response::{Html, IntoResponse};
-use axum::{serve, Json};
-use futures::future::BoxFuture;
+use axum::{Json, serve};
 use futures::FutureExt;
+use futures::future::BoxFuture;
 use mpc_attestation::attestation::Attestation;
 use mpc_node_config::{
-    CKDConfig, ConfigFile, IndexerConfig, KeygenConfig, PresignatureConfig, SignatureConfig,
-    TripleConfig,
+    CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, PresignatureConfig,
+    SignatureConfig, TripleConfig,
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use node_types::http_server::StaticWebData;
-use prometheus::{default_registry, Encoder, TextEncoder};
+use prometheus::{Encoder, TextEncoder, default_registry};
+use recent_transactions::SharedRecentTransactions;
 use serde::Serialize;
 use std::net::SocketAddr;
 use std::sync::{Arc, OnceLock};
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc, watch};
+
+pub mod recent_transactions;
 
 /// Wrapper to make Axum understand how to convert anyhow::Error into a 500
 /// response.
@@ -65,6 +68,8 @@ struct WebServerState {
     migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
     static_web_data: StaticWebData,
     node_config: NodeConfigResponse,
+    /// In-memory log behind the `/debug/recent_transactions` handler.
+    recent_transactions: SharedRecentTransactions,
 }
 
 /// API-safe view of [`ConfigFile`] served by `/debug/node_config`.
@@ -91,7 +96,9 @@ struct NodeConfigResponse {
     signature: SignatureConfig,
     ckd: CKDConfig,
     keygen: KeygenConfig,
+    foreign_chains_provider_counts: ForeignChainsProviderCounts,
     cores: Option<usize>,
+    separate_asset_generation_runtime: bool,
 }
 
 impl From<ConfigFile> for NodeConfigResponse {
@@ -109,7 +116,54 @@ impl From<ConfigFile> for NodeConfigResponse {
             signature: config.signature,
             ckd: config.ckd,
             keygen: config.keygen,
+            foreign_chains_provider_counts: config.foreign_chains.into(),
             cores: config.cores,
+            separate_asset_generation_runtime: config.separate_asset_generation_runtime,
+        }
+    }
+}
+
+fn is_zero(v: &usize) -> bool {
+    *v == 0
+}
+
+#[derive(Clone, Serialize)]
+struct ForeignChainsProviderCounts {
+    #[serde(skip_serializing_if = "is_zero")]
+    solana: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    bitcoin: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    ethereum: usize,
+    #[serde(rename = "abstract", skip_serializing_if = "is_zero")]
+    abstract_chain: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    starknet: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    bnb: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    base: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    arbitrum: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    hyper_evm: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    polygon: usize,
+}
+
+impl From<ForeignChainsConfig> for ForeignChainsProviderCounts {
+    fn from(config: ForeignChainsConfig) -> Self {
+        Self {
+            solana: config.solana.map_or(0, |c| c.providers.len()),
+            bitcoin: config.bitcoin.map_or(0, |c| c.providers.len()),
+            ethereum: config.ethereum.map_or(0, |c| c.providers.len()),
+            abstract_chain: config.abstract_chain.map_or(0, |c| c.providers.len()),
+            starknet: config.starknet.map_or(0, |c| c.providers.len()),
+            bnb: config.bnb.map_or(0, |c| c.providers.len()),
+            base: config.base.map_or(0, |c| c.providers.len()),
+            arbitrum: config.arbitrum.map_or(0, |c| c.providers.len()),
+            hyper_evm: config.hyper_evm.map_or(0, |c| c.providers.len()),
+            polygon: config.polygon.map_or(0, |c| c.providers.len()),
         }
     }
 }
@@ -189,6 +243,11 @@ async fn contract_state(state: State<WebServerState>) -> String {
     near_mpc_contract_interface::types::protocol_state_to_string(&protocol_state)
 }
 
+async fn debug_recent_transactions(State(state): State<WebServerState>) -> String {
+    let snapshot = state.recent_transactions.snapshot();
+    recent_transactions::render(&snapshot)
+}
+
 async fn third_party_licenses() -> Html<&'static str> {
     Html(include_str!("../../../third-party-licenses/licenses.html"))
 }
@@ -250,6 +309,7 @@ async fn public_data(state: State<WebServerState>) -> Json<StaticWebData> {
 /// The returned future is the one that actually serves. It will be
 /// long-running, and is typically not expected to return. However, dropping
 /// the returned future will stop the web server.
+#[expect(clippy::too_many_arguments)]
 pub async fn start_web_server(
     root_task_handle: Arc<OnceLock<Arc<TaskHandle>>>,
     debug_request_sender: broadcast::Sender<DebugRequest>,
@@ -258,6 +318,7 @@ pub async fn start_web_server(
     protocol_state_receiver: watch::Receiver<ProtocolContractState>,
     migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
     config: ConfigFile,
+    recent_transactions: SharedRecentTransactions,
 ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
     tracing::info!(?bind_address, "attempting to bind web server to address");
 
@@ -268,6 +329,10 @@ pub async fn start_web_server(
         .route("/debug/signatures", axum::routing::get(debug_signatures))
         .route("/debug/ckds", axum::routing::get(debug_ckds))
         .route("/debug/contract", axum::routing::get(contract_state))
+        .route(
+            "/debug/recent_transactions",
+            axum::routing::get(debug_recent_transactions),
+        )
         .route("/debug/migrations", axum::routing::get(migrations))
         .route("/debug/node_config", axum::routing::get(debug_node_config))
         .route("/licenses", axum::routing::get(third_party_licenses))
@@ -280,6 +345,7 @@ pub async fn start_web_server(
             migration_state_receiver,
             static_web_data,
             node_config: NodeConfigResponse::from(config),
+            recent_transactions,
         });
 
     let tcp_listener = TcpListener::bind(&bind_address).await?;
@@ -324,6 +390,7 @@ mod tests {
     const ARBITRUM_RPC_URL: &str = "https://arbitrum.publicnode.com";
     const HYPER_EVM_RPC_URL: &str = "https://rpc.hyperliquid.xyz/evm";
     const POLYGON_RPC_URL: &str = "https://polygon-bor-rpc.publicnode.com";
+    const APTOS_RPC_URL: &str = "https://aptos-mainnet.nodereal.io/v1/";
 
     const SOLANA_BEARER_TOKEN: &str = "sk-SUPER-SECRET-KEY";
     const BITCOIN_PATH_TOKEN: &str = "ankr-secret-token";
@@ -442,35 +509,54 @@ mod tests {
                     POLYGON_RPC_URL,
                     AuthConfig::None,
                 )),
+                aptos: Some(test_chain(PROVIDER_PUBLIC, APTOS_RPC_URL, AuthConfig::None)),
             },
             cores: Some(4),
+            separate_asset_generation_runtime: true,
         }
     }
 
     #[test]
-    fn node_config_response_json__should_not_leak_foreign_chain_info() {
+    fn node_config_response_json____should_expose_provider_counts_but_no_sensitive_info() {
         // Given
         let config = test_config();
 
         // When
         let json = serde_json::to_string(&NodeConfigResponse::from(config)).unwrap();
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
-
-        // Then — the structural invariant: the public debug response must
-        // not carry a `foreign_chains` field at all.
         let object = value
             .as_object()
             .expect("response must serialize as a JSON object");
-        assert!(
-            !object.contains_key("foreign_chains"),
-            "response must not contain a `foreign_chains` key, got: {json}"
-        );
 
-        // Defense in depth: catch a regression that re-introduces RPC
-        // provider data under a different field name. Each needle below is
-        // a value present only in the foreign-chain test fixture, so its
-        // appearance anywhere in the serialized response is unambiguous
-        // evidence of a leak.
+        // Then — provider counts are safe to expose; sensitive details are not.
+        let counts = object
+            .get("foreign_chains_provider_counts")
+            .expect("response must contain `foreign_chains_provider_counts`")
+            .as_object()
+            .expect("`foreign_chains_provider_counts` must be an object");
+
+        // test_config gives each chain exactly one provider
+        for chain in [
+            "solana",
+            "bitcoin",
+            "ethereum",
+            "abstract",
+            "starknet",
+            "bnb",
+            "base",
+            "arbitrum",
+            "hyper_evm",
+            "polygon",
+        ] {
+            assert_eq!(
+                counts.get(chain).and_then(|v| v.as_u64()),
+                Some(1),
+                "expected 1 provider for chain `{chain}`, got: {counts:?}"
+            );
+        }
+
+        // Defense in depth: no provider name, URL, auth token, or env-var name
+        // must appear anywhere in the serialized response.
         let forbidden = [
             PROVIDER_ALCHEMY,
             PROVIDER_ANKR,
@@ -486,6 +572,7 @@ mod tests {
             ARBITRUM_RPC_URL,
             HYPER_EVM_RPC_URL,
             POLYGON_RPC_URL,
+            APTOS_RPC_URL,
             SOLANA_BEARER_TOKEN,
             BITCOIN_PATH_TOKEN,
             STARKNET_QUERY_TOKEN,

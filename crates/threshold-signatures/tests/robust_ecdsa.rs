@@ -7,23 +7,22 @@ use std::collections::HashMap;
 use rand_core::{OsRng, RngCore};
 
 use threshold_signatures::{
-    self,
+    self, Element, MaxMalicious, ParticipantList,
     ecdsa::{
-        robust_ecdsa::{
-            presign::presign, sign::sign, PresignArguments, PresignOutput,
-            RerandomizedPresignOutput,
-        },
         RerandomizationArguments, Secp256K1Sha256, Signature, SignatureOption,
+        robust_ecdsa::{
+            PresignArguments, PresignOutput, RerandomizedPresignOutput, presign::presign,
+            sign::sign,
+        },
     },
     frost_secp256k1::VerifyingKey,
     participants::Participant,
-    Element, MaxMalicious, ParticipantList,
 };
 
 // Note: This is required to use Scalar::from_repr
 use elliptic_curve::ff::PrimeField;
 
-use crate::common::{run_protocol, GenProtocol};
+use crate::common::{GenProtocol, run_protocol};
 
 type C = Secp256K1Sha256;
 type KeygenOutput = threshold_signatures::KeygenOutput<C>;

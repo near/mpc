@@ -2,15 +2,14 @@ pub mod cleanup;
 #[cfg(test)]
 pub mod test_utils;
 
-use crate::db::{DBCol, SecretDB};
+use crate::db::{DBCol, SecretDB, SecretDBUpdate};
 use crate::primitives::{ParticipantId, UniqueId};
 use crate::providers::HasParticipants;
 use borsh::BorshDeserialize;
 use futures::FutureExt;
-use mpc_primitives::domain::DomainId;
 use near_time::Clock;
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use std::collections::{HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 
@@ -299,16 +298,19 @@ where
 
         // If the cold queue is exhausted, process elements buffered in the hot queue
         while num_elements_to_process > 0 {
-            if let Some(Ok((id, value))) = self.hot_receiver.recv_async().now_or_never() {
-                num_elements_to_process -= 1;
-                let _ = self
-                    .cold_queue
-                    .lock()
-                    .unwrap()
-                    .add_if_condition_satisfied(id, value);
-            } else {
-                // Nothing waiting in the hot queue
-                break;
+            match self.hot_receiver.recv_async().now_or_never() {
+                Some(Ok((id, value))) => {
+                    num_elements_to_process -= 1;
+                    let _ = self
+                        .cold_queue
+                        .lock()
+                        .unwrap()
+                        .add_if_condition_satisfied(id, value);
+                }
+                _ => {
+                    // Nothing waiting in the hot queue
+                    break;
+                }
             }
         }
 
@@ -346,7 +348,10 @@ where
 {
     db: Arc<SecretDB>,
     col: DBCol,
-    domain_id: Option<DomainId>,
+    /// Byte prefix prepended to every key written under `col`. Empty `Vec` means
+    /// no prefix (i.e. the original layout where keys were just
+    /// `borsh(UniqueId)`).
+    prefix: Vec<u8>,
     my_participant_id: ParticipantId,
     owned_queue: DoubleQueue<T, Vec<ParticipantId>>,
     last_id: Mutex<Option<UniqueId>>,
@@ -356,21 +361,28 @@ where
     unowned_in_flight: Mutex<HashSet<UniqueId>>,
 }
 
-/// Iterates over a key range in column `db_col`, determined by  [`DistributedAssetStorage::<T>::make_prefix_range(my_participant_id, domain_id)`],
-/// Deletes all entries in `db_col` that evaluate `false` for `is_subset_of_active_participants(persistent_participants)`
+/// Iterates over a key range in column `db_col`, determined by
+/// [`DistributedAssetStorage::<T>::make_prefix_range(my_participant_id, prefix)`],
+/// and stages a delete on `update_writer` for every entry that evaluates `false`
+/// for `is_subset_of_active_participants(persistent_participants)`.
+///
+/// The caller is responsible for committing `update_writer`. Sharing a writer
+/// across multiple calls lets a single cleanup pass (per-`t` triple columns +
+/// per-domain presignature columns + epoch marker) be committed as one atomic
+/// batch.
 pub fn clean_db<T>(
     db: &Arc<SecretDB>,
+    update_writer: &mut SecretDBUpdate,
     db_col: DBCol,
     persistent_participants: &[ParticipantId],
     my_participant_id: ParticipantId,
-    domain_id: Option<DomainId>,
+    prefix: &[u8],
 ) -> anyhow::Result<()>
 where
     T: Serialize + DeserializeOwned + Send + 'static + HasParticipants,
 {
     let (start, end): (Vec<u8>, Vec<u8>) =
-        DistributedAssetStorage::<T>::make_prefix_range(my_participant_id, domain_id);
-    let mut update_writer = db.update();
+        DistributedAssetStorage::<T>::make_prefix_range(my_participant_id, prefix);
     for item in db.iter_range(db_col, &start, &end) {
         let (key, value) = item?;
         let value: T = serde_json::from_slice(&value)?;
@@ -378,7 +390,6 @@ where
             update_writer.delete(db_col, &key);
         }
     }
-    update_writer.commit()?;
     Ok(())
 }
 
@@ -390,7 +401,7 @@ where
         clock: Clock,
         db: Arc<SecretDB>,
         col: DBCol,
-        domain_id: Option<DomainId>,
+        prefix: Vec<u8>,
         my_participant_id: ParticipantId,
         condition: fn(&Vec<ParticipantId>, &T) -> bool,
         alive_participant_ids_query: Arc<dyn Fn() -> Vec<ParticipantId> + Send + Sync>,
@@ -401,10 +412,10 @@ where
         // but it's the simplest way to implement a multi-consumer, multi-producer queue that
         // supports asynchronous blocking when an asset isn't available.
         let mut last_id = None;
-        let (start, end) = Self::make_prefix_range(my_participant_id, domain_id);
+        let (start, end) = Self::make_prefix_range(my_participant_id, &prefix);
         for item in db.iter_range(col, &start, &end) {
             let (key, value) = item?;
-            let id = Self::decode_key(&key, domain_id)?;
+            let id = Self::decode_key(&key, prefix.len())?;
             let value = serde_json::from_slice(&value)?;
             owned_queue.add_owned(id, value);
             last_id = Some(id);
@@ -413,7 +424,7 @@ where
         Ok(Self {
             db,
             col,
-            domain_id,
+            prefix,
             my_participant_id,
             owned_queue,
             last_id: Mutex::new(last_id),
@@ -421,16 +432,9 @@ where
         })
     }
 
-    fn make_prefix_range(
-        participant_id: ParticipantId,
-        domain_id: Option<DomainId>,
-    ) -> (Vec<u8>, Vec<u8>) {
-        let mut start = Vec::new();
-        let mut end = Vec::new();
-        if let Some(domain_id) = domain_id {
-            start.extend_from_slice(&domain_id.0.to_be_bytes());
-            end.extend_from_slice(&domain_id.0.to_be_bytes());
-        }
+    fn make_prefix_range(participant_id: ParticipantId, prefix: &[u8]) -> (Vec<u8>, Vec<u8>) {
+        let mut start = prefix.to_vec();
+        let mut end = prefix.to_vec();
         start.extend_from_slice(&UniqueId::prefix_for_participant_id(participant_id));
         end.extend_from_slice(&UniqueId::prefix_for_participant_id(
             ParticipantId::from_raw(participant_id.raw().checked_add(1).unwrap()),
@@ -439,20 +443,13 @@ where
     }
 
     fn make_key(&self, id: UniqueId) -> Vec<u8> {
-        let mut key = Vec::new();
-        if let Some(domain_id) = self.domain_id {
-            key.extend_from_slice(&domain_id.0.to_be_bytes());
-        }
+        let mut key = self.prefix.clone();
         key.extend_from_slice(&borsh::to_vec(&id).unwrap());
         key
     }
 
-    fn decode_key(key: &[u8], domain_id: Option<DomainId>) -> anyhow::Result<UniqueId> {
-        let mut key = key;
-        if domain_id.is_some() {
-            key = &key[std::mem::size_of::<DomainId>()..];
-        }
-        Ok(UniqueId::try_from_slice(key)?)
+    fn decode_key(key: &[u8], prefix_len: usize) -> anyhow::Result<UniqueId> {
+        Ok(UniqueId::try_from_slice(&key[prefix_len..])?)
     }
 
     /// Generates an ID that won't conflict with existing ones, and reserves it
@@ -531,8 +528,7 @@ where
         if !removed_cold_ids.is_empty() {
             let mut update = self.db.update();
             for id in removed_cold_ids {
-                let key = self.make_key(id);
-                update.delete(self.col, &key)
+                update.delete(self.col, &self.make_key(id));
             }
             update
                 .commit()
@@ -589,20 +585,30 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{ColdQueue, DistributedAssetStorage, DomainId, DoubleQueue, UniqueId};
+    use super::{ColdQueue, DistributedAssetStorage, DoubleQueue, UniqueId};
     use crate::assets::clean_db;
-    use crate::async_testing::{run_future_once, MaybeReady};
+    use crate::async_testing::{MaybeReady, run_future_once};
     use crate::db::DBCol;
     use crate::primitives::ParticipantId;
     use crate::providers::HasParticipants;
     use borsh::BorshDeserialize;
     use futures::FutureExt;
+    use mpc_primitives::domain::DomainId;
     use near_time::FakeClock;
     use serde::{Deserialize, Serialize};
     use std::cmp::Eq;
     use std::default::Default;
     use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
+
+    /// Adapter used by tests that previously took `Option<DomainId>` to compose
+    /// the equivalent prefix bytes for the generalized `DistributedAssetStorage`.
+    fn domain_id_to_prefix(domain_id: Option<DomainId>) -> Vec<u8> {
+        match domain_id {
+            Some(d) => d.0.to_be_bytes().to_vec(),
+            None => Vec::new(),
+        }
+    }
 
     #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
     struct ParticipantsWithI32(pub Vec<ParticipantId>, pub i32);
@@ -842,8 +848,8 @@ mod tests {
         let store = DistributedAssetStorage::<ParticipantsWithI32>::new(
             clock.clock(),
             db,
-            crate::db::DBCol::Triple,
-            None,
+            crate::db::DBCol::TripleV2,
+            Vec::new(),
             ParticipantId::from_raw(42),
             |cond, val| val.is_subset_of_active_participants(cond),
             {
@@ -977,8 +983,8 @@ mod tests {
         let store = DistributedAssetStorage::<u32>::new(
             FakeClock::default().clock(),
             db,
-            crate::db::DBCol::Triple,
-            None,
+            crate::db::DBCol::TripleV2,
+            Vec::new(),
             ParticipantId::from_raw(42),
             |_, _| true,
             Arc::new(std::vec::Vec::new),
@@ -1024,8 +1030,8 @@ mod tests {
         let store = DistributedAssetStorage::<u32>::new(
             FakeClock::default().clock(),
             db.clone(),
-            crate::db::DBCol::Triple,
-            None,
+            crate::db::DBCol::TripleV2,
+            Vec::new(),
             ParticipantId::from_raw(42),
             |_, _| true,
             Arc::new(std::vec::Vec::new),
@@ -1074,8 +1080,8 @@ mod tests {
         let store = DistributedAssetStorage::<u32>::new(
             FakeClock::default().clock(),
             db,
-            crate::db::DBCol::Triple,
-            None,
+            crate::db::DBCol::TripleV2,
+            Vec::new(),
             ParticipantId::from_raw(42),
             |_, _| true,
             Arc::new(std::vec::Vec::new),
@@ -1092,8 +1098,8 @@ mod tests {
         let store = DistributedAssetStorage::<u32>::new(
             FakeClock::default().clock(),
             db,
-            crate::db::DBCol::Triple,
-            None,
+            crate::db::DBCol::TripleV2,
+            Vec::new(),
             ParticipantId::from_raw(42),
             |_, _| true,
             Arc::new(std::vec::Vec::new),
@@ -1133,8 +1139,8 @@ mod tests {
         let store = DistributedAssetStorage::<u32>::new(
             FakeClock::default().clock(),
             db.clone(),
-            crate::db::DBCol::Triple,
-            None,
+            crate::db::DBCol::TripleV2,
+            Vec::new(),
             myself,
             |_, _| true,
             Arc::new(std::vec::Vec::new),
@@ -1157,8 +1163,8 @@ mod tests {
         let store = DistributedAssetStorage::<u32>::new(
             FakeClock::default().clock(),
             db,
-            crate::db::DBCol::Triple,
-            None,
+            crate::db::DBCol::TripleV2,
+            Vec::new(),
             myself,
             |_, _| true,
             Arc::new(std::vec::Vec::new),
@@ -1191,8 +1197,8 @@ mod tests {
         let store = DistributedAssetStorage::<u32>::new(
             FakeClock::default().clock(),
             db.clone(),
-            crate::db::DBCol::Triple,
-            None,
+            crate::db::DBCol::TripleV2,
+            Vec::new(),
             myself,
             |_, x| *x != 1,
             Arc::new(Vec::new),
@@ -1212,8 +1218,8 @@ mod tests {
         let store = DistributedAssetStorage::<u32>::new(
             FakeClock::default().clock(),
             db,
-            crate::db::DBCol::Triple,
-            None,
+            crate::db::DBCol::TripleV2,
+            Vec::new(),
             myself,
             |_, _| true,
             Arc::new(std::vec::Vec::new),
@@ -1236,7 +1242,7 @@ mod tests {
                 FakeClock::default().clock(),
                 db.clone(),
                 crate::db::DBCol::Presignature,
-                domain_id,
+                domain_id_to_prefix(domain_id),
                 myself,
                 |_, _| true,
                 Arc::new(std::vec::Vec::new),
@@ -1269,7 +1275,7 @@ mod tests {
                 FakeClock::default().clock(),
                 db.clone(),
                 crate::db::DBCol::Presignature,
-                domain_id,
+                domain_id_to_prefix(domain_id),
                 myself,
                 |_, _| true,
                 Arc::new(std::vec::Vec::new),
@@ -1322,7 +1328,7 @@ mod tests {
                 clock.clock(),
                 db.clone(),
                 db_col,
-                domain_id,
+                domain_id_to_prefix(domain_id),
                 my_participant_id,
                 |cond, val| val.is_subset_of_active_participants(cond),
                 {
@@ -1337,7 +1343,7 @@ mod tests {
             assert_eq!(store.num_owned(), expected);
         };
         for domain_id in [None, Some(DomainId(0)), Some(DomainId(1))] {
-            for db_col in [crate::db::DBCol::Presignature, crate::db::DBCol::Triple] {
+            for db_col in [crate::db::DBCol::Presignature, crate::db::DBCol::TripleV2] {
                 assert_db_num_owned(db_col, domain_id, 0);
                 {
                     // populate the database
@@ -1352,33 +1358,42 @@ mod tests {
                     }
                 }
                 assert_db_num_owned(db_col, domain_id, 4);
+                let mut writer = db.update();
                 clean_db::<ParticipantsWithI32>(
                     &db,
+                    &mut writer,
                     db_col,
                     &all_participants,
                     my_participant_id,
-                    domain_id,
+                    &domain_id_to_prefix(domain_id),
                 )
                 .unwrap();
+                writer.commit().unwrap();
                 assert_db_num_owned(db_col, domain_id, 4);
+                let mut writer = db.update();
                 clean_db::<ParticipantsWithI32>(
                     &db,
+                    &mut writer,
                     db_col,
                     &participant_subset_a,
                     my_participant_id,
-                    domain_id,
+                    &domain_id_to_prefix(domain_id),
                 )
                 .unwrap();
+                writer.commit().unwrap();
                 assert_db_num_owned(db_col, domain_id, 2);
 
+                let mut writer = db.update();
                 clean_db::<ParticipantsWithI32>(
                     &db,
+                    &mut writer,
                     db_col,
                     &participant_subset_b,
                     my_participant_id,
-                    domain_id,
+                    &domain_id_to_prefix(domain_id),
                 )
                 .unwrap();
+                writer.commit().unwrap();
                 assert_db_num_owned(db_col, domain_id, 1);
             }
         }
