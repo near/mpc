@@ -23,7 +23,7 @@ use mpc_node_config::{ConfigFile, ForeignChainConfig, ForeignChainsConfig};
 use near_mpc_contract_interface::types as dtos;
 use std::sync::Arc;
 use std::time::Duration;
-use threshold_signatures::ReconstructionLowerBound;
+use threshold_signatures::ReconstructionThreshold;
 use threshold_signatures::ecdsa::{KeygenOutput, Signature};
 use threshold_signatures::frost_secp256k1::VerifyingKey;
 use threshold_signatures::frost_secp256k1::keys::SigningShare;
@@ -186,7 +186,7 @@ where
     }
 
     async fn run_key_generation_client(
-        _threshold: ReconstructionLowerBound,
+        _threshold: ReconstructionThreshold,
         _channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
         anyhow::bail!(
@@ -195,7 +195,7 @@ where
     }
 
     async fn run_key_resharing_client(
-        _new_threshold: ReconstructionLowerBound,
+        _new_threshold: ReconstructionThreshold,
         _key_share: Option<SigningShare>,
         _public_key: VerifyingKey,
         _old_participants: &ParticipantsConfig,

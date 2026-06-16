@@ -1,5 +1,5 @@
 use crate::{
-    ReconstructionLowerBound,
+    ReconstructionThreshold,
     errors::InitializationError,
     participants::{Participant, ParticipantList},
 };
@@ -8,7 +8,7 @@ use crate::{
 /// present, threshold ≤ count) and returns the validated [`ParticipantList`].
 pub fn assert_participant_inputs(
     participants: &[Participant],
-    threshold: impl Into<ReconstructionLowerBound>,
+    threshold: impl Into<ReconstructionThreshold>,
     me: Participant,
 ) -> Result<ParticipantList, InitializationError> {
     let threshold = threshold.into();
@@ -42,7 +42,7 @@ pub fn assert_participant_inputs(
 /// Verifies that the sign inputs are valid
 pub fn assert_sign_inputs(
     participants: &[Participant],
-    threshold: impl Into<ReconstructionLowerBound>,
+    threshold: impl Into<ReconstructionThreshold>,
     me: Participant,
     coordinator: Participant,
 ) -> Result<ParticipantList, InitializationError> {

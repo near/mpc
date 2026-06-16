@@ -10,7 +10,7 @@ use crate::participants::Participant;
 #[cfg(test)]
 use crate::test_utils::participants::generate_participants_with_random_ids;
 use crate::test_utils::{GenOutput, GenProtocol, run_protocol};
-use crate::thresholds::ReconstructionLowerBound;
+use crate::thresholds::ReconstructionThreshold;
 use crate::{Ciphersuite, KeygenOutput, VerifyingKey, keygen, refresh, reshare};
 
 // +++++++++++++++++ DKG Functions +++++++++++++++++ //
@@ -22,7 +22,7 @@ type DKGGenProtocol<C> = GenProtocol<KeygenOutput<C>>;
 /// If the protocol succeeds, returns a sorted vector based on participants id
 pub fn run_keygen<C: Ciphersuite, R: CryptoRngCore + SeedableRng + Send + 'static>(
     participants: &[Participant],
-    threshold: impl Into<ReconstructionLowerBound> + Copy + Send + 'static,
+    threshold: impl Into<ReconstructionThreshold> + Copy + Send + 'static,
     rng: &mut R,
 ) -> GenOutput<C> {
     let mut protocols: DKGGenProtocol<C> = Vec::with_capacity(participants.len());
@@ -41,7 +41,7 @@ pub fn run_keygen<C: Ciphersuite, R: CryptoRngCore + SeedableRng + Send + 'stati
 pub fn run_refresh<C: Ciphersuite, R: CryptoRngCore + SeedableRng + Send + 'static>(
     participants: &[Participant],
     keys: &[(Participant, KeygenOutput<C>)],
-    threshold: impl Into<ReconstructionLowerBound> + Copy + Send + 'static,
+    threshold: impl Into<ReconstructionThreshold> + Copy + Send + 'static,
     rng: &mut R,
 ) -> GenOutput<C> {
     let mut protocols: DKGGenProtocol<C> = Vec::with_capacity(participants.len());
@@ -69,8 +69,8 @@ pub fn run_reshare<C: Ciphersuite, R: CryptoRngCore + SeedableRng + Send + 'stat
     participants: &[Participant],
     pub_key: &VerifyingKey<C>,
     keys: &[(Participant, KeygenOutput<C>)],
-    old_threshold: impl Into<ReconstructionLowerBound> + Copy + Send + 'static,
-    new_threshold: impl Into<ReconstructionLowerBound> + Copy + Send + 'static,
+    old_threshold: impl Into<ReconstructionThreshold> + Copy + Send + 'static,
+    new_threshold: impl Into<ReconstructionThreshold> + Copy + Send + 'static,
     new_participants: &[Participant],
     rng: &mut R,
 ) -> GenOutput<C> {
