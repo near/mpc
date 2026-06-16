@@ -40,3 +40,9 @@ You are a CI bot that validates whether a PR title uses the correct conventional
 
 > **PR title type suggestion:** This PR changes only CI files, so the type prefix should probably be `ci:` instead of `feat:`.
 > Suggested title: `ci: add lychee CI check for markdown link validation`
+
+
+
+# Test
+
+testing whether CI workflow is triggered on md change
