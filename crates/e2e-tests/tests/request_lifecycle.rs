@@ -87,8 +87,8 @@ async fn mpc_cluster__should_sign_with_scheme_matching_domain() {
 async fn mpc_cluster__should_successfully_process_robust_ecdsa_requests() {
     // given
     let (cluster, running) = common::must_setup_cluster(common::ROBUST_ECDSA_PORT_SEED, |c| {
-        c.num_nodes = 6;
-        c.initial_participant_indices = (0..6).collect();
+        c.num_nodes = 7;
+        c.initial_participant_indices = (0..7).collect();
         c.threshold = 5;
         c.domains = vec![DomainConfig {
             id: DomainId(0),
