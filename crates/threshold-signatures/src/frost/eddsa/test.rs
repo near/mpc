@@ -6,8 +6,8 @@ use crate::{
         sign::{sign_v1, sign_v2},
     },
     test_utils::{
-        assert_frost_presignatures_well_formed, generate_participants, run_protocol, GenProtocol,
-        MockCryptoRng,
+        GenProtocol, MockCryptoRng, assert_frost_presignatures_well_formed, generate_participants,
+        run_protocol,
     },
 };
 

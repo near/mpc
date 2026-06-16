@@ -1,5 +1,5 @@
-use frost_core::round1::{SigningCommitments, SigningNonces};
 use frost_core::Identifier;
+use frost_core::round1::{SigningCommitments, SigningNonces};
 use frost_secp256k1::Secp256K1Sha256;
 use k256::AffinePoint;
 use rand_core::CryptoRngCore;

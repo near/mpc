@@ -8,11 +8,10 @@ use crate::{
 };
 
 use crate::test_utils::{
-    assert_frost_presignatures_well_formed, assert_public_key_invariant,
-    build_frost_key_packages_with_dealer, generate_participants,
-    generate_participants_with_random_ids, check_one_coordinator_output,
+    GenProtocol, MockCryptoRng, assert_frost_presignatures_well_formed,
+    assert_public_key_invariant, build_frost_key_packages_with_dealer,
+    check_one_coordinator_output, generate_participants, generate_participants_with_random_ids,
     run_keygen, run_protocol, run_refresh, run_reshare,
-    GenProtocol, MockCryptoRng,
 };
 
 use std::error::Error;
