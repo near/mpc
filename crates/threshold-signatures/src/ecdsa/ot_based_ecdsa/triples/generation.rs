@@ -180,6 +180,8 @@ async fn do_generation_many<const N: usize>(
         big_e_i_v.push(big_e_i);
         big_f_i_v.push(big_f_i);
         big_l_i_v.push(big_l_i);
+
+        chan.yield_point().await;
     }
 
     // Spec 1.6
@@ -288,6 +290,8 @@ async fn do_generation_many<const N: usize>(
             )?;
             my_phi_proof0v.push(my_phi_proof0);
             my_phi_proof1v.push(my_phi_proof1);
+
+            chan.yield_point().await;
         }
 
         // Spec 2.7
@@ -425,6 +429,8 @@ async fn do_generation_many<const N: usize>(
                 *big_e = big_e.add(their_big_e)?;
                 *big_f = big_f.add(their_big_f)?;
                 *big_l = big_l.add(their_big_l)?;
+
+                chan.yield_point().await;
             }
         }
 
@@ -484,6 +490,8 @@ async fn do_generation_many<const N: usize>(
             big_c_i_points.push(CoefficientCommitment::new(big_c_i));
             big_c_i_v.push(big_c_i);
             my_phi_proofs.push(my_phi_proof);
+
+            chan.yield_point().await;
         }
 
         // Spec 3.10
@@ -525,6 +533,8 @@ async fn do_generation_many<const N: usize>(
                     )));
                 }
                 *big_c += big_c_j_val;
+
+                chan.yield_point().await;
             }
         }
         let big_l_v = big_l_v
@@ -578,6 +588,8 @@ async fn do_generation_many<const N: usize>(
         hat_big_c_i_points.push(CoefficientCommitment::new(hat_big_c_i));
         hat_big_c_i_v.push(hat_big_c_i);
         my_phi_proofs.push(my_l0_phi_proof);
+
+        chan.yield_point().await;
     }
 
     // Spec 4.8
@@ -635,6 +647,8 @@ async fn do_generation_many<const N: usize>(
                 )));
             }
             *hat_big_c += &their_hat_big_c;
+
+            chan.yield_point().await;
         }
     }
 
@@ -652,6 +666,8 @@ async fn do_generation_many<const N: usize>(
                 "final polynomial doesn't match C value".to_owned(),
             ));
         }
+
+        chan.yield_point().await;
     }
 
     // Spec 5.5 + 5.6
@@ -695,6 +711,8 @@ async fn do_generation_many<const N: usize>(
                 threshold,
             },
         ));
+
+        chan.yield_point().await;
     }
 
     Ok(ret)
@@ -844,7 +862,9 @@ mod test {
         ecdsa::{ProjectivePoint, ot_based_ecdsa::triples::generate_triple},
         participants::{Participant, ParticipantList},
         protocol::Protocol,
-        test_utils::{MockCryptoRng, generate_participants, run_protocol},
+        test_utils::{
+            MockCryptoRng, generate_participants, run_protocol, run_protocol_counting_yields,
+        },
     };
 
     use super::{
@@ -904,6 +924,37 @@ mod test {
         assert_eq!(a * b, c);
 
         insta::assert_json_snapshot!(result);
+    }
+
+    /// Deterministic guard that the CPU-bound triple-generation code surfaces
+    /// cooperative yields; fails if the `yield_point` calls in the crypto loops
+    /// are removed.
+    #[test]
+    #[expect(non_snake_case)]
+    fn generate_triple_many__should_emit_yield_actions() {
+        // Given - a real triple-generation batch across three participants
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let participants = generate_participants(3);
+        let threshold = 3;
+        let mut protocols: Vec<(
+            Participant,
+            Box<dyn Protocol<Output = TripleGenerationOutputMany>>,
+        )> = Vec::with_capacity(participants.len());
+        for &p in &participants {
+            let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
+            let protocol =
+                generate_triple_many::<2, _, _>(&participants, p, threshold, rng_p).unwrap();
+            protocols.push((p, Box::new(protocol)));
+        }
+
+        // When
+        let yields = run_protocol_counting_yields(protocols).unwrap();
+
+        // Then
+        assert!(
+            yields > 0,
+            "expected triple generation to yield cooperatively, but it never did"
+        );
     }
 
     #[test]

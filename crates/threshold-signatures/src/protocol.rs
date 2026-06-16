@@ -32,6 +32,10 @@ pub type MessageData = Vec<u8>;
 pub enum Action<T> {
     /// Don't do anything.
     Wait,
+    /// The protocol has more computation to do, but offers the caller a chance
+    /// to run other tasks first. Call [`Protocol::poke`] again to continue;
+    /// unlike [`Action::Wait`], do not wait for a message.
+    Yield,
     /// Send a message to all other participants.
     ///
     /// Participants *never* sends messages to themselves.
@@ -49,6 +53,7 @@ impl<T> fmt::Debug for Action<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Wait => write!(f, "Action::Wait"),
+            Self::Yield => write!(f, "Action::Yield"),
             Self::SendMany(data) => f
                 .debug_tuple("Action::SendMany")
                 .field(&format_args!("[{} bytes]", data.len()))
@@ -78,6 +83,10 @@ pub trait Protocol {
     ///
     /// Upon returning a wait action, that protocol will not advance any further
     /// until a new message arrives.
+    ///
+    /// Upon returning a yield action, the caller should yield to its executor
+    /// (e.g. `tokio::task::yield_now`) and then poke again; the protocol can
+    /// make progress without receiving a message first.
     fn poke(&mut self) -> Result<Action<Self::Output>, ProtocolError>;
 
     /// Inform the protocol of a new message.

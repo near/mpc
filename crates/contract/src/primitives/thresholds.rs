@@ -205,9 +205,8 @@ impl ThresholdParameters {
         &self.participants
     }
 
-    /// Test-only: builds parameters without [`Self::validate_threshold`], so tests can use
-    /// sub-production thresholds. Production proposal DTOs are validated during conversion
-    /// (see `TryIntoContractType` in `dto_mapping`) and use [`Self::new`] instead.
+    /// Test-only: builds parameters without threshold validation.
+    #[cfg(feature = "test-utils")]
     pub fn new_unvalidated(participants: Participants, threshold: Threshold) -> Self {
         ThresholdParameters {
             participants,
