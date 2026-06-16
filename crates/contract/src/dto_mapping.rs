@@ -920,11 +920,11 @@ pub fn args_into_verify_foreign_tx_request(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::primitives::thresholds::Threshold;
-    use assert_matches::assert_matches;
     use crate::errors::InvalidThreshold;
     use crate::primitives::test_utils::gen_participants;
-    
+    use crate::primitives::thresholds::Threshold;
+    use assert_matches::assert_matches;
+
     const TEST_THRESHOLD: u64 = 2;
 
     fn test_participants() -> Participants {
