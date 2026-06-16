@@ -224,9 +224,18 @@ impl Attestation {
                 accepted_measurements,
                 current_timestamp_seconds,
             ),
-            Self::Dstack(_) => Err(VerificationError::Custom(
-                "verify_mock_only called on a Dstack attestation".to_string(),
-            )),
+            Self::Dstack(_) => {
+                // Caller-side misuse, not a verification failure: a `Dstack`
+                // attestation has no mock-only path. Fail loudly in debug/test
+                // builds; in release, surface it as an error rather than panic.
+                debug_assert!(
+                    false,
+                    "verify_mock_only called on a Dstack attestation; use verify_with_report"
+                );
+                Err(VerificationError::Custom(
+                    "verify_mock_only called on a Dstack attestation".to_string(),
+                ))
+            }
         }
     }
 
