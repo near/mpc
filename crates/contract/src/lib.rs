@@ -1589,13 +1589,10 @@ impl MpcContract {
                 // remain at least every domain's ReconstructionThreshold (the kickout
                 // keeps the existing per-domain thresholds). Otherwise we refuse and
                 // wait for manual intervention.
-                let max_reconstruction_threshold = running_state
-                    .domains
-                    .domains()
-                    .iter()
-                    .map(|domain| domain.reconstruction_threshold.inner())
-                    .max()
-                    .unwrap_or(0);
+                let max_reconstruction_threshold =
+                    crate::primitives::domain::max_reconstruction_threshold(
+                        running_state.domains.domains(),
+                    );
                 if let Err(err) = ThresholdParameters::validate_governance_against_reconstruction(
                     remaining as u64,
                     current_params.threshold(),
@@ -1830,17 +1827,14 @@ impl MpcContract {
         parameters.validate()?;
         let domains = DomainRegistry::from_raw_validated(domains, next_domain_id)?;
         let num_participants = parameters.participants().len() as u64;
-        let mut max_reconstruction_threshold = 0u64;
         for domain in domains.domains() {
             crate::primitives::domain::validate_domain_threshold(domain, num_participants)?;
-            max_reconstruction_threshold =
-                max_reconstruction_threshold.max(domain.reconstruction_threshold.inner());
         }
         // Keep the GovernanceThreshold at least as large as the largest ReconstructionThreshold.
         ThresholdParameters::validate_governance_against_reconstruction(
             num_participants,
             parameters.threshold(),
-            max_reconstruction_threshold,
+            crate::primitives::domain::max_reconstruction_threshold(domains.domains()),
         )?;
 
         // Check that the domains match exactly those in the keyset.
