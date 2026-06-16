@@ -115,13 +115,6 @@ pub struct NearInitConfig {
     /// outbound IP and DSS times out. Patches into nearcore's
     /// `network.experimental.tier3_public_addr` config field.
     pub tier3_public_addr: Option<SocketAddr>,
-    /// Override how many P2P (DSS) state-sync attempts to make before falling
-    /// back to the external storage bucket. `0` (current default) means
-    /// "go straight to bucket, never use DSS." A moderate value enables
-    /// DSS-first with bucket as a safety net; a very large value effectively
-    /// disables the bucket fallback. Patches into nearcore's
-    /// `state_sync.sync.ExternalStorage.external_storage_fallback_threshold`.
-    pub external_storage_fallback_threshold: Option<u64>,
 }
 
 /// Encryption keys needed at startup.

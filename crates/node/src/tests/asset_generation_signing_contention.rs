@@ -19,18 +19,25 @@
 //!   - post-resharing — the mainnet desired triple buffer (2^14), which starts
 //!     empty and so triple generation runs flat out.
 //!
-//! Two knobs are not literal mainnet values, both because this in-process cluster
-//! has near-instant networking (see `CORES_PER_NODE` and the `*_TRIPLE_CONCURRENCY`
-//! constants): mainnet reaches CPU saturation because real cross-node latency
-//! keeps many generations in flight at once, whereas here protocols finish too
-//! fast to pile up that way. To recreate the same saturation cheaply we (a) give
-//! MPC a single core, and (b) drive triple generation harder in the post-resharing
-//! scenario (higher concurrency, no stagger) while leaving the steady scenario
-//! with a gentle top-off concurrency. The buffer *size* that defines
-//! "post-resharing" is the real mainnet 2^14.
+//! The generation knobs are the literal mainnet values (triple concurrency 2,
+//! presignature concurrency 16, the 2^14 triple buffer). What recreates the
+//! saturation cheaply is capping each node's MPC runtime at a few threads
+//! (`CORES_PER_NODE`): with presignature concurrency exceeding that cap, the
+//! post-resharing refill drives presignature generation hard enough to contend
+//! with signing. The steady scenario uses a tiny triple buffer so generation
+//! idles instead.
 //!
-//! It is timing-sensitive, so it is `#[ignore]`d and excluded from CI. Run it
-//! manually and read the printed report. `RUST_LOG=off` silences all `tracing`
+//! The fix runs asset generation on a separate, lower-OS-priority tokio runtime
+//! (`ConfigFile::separate_asset_generation_runtime`, on by default) so the OS
+//! preempts it whenever signing is ready. This module has two tests that run the
+//! same load at the same `CORES_PER_NODE`, differing only in whether the fix is
+//! enabled: `signing_latency__should_degrade_under_concurrent_asset_generation`
+//! runs with it DISABLED and asserts the degradation above;
+//! `signing_latency__should_remain_stable_with_separate_asset_runtime` runs with
+//! it ENABLED and asserts signing stays healthy.
+//!
+//! Both are timing-sensitive, so they are `#[ignore]`d and excluded from CI. Run
+//! them manually and read the printed report. `RUST_LOG=off` silences all `tracing`
 //! output so the `[#1175]` summary lines aren't buried; the report goes through
 //! `println!`, not tracing, so this only mutes the noise. Drop `RUST_LOG=off` if
 //! you need the logs to diagnose a failure.
@@ -69,38 +76,37 @@ const TXN_DELAY_BLOCKS: u64 = 1;
 // buffer: the post-resharing run targets the mainnet size (2^14) and so generates
 // continuously, while the steady run targets a tiny buffer that fills in a couple
 // of batches and then leaves triple generation idle. Everything else is identical.
-const CORES_PER_NODE: usize = 1;
+const CORES_PER_NODE: usize = 4;
 /// Mainnet triple buffer (2^14): empty after a resharing, so a node refills toward
 /// it continuously — the post-resharing state.
 const REFILL_TRIPLES_TO_BUFFER: usize = 16_384;
 /// Small enough to fill in a couple of batches and then idle — steady state, where
 /// the buffer is already full.
 const STEADY_TRIPLES_TO_BUFFER: usize = 128;
-/// Triple generation is the heavy CPU op, so it is what we drive to recreate the
-/// refill load. On mainnet (concurrency 2, 1s stagger) saturation builds because
-/// real cross-node latency keeps many generations in flight at once; this
-/// in-process cluster has near-instant networking, so to reach the same CPU
-/// pressure within seconds we drop the stagger and raise concurrency in the
-/// post-resharing scenario.
-const REFILL_TRIPLE_CONCURRENCY: usize = 6;
-/// Steady state only needs to top off as signing consumes presignatures — using
-/// the post-resharing concurrency here would let the initial buffer fill spawn 6
-/// concurrent CPU-heavy batches on the single MPC core, overshooting the small
-/// target and producing a multi-second latency tail on early measured signatures.
-/// One batch at a time is enough to refill the small steady buffer.
+/// Mainnet triple concurrency. The op that saturates the runtime here is
+/// leader-side presignature generation (see `PRESIGNATURE_CONCURRENCY`); in the
+/// post-resharing scenario the large triple buffer keeps triples flowing, so
+/// presignature generation runs flat out.
+const REFILL_TRIPLE_CONCURRENCY: usize = 2;
+/// Steady state only tops off as signing consumes presignatures; one triple batch
+/// at a time keeps the small buffer full without itself loading the runtime.
 const STEADY_TRIPLE_CONCURRENCY: usize = 1;
 const TRIPLE_STAGGER_SEC: u64 = 0;
-/// Presignatures are buffered modestly and identically in both scenarios, so they
-/// stay available for signing without themselves being the variable under test.
-const PRESIGNATURE_CONCURRENCY: usize = 2;
+/// Mainnet presignature concurrency, which exceeds `CORES_PER_NODE`: leader-side
+/// presignature generation alone oversubscribes the MPC runtime once triples are
+/// available, so it is the op that contends with signing.
+const PRESIGNATURE_CONCURRENCY: usize = 16;
 const PRESIGNATURES_TO_BUFFER: usize = 64;
 
-const WARMUP_SIGNATURES: usize = 2;
+/// Enough to drain the startup presignature-generation burst (concurrency 16
+/// fills the buffer at startup) before measuring, so the steady scenario doesn't
+/// produce spurious timeouts under the tight per-signature budget.
+const WARMUP_SIGNATURES: usize = 8;
 const MEASURED_SIGNATURES: usize = 8;
-/// Generous relative to the observed steady-state tail so a loaded host doesn't
-/// produce spurious timeouts in the steady-state scenario; the post-resharing
-/// scenario blows past it regardless.
-const PER_SIGNATURE_TIMEOUT: Duration = Duration::from_secs(15);
+/// A realistic per-request budget: well above the steady-state latency (~0.6s
+/// once warm) so steady never spuriously times out, but tight enough that the
+/// post-resharing contention without the fix trips it.
+const PER_SIGNATURE_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Summary statistics over a batch of signing attempts. Latency stats are computed
 /// with the `average` crate (as in the threshold-signatures benches); timeouts are
@@ -172,7 +178,11 @@ impl LatencyReport {
 /// latency. When `buffers_empty` is true the nodes use the mainnet desired buffers
 /// (so generation runs flat out — the post-resharing state); otherwise they use
 /// small buffers that fill and idle (steady state).
-async fn measure_signing_latency(buffers_empty: bool, case: u16) -> LatencyReport {
+async fn measure_signing_latency(
+    buffers_empty: bool,
+    case: u16,
+    separate_asset_runtime: bool,
+) -> LatencyReport {
     let label = if buffers_empty {
         "post-resharing"
     } else {
@@ -203,6 +213,7 @@ async fn measure_signing_latency(buffers_empty: bool, case: u16) -> LatencyRepor
     // scenario is meant to model — aggressive refill vs. gentle top-off.
     for node in &mut setup.configs {
         node.config.cores = Some(CORES_PER_NODE);
+        node.config.separate_asset_generation_runtime = separate_asset_runtime;
         node.config.triple = TripleConfig {
             concurrency: if buffers_empty {
                 REFILL_TRIPLE_CONCURRENCY
@@ -276,29 +287,68 @@ async fn measure_signing_latency(buffers_empty: bool, case: u16) -> LatencyRepor
 #[ignore = "timing-sensitive reproduction for #1175; run manually with --run-ignored"]
 #[expect(non_snake_case)]
 async fn signing_latency__should_degrade_under_concurrent_asset_generation() {
-    // Given a 4-node cluster signing in steady state (asset buffers already full),
-    let steady = measure_signing_latency(false, 0).await;
+    // Given a 4-node cluster with the separate gen runtime DISABLED (the
+    // pre-fix behavior — generation shares the signing runtime), signing in
+    // steady state (asset buffers already full),
+    let steady = measure_signing_latency(false, 0, false).await;
 
     // When the same cluster signs just after a resharing (buffers empty, so every
     // node refills toward the mainnet target while signing),
-    let post_resharing = measure_signing_latency(true, 1).await;
+    let post_resharing = measure_signing_latency(true, 1, false).await;
 
     steady.print();
     post_resharing.print();
 
-    // Then signing latency degrades sharply during the refill: either signing
-    // requests start timing out, or the median latency inflates well beyond the
-    // steady-state baseline. (The steady-state baseline itself must stay healthy.)
+    // Then signing latency degrades during the refill: either signing requests
+    // start timing out, or the tail latency inflates well beyond the steady-state
+    // baseline. (The steady-state baseline itself must stay healthy.) The tail,
+    // not the median, is the reliable signal here: at mainnet-faithful concurrency
+    // the in-process cluster is triple-production-limited, so contention shows up
+    // as a fat tail rather than a shifted median.
     assert_eq!(
         steady.timeouts, 0,
         "steady-state baseline should not time out; harness is unhealthy"
     );
     assert!(
-        post_resharing.timeouts > 0 || post_resharing.p50 >= steady.p50 * 2,
-        "expected post-resharing refill to degrade signing: \
-         steady p50 {:?}, post-resharing p50 {:?}, post-resharing timeouts {}",
-        steady.p50,
-        post_resharing.p50,
+        post_resharing.timeouts > 0 || post_resharing.max >= steady.max * 2,
+        "expected post-resharing refill to degrade signing's tail: \
+         steady max {:?}, post-resharing max {:?}, post-resharing timeouts {}",
+        steady.max,
+        post_resharing.max,
+        post_resharing.timeouts,
+    );
+}
+
+#[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 4))]
+#[ignore = "timing-sensitive verification for #3500; run manually with --run-ignored"]
+#[expect(non_snake_case)]
+async fn signing_latency__should_remain_stable_with_separate_asset_runtime() {
+    // Given a 4-node cluster with the separate, lower-priority gen runtime
+    // ENABLED (the fix), signing in steady state,
+    let steady = measure_signing_latency(false, 2, true).await;
+
+    // When the same cluster signs just after a resharing (buffers empty, so every
+    // node refills toward the mainnet target while signing),
+    let post_resharing = measure_signing_latency(true, 3, true).await;
+
+    steady.print();
+    post_resharing.print();
+
+    // Then signing does NOT degrade: this is the exact negation of the condition
+    // `signing_latency__should_degrade_under_concurrent_asset_generation` asserts
+    // at the same load and `CORES_PER_NODE` — no timeouts AND the tail stays under
+    // the same 2x bar — because asset generation is preempted by the OS whenever
+    // signing is ready. (The steady-state baseline itself must stay healthy.)
+    assert_eq!(
+        steady.timeouts, 0,
+        "steady-state baseline should not time out; harness is unhealthy"
+    );
+    assert!(
+        post_resharing.timeouts == 0 && post_resharing.max < steady.max * 2,
+        "expected the separate gen runtime to prevent degradation: \
+         steady max {:?}, post-resharing max {:?}, post-resharing timeouts {}",
+        steady.max,
+        post_resharing.max,
         post_resharing.timeouts,
     );
 }

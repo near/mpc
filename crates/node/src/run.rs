@@ -14,7 +14,15 @@ use crate::{
     profiler,
     tracing::init_logging,
     tracking::{self, start_root_task},
-    web::{DebugRequest, start_web_server, static_web_data},
+    types::SubmittedTransaction,
+    web::{
+        DebugRequest,
+        recent_transactions::{
+            RECENT_TRANSACTIONS_CHANNEL_SIZE, RecentTransactionsLogger, SharedRecentTransactions,
+            spawn_recent_transactions_drain,
+        },
+        start_web_server, static_web_data,
+    },
 };
 use anyhow::{Context, anyhow};
 use itertools::Itertools;
@@ -168,6 +176,15 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
         watch::channel(ProtocolContractState::NotInitialized);
 
     let (migration_state_sender, migration_state_receiver) = watch::channel((0, BTreeMap::new()));
+
+    // Buffer behind the recent-transactions debug page. The indexer forwards
+    // records over `recent_tx_sender`; the drain task records them into the
+    // buffer, which the web server reads for snapshots.
+    let (recent_tx_sender, recent_tx_receiver) =
+        mpsc::channel::<SubmittedTransaction>(RECENT_TRANSACTIONS_CHANNEL_SIZE);
+    let recent_transactions = SharedRecentTransactions::default();
+    spawn_recent_transactions_drain(recent_tx_receiver, recent_transactions.clone());
+
     let web_server = root_runtime
         .block_on(start_web_server(
             root_task_handle.clone(),
@@ -177,6 +194,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
             protocol_state_receiver,
             migration_state_receiver,
             config.node.clone(),
+            recent_transactions.clone(),
         ))
         .context("Failed to create web server.")?;
 
@@ -184,6 +202,12 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
 
     // Create Indexer and wait for indexer to be synced.
     let (indexer_exit_sender, indexer_exit_receiver) = oneshot::channel();
+    // Dedicated cancellation token for the indexer thread. Cancelled after
+    // `shutdown_all_actors()` below so the indexer's terminal `listen_blocks`
+    // race exits, its tokio runtime drops, and the Arc<RocksDB> references
+    // held by its spawned monitor tasks are released — enabling
+    // `RocksDB::block_until_all_instances_are_dropped()` to return.
+    let indexer_shutdown_token = CancellationToken::new();
     let indexer_api = spawn_real_indexer(
         config.home_dir.clone(),
         node_config.indexer.clone(),
@@ -195,6 +219,8 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
         migration_state_sender,
         *tls_public_key,
         node_config.foreign_chains.clone(),
+        RecentTransactionsLogger::new(recent_tx_sender),
+        indexer_shutdown_token.clone(),
     );
 
     let cancellation_token = CancellationToken::new();
@@ -266,13 +292,24 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     info!(?exit_result, "Image hash watcher exited.");
 
     // Stop nearcore's actor system so its tasks have a chance to commit any
-    // in-flight RocksDB batches before the process exits. We deliberately
-    // skip `RocksDB::block_until_all_instances_are_dropped()` here (which
-    // neard's standalone binary calls next): in this embedding it would
-    // hang past any reasonable grace period, and the orchestrator would
-    // SIGKILL us before the graceful path completes.
+    // in-flight RocksDB batches before the process exits.
     info!("Stopping nearcore actor system.");
     near_async::shutdown_all_actors();
+
+    // Cancel the indexer's terminal `listen_blocks` race; that lets the
+    // indexer thread's `block_on` return, its tokio runtime drop, and every
+    // spawned monitor task (each holding `Arc<IndexerState>` →
+    // `Arc<RocksDB>`) be aborted with the runtime.
+    info!("Cancelling indexer shutdown token.");
+    indexer_shutdown_token.cancel();
+
+    // Now block until every RocksDB instance has actually been dropped —
+    // mirroring what neard's standalone binary does on its SIGTERM path.
+    // Without the cancellation above this call would hang forever because
+    // the indexer thread's monitor tasks keep their Arc<RocksDB> alive.
+    info!("Waiting for RocksDB instances to gracefully shut down.");
+    near_store::db::RocksDB::block_until_all_instances_are_dropped();
+    info!("RocksDB shutdown complete.");
 
     exit_reason
 }

@@ -493,9 +493,9 @@ mod test {
     };
     use crate::test_utils::{
         MockCryptoRng, assert_buffer_capacity, assert_public_key_invariant,
-        build_frost_key_packages_with_dealer, expected_buffer_by_role, generate_participants,
-        generate_participants_with_random_ids, one_coordinator_output, run_keygen, run_refresh,
-        run_reshare,
+        build_frost_key_packages_with_dealer, check_one_coordinator_output,
+        expected_buffer_by_role, generate_participants, generate_participants_with_random_ids,
+        run_keygen, run_refresh, run_reshare,
     };
     use crate::{
         Protocol,
@@ -536,7 +536,7 @@ mod test {
                     &mut rng,
                 )
                 .unwrap();
-                one_coordinator_output(data, coordinator).unwrap();
+                check_one_coordinator_output(data, coordinator).unwrap();
             }
         }
     }
@@ -564,7 +564,7 @@ mod test {
                     MockCryptoRng::seed_from_u64(rng.next_u64()),
                 )
                 .unwrap();
-                one_coordinator_output(data, coordinator).unwrap();
+                check_one_coordinator_output(data, coordinator).unwrap();
             }
         }
     }
@@ -607,7 +607,7 @@ mod test {
             },
         )
         .unwrap();
-        let signature = one_coordinator_output(result, coordinator).unwrap();
+        let signature = check_one_coordinator_output(result, coordinator).unwrap();
         insta::assert_json_snapshot!(signature);
     }
 
@@ -652,7 +652,7 @@ mod test {
             },
         )
         .unwrap();
-        let signature = one_coordinator_output(result, coordinator).unwrap();
+        let signature = check_one_coordinator_output(result, coordinator).unwrap();
         insta::assert_json_snapshot!(signature);
     }
 
@@ -678,7 +678,7 @@ mod test {
                 &mut rng,
             )
             .unwrap();
-            let signature = one_coordinator_output(data, coordinator).unwrap();
+            let signature = check_one_coordinator_output(data, coordinator).unwrap();
 
             // externally verify with the signature
             assert!(
@@ -715,7 +715,7 @@ mod test {
                 MockCryptoRng::seed_from_u64(rng.next_u64()),
             )
             .unwrap();
-            let signature = one_coordinator_output(data, coordinator).unwrap();
+            let signature = check_one_coordinator_output(data, coordinator).unwrap();
 
             // externally verify with the signature
             assert!(
@@ -768,7 +768,7 @@ mod test {
                 &mut rng,
             )
             .unwrap();
-            let signature = one_coordinator_output(data, coordinator).unwrap();
+            let signature = check_one_coordinator_output(data, coordinator).unwrap();
 
             // externally verify with the signature
             assert!(
@@ -831,7 +831,7 @@ mod test {
                 MockCryptoRng::seed_from_u64(rng.next_u64()),
             )
             .unwrap();
-            let signature = one_coordinator_output(data, coordinator).unwrap();
+            let signature = check_one_coordinator_output(data, coordinator).unwrap();
 
             // externally verify with the signature
             assert!(
@@ -895,7 +895,7 @@ mod test {
                 &mut rng,
             )
             .unwrap();
-            let signature = one_coordinator_output(data, coordinator).unwrap();
+            let signature = check_one_coordinator_output(data, coordinator).unwrap();
 
             // externally verify with the signature
             assert!(
@@ -1049,7 +1049,7 @@ mod test {
                 MockCryptoRng::seed_from_u64(rng.next_u64()),
             )
             .unwrap();
-            let signature = one_coordinator_output(data, coordinator).unwrap();
+            let signature = check_one_coordinator_output(data, coordinator).unwrap();
 
             // externally verify with the signature
             assert!(

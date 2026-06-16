@@ -1,7 +1,9 @@
 use super::key_state::AuthenticatedParticipantId;
 use crate::errors::{DomainError, Error};
 use crate::primitives::participants::Participants;
-use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, DomainPurpose, Protocol};
+use near_mpc_contract_interface::types::{
+    Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
+};
 use near_sdk::{log, near};
 use std::collections::BTreeMap;
 
@@ -177,6 +179,42 @@ impl DomainRegistry {
     pub fn next_domain_id(&self) -> u64 {
         self.next_domain_id
     }
+
+    /// Returns a new registry whose domains have their
+    /// `reconstruction_threshold` rewritten from `threshold_updates`, a sparse
+    /// map of the per-domain reconstruction thresholds a proposal wants to
+    /// change. Domain IDs in `threshold_updates` that are not present in the
+    /// registry are rejected with [`DomainError::UnknownDomainInProposal`].
+    /// Domains absent from `threshold_updates` retain their existing threshold.
+    /// An empty map returns a structurally identical clone (no change).
+    pub fn with_threshold_updates(
+        &self,
+        threshold_updates: &BTreeMap<DomainId, ReconstructionThreshold>,
+    ) -> Result<DomainRegistry, Error> {
+        for id in threshold_updates.keys() {
+            if !self.domains.iter().any(|d| d.id == *id) {
+                return Err(DomainError::UnknownDomainInProposal { domain_id: *id }.into());
+            }
+        }
+        let domains: Vec<DomainConfig> = self
+            .domains
+            .iter()
+            .map(|d| {
+                let reconstruction_threshold = threshold_updates
+                    .get(&d.id)
+                    .copied()
+                    .unwrap_or(d.reconstruction_threshold);
+                DomainConfig {
+                    reconstruction_threshold,
+                    ..d.clone()
+                }
+            })
+            .collect();
+        Ok(DomainRegistry {
+            domains,
+            next_domain_id: self.next_domain_id,
+        })
+    }
 }
 
 /// Tracks votes to add domains. Each participant can at any given time vote for a list of domains
@@ -229,6 +267,7 @@ impl AddDomainsVotes {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 pub mod tests {
     use super::{
         AddDomainsVotes, Curve, DomainConfig, DomainId, DomainPurpose, DomainRegistry,
@@ -242,6 +281,7 @@ pub mod tests {
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
     use rstest::rstest;
+    use std::collections::BTreeMap;
 
     #[test]
     fn test_add_domains() {
@@ -566,5 +606,175 @@ pub mod tests {
         assert_eq!(remaining.proposal_by_account.len(), 2);
         assert_eq!(remaining.proposal_by_account[&auth_ids[0]], proposal_a);
         assert_eq!(remaining.proposal_by_account[&auth_ids[1]], proposal_b);
+    }
+
+    fn registry_of(domains: Vec<DomainConfig>) -> DomainRegistry {
+        let next_domain_id = domains.iter().map(|d| d.id.0).max().map_or(0, |m| m + 1);
+        DomainRegistry::from_raw_validated(domains, next_domain_id).unwrap()
+    }
+
+    #[test]
+    fn with_threshold_updates__should_be_identity_when_updates_is_empty() {
+        // Given a non-empty registry and no threshold updates
+        let registry = registry_of(vec![
+            DomainConfig {
+                id: DomainId(0),
+                protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(3),
+                purpose: DomainPurpose::Sign,
+            },
+            DomainConfig {
+                id: DomainId(1),
+                protocol: Protocol::Frost,
+                reconstruction_threshold: ReconstructionThreshold::new(2),
+                purpose: DomainPurpose::Sign,
+            },
+        ]);
+        let threshold_updates = BTreeMap::new();
+
+        // When applying the threshold updates
+        let result = registry.with_threshold_updates(&threshold_updates).unwrap();
+
+        // Then the registry is structurally identical
+        assert_eq!(result, registry);
+    }
+
+    #[test]
+    fn with_threshold_updates__should_apply_per_domain_updates() {
+        // Given a registry with two domains and threshold updates targeting one
+        let registry = registry_of(vec![
+            DomainConfig {
+                id: DomainId(0),
+                protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(3),
+                purpose: DomainPurpose::Sign,
+            },
+            DomainConfig {
+                id: DomainId(1),
+                protocol: Protocol::Frost,
+                reconstruction_threshold: ReconstructionThreshold::new(2),
+                purpose: DomainPurpose::Sign,
+            },
+        ]);
+        let mut threshold_updates = BTreeMap::new();
+        threshold_updates.insert(DomainId(0), ReconstructionThreshold::new(5));
+
+        // When applying the threshold updates
+        let result = registry.with_threshold_updates(&threshold_updates).unwrap();
+
+        // Then only the targeted domain's threshold changes
+        assert_eq!(
+            result.domains()[0].reconstruction_threshold,
+            ReconstructionThreshold::new(5)
+        );
+        assert_eq!(
+            result.domains()[1].reconstruction_threshold,
+            ReconstructionThreshold::new(2)
+        );
+    }
+
+    #[test]
+    fn with_threshold_updates__should_reject_unknown_domain_id() {
+        // Given a registry with one domain and a threshold update referencing a different ID
+        let registry = registry_of(vec![DomainConfig {
+            id: DomainId(0),
+            protocol: Protocol::CaitSith,
+            reconstruction_threshold: ReconstructionThreshold::new(3),
+            purpose: DomainPurpose::Sign,
+        }]);
+        let mut threshold_updates = BTreeMap::new();
+        threshold_updates.insert(DomainId(42), ReconstructionThreshold::new(5));
+
+        // When applying the threshold updates
+        let err = registry
+            .with_threshold_updates(&threshold_updates)
+            .unwrap_err();
+
+        // Then unknown-domain guard rejects
+        assert!(
+            err.to_string().contains("not in the current registry"),
+            "Expected UnknownDomainInProposal, got: {err}"
+        );
+    }
+
+    #[test]
+    fn with_threshold_updates__should_accept_updates_that_diverge_caitsith_thresholds() {
+        // Given a registry with two CaitSith domains sharing one threshold and
+        // threshold updates that rewrite only one of them to a different value.
+        let registry = registry_of(vec![
+            DomainConfig {
+                id: DomainId(0),
+                protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(3),
+                purpose: DomainPurpose::Sign,
+            },
+            DomainConfig {
+                id: DomainId(1),
+                protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(3),
+                purpose: DomainPurpose::Sign,
+            },
+        ]);
+        let mut threshold_updates = BTreeMap::new();
+        threshold_updates.insert(DomainId(0), ReconstructionThreshold::new(5));
+
+        // When applying the threshold updates
+        let result = registry.with_threshold_updates(&threshold_updates).unwrap();
+
+        // Then CaitSith domains may carry independent thresholds.
+        assert_eq!(
+            result.domains()[0].reconstruction_threshold,
+            ReconstructionThreshold::new(5)
+        );
+        assert_eq!(
+            result.domains()[1].reconstruction_threshold,
+            ReconstructionThreshold::new(3)
+        );
+    }
+
+    #[test]
+    fn with_threshold_updates__should_accept_updates_that_keep_caitsith_thresholds_uniform() {
+        // Given two CaitSith domains and a Frost domain, with threshold updates
+        // that move both CaitSith domains to the same new threshold.
+        let registry = registry_of(vec![
+            DomainConfig {
+                id: DomainId(0),
+                protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(3),
+                purpose: DomainPurpose::Sign,
+            },
+            DomainConfig {
+                id: DomainId(1),
+                protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(3),
+                purpose: DomainPurpose::Sign,
+            },
+            DomainConfig {
+                id: DomainId(2),
+                protocol: Protocol::Frost,
+                reconstruction_threshold: ReconstructionThreshold::new(2),
+                purpose: DomainPurpose::Sign,
+            },
+        ]);
+        let mut threshold_updates = BTreeMap::new();
+        threshold_updates.insert(DomainId(0), ReconstructionThreshold::new(5));
+        threshold_updates.insert(DomainId(1), ReconstructionThreshold::new(5));
+
+        // When applying the threshold updates
+        let result = registry.with_threshold_updates(&threshold_updates).unwrap();
+
+        // Then both CaitSith domains move together and Frost is untouched
+        assert_eq!(
+            result.domains()[0].reconstruction_threshold,
+            ReconstructionThreshold::new(5)
+        );
+        assert_eq!(
+            result.domains()[1].reconstruction_threshold,
+            ReconstructionThreshold::new(5)
+        );
+        assert_eq!(
+            result.domains()[2].reconstruction_threshold,
+            ReconstructionThreshold::new(2)
+        );
     }
 }

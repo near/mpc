@@ -52,6 +52,8 @@ pub fn run_protocol<T>(
                 let action = ps[i].1.poke()?;
                 match action {
                     Action::Wait => false,
+                    // Keep poking; a yield needs no executor here.
+                    Action::Yield => true,
                     Action::SendMany(m) => {
                         for j in 0..size {
                             if i == j {

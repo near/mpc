@@ -392,10 +392,11 @@ impl RunLoadtestCmd {
                 for _ in 0..10 {
                     let waiting_time = 1000 / (config.rpc.total_qps() as u64);
                     tokio::time::sleep(Duration::from_millis(waiting_time)).await;
-                    let request = RpcTransactionStatusRequest{
-                    transaction_info:
-                        TransactionInfo::Transaction(near_jsonrpc_primitives::types::transactions::SignedTransaction::SignedTransaction(tx.clone())),
-                    wait_until: TxExecutionStatus::Final,
+                    let request = RpcTransactionStatusRequest {
+                        transaction_info: TransactionInfo::Transaction {
+                            signed_tx: tx.clone(),
+                        },
+                        wait_until: TxExecutionStatus::Final,
                     };
                     match rpc_clone.submit(request).await {
                         Ok(res) => {

@@ -6,7 +6,7 @@ expression: abi
   "schema_version": "0.4.0",
   "metadata": {
     "name": "mpc-contract",
-    "version": "3.11.0",
+    "version": "3.12.0",
     "build": {
       "compiler": "[RUSTC_VERSION]",
       "builder": "[CARGO_NEAR_BUILD_VERSION]"
@@ -1164,7 +1164,7 @@ expression: abi
       },
       {
         "name": "remove_non_participant_update_votes",
-        "doc": " Cleans update votes from non-participants after resharing.\n Can be called by any participant or triggered automatically via promise.",
+        "doc": " Cleans update votes from non-participants after resharing.\n Can only be called by participants or by the contract itself.",
         "kind": "call",
         "result": {
           "serialization_type": "json",
@@ -1710,7 +1710,7 @@ expression: abi
       },
       {
         "name": "vote_new_parameters",
-        "doc": " Propose a new set of parameters (participants and threshold) for the MPC network.\n If a threshold number of votes are reached on the exact same proposal, this will transition\n the contract into the Resharing state.\n\n The epoch_id must be equal to 1 plus the current epoch ID (if Running) or prospective epoch\n ID (if Resharing). Otherwise the vote is ignored. This is to prevent late transactions from\n accidentally voting on outdated proposals.\n\n Like the other governance voting methods, this must be called directly from the\n participant's own NEAR account: `assert_caller_is_signer()` requires\n `signer_account_id == predecessor_account_id`, so calls forwarded through another\n contract are rejected.",
+        "doc": " Propose new parameters for the MPC network: participants, governance\n threshold, and optional per-domain `ReconstructionThreshold` updates\n (empty map keeps the current ones), applied on resharing completion.\n If a threshold number of votes are reached on the exact same proposal, this will transition\n the contract into the Resharing state.\n\n The epoch_id must be equal to 1 plus the current epoch ID (if Running) or prospective epoch\n ID (if Resharing). Otherwise the vote is ignored. This is to prevent late transactions from\n accidentally voting on outdated proposals.\n\n Like the other governance voting methods, this must be called directly from the\n participant's own NEAR account: `assert_caller_is_signer()` requires\n `signer_account_id == predecessor_account_id`, so calls forwarded through another\n contract are rejected.",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -1724,7 +1724,7 @@ expression: abi
             {
               "name": "proposal",
               "type_schema": {
-                "$ref": "#/definitions/ThresholdParameters"
+                "$ref": "#/definitions/ProposedThresholdParameters"
               }
             }
           ]
@@ -3949,6 +3949,27 @@ expression: abi
             }
           }
         },
+        "ProposedThresholdParameters": {
+          "description": "A proposed set of threshold parameters submitted to `vote_new_parameters`: the proposed [`ThresholdParameters`] plus per-domain `ReconstructionThreshold` updates for the resharing it would trigger. An empty `per_domain_thresholds` keeps the current ones; a populated map must reference only existing domains (contract-validated), is applied to the `DomainRegistry` on resharing, and never persists onto the stored [`ThresholdParameters`].",
+          "type": "object",
+          "required": [
+            "parameters"
+          ],
+          "properties": {
+            "parameters": {
+              "$ref": "#/definitions/ThresholdParameters"
+            },
+            "per_domain_thresholds": {
+              "default": {},
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            }
+          }
+        },
         "ProposedUpdates": {
           "type": "object",
           "required": [
@@ -4246,6 +4267,16 @@ expression: abi
                 "$ref": "#/definitions/AuthenticatedAccountId"
               },
               "uniqueItems": true
+            },
+            "per_domain_thresholds": {
+              "description": "Per-domain `ReconstructionThreshold` updates carried from the accepted proposal. Applied to the `DomainRegistry` when resharing completes.",
+              "default": {},
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
             },
             "previous_running_state": {
               "$ref": "#/definitions/RunningContractState"
@@ -4666,7 +4697,7 @@ expression: abi
           "minimum": 0.0
         },
         "ThresholdParameters": {
-          "description": "Threshold parameters for distributed key operations.",
+          "description": "Threshold parameters for distributed key operations: the current participant set and the governance threshold. This is the stored, always-current shape; per-domain reconstruction-threshold *proposals* live on [`ProposedThresholdParameters`].",
           "type": "object",
           "required": [
             "participants",
@@ -4691,7 +4722,7 @@ expression: abi
             "proposal_by_account": {
               "type": "object",
               "additionalProperties": {
-                "$ref": "#/definitions/ThresholdParameters"
+                "$ref": "#/definitions/ProposedThresholdParameters"
               }
             }
           }

@@ -25,7 +25,7 @@ use crate::{
         key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, KeyForDomain, Keyset},
         participants::{ParticipantInfo, Participants},
         threshold_votes::ThresholdParametersVotes,
-        thresholds::ThresholdParameters,
+        thresholds::{ProposedThresholdParameters, ThresholdParameters},
     },
     state::{
         ProtocolContractState,
@@ -214,7 +214,25 @@ impl IntoContractType<Participants> for dtos::Participants {
 
 impl IntoContractType<ThresholdParameters> for dtos::ThresholdParameters {
     fn into_contract_type(self) -> ThresholdParameters {
+        // This conversion is intentionally infallible: `new_unvalidated` skips the
+        // absolute/relative (>= 60%) threshold checks. Validation is not the job of the
+        // DTO mapping — every contract entry point that accepts these parameters
+        // (`init`, `init_running`, `vote_new_parameters`) calls `validate()` /
+        // `validate_incoming_proposal` downstream, so production proposals are still
+        // rejected if they violate the threshold bounds. Deferring validation here also
+        // lets tests construct parameters with sub-production thresholds.
         ThresholdParameters::new_unvalidated(self.participants.into_contract_type(), self.threshold)
+    }
+}
+
+impl IntoContractType<ProposedThresholdParameters> for dtos::ProposedThresholdParameters {
+    fn into_contract_type(self) -> ProposedThresholdParameters {
+        // Infallible for the same reason as `ThresholdParameters` above: the
+        // proposal is validated downstream in `process_new_parameters_proposal`.
+        ProposedThresholdParameters::new(
+            self.parameters.into_contract_type(),
+            self.per_domain_thresholds,
+        )
     }
 }
 
@@ -530,99 +548,13 @@ impl From<near_mpc_contract_interface::types::Config> for Config {
 // State DTO Conversions
 // =============================================================================
 
-// --- From DTO to contract types (node-only, not compiled into WASM) ---
-// TODO(#381): Remove once the node no longer depends on the contract crate.
-
-#[cfg(feature = "compat")]
-mod from_dto {
+// Test-only `From` conversions consumed outside this crate: the node (via its
+// dev-dependency) and the contract's own integration tests, neither of which
+// can reach the `pub(crate)` `into_dto_type` / `into_contract_type` traits.
+// Gated behind `test-utils` so they stay out of the production/WASM surface.
+#[cfg(feature = "test-utils")]
+mod test_conversions {
     use super::*;
-    use crate::crypto_shared::types::PublicKeyExtendedConversionError;
-    use crate::crypto_shared::types::serializable::SerializableEdwardsPoint;
-
-    impl TryFrom<dtos::PublicKeyExtended> for PublicKeyExtended {
-        type Error = PublicKeyExtendedConversionError;
-        fn try_from(pk: dtos::PublicKeyExtended) -> Result<Self, Self::Error> {
-            match pk {
-                dtos::PublicKeyExtended::Secp256k1 { near_public_key } => {
-                    let pk: near_sdk::PublicKey = near_public_key
-                        .parse()
-                        .map_err(|_| PublicKeyExtendedConversionError::PublicKeyLengthMalformed)?;
-                    Ok(Self::Secp256k1 {
-                        near_public_key: pk,
-                    })
-                }
-                dtos::PublicKeyExtended::Ed25519 {
-                    near_public_key_compressed,
-                    edwards_point,
-                } => {
-                    let pk: near_sdk::PublicKey = near_public_key_compressed
-                        .parse()
-                        .map_err(|_| PublicKeyExtendedConversionError::PublicKeyLengthMalformed)?;
-                    let edwards_point = SerializableEdwardsPoint::from_bytes(&edwards_point)
-                        .into_option()
-                        .ok_or(
-                            PublicKeyExtendedConversionError::FailedDecompressingToEdwardsPoint,
-                        )?;
-                    Ok(Self::Ed25519 {
-                        near_public_key_compressed: pk,
-                        edwards_point,
-                    })
-                }
-                dtos::PublicKeyExtended::Bls12381 { public_key } => {
-                    Ok(Self::Bls12381 { public_key })
-                }
-            }
-        }
-    }
-
-    impl TryFrom<dtos::KeyForDomain> for KeyForDomain {
-        type Error = Error;
-        fn try_from(kfd: dtos::KeyForDomain) -> Result<Self, Self::Error> {
-            Ok(KeyForDomain {
-                domain_id: kfd.domain_id,
-                key: kfd
-                    .key
-                    .try_into()
-                    .map_err(|e| ConversionError::DataConversion {
-                        reason: format!("Failed to convert PublicKeyExtended: {e:?}"),
-                    })?,
-                attempt: kfd.attempt,
-            })
-        }
-    }
-
-    impl TryFrom<dtos::Keyset> for Keyset {
-        type Error = Error;
-        fn try_from(keyset: dtos::Keyset) -> Result<Self, Self::Error> {
-            let domains: Result<Vec<KeyForDomain>, _> =
-                keyset.domains.into_iter().map(TryFrom::try_from).collect();
-            Ok(Keyset::new(keyset.epoch_id, domains?))
-        }
-    }
-
-    impl From<dtos::ParticipantInfo> for ParticipantInfo {
-        fn from(info: dtos::ParticipantInfo) -> Self {
-            info.into_contract_type()
-        }
-    }
-}
-
-// TODO(#381): Remove once the node no longer depends on the contract crate.
-#[cfg(feature = "compat")]
-mod to_dto {
-    use super::*;
-
-    impl From<KeyForDomain> for dtos::KeyForDomain {
-        fn from(kfd: KeyForDomain) -> Self {
-            (&kfd).into_dto_type()
-        }
-    }
-
-    impl From<Keyset> for dtos::Keyset {
-        fn from(keyset: Keyset) -> Self {
-            (&keyset).into_dto_type()
-        }
-    }
 
     impl From<ProtocolContractState> for dtos::ProtocolContractState {
         fn from(state: ProtocolContractState) -> Self {
@@ -636,12 +568,24 @@ mod to_dto {
         }
     }
 
+    impl From<ProposedThresholdParameters> for dtos::ProposedThresholdParameters {
+        fn from(params: ProposedThresholdParameters) -> Self {
+            (&params).into_dto_type()
+        }
+    }
+
     impl From<ParticipantInfo> for dtos::ParticipantInfo {
         fn from(info: ParticipantInfo) -> Self {
             dtos::ParticipantInfo {
                 url: info.url,
                 tls_public_key: info.tls_public_key,
             }
+        }
+    }
+
+    impl From<dtos::ParticipantInfo> for ParticipantInfo {
+        fn from(info: dtos::ParticipantInfo) -> Self {
+            info.into_contract_type()
         }
     }
 }
@@ -725,6 +669,15 @@ impl IntoInterfaceType<dtos::ThresholdParameters> for &ThresholdParameters {
         dtos::ThresholdParameters {
             participants: self.participants().into_dto_type(),
             threshold: self.threshold(),
+        }
+    }
+}
+
+impl IntoInterfaceType<dtos::ProposedThresholdParameters> for &ProposedThresholdParameters {
+    fn into_dto_type(self) -> dtos::ProposedThresholdParameters {
+        dtos::ProposedThresholdParameters {
+            parameters: self.parameters().into_dto_type(),
+            per_domain_thresholds: self.per_domain_thresholds().clone(),
         }
     }
 }
@@ -853,6 +806,7 @@ impl IntoInterfaceType<dtos::ResharingContractState> for &ResharingContractState
                 .iter()
                 .map(|a| a.into_dto_type())
                 .collect(),
+            per_domain_thresholds: self.per_domain_thresholds.clone(),
         }
     }
 }
