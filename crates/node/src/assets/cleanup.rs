@@ -4,9 +4,10 @@ use crate::db::{DBCol, EPOCH_ID_KEY, SecretDB};
 use crate::primitives;
 use crate::providers::ecdsa::presign::PresignOutputWithParticipants;
 use crate::providers::ecdsa::triple::PairedTriple;
-use mpc_primitives::{EpochId, ReconstructionThreshold, domain::DomainId};
+use mpc_primitives::{EpochId, domain::DomainId};
 use serde::{self, Deserialize, Serialize};
 use std::sync::Arc;
+use threshold_signatures::ReconstructionThreshold;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct EpochData {

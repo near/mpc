@@ -14,13 +14,14 @@ use ed25519_dalek::{SigningKey, VerifyingKey};
 use k256::ProjectivePoint;
 use mpc_contract::primitives::test_utils::gen_participants;
 use mpc_contract::primitives::thresholds::{Threshold, ThresholdParameters};
-use mpc_primitives::{EpochId, ReconstructionThreshold, domain::DomainId};
+use mpc_primitives::{EpochId, domain::DomainId};
 use near_time::FakeClock;
 use rand::RngCore;
 use rand::rngs::OsRng;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::sync::{Arc, Mutex};
+use threshold_signatures::ReconstructionThreshold;
 use threshold_signatures::ecdsa::Polynomial;
 use threshold_signatures::ecdsa::ot_based_ecdsa::PresignOutput;
 use threshold_signatures::ecdsa::ot_based_ecdsa::triples::{

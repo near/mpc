@@ -37,7 +37,7 @@ pub fn sign<T>(
 where
     T: Into<ReconstructionThreshold>,
 {
-    let threshold = usize::from(threshold.into());
+    let threshold = threshold.into().as_usize();
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
             participants: participants.len(),

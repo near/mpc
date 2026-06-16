@@ -280,7 +280,7 @@ fn construct_key_package(
         signing_share,
         verifying_share,
         verifying_key,
-        u16::try_from(threshold.value()).map_err(|_| {
+        u16::try_from(threshold.inner()).map_err(|_| {
             ProtocolError::Other("threshold cannot be converted to u16".to_string())
         })?,
     );

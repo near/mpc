@@ -27,7 +27,7 @@ fn threshold() -> ReconstructionThreshold {
 
 /// Benches the ckd protocol
 fn bench_ckd(c: &mut Criterion) {
-    let num = threshold().value();
+    let num = threshold().as_usize();
     let max_malicious = *MAX_MALICIOUS;
 
     let setup = setup_ckd_snapshot(threshold());

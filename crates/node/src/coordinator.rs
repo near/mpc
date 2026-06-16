@@ -32,13 +32,13 @@ use crate::web::DebugRequest;
 use futures::FutureExt;
 use futures::future::BoxFuture;
 use mpc_node_config::ConfigFile;
+use mpc_primitives::EpochId;
 use mpc_primitives::domain::{Curve, DomainId, Protocol};
-use mpc_primitives::{EpochId, ReconstructionThreshold};
 use near_time::Clock;
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
-use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
+use threshold_signatures::ReconstructionThreshold;
 use threshold_signatures::{confidential_key_derivation, ecdsa, frost::eddsa};
 use tokio::select;
 use tokio::sync::mpsc::unbounded_channel;
@@ -332,7 +332,7 @@ where
         let (network_client, channel_receiver, _handle) =
             run_network_client(Arc::new(sender), Box::new(receiver));
         let threshold: usize = mpc_config.participants.threshold.try_into()?;
-        let threshold = TSReconstructionThreshold::from(threshold);
+        let threshold = ReconstructionThreshold::from(threshold);
         if mpc_config.is_leader_for_key_event() {
             keygen_leader(
                 network_client,
@@ -780,7 +780,7 @@ where
         let args = Arc::new(ResharingArgs {
             previous_keyset,
             existing_keyshares,
-            new_threshold: TSReconstructionThreshold::from(new_threshold),
+            new_threshold: ReconstructionThreshold::from(new_threshold),
             old_participants: current_running_state.participants,
         });
 

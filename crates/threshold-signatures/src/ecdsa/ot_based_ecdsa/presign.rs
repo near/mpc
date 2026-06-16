@@ -31,9 +31,9 @@ pub fn presign(
         });
     }
     // Spec 1.1
-    if args.threshold.value() > participants.len() {
+    if args.threshold.as_usize() > participants.len() {
         return Err(InitializationError::ThresholdTooLarge {
-            threshold: args.threshold.value(),
+            threshold: args.threshold.as_usize(),
             max: participants.len(),
         });
     }

@@ -72,9 +72,9 @@ where
     }
 
     // validate threshold
-    if args.threshold.value() > participants.len() {
+    if args.threshold.as_usize() > participants.len() {
         return Err(InitializationError::ThresholdTooLarge {
-            threshold: args.threshold.into(),
+            threshold: args.threshold.as_usize(),
             max: participants.len(),
         });
     }

@@ -180,7 +180,7 @@ fn verify_proof_of_knowledge<C: Ciphersuite>(
     commitment: &VerifiableSecretSharingCommitment<C>,
     proof_of_knowledge: Option<&Signature<C>>,
 ) -> Result<(), ProtocolError> {
-    let threshold = threshold.value();
+    let threshold = threshold.as_usize();
     match proof_of_knowledge {
         // if participant did not send anything but he is actually an old participant
         None => {
@@ -248,7 +248,7 @@ fn insert_identity_if_missing<C: Ciphersuite>(
     // threshold -1 (because the zero term is not serializable)
     let mut commitment_i = commitment_i.clone();
     let mut coefficients_i = commitment_i.coefficients().to_vec();
-    if coefficients_i.len() == threshold.value() - 1 {
+    if coefficients_i.len() == threshold.as_usize() - 1 {
         let identity = CoefficientCommitment::new(<C::Group as Group>::identity());
         coefficients_i.insert(0, identity);
         commitment_i = VerifiableSecretSharingCommitment::new(coefficients_i);
@@ -373,7 +373,7 @@ async fn do_keyshare<C: Ciphersuite>(
     // Step 2.3
     // the degree of the polynomial is threshold - 1
     let degree = threshold
-        .value()
+        .as_usize()
         .checked_sub(1)
         .ok_or(ProtocolError::IntegerOverflow)?;
     let secret_coefficients = Polynomial::<C>::generate_polynomial(Some(secret), degree, rng)?;
@@ -562,7 +562,7 @@ pub fn assert_key_invariants(
     me: Participant,
     threshold: impl Into<ReconstructionThreshold>,
 ) -> Result<ParticipantList, InitializationError> {
-    let threshold = usize::from(threshold.into());
+    let threshold = threshold.into().as_usize();
     // need enough participants
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
@@ -645,8 +645,8 @@ pub fn assert_reshare_keys_invariants<C: Ciphersuite>(
     old_threshold: impl Into<ReconstructionThreshold>,
     old_participants: &[Participant],
 ) -> Result<(ParticipantList, ParticipantList), InitializationError> {
-    let threshold = usize::from(threshold.into());
-    let old_threshold = usize::from(old_threshold.into());
+    let threshold = threshold.into();
+    let old_threshold = old_threshold.into().as_usize();
 
     let participants = assert_key_invariants(participants, me, threshold)?;
 

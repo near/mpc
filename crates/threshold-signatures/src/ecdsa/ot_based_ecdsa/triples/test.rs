@@ -31,7 +31,7 @@ pub fn deal(
     let b = Secp256K1ScalarField::random(&mut *rng);
     let c = a * b;
 
-    let degree = threshold.value().checked_sub(1).unwrap();
+    let degree = threshold.as_usize().checked_sub(1).unwrap();
     let f_a = Polynomial::generate_polynomial(Some(a), degree, rng)?;
     let f_b = Polynomial::generate_polynomial(Some(b), degree, rng)?;
     let f_c = Polynomial::generate_polynomial(Some(c), degree, rng)?;

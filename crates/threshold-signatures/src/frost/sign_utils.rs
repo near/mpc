@@ -30,9 +30,9 @@ pub fn assert_sign_inputs(
     }
 
     // validate threshold
-    if threshold.value() > participants.len() {
+    if threshold.as_usize() > participants.len() {
         return Err(InitializationError::ThresholdTooLarge {
-            threshold: threshold.value(),
+            threshold: threshold.as_usize(),
             max: participants.len(),
         });
     }
