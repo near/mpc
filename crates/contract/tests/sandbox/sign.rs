@@ -443,11 +443,11 @@ async fn test_ckd_gas_regression() -> anyhow::Result<()> {
     println!("  CKD respond (PV):     {} TGas", pv_respond_gas.as_tgas());
 
     // Gas thresholds (in TGas) with ~25% buffer over measured values.
-    // PV adds BLS12-381 pairing checks on both request and respond.
+    // PV adds BLS12-381 checks on both request and respond.
     const MAX_LEGACY_REQUEST_TGAS: u64 = 10;
     const MAX_LEGACY_RESPOND_TGAS: u64 = 7;
-    const MAX_PV_REQUEST_TGAS: u64 = 72;
-    const MAX_PV_RESPOND_TGAS: u64 = 75;
+    const MAX_PV_REQUEST_TGAS: u64 = 19;
+    const MAX_PV_RESPOND_TGAS: u64 = 30;
 
     assert!(
         legacy_request_gas.as_tgas() <= MAX_LEGACY_REQUEST_TGAS,
