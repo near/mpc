@@ -50,7 +50,7 @@ impl ThresholdParameters {
     ///   of the number of shares (rounded downwards), so a minority that stops serving
     ///   cannot lock the contract. This upper cap is clamped up to the 60% lower bound so
     ///   the feasible window is never empty for small `n_shares`.
-    pub fn validate_threshold(n_shares: u64, k: Threshold) -> Result<(), Error> {
+    fn validate_threshold(n_shares: u64, k: Threshold) -> Result<(), Error> {
         if k.value() > n_shares {
             return Err(InvalidThreshold::MaxRequirementFailed {
                 max: n_shares,
