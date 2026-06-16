@@ -1,12 +1,12 @@
-use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::NetworkTaskChannel;
+use crate::network::computation::MpcLeaderCentricComputation;
 use crate::protocol::run_protocol;
 use crate::providers::ckd::CKDProvider;
 use rand::rngs::OsRng;
-use threshold_signatures::confidential_key_derivation::KeygenOutput;
-use threshold_signatures::confidential_key_derivation::BLS12381SHA256;
-use threshold_signatures::participants::Participant;
 use threshold_signatures::ReconstructionLowerBound;
+use threshold_signatures::confidential_key_derivation::BLS12381SHA256;
+use threshold_signatures::confidential_key_derivation::KeygenOutput;
+use threshold_signatures::participants::Participant;
 
 impl CKDProvider {
     pub(super) async fn run_key_generation_client_internal(
@@ -38,7 +38,7 @@ impl MpcLeaderCentricComputation<KeygenOutput> for KeyGenerationComputation {
             .map(Participant::from)
             .collect::<Vec<_>>();
         let me = channel.my_participant_id();
-        let protocol = threshold_signatures::keygen::<BLS12381SHA256>(
+        let protocol = threshold_signatures::keygen::<BLS12381SHA256, _, _>(
             &cs_participants,
             me.into(),
             self.threshold,
@@ -57,19 +57,19 @@ mod tests {
     use crate::network::computation::MpcLeaderCentricComputation;
     use crate::network::testing::run_test_clients;
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-    use crate::providers::ckd::key_generation::KeyGenerationComputation;
     use crate::providers::ckd::CKDTaskId;
+    use crate::providers::ckd::key_generation::KeyGenerationComputation;
     use crate::tests::into_participant_ids;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use mpc_primitives::domain::DomainId;
     use near_mpc_contract_interface::types::{AttemptId, EpochId, KeyEventId};
     use std::sync::Arc;
+    use threshold_signatures::ReconstructionLowerBound;
     use threshold_signatures::confidential_key_derivation::KeygenOutput;
     use threshold_signatures::frost_core::Group;
     use threshold_signatures::participants::Participant;
     use threshold_signatures::test_utils::generate_participants;
-    use threshold_signatures::ReconstructionLowerBound;
-    use threshold_signatures::{confidential_key_derivation as ckd, ParticipantList};
+    use threshold_signatures::{ParticipantList, confidential_key_derivation as ckd};
     use tokio::sync::mpsc;
 
     #[tokio::test]

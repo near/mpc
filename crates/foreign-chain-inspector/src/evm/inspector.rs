@@ -20,10 +20,18 @@ const GET_BLOCK_BY_NUMBER_METHOD: &str = "eth_getBlockByNumber";
 /// different chains remain type-incompatible at the call site, while sharing the
 /// single [`EvmInspector`] implementation.
 pub trait EvmChain {
-    type BlockHash: From<[u8; 32]> + Into<[u8; 32]> + Clone + Debug + PartialEq + Eq + Hash;
-    type TransactionHash: From<[u8; 32]> + Into<[u8; 32]> + Clone + Debug + PartialEq + Eq + Hash;
+    type BlockHash: From<[u8; 32]> + Into<[u8; 32]> + Clone + Debug + PartialEq + Eq + Hash + Send;
+    type TransactionHash: From<[u8; 32]>
+        + Into<[u8; 32]>
+        + Clone
+        + Debug
+        + PartialEq
+        + Eq
+        + Hash
+        + Send;
 }
 
+#[derive(Clone)]
 pub struct EvmInspector<Client, Chain> {
     client: Client,
     _chain: std::marker::PhantomData<Chain>,
@@ -31,8 +39,8 @@ pub struct EvmInspector<Client, Chain> {
 
 impl<Client, Chain> ForeignChainInspector for EvmInspector<Client, Chain>
 where
-    Client: ClientT + Send,
-    Chain: EvmChain + Send,
+    Client: ClientT + Send + Sync,
+    Chain: EvmChain + Send + Sync,
 {
     type TransactionId = Chain::TransactionHash;
     type Finality = EthereumFinality;
@@ -79,7 +87,7 @@ where
 
 impl<Client, Chain> EvmInspector<Client, Chain>
 where
-    Client: ClientT + Send,
+    Client: ClientT + Send + Sync,
     Chain: EvmChain,
 {
     pub fn new(client: Client) -> Self {
@@ -120,6 +128,10 @@ where
     /// block at `receipt_block_number` and comparing hashes. `eth_getBlockByNumber` only ever
     /// resolves to a canonical block, so a mismatch means the receipt was indexed against a
     /// side block (stale tx index, partially-applied reorg, divergent RPC backend, etc.).
+    ///
+    /// The canonical block's height is also asserted against the requested one — a divergent
+    /// RPC that returns a hash from a different height would otherwise sneak past a
+    /// hash-only check.
     async fn verify_block_is_canonical(
         &self,
         receipt_block_number: U64,
@@ -134,11 +146,13 @@ where
             .request(GET_BLOCK_BY_NUMBER_METHOD, &args)
             .await?;
 
-        if canonical.hash != receipt_block_hash {
+        let hash_matches = canonical.hash == receipt_block_hash;
+        let height_matches = canonical.number == receipt_block_number;
+        if !hash_matches || !height_matches {
             return Err(ForeignChainInspectionError::NonCanonicalBlock {
-                block_number: receipt_block_number,
-                receipt_hash: receipt_block_hash,
-                canonical_hash: canonical.hash,
+                block_number: receipt_block_number.as_u64(),
+                receipt_hash: receipt_block_hash.into(),
+                canonical_hash: canonical.hash.into(),
             });
         }
         Ok(())

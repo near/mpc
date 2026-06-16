@@ -27,12 +27,15 @@ pub struct ClientHandle {
 impl NearBlockchain {
     pub fn new(
         rpc_url: &str,
+        chain_id: &str,
         root_account: &str,
         root_secret_key: near_kit::SecretKey,
     ) -> anyhow::Result<Self> {
         let signer = near_kit::InMemorySigner::from_secret_key(root_account, root_secret_key)
             .map_err(|e| anyhow::anyhow!("failed to create root signer: {e}"))?;
-        let client = near_kit::Near::custom(rpc_url).signer(signer).build();
+        let client = near_kit::Near::custom(rpc_url, chain_id)
+            .signer(signer)
+            .build();
         Ok(Self {
             root_client: client,
             rpc_url: rpc_url.to_string(),
@@ -55,8 +58,7 @@ impl NearBlockchain {
             tx = tx.add_full_access_key(key.to_near_public_key());
         }
 
-        tx.wait_until(near_kit::TxExecutionStatus::Final)
-            .send()
+        tx.wait_until(near_kit::Final)
             .await
             .map_err(|e| anyhow::anyhow!("failed to create account {name}: {e}"))?;
         Ok(())
@@ -75,8 +77,7 @@ impl NearBlockchain {
             .transfer(near_kit::NearToken::from_near(balance_near))
             .add_full_access_key(key.to_near_public_key())
             .deploy(wasm.to_vec())
-            .wait_until(near_kit::TxExecutionStatus::Final)
-            .send()
+            .wait_until(near_kit::Final)
             .await
             .map_err(|e| anyhow::anyhow!("failed to create account and deploy to {name}: {e}"))?;
 

@@ -30,7 +30,7 @@ my_near_account_id = "${MPC_ACCOUNT_ID}"
 near_responder_account_id = "${MPC_ACCOUNT_ID}"
 number_of_responder_keys = 1
 web_ui = "0.0.0.0:8080"
-migration_web_ui = "0.0.0.0:8078"
+migration_web_ui = "0.0.0.0:8079"
 cores = 4
 
 [mpc_node_config.node.indexer]
@@ -39,6 +39,9 @@ sync_mode = "Latest"
 concurrency = 1
 mpc_contract_id = "${MPC_CONTRACT_ID}"
 finality = "optimistic"
+# Mirrors production: contract participant URLs may publish any port, but
+# the P2P/TLS listener always binds 80 inside the CVM.
+port_override = 80
 
 [mpc_node_config.node.triple]
 concurrency = 2

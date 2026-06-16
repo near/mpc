@@ -4,7 +4,7 @@ use super::pprof::collect_pprof;
 
 use axum::{
     extract::Query,
-    http::{header, StatusCode},
+    http::{StatusCode, header},
     response::IntoResponse,
 };
 use std::{net::SocketAddr, time::Duration};

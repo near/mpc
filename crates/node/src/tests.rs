@@ -3,28 +3,28 @@ use blstrs::{G1Projective, G2Projective, Scalar};
 use elliptic_curve::{Field as _, Group as _};
 use near_mpc_contract_interface::types::ProtocolContractState;
 use near_mpc_contract_interface::types::{
-    BitcoinExtractor, BitcoinRpcRequest, ForeignChainRpcRequest, ForeignTxPayloadVersion,
-    VerifyForeignTransactionRequestArgs, EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
-    EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
+    BitcoinExtractor, BitcoinRpcRequest, EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
+    EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES, ForeignChainRpcRequest, ForeignTxPayloadVersion,
+    VerifyForeignTransactionRequestArgs,
 };
 use rand::rngs::OsRng;
 use std::collections::BTreeMap;
 use std::net::{Ipv4Addr, SocketAddr};
 
-use tokio::sync::{watch, RwLock};
+use tokio::sync::{RwLock, watch};
 
 use crate::config::{ParticipantsConfig, PersistentSecrets, SecretsConfig};
 use crate::coordinator::Coordinator;
 use crate::db::SecretDB;
+use crate::indexer::IndexerAPI;
 use crate::indexer::fake::{FakeIndexerManager, FakeReadSupportedForeignChain};
 use crate::indexer::handler::{
     CKDArgs, CKDRequestFromChain, SignArgs, SignatureRequestFromChain,
     VerifyForeignTxRequestFromChain,
 };
-use crate::indexer::IndexerAPI;
 use crate::keyshare::{KeyStorageConfig, Keyshare};
 use crate::migration_service::spawn_recovery_server_and_run_onboarding;
-use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
+use crate::p2p::testing::{PortSeed, generate_test_p2p_configs};
 use mpc_node_config::{
     CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, PresignatureConfig,
     SignatureConfig, SyncMode, TripleConfig,
@@ -32,13 +32,14 @@ use mpc_node_config::{
 
 use crate::primitives::ParticipantId;
 use crate::tests::common::MockTransactionSender;
-use crate::tracking::{self, start_root_task, AutoAbortTask};
+use crate::tracking::{self, AutoAbortTask, start_root_task};
+use crate::web::recent_transactions::SharedRecentTransactions;
 use crate::web::{start_web_server, static_web_data};
 use assert_matches::assert_matches;
 use mpc_primitives::domain::{Curve, Protocol};
 use near_account_id::AccountId;
-use near_indexer_primitives::types::Finality;
 use near_indexer_primitives::CryptoHash;
+use near_indexer_primitives::types::Finality;
 use near_mpc_bounded_collections::BoundedVec;
 use near_mpc_contract_interface::types::DomainConfig;
 use near_mpc_contract_interface::types::Payload;
@@ -50,13 +51,16 @@ use std::sync::{Arc, OnceLock};
 use tokio::time::timeout;
 
 pub mod common;
+pub(crate) mod dto_conversions;
 
+mod asset_generation_signing_contention;
 mod basic_cluster;
 mod changing_participant_details;
 mod faulty;
 mod foreign_chain_configuration;
 mod multidomain;
 mod onboarding;
+mod protocol_yielding;
 mod resharing;
 
 const DEFAULT_BLOCK_TIME: std::time::Duration = std::time::Duration::from_millis(300);
@@ -109,6 +113,8 @@ impl OneNodeTestConfig {
                 let (_, dummy_protocol_state_receiver) =
                     watch::channel(ProtocolContractState::NotInitialized);
                 let (_, dummy_migration_state_receiver) = watch::channel((0, BTreeMap::new()));
+                // The fake indexer never records, so the buffer stays empty.
+                // TODO(#3522): wire it into the fake indexer and assert on it.
                 let web_server = start_web_server(
                     root_task.into(),
                     debug_request_sender.clone(),
@@ -117,6 +123,7 @@ impl OneNodeTestConfig {
                     dummy_protocol_state_receiver,
                     dummy_migration_state_receiver,
                     self.config.clone(),
+                    SharedRecentTransactions::default(),
                 )
                 .await?;
                 let _web_server = tracking::spawn_checked("web server", web_server);
@@ -195,6 +202,7 @@ impl IntegrationTestSetup {
         for (i, (_, p2p_key)) in p2p_configs.into_iter().enumerate() {
             let config = ConfigFile {
                 cores: Some(4),
+                separate_asset_generation_runtime: true,
                 // Indexer config is just a dummy.
                 indexer: IndexerConfig {
                     concurrency: 1.try_into().unwrap(),

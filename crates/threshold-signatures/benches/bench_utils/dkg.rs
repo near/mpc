@@ -1,11 +1,10 @@
 use rand_core::{CryptoRngCore, SeedableRng};
 
 use threshold_signatures::{
-    keygen,
+    Ciphersuite, KeygenOutput, ReconstructionLowerBound, keygen,
     participants::Participant,
     protocol::Protocol,
-    test_utils::{generate_participants_with_random_ids, MockCryptoRng},
-    Ciphersuite, KeygenOutput, ReconstructionLowerBound,
+    test_utils::{MockCryptoRng, generate_participants_with_random_ids},
 };
 
 /// Used to prepare DKG keygen protocols for benchmarking
@@ -23,7 +22,7 @@ where
 
     for p in &participants {
         let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
-        let protocol = keygen::<C>(&participants, *p, threshold, rng_p)
+        let protocol = keygen::<C, _, _>(&participants, *p, threshold, rng_p)
             .map(|p| Box::new(p) as Box<dyn Protocol<Output = KeygenOutput<C>>>)
             .expect("Keygen should succeed");
         protocols.push((*p, protocol));

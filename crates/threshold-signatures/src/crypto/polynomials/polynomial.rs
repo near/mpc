@@ -1,5 +1,5 @@
 use frost_core::{
-    keys::CoefficientCommitment, serialization::SerializableScalar, Field, Group, Scalar,
+    Field, Group, Scalar, keys::CoefficientCommitment, serialization::SerializableScalar,
 };
 use rand_core::CryptoRngCore;
 use subtle::ConstantTimeEq;
@@ -8,7 +8,7 @@ use crate::crypto::ciphersuite::Ciphersuite;
 use crate::errors::ProtocolError;
 use crate::participants::Participant;
 
-use super::{batch_compute_lagrange_coefficients, PolynomialCommitment};
+use super::{PolynomialCommitment, batch_compute_lagrange_coefficients};
 
 /// Polynomial structure of non-empty or non-zero coefficients
 /// Represents a polynomial with coefficients in the scalar field of the curve.

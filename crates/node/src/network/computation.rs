@@ -44,11 +44,12 @@ pub trait MpcLeaderCentricComputation<T>: Sized + 'static {
                     return Err(err);
                 }
             };
-            if leader_waits_for_success && sender.is_leader() {
-                if let Err(err) = channel.wait_for_followers_to_succeed().await {
-                    sender.communicate_failure(&err);
-                    return Err(err);
-                }
+            if leader_waits_for_success
+                && sender.is_leader()
+                && let Err(err) = channel.wait_for_followers_to_succeed().await
+            {
+                sender.communicate_failure(&err);
+                return Err(err);
             }
             Ok(result)
         };

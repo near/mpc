@@ -17,11 +17,22 @@ As part of [#2648](https://github.com/near/mpc/issues/2648), we want to be able 
 requiring all other nodes to have the exact same configuration.
 
 ### Requirements
+
+> Terms used below (whitelisted, available, RPC quorum, *covers*, signing threshold) are defined in
+> the [main doc's Terminology](../foreign-chain-transactions.md#terminology).
+
 1. RPC providers are whitelisted by being voted into the contract by node operators submitting votes. The whitelist is **per-chain**, keyed by `(ForeignChain, ProviderId)`.
 2. The contract owns the connection config (`base_url`, `auth_scheme`, `chain_routing`), not the operator. Operator yaml carries `provider_id` + a `token_env` reference only.
 3. Nodes do not need to have local configurations covering all whitelisted RPC providers — a quorum number of locally-configured providers per chain is sufficient.
-4. Every node partaking in a foreign signature verification request queries all its locally configured RPC providers for the relevant chain, independently of other nodes. A quorum of those RPC providers must agree on the verification.
-5. A foreign chain is considered supported by the MPC network iff every node has at least a quorum number of whitelisted RPC providers configured for that chain. The quorum threshold is per-chain.
+4. Every node partaking in a foreign signature verification request queries all its locally configured RPC providers for the relevant chain, independently of other nodes. A quorum of those RPC providers must agree on the verification; if fewer than the quorum agree, the node errors out that foreign-tx validation and does **not** retry the request.
+5. Every node is expected to **cover** every whitelisted foreign chain at all times. There is no
+   on-chain enforcement, so the system must tolerate temporary **incomplete coverage**: a chain is
+   served while it is **available** (≥ signing threshold of active nodes cover it), and
+   `verify_foreign_transaction` early-rejects a whitelisted-but-unavailable chain. Per-node
+   registrations feed the availability computation. See
+   [Calculating the whitelisted and available foreign-chain sets](calculating-supported-foreign-chains.md).
+6. Monitoring and off-chain alert channels notify operators of incomplete coverage (a node not
+   covering some whitelisted chain); there is no on-chain penalty.
 
 ## Why
 The current setup has many limitations and was implemented as an MVP.
@@ -62,14 +73,14 @@ struct ChainEntry {
     providers: Vec<ProviderEntry>,
     // RPC response quorum: when a node fans out a query to the N providers above,
     // at least this many must return the same value for the response to be accepted.
-    threshold: u64,
+    quorum: u64,
 }
 
 struct ProviderVotes {
     // Pending per-chain proposals, keyed by `(participant, chain)`. The slot holds the
     // exact `ChainEntry` the participant is proposing for that chain. The chain's state
     // is replaced once the protocol's signing threshold of participants holds the same
-    // canonical `(providers, threshold)` pair.
+    // canonical `(providers, quorum)` pair.
     pending: BTreeMap<(AuthenticatedParticipantId, ForeignChain), ChainEntry>,
 }
 
@@ -88,7 +99,7 @@ struct ProviderEntry {
 struct ChainVote {
     chain: ForeignChain,
     providers: Vec<ProviderEntry>, // full proposed list for `chain` (snapshot, not a diff)
-    threshold: u64,                // proposed RPC response quorum for `chain`
+    quorum: u64,                   // proposed RPC quorum for `chain`
 }
 ```
 
@@ -107,18 +118,18 @@ Since the nodes are running in a Trusted Execution Environment (TEE), this funct
 
 ### Individual node quorum of RPC providers for verification requests
 
-When a foreign TX verification request is processed by a set of nodes, every node individually queries its locally-configured RPC providers for that chain. A node considers the foreign TX verified iff at least a per-chain quorum number of providers agreed.
+When a foreign TX verification request is processed by a set of nodes, every node individually queries its locally-configured RPC providers for that chain. A node considers the foreign TX verified iff at least the per-chain RPC quorum of providers agreed. If fewer than the RPC quorum agree, the node errors out and produces no signature share. This sub-quorum outcome must be **terminal** for the request — the leader does not re-attempt it. This is an implementation requirement, not current behavior. See [Calculating the whitelisted and available foreign-chain sets](calculating-supported-foreign-chains.md#verification-behavior).
 
-The quorum value comes from on-chain `ChainEntry.threshold`, voted in as part of the same `ChainVote` that voted the chain's provider list — so participants agree on both "which providers are trusted" and "how many of them must concur" in one round.
+The quorum value comes from on-chain `ChainEntry.quorum`, voted in as part of the same `ChainVote` that voted the chain's provider list — so participants agree on both "which providers are trusted" and "how many of them must concur" in one round.
 
 ### Nodes submit the configured foreign chains on-chain
 
-Nodes submit their per-chain provider set on-chain so the network knows which chains they support. Functionality for this was added on the contract side in [#2784](https://github.com/near/mpc/pull/2784) and is kept — the whitelist is a new layer on top, not a replacement.
+Nodes submit their per-chain provider set on-chain so the network knows which chains they cover. Functionality for this was added on the contract side in [#2784](https://github.com/near/mpc/pull/2784) and is kept, now serving two roles: it feeds the **available**-set computation (which chains have ≥ signing threshold covering nodes) and the alerting that flags any active node not covering a whitelisted chain. See [Calculating the whitelisted and available foreign-chain sets](calculating-supported-foreign-chains.md).
 
 ## Rollout
 
 Landing in stacked PRs under [#3208](https://github.com/near/mpc/issues/3208):
 
 - **PR 1** ([#3216](https://github.com/near/mpc/pull/3216)): on-chain data shape and storage field (`ForeignChainRpcWhitelist`, `ProviderEntry`, `AuthScheme`, `ChainRouting`, `ProviderId`), `MpcContract` field + storage key, and the `AllowedProviders` data-structure helpers (add/remove/get). No vote endpoints, no view function, no node-side wiring.
-- **PR 2** ([#3249](https://github.com/near/mpc/pull/3249)): contract-side voting on the whitelist. Adds `vote_update_foreign_chain_providers(votes: Vec<ChainVote>)`, the `ProviderVotes` pending-vote storage, canonicalization (`providers` sorted by `provider_id`; duplicate chain or `provider_id` in a batch rejected with `InvalidParameters::MalformedPayload`), and the `clean_tee_status` extension that drops votes from non-participants. Voting is **full-snapshot**: each `ChainVote` proposes the chain's complete state (provider list + RPC response quorum), and the chain's stored `ChainEntry` is replaced once the protocol's signing threshold of participants holds the same canonical `(providers, threshold)` pair (same gate as `vote_add_os_measurement`). Drops the original Add/Remove-ops design for two reasons: (1) snapshot semantics canonicalize trivially (sort the proposed list), avoiding the order-of-apply ambiguity Add/Remove batches introduced, and (2) bundling the RPC response quorum into `ChainVote.threshold` collapses what was originally going to be two separate vote endpoints (whitelist + quorum) into one.
+- **PR 2** ([#3249](https://github.com/near/mpc/pull/3249)): contract-side voting on the whitelist. Adds `vote_update_foreign_chain_providers(votes: Vec<ChainVote>)`, the `ProviderVotes` pending-vote storage, canonicalization (`providers` sorted by `provider_id`; duplicate chain or `provider_id` in a batch rejected with `InvalidParameters::MalformedPayload`), and the `clean_tee_status` extension that drops votes from non-participants. Voting is **full-snapshot**: each `ChainVote` proposes the chain's complete state (provider list + RPC response quorum), and the chain's stored `ChainEntry` is replaced once the protocol's signing threshold of participants holds the same canonical `(providers, quorum)` pair (same gate as `vote_add_os_measurement`). Drops the original Add/Remove-ops design for two reasons: (1) snapshot semantics canonicalize trivially (sort the proposed list), avoiding the order-of-apply ambiguity Add/Remove batches introduced, and (2) bundling the RPC response quorum into `ChainVote.quorum` collapses what was originally going to be two separate vote endpoints (whitelist + quorum) into one.
 - **PR 3**: node-side wiring — operator-yaml schema change (`provider_id` + `token` only), indexer task streaming the whitelist into a `watch::Receiver`, coordinator startup pipeline (resolve → chain-identity probe → sample-tx probe → register), per-inspector chain-identity probe.

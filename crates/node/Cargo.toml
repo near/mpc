@@ -1,6 +1,6 @@
 [package]
 name = "mpc-node"
-edition = "2021"
+edition = { workspace = true }
 version = { workspace = true }
 license = { workspace = true }
 
@@ -18,17 +18,21 @@ base64 = { workspace = true }
 borsh = { workspace = true }
 bs58 = { workspace = true }
 bytes = { workspace = true }
+chain-gateway = { workspace = true }
 clap = { workspace = true }
 derive_more = { workspace = true }
 ed25519-dalek = { workspace = true }
 flume = { workspace = true }
 foreign-chain-inspector = { workspace = true }
+foreign-chain-rpc-interfaces = { workspace = true }
 futures = { workspace = true }
 gcloud-sdk = { workspace = true }
 hex = { workspace = true }
 http = { workspace = true }
+http-body-util = { workspace = true }
 humantime = { workspace = true }
 hyper = { workspace = true }
+hyper-util = { workspace = true }
 itertools = { workspace = true }
 k256 = { workspace = true }
 launcher-interface = { workspace = true }
@@ -53,7 +57,8 @@ near-mpc-contract-interface = { workspace = true, features = [
 ] }
 near-mpc-crypto-types = { workspace = true }
 near-o11y = { workspace = true }
-near-sdk = { workspace = true }
+near-sdk = { workspace = true, features = ["non-contract-usage"] }
+near-store = { workspace = true }
 near-time = { workspace = true }
 node-types = { workspace = true }
 num_enum = { workspace = true }
@@ -71,6 +76,7 @@ socket2 = { workspace = true }
 tee-authority = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
+thread-priority = { workspace = true }
 threshold-signatures = { workspace = true }
 tikv-jemallocator = { workspace = true }
 time = { workspace = true }
@@ -102,12 +108,14 @@ built = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
+average = { workspace = true }
 blstrs = { workspace = true }
+chain-gateway = { workspace = true, features = ["test-utils"] }
 elliptic-curve = { workspace = true }
+insta = { workspace = true }
 itertools = { workspace = true }
 mockall = { workspace = true }
-mpc-contract = { workspace = true, features = ["compat", "test-utils"] }
-near-sdk = { workspace = true }
+mpc-contract = { workspace = true, features = ["test-utils"] }
 rstest = { workspace = true }
 serial_test = { workspace = true }
 test-log = { workspace = true }

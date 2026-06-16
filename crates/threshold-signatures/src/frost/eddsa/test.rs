@@ -1,20 +1,20 @@
 use crate::{
+    Participant, ReconstructionLowerBound,
     crypto::hash::HashOutput,
     frost::eddsa::{
-        sign::{sign_v1, sign_v2},
         KeygenOutput, PresignOutput, SignatureOption,
+        sign::{sign_v1, sign_v2},
     },
     test_utils::{
         assert_frost_presignatures_well_formed, generate_participants, run_protocol, GenProtocol,
         MockCryptoRng,
     },
-    Participant, ReconstructionLowerBound,
 };
 
 use std::error::Error;
 
 use frost_core::Scalar;
-use frost_ed25519::{keys::SigningShare, Ed25519Sha512, SigningKey, VerifyingKey};
+use frost_ed25519::{Ed25519Sha512, SigningKey, VerifyingKey, keys::SigningShare};
 use rand::SeedableRng;
 use rand_core::CryptoRngCore;
 

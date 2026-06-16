@@ -1,12 +1,12 @@
 use super::consts::DEFAULT_MAX_TIMEOUT_TX_INCLUDED;
 use super::shared_key_utils::{
-    derive_secret_key_ed25519, derive_secret_key_secp256k1, generate_random_app_public_key,
-    DomainKey, SharedSecretKey,
+    DomainKey, SharedSecretKey, derive_secret_key_ed25519, derive_secret_key_secp256k1,
+    generate_random_app_public_key,
 };
 use digest::{Digest, FixedOutput};
 use k256::{
-    elliptic_curve::{Field as _, Group as _},
     FieldBytes,
+    elliptic_curve::{Field as _, Group as _},
 };
 use mpc_contract::{
     errors,
@@ -29,20 +29,20 @@ use near_mpc_contract_interface::types::{CKDResponse, DomainId, Payload};
 use near_mpc_sdk::sign::{Ed25519Signature, K256Signature};
 use near_mpc_sdk::sign::{SignRequestArgs, SignRequestBuilder, SignatureRequestResponse};
 use near_workspaces::{
-    network::Sandbox, operations::TransactionStatus, types::NearToken, Account, Contract, Worker,
+    Account, Contract, Worker, network::Sandbox, operations::TransactionStatus, types::NearToken,
 };
-use rand::{rngs::OsRng, Rng};
+use rand::{Rng, rngs::OsRng};
 use rand_core::CryptoRngCore;
 use serde::Serialize;
 use sha2::Sha256;
 use signature::DigestSigner;
 use std::time::Duration;
 use threshold_signatures::{
-    confidential_key_derivation::{self as ckd, hash_app_id_with_pk, BLS12381SHA256},
+    KeygenOutput,
+    confidential_key_derivation::{self as ckd, BLS12381SHA256, hash_app_id_with_pk},
     ecdsa as ts_ecdsa,
     frost::eddsa,
     frost_ed25519::{self},
-    KeygenOutput,
 };
 
 #[derive(Debug)]
@@ -192,9 +192,10 @@ pub async fn verify_timeout(status: TransactionStatus) -> anyhow::Result<()> {
     let err = execution
         .into_result()
         .expect_err("expect execution failure");
-    assert!(err
-        .to_string()
-        .contains(&errors::RequestError::Timeout.to_string()));
+    assert!(
+        err.to_string()
+            .contains(&errors::RequestError::Timeout.to_string())
+    );
     Ok(())
 }
 
@@ -205,11 +206,11 @@ pub struct CKDRequestTest {
 }
 
 fn gen_ckd_derivation_path(rng: &mut impl CryptoRngCore) -> String {
-    let empty: bool = rng.gen();
+    let empty: bool = rng.r#gen();
     if empty {
         "".to_string()
     } else {
-        rng.gen::<usize>().to_string()
+        rng.r#gen::<usize>().to_string()
     }
 }
 
@@ -588,7 +589,7 @@ pub fn create_response_ed25519(
 }
 
 /// Process the message, creating the same hash with type of [`Digest`] and [`Payload`]
-fn process_message(msg: &str) -> (impl Digest, Payload) {
+fn process_message(msg: &str) -> (impl Digest + use<>, Payload) {
     let msg = msg.as_bytes();
     let digest = <k256::Secp256k1 as ecdsa::hazmat::DigestPrimitive>::Digest::new_with_prefix(msg);
     let bytes: FieldBytes = digest.clone().finalize_fixed();
@@ -613,8 +614,8 @@ fn gen_ed25519_sign_test(
     predecessor_id: &AccountId,
     sk: &eddsa::KeygenOutput,
 ) -> SignRequestTest {
-    let msg: String = rng.gen::<usize>().to_string();
-    let path: String = rng.gen::<usize>().to_string();
+    let msg: String = rng.r#gen::<usize>().to_string();
+    let path: String = rng.r#gen::<usize>().to_string();
     let (payload, request, response) =
         create_response_ed25519(domain_id, predecessor_id, &msg, &path, sk);
     let args = SignRequestBuilder::new()
@@ -636,8 +637,8 @@ pub fn gen_secp_256k1_sign_test(
     predecessor_id: &AccountId,
     sk: &ts_ecdsa::KeygenOutput,
 ) -> SignRequestTest {
-    let msg: String = rng.gen::<usize>().to_string();
-    let path: String = rng.gen::<usize>().to_string();
+    let msg: String = rng.r#gen::<usize>().to_string();
+    let path: String = rng.r#gen::<usize>().to_string();
     let (payload, request, response) =
         create_response_secp256k1(domain_id, predecessor_id, &msg, &path, sk);
 

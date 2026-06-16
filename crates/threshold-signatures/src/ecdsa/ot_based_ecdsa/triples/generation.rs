@@ -1,5 +1,5 @@
-use frost_core::serialization::SerializableScalar;
 use frost_core::Ciphersuite;
+use frost_core::serialization::SerializableScalar;
 use itertools::multizip;
 use rand_core::CryptoRngCore;
 use serde::{Deserialize, Serialize};
@@ -9,8 +9,8 @@ use crate::participants::{Participant, ParticipantList, ParticipantMap};
 use crate::thresholds::ReconstructionLowerBound;
 use crate::{
     crypto::{
-        commitment::{commit, Commitment},
-        hash::{hash, HashOutput},
+        commitment::{Commitment, commit},
+        hash::{HashOutput, hash},
         proofs::{dlog, dlogeq, strobe_transcript::Transcript},
         random::Randomness,
     },
@@ -20,13 +20,13 @@ use crate::{
     },
     errors::{InitializationError, ProtocolError},
     protocol::{
-        helpers::recv_from_others,
-        internal::{make_protocol, Comms},
         Protocol,
+        helpers::recv_from_others,
+        internal::{Comms, make_protocol},
     },
 };
 
-use super::{multiplication::multiplication_many, TriplePub, TripleShare};
+use super::{TriplePub, TripleShare, multiplication::multiplication_many};
 
 /// Creates a transcript and internally encodes the following data:
 ///     LABEL, NAME, Participants, threshold
@@ -56,6 +56,8 @@ pub type TripleGenerationOutput = (TripleShare, TriplePub);
 pub type TripleGenerationOutputMany = Vec<(TripleShare, TriplePub)>;
 type C = Secp256K1Sha256;
 
+#[allow(dead_code)]
+// superseded by `PolynomialCommitmentsMessageMany`; kept as the single-instance wire-format reference.
 #[derive(Serialize, Deserialize)]
 struct PolynomialCommitmentsMessage {
     big_e: PolynomialCommitment,
@@ -178,6 +180,8 @@ async fn do_generation_many<const N: usize>(
         big_e_i_v.push(big_e_i);
         big_f_i_v.push(big_f_i);
         big_l_i_v.push(big_l_i);
+
+        chan.yield_point().await;
     }
 
     // Spec 1.6
@@ -286,6 +290,8 @@ async fn do_generation_many<const N: usize>(
             )?;
             my_phi_proof0v.push(my_phi_proof0);
             my_phi_proof1v.push(my_phi_proof1);
+
+            chan.yield_point().await;
         }
 
         // Spec 2.7
@@ -423,6 +429,8 @@ async fn do_generation_many<const N: usize>(
                 *big_e = big_e.add(their_big_e)?;
                 *big_f = big_f.add(their_big_f)?;
                 *big_l = big_l.add(their_big_l)?;
+
+                chan.yield_point().await;
             }
         }
 
@@ -482,6 +490,8 @@ async fn do_generation_many<const N: usize>(
             big_c_i_points.push(CoefficientCommitment::new(big_c_i));
             big_c_i_v.push(big_c_i);
             my_phi_proofs.push(my_phi_proof);
+
+            chan.yield_point().await;
         }
 
         // Spec 3.10
@@ -523,6 +533,8 @@ async fn do_generation_many<const N: usize>(
                     )));
                 }
                 *big_c += big_c_j_val;
+
+                chan.yield_point().await;
             }
         }
         let big_l_v = big_l_v
@@ -576,6 +588,8 @@ async fn do_generation_many<const N: usize>(
         hat_big_c_i_points.push(CoefficientCommitment::new(hat_big_c_i));
         hat_big_c_i_v.push(hat_big_c_i);
         my_phi_proofs.push(my_l0_phi_proof);
+
+        chan.yield_point().await;
     }
 
     // Spec 4.8
@@ -633,6 +647,8 @@ async fn do_generation_many<const N: usize>(
                 )));
             }
             *hat_big_c += &their_hat_big_c;
+
+            chan.yield_point().await;
         }
     }
 
@@ -650,6 +666,8 @@ async fn do_generation_many<const N: usize>(
                 "final polynomial doesn't match C value".to_owned(),
             ));
         }
+
+        chan.yield_point().await;
     }
 
     // Spec 5.5 + 5.6
@@ -693,6 +711,8 @@ async fn do_generation_many<const N: usize>(
                 threshold,
             },
         ));
+
+        chan.yield_point().await;
     }
 
     Ok(ret)
@@ -778,12 +798,16 @@ pub fn triple_generation_max_incoming_buffer_entries(
 ///
 /// The resulting triple will be threshold shared, according to the threshold
 /// provided to this function.
-pub fn generate_triple(
+pub fn generate_triple<T, R>(
     participants: &[Participant],
     me: Participant,
-    threshold: impl Into<ReconstructionLowerBound>,
-    rng: impl CryptoRngCore + Send + 'static,
-) -> Result<impl Protocol<Output = TripleGenerationOutput>, InitializationError> {
+    threshold: T,
+    rng: R,
+) -> Result<impl Protocol<Output = TripleGenerationOutput> + use<T, R>, InitializationError>
+where
+    T: Into<ReconstructionLowerBound>,
+    R: CryptoRngCore + Send + 'static,
+{
     let (participants, threshold) = validate_triple_inputs(participants, threshold)?;
     let ctx = Comms::with_buffer_capacity(triple_generation_max_incoming_buffer_entries(
         participants.len(),
@@ -794,12 +818,16 @@ pub fn generate_triple(
 }
 
 /// As [`generate_triple`] but for many triples at once
-pub fn generate_triple_many<const N: usize>(
+pub fn generate_triple_many<const N: usize, T, R>(
     participants: &[Participant],
     me: Participant,
-    threshold: impl Into<ReconstructionLowerBound>,
-    rng: impl CryptoRngCore + Send + 'static,
-) -> Result<impl Protocol<Output = TripleGenerationOutputMany>, InitializationError> {
+    threshold: T,
+    rng: R,
+) -> Result<impl Protocol<Output = TripleGenerationOutputMany> + use<N, T, R>, InitializationError>
+where
+    T: Into<ReconstructionLowerBound>,
+    R: CryptoRngCore + Send + 'static,
+{
     let (participants, threshold) = validate_triple_inputs(participants, threshold)?;
     let ctx = Comms::with_buffer_capacity(triple_generation_max_incoming_buffer_entries(
         participants.len(),
@@ -831,15 +859,17 @@ mod test {
     use rstest::rstest;
 
     use crate::{
-        ecdsa::{ot_based_ecdsa::triples::generate_triple, ProjectivePoint},
+        ecdsa::{ProjectivePoint, ot_based_ecdsa::triples::generate_triple},
         participants::{Participant, ParticipantList},
         protocol::Protocol,
-        test_utils::{generate_participants, run_protocol, MockCryptoRng},
+        test_utils::{
+            MockCryptoRng, generate_participants, run_protocol, run_protocol_counting_yields,
+        },
     };
 
     use super::{
-        do_generation_many, generate_triple_many, triple_generation_max_incoming_buffer_entries,
-        TripleGenerationOutput, TripleGenerationOutputMany, C,
+        C, TripleGenerationOutput, TripleGenerationOutputMany, do_generation_many,
+        generate_triple_many, triple_generation_max_incoming_buffer_entries,
     };
 
     #[test]
@@ -863,16 +893,16 @@ mod test {
         let result = run_protocol(protocols).unwrap();
 
         assert!(result.len() == participants.len());
-        assert_eq!(result[0].1 .1, result[1].1 .1);
-        assert_eq!(result[1].1 .1, result[2].1 .1);
+        assert_eq!(result[0].1.1, result[1].1.1);
+        assert_eq!(result[1].1.1, result[2].1.1);
 
-        let triple_pub = result[2].1 .1.clone();
+        let triple_pub = result[2].1.1.clone();
 
         let participants = vec![result[0].0, result[1].0, result[2].0];
-        let triple_shares = vec![
-            result[0].1 .0.clone(),
-            result[1].1 .0.clone(),
-            result[2].1 .0.clone(),
+        let triple_shares = [
+            result[0].1.0.clone(),
+            result[1].1.0.clone(),
+            result[2].1.0.clone(),
         ];
         let p_list = ParticipantList::new(&participants).unwrap();
 
@@ -896,6 +926,37 @@ mod test {
         insta::assert_json_snapshot!(result);
     }
 
+    /// Deterministic guard that the CPU-bound triple-generation code surfaces
+    /// cooperative yields; fails if the `yield_point` calls in the crypto loops
+    /// are removed.
+    #[test]
+    #[expect(non_snake_case)]
+    fn generate_triple_many__should_emit_yield_actions() {
+        // Given - a real triple-generation batch across three participants
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let participants = generate_participants(3);
+        let threshold = 3;
+        let mut protocols: Vec<(
+            Participant,
+            Box<dyn Protocol<Output = TripleGenerationOutputMany>>,
+        )> = Vec::with_capacity(participants.len());
+        for &p in &participants {
+            let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
+            let protocol =
+                generate_triple_many::<2, _, _>(&participants, p, threshold, rng_p).unwrap();
+            protocols.push((p, Box::new(protocol)));
+        }
+
+        // When
+        let yields = run_protocol_counting_yields(protocols).unwrap();
+
+        // Then
+        assert!(
+            yields > 0,
+            "expected triple generation to yield cooperatively, but it never did"
+        );
+    }
+
     #[test]
     fn test_triple_generation_many() {
         let mut rng = MockCryptoRng::seed_from_u64(42);
@@ -910,7 +971,8 @@ mod test {
 
         for &p in &participants {
             let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
-            let protocol = generate_triple_many::<1>(&participants, p, threshold, rng_p).unwrap();
+            let protocol =
+                generate_triple_many::<1, _, _>(&participants, p, threshold, rng_p).unwrap();
             protocols.push((p, Box::new(protocol)));
         }
 
@@ -923,7 +985,7 @@ mod test {
         let triple_pub = result[2].1[0].1.clone();
 
         let participants = vec![result[0].0, result[1].0, result[2].0];
-        let triple_shares = vec![
+        let triple_shares = [
             result[0].1[0].0.clone(),
             result[1].1[0].0.clone(),
             result[2].1[0].0.clone(),

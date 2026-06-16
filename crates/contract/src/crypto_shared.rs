@@ -8,7 +8,7 @@ pub use types::{ed25519_types, k256_types};
 // We could use something VRF + pseudorandom here, but someone would likely shoot themselves in the foot with it.
 // Our crypto libraries should definitely panic, because they normally expect randomness to be private
 #[cfg(target_arch = "wasm32")]
-use getrandom::{register_custom_getrandom, Error};
+use getrandom::{Error, register_custom_getrandom};
 #[cfg(target_arch = "wasm32")]
 pub fn randomness_unsupported(_: &mut [u8]) -> Result<(), Error> {
     Err(Error::UNSUPPORTED)

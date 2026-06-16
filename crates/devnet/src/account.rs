@@ -12,6 +12,10 @@
 //! because we need a mutable reference to it to add access keys to our local state. On the other
 //! hand, sending an arbitrary transfer of NEAR tokens is in OperatingAccessKey, since no local
 //! state needs changing (other than updating the nonce, which is per access key).
+#![expect(
+    clippy::disallowed_types,
+    reason = "devnet tooling uses `near_crypto_public::SecretKey` to build signed transactions via the legacy `near_jsonrpc_client` API."
+)]
 use crate::contracts::ActionCall;
 use crate::queries;
 use crate::rpc::NearRpcClients;
@@ -19,7 +23,7 @@ use crate::types::{ContractSetup, MpcParticipantSetup, NearAccount, NearAccountK
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use futures::FutureExt;
 use near_account_id::AccountId;
-use near_crypto::{ED25519SecretKey, InMemorySigner, SecretKey, Signer};
+use near_crypto_public::{ED25519SecretKey, InMemorySigner, SecretKey, Signer};
 use near_jsonrpc_client::methods;
 use near_jsonrpc_client::methods::send_tx::SignedTransaction;
 use near_jsonrpc_client::methods::tx::RpcTransactionResponse;
@@ -28,14 +32,13 @@ use near_primitives::account::AccessKey;
 use near_primitives::action::{Action, AddKeyAction};
 use near_primitives::hash::CryptoHash;
 use near_primitives::types::Finality;
-use near_primitives::types::{BlockReference, FunctionArgs};
+use near_primitives::types::{Balance, BlockReference, FunctionArgs, Gas};
 use near_primitives::views::{CallResult, QueryRequest, TxExecutionStatus};
 use rand::rngs::OsRng;
 use reqwest::StatusCode;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::OwnedMutexGuard;
-use utilities::{AccountIdExtV1, AccountIdExtV2};
 
 /// Current state of an account while the CLI is running.
 pub struct OperatingAccount {
@@ -109,10 +112,7 @@ impl OperatingAccessKey {
         let near_crypto_secret_key: SecretKey =
             SecretKey::ED25519(ED25519SecretKey(signing_key.to_keypair_bytes()));
 
-        let signer = Signer::InMemory(InMemorySigner::from_secret_key(
-            account_id.as_v1_account_id(),
-            near_crypto_secret_key.clone(),
-        ));
+        let signer = InMemorySigner::from_secret_key(account_id.clone(), near_crypto_secret_key);
         Self {
             account_id,
             nonce: None,
@@ -131,7 +131,7 @@ impl OperatingAccessKey {
             }
             None => {
                 let request = near_primitives::views::QueryRequest::ViewAccessKey {
-                    account_id: self.account_id.as_v1_account_id(),
+                    account_id: self.account_id.clone(),
                     public_key: self.signer.public_key(),
                 };
                 let nonce = self
@@ -181,14 +181,15 @@ impl OperatingAccessKey {
         let verifying_key = signing_key.verifying_key();
         let verifying_key_bytes: &[u8; 32] = verifying_key.as_bytes();
         #[expect(clippy::disallowed_methods)]
-        let near_core_public_key = near_crypto::ED25519PublicKey(*verifying_key_bytes).into();
+        let near_core_public_key =
+            near_crypto_public::ED25519PublicKey(*verifying_key_bytes).into();
 
         let request = methods::send_tx::RpcSendTransactionRequest {
             signed_transaction: SignedTransaction::create_account(
                 self.next_nonce().await,
-                self.account_id.as_v1_account_id(),
-                new_account_id.as_v1_account_id(),
-                amount,
+                self.account_id.clone(),
+                new_account_id.clone(),
+                Balance::from_yoctonear(amount),
                 near_core_public_key,
                 &self.signer,
                 self.recent_block_hash,
@@ -212,13 +213,14 @@ impl OperatingAccessKey {
 
         let verifying_key_bytes: &[u8; 32] = verifying_key.as_bytes();
         #[expect(clippy::disallowed_methods)]
-        let near_core_public_key = near_crypto::ED25519PublicKey(*verifying_key_bytes).into();
+        let near_core_public_key =
+            near_crypto_public::ED25519PublicKey(*verifying_key_bytes).into();
 
         let request = methods::send_tx::RpcSendTransactionRequest {
             signed_transaction: SignedTransaction::from_actions(
                 self.next_nonce().await,
-                self.account_id.as_v1_account_id(),
-                self.account_id.as_v1_account_id(),
+                self.account_id.clone(),
+                self.account_id.clone(),
                 &self.signer,
                 vec![Action::AddKey(Box::new(AddKeyAction {
                     access_key: AccessKey {
@@ -228,7 +230,6 @@ impl OperatingAccessKey {
                     public_key: near_core_public_key,
                 }))],
                 self.recent_block_hash,
-                0,
             ),
             wait_until: TxExecutionStatus::Final,
         };
@@ -269,19 +270,18 @@ impl OperatingAccessKey {
         let request = methods::send_tx::RpcSendTransactionRequest {
             signed_transaction: SignedTransaction::from_actions(
                 self.next_nonce().await,
-                self.account_id.as_v1_account_id(),
-                contract_id.as_v1_account_id(),
+                self.account_id.clone(),
+                contract_id.clone(),
                 &self.signer,
                 vec![Action::FunctionCall(Box::new(
                     near_primitives::action::FunctionCallAction {
                         method_name: method.to_string(),
                         args: args.to_vec(),
-                        gas: tgas * 1_000_000_000_000,
-                        deposit,
+                        gas: Gas::from_teragas(tgas),
+                        deposit: Balance::from_yoctonear(deposit),
                     },
                 ))],
                 self.recent_block_hash,
-                0,
             ),
             wait_until,
         };
@@ -291,12 +291,11 @@ impl OperatingAccessKey {
     pub async fn sign_tx_from_actions(&mut self, action_call: ActionCall) -> SignedTransaction {
         SignedTransaction::from_actions(
             self.next_nonce().await,
-            self.account_id.as_v1_account_id(),
-            action_call.receiver_id.as_v1_account_id(),
+            self.account_id.clone(),
+            action_call.receiver_id.clone(),
             &self.signer,
             action_call.actions,
             self.recent_block_hash,
-            0,
         )
     }
 }
@@ -381,14 +380,17 @@ impl OperatingAccount {
                 );
             }
             _ => {
-                panic!("Account {} is not a normal or contract account, refusing to deploy contract to it", self.account_data.account_id);
+                panic!(
+                    "Account {} is not a normal or contract account, refusing to deploy contract to it",
+                    self.account_data.account_id
+                );
             }
         }
         let mut key = self.keys[0].lock().await;
         let request = methods::send_tx::RpcSendTransactionRequest {
             signed_transaction: SignedTransaction::deploy_contract(
                 key.next_nonce().await,
-                &self.account_data.account_id.as_v1_account_id(),
+                &self.account_data.account_id,
                 code,
                 &key.signer,
                 key.recent_block_hash,
@@ -406,7 +408,7 @@ impl OperatingAccount {
         let request = methods::query::RpcQueryRequest {
             block_reference: BlockReference::Finality(Finality::Final),
             request: QueryRequest::CallFunction {
-                account_id: self.account_data.account_id.as_v1_account_id(),
+                account_id: self.account_data.account_id.clone(),
                 method_name: method.to_string(),
                 args: FunctionArgs::from(args),
             },
@@ -498,10 +500,10 @@ impl OperatingAccounts {
         let request = methods::send_tx::RpcSendTransactionRequest {
             signed_transaction: SignedTransaction::send_money(
                 sender.next_nonce().await,
-                sender.account_id.as_v1_account_id(),
-                receiver.as_v1_account_id(),
+                sender.account_id.clone(),
+                receiver.clone(),
                 &sender.signer,
-                amount,
+                Balance::from_yoctonear(amount),
                 sender.recent_block_hash,
             ),
             wait_until: TxExecutionStatus::Final,
@@ -568,7 +570,7 @@ impl OperatingAccounts {
         let futs = accounts.iter().map(|account_id| async {
             self.client
                 .with_retry(10, |rpc| {
-                    let account_id = account_id.as_v1_account_id();
+                    let account_id = account_id.clone();
                     async move {
                         match rpc
                             .call(methods::query::RpcQueryRequest {
@@ -581,7 +583,7 @@ impl OperatingAccounts {
                             .kind
                         {
                             QueryResponseKind::ViewAccount(account) => {
-                                anyhow::Ok((account_id.as_v2_account_id(), account.amount))
+                                anyhow::Ok((account_id, account.amount.as_yoctonear()))
                             }
                             _ => panic!("Unexpected response"),
                         }
@@ -596,7 +598,7 @@ impl OperatingAccounts {
 
     /// Get the balance of a single account.
     pub async fn get_account_balance(&self, account_id: &AccountId) -> u128 {
-        self.get_account_balances(&[account_id.clone()])
+        self.get_account_balances(std::slice::from_ref(account_id))
             .await
             .remove(account_id)
             .unwrap()

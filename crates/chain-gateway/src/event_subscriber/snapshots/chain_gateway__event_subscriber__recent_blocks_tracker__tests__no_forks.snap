@@ -1,0 +1,32 @@
+---
+source: crates/chain-gateway/src/event_subscriber/recent_blocks_tracker.rs
+expression: tester.evolution
+---
+--- after add(F1BKWCC) ---
+   Recent blocks: (Window = 8 to 11, GC limit 0)
+CH └─[11] C   F1BKWCCxzv7PtiVZxLMx3HQuuxDGcrtPRT2FaGgRggpA 
+
+--- after add(7wk1ewk) ---
+   Recent blocks: (Window = 9 to 12, GC limit 0)
+   └─[11] C   F1BKWCCxzv7PtiVZxLMx3HQuuxDGcrtPRT2FaGgRggpA 
+CH   [12] C   7wk1ewkZKmCNLRRhCrjFuoYy1K94dis9qAUv7JUKzCkG 
+
+--- after add(DTYziqM) ---
+   Recent blocks: (Window = 10 to 13, GC limit 10)
+FH └─[11] C F F1BKWCCxzv7PtiVZxLMx3HQuuxDGcrtPRT2FaGgRggpA 
+     [12] C   7wk1ewkZKmCNLRRhCrjFuoYy1K94dis9qAUv7JUKzCkG 
+CH   [13] C   DTYziqMhQ9i2wbruEfoNiWZNp34dzVYto6FLy3FUZKwt 
+
+--- after add(4q6agzf) ---
+   Recent blocks: (Window = 11 to 14, GC limit 11)
+   └─[11] C F F1BKWCCxzv7PtiVZxLMx3HQuuxDGcrtPRT2FaGgRggpA 
+FH   [12] C F 7wk1ewkZKmCNLRRhCrjFuoYy1K94dis9qAUv7JUKzCkG 
+     [13] C   DTYziqMhQ9i2wbruEfoNiWZNp34dzVYto6FLy3FUZKwt 
+CH   [14] C   4q6agzf1AcZWcVbNnULR8969K8MhmPCEJ7pKapjmEGmA 
+
+--- after add(7inNzFR) ---
+   Recent blocks: (Window = 12 to 15, GC limit 12)
+   └─[12] C F 7wk1ewkZKmCNLRRhCrjFuoYy1K94dis9qAUv7JUKzCkG 
+FH   [13] C F DTYziqMhQ9i2wbruEfoNiWZNp34dzVYto6FLy3FUZKwt 
+     [14] C   4q6agzf1AcZWcVbNnULR8969K8MhmPCEJ7pKapjmEGmA 
+CH   [15] C   7inNzFR4mz4TRu9CSajNQnWxwhKDcYzTYubtM6zFri7Y

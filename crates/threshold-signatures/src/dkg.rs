@@ -1,6 +1,6 @@
 use crate::crypto::{
     ciphersuite::Ciphersuite,
-    hash::{domain_separate_hash, DomainSeparator, HashOutput},
+    hash::{DomainSeparator, HashOutput, domain_separate_hash},
     polynomials::{Polynomial, PolynomialCommitment},
 };
 
@@ -33,14 +33,16 @@ fn assert_keyshare_inputs<C: Ciphersuite>(
             //  prevents accidentally calling keyshare with extremely old keyshares
             //  that have nothing to do with the current resharing
             if old_participants.contains(me) {
-                return Err(ProtocolError::AssertionFailed(
-                    format!("{me:?} is running Resharing with a zero share but does belong to the old participant set")));
+                return Err(ProtocolError::AssertionFailed(format!(
+                    "{me:?} is running Resharing with a zero share but does belong to the old participant set"
+                )));
             }
         } else {
             //  return error if me is part of the old participants set
             if !old_participants.contains(me) {
-                return Err(ProtocolError::AssertionFailed(
-                    format!("{me:?} is running Resharing with a non-zero share but does not belong to the old participant set")));
+                return Err(ProtocolError::AssertionFailed(format!(
+                    "{me:?} is running Resharing with a non-zero share but does not belong to the old participant set"
+                )));
             }
         }
         Ok((Some(old_key), Some(old_participants)))
@@ -318,7 +320,7 @@ async fn broadcast_success(
         .ok_or_else(|| ProtocolError::AssertionFailed("vote_list is empty".to_string()))?;
     // go through all the list of votes and check if any is fail or some does not contain the session id
 
-    if !vote_list.iter().all(|(_, ref sid)| sid == &session_id) {
+    if !vote_list.iter().all(|(_, sid)| sid == &session_id) {
         return Err(ProtocolError::AssertionFailed(
             "A participant
                 broadcast the wrong session id. Aborting Protocol!"
@@ -474,6 +476,8 @@ async fn do_keyshare<C: Ciphersuite>(
 
         // add received full commitment
         all_full_commitments.put(p, full_commitment_i);
+
+        chan.yield_point().await;
     }
 
     // Verify vk asap
@@ -525,6 +529,8 @@ async fn do_keyshare<C: Ciphersuite>(
         // At the end of this loop, I will be owning a valid secret signing share
         // Step 5.3
         my_signing_share = my_signing_share + signing_share_from.to_scalar();
+
+        chan.yield_point().await;
     }
 
     // Step 5.4 and Step 5.5
@@ -681,11 +687,10 @@ pub mod test {
     use crate::participants::{Participant, ParticipantList};
     use crate::test_utils::MockCryptoRng;
     use crate::test_utils::{
-        assert_buffer_capacity, assert_public_key_invariant, build_buffer_test,
+        GenOutput, assert_buffer_capacity, assert_public_key_invariant, build_buffer_test,
         generate_participants, run_and_assert_buffer_entries, run_keygen, run_refresh, run_reshare,
-        GenOutput,
     };
-    use crate::{keygen, reshare, DKG_MAX_INCOMING_BUFFER_ENTRIES};
+    use crate::{DKG_MAX_INCOMING_BUFFER_ENTRIES, keygen, reshare};
     use crate::{KeygenOutput, ReconstructionLowerBound};
     use frost_core::{Field, Group};
     use rand_core::{CryptoRngCore, SeedableRng};
@@ -727,8 +732,7 @@ pub mod test {
         rng: &mut R,
     ) -> Vec<(Participant, KeygenOutput<C>)>
     where
-        <C::Group as Group>::Element: std::fmt::Debug + std::marker::Send,
-        <<C::Group as Group>::Field as Field>::Scalar: std::marker::Send,
+        <C::Group as Group>::Element: std::fmt::Debug,
     {
         let result = run_keygen::<C, R>(participants, threshold, rng);
         assert!(result.len() == participants.len());
@@ -747,14 +751,13 @@ pub mod test {
     >(
         rng: &mut R,
     ) where
-        <C::Group as Group>::Element: std::fmt::Debug + std::marker::Send,
-        <<C::Group as Group>::Field as Field>::Scalar: std::marker::Send,
+        <C::Group as Group>::Element: std::fmt::Debug,
     {
         let threshold = 1;
         let participants = generate_participants(2);
 
         let rng_keygen = R::seed_from_u64(rng.next_u64());
-        let result = keygen::<C>(&participants, participants[0], threshold, rng_keygen);
+        let result = keygen::<C, _, _>(&participants, participants[0], threshold, rng_keygen);
 
         assert_eq!(
             result.err().unwrap(),
@@ -771,8 +774,7 @@ pub mod test {
         rng: &mut R,
     ) -> Vec<(Participant, KeygenOutput<C>)>
     where
-        <C::Group as Group>::Element: std::fmt::Debug + std::marker::Send,
-        <<C::Group as Group>::Field as Field>::Scalar: std::marker::Send,
+        <C::Group as Group>::Element: std::fmt::Debug,
     {
         let result0 = run_keygen::<C, R>(participants, threshold, rng);
         assert_public_key_invariant(&result0);
@@ -793,8 +795,7 @@ pub mod test {
         rng: &mut R,
     ) -> Vec<(Participant, KeygenOutput<C>)>
     where
-        <C::Group as Group>::Element: std::fmt::Debug + std::marker::Send,
-        <<C::Group as Group>::Field as Field>::Scalar: std::marker::Send,
+        <C::Group as Group>::Element: std::fmt::Debug,
     {
         let result0 = run_keygen::<C, R>(participants, threshold0, rng);
         assert_public_key_invariant(&result0);
@@ -827,8 +828,7 @@ pub mod test {
     >(
         rng: &mut R,
     ) where
-        <C::Group as Group>::Element: std::fmt::Debug + std::marker::Send,
-        <<C::Group as Group>::Field as Field>::Scalar: std::marker::Send,
+        <C::Group as Group>::Element: std::fmt::Debug,
     {
         let participants = generate_participants(2);
         let threshold0 = 2;
@@ -840,7 +840,7 @@ pub mod test {
         let pub_key = result0[0].1.public_key;
 
         let rng_reshare = R::seed_from_u64(rng.next_u64());
-        let result = reshare::<C>(
+        let result = reshare::<C, _, _, _>(
             &participants,
             threshold0,
             None,

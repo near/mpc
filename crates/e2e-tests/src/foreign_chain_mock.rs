@@ -7,9 +7,32 @@
 use httpmock::prelude::*;
 use httpmock::{HttpMockRequest, HttpMockResponse};
 
+/// A [`MockServer`] paired with the id of a registered [`httpmock::Mock`], so
+/// tests can recover the `Mock<'_>` (which borrows from the server) on demand
+/// and read its hit count. Storing the `Mock` directly would make this struct
+/// self-referential.
+pub struct MockServerExt {
+    pub server: MockServer,
+    pub mock_id: usize,
+}
+
+impl MockServerExt {
+    pub fn new(server: MockServer, mock_id: usize) -> Self {
+        Self { server, mock_id }
+    }
+
+    /// Number of HTTP requests the registered mock has matched so far.
+    pub fn calls(&self) -> usize {
+        httpmock::Mock::new(self.mock_id, &self.server).calls()
+    }
+}
+
 pub const MOCK_BLOCK_HASH: &str =
     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 pub const MOCK_TX_ID: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+pub const MOCK_STARKNET_BLOCK_NUMBER: u64 = 6_868_546;
+pub const MOCK_BLOCK_HEIGHT: u64 = 800_000;
+pub const MOCK_BITCOIN_CONFIRMATIONS: u64 = 10;
 
 fn jsonrpc_error(id: serde_json::Value, method: &str) -> HttpMockResponse {
     let response_body = serde_json::json!({
@@ -24,38 +47,46 @@ fn jsonrpc_error(id: serde_json::Value, method: &str) -> HttpMockResponse {
         .build()
 }
 
-pub fn setup_bitcoin_mock(server: &MockServer) {
-    server.mock(|when, then| {
-        when.method(POST).path("/");
-        then.respond_with(move |req: &HttpMockRequest| {
-            let body: serde_json::Value =
-                serde_json::from_slice(req.body().as_ref()).expect("valid json-rpc request");
-            let id = body["id"].clone();
-            let method = body["method"].as_str().expect("method field");
+pub fn setup_bitcoin_mock(server: &MockServer) -> usize {
+    server
+        .mock(|when, then| {
+            when.method(POST).path("/");
+            then.respond_with(move |req: &HttpMockRequest| {
+                let body: serde_json::Value =
+                    serde_json::from_slice(req.body().as_ref()).expect("valid json-rpc request");
+                let id = body["id"].clone();
+                let method = body["method"].as_str().expect("method field");
 
-            if method != "getrawtransaction" {
-                return jsonrpc_error(id, method);
-            }
+                let result = match method {
+                    "getrawtransaction" => serde_json::json!({
+                        "blockhash": MOCK_BLOCK_HASH,
+                        "confirmations": MOCK_BITCOIN_CONFIRMATIONS,
+                    }),
+                    "getblockheader" => serde_json::json!({
+                        "hash": MOCK_BLOCK_HASH,
+                        "height": MOCK_BLOCK_HEIGHT,
+                    }),
+                    "getblockhash" => serde_json::Value::String(MOCK_BLOCK_HASH.to_string()),
+                    other => return jsonrpc_error(id, other),
+                };
 
-            let response_body = serde_json::json!({
-                "jsonrpc": "2.0",
-                "result": {
-                    "blockhash": MOCK_BLOCK_HASH,
-                    "confirmations": 10,
-                },
-                "id": id,
+                let response_body = serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "result": result,
+                    "id": id,
+                });
+
+                HttpMockResponse::builder()
+                    .status(200)
+                    .header("content-type", "application/json")
+                    .body(serde_json::to_string(&response_body).unwrap())
+                    .build()
             });
-
-            HttpMockResponse::builder()
-                .status(200)
-                .header("content-type", "application/json")
-                .body(serde_json::to_string(&response_body).unwrap())
-                .build()
-        });
-    });
+        })
+        .id
 }
 
-pub fn setup_evm_mock(server: &MockServer) {
+pub fn setup_evm_mock(server: &MockServer) -> usize {
     server.mock(|when, then| {
         when.method(POST).path("/");
         then.respond_with(move |req: &HttpMockRequest| {
@@ -123,31 +154,54 @@ pub fn setup_evm_mock(server: &MockServer) {
                 .body(serde_json::to_string(&response_body).unwrap())
                 .build()
         });
-    });
+    })
+    .id
 }
 
-pub fn setup_starknet_mock(server: &MockServer) {
-    server.mock(|when, then| {
-        when.method(POST).path("/");
-        then.respond_with(move |req: &HttpMockRequest| {
-            let body: serde_json::Value =
-                serde_json::from_slice(req.body().as_ref()).expect("valid json-rpc request");
-            let id = body["id"].clone();
-            let method = body["method"].as_str().expect("method field");
+pub fn setup_starknet_mock(server: &MockServer) -> usize {
+    server
+        .mock(|when, then| {
+            when.method(POST).path("/");
+            then.respond_with(move |req: &HttpMockRequest| {
+                let body: serde_json::Value =
+                    serde_json::from_slice(req.body().as_ref()).expect("valid json-rpc request");
+                let id = body["id"].clone();
+                let method = body["method"].as_str().expect("method field");
 
-            if method != "starknet_getTransactionReceipt" {
-                return jsonrpc_error(id, method);
-            }
+                let result = match method {
+                    "starknet_getTransactionReceipt" => starknet_receipt_result(),
+                    "starknet_getBlockWithTxHashes" => serde_json::json!({
+                        "block_hash": format!("0x{MOCK_BLOCK_HASH}"),
+                        "block_number": MOCK_STARKNET_BLOCK_NUMBER,
+                    }),
+                    other => return jsonrpc_error(id, other),
+                };
 
-            let response_body = serde_json::json!({
-                "result": {
+                let response_body = serde_json::json!({
+                    "result": result,
+                    "jsonrpc": "2.0",
+                    "id": id,
+                });
+
+                HttpMockResponse::builder()
+                    .status(200)
+                    .header("content-type", "application/json")
+                    .body(serde_json::to_string(&response_body).unwrap())
+                    .build()
+            });
+        })
+        .id
+}
+
+fn starknet_receipt_result() -> serde_json::Value {
+    serde_json::json!({
                     "type": "INVOKE",
                     "transaction_hash": "0x52a6c2b9d1d1b77dbc322b298fd91f39e3cca9bf1db4a7aa79f14a90efa633e",
                     "actual_fee": { "amount": "0xe97d3e61059940", "unit": "FRI" },
                     "execution_status": "SUCCEEDED",
                     "finality_status": "ACCEPTED_ON_L1",
                     "block_hash": format!("0x{MOCK_BLOCK_HASH}"),
-                    "block_number": 6868546,
+                    "block_number": MOCK_STARKNET_BLOCK_NUMBER,
                     "messages_sent": [],
                     "events": [
                         {
@@ -206,16 +260,5 @@ pub fn setup_starknet_mock(server: &MockServer) {
                         "l2_gas": 3159360,
                         "l1_data_gas": 512,
                     },
-                },
-                "jsonrpc": "2.0",
-                "id": id,
-            });
-
-            HttpMockResponse::builder()
-                .status(200)
-                .header("content-type", "application/json")
-                .body(serde_json::to_string(&response_body).unwrap())
-                .build()
-        });
-    });
+    })
 }

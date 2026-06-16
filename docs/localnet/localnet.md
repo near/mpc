@@ -233,15 +233,16 @@ export SAM_RESPONDER_KEY=$(curl -s localhost:8082/public_data | jq -r ".near_res
 ```
 
 Now we can add these keys to the appropriate NEAR accounts with the NEAR CLI.
+The empty `--function-names ''` grants each key access to all methods on the MPC
+contract (still scoped to it via `--contract-account-id`), so the keys do not
+break when a release adds a method the node must call.
 
 ```shell
-NODE_METHODS="respond,respond_ckd,respond_verify_foreign_tx,vote_pk,start_keygen_instance,vote_reshared,register_foreign_chain_config,start_reshare_instance,vote_abort_key_event_instance,verify_tee,submit_participant_info,conclude_node_migration"
+near account add-key frodo.test.near grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names '' use-manually-provided-public-key "$FRODO_PUBKEY" network-config mpc-localnet sign-with-keychain send
+near account add-key frodo.test.near grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names '' use-manually-provided-public-key "$FRODO_RESPONDER_KEY" network-config mpc-localnet sign-with-keychain send
 
-near account add-key frodo.test.near grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names "$NODE_METHODS" use-manually-provided-public-key "$FRODO_PUBKEY" network-config mpc-localnet sign-with-keychain send
-near account add-key frodo.test.near grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names "$NODE_METHODS" use-manually-provided-public-key "$FRODO_RESPONDER_KEY" network-config mpc-localnet sign-with-keychain send
-
-near account add-key sam.test.near grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names "$NODE_METHODS" use-manually-provided-public-key "$SAM_PUBKEY" network-config mpc-localnet sign-with-keychain send
-near account add-key sam.test.near grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names "$NODE_METHODS" use-manually-provided-public-key "$SAM_RESPONDER_KEY" network-config mpc-localnet sign-with-keychain send
+near account add-key sam.test.near grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names '' use-manually-provided-public-key "$SAM_PUBKEY" network-config mpc-localnet sign-with-keychain send
+near account add-key sam.test.near grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names '' use-manually-provided-public-key "$SAM_RESPONDER_KEY" network-config mpc-localnet sign-with-keychain send
 ```
 
 ## 4. Initialize the MPC contract
@@ -400,6 +401,12 @@ Function execution return value (printed to stdout):
 
 ```shell
 near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/localnet/args/verify_foreign_tx_abstract.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
+```
+
+#### Aptos
+
+```shell
+near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/localnet/args/verify_foreign_tx_aptos.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
 #### Starknet

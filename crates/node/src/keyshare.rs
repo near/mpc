@@ -146,10 +146,10 @@ impl KeyshareStorage {
         };
         for domain in already_generated_keys {
             // Skip domains that exist in permanent storage
-            if let Some(ref p) = permanent_same_epoch {
-                if p.keyshare_by_domain_id(domain.domain_id).is_some() {
-                    continue;
-                }
+            if let Some(ref p) = permanent_same_epoch
+                && p.keyshare_by_domain_id(domain.domain_id).is_some()
+            {
+                continue;
             }
             self.load_keyshare_from_temporary(epoch_id, domain).await?;
         }
@@ -173,14 +173,14 @@ impl KeyshareStorage {
     ) -> anyhow::Result<PendingKeyshareStorageHandle> {
         let permanent = self.permanent.load().await?;
         let epoch_id = key_id_to_generate.epoch_id;
-        if let Some(permanent) = permanent {
-            if permanent.epoch_id().get() >= epoch_id.get() {
-                anyhow::bail!(
-                    "Permanent key storage has epoch ID {} which is not older than {}",
-                    permanent.epoch_id().get(),
-                    epoch_id.get()
-                );
-            }
+        if let Some(permanent) = permanent
+            && permanent.epoch_id().get() >= epoch_id.get()
+        {
+            anyhow::bail!(
+                "Permanent key storage has epoch ID {} which is not older than {}",
+                permanent.epoch_id().get(),
+                epoch_id.get()
+            );
         }
         for domain in already_reshared_keys {
             self.load_keyshare_from_temporary(epoch_id, domain).await?;
@@ -235,11 +235,11 @@ impl KeyshareStorage {
         let mut has_temporary = false;
 
         for domain in domains {
-            if let Some(p) = &permanent {
-                if let Some(keyshare) = p.keyshare_by_domain_id(domain.domain_id) {
-                    keyshares.push(keyshare.clone());
-                    continue;
-                }
+            if let Some(p) = &permanent
+                && let Some(keyshare) = p.keyshare_by_domain_id(domain.domain_id)
+            {
+                keyshares.push(keyshare.clone());
+                continue;
             }
 
             let key_id = KeyEventId::new(keyset.epoch_id, domain.domain_id, domain.attempt);
@@ -396,11 +396,11 @@ impl KeyshareStorage {
         let permanent = self._load_matching_from_permanent(contract_keyset).await?;
         let mut new_keyshares = Vec::with_capacity(domains.len());
         for domain in domains {
-            if let Some(p) = &permanent {
-                if let Some(keyshare) = p.keyshare_by_domain_id(domain.domain_id) {
-                    new_keyshares.push(keyshare.clone());
-                    continue;
-                }
+            if let Some(p) = &permanent
+                && let Some(keyshare) = p.keyshare_by_domain_id(domain.domain_id)
+            {
+                new_keyshares.push(keyshare.clone());
+                continue;
             }
 
             let key_id =
@@ -436,7 +436,10 @@ impl KeyshareStorage {
                     }
                 })
                 .collect();
-            anyhow::bail!("corrupted backup or corrupted keystore: found a mismatch between secret shares for key_ids: {:?}.", inconsistent_shares);
+            anyhow::bail!(
+                "corrupted backup or corrupted keystore: found a mismatch between secret shares for key_ids: {:?}.",
+                inconsistent_shares
+            );
         }
 
         self._store_new_permanent_keyset_data_delete_temporary(
@@ -510,15 +513,19 @@ pub async fn generate_key_storage() -> (KeyshareStorage, tempfile::TempDir) {
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::cloned_ref_to_slice_refs,
+    reason = "tests build single-element keyshare slices; clarity beats `slice::from_ref` here."
+)]
 pub mod tests {
     use mpc_primitives::domain::DomainId;
     use mpc_primitives::{AttemptId, EpochId, KeyEventId};
     use rand::SeedableRng as _;
 
-    use super::{generate_key_storage, KeyshareStorage};
+    use super::{KeyshareStorage, generate_key_storage};
     use crate::keyshare::{
-        test_utils::{generate_dummy_keyshare, generate_dummy_keyshares, KeysetBuilder},
         Keyshare,
+        test_utils::{KeysetBuilder, generate_dummy_keyshare, generate_dummy_keyshares},
     };
 
     #[tokio::test]
@@ -545,10 +552,12 @@ pub mod tests {
             // Before starting the good path, let's test that start_generating_key fails if called
             // when already-generated keys don't exist.
             let bad_keyset = KeysetBuilder::from_keyshares(0, &[key_1_epoch_0_non_final.clone()]);
-            assert!(storage
-                .start_generating_key(&bad_keyset.generated(), key_1_epoch_0_non_final.key_id)
-                .await
-                .is_err());
+            assert!(
+                storage
+                    .start_generating_key(&bad_keyset.generated(), key_1_epoch_0_non_final.key_id)
+                    .await
+                    .is_err()
+            );
         }
 
         storage
@@ -584,10 +593,12 @@ pub mod tests {
 
         {
             // Check that we cannot start generating the same key again.
-            assert!(storage
-                .start_generating_key(&keyset.generated(), key_2_epoch_0_final.key_id)
-                .await
-                .is_err());
+            assert!(
+                storage
+                    .start_generating_key(&keyset.generated(), key_2_epoch_0_final.key_id)
+                    .await
+                    .is_err()
+            );
         }
 
         // Finalize two keys from epoch 0.
@@ -632,10 +643,12 @@ pub mod tests {
             // Before starting the good path, let's test that start_resharing fails if called
             // when already-reshared keys don't exist.
             let bad_keyset = KeysetBuilder::from_keyshares(1, &[key_1_epoch_1.clone()]);
-            assert!(storage
-                .start_resharing_key(&bad_keyset.generated(), key_1_epoch_1.key_id)
-                .await
-                .is_err());
+            assert!(
+                storage
+                    .start_resharing_key(&bad_keyset.generated(), key_1_epoch_1.key_id)
+                    .await
+                    .is_err()
+            );
         }
 
         let mut keyset = KeysetBuilder::from_keyshares(1, &[]);
@@ -671,10 +684,12 @@ pub mod tests {
 
         {
             // Check that we cannot start resharing the same key again.
-            assert!(storage
-                .start_resharing_key(&keyset.generated(), key_2_epoch_1.key_id)
-                .await
-                .is_err());
+            assert!(
+                storage
+                    .start_resharing_key(&keyset.generated(), key_2_epoch_1.key_id)
+                    .await
+                    .is_err()
+            );
         }
 
         {

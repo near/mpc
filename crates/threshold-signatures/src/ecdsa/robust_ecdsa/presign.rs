@@ -1,17 +1,17 @@
 use super::{PresignArguments, PresignOutput};
 use crate::participants::{Participant, ParticipantList, ParticipantMap};
 use crate::{
+    SigningShare,
     ecdsa::{
         CoefficientCommitment, Field, Polynomial, PolynomialCommitment, Scalar,
         Secp256K1ScalarField, Secp256K1Sha256,
     },
     errors::{InitializationError, ProtocolError},
     protocol::{
-        helpers::recv_from_others,
-        internal::{make_protocol, Comms, SharedChannel},
         Protocol,
+        helpers::recv_from_others,
+        internal::{Comms, SharedChannel, make_protocol},
     },
-    SigningShare,
 };
 use frost_core::serialization::SerializableScalar;
 use frost_secp256k1::{Group, Secp256K1Group};
@@ -30,12 +30,15 @@ pub(crate) const ROBUST_ECDSA_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES: usize = 3;
 ///
 /// This work does depend on the private key though, and it's crucial
 /// that a presignature is never reused.
-pub fn presign(
+pub fn presign<R>(
     participants: &[Participant],
     me: Participant,
     args: PresignArguments,
-    rng: impl CryptoRngCore + Send + 'static,
-) -> Result<impl Protocol<Output = PresignOutput>, InitializationError> {
+    rng: R,
+) -> Result<impl Protocol<Output = PresignOutput> + use<R>, InitializationError>
+where
+    R: CryptoRngCore + Send + 'static,
+{
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
             participants: participants.len(),
@@ -213,6 +216,8 @@ async fn do_presign(
                 "Exponent interpolation check failed.".to_string(),
             ));
         }
+
+        chan.yield_point().await;
     }
     // Step 3.3
     // get only the first t+1 elements to interpolate
@@ -291,6 +296,8 @@ async fn do_presign(
                 "Exponent interpolation check failed.".to_string(),
             ));
         }
+
+        chan.yield_point().await;
     }
 
     // Step 3.10
@@ -403,8 +410,8 @@ mod test {
     use rand::{RngCore, SeedableRng};
 
     use crate::test_utils::{
-        generate_participants, generate_test_keys, make_keygen_output, run_protocol, GenProtocol,
-        MockCryptoRng,
+        GenProtocol, MockCryptoRng, generate_participants, generate_test_keys, make_keygen_output,
+        run_protocol,
     };
     use rstest::rstest;
 

@@ -1,12 +1,12 @@
 #![allow(non_snake_case)]
 
 use crate::sandbox::common::{
-    abstract_evm_request, arbitrum_evm_request,
-    await_pending_foreign_tx_request_observed_on_contract, base_evm_request,
-    bitcoin_extracted_values, bitcoin_request, bnb_evm_request, ethereum_evm_request,
-    evm_block_hash_extracted_values, hyper_evm_request, polygon_evm_request,
+    SandboxTestSetup, abstract_evm_request, aptos_extracted_values, aptos_request,
+    arbitrum_evm_request, await_pending_foreign_tx_request_observed_on_contract, base_evm_request,
+    bitcoin_extracted_values, bitcoin_request, bnb_evm_request, bogus_ton_log_extracted_value,
+    ethereum_evm_request, evm_block_hash_extracted_values, hyper_evm_request, polygon_evm_request,
     register_foreign_chain_configuration, sign_foreign_tx_response, starknet_extracted_values,
-    starknet_request, SandboxTestSetup,
+    starknet_request, ton_request,
 };
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
@@ -29,6 +29,8 @@ const SIGNATURE_TIMEOUT_BLOCKS: u64 = 200;
 #[case::arbitrum(arbitrum_evm_request(), evm_block_hash_extracted_values())]
 #[case::polygon(polygon_evm_request(), evm_block_hash_extracted_values())]
 #[case::hyper_evm(hyper_evm_request(), evm_block_hash_extracted_values())]
+#[case::ton(ton_request(), bogus_ton_log_extracted_value())]
+#[case::aptos(aptos_request(), aptos_extracted_values())]
 #[tokio::test]
 async fn verify_foreign_transaction__should_succeed(
     #[case] rpc_request: ForeignChainRpcRequest,
@@ -201,6 +203,8 @@ async fn verify_foreign_transaction__should_fan_out_response_to_duplicates_from_
 #[case::arbitrum(arbitrum_evm_request())]
 #[case::polygon(polygon_evm_request())]
 #[case::hyper_evm(hyper_evm_request())]
+#[case::ton(ton_request())]
+#[case::aptos(aptos_request())]
 #[tokio::test]
 async fn verify_foreign_transaction__should_reject_without_policy(
     #[case] rpc_request: ForeignChainRpcRequest,
@@ -247,6 +251,8 @@ async fn verify_foreign_transaction__should_reject_without_policy(
 #[case::arbitrum(arbitrum_evm_request())]
 #[case::polygon(polygon_evm_request())]
 #[case::hyper_evm(hyper_evm_request())]
+#[case::ton(ton_request())]
+#[case::aptos(aptos_request())]
 #[tokio::test]
 async fn verify_foreign_transaction__should_timeout_without_response(
     #[case] rpc_request: ForeignChainRpcRequest,

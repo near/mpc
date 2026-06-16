@@ -2,12 +2,15 @@ disallowed-types = [
     { path = "near_crypto::ED25519PublicKey", reason = "Use `near_sdk::PublicKey` instead for types that directly interact with the MPC contract. For more context see https://github.com/near/mpc/issues/880" },
     { path = "near_crypto::Secp256K1PublicKey", reason = "Use `near_sdk::PublicKey` instead for types that directly interact with the MPC contract. For more context see https://github.com/near/mpc/issues/880" },
     { path = "near_crypto::PublicKey", reason = "Use `near_sdk::PublicKey` instead for types that directly interact with the MPC contract. For more context see https://github.com/near/mpc/issues/880" },
-    { path = "near_crypto::PrivateKey", reason = "Use the crates `secp256k1` or `ed25519_dalek` instead for private keys. This type provides no functionality benefit for the MPC project. For more context see https://github.com/near/mpc/issues/880" },
+    { path = "near_crypto::SecretKey", reason = "Use the crates `secp256k1` or `ed25519_dalek` instead for private keys. This type provides no functionality benefit for the MPC project. For more context see https://github.com/near/mpc/issues/880" },
 ]
 
 disallowed-methods = [
-    { path = "near_crypto::ED25519PublicKey", reason = "Use `near_sdk::PublicKey` instead for types that directly interact with the MPC contract. For more context see https://github.com/near/mpc/issues/880" },
-    { path = "near_crypto::Secp256K1PublicKey", reason = "Use `near_sdk::PublicKey` instead for types that directly interact with the MPC contract. For more context see https://github.com/near/mpc/issues/880" },
+    # The two tuple-struct entries below ban constructor calls (e.g. `ED25519PublicKey(bytes)`).
+    # `allow-invalid = true` silences clippy's config-time warning that the path resolves to a
+    # struct rather than a function — the lint still fires correctly at constructor call sites.
+    { path = "near_crypto::ED25519PublicKey", reason = "Use `near_sdk::PublicKey` instead for types that directly interact with the MPC contract. For more context see https://github.com/near/mpc/issues/880", allow-invalid = true },
+    { path = "near_crypto::Secp256K1PublicKey", reason = "Use `near_sdk::PublicKey` instead for types that directly interact with the MPC contract. For more context see https://github.com/near/mpc/issues/880", allow-invalid = true },
     { path = "near_o11y::testonly::init_integration_logger", reason = "we are in the process of removing nearcore dependencies. Use the `#[test_log::test]` macro instead" },
     { path = "near_o11y::metrics::try_create_histogram", reason = "we are in the process of removing nearcore dependencies. Use the prometheus crate directly instead with `prometheus::register_histogram!` macro" },
 ]
