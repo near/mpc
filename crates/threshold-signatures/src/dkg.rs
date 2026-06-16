@@ -476,6 +476,8 @@ async fn do_keyshare<C: Ciphersuite>(
 
         // add received full commitment
         all_full_commitments.put(p, full_commitment_i);
+
+        chan.yield_point().await;
     }
 
     // Verify vk asap
@@ -527,6 +529,8 @@ async fn do_keyshare<C: Ciphersuite>(
         // At the end of this loop, I will be owning a valid secret signing share
         // Step 5.3
         my_signing_share = my_signing_share + signing_share_from.to_scalar();
+
+        chan.yield_point().await;
     }
 
     // Step 5.4 and Step 5.5
