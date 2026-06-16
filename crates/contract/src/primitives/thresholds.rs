@@ -18,12 +18,12 @@ const MIN_THRESHOLD_DENOMINATOR: u64 = 5;
 
 /// Maximum fraction of participants the GovernanceThreshold may reach, expressed
 /// as `MAX_THRESHOLD_NUMERATOR / MAX_THRESHOLD_DENOMINATOR`. Currently set to 100%
-/// (5/5), so the relative upper cap is effectively disabled: the GovernanceThreshold
+/// (1/1), so the relative upper cap is effectively disabled: the GovernanceThreshold
 /// may go all the way up to the participant count (the absolute `k <= n` check still
 /// applies). Kept as an explicit fraction so a stricter cap can be re-introduced by
 /// lowering the numerator should a future policy require it.
-const MAX_THRESHOLD_NUMERATOR: u64 = 5;
-const MAX_THRESHOLD_DENOMINATOR: u64 = 5;
+const MAX_THRESHOLD_NUMERATOR: u64 = 1;
+const MAX_THRESHOLD_DENOMINATOR: u64 = 1;
 
 /// Lower bound on the GovernanceThreshold for `n` participants: 60% rounded up.
 /// Single source of truth shared by validation and test fixtures.
