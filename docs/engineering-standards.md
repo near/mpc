@@ -304,7 +304,7 @@ If it was instructed to implement `ComponentVersionA` instead of `ComponentVersi
     ```
 
 5. **Long-form rationale that belongs in an issue.** Prefer
-   `// TODO(#NNNN): <short replacement>` over a paragraph of
+   `// TODO(#example_issue_number): <short replacement>` over a paragraph of
    context. The *why* lives in the issue:
 
     ```rust
@@ -318,7 +318,7 @@ If it was instructed to implement `ComponentVersionA` instead of `ComponentVersi
     fn build_params() -> Params { ... }
 
     // Do
-    /// TODO(#NNNN): can become [`HashMap`] once [`parameter_store`] test no
+    /// TODO(#example_issue_number): can become [`HashMap`] once [`parameter_store`] test no
     /// longer asserts stable iteration order.
     fn build_params() -> Params { ... }
     ```

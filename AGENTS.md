@@ -122,7 +122,7 @@ Do not suggest using `checked_add`, `checked_mul`, `checked_sub`, `saturating_ad
 Default to writing no comments. Add one only in case one of the following applies:
 - the *why* is non-obvious: an invariant, a constraint, a surprising behavior;
 - it is part of the public API. In this case, focus on information relevant to the _consumer_ of that code (provide brief example, explain complexity);
-- the code requires a follow-up. In this case, there should be an issue for it, linked via `TODO(#issue)`. The issue should do the heavy-lifting when it comes to explaining the desired behavior, not the code comment.
+- the code requires a follow-up. In this case, there should be an issue for it, linked via a `TODO(#example_issue_number): <description>` comment. The issue should do the heavy-lifting when it comes to explaining the desired behavior, not the code comment.
 
 Avoid comments that are:
 - paraphrasing the code;
