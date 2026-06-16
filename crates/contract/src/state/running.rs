@@ -912,7 +912,11 @@ pub mod running_tests {
     fn vote_add_domains__should_accept_non_caitsith_domain_with_differing_threshold() {
         // Given a Running state with a CaitSith domain at t = 2 and a Frost
         // proposal at a different threshold.
+        // Require GovernanceThreshold >= 3 so a reconstruction threshold of 3 is allowed.
         let mut state = gen_running_state(1);
+        while state.parameters.threshold().value() < 3 {
+            state = gen_running_state(1);
+        }
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
         let proposal = single_domain_proposal(&state, Protocol::Frost, DomainPurpose::Sign, 3);
