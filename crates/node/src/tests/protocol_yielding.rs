@@ -28,7 +28,7 @@ use anyhow::Context;
 use rand::SeedableRng as _;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use threshold_signatures::ReconstructionLowerBound;
+use threshold_signatures::ReconstructionThreshold;
 use threshold_signatures::ecdsa::ot_based_ecdsa::triples::generate_triple_many;
 use threshold_signatures::participants::Participant;
 use threshold_signatures::test_utils::{MockCryptoRng, generate_participants};
@@ -139,7 +139,7 @@ async fn run_triple_gen_client(
     let protocol = generate_triple_many::<TRIPLES_PER_BATCH, _, _>(
         &cs_participants,
         my_id.into(),
-        ReconstructionLowerBound::from(THRESHOLD),
+        ReconstructionThreshold::from(THRESHOLD),
         rng,
     )?;
     let triples = run_protocol("canary triple gen", &mut channel, protocol).await?;

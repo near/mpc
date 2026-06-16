@@ -8,12 +8,12 @@ use crate::bench_utils::{
 };
 use rand_core::SeedableRng;
 use threshold_signatures::{
-    ReconstructionLowerBound,
+    ReconstructionThreshold,
     test_utils::{MockCryptoRng, run_protocol},
 };
 
-fn threshold() -> ReconstructionLowerBound {
-    ReconstructionLowerBound::from(*MAX_MALICIOUS + 1)
+fn threshold() -> ReconstructionThreshold {
+    ReconstructionThreshold::from(*MAX_MALICIOUS + 1)
 }
 
 fn participants_num() -> usize {

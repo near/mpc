@@ -21,7 +21,7 @@ use mpc_primitives::domain::DomainId;
 use near_time::Clock;
 use std::sync::Arc;
 use threshold_signatures::MaxMalicious;
-use threshold_signatures::ReconstructionLowerBound;
+use threshold_signatures::ReconstructionThreshold;
 use threshold_signatures::ecdsa::KeygenOutput;
 use threshold_signatures::ecdsa::Signature;
 use threshold_signatures::frost_secp256k1::VerifyingKey;
@@ -144,21 +144,21 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
     }
 
     async fn run_key_generation_client(
-        threshold: ReconstructionLowerBound,
+        threshold: ReconstructionThreshold,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
         let number_of_participants = channel.participants().len();
         let robust_ecdsa_threshold =
             translate_threshold(threshold.value(), number_of_participants)?;
         EcdsaSignatureProvider::run_key_generation_client_internal(
-            ReconstructionLowerBound::try_from(robust_ecdsa_threshold)?,
+            ReconstructionThreshold::try_from(robust_ecdsa_threshold)?,
             channel,
         )
         .await
     }
 
     async fn run_key_resharing_client(
-        new_threshold: ReconstructionLowerBound,
+        new_threshold: ReconstructionThreshold,
         my_share: Option<SigningShare>,
         public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
@@ -176,12 +176,12 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
             old_participants.threshold.try_into()?,
             old_participants.participants.len(),
         )?;
-        old_participants_patched.threshold = ReconstructionLowerBound::try_from(old_translated)?
+        old_participants_patched.threshold = ReconstructionThreshold::try_from(old_translated)?
             .value()
             .try_into()?;
 
         EcdsaSignatureProvider::run_key_resharing_client_internal(
-            ReconstructionLowerBound::try_from(new_robust_ecdsa_threshold)?,
+            ReconstructionThreshold::try_from(new_robust_ecdsa_threshold)?,
             my_share,
             public_key,
             &old_participants_patched,
