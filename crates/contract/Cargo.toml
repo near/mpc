@@ -59,9 +59,6 @@ bench-contract-methods = []
 # length of a fan-out queue). Distinct from `bench-contract-methods` because these are
 # behavioral hooks, not gas-measurement hooks.
 sandbox-test-methods = []
-# Exposes constructors for DTO-to-internal type conversion in the node.
-# TODO(#381): Remove once the node no longer depends on the contract crate.
-compat = []
 dev-utils = ["rand", "threshold-signatures", "near-mpc-contract-interface/blstrs"]
 abi = [
     "borsh/unstable__schema",
@@ -128,7 +125,6 @@ ecdsa = { workspace = true }
 futures = { workspace = true }
 insta = { workspace = true }
 mpc-contract = { workspace = true, features = [
-    "compat",
     "sandbox-test-methods",
     "test-utils",
 ] }

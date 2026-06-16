@@ -51,6 +51,7 @@ use std::sync::{Arc, OnceLock};
 use tokio::time::timeout;
 
 pub mod common;
+pub(crate) mod dto_conversions;
 
 mod asset_generation_signing_contention;
 mod basic_cluster;
@@ -59,6 +60,7 @@ mod faulty;
 mod foreign_chain_configuration;
 mod multidomain;
 mod onboarding;
+mod protocol_yielding;
 mod resharing;
 
 const DEFAULT_BLOCK_TIME: std::time::Duration = std::time::Duration::from_millis(300);
