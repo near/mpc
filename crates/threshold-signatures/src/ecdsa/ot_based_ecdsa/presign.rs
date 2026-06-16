@@ -1,4 +1,4 @@
-use crate::ReconstructionLowerBound;
+use crate::ReconstructionThreshold;
 use crate::ecdsa::ot_based_ecdsa::triples::{TriplePub, TripleShare};
 use crate::ecdsa::{
     AffinePoint, KeygenOutput, ProjectivePoint, RerandomizationArguments, Scalar, Secp256K1Sha256,
@@ -27,7 +27,7 @@ pub struct PresignArguments {
     /// This is of type `KeygenOutput<Secp256K1Sha256>` from Frost implementation
     pub keygen_out: KeygenOutput,
     /// The desired threshold for the presignature, which must match the original threshold
-    pub threshold: ReconstructionLowerBound,
+    pub threshold: ReconstructionThreshold,
 }
 
 /// The output of the presigning protocol.
