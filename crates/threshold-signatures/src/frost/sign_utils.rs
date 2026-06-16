@@ -4,11 +4,8 @@ use crate::{
     participants::{Participant, ParticipantList},
 };
 
-/// Verifies the participant-set and threshold inputs shared by every FROST protocol.
-///
-/// Checks that there are at least two participants, that the list has no duplicates, that `me`
-/// is among them, and that the threshold does not exceed the participant count. Returns the
-/// validated [`ParticipantList`] so callers can layer on any protocol-specific checks.
+/// Validates the FROST participant set and threshold (≥2 participants, no duplicates, `me`
+/// present, threshold ≤ count) and returns the validated [`ParticipantList`].
 pub fn assert_participant_inputs(
     participants: &[Participant],
     threshold: impl Into<ReconstructionLowerBound>,
