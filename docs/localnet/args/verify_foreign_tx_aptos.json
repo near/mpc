@@ -1,0 +1,19 @@
+{
+    "request": {
+        "request": {
+            "Aptos": {
+                "tx_id": "adc6b85a0931fc7f0d7e3839b52d63105e22cec1cb1cdee48aa2065773098c3c",
+                "finality": "Committed",
+                "extractors": [
+                    {
+                        "Event": {
+                            "event_index": 0
+                        }
+                    }
+                ]
+            }
+        },
+        "domain_id": 3,
+        "payload_version": 1
+    }
+}

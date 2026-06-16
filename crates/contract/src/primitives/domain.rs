@@ -71,26 +71,6 @@ pub fn validate_domain_threshold(
     Ok(())
 }
 
-/// TODO(#3306): Enforces the 3.11-transition lock: every CaitSith domain (ForeignTx
-/// included) must share a single `reconstruction_threshold`.
-pub fn validate_caitsith_uniform_threshold(domains: &[DomainConfig]) -> Result<(), Error> {
-    let mut expected: Option<u64> = None;
-    for domain in domains {
-        if domain.protocol != Protocol::CaitSith {
-            continue;
-        }
-        let found = domain.reconstruction_threshold.inner();
-        match expected {
-            None => expected = Some(found),
-            Some(expected) if expected != found => {
-                return Err(DomainError::CaitsithThresholdMismatch { expected, found }.into());
-            }
-            Some(_) => {}
-        }
-    }
-    Ok(())
-}
-
 /// All the domains present in the contract, as well as the next domain ID which is kept to ensure
 /// that we never reuse domain IDs. (Domains may be deleted in only one case: when we decided to
 /// add domains but ultimately canceled that process.)
@@ -212,13 +192,6 @@ impl DomainRegistry {
     /// registry are rejected with [`DomainError::UnknownDomainInProposal`].
     /// Domains absent from `threshold_updates` retain their existing threshold.
     /// An empty map returns a structurally identical clone (no change).
-    ///
-    /// The resulting registry is re-checked against the 3.11-transition lock
-    /// (see [`validate_caitsith_uniform_threshold`]): because the updates can
-    /// rewrite per-domain thresholds, they could otherwise leave CaitSith
-    /// domains with differing thresholds. This is the authoritative chokepoint
-    /// — no resharing transition can produce a registry that violates the
-    /// invariant.
     pub fn with_threshold_updates(
         &self,
         threshold_updates: &BTreeMap<DomainId, ReconstructionThreshold>,
@@ -242,7 +215,6 @@ impl DomainRegistry {
                 }
             })
             .collect();
-        validate_caitsith_uniform_threshold(&domains)?;
         Ok(DomainRegistry {
             domains,
             next_domain_id: self.next_domain_id,
@@ -731,10 +703,9 @@ pub mod tests {
     }
 
     #[test]
-    fn with_threshold_updates__should_reject_updates_that_diverge_caitsith_thresholds() {
-        // Given a registry with two CaitSith domains sharing one threshold
-        // (the 3.11-transition lock invariant) and threshold updates that
-        // rewrite only one of them to a different value.
+    fn with_threshold_updates__should_accept_updates_that_diverge_caitsith_thresholds() {
+        // Given a registry with two CaitSith domains sharing one threshold and
+        // threshold updates that rewrite only one of them to a different value.
         let registry = registry_of(vec![
             DomainConfig {
                 id: DomainId(0),
@@ -753,14 +724,16 @@ pub mod tests {
         threshold_updates.insert(DomainId(0), ReconstructionThreshold::new(5));
 
         // When applying the threshold updates
-        let err = registry
-            .with_threshold_updates(&threshold_updates)
-            .unwrap_err();
+        let result = registry.with_threshold_updates(&threshold_updates).unwrap();
 
-        // Then the 3.11-transition lock rejects the divergence
-        assert!(
-            err.to_string().contains("CaitSith threshold mismatch"),
-            "Expected CaitsithThresholdMismatch, got: {err}"
+        // Then CaitSith domains may carry independent thresholds.
+        assert_eq!(
+            result.domains()[0].reconstruction_threshold,
+            ReconstructionThreshold::new(5)
+        );
+        assert_eq!(
+            result.domains()[1].reconstruction_threshold,
+            ReconstructionThreshold::new(3)
         );
     }
 

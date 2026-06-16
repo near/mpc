@@ -5,10 +5,16 @@ use std::error::Error;
 
 use crate::ecdsa::{RerandomizationArguments, Tweak};
 use crate::frost;
-use crate::test_utils::{GenProtocol, random_32_bytes, run_protocol};
+use crate::test_utils::{GenProtocol, run_protocol};
 use crate::{
     Ciphersuite, Participant, ParticipantList, ReconstructionLowerBound, Scalar, VerifyingKey,
 };
+
+fn random_32_bytes(rng: &mut impl CryptoRngCore) -> [u8; 32] {
+    let mut bytes: [u8; 32] = [0u8; 32];
+    rng.fill_bytes(&mut bytes);
+    bytes
+}
 
 // +++++++++++++++++ ECDSA Presignature Rerandomization +++++++++++++++++ //
 /// Rerandomizes an ECDSA presignature.

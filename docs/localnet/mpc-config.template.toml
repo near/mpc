@@ -84,3 +84,13 @@ rpc_url = "https://starknet-rpc.publicnode.com"
 
 [node.foreign_chains.starknet.providers.public.auth]
 kind = "none"
+
+[node.foreign_chains.aptos]
+timeout_sec = 30
+max_retries = 3
+
+[node.foreign_chains.aptos.providers.public]
+rpc_url = "https://fullnode.mainnet.aptoslabs.com/v1"
+
+[node.foreign_chains.aptos.providers.public.auth]
+kind = "none"
