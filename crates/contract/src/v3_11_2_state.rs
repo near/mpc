@@ -19,7 +19,7 @@ use crate::{
     node_migrations::NodeMigrations,
     primitives::{
         ckd::CKDRequest,
-        domain::{AddDomainsVotes, DomainRegistry},
+        domain::{AddDomainsVotes, DomainRegistry, max_reconstruction_threshold},
         key_state::{AuthenticatedAccountId, EpochId, Keyset},
         signature::{SignatureRequest, YieldIndex},
         threshold_votes::ThresholdParametersVotes,
@@ -161,13 +161,7 @@ impl From<MpcContract> for crate::MpcContract {
 /// gate has no remaining job.
 fn validate_threshold_relation_on_migration(running: &RunningContractState) {
     let num_participants = running.parameters.participants().len() as u64;
-    let max_reconstruction_threshold = running
-        .domains
-        .domains()
-        .iter()
-        .map(|domain| domain.reconstruction_threshold.inner())
-        .max()
-        .unwrap_or(0);
+    let max_reconstruction_threshold = max_reconstruction_threshold(running.domains.domains());
     if let Err(err) = ThresholdParameters::validate_governance_against_reconstruction(
         num_participants,
         running.parameters.threshold(),

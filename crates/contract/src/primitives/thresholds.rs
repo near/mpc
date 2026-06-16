@@ -624,8 +624,7 @@ mod tests {
     fn test_remove_only() {
         let params = ThresholdParameters::new(gen_participants(5), Threshold::new(3)).unwrap();
 
-        // Shrink to 4 participants (not down to the threshold of 3): with the upper
-        // cap, k=3 requires at least 4 participants (floor(0.8*4) = 3).
+        // Shrink to 4 participants with the upper cap k=3
         let new_participants = params.participants.subset(0..4);
 
         let new_params = ThresholdParameters::new(new_participants, params.threshold).unwrap();
@@ -662,7 +661,7 @@ mod tests {
         let mut new_participants_vec: Vec<_> = params.participants.participants().to_vec();
         new_participants_vec.push((new_account, next_id, new_info));
 
-        // 6 participants with threshold 4: validate_threshold passes (60% of 6 = 4, upper cap = 4)
+        // 6 participants with threshold 4
         let proposal = ThresholdParameters::new_unvalidated(
             Participants::init(
                 ParticipantId(next_id.get() + 2), // too high: should be next_id + 1

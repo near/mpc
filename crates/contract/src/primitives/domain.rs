@@ -71,6 +71,19 @@ pub fn validate_domain_threshold(
     Ok(())
 }
 
+/// The largest `ReconstructionThreshold` across `domains`, or 0 if there are none
+/// (an empty set imposes no cross-domain lower bound on the GovernanceThreshold).
+/// Feeds [`ThresholdParameters::validate_governance_against_reconstruction`](crate::primitives::thresholds::ThresholdParameters::validate_governance_against_reconstruction).
+pub fn max_reconstruction_threshold<'a>(
+    domains: impl IntoIterator<Item = &'a DomainConfig>,
+) -> u64 {
+    domains
+        .into_iter()
+        .map(|domain| domain.reconstruction_threshold.inner())
+        .max()
+        .unwrap_or(0)
+}
+
 /// All the domains present in the contract, as well as the next domain ID which is kept to ensure
 /// that we never reuse domain IDs. (Domains may be deleted in only one case: when we decided to
 /// add domains but ultimately canceled that process.)

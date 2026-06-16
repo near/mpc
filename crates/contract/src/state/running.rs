@@ -3,7 +3,10 @@ use super::key_event::KeyEvent;
 use super::resharing::ResharingContractState;
 use crate::errors::{ConversionError, DomainError, Error, InvalidParameters, VoteError};
 use crate::primitives::{
-    domain::{AddDomainsVotes, DomainRegistry, validate_domain_purpose, validate_domain_threshold},
+    domain::{
+        AddDomainsVotes, DomainRegistry, max_reconstruction_threshold, validate_domain_purpose,
+        validate_domain_threshold,
+    },
     key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, Keyset},
     threshold_votes::ThresholdParametersVotes,
     thresholds::{ProposedThresholdParameters, ThresholdParameters},
@@ -182,15 +185,10 @@ impl RunningContractState {
 
         // The GovernanceThreshold must dominate every domain's effective ReconstructionThreshold;
         // enforced here so the state transition is self-contained (single source of truth).
-        let max_reconstruction_threshold = effective_domains
-            .iter()
-            .map(|domain| domain.reconstruction_threshold.inner())
-            .max()
-            .unwrap_or(0);
         ThresholdParameters::validate_governance_against_reconstruction(
             new_num_participants,
             proposal.threshold(),
-            max_reconstruction_threshold,
+            max_reconstruction_threshold(&effective_domains),
         )?;
 
         // ensure the signer is a proposed participant
@@ -232,15 +230,10 @@ impl RunningContractState {
         // Keep trust assumptions consistent: a domain must never require more shares to
         // reconstruct than the GovernanceThreshold demands to govern. Route through the
         // canonical helper so the cross-domain invariant has a single source of truth.
-        let max_reconstruction_threshold = domains
-            .iter()
-            .map(|domain| domain.reconstruction_threshold.inner())
-            .max()
-            .expect("domains is non-empty: guarded by AddDomainsMustAddAtLeastOneDomain above");
         ThresholdParameters::validate_governance_against_reconstruction(
             num_participants,
             self.parameters.threshold(),
-            max_reconstruction_threshold,
+            max_reconstruction_threshold(&domains),
         )?;
         let participant = AuthenticatedParticipantId::new(self.parameters.participants())?;
         let n_votes = self.add_domains_votes.vote(domains.clone(), &participant);
