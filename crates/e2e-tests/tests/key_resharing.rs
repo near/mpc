@@ -49,10 +49,10 @@ async fn test_key_resharing() {
         .await
         .expect("ckd request failed");
 
-    // Resharing 2: shrink to nodes [1,2,3] (drop node 0), threshold 2.
+    // Resharing 2: shrink to nodes [1,2,3] (drop node 0), threshold 3.
     tracing::info!("resharing 2: dropping node 0");
     cluster
-        .start_resharing_and_wait(&[1, 2, 3], 2)
+        .start_resharing_and_wait(&[1, 2, 3], 3)
         .await
         .expect("resharing 2 failed");
     let running = running_state(&cluster).await.expect("running_state failed");
@@ -77,14 +77,14 @@ async fn test_key_resharing() {
         .await
         .expect("sign request failed");
 
-    // Resharing 4: re-add node 0 and increase threshold to 4 (n=5, the 80% cap allows 4).
-    tracing::info!("resharing 4: expanding to 5 nodes, increasing threshold to 4");
+    // Resharing 4: increase threshold to 4 (all participants required).
+    tracing::info!("resharing 4: increasing threshold to 4");
     cluster
-        .start_resharing_and_wait(&[0, 1, 2, 3, 4], 4)
+        .start_resharing_and_wait(&[1, 2, 3, 4], 4)
         .await
         .expect("resharing 4 failed");
     let running = running_state(&cluster).await.expect("running_state failed");
-    assert_eq!(running.parameters.participants.participants.len(), 5);
+    assert_eq!(running.parameters.participants.participants.len(), 4);
 
     // Verify resharing didn't repeatedly fail. Allow a small number of
     // retries for transient sandbox contention (key_event_timeout_blocks

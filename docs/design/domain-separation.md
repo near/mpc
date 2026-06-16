@@ -348,10 +348,12 @@ pub fn validate_governance(governance: &GovernanceBody) -> Result<(), Error> {
     if t < min_relative {
         return Err(Error::GovernanceThresholdBelowMinimumRelative);
     }
-    // Governance upper cap: <= 80% (floor), clamped up to the 60% lower bound so the
-    // window is never empty. Prevents a minority that stops serving from locking the
-    // contract (reshare / add / kick / sign). See §7.1.
-    let max_relative = (4 * n / 5).max(min_relative);
+    // Governance relative upper cap, expressed as a fraction of n. Currently set to
+    // 100% (5/5 = n) — effectively disabled — so it never binds below the absolute
+    // `t <= n` check above. Kept as an explicit fraction (clamped up to the 60% lower
+    // bound so the window is never empty) so a stricter cap can be re-introduced later.
+    // See §7.1.
+    let max_relative = (5 * n / 5).max(min_relative);
     if t > max_relative {
         return Err(Error::GovernanceThresholdAboveMaximumRelative);
     }
@@ -935,11 +937,9 @@ let threshold = match dk.protocol {
 Resolved: the `GovernanceThreshold` is now constrained relative to the cryptographic `ReconstructionThreshold`. Concretely, for `n` participants and per-domain reconstruction thresholds `t_i`:
 
 - `max(t_i) <= GovernanceThreshold` — a governance majority can never approve a reshare into a set smaller than what any domain needs to reconstruct its key (keeps trust assumptions consistent).
-- `ceil(0.6*n) <= GovernanceThreshold <= max(ceil(0.6*n), floor(0.8*n))` — the existing 60% lower bound plus an 80%-floor upper cap so a minority that stops serving cannot lock the contract.
+- `ceil(0.6*n) <= GovernanceThreshold <= n` — the existing 60% lower bound. A relative upper cap (`MAX_THRESHOLD_NUMERATOR / MAX_THRESHOLD_DENOMINATOR`) is retained in the code but currently set to 100% (5/5 = n), so it is effectively disabled and only the absolute `GovernanceThreshold <= n` check binds. An 80%-floor cap was considered (to stop a minority that stops serving from locking the contract) but not adopted; the fraction is kept explicit so a stricter cap can be re-introduced later.
 
 These are enforced at every mutation point (governance threshold updates, reconstruction threshold updates, participant add, participant kick) and re-validated once on migration, where a violation hard-blocks the upgrade (panic) — state that breaks the relation must be corrected via `vote_new_parameters` before upgrading. See `ThresholdParameters::validate_threshold` and `validate_governance_against_reconstruction` in `crates/contract/src/primitives/thresholds.rs`.
-
-> **Operator note — the feasible window can be a single value.** When `ceil(0.6*n)` and `floor(0.8*n)` round to the same integer, exactly one `GovernanceThreshold` is legal and there is zero room to tune: this happens at `n = 2, 3, 4, 6, 7` (forced thresholds `2, 2, 3, 4, 5`), widening only from `n >= 8`. The `n = 2` case is degenerate — it forces `GovernanceThreshold = n` (unanimity), defeating the cap; permitted by validation but not a sensible configuration.
 
 ### 7.2 Backward-Compatible View Methods
 

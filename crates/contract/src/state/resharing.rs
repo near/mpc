@@ -417,7 +417,7 @@ pub mod tests {
         // should be rejected, since all re-proposals must be valid against the original.
         let mut new_participants_1 = old_participants.clone();
         // Threshold valid for the grown set (1.5x): old_len sits within
-        // [ceil(0.6 * 1.5n), floor(0.8 * 1.5n)].
+        // [ceil(0.6 * 1.5n), 1.5n].
         let new_threshold = Threshold::new(old_participants.len() as u64);
         new_participants_1.add_random_participants_till_n((old_participants.len() * 3).div_ceil(2));
         let new_participants_2 = new_participants_1

@@ -1032,29 +1032,4 @@ mod tests {
             ))
         ));
     }
-
-    /// A threshold above the relative upper cap (> 80%) must be rejected at the
-    /// DTO boundary rather than deferred to a later validation step.
-    #[test]
-    fn try_into_contract_type__should_reject_threshold_above_upper_cap() {
-        // Given a DTO with 5 participants and a threshold of 5 (above the cap of floor(0.8*5)=4).
-        use crate::errors::InvalidThreshold;
-        use crate::primitives::test_utils::gen_participants;
-
-        let dto = dtos::ThresholdParameters {
-            participants: (&gen_participants(5)).into_dto_type(),
-            threshold: Threshold::new(5),
-        };
-
-        // When converting the DTO into the contract type.
-        let result: Result<ThresholdParameters, Error> = dto.try_into_contract_type();
-
-        // Then conversion fails with the upper-cap error.
-        assert!(matches!(
-            result,
-            Err(Error::InvalidThreshold(
-                InvalidThreshold::MaxRelRequirementFailed { max: 4, found: 5 }
-            ))
-        ));
-    }
 }

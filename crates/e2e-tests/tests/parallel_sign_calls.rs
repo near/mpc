@@ -8,7 +8,7 @@ use near_mpc_contract_interface::types::{
 use serde_json::json;
 
 /// 9 parallel calls (3 robust ECDSA + 2 ECDSA + 2 EdDSA + 2 CKD) via the test parallel
-/// contract, against a 7-node / threshold-5 cluster that carries all four signing-scheme
+/// contract, against a 6-node / threshold-5 cluster that carries all four signing-scheme
 /// domains. Verifies all calls succeed and both the signature and CKD queues drain.
 #[tokio::test]
 async fn mpc_cluster_should_successfully_process_parallel_requests() {
@@ -21,8 +21,8 @@ async fn mpc_cluster_should_successfully_process_parallel_requests() {
     // given
     let (cluster, _running) =
         common::must_setup_cluster(common::PARALLEL_SIGN_CALLS_PORT_SEED, |c| {
-            c.num_nodes = 7;
-            c.initial_participant_indices = (0..7).collect();
+            c.num_nodes = 6;
+            c.initial_participant_indices = (0..6).collect();
             c.threshold = 5;
             c.domains = vec![
                 DomainConfig {

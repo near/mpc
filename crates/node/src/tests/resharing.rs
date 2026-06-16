@@ -37,7 +37,7 @@ async fn test_key_resharing_simple(
     #[case] protocol: Protocol,
     #[case] threshold: usize,
 ) {
-    let num_participants: usize = threshold + 2;
+    let num_participants: usize = threshold + 1;
     const TXN_DELAY_BLOCKS: u64 = 1;
     let temp_dir = tempfile::tempdir().unwrap();
     let mut setup = IntegrationTestSetup::new(

@@ -9,20 +9,20 @@ use rand::SeedableRng;
 /// Tests that signature and CKD requests are processed using the previous
 /// running state's threshold while resharing is in progress.
 ///
-/// Setup: 8 nodes, 7 initial participants (threshold 5). Domains cover
+/// Setup: 6 nodes, 5 initial participants (threshold 5). Domains cover
 /// classic ECDSA (CaitSith), robust ECDSA (DamgardEtAl), EdDSA (Frost) and
 /// CKD (ConfidentialKeyDerivation). Threshold is 5 because robust ECDSA
-/// requires ≥ 5 signers (see `robust_ecdsa::translate_threshold`); 7
-/// participants keep it within the 80% governance cap. Begin resharing to all
-/// 8 with threshold 6, then kill node 7 so resharing can't complete. Requests
-/// should still succeed using the old threshold of 5 across all signing schemes.
+/// requires ≥ 5 signers (see `robust_ecdsa::translate_threshold`). Begin
+/// resharing to all 6 with threshold 6, then kill node 5 so resharing can't
+/// complete. Requests should still succeed using the old threshold of 5
+/// across all signing schemes.
 #[tokio::test]
 async fn test_request_during_resharing() {
     // given
     let (mut cluster, contract_state) =
         common::must_setup_cluster(common::REQUEST_DURING_RESHARING_PORT_SEED, |c| {
-            c.num_nodes = 8;
-            c.initial_participant_indices = (0..7).collect();
+            c.num_nodes = 6;
+            c.initial_participant_indices = (0..5).collect();
             c.threshold = 5;
             c.triples_to_buffer = 2;
             c.presignatures_to_buffer = 2;
@@ -36,14 +36,14 @@ async fn test_request_during_resharing() {
         .await;
 
     // when
-    tracing::info!("beginning resharing to 8 nodes, threshold 6");
+    tracing::info!("beginning resharing to 6 nodes, threshold 6");
     cluster
-        .start_resharing(&[0, 1, 2, 3, 4, 5, 6, 7], 6)
+        .start_resharing(&[0, 1, 2, 3, 4, 5], 6)
         .await
         .expect("start_resharing failed");
 
-    tracing::info!("killing node 7 to block resharing");
-    cluster.kill_nodes(&[7]).expect("failed to kill node 7");
+    tracing::info!("killing node 5 to block resharing");
+    cluster.kill_nodes(&[5]).expect("failed to kill node 5");
 
     // then
     let ecdsa_domain = contract_state

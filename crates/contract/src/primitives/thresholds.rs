@@ -17,11 +17,12 @@ const MIN_THRESHOLD_NUMERATOR: u64 = 3;
 const MIN_THRESHOLD_DENOMINATOR: u64 = 5;
 
 /// Maximum fraction of participants the GovernanceThreshold may reach, expressed
-/// as `MAX_THRESHOLD_NUMERATOR / MAX_THRESHOLD_DENOMINATOR` (currently 80%). A
-/// GovernanceThreshold set too high would let a minority that stops serving lock
-/// the contract (it could no longer reshare, add/kick participants, or sign).
-/// Kept as an explicit fraction so the percentage and rounding are easy to tune.
-const MAX_THRESHOLD_NUMERATOR: u64 = 4;
+/// as `MAX_THRESHOLD_NUMERATOR / MAX_THRESHOLD_DENOMINATOR`. Currently set to 100%
+/// (5/5), so the relative upper cap is effectively disabled: the GovernanceThreshold
+/// may go all the way up to the participant count (the absolute `k <= n` check still
+/// applies). Kept as an explicit fraction so a stricter cap can be re-introduced by
+/// lowering the numerator should a future policy require it.
+const MAX_THRESHOLD_NUMERATOR: u64 = 5;
 const MAX_THRESHOLD_DENOMINATOR: u64 = 5;
 
 /// Lower bound on the GovernanceThreshold for `n` participants: 60% rounded up.
@@ -30,8 +31,9 @@ pub(crate) fn governance_threshold_lower_bound(n: u64) -> u64 {
     (MIN_THRESHOLD_NUMERATOR * n).div_ceil(MIN_THRESHOLD_DENOMINATOR)
 }
 
-/// Upper bound on the GovernanceThreshold for `n` participants: 80% floored,
-/// clamped up to the lower bound so the feasible window is never empty for small
+/// Upper bound on the GovernanceThreshold for `n` participants:
+/// `MAX_THRESHOLD_NUMERATOR / MAX_THRESHOLD_DENOMINATOR` floored (currently 100%, i.e.
+/// `n`), clamped up to the lower bound so the feasible window is never empty for small
 /// `n`. Single source of truth shared by validation and test fixtures.
 pub(crate) fn governance_threshold_upper_bound(n: u64) -> u64 {
     (MAX_THRESHOLD_NUMERATOR * n / MAX_THRESHOLD_DENOMINATOR)
@@ -67,9 +69,10 @@ impl ThresholdParameters {
     /// - threshold can not exceed the number of shares `n_shares`.
     /// - threshold must be at least 60% of the number of shares (rounded upwards).
     /// - threshold must not exceed `MAX_THRESHOLD_NUMERATOR / MAX_THRESHOLD_DENOMINATOR`
-    ///   of the number of shares (rounded downwards), so a minority that stops serving
-    ///   cannot lock the contract. This upper cap is clamped up to the 60% lower bound so
-    ///   the feasible window is never empty for small `n_shares`.
+    ///   of the number of shares (rounded downwards), clamped up to the 60% lower bound so
+    ///   the feasible window is never empty for small `n_shares`. This relative upper cap is
+    ///   currently set to 100%, so in practice it never binds below the absolute `k <= n`
+    ///   check above.
     fn validate_threshold(n_shares: u64, k: Threshold) -> Result<(), Error> {
         if k.value() > n_shares {
             return Err(InvalidThreshold::MaxRequirementFailed {
@@ -370,24 +373,9 @@ mod tests {
     }
 
     #[test]
-    fn validate_threshold__should_reject_governance_above_upper_cap() {
-        // Given 10 participants, the upper cap is floor(0.8 * 10) = 8.
-        let n = 10;
-        // When/Then thresholds within the window are accepted.
-        ThresholdParameters::validate_threshold(n, Threshold::new(8)).unwrap();
-        // ...and the first value above the cap is rejected.
-        assert_matches!(
-            ThresholdParameters::validate_threshold(n, Threshold::new(9)),
-            Err(Error::InvalidThreshold(
-                InvalidThreshold::MaxRelRequirementFailed { max: 8, found: 9 }
-            ))
-        );
-    }
-
-    #[test]
     fn validate_threshold__should_not_produce_empty_window_for_small_n() {
-        // For small n the floor(0.8n) cap can dip below the ceil(0.6n) lower bound;
-        // the clamp must keep at least one valid threshold available.
+        // The relative upper cap is clamped up to the ceil(0.6n) lower bound, so the
+        // feasible window must always hold at least one valid threshold.
         for n in 2..=12u64 {
             let lower = governance_threshold_lower_bound(n);
             let upper = governance_threshold_upper_bound(n);
@@ -568,8 +556,8 @@ mod tests {
     #[test]
     fn test_proposal_non_contiguous_new_ids_fail() {
         // Test that the lowest new id equals to the `next_id` of the previous set.
-        // Use a high (but capped) threshold so adding one participant doesn't violate the 60% rule.
-        let params = ThresholdParameters::new(gen_participants(5), Threshold::new(4)).unwrap();
+        // Use a high threshold so adding one participant doesn't violate the 60% rule.
+        let params = ThresholdParameters::new(gen_participants(5), Threshold::new(5)).unwrap();
 
         let wrong_id = params.participants.next_id().0 + 1;
 
@@ -593,7 +581,7 @@ mod tests {
 
     #[test]
     fn test_proposal_non_unique_ids() {
-        let params = ThresholdParameters::new(gen_participants(5), Threshold::new(4)).unwrap();
+        let params = ThresholdParameters::new(gen_participants(5), Threshold::new(5)).unwrap();
 
         // Create proposal with duplicate participants (doubled list)
         let tampered_participants = Participants::init(
@@ -624,8 +612,9 @@ mod tests {
     fn test_remove_only() {
         let params = ThresholdParameters::new(gen_participants(5), Threshold::new(3)).unwrap();
 
-        // Shrink to 4 participants with the upper cap k=3
-        let new_participants = params.participants.subset(0..4);
+        let new_participants = params
+            .participants
+            .subset(0..params.threshold.value() as usize);
 
         let new_params = ThresholdParameters::new(new_participants, params.threshold).unwrap();
 
@@ -652,7 +641,7 @@ mod tests {
     fn test_new_participant_id_too_high() {
         // When proposal's next_id is higher than max_id + 1, it should fail with
         // NewParticipantIdsTooHigh.
-        let params = ThresholdParameters::new(gen_participants(5), Threshold::new(4)).unwrap();
+        let params = ThresholdParameters::new(gen_participants(5), Threshold::new(5)).unwrap();
         let next_id = params.participants.next_id();
 
         // Add one new participant with the correct next_id, but set the proposal's
@@ -661,13 +650,13 @@ mod tests {
         let mut new_participants_vec: Vec<_> = params.participants.participants().to_vec();
         new_participants_vec.push((new_account, next_id, new_info));
 
-        // 6 participants with threshold 4
+        // 6 participants with threshold 5
         let proposal = ThresholdParameters::new_unvalidated(
             Participants::init(
                 ParticipantId(next_id.get() + 2), // too high: should be next_id + 1
                 new_participants_vec,
             ),
-            Threshold::new(4),
+            Threshold::new(5),
         );
         assert_eq!(
             params.validate_incoming_proposal(&proposal).unwrap_err(),

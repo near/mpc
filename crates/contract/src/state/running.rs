@@ -528,16 +528,17 @@ pub mod running_tests {
     fn vote_add_domains__should_reject_reconstruction_threshold_above_governance() {
         // Given a Frost proposal whose ReconstructionThreshold exceeds the
         // GovernanceThreshold (but is still <= participant count).
+        // Regenerate until the GovernanceThreshold sits strictly below the participant
+        // count, so `governance + 1 <= n` and the rejection is driven by the
+        // GovernanceThreshold/ReconstructionThreshold relation rather than the
+        // participant-count ceiling.
         let mut state = gen_running_state(1);
+        while state.parameters.threshold().value() >= state.parameters.participants().len() as u64 {
+            state = gen_running_state(1);
+        }
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
         let governance = state.parameters.threshold().value();
-        let n = state.parameters.participants().len() as u64;
-        // gen_threshold_params caps governance below n, so governance + 1 <= n here.
-        assert!(
-            governance < n,
-            "test requires governance below participant count"
-        );
         let next_id = state.domains.next_domain_id();
         let proposal = vec![DomainConfig {
             id: DomainId(next_id),
