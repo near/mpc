@@ -87,7 +87,7 @@ k256 = { workspace = true, features = [
     "arithmetic",
     "expose-field",
 ] }
-mpc-attestation = { workspace = true }
+mpc-attestation = { workspace = true, features = ["local-verify"] }
 mpc-primitives = { workspace = true }
 near-account-id = { workspace = true, features = ["serde"] }
 near-mpc-bounded-collections = { workspace = true }

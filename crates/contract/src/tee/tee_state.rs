@@ -159,7 +159,7 @@ impl TeeState {
         let AcceptedAttestation {
             attestation: verified_attestation,
             advisory_ids,
-        } = attestation.verify(
+        } = attestation.verify_locally(
             expected_report_data.into(),
             Self::current_time_seconds(),
             &self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration),

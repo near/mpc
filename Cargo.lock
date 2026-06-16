@@ -976,6 +976,7 @@ name = "attestation"
 version = "3.12.0"
 dependencies = [
  "assert_matches",
+ "attestation",
  "borsh",
  "dcap-qvl",
  "derive_more 2.1.1",
@@ -986,6 +987,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "sha2 0.10.9",
+ "tee-verifier-interface",
  "test-utils",
  "thiserror 2.0.18",
 ]
@@ -5735,11 +5737,13 @@ dependencies = [
  "hex",
  "include-measurements",
  "launcher-interface",
+ "mpc-attestation",
  "mpc-primitives",
  "serde",
  "serde_json",
  "sha2 0.10.9",
  "sha3",
+ "tee-verifier-interface",
  "test-utils",
 ]
 
@@ -11107,6 +11111,7 @@ dependencies = [
  "borsh",
  "derive_more 2.1.1",
  "rstest",
+ "serde",
 ]
 
 [[package]]

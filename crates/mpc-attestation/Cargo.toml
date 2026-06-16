@@ -8,6 +8,11 @@ edition = { workspace = true }
 abi = ["borsh/unstable__schema", "mpc-primitives/abi", "attestation/borsh-schema"]
 dstack-conversions = ["attestation/dstack-conversions"]
 test-utils = ["attestation/test-utils"]
+# Enables `Attestation::verify_locally` (full local DCAP + post-DCAP
+# verification), forwarding to `attestation/local-verify` which pulls in
+# `dcap-qvl`. Used off-chain (node, tee-authority, attestation-cli) and, for
+# now, by the contract's synchronous attestation path.
+local-verify = ["attestation/local-verify"]
 
 [dependencies]
 attestation = { workspace = true }
@@ -21,10 +26,16 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 sha3 = { workspace = true }
+tee-verifier-interface = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
+# `dcap-qvl` is used directly by the off-chain `report_data` unit test (gated on
+# `local-verify`) to parse a real quote.
 dcap-qvl = { workspace = true }
+# Self-dependency with `local-verify` so the integration tests can exercise the
+# full local DCAP + post-DCAP path (`verify_locally`).
+mpc-attestation = { path = ".", features = ["local-verify", "test-utils"] }
 test-utils = { workspace = true }
 
 [lints]
