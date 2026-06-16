@@ -181,11 +181,10 @@ impl EcdsaSignatureProvider {
         // Triple store to consume from is keyed by the presign's `t`, which
         // equals the number of presign participants (same as triple
         // participants — the leader pairs them).
-        let threshold_usize: usize = channel.participants().len();
-        let threshold = ReconstructionThreshold::new(threshold_usize.try_into()?);
+        let threshold = ReconstructionThreshold::from(channel.participants().len());
         let triple_store = self.triple_store_for_t(threshold)?;
         FollowerPresignComputation {
-            threshold: ReconstructionThreshold::from(threshold_usize),
+            threshold,
             keygen_out: domain_data.keyshare,
             triple_store,
             paired_triple_id,

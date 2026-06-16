@@ -270,8 +270,6 @@ impl SignatureProvider for EcdsaSignatureProvider {
         // and source `t` from `domain.reconstruction_threshold` rather than the
         // network-wide threshold.
         let threshold = ReconstructionThreshold::new(self.mpc_config.participants.threshold);
-        let threshold_usize: usize = threshold.inner().try_into()?;
-        let threshold_bound = ReconstructionThreshold::from(threshold_usize);
         let triple_store = self.triple_store_for_t(threshold)?;
 
         let generate_triples = tracking::spawn(
@@ -281,7 +279,7 @@ impl SignatureProvider for EcdsaSignatureProvider {
                 self.mpc_config.clone(),
                 self.config.triple.clone().into(),
                 triple_store.clone(),
-                threshold_bound,
+                threshold,
             ),
         );
 
@@ -293,7 +291,7 @@ impl SignatureProvider for EcdsaSignatureProvider {
                     &format!("generate presignatures for domain {}", domain_id.0),
                     Self::run_background_presignature_generation(
                         self.client.clone(),
-                        threshold_bound,
+                        threshold,
                         self.config.presignature.clone().into(),
                         triple_store.clone(),
                         *domain_id,

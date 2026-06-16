@@ -26,15 +26,14 @@ impl ReconstructionThreshold {
         self.0
     }
 
-    /// The threshold as a `usize`, for indexing and sizing collections in the
-    /// protocol code. Lossless on all supported (>= 32-bit) targets.
+    /// The threshold as a `usize`, for indexing and sizing collections.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics only if the threshold exceeds `usize::MAX` — impossible on
-    /// supported targets, where a participant count always fits in `usize`.
-    pub fn as_usize(self) -> usize {
-        usize::try_from(self.0).expect("reconstruction threshold fits in usize")
+    /// [`ThresholdError::IntegerOverflow`] if the threshold exceeds `usize::MAX`
+    /// — unreachable on supported (>= 32-bit) targets.
+    pub fn try_as_usize(self) -> Result<usize, ThresholdError> {
+        usize::try_from(self.0).map_err(|_| ThresholdError::IntegerOverflow)
     }
 }
 
@@ -66,4 +65,72 @@ impl TryFrom<MaxMalicious> for ReconstructionThreshold {
 pub enum ThresholdError {
     #[error("integer overflow")]
     IntegerOverflow,
+}
+
+#[cfg(test)]
+#[allow(non_snake_case)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reconstruction_threshold__should_round_trip_through_new_and_inner() {
+        // Given
+        let threshold = ReconstructionThreshold::new(3);
+
+        // When
+        let inner = threshold.inner();
+
+        // Then
+        assert_eq!(inner, 3);
+        assert_eq!(ReconstructionThreshold::new(inner), threshold);
+    }
+
+    #[test]
+    fn reconstruction_threshold__should_round_trip_through_from_usize_and_try_as_usize() {
+        // Given
+        let threshold = ReconstructionThreshold::from(5usize);
+
+        // When
+        let as_usize = threshold.try_as_usize();
+
+        // Then
+        assert_eq!(as_usize, Ok(5usize));
+        assert_eq!(ReconstructionThreshold::from(as_usize.unwrap()), threshold);
+    }
+
+    #[test]
+    fn try_as_usize__should_return_ok_for_representable_value() {
+        // Given
+        let threshold = ReconstructionThreshold::new(7);
+
+        // When
+        let result = threshold.try_as_usize();
+
+        // Then
+        assert_eq!(result, Ok(7usize));
+    }
+
+    #[test]
+    fn try_from_max_malicious__should_be_max_malicious_plus_one() {
+        // Given
+        let max_malicious = MaxMalicious::from(4usize);
+
+        // When
+        let threshold = ReconstructionThreshold::try_from(max_malicious);
+
+        // Then
+        assert_eq!(threshold, Ok(ReconstructionThreshold::new(5)));
+    }
+
+    #[test]
+    fn try_from_max_malicious__should_overflow_when_at_usize_max() {
+        // Given
+        let max_malicious = MaxMalicious::from(usize::MAX);
+
+        // When
+        let result = ReconstructionThreshold::try_from(max_malicious);
+
+        // Then
+        assert_eq!(result, Err(ThresholdError::IntegerOverflow));
+    }
 }

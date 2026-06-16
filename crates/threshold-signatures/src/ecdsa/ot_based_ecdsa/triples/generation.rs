@@ -144,11 +144,11 @@ async fn do_generation_many<const N: usize>(
     let mut big_l_i_v = vec![];
 
     let degree1 = threshold
-        .as_usize()
+        .try_as_usize()?
         .checked_sub(1)
         .ok_or(ProtocolError::IntegerOverflow)?;
     let degree2 = threshold
-        .as_usize()
+        .try_as_usize()?
         .checked_sub(2)
         .ok_or(ProtocolError::IntegerOverflow)?;
 
@@ -367,10 +367,11 @@ async fn do_generation_many<const N: usize>(
                 big_f_v.iter_mut(),
                 big_l_v.iter_mut(),
             )) {
-                if their_big_e.degree() != threshold.as_usize() - 1
-                    || their_big_f.degree() != threshold.as_usize() - 1
+                let threshold_value = threshold.try_as_usize()?;
+                if their_big_e.degree() != threshold_value - 1
+                    || their_big_f.degree() != threshold_value - 1
                     // degree is threshold - 2 because the constant element identity is not serializable
-                    || their_big_l.degree() != threshold.as_usize() - 2
+                    || their_big_l.degree() != threshold_value - 2
                 {
                     return Err(ProtocolError::AssertionFailed(format!(
                         "polynomial from {from:?} has the wrong length"
@@ -707,7 +708,7 @@ fn validate_triple_inputs(
     threshold: impl Into<ReconstructionThreshold>,
 ) -> Result<(ParticipantList, ReconstructionThreshold), InitializationError> {
     let threshold = threshold.into();
-    let threshold_value = threshold.as_usize();
+    let threshold_value = threshold.try_as_usize()?;
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
             participants: participants.len(),

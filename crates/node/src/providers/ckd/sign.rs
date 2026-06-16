@@ -42,7 +42,7 @@ impl CKDProvider {
         let participants = self
             .client
             .select_random_active_participants_including_me(
-                threshold.as_usize(),
+                threshold.try_as_usize()?,
                 &running_participants,
             )
             .context("Could not choose active participants for a ckd")?;

@@ -78,6 +78,11 @@ impl EcdsaSignatureProvider {
         let in_flight_generations = InFlightGenerationTracker::new();
         let parallelism_limiter = Arc::new(tokio::sync::Semaphore::new(config.concurrency));
         let mut tasks = AutoAbortTaskCollection::new();
+        // Converted once: loop-invariant, and this `-> !` loop has no error
+        // channel. Unreachable on supported targets (count fits in `usize`).
+        let threshold_usize = threshold
+            .try_as_usize()
+            .expect("reconstruction threshold fits in usize");
         let running_participants: Vec<_> = mpc_config
             .participants
             .participants
@@ -106,7 +111,7 @@ impl EcdsaSignatureProvider {
                 < config.concurrency * 2 * SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE
             {
                 let participants = match client.select_random_active_participants_including_me(
-                    threshold.as_usize(),
+                    threshold_usize,
                     &running_participants,
                 ) {
                     Ok(participants) => participants,
@@ -207,11 +212,10 @@ impl EcdsaSignatureProvider {
         // Cait-sith triple generation runs with exactly `t` participants, so we
         // can derive the store's `t` from the channel's participant list
         // without a wire-format change to `EcdsaTaskId::ManyTriples`.
-        let threshold_usize: usize = channel.participants().len();
-        let threshold = ReconstructionThreshold::new(threshold_usize.try_into()?);
+        let threshold = ReconstructionThreshold::from(channel.participants().len());
         let triple_store = self.triple_store_for_t(threshold)?;
         FollowerManyTripleGenerationComputation::<SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE> {
-            threshold: ReconstructionThreshold::from(threshold_usize),
+            threshold,
             out_triple_id_start: start,
             out_triple_store: triple_store,
         }

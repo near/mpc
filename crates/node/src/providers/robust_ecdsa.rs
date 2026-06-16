@@ -149,7 +149,7 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
     ) -> anyhow::Result<Self::KeygenOutput> {
         let number_of_participants = channel.participants().len();
         let robust_ecdsa_threshold =
-            translate_threshold(threshold.as_usize(), number_of_participants)?;
+            translate_threshold(threshold.try_as_usize()?, number_of_participants)?;
         EcdsaSignatureProvider::run_key_generation_client_internal(
             ReconstructionThreshold::try_from(robust_ecdsa_threshold)?,
             channel,
@@ -166,7 +166,7 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
     ) -> anyhow::Result<Self::KeygenOutput> {
         let number_of_participants = channel.participants().len();
         let new_robust_ecdsa_threshold =
-            translate_threshold(new_threshold.as_usize(), number_of_participants)?;
+            translate_threshold(new_threshold.try_as_usize()?, number_of_participants)?;
 
         // This is a bad hack, but cannot think of a better way to solve it, as the struct
         // comes directly from generic implementations, so probably this is the best place
