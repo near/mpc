@@ -276,13 +276,6 @@ pub enum DomainError {
         "Resharing proposal references domain ID {domain_id}, which is not in the current registry."
     )]
     UnknownDomainInProposal { domain_id: DomainId },
-    #[error(
-        "ReconstructionThreshold {reconstruction_threshold} exceeds the GovernanceThreshold {governance_threshold}."
-    )]
-    ReconstructionThresholdExceedsGovernance {
-        reconstruction_threshold: u64,
-        governance_threshold: u64,
-    },
 }
 
 /// A list specifying general categories of MPC Contract errors.

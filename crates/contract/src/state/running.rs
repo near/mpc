@@ -3,7 +3,7 @@ use super::key_event::KeyEvent;
 use super::resharing::ResharingContractState;
 use crate::errors::{ConversionError, DomainError, Error, InvalidParameters, VoteError};
 use crate::primitives::{
-    domain::{AddDomainsVotes, DomainRegistry, validate_domain_threshold},
+    domain::{AddDomainsVotes, DomainRegistry, validate_domain_purpose, validate_domain_threshold},
     key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, Keyset},
     threshold_votes::ThresholdParametersVotes,
     thresholds::{ProposedThresholdParameters, ThresholdParameters},
@@ -210,22 +210,25 @@ impl RunningContractState {
         if domains.is_empty() {
             return Err(DomainError::AddDomainsMustAddAtLeastOneDomain.into());
         }
-        let num_participants = self.parameters.participants().len() as u64;
-        let governance_threshold = self.parameters.threshold().value();
+        let num_participants = u64::try_from(self.parameters.participants().len())
+            .expect("participant list should be wayyyy smaller than u64::MAX");
         for domain in &domains {
-            crate::primitives::domain::validate_domain_purpose(domain)?;
-            crate::primitives::domain::validate_domain_threshold(domain, num_participants)?;
-            // Keep trust assumptions consistent: a domain must never require more
-            // shares to reconstruct than the GovernanceThreshold demands to govern.
-            let reconstruction_threshold = domain.reconstruction_threshold.inner();
-            if reconstruction_threshold > governance_threshold {
-                return Err(DomainError::ReconstructionThresholdExceedsGovernance {
-                    reconstruction_threshold,
-                    governance_threshold,
-                }
-                .into());
-            }
+            validate_domain_purpose(domain)?;
+            validate_domain_threshold(domain, num_participants)?;
         }
+        // Keep trust assumptions consistent: a domain must never require more shares to
+        // reconstruct than the GovernanceThreshold demands to govern. Route through the
+        // canonical helper so the cross-domain invariant has a single source of truth.
+        let max_reconstruction_threshold = domains
+            .iter()
+            .map(|domain| domain.reconstruction_threshold.inner())
+            .max()
+            .expect("domains is non-empty: guarded by AddDomainsMustAddAtLeastOneDomain above");
+        ThresholdParameters::validate_governance_against_reconstruction(
+            num_participants,
+            self.parameters.threshold(),
+            max_reconstruction_threshold,
+        )?;
         let participant = AuthenticatedParticipantId::new(self.parameters.participants())?;
         let n_votes = self.add_domains_votes.vote(domains.clone(), &participant);
         if self.parameters.participants().len() as u64 == n_votes {
@@ -259,7 +262,7 @@ pub mod running_tests {
     use rstest::rstest;
 
     use super::RunningContractState;
-    use crate::errors::{DomainError, Error};
+    use crate::errors::{Error, InvalidThreshold};
     use crate::primitives::domain::AddDomainsVotes;
     use crate::primitives::test_utils::{NUM_PROTOCOLS, gen_proposed_threshold_params};
     use crate::primitives::threshold_votes::ThresholdParametersVotes;
@@ -537,13 +540,14 @@ pub mod running_tests {
         // When
         let err = state.vote_add_domains(proposal).unwrap_err();
 
-        // Then the GovernanceThreshold/ReconstructionThreshold relation is enforced.
+        // Then the GovernanceThreshold/ReconstructionThreshold relation is enforced via the
+        // canonical validate_governance_against_reconstruction helper.
         assert!(
             matches!(
                 err,
-                Error::DomainError(DomainError::ReconstructionThresholdExceedsGovernance { .. })
+                Error::InvalidThreshold(InvalidThreshold::BelowReconstructionThreshold { .. })
             ),
-            "Expected ReconstructionThresholdExceedsGovernance, got: {err}"
+            "Expected BelowReconstructionThreshold, got: {err}"
         );
     }
 
