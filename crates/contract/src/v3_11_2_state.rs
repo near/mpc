@@ -154,7 +154,7 @@ impl From<MpcContract> for crate::MpcContract {
 /// that breaks the threshold relation into the new contract. Such state must be
 /// corrected (via `vote_new_parameters`) before upgrading.
 ///
-/// TODO(#XXXX): remove together with this module once the 3.11.2 -> current
+/// TODO(#3598): remove together with this module once the 3.11.2 -> current
 /// migration is retired. The relation is enforced at every runtime mutation point
 /// (`process_new_parameters_proposal`, `vote_add_domains`, `init_running`,
 /// `verify_tee`), so once no pre-existing violating state can reach this path the
