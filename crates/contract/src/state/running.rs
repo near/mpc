@@ -180,6 +180,19 @@ impl RunningContractState {
             validate_domain_threshold(domain, new_num_participants)?;
         }
 
+        // The GovernanceThreshold must dominate every domain's effective ReconstructionThreshold;
+        // enforced here so the state transition is self-contained (single source of truth).
+        let max_reconstruction_threshold = effective_domains
+            .iter()
+            .map(|domain| domain.reconstruction_threshold.inner())
+            .max()
+            .unwrap_or(0);
+        ThresholdParameters::validate_governance_against_reconstruction(
+            new_num_participants,
+            proposal.threshold(),
+            max_reconstruction_threshold,
+        )?;
+
         // ensure the signer is a proposed participant
         let candidate = AuthenticatedAccountId::new(proposal.participants())?;
 
