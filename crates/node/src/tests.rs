@@ -51,6 +51,7 @@ use std::sync::{Arc, OnceLock};
 use tokio::time::timeout;
 
 pub mod common;
+pub(crate) mod dto_conversions;
 
 mod asset_generation_signing_contention;
 mod basic_cluster;
