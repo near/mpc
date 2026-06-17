@@ -488,7 +488,7 @@ https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-56Ar3.pdf - pa
 
 The current back-migration flow (a node returning to the participant set after being migrated out, i.e. A → B → A) has two known limitations:
 
-1. **The returning node must be restarted between the forward and back migrations.** The migration service is designed for a single onboarding cycle and does not re-initialize for a subsequent migration without a restart. The restart also forces a fresh on-chain attestation submission, which feeds into limitation 2.
+1. **The returning node must be restarted between the forward and back migrations.** The migration service is designed for a single onboarding cycle and does not re-initialize for a subsequent migration without a restart. The restart also forces a fresh on-chain attestation submission, which resolves the second limitation outlined below.
 
 2. **The returning node's on-chain attestation must be current.** Before the contract finalizes a back-migration, it validates the destination node's TEE attestation. If the attestation has expired or been revoked while the node was out of the participant set, the contract will reject the migration. The restart in limitation 1 satisfies this in most cases; otherwise the node's periodic resubmission keeps the attestation current.
 
