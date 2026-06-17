@@ -36,7 +36,7 @@ impl From<&SecretsConfig> for MigrationSecrets {
 /// task does — i.e. the lifetime of the node process.
 ///
 /// The dispatcher in `run.rs` clones this receiver into each invocation of
-/// [`onboarding::onboard`] so back-migrations can be served without a process
+/// `onboarding::onboard` so back-migrations can be served without a process
 /// restart. See `docs/design/migration-onboarding-dispatcher.md`.
 pub async fn start_migration_web_server(
     migration_web_ui: SocketAddr,
