@@ -1,5 +1,18 @@
 # Attestation Verifier Contract Breakout
 
+> **Status: largely implemented.** The verifier contract (`tee-verifier`) and
+> wire DTOs (`tee-verifier-interface`) shipped first; `mpc-contract` now offloads
+> DCAP verification to the verifier via the async `submit_participant_info` flow
+> described below, the verifier-change vote is in place, and `dcap-qvl` is no
+> longer linked into `mpc-contract`. Two follow-ups remain: collapsing the
+> JSON-facing `near-mpc-contract-interface::Collateral` into the interface type
+> (issue #3494 — an API-wire migration deferred to its own change), and a sandbox
+> test for the `Verified` + post-DCAP-pass branch (the other branches are
+> covered). The in-flight semantics of a verifier rotation — a verification
+> dispatched against the old verifier still lands and stores there, while every
+> new submission uses the freshly voted-in verifier — are detailed in
+> [Governance and upgrades](#governance-and-upgrades).
+
 This document outlines the design for moving on-chain TDX quote verification out of `mpc-contract`'s WASM into a standalone verifier contract.
 
 It supersedes [#3160](https://github.com/near/mpc/pull/3160), which sketched a three-contract architecture (shared verifier + per-team policy contract + TEE-agnostic application contract) for Defuse, Proximity, and other teams. That direction was deferred: a shared policy contract presumes shared lifecycle conventions (the [launcher pattern][launcher-pattern] `mpc-contract` uses), and aligning the other teams on those conventions is a separate, longer [conversation][slack-launcher-discussion] that has not yet converged.

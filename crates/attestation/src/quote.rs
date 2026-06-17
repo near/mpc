@@ -1,22 +1,6 @@
-use alloc::vec::Vec;
-use borsh::{BorshDeserialize, BorshSerialize};
-use derive_more::{Deref, From, Into};
-use serde::{Deserialize, Serialize};
-
-#[derive(
-    Debug,
-    Clone,
-    From,
-    Into,
-    Deref,
-    Serialize,
-    Deserialize,
-    BorshDeserialize,
-    BorshSerialize,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-)]
-
-pub struct QuoteBytes(Vec<u8>);
+//! Raw TDX/SGX quote bytes.
+//!
+//! Re-exported from `tee-verifier-interface` so the quote type has a single
+//! definition shared by the verifier wire, this crate's post-DCAP logic, and
+//! every consumer. This crate does not define its own quote type.
+pub use tee_verifier_interface::QuoteBytes;
