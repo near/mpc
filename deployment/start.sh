@@ -214,4 +214,6 @@ else
 fi
 
 echo "Starting mpc node..."
-/app/mpc-node start
+# `exec` so mpc-node becomes PID 1 and receives SIGTERM directly; otherwise
+# bash stays as PID 1 and swallows the signal.
+exec /app/mpc-node start

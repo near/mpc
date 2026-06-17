@@ -14,8 +14,6 @@ pub use auth::{AuthConfig, TokenConfig};
 mod auth;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-// TODO(#3002): only keep variants that are actually supported by the node binary
 pub struct ForeignChainsConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub solana: Option<ForeignChainConfig>,
@@ -320,7 +318,7 @@ foreign_chains:
     }
 
     #[test]
-    fn config_parsing__should_fail_when_foreign_chain_key_is_unknown() {
+    fn config_parsing__should_succeed_when_foreign_chain_key_is_unknown() {
         // Given
         let yaml = r#"
 my_near_account_id: test.near
@@ -379,7 +377,7 @@ foreign_chains:
         let result: Result<ConfigFile, _> = serde_yaml::from_str(yaml);
 
         // Then
-        result.unwrap_err();
+        result.expect("unknown foreign chain keys should be silently ignored");
     }
 
     #[test]

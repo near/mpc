@@ -879,7 +879,7 @@ impl MpcContract {
         proposal: dtos::ProposedThresholdParameters,
     ) -> Result<(), Error> {
         Self::assert_caller_is_signer();
-        let proposal: ProposedThresholdParameters = proposal.into_contract_type();
+        let proposal: ProposedThresholdParameters = proposal.try_into_contract_type()?;
         log!(
             "vote_new_parameters: signer={}, proposal={:?}",
             env::signer_account_id(),
@@ -1805,7 +1805,7 @@ impl MpcContract {
         parameters: dtos::ThresholdParameters,
         init_config: Option<dtos::InitConfig>,
     ) -> Result<Self, Error> {
-        let parameters: ThresholdParameters = parameters.into_contract_type();
+        let parameters: ThresholdParameters = parameters.try_into_contract_type()?;
         // Log participant count and hash - full parameters exceed NEAR's 16KB log limit at ~100 participants
         let params_hash = env::sha256_array(borsh::to_vec(&parameters).unwrap());
         log!(
@@ -1856,7 +1856,7 @@ impl MpcContract {
         parameters: dtos::ThresholdParameters,
         init_config: Option<dtos::InitConfig>,
     ) -> Result<Self, Error> {
-        let parameters: ThresholdParameters = parameters.into_contract_type();
+        let parameters: ThresholdParameters = parameters.try_into_contract_type()?;
         // Log participant count and hash - full parameters exceed NEAR's 16KB log limit at ~100 participants
         let params_hash = env::sha256_array(borsh::to_vec(&parameters).unwrap());
         log!(

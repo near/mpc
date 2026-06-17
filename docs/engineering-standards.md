@@ -7,6 +7,7 @@ To ensure consistent high quality code, every PR must conform to the following p
 - [Separate business logic from I/O](#separate-business-logic-from-io)
 - [Add tests](#add-tests)
 - [Measure performance](#measure-performance)
+- [Write helpful code comments](#write-helpful-code-comments)
 
 Beyond our engineering standards,
 The Rust library team maintains a set of [API guidelines](https://rust-lang.github.io/api-guidelines/about.html).
@@ -225,3 +226,114 @@ benchmarked properly will regress over time.
 Therefore, any proposed performance improvements should come with benchmarks
 or some other objective measure of improvement and regression tests that
 prevent the optimization from regressing in future iterations.
+
+## Write helpful code comments
+With the advent of LLMs, code comments have become much more prevalent. The issue is that LLMs tend to document **what** the code does, less so **why** the code does it.
+As usual, the PR author is taking ownership of the code, regardless of whether that code has been produced by an LLM or was written by themselves.
+
+As such, the following code comment patterns may get rejected at review:
+
+1. **Paraphrasing the code, without providing additional information.** Instead of providing a code comment, try to find better function or struct names.
+    ```rust
+    // Don't
+    /// Adds `y` and `x` modulo 10.
+    ///
+    /// Returns `None` when the result is zero — i.e. whenever `x + y` is a
+    /// multiple of 10 (`1 + 9`, `5 + 5`, ...) — since the result type cannot
+    /// represent zero. Returns `Some` with the mod-10 sum otherwise.
+    ///
+    /// Helper used by `this_other_method` to implement decimal-digit
+    /// arithmetic. Kept separate to make the carry logic easier to test.
+    fn my_add(x: NonZeroU8, y: NonZeroU8) -> Option<NonZeroU8> { ... }
+
+    // Do
+    /// Returns `None` if the result is zero.
+    fn add_mod_10(x: NonZeroU8, y: NonZeroU8) -> Option<NonZeroU8> { ... }
+
+    // Don't
+    /// Has a field `x` of type `MyOtherStructX` and a field `y` of type `MyOtherStructY`
+    struct MyStruct {
+        /// An instance of `MyOtherStructX`
+        x: MyOtherStructX,
+        /// An instance of `MyOtherStructY`
+        y: MyOtherStructY,
+    }
+
+    // Do
+    struct MyStruct {
+        descriptive_name_for_field_1: MyOtherStructX,
+        descriptive_name_for_field_2: MyOtherStructY,
+    }
+    ```
+
+2. **Repetition by explanation of common terminology.** There is no need in explaining concepts such as _Lazy_ or _idempotent_. We assume whoever is exploring our codebase knows how to search for definition of appropriate terms.
+    ```rust
+    // Don't
+    /// Adds `thing`.
+    ///
+    /// Idempotent in `thing`: adding the same `thing` more than once has the
+    /// same effect as adding it once. The second add is a no-op / overwrites
+    /// the existing entry with an equal value — so callers can re-add without
+    /// first checking whether it's already present.
+    fn add_the_thing(self, thing: Thing) { ... }
+
+    // Do
+    /// idempotent
+    fn add_the_thing(self, thing: Thing) { ... }
+    ```
+3. **Burdening the reader with unnecessary context.** LLMs often let session context leak into code comments.
+If it was instructed to implement `ComponentVersionA` instead of `ComponentVersionB`, it often attaches a comment of the sort:
+    ```rust
+    // Don't
+    /// This struct achieves <xyz>, using <insert_version_a_specific_way_of_doing_the_thing> instead of <insert_version_b_specific_way_of_doing_the_thing>.
+    struct ComponentVersionA;
+
+    // Do
+    struct ComponentVersionA;
+    ```
+   This is not helpful to the reader. If the trade-off is non-obvious, then the PR description is probably the best place to explain it and requires a more lengthy explanation, focusing on the different approaches that have been considered, their trade-offs and explaining **why** the author chose one way over the other.
+4. **Explaining where this code is used**. Most of the time, it is redundant to explain _where_ a piece of code is used. Code editors can produce that information much more reliably than code comments. In the rare case where such a code comment is warranted and provides useful information, it is imperative that the referred callsite or objects are linked, such that the CI can pick up stale references.
+
+    ```rust
+    // Don't
+    /// Stored behind a `Lazy` in `ThisOtherStruct`.
+    struct ThisStruct;
+
+    // Do
+    struct ThisStruct;
+    ```
+
+5. **Long-form rationale that belongs in an issue.** Prefer
+   `// TODO(#example_issue_number): <short replacement>` over a paragraph of
+   context. The *why* lives in the issue:
+
+    ```rust
+    // Don't
+    /// We use [`BTreeMap`] instead of [`HashMap`] here because the snapshot
+    /// test in [`parameter_store::tests::stable_iteration`] was written
+    /// against a stable iteration order. If we ever migrate that test to be
+    /// insensitive to order, this could go back to [`HashMap`]. Leaving as
+    /// [`BTreeMap`] for now to keep the diff small and avoid touching
+    /// unrelated test infrastructure.
+    fn build_params() -> Params { ... }
+
+    // Do
+    /// TODO(#example_issue_number): can become [`HashMap`] once [`parameter_store`] test no
+    /// longer asserts stable iteration order.
+    fn build_params() -> Params { ... }
+    ```
+
+
+**Public APIs are the exception.** Doc comments on public items
+(types, functions, traits) may be more explanatory than internal
+comments, because consumers can't see the implementation.
+It may be permittable to explain **what** the code does, to the extent necessary and relevant for the reader (for example: _Sorts a vector in O(n log n)_).
+Generally speaking, such API comments increase their value if they explain _how_ to use the code, with a brief example.
+
+**Use rustdoc intra-doc links instead of plain backticks.** Whenever a doc
+comment names another type, function, module, or path, write it as
+`` [`Foo`] `` (a rustdoc intra-doc link) rather than `` `Foo` `` (a plain
+inline-code span). `cargo doc` verifies the former and reports broken
+references; plain backticks render the same but are not checked, so
+references silently rot when items are renamed or moved.
+

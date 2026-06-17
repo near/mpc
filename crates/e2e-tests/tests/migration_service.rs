@@ -679,6 +679,8 @@ async fn migration_service__should_migrate_nodes_via_backup_cli() {
 /// a reproducer for #2121.
 #[tokio::test]
 #[expect(non_snake_case)]
+// TODO(#3605): re-enable once the nearcore restart-panic fix (nearcore#15867) lands.
+#[ignore = "flaky: near-indexer panics on restart, blocked on nearcore#15867"]
 async fn migration_service__should_handle_back_migration_a_to_b_to_a() {
     let backup_cli = must_get_backup_cli_path();
 

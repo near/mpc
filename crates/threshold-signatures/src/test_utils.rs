@@ -41,7 +41,8 @@ pub use protocol::{
     run_and_assert_buffer_entries,
 };
 pub use protocol::{
-    run_protocol, run_protocol_and_take_snapshots, run_simulated_protocol, run_two_party_protocol,
+    run_protocol, run_protocol_and_take_snapshots, run_protocol_counting_yields,
+    run_simulated_protocol, run_two_party_protocol,
 };
 pub use sign::{check_one_coordinator_output, run_sign};
 pub use simulator_bench::{

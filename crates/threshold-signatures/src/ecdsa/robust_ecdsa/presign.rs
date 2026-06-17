@@ -216,6 +216,8 @@ async fn do_presign(
                 "Exponent interpolation check failed.".to_string(),
             ));
         }
+
+        chan.yield_point().await;
     }
     // Step 3.3
     // get only the first t+1 elements to interpolate
@@ -294,6 +296,8 @@ async fn do_presign(
                 "Exponent interpolation check failed.".to_string(),
             ));
         }
+
+        chan.yield_point().await;
     }
 
     // Step 3.10

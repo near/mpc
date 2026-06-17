@@ -143,7 +143,8 @@ impl ThresholdParameters {
         &self.participants
     }
 
-    /// For integration testing.
+    /// Test-only: builds parameters without threshold validation.
+    #[cfg(feature = "test-utils")]
     pub fn new_unvalidated(participants: Participants, threshold: Threshold) -> Self {
         ThresholdParameters {
             participants,
