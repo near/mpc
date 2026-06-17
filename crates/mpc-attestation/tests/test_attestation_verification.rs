@@ -55,6 +55,7 @@ fn invalid_mock_attestation_fails_verification() {
 #[test]
 #[expect(non_snake_case)]
 fn verify_with_report__should_agree_with_verify_locally() {
+    // Given
     let attestation = mock_dstack_attestation();
     let tls_key = p2p_tls_key();
     let account_key = account_key();
@@ -62,7 +63,12 @@ fn verify_with_report__should_agree_with_verify_locally() {
     let timestamp_s = VALID_ATTESTATION_TIMESTAMP;
     let allowed_mpc_hashes = [image_digest()];
     let allowed_launcher_hashes = [launcher_compose_digest()];
+    let measurements = default_measurements();
+    let Attestation::Dstack(dstack) = &attestation else {
+        panic!("fixture is a Dstack attestation");
+    };
 
+    // When
     // Full local verify (DCAP + post-DCAP).
     let local = attestation
         .verify_locally(
@@ -70,19 +76,14 @@ fn verify_with_report__should_agree_with_verify_locally() {
             timestamp_s,
             &allowed_mpc_hashes,
             &allowed_launcher_hashes,
-            default_measurements(),
+            measurements,
         )
         .expect("local verify should succeed");
-
     // Obtain the report the verifier contract would return (DCAP only), then
     // feed it to the pure post-DCAP path the contract uses.
-    let Attestation::Dstack(dstack) = &attestation else {
-        panic!("fixture is a Dstack attestation");
-    };
     let report = dstack
-        .dcap_report(timestamp_s)
-        .expect("dcap report should be produced");
-
+        .verify_dcap_quote(timestamp_s)
+        .expect("dcap quote verification should produce a report");
     let with_report = attestation
         .verify_with_report(
             &report,
@@ -90,10 +91,11 @@ fn verify_with_report__should_agree_with_verify_locally() {
             timestamp_s,
             &allowed_mpc_hashes,
             &allowed_launcher_hashes,
-            default_measurements(),
+            measurements,
         )
         .expect("verify_with_report should succeed");
 
+    // Then
     // `VerifiedAttestation` has no `PartialEq`; compare via its Borsh encoding,
     // which is the form actually stored on-chain.
     assert_eq!(

@@ -41,9 +41,10 @@ pub struct DstackAttestation {
     pub tcb_info: TcbInfo,
 }
 
-/// Result of a successful [`DstackAttestation::verify_with_report`] call.
+/// Result of successfully verifying an attestation.
 #[derive(Clone, Debug)]
 pub struct AcceptedDstackAttestation {
+    /// The accepted measurement set this attestation matched.
     pub measurements: ExpectedMeasurements,
     /// Informational advisory IDs (e.g. `INTEL-DOC-10000` post-ESU) surfaced by
     /// Intel's PCS alongside an `UpToDate` TCB status. They are not a security
@@ -163,15 +164,18 @@ impl DstackAttestation {
         timestamp_seconds: u64,
         accepted_measurements: &[ExpectedMeasurements],
     ) -> Result<AcceptedDstackAttestation, VerificationError> {
-        let report = self.dcap_report(timestamp_seconds)?;
+        let report = self.verify_dcap_quote(timestamp_seconds)?;
         self.verify_with_report(&report, expected_report_data, accepted_measurements)
     }
 
     /// Runs only the DCAP step (`dcap_qvl::verify::verify`) and returns the
     /// resulting report as the `tee-verifier-interface` mirror — the same value
-    /// the `tee-verifier` contract returns on-chain. Off-chain only.
+    /// the `tee-verifier` contract returns on-chain.
     #[cfg(feature = "local-verify")]
-    pub fn dcap_report(&self, timestamp_seconds: u64) -> Result<VerifiedReport, VerificationError> {
+    pub fn verify_dcap_quote(
+        &self,
+        timestamp_seconds: u64,
+    ) -> Result<VerifiedReport, VerificationError> {
         let collateral = self.collateral.clone().into_dcap_type();
         Ok(
             dcap_qvl::verify::verify(&self.quote.0, &collateral, timestamp_seconds)

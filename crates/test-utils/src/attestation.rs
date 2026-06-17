@@ -66,8 +66,6 @@ pub fn collateral() -> Value {
 
 pub fn quote() -> QuoteBytes {
     let quote_json_string = include_str!("../assets/quote.json");
-    // `quote.json` is a JSON array of byte integers. The verifier wire
-    // `QuoteBytes` is Borsh-only (no serde), so parse to `Vec<u8>` and wrap.
     let bytes: Vec<u8> =
         serde_json::from_str(quote_json_string).expect("Quote file is a valid json byte array.");
     QuoteBytes::from(bytes)

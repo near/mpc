@@ -3,21 +3,10 @@
 //! Field-for-field mirrors of the `dcap_qvl` input and output types,
 //! owned here so the Borsh wire layout is independent of upstream.
 //!
-//! This crate is the *only* DTO crate a consumer (`mpc-contract`, future
-//! Proximity / Defuse contracts) needs in order to talk to the verifier —
-//! without re-linking the `dcap-qvl` / `ring` / `webpki` / `x509-cert`
-//! closure into its own WASM. The crate is `no_std` and has no
-//! `dcap-qvl` dependency; the `From<dcap_qvl::...>` conversions live in
-//! the `tee-verifier` contract crate, the only crate that depends on
-//! both.
-//!
-//! Borsh-only on purpose. The verifier is reached only over a cross-contract
-//! call (Borsh ABI), so there is no JSON wire and serde would just add
-//! dependencies. The payload is mostly binary anyway (a multi-KB quote
-//! plus collateral), which Borsh sends as raw bytes where JSON would inflate
-//! it into integer arrays. Byte fields stay plain `Vec<u8>` / arrays rather
-//! than serde/hex wrappers, which also keeps the layout a field-for-field
-//! Borsh mirror of `dcap_qvl`.
+//! It is the only DTO crate a consumer (`mpc-contract` and future external
+//! contracts) needs to talk to the verifier, without linking `dcap-qvl` into
+//! its own WASM. `no_std`, no `dcap-qvl` dependency; the `dcap_qvl` conversions
+//! live in `tee-verifier-conversions`.
 
 #![no_std]
 

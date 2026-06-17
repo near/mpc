@@ -41,15 +41,50 @@ pub enum VerifiedAttestation {
     Mock(MockAttestation),
 }
 
-/// Result of a successful [`Attestation::verify_with_report`] call.
+/// Result of successfully verifying an attestation.
 #[derive(Clone, Debug)]
 pub struct AcceptedAttestation {
+    /// The validated attestation data extracted during verification, stored for
+    /// later re-verification against the then-current allowed set.
     pub attestation: VerifiedAttestation,
     /// Informational advisory IDs (e.g. `INTEL-DOC-10000` post-ESU) surfaced by
     /// Intel's PCS alongside an `UpToDate` TCB status. They are not a security
     /// failure — `UpToDate` is the sole security gate; these advisories convey
     /// platform lifecycle information.
     pub advisory_ids: Vec<String>,
+}
+
+impl AcceptedAttestation {
+    /// Assembles the acceptance for a verified `Dstack` attestation, stamping the
+    /// expiry.
+    fn dstack(
+        mpc_image_hash: NodeImageHash,
+        launcher_compose_hash: LauncherDockerComposeHash,
+        measurements: ExpectedMeasurements,
+        advisory_ids: Vec<String>,
+        current_timestamp_seconds: u64,
+    ) -> Self {
+        // TODO(#1639): extract timestamp from certificate itself
+        let expiration_timestamp_seconds =
+            current_timestamp_seconds + DEFAULT_EXPIRATION_DURATION_SECONDS;
+        Self {
+            attestation: VerifiedAttestation::Dstack(ValidatedDstackAttestation {
+                mpc_image_hash,
+                launcher_compose_hash,
+                expiry_timestamp_seconds: expiration_timestamp_seconds,
+                measurements,
+            }),
+            advisory_ids,
+        }
+    }
+
+    /// Assembles the acceptance for a verified `Mock` attestation.
+    fn mock(mock_attestation: &MockAttestation) -> Self {
+        Self {
+            attestation: VerifiedAttestation::Mock(mock_attestation.clone()),
+            advisory_ids: Vec::new(),
+        }
+    }
 }
 
 #[expect(clippy::large_enum_variant)]
@@ -82,18 +117,62 @@ impl MockAttestation {
         allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
         accepted_measurements: &[ExpectedMeasurements],
     ) -> Result<AcceptedAttestation, VerificationError> {
-        let () = verify_mock_attestation(
-            self,
-            allowed_mpc_docker_image_hashes,
-            allowed_launcher_docker_compose_hashes,
-            accepted_measurements,
-            current_timestamp_seconds,
-        )?;
+        match self {
+            MockAttestation::Valid => Ok(()),
+            MockAttestation::Invalid => Err(VerificationError::InvalidMockAttestation),
+            MockAttestation::WithConstraints {
+                mpc_docker_image_hash,
+                launcher_docker_compose_hash,
+                expiry_timestamp_seconds,
+                expected_measurements,
+            } => {
+                if let Some(hash) = mpc_docker_image_hash {
+                    if allowed_mpc_docker_image_hashes.is_empty() {
+                        return Err(VerificationError::Custom(
+                            "the allowed mpc image hashes list is empty".to_string(),
+                        ));
+                    }
+                    allowed_mpc_docker_image_hashes.contains(hash).or_err(|| {
+                        VerificationError::Custom(format!(
+                            "MPC image hash {} is not in the allowed hashes list",
+                            hex::encode(hash.as_ref(),)
+                        ))
+                    })?;
+                };
 
-        Ok(AcceptedAttestation {
-            attestation: VerifiedAttestation::Mock(self.clone()),
-            advisory_ids: Vec::new(),
-        })
+                if let Some(hash) = launcher_docker_compose_hash {
+                    if allowed_launcher_docker_compose_hashes.is_empty() {
+                        return Err(VerificationError::Custom(
+                            "the allowed mpc launcher compose hashes list is empty".to_string(),
+                        ));
+                    }
+                    allowed_launcher_docker_compose_hashes
+                        .contains(hash)
+                        .or_err(|| {
+                            VerificationError::Custom(format!(
+                                "launcher compose hash {} is not in the allowed hashes list",
+                                hex::encode(hash.as_ref(),)
+                            ))
+                        })?;
+                };
+                if let Some(expiry_timestamp) = expiry_timestamp_seconds {
+                    (current_timestamp_seconds < *expiry_timestamp).or_err(|| {
+                        VerificationError::ExpiredCertificate {
+                            attestation_time: current_timestamp_seconds,
+                            expiry_time: *expiry_timestamp,
+                        }
+                    })?;
+                };
+
+                if let Some(measurements) = expected_measurements {
+                    verify_measurements(measurements, accepted_measurements)?;
+                }
+
+                Ok(())
+            }
+        }?;
+
+        Ok(AcceptedAttestation::mock(self))
     }
 }
 
@@ -147,13 +226,14 @@ impl VerifiedAttestation {
 
                 Ok(())
             }
-            Self::Mock(mock_attestation) => verify_mock_attestation(
-                mock_attestation,
-                allowed_mpc_docker_image_hashes,
-                allowed_launcher_docker_compose_hashes,
-                allowed_measurements,
-                timestamp_seconds,
-            ),
+            Self::Mock(mock_attestation) => mock_attestation
+                .verify(
+                    timestamp_seconds,
+                    allowed_mpc_docker_image_hashes,
+                    allowed_launcher_docker_compose_hashes,
+                    allowed_measurements,
+                )
+                .map(|_| ()),
         }
     }
 }
@@ -170,13 +250,14 @@ pub fn default_measurements() -> &'static [ExpectedMeasurements] {
 
 /// Verification for a [`DstackAttestation`] at the `mpc-attestation` layer.
 ///
-/// `DstackAttestation` is defined in the lower `attestation` crate, which knows
+/// [`DstackAttestation`] is defined in the lower `attestation` crate, which knows
 /// nothing of `mpc-primitives` hashes, so the MPC image / launcher compose checks
 /// (and the resulting [`AcceptedAttestation`]) live here as an extension trait
 /// rather than an inherent method. Mirrors [`MockAttestation::verify`].
 pub trait DstackVerify {
     /// Runs the MPC-hash allowlist checks and the post-DCAP checks against an
-    /// already-DCAP-verified `report`, returning the [`AcceptedAttestation`].
+    /// already-DCAP-verified [`VerifiedReport`], returning the
+    /// [`AcceptedAttestation`].
     fn verify(
         &self,
         report: &VerifiedReport,
@@ -209,7 +290,7 @@ impl DstackVerify for DstackAttestation {
             advisory_ids,
         } = self.verify_with_report(report, expected_report_data, accepted_measurements)?;
 
-        Ok(accepted_dstack_attestation(
+        Ok(AcceptedAttestation::dstack(
             mpc_image_hash,
             launcher_compose_hash,
             measurements,
@@ -221,12 +302,6 @@ impl DstackVerify for DstackAttestation {
 
 impl Attestation {
     /// Verifies the attestation given an already-DCAP-verified report.
-    ///
-    /// Dispatches to the per-variant verification: [`DstackVerify::verify`]
-    /// (which consumes `report`) or [`MockAttestation::verify`] (which has no
-    /// quote and ignores `report`). A caller that already holds a single variant
-    /// can call its `verify` directly — in particular the contract can verify a
-    /// `Mock` synchronously via [`MockAttestation::verify`] without a report.
     pub fn verify_with_report(
         &self,
         report: &VerifiedReport,
@@ -255,14 +330,9 @@ impl Attestation {
     }
 
     /// Full local verification: runs DCAP (`dcap_qvl::verify::verify`) and then
-    /// the post-DCAP checks. Off-chain only (the `local-verify` feature pulls
-    /// in `dcap-qvl`).
-    ///
-    /// Used by the node, `tee-authority`, and `attestation-cli`. `mpc-contract`
-    /// also calls this today (it enables `local-verify`); a planned follow-up
-    /// moves the DCAP step into a separate verifier contract, after which the
-    /// contract will call [`verify_with_report`](Self::verify_with_report)
-    /// directly instead.
+    /// the post-DCAP checks. Behind the `local-verify` feature, which pulls in
+    /// `dcap-qvl`. Used by off-chain callers and, today, by `mpc-contract`.
+    // TODO(#3264): contract drops this once DCAP moves to the verifier contract.
     #[cfg(feature = "local-verify")]
     pub fn verify_locally(
         &self,
@@ -289,7 +359,7 @@ impl Attestation {
                     accepted_measurements,
                 )?;
 
-                Ok(accepted_dstack_attestation(
+                Ok(AcceptedAttestation::dstack(
                     mpc_image_hash,
                     launcher_compose_hash,
                     measurements,
@@ -353,29 +423,6 @@ fn verify_dstack_mpc_hashes(
     Ok((mpc_image_hash, launcher_compose_hash))
 }
 
-/// Assembles the [`AcceptedAttestation`] for a verified `Dstack` attestation,
-/// stamping the expiry. Shared by both verification entry points.
-fn accepted_dstack_attestation(
-    mpc_image_hash: NodeImageHash,
-    launcher_compose_hash: LauncherDockerComposeHash,
-    measurements: ExpectedMeasurements,
-    advisory_ids: Vec<String>,
-    current_timestamp_seconds: u64,
-) -> AcceptedAttestation {
-    // TODO(#1639): extract timestamp from certificate itself
-    let expiration_timestamp_seconds =
-        current_timestamp_seconds + DEFAULT_EXPIRATION_DURATION_SECONDS;
-    AcceptedAttestation {
-        attestation: VerifiedAttestation::Dstack(ValidatedDstackAttestation {
-            mpc_image_hash,
-            launcher_compose_hash,
-            expiry_timestamp_seconds: expiration_timestamp_seconds,
-            measurements,
-        }),
-        advisory_ids,
-    }
-}
-
 /// Verifies MPC node image hash is in allowed list.
 fn verify_mpc_hash(
     image_hash: &NodeImageHash,
@@ -433,69 +480,6 @@ fn verify_measurements(
     }
 
     Ok(())
-}
-
-pub(crate) fn verify_mock_attestation(
-    mock_attestation: &MockAttestation,
-    allowed_mpc_docker_image_hashes: &[NodeImageHash],
-    allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
-    allowed_measurements: &[ExpectedMeasurements],
-    timestamp_seconds: u64,
-) -> Result<(), VerificationError> {
-    match mock_attestation {
-        MockAttestation::Valid => Ok(()),
-        MockAttestation::Invalid => Err(VerificationError::InvalidMockAttestation),
-        MockAttestation::WithConstraints {
-            mpc_docker_image_hash,
-            launcher_docker_compose_hash,
-            expiry_timestamp_seconds,
-            expected_measurements,
-        } => {
-            if let Some(hash) = mpc_docker_image_hash {
-                if allowed_mpc_docker_image_hashes.is_empty() {
-                    return Err(VerificationError::Custom(
-                        "the allowed mpc image hashes list is empty".to_string(),
-                    ));
-                }
-                allowed_mpc_docker_image_hashes.contains(hash).or_err(|| {
-                    VerificationError::Custom(format!(
-                        "MPC image hash {} is not in the allowed hashes list",
-                        hex::encode(hash.as_ref(),)
-                    ))
-                })?;
-            };
-
-            if let Some(hash) = launcher_docker_compose_hash {
-                if allowed_launcher_docker_compose_hashes.is_empty() {
-                    return Err(VerificationError::Custom(
-                        "the allowed mpc launcher compose hashes list is empty".to_string(),
-                    ));
-                }
-                allowed_launcher_docker_compose_hashes
-                    .contains(hash)
-                    .or_err(|| {
-                        VerificationError::Custom(format!(
-                            "launcher compose hash {} is not in the allowed hashes list",
-                            hex::encode(hash.as_ref(),)
-                        ))
-                    })?;
-            };
-            if let Some(expiry_timestamp) = expiry_timestamp_seconds {
-                (timestamp_seconds < *expiry_timestamp).or_err(|| {
-                    VerificationError::ExpiredCertificate {
-                        attestation_time: timestamp_seconds,
-                        expiry_time: *expiry_timestamp,
-                    }
-                })?;
-            };
-
-            if let Some(measurements) = expected_measurements {
-                verify_measurements(measurements, allowed_measurements)?;
-            }
-
-            Ok(())
-        }
-    }
 }
 
 #[cfg(test)]

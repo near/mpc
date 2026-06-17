@@ -1,13 +1,13 @@
 //! Conversions between `dcap_qvl`'s types and the Borsh-mirrored types in
 //! `tee-verifier-interface`.
 //!
-//! Shared by the on-chain `tee-verifier` contract (which feeds `dcap_qvl::verify`
-//! and returns the interface `VerifiedReport`) and the off-chain `attestation`
-//! crate's `verify_locally` path. The conversion code's only dependency floor
-//! is `dcap-qvl` + `tee-verifier-interface` + `borsh`, which both consumers
-//! already carry, so it lives in this minimal crate rather than being duplicated
-//! or pulled through `attestation` (whose `serde`/`serde_json`/`sha2`/
-//! `dstack-sdk-types` closure is unrelated to these mappings).
+//! Shared by the on-chain `tee-verifier` contract and the off-chain
+//! `attestation` crate's `verify_locally` path.
+//!
+//! These mappings need only `dcap-qvl` + `tee-verifier-interface` + `borsh`, so
+//! they live in this minimal crate. Putting them in `attestation` instead would
+//! force the contract to pull that crate's unrelated dependencies (`serde`,
+//! `sha2`, etc.) into its WASM.
 //!
 //! Mapped with the local [`IntoDcapType`] / [`IntoInterfaceType`] traits. We
 //! can not use [`From`] and [`Into`] due to the [*orphan rule*](https://doc.rust-lang.org/reference/items/implementations.html#orphan-rules).
@@ -67,15 +67,10 @@ impl IntoInterfaceType<Collateral> for dcap_qvl::QuoteCollateralV3 {
     }
 }
 
-/// Converts a `dcap_qvl::QuoteCollateralV3` (e.g. fetched from a PCCS endpoint)
-/// into the interface [`Collateral`]. Off-chain helper for callers that hold a
-/// `dcap-qvl` collateral and need the wire type.
 pub fn collateral_from_dcap(collateral: dcap_qvl::QuoteCollateralV3) -> Collateral {
     collateral.into_interface_type()
 }
 
-/// Converts an interface [`Collateral`] into a `dcap_qvl::QuoteCollateralV3`.
-/// Off-chain helper, the inverse of [`collateral_from_dcap`].
 pub fn collateral_into_dcap(collateral: Collateral) -> dcap_qvl::QuoteCollateralV3 {
     collateral.into_dcap_type()
 }

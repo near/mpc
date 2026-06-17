@@ -5,17 +5,14 @@ license = { workspace = true }
 edition = { workspace = true }
 
 [features]
-abi = [
-    "borsh/unstable__schema",
-    "mpc-primitives/abi",
-    "attestation/borsh-schema",
-]
+abi = ["borsh/unstable__schema", "mpc-primitives/abi", "attestation/borsh-schema"]
 dstack-conversions = ["attestation/dstack-conversions"]
 test-utils = ["attestation/test-utils"]
-# Enables `Attestation::verify_locally` (full local DCAP + post-DCAP
-# verification), forwarding to `attestation/local-verify` which pulls in
-# `dcap-qvl`. Used off-chain (node, tee-authority, attestation-cli) and, for
-# now, by the contract's synchronous attestation path.
+# Enables full local DCAP + post-DCAP verification, forwarding to
+# `attestation/local-verify` which pulls in `dcap-qvl`. Used off-chain (node,
+# tee-authority, attestation-cli) and, for now, by the contract's synchronous
+# attestation path.
+# TODO(#3264): contract drops this once DCAP moves to the verifier contract.
 local-verify = ["attestation/local-verify"]
 
 [dependencies]
@@ -35,8 +32,6 @@ tee-verifier-interface = { workspace = true }
 [dev-dependencies]
 assert_matches = { workspace = true }
 dcap-qvl = { workspace = true }
-# Self-dependency with `local-verify` so the integration tests can exercise the
-# full local DCAP + post-DCAP path (`verify_locally`).
 mpc-attestation = { path = ".", features = ["local-verify", "test-utils"] }
 test-utils = { workspace = true }
 

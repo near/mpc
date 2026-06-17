@@ -87,7 +87,7 @@ impl IntoContractInterfaceType<near_mpc_contract_interface::types::DstackAttesta
 impl IntoContractInterfaceType<near_mpc_contract_interface::types::Collateral> for Collateral {
     fn into_contract_interface_type(self) -> near_mpc_contract_interface::types::Collateral {
         // TODO(#3494): drop this conversion once the DTO carries the interface
-        // `Collateral` directly (L4).
+        // `Collateral` directly.
         let Collateral {
             pck_crl_issuer_chain,
             root_ca_crl,

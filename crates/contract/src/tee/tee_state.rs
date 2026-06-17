@@ -156,6 +156,8 @@ impl TeeState {
         .into();
 
         let accepted_measurements = self.get_accepted_measurements();
+        // TODO(#3264): run DCAP in the verifier contract (Promise + callback) and
+        // do the post-DCAP checks here, instead of verifying locally in-WASM.
         let AcceptedAttestation {
             attestation: verified_attestation,
             advisory_ids,
