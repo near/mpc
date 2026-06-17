@@ -10,36 +10,18 @@ pub use near_mpc_contract_interface::types::Threshold;
 /// Minimum absolute threshold required.
 const MIN_THRESHOLD_ABSOLUTE: u64 = 2;
 
-/// Minimum fraction of participants the GovernanceThreshold must reach, expressed
-/// as `MIN_THRESHOLD_NUMERATOR / MIN_THRESHOLD_DENOMINATOR` (currently 60%, rounded
-/// up) so a key stays reconstructible/signable by a robust majority.
-const MIN_THRESHOLD_NUMERATOR: u64 = 3;
-const MIN_THRESHOLD_DENOMINATOR: u64 = 5;
-
-/// Maximum fraction of participants the GovernanceThreshold may reach, expressed
-/// as `MAX_THRESHOLD_NUMERATOR / MAX_THRESHOLD_DENOMINATOR`. Currently set to 100%
-/// (1/1), so the relative upper cap is effectively disabled: the GovernanceThreshold
-/// may go all the way up to the participant count (the absolute `k <= n` check still
-/// applies). Kept as an explicit fraction so a stricter cap can be re-introduced by
-/// lowering the numerator should a future policy require it.
-const MAX_THRESHOLD_NUMERATOR: u64 = 1;
-const MAX_THRESHOLD_DENOMINATOR: u64 = 1;
-
 /// Lower bound on the GovernanceThreshold for `n` participants: 60% rounded up.
 /// Single source of truth shared by validation and test fixtures.
 pub(crate) fn governance_threshold_lower_bound(n: u64) -> u64 {
-    MIN_THRESHOLD_NUMERATOR
-        .saturating_mul(n)
-        .div_ceil(MIN_THRESHOLD_DENOMINATOR)
+    3_u64.saturating_mul(n).div_ceil(5)
 }
 
 /// Upper bound on the GovernanceThreshold for `n` participants:
-/// `MAX_THRESHOLD_NUMERATOR / MAX_THRESHOLD_DENOMINATOR` floored (currently 100%, i.e.
-/// `n`), clamped up to the lower bound so the feasible window is never empty for small
-/// `n`. Single source of truth shared by validation and test fixtures.
+/// Currently set to 100% of participants but would be a discussion subject
+/// to drop this upper bound down not to have problems with smart contract
+/// being locked if t = n and if an operator stops voting
 pub(crate) fn governance_threshold_upper_bound(n: u64) -> u64 {
-    (MAX_THRESHOLD_NUMERATOR.saturating_mul(n) / MAX_THRESHOLD_DENOMINATOR)
-        .max(governance_threshold_lower_bound(n))
+    n
 }
 
 /// Stores the threshold key parameters: the owners of key shares
