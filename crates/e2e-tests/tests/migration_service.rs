@@ -667,12 +667,11 @@ enum BetweenDirections {
 
 /// Back-migration A → B → A round trip. Starts a cluster with 2 participating
 /// nodes (A0, A1) + 1 migration target (B0). A1 stays a participant throughout
-/// so threshold (2) holds during both directions. Per direction:
-///   1. Register backup service
-///   2. GET keyshares from source node
-///   3. Initiate node migration
-///   4. PUT keyshares to target node
-///   5. Verify migration finalizes and sign + ckd requests succeed
+/// so threshold (2) holds during both directions. Each direction goes through
+/// the backup-cli flow: register backup service, GET keyshares from source,
+/// initiate node migration, PUT keyshares to target, then verify migration
+/// finalizes and sign + ckd requests succeed.
+///
 /// Between the forward and back directions, `between` controls what happens to
 /// A0 — see [`BetweenDirections`]. After the back direction, B0 is killed so
 /// the final sign + ckd assertions prove A0 + A1 carry the workload alone.

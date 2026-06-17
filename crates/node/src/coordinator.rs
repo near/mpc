@@ -111,10 +111,7 @@ where
     /// `docs/design/migration-onboarding-dispatcher.md`). On cancel, the
     /// current in-flight MPC job's `AsyncDroppableRuntime` is dropped as
     /// `self` borrows are released, terminating its spawned tasks.
-    pub async fn run(
-        &mut self,
-        cancellation_token: CancellationToken,
-    ) -> anyhow::Result<()> {
+    pub async fn run(&mut self, cancellation_token: CancellationToken) -> anyhow::Result<()> {
         loop {
             let state = self.indexer.contract_state_receiver.borrow().clone();
             let mut job: MpcJob = match state {
