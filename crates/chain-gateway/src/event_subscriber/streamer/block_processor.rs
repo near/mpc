@@ -39,7 +39,7 @@ pub(super) async fn listen_blocks(
         blocks_processed_count = blocks_processed_count.saturating_add(1);
         stats_tx.send_modify(|s| {
             s.blocks_processed_count = blocks_processed_count;
-            s.last_processed_block_height = context.height.into();
+            s.last_processed_block_height = context.height;
         });
 
         // TODO(#2626): skip the work below for blocks older than the node's
