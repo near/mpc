@@ -13,7 +13,6 @@ use crate::storage_keys::StorageKey;
 pub(crate) struct ForeignChainsMetadata {
     pub(crate) rpc_whitelist: ForeignChainRpcWhitelist,
     pub(crate) available_foreign_chains: dtos::AvailableForeignChains,
-    // Stores tls key -> foreign chain config mapping.
     pub(crate) foreign_chains_configs:
         IterableMap<dtos::Ed25519PublicKey, dtos::ForeignChainsConfig>,
 }
@@ -29,8 +28,7 @@ impl Default for ForeignChainsMetadata {
 }
 
 impl ForeignChainsMetadata {
-    /// Registers `foreign_chains_config` for the node.
-    /// This means same node operator can register config per node.
+    /// Registers `foreign_chains_config` keyed by TLS key, so multiple nodes from the same operator can coexist.
     pub(crate) fn register(
         &mut self,
         tls_key: dtos::Ed25519PublicKey,
@@ -53,7 +51,8 @@ impl ForeignChainsMetadata {
             };
             for chain in chains.iter() {
                 if self.rpc_whitelist.entries.is_whitelisted(chain) {
-                    *chain_to_supporter_count.entry(*chain).or_default() += 1;
+                    let count = chain_to_supporter_count.entry(*chain).or_default();
+                    *count = count.checked_add(1).expect("supporter count bounded by participant set size");
                 }
             }
         }
@@ -64,8 +63,6 @@ impl ForeignChainsMetadata {
             .into();
     }
 
-    /// Removes entries from foreign chains configs whose tls key is not in
-    /// active node's tls keys.
     pub(crate) fn remove_stale_configs(
         &mut self,
         active_tls_keys: &BTreeSet<dtos::Ed25519PublicKey>,
@@ -81,7 +78,6 @@ impl ForeignChainsMetadata {
         }
     }
 
-    /// Returns clone of foreign chains as a map of <node tls key, foreign chain config>
     pub(crate) fn snapshot_by_node(&self) -> dtos::ForeignChainsConfigs {
         self.foreign_chains_configs
             .iter()

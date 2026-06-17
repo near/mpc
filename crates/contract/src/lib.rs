@@ -1063,8 +1063,9 @@ impl MpcContract {
         Ok(())
     }
 
-    /// No-op when `NotInitialized`. For `Resharing`, uses the embedded previous running-state
-    /// parameters (the set that is still actively signing).
+    /// No-op when `NotInitialized`. For `Resharing`, uses the previous running-state parameters
+    /// (the set still actively signing). For `Initializing`, uses the proposed keygen parameters —
+    /// there is no prior running set, so threshold is derived from the new domain registry.
     fn recompute_available_foreign_chains(&mut self) {
         let Ok(params) = self.protocol_state.threshold_parameters() else {
             return;
@@ -1287,6 +1288,8 @@ impl MpcContract {
 
         if let Some(new_state) = self.protocol_state.vote_cancel_resharing()? {
             self.protocol_state = new_state;
+            // Cancel-resharing reverts to the previous running state, so the
+            // cached available-chains set is still valid — no recompute needed.
         }
 
         Ok(())
@@ -1305,6 +1308,9 @@ impl MpcContract {
 
         if let Some(new_state) = self.protocol_state.vote_cancel_keygen(next_domain_id)? {
             self.protocol_state = new_state;
+            // Cancel-keygen drops incomplete domains, which can change the max ForeignTx
+            // threshold — recompute to keep the cached set consistent.
+            self.recompute_available_foreign_chains();
         }
         Ok(())
     }
@@ -1881,7 +1887,6 @@ impl MpcContract {
                 .remove(account);
         }
 
-        // Remove foreign chain configs and their reverse-map entries for departed nodes.
         self.foreign_chains
             .get_mut()
             .remove_stale_configs(&active_tls_keys);
@@ -2564,6 +2569,12 @@ impl MpcContract {
             .into());
         };
 
+        let old_tls_key = running_state
+            .parameters
+            .participants()
+            .info(&account_id)
+            .map(|info| info.tls_public_key.clone());
+
         let contract_participant_info = expected_destination_node
             .destination_node_info
             .into_contract_type();
@@ -2576,6 +2587,14 @@ impl MpcContract {
         running_state
             .parameters
             .update_info(account_id, contract_participant_info)?;
+
+        if let Some(old_key) = old_tls_key {
+            self.foreign_chains
+                .get_mut()
+                .foreign_chains_configs
+                .remove(&old_key);
+        }
+
         self.recompute_available_foreign_chains();
         Ok(())
     }
