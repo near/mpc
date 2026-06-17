@@ -7,7 +7,7 @@ mod bench_utils;
 use bench_utils::ed25519_build_presign_protocols;
 
 use threshold_signatures::{
-    ReconstructionLowerBound,
+    ReconstructionThreshold,
     frost::eddsa,
     participants::Participant,
     protocol::Protocol,
@@ -19,7 +19,7 @@ use threshold_signatures::{
 
 fn main() {
     let config = BenchConfig::from_env();
-    let threshold = ReconstructionLowerBound::from(config.threshold);
+    let threshold = ReconstructionThreshold::from(config.threshold);
 
     println!("Protocol simulation: EdDSA FROST signing");
     println!(
@@ -121,7 +121,7 @@ fn main() {
 fn run_presign(
     participants: &[Participant],
     key_packages: &[(Participant, eddsa::KeygenOutput)],
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     latency: &LatencyModel,
     rng: &mut MockCryptoRng,
 ) -> (Vec<(Participant, eddsa::PresignOutput)>, SimulationMetrics) {
@@ -134,7 +134,7 @@ fn run_presign(
 fn run_sign_v1(
     participants: &[Participant],
     key_packages: &[(Participant, eddsa::KeygenOutput)],
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     coordinator: Participant,
     message: &[u8],
     latency: &LatencyModel,
@@ -167,7 +167,7 @@ fn run_sign_v2(
     participants: &[Participant],
     key_packages: &[(Participant, eddsa::KeygenOutput)],
     presign_outputs: &[(Participant, eddsa::PresignOutput)],
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     coordinator: Participant,
     message: &[u8],
     latency: &LatencyModel,

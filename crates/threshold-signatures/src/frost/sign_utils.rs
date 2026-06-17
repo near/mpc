@@ -1,15 +1,15 @@
 use crate::{
-    ReconstructionLowerBound,
+    ReconstructionThreshold,
     errors::InitializationError,
     participants::{Participant, ParticipantList},
 };
 
-/// Verifies that the sign inputs are valid
-pub fn assert_sign_inputs(
+/// Validates the FROST participant set and threshold (≥2 participants, no duplicates, `me`
+/// present, threshold ≤ count) and returns the validated [`ParticipantList`].
+pub fn assert_participant_inputs(
     participants: &[Participant],
-    threshold: impl Into<ReconstructionLowerBound>,
+    threshold: impl Into<ReconstructionThreshold>,
     me: Participant,
-    coordinator: Participant,
 ) -> Result<ParticipantList, InitializationError> {
     let threshold = threshold.into();
     if participants.len() < 2 {
@@ -17,9 +17,8 @@ pub fn assert_sign_inputs(
             participants: participants.len(),
         });
     }
-    let Some(participants) = ParticipantList::new(participants) else {
-        return Err(InitializationError::DuplicateParticipants);
-    };
+    let participants =
+        ParticipantList::new(participants).ok_or(InitializationError::DuplicateParticipants)?;
 
     // ensure my presence in the participant list
     if !participants.contains(me) {
@@ -36,6 +35,18 @@ pub fn assert_sign_inputs(
             max: participants.len(),
         });
     }
+
+    Ok(participants)
+}
+
+/// Verifies that the sign inputs are valid
+pub fn assert_sign_inputs(
+    participants: &[Participant],
+    threshold: impl Into<ReconstructionThreshold>,
+    me: Participant,
+    coordinator: Participant,
+) -> Result<ParticipantList, InitializationError> {
+    let participants = assert_participant_inputs(participants, threshold, me)?;
 
     // ensure the coordinator is a participant
     if !participants.contains(coordinator) {

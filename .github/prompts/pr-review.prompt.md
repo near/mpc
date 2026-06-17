@@ -46,11 +46,15 @@ PRIORITY CHECKS (report only if found):
    - Poor modularity (functions >100 lines, god objects)
    - Violated Single Responsibility Principle
 
+8. Code Comment Quality
+   - Enforce all standards defined in [engineering-standards.md] (paraphrasing of code, repetitions, explaining common terminology, leaking context, explanation that should be a stand-alone issue)
+
 REVIEW STYLE:
 - List only issues that should block the merge
 - Use bullet points, be direct and specific
 - Provide code suggestions for fixes when helpful
-- Do NOT comment on style, formatting, naming, or documentation unless it causes a bug
+- Flag code-comment quality issues per [engineering-standards.md]. The goal is to avoid comments that may become stale or add little value to the reader.
+- Do NOT comment on style, formatting, or naming unless it causes a bug.
 - Do NOT restate what the diff already shows
 - If no critical issues found: approve with a one-line summary
 - Sign off with: ✅ (approved) or ⚠️ (issues found)

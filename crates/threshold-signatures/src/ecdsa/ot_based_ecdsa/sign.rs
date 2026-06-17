@@ -2,7 +2,7 @@ use elliptic_curve::scalar::IsHigh;
 use subtle::ConditionallySelectable;
 
 use super::RerandomizedPresignOutput;
-use crate::ReconstructionLowerBound;
+use crate::ReconstructionThreshold;
 use crate::errors::{InitializationError, ProtocolError};
 use crate::participants::{Participant, ParticipantList};
 use crate::{
@@ -35,7 +35,7 @@ pub fn sign<T>(
     msg_hash: Scalar,
 ) -> Result<impl Protocol<Output = SignatureOption> + use<T>, InitializationError>
 where
-    T: Into<ReconstructionLowerBound>,
+    T: Into<ReconstructionThreshold>,
 {
     let threshold = usize::from(threshold.into());
     if participants.len() < 2 {

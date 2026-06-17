@@ -1,5 +1,5 @@
 use crate::{
-    Participant, ReconstructionLowerBound,
+    Participant, ReconstructionThreshold,
     crypto::hash::HashOutput,
     frost::eddsa::{
         KeygenOutput, PresignOutput, SignatureOption,
@@ -21,7 +21,7 @@ pub fn run_sign_v1(
     participants: &[(Participant, KeygenOutput)],
     actual_signers: usize,
     coordinator: Participant,
-    threshold: impl Into<ReconstructionLowerBound> + Copy + 'static,
+    threshold: impl Into<ReconstructionThreshold> + Copy + 'static,
     msg_hash: HashOutput,
     rng: &mut impl CryptoRngCore,
 ) -> Result<Vec<(Participant, SignatureOption)>, Box<dyn Error>> {
@@ -59,7 +59,7 @@ pub fn run_sign_v1(
 
 pub fn run_presign(
     participants: &[(Participant, KeygenOutput)],
-    threshold: impl Into<ReconstructionLowerBound> + Copy,
+    threshold: impl Into<ReconstructionThreshold> + Copy,
     actual_signers: usize,
     rng: impl CryptoRngCore + Send + Clone + 'static,
 ) -> Result<Vec<(Participant, PresignOutput)>, Box<dyn Error>> {
@@ -70,7 +70,7 @@ pub fn run_sign_v2(
     participants: &[(Participant, KeygenOutput)],
     actual_signers: usize,
     coordinator: Participant,
-    threshold: impl Into<ReconstructionLowerBound> + Copy + 'static,
+    threshold: impl Into<ReconstructionThreshold> + Copy + 'static,
     msg_hash: HashOutput,
     rng: impl CryptoRngCore + Send + Clone + 'static,
 ) -> Result<Vec<(Participant, SignatureOption)>, Box<dyn Error>> {
