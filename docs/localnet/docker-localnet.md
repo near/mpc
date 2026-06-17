@@ -18,6 +18,17 @@ Otherwise the neard node will have a different genesis configuration.
 cp -rf $(pwd)/deployment/localnet/. ~/.near/mpc-localnet
 ```
 
+Note: the checked-in config binds `network.addr` to `127.0.0.1:24566`, which is
+unreachable from the containers (they connect via the docker gateway
+`172.17.0.1`). Rebind it to `0.0.0.0:24566` before starting neard, otherwise the
+nodes get 0 peers and never sync:
+```shell
+sed -i 's/"127.0.0.1:24566"/"0.0.0.0:24566"/' ~/.near/mpc-localnet/config.json
+```
+
+Note: `neard` and `deployment/localnet` (genesis) must come from the **same
+commit the node image was built from**.
+
 # Step 3:
 Assuming you've created the frodo and sam accounts as per localnet guide.
 We can now start their nodes in docker.
