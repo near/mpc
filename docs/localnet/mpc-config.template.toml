@@ -75,6 +75,16 @@ rpc_url = "https://api.testnet.abs.xyz"
 [node.foreign_chains.abstract.providers.public.auth]
 kind = "none"
 
+[node.foreign_chains.abstract.providers.alchemy]
+rpc_url = "https://abstract-mainnet.g.alchemy.com/v2/{API_KEY}"
+
+[node.foreign_chains.abstract.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+
+[node.foreign_chains.abstract.providers.alchemy.auth.token]
+env = "ALCHEMY_API_KEY"
+
 [node.foreign_chains.starknet]
 timeout_sec = 30
 max_retries = 3
@@ -85,6 +95,16 @@ rpc_url = "https://starknet-rpc.publicnode.com"
 [node.foreign_chains.starknet.providers.public.auth]
 kind = "none"
 
+[node.foreign_chains.starknet.providers.alchemy]
+rpc_url = "https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_10/{API_KEY}"
+
+[node.foreign_chains.starknet.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+
+[node.foreign_chains.starknet.providers.alchemy.auth.token]
+env = "ALCHEMY_API_KEY"
+
 [node.foreign_chains.aptos]
 timeout_sec = 30
 max_retries = 3
@@ -94,3 +114,24 @@ rpc_url = "https://fullnode.mainnet.aptoslabs.com/v1"
 
 [node.foreign_chains.aptos.providers.public.auth]
 kind = "none"
+
+[node.foreign_chains.aptos.providers.alchemy]
+rpc_url = "https://aptos-mainnet.g.alchemy.com/v2/{API_KEY}/v1"
+
+[node.foreign_chains.aptos.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+
+[node.foreign_chains.aptos.providers.alchemy.auth.token]
+env = "ALCHEMY_API_KEY"
+
+[node.foreign_chains.aptos.providers.geomi]
+rpc_url = "https://api.mainnet.aptoslabs.com/v1"
+
+[node.foreign_chains.aptos.providers.geomi.auth]
+kind = "header"
+name = "Authorization"
+scheme = "Bearer"
+
+[node.foreign_chains.aptos.providers.geomi.auth.token]
+env = "GEOMI_API_KEY"
