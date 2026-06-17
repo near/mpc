@@ -387,4 +387,11 @@ If backup-cli cannot connect to your node:
 
 - **Verify firewall rules**: Ensure the backup service can reach the node's address and that port 8079 is open and accessible.
 
+## Known Limitations
+
+The back-migration flow (returning to a previously-active node, i.e. A → B → A) has two operator-facing limitations:
+
+1. **Node A must be restarted before back-migration.** After the forward migration A → B completes, A's migration service is no longer accepting keyshares. Before initiating the back-migration B → A, stop and start A again so the migration service is reinitialized and ready to receive keyshares from B.
+
+2. **Node A's on-chain attestation must be current.** Before the contract finalizes the back-migration, it validates A's TEE attestation. If A's attestation has expired or been revoked while A was outside the participant set, the back-migration will not complete. Verify A has a fresh attestation registered on the contract before initiating B → A.
 

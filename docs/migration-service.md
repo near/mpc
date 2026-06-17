@@ -478,6 +478,14 @@ See [(#949)](https://github.com/near/mpc/issues/949)
 
 > **Implementation Strategy**: Similar to MPC nodes, the backup service will first be developed as a standalone application that uses mocked attestations. This allows development and testing of the blockchain interface, contract monitoring, and automatic backup/recovery flows in a controlled environment. Once the core functionality is stable, the service can be migrated into a TEE with real attestations.
 
+## Known Limitations
+
+The current back-migration flow (a node returning to the participant set after being migrated out, i.e. A → B → A) has two known limitations:
+
+1. **The returning node must be restarted between the forward and back migrations.** The onboarding state machine in the migration service exits on first `OnboardingJob::Done` and drops the keyshare-import receiver. A node returning to the participant set therefore needs to be restarted between the forward and back directions so the migration service rebinds the receiver before the second round of keyshares can be PUT.
+
+2. **The returning node must have a valid on-chain attestation.** Before the contract finalizes a back-migration, it validates the destination node's TEE attestation. If the attestation has expired or been revoked while the node was out of the participant set, the contract will not accept the migration. Attestation freshness must be ensured before initiating the back direction.
+
 ## Materials
 
 https://nearone.slack.com/archives/C07UW93JVQ8/p1753830474083739
