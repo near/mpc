@@ -26,8 +26,9 @@ use crate::{
     update::ProposedUpdates,
 };
 
-/// 3.12.0 layout of `MpcContract`. Byte-identical to the current layout;
-/// add shadow types when a future migration introduces layout changes.
+/// Keep this module in sync with [`crate::MpcContract`]: the moment a field's borsh
+/// layout diverges, shadow the old type here (see this module's history for examples) so
+/// state written by the `3.12.0` contract still deserializes during migration.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct MpcContract {
     protocol_state: ProtocolContractState,
