@@ -1084,7 +1084,7 @@ impl MpcContract {
         }) else {
             // No op if contract isn't in Running or Resharing state, or
             // there is no foreign tx domain registered.
-            // Not panicing is intentional.
+            // Not panicking is intentional.
             log!("Skipping available foreign chains recomputation");
             return;
         };
@@ -1169,7 +1169,6 @@ impl MpcContract {
 
         if let Some(new_state) = self.protocol_state.vote_pk(key_event_id, extended_key)? {
             self.protocol_state = new_state;
-            self.recompute_available_foreign_chains();
         }
 
         Ok(())
