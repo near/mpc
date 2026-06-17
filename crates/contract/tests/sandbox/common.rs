@@ -22,7 +22,8 @@ use mpc_contract::{
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
-    Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
+    AptosAddress, AptosEvent, AptosExtractedValue, AptosExtractor, AptosFinality, AptosRpcRequest,
+    AptosTxId, Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
     SupportedForeignChains, TonAddress, TonCellBody, TonExtractedValue, TonExtractor, TonFinality,
     TonLog, TonRpcRequest, TonTxId,
 };
@@ -811,6 +812,17 @@ pub fn bogus_ton_log_extracted_value() -> Vec<ExtractedValue> {
     ))]
 }
 
+pub fn aptos_extracted_values() -> Vec<ExtractedValue> {
+    vec![ExtractedValue::AptosExtractedValue(
+        AptosExtractedValue::Event(AptosEvent {
+            account_address: AptosAddress([1; 32]),
+            sequence_number: 0,
+            type_tag: "0x1::omni_bridge::InitTransfer".to_string(),
+            data: r#"{"amount":"100"}"#.to_string(),
+        }),
+    )]
+}
+
 pub fn bnb_evm_request() -> ForeignChainRpcRequest {
     ForeignChainRpcRequest::Bnb(EvmRpcRequest {
         tx_id: EvmTxId([0xbb; 32]),
@@ -860,5 +872,13 @@ pub fn ton_request() -> ForeignChainRpcRequest {
             workchain: 0,
             hash: Hash256([1; 32]),
         },
+    })
+}
+
+pub fn aptos_request() -> ForeignChainRpcRequest {
+    ForeignChainRpcRequest::Aptos(AptosRpcRequest {
+        tx_id: AptosTxId([0xbb; 32]),
+        finality: AptosFinality::Committed,
+        extractors: vec![AptosExtractor::Event { event_index: 0 }],
     })
 }

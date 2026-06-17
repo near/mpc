@@ -1,6 +1,7 @@
 use super::participants::{ParticipantId, ParticipantInfo, Participants};
 use crate::errors::{Error, InvalidCandidateSet, InvalidThreshold};
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types::{DomainId, ReconstructionThreshold};
 use near_sdk::near;
 use std::collections::BTreeMap;
 
@@ -9,9 +10,9 @@ pub use near_mpc_contract_interface::types::Threshold;
 /// Minimum absolute threshold required.
 const MIN_THRESHOLD_ABSOLUTE: u64 = 2;
 
-/// Stores information about the threshold key parameters:
-/// - owners of key shares
-/// - cryptographic threshold
+/// Stores the threshold key parameters: the owners of key shares
+/// (`participants`) and the cryptographic `threshold`. This is the stored,
+/// always-current shape.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct ThresholdParameters {
@@ -142,7 +143,8 @@ impl ThresholdParameters {
         &self.participants
     }
 
-    /// For integration testing.
+    /// Test-only: builds parameters without threshold validation.
+    #[cfg(feature = "test-utils")]
     pub fn new_unvalidated(participants: Participants, threshold: Threshold) -> Self {
         ThresholdParameters {
             participants,
@@ -165,19 +167,78 @@ impl ThresholdParameters {
     }
 }
 
+/// A proposal submitted to `vote_new_parameters`: the new [`ThresholdParameters`]
+/// plus per-domain `ReconstructionThreshold` updates applied to the
+/// [`super::domain::DomainRegistry`] when resharing completes. An empty map keeps
+/// the current thresholds; a populated map must reference only existing domains
+/// (validated in `RunningContractState::process_new_parameters_proposal`).
+#[near(serializers=[borsh, json])]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
+pub struct ProposedThresholdParameters {
+    parameters: ThresholdParameters,
+    #[serde(default)]
+    per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
+}
+
+impl ProposedThresholdParameters {
+    pub fn new(
+        parameters: ThresholdParameters,
+        per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
+    ) -> Self {
+        ProposedThresholdParameters {
+            parameters,
+            per_domain_thresholds,
+        }
+    }
+
+    /// Builder-style helper: replace the per-domain reconstruction-threshold
+    /// updates. Convenient for constructing proposals (notably in tests).
+    #[cfg(test)]
+    pub fn with_per_domain_thresholds(
+        mut self,
+        per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
+    ) -> Self {
+        self.per_domain_thresholds = per_domain_thresholds;
+        self
+    }
+
+    /// The proposed stored parameters (participants + threshold).
+    pub fn parameters(&self) -> &ThresholdParameters {
+        &self.parameters
+    }
+
+    /// The proposed per-domain reconstruction-threshold updates.
+    pub fn per_domain_thresholds(&self) -> &BTreeMap<DomainId, ReconstructionThreshold> {
+        &self.per_domain_thresholds
+    }
+
+    /// Delegates to the proposed parameters' participants.
+    pub fn participants(&self) -> &Participants {
+        self.parameters.participants()
+    }
+
+    /// Delegates to the proposed parameters' threshold.
+    pub fn threshold(&self) -> Threshold {
+        self.parameters.threshold()
+    }
+}
+
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use crate::{
         errors::{Error, InvalidCandidateSet},
         primitives::{
             participants::{ParticipantId, Participants},
             test_utils::{gen_participant, gen_participants, gen_threshold_params},
-            thresholds::{Threshold, ThresholdParameters},
+            thresholds::{ProposedThresholdParameters, Threshold, ThresholdParameters},
         },
         state::test_utils::gen_valid_params_proposal,
     };
     use assert_matches::assert_matches;
+    use near_mpc_contract_interface::types::{DomainId, ReconstructionThreshold};
     use rand::Rng;
+    use std::collections::BTreeMap;
 
     #[test]
     fn test_threshold() {
@@ -240,7 +301,7 @@ mod tests {
         let params = gen_threshold_params(10);
         let proposal = gen_valid_params_proposal(&params);
         params
-            .validate_incoming_proposal(&proposal)
+            .validate_incoming_proposal(proposal.parameters())
             .expect("Valid proposal should validate");
 
         // Random proposals should not validate.
@@ -395,10 +456,8 @@ mod tests {
             .insert_with_id(account_id, participant_info, ParticipantId(wrong_id))
             .unwrap();
 
-        let tampered_params = ThresholdParameters {
-            participants: tampered_participants,
-            threshold: params.threshold,
-        };
+        let tampered_params =
+            ThresholdParameters::new_unvalidated(tampered_participants, params.threshold);
 
         assert_eq!(
             params
@@ -491,5 +550,79 @@ mod tests {
             params.validate_incoming_proposal(&proposal).unwrap_err(),
             Error::from(InvalidCandidateSet::NewParticipantIdsTooHigh)
         );
+    }
+
+    #[test]
+    fn proposed_threshold_parameters__should_expose_parameters_threshold_and_updates() {
+        // Given a proposal carrying per-domain reconstruction-threshold updates
+        let params = gen_threshold_params(10);
+        let mut updates = BTreeMap::new();
+        updates.insert(DomainId(0), ReconstructionThreshold::new(3));
+        updates.insert(DomainId(2), ReconstructionThreshold::new(4));
+        let proposal = ProposedThresholdParameters::new(params.clone(), updates.clone());
+
+        // When / Then the accessors expose the wrapped parameters and the updates,
+        // and the participants/threshold delegates match the wrapped parameters.
+        assert_eq!(proposal.parameters(), &params);
+        assert_eq!(proposal.participants(), params.participants());
+        assert_eq!(proposal.threshold(), params.threshold());
+        assert_eq!(proposal.per_domain_thresholds(), &updates);
+    }
+
+    #[test]
+    fn proposed_threshold_parameters__should_default_per_domain_thresholds_when_field_absent_in_json()
+     {
+        // Given a serialized proposal with the `per_domain_thresholds` field
+        // stripped out — the shape an older client predating per-domain
+        // reconstruction thresholds would submit to `vote_new_parameters`.
+        let params = gen_threshold_params(10);
+        let proposal = ProposedThresholdParameters::new(params, BTreeMap::new());
+        let mut json = serde_json::to_value(&proposal).unwrap();
+        json.as_object_mut()
+            .unwrap()
+            .remove("per_domain_thresholds")
+            .expect("empty map should still serialize as a field");
+
+        // When deserializing the field-less JSON
+        let parsed: ProposedThresholdParameters = serde_json::from_value(json).unwrap();
+
+        // Then the missing field defaults to an empty (no-change) map and the
+        // rest of the proposal is preserved.
+        assert!(parsed.per_domain_thresholds().is_empty());
+        assert_eq!(parsed.parameters(), proposal.parameters());
+    }
+
+    #[test]
+    fn proposed_threshold_parameters__should_round_trip_per_domain_thresholds_through_json() {
+        // Given a proposal with a populated per-domain threshold map
+        let params = gen_threshold_params(10);
+        let mut updates = BTreeMap::new();
+        updates.insert(DomainId(0), ReconstructionThreshold::new(3));
+        updates.insert(DomainId(2), ReconstructionThreshold::new(4));
+        let proposal = ProposedThresholdParameters::new(params, updates);
+
+        // When serializing to JSON and back
+        let json = serde_json::to_string(&proposal).unwrap();
+        let parsed: ProposedThresholdParameters = serde_json::from_str(&json).unwrap();
+
+        // Then the proposal round-trips unchanged
+        assert_eq!(parsed, proposal);
+    }
+
+    #[test]
+    fn proposed_threshold_parameters__should_round_trip_per_domain_thresholds_through_borsh() {
+        // Given a proposal with a populated per-domain threshold map
+        let params = gen_threshold_params(10);
+        let mut updates = BTreeMap::new();
+        updates.insert(DomainId(0), ReconstructionThreshold::new(3));
+        updates.insert(DomainId(2), ReconstructionThreshold::new(4));
+        let proposal = ProposedThresholdParameters::new(params, updates);
+
+        // When serializing to borsh and back
+        let bytes = borsh::to_vec(&proposal).unwrap();
+        let parsed: ProposedThresholdParameters = borsh::from_slice(&bytes).unwrap();
+
+        // Then the proposal round-trips unchanged
+        assert_eq!(parsed, proposal);
     }
 }

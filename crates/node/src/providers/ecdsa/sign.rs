@@ -15,7 +15,7 @@ use near_mpc_contract_interface::types::Tweak;
 use std::sync::Arc;
 use std::time::Duration;
 use threshold_signatures::ParticipantList;
-use threshold_signatures::ReconstructionLowerBound;
+use threshold_signatures::ReconstructionThreshold;
 use threshold_signatures::ecdsa::ot_based_ecdsa::{PresignOutput, RerandomizedPresignOutput};
 use threshold_signatures::ecdsa::{RerandomizationArguments, Signature, SignatureOption};
 use threshold_signatures::frost_secp256k1::VerifyingKey;
@@ -32,7 +32,7 @@ impl EcdsaSignatureProvider {
         let domain_data = self.domain_data(sign_request.domain)?;
         let participants = presignature.participants.clone();
         let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
-        let threshold = ReconstructionLowerBound::from(threshold);
+        let threshold = ReconstructionThreshold::from(threshold);
 
         let (signature, public_key) = SignComputation {
             keygen_out: domain_data.keyshare,
@@ -89,9 +89,11 @@ impl EcdsaSignatureProvider {
         presignature_id: UniqueId,
         sign_request: SignatureRequest,
     ) -> anyhow::Result<()> {
+        // The presignature must be owned by the leader, never one of ours.
+        presignature_id.validate_owned_by(channel.sender().get_leader())?;
         let domain_data = self.domain_data(sign_request.domain)?;
         let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
-        let threshold = ReconstructionLowerBound::from(threshold);
+        let threshold = ReconstructionThreshold::from(threshold);
 
         let participants = channel.participants().to_vec();
         FollowerSignComputation {
@@ -147,7 +149,7 @@ impl EcdsaSignatureProvider {
 /// The tweak allows key derivation
 pub struct SignComputation {
     pub keygen_out: KeygenOutput,
-    pub threshold: ReconstructionLowerBound,
+    pub threshold: ReconstructionThreshold,
     pub presign_out: PresignOutput,
     pub msg_hash: [u8; 32],
     pub tweak: Tweak,
@@ -216,7 +218,7 @@ impl MpcLeaderCentricComputation<(SignatureOption, VerifyingKey)> for SignComput
 /// The difference is that the follower needs to look up the presignature, which may fail.
 pub struct FollowerSignComputation {
     pub keygen_out: KeygenOutput,
-    pub threshold: ReconstructionLowerBound,
+    pub threshold: ReconstructionThreshold,
     pub presignature_id: UniqueId,
     pub presignature_store: Arc<PresignatureStorage>,
     pub msg_hash: [u8; 32],

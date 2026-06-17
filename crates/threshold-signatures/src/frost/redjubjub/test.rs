@@ -1,5 +1,5 @@
 use crate::{
-    Participant, ReconstructionLowerBound,
+    Participant, ReconstructionThreshold,
     crypto::{
         hash::{HashOutput, hash},
         random::Randomness,
@@ -9,7 +9,7 @@ use crate::{
 
 use crate::test_utils::{
     GenProtocol, MockCryptoRng, assert_public_key_invariant, build_frost_key_packages_with_dealer,
-    generate_participants, generate_participants_with_random_ids, one_coordinator_output,
+    check_one_coordinator_output, generate_participants, generate_participants_with_random_ids,
     run_keygen, run_protocol, run_refresh, run_reshare,
 };
 
@@ -24,7 +24,7 @@ type C = JubjubBlake2b512;
 
 pub fn run_presign(
     participants: &[(Participant, KeygenOutput)],
-    threshold: impl Into<ReconstructionLowerBound> + Copy,
+    threshold: impl Into<ReconstructionThreshold> + Copy,
     actual_signers: usize,
     rng: impl CryptoRngCore + Send + Clone + 'static,
 ) -> Result<Vec<(Participant, PresignOutput)>, Box<dyn Error>> {
@@ -37,7 +37,7 @@ pub fn run_sign_with_presign(
     participants: &[(Participant, KeygenOutput)],
     actual_signers: usize,
     coordinator: Participant,
-    threshold: impl Into<ReconstructionLowerBound> + Copy + 'static,
+    threshold: impl Into<ReconstructionThreshold> + Copy + 'static,
     msg_hash: HashOutput,
 ) -> Result<Vec<(Participant, SignatureOption)>, Box<dyn Error>> {
     let mut rng = MockCryptoRng::seed_from_u64(644_221);
@@ -194,7 +194,7 @@ fn dkg_refresh_sign_test() {
             msg_hash,
         )
         .unwrap();
-        one_coordinator_output(data, coordinator).unwrap();
+        check_one_coordinator_output(data, coordinator).unwrap();
         key_packages = run_refresh(&participants, &key_packages, threshold, &mut rng);
     }
 }
@@ -223,7 +223,7 @@ fn dkg_reshare_more_participants_sign_test() {
             msg_hash,
         )
         .unwrap();
-        one_coordinator_output(data, coordinator).unwrap();
+        check_one_coordinator_output(data, coordinator).unwrap();
 
         new_participant.push(Participant::from(20u32 + i));
 
@@ -267,7 +267,7 @@ fn dkg_reshare_less_participants_sign_test() {
             msg_hash,
         )
         .unwrap();
-        one_coordinator_output(data, coordinator).unwrap();
+        check_one_coordinator_output(data, coordinator).unwrap();
 
         new_participant.pop();
 

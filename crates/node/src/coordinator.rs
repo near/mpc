@@ -24,7 +24,7 @@ use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
 use crate::providers::robust_ecdsa::RobustEcdsaSignatureProvider;
 use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;
 use crate::providers::{EcdsaSignatureProvider, EcdsaTaskId};
-use crate::runtime::AsyncDroppableRuntime;
+use crate::runtime::{AsyncDroppableRuntime, build_lower_priority_runtime};
 use crate::storage::SignRequestStorage;
 use crate::storage::{CKDRequestStorage, VerifyForeignTransactionRequestStorage};
 use crate::tracking::{self};
@@ -38,7 +38,7 @@ use near_time::Clock;
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
-use threshold_signatures::ReconstructionLowerBound;
+use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
 use threshold_signatures::{confidential_key_derivation, ecdsa, frost::eddsa};
 use tokio::select;
 use tokio::sync::mpsc::unbounded_channel;
@@ -254,7 +254,7 @@ where
         let runtime_monitor = RuntimeMonitor::new(runtime_handle);
 
         // run as long as the runtime is alive
-        mpc_runtime.spawn(run_monitor_loop(runtime_monitor));
+        mpc_runtime.spawn(run_monitor_loop("mpc", runtime_monitor));
 
         let mpc_runtime = AsyncDroppableRuntime::new(mpc_runtime);
         let fut = mpc_runtime.spawn(task_handle.scope(description, task));
@@ -263,6 +263,43 @@ where
             anyhow::Ok(fut.await??)
         }
         .boxed())
+    }
+
+    /// Builds the lower-priority runtime that CPU-heavy asset generation runs on,
+    /// so the OS preempts it whenever signing is ready. Returns the runtime — to
+    /// be kept alive for the duration of the run — alongside the handle that
+    /// generation tasks spawn on. When disabled there is no separate runtime and
+    /// the handle is the current one, so generation shares the MPC runtime. Must
+    /// be called from within the MPC runtime so `Handle::current()` resolves to it.
+    fn build_gen_runtime(
+        config_file: &ConfigFile,
+    ) -> anyhow::Result<(Option<AsyncDroppableRuntime>, tokio::runtime::Handle)> {
+        let gen_runtime = config_file
+            .separate_asset_generation_runtime
+            .then(|| {
+                let worker_threads = config_file.cores.unwrap_or_else(|| {
+                    std::thread::available_parallelism()
+                        .map(|n| n.get())
+                        .unwrap_or(1)
+                });
+                build_lower_priority_runtime(worker_threads, "mpc-gen")
+                    .map(AsyncDroppableRuntime::new)
+            })
+            .transpose()?;
+        if let Some(runtime) = &gen_runtime {
+            // Metrics published under the "gen" runtime label (the MPC runtime
+            // uses "mpc"), so the two runtimes stay distinct series.
+            runtime.spawn(run_monitor_loop(
+                "gen",
+                RuntimeMonitor::new(runtime.handle()),
+            ));
+        }
+        let gen_runtime_handle = gen_runtime
+            .as_ref()
+            .map_or_else(tokio::runtime::Handle::current, |runtime| {
+                runtime.handle().clone()
+            });
+        Ok((gen_runtime, gen_runtime_handle))
     }
 
     /// Entry point to handle the Initializing state of the contract.
@@ -295,7 +332,7 @@ where
         let (network_client, channel_receiver, _handle) =
             run_network_client(Arc::new(sender), Box::new(receiver));
         let threshold: usize = mpc_config.participants.threshold.try_into()?;
-        let threshold = ReconstructionLowerBound::from(threshold);
+        let threshold = TSReconstructionThreshold::from(threshold);
         if mpc_config.is_leader_for_key_event() {
             keygen_leader(
                 network_client,
@@ -338,6 +375,11 @@ where
         resharing_state_receiver: Option<watch::Receiver<ContractKeyEventInstance>>,
     ) -> anyhow::Result<MpcJobResult> {
         tracing::info!("Entering running state.");
+
+        // `_gen_runtime` is kept alive for the lifetime of `run` below;
+        // `AsyncDroppableRuntime` lets it be dropped from this async context on
+        // teardown.
+        let (_gen_runtime, gen_runtime_handle) = Self::build_gen_runtime(&config_file)?;
 
         let my_participant_id = running_state
             .participants
@@ -657,6 +699,7 @@ where
                     ckd_provider,
                     verify_foreign_tx_provider,
                     domain_to_protocol,
+                    gen_runtime_handle,
                 ));
 
                 mpc_client
@@ -737,7 +780,7 @@ where
         let args = Arc::new(ResharingArgs {
             previous_keyset,
             existing_keyshares,
-            new_threshold: ReconstructionLowerBound::from(new_threshold),
+            new_threshold: TSReconstructionThreshold::from(new_threshold),
             old_participants: current_running_state.participants,
         });
 

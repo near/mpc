@@ -33,10 +33,10 @@ jobs:
         id: filter
         uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         with:
-          # Match everything, excluding .md and docs/ folder (assumes there's no
-          # executable in docs/ folder).
+          # Match everything, excluding .md files and the docs/ folder.
+          predicate-quantifier: 'every'
           filters: |
             code:
               - '**'
-              - '!**.md'
-              - '!docs/**'
+              - '!**/*.md'
+              - '!docs/**/*'

@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 use super::key_event::KeyEvent;
 use super::running::RunningContractState;
@@ -6,8 +6,9 @@ use crate::errors::{Error, InvalidParameters};
 use crate::primitives::key_state::{
     AuthenticatedAccountId, EpochId, KeyEventId, KeyForDomain, Keyset,
 };
-use crate::primitives::thresholds::ThresholdParameters;
+use crate::primitives::thresholds::ProposedThresholdParameters;
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types::{DomainId, ReconstructionThreshold};
 use near_sdk::near;
 
 /// In this state, we reshare the key of every domain onto a new set of participants and threshold.
@@ -31,6 +32,10 @@ pub struct ResharingContractState {
     pub reshared_keys: Vec<KeyForDomain>,
     pub resharing_key: KeyEvent,
     pub cancellation_requests: HashSet<AuthenticatedAccountId>,
+    /// Per-domain `ReconstructionThreshold` updates carried from the accepted
+    /// proposal. Applied to the [`DomainRegistry`](crate::primitives::domain::DomainRegistry)
+    /// when resharing completes; empty means "keep current per-domain thresholds".
+    pub per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
 }
 
 impl ResharingContractState {
@@ -51,7 +56,7 @@ impl ResharingContractState {
     pub fn vote_new_parameters(
         &mut self,
         prospective_epoch_id: EpochId,
-        proposal: &ThresholdParameters,
+        proposal: &ProposedThresholdParameters,
     ) -> Result<Option<ResharingContractState>, Error> {
         let expected_prospective_epoch_id = self.prospective_epoch_id().next();
         if prospective_epoch_id != expected_prospective_epoch_id {
@@ -80,9 +85,10 @@ impl ResharingContractState {
                         .get_domain_by_index(0)
                         .unwrap()
                         .clone(),
-                    proposal.clone(),
+                    proposal.parameters().clone(),
                 ),
                 cancellation_requests: HashSet::new(),
+                per_domain_thresholds: proposal.per_domain_thresholds().clone(),
             }));
         }
         Ok(None)
@@ -138,8 +144,16 @@ impl ResharingContractState {
                     self.resharing_key.proposed_parameters().clone(),
                 );
             } else {
+                // Resharing complete: fold the per-domain threshold updates into
+                // the registry and store the proposed parameters. The updates live
+                // only on this resharing state, so they are structurally dropped
+                // here rather than scrubbed off the stored parameters.
+                let new_domains = self
+                    .previous_running_state
+                    .domains
+                    .with_threshold_updates(&self.per_domain_thresholds)?;
                 return Ok(Some(RunningContractState::new(
-                    self.previous_running_state.domains.clone(),
+                    new_domains,
                     Keyset::new(self.prospective_epoch_id(), self.reshared_keys.clone()),
                     self.resharing_key.proposed_parameters().clone(),
                     self.previous_running_state.add_domains_votes.clone(),
@@ -194,21 +208,24 @@ impl ResharingContractState {
 #[cfg(test)]
 pub mod tests {
     use crate::primitives::test_utils::NUM_PROTOCOLS;
-    use crate::state::{key_event::tests::find_leader, running::RunningContractState};
+    use crate::state::{
+        key_event::tests::{Environment, find_leader},
+        running::RunningContractState,
+    };
     use crate::{
         primitives::{
             domain::AddDomainsVotes,
             key_state::{AttemptId, KeyEventId},
             test_utils::gen_account_id,
             threshold_votes::ThresholdParametersVotes,
-            thresholds::{Threshold, ThresholdParameters},
+            thresholds::{ProposedThresholdParameters, Threshold, ThresholdParameters},
         },
-        state::test_utils::gen_resharing_state,
+        state::test_utils::{gen_resharing_state, gen_running_state},
     };
     use near_account_id::AccountId;
-    use near_mpc_contract_interface::types::DomainId;
+    use near_mpc_contract_interface::types::{DomainId, ReconstructionThreshold};
     use rstest::rstest;
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
 
     fn test_resharing_contract_state_for(num_domains: usize) {
         println!("Testing with {} domains", num_domains);
@@ -405,6 +422,9 @@ pub mod tests {
             .subset(new_participants_1.len() - old_participants.len()..new_participants_1.len());
         let new_params_1 = ThresholdParameters::new(new_participants_1, new_threshold).unwrap();
         let new_params_2 = ThresholdParameters::new(new_participants_2, new_threshold).unwrap();
+        // Proposals carry an empty (no-change) set of per-domain threshold updates.
+        let proposed_1 = ProposedThresholdParameters::new(new_params_1.clone(), BTreeMap::new());
+        let proposed_2 = ProposedThresholdParameters::new(new_params_2.clone(), BTreeMap::new());
         state
             .previous_running_state
             .parameters
@@ -423,10 +443,10 @@ pub mod tests {
         {
             env.set_signer(&old_participants.participants()[0].0);
             let _ = state
-                .vote_new_parameters(state.prospective_epoch_id(), &new_params_1)
+                .vote_new_parameters(state.prospective_epoch_id(), &proposed_1)
                 .unwrap_err();
             let _ = state
-                .vote_new_parameters(state.prospective_epoch_id().next().next(), &new_params_1)
+                .vote_new_parameters(state.prospective_epoch_id().next().next(), &proposed_1)
                 .unwrap_err();
         }
 
@@ -436,7 +456,7 @@ pub mod tests {
             env.set_signer(account);
             assert!(new_state.is_none());
             new_state = state
-                .vote_new_parameters(state.prospective_epoch_id().next(), &new_params_1)
+                .vote_new_parameters(state.prospective_epoch_id().next(), &proposed_1)
                 .unwrap();
         }
         // We should've gotten a new resharing state.
@@ -462,7 +482,174 @@ pub mod tests {
         // Repropose with new_params_2. That should fail.
         env.set_signer(&old_participants.participants()[0].0);
         let _ = new_state
-            .vote_new_parameters(new_state.prospective_epoch_id().next(), &new_params_2)
+            .vote_new_parameters(new_state.prospective_epoch_id().next(), &proposed_2)
             .unwrap_err();
+    }
+
+    /// On successful resharing transition, the proposal's
+    /// `per_domain_thresholds` updates must be applied to the new
+    /// `DomainRegistry`. The updates live only on the proposal /
+    /// resharing state, so the stored `RunningContractState.parameters`
+    /// (a plain `ThresholdParameters`) cannot carry them at all.
+    ///
+    /// The fixture is deterministic on purpose: it keeps the participant
+    /// set unchanged (a key-refresh resharing) so the proposed participant
+    /// count equals the running count (`n >= 3`, guaranteed by
+    /// `gen_running_state`). That guarantees `n` is itself a valid
+    /// reconstruction threshold and always differs from the default `2` —
+    /// avoiding the flakiness of deriving the new value from the random
+    /// cluster threshold, which lands on `2` whenever the proposal has 2 or
+    /// 3 participants.
+    #[expect(non_snake_case)]
+    #[test]
+    fn vote_reshared__final_transition__should_apply_threshold_updates_to_registry() {
+        // Given a running state with a single CaitSith domain at the default
+        // reconstruction threshold (2), and a resharing proposal over the
+        // same participant set carrying a threshold update that moves that
+        // domain to `n` — a value valid for `n` participants and distinct from 2.
+        let mut env = Environment::new(Some(100), None, None);
+        let mut running = gen_running_state(1);
+        let current_params = running.parameters.clone();
+        let n = current_params.participants().len() as u64;
+        assert!(
+            n >= 3,
+            "gen_running_state guarantees at least 3 participants"
+        );
+        let domain_id = running.domains.domains()[0].id;
+        let original_threshold = running.domains.domains()[0].reconstruction_threshold;
+        let new_threshold = ReconstructionThreshold::new(n);
+        assert_ne!(new_threshold, original_threshold);
+        let mut threshold_updates = BTreeMap::new();
+        threshold_updates.insert(domain_id, new_threshold);
+        let proposal = ProposedThresholdParameters::new(current_params.clone(), threshold_updates);
+
+        // Drive the proposal to acceptance so we transition into Resharing
+        // through the real vote path (which also exercises the fail-fast
+        // threshold-update validation in `process_new_parameters_proposal`).
+        let prospective_epoch_id = running.prospective_epoch_id();
+        let mut state = None;
+        for (account, _, _) in proposal.participants().participants() {
+            env.set_signer(account);
+            state = running
+                .vote_new_parameters(prospective_epoch_id, &proposal)
+                .unwrap();
+        }
+        let mut state = state.expect("Should've transitioned into resharing");
+
+        // When all candidates vote-reshared for the (single) domain
+        let leader = find_leader(&state.resharing_key);
+        env.set_signer(&leader.0);
+        let key_event_id = KeyEventId {
+            attempt_id: AttemptId::new(),
+            domain_id,
+            epoch_id: state.prospective_epoch_id(),
+        };
+        state.start(key_event_id, 0).unwrap();
+        let mut new_running = None;
+        let candidates: Vec<_> = state
+            .resharing_key
+            .proposed_parameters()
+            .participants()
+            .participants()
+            .iter()
+            .map(|(acc, _, _)| acc.clone())
+            .collect();
+        for account in &candidates {
+            env.set_signer(account);
+            new_running = state.vote_reshared(key_event_id).unwrap();
+        }
+
+        // Then the new running state's registry carries the updated
+        // threshold. (The stored parameters are a plain `ThresholdParameters`
+        // and structurally cannot carry pending threshold updates.)
+        let new_running = new_running.expect("resharing should have transitioned to Running");
+        assert_eq!(
+            new_running.domains.domains()[0].reconstruction_threshold,
+            new_threshold,
+        );
+    }
+
+    /// End-to-end companion to the single-domain test above: two domains end the
+    /// resharing with *different* thresholds. Only the Frost domain is updated,
+    /// leaving CaitSith at the default `2`. Key-refresh resharing (unchanged
+    /// participants) keeps `n >= 3`, so `n` is a valid threshold distinct from `2`.
+    #[expect(non_snake_case)]
+    #[test]
+    fn vote_reshared__final_transition__should_apply_distinct_thresholds_per_domain() {
+        // Given CaitSith (index 0) and Frost (index 1) domains, both at default
+        // threshold 2, and a proposal moving only the Frost domain to `n`.
+        let mut env = Environment::new(Some(100), None, None);
+        let mut running = gen_running_state(2);
+        let current_params = running.parameters.clone();
+        let n = current_params.participants().len() as u64;
+        assert!(
+            n >= 3,
+            "gen_running_state guarantees at least 3 participants"
+        );
+        let caitsith_id = running.domains.domains()[0].id;
+        let frost_id = running.domains.domains()[1].id;
+        let default_threshold = running.domains.domains()[0].reconstruction_threshold;
+        let frost_new_threshold = ReconstructionThreshold::new(n);
+        assert_ne!(frost_new_threshold, default_threshold);
+        let mut threshold_updates = BTreeMap::new();
+        threshold_updates.insert(frost_id, frost_new_threshold);
+        let proposal = ProposedThresholdParameters::new(current_params.clone(), threshold_updates);
+
+        // Drive the proposal to acceptance via the real vote path.
+        let prospective_epoch_id = running.prospective_epoch_id();
+        let mut state = None;
+        for (account, _, _) in proposal.participants().participants() {
+            env.set_signer(account);
+            state = running
+                .vote_new_parameters(prospective_epoch_id, &proposal)
+                .unwrap();
+        }
+        let mut state = state.expect("Should've transitioned into resharing");
+
+        // When every domain is resharing-completed in order.
+        let candidates: Vec<_> = state
+            .resharing_key
+            .proposed_parameters()
+            .participants()
+            .participants()
+            .iter()
+            .map(|(acc, _, _)| acc.clone())
+            .collect();
+        let num_domains = state.previous_running_state.domains.domains().len();
+        let mut new_running = None;
+        for i in 0..num_domains {
+            let domain_id = state
+                .previous_running_state
+                .domains
+                .get_domain_by_index(i)
+                .unwrap()
+                .id;
+            let leader = find_leader(&state.resharing_key);
+            env.set_signer(&leader.0);
+            let key_event_id = KeyEventId {
+                attempt_id: AttemptId::new(),
+                domain_id,
+                epoch_id: state.prospective_epoch_id(),
+            };
+            state.start(key_event_id, 0).unwrap();
+            for account in &candidates {
+                env.set_signer(account);
+                new_running = state.vote_reshared(key_event_id).unwrap();
+            }
+        }
+
+        // Then each domain carries its own threshold: CaitSith keeps `2`, Frost holds `n`.
+        let new_running = new_running.expect("resharing should have transitioned to Running");
+        let threshold_for = |id| {
+            new_running
+                .domains
+                .domains()
+                .iter()
+                .find(|d| d.id == id)
+                .unwrap()
+                .reconstruction_threshold
+        };
+        assert_eq!(threshold_for(caitsith_id), default_threshold);
+        assert_eq!(threshold_for(frost_id), frost_new_threshold);
     }
 }

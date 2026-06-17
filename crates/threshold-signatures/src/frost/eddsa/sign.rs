@@ -2,7 +2,7 @@
 //!  into `cait-sith::Protocol` representation.
 use super::{KeygenOutput, PresignOutput, SignatureOption};
 use crate::{
-    Participant, ParticipantList, ReconstructionLowerBound,
+    Participant, ParticipantList, ReconstructionThreshold,
     errors::{InitializationError, ProtocolError},
     frost::assert_sign_inputs,
     protocol::{
@@ -56,7 +56,7 @@ pub fn sign_v1<T, R>(
     rng: R,
 ) -> Result<impl Protocol<Output = SignatureOption> + use<T, R>, InitializationError>
 where
-    T: Into<ReconstructionLowerBound>,
+    T: Into<ReconstructionThreshold>,
     R: CryptoRngCore + Send + 'static,
 {
     let threshold = threshold.into();
@@ -87,7 +87,7 @@ pub fn sign_v2<T>(
     message: Vec<u8>,
 ) -> Result<impl Protocol<Output = SignatureOption> + use<T>, InitializationError>
 where
-    T: Into<ReconstructionLowerBound> + Copy,
+    T: Into<ReconstructionThreshold> + Copy,
 {
     let participants = assert_sign_inputs(participants, threshold, me, coordinator)?;
 
@@ -118,7 +118,7 @@ where
 async fn do_sign_coordinator_v1(
     mut chan: SharedChannel,
     participants: ParticipantList,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     me: Participant,
     keygen_output: KeygenOutput,
     message: Vec<u8>,
@@ -205,7 +205,7 @@ async fn do_sign_coordinator_v1(
 async fn do_sign_coordinator_v2(
     mut chan: SharedChannel,
     participants: ParticipantList,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     me: Participant,
     keygen_output: KeygenOutput,
     presignature: &PresignOutput,
@@ -271,7 +271,7 @@ async fn do_sign_coordinator_v2(
 /// For reference, see how RFC 8032 handles "pre-hashing".
 async fn do_sign_participant_v1(
     mut chan: SharedChannel,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     me: Participant,
     coordinator: Participant,
     keygen_output: KeygenOutput,
@@ -351,7 +351,7 @@ async fn do_sign_participant_v1(
 /// For reference, see how RFC 8032 handles "pre-hashing".
 fn do_sign_participant_v2(
     mut chan: SharedChannel,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     me: Participant,
     coordinator: Participant,
     keygen_output: &KeygenOutput,
@@ -393,7 +393,7 @@ fn do_sign_participant_v2(
 /// A function that takes a signing share and a keygenOutput
 /// and construct a public key package used for frost signing
 fn construct_key_package(
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     me: Participant,
     signing_share: SigningShare,
     verifying_key: &VerifyingKey,
@@ -416,7 +416,7 @@ fn construct_key_package(
 async fn fut_wrapper_v1(
     chan: SharedChannel,
     participants: ParticipantList,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     me: Participant,
     coordinator: Participant,
     keygen_output: KeygenOutput,
@@ -452,7 +452,7 @@ async fn fut_wrapper_v1(
 async fn fut_wrapper_v2(
     chan: SharedChannel,
     participants: ParticipantList,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     me: Participant,
     coordinator: Participant,
     keygen_output: KeygenOutput,
@@ -493,9 +493,9 @@ mod test {
     };
     use crate::test_utils::{
         MockCryptoRng, assert_buffer_capacity, assert_public_key_invariant,
-        build_frost_key_packages_with_dealer, expected_buffer_by_role, generate_participants,
-        generate_participants_with_random_ids, one_coordinator_output, run_keygen, run_refresh,
-        run_reshare,
+        build_frost_key_packages_with_dealer, check_one_coordinator_output,
+        expected_buffer_by_role, generate_participants, generate_participants_with_random_ids,
+        run_keygen, run_refresh, run_reshare,
     };
     use crate::{
         Protocol,
@@ -536,7 +536,7 @@ mod test {
                     &mut rng,
                 )
                 .unwrap();
-                one_coordinator_output(data, coordinator).unwrap();
+                check_one_coordinator_output(data, coordinator).unwrap();
             }
         }
     }
@@ -564,7 +564,7 @@ mod test {
                     MockCryptoRng::seed_from_u64(rng.next_u64()),
                 )
                 .unwrap();
-                one_coordinator_output(data, coordinator).unwrap();
+                check_one_coordinator_output(data, coordinator).unwrap();
             }
         }
     }
@@ -607,7 +607,7 @@ mod test {
             },
         )
         .unwrap();
-        let signature = one_coordinator_output(result, coordinator).unwrap();
+        let signature = check_one_coordinator_output(result, coordinator).unwrap();
         insta::assert_json_snapshot!(signature);
     }
 
@@ -652,7 +652,7 @@ mod test {
             },
         )
         .unwrap();
-        let signature = one_coordinator_output(result, coordinator).unwrap();
+        let signature = check_one_coordinator_output(result, coordinator).unwrap();
         insta::assert_json_snapshot!(signature);
     }
 
@@ -678,7 +678,7 @@ mod test {
                 &mut rng,
             )
             .unwrap();
-            let signature = one_coordinator_output(data, coordinator).unwrap();
+            let signature = check_one_coordinator_output(data, coordinator).unwrap();
 
             // externally verify with the signature
             assert!(
@@ -715,7 +715,7 @@ mod test {
                 MockCryptoRng::seed_from_u64(rng.next_u64()),
             )
             .unwrap();
-            let signature = one_coordinator_output(data, coordinator).unwrap();
+            let signature = check_one_coordinator_output(data, coordinator).unwrap();
 
             // externally verify with the signature
             assert!(
@@ -768,7 +768,7 @@ mod test {
                 &mut rng,
             )
             .unwrap();
-            let signature = one_coordinator_output(data, coordinator).unwrap();
+            let signature = check_one_coordinator_output(data, coordinator).unwrap();
 
             // externally verify with the signature
             assert!(
@@ -831,7 +831,7 @@ mod test {
                 MockCryptoRng::seed_from_u64(rng.next_u64()),
             )
             .unwrap();
-            let signature = one_coordinator_output(data, coordinator).unwrap();
+            let signature = check_one_coordinator_output(data, coordinator).unwrap();
 
             // externally verify with the signature
             assert!(
@@ -895,7 +895,7 @@ mod test {
                 &mut rng,
             )
             .unwrap();
-            let signature = one_coordinator_output(data, coordinator).unwrap();
+            let signature = check_one_coordinator_output(data, coordinator).unwrap();
 
             // externally verify with the signature
             assert!(
@@ -1049,7 +1049,7 @@ mod test {
                 MockCryptoRng::seed_from_u64(rng.next_u64()),
             )
             .unwrap();
-            let signature = one_coordinator_output(data, coordinator).unwrap();
+            let signature = check_one_coordinator_output(data, coordinator).unwrap();
 
             // externally verify with the signature
             assert!(

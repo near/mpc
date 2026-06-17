@@ -118,6 +118,21 @@ See `docs/engineering-standards.md` for the full rationale and additional testin
 ### Arithmetic in Tests
 Do not suggest using `checked_add`, `checked_mul`, `checked_sub`, `saturating_add`, or similar checked/saturating arithmetic in test code — this includes `#[cfg(test)]` modules, integration test crates, and e2e test crates. Raw arithmetic operators (`+`, `-`, `*`, `/`) are fine in tests — overflow will cause a panic, which is the desired behavior in tests.
 
+### Code Comments
+Default to writing no comments. Add one only in case one of the following applies:
+- the *why* is non-obvious: an invariant, a constraint, a surprising behavior;
+- it is part of the public API. In this case, focus on information relevant to the _consumer_ of that code (provide brief example, explain complexity);
+- the code requires a follow-up. In this case, there should be an issue for it, linked via a `TODO(#example_issue_number): <description>` comment. The issue should do the heavy-lifting when it comes to explaining the desired behavior, not the code comment.
+
+Avoid comments that are:
+- paraphrasing the code;
+- explaining common knowledge or terminology;
+- burdening the reader with non-relevant information;
+
+Prefer concise comments, using correct terminology.
+
+See `docs/engineering-standards.md` §Write helpful code comments for the full rationale and a `Don't` / `Do` example.
+
 ## Test Terminology
 
 - **Unit test**: Rust test in `/src` folder

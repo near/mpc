@@ -25,7 +25,7 @@ use crate::{
         key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, KeyForDomain, Keyset},
         participants::{ParticipantInfo, Participants},
         threshold_votes::ThresholdParametersVotes,
-        thresholds::ThresholdParameters,
+        thresholds::{ProposedThresholdParameters, ThresholdParameters},
     },
     state::{
         ProtocolContractState,
@@ -212,9 +212,24 @@ impl IntoContractType<Participants> for dtos::Participants {
     }
 }
 
-impl IntoContractType<ThresholdParameters> for dtos::ThresholdParameters {
-    fn into_contract_type(self) -> ThresholdParameters {
-        ThresholdParameters::new_unvalidated(self.participants.into_contract_type(), self.threshold)
+impl TryIntoContractType<ThresholdParameters> for dtos::ThresholdParameters {
+    type Error = Error;
+
+    fn try_into_contract_type(self) -> Result<ThresholdParameters, Self::Error> {
+        // Validate eagerly at the DTO boundary so invalid proposal parameters are rejected here.
+        ThresholdParameters::new(self.participants.into_contract_type(), self.threshold)
+    }
+}
+
+impl TryIntoContractType<ProposedThresholdParameters> for dtos::ProposedThresholdParameters {
+    type Error = Error;
+
+    fn try_into_contract_type(self) -> Result<ProposedThresholdParameters, Self::Error> {
+        // Validates the inner threshold parameters; see the conversion above.
+        Ok(ProposedThresholdParameters::new(
+            self.parameters.try_into_contract_type()?,
+            self.per_domain_thresholds,
+        ))
     }
 }
 
@@ -530,99 +545,13 @@ impl From<near_mpc_contract_interface::types::Config> for Config {
 // State DTO Conversions
 // =============================================================================
 
-// --- From DTO to contract types (node-only, not compiled into WASM) ---
-// TODO(#381): Remove once the node no longer depends on the contract crate.
-
-#[cfg(feature = "compat")]
-mod from_dto {
+// Test-only `From` conversions consumed outside this crate: the node (via its
+// dev-dependency) and the contract's own integration tests, neither of which
+// can reach the `pub(crate)` `into_dto_type` / `into_contract_type` traits.
+// Gated behind `test-utils` so they stay out of the production/WASM surface.
+#[cfg(feature = "test-utils")]
+mod test_conversions {
     use super::*;
-    use crate::crypto_shared::types::PublicKeyExtendedConversionError;
-    use crate::crypto_shared::types::serializable::SerializableEdwardsPoint;
-
-    impl TryFrom<dtos::PublicKeyExtended> for PublicKeyExtended {
-        type Error = PublicKeyExtendedConversionError;
-        fn try_from(pk: dtos::PublicKeyExtended) -> Result<Self, Self::Error> {
-            match pk {
-                dtos::PublicKeyExtended::Secp256k1 { near_public_key } => {
-                    let pk: near_sdk::PublicKey = near_public_key
-                        .parse()
-                        .map_err(|_| PublicKeyExtendedConversionError::PublicKeyLengthMalformed)?;
-                    Ok(Self::Secp256k1 {
-                        near_public_key: pk,
-                    })
-                }
-                dtos::PublicKeyExtended::Ed25519 {
-                    near_public_key_compressed,
-                    edwards_point,
-                } => {
-                    let pk: near_sdk::PublicKey = near_public_key_compressed
-                        .parse()
-                        .map_err(|_| PublicKeyExtendedConversionError::PublicKeyLengthMalformed)?;
-                    let edwards_point = SerializableEdwardsPoint::from_bytes(&edwards_point)
-                        .into_option()
-                        .ok_or(
-                            PublicKeyExtendedConversionError::FailedDecompressingToEdwardsPoint,
-                        )?;
-                    Ok(Self::Ed25519 {
-                        near_public_key_compressed: pk,
-                        edwards_point,
-                    })
-                }
-                dtos::PublicKeyExtended::Bls12381 { public_key } => {
-                    Ok(Self::Bls12381 { public_key })
-                }
-            }
-        }
-    }
-
-    impl TryFrom<dtos::KeyForDomain> for KeyForDomain {
-        type Error = Error;
-        fn try_from(kfd: dtos::KeyForDomain) -> Result<Self, Self::Error> {
-            Ok(KeyForDomain {
-                domain_id: kfd.domain_id,
-                key: kfd
-                    .key
-                    .try_into()
-                    .map_err(|e| ConversionError::DataConversion {
-                        reason: format!("Failed to convert PublicKeyExtended: {e:?}"),
-                    })?,
-                attempt: kfd.attempt,
-            })
-        }
-    }
-
-    impl TryFrom<dtos::Keyset> for Keyset {
-        type Error = Error;
-        fn try_from(keyset: dtos::Keyset) -> Result<Self, Self::Error> {
-            let domains: Result<Vec<KeyForDomain>, _> =
-                keyset.domains.into_iter().map(TryFrom::try_from).collect();
-            Ok(Keyset::new(keyset.epoch_id, domains?))
-        }
-    }
-
-    impl From<dtos::ParticipantInfo> for ParticipantInfo {
-        fn from(info: dtos::ParticipantInfo) -> Self {
-            info.into_contract_type()
-        }
-    }
-}
-
-// TODO(#381): Remove once the node no longer depends on the contract crate.
-#[cfg(feature = "compat")]
-mod to_dto {
-    use super::*;
-
-    impl From<KeyForDomain> for dtos::KeyForDomain {
-        fn from(kfd: KeyForDomain) -> Self {
-            (&kfd).into_dto_type()
-        }
-    }
-
-    impl From<Keyset> for dtos::Keyset {
-        fn from(keyset: Keyset) -> Self {
-            (&keyset).into_dto_type()
-        }
-    }
 
     impl From<ProtocolContractState> for dtos::ProtocolContractState {
         fn from(state: ProtocolContractState) -> Self {
@@ -636,12 +565,24 @@ mod to_dto {
         }
     }
 
+    impl From<ProposedThresholdParameters> for dtos::ProposedThresholdParameters {
+        fn from(params: ProposedThresholdParameters) -> Self {
+            (&params).into_dto_type()
+        }
+    }
+
     impl From<ParticipantInfo> for dtos::ParticipantInfo {
         fn from(info: ParticipantInfo) -> Self {
             dtos::ParticipantInfo {
                 url: info.url,
                 tls_public_key: info.tls_public_key,
             }
+        }
+    }
+
+    impl From<dtos::ParticipantInfo> for ParticipantInfo {
+        fn from(info: dtos::ParticipantInfo) -> Self {
+            info.into_contract_type()
         }
     }
 }
@@ -725,6 +666,15 @@ impl IntoInterfaceType<dtos::ThresholdParameters> for &ThresholdParameters {
         dtos::ThresholdParameters {
             participants: self.participants().into_dto_type(),
             threshold: self.threshold(),
+        }
+    }
+}
+
+impl IntoInterfaceType<dtos::ProposedThresholdParameters> for &ProposedThresholdParameters {
+    fn into_dto_type(self) -> dtos::ProposedThresholdParameters {
+        dtos::ProposedThresholdParameters {
+            parameters: self.parameters().into_dto_type(),
+            per_domain_thresholds: self.per_domain_thresholds().clone(),
         }
     }
 }
@@ -853,6 +803,7 @@ impl IntoInterfaceType<dtos::ResharingContractState> for &ResharingContractState
                 .iter()
                 .map(|a| a.into_dto_type())
                 .collect(),
+            per_domain_thresholds: self.per_domain_thresholds.clone(),
         }
     }
 }
@@ -887,9 +838,13 @@ pub fn args_into_verify_foreign_tx_request(
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use crate::errors::InvalidThreshold;
+    use crate::primitives::test_utils::gen_participants;
     use crate::primitives::thresholds::Threshold;
+    use assert_matches::assert_matches;
 
     const TEST_THRESHOLD: u64 = 2;
 
@@ -971,5 +926,30 @@ mod tests {
         let dto_json = serde_json::to_value(&dto).unwrap();
 
         assert_eq!(internal_json, dto_json);
+    }
+
+    /// A threshold below the relative (>= 60%) requirement must be rejected at the
+    /// DTO boundary rather than deferred to a later validation step.
+    #[test]
+    fn try_into_contract_type__should_reject_threshold_below_relative_requirement() {
+        // Given a DTO with 5 participants and a threshold of 2 (below the 60% bound of 3).
+        let dto = dtos::ThresholdParameters {
+            participants: (&gen_participants(5)).into_dto_type(),
+            threshold: Threshold::new(2),
+        };
+
+        // When converting the DTO into the contract type.
+        let result: Result<ThresholdParameters, Error> = dto.try_into_contract_type();
+
+        // Then conversion fails with the relative-threshold error.
+        assert_matches!(
+            result,
+            Err(Error::InvalidThreshold(
+                InvalidThreshold::MinRelRequirementFailed {
+                    required: 3,
+                    found: 2
+                }
+            ))
+        );
     }
 }

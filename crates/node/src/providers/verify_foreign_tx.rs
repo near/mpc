@@ -7,8 +7,8 @@ use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
 use crate::storage::VerifyForeignTransactionRequestStorage;
 use crate::types::VerifyForeignTxId;
 use borsh::{BorshDeserialize, BorshSerialize};
-use foreign_chain_inspector::FanOut;
 use foreign_chain_inspector::abstract_chain::inspector::AbstractInspector;
+use foreign_chain_inspector::aptos::inspector::AptosInspector;
 use foreign_chain_inspector::arbitrum::inspector::ArbitrumInspector;
 use foreign_chain_inspector::base::inspector::BaseInspector;
 use foreign_chain_inspector::bitcoin::inspector::BitcoinInspector;
@@ -17,10 +17,13 @@ use foreign_chain_inspector::http_client::HttpClient;
 use foreign_chain_inspector::hyperevm::inspector::HyperEvmInspector;
 use foreign_chain_inspector::polygon::inspector::PolygonInspector;
 use foreign_chain_inspector::starknet::inspector::StarknetInspector;
+use foreign_chain_inspector::{FanOut, RpcAuthentication};
+use foreign_chain_rpc_interfaces::aptos::ReqwestAptosClient;
 use mpc_node_config::{ConfigFile, ForeignChainConfig, ForeignChainsConfig};
 use near_mpc_contract_interface::types as dtos;
 use std::sync::Arc;
-use threshold_signatures::ReconstructionLowerBound;
+use std::time::Duration;
+use threshold_signatures::ReconstructionThreshold;
 use threshold_signatures::ecdsa::{KeygenOutput, Signature};
 use threshold_signatures::frost_secp256k1::VerifyingKey;
 use threshold_signatures::frost_secp256k1::keys::SigningShare;
@@ -38,35 +41,88 @@ pub(crate) struct ForeignChainInspectors<Client> {
     pub arbitrum: Option<FanOut<ArbitrumInspector<Client>>>,
     pub hyper_evm: Option<FanOut<HyperEvmInspector<Client>>>,
     pub polygon: Option<FanOut<PolygonInspector<Client>>>,
+    pub aptos: Option<FanOut<AptosInspector<ReqwestAptosClient>>>,
 }
 
 impl ForeignChainInspectors<HttpClient> {
     fn build(config: &ForeignChainsConfig) -> anyhow::Result<Self> {
         fn build_fanout<I>(
             chain_config: Option<&ForeignChainConfig>,
-            new_inspector: impl Fn(HttpClient) -> I,
+            new_inspector: impl Fn(String, RpcAuthentication, Duration) -> anyhow::Result<I>,
         ) -> anyhow::Result<Option<FanOut<I>>> {
             let Some(c) = chain_config else {
                 return Ok(None);
             };
+            let timeout = Duration::from_secs(c.timeout_sec.get());
             let inspectors = c.providers.try_map_to_vec(|_, p| {
+                // `Path`/`Query` auth is substituted into `url`; `Header` auth is returned
+                // as `RpcAuthentication::CustomHeader` for the client to install.
                 let mut url = p.rpc_url.clone();
                 let rpc_auth = auth_config_to_rpc_auth(p.auth.clone(), &mut url)?;
-                let client = foreign_chain_inspector::build_http_client(url, rpc_auth)?;
-                Ok::<_, anyhow::Error>(new_inspector(client))
+                new_inspector(url, rpc_auth, timeout)
             })?;
             Ok(Some(FanOut::new(inspectors)))
         }
 
+        /// Adapts an inspector constructor over a jsonrpsee [`HttpClient`] to `build_fanout`'s
+        /// closure shape. The timeout is unused: the jsonrpsee chains rely on the inspection
+        /// deadline in the signing flow, as they did before this adapter existed.
+        fn with_http_client<I>(
+            new_inspector: impl Fn(HttpClient) -> I,
+        ) -> impl Fn(String, RpcAuthentication, Duration) -> anyhow::Result<I> {
+            move |url, rpc_auth, _timeout| {
+                let client = foreign_chain_inspector::build_http_client(url, rpc_auth)?;
+                Ok(new_inspector(client))
+            }
+        }
+
+        fn new_aptos_inspector(
+            url: String,
+            rpc_auth: RpcAuthentication,
+            timeout: Duration,
+        ) -> anyhow::Result<AptosInspector<ReqwestAptosClient>> {
+            let auth_header = match rpc_auth {
+                RpcAuthentication::KeyInUrl => None,
+                RpcAuthentication::CustomHeader {
+                    header_name,
+                    header_value,
+                } => Some((header_name, header_value)),
+            };
+            Ok(AptosInspector::new(ReqwestAptosClient::new(
+                url,
+                auth_header,
+                timeout,
+            )))
+        }
+
         Ok(Self {
-            bitcoin: build_fanout(config.bitcoin.as_ref(), BitcoinInspector::new)?,
-            abstract_chain: build_fanout(config.abstract_chain.as_ref(), AbstractInspector::new)?,
-            base: build_fanout(config.base.as_ref(), BaseInspector::new)?,
-            bnb: build_fanout(config.bnb.as_ref(), BnbInspector::new)?,
-            starknet: build_fanout(config.starknet.as_ref(), StarknetInspector::new)?,
-            arbitrum: build_fanout(config.arbitrum.as_ref(), ArbitrumInspector::new)?,
-            hyper_evm: build_fanout(config.hyper_evm.as_ref(), HyperEvmInspector::new)?,
-            polygon: build_fanout(config.polygon.as_ref(), PolygonInspector::new)?,
+            bitcoin: build_fanout(
+                config.bitcoin.as_ref(),
+                with_http_client(BitcoinInspector::new),
+            )?,
+            abstract_chain: build_fanout(
+                config.abstract_chain.as_ref(),
+                with_http_client(AbstractInspector::new),
+            )?,
+            base: build_fanout(config.base.as_ref(), with_http_client(BaseInspector::new))?,
+            bnb: build_fanout(config.bnb.as_ref(), with_http_client(BnbInspector::new))?,
+            starknet: build_fanout(
+                config.starknet.as_ref(),
+                with_http_client(StarknetInspector::new),
+            )?,
+            arbitrum: build_fanout(
+                config.arbitrum.as_ref(),
+                with_http_client(ArbitrumInspector::new),
+            )?,
+            hyper_evm: build_fanout(
+                config.hyper_evm.as_ref(),
+                with_http_client(HyperEvmInspector::new),
+            )?,
+            polygon: build_fanout(
+                config.polygon.as_ref(),
+                with_http_client(PolygonInspector::new),
+            )?,
+            aptos: build_fanout(config.aptos.as_ref(), new_aptos_inspector)?,
         })
     }
 }
@@ -130,7 +186,7 @@ where
     }
 
     async fn run_key_generation_client(
-        _threshold: ReconstructionLowerBound,
+        _threshold: ReconstructionThreshold,
         _channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
         anyhow::bail!(
@@ -139,7 +195,7 @@ where
     }
 
     async fn run_key_resharing_client(
-        _new_threshold: ReconstructionLowerBound,
+        _new_threshold: ReconstructionThreshold,
         _key_share: Option<SigningShare>,
         _public_key: VerifyingKey,
         _old_participants: &ParticipantsConfig,

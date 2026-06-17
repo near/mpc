@@ -53,3 +53,11 @@ foreign_chains:
         rpc_url: "https://starknet-rpc.publicnode.com"
         auth:
           kind: none
+  aptos:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      public:
+        rpc_url: "https://fullnode.mainnet.aptoslabs.com/v1"
+        auth:
+          kind: none

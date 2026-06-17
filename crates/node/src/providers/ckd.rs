@@ -11,7 +11,7 @@ use threshold_signatures::confidential_key_derivation::{
     ElementG1, KeygenOutput, SigningShare, VerifyingKey,
 };
 
-use threshold_signatures::ReconstructionLowerBound;
+use threshold_signatures::ReconstructionThreshold;
 
 use mpc_node_config::ConfigFile;
 
@@ -79,14 +79,14 @@ impl SignatureProvider for CKDProvider {
     }
 
     async fn run_key_generation_client(
-        threshold: ReconstructionLowerBound,
+        threshold: ReconstructionThreshold,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
         Self::run_key_generation_client_internal(threshold, channel).await
     }
 
     async fn run_key_resharing_client(
-        new_threshold: ReconstructionLowerBound,
+        new_threshold: ReconstructionThreshold,
         key_share: Option<SigningShare>,
         public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
