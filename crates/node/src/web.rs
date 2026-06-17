@@ -149,6 +149,8 @@ struct ForeignChainsProviderCounts {
     hyper_evm: usize,
     #[serde(skip_serializing_if = "is_zero")]
     polygon: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    aptos: usize,
 }
 
 impl From<ForeignChainsConfig> for ForeignChainsProviderCounts {
@@ -164,6 +166,7 @@ impl From<ForeignChainsConfig> for ForeignChainsProviderCounts {
             arbitrum: config.arbitrum.map_or(0, |c| c.providers.len()),
             hyper_evm: config.hyper_evm.map_or(0, |c| c.providers.len()),
             polygon: config.polygon.map_or(0, |c| c.providers.len()),
+            aptos: config.aptos.map_or(0, |c| c.providers.len()),
         }
     }
 }
@@ -547,6 +550,7 @@ mod tests {
             "arbitrum",
             "hyper_evm",
             "polygon",
+            "aptos",
         ] {
             assert_eq!(
                 counts.get(chain).and_then(|v| v.as_u64()),

@@ -20,13 +20,14 @@ use dtos::{
 };
 use mpc_contract::primitives::{
     test_utils::infer_purpose_from_protocol,
-    thresholds::{Threshold, ThresholdParameters},
+    thresholds::{ProposedThresholdParameters, Threshold, ThresholdParameters},
 };
 use near_mpc_contract_interface::types::ReconstructionThreshold;
 use near_mpc_contract_interface::{method_names, types as dtos};
 use near_workspaces::{Account, Contract, Worker, network::Sandbox};
 use rstest::rstest;
 use serde_json::json;
+use std::collections::BTreeMap;
 
 #[tokio::test]
 async fn test_keygen() -> anyhow::Result<()> {
@@ -639,7 +640,10 @@ async fn test_cancelled_epoch_cannot_be_reused(
                 .call(contract.id(), method_names::VOTE_NEW_PARAMETERS)
                 .args_json(json!({
                     "prospective_epoch_id": cancelled_epoch_id.0,
-                    "proposal": threshold_parameters,
+                    "proposal": ProposedThresholdParameters::new(
+                        threshold_parameters.clone(),
+                        BTreeMap::new(),
+                    ),
                 }))
                 .transact()
                 .await?
@@ -808,7 +812,10 @@ async fn vote_new_parameters_errors_if_new_participant_is_missing_valid_attestat
             .max_gas()
             .args_json(json!({
                 "prospective_epoch_id": dtos::EpochId(epoch_id.0 + 1),
-                "proposal": threshold_parameters,
+                "proposal": ProposedThresholdParameters::new(
+                    threshold_parameters.clone(),
+                    BTreeMap::new(),
+                ),
             }))
             .transact()
             .await

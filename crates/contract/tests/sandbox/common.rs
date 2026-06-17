@@ -15,7 +15,7 @@ use mpc_contract::{
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantInfo, Participants},
         test_utils::{bogus_ed25519_public_key, infer_purpose_from_protocol},
-        thresholds::{Threshold, ThresholdParameters},
+        thresholds::{ProposedThresholdParameters, Threshold, ThresholdParameters},
     },
     tee::tee_state::NodeId,
     update::{ProposeUpdateArgs, UpdateId},
@@ -43,7 +43,7 @@ use near_workspaces::{Contract, network::Sandbox, result::ExecutionSuccess};
 use rand_core::CryptoRngCore;
 use serde_json::json;
 use signature::hazmat::PrehashSigner;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 use tokio_util::time::FutureExt as _;
 
@@ -591,7 +591,10 @@ pub async fn execute_key_generation_and_add_random_state(
         ThresholdParameters::new(participants, Threshold::new(threshold.0 + 1)).unwrap();
     let dummy_proposal = json!({
         "prospective_epoch_id": 1,
-        "proposal": &dummy_threshold_parameters,
+        "proposal": ProposedThresholdParameters::new(
+            dummy_threshold_parameters,
+            BTreeMap::new(),
+        ),
     });
     accounts[0]
         .call(contract.id(), method_names::VOTE_NEW_PARAMETERS)
