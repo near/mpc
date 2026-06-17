@@ -1030,12 +1030,8 @@ impl MpcContract {
         Self::assert_caller_is_signer();
         let signer_account_id = env::signer_account_id();
         let signer_account_pk = env::signer_account_pk();
-        let signer_account_ed25519_pk =
-            Ed25519PublicKey::try_from(&signer_account_pk).map_err(|_| {
-                InvalidParameters::InvalidTeeRemoteAttestation {
-                    reason: "signer account key must be Ed25519".to_string(),
-                }
-            })?;
+        let signer_account_ed25519_pk = Ed25519PublicKey::try_from(&signer_account_pk)
+            .unwrap_or_else(|_| env::panic_str("signer account key must be Ed25519"));
         let node_id = self
             .tee_state
             .lookup_node_id_by_signer_pk(&signer_account_ed25519_pk)
