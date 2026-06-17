@@ -45,6 +45,13 @@ foreign_chains:
         rpc_url: "https://api.testnet.abs.xyz"
         auth:
           kind: none
+      alchemy:
+        rpc_url: "https://abstract-mainnet.g.alchemy.com/v2/{API_KEY}"
+        auth:
+          kind: path
+          placeholder: "{API_KEY}"
+          token:
+            env: ALCHEMY_API_KEY
   starknet:
     timeout_sec: 30
     max_retries: 3
@@ -53,6 +60,13 @@ foreign_chains:
         rpc_url: "https://starknet-rpc.publicnode.com"
         auth:
           kind: none
+      alchemy:
+        rpc_url: "https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_10/{API_KEY}"
+        auth:
+          kind: path
+          placeholder: "{API_KEY}"
+          token:
+            env: ALCHEMY_API_KEY
   aptos:
     timeout_sec: 30
     max_retries: 3
@@ -61,3 +75,18 @@ foreign_chains:
         rpc_url: "https://fullnode.mainnet.aptoslabs.com/v1"
         auth:
           kind: none
+      alchemy:
+        rpc_url: "https://aptos-mainnet.g.alchemy.com/v2/{API_KEY}/v1"
+        auth:
+          kind: path
+          placeholder: "{API_KEY}"
+          token:
+            env: ALCHEMY_API_KEY
+      geomi:
+        rpc_url: "https://api.mainnet.aptoslabs.com/v1"
+        auth:
+          kind: header
+          name: Authorization
+          scheme: Bearer
+          token:
+            env: GEOMI_API_KEY

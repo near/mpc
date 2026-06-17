@@ -17,6 +17,9 @@ N=2
 # threshold, currently must be > 1 and at least 60% of N
 THRESHOLD=2
 
+: "${ALCHEMY_API_KEY:=placeholder}"
+: "${GEOMI_API_KEY:=placeholder}"
+
 # Base ports used by the mpc-nodes
 # Currently mpc-node i uses port
 # BASE_XXXX_PORT + i for functionality XXXX
@@ -84,6 +87,11 @@ main() {
   echo "Creating network with ${N} mpc nodes and threshold ${THRESHOLD}"
   echo "Logs will be stored in ${tmpdir}"
 
+  echo "Killing any leftover neard/mpc-node processes"
+  pkill -f neard || true
+  pkill -f mpc-node || true
+  sleep 2
+
   echo "Cleaning ~/.near folder"
   rm -rf ~/.near/
 
@@ -150,6 +158,10 @@ EOF
     WEB_UI_PORT=$((BASE_WEB_UI_PORT + i)) MIGRATION_PORT=$((BASE_MIGRATION_PORT + i)) PPROF_PORT=$((BASE_PPROF_PORT + i)) NEAR_ACCOUNT_NAME=$node_name envsubst <docs/localnet/mpc-configs/config.yaml.template >~/.near/$node_name/config.yaml
 
   done
+
+  echo "Optional API key env vars (nodes fall back to public providers if not set):"
+  [[ -n "${ALCHEMY_API_KEY:-}" ]] && echo "  ALCHEMY_API_KEY: set" || echo "  ALCHEMY_API_KEY: not set"
+  [[ -n "${GEOMI_API_KEY:-}" ]]   && echo "  GEOMI_API_KEY: set"   || echo "  GEOMI_API_KEY: not set"
 
   echo "Starting mpc nodes"
 
@@ -236,15 +248,19 @@ EOF
   is_contract_running_cmd="near contract call-function as-read-only mpc-contract.test.near state json-args {} network-config mpc-localnet now 2>&1 | grep Running"
   wait_for_success "${is_contract_running_cmd}"
 
+  POST_KEYGEN_WAIT=30
+  echo "Waiting ${POST_KEYGEN_WAIT} seconds for post-keygen transactions to settle"
+  sleep $POST_KEYGEN_WAIT
+
   signer_account="mpc-node-1.test.near"
 
   echo "Executing signature requests"
-  run_quiet_on_success "near contract call-function as-transaction mpc-contract.test.near sign file-args docs/localnet/args/sign_ecdsa.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as ${signer_account} network-config mpc-localnet sign-with-keychain send"
-  run_quiet_on_success "near contract call-function as-transaction mpc-contract.test.near sign file-args docs/localnet/args/sign_eddsa.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as ${signer_account} network-config mpc-localnet sign-with-keychain send"
-  run_quiet_on_success "near contract call-function as-transaction mpc-contract.test.near request_app_private_key file-args docs/localnet/args/ckd.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as ${signer_account} network-config mpc-localnet sign-with-keychain send"
-  run_quiet_on_success "near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/localnet/args/verify_foreign_tx_bitcoin.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as ${signer_account} network-config mpc-localnet sign-with-keychain send"
-  run_quiet_on_success "near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/localnet/args/verify_foreign_tx_abstract.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as ${signer_account} network-config mpc-localnet sign-with-keychain send"
-  run_quiet_on_success "near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/localnet/args/verify_foreign_tx_aptos.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as ${signer_account} network-config mpc-localnet sign-with-keychain send"
+  run_quiet_on_success_with_retries "near contract call-function as-transaction mpc-contract.test.near sign file-args docs/localnet/args/sign_ecdsa.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as ${signer_account} network-config mpc-localnet sign-with-keychain send" 10 10
+  run_quiet_on_success_with_retries "near contract call-function as-transaction mpc-contract.test.near sign file-args docs/localnet/args/sign_eddsa.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as ${signer_account} network-config mpc-localnet sign-with-keychain send" 10 10
+  run_quiet_on_success_with_retries "near contract call-function as-transaction mpc-contract.test.near request_app_private_key file-args docs/localnet/args/ckd.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as ${signer_account} network-config mpc-localnet sign-with-keychain send" 10 10
+  run_quiet_on_success_with_retries "near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/localnet/args/verify_foreign_tx_bitcoin.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as ${signer_account} network-config mpc-localnet sign-with-keychain send" 10 10
+  run_quiet_on_success_with_retries "near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/localnet/args/verify_foreign_tx_abstract.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as ${signer_account} network-config mpc-localnet sign-with-keychain send" 10 10
+  run_quiet_on_success_with_retries "near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/localnet/args/verify_foreign_tx_aptos.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as ${signer_account} network-config mpc-localnet sign-with-keychain send" 10 10
 
   read -rp "Press Enter to finish the script and run clean-up steps..."
 }
