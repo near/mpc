@@ -1,15 +1,15 @@
 use std::{net::SocketAddr, sync::Arc};
 
-use ed25519_dalek::SigningKey;
+use ed25519_dalek::{SigningKey, VerifyingKey};
 use near_account_id::AccountId;
-use onboarding::onboard;
 use tokio::sync::{RwLock, watch};
 use types::MigrationInfo;
 
 use crate::{
     config::{AesKey256, SecretsConfig},
-    indexer::{participants::ContractState, tx_sender::TransactionSender},
-    keyshare::KeyshareStorage,
+    indexer::participants::ContractState,
+    keyshare::{Keyshare, KeyshareStorage},
+    migration_service::types::OnboardingJob,
 };
 
 pub mod onboarding;
@@ -30,38 +30,57 @@ impl From<&SecretsConfig> for MigrationSecrets {
     }
 }
 
-pub async fn spawn_recovery_server_and_run_onboarding(
+/// Binds the migration web server on `migration_web_ui` and returns the
+/// receiver side of the keyshare-import channel. The sender lives inside the
+/// web server's state, so the channel stays alive for as long as the server
+/// task does — i.e. the lifetime of the node process.
+///
+/// The dispatcher in `run.rs` clones this receiver into each invocation of
+/// [`onboarding::onboard`] so back-migrations can be served without a process
+/// restart. See `docs/design/migration-onboarding-dispatcher.md`.
+pub async fn start_migration_web_server(
     migration_web_ui: SocketAddr,
-    migration_secrets: MigrationSecrets,
-    my_near_account_id: AccountId,
+    migration_secrets: &MigrationSecrets,
     keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     my_migration_info_receiver: watch::Receiver<MigrationInfo>,
-    contract_state_receiver: watch::Receiver<ContractState>,
-    tx_sender: impl TransactionSender,
-) -> anyhow::Result<()> {
-    let (import_keyshares_sender, import_keyshares_receiver) = tokio::sync::watch::channel(vec![]);
+) -> anyhow::Result<watch::Receiver<Vec<Keyshare>>> {
+    let (import_keyshares_sender, import_keyshares_receiver) = watch::channel(vec![]);
     let web_server_state = web::types::WebServerState {
         import_keyshares_sender,
-        keyshare_storage: keyshare_storage.clone(),
+        keyshare_storage,
         backup_encryption_key: migration_secrets.backup_encryption_key,
     };
-
     web::server::start_web_server(
         web_server_state.into(),
         migration_web_ui,
-        my_migration_info_receiver.clone(),
+        my_migration_info_receiver,
         &migration_secrets.p2p_private_key,
     )
     .await?;
-    onboard(
-        contract_state_receiver,
-        my_migration_info_receiver.clone(),
-        my_near_account_id.clone(),
-        migration_secrets.p2p_private_key.verifying_key(),
-        tx_sender,
-        keyshare_storage.clone(),
-        import_keyshares_receiver,
-    )
-    .await?;
-    Ok(())
+    Ok(import_keyshares_receiver)
+}
+
+/// Waits until the onboarding role implied by `(contract_state, migration_info,
+/// my_id, tls_pub_key)` changes away from `current`, then returns the new
+/// role. Used by the dispatcher to detect when the active subsystem
+/// (coordinator vs onboarding) must be swapped.
+pub(crate) async fn wait_until_role_change(
+    mut contract_state_receiver: watch::Receiver<ContractState>,
+    mut my_migration_info_receiver: watch::Receiver<MigrationInfo>,
+    my_near_account_id: &AccountId,
+    tls_public_key: &VerifyingKey,
+    current: OnboardingJob,
+) -> OnboardingJob {
+    loop {
+        let contract = contract_state_receiver.borrow_and_update().clone();
+        let migration_info = my_migration_info_receiver.borrow_and_update().clone();
+        let job = OnboardingJob::new(migration_info, contract, my_near_account_id, tls_public_key);
+        if job != current {
+            return job;
+        }
+        tokio::select! {
+            _ = contract_state_receiver.changed() => {}
+            _ = my_migration_info_receiver.changed() => {}
+        }
+    }
 }
