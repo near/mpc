@@ -84,3 +84,72 @@ pub(crate) async fn wait_until_role_change(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::migration_service::types::tests::make_running_contract_case;
+
+    /// Returns when the contract state transitions away from a state in which
+    /// the test node is an active participant. The function must surface the
+    /// new role to the dispatcher so it can swap the coordinator out.
+    #[tokio::test]
+    #[expect(non_snake_case)]
+    async fn wait_until_role_change__should_return_new_role_when_contract_state_changes() {
+        // Given: a Running contract where the test node IS an active participant
+        // (initial role = Done).
+        let (case, _keyset) = make_running_contract_case(
+            ed25519_dalek::SigningKey::from_bytes(&[7u8; 32]).verifying_key(),
+        );
+        let my_account_id = case.participant_node.account_id.clone();
+        let my_pk = case.participant_node.p2p_public_key;
+        let initial_contract = case.contract;
+        let migration_info = MigrationInfo {
+            backup_service_info: None,
+            active_migration: false,
+        };
+        assert_eq!(
+            OnboardingJob::new(
+                migration_info.clone(),
+                initial_contract.clone(),
+                &my_account_id,
+                &my_pk,
+            ),
+            OnboardingJob::Done,
+            "test precondition: initial role must be Done"
+        );
+        let (contract_tx, contract_rx) = watch::channel(initial_contract.clone());
+        let (_migration_tx, migration_rx) = watch::channel(migration_info.clone());
+
+        // When: start waiting with current = Done, then mutate the contract
+        // so the same node is no longer a participant (role diverges from Done).
+        let my_account_id_clone = my_account_id.clone();
+        let handle = tokio::spawn(async move {
+            wait_until_role_change(
+                contract_rx,
+                migration_rx,
+                &my_account_id_clone,
+                &my_pk,
+                OnboardingJob::Done,
+            )
+            .await
+        });
+        let other_pk =
+            ed25519_dalek::SigningKey::from_bytes(&[42u8; 32]).verifying_key();
+        let mut mutated = initial_contract.clone();
+        mutated.change_participant_pk(&my_account_id, other_pk);
+        contract_tx.send(mutated).expect("send mutated contract state");
+
+        // Then: the function returns the new (non-Done) role within a
+        // bounded time.
+        let new_role = tokio::time::timeout(std::time::Duration::from_secs(2), handle)
+            .await
+            .expect("wait_until_role_change did not return within 2s")
+            .expect("task panicked");
+        assert_ne!(
+            new_role,
+            OnboardingJob::Done,
+            "should have returned a role different from Done"
+        );
+    }
+}
