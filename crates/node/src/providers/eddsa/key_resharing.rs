@@ -5,7 +5,7 @@ use crate::primitives::ParticipantId;
 use crate::protocol::run_protocol;
 use crate::providers::eddsa::EddsaSignatureProvider;
 use rand::rngs::OsRng;
-use threshold_signatures::ReconstructionLowerBound;
+use threshold_signatures::ReconstructionThreshold;
 use threshold_signatures::frost::eddsa::KeygenOutput;
 use threshold_signatures::frost_ed25519::keys::SigningShare;
 use threshold_signatures::frost_ed25519::{Ed25519Sha512, VerifyingKey};
@@ -13,7 +13,7 @@ use threshold_signatures::participants::Participant;
 
 impl EddsaSignatureProvider {
     pub(super) async fn run_key_resharing_client_internal(
-        new_threshold: ReconstructionLowerBound,
+        new_threshold: ReconstructionThreshold,
         my_share: Option<SigningShare>,
         public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
@@ -23,7 +23,7 @@ impl EddsaSignatureProvider {
         let new_keyshare = KeyResharingComputation {
             threshold: new_threshold,
             old_participants: old_participants.participants.iter().map(|p| p.id).collect(),
-            old_threshold: ReconstructionLowerBound::from(old_threshold),
+            old_threshold: ReconstructionThreshold::from(old_threshold),
             my_share,
             public_key,
         }
@@ -49,9 +49,9 @@ impl EddsaSignatureProvider {
 ///       the old threshold; or
 ///     - the threshold is larger than the number of participants.
 pub struct KeyResharingComputation {
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     old_participants: Vec<ParticipantId>,
-    old_threshold: ReconstructionLowerBound,
+    old_threshold: ReconstructionThreshold,
     my_share: Option<SigningShare>,
     public_key: VerifyingKey,
 }
@@ -105,7 +105,7 @@ mod tests {
     use near_mpc_contract_interface::types::{AttemptId, EpochId, KeyEventId};
     use rand::{Rng as _, SeedableRng as _};
     use std::sync::Arc;
-    use threshold_signatures::ReconstructionLowerBound;
+    use threshold_signatures::ReconstructionThreshold;
     use threshold_signatures::frost_ed25519::Ed25519Sha512;
     use threshold_signatures::test_utils::{generate_participants_with_random_ids, run_keygen};
     use tokio::sync::mpsc;
@@ -152,9 +152,9 @@ mod tests {
                             .ok_or_else(|| anyhow::anyhow!("No channel"))?
                     };
                     let key = KeyResharingComputation {
-                        threshold: ReconstructionLowerBound::from(THRESHOLD),
+                        threshold: ReconstructionThreshold::from(THRESHOLD),
                         old_participants,
-                        old_threshold: ReconstructionLowerBound::from(THRESHOLD),
+                        old_threshold: ReconstructionThreshold::from(THRESHOLD),
                         my_share: keyshare,
                         public_key: pubkey,
                     }

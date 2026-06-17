@@ -21,7 +21,7 @@ pub use ecdsa::EcdsaSignatureProvider;
 pub use ecdsa::EcdsaTaskId;
 pub use robust_ecdsa::RobustEcdsaSignatureProvider;
 use std::sync::Arc;
-use threshold_signatures::ReconstructionLowerBound;
+use threshold_signatures::ReconstructionThreshold;
 
 /// The interface that defines the requirements for a signing schema to be correctly used in the code.
 pub trait SignatureProvider {
@@ -51,7 +51,7 @@ pub trait SignatureProvider {
     ///
     /// It drains `channel_receiver` until the required task is found, meaning these clients must not be run in parallel.
     async fn run_key_generation_client(
-        threshold: ReconstructionLowerBound,
+        threshold: ReconstructionThreshold,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput>;
 
@@ -59,7 +59,7 @@ pub trait SignatureProvider {
     /// Both leaders and followers call this function.
     /// It drains `channel_receiver` until the required task is found, meaning these clients must not be run in parallel.
     async fn run_key_resharing_client(
-        new_threshold: ReconstructionLowerBound,
+        new_threshold: ReconstructionThreshold,
         key_share: Option<Self::SecretShare>,
         public_key: Self::PublicKey,
         old_participants: &ParticipantsConfig,

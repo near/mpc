@@ -10,7 +10,7 @@ pub struct MaxMalicious(usize);
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, From, Into,
 )]
-pub struct ReconstructionLowerBound(usize);
+pub struct ReconstructionThreshold(usize);
 
 // ----- MaxMalicious conversions -----
 impl MaxMalicious {
@@ -19,14 +19,14 @@ impl MaxMalicious {
     }
 }
 
-impl ReconstructionLowerBound {
+impl ReconstructionThreshold {
     pub fn value(self) -> usize {
         self.0
     }
 }
 
 /// Lower bound to reconstruct the secret is `MaxMalicious` + 1.
-impl TryFrom<MaxMalicious> for ReconstructionLowerBound {
+impl TryFrom<MaxMalicious> for ReconstructionThreshold {
     type Error = ThresholdError;
 
     fn try_from(m: MaxMalicious) -> Result<Self, Self::Error> {

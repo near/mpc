@@ -214,27 +214,24 @@ impl IntoContractType<Participants> for dtos::Participants {
     }
 }
 
-impl IntoContractType<ThresholdParameters> for dtos::ThresholdParameters {
-    fn into_contract_type(self) -> ThresholdParameters {
-        // This conversion is intentionally infallible: `new_unvalidated` skips the
-        // absolute/relative (>= 60%) threshold checks. Validation is not the job of the
-        // DTO mapping — every contract entry point that accepts these parameters
-        // (`init`, `init_running`, `vote_new_parameters`) calls `validate()` /
-        // `validate_incoming_proposal` downstream, so production proposals are still
-        // rejected if they violate the threshold bounds. Deferring validation here also
-        // lets tests construct parameters with sub-production thresholds.
-        ThresholdParameters::new_unvalidated(self.participants.into_contract_type(), self.threshold)
+impl TryIntoContractType<ThresholdParameters> for dtos::ThresholdParameters {
+    type Error = Error;
+
+    fn try_into_contract_type(self) -> Result<ThresholdParameters, Self::Error> {
+        // Validate eagerly at the DTO boundary so invalid proposal parameters are rejected here.
+        ThresholdParameters::new(self.participants.into_contract_type(), self.threshold)
     }
 }
 
-impl IntoContractType<ProposedThresholdParameters> for dtos::ProposedThresholdParameters {
-    fn into_contract_type(self) -> ProposedThresholdParameters {
-        // Infallible for the same reason as `ThresholdParameters` above: the
-        // proposal is validated downstream in `process_new_parameters_proposal`.
-        ProposedThresholdParameters::new(
-            self.parameters.into_contract_type(),
+impl TryIntoContractType<ProposedThresholdParameters> for dtos::ProposedThresholdParameters {
+    type Error = Error;
+
+    fn try_into_contract_type(self) -> Result<ProposedThresholdParameters, Self::Error> {
+        // Validates the inner threshold parameters; see the conversion above.
+        Ok(ProposedThresholdParameters::new(
+            self.parameters.try_into_contract_type()?,
             self.per_domain_thresholds,
-        )
+        ))
     }
 }
 
@@ -844,9 +841,13 @@ pub fn args_into_verify_foreign_tx_request(
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use crate::errors::InvalidThreshold;
+    use crate::primitives::test_utils::gen_participants;
     use crate::primitives::thresholds::Threshold;
+    use assert_matches::assert_matches;
 
     const TEST_THRESHOLD: u64 = 2;
 
@@ -928,5 +929,30 @@ mod tests {
         let dto_json = serde_json::to_value(&dto).unwrap();
 
         assert_eq!(internal_json, dto_json);
+    }
+
+    /// A threshold below the relative (>= 60%) requirement must be rejected at the
+    /// DTO boundary rather than deferred to a later validation step.
+    #[test]
+    fn try_into_contract_type__should_reject_threshold_below_relative_requirement() {
+        // Given a DTO with 5 participants and a threshold of 2 (below the 60% bound of 3).
+        let dto = dtos::ThresholdParameters {
+            participants: (&gen_participants(5)).into_dto_type(),
+            threshold: Threshold::new(2),
+        };
+
+        // When converting the DTO into the contract type.
+        let result: Result<ThresholdParameters, Error> = dto.try_into_contract_type();
+
+        // Then conversion fails with the relative-threshold error.
+        assert_matches!(
+            result,
+            Err(Error::InvalidThreshold(
+                InvalidThreshold::MinRelRequirementFailed {
+                    required: 3,
+                    found: 2
+                }
+            ))
+        );
     }
 }

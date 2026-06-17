@@ -6,7 +6,7 @@ use tokio::time::timeout;
 
 use near_mpc_contract_interface::types as dtos;
 use threshold_signatures::{
-    ReconstructionLowerBound,
+    ReconstructionThreshold,
     confidential_key_derivation::{
         AppId, ElementG1, ElementG2, KeygenOutput, PublicVerificationKey, VerifyingKey, ckd_pv,
         protocol::ckd,
@@ -30,7 +30,7 @@ impl CKDProvider {
         let ckd_request = self.ckd_request_store.get(id).await?;
 
         let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
-        let threshold = ReconstructionLowerBound::from(threshold);
+        let threshold = ReconstructionThreshold::from(threshold);
         let running_participants: Vec<_> = self
             .mpc_config
             .participants

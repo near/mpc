@@ -14,7 +14,7 @@ use crate::bench_utils::{
 };
 
 use threshold_signatures::{
-    ReconstructionLowerBound,
+    ReconstructionThreshold,
     ecdsa::{
         KeygenOutput, SignatureOption,
         ot_based_ecdsa::{
@@ -266,7 +266,7 @@ struct SignSetup {
 /// Expensive one-time setup for sign: runs the full N-party protocol to capture snapshots
 fn setup_sign_snapshot(
     result: &[(Participant, PresignOutput)],
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     pk: VerifyingKey,
 ) -> SignSetup {
     let mut rng = MockCryptoRng::seed_from_u64(40);
@@ -297,7 +297,7 @@ fn setup_sign_snapshot(
 /// Cheap per-sample setup: creates fresh sign protocol and clones the cached simulator
 fn prepare_simulated_sign(
     setup: &SignSetup,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
 ) -> PreparedSimulatedSig {
     let real_protocol = sign(
         &setup.participants,

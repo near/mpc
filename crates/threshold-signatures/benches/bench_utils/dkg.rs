@@ -1,7 +1,7 @@
 use rand_core::{CryptoRngCore, SeedableRng};
 
 use threshold_signatures::{
-    Ciphersuite, KeygenOutput, ReconstructionLowerBound, keygen,
+    Ciphersuite, KeygenOutput, ReconstructionThreshold, keygen,
     participants::Participant,
     protocol::Protocol,
     test_utils::{MockCryptoRng, generate_participants_with_random_ids},
@@ -10,7 +10,7 @@ use threshold_signatures::{
 /// Used to prepare DKG keygen protocols for benchmarking
 pub fn prepare_dkg<C: Ciphersuite, R: CryptoRngCore + SeedableRng + Send + 'static>(
     num_participants: usize,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     rng: &mut R,
 ) -> PreparedDkgPackage<C>
 where
