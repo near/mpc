@@ -62,7 +62,7 @@ pub const fn version_3_11_2() -> &'static [u8; 1439260] {
     include_bytes!("../archive/signer-3_11_2.wasm")
 }
 
-pub const fn version_3_12_0() -> &'static [u8; 1481399] {
+pub const fn version_3_12_0() -> &'static [u8; 1482860] {
     include_bytes!("../archive/signer-3_12_0.wasm")
 }
 
