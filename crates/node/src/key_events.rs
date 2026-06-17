@@ -727,11 +727,11 @@ mod tests {
     use mpc_primitives::domain::DomainId;
     use mpc_primitives::{AttemptId, EpochId, KeyEventId};
     use near_mpc_contract_interface::types::{
-        DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
+        DomainConfig, DomainPurpose, Protocol,
     };
     use std::collections::BTreeSet;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
+    use threshold_signatures::ReconstructionThreshold;
 
     #[rstest::rstest]
     #[tokio::test(start_paused = true)]
@@ -888,7 +888,7 @@ mod tests {
             domain: DomainConfig {
                 id: key_event_id.domain_id,
                 protocol: Protocol::CaitSith,
-                reconstruction_threshold: ReconstructionThreshold::new(2),
+                reconstruction_threshold: dtos::ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
             },
             started,
@@ -901,7 +901,7 @@ mod tests {
         Arc::new(ResharingArgs {
             previous_keyset: Keyset::new(EpochId::new(5), vec![]),
             existing_keyshares: None,
-            new_threshold: TSReconstructionThreshold::from(3),
+            new_threshold: ReconstructionThreshold::from(3),
             old_participants: ParticipantsConfig {
                 threshold: 3,
                 participants: vec![],
