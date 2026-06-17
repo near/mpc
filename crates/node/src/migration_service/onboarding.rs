@@ -6,7 +6,7 @@ use ed25519_dalek::VerifyingKey;
 use futures::TryFutureExt;
 use near_account_id::AccountId;
 use near_mpc_crypto_types::Keyset;
-use tokio::sync::{RwLock, watch};
+use tokio::sync::{RwLock, oneshot, watch};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -19,12 +19,12 @@ use crate::{
     migration_service::types::{MigrationInfo, OnboardingJob, OnboardingTask},
 };
 
-/// Waits until the node becomes an active participant in the current epoch or
-/// terminates if the keyshare channel closes.
-/// Internally, this function monitors contract and migration state changes and
-/// runs onboarding tasks as needed.
-///
-/// Returns `Ok(())` when this node is an active participant in the current epoch.
+/// Runs the onboarding state machine for the lifetime of the process.
+/// `Done` is a resting state — the loop keeps watching so a later
+/// contract transition can re-enter `Onboard(keyset)` without a restart.
+/// `first_done_signal` fires once, on first `Done`, so the caller can
+/// unblock startup. See `docs/design/migration-onboarding-reentry.md`.
+#[expect(clippy::too_many_arguments)]
 pub(crate) async fn onboard(
     contract_state_receiver: watch::Receiver<ContractState>,
     my_migration_info_receiver: watch::Receiver<MigrationInfo>,
@@ -33,6 +33,7 @@ pub(crate) async fn onboard(
     tx_sender: impl TransactionSender,
     keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     keyshare_receiver: watch::Receiver<Vec<Keyshare>>,
+    mut first_done_signal: Option<oneshot::Sender<()>>,
 ) -> anyhow::Result<()> {
     tracing::info!(?my_near_account_id, "starting onboarding");
     let (cancel_monitoring_task, mut onboarding_job_receiver) = start_onboarding_monitoring_task(
@@ -51,8 +52,11 @@ pub(crate) async fn onboard(
         match job {
             OnboardingJob::Done => {
                 tracing::info!(?my_near_account_id, "done onboarding");
-                cancel_monitoring_task.cancel();
-                return Ok(());
+                if let Some(tx) = first_done_signal.take() {
+                    let _ = tx.send(());
+                }
+                cancellation_token.cancelled().await;
+                continue;
             }
             OnboardingJob::WaitForStateChange => {
                 tracing::info!(?my_near_account_id, "waiting for state change");
@@ -336,7 +340,7 @@ mod tests {
 
     use rand::SeedableRng as _;
     use tokio::{
-        sync::{RwLock, watch},
+        sync::{RwLock, mpsc, oneshot, watch},
         time::timeout,
     };
     use tokio_util::sync::CancellationToken;
@@ -358,10 +362,11 @@ mod tests {
                 },
             },
         },
+        tests::common::MockTransactionSender,
     };
     use tracing_test::{self, traced_test};
 
-    use super::start_onboarding_monitoring_task;
+    use super::{onboard, start_onboarding_monitoring_task};
 
     const EPOCH_ID: u64 = 3;
     const NUM_KEYS: u64 = 5;
@@ -629,5 +634,66 @@ mod tests {
             monitoring_cancellation_token,
         )
         .await;
+    }
+
+    /// `onboard()` no longer returns on `Done`: it fires `first_done_signal`
+    /// (once) and keeps looping so a subsequent contract transition can
+    /// re-enter `Onboard(keyset)` without a process restart. See #3406 and
+    /// `docs/design/migration-onboarding-reentry.md`.
+    #[tokio::test]
+    #[expect(non_snake_case)]
+    async fn onboard__should_fire_first_done_signal_and_keep_looping_past_done() {
+        // Given: a node that is already an Active participant in the contract,
+        // so the very first OnboardingJob the loop reads is `Done`.
+        let onboarding_node = gen_participant();
+        let (running_case, _keyset) = make_running_contract_case(onboarding_node.p2p_public_key);
+        let participant_node = running_case.participant_node.clone();
+        let mut contract = running_case.contract.clone();
+        // Make the loop's account_id + p2p_public_key match a current
+        // participant (Active(Active) → Done).
+        contract.change_participant_pk(
+            &participant_node.account_id,
+            participant_node.p2p_public_key,
+        );
+
+        let (_contract_state_sender, contract_state_receiver) = watch::channel(contract);
+        let (_my_migration_info_sender, my_migration_info_receiver) =
+            watch::channel(INACTIVE_MIGRATION);
+        let (_keyshare_sender, keyshare_receiver) = watch::channel(vec![]);
+        let (tx_sender, _tx_receiver) = mpsc::channel(10);
+        let tx_sender = MockTransactionSender {
+            transaction_sender: tx_sender,
+        };
+        let (first_done_tx, first_done_rx) = oneshot::channel();
+        let (config, _temp_dir) = generate_key_storage_config();
+        let keyshare_storage = Arc::new(RwLock::new(config.create().await.unwrap()));
+
+        // When: spawn onboard() in the background.
+        let onboard_handle = tokio::spawn(onboard(
+            contract_state_receiver,
+            my_migration_info_receiver,
+            participant_node.account_id.clone(),
+            participant_node.p2p_public_key,
+            tx_sender,
+            keyshare_storage,
+            keyshare_receiver,
+            Some(first_done_tx),
+        ));
+
+        // Then: first_done_signal fires within a short window (Done was reached).
+        timeout(Duration::from_secs(5), first_done_rx)
+            .await
+            .expect("first_done_signal should fire within 5s")
+            .expect("first_done_signal should not be dropped before firing");
+
+        // And: the loop is still running — Done is a resting state, not a terminal one.
+        // Give it some time to potentially exit before asserting still-running.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert!(
+            !onboard_handle.is_finished(),
+            "onboard() should keep looping past first Done; it must not return on Done"
+        );
+
+        onboard_handle.abort();
     }
 }

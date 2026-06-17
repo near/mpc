@@ -36,6 +36,7 @@ pub const CONTRACT_UPGRADE_COMPATIBILITY_TESTNET_PORT_SEED: u16 = 19;
 pub const TIMEOUT_METRIC_PORT_SEED: u16 = 20;
 pub const MIGRATION_BACK_PORT_SEED: u16 = 21;
 pub const SIGTERM_HANDLER_PORT_SEED: u16 = 22;
+pub const MIGRATION_BACK_NO_RESTART_PORT_SEED: u16 = 23;
 
 /// Start a cluster, wait for Running state and presignatures to buffer.
 ///
