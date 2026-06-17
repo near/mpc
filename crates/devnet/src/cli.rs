@@ -13,6 +13,8 @@ pub enum Cli {
     Loadtest(LoadtestCmd),
     /// List loadtests or mpc networks
     List(ListCmd),
+    /// Fund an existing testnet account with a fixed amount of NEAR.
+    Fund(FundCmd),
 }
 
 impl Cli {
@@ -97,8 +99,21 @@ impl Cli {
                     cmd.run(config).await;
                 }
             },
+            Cli::Fund(cmd) => {
+                cmd.run(config).await;
+            }
         }
     }
+}
+
+#[derive(clap::Parser)]
+pub struct FundCmd {
+    /// The existing testnet account to fund.
+    #[clap(long)]
+    pub account_id: AccountId,
+    /// Amount of NEAR to transfer to the account, on top of its current balance.
+    #[clap(long)]
+    pub near: u128,
 }
 
 #[derive(clap::Parser)]

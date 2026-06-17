@@ -92,6 +92,19 @@ You may create multiple MPC networks, multiple Loadtest Setups, and
 update each of them with bigger parameters. The CLI will automatically
 fund any necessary accounts using as many Testnet faucets as needed.
 
+## Funding an Account
+
+To send NEAR to an arbitrary existing testnet account (on top of its current
+balance):
+
+```shell
+mpc-devnet fund --account-id some-account.testnet --near 5
+```
+
+The funds are drawn from the configured `funding_account` if set, otherwise
+from a fresh faucet account. As with all funding operations, a single
+invocation refuses to move more than 100 NEAR.
+
 ## Creating an MPC Network
 
 First, create an MPC network. Pick a name; here I'll use

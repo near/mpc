@@ -1,9 +1,11 @@
 use crate::account::{OperatingAccount, OperatingAccounts, make_random_account_name};
+use crate::cli::FundCmd;
 use crate::constants::{
     MINIMUM_BALANCE_TO_REMAIN_IN_ACCOUNTS, ONE_NEAR,
     PERCENT_OF_ORIGINAL_BALANCE_BELOW_WHICH_TO_REFILL,
 };
-use crate::types::NearAccount;
+use crate::devnet::OperatingDevnetSetup;
+use crate::types::{NearAccount, ParsedConfig};
 use near_account_id::AccountId;
 use std::collections::VecDeque;
 
@@ -22,6 +24,8 @@ pub enum AccountToFund {
         desired_balance: u128,
         do_not_refill_above: u128,
     },
+    /// Transfer a fixed `amount` to an existing account, regardless of its current balance.
+    ExistingAccountAddAmount { account_id: AccountId, amount: u128 },
 }
 
 impl AccountToFund {
@@ -40,6 +44,10 @@ impl AccountToFund {
                 * PERCENT_OF_ORIGINAL_BALANCE_BELOW_WHICH_TO_REFILL
                 / 100,
         }
+    }
+
+    pub fn from_existing_add_amount(account_id: AccountId, amount: u128) -> Self {
+        Self::ExistingAccountAddAmount { account_id, amount }
     }
 }
 
@@ -90,6 +98,7 @@ pub async fn fund_accounts(
                     *desired_balance - balance
                 }
             }
+            AccountToFund::ExistingAccountAddAmount { amount, .. } => *amount,
         };
         accounts_to_be_funded.push_back((account, balance_needed));
     }
@@ -182,7 +191,8 @@ pub async fn fund_accounts(
                     .create_account(prefix, balance_to_fund, &funding_account)
                     .await
             }
-            AccountToFund::ExistingAccount { account_id, .. } => {
+            AccountToFund::ExistingAccount { account_id, .. }
+            | AccountToFund::ExistingAccountAddAmount { account_id, .. } => {
                 if balance_to_fund > 0 {
                     println!(
                         "Refilling existing account {} with additional balance {}",
@@ -216,4 +226,54 @@ pub async fn fund_accounts(
         accounts.discard_account(&account);
     }
     funded_accounts
+}
+
+impl FundCmd {
+    pub async fn run(&self, config: ParsedConfig) {
+        let amount = self.near * ONE_NEAR;
+        println!(
+            "Funding account {} with {} NEAR",
+            self.account_id, self.near
+        );
+        let mut setup = OperatingDevnetSetup::load(config.rpc).await;
+        fund_accounts(
+            &mut setup.accounts,
+            vec![AccountToFund::from_existing_add_amount(
+                self.account_id.clone(),
+                amount,
+            )],
+            config.funding_account,
+        )
+        .await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The additive constructor must carry the exact amount, unlike `from_existing`
+    /// which derives a top-up target and a `do_not_refill_above` threshold.
+    #[test]
+    #[expect(non_snake_case)]
+    fn from_existing_add_amount__should_carry_exact_amount() {
+        // Given
+        let account_id: AccountId = "alice.testnet".parse().unwrap();
+        let amount = 5 * ONE_NEAR;
+
+        // When
+        let to_fund = AccountToFund::from_existing_add_amount(account_id.clone(), amount);
+
+        // Then
+        match to_fund {
+            AccountToFund::ExistingAccountAddAmount {
+                account_id: got_id,
+                amount: got_amount,
+            } => {
+                assert_eq!(got_id, account_id);
+                assert_eq!(got_amount, amount);
+            }
+            _ => panic!("expected ExistingAccountAddAmount variant"),
+        }
+    }
 }
