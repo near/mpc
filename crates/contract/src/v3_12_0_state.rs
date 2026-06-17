@@ -6,8 +6,6 @@
 //! In theory, you could copy-paste every struct from the specific commit you're migrating from.
 //! However, this approach (a) requires manual effort from a developer and (b) increases the binary size.
 //! A better approach: only copy the structures that have changed and import the rest from the existing codebase.
-//!
-//! The 3.12.0 layout is identical to the current layout, so no shadow types are needed here.
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_contract_interface::types::{Metrics, VerifyForeignTransactionRequest};
