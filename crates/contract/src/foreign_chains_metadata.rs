@@ -52,7 +52,9 @@ impl ForeignChainsMetadata {
             for chain in chains.iter() {
                 if self.rpc_whitelist.entries.is_whitelisted(chain) {
                     let count = chain_to_supporter_count.entry(*chain).or_default();
-                    *count = count.checked_add(1).expect("supporter count bounded by participant set size");
+                    *count = count
+                        .checked_add(1)
+                        .expect("supporter count bounded by participant set size");
                 }
             }
         }
