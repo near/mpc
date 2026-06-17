@@ -1,0 +1,21 @@
+[package]
+name = "tee-verifier-conversions"
+version = { workspace = true }
+license = { workspace = true }
+edition = { workspace = true }
+
+[dependencies]
+# Logical feature floor is `dcap-qvl/borsh` only: this crate maps types and
+# never calls `verify()`, so it needs neither `std`/`ring`/`x509` nor the JSON
+# features. We inherit the workspace pin because Cargo feature-unifies
+# `dcap-qvl` across the build graph anyway, so a narrower list here would
+# change nothing and only risk drift.
+dcap-qvl = { workspace = true }
+tee-verifier-interface = { workspace = true }
+
+[dev-dependencies]
+borsh = { workspace = true }
+rstest = { workspace = true }
+
+[lints]
+workspace = true

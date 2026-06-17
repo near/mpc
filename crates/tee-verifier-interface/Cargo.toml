@@ -7,9 +7,8 @@ edition = { workspace = true }
 [features]
 borsh-schema = ["borsh/unstable__schema"]
 # Off by default. Derives serde only on the verifier *input* types
-# (`QuoteBytes`, `Collateral`) for MPC-internal off-chain callers that embed
-# them in a serde struct (e.g. the node's `/public_data` HTTP payload).
-# External teams and the verifier contract talk Borsh-only and never enable it.
+# (`QuoteBytes`, `Collateral`) for off-chain callers that embed them in serde
+# structs. The Borsh cross-contract ABI never enables it.
 serde = ["dep:serde"]
 
 [dependencies]

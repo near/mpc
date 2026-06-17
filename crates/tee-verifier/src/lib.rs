@@ -11,8 +11,7 @@
 use near_sdk::{env, near};
 use tee_verifier_interface::{Collateral, QuoteBytes, VerificationResult, VerifierError};
 
-mod conversions;
-use conversions::{IntoDcapType as _, IntoInterfaceType as _};
+use tee_verifier_conversions::{IntoDcapType as _, IntoInterfaceType as _};
 
 // `dcap-qvl`'s `contract` feature pulls in `getrandom` but doesn't enable
 // any backend. On `wasm32-unknown-unknown` we register a custom impl that

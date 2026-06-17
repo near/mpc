@@ -70,8 +70,7 @@ pub fn verify_at_timestamp(
         VerificationError::Custom(format!("failed to load expected measurements: {e}"))
     })?;
 
-    // Full local verification (DCAP + post-DCAP) — the CLI verifies end-to-end
-    // locally, the same post-DCAP logic the contract runs on the verifier's report.
+    // Single verify call — same verification logic as the contract and node
     let AcceptedAttestation {
         attestation: verified_attestation,
         advisory_ids,

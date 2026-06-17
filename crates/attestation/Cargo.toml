@@ -10,9 +10,8 @@ dstack-conversions = ["dep:dstack-sdk-types"]
 test-utils = []
 # Off-chain only: pulls in `dcap-qvl` for `DstackAttestation::verify_locally`
 # (full local DCAP + post-DCAP verification). On-chain callers (the contract)
-# do not enable this; they get the `VerifiedReport` from the verifier contract
-# and call `verify_with_report` directly.
-local-verify = ["dep:dcap-qvl"]
+# do not enable this.
+local-verify = ["dep:dcap-qvl", "dep:tee-verifier-conversions"]
 
 [dependencies]
 borsh = { workspace = true }
@@ -24,10 +23,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
 sha2 = { workspace = true }
-# `serde` feature: `DstackAttestation` re-exports and embeds the interface
-# `Collateral`/`QuoteBytes` and derives serde on them (needed for the node's
-# `/public_data` payload). This is the only place that turns the interface
-# crate's off-by-default `serde` feature on.
+tee-verifier-conversions = { workspace = true, optional = true }
 tee-verifier-interface = { workspace = true, features = ["serde"] }
 thiserror = { workspace = true }
 
@@ -35,7 +31,11 @@ thiserror = { workspace = true }
 assert_matches = { workspace = true }
 # Self-dependency enabling the off-chain features so unit tests can exercise
 # the `dcap_conversions` Borsh-layout pin and `verify_locally`.
-attestation = { path = ".", features = ["local-verify", "test-utils", "dstack-conversions"] }
+attestation = { path = ".", features = [
+    "local-verify",
+    "test-utils",
+    "dstack-conversions",
+] }
 dstack-sdk-types = { workspace = true }
 rstest = { workspace = true }
 test-utils = { workspace = true }

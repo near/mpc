@@ -1,9 +1,12 @@
 //! Quote collateral (Intel certificates + TCB info) used to verify a quote.
 //!
-//! Re-exported from `tee-verifier-interface` so the collateral type has a
-//! single definition shared by the verifier wire, this crate's post-DCAP
-//! logic, and every consumer. This crate does not define its own collateral
-//! type; the `test-utils` JSON parser below produces the re-exported type.
+//! `Collateral` is re-exported from `tee-verifier-interface`, not redefined,
+//! so it has a single canonical definition.
+//!
+//! The `test-utils` JSON parser below lives here, not in the wire crate:
+//! `tee-verifier-interface` is Borsh-only on the cross-contract call, so
+//! adding `serde_json` + `hex` there would bloat every consumer's WASM. The
+//! only place collateral exists as JSON is off-chain test fixtures.
 pub use tee_verifier_interface::Collateral;
 
 #[cfg(feature = "test-utils")]
@@ -12,22 +15,11 @@ pub use parse::{CollateralError, collateral_from_json, collateral_from_str};
 #[cfg(feature = "test-utils")]
 mod parse {
     use super::Collateral;
-    use alloc::string::String;
-    use alloc::vec::Vec;
+    use alloc::{string::String, vec::Vec};
     use hex::FromHexError;
     use serde_json::Value;
     use thiserror::Error;
 
-    /// Parses a JSON value (hex-encoded byte fields) into a [`Collateral`].
-    ///
-    /// The verifier wire [`Collateral`] holds plain `Vec<u8>` fields, so this
-    /// off-chain helper hex-decodes the byte fields explicitly rather than
-    /// relying on a serde derive — keeping `tee-verifier-interface` serde-free.
-    ///
-    /// # Errors
-    ///
-    /// Returns a [`CollateralError`] if a required field is missing, has the
-    /// wrong type, or a hex field cannot be decoded.
     pub fn collateral_from_json(v: Value) -> Result<Collateral, CollateralError> {
         fn get_str(v: &Value, key: &str) -> Result<String, CollateralError> {
             v.get(key)
@@ -58,12 +50,6 @@ mod parse {
         })
     }
 
-    /// Parses a JSON string into a [`Collateral`].
-    ///
-    /// # Errors
-    ///
-    /// Returns a [`CollateralError`] if the string is not valid JSON, a
-    /// required field is missing, or a hex field cannot be decoded.
     pub fn collateral_from_str(s: &str) -> Result<Collateral, CollateralError> {
         let json_value: Value =
             serde_json::from_str(s).map_err(|_| CollateralError::InvalidJson)?;

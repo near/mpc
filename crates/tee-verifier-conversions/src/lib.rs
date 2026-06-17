@@ -1,10 +1,22 @@
 //! Conversions between `dcap_qvl`'s types and the Borsh-mirrored types in
-//! `tee-verifier-interface`. They live here, not in the interface crate, so
-//! that crate stays `no_std` and free of `dcap-qvl`.
+//! `tee-verifier-interface`.
+//!
+//! Shared by the on-chain `tee-verifier` contract (which feeds `dcap_qvl::verify`
+//! and returns the interface `VerifiedReport`) and the off-chain `attestation`
+//! crate's `verify_locally` path. The conversion code's only dependency floor
+//! is `dcap-qvl` + `tee-verifier-interface` + `borsh`, which both consumers
+//! already carry, so it lives in this minimal crate rather than being duplicated
+//! or pulled through `attestation` (whose `serde`/`serde_json`/`sha2`/
+//! `dstack-sdk-types` closure is unrelated to these mappings).
 //!
 //! Mapped with the local [`IntoDcapType`] / [`IntoInterfaceType`] traits. We
 //! can not use [`From`] and [`Into`] due to the [*orphan rule*](https://doc.rust-lang.org/reference/items/implementations.html#orphan-rules).
 
+#![no_std]
+
+extern crate alloc;
+
+use alloc::vec::Vec;
 use dcap_qvl::{quote as dq_quote, tcb_info as dq_tcb, verify as dq_verify};
 use tee_verifier_interface::{
     Collateral, EnclaveReport, QuoteBytes, Report, TDReport10, TDReport15, TcbStatus,
@@ -12,12 +24,12 @@ use tee_verifier_interface::{
 };
 
 /// Converts an interface type into its `dcap_qvl` counterpart `T`.
-pub(crate) trait IntoDcapType<T> {
+pub trait IntoDcapType<T> {
     fn into_dcap_type(self) -> T;
 }
 
 /// Converts a `dcap_qvl` type into its `tee-verifier-interface` counterpart `T`.
-pub(crate) trait IntoInterfaceType<T> {
+pub trait IntoInterfaceType<T> {
     fn into_interface_type(self) -> T;
 }
 
@@ -36,6 +48,36 @@ impl IntoDcapType<dcap_qvl::QuoteCollateralV3> for Collateral {
             pck_certificate_chain: self.pck_certificate_chain,
         }
     }
+}
+
+impl IntoInterfaceType<Collateral> for dcap_qvl::QuoteCollateralV3 {
+    fn into_interface_type(self) -> Collateral {
+        Collateral {
+            pck_crl_issuer_chain: self.pck_crl_issuer_chain,
+            root_ca_crl: self.root_ca_crl,
+            pck_crl: self.pck_crl,
+            tcb_info_issuer_chain: self.tcb_info_issuer_chain,
+            tcb_info: self.tcb_info,
+            tcb_info_signature: self.tcb_info_signature,
+            qe_identity_issuer_chain: self.qe_identity_issuer_chain,
+            qe_identity: self.qe_identity,
+            qe_identity_signature: self.qe_identity_signature,
+            pck_certificate_chain: self.pck_certificate_chain,
+        }
+    }
+}
+
+/// Converts a `dcap_qvl::QuoteCollateralV3` (e.g. fetched from a PCCS endpoint)
+/// into the interface [`Collateral`]. Off-chain helper for callers that hold a
+/// `dcap-qvl` collateral and need the wire type.
+pub fn collateral_from_dcap(collateral: dcap_qvl::QuoteCollateralV3) -> Collateral {
+    collateral.into_interface_type()
+}
+
+/// Converts an interface [`Collateral`] into a `dcap_qvl::QuoteCollateralV3`.
+/// Off-chain helper, the inverse of [`collateral_from_dcap`].
+pub fn collateral_into_dcap(collateral: Collateral) -> dcap_qvl::QuoteCollateralV3 {
+    collateral.into_dcap_type()
 }
 
 impl IntoDcapType<Vec<u8>> for QuoteBytes {
@@ -159,6 +201,7 @@ impl IntoInterfaceType<TcbStatusWithAdvisory> for dq_tcb::TcbStatusWithAdvisory 
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use alloc::{string::ToString, vec};
     use rstest::rstest;
 
     /// Asserts the two values encode to identical Borsh bytes.
@@ -173,16 +216,16 @@ mod tests {
 
     fn sample_collateral() -> Collateral {
         Collateral {
-            pck_crl_issuer_chain: "issuer-chain".into(),
+            pck_crl_issuer_chain: "issuer-chain".to_string(),
             root_ca_crl: vec![1, 2, 3],
             pck_crl: vec![4, 5, 6],
-            tcb_info_issuer_chain: "tcb-issuer".into(),
-            tcb_info: "tcb-info-json".into(),
+            tcb_info_issuer_chain: "tcb-issuer".to_string(),
+            tcb_info: "tcb-info-json".to_string(),
             tcb_info_signature: vec![7, 8],
-            qe_identity_issuer_chain: "qe-issuer".into(),
-            qe_identity: "qe-identity-json".into(),
+            qe_identity_issuer_chain: "qe-issuer".to_string(),
+            qe_identity: "qe-identity-json".to_string(),
             qe_identity_signature: vec![9, 10],
-            pck_certificate_chain: Some("pck-chain".into()),
+            pck_certificate_chain: Some("pck-chain".to_string()),
         }
     }
 
@@ -233,8 +276,8 @@ mod tests {
 
     fn dcap_verified_report(report: dq_quote::Report) -> dq_verify::VerifiedReport {
         dq_verify::VerifiedReport {
-            status: "UpToDate".into(),
-            advisory_ids: vec!["INTEL-SA-00001".into()],
+            status: "UpToDate".to_string(),
+            advisory_ids: vec!["INTEL-SA-00001".to_string()],
             report,
             ppid: vec![0xAB; 16],
             qe_status: dq_tcb::TcbStatusWithAdvisory {
@@ -243,7 +286,7 @@ mod tests {
             },
             platform_status: dq_tcb::TcbStatusWithAdvisory {
                 status: dq_tcb::TcbStatus::ConfigurationNeeded,
-                advisory_ids: vec!["INTEL-SA-00002".into()],
+                advisory_ids: vec!["INTEL-SA-00002".to_string()],
             },
         }
     }
@@ -321,7 +364,7 @@ mod tests {
     fn tcb_status_with_advisory__should_match_dcap_borsh_layout() {
         let dcap = dq_tcb::TcbStatusWithAdvisory {
             status: dq_tcb::TcbStatus::ConfigurationNeeded,
-            advisory_ids: vec!["INTEL-SA-00003".into()],
+            advisory_ids: vec!["INTEL-SA-00003".to_string()],
         };
         let interface: TcbStatusWithAdvisory = dcap.clone().into_interface_type();
         assert_same_borsh_bytes(&interface, &dcap);

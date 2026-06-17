@@ -987,6 +987,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "sha2 0.10.9",
+ "tee-verifier-conversions",
  "tee-verifier-interface",
  "test-utils",
  "thiserror 2.0.18",
@@ -11098,10 +11099,20 @@ dependencies = [
  "getrandom 0.2.17",
  "hex",
  "near-sdk",
- "rstest",
  "tee-verifier",
+ "tee-verifier-conversions",
  "tee-verifier-interface",
  "test-utils",
+]
+
+[[package]]
+name = "tee-verifier-conversions"
+version = "3.12.0"
+dependencies = [
+ "borsh",
+ "dcap-qvl",
+ "rstest",
+ "tee-verifier-interface",
 ]
 
 [[package]]

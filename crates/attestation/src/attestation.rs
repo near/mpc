@@ -34,11 +34,6 @@ pub(crate) const KEY_PROVIDER_EVENT: &str = "key-provider";
 
 const RTMR3_INDEX: u32 = 3;
 
-// `quote` and `collateral` are the `tee-verifier-interface` mirrors; their
-// serde impls come from that crate's off-by-default `serde` feature, which
-// `attestation` enables. Serde is needed because `DstackAttestation` is
-// embedded (via `mpc_attestation::Attestation`) in the node's serde-serialized
-// `/public_data` HTTP payload.
 #[derive(Clone, Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 pub struct DstackAttestation {
     pub quote: QuoteBytes,
@@ -133,16 +128,6 @@ impl fmt::Debug for DstackAttestation {
 
 impl DstackAttestation {
     /// Runs the post-DCAP checks against an already-verified report.
-    ///
-    /// Pure: no `dcap-qvl`, no host calls. The DCAP cryptographic verification
-    /// (`dcap_qvl::verify::verify`) is done elsewhere — by the `tee-verifier`
-    /// contract on-chain, or by [`verify_locally`](Self::verify_locally)
-    /// off-chain — and its `VerifiedReport` is passed in here. This is the
-    /// function both the contract and the off-chain helper share.
-    ///
-    /// `report` must be the verifier's output for *this* attestation's quote
-    /// and collateral; the checks below bind it to the expected report data,
-    /// the embedded TCB info, and the accepted measurement sets.
     pub fn verify_with_report(
         &self,
         report: &VerifiedReport,
@@ -170,14 +155,7 @@ impl DstackAttestation {
     }
 
     /// Full local verification: runs `dcap_qvl::verify::verify` and then the
-    /// post-DCAP checks via [`verify_with_report`](Self::verify_with_report).
-    ///
-    /// Off-chain only (the `local-verify` feature pulls in `dcap-qvl`). Used by
-    /// the node, `tee-authority`, and `attestation-cli` to verify an
-    /// attestation end-to-end. `mpc-contract` also calls this today (it enables
-    /// `local-verify`); a planned follow-up moves the DCAP step into a separate
-    /// verifier contract, after which the contract will call
-    /// [`verify_with_report`](Self::verify_with_report) directly instead.
+    /// post-DCAP checks via [`Self::verify_with_report`].
     #[cfg(feature = "local-verify")]
     pub fn verify_locally(
         &self,
@@ -192,15 +170,8 @@ impl DstackAttestation {
     /// Runs only the DCAP step (`dcap_qvl::verify::verify`) and returns the
     /// resulting report as the `tee-verifier-interface` mirror — the same value
     /// the `tee-verifier` contract returns on-chain. Off-chain only.
-    ///
-    /// This is the boundary between the DCAP verification (which the contract
-    /// offloads to the verifier) and the post-DCAP checks
-    /// ([`verify_with_report`](Self::verify_with_report)).
     #[cfg(feature = "local-verify")]
     pub fn dcap_report(&self, timestamp_seconds: u64) -> Result<VerifiedReport, VerificationError> {
-        // Borrow the quote bytes directly (`QuoteBytes` is a `pub Vec<u8>`); the
-        // collateral clone is unavoidable since `QuoteCollateralV3` owns its
-        // fields and `into_dcap_type` consumes `self`.
         let collateral = self.collateral.clone().into_dcap_type();
         Ok(
             dcap_qvl::verify::verify(&self.quote.0, &collateral, timestamp_seconds)

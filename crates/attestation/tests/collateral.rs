@@ -60,9 +60,9 @@ fn test_hex_signature_lengths() {
     let json_value = collateral();
     let collateral = collateral_from_json(json_value).unwrap();
 
-    // The signatures are hex-decoded into raw bytes: a 64-byte ECDSA signature
-    // is 128 hex chars in the JSON.
+    // TCB info signature should be 64 hex chars (32 bytes)
     assert_eq!(collateral.tcb_info_signature.len(), 64);
+    // QE identity signature should be 64 hex chars (32 bytes)
     assert_eq!(collateral.qe_identity_signature.len(), 64);
 }
 
