@@ -150,7 +150,7 @@ impl OneNodeTestConfig {
                 .await
                 .unwrap();
 
-                let coordinator = Coordinator {
+                let mut coordinator = Coordinator {
                     clock: self.clock,
                     config_file: self.config,
                     secrets: self.secrets,
@@ -161,7 +161,9 @@ impl OneNodeTestConfig {
                     currently_running_job_name: self.currently_running_job_name,
                     debug_request_sender,
                 };
-                coordinator.run().await
+                coordinator
+                    .run(tokio_util::sync::CancellationToken::new())
+                    .await
             };
             start_root_task(&format!("root for {}", my_account_id), root_future)
                 .0

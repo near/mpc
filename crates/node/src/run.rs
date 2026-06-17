@@ -421,7 +421,7 @@ where
     )
     .await?;
 
-    let coordinator = Coordinator {
+    let mut coordinator = Coordinator {
         clock: Clock::real(),
         config_file: config,
         secrets,
@@ -431,5 +431,5 @@ where
         currently_running_job_name: Arc::new(Mutex::new(String::new())),
         debug_request_sender,
     };
-    coordinator.run().await
+    coordinator.run(CancellationToken::new()).await
 }
