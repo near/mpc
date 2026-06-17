@@ -2,13 +2,17 @@ use derive_more::{Deref, From};
 use near_account_id::AccountId;
 use near_indexer_primitives::CryptoHash;
 
-use crate::types::{BlockEntropy, BlockHeight};
+use crate::{
+    event_subscriber::recent_blocks_tracker::BlockStatusHandle,
+    types::{BlockEntropy, BlockHeight},
+};
 
 /// The BlockUpdate returned by the Chain indexer.
 /// Similar to [`ChainBlockUpdate`](../../node/src/indexer/handler.rs) in the `mpc-node` crate.
 #[derive(Debug)]
 pub struct BlockUpdate {
     pub context: BlockContext,
+    pub status: BlockStatusHandle,
     pub events: Vec<MatchedEvent>,
 }
 

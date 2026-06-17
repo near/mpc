@@ -12,6 +12,7 @@ use crate::{
             BlockContext, BlockUpdate, EventData, ExecutorFunctionCallSuccessWithPromiseData,
             MatchedEvent, ReceiverFunctionCallData,
         },
+        recent_blocks_tracker::{AddBlockResult, RecentBlocksTracker},
         stats::IndexerStats,
     },
 };
@@ -23,45 +24,64 @@ pub(super) async fn listen_blocks(
     block_events: BlockEvents,
     stats_tx: tokio::sync::watch::Sender<IndexerStats>,
     block_update_sender: tokio::sync::mpsc::Sender<BlockUpdate>,
+    number_of_tracked_blocks: u64,
 ) -> Result<(), ChainGatewayError> {
     let mut blocks_processed_count: u64 = 0;
-    // Note: the mpc-node indexer (handler.rs) uses `buffer_unordered` for concurrent
-    // block processing. We deliberately use sequential processing here because:
-    //   1. `process_block` is synchronous — there is no async work to overlap.
-    //   2. `buffer_unordered` does not preserve ordering, yet consumers expect
-    //      block updates in block-height order.
-    //   3. There is no performance gain in concurrent processing here, especially if we use
-    //      bounded channels.
+    let mut recent_blocks_tracker = RecentBlocksTracker::new(number_of_tracked_blocks);
     loop {
         let streamer_message = stream
             .recv()
             .await
             .ok_or(ChainGatewayError::BlockEventIndexerDropped)?;
-        let block_height = streamer_message.block.header.height;
-        // TODO(#2626): we can ignore events from blocks that are older than a specific block height. This
-        // requires some care on the node side, which is why we will only do so after we integrated
-        // the chain-gateway struct with the node.
-        let block_update = process_block(streamer_message, &block_events);
-        // Send every block. Some consumers might require this.
-        // Note that a timeout here is not requried. The `stream` channel from the nearcore indxer
-        // is of buffer size 100 and the near node will simply pause sending blocks
-        // in case the buffer is full.
-        block_update_sender
-            .send(block_update)
-            .await
-            .map_err(|_| ChainGatewayError::BlockEventReceiverDropped)?;
+        let context = make_context(&streamer_message);
+        let AddBlockResult { block_status } = recent_blocks_tracker.add_block(&context);
+        let matched_events = match_block_events(streamer_message, &block_events);
         blocks_processed_count = blocks_processed_count.saturating_add(1);
         stats_tx.send_modify(|s| {
             s.blocks_processed_count = blocks_processed_count;
-            s.last_processed_block_height = block_height.into();
+            s.last_processed_block_height = context.height.into();
         });
+
+        // TODO(#2626): skip the work below for blocks older than the node's
+        // request-expiration horizon, once chain-gateway is integrated.
+        if !matched_events.is_empty() {
+            let permit = match block_update_sender.try_reserve() {
+                Ok(permit) => permit,
+                Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                    tracing::warn!(
+                        block_context = ?context,
+                        "dropping block update because channel is full",
+                    );
+                    continue;
+                }
+                Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                    return Err(ChainGatewayError::BlockEventReceiverDropped);
+                }
+            };
+            permit.send(BlockUpdate {
+                context,
+                status: block_status,
+                events: matched_events,
+            });
+        }
     }
 }
 
-fn process_block(
+fn make_context(streamer_message: &near_indexer_primitives::StreamerMessage) -> BlockContext {
+    BlockContext {
+        hash: streamer_message.block.header.hash,
+        height: streamer_message.block.header.height.into(),
+        prev_hash: streamer_message.block.header.prev_hash,
+        entropy: streamer_message.block.header.random_value.into(),
+        timestamp_nanosec: streamer_message.block.header.timestamp_nanosec,
+        last_final_block: streamer_message.block.header.last_final_block,
+    }
+}
+
+fn match_block_events(
     streamer_message: near_indexer_primitives::StreamerMessage,
     block_events: &BlockEvents,
-) -> BlockUpdate {
+) -> Vec<MatchedEvent> {
     let mut processed_events = vec![];
     for shard in streamer_message.shards {
         for outcome in &shard.receipt_execution_outcomes {
@@ -71,18 +91,7 @@ fn process_block(
             block_events.process_receipt(&mut processed_events, outcome);
         }
     }
-    let context = BlockContext {
-        hash: streamer_message.block.header.hash,
-        height: streamer_message.block.header.height.into(),
-        prev_hash: streamer_message.block.header.prev_hash,
-        entropy: streamer_message.block.header.random_value.into(),
-        timestamp_nanosec: streamer_message.block.header.timestamp_nanosec,
-        last_final_block: streamer_message.block.header.last_final_block,
-    };
-    BlockUpdate {
-        context,
-        events: processed_events,
-    }
+    processed_events
 }
 
 impl BlockEvents {
