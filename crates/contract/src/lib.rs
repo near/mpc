@@ -1063,9 +1063,7 @@ impl MpcContract {
         Ok(())
     }
 
-    /// No-op when `NotInitialized`. For `Resharing`, uses the previous running-state parameters
-    /// (the set still actively signing). For `Initializing`, uses the proposed keygen parameters —
-    /// there is no prior running set, so threshold is derived from the new domain registry.
+    /// No-op when outside [`ProtocolContractState::Running`] and [`ProtocolContractState::Resharing`].
     fn recompute_available_foreign_chains(&mut self) {
         let Ok(params) = self.protocol_state.threshold_parameters() else {
             return;
@@ -1211,8 +1209,6 @@ impl MpcContract {
         if let Some(new_state) = self.protocol_state.vote_reshared(key_event_id)? {
             // Resharing has concluded, transition to running state
             self.protocol_state = new_state;
-            // update_cache iterates active_tls_keys only, so departed nodes' configs are
-            // already excluded — correct result even before cleanup promises run.
             self.recompute_available_foreign_chains();
 
             // Spawn a promise to clean up votes from non-participants.
@@ -1288,8 +1284,6 @@ impl MpcContract {
 
         if let Some(new_state) = self.protocol_state.vote_cancel_resharing()? {
             self.protocol_state = new_state;
-            // Cancel-resharing reverts to the previous running state, so the
-            // cached available-chains set is still valid — no recompute needed.
         }
 
         Ok(())
@@ -1308,9 +1302,6 @@ impl MpcContract {
 
         if let Some(new_state) = self.protocol_state.vote_cancel_keygen(next_domain_id)? {
             self.protocol_state = new_state;
-            // Cancel-keygen drops incomplete domains, which can change the max ForeignTx
-            // threshold — recompute to keep the cached set consistent.
-            self.recompute_available_foreign_chains();
         }
         Ok(())
     }
@@ -1947,7 +1938,7 @@ impl MpcContract {
             metrics: Default::default(),
             node_foreign_chain_support: Default::default(),
             foreign_chains: Lazy::new(
-                StorageKey::ForeignChainAvailability,
+                StorageKey::ForeignChainMetadata,
                 ForeignChainsMetadata::default(),
             ),
         })
@@ -2018,7 +2009,7 @@ impl MpcContract {
             metrics: Default::default(),
             node_foreign_chain_support: Default::default(),
             foreign_chains: Lazy::new(
-                StorageKey::ForeignChainAvailability,
+                StorageKey::ForeignChainMetadata,
                 ForeignChainsMetadata::default(),
             ),
         })
@@ -4421,7 +4412,7 @@ mod tests {
                 node_migrations: Default::default(),
                 metrics: Default::default(),
                 foreign_chains: Lazy::new(
-                    StorageKey::ForeignChainAvailability,
+                    StorageKey::ForeignChainMetadata,
                     ForeignChainsMetadata::default(),
                 ),
             }
