@@ -16,7 +16,10 @@ WASM_PATH="${1:-result/mpc_contract.wasm}"
 # ~12 KB over the pre-feature baseline; this limit gives a bit of headroom
 # above the post-feature size without leaving the contract free to creep up
 # to the protocol boundary.
-HARD_LIMIT=1500000
+# Bump up from 1500000 to 1520000 as part of #3475. TODO(#3475): reduce the limit
+# once we migrate to new endpoints after upgrading to 3.12 and drop deprecated
+# endpoints and DTO structs.
+HARD_LIMIT=1520000
 
 
 if [[ ! -f "$WASM_PATH" ]]; then

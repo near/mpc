@@ -135,6 +135,11 @@ impl AllowedProviders {
             .map(|(c, e)| (*c, e.clone().into()))
             .collect()
     }
+
+    /// Whether `chain` is currently whitelisted (has a voted-in `ChainEntry`).
+    pub fn is_whitelisted(&self, chain: &ForeignChain) -> bool {
+        self.entries.contains_key(chain)
+    }
 }
 
 #[near(serializers=[borsh])]
