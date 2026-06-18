@@ -134,11 +134,12 @@ mod tests {
             )
             .await
         });
-        let other_pk =
-            ed25519_dalek::SigningKey::from_bytes(&[42u8; 32]).verifying_key();
+        let other_pk = ed25519_dalek::SigningKey::from_bytes(&[42u8; 32]).verifying_key();
         let mut mutated = initial_contract.clone();
         mutated.change_participant_pk(&my_account_id, other_pk);
-        contract_tx.send(mutated).expect("send mutated contract state");
+        contract_tx
+            .send(mutated)
+            .expect("send mutated contract state");
 
         // Then: the function returns the new (non-Done) role within a
         // bounded time.
