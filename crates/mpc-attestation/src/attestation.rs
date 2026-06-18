@@ -117,6 +117,24 @@ impl MockAttestation {
         allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
         accepted_measurements: &[ExpectedMeasurements],
     ) -> Result<AcceptedAttestation, VerificationError> {
+        self.verify_constraints(
+            current_timestamp_seconds,
+            allowed_mpc_docker_image_hashes,
+            allowed_launcher_docker_compose_hashes,
+            accepted_measurements,
+        )?;
+        Ok(AcceptedAttestation::mock(self))
+    }
+
+    /// Checks the mock's constraints, returning only pass/fail. Lets the
+    /// re-verification path validate without building an [`AcceptedAttestation`].
+    fn verify_constraints(
+        &self,
+        current_timestamp_seconds: u64,
+        allowed_mpc_docker_image_hashes: &[NodeImageHash],
+        allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
+        accepted_measurements: &[ExpectedMeasurements],
+    ) -> Result<(), VerificationError> {
         match self {
             MockAttestation::Valid => Ok(()),
             MockAttestation::Invalid => Err(VerificationError::InvalidMockAttestation),
@@ -170,9 +188,7 @@ impl MockAttestation {
 
                 Ok(())
             }
-        }?;
-
-        Ok(AcceptedAttestation::mock(self))
+        }
     }
 }
 
@@ -226,14 +242,12 @@ impl VerifiedAttestation {
 
                 Ok(())
             }
-            Self::Mock(mock_attestation) => mock_attestation
-                .verify(
-                    timestamp_seconds,
-                    allowed_mpc_docker_image_hashes,
-                    allowed_launcher_docker_compose_hashes,
-                    allowed_measurements,
-                )
-                .map(|_| ()),
+            Self::Mock(mock_attestation) => mock_attestation.verify_constraints(
+                timestamp_seconds,
+                allowed_mpc_docker_image_hashes,
+                allowed_launcher_docker_compose_hashes,
+                allowed_measurements,
+            ),
         }
     }
 }
