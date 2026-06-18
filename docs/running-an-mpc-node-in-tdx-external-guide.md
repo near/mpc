@@ -616,7 +616,7 @@ For more information, see [local-key-provider-from-phala](https://github.com/Dst
    Then confirm the key provider actually came up and is listening:
 
    ```bash
-   docker logs gramine-sealing-key-provider 2>&1 | tail -n 5
+   docker logs gramine-sealing-key-provider 2>&1 | tail -n 50
    ```
 
    A healthy provider ends with these lines and shows **no** `ERROR` lines:
@@ -1918,7 +1918,7 @@ crash-loops at boot. Guest log:
 Failed to get sealing key: Invalid status code: 400, path=GetSealingKey
 ```
 
-key provider log:
+Key provider log:
 
 ```
 gramine_sealing_key_provider::server: connection error ...: DCAP error
@@ -1934,9 +1934,10 @@ and `DCAP error` is a catch-all for that verification failing. Two causes:
 - **TCB check** — the platform's TCB is below what Intel's current TCB info
   accepts ("No matching TCB level"). The **TDX module (SEAM) SVN is evaluated
   separately from CPU microcode**, so current microcode does *not* imply a
-  current TDX module. Check the loaded module with `sudo dmesg | grep -i "tdx
-  module"`; the fix is a **vendor BIOS/firmware update** that bundles a newer
-  Intel TDX module — an `intel-microcode` update alone won't move it.
+  current TDX module. Check the loaded module with
+  `sudo dmesg | grep -i "tdx module"`; the fix is a **vendor BIOS/firmware
+  update** that bundles a newer Intel TDX module — an `intel-microcode` update
+  alone won't move it.
 
 > Confirmed in the field: a Granite Rapids host with this signature was fixed by
 > a vendor BIOS update bundling a newer Intel TDX module.
