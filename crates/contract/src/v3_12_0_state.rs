@@ -60,7 +60,7 @@ impl From<MpcContract> for crate::MpcContract {
             node_migrations: old.node_migrations,
             metrics: old.metrics,
             foreign_chains: Lazy::new(
-                StorageKey::ForeignChainAvailability,
+                StorageKey::ForeignChainMetadata,
                 ForeignChainsMetadata {
                     rpc_whitelist: old.foreign_chain_rpc_whitelist,
                     ..Default::default()
