@@ -1,9 +1,9 @@
 //! Participant voting for the trusted `tee-verifier` account.
 //!
 //! `mpc-contract` invokes `verify_quote` on a single trusted verifier account
-//! (`tee_verifier_account_id`). Which account that is is decided by a threshold
-//! vote of active participants, each committing to the `(account_id, code_hash)`
-//! pair they audited off-chain. This mirrors the foreign-chain provider voting
+//! (`tee_verifier_account_id`), chosen by a threshold vote of active
+//! participants, each committing to the `(account_id, code_hash)` pair they
+//! audited off-chain. This mirrors the foreign-chain provider voting
 //! ([`crate::foreign_chain_rpc::ProviderVotes`]) on top of the generic
 //! [`Votes`] primitive.
 
@@ -78,11 +78,9 @@ impl TeeVerifierVotes {
         })?;
 
         if count >= protocol_threshold {
-            // The candidate is now trusted, so this voting round is over. Clear
-            // every pending vote — including losing-hash buckets for the same
-            // account and any votes for other candidates — so a stale quorum
-            // can't later re-fire against the now-current verifier. There is at
-            // most one trusted verifier; the next change starts a fresh round.
+            // Clear every pending vote — including losing-hash buckets for the
+            // same account and votes for other candidates — so a stale quorum
+            // can't later re-fire against the now-current verifier.
             self.pending.clear();
             Ok(Some(proposal.candidate_account_id))
         } else {
@@ -269,6 +267,11 @@ mod tests {
         // Retaining against the same participant set is a no-op.
         votes.retain(&participants);
         assert_eq!(votes.pending_voter_count(), 2);
+
+        // Retaining against a strict subset that excludes voter 0 keeps voter 1
+        // and drops voter 0.
+        votes.retain(&participants.subset(1..3));
+        assert_eq!(votes.pending_voter_count(), 1);
 
         // Retaining against an empty set (no current participants) drops all votes.
         votes.retain(&gen_participants(0));

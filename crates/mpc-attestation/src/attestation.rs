@@ -24,10 +24,13 @@ use crate::alloc::string::{String, ToString};
 // TODO(#1639): extract timestamp from certificate itself
 //
 // 1 day (lowered from 7) bounds how long a wrongly-accepted attestation — e.g.
-// one a since-rotated, buggy verifier let through — stays trusted before it
+// one that a since-rotated, buggy verifier let through — stays trusted before it
 // ages out via `re_verify`, without a sweep. The window stays well above the
 // node's hourly resubmit cadence, so honest nodes refresh with comfortable
 // margin.
+//
+// This constant is also used node-side to recover an attestation's storage
+// timestamp from its stored expiry, so changing it shifts that round-trip too.
 pub const DEFAULT_EXPIRATION_DURATION_SECONDS: u64 = 60 * 60 * 24; // 1 day
 
 #[expect(clippy::large_enum_variant)]

@@ -141,13 +141,14 @@ fn require_deposit(minimum_deposit: NearToken, predecessor: &AccountId) {
     }
 }
 
-/// Placeholder `tee_verifier_account_id` before participants have voted in a
-/// real verifier. Never deployed and never called; `vote_tee_verifier_change`
-/// refuses to vote it in, so the verifier can only move away from it.
+/// Placeholder [`MpcContract::tee_verifier_account_id`] before participants have
+/// voted in a real verifier. Never deployed and never called;
+/// [`MpcContract::vote_tee_verifier_change`] refuses to vote it in, so the
+/// verifier can only move away from it.
 const UNSET_TEE_VERIFIER_ACCOUNT: &str = "unset.tee-verifier.invalid";
 
-/// The `tee_verifier_account_id` to start from, given an optional value
-/// supplied at init time. Falls back to the [`UNSET_TEE_VERIFIER_ACCOUNT`]
+/// The [`MpcContract::tee_verifier_account_id`] to start from, given an optional
+/// value supplied at init time. Falls back to the [`UNSET_TEE_VERIFIER_ACCOUNT`]
 /// placeholder.
 pub(crate) fn initial_tee_verifier_account_id(configured: Option<dtos::AccountId>) -> AccountId {
     configured.unwrap_or_else(|| {
@@ -1686,8 +1687,8 @@ impl MpcContract {
 
     /// Vote for `candidate_account_id` to become the trusted `tee-verifier`
     /// account. `expected_code_hash` commits the voter to the code they audited.
-    /// When the proposal crosses the signing threshold, `tee_verifier_account_id`
-    /// is updated and all pending verifier-change votes are cleared.
+    /// When the proposal crosses the signing threshold, the trusted verifier
+    /// account is updated and all pending verifier-change votes are cleared.
     #[handle_result]
     pub fn vote_tee_verifier_change(
         &mut self,
@@ -1706,6 +1707,12 @@ impl MpcContract {
         // back to the unconfigured state.
         if candidate_account_id == initial_tee_verifier_account_id(None) {
             return Err(TeeError::VerifierCandidateIsPlaceholder.into());
+        }
+
+        // Voting in the already-current verifier is a no-op; return without
+        // recording a vote so it can't clear an in-flight rotation proposal.
+        if candidate_account_id == self.tee_verifier_account_id {
+            return Ok(());
         }
 
         let threshold_parameters = self
@@ -3948,6 +3955,49 @@ mod tests {
 
         // Then the vote is rejected as the placeholder candidate.
         assert_eq!(result, Err(TeeError::VerifierCandidateIsPlaceholder.into()));
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn vote_tee_verifier_change__should_apply_candidate_when_threshold_reached() {
+        // Given a running contract with 3 participants, signing threshold 2,
+        // starting at the unconfigured placeholder verifier.
+        let (mut contract, participants, _) = setup_tee_test_contract(3, 2);
+        assert_eq!(
+            contract.tee_verifier_account_id,
+            initial_tee_verifier_account_id(None)
+        );
+        let participant_account_ids: Vec<AccountId> = participants
+            .participants()
+            .iter()
+            .map(|(account_id, _, _)| account_id.clone())
+            .collect();
+        let candidate: AccountId = "verifier.near".parse().unwrap();
+        let code_hash = [7u8; 32];
+
+        let vote_as = |contract: &mut MpcContract, account_id: &AccountId| {
+            testing_env!(
+                VMContextBuilder::new()
+                    .signer_account_id(account_id.clone())
+                    .predecessor_account_id(account_id.clone())
+                    .build()
+            );
+            contract
+                .vote_tee_verifier_change(candidate.clone(), code_hash)
+                .expect("vote should succeed");
+        };
+
+        // When the first participant votes (below threshold), the verifier is unchanged.
+        vote_as(&mut contract, &participant_account_ids[0]);
+        assert_eq!(
+            contract.tee_verifier_account_id,
+            initial_tee_verifier_account_id(None)
+        );
+
+        // When the second participant votes, threshold is reached and the
+        // candidate becomes the trusted verifier.
+        vote_as(&mut contract, &participant_account_ids[1]);
+        assert_eq!(contract.tee_verifier_account_id, candidate);
     }
 
     fn submit_attestation(
