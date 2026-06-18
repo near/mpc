@@ -1063,9 +1063,7 @@ impl MpcContract {
         Ok(())
     }
 
-    /// No-op when `NotInitialized`. For `Resharing`, uses the previous running-state parameters
-    /// (the set still actively signing). For `Initializing`, uses the proposed keygen parameters —
-    /// there is no prior running set, so threshold is derived from the new domain registry.
+    /// No-op when outside 'Running' and 'Resharing'.
     fn recompute_available_foreign_chains(&mut self) {
         let Ok(params) = self.protocol_state.threshold_parameters() else {
             return;
@@ -1211,8 +1209,6 @@ impl MpcContract {
         if let Some(new_state) = self.protocol_state.vote_reshared(key_event_id)? {
             // Resharing has concluded, transition to running state
             self.protocol_state = new_state;
-            // update_cache iterates active_tls_keys only, so departed nodes' configs are
-            // already excluded — correct result even before cleanup promises run.
             self.recompute_available_foreign_chains();
 
             // Spawn a promise to clean up votes from non-participants.

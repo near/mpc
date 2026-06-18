@@ -98,6 +98,14 @@ mod tests {
 
     use super::*;
 
+    #[cfg(all(feature = "__abi-generate", not(target_arch = "wasm32")))]
+    #[test]
+    #[expect(non_snake_case)]
+    fn foreign_chains_metadata_borsh_schema__should_not_change() {
+        let schema = borsh::schema::BorshSchemaContainer::for_type::<ForeignChainsMetadata>();
+        insta::assert_debug_snapshot!(schema);
+    }
+
     fn make_key(byte: u8) -> dtos::Ed25519PublicKey {
         dtos::Ed25519PublicKey([byte; 32])
     }
