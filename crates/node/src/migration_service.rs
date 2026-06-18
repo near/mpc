@@ -1,5 +1,6 @@
 use std::{net::SocketAddr, sync::Arc};
 
+use anyhow::Context as _;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use near_account_id::AccountId;
 use tokio::sync::{RwLock, watch};
@@ -63,24 +64,30 @@ pub async fn start_migration_web_server(
 /// Waits until the onboarding role implied by `(contract_state, migration_info,
 /// my_id, tls_pub_key)` changes away from `current`, then returns the new
 /// role. Used by the dispatcher to detect when the active subsystem
-/// (coordinator vs onboarding) must be swapped.
+/// (coordinator vs onboarding) must be swapped. Returns `Err` if either
+/// underlying watch channel closes — without surfacing the error the loop
+/// would spin reading stale state.
 pub(crate) async fn wait_until_role_change(
     mut contract_state_receiver: watch::Receiver<ContractState>,
     mut my_migration_info_receiver: watch::Receiver<MigrationInfo>,
     my_near_account_id: &AccountId,
     tls_public_key: &VerifyingKey,
     current: OnboardingJob,
-) -> OnboardingJob {
+) -> anyhow::Result<OnboardingJob> {
     loop {
         let contract = contract_state_receiver.borrow_and_update().clone();
         let migration_info = my_migration_info_receiver.borrow_and_update().clone();
         let job = OnboardingJob::new(migration_info, contract, my_near_account_id, tls_public_key);
         if job != current {
-            return job;
+            return Ok(job);
         }
         tokio::select! {
-            _ = contract_state_receiver.changed() => {}
-            _ = my_migration_info_receiver.changed() => {}
+            res = contract_state_receiver.changed() => {
+                res.context("contract state receiver closed")?;
+            }
+            res = my_migration_info_receiver.changed() => {
+                res.context("migration info receiver closed")?;
+            }
         }
     }
 }
@@ -146,7 +153,8 @@ mod tests {
         let new_role = tokio::time::timeout(std::time::Duration::from_secs(2), handle)
             .await
             .expect("wait_until_role_change did not return within 2s")
-            .expect("task panicked");
+            .expect("task panicked")
+            .expect("wait_until_role_change returned Err");
         assert_ne!(
             new_role,
             OnboardingJob::Done,

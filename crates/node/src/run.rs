@@ -457,26 +457,29 @@ where
         match current_role {
             OnboardingJob::Done => {
                 tracing::info!("dispatcher: active participant — running coordinator");
-                let cancel = CancellationToken::new();
+                // If the role-change arm wins, dropping the coordinator
+                // future cascades cleanup through the internal
+                // `drop_guard = cancellation_token.drop_guard()` in
+                // `Coordinator::run`. The token we pass is the API surface
+                // for graceful-exit callers; we don't fire it here.
                 tokio::select! {
-                    res = coordinator.run(cancel.clone()) => {
+                    res = coordinator.run(CancellationToken::new()) => {
                         res?;
                         tracing::info!(
                             "dispatcher: coordinator returned without role change"
                         );
                     }
-                    _ = wait_until_role_change(
+                    res = wait_until_role_change(
                         contract_state_receiver_for_dispatcher.clone(),
                         migration_info_receiver_for_dispatcher.clone(),
                         &my_near_account_id,
                         &tls_pub_key,
                         OnboardingJob::Done,
                     ) => {
+                        res?;
                         tracing::info!(
-                            "dispatcher: role changed away from active participant — \
-                             cancelling coordinator"
+                            "dispatcher: role changed away from active participant"
                         );
-                        cancel.cancel();
                     }
                 }
             }
