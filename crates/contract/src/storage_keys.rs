@@ -31,5 +31,5 @@ pub enum StorageKey {
     ForeignChainProviderVotesByVoterV1,
     ForeignChainProviderVotesByProposalV1,
     ForeignChainsConfigs,
-    ForeignChainAvailability,
+    ForeignChainMetadata,
 }
