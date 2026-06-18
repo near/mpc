@@ -699,6 +699,14 @@ BorshSchemaContainer {
                         "foreign_chains",
                         "Lazy",
                     ),
+                    (
+                        "tee_verifier_account_id",
+                        "AccountId",
+                    ),
+                    (
+                        "tee_verifier_votes",
+                        "TeeVerifierVotes",
+                    ),
                 ],
             ),
         },
@@ -1152,6 +1160,16 @@ BorshSchemaContainer {
                 ],
             ),
         },
+        "TeeVerifierVotes": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "pending",
+                        "Votes<AuthenticatedParticipantId>",
+                    ),
+                ],
+            ),
+        },
         "Threshold": Struct {
             fields: UnnamedFields(
                 [
@@ -1247,6 +1265,20 @@ BorshSchemaContainer {
                     (
                         "values",
                         "IndexMap",
+                    ),
+                ],
+            ),
+        },
+        "Votes<AuthenticatedParticipantId>": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "proposal_by_voter",
+                        "IterableMap",
+                    ),
+                    (
+                        "votes_by_proposal",
+                        "IterableMap",
                     ),
                 ],
             ),

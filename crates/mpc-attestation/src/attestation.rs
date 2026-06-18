@@ -22,7 +22,13 @@ use crate::alloc::format;
 use crate::alloc::string::{String, ToString};
 
 // TODO(#1639): extract timestamp from certificate itself
-pub const DEFAULT_EXPIRATION_DURATION_SECONDS: u64 = 60 * 60 * 24 * 7; // 7 days
+//
+// 1 day (lowered from 7) bounds how long a wrongly-accepted attestation — e.g.
+// one a since-rotated, buggy verifier let through — stays trusted before it
+// ages out via `re_verify`, without a sweep. The window stays well above the
+// node's hourly resubmit cadence, so honest nodes refresh with comfortable
+// margin.
+pub const DEFAULT_EXPIRATION_DURATION_SECONDS: u64 = 60 * 60 * 24; // 1 day
 
 #[expect(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]

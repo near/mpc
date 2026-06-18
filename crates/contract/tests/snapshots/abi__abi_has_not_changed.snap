@@ -1875,6 +1875,42 @@ expression: abi
         }
       },
       {
+        "name": "vote_tee_verifier_change",
+        "doc": " Vote for `candidate_account_id` to become the trusted `tee-verifier`\n account. `expected_code_hash` commits the voter to the code they audited.\n When the proposal crosses the signing threshold, `tee_verifier_account_id`\n is updated and all pending verifier-change votes are cleared.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "candidate_account_id",
+              "type_schema": {
+                "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
+                "type": "string"
+              }
+            },
+            {
+              "name": "expected_code_hash",
+              "type_schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "uint8",
+                  "minimum": 0.0
+                },
+                "maxItems": 32,
+                "minItems": 32
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
         "name": "vote_update",
         "doc": " Vote for a proposed update given the [`UpdateId`] of the update.\n\n Returns `Ok(true)` if the amount of voters surpassed the threshold and the update was\n executed. Returns `Ok(false)` if the amount of voters did not surpass the threshold.\n Returns [`Error`] if the update was not found or if the voter is not a participant\n in the protocol.",
         "kind": "call",
@@ -2247,6 +2283,17 @@ expression: abi
             "items": {
               "$ref": "#/definitions/ForeignChain"
             }
+          }
+        }
+      },
+      {
+        "name": "withdraw_tee_verifier_vote",
+        "doc": " Withdraw the caller's current vote on any pending verifier-change\n proposal. No-op if the caller has not voted.",
+        "kind": "call",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
           }
         }
       }
@@ -3345,6 +3392,13 @@ expression: abi
               ],
               "format": "uint64",
               "minimum": 0.0
+            },
+            "tee_verifier_account_id": {
+              "description": "Account whose `verify_quote` method the contract trusts for DCAP verification. Optional: fresh deploys may set it here, otherwise the contract starts from an unconfigured placeholder and participants vote one in via `vote_tee_verifier_change`.",
+              "type": [
+                "string",
+                "null"
+              ]
             }
           }
         },

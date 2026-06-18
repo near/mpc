@@ -28,6 +28,10 @@ pub enum TeeError {
         "Due to previously failed TEE validation, the network is not accepting new requests at this point in time. Try again later."
     )]
     TeeValidationFailed,
+    #[error(
+        "The placeholder verifier account cannot be voted in as the trusted verifier; it denotes the unconfigured state."
+    )]
+    VerifierCandidateIsPlaceholder,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

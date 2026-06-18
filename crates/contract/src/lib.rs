@@ -49,6 +49,7 @@ use crate::{
     state::ContractNotInitialized,
     storage_keys::StorageKey,
     tee::tee_state::{TeeQuoteStatus, TeeState},
+    tee::verifier_votes::{TeeVerifierVotes, VerifierChangeProposal},
     update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId},
 };
 use config::Config;
@@ -140,6 +141,22 @@ fn require_deposit(minimum_deposit: NearToken, predecessor: &AccountId) {
     }
 }
 
+/// Placeholder `tee_verifier_account_id` before participants have voted in a
+/// real verifier. Never deployed and never called; `vote_tee_verifier_change`
+/// refuses to vote it in, so the verifier can only move away from it.
+const UNSET_TEE_VERIFIER_ACCOUNT: &str = "unset.tee-verifier.invalid";
+
+/// The `tee_verifier_account_id` to start from, given an optional value
+/// supplied at init time. Falls back to the [`UNSET_TEE_VERIFIER_ACCOUNT`]
+/// placeholder.
+pub(crate) fn initial_tee_verifier_account_id(configured: Option<dtos::AccountId>) -> AccountId {
+    configured.unwrap_or_else(|| {
+        UNSET_TEE_VERIFIER_ACCOUNT
+            .parse()
+            .expect("placeholder verifier account id must be valid")
+    })
+}
+
 impl Default for MpcContract {
     fn default() -> Self {
         env::panic_str("Calling default not allowed.");
@@ -164,6 +181,12 @@ pub struct MpcContract {
     // TODO(#2937): Remove via state migration.
     metrics: Metrics,
     foreign_chains: Lazy<ForeignChainsMetadata>,
+    /// Account whose `verify_quote` the contract trusts for DCAP verification.
+    /// Starts at the [`UNSET_TEE_VERIFIER_ACCOUNT`] placeholder until
+    /// participants vote one in. Not yet used to dispatch verification (the
+    /// async flow lands in a follow-up); stored and voted on here.
+    tee_verifier_account_id: AccountId,
+    tee_verifier_votes: TeeVerifierVotes,
 }
 
 #[near(serializers=[borsh])]
@@ -1661,6 +1684,70 @@ impl MpcContract {
         Ok(applied)
     }
 
+    /// Vote for `candidate_account_id` to become the trusted `tee-verifier`
+    /// account. `expected_code_hash` commits the voter to the code they audited.
+    /// When the proposal crosses the signing threshold, `tee_verifier_account_id`
+    /// is updated and all pending verifier-change votes are cleared.
+    #[handle_result]
+    pub fn vote_tee_verifier_change(
+        &mut self,
+        candidate_account_id: AccountId,
+        expected_code_hash: CryptoHash,
+    ) -> Result<(), Error> {
+        log!(
+            "vote_tee_verifier_change: signer={}, candidate={}, expected_code_hash={}",
+            env::signer_account_id(),
+            candidate_account_id,
+            hex::encode(expected_code_hash),
+        );
+        self.voter_or_panic();
+
+        // Reject the placeholder up front so a quorum can never roll the verifier
+        // back to the unconfigured state.
+        if candidate_account_id == initial_tee_verifier_account_id(None) {
+            return Err(TeeError::VerifierCandidateIsPlaceholder.into());
+        }
+
+        let threshold_parameters = self
+            .protocol_state
+            .threshold_parameters()
+            .expect("voter_or_panic() above already errors on NotInitialized");
+        let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
+
+        let proposal = VerifierChangeProposal {
+            candidate_account_id,
+            expected_code_hash,
+        };
+        if let Some(new_verifier) =
+            self.tee_verifier_votes
+                .vote(proposal, participant, threshold_parameters)?
+        {
+            log!("vote_tee_verifier_change: new verifier = {}", new_verifier);
+            self.tee_verifier_account_id = new_verifier;
+        }
+        Ok(())
+    }
+
+    /// Withdraw the caller's current vote on any pending verifier-change
+    /// proposal. No-op if the caller has not voted.
+    #[handle_result]
+    pub fn withdraw_tee_verifier_vote(&mut self) -> Result<(), Error> {
+        log!(
+            "withdraw_tee_verifier_vote: signer={}",
+            env::signer_account_id(),
+        );
+        self.voter_or_panic();
+
+        let threshold_parameters = self
+            .protocol_state
+            .threshold_parameters()
+            .expect("voter_or_panic() above already errors on NotInitialized");
+        let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
+
+        self.tee_verifier_votes.withdraw(&participant);
+        Ok(())
+    }
+
     /// On-chain RPC provider whitelist keyed by `ForeignChain`. Nodes read this at
     /// startup to validate their local `foreign_chains.yaml`. Borsh-encoded result.
     #[result_serializer(borsh)]
@@ -1888,6 +1975,8 @@ impl MpcContract {
             .votes
             .retain(participants);
 
+        self.tee_verifier_votes.retain(participants);
+
         Ok(())
     }
 }
@@ -1918,6 +2007,12 @@ impl MpcContract {
         let initial_participants = parameters.participants();
         let tee_state = TeeState::with_mocked_participant_attestations(initial_participants);
 
+        let tee_verifier_account_id = initial_tee_verifier_account_id(
+            init_config
+                .as_ref()
+                .and_then(|c| c.tee_verifier_account_id.clone()),
+        );
+
         Ok(Self {
             protocol_state: ProtocolContractState::Running(RunningContractState::new(
                 DomainRegistry::default(),
@@ -1941,6 +2036,8 @@ impl MpcContract {
                 StorageKey::ForeignChainMetadata,
                 ForeignChainsMetadata::default(),
             ),
+            tee_verifier_account_id,
+            tee_verifier_votes: TeeVerifierVotes::default(),
         })
     }
 
@@ -1989,6 +2086,12 @@ impl MpcContract {
         let initial_participants = parameters.participants();
         let tee_state = TeeState::with_mocked_participant_attestations(initial_participants);
 
+        let tee_verifier_account_id = initial_tee_verifier_account_id(
+            init_config
+                .as_ref()
+                .and_then(|c| c.tee_verifier_account_id.clone()),
+        );
+
         Ok(MpcContract {
             config: init_config.map(Into::into).unwrap_or_default(),
             protocol_state: ProtocolContractState::Running(RunningContractState::new(
@@ -2012,6 +2115,8 @@ impl MpcContract {
                 StorageKey::ForeignChainMetadata,
                 ForeignChainsMetadata::default(),
             ),
+            tee_verifier_account_id,
+            tee_verifier_votes: TeeVerifierVotes::default(),
         })
     }
 
@@ -3831,6 +3936,20 @@ mod tests {
         (contract, participants, first_participant_id)
     }
 
+    #[test]
+    #[expect(non_snake_case)]
+    fn vote_tee_verifier_change__should_reject_the_placeholder_candidate() {
+        // Given a running contract whose signer is an active participant.
+        let (mut contract, _participants, _first_participant_id) = setup_tee_test_contract(3, 2);
+
+        // When voting for the placeholder account as the trusted verifier.
+        let result =
+            contract.vote_tee_verifier_change(initial_tee_verifier_account_id(None), [0; 32]);
+
+        // Then the vote is rejected as the placeholder candidate.
+        assert_eq!(result, Err(TeeError::VerifierCandidateIsPlaceholder.into()));
+    }
+
     fn submit_attestation(
         contract: &mut MpcContract,
         participants: &Participants,
@@ -4415,6 +4534,8 @@ mod tests {
                     StorageKey::ForeignChainMetadata,
                     ForeignChainsMetadata::default(),
                 ),
+                tee_verifier_account_id: initial_tee_verifier_account_id(None),
+                tee_verifier_votes: Default::default(),
             }
         }
     }

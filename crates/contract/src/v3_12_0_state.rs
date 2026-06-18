@@ -15,6 +15,7 @@ use crate::{
     Config, SupportedForeignChainsByNode,
     foreign_chain_rpc::ForeignChainRpcWhitelist,
     foreign_chains_metadata::ForeignChainsMetadata,
+    initial_tee_verifier_account_id,
     node_migrations::NodeMigrations,
     primitives::{
         ckd::CKDRequest,
@@ -22,7 +23,7 @@ use crate::{
     },
     state::ProtocolContractState,
     storage_keys::StorageKey,
-    tee::tee_state::TeeState,
+    tee::{tee_state::TeeState, verifier_votes::TeeVerifierVotes},
     update::ProposedUpdates,
 };
 
@@ -66,6 +67,10 @@ impl From<MpcContract> for crate::MpcContract {
                     ..Default::default()
                 },
             ),
+            // New in this version: deployed state predates the TEE verifier, so
+            // start from the unconfigured placeholder with no pending votes.
+            tee_verifier_account_id: initial_tee_verifier_account_id(None),
+            tee_verifier_votes: TeeVerifierVotes::default(),
         }
     }
 }
