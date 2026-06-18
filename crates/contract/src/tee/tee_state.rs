@@ -106,11 +106,11 @@ impl TeeState {
 
         for (account_id, _, participant_info) in participants.participants() {
             let tls_public_key = participant_info.tls_public_key.clone();
-            // TODO(#1087): replace this sentinel with a real account public
+            // TODO(#1087): replace account_public_key with a real account public
             // key passed in by the caller. `Participants` does not currently
             // carry the operator's account public key, so a mocked entry
-            // cannot record the real one and we store an all-zero placeholder
-            // that never matches a live signer. The mock keeps the
+            // cannot record the real one and we use the TLS key as a unique
+            // per-participant placeholder. The mock keeps the
             // participant from being kicked out of an empty `TeeState` until
             // a real `submit_participant_info` call replaces it (keyed by
             // TLS), but any caller-facing check that compares
@@ -120,7 +120,12 @@ impl TeeState {
             let node_id = NodeId {
                 account_id: account_id.clone(),
                 tls_public_key: tls_public_key.clone(),
-                account_public_key: Ed25519PublicKey::from([0u8; 32]),
+                // Use tls_public_key as account_public_key instead of hardcoded
+                // Ed25519PublicKey::from([0u8; 32]) so that same account public
+                // key isn't associated with different tls keys.
+                // This is not a fix for above issue: #1087, which should be
+                // addressed outside this PR.
+                account_public_key: tls_public_key.clone(),
             };
 
             tee_state.stored_attestations.insert(
@@ -442,6 +447,19 @@ impl TeeState {
         self.stored_attestations
             .get(tls_public_key)
             .map(|node_attestation| node_attestation.node_id.clone())
+    }
+
+    /// Finds the `NodeId` (account_id + tls_public_key) for the node whose attested
+    /// account public key matches `signer_account_pk`.
+    pub(crate) fn lookup_node_id_by_signer_pk(
+        &self,
+        signer_account_pk: &Ed25519PublicKey,
+    ) -> Result<&NodeId, AttestationCheckError> {
+        self.stored_attestations
+            .iter()
+            .find(|(_, attestation)| attestation.node_id.account_public_key == *signer_account_pk)
+            .map(|(_, attestation)| &attestation.node_id)
+            .ok_or(AttestationCheckError::AttestationNotFound)
     }
 
     /// Returns Ok(()) if the caller has at least one participant entry
