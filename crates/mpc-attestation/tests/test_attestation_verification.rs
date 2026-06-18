@@ -48,63 +48,6 @@ fn invalid_mock_attestation_fails_verification() {
     );
 }
 
-/// `verify_locally` (DCAP + post-DCAP) and `verify_with_report` (post-DCAP
-/// against a supplied report) must agree: the contract feeds the verifier's
-/// report into `verify_with_report`, so it must yield exactly what a full local
-/// verify would. This runs DCAP once to obtain the report, then compares.
-#[test]
-#[expect(non_snake_case)]
-fn verify_with_report__should_agree_with_verify_locally() {
-    // Given
-    let attestation = mock_dstack_attestation();
-    let tls_key = p2p_tls_key();
-    let account_key = account_key();
-    let report_data: ReportData = ReportDataV1::new(tls_key, account_key).into();
-    let timestamp_s = VALID_ATTESTATION_TIMESTAMP;
-    let allowed_mpc_hashes = [image_digest()];
-    let allowed_launcher_hashes = [launcher_compose_digest()];
-    let measurements = default_measurements();
-    let Attestation::Dstack(dstack) = &attestation else {
-        panic!("fixture is a Dstack attestation");
-    };
-
-    // When
-    // Full local verify (DCAP + post-DCAP).
-    let local = attestation
-        .verify_locally(
-            report_data.clone().into(),
-            timestamp_s,
-            &allowed_mpc_hashes,
-            &allowed_launcher_hashes,
-            measurements,
-        )
-        .expect("local verify should succeed");
-    // Obtain the report the verifier contract would return (DCAP only), then
-    // feed it to the pure post-DCAP path the contract uses.
-    let report = dstack
-        .verify_dcap_quote(timestamp_s)
-        .expect("dcap quote verification should produce a report");
-    let with_report = attestation
-        .verify_with_report(
-            &report,
-            report_data.into(),
-            timestamp_s,
-            &allowed_mpc_hashes,
-            &allowed_launcher_hashes,
-            measurements,
-        )
-        .expect("verify_with_report should succeed");
-
-    // Then
-    // `VerifiedAttestation` has no `PartialEq`; compare via its Borsh encoding,
-    // which is the form actually stored on-chain.
-    assert_eq!(
-        borsh::to_vec(&local.attestation).unwrap(),
-        borsh::to_vec(&with_report.attestation).unwrap(),
-    );
-    assert_eq!(local.advisory_ids, with_report.advisory_ids);
-}
-
 #[test]
 fn validated_dstack_attestation_can_be_reverified() {
     // given

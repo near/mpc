@@ -358,28 +358,15 @@ impl Attestation {
     ) -> Result<AcceptedAttestation, VerificationError> {
         match self {
             Self::Dstack(dstack_attestation) => {
-                let (mpc_image_hash, launcher_compose_hash) = verify_dstack_mpc_hashes(
-                    dstack_attestation,
-                    allowed_mpc_docker_image_hashes,
-                    allowed_launcher_docker_compose_hashes,
-                )?;
-
-                let AcceptedDstackAttestation {
-                    measurements,
-                    advisory_ids,
-                } = dstack_attestation.verify_locally(
+                let report = dstack_attestation.verify_dcap_quote(current_timestamp_seconds)?;
+                dstack_attestation.verify(
+                    &report,
                     expected_report_data,
                     current_timestamp_seconds,
+                    allowed_mpc_docker_image_hashes,
+                    allowed_launcher_docker_compose_hashes,
                     accepted_measurements,
-                )?;
-
-                Ok(AcceptedAttestation::dstack(
-                    mpc_image_hash,
-                    launcher_compose_hash,
-                    measurements,
-                    advisory_ids,
-                    current_timestamp_seconds,
-                ))
+                )
             }
             Self::Mock(mock_attestation) => mock_attestation.verify(
                 current_timestamp_seconds,
