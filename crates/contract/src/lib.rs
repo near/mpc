@@ -1063,7 +1063,7 @@ impl MpcContract {
         Ok(())
     }
 
-    /// No-op when outside 'Running' and 'Resharing'.
+    /// No-op when outside [`ProtocolContractState::Running`] and [`ProtocolContractState::Resharing`].
     fn recompute_available_foreign_chains(&mut self) {
         let Ok(params) = self.protocol_state.threshold_parameters() else {
             return;
