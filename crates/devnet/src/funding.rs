@@ -24,6 +24,17 @@ pub enum AccountToFund {
     },
 }
 
+/// Maximum total NEAR we fund in a single call when drawing from the faucet, to avoid draining too
+/// much of it.
+const MAX_FAUCET_FUNDING_NEAR: u128 = 100;
+
+/// The cap exists only to avoid draining the testnet faucet, so it applies only when we have no
+/// funding account and would create one from the faucet. A provided or genesis-funded account
+/// (e.g. on localnet) is exempt.
+fn would_exceed_faucet_cap(funding_account: &Option<NearAccount>, total_to_fund: u128) -> bool {
+    funding_account.is_none() && total_to_fund > MAX_FAUCET_FUNDING_NEAR * ONE_NEAR
+}
+
 impl AccountToFund {
     pub fn from_new(initial_balance: u128, prefix: String) -> Self {
         Self::NewAccount {
@@ -45,7 +56,7 @@ impl AccountToFund {
 
 /// Funds the given accounts, drawing from existing funding accounts when available, and creating
 /// new funding accounts from the faucet if needed. Any number of accounts and any amount of balance
-/// can be funded, up to a sanity limit of 100 NEAR total.
+/// can be funded, up to a sanity limit (see [`MAX_FAUCET_FUNDING_NEAR`]) when using the faucet.
 pub async fn fund_accounts(
     accounts: &mut OperatingAccounts,
     desired_funding: Vec<AccountToFund>,
@@ -93,14 +104,13 @@ pub async fn fund_accounts(
         };
         accounts_to_be_funded.push_back((account, balance_needed));
     }
-    if accounts_to_be_funded
+    let total_to_fund = accounts_to_be_funded
         .iter()
         .map(|(_, balance)| balance)
-        .sum::<u128>()
-        > 100 * ONE_NEAR
-    {
+        .sum::<u128>();
+    if would_exceed_faucet_cap(&funding_account, total_to_fund) {
         panic!(
-            "Refusing to fund more than 100 NEAR at once, as it would drain too much of the faucet."
+            "Refusing to fund more than {MAX_FAUCET_FUNDING_NEAR} NEAR at once, as it would drain too much of the faucet."
         );
     }
 
@@ -216,4 +226,58 @@ pub async fn fund_accounts(
         accounts.discard_account(&account);
     }
     funded_accounts
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::*;
+    use crate::types::NearAccountKind;
+    use ed25519_dalek::SigningKey;
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
+
+    fn dummy_funding_account() -> NearAccount {
+        NearAccount {
+            account_id: "funder.near".parse().unwrap(),
+            access_keys: vec![SigningKey::generate(&mut StdRng::seed_from_u64(42))],
+            kind: NearAccountKind::FundingAccount,
+        }
+    }
+
+    #[test]
+    fn would_exceed_faucet_cap__should_trip_for_faucet_path_above_cap() {
+        // Given
+        let funding_account = None;
+
+        // When
+        let exceeded = would_exceed_faucet_cap(&funding_account, 101 * ONE_NEAR);
+
+        // Then
+        assert!(exceeded);
+    }
+
+    #[test]
+    fn would_exceed_faucet_cap__should_not_trip_when_funding_account_provided() {
+        // Given
+        let funding_account = Some(dummy_funding_account());
+
+        // When
+        let exceeded = would_exceed_faucet_cap(&funding_account, 1_000 * ONE_NEAR);
+
+        // Then
+        assert!(!exceeded);
+    }
+
+    #[test]
+    fn would_exceed_faucet_cap__should_not_trip_below_cap_on_faucet_path() {
+        // Given
+        let funding_account = None;
+
+        // When
+        let exceeded = would_exceed_faucet_cap(&funding_account, 50 * ONE_NEAR);
+
+        // Then
+        assert!(!exceeded);
+    }
 }

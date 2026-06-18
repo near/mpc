@@ -16,10 +16,13 @@
     clippy::disallowed_types,
     reason = "devnet tooling uses `near_crypto_public::SecretKey` to build signed transactions via the legacy `near_jsonrpc_client` API."
 )]
+use crate::constants::{LOCALNET_MASTER_ACCOUNT_ID, LOCALNET_VALIDATOR_KEY_PATH};
 use crate::contracts::ActionCall;
 use crate::queries;
 use crate::rpc::NearRpcClients;
-use crate::types::{ContractSetup, MpcParticipantSetup, NearAccount, NearAccountKind};
+use crate::types::{
+    ContractSetup, MpcParticipantSetup, NearAccount, NearAccountKind, ParsedConfig,
+};
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use futures::FutureExt;
 use near_account_id::AccountId;
@@ -100,6 +103,48 @@ pub fn make_random_account_name(prefix: &str, suffix: &str) -> AccountId {
     )
     .try_into()
     .unwrap()
+}
+
+/// Resolves the funding account to draw from: a configured one if present, otherwise the
+/// genesis-funded master on localnet (no faucet). Returns `None` on testnet without a configured
+/// account, so [`fund_accounts`](crate::funding::fund_accounts) falls back to the faucet.
+pub fn resolve_funding_account(config: &ParsedConfig) -> Option<NearAccount> {
+    resolve_funding_account_inner(config.funding_account.as_ref(), config.is_localnet())
+}
+
+fn resolve_funding_account_inner(
+    configured: Option<&NearAccount>,
+    is_localnet: bool,
+) -> Option<NearAccount> {
+    match configured {
+        Some(account) => Some(account.clone()),
+        None if is_localnet => Some(localnet_genesis_master()),
+        None => None,
+    }
+}
+
+/// Loads the genesis-funded localnet master account (`test.near`) from the static validator key,
+/// so localnet deployments can fund accounts without a faucet.
+pub fn localnet_genesis_master() -> NearAccount {
+    let contents = std::fs::read_to_string(LOCALNET_VALIDATOR_KEY_PATH).unwrap_or_else(|e| {
+        panic!("localnet validator key should exist at {LOCALNET_VALIDATOR_KEY_PATH}: {e}")
+    });
+    let parsed: serde_json::Value =
+        serde_json::from_str(&contents).expect("localnet validator key should be valid JSON");
+    let secret_key: SecretKey = parsed["secret_key"]
+        .as_str()
+        .expect("localnet validator key should contain a `secret_key`")
+        .parse()
+        .expect("localnet validator key should be a valid NEAR secret key");
+    let SecretKey::ED25519(secret_key) = secret_key else {
+        panic!("localnet validator key should be an ed25519 key");
+    };
+    let signing_key = SigningKey::from_keypair_bytes(&secret_key.0).expect("valid ed25519 keypair");
+    NearAccount {
+        account_id: LOCALNET_MASTER_ACCOUNT_ID.parse().unwrap(),
+        access_keys: vec![signing_key],
+        kind: NearAccountKind::FundingAccount,
+    }
 }
 
 impl OperatingAccessKey {
@@ -640,5 +685,75 @@ impl OperatingAccounts {
             .iter()
             .map(|(account_id, account)| (account_id.clone(), account.account_data.clone()))
             .collect()
+    }
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::*;
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
+
+    /// The localnet master must match `deployment/localnet/validator_key.json`, since its key
+    /// controls the genesis-funded `test.near` account used for faucet-free funding.
+    #[test]
+    fn localnet_genesis_master__should_load_test_near_with_genesis_key() {
+        // Given / When
+        let master = localnet_genesis_master();
+
+        // Then
+        assert_eq!(master.account_id.as_str(), "test.near");
+        let NearAccountKind::FundingAccount = master.kind else {
+            panic!("expected FundingAccount, got {:?}", master.kind);
+        };
+        let public_key = format!(
+            "ed25519:{}",
+            bs58::encode(master.access_keys[0].verifying_key().as_bytes()).into_string()
+        );
+        assert_eq!(
+            public_key,
+            "ed25519:7E9jtdHWcn4eVZQPiHMCUMVVnMEvGeSG3HPVasisWooU"
+        );
+    }
+
+    #[test]
+    fn resolve_funding_account__should_use_genesis_master_on_localnet_without_config() {
+        // Given
+        let configured = None;
+
+        // When
+        let resolved = resolve_funding_account_inner(configured, true);
+
+        // Then
+        assert_eq!(resolved.unwrap().account_id.as_str(), "test.near");
+    }
+
+    #[test]
+    fn resolve_funding_account__should_be_none_on_testnet_without_config() {
+        // Given
+        let configured = None;
+
+        // When
+        let resolved = resolve_funding_account_inner(configured, false);
+
+        // Then
+        assert!(resolved.is_none());
+    }
+
+    #[test]
+    fn resolve_funding_account__should_prefer_configured_account() {
+        // Given
+        let configured = NearAccount {
+            account_id: "funder.near".parse().unwrap(),
+            access_keys: vec![SigningKey::generate(&mut StdRng::seed_from_u64(42))],
+            kind: NearAccountKind::FundingAccount,
+        };
+
+        // When
+        let resolved = resolve_funding_account_inner(Some(&configured), true);
+
+        // Then
+        assert_eq!(resolved.unwrap().account_id.as_str(), "funder.near");
     }
 }

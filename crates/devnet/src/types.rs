@@ -63,6 +63,14 @@ pub struct MpcNetworkSetup {
     pub nomad_server_url: Option<String>,
     #[serde(default)]
     pub ssd: bool,
+    /// Intended participant count, stored so the cluster can be sized (`deploy-infra`) before the
+    /// participant accounts are funded. On localnet, funding is deferred until the chain is up.
+    #[serde(default)]
+    pub desired_num_participants: usize,
+    /// The neard image the localnet validator was deployed with, recorded by `deploy-chain` so
+    /// `deploy-nomad` reuses the same tag without re-specifying `--neard-docker-image`.
+    #[serde(default)]
+    pub neard_docker_image: Option<String>,
 }
 
 impl fmt::Display for MpcNetworkSetup {
@@ -150,6 +158,10 @@ pub struct Config {
     // Path of the Near-One/infra-ops repository.
     // Used only for terraform deployment commands.
     pub infra_ops_path: String,
+    /// Chain the configured RPCs talk to. `None` means testnet (the default). Set to
+    /// `mpc-localnet` to deploy and operate against a localnet chain.
+    #[serde(default)]
+    pub chain_id: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -169,6 +181,14 @@ pub struct ParsedConfig {
     pub rpc: Arc<NearRpcClients>,
     pub infra_ops_path: PathBuf,
     pub funding_account: Option<NearAccount>,
+    /// Chain id the RPCs talk to; `mpc-localnet` for a localnet deployment, otherwise testnet.
+    pub chain_id: String,
+}
+
+impl ParsedConfig {
+    pub fn is_localnet(&self) -> bool {
+        self.chain_id == crate::constants::LOCALNET_CHAIN_ID
+    }
 }
 
 pub async fn load_config() -> ParsedConfig {
@@ -181,6 +201,9 @@ pub async fn load_config() -> ParsedConfig {
         rpc: client,
         infra_ops_path: PathBuf::from(config.infra_ops_path),
         funding_account: config.funding_account,
+        chain_id: config
+            .chain_id
+            .unwrap_or_else(|| crate::constants::TESTNET_CHAIN_ID.to_string()),
     }
 }
 
@@ -282,5 +305,50 @@ pub mod near_crypto_compatible_serialization {
                 .context("Failed to create verifying key from deserialized bytes.")
                 .map_err(de::Error::custom)
         }
+    }
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::*;
+
+    /// Existing `config.yaml` files predate the `chain_id` field, so it must remain optional and
+    /// absence must mean testnet.
+    #[test]
+    fn config__should_default_chain_id_to_none_when_absent() {
+        // Given
+        let yaml = "\
+rpcs:
+  - url: http://localhost:3030
+    rate_limit: 5
+    max_concurrency: 30
+infra_ops_path: /tmp/infra-ops
+";
+
+        // When
+        let config: Config = serde_yaml::from_str(yaml).unwrap();
+
+        // Then
+        assert!(config.chain_id.is_none());
+    }
+
+    #[test]
+    fn config__should_parse_localnet_chain_id() {
+        // Given
+        let yaml = "\
+rpcs:
+  - url: http://localhost:3030
+    rate_limit: 5
+    max_concurrency: 30
+infra_ops_path: /tmp/infra-ops
+chain_id: mpc-localnet
+";
+
+        // When
+        let config: Config = serde_yaml::from_str(yaml).unwrap();
+
+        // Then
+        assert_eq!(config.chain_id.as_deref(), Some("mpc-localnet"));
     }
 }

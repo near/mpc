@@ -58,6 +58,9 @@ impl Cli {
                     MpcNetworkSubCmd::DeployInfra(cmd) => {
                         cmd.run(&name, config).await;
                     }
+                    MpcNetworkSubCmd::DeployChain(cmd) => {
+                        cmd.run(&name, config).await;
+                    }
                     MpcNetworkSubCmd::DeployNomad(cmd) => {
                         cmd.run(&name, config).await;
                     }
@@ -159,6 +162,9 @@ pub enum MpcNetworkSubCmd {
     VoteCodeHash(MpcVoteApprovedHashCmd),
     /// Deploy the GCP nodes with Terraform to host Nomad jobs to run this network.
     DeployInfra(MpcTerraformDeployInfraCmd),
+    /// Deploy the localnet validator (neard) Nomad job. Localnet only; run after deploy-infra and
+    /// before funding/deploy-contract, so the chain is up for account creation.
+    DeployChain(MpcTerraformDeployChainCmd),
     /// Deploy the Nomad jobs to run this network.
     DeployNomad(MpcTerraformDeployNomadCmd),
     /// Destroy the GCP nodes previously deployed.
@@ -351,6 +357,18 @@ pub struct MpcTerraformDeployNomadCmd {
     /// The default is `constants::DEFAULT_MPC_DOCKER_IMAGE`.
     #[clap(long)]
     pub docker_image: Option<String>,
+    /// Overrides the neard docker image for the localnet validator job. Defaults to the image
+    /// recorded by `deploy-chain`; ignored on testnet.
+    #[clap(long)]
+    pub neard_docker_image: Option<String>,
+}
+
+#[derive(clap::Parser)]
+pub struct MpcTerraformDeployChainCmd {
+    /// The neard docker image to run the localnet validator with (a stock `nearprotocol/nearcore`
+    /// tag matching the nearcore version the MPC node embeds, e.g. `nearprotocol/nearcore:2.12.0`).
+    #[clap(long)]
+    pub neard_docker_image: String,
 }
 
 #[derive(clap::Parser)]
