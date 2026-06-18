@@ -105,13 +105,12 @@ where
     ForeignChainPolicyReader: ReadSupportedForeignChain + Clone + Send + Sync + 'static,
 {
     /// Drives the MPC state machine for the lifetime of the coordinator role.
-    /// Returns `Ok(())` when `cancellation_token` fires (the dispatcher in
-    /// `run.rs` uses this to swap the coordinator out when the contract state
-    /// transitions out of the active-participant role — see
-    /// `docs/design/migration-onboarding-dispatcher.md`). On cancel, the
-    /// current in-flight MPC job's `AsyncDroppableRuntime` is dropped as
-    /// `self` borrows are released, terminating its spawned tasks.
-    pub async fn run(&mut self, cancellation_token: CancellationToken) -> anyhow::Result<()> {
+    /// Loops forever; returns `Err` only on unrecoverable conditions. The
+    /// dispatcher in `run.rs` swaps the coordinator out by dropping this
+    /// future — the in-flight MPC job's `AsyncDroppableRuntime` and the
+    /// `drop_guard` on its internal cancellation token cascade cleanup of
+    /// spawned tasks. See `docs/design/migration-onboarding-dispatcher.md`.
+    pub async fn run(&mut self) -> anyhow::Result<()> {
         loop {
             let state = self.indexer.contract_state_receiver.borrow().clone();
             let mut job: MpcJob = match state {
@@ -227,13 +226,6 @@ where
                             );
                             break;
                         }
-                    }
-                    _ = cancellation_token.cancelled() => {
-                        tracing::info!(
-                            "[{}] coordinator cancelled — exiting cleanly",
-                            job.name
-                        );
-                        return Ok(());
                     }
                 }
             }

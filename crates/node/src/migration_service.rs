@@ -148,17 +148,13 @@ mod tests {
             .send(mutated)
             .expect("send mutated contract state");
 
-        // Then: the function returns the new (non-Done) role within a
-        // bounded time.
+        // Then: the function returns WaitForStateChange (this node is no
+        // longer a participant under the mutated contract).
         let new_role = tokio::time::timeout(std::time::Duration::from_secs(2), handle)
             .await
             .expect("wait_until_role_change did not return within 2s")
             .expect("task panicked")
             .expect("wait_until_role_change returned Err");
-        assert_ne!(
-            new_role,
-            OnboardingJob::Done,
-            "should have returned a role different from Done"
-        );
+        assert_eq!(new_role, OnboardingJob::WaitForStateChange);
     }
 }

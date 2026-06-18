@@ -14,28 +14,43 @@ subsystem when the contract state transitions.
 ## Design
 
 A single state-driven dispatcher in `mpc-node` selects which subsystem runs
-based on the current contract state and migration info for this node:
+based on the current contract state and migration info for this node. Role
+classification is `OnboardingJob::new(migration_info, contract_state, my_id,
+tls_pk)`:
 
 ```rust
 loop {
-    match classify_role(&contract_state, &migration_info, &my_id, &tls_pk) {
-        Role::ActiveParticipant => run_coordinator(&cancel).await,
-        Role::MayOnboard        => run_onboarding(&cancel).await,
-        Role::Idle              => wait_for_state_change().await,
+    match OnboardingJob::new(&migration_info, &contract_state, &my_id, &tls_pk) {
+        OnboardingJob::Done => {
+            // Active participant.
+            select! {
+                _ = coordinator.run() => { ... }
+                _ = wait_until_role_change(..., Done) => { /* drop coordinator */ }
+            }
+        }
+        OnboardingJob::Onboard(_) | OnboardingJob::WaitForStateChange => {
+            // Returns on the next `Done`.
+            onboard(...).await?;
+        }
     }
 }
 ```
 
-`run_coordinator` and `run_onboarding` are mutually exclusive — at most one is
-active at a time. When the contract state transitions out of the active
-subsystem's role, the dispatcher cancels it and re-enters the loop with the
-new role.
+The coordinator and onboarding are mutually exclusive — at most one is active
+at a time. When the contract state transitions away from `Done`, the
+dispatcher drops the coordinator future; cleanup of in-flight MPC tasks
+cascades through the `drop_guard` on the coordinator's internal cancellation
+token. The coordinator's own fields (`Arc<RwLock<KeyshareStorage>>`,
+`SecretDB`, etc.) stay allocated across role changes because the dispatcher
+holds the `Coordinator` by `&mut`.
 
 ## Requirements
 
-- **Coordinator: cancellable and restartable.** `Coordinator::run` takes a
-  `CancellationToken` and returns cleanly when it fires, releasing its
-  `Arc<RwLock<KeyshareStorage>>` handle and any in-flight protocol state.
+- **Coordinator: re-entrant by drop.** `Coordinator::run` takes `&mut self`
+  so the dispatcher can swap it in and out across role changes. Dropping the
+  future stops the in-flight MPC runtime and spawned tasks via the
+  `drop_guard` on its internal cancellation token; the coordinator's owned
+  state is preserved for the next run.
 - **Onboarding: terminate on `Done`.** The onboarding state machine returns
   when the node reaches the active-participant state. The dispatcher decides
   whether to re-enter on a subsequent transition.

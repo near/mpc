@@ -173,9 +173,7 @@ impl OneNodeTestConfig {
                     currently_running_job_name: self.currently_running_job_name,
                     debug_request_sender,
                 };
-                coordinator
-                    .run(tokio_util::sync::CancellationToken::new())
-                    .await
+                coordinator.run().await
             };
             start_root_task(&format!("root for {}", my_account_id), root_future)
                 .0

@@ -457,13 +457,11 @@ where
         match current_role {
             OnboardingJob::Done => {
                 tracing::info!("dispatcher: active participant — running coordinator");
-                // If the role-change arm wins, dropping the coordinator
-                // future cascades cleanup through the internal
-                // `drop_guard = cancellation_token.drop_guard()` in
-                // `Coordinator::run`. The token we pass is the API surface
-                // for graceful-exit callers; we don't fire it here.
+                // When the role-change arm wins, `select!` drops the
+                // coordinator future; cleanup cascades through the
+                // `drop_guard` on its internal cancellation token.
                 tokio::select! {
-                    res = coordinator.run(CancellationToken::new()) => {
+                    res = coordinator.run() => {
                         res?;
                         tracing::info!(
                             "dispatcher: coordinator returned without role change"
