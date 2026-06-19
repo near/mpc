@@ -1663,7 +1663,6 @@ impl MpcContract {
             TeeValidationResult::Partial {
                 participants_with_valid_attestation,
             } => {
-                let threshold = current_params.threshold().value() as usize;
                 let remaining = participants_with_valid_attestation.len();
                 // Defense in depth: the surviving participant set must keep the full
                 // threshold relation intact — the GovernanceThreshold must still sit
@@ -1696,7 +1695,7 @@ impl MpcContract {
                 //let n_participants_new = new_participants.len();
                 //let new_threshold = (3 * n_participants_new + 4) / 5; // minimum 60%
                 //let new_threshold = new_threshold.max(2); // but also minimum 2
-                let new_threshold = threshold;
+                let new_threshold = current_params.threshold().value() as usize;;
 
                 let threshold_parameters = ThresholdParameters::new(
                     participants_with_valid_attestation,
