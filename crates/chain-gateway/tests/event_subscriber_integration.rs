@@ -402,9 +402,7 @@ async fn test_event_subscriber_channel_buffer_handles_backpressure(
     drop(watch_value);
 
     for _ in 0..expected_received {
-        receiver
-            .try_recv()
-            .expect("expected a buffered block update");
+        must_recv_block_update(&mut receiver).await;
     }
     receiver
         .try_recv()
