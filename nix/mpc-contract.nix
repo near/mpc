@@ -19,7 +19,7 @@ let
   clangResourceInclude = "${llvmPkgs.clang-unwrapped.lib}/lib/clang/${clangVersion}/include";
 
   # Pin the Rust toolchain to rust-toolchain.toml — same source of truth as
-  # the mpc-node build (nix/mpc-node.nix) and the dev shell.
+  # the dev shell (flake.nix).
   rustToolchain = (rust-bin.fromRustupToolchainFile ../rust-toolchain.toml).override {
     extensions = [ "rust-src" ];
   };
@@ -28,9 +28,9 @@ let
   pname = "mpc-contract";
   version = workspaceCargoToml.workspace.package.version;
 
-  # Source filter — keep Cargo files, *.rs, and the same `include_str!` /
-  # `include_bytes!` allow-list as nix/mpc-node.nix so compile-time path
-  # resolution works. The contract only links a subset of crates, but
+  # Source filter — keep Cargo files, *.rs, and the `include_str!` /
+  # `include_bytes!` allow-list so compile-time path resolution works.
+  # The contract only links a subset of crates, but
   # `cargo` still parses the full workspace manifest, so we keep the
   # workspace tree intact.
   src = lib.cleanSourceWith {
@@ -143,8 +143,7 @@ stdenv.mkDerivation {
     export SOURCE_DATE_EPOCH=0
 
     # Also remap the build sandbox path so panic-location strings don't
-    # embed `$NIX_BUILD_TOP` — analogous to the preBuild remap in
-    # nix/mpc-node.nix.
+    # embed `$NIX_BUILD_TOP`.
     export CARGO_BUILD_RUSTFLAGS="$CARGO_BUILD_RUSTFLAGS --remap-path-prefix=$NIX_BUILD_TOP/source=/build/source --remap-path-prefix=$NIX_BUILD_TOP=/build"
 
     cargo near build ${lib.escapeShellArgs cargoNearArgs}

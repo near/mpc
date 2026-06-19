@@ -8,8 +8,6 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-
-    crane.url = "github:ipetkov/crane";
   };
 
   outputs =
@@ -17,7 +15,6 @@
       self,
       nixpkgs,
       rust-overlay,
-      crane,
     }:
     let
       lib = nixpkgs.lib;
@@ -51,18 +48,15 @@
       # PCLMUL-accelerated CRC32C path is compiled in. Production node
       # fleet is all v3-capable (Haswell / Excavator and newer).
       #
-      # Shared between the reproducible mpc-node build (nix/mpc-node.nix)
-      # and the dev shell (devShells.default below) so feature-test macros
-      # in bindgen-parsed headers, cc-rs-compiled C/C++ deps, and the
-      # rustc target-cpu line up across all build paths.
+      # Used by the dev shell (devShells.default below) and mirrored by the
+      # reproducible mpc-node build (scripts/build-mpc-node-reproducible.sh)
+      # so feature-test macros in bindgen-parsed headers, cc-rs-compiled
+      # C/C++ deps, and the rustc target-cpu line up across all build paths.
       prodCFlags = "-march=x86-64-v3 -mpclmul -maes";
 
     in
     {
       packages = forAllSystems (pkgs: {
-        mpc-node = pkgs.callPackage ./nix/mpc-node.nix {
-          inherit crane prodCFlags;
-        };
         mpc-contract = pkgs.callPackage ./nix/mpc-contract.nix {
           cargo-near = pkgs.callPackage ./nix/cargo-near.nix { };
         };
@@ -114,7 +108,8 @@
 
             # Match the production-build feature-test macros (`__AVX2__`,
             # `__FMA__`, `__BMI2__`, `__PCLMUL__`, `__AES__`) so rust-bindgen
-            # generates the same Rust bindings as `nix/mpc-node.nix` does.
+            # generates the same Rust bindings the reproducible mpc-node build
+            # (scripts/build-mpc-node-reproducible.sh) produces.
             BINDGEN_EXTRA_CLANG_ARGS = lib.concatStringsSep " " (
               [
                 "-I${clangResourceInclude llvmPkgs}"
@@ -239,6 +234,17 @@
                 export CXX_aarch64_apple_darwin="${llvmPkgs.clang}/bin/clang++"
                 export AR="${llvmPkgs.llvm}/bin/llvm-ar"
                 export RANLIB="${llvmPkgs.llvm}/bin/llvm-ranlib"
+              ''}
+              ${lib.optionalString stdenv.isLinux ''
+                # Pin the host C/C++ compiler to the nix toolchain. stdenv's
+                # setup leaves CC as the bare name `gcc`, and some Nix versions'
+                # `nix develop` don't export CC at all — either way cc-rs can
+                # resolve it to the host system gcc (e.g. Ubuntu's), making the C
+                # dependencies (jemalloc, aws-lc, rocksdb, …) compile to
+                # different objects per machine. Force the full nix store path so
+                # the compiler is byte-identical everywhere.
+                export CC="${stdenv.cc}/bin/cc"
+                export CXX="${stdenv.cc}/bin/c++"
               ''}
               printf "\e[32m🦀 NEAR Dev Shell Active\e[0m\n"
             '';

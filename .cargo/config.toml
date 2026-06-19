@@ -3,8 +3,8 @@
 # and friends. Scoped to x86_64 so aarch64 dev machines (Apple Silicon) keep
 # building without modification.
 #
-# Note: `nix/mpc-node.nix` exports its own RUSTFLAGS env var, which *replaces*
-# (not merges with) these flags — the Nix build sets `target-cpu=x86-64-v3`
-# explicitly there. Keep both in sync.
+# Note: `scripts/build-mpc-node-reproducible.sh` exports its own RUSTFLAGS env
+# var, which *replaces* (not merges with) these flags — that build sets
+# `target-cpu=x86-64-v3` explicitly there. Keep both in sync.
 [target.'cfg(target_arch = "x86_64")']
 rustflags = ["-C", "target-cpu=x86-64-v3"]

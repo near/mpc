@@ -157,8 +157,8 @@ fi
 
 if $USE_NODE || $USE_NODE_GCP; then
     # Pin jemalloc's `./configure` auto-detected values so tikv-jemalloc-sys
-    # produces identical bytes across builders. See nix/mpc-node.nix for the
-    # full rationale; values match the standard x86_64 Linux ABI.
+    # produces identical bytes across builders; values match the standard
+    # x86_64 Linux ABI. Mirrored by scripts/build-mpc-node-reproducible.sh.
     #
     # GIT_CEILING_DIRECTORIES stops jemalloc's `./configure` from walking out
     # of `target/` and finding the surrounding mpc repo's `.git/` — without
@@ -174,7 +174,7 @@ if $USE_NODE || $USE_NODE_GCP; then
     # PCLMUL and AES are not part of the v3 micro-arch level (per System V
     # psABI) but are universally available on v3-capable hardware. Adding
     # them explicitly keeps rocksdb's PCLMUL-accelerated CRC32C path
-    # compiled in. Match nix/mpc-node.nix and flake.nix.
+    # compiled in. Match scripts/build-mpc-node-reproducible.sh and flake.nix.
     # BUILT_OVERRIDE_mpc_node_GIT_VERSION pins built's GIT_VERSION so local git
     # tags aren't embedded in the binary (which would break reproducibility).
     SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH \
