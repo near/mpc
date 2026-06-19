@@ -1695,7 +1695,7 @@ impl MpcContract {
                 //let n_participants_new = new_participants.len();
                 //let new_threshold = (3 * n_participants_new + 4) / 5; // minimum 60%
                 //let new_threshold = new_threshold.max(2); // but also minimum 2
-                let new_threshold = current_params.threshold().value() as usize;;
+                let new_threshold = current_params.threshold().value() as usize;
 
                 let threshold_parameters = ThresholdParameters::new(
                     participants_with_valid_attestation,
