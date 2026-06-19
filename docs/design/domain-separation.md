@@ -935,7 +935,8 @@ let threshold = match dk.protocol {
 Resolved: the `GovernanceThreshold` is now constrained relative to the cryptographic `ReconstructionThreshold`. Concretely, for `n` participants and per-domain reconstruction thresholds `t_i`:
 
 - `max(t_i) <= GovernanceThreshold` — a governance majority can never approve a reshare into a set smaller than what any domain needs to reconstruct its key (keeps trust assumptions consistent).
-- `ceil(0.6*n) <= GovernanceThreshold <= n` — the existing 60% lower bound. A relative upper cap (`MAX_THRESHOLD_NUMERATOR / MAX_THRESHOLD_DENOMINATOR`) is retained in the code but currently set to 100% (5/5 = n), so it is effectively disabled and only the absolute `GovernanceThreshold <= n` check binds. An 80%-floor cap was considered (to stop a minority that stops serving from locking the contract) but not adopted; the fraction is kept explicit so a stricter cap can be re-introduced later.
+- `ceil(0.6*n) <= GovernanceThreshold <= n` — the existing 60% lower bound. A relative upper cap is retained in the code but currently set to 100%
+(effectively disabled due to non-convergence of opinions on what would be a good upper bound).
 
 These are enforced at every mutation point (governance threshold updates, reconstruction threshold updates, participant add, participant kick) and re-validated once on migration, where a violation hard-blocks the upgrade (panic) — state that breaks the relation must be corrected via `vote_new_parameters` before upgrading. See `ThresholdParameters::validate_threshold` and `validate_governance_against_reconstruction` in `crates/contract/src/primitives/thresholds.rs`.
 
