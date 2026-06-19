@@ -221,9 +221,11 @@ impl RunningContractState {
         if domains.is_empty() {
             return Err(DomainError::AddDomainsMustAddAtLeastOneDomain.into());
         }
-        let num_participants = u64::try_from(self.parameters.participants().len())
-            .map_err(|e| ConversionError::DataConversion {
-                reason: format!("participant count does not fit in u64: {e}"),
+        let num_participants =
+            u64::try_from(self.parameters.participants().len()).map_err(|e| {
+                ConversionError::DataConversion {
+                    reason: format!("participant count does not fit in u64: {e}"),
+                }
             })?;
         for domain in &domains {
             validate_domain_purpose(domain)?;
