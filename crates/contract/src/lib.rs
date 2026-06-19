@@ -72,7 +72,7 @@ use near_mpc_contract_interface::types::{
 use near_mpc_contract_interface::{method_names, types::CKDRequestArgs};
 
 use dtos::{Curve, DomainConfig, DomainId, DomainPurpose, Protocol};
-use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash};
+use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, TeeVerifierCodeHash};
 use near_sdk::{
     AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue, env,
     log, near,
@@ -182,7 +182,7 @@ pub struct MpcContract {
     // TODO(#2937): Remove via state migration.
     metrics: Metrics,
     foreign_chains: Lazy<ForeignChainsMetadata>,
-    /// Account whose `verify_quote` the contract trusts for DCAP verification.
+    /// The verifier contract account the contract trusts for DCAP verification.
     /// Starts at the [`UNSET_TEE_VERIFIER_ACCOUNT`] placeholder until
     /// participants vote one in. Not yet used to dispatch verification (the
     /// async flow lands in a follow-up); stored and voted on here.
@@ -1685,21 +1685,21 @@ impl MpcContract {
         Ok(applied)
     }
 
-    /// Vote for `candidate_account_id` to become the trusted `tee-verifier`
-    /// account. `expected_code_hash` commits the voter to the code they audited.
-    /// When the proposal crosses the signing threshold, the trusted verifier
-    /// account is updated and all pending verifier-change votes are cleared.
+    /// Vote for a candidate account to become the trusted verifier contract
+    /// account, committing to the code hash the voter audited. When the proposal
+    /// crosses the signing threshold, the trusted verifier account is updated
+    /// and all pending verifier-change votes are cleared.
     #[handle_result]
     pub fn vote_tee_verifier_change(
         &mut self,
         candidate_account_id: AccountId,
-        expected_code_hash: CryptoHash,
+        expected_code_hash: TeeVerifierCodeHash,
     ) -> Result<(), Error> {
         log!(
             "vote_tee_verifier_change: signer={}, candidate={}, expected_code_hash={}",
             env::signer_account_id(),
             candidate_account_id,
-            hex::encode(expected_code_hash),
+            expected_code_hash,
         );
         self.voter_or_panic();
 
@@ -3950,8 +3950,10 @@ mod tests {
         let (mut contract, _participants, _first_participant_id) = setup_tee_test_contract(3, 2);
 
         // When voting for the placeholder account as the trusted verifier.
-        let result =
-            contract.vote_tee_verifier_change(initial_tee_verifier_account_id(None), [0; 32]);
+        let result = contract.vote_tee_verifier_change(
+            initial_tee_verifier_account_id(None),
+            TeeVerifierCodeHash::new([0; 32]),
+        );
 
         // Then the vote is rejected as the placeholder candidate.
         assert_eq!(result, Err(TeeError::VerifierCandidateIsPlaceholder.into()));
@@ -3973,7 +3975,7 @@ mod tests {
             .map(|(account_id, _, _)| account_id.clone())
             .collect();
         let candidate: AccountId = "verifier.near".parse().unwrap();
-        let code_hash = [7u8; 32];
+        let code_hash = TeeVerifierCodeHash::new([7u8; 32]);
 
         let vote_as = |contract: &mut MpcContract, account_id: &AccountId| {
             testing_env!(

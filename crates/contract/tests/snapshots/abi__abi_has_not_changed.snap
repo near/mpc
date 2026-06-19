@@ -1876,7 +1876,7 @@ expression: abi
       },
       {
         "name": "vote_tee_verifier_change",
-        "doc": " Vote for `candidate_account_id` to become the trusted `tee-verifier`\n account. `expected_code_hash` commits the voter to the code they audited.\n When the proposal crosses the signing threshold, the trusted verifier\n account is updated and all pending verifier-change votes are cleared.",
+        "doc": " Vote for a candidate account to become the trusted verifier contract\n account, committing to the code hash the voter audited. When the proposal\n crosses the signing threshold, the trusted verifier account is updated\n and all pending verifier-change votes are cleared.",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -1891,14 +1891,7 @@ expression: abi
             {
               "name": "expected_code_hash",
               "type_schema": {
-                "type": "array",
-                "items": {
-                  "type": "integer",
-                  "format": "uint8",
-                  "minimum": 0.0
-                },
-                "maxItems": 32,
-                "minItems": 32
+                "$ref": "#/definitions/TeeVerifierCodeHash"
               }
             }
           ]
@@ -4810,6 +4803,12 @@ expression: abi
               "type": "string"
             }
           }
+        },
+        "TeeVerifierCodeHash": {
+          "type": "string",
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-fA-F]+$"
         },
         "Threshold": {
           "description": "Cryptographic threshold (`k`) for a distributed key: the minimum number of participants that must collaborate to produce a signature.",

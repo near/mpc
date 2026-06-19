@@ -200,6 +200,14 @@ define_hash!(
 );
 
 define_hash!(
+    /// Wasm code hash of the trusted `tee-verifier` contract. Voted on by
+    /// participants, each committing to the code they audited, before the
+    /// verifier account is trusted for DCAP verification.
+    TeeVerifierCodeHash,
+    32
+);
+
+define_hash!(
     /// A SHA-384 digest used for TDX measurements (MRTD, RTMRs, event digests).
     Sha384Digest,
     48
