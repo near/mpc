@@ -5,13 +5,17 @@ license = { workspace = true }
 edition = { workspace = true }
 
 [features]
-borsh-schema = ["borsh/unstable__schema"]
+borsh-schema = ["borsh/unstable__schema", "tee-verifier-interface/borsh-schema"]
 dstack-conversions = ["dep:dstack-sdk-types"]
 test-utils = []
+# Pulls in `dcap-qvl` for full local DCAP + post-DCAP verification. Meant for
+# off-chain callers; `mpc-contract` enables it today.
+# TODO(#3264): contract drops this once DCAP moves to the verifier contract.
+local-verify = ["dep:dcap-qvl", "dep:tee-verifier-conversions"]
 
 [dependencies]
 borsh = { workspace = true }
-dcap-qvl = { workspace = true }
+dcap-qvl = { workspace = true, optional = true }
 derive_more = { workspace = true }
 dstack-sdk-types = { workspace = true, optional = true }
 hex = { workspace = true }
@@ -19,10 +23,17 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
 sha2 = { workspace = true }
+tee-verifier-conversions = { workspace = true, optional = true }
+tee-verifier-interface = { workspace = true, features = ["serde"] }
 thiserror = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
+attestation = { path = ".", features = [
+    "local-verify",
+    "test-utils",
+    "dstack-conversions",
+] }
 dstack-sdk-types = { workspace = true }
 rstest = { workspace = true }
 test-utils = { workspace = true }

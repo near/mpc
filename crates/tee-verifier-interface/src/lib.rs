@@ -3,21 +3,10 @@
 //! Field-for-field mirrors of the `dcap_qvl` input and output types,
 //! owned here so the Borsh wire layout is independent of upstream.
 //!
-//! This crate is the *only* DTO crate a consumer (`mpc-contract`, future
-//! Proximity / Defuse contracts) needs in order to talk to the verifier —
-//! without re-linking the `dcap-qvl` / `ring` / `webpki` / `x509-cert`
-//! closure into its own WASM. The crate is `no_std` and has no
-//! `dcap-qvl` dependency; the `From<dcap_qvl::...>` conversions live in
-//! the `tee-verifier` contract crate, the only crate that depends on
-//! both.
-//!
-//! Borsh-only on purpose. The verifier is reached only over a cross-contract
-//! call (Borsh ABI), so there is no JSON wire and serde would just add
-//! dependencies. The payload is mostly binary anyway (a multi-KB quote
-//! plus collateral), which Borsh sends as raw bytes where JSON would inflate
-//! it into integer arrays. Byte fields stay plain `Vec<u8>` / arrays rather
-//! than serde/hex wrappers, which also keeps the layout a field-for-field
-//! Borsh mirror of `dcap_qvl`.
+//! It is the only DTO crate a consumer (`mpc-contract` and future external
+//! contracts) needs to talk to the verifier, without linking `dcap-qvl` into
+//! its own WASM. `no_std`, no `dcap-qvl` dependency; the `dcap_qvl` conversions
+//! live in `tee-verifier-conversions`.
 
 #![no_std]
 
@@ -43,6 +32,11 @@ use borsh::{BorshDeserialize, BorshSerialize};
     derive_more::Into,
 )]
 #[cfg_attr(feature = "borsh-schema", derive(borsh::BorshSchema))]
+// The off-by-default `serde` feature is for off-chain callers that embed the
+// verifier *input* types (`QuoteBytes`, `Collateral`) in serde structs. The
+// Borsh cross-contract ABI never enables it; the report/output types stay
+// Borsh-only.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct QuoteBytes(pub Vec<u8>);
 
 /// Quote collateral, mirroring `dcap_qvl::QuoteCollateralV3`.
@@ -51,6 +45,9 @@ pub struct QuoteBytes(pub Vec<u8>);
 /// encoding of `QuoteCollateralV3`.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "borsh-schema", derive(borsh::BorshSchema))]
+// See the note on [`QuoteBytes`]: the off-by-default `serde` feature is for
+// off-chain callers only and covers just the verifier input types.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Collateral {
     pub pck_crl_issuer_chain: String,
     pub root_ca_crl: Vec<u8>,

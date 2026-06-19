@@ -35,6 +35,7 @@ test-utils = ["near-sdk/unit-testing"]
 borsh = { workspace = true }
 dcap-qvl = { workspace = true }
 near-sdk = { workspace = true }
+tee-verifier-conversions = { workspace = true }
 tee-verifier-interface = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
@@ -42,7 +43,6 @@ getrandom = { workspace = true, features = ["custom"] }
 
 [dev-dependencies]
 hex = { workspace = true }
-rstest = { workspace = true }
 tee-verifier = { path = ".", features = ["test-utils"] }
 test-utils = { workspace = true }
 

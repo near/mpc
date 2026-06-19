@@ -74,7 +74,7 @@ pub fn verify_at_timestamp(
     let AcceptedAttestation {
         attestation: verified_attestation,
         advisory_ids,
-    } = attestation.verify(
+    } = attestation.verify_locally(
         report_data.into(),
         timestamp_seconds,
         &cli.allowed_image_hashes,

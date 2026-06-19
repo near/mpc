@@ -65,9 +65,10 @@ pub fn collateral() -> Value {
 }
 
 pub fn quote() -> QuoteBytes {
-    let quote_collateral_json_string = include_str!("../assets/quote.json");
-    serde_json::from_str(quote_collateral_json_string)
-        .expect("Quote collateral file is a valid json.")
+    let quote_json_string = include_str!("../assets/quote.json");
+    let bytes: Vec<u8> =
+        serde_json::from_str(quote_json_string).expect("Quote file is a valid json byte array.");
+    QuoteBytes::from(bytes)
 }
 
 pub fn p2p_tls_key() -> [u8; 32] {
@@ -98,7 +99,8 @@ pub fn near_account_key() -> near_sdk::PublicKey {
 pub fn mock_dstack_attestation() -> Attestation {
     let quote = quote();
     let collateral_json_string = include_str!("../assets/collateral.json");
-    let collateral = serde_json::from_str(collateral_json_string).unwrap();
+    let collateral = mpc_attestation::collateral::collateral_from_str(collateral_json_string)
+        .expect("collateral.json is valid collateral");
 
     let tcb_info: TcbInfo = serde_json::from_str(TEST_TCB_INFO_STRING).unwrap();
 
