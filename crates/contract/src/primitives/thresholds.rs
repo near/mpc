@@ -20,7 +20,7 @@ pub(crate) fn governance_threshold_lower_relative_bound(n: u64) -> u64 {
 /// Currently set to 100% of participants but would be a discussion subject
 /// to drop this upper bound down not to have problems with smart contract
 /// being locked if t = n and if an operator stops voting
-pub(crate) fn governance_threshold_upper_bound(n: u64) -> u64 {
+pub(crate) fn governance_threshold_upper_relative_bound(n: u64) -> u64 {
     n
 }
 
