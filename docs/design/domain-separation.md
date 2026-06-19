@@ -348,12 +348,10 @@ pub fn validate_governance(governance: &GovernanceBody) -> Result<(), Error> {
     if t < min_relative {
         return Err(Error::GovernanceThresholdBelowMinimumRelative);
     }
-    // Governance relative upper cap, expressed as a fraction of n. Currently set to
-    // 100% (5/5 = n) — effectively disabled — so it never binds below the absolute
-    // `t <= n` check above. Kept as an explicit fraction (clamped up to the 60% lower
-    // bound so the window is never empty) so a stricter cap can be re-introduced later.
-    // See §7.1.
-    let max_relative = (5 * n / 5).max(min_relative);
+    // Currently, the governance relative upper cap is set to 100% but could and should
+    // be lowered to prevent getting the smart contract locked when a participant stops
+    // suddenly voting
+    let max_relative = n;
     if t > max_relative {
         return Err(Error::GovernanceThresholdAboveMaximumRelative);
     }
