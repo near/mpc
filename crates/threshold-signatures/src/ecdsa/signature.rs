@@ -68,7 +68,7 @@ mod test {
     use sha2::{Digest, Sha256, digest::FixedOutput};
 
     #[test]
-    fn test_verify() {
+    fn verify__should_accept_valid_signature() {
         let mut rng = MockCryptoRng::seed_from_u64(42);
         let msg = b"Hello from Near";
         let mut hasher = Sha256::new();
