@@ -237,9 +237,11 @@ mod tests {
     use rand::SeedableRng;
     use rand::rngs::StdRng;
 
+    const CONFIGURED_FUNDER: &str = "funder.near";
+
     fn dummy_funding_account() -> NearAccount {
         NearAccount {
-            account_id: "funder.near".parse().unwrap(),
+            account_id: CONFIGURED_FUNDER.parse().unwrap(),
             access_keys: vec![SigningKey::generate(&mut StdRng::seed_from_u64(42))],
             kind: NearAccountKind::FundingAccount,
         }

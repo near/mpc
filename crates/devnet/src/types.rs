@@ -336,19 +336,22 @@ infra_ops_path: /tmp/infra-ops
     #[test]
     fn config__should_parse_localnet_chain_id() {
         // Given
-        let yaml = "\
+        let chain_id = crate::constants::LOCALNET_CHAIN_ID;
+        let yaml = format!(
+            "\
 rpcs:
   - url: http://localhost:3030
     rate_limit: 5
     max_concurrency: 30
 infra_ops_path: /tmp/infra-ops
-chain_id: mpc-localnet
-";
+chain_id: {chain_id}
+"
+        );
 
         // When
-        let config: Config = serde_yaml::from_str(yaml).unwrap();
+        let config: Config = serde_yaml::from_str(&yaml).unwrap();
 
         // Then
-        assert_eq!(config.chain_id.as_deref(), Some("mpc-localnet"));
+        assert_eq!(config.chain_id.as_deref(), Some(chain_id));
     }
 }

@@ -695,15 +695,19 @@ mod tests {
     use rand::SeedableRng;
     use rand::rngs::StdRng;
 
-    /// The localnet master must match `deployment/localnet/validator_key.json`, since its key
-    /// controls the genesis-funded `test.near` account used for faucet-free funding.
+    const CONFIGURED_FUNDER: &str = "funder.near";
+    /// Public key matching the secret key in `deployment/localnet/validator_key.json`.
+    const LOCALNET_MASTER_PUBLIC_KEY: &str = "ed25519:7E9jtdHWcn4eVZQPiHMCUMVVnMEvGeSG3HPVasisWooU";
+
+    /// The localnet master must match [`LOCALNET_VALIDATOR_KEY_PATH`], since its key controls the
+    /// genesis-funded master account used for faucet-free funding.
     #[test]
     fn localnet_genesis_master__should_load_test_near_with_genesis_key() {
         // Given / When
         let master = localnet_genesis_master();
 
         // Then
-        assert_eq!(master.account_id.as_str(), "test.near");
+        assert_eq!(master.account_id.as_str(), LOCALNET_MASTER_ACCOUNT_ID);
         let NearAccountKind::FundingAccount = master.kind else {
             panic!("expected FundingAccount, got {:?}", master.kind);
         };
@@ -711,10 +715,7 @@ mod tests {
             "ed25519:{}",
             bs58::encode(master.access_keys[0].verifying_key().as_bytes()).into_string()
         );
-        assert_eq!(
-            public_key,
-            "ed25519:7E9jtdHWcn4eVZQPiHMCUMVVnMEvGeSG3HPVasisWooU"
-        );
+        assert_eq!(public_key, LOCALNET_MASTER_PUBLIC_KEY);
     }
 
     #[test]
@@ -726,7 +727,10 @@ mod tests {
         let resolved = resolve_funding_account_inner(configured, true);
 
         // Then
-        assert_eq!(resolved.unwrap().account_id.as_str(), "test.near");
+        assert_eq!(
+            resolved.unwrap().account_id.as_str(),
+            LOCALNET_MASTER_ACCOUNT_ID
+        );
     }
 
     #[test]
@@ -745,7 +749,7 @@ mod tests {
     fn resolve_funding_account__should_prefer_configured_account() {
         // Given
         let configured = NearAccount {
-            account_id: "funder.near".parse().unwrap(),
+            account_id: CONFIGURED_FUNDER.parse().unwrap(),
             access_keys: vec![SigningKey::generate(&mut StdRng::seed_from_u64(42))],
             kind: NearAccountKind::FundingAccount,
         };
@@ -754,6 +758,6 @@ mod tests {
         let resolved = resolve_funding_account_inner(Some(&configured), true);
 
         // Then
-        assert_eq!(resolved.unwrap().account_id.as_str(), "funder.near");
+        assert_eq!(resolved.unwrap().account_id.as_str(), CONFIGURED_FUNDER);
     }
 }

@@ -137,7 +137,7 @@ Nomad server UI shows up. Accessing the UI will require a password, which can be
 found in the "Nomad MPC UI" entry in the company's password manager. We can then
 deploy the MPC nodes:
 
-In addition, You can find the VMs created in GCP under [this link](<https://console.cloud.google.com/compute/instances?referrer=search&inv=1&invt=Ab256A&project=nearone-mpc&pli=1&pageState=(%22instances%22:(%22s%22:%5B(%22i%22:%22creationTimestamp%22,%22s%22:%220%22),(%22i%22:%22name%22,%22s%22:%220%22)%5D,%22r%22:50))>).
+In addition, you can find the VMs created in GCP under [this link](<https://console.cloud.google.com/compute/instances?referrer=search&inv=1&invt=Ab256A&project=nearone-mpc&pli=1&pageState=(%22instances%22:(%22s%22:%5B(%22i%22:%22creationTimestamp%22,%22s%22:%220%22),(%22i%22:%22name%22,%22s%22:%220%22)%5D,%22r%22:50))>).
 
 ```shell
 mpc-devnet mpc $MPC_NETWORK_NAME deploy-nomad
@@ -256,7 +256,7 @@ will expand the current setup to add any new resources, for example:
 mpc-devnet mpc $MPC_NETWORK_NAME update --num-participants 3
 ```
 
-**Note**: that it is recommended to create all the participants that we're
+**Note:** it is recommended to create all the participants that we're
 going to need upfront, instead of adding one later. The contract can be
 initialized with fewer participants and then new participants can join
 later, but creating all the machines upfront will save time.
