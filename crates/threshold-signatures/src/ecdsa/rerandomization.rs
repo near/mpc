@@ -73,7 +73,7 @@ impl RerandomizationArguments {
 
         // concatenate all the bytes
         let mut concatenation = Vec::new();
-        // 1 byte counter, used in the unlikely case that the hash result is 0
+        // First byte is a counter (for the unlikely case the derived scalar is 0); the second byte is a fixed tag.
         concatenation.extend_from_slice(&[0u8, 1]);
         concatenation.extend_from_slice(encoded_pk);
         concatenation.extend_from_slice(encoded_tweak);
