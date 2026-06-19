@@ -231,8 +231,13 @@ fn read_asset(path: &Path) -> String {
 fn rebind_neard_config(config: &str) -> String {
     let mut value: serde_json::Value =
         serde_json::from_str(config).expect("localnet config.json should be valid JSON");
-    value["rpc"]["addr"] = serde_json::json!("0.0.0.0:3030");
-    value["network"]["addr"] = serde_json::json!("0.0.0.0:24566");
+    for (section, addr) in [("rpc", "0.0.0.0:3030"), ("network", "0.0.0.0:24566")] {
+        let section = value
+            .get_mut(section)
+            .and_then(serde_json::Value::as_object_mut)
+            .unwrap_or_else(|| panic!("localnet config.json should have a `{section}` object"));
+        section.insert("addr".to_string(), serde_json::json!(addr));
+    }
     serde_json::to_string_pretty(&value).unwrap()
 }
 
@@ -427,15 +432,12 @@ impl MpcTerraformDeployChainCmd {
         let mut setup = OperatingDevnetSetup::load_offline(config.rpc);
         let mpc_setup = setup
             .mpc_setups
-            .get_mut(name)
+            .get(name)
             .expect(&format!("MPC network {} does not exist", name));
         let nomad_server_url = mpc_setup
             .nomad_server_url
             .clone()
             .expect("Nomad server URL is not set; run deploy-infra first");
-        // Record the image so deploy-nomad can reuse it (the same apply reconciles the validator
-        // job, so a different tag there would silently re-image it). Persisted on drop.
-        mpc_setup.neard_docker_image = Some(self.neard_docker_image.clone());
 
         let terraform_vars_file = export_terraform_chain_vars(name).await;
         let infra_ops_path = &config.infra_ops_path;
@@ -489,6 +491,14 @@ impl MpcTerraformDeployChainCmd {
             .current_dir(&infra_dir)
             .env("NOMAD_ADDR", &nomad_server_url)
             .print_and_run();
+
+        // Record the image only after a successful apply (terraform failure exits before here, and
+        // the re-run guard panics before here), so deploy-nomad reuses exactly what was deployed.
+        setup
+            .mpc_setups
+            .get_mut(name)
+            .expect(&format!("MPC network {} does not exist", name))
+            .neard_docker_image = Some(self.neard_docker_image.clone());
     }
 }
 
@@ -614,9 +624,11 @@ impl CommandExt for std::process::Command {
         println!("Running command: {:?}", self);
         let status = self.status().expect("Failed to execute command");
         if !status.success() {
-            let code = status.code().unwrap_or(1);
-            eprintln!("terraform exited with status {code}; aborting.");
-            std::process::exit(code);
+            panic!(
+                "Command failed with exit code {}: {:?}",
+                status.code().unwrap(),
+                self
+            );
         }
     }
 }

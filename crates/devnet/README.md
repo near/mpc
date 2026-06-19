@@ -23,7 +23,7 @@ gcloud auth login
 gcloud auth application-default login
 ```
 
-You can check you are correctly autenticated by using:
+You can check you are correctly authenticated by using:
 
 ```shell
 gcloud auth list
@@ -103,7 +103,7 @@ fund any necessary accounts using as many Testnet faucets as needed.
 First, create an MPC network. Pick a name; here I'll use
 "MPC_NETWORK_NAME=yourusername-test", but **ensure that your name is globally unique
 within the team**, so include your username in there. It must also be short (less than 15 chars) else
-yo might get errors when creating and funding accounts.
+you might get errors when creating and funding accounts.
 
 ```shell
 export MPC_NETWORK_NAME=yourusername-test
