@@ -17,7 +17,9 @@
 
 use core::ops::{Add, Mul, Sub};
 
-use frost_core::{Challenge, Element, Error, Field, FieldError, Group, GroupError, VerifyingKey};
+use frost_core::{
+    Challenge, Element, Error, Field, FieldError, Group, GroupError, Signature, VerifyingKey,
+};
 use rand_core::{CryptoRng, RngCore};
 
 use crate::crypto::cheetah_tip5::belt::{Belt, PRIME};
@@ -336,6 +338,32 @@ impl ScalarSerializationFormat for CheetahTip5 {
 }
 
 impl crate::Ciphersuite for CheetahTip5 {}
+
+/// Serialize a Cheetah verifying key to its 97-byte chain wire form
+/// (`0x01 ‖ y-limbs ‖ x-limbs`), matching rose-ts `publicKeyToBeBytes`. This is the
+/// opaque bytes carried by `dtos::PublicKey::Cheetah`.
+pub fn verifying_key_to_bytes(key: &VerifyingKey<CheetahTip5>) -> [u8; 97] {
+    point_to_bytes(&key.to_element().0)
+}
+
+/// Convert a FROST signature `(R, z)` into the Nockchain chain signature `c ‖ s`
+/// (two 32-byte little-endian scalars), where `c = challenge(R, P, m)` and `s = z`.
+/// This is the `(c, s)` the contract relays and the Nockchain verifier accepts.
+pub fn chain_signature_bytes(
+    signature: &Signature<CheetahTip5>,
+    verifying_key: &VerifyingKey<CheetahTip5>,
+    message: &[u8],
+) -> Result<[u8; 64], Error<CheetahTip5>> {
+    let c = <CheetahTip5 as frost_core::Ciphersuite>::challenge(
+        signature.R(),
+        verifying_key,
+        message,
+    )?;
+    let mut out = [0u8; 64];
+    out[..32].copy_from_slice(&<CheetahScalarField as Field>::serialize(&c.to_scalar()));
+    out[32..].copy_from_slice(&<CheetahScalarField as Field>::serialize(signature.z()));
+    Ok(out)
+}
 
 #[cfg(test)]
 #[allow(non_snake_case)] // repo test convention: <system_under_test>__should_<assertion>

@@ -10,6 +10,7 @@ use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
 use crate::providers::ckd::CKDProvider;
 use crate::providers::ecdsa::EcdsaTaskId;
+use crate::providers::cheetah::CheetahSignatureProvider;
 use crate::providers::eddsa::EddsaSignatureProvider;
 use crate::providers::robust_ecdsa::{RobustEcdsaSignatureProvider, RobustEcdsaTaskId};
 use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;
@@ -55,6 +56,7 @@ pub struct MpcClient<ForeignChainPolicyReader> {
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
     robust_ecdsa_signature_provider: Arc<RobustEcdsaSignatureProvider>,
     eddsa_signature_provider: Arc<EddsaSignatureProvider>,
+    cheetah_signature_provider: Arc<CheetahSignatureProvider>,
     ckd_provider: Arc<CKDProvider>,
     verify_foreign_tx_provider: Arc<VerifyForeignTxProvider<ForeignChainPolicyReader>>,
     domain_to_protocol: HashMap<DomainId, Protocol>,
@@ -81,6 +83,7 @@ fn is_heavy_generation_task(task_id: &MpcTaskId) -> bool {
             | RobustEcdsaTaskId::Signature { .. } => false,
         },
         MpcTaskId::EddsaTaskId(_)
+        | MpcTaskId::CheetahTaskId(_)
         | MpcTaskId::CKDTaskId(_)
         | MpcTaskId::VerifyForeignTxTaskId(_) => false,
     }
@@ -100,6 +103,7 @@ where
         ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
         robust_ecdsa_signature_provider: Arc<RobustEcdsaSignatureProvider>,
         eddsa_signature_provider: Arc<EddsaSignatureProvider>,
+        cheetah_signature_provider: Arc<CheetahSignatureProvider>,
         ckd_provider: Arc<CKDProvider>,
         verify_foreign_tx_provider: Arc<VerifyForeignTxProvider<ForeignChainPolicyReader>>,
         domain_to_protocol: HashMap<DomainId, Protocol>,
@@ -114,6 +118,7 @@ where
             ecdsa_signature_provider,
             robust_ecdsa_signature_provider,
             eddsa_signature_provider,
+            cheetah_signature_provider,
             ckd_provider,
             verify_foreign_tx_provider,
             domain_to_protocol,
@@ -403,6 +408,23 @@ where
 
                                         Ok(response)
                                     }
+                                    Some(Protocol::FrostCheetah) => {
+                                        let (signature, public_key) = timeout(
+                                            Duration::from_secs(this.config.signature.timeout_sec),
+                                            this.cheetah_signature_provider
+                                                .clone()
+                                                .make_signature(signature_attempt.request.id),
+                                        )
+                                        .await??;
+
+                                        let response = ChainSignatureRespondArgs::new_cheetah(
+                                            &signature_attempt.request,
+                                            &signature,
+                                            &public_key,
+                                        )?;
+
+                                        Ok(response)
+                                    }
                                     Some(Protocol::ConfidentialKeyDerivation) => {
                                         Err(anyhow::anyhow!(
                                             "Incorrect protocol for domain: {:?}",
@@ -509,7 +531,8 @@ where
                                     }
                                     Some(Protocol::CaitSith)
                                     | Some(Protocol::DamgardEtAl)
-                                    | Some(Protocol::Frost) => Err(anyhow::anyhow!(
+                                    | Some(Protocol::Frost)
+                                    | Some(Protocol::FrostCheetah) => Err(anyhow::anyhow!(
                                         "Signature scheme is not allowed for domain: {:?}",
                                         ckd_attempt.request.domain_id.clone()
                                     )),
@@ -601,7 +624,8 @@ where
                                     }
                                     Some(Protocol::ConfidentialKeyDerivation)
                                     | Some(Protocol::DamgardEtAl)
-                                    | Some(Protocol::Frost) => Err(anyhow::anyhow!(
+                                    | Some(Protocol::Frost)
+                                    | Some(Protocol::FrostCheetah) => Err(anyhow::anyhow!(
                                         "Signature scheme is not allowed for domain: {:?}",
                                         verify_foreign_tx_attempt.request.domain_id.clone()
                                     )),
@@ -683,6 +707,12 @@ where
             }
             MpcTaskId::EddsaTaskId(_) => {
                 self.eddsa_signature_provider
+                    .clone()
+                    .process_channel(channel)
+                    .await?
+            }
+            MpcTaskId::CheetahTaskId(_) => {
+                self.cheetah_signature_provider
                     .clone()
                     .process_channel(channel)
                     .await?

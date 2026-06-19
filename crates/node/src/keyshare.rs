@@ -9,7 +9,7 @@ pub mod test_utils;
 use anyhow::Context;
 use mpc_primitives::{EpochId, KeyEventId};
 use near_mpc_contract_interface::types::{
-    Bls12381G2PublicKey, Ed25519PublicKey, PublicKey, Secp256k1PublicKey,
+    Bls12381G2PublicKey, CheetahPublicKey, Ed25519PublicKey, PublicKey, Secp256k1PublicKey,
 };
 use near_mpc_crypto_types::{KeyForDomain, Keyset};
 use permanent::{PermanentKeyStorage, PermanentKeyStorageBackend, PermanentKeyshareData};
@@ -23,6 +23,7 @@ pub enum KeyshareData {
     Secp256k1(threshold_signatures::ecdsa::KeygenOutput),
     Ed25519(threshold_signatures::frost::eddsa::KeygenOutput),
     Bls12381(threshold_signatures::confidential_key_derivation::KeygenOutput),
+    Cheetah(threshold_signatures::frost::cheetah::KeygenOutput),
 }
 
 /// A single keyshare, corresponding to one epoch, one domain, one attempt.
@@ -43,6 +44,9 @@ impl Keyshare {
             ))),
             KeyshareData::Bls12381(data) => Ok(PublicKey::Bls12381(Bls12381G2PublicKey::from(
                 &data.public_key.to_element(),
+            ))),
+            KeyshareData::Cheetah(data) => Ok(PublicKey::Cheetah(CheetahPublicKey::from(
+                threshold_signatures::frost::cheetah::verifying_key_to_bytes(&data.public_key),
             ))),
         }
     }

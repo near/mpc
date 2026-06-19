@@ -35,9 +35,10 @@ pub mod types {
 
     // Re-export crypto types from near-mpc-crypto-types
     pub use near_mpc_crypto_types::{
-        Bls12381G1PublicKey, Bls12381G2PublicKey, CryptoConversionError, Ed25519PublicKey,
-        Ed25519Signature, K256AffinePoint, K256Scalar, K256Signature, ParsePublicKeyError,
-        PublicKey, PublicKeyExtended, Secp256k1PublicKey, SignatureResponse,
+        Bls12381G1PublicKey, Bls12381G2PublicKey, CheetahPublicKey, CheetahSignature,
+        CryptoConversionError, Ed25519PublicKey, Ed25519Signature, K256AffinePoint, K256Scalar,
+        K256Signature, ParsePublicKeyError, PublicKey, PublicKeyExtended, Secp256k1PublicKey,
+        SignatureResponse,
     };
 
     mod attestation;
