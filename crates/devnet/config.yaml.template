@@ -5,6 +5,10 @@ rpcs:
 
 infra_ops_path: /replace_me/infra-ops
 
+# Chain the RPCs talk to. Omit (or `testnet`) for testnet. Set to `mpc-localnet` to deploy against a
+# localnet chain (see the "Deploying against a localnet chain" section of the README).
+# chain_id: mpc-localnet
+
 # Optional own funding account
 # funding_account:
 # account_id: your-funding-account.testnet

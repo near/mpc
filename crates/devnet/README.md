@@ -23,6 +23,12 @@ gcloud auth login
 gcloud auth application-default login
 ```
 
+You can check you are correctly authenticated by using:
+
+```shell
+gcloud auth list
+```
+
 ## Installation
 
 With the application credentials in place, the next step is to install the CLI.
@@ -41,15 +47,15 @@ Once completed, you should have the `mpc-devnet` command available in your shell
 Before starting, copy `config.yaml.template` to `config.yaml` and
 edit it:
 
-* Add any number of RPC nodes; configuring the QPS rate limit it allows,
+- Add any number of RPC nodes; configuring the QPS rate limit it allows,
   as well as the maximum allowed number of simultaneous outstanding
   requests.
-  * The CLI will utilize all available RPC nodes by aggregating their
+  - The CLI will utilize all available RPC nodes by aggregating their
     available throughput.
-* Set the directory of your local clone of the infra-ops repository.
+- Set the directory of your local clone of the infra-ops repository.
   This is used for Terraform deployment of the test cluster. To avoid any errors, it is advised to ensure the local repo is up to date.
-* Configure `rpcs` to point to your RPC endpoint. You can find NEAR testnet RPC providers at [docs](https://docs.near.org/api/rpc/providers#testnet). Use the URL listed under "Endpoint Root" for the url field.
-Here's an example configuration:
+- Configure `rpcs` to point to your RPC endpoint. You can find NEAR testnet RPC providers at [docs](https://docs.near.org/api/rpc/providers#testnet). Use the URL listed under "Endpoint Root" for the url field.
+  Here's an example configuration:
 
 ```yaml
 rpcs:
@@ -64,13 +70,13 @@ The optional `api_key` field is sent as `Authorization: Bearer <value>` on
 every request to the corresponding endpoint. Omit it to use the public
 endpoint unauthenticated.
 
-* (Optional) Configure a `funding_account` to use a specific account for funding operations:
+- (Optional) Configure a `funding_account` to use a specific account for funding operations:
 
   ```yaml
   funding_account:
     account_id: your-account.testnet
     access_keys:
-      - ed25519:xxxxxx  # Your private key
+      - ed25519:xxxxxx # Your private key
     kind: FundingAccount
   ```
 
@@ -96,7 +102,8 @@ fund any necessary accounts using as many Testnet faucets as needed.
 
 First, create an MPC network. Pick a name; here I'll use
 "MPC_NETWORK_NAME=yourusername-test", but **ensure that your name is globally unique
-within the team**, so include your username in there.
+within the team**, so include your username in there. It must also be short (less than 15 chars) else
+you might get errors when creating and funding accounts.
 
 ```shell
 export MPC_NETWORK_NAME=yourusername-test
@@ -130,7 +137,7 @@ Nomad server UI shows up. Accessing the UI will require a password, which can be
 found in the "Nomad MPC UI" entry in the company's password manager. We can then
 deploy the MPC nodes:
 
-In addition, You can find the VMs created in GCP under [this link](https://console.cloud.google.com/compute/instances?referrer=search&inv=1&invt=Ab256A&project=nearone-mpc&pli=1&pageState=(%22instances%22:(%22s%22:%5B(%22i%22:%22creationTimestamp%22,%22s%22:%220%22),(%22i%22:%22name%22,%22s%22:%220%22)%5D,%22r%22:50))).
+In addition, you can find the VMs created in GCP under [this link](<https://console.cloud.google.com/compute/instances?referrer=search&inv=1&invt=Ab256A&project=nearone-mpc&pli=1&pageState=(%22instances%22:(%22s%22:%5B(%22i%22:%22creationTimestamp%22,%22s%22:%220%22),(%22i%22:%22name%22,%22s%22:%220%22)%5D,%22r%22:50))>).
 
 ```shell
 mpc-devnet mpc $MPC_NETWORK_NAME deploy-nomad
@@ -249,7 +256,7 @@ will expand the current setup to add any new resources, for example:
 mpc-devnet mpc $MPC_NETWORK_NAME update --num-participants 3
 ```
 
-Note that it is recommended to create all the participants that we're
+**Note:** it is recommended to create all the participants that we're
 going to need upfront, instead of adding one later. The contract can be
 initialized with fewer participants and then new participants can join
 later, but creating all the machines upfront will save time.
@@ -391,7 +398,7 @@ specified, we will send one sign call per transaction. This parameter is useful
 if we want to send a high amount of load.
 
 The `--domain-id` parameter specifies which domain to use for the signature
-requests. This parameter *may* be omitted to test compatibility with the legacy API and *will* be ignored if `--parallel-sign-calls-per-domain` is set.
+requests. This parameter _may_ be omitted to test compatibility with the legacy API and _will_ be ignored if `--parallel-sign-calls-per-domain` is set.
 
 The output should be something like the following:
 
@@ -423,3 +430,86 @@ running.
 ```
 
 Run `./scripts/loadtest-scenarios.sh --help` for the full list of options.
+
+## Deploying against a localnet chain
+
+By default a cluster runs against **testnet**, so every node first has to sync the testnet chain
+(roughly an hour, sometimes several) before it can do anything. For benchmarking you can instead run
+a **localnet** chain *inside the cluster*: a single `neard` validator on the base-infra machine
+produces blocks and the MPC nodes follow it. Nothing external needs syncing, so the cluster is ready
+almost immediately and the chain won't throttle the benchmark.
+
+Because the chain lives in the cluster, it has to exist before any on-chain work (creating accounts,
+deploying the contract). That reverses the usual order: bring up the cluster and validator first,
+then fund accounts and deploy the contract. The CLI sequences this for you — on localnet, `new` only
+records the network and a separate `deploy-chain` step starts the validator.
+
+The chain's genesis and keys are checked in under `deployment/localnet/` and shipped to the
+validator automatically, so you normally don't touch them. Edit them only to change the chain itself
+(e.g. genesis parameters); if you do, also rebuild the mpc-node image, which embeds the same
+`genesis.json` — the validator and the nodes must agree on it to peer.
+
+### Configure
+
+In `config.yaml`, set `chain_id: mpc-localnet`. Leave the RPC url as a placeholder for now; you fill
+it in once the validator is up (step 2). No `funding_account` is needed — on localnet the CLI funds
+everything from the chain's genesis account.
+
+```yaml
+chain_id: mpc-localnet
+rpcs:
+  - url: http://replace-me-after-deploy-infra:3030
+    rate_limit: 5
+    max_concurrency: 30
+infra_ops_path: /path/to/infra-ops
+```
+
+### Deploy
+
+Pick a globally-unique network name (see [Creating an MPC Network](#creating-an-mpc-network)):
+
+```shell
+export MPC_NETWORK_NAME=yourusername-test
+```
+
+1. Register the network. On localnet this does not fund anything yet:
+
+   ```shell
+   mpc-devnet mpc $MPC_NETWORK_NAME new --num-participants 2 --num-responding-access-keys 8
+   ```
+
+2. Provision the cluster (including the validator machine). This prints the validator's RPC URL;
+   copy it into `rpcs[0].url` in `config.yaml`:
+
+   ```shell
+   mpc-devnet mpc $MPC_NETWORK_NAME deploy-infra
+   ```
+
+3. Start the `neard` validator. Pass the `nearprotocol/nearcore` image tag whose version matches the
+   one the node embeds (the `nearcore` tag in the workspace `Cargo.toml`):
+
+   ```shell
+   mpc-devnet mpc $MPC_NETWORK_NAME deploy-chain --neard-docker-image nearprotocol/nearcore:2.12.0
+   ```
+
+4. Fund the participant accounts on the now-live chain:
+
+   ```shell
+   mpc-devnet mpc $MPC_NETWORK_NAME update
+   ```
+
+5. Deploy the contract. `--path` is required on localnet (there is no testnet contract to fetch):
+
+   ```shell
+   mpc-devnet mpc $MPC_NETWORK_NAME deploy-contract --path ../../target/near/mpc_contract/mpc_contract.wasm
+   ```
+
+6. Deploy the MPC node jobs. The validator image from step 3 is reused automatically:
+
+   ```shell
+   mpc-devnet mpc $MPC_NETWORK_NAME deploy-nomad --docker-image nearone/mpc-node:<tag>
+   ```
+
+From here, continue with the normal `add-keys`, `init-contract`, and `vote-add-domains` steps — with
+no sync wait. For the single-host equivalent (everything on one machine), see
+`scripts/launch-localnet.sh`.
