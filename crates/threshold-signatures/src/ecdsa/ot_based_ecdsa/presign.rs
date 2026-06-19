@@ -69,7 +69,7 @@ impl Eq for PresignOutput {}
 #[derive(Clone, Serialize, Deserialize, ZeroizeOnDrop)]
 pub struct RerandomizedPresignOutput {
     /// The rerandomized public nonce commitment.
-    #[zeroize[skip]]
+    #[zeroize(skip)]
     pub big_r: AffinePoint,
     /// Our rerandomized share of the nonce value.
     pub k: Scalar,
