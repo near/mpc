@@ -79,7 +79,7 @@ impl RerandomizationArguments {
         concatenation.extend_from_slice(encoded_tweak);
         concatenation.extend_from_slice(encoded_msg_hash);
         concatenation.extend_from_slice(encoded_big_r);
-        // Append each ParticipantId's
+        // Append each ParticipantId
         for participant in self.participants.participants() {
             concatenation.extend_from_slice(&participant.bytes());
         }
