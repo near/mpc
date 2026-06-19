@@ -161,10 +161,12 @@ impl TeeState {
         .into();
 
         let accepted_measurements = self.get_accepted_measurements();
+        // TODO(#3264): run DCAP in the verifier contract (Promise + callback) and
+        // do the post-DCAP checks here, instead of verifying locally in-WASM.
         let AcceptedAttestation {
             attestation: verified_attestation,
             advisory_ids,
-        } = attestation.verify(
+        } = attestation.verify_locally(
             expected_report_data.into(),
             Self::current_time_seconds(),
             &self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration),
