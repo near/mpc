@@ -346,7 +346,7 @@ async fn test_event_subscriber_receiver_error_if_non_private_call() {
 
 /// Two `private_set` txs are submitted sequentially, with a `view_value` sync
 /// between them to force the receipts into distinct blocks.
-/// If the buffer fits both updates, we expect to receive both blcok events.
+/// If the buffer fits both updates, we expect to receive both block events.
 /// If the buffer does not fit both updates, we expect the latest updates to be dropped.
 #[rstest]
 #[case::buffer_fits_both_updates(2, 2)]
