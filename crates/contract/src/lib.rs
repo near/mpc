@@ -78,7 +78,7 @@ use near_sdk::{
 };
 use node_migrations::NodeMigrations;
 use primitives::{
-    domain::DomainRegistry,
+    domain::{DomainRegistry, max_reconstruction_threshold},
     key_state::{AuthenticatedParticipantId, EpochId, KeyEventId, Keyset},
     signature::{SignRequestArgs, SignatureRequest, YieldIndex},
     thresholds::{ProposedThresholdParameters, Threshold, ThresholdParameters},
@@ -1673,9 +1673,7 @@ impl MpcContract {
                 // keeps the existing per-domain thresholds). Otherwise we refuse and
                 // wait for manual intervention.
                 let max_reconstruction_threshold =
-                    crate::primitives::domain::max_reconstruction_threshold(
-                        running_state.domains.domains(),
-                    );
+                    max_reconstruction_threshold(running_state.domains.domains());
                 if let Err(err) = ThresholdParameters::validate_governance_against_reconstruction(
                     remaining as u64,
                     current_params.threshold(),
@@ -1933,7 +1931,7 @@ impl MpcContract {
         ThresholdParameters::validate_governance_against_reconstruction(
             num_participants,
             parameters.threshold(),
-            crate::primitives::domain::max_reconstruction_threshold(domains.domains()),
+            max_reconstruction_threshold(domains.domains()),
         )?;
 
         // Check that the domains match exactly those in the keyset.
