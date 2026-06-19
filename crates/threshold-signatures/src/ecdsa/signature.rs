@@ -54,6 +54,7 @@ impl Signature {
 pub type SignatureOption = Option<Signature>;
 
 #[cfg(test)]
+#[allow(non_snake_case)]
 mod test {
     use super::Signature;
     use crate::ecdsa::Scalar;
