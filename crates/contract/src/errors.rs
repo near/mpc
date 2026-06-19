@@ -178,13 +178,13 @@ pub enum InvalidThreshold {
     #[error("Threshold does not meet the minimum absolute requirement")]
     MinAbsRequirementFailed,
     #[error(
-        "Threshold does not meet the minimum relative requirement: require at least {required}, found {found}"
+        "GovernanceThreshold is below the minimum required relative to the participant count: require at least {required}, found {found}"
     )]
     MinRelRequirementFailed { required: u64, found: u64 },
     #[error("Threshold must not exceed number of participants: max {max}, found {found}")]
     MaxRequirementFailed { max: u64, found: u64 },
     #[error(
-        "GovernanceThreshold does not meet the maximum relative requirement: max {max}, found {found}"
+        "GovernanceThreshold exceeds the maximum allowed relative to the participant count: max {max}, found {found}"
     )]
     MaxRelRequirementFailed { max: u64, found: u64 },
     #[error(
