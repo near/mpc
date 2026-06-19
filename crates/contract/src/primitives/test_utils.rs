@@ -14,7 +14,7 @@ use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
     DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
 };
-use rand::{Rng, distributions::Uniform};
+use rand::{Rng, SeedableRng, distributions::Uniform, rngs::StdRng};
 use std::collections::BTreeMap;
 // Re-export for convenience
 
@@ -156,10 +156,11 @@ pub fn gen_threshold_params(max_n: usize) -> ThresholdParameters {
     // Lower bound is 3 (not 2) so the produced parameters are compatible with
     // every protocol — `DamgardEtAl` requires `n >= 2t - 1`, which forces
     // `n >= 3` even at the minimum `t = 2`.
-    let n: usize = rand::thread_rng().gen_range(3..max_n + 1);
+    let mut rng = StdRng::seed_from_u64(42);
+    let n: usize = rng.gen_range(3..max_n + 1);
     let k_min = governance_threshold_lower_bound(n as u64) as usize;
     let k_max = governance_threshold_upper_bound(n as u64) as usize;
-    let k = rand::thread_rng().gen_range(k_min..k_max + 1);
+    let k = rng.gen_range(k_min..k_max + 1);
     ThresholdParameters::new(gen_participants(n), Threshold::new(k as u64)).unwrap()
 }
 
