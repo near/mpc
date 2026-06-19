@@ -19,7 +19,7 @@ pub fn x_coordinate(point: &AffinePoint) -> Scalar {
 /// An ECDSA signature is usually two scalars.
 /// The first is derived from using the x-coordinate of an elliptic curve point (`big_r`),
 /// and the second is computed using the typical ecdsa signing equation.
-/// Deriving the x-coordination implies losing information about `big_r`, some variants
+/// Deriving the x-coordinate implies losing information about `big_r`, some variants
 /// may thus include an extra information to recover this point.
 ///
 /// This signature supports all variants by containing `big_r` entirely
