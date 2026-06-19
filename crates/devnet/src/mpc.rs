@@ -1,5 +1,5 @@
 #![allow(clippy::expect_fun_call)] // to reduce verbosity of expect calls
-use crate::account::{OperatingAccount, OperatingAccounts};
+use crate::account::{OperatingAccount, OperatingAccounts, resolve_funding_account};
 use crate::cli::{
     ListMpcCmd, MpcAddKeysCmd, MpcDeployContractCmd, MpcDescribeCmd, MpcInitContractCmd,
     MpcProposeUpdateContractCmd, MpcViewContractCmd, MpcVoteAddDomainsCmd, MpcVoteApprovedHashCmd,
@@ -119,7 +119,15 @@ impl NewMpcNetworkCmd {
             self.ssd,
         );
 
-        let mut setup = OperatingDevnetSetup::load(config.rpc).await;
+        let funding_account = resolve_funding_account(&config);
+        let is_localnet = config.is_localnet();
+        // On localnet the chain isn't up yet at creation time, so load without contacting it;
+        // funding (which needs the chain) is deferred to `update`.
+        let mut setup = if is_localnet {
+            OperatingDevnetSetup::load_offline(config.rpc)
+        } else {
+            OperatingDevnetSetup::load(config.rpc).await
+        };
         if setup.mpc_setups.contains_key(name) {
             panic!("MPC network {} already exists", name);
         }
@@ -134,13 +142,29 @@ impl NewMpcNetworkCmd {
                 desired_balance_per_responding_account: self.near_per_responding_account * ONE_NEAR,
                 nomad_server_url: None,
                 ssd: self.ssd,
+                desired_num_participants: self.num_participants,
+                neard_docker_image: None,
             });
+
+        // On localnet the chain runs inside the cluster, so it isn't up yet when the network is
+        // created. Defer funding: the operator brings up the chain (deploy-infra + deploy-chain),
+        // points config.yaml at the validator RPC, then funds with `update`.
+        if is_localnet {
+            println!(
+                "localnet: the chain is not up yet, so participant accounts are not funded now.\n\
+                 Next: `deploy-infra`, `deploy-chain`, set config.yaml `rpcs` to the printed \
+                 validator RPC, then `update` to fund the {} participants.",
+                self.num_participants
+            );
+            return;
+        }
+
         update_mpc_network(
             name,
             &mut setup.accounts,
             mpc_setup,
             self.num_participants,
-            config.funding_account,
+            funding_account,
         )
         .await;
     }
@@ -150,15 +174,22 @@ impl UpdateMpcNetworkCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
         println!("Going to update MPC network {}", name);
 
+        let funding_account = resolve_funding_account(&config);
         let mut setup = OperatingDevnetSetup::load(config.rpc).await;
         let mpc_setup = setup
             .mpc_setups
             .get_mut(name)
             .expect(&format!("MPC network {} does not exist", name));
 
-        let num_participants = self
-            .num_participants
-            .unwrap_or(mpc_setup.participants.len());
+        // Default to the intended count stored at creation, so a bare `update` funds the network up
+        // to the size requested by `new` (relevant on localnet, where `new` deferred funding).
+        let num_participants = self.num_participants.unwrap_or(
+            mpc_setup
+                .desired_num_participants
+                .max(mpc_setup.participants.len()),
+        );
+        mpc_setup.desired_num_participants =
+            mpc_setup.desired_num_participants.max(num_participants);
 
         if let Some(near_per_account) = self.near_per_account {
             mpc_setup.desired_balance_per_account = near_per_account * ONE_NEAR;
@@ -178,7 +209,7 @@ impl UpdateMpcNetworkCmd {
             &mut setup.accounts,
             mpc_setup,
             num_participants,
-            config.funding_account,
+            funding_account,
         )
         .await;
     }
@@ -247,9 +278,16 @@ impl MpcAddKeysCmd {
 
 impl MpcDeployContractCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
+        let funding_account = resolve_funding_account(&config);
         let (contract_data, contract_path) = match &self.path {
             Some(contract_path) => (std::fs::read(contract_path).unwrap(), contract_path.clone()),
             None => {
+                if config.is_localnet() {
+                    panic!(
+                        "On localnet there is no testnet contract to fetch; pass --path to a built \
+                         contract wasm (e.g. ../../target/near/mpc_contract/mpc_contract.wasm)."
+                    );
+                }
                 println!(
                     "fetching and deploying contract from testnet account {}",
                     TESTNET_CONTRACT_ACCOUNT_ID
@@ -300,7 +338,7 @@ impl MpcDeployContractCmd {
         let contract_account = fund_accounts(
             &mut setup.accounts,
             vec![contract_account_to_fund],
-            config.funding_account,
+            funding_account,
         )
         .await
         .into_iter()
@@ -443,6 +481,7 @@ fn get_voter_account_ids<'a>(
 impl MpcProposeUpdateContractCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
         println!("Going to propose update contract for MPC network {}", name);
+        let funding_account = resolve_funding_account(&config);
         let mut setup = OperatingDevnetSetup::load(config.rpc).await;
         let mpc_setup = setup
             .mpc_setups
@@ -460,12 +499,7 @@ impl MpcProposeUpdateContractCmd {
             proposer_account_id.clone(),
             mpc_setup.desired_balance_per_account + self.deposit_near * ONE_NEAR,
         );
-        fund_accounts(
-            &mut setup.accounts,
-            vec![account_to_fund],
-            config.funding_account,
-        )
-        .await;
+        fund_accounts(&mut setup.accounts, vec![account_to_fund], funding_account).await;
         let proposer = setup.accounts.account(proposer_account_id);
 
         let result = proposer
@@ -928,6 +962,37 @@ impl MpcDescribeCmd {
 mod tests {
     use super::*;
     use crate::types::RpcConfig;
+
+    /// On localnet there is no testnet contract to fetch, so deploy-contract without `--path` must
+    /// fail fast (before any RPC) rather than try to read `v1.signer-prod.testnet`.
+    #[tokio::test]
+    #[should_panic(expected = "--path")]
+    #[expect(non_snake_case)]
+    async fn deploy_contract__should_panic_without_path_on_localnet() {
+        // Given
+        let config = ParsedConfig {
+            rpc: Arc::new(
+                NearRpcClients::new(vec![RpcConfig {
+                    url: "http://localhost:3030".to_string(),
+                    rate_limit: 5,
+                    max_concurrency: 2,
+                    api_key: None,
+                }])
+                .await,
+            ),
+            infra_ops_path: "/tmp/infra-ops".into(),
+            funding_account: None,
+            chain_id: crate::constants::LOCALNET_CHAIN_ID.to_string(),
+        };
+
+        // When / Then
+        MpcDeployContractCmd {
+            path: None,
+            deposit_near: 20,
+        }
+        .run("bench", config)
+        .await;
+    }
 
     /// Exercises the upgraded RPC stack against the live testnet signer
     /// contract. `read_contract_state` deserializes the response and panics on
