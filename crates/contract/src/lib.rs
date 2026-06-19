@@ -5568,7 +5568,7 @@ mod tests {
         // to 4 participants would leave the GovernanceThreshold above the participant
         // count, breaking the threshold relation.
         let participants = gen_participants(PARTICIPANT_COUNT);
-        let parameters = ThresholdParameters::new(participants.clone(), Threshold::new(5)).unwrap();
+        let parameters = ThresholdParameters::new(participants.clone(), Threshold::new(PARTICIPANT_COUNT)).unwrap();
         let domain_id = DomainId::default();
         let domains = vec![DomainConfig {
             id: domain_id,
