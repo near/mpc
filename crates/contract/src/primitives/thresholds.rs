@@ -12,7 +12,7 @@ const MIN_THRESHOLD_ABSOLUTE: u64 = 2;
 
 /// Lower bound on the GovernanceThreshold for `n` participants: 60% rounded up.
 /// Single source of truth shared by validation and test fixtures.
-pub(crate) fn governance_threshold_lower_bound(n: u64) -> u64 {
+pub(crate) fn governance_threshold_lower_relative_bound(n: u64) -> u64 {
     3_u64.saturating_mul(n).div_ceil(5)
 }
 
