@@ -633,6 +633,9 @@ impl IntoInterfaceType<dtos::PublicKeyExtended> for &PublicKeyExtended {
             PublicKeyExtended::Bls12381 { public_key } => dtos::PublicKeyExtended::Bls12381 {
                 public_key: public_key.clone(),
             },
+            PublicKeyExtended::Cheetah { public_key } => dtos::PublicKeyExtended::Cheetah {
+                public_key: public_key.clone(),
+            },
         }
     }
 }

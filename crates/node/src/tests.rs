@@ -306,6 +306,20 @@ pub async fn request_signature_and_await_response(
 
             Payload::Eddsa(bounded_payload)
         }
+        Protocol::FrostCheetah => {
+            // 5 Goldilocks belts (each < field prime) as 40 LE bytes: a valid Cheetah digest.
+            let mut payload = Vec::with_capacity(40);
+            for _ in 0..5 {
+                payload.extend_from_slice(&(rand::random::<u32>() as u64).to_le_bytes());
+            }
+            let bounded_payload: BoundedVec<
+                u8,
+                EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
+                EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
+            > = payload.try_into().unwrap();
+
+            Payload::Eddsa(bounded_payload)
+        }
         Protocol::ConfidentialKeyDerivation => unreachable!(),
     };
     let request = SignatureRequestFromChain {

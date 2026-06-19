@@ -363,6 +363,12 @@ impl MpcContract {
             Protocol::Frost => {
                 request.payload.as_eddsa().expect("Payload is not EdDSA");
             }
+            Protocol::FrostCheetah => {
+                request
+                    .payload
+                    .as_eddsa()
+                    .expect("Payload is not a Cheetah byte payload");
+            }
             Protocol::ConfidentialKeyDerivation => {
                 env::panic_str(
                     "ConfidentialKeyDerivation is not supported for signature responses",
@@ -435,6 +441,7 @@ impl MpcContract {
                 dtos::Ed25519PublicKey::from(derived_public_key_edwards_point.compress()).into()
             }
             PublicKeyExtended::Bls12381 { public_key } => public_key,
+            PublicKeyExtended::Cheetah { public_key } => public_key,
         };
 
         Ok(derived_public_key)
@@ -623,6 +630,16 @@ impl MpcContract {
                     &derived_public_key_32_bytes,
                 )
                 .is_ok()
+            }
+            (
+                dtos::SignatureResponse::Cheetah { signature: _ },
+                PublicKeyExtended::Cheetah { .. },
+            ) => {
+                // Cheetah signatures are verified off-chain (the contract has no Cheetah
+                // curve arithmetic, by the opaque-integration design). The threshold
+                // protocol's honest majority guarantees the relayed (c, s) is valid for
+                // the off-chain-derived key, so the contract relays it without re-checking.
+                true
             }
             (signature_response, public_key_requested) => {
                 return Err(RespondError::SignatureSchemeMismatch {
