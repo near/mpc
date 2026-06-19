@@ -5,9 +5,8 @@ rpcs:
 
 infra_ops_path: /replace_me/infra-ops
 
-# Chain the RPCs talk to. Omit (or `testnet`) for testnet. Set to `mpc-localnet` to deploy and
-# operate against a localnet chain: funding then auto-derives the genesis master (no faucet), and
-# the terraform deploy brings up a neard validator. Point `rpcs` above at the validator's RPC.
+# Chain the RPCs talk to. Omit (or `testnet`) for testnet. Set to `mpc-localnet` to deploy against a
+# localnet chain (see the "Deploying against a localnet chain" section of the README).
 # chain_id: mpc-localnet
 
 # Optional own funding account
