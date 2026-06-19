@@ -61,9 +61,6 @@ impl CheetahScalar {
 
 impl PartialEq for CheetahScalar {
     fn eq(&self, other: &Self) -> bool {
-        // Constant-time. Scalars are always stored canonically (reduced mod n by
-        // `from_ubig`/`deserialize`), so byte-equality is value-equality; `ct_eq`
-        // compares all 32 bytes without the early-exit timing leak of `==`.
         self.0.ct_eq(&other.0).into()
     }
 }

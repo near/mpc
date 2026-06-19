@@ -86,6 +86,14 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
                     Protocol::ConfidentialKeyDerivation => {
                         ckd_calls_by_domain.insert(domain.id.0, prot_calls);
                     }
+                    Protocol::FrostCheetah => {
+                        // The parallel-sign helper contract (`ParallelSignArgsV2`) has no
+                        // Cheetah bucket; use the single-domain sign path for FrostCheetah.
+                        panic!(
+                            "parallel-sign load test does not support FrostCheetah; \
+                             use single-domain sign (--domain-id)"
+                        );
+                    }
                 }
             }
             ActionCall {
@@ -202,6 +210,22 @@ fn make_payload(protocol: Protocol) -> Payload {
             let mut payload = vec![0; len];
             rng.fill_bytes(&mut payload);
 
+            let bounded_payload: BoundedVec<
+                u8,
+                EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
+                EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
+            > = payload.try_into().unwrap();
+
+            Payload::Eddsa(bounded_payload)
+        }
+        Protocol::FrostCheetah => {
+            // The Cheetah signing message is the 5-belt sig-hash digest as 40 LE
+            // bytes; each belt must be < the Goldilocks prime, so build it from
+            // five u32 limbs. It rides the variable-length (`Eddsa`) payload arm.
+            let mut payload = Vec::with_capacity(40);
+            for _ in 0..5 {
+                payload.extend_from_slice(&u64::from(rand::random::<u32>()).to_le_bytes());
+            }
             let bounded_payload: BoundedVec<
                 u8,
                 EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
