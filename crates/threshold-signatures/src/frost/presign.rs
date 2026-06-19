@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use zeroize::ZeroizeOnDrop;
 
 use crate::{
-    Ciphersuite, ReconstructionLowerBound,
+    Ciphersuite, ReconstructionThreshold,
     errors::{InitializationError, ProtocolError},
     frost::sign_utils::assert_participant_inputs,
     participants::{Participant, ParticipantList},
@@ -25,7 +25,7 @@ pub struct PresignArguments<C: Ciphersuite> {
     /// The output of key generation, i.e. our share of the secret key.
     pub private_share: SigningShare<C>,
     /// The threshold for the scheme
-    pub threshold: ReconstructionLowerBound,
+    pub threshold: ReconstructionThreshold,
 }
 
 /// The output of the presigning protocol.

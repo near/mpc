@@ -10,7 +10,7 @@ use rand::seq::SliceRandom as _;
 use rand_core::OsRng;
 
 use threshold_signatures::{
-    self, Ciphersuite, Element, KeygenOutput, ReconstructionLowerBound, Scalar,
+    self, Ciphersuite, Element, KeygenOutput, ReconstructionThreshold, Scalar,
     errors::ProtocolError,
     frost_core::VerifyingKey,
     keygen,
@@ -84,7 +84,7 @@ pub fn run_protocol<T>(
 #[allow(clippy::missing_panics_doc)]
 pub fn run_keygen<C: Ciphersuite>(
     participants: &[Participant],
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
 ) -> HashMap<Participant, KeygenOutput<C>>
 where
     Element<C>: std::marker::Send,
@@ -107,8 +107,8 @@ pub fn run_reshare<C: Ciphersuite>(
     participants: &[Participant],
     pub_key: &VerifyingKey<C>,
     keys: &[(Participant, KeygenOutput<C>)],
-    old_threshold: ReconstructionLowerBound,
-    new_threshold: ReconstructionLowerBound,
+    old_threshold: ReconstructionThreshold,
+    new_threshold: ReconstructionThreshold,
     new_participants: &[Participant],
 ) -> HashMap<Participant, KeygenOutput<C>>
 where

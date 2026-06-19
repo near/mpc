@@ -7,7 +7,7 @@ mod bench_utils;
 use bench_utils::split_even_odd;
 
 use threshold_signatures::{
-    MaxMalicious, ReconstructionLowerBound,
+    MaxMalicious, ReconstructionThreshold,
     ecdsa::{
         self,
         ot_based_ecdsa::{self, triples::generate_triple_many},
@@ -30,7 +30,7 @@ type TriplesResult = Vec<(Participant, Vec<TriplePair>)>;
 
 fn main() {
     let config = BenchConfig::from_env();
-    let threshold = ReconstructionLowerBound::from(config.threshold);
+    let threshold = ReconstructionThreshold::from(config.threshold);
     let max_malicious = MaxMalicious::from(config.threshold - 1);
 
     println!("Protocol simulation: ECDSA (Cait-Sith vs DamgardEtAl)");
@@ -86,7 +86,7 @@ fn main() {
 fn bench_cait_sith(
     participants: &[Participant],
     key_packages: &[(Participant, ecdsa::KeygenOutput)],
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     coordinator: Participant,
     pk: frost_secp256k1::VerifyingKey,
     config: &BenchConfig,
@@ -196,7 +196,7 @@ fn bench_damgard(
 
 fn ot_run_triples(
     participants: &[Participant],
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     latency: &LatencyModel,
     rng: &mut MockCryptoRng,
 ) -> (TriplesResult, SimulationMetrics) {
@@ -215,7 +215,7 @@ fn ot_run_presign(
     participants: &[Participant],
     two_triples: &[(Participant, Vec<TriplePair>)],
     key_packages: &[(Participant, ecdsa::KeygenOutput)],
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     latency: &LatencyModel,
 ) -> (
     Vec<(Participant, ot_based_ecdsa::PresignOutput)>,
@@ -251,7 +251,7 @@ fn ot_run_presign(
 fn ot_run_sign(
     participants: &[Participant],
     presign_outputs: &[(Participant, ot_based_ecdsa::PresignOutput)],
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     coordinator: Participant,
     pk: frost_secp256k1::VerifyingKey,
     latency: &LatencyModel,

@@ -15,7 +15,7 @@ Both schemes share common types defined in this module:
 
 ### OT-based ECDSA (`ot_based_ecdsa/`)
 
-Originally imported from the [Cait-Sith](https://github.com/cronokirby/cait-sith) library. Uses an **offline phase with two protocols** (triple generation + presigning) to enable efficient one-round online signing. Requires `N >= t` participants where `t = ReconstructionLowerBound`.
+Originally imported from the [Cait-Sith](https://github.com/cronokirby/cait-sith) library. Uses an **offline phase with two protocols** (triple generation + presigning) to enable efficient one-round online signing. Requires `N >= t` participants where `t = ReconstructionThreshold`.
 
 See [`ot_based_ecdsa/README.md`](ot_based_ecdsa/README.md) for details.
 
@@ -33,7 +33,7 @@ See [`robust_ecdsa/README.md`](robust_ecdsa/README.md) for details.
 | **Offline rounds** | 11+ | 3 |
 | **Sign rounds** | 1 | 1 |
 | **Triple requirement** | 2 triples per presignature | None |
-| **Threshold parameter** | `ReconstructionLowerBound` | `MaxMalicious` |
+| **Threshold parameter** | `ReconstructionThreshold` | `MaxMalicious` |
 | **Scaling** | Less efficient with many participants | Better efficiency and bandwidth |
 
 See the [benchmark analysis](../../docs/benches/results.md) for detailed performance comparisons.

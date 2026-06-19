@@ -8,7 +8,7 @@ use anyhow::Context;
 use near_mpc_contract_interface::types::Tweak;
 use rand::rngs::OsRng;
 use std::time::Duration;
-use threshold_signatures::ReconstructionLowerBound;
+use threshold_signatures::ReconstructionThreshold;
 use threshold_signatures::frost::eddsa::KeygenOutput;
 use threshold_signatures::frost::eddsa::sign::sign;
 use threshold_signatures::frost_core::Scalar;
@@ -25,7 +25,7 @@ impl EddsaSignatureProvider {
         let sign_request = self.sign_request_store.get(id).await?;
 
         let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
-        let threshold = ReconstructionLowerBound::from(threshold);
+        let threshold = ReconstructionThreshold::from(threshold);
         let running_participants: Vec<_> = self
             .mpc_config
             .participants
@@ -96,7 +96,7 @@ impl EddsaSignatureProvider {
         metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_LOOKUP_SUCCEEDED.inc();
 
         let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
-        let threshold = ReconstructionLowerBound::from(threshold);
+        let threshold = ReconstructionThreshold::from(threshold);
 
         let Some(keygen_output) = self.keyshares.get(&sign_request.domain) else {
             anyhow::bail!("No keyshare for domain {:?}", sign_request.domain);
@@ -136,7 +136,7 @@ impl EddsaSignatureProvider {
 /// The tweak allows key derivation
 pub struct SignComputation {
     pub keygen_output: KeygenOutput,
-    pub threshold: ReconstructionLowerBound,
+    pub threshold: ReconstructionThreshold,
     pub message: Vec<u8>,
     pub tweak: Tweak,
 }
