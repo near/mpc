@@ -37,7 +37,7 @@ pub struct PresignArguments {
 #[derive(Clone, Serialize, Deserialize, ZeroizeOnDrop)]
 pub struct PresignOutput {
     /// The public nonce commitment.
-    #[zeroize[skip]]
+    #[zeroize(skip)]
     pub big_r: AffinePoint,
     /// Our share of the nonce value.
     pub k: Scalar,
