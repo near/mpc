@@ -1817,6 +1817,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "cheetah-curve"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "88276cb3676bfb2504d62d813670ef7268bfdde3a79a95e08a46d501205e3647"
+dependencies = [
+ "arrayref",
+ "bs58 0.5.1",
+ "ibig",
+ "num-traits",
+ "once_cell",
+ "serde",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
 name = "chrono"
 version = "0.4.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11332,14 +11348,13 @@ dependencies = [
 name = "threshold-signatures"
 version = "0.1.0"
 dependencies = [
- "arrayref",
  "assert_matches",
  "auto_ops",
  "average",
  "blstrs",
  "borsh",
- "bs58 0.5.1",
  "byteorder",
+ "cheetah-curve",
  "criterion",
  "derive_more 2.1.1",
  "digest 0.10.7",
@@ -11357,8 +11372,6 @@ dependencies = [
  "itertools 0.14.0",
  "k256",
  "keccak",
- "num-traits",
- "once_cell",
  "pairing",
  "rand 0.8.6",
  "rand_chacha 0.3.1",
@@ -11375,7 +11388,6 @@ dependencies = [
  "subtle",
  "thiserror 2.0.18",
  "threshold-signatures",
- "tracing",
  "zeroize",
 ]
 

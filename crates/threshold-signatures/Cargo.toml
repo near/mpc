@@ -17,6 +17,7 @@ auto_ops.workspace = true
 blstrs.workspace = true
 borsh.workspace = true
 byteorder.workspace = true
+cheetah = { package = "cheetah-curve", version = "0.1.0" }
 derive_more = { workspace = true, features = ["deref_mut"] }
 digest.workspace = true
 ecdsa.workspace = true
@@ -24,16 +25,10 @@ elliptic-curve.workspace = true
 frost-core.workspace = true
 frost-ed25519.workspace = true
 frost-secp256k1.workspace = true
-# Deps for the vendored Cheetah curve + Tip5 primitives (src/crypto/cheetah_tip5).
-ibig = "0.3.6"
-once_cell = "1"
-arrayref = "0.3"
-num-traits = "0.2"
-bs58.workspace = true
-tracing.workspace = true
-futures.workspace = true
 futures-lite.workspace = true
+futures.workspace = true
 hex.workspace = true
+ibig = "0.3.6"
 hkdf.workspace = true
 itertools.workspace = true
 k256 = { workspace = true, features = [

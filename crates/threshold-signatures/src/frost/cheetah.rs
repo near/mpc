@@ -1,7 +1,7 @@
 //! FROST ciphersuite for Nockchain's Cheetah curve + Tip5 challenge ("SchnorrCheetah").
 //!
 //! A hand-rolled `frost_core::{Field, Group, Ciphersuite}` over the pure-Rust
-//! `cheetah-tip5` primitives. Unlike `eddsa`/`redjubjub` (which reuse off-the-shelf
+//! `cheetah-curve` primitives. Unlike `eddsa`/`redjubjub` (which reuse off-the-shelf
 //! ciphersuite crates), Cheetah has none, so the group/field/hashes live here.
 //!
 //! `challenge()` is overridden to Nockchain's exact transcript
@@ -11,9 +11,11 @@
 //! The FROST `message` is the 5-belt sig-hash digest encoded as 40 LE bytes (see
 //! [`message_from_digest`]).
 //!
-//! NOTE: this first cut is not constant-time and not clippy-clean (indexing /
-//! `expect`); hardening, the presign/sign wrappers (mirroring `eddsa`/`redjubjub`),
-//! and the node provider are follow-ups.
+//! Hardening: scalar equality is constant-time (`subtle::ct_eq`) and nonce
+//! sampling uses wide reduction (negligible modulo bias). REMAINING: the scalar
+//! field arithmetic routes through `ibig` (a variable-time bignum), so it is not
+//! yet fully constant-time — a constant-time field backend is future work — and
+//! the code is not yet clippy-clean (indexing / `expect`).
 
 use core::ops::{Add, Mul, Sub};
 
@@ -21,12 +23,12 @@ use frost_core::{
     Challenge, Element, Error, Field, FieldError, Group, GroupError, Signature, VerifyingKey,
 };
 use rand_core::{CryptoRng, RngCore};
+use subtle::ConstantTimeEq;
 
-use crate::crypto::cheetah_tip5::belt::{Belt, PRIME};
-use crate::crypto::cheetah_tip5::cheetah::{
-    ch_add, ch_neg, ch_scal_big, trunc_g_order, CheetahPoint, F6lt, A_GEN, A_ID, G_ORDER,
+use cheetah::{
+    ch_add, ch_neg, ch_scal_big, hash_varlen, trunc_g_order, Belt, CheetahPoint, F6lt, A_GEN,
+    A_ID, G_ORDER, PRIME,
 };
-use crate::crypto::cheetah_tip5::tip5::hash::hash_varlen;
 use ibig::modular::ModuloRing;
 use ibig::UBig;
 
@@ -59,8 +61,10 @@ impl CheetahScalar {
 
 impl PartialEq for CheetahScalar {
     fn eq(&self, other: &Self) -> bool {
-        // TODO(hardening): make this constant-time (frost-core requires it).
-        self.0 == other.0
+        // Constant-time. Scalars are always stored canonically (reduced mod n by
+        // `from_ubig`/`deserialize`), so byte-equality is value-equality; `ct_eq`
+        // compares all 32 bytes without the early-exit timing leak of `==`.
+        self.0.ct_eq(&other.0).into()
     }
 }
 impl Eq for CheetahScalar {}
@@ -109,10 +113,12 @@ impl Field for CheetahScalarField {
         Ok(CheetahScalar::from_ubig(&inv.residue()))
     }
     fn random<R: RngCore + CryptoRng>(rng: &mut R) -> CheetahScalar {
-        // TODO(hardening): wide reduction to remove the (negligible) modulo bias.
-        let mut b = [0u8; 32];
-        rng.fill_bytes(&mut b);
-        CheetahScalar::from_ubig(&UBig::from_le_bytes(&b))
+        // Wide reduction: sample 512 bits and reduce mod n (`from_ubig`), so the
+        // modulo bias is ~2^-257 (cryptographically negligible) instead of the
+        // ~2^-255 a single 256-bit draw would give.
+        let mut wide = [0u8; 64];
+        rng.fill_bytes(&mut wide);
+        CheetahScalar::from_ubig(&UBig::from_le_bytes(&wide))
     }
     fn serialize(scalar: &CheetahScalar) -> [u8; 32] {
         scalar.0
