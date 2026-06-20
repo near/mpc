@@ -122,7 +122,9 @@ impl CheetahSignatureProvider {
 
 /// The Cheetah message is the 5-belt Nockchain sig-hash digest (40 LE bytes),
 /// carried in the variable-length payload arm (the domain's curve selects the scheme).
-fn cheetah_message(payload: &near_mpc_crypto_types::primitives::Payload) -> anyhow::Result<Vec<u8>> {
+fn cheetah_message(
+    payload: &near_mpc_crypto_types::primitives::Payload,
+) -> anyhow::Result<Vec<u8>> {
     Ok(payload
         .as_eddsa()
         .ok_or_else(|| anyhow::anyhow!("Cheetah signature request payload is not a byte payload"))?

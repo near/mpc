@@ -19,8 +19,8 @@ use crate::network::{
 };
 use crate::p2p::new_tls_mesh_network;
 use crate::primitives::MpcTaskId;
-use crate::providers::ckd::CKDProvider;
 use crate::providers::cheetah::CheetahSignatureProvider;
+use crate::providers::ckd::CKDProvider;
 use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
 use crate::providers::robust_ecdsa::RobustEcdsaSignatureProvider;
 use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;

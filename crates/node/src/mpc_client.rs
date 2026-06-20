@@ -8,9 +8,9 @@ use crate::indexer::types::{
 use crate::metrics;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
+use crate::providers::cheetah::CheetahSignatureProvider;
 use crate::providers::ckd::CKDProvider;
 use crate::providers::ecdsa::EcdsaTaskId;
-use crate::providers::cheetah::CheetahSignatureProvider;
 use crate::providers::eddsa::EddsaSignatureProvider;
 use crate::providers::robust_ecdsa::{RobustEcdsaSignatureProvider, RobustEcdsaTaskId};
 use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;

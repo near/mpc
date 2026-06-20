@@ -17,8 +17,8 @@ use crate::{
     keyshare::{Keyshare, KeyshareData, KeyshareStorage},
     network::NetworkTaskChannel,
     providers::{
-        CKDProvider, CheetahSignatureProvider, EcdsaSignatureProvider, RobustEcdsaSignatureProvider,
-        SignatureProvider,
+        CKDProvider, CheetahSignatureProvider, EcdsaSignatureProvider,
+        RobustEcdsaSignatureProvider, SignatureProvider,
     },
 };
 use mpc_primitives::KeyEventId;

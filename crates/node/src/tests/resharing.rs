@@ -19,10 +19,9 @@ use super::DEFAULT_BLOCK_TIME;
 fn infer_purpose_from_protocol(protocol: Protocol) -> DomainPurpose {
     match protocol {
         Protocol::ConfidentialKeyDerivation => DomainPurpose::CKD,
-        Protocol::CaitSith
-        | Protocol::Frost
-        | Protocol::DamgardEtAl
-        | Protocol::FrostCheetah => DomainPurpose::Sign,
+        Protocol::CaitSith | Protocol::Frost | Protocol::DamgardEtAl | Protocol::FrostCheetah => {
+            DomainPurpose::Sign
+        }
     }
 }
 

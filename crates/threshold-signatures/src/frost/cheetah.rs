@@ -1,4 +1,4 @@
-//! FROST ciphersuite for Nockchain's Cheetah curve + Tip5 challenge ("SchnorrCheetah").
+//! FROST ciphersuite for Nockchain's Cheetah curve + Tip5 challenge ("`SchnorrCheetah`").
 //!
 //! A hand-rolled `frost_core::{Field, Group, Ciphersuite}` over the pure-Rust
 //! `cheetah-curve` primitives. Unlike `eddsa`/`redjubjub` (which reuse off-the-shelf
@@ -14,8 +14,7 @@
 //! Hardening: scalar equality is constant-time (`subtle::ct_eq`) and nonce
 //! sampling uses wide reduction (negligible modulo bias). REMAINING: the scalar
 //! field arithmetic routes through `ibig` (a variable-time bignum), so it is not
-//! yet fully constant-time — a constant-time field backend is future work — and
-//! the code is not yet clippy-clean (indexing / `expect`).
+//! yet fully constant-time — a constant-time field backend is future work.
 
 use core::ops::{Add, Mul, Sub};
 
@@ -26,11 +25,11 @@ use rand_core::{CryptoRng, RngCore};
 use subtle::ConstantTimeEq;
 
 use cheetah::{
-    ch_add, ch_neg, ch_scal_big, hash_varlen, trunc_g_order, Belt, CheetahPoint, F6lt, A_GEN,
-    A_ID, G_ORDER, PRIME,
+    A_GEN, A_ID, Belt, CheetahPoint, F6lt, G_ORDER, PRIME, ch_add, ch_neg, ch_scal_big,
+    hash_varlen, trunc_g_order,
 };
-use ibig::modular::ModuloRing;
 use ibig::UBig;
+use ibig::modular::ModuloRing;
 
 use crate::crypto::ciphersuite::{BytesOrder, ScalarSerializationFormat};
 
@@ -51,8 +50,10 @@ impl CheetahScalar {
         let r = v.clone() % &*G_ORDER;
         let le = r.to_le_bytes();
         let mut b = [0u8; 32];
-        b[..le.len()].copy_from_slice(&le);
-        CheetahScalar(b)
+        b.get_mut(..le.len())
+            .expect("scalar encoding fits in 32 bytes")
+            .copy_from_slice(&le);
+        Self(b)
     }
     fn to_ubig(self) -> UBig {
         UBig::from_le_bytes(&self.0)
@@ -106,13 +107,13 @@ impl Field for CheetahScalarField {
             return Err(FieldError::InvalidZeroScalar);
         }
         let ring = ModuloRing::new(&G_ORDER);
-        let inv = ring.from(&v).inverse().ok_or(FieldError::InvalidZeroScalar)?;
+        let inv = ring
+            .from(&v)
+            .inverse()
+            .ok_or(FieldError::InvalidZeroScalar)?;
         Ok(CheetahScalar::from_ubig(&inv.residue()))
     }
     fn random<R: RngCore + CryptoRng>(rng: &mut R) -> CheetahScalar {
-        // Wide reduction: sample 512 bits and reduce mod n (`from_ubig`), so the
-        // modulo bias is ~2^-257 (cryptographically negligible) instead of the
-        // ~2^-255 a single 256-bit draw would give.
         let mut wide = [0u8; 64];
         rng.fill_bytes(&mut wide);
         CheetahScalar::from_ubig(&UBig::from_le_bytes(&wide))
@@ -140,19 +141,19 @@ pub struct CheetahElement(pub CheetahPoint);
 impl Add for CheetahElement {
     type Output = Self;
     fn add(self, rhs: Self) -> Self {
-        CheetahElement(ch_add(&self.0, &rhs.0).expect("cheetah point addition"))
+        Self(ch_add(&self.0, &rhs.0).expect("cheetah point addition"))
     }
 }
 impl Sub for CheetahElement {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self {
-        CheetahElement(ch_add(&self.0, &ch_neg(&rhs.0)).expect("cheetah point subtraction"))
+        Self(ch_add(&self.0, &ch_neg(&rhs.0)).expect("cheetah point subtraction"))
     }
 }
 impl Mul<CheetahScalar> for CheetahElement {
     type Output = Self;
     fn mul(self, rhs: CheetahScalar) -> Self {
-        CheetahElement(ch_scal_big(&rhs.to_ubig(), &self.0).expect("cheetah scalar mul"))
+        Self(ch_scal_big(&rhs.to_ubig(), &self.0).expect("cheetah scalar mul"))
     }
 }
 
@@ -191,18 +192,20 @@ impl Group for CheetahGroup {
     }
 }
 
-/// 97-byte point wire form: `0x01 ‖ y-limbs(reversed, BE) ‖ x-limbs(reversed, BE)`.
-/// Matches `cheetah-tip5`'s base58 byte order and rose-ts `publicKeyToBeBytes`.
 fn point_to_bytes(p: &CheetahPoint) -> [u8; 97] {
     let mut o = [0u8; 97];
     o[0] = 0x01;
     let mut i = 1;
     for b in p.y.0.iter().rev() {
-        o[i..i + 8].copy_from_slice(&b.0.to_be_bytes());
+        o.get_mut(i..i + 8)
+            .expect("point encoding fits in 97 bytes")
+            .copy_from_slice(&b.0.to_be_bytes());
         i += 8;
     }
     for b in p.x.0.iter().rev() {
-        o[i..i + 8].copy_from_slice(&b.0.to_be_bytes());
+        o.get_mut(i..i + 8)
+            .expect("point encoding fits in 97 bytes")
+            .copy_from_slice(&b.0.to_be_bytes());
         i += 8;
     }
     o
@@ -215,16 +218,27 @@ fn point_from_bytes(buf: &[u8; 97]) -> Option<CheetahPoint> {
     let mut limbs = [0u64; 12];
     for (k, limb) in limbs.iter_mut().enumerate() {
         let mut a = [0u8; 8];
-        a.copy_from_slice(&buf[1 + k * 8..9 + k * 8]);
+        a.copy_from_slice(
+            buf.get(1 + k * 8..9 + k * 8)
+                .expect("point decoding from 97-byte buffer"),
+        );
         *limb = u64::from_be_bytes(a);
     }
     let y = F6lt([
-        Belt(limbs[5]), Belt(limbs[4]), Belt(limbs[3]),
-        Belt(limbs[2]), Belt(limbs[1]), Belt(limbs[0]),
+        Belt(limbs[5]),
+        Belt(limbs[4]),
+        Belt(limbs[3]),
+        Belt(limbs[2]),
+        Belt(limbs[1]),
+        Belt(limbs[0]),
     ]);
     let x = F6lt([
-        Belt(limbs[11]), Belt(limbs[10]), Belt(limbs[9]),
-        Belt(limbs[8]), Belt(limbs[7]), Belt(limbs[6]),
+        Belt(limbs[11]),
+        Belt(limbs[10]),
+        Belt(limbs[9]),
+        Belt(limbs[8]),
+        Belt(limbs[7]),
+        Belt(limbs[6]),
     ]);
     Some(CheetahPoint { x, y, inf: false })
 }
@@ -235,15 +249,14 @@ fn point_from_bytes(buf: &[u8; 97]) -> Option<CheetahPoint> {
 /// pass to FROST as the `message`.
 pub fn message_from_digest(digest: &[u64; 5]) -> [u8; 40] {
     let mut m = [0u8; 40];
-    for (i, &b) in digest.iter().enumerate() {
-        m[i * 8..i * 8 + 8].copy_from_slice(&b.to_le_bytes());
+    for (chunk, &belt) in m.chunks_mut(8).zip(digest) {
+        for (slot, byte) in chunk.iter_mut().zip(belt.to_le_bytes()) {
+            *slot = byte;
+        }
     }
     m
 }
 
-/// Derive a Cheetah scalar from tweak bytes (little-endian, reduced mod the group
-/// order) for chainsig-style key derivation via [`crate::Tweak`]. The same mapping
-/// must be used by the chainsig.js adapter when deriving per-account child keys.
 pub fn tweak_scalar(bytes: &[u8]) -> CheetahScalar {
     CheetahScalar::from_ubig(&UBig::from_le_bytes(bytes))
 }
@@ -254,7 +267,11 @@ fn digest_from_message(message: &[u8]) -> [u64; 5] {
         let s = i * 8;
         let mut a = [0u8; 8];
         if s + 8 <= message.len() {
-            a.copy_from_slice(&message[s..s + 8]);
+            a.copy_from_slice(
+                message
+                    .get(s..s + 8)
+                    .expect("message chunk fits in digest slots"),
+            );
         }
         *slot = u64::from_le_bytes(a) % PRIME;
     }
@@ -263,19 +280,25 @@ fn digest_from_message(message: &[u8]) -> [u64; 5] {
 
 fn tip5_to_scalar(domain: &[u8], m: &[u8]) -> CheetahScalar {
     let mut t: Vec<Belt> = Vec::with_capacity(domain.len() + m.len());
-    t.extend(domain.iter().map(|&b| Belt(b as u64)));
-    t.extend(m.iter().map(|&b| Belt(b as u64)));
+    t.extend(domain.iter().map(|&b| Belt(u64::from(b))));
+    t.extend(m.iter().map(|&b| Belt(u64::from(b))));
     CheetahScalar::from_ubig(&trunc_g_order(&hash_varlen(&mut t)))
 }
 
 fn tip5_to_bytes(domain: &[u8], m: &[u8]) -> [u8; 32] {
     let mut t: Vec<Belt> = Vec::with_capacity(domain.len() + m.len());
-    t.extend(domain.iter().map(|&b| Belt(b as u64)));
-    t.extend(m.iter().map(|&b| Belt(b as u64)));
+    t.extend(domain.iter().map(|&b| Belt(u64::from(b))));
+    t.extend(m.iter().map(|&b| Belt(u64::from(b))));
     let d = hash_varlen(&mut t);
     let mut o = [0u8; 32];
     for i in 0..4 {
-        o[i * 8..i * 8 + 8].copy_from_slice(&d[i].to_le_bytes());
+        o.get_mut(i * 8..i * 8 + 8)
+            .expect("tip5 hash output fits in 32 bytes")
+            .copy_from_slice(
+                &d.get(i)
+                    .expect("tip5 digest has at least 4 belts")
+                    .to_le_bytes(),
+            );
     }
     o
 }
@@ -294,7 +317,6 @@ impl frost_core::Ciphersuite for CheetahTip5 {
         tip5_to_scalar(b"rho", m)
     }
     fn H2(m: &[u8]) -> CheetahScalar {
-        // Unused: challenge() is overridden below to match Nockchain exactly.
         tip5_to_scalar(b"chal", m)
     }
     fn H3(m: &[u8]) -> CheetahScalar {
@@ -314,7 +336,7 @@ impl frost_core::Ciphersuite for CheetahTip5 {
     }
 
     /// Nockchain challenge: `c = trunc_g_order(Tip5(R.x‖R.y‖P.x‖P.y‖m))`.
-    #[allow(non_snake_case)] // `R` (nonce commitment) matches frost-core's trait/spec naming.
+    #[allow(non_snake_case)]
     fn challenge(
         R: &Element<Self>,
         verifying_key: &VerifyingKey<Self>,
@@ -342,26 +364,22 @@ impl ScalarSerializationFormat for CheetahTip5 {
 
 impl crate::Ciphersuite for CheetahTip5 {}
 
-/// Serialize a Cheetah verifying key to its 97-byte chain wire form
-/// (`0x01 ‖ y-limbs ‖ x-limbs`), matching rose-ts `publicKeyToBeBytes`. This is the
-/// opaque bytes carried by `dtos::PublicKey::Cheetah`.
+/// (`0x01 ‖ y-limbs ‖ x-limbs`), matching rose-ts `publicKeyToBeBytes`.
 pub fn verifying_key_to_bytes(key: &VerifyingKey<CheetahTip5>) -> [u8; 97] {
     point_to_bytes(&key.to_element().0)
 }
 
-/// Convert a FROST signature `(R, z)` into the Nockchain chain signature `c ‖ s`
-/// (two 32-byte little-endian scalars), where `c = challenge(R, P, m)` and `s = z`.
+/// Convert a FROST signature `(R, z)` into the Nockchain chain signature `c ‖ s`.
+///
+/// Output is two 32-byte little-endian scalars, where `c = challenge(R, P, m)` and `s = z`.
 /// This is the `(c, s)` the contract relays and the Nockchain verifier accepts.
 pub fn chain_signature_bytes(
     signature: &Signature<CheetahTip5>,
     verifying_key: &VerifyingKey<CheetahTip5>,
     message: &[u8],
 ) -> Result<[u8; 64], Error<CheetahTip5>> {
-    let c = <CheetahTip5 as frost_core::Ciphersuite>::challenge(
-        signature.R(),
-        verifying_key,
-        message,
-    )?;
+    let c =
+        <CheetahTip5 as frost_core::Ciphersuite>::challenge(signature.R(), verifying_key, message)?;
     let mut out = [0u8; 64];
     out[..32].copy_from_slice(&<CheetahScalarField as Field>::serialize(&c.to_scalar()));
     out[32..].copy_from_slice(&<CheetahScalarField as Field>::serialize(signature.z()));
@@ -369,12 +387,12 @@ pub fn chain_signature_bytes(
 }
 
 #[cfg(test)]
-#[allow(non_snake_case)] // repo test convention: <system_under_test>__should_<assertion>
+#[allow(non_snake_case)]
 mod tests {
     use super::*;
     use frost_core::{SigningKey, VerifyingKey};
-    use rand::rngs::StdRng;
     use rand::SeedableRng;
+    use rand::rngs::StdRng;
 
     /// Mirror of nockchain-types `Spend1::verify_pkh_signature`: accept iff
     /// `trunc_g_order(Tip5((s·G − c·P).x ‖ .y ‖ P.x ‖ P.y ‖ m)) == c`.
@@ -424,7 +442,10 @@ mod tests {
         t.extend(digest.iter().map(|&u| Belt(u)));
         let c = trunc_g_order(&hash_varlen(&mut t));
 
-        assert!(chain_verify(&p, &c, &z, &digest), "Nockchain verifier must accept");
+        assert!(
+            chain_verify(&p, &c, &z, &digest),
+            "Nockchain verifier must accept"
+        );
     }
 
     #[test]
@@ -432,9 +453,9 @@ mod tests {
         // Given a 3-of-5 dealer keygen,
         use crate::test_utils::build_frost_key_packages_with_dealer;
         use frost_core::{
-            aggregate_custom,
+            CheaterDetection, Identifier, SigningPackage, aggregate_custom,
             keys::{KeyPackage, PublicKeyPackage},
-            round1, round2, CheaterDetection, Identifier, SigningPackage,
+            round1, round2,
         };
         use std::collections::BTreeMap;
 
@@ -447,8 +468,10 @@ mod tests {
         let signers: Vec<_> = keys.iter().take(t as usize).cloned().collect();
 
         // round 1: commitments + nonces
-        let mut commitments: BTreeMap<Identifier<CheetahTip5>, round1::SigningCommitments<CheetahTip5>> =
-            BTreeMap::new();
+        let mut commitments: BTreeMap<
+            Identifier<CheetahTip5>,
+            round1::SigningCommitments<CheetahTip5>,
+        > = BTreeMap::new();
         let mut nonces: BTreeMap<Identifier<CheetahTip5>, round1::SigningNonces<CheetahTip5>> =
             BTreeMap::new();
         for (p, kg) in &signers {
@@ -478,6 +501,7 @@ mod tests {
         let pkp = PublicKeyPackage::new(BTreeMap::new(), vk, None);
         let signature =
             aggregate_custom(&signing_package, &shares, &pkp, CheaterDetection::Disabled).unwrap();
-        vk.verify(&msg, &signature).expect("threshold signature must verify");
+        vk.verify(&msg, &signature)
+            .expect("threshold signature must verify");
     }
 }

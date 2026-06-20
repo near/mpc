@@ -1,8 +1,9 @@
-//! Wraps FROST signature generation for the Cheetah (SchnorrCheetah) ciphersuite
-//! into a `cait-sith`-style `Protocol`. Mirrors `frost/eddsa/sign.rs`, but over the
-//! generic `frost_core` types parameterized by [`CheetahTip5`] (Cheetah has no
-//! off-the-shelf ciphersuite crate). Produced signatures are Nockchain-valid; the
-//! chain signature is `(c, s = z)` (see `frost/cheetah.rs`).
+//! Wraps FROST signature generation for the Cheetah (`SchnorrCheetah`) ciphersuite.
+//!
+//! Mirrors `frost/eddsa/sign.rs` as a `cait-sith`-style [`Protocol`](crate::protocol::Protocol),
+//! but over generic `frost_core` types parameterized by [`CheetahTip5`] (Cheetah has no
+//! off-the-shelf ciphersuite crate). Produced signatures are Nockchain-valid; the chain
+//! signature is `(c, s = z)` (see `frost/cheetah.rs`).
 
 use super::{CheetahTip5, KeygenOutput, PresignOutput, SignatureOption};
 use crate::{
@@ -145,7 +146,8 @@ async fn do_sign_coordinator_v1(
         .map_err(|e| ProtocolError::AssertionFailed(e.to_string()))?;
 
     signature_shares.insert(me.to_identifier()?, signature_share);
-    for (from, signature_share) in recv_from_others(&chan, r2_wait_point, &participants, me).await? {
+    for (from, signature_share) in recv_from_others(&chan, r2_wait_point, &participants, me).await?
+    {
         signature_shares.insert(from.to_identifier()?, signature_share);
     }
 
@@ -185,7 +187,8 @@ async fn do_sign_coordinator_v2(
     signature_shares.insert(me.to_identifier()?, signature_share);
 
     let sign_waitpoint = chan.next_waitpoint();
-    for (from, signature_share) in recv_from_others(&chan, sign_waitpoint, &participants, me).await?
+    for (from, signature_share) in
+        recv_from_others(&chan, sign_waitpoint, &participants, me).await?
     {
         signature_shares.insert(from.to_identifier()?, signature_share);
     }
@@ -274,8 +277,7 @@ fn do_sign_participant_v2(
     )?;
     let key_package = Zeroizing::new(key_package);
 
-    let signing_package =
-        CheetahSigningPackage::new(presignature.commitments_map.clone(), message);
+    let signing_package = CheetahSigningPackage::new(presignature.commitments_map.clone(), message);
     let signature_share = round2::sign(&signing_package, &presignature.nonces, &key_package)
         .map_err(|e| ProtocolError::AssertionFailed(e.to_string()))?;
 

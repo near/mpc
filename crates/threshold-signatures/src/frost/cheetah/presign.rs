@@ -9,7 +9,7 @@ pub type KeygenOutput = crate::KeygenOutput<CheetahTip5>;
 pub type PresignArguments = crate::frost::PresignArguments<CheetahTip5>;
 pub type PresignOutput = crate::frost::PresignOutput<CheetahTip5>;
 
-/// Cheetah (SchnorrCheetah) presigning — generates a FROST presignature (round-1
+/// Cheetah (`SchnorrCheetah`) presigning — generates a FROST presignature (round-1
 /// nonces + commitments) for later one-round signing. Wraps the generic FROST presign.
 pub fn presign<R>(
     participants: &[Participant],

@@ -309,9 +309,7 @@ impl ChainSignatureRespondArgs {
             .as_eddsa()
             .ok_or_else(|| anyhow::anyhow!("Cheetah payload is not a byte payload"))?;
         let signature_bytes = threshold_signatures::frost::cheetah::chain_signature_bytes(
-            signature,
-            public_key,
-            message,
+            signature, public_key, message,
         )
         .map_err(|e| anyhow::anyhow!("Cheetah chain signature failed: {e:?}"))?;
         Ok(ChainSignatureRespondArgs {

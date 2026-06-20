@@ -7,8 +7,8 @@ use crate::providers::cheetah::CheetahSignatureProvider;
 use rand::rngs::OsRng;
 use threshold_signatures::ReconstructionThreshold;
 use threshold_signatures::frost::cheetah::{CheetahTip5, KeygenOutput};
-use threshold_signatures::frost_core::keys::SigningShare;
 use threshold_signatures::frost_core::VerifyingKey;
+use threshold_signatures::frost_core::keys::SigningShare;
 use threshold_signatures::participants::Participant;
 
 impl CheetahSignatureProvider {
