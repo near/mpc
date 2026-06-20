@@ -1,9 +1,5 @@
 //! FROST ciphersuite for Nockchain's Cheetah curve + Tip5 challenge ("`SchnorrCheetah`").
 //!
-//! A hand-rolled `frost_core::{Field, Group, Ciphersuite}` over the pure-Rust
-//! `cheetah-curve` primitives. Unlike `eddsa`/`redjubjub` (which reuse off-the-shelf
-//! ciphersuite crates), Cheetah has none, so the group/field/hashes live here.
-//!
 //! `challenge()` is overridden to Nockchain's exact transcript
 //! `c = trunc_g_order(Tip5(R.x‖R.y‖P.x‖P.y‖m))`, so frost-core's verification
 //! equation `z·G == R + c·P` coincides with the on-chain `Spend1` verifier — i.e.
@@ -11,11 +7,6 @@
 //! The FROST `message` is the 5-belt sig-hash digest encoded as 40 LE bytes (see
 //! [`message_from_digest`]).
 //!
-//! Hardening: the scalar field is backed by constant-time `crypto-bigint`
-//! (`U256`) — modular add/sub/mul/inverse, wide-reduction nonce sampling, and
-//! constant-time equality/range checks. The cheetah-curve point/field arithmetic
-//! underneath (point add/double, projective scalar mul, Goldilocks reductions) is
-//! constant time as well — see cheetah-curve's `SECURITY.md`.
 
 use core::ops::{Add, Mul, Sub};
 
@@ -27,7 +18,7 @@ use subtle::{ConstantTimeEq, ConstantTimeLess};
 
 pub use cheetah::message_from_digest;
 use cheetah::{
-    A_GEN, A_ID, Belt, CheetahPoint, F6lt, G_ORDER, G_ORDER_NZ, U256, ch_add, ch_neg, ch_scal_big,
+    A_GEN, A_ID, Belt, CheetahPoint, G_ORDER, G_ORDER_NZ, U256, ch_add, ch_neg, ch_scal_big,
     digest_from_message, hash_varlen, tip5_to_bytes, trunc_g_order,
 };
 use crypto_bigint::U512;
@@ -160,73 +151,13 @@ impl Group for CheetahGroup {
     fn generator() -> CheetahElement {
         CheetahElement(A_GEN)
     }
-    fn serialize(element: &CheetahElement) -> Result<[u8; 97], GroupError> {
-        if element.0.inf {
-            return Err(GroupError::InvalidIdentityElement);
-        }
-        Ok(point_to_bytes(&element.0))
+    fn serialize(element: &CheetahElement) -> Result<Self::Serialization, GroupError> {
+        CheetahPoint::to_be_bytes(&element.0).map_err(|_| GroupError::MalformedElement)
     }
-    fn deserialize(buf: &[u8; 97]) -> Result<CheetahElement, GroupError> {
-        let p = point_from_bytes(buf).ok_or(GroupError::MalformedElement)?;
-        if p.inf {
-            return Err(GroupError::InvalidIdentityElement);
-        }
-        if !p.in_curve() {
-            return Err(GroupError::MalformedElement);
-        }
+    fn deserialize(buf: &Self::Serialization) -> Result<CheetahElement, GroupError> {
+        let p = CheetahPoint::from_be_bytes(buf).map_err(|_| GroupError::MalformedElement)?;
         Ok(CheetahElement(p))
     }
-}
-
-fn point_to_bytes(p: &CheetahPoint) -> [u8; 97] {
-    let mut o = [0u8; 97];
-    o[0] = 0x01;
-    let mut i = 1;
-    for b in p.y.0.iter().rev() {
-        o.get_mut(i..i + 8)
-            .expect("point encoding fits in 97 bytes")
-            .copy_from_slice(&b.0.to_be_bytes());
-        i += 8;
-    }
-    for b in p.x.0.iter().rev() {
-        o.get_mut(i..i + 8)
-            .expect("point encoding fits in 97 bytes")
-            .copy_from_slice(&b.0.to_be_bytes());
-        i += 8;
-    }
-    o
-}
-
-fn point_from_bytes(buf: &[u8; 97]) -> Option<CheetahPoint> {
-    if buf[0] != 0x01 {
-        return None;
-    }
-    let mut limbs = [0u64; 12];
-    for (k, limb) in limbs.iter_mut().enumerate() {
-        let mut a = [0u8; 8];
-        a.copy_from_slice(
-            buf.get(1 + k * 8..9 + k * 8)
-                .expect("point decoding from 97-byte buffer"),
-        );
-        *limb = u64::from_be_bytes(a);
-    }
-    let y = F6lt([
-        Belt(limbs[5]),
-        Belt(limbs[4]),
-        Belt(limbs[3]),
-        Belt(limbs[2]),
-        Belt(limbs[1]),
-        Belt(limbs[0]),
-    ]);
-    let x = F6lt([
-        Belt(limbs[11]),
-        Belt(limbs[10]),
-        Belt(limbs[9]),
-        Belt(limbs[8]),
-        Belt(limbs[7]),
-        Belt(limbs[6]),
-    ]);
-    Some(CheetahPoint { x, y, inf: false })
 }
 
 // ---- ciphersuite ------------------------------------------------------------
@@ -305,7 +236,7 @@ impl crate::Ciphersuite for CheetahTip5 {}
 
 /// (`0x01 ‖ y-limbs ‖ x-limbs`), matching rose-ts `publicKeyToBeBytes`.
 pub fn verifying_key_to_bytes(key: &VerifyingKey<CheetahTip5>) -> [u8; 97] {
-    point_to_bytes(&key.to_element().0)
+    CheetahPoint::to_be_bytes(&key.to_element().0).expect("valid verifying key")
 }
 
 /// Convert a FROST signature `(R, z)` into the Nockchain chain signature `c ‖ s`.
@@ -369,7 +300,7 @@ mod tests {
         assert_eq!(bytes.len(), 129);
         let mut rbuf = [0u8; 97];
         rbuf.copy_from_slice(&bytes[..97]);
-        let rpt = point_from_bytes(&rbuf).expect("R point");
+        let rpt = CheetahPoint::from_be_bytes(&rbuf).expect("R point");
         let z = U256::from_le_slice(&bytes[97..129]);
         let p = vk.to_element().0;
 
