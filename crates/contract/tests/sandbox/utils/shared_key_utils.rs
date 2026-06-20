@@ -8,8 +8,10 @@ use threshold_signatures::{
     blstrs,
     confidential_key_derivation::{self as ckd},
     ecdsa as ts_ecdsa,
+    frost::cheetah::{self as cheetah, CheetahGroup, CheetahScalarField, verifying_key_to_bytes},
     frost::eddsa,
-    frost_ed25519::{Ed25519Group, Group as _, VerifyingKey, keys::SigningShare},
+    frost_core::{Field, Group as _, VerifyingKey, keys::SigningShare},
+    frost_ed25519::{Ed25519Group, VerifyingKey as Ed25519VerifyingKey},
     frost_secp256k1::{self, Secp256K1Group},
 };
 
@@ -41,6 +43,7 @@ pub enum SharedSecretKey {
     Secp256k1(ts_ecdsa::KeygenOutput),
     Ed25519(eddsa::KeygenOutput),
     Bls12381(ckd::KeygenOutput),
+    Cheetah(cheetah::KeygenOutput),
 }
 
 pub fn new_secp256k1() -> (dtos::PublicKey, ts_ecdsa::KeygenOutput) {
@@ -76,14 +79,36 @@ pub fn make_key_for_domain(domain_curve: Curve) -> (dtos::PublicKey, SharedSecre
             let (pk, sk) = new_bls12381();
             (pk, SharedSecretKey::Bls12381(sk))
         }
+        Curve::Cheetah => {
+            let (pk, sk) = new_cheetah();
+            (pk, SharedSecretKey::Cheetah(sk))
+        }
     }
+}
+
+pub fn new_cheetah() -> (dtos::PublicKey, cheetah::KeygenOutput) {
+    let scalar = <CheetahScalarField as Field>::random(&mut OsRng);
+    let private_share = SigningShare::new(scalar);
+    let public_key_element = CheetahGroup::generator() * scalar;
+    let public_key = VerifyingKey::new(public_key_element);
+
+    let keygen_output = cheetah::KeygenOutput {
+        private_share,
+        public_key,
+    };
+
+    let pk = dtos::PublicKey::Cheetah(dtos::CheetahPublicKey::from(verifying_key_to_bytes(
+        &public_key,
+    )));
+
+    (pk, keygen_output)
 }
 
 pub fn new_ed25519() -> (dtos::PublicKey, eddsa::KeygenOutput) {
     let scalar = curve25519_dalek::Scalar::random(&mut OsRng);
     let private_share = SigningShare::new(scalar);
     let public_key_element = Ed25519Group::generator() * scalar;
-    let public_key = VerifyingKey::new(public_key_element);
+    let public_key = Ed25519VerifyingKey::new(public_key_element);
 
     let keygen_output = eddsa::KeygenOutput {
         private_share,

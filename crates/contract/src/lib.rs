@@ -2701,7 +2701,10 @@ mod tests {
     };
     use test_utils::contract_types::dummy_config;
     use threshold_signatures::confidential_key_derivation as ckd;
-    use threshold_signatures::frost_core::Group as _;
+    use threshold_signatures::frost::cheetah::{
+        CheetahGroup, CheetahScalar, CheetahScalarField, verifying_key_to_bytes,
+    };
+    use threshold_signatures::frost_core::{Field, Group as _};
     use threshold_signatures::frost_ed25519::Ed25519Group;
     use threshold_signatures::frost_secp256k1::Secp256K1Group;
 
@@ -2722,6 +2725,8 @@ mod tests {
         #[expect(dead_code)]
         Ed25519(curve25519_dalek::Scalar),
         Bls12381(ckd::Scalar),
+        #[expect(dead_code)]
+        Cheetah(CheetahScalar),
     }
 
     pub fn derive_secret_key(secret_key: &k256::SecretKey, tweak: &Tweak) -> k256::SecretKey {
@@ -2757,6 +2762,16 @@ mod tests {
         let public_key_element = ckd::ElementG2::generator() * scalar;
 
         let pk = dtos::Bls12381G2PublicKey::from(&public_key_element);
+
+        (pk, scalar)
+    }
+
+    pub fn new_cheetah(rng: &mut impl CryptoRngCore) -> (dtos::CheetahPublicKey, CheetahScalar) {
+        let scalar = <CheetahScalarField as Field>::random(rng);
+        let public_key_element = CheetahGroup::generator() * scalar;
+        let public_key = threshold_signatures::frost_core::VerifyingKey::new(public_key_element);
+
+        let pk = dtos::CheetahPublicKey::from(verifying_key_to_bytes(&public_key));
 
         (pk, scalar)
     }
@@ -2806,6 +2821,10 @@ mod tests {
                 let (pk, sk) = new_bls12381g2(rng);
                 (pk.into(), SharedSecretKey::Bls12381(sk))
             }
+            Curve::Cheetah => {
+                let (pk, sk) = new_cheetah(rng);
+                (pk.into(), SharedSecretKey::Cheetah(sk))
+            }
         }
     }
 
@@ -2817,6 +2836,7 @@ mod tests {
             Curve::Secp256k1 => Protocol::CaitSith,
             Curve::Edwards25519 => Protocol::Frost,
             Curve::Bls12381 => Protocol::ConfidentialKeyDerivation,
+            Curve::Cheetah => Protocol::FrostCheetah,
         };
         basic_setup_with_protocol(protocol, infer_purpose_from_protocol(protocol), rng)
     }
