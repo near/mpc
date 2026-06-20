@@ -1,4 +1,5 @@
 use crate::participants::Participant;
+use crate::thresholds::ThresholdError;
 use std::error;
 use thiserror::Error;
 
@@ -164,4 +165,16 @@ pub enum InitializationError {
 
     #[error("participant has an invalid index")]
     InvalidParticipantIndex,
+}
+
+impl From<ThresholdError> for ProtocolError {
+    fn from(_: ThresholdError) -> Self {
+        Self::IntegerOverflow
+    }
+}
+
+impl From<ThresholdError> for InitializationError {
+    fn from(value: ThresholdError) -> Self {
+        Self::BadParameters(value.to_string())
+    }
 }

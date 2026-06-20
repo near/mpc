@@ -12,14 +12,13 @@ use crate::providers::ecdsa::{EcdsaSignatureProvider, EcdsaTaskId, KeygenOutput,
 use crate::tracking::AutoAbortTaskCollection;
 use crate::{metrics, tracking};
 use mpc_node_config::PresignatureConfig;
-use mpc_primitives::ReconstructionThreshold;
 use mpc_primitives::domain::DomainId;
 use near_time::Clock;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::time::Duration;
-use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
+use threshold_signatures::ReconstructionThreshold;
 use threshold_signatures::ecdsa::ot_based_ecdsa::triples::TripleGenerationOutput;
 use threshold_signatures::ecdsa::ot_based_ecdsa::{
     PresignArguments, PresignOutput, presign::presign,
@@ -66,7 +65,7 @@ impl EcdsaSignatureProvider {
     /// so that needs to be separately handled.
     pub(super) async fn run_background_presignature_generation(
         client: Arc<MeshNetworkClient>,
-        threshold: TSReconstructionThreshold,
+        threshold: ReconstructionThreshold,
         config: Arc<PresignatureConfig>,
         triple_store: Arc<TripleStorage>,
         domain_id: DomainId,
@@ -182,11 +181,10 @@ impl EcdsaSignatureProvider {
         // Triple store to consume from is keyed by the presign's `t`, which
         // equals the number of presign participants (same as triple
         // participants — the leader pairs them).
-        let threshold_usize: usize = channel.participants().len();
-        let threshold = ReconstructionThreshold::new(threshold_usize.try_into()?);
+        let threshold = ReconstructionThreshold::from(channel.participants().len());
         let triple_store = self.triple_store_for_t(threshold)?;
         FollowerPresignComputation {
-            threshold: TSReconstructionThreshold::from(threshold_usize),
+            threshold,
             keygen_out: domain_data.keyshare,
             triple_store,
             paired_triple_id,
@@ -220,7 +218,7 @@ impl HasParticipants for PresignOutputWithParticipants {
 /// Performs an MPC presignature operation. This is shared for the initiator
 /// and for passive participants.
 pub struct PresignComputation {
-    threshold: TSReconstructionThreshold,
+    threshold: ReconstructionThreshold,
     triple0: TripleGenerationOutput,
     triple1: TripleGenerationOutput,
     keygen_out: KeygenOutput,
@@ -260,7 +258,7 @@ impl MpcLeaderCentricComputation<PresignOutput> for PresignComputation {
 /// The difference is: we need to read the triples from the triple store (which may fail),
 /// and we need to write the presignature to the presignature store before completing.
 pub struct FollowerPresignComputation {
-    pub threshold: TSReconstructionThreshold,
+    pub threshold: ReconstructionThreshold,
     pub paired_triple_id: UniqueId,
     pub keygen_out: KeygenOutput,
     pub triple_store: Arc<TripleStorage>,

@@ -27,7 +27,9 @@ type PreparedSimulatedSig = PreparedOutputs<SignatureOption>;
 
 /// Benches the presigning protocol
 fn bench_presign(c: &mut Criterion) {
-    let num = RECONSTRUCTION_LOWER_BOUND.value();
+    let num = RECONSTRUCTION_LOWER_BOUND
+        .try_as_usize()
+        .expect("reconstruction threshold fits in usize");
     let max_malicious = *MAX_MALICIOUS;
 
     let setup = setup_presign_snapshot(num);
@@ -50,7 +52,9 @@ fn bench_presign(c: &mut Criterion) {
 
 /// Benches the signing protocol
 fn bench_sign(c: &mut Criterion) {
-    let num = RECONSTRUCTION_LOWER_BOUND.value();
+    let num = RECONSTRUCTION_LOWER_BOUND
+        .try_as_usize()
+        .expect("reconstruction threshold fits in usize");
     let max_malicious = *MAX_MALICIOUS;
 
     let setup = setup_sign_snapshot(*RECONSTRUCTION_LOWER_BOUND);
@@ -151,7 +155,12 @@ struct SignSetup {
 /// Expensive one-time setup for sign: runs the full N-party protocol to capture snapshots
 fn setup_sign_snapshot(threshold: ReconstructionThreshold) -> SignSetup {
     let mut rng = MockCryptoRng::seed_from_u64(41);
-    let preps = ed25519_prepare_presign(threshold.value(), &mut rng);
+    let preps = ed25519_prepare_presign(
+        threshold
+            .try_as_usize()
+            .expect("reconstruction threshold fits in usize"),
+        &mut rng,
+    );
     let result = run_protocol(preps.protocols).expect("Prepare sign should not fail");
     let preps = ed25519_prepare_sign_v2(&result, preps.key_packages, threshold, &mut rng);
     let (_, protocol_snapshot) = run_protocol_and_take_snapshots(preps.protocols)

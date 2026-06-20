@@ -22,7 +22,9 @@ type PreparedSimulatedSig = PreparedOutputs<SignatureOption>;
 
 /// Benches the signing protocol
 fn bench_sign(c: &mut Criterion) {
-    let num = RECONSTRUCTION_LOWER_BOUND.value();
+    let num = RECONSTRUCTION_LOWER_BOUND
+        .try_as_usize()
+        .expect("reconstruction threshold fits in usize");
     let max_malicious = *MAX_MALICIOUS;
 
     let setup = setup_sign_snapshot(*RECONSTRUCTION_LOWER_BOUND);

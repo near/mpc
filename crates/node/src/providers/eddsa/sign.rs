@@ -37,7 +37,7 @@ impl EddsaSignatureProvider {
         let participants = self
             .client
             .select_random_active_participants_including_me(
-                threshold.value(),
+                threshold.try_as_usize()?,
                 &running_participants,
             )
             .context("Can't choose active participants for a eddsa signature")?;

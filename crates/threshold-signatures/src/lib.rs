@@ -36,7 +36,7 @@ use crate::errors::InitializationError;
 use crate::participants::Participant;
 use crate::protocol::Protocol;
 use crate::protocol::internal::{Comms, make_protocol};
-pub use crate::thresholds::{MaxMalicious, ReconstructionThreshold};
+pub use crate::thresholds::{MaxMalicious, ReconstructionThreshold, ThresholdError};
 use rand_core::CryptoRngCore;
 use std::marker::Send;
 

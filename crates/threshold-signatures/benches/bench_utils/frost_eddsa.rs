@@ -66,7 +66,9 @@ pub fn ed25519_prepare_sign_v1<R: CryptoRngCore + SeedableRng + Send + 'static>(
     threshold: ReconstructionThreshold,
     rng: &mut R,
 ) -> FrostEd25519SigV1 {
-    let num_participants = threshold.value();
+    let num_participants = threshold
+        .try_as_usize()
+        .expect("reconstruction threshold fits in usize");
     let participants = generate_participants_with_random_ids(num_participants, rng);
     let key_packages = run_keygen(&participants, *MAX_MALICIOUS + 1, rng);
 
@@ -110,7 +112,9 @@ pub fn ed25519_prepare_sign_v2<R: CryptoRngCore + SeedableRng + Send + 'static>(
     threshold: ReconstructionThreshold,
     rng: &mut R,
 ) -> FrostEd25519SigV2 {
-    let num_participants = threshold.value();
+    let num_participants = threshold
+        .try_as_usize()
+        .expect("reconstruction threshold fits in usize");
     // collect all participants
     let participants: Vec<_> = result.iter().map(|(participant, _)| *participant).collect();
 
@@ -175,7 +179,9 @@ pub fn prepare_ckd<R: CryptoRngCore + SeedableRng + Send + 'static>(
     threshold: ReconstructionThreshold,
     rng: &mut R,
 ) -> PreparedCkdPackage {
-    let num_participants = threshold.value();
+    let num_participants = threshold
+        .try_as_usize()
+        .expect("reconstruction threshold fits in usize");
     // collect all participants
     let participants = generate_participants_with_random_ids(num_participants, rng);
     let key_packages = run_keygen(&participants, *MAX_MALICIOUS + 1, rng);

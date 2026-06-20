@@ -180,7 +180,7 @@ fn verify_proof_of_knowledge<C: Ciphersuite>(
     commitment: &VerifiableSecretSharingCommitment<C>,
     proof_of_knowledge: Option<&Signature<C>>,
 ) -> Result<(), ProtocolError> {
-    let threshold = threshold.value();
+    let threshold = threshold.try_as_usize()?;
     match proof_of_knowledge {
         // if participant did not send anything but he is actually an old participant
         None => {
@@ -243,17 +243,17 @@ fn verify_commitment_hash<C: Ciphersuite>(
 fn insert_identity_if_missing<C: Ciphersuite>(
     threshold: ReconstructionThreshold,
     commitment_i: &VerifiableSecretSharingCommitment<C>,
-) -> VerifiableSecretSharingCommitment<C> {
+) -> Result<VerifiableSecretSharingCommitment<C>, ProtocolError> {
     // in case the participant was new and it sent a polynomial of length
     // threshold -1 (because the zero term is not serializable)
     let mut commitment_i = commitment_i.clone();
     let mut coefficients_i = commitment_i.coefficients().to_vec();
-    if coefficients_i.len() == threshold.value() - 1 {
+    if coefficients_i.len() == threshold.try_as_usize()? - 1 {
         let identity = CoefficientCommitment::new(<C::Group as Group>::identity());
         coefficients_i.insert(0, identity);
         commitment_i = VerifiableSecretSharingCommitment::new(coefficients_i);
     }
-    commitment_i
+    Ok(commitment_i)
 }
 
 // creates a signing share structure using my identifier, the received
@@ -373,7 +373,7 @@ async fn do_keyshare<C: Ciphersuite>(
     // Step 2.3
     // the degree of the polynomial is threshold - 1
     let degree = threshold
-        .value()
+        .try_as_usize()?
         .checked_sub(1)
         .ok_or(ProtocolError::IntegerOverflow)?;
     let secret_coefficients = Polynomial::<C>::generate_polynomial(Some(secret), degree, rng)?;
@@ -429,7 +429,7 @@ async fn do_keyshare<C: Ciphersuite>(
 
     // Start Round 3
     // add my commitment to the map with the proper commitment sizes = threshold
-    let my_full_commitment = insert_identity_if_missing(threshold, &commitment);
+    let my_full_commitment = insert_identity_if_missing(threshold, &commitment)?;
     all_full_commitments.put(me, my_full_commitment);
 
     // Broadcast the commitment and the proof of knowledge
@@ -472,7 +472,7 @@ async fn do_keyshare<C: Ciphersuite>(
 
         // in case the participant was new and it sent a polynomial of length
         // threshold -1 (because the zero term is not serializable)
-        let full_commitment_i = insert_identity_if_missing(threshold, commitment_i);
+        let full_commitment_i = insert_identity_if_missing(threshold, commitment_i)?;
 
         // add received full commitment
         all_full_commitments.put(p, full_commitment_i);
@@ -566,7 +566,7 @@ pub fn assert_key_invariants(
     me: Participant,
     threshold: impl Into<ReconstructionThreshold>,
 ) -> Result<ParticipantList, InitializationError> {
-    let threshold = usize::from(threshold.into());
+    let threshold = threshold.into().try_as_usize()?;
     // need enough participants
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
@@ -649,8 +649,8 @@ pub fn assert_reshare_keys_invariants<C: Ciphersuite>(
     old_threshold: impl Into<ReconstructionThreshold>,
     old_participants: &[Participant],
 ) -> Result<(ParticipantList, ParticipantList), InitializationError> {
-    let threshold = usize::from(threshold.into());
-    let old_threshold = usize::from(old_threshold.into());
+    let threshold = threshold.into();
+    let old_threshold = old_threshold.into().try_as_usize()?;
 
     let participants = assert_key_invariants(participants, me, threshold)?;
 

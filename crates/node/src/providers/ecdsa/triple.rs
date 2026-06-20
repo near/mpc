@@ -12,13 +12,12 @@ use crate::providers::HasParticipants;
 use crate::providers::ecdsa::{EcdsaSignatureProvider, EcdsaTaskId};
 use crate::tracking::AutoAbortTaskCollection;
 use mpc_node_config::TripleConfig;
-use mpc_primitives::ReconstructionThreshold;
 use near_time::Clock;
 use rand::rngs::OsRng;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
-use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
+use threshold_signatures::ReconstructionThreshold;
 use threshold_signatures::ecdsa::ot_based_ecdsa::triples::TripleGenerationOutput;
 use threshold_signatures::participants::Participant;
 
@@ -74,11 +73,16 @@ impl EcdsaSignatureProvider {
         mpc_config: Arc<MpcConfig>,
         config: Arc<TripleConfig>,
         triple_store: Arc<TripleStorage>,
-        threshold: TSReconstructionThreshold,
+        threshold: ReconstructionThreshold,
     ) -> ! {
         let in_flight_generations = InFlightGenerationTracker::new();
         let parallelism_limiter = Arc::new(tokio::sync::Semaphore::new(config.concurrency));
         let mut tasks = AutoAbortTaskCollection::new();
+        // Converted once: loop-invariant, and this `-> !` loop has no error
+        // channel. Unreachable on supported targets (count fits in `usize`).
+        let threshold_usize = threshold
+            .try_as_usize()
+            .expect("reconstruction threshold fits in usize");
         let running_participants: Vec<_> = mpc_config
             .participants
             .participants
@@ -107,7 +111,7 @@ impl EcdsaSignatureProvider {
                 < config.concurrency * 2 * SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE
             {
                 let participants = match client.select_random_active_participants_including_me(
-                    threshold.value(),
+                    threshold_usize,
                     &running_participants,
                 ) {
                     Ok(participants) => participants,
@@ -208,11 +212,10 @@ impl EcdsaSignatureProvider {
         // Cait-sith triple generation runs with exactly `t` participants, so we
         // can derive the store's `t` from the channel's participant list
         // without a wire-format change to `EcdsaTaskId::ManyTriples`.
-        let threshold_usize: usize = channel.participants().len();
-        let threshold = ReconstructionThreshold::new(threshold_usize.try_into()?);
+        let threshold = ReconstructionThreshold::from(channel.participants().len());
         let triple_store = self.triple_store_for_t(threshold)?;
         FollowerManyTripleGenerationComputation::<SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE> {
-            threshold: TSReconstructionThreshold::from(threshold_usize),
+            threshold,
             out_triple_id_start: start,
             out_triple_store: triple_store,
         }
@@ -240,7 +243,7 @@ impl HasParticipants for PairedTriple {
 /// Generates many cait-sith triples at once. This can significantly save the
 /// *number* of network messages.
 pub struct ManyTripleGenerationComputation<const N: usize> {
-    pub threshold: TSReconstructionThreshold,
+    pub threshold: ReconstructionThreshold,
 }
 
 #[async_trait::async_trait]
@@ -288,7 +291,7 @@ impl<const N: usize> MpcLeaderCentricComputation<Vec<PairedTriple>>
 /// The follower version of the triple generation. The difference is that the follower will only
 /// complete the computation after successfully persisting the triples to storage.
 pub struct FollowerManyTripleGenerationComputation<const N: usize> {
-    pub threshold: TSReconstructionThreshold,
+    pub threshold: ReconstructionThreshold,
     pub out_triple_store: Arc<TripleStorage>,
     pub out_triple_id_start: UniqueId,
 }
@@ -348,7 +351,6 @@ mod tests {
     use futures::{FutureExt, StreamExt, stream};
     use std::collections::HashMap;
     use std::sync::Arc;
-    use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
     use threshold_signatures::test_utils::generate_participants;
     use tokio::sync::mpsc;
 
@@ -405,7 +407,7 @@ mod tests {
                             panic!("Unexpected task id");
                         };
                         let triples = ManyTripleGenerationComputation::<TRIPLES_PER_BATCH> {
-                            threshold: TSReconstructionThreshold::from(THRESHOLD),
+                            threshold: ReconstructionThreshold::from(THRESHOLD),
                         }
                         .perform_leader_centric_computation(
                             channel,
@@ -453,7 +455,7 @@ mod tests {
                     let result = tracking::spawn(
                         &format!("task {:?}", task_id),
                         ManyTripleGenerationComputation::<TRIPLES_PER_BATCH> {
-                            threshold: TSReconstructionThreshold::from(THRESHOLD),
+                            threshold: ReconstructionThreshold::from(THRESHOLD),
                         }
                         .perform_leader_centric_computation(
                             channel,

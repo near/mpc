@@ -29,9 +29,10 @@ pub fn assert_participant_inputs(
     }
 
     // validate threshold
-    if threshold.value() > participants.len() {
+    let threshold = threshold.try_as_usize()?;
+    if threshold > participants.len() {
         return Err(InitializationError::ThresholdTooLarge {
-            threshold: threshold.value(),
+            threshold,
             max: participants.len(),
         });
     }
