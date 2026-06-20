@@ -37,6 +37,39 @@ pub fn derive_public_key_edwards_point_ed25519(
     public_key_edwards_point + ED25519_BASEPOINT_POINT * tweak
 }
 
+pub fn derive_public_key_cheetah(root_be: &[u8], tweak: &Tweak) -> Option<[u8; 97]> {
+    let root = cheetah::PublicKey::from_be_bytes(root_be).ok()?;
+    let scalar = cheetah::tweak_from_le_bytes(&tweak.as_bytes());
+    root.derive_child(&scalar).ok()?.to_be_bytes().ok()
+}
+
+/// Verify a Nockchain Cheetah Schnorr signature against the *derived child* key.
+///
+/// - `root_be`: 97-byte big-endian root public key (as stored in the contract).
+/// - `tweak`: chain-signatures epsilon for the request (read little-endian).
+/// - `message`: the Cheetah signing payload — the 5-belt Tip5 digest as forty
+///   little-endian bytes (`message_from_digest`).
+/// - `sig`: `c ‖ s`, two 32-byte little-endian scalars.
+pub fn verify_cheetah_signature(
+    root_be: &[u8],
+    tweak: &Tweak,
+    message: &[u8],
+    sig: &[u8; 64],
+) -> bool {
+    let root = match cheetah::PublicKey::from_be_bytes(root_be) {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+    let scalar = cheetah::tweak_from_le_bytes(&tweak.as_bytes());
+    let child = match root.derive_child(&scalar) {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+    let digest = cheetah::digest_from_message(message);
+    let signature = cheetah::Signature::from_le_bytes(sig);
+    child.verify(&signature, &digest)
+}
+
 /// Get the x coordinate of a point, as a scalar
 pub fn x_coordinate(
     point: &<Secp256k1 as CurveArithmetic>::AffinePoint,
@@ -57,6 +90,51 @@ mod tests {
     use threshold_signatures::frost_core::VerifyingKey;
     use threshold_signatures::frost_core::keys::SigningShare;
     use threshold_signatures::frost_ed25519::{Ed25519Group, Ed25519Sha512, Group, SigningKey};
+
+    #[test]
+    fn verify_cheetah_signature_accepts_child_and_rejects_tampering() {
+        let root_sk = cheetah::PrivateKey::from_be_bytes(&[7u8; 32])
+            .expect("0x07..07 is a canonical scalar");
+        let tweak_bytes = [0x5a_u8; 32];
+        let tweak = cheetah::tweak_from_le_bytes(&tweak_bytes);
+
+        // The cluster signs for child = root + tweak·G.
+        let child_sk = root_sk.derive_child(&tweak);
+        let root_be = root_sk.public_key().unwrap().to_be_bytes().unwrap();
+
+        // 5-belt Tip5 digest, encoded as the 40-byte little-endian payload.
+        let digest = [11u64, 22, 33, 44, 55];
+        let mut message = [0u8; 40];
+        for (chunk, &belt) in message.chunks_mut(8).zip(&digest) {
+            chunk.copy_from_slice(&belt.to_le_bytes());
+        }
+        let sig = child_sk.sign(&digest).unwrap().to_le_bytes();
+
+        assert!(
+            verify_cheetah_signature(&root_be, &Tweak::new(tweak_bytes), &message, &sig),
+            "child signature verifies under root + tweak"
+        );
+
+        // Wrong tweak -> wrong derived key -> reject.
+        let mut other_tweak = tweak_bytes;
+        other_tweak[0] ^= 1;
+        assert!(!verify_cheetah_signature(&root_be, &Tweak::new(other_tweak), &message, &sig));
+
+        // Tampered signature -> reject.
+        let mut bad_sig = sig;
+        bad_sig[0] ^= 1;
+        assert!(!verify_cheetah_signature(&root_be, &Tweak::new(tweak_bytes), &message, &bad_sig));
+
+        // Zero tweak derives to the root key: signing with the root secret then
+        // verifies under a zero tweak (and the derived key equals the root).
+        let root_sig = root_sk.sign(&digest).unwrap().to_le_bytes();
+        assert!(verify_cheetah_signature(&root_be, &Tweak::new([0u8; 32]), &message, &root_sig));
+        assert_eq!(
+            derive_public_key_cheetah(&root_be, &Tweak::new([0u8; 32])),
+            Some(root_be),
+            "zero tweak is the identity derivation"
+        );
+    }
 
     pub(crate) fn derive_keygen_output(
         keygen_output: &KeygenOutput,

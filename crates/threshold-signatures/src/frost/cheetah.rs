@@ -11,10 +11,11 @@
 //! The FROST `message` is the 5-belt sig-hash digest encoded as 40 LE bytes (see
 //! [`message_from_digest`]).
 //!
-//! Hardening: scalar equality is constant-time (`subtle::ct_eq`) and nonce
-//! sampling uses wide reduction (negligible modulo bias). REMAINING: the scalar
-//! field arithmetic routes through `ibig` (a variable-time bignum), so it is not
-//! yet fully constant-time — a constant-time field backend is future work.
+//! Hardening: the scalar field is backed by constant-time `crypto-bigint`
+//! (`U256`) — modular add/sub/mul/inverse, wide-reduction nonce sampling, and
+//! constant-time equality/range checks. The cheetah-curve point/field arithmetic
+//! underneath (point add/double, projective scalar mul, Goldilocks reductions) is
+//! constant time as well — see cheetah-curve's `SECURITY.md`.
 
 use core::ops::{Add, Mul, Sub};
 
@@ -22,14 +23,14 @@ use frost_core::{
     Challenge, Element, Error, Field, FieldError, Group, GroupError, Signature, VerifyingKey,
 };
 use rand_core::{CryptoRng, RngCore};
-use subtle::ConstantTimeEq;
+use subtle::{ConstantTimeEq, ConstantTimeLess};
 
 use cheetah::{
-    A_GEN, A_ID, Belt, CheetahPoint, F6lt, G_ORDER, PRIME, ch_add, ch_neg, ch_scal_big,
-    hash_varlen, trunc_g_order,
+    A_GEN, A_ID, Belt, CheetahPoint, F6lt, G_ORDER, G_ORDER_NZ, U256, ch_add, ch_neg, ch_scal_big,
+    digest_from_message, hash_varlen, tip5_to_bytes, trunc_g_order,
 };
-use ibig::UBig;
-use ibig::modular::ModuloRing;
+pub use cheetah::message_from_digest;
+use crypto_bigint::U512;
 
 use crate::crypto::ciphersuite::{BytesOrder, ScalarSerializationFormat};
 
@@ -40,23 +41,16 @@ pub use presign::{KeygenOutput, PresignArguments, PresignOutput, SignatureOption
 
 // ---- scalar field GF(G_ORDER) ----------------------------------------------
 
-/// A scalar in `[0, G_ORDER)`, stored little-endian. `Copy` (required by frost-core),
-/// so it cannot hold an `ibig::UBig` directly; arithmetic routes through `UBig`.
+/// A scalar in `[0, G_ORDER)`, backed by a constant-time `crypto_bigint::U256`.
 #[derive(Copy, Clone, Debug)]
-pub struct CheetahScalar([u8; 32]);
+pub struct CheetahScalar(U256);
 
 impl CheetahScalar {
-    fn from_ubig(v: &UBig) -> Self {
-        let r = v.clone() % &*G_ORDER;
-        let le = r.to_le_bytes();
-        let mut b = [0u8; 32];
-        b.get_mut(..le.len())
-            .expect("scalar encoding fits in 32 bytes")
-            .copy_from_slice(&le);
-        Self(b)
+    fn from_u256(v: &U256) -> Self {
+        Self(v.rem(&G_ORDER_NZ))
     }
-    fn to_ubig(self) -> UBig {
-        UBig::from_le_bytes(&self.0)
+    fn to_u256(self) -> U256 {
+        self.0
     }
 }
 
@@ -70,21 +64,19 @@ impl Eq for CheetahScalar {}
 impl Add for CheetahScalar {
     type Output = Self;
     fn add(self, rhs: Self) -> Self {
-        Self::from_ubig(&(self.to_ubig() + rhs.to_ubig()))
+        Self(self.0.add_mod(&rhs.0, &G_ORDER_NZ))
     }
 }
 impl Sub for CheetahScalar {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self {
-        // (a - b) mod n = a + (n - b), since b is canonical in [0, n).
-        let n = (*G_ORDER).clone();
-        Self::from_ubig(&(self.to_ubig() + (n - rhs.to_ubig())))
+        Self(self.0.sub_mod(&rhs.0, &G_ORDER_NZ))
     }
 }
 impl Mul for CheetahScalar {
     type Output = Self;
     fn mul(self, rhs: Self) -> Self {
-        Self::from_ubig(&(self.to_ubig() * rhs.to_ubig()))
+        Self(self.0.mul_mod(&rhs.0, &G_ORDER_NZ))
     }
 }
 
@@ -96,40 +88,34 @@ impl Field for CheetahScalarField {
     type Serialization = [u8; 32];
 
     fn zero() -> CheetahScalar {
-        CheetahScalar([0u8; 32])
+        CheetahScalar(U256::ZERO)
     }
     fn one() -> CheetahScalar {
-        CheetahScalar::from_ubig(&UBig::from(1u8))
+        CheetahScalar(U256::ONE)
     }
     fn invert(scalar: &CheetahScalar) -> Result<CheetahScalar, FieldError> {
-        let v = scalar.to_ubig();
-        if v == UBig::from(0u8) {
-            return Err(FieldError::InvalidZeroScalar);
-        }
-        let ring = ModuloRing::new(&G_ORDER);
-        let inv = ring
-            .from(&v)
-            .inverse()
-            .ok_or(FieldError::InvalidZeroScalar)?;
-        Ok(CheetahScalar::from_ubig(&inv.residue()))
+        Option::<U256>::from(scalar.0.invert_mod(&G_ORDER_NZ))
+            .map(CheetahScalar)
+            .ok_or(FieldError::InvalidZeroScalar)
     }
     fn random<R: RngCore + CryptoRng>(rng: &mut R) -> CheetahScalar {
         let mut wide = [0u8; 64];
         rng.fill_bytes(&mut wide);
-        CheetahScalar::from_ubig(&UBig::from_le_bytes(&wide))
+        CheetahScalar(U512::from_le_slice(&wide).rem(&G_ORDER_NZ))
     }
     fn serialize(scalar: &CheetahScalar) -> [u8; 32] {
-        scalar.0
+        scalar.0.to_le_bytes().into()
     }
     fn little_endian_serialize(scalar: &CheetahScalar) -> [u8; 32] {
-        scalar.0
+        scalar.0.to_le_bytes().into()
     }
     fn deserialize(buf: &[u8; 32]) -> Result<CheetahScalar, FieldError> {
-        let v = UBig::from_le_bytes(buf);
-        if v >= *G_ORDER {
-            return Err(FieldError::MalformedScalar);
+        let v = U256::from_le_slice(buf);
+        if bool::from(v.ct_lt(&G_ORDER)) {
+            Ok(CheetahScalar(v))
+        } else {
+            Err(FieldError::MalformedScalar)
         }
-        Ok(CheetahScalar(*buf))
     }
 }
 
@@ -153,7 +139,7 @@ impl Sub for CheetahElement {
 impl Mul<CheetahScalar> for CheetahElement {
     type Output = Self;
     fn mul(self, rhs: CheetahScalar) -> Self {
-        Self(ch_scal_big(&rhs.to_ubig(), &self.0).expect("cheetah scalar mul"))
+        Self(ch_scal_big(&rhs.to_u256(), &self.0).expect("cheetah scalar mul"))
     }
 }
 
@@ -245,62 +231,15 @@ fn point_from_bytes(buf: &[u8; 97]) -> Option<CheetahPoint> {
 
 // ---- ciphersuite ------------------------------------------------------------
 
-/// Encode a 5-belt sig-hash digest as the 40 little-endian bytes that consumers
-/// pass to FROST as the `message`.
-pub fn message_from_digest(digest: &[u64; 5]) -> [u8; 40] {
-    let mut m = [0u8; 40];
-    for (chunk, &belt) in m.chunks_mut(8).zip(digest) {
-        for (slot, byte) in chunk.iter_mut().zip(belt.to_le_bytes()) {
-            *slot = byte;
-        }
-    }
-    m
-}
-
+/// Reduce a little-endian byte string into a Cheetah scalar (chain-signatures
+/// tweak / epsilon). Delegates to cheetah-curve's `tweak_from_le_bytes`.
 pub fn tweak_scalar(bytes: &[u8]) -> CheetahScalar {
-    CheetahScalar::from_ubig(&UBig::from_le_bytes(bytes))
+    CheetahScalar::from_u256(&cheetah::tweak_from_le_bytes(bytes))
 }
 
-fn digest_from_message(message: &[u8]) -> [u64; 5] {
-    let mut d = [0u64; 5];
-    for (i, slot) in d.iter_mut().enumerate() {
-        let s = i * 8;
-        let mut a = [0u8; 8];
-        if s + 8 <= message.len() {
-            a.copy_from_slice(
-                message
-                    .get(s..s + 8)
-                    .expect("message chunk fits in digest slots"),
-            );
-        }
-        *slot = u64::from_le_bytes(a) % PRIME;
-    }
-    d
-}
-
+/// Domain-separated Tip5 hash to a Cheetah scalar (FROST H1/H2/H3/HDKG/HID).
 fn tip5_to_scalar(domain: &[u8], m: &[u8]) -> CheetahScalar {
-    let mut t: Vec<Belt> = Vec::with_capacity(domain.len() + m.len());
-    t.extend(domain.iter().map(|&b| Belt(u64::from(b))));
-    t.extend(m.iter().map(|&b| Belt(u64::from(b))));
-    CheetahScalar::from_ubig(&trunc_g_order(&hash_varlen(&mut t)))
-}
-
-fn tip5_to_bytes(domain: &[u8], m: &[u8]) -> [u8; 32] {
-    let mut t: Vec<Belt> = Vec::with_capacity(domain.len() + m.len());
-    t.extend(domain.iter().map(|&b| Belt(u64::from(b))));
-    t.extend(m.iter().map(|&b| Belt(u64::from(b))));
-    let d = hash_varlen(&mut t);
-    let mut o = [0u8; 32];
-    for i in 0..4 {
-        o.get_mut(i * 8..i * 8 + 8)
-            .expect("tip5 hash output fits in 32 bytes")
-            .copy_from_slice(
-                &d.get(i)
-                    .expect("tip5 digest has at least 4 belts")
-                    .to_le_bytes(),
-            );
-    }
-    o
+    CheetahScalar::from_u256(&cheetah::tip5_to_scalar(domain, m))
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -351,8 +290,8 @@ impl frost_core::Ciphersuite for CheetahTip5 {
         t.extend_from_slice(&p.x.0);
         t.extend_from_slice(&p.y.0);
         t.extend(m.iter().map(|&u| Belt(u)));
-        let c = trunc_g_order(&hash_varlen(&mut t));
-        Ok(Challenge::from_scalar(CheetahScalar::from_ubig(&c)))
+        let c = trunc_g_order(&hash_varlen(&t));
+        Ok(Challenge::from_scalar(CheetahScalar::from_u256(&c)))
     }
 }
 
@@ -396,7 +335,7 @@ mod tests {
 
     /// Mirror of nockchain-types `Spend1::verify_pkh_signature`: accept iff
     /// `trunc_g_order(Tip5((s·G − c·P).x ‖ .y ‖ P.x ‖ P.y ‖ m)) == c`.
-    fn chain_verify(pubkey: &CheetahPoint, c: &UBig, s: &UBig, m: &[u64; 5]) -> bool {
+    fn chain_verify(pubkey: &CheetahPoint, c: &U256, s: &U256, m: &[u64; 5]) -> bool {
         let left = ch_scal_big(s, &A_GEN).expect("sG");
         let right = ch_neg(&ch_scal_big(c, pubkey).expect("cP"));
         let rprime = ch_add(&left, &right).expect("R'");
@@ -406,7 +345,7 @@ mod tests {
         t.extend_from_slice(&pubkey.x.0);
         t.extend_from_slice(&pubkey.y.0);
         t.extend(m.iter().map(|&u| Belt(u)));
-        &trunc_g_order(&hash_varlen(&mut t)) == c
+        &trunc_g_order(&hash_varlen(&t)) == c
     }
 
     #[test]
@@ -431,7 +370,7 @@ mod tests {
         let mut rbuf = [0u8; 97];
         rbuf.copy_from_slice(&bytes[..97]);
         let rpt = point_from_bytes(&rbuf).expect("R point");
-        let z = UBig::from_le_bytes(&bytes[97..129]);
+        let z = U256::from_le_slice(&bytes[97..129]);
         let p = vk.to_element().0;
 
         let mut t: Vec<Belt> = Vec::with_capacity(29);
@@ -440,7 +379,7 @@ mod tests {
         t.extend_from_slice(&p.x.0);
         t.extend_from_slice(&p.y.0);
         t.extend(digest.iter().map(|&u| Belt(u)));
-        let c = trunc_g_order(&hash_varlen(&mut t));
+        let c = trunc_g_order(&hash_varlen(&t));
 
         assert!(
             chain_verify(&p, &c, &z, &digest),

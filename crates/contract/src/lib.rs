@@ -441,7 +441,14 @@ impl MpcContract {
                 dtos::Ed25519PublicKey::from(derived_public_key_edwards_point.compress()).into()
             }
             PublicKeyExtended::Bls12381 { public_key } => public_key,
-            PublicKeyExtended::Cheetah { public_key } => public_key,
+            PublicKeyExtended::Cheetah { public_key } => match public_key {
+                dtos::PublicKey::Cheetah(pk) => {
+                    let child = crypto_shared::kdf::derive_public_key_cheetah(pk.as_ref(), &tweak)
+                        .expect("stored Cheetah root key is a valid on-curve point");
+                    dtos::PublicKey::Cheetah(dtos::CheetahPublicKey(child))
+                }
+                other => other,
+            },
         };
 
         Ok(derived_public_key)
@@ -632,14 +639,25 @@ impl MpcContract {
                 .is_ok()
             }
             (
-                dtos::SignatureResponse::Cheetah { signature: _ },
-                PublicKeyExtended::Cheetah { .. },
+                dtos::SignatureResponse::Cheetah { signature },
+                PublicKeyExtended::Cheetah { public_key },
             ) => {
-                // Cheetah signatures are verified off-chain (the contract has no Cheetah
-                // curve arithmetic, by the opaque-integration design). The threshold
-                // protocol's honest majority guarantees the relayed (c, s) is valid for
-                // the off-chain-derived key, so the contract relays it without re-checking.
-                true
+                let root_be = match &public_key {
+                    dtos::PublicKey::Cheetah(pk) => pk.as_ref(),
+                    _ => return Err(RespondError::InvalidSignature.into()),
+                };
+                let message = request
+                    .payload
+                    .as_eddsa()
+                    .expect("Cheetah payload is a byte message");
+                let mut sig_bytes = [0u8; 64];
+                sig_bytes.copy_from_slice(&signature[..]);
+                crypto_shared::kdf::verify_cheetah_signature(
+                    root_be,
+                    &request.tweak,
+                    message,
+                    &sig_bytes,
+                )
             }
             (signature_response, public_key_requested) => {
                 return Err(RespondError::SignatureSchemeMismatch {
