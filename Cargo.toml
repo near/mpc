@@ -141,8 +141,6 @@ ethereum-types = "0.16.0"
 flume = "0.12.0"
 frost-core = { version = "3.0.0", default-features = false, features = [
     "serde",
-    # Exposes Challenge::from_scalar / VerifyingKey::to_element so the hand-rolled
-    # Cheetah ciphersuite can override challenge() with Nockchain's Tip5 transcript.
     "internals",
 ] }
 frost-ed25519 = { version = "3.0.0", default-features = false }

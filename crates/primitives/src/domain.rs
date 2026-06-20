@@ -63,8 +63,6 @@ pub enum Curve {
     Secp256k1,
     Edwards25519,
     Bls12381,
-    /// Nockchain's Cheetah curve (key-prefixed Schnorr, Tip5 challenge).
-    /// Appended last to preserve Borsh discriminants and JSON variant names.
     Cheetah,
 }
 
@@ -93,8 +91,6 @@ pub enum Protocol {
     Frost,
     ConfidentialKeyDerivation,
     DamgardEtAl,
-    /// FROST threshold Schnorr over Nockchain's Cheetah curve. Appended last to
-    /// preserve Borsh discriminants and JSON variant names.
     FrostCheetah,
 }
 
