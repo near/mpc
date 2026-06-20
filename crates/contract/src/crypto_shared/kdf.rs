@@ -93,8 +93,8 @@ mod tests {
 
     #[test]
     fn verify_cheetah_signature_accepts_child_and_rejects_tampering() {
-        let root_sk = cheetah::PrivateKey::from_be_bytes(&[7u8; 32])
-            .expect("0x07..07 is a canonical scalar");
+        let root_sk =
+            cheetah::PrivateKey::from_be_bytes(&[7u8; 32]).expect("0x07..07 is a canonical scalar");
         let tweak_bytes = [0x5a_u8; 32];
         let tweak = cheetah::tweak_from_le_bytes(&tweak_bytes);
 
@@ -118,17 +118,32 @@ mod tests {
         // Wrong tweak -> wrong derived key -> reject.
         let mut other_tweak = tweak_bytes;
         other_tweak[0] ^= 1;
-        assert!(!verify_cheetah_signature(&root_be, &Tweak::new(other_tweak), &message, &sig));
+        assert!(!verify_cheetah_signature(
+            &root_be,
+            &Tweak::new(other_tweak),
+            &message,
+            &sig
+        ));
 
         // Tampered signature -> reject.
         let mut bad_sig = sig;
         bad_sig[0] ^= 1;
-        assert!(!verify_cheetah_signature(&root_be, &Tweak::new(tweak_bytes), &message, &bad_sig));
+        assert!(!verify_cheetah_signature(
+            &root_be,
+            &Tweak::new(tweak_bytes),
+            &message,
+            &bad_sig
+        ));
 
         // Zero tweak derives to the root key: signing with the root secret then
         // verifies under a zero tweak (and the derived key equals the root).
         let root_sig = root_sk.sign(&digest).unwrap().to_le_bytes();
-        assert!(verify_cheetah_signature(&root_be, &Tweak::new([0u8; 32]), &message, &root_sig));
+        assert!(verify_cheetah_signature(
+            &root_be,
+            &Tweak::new([0u8; 32]),
+            &message,
+            &root_sig
+        ));
         assert_eq!(
             derive_public_key_cheetah(&root_be, &Tweak::new([0u8; 32])),
             Some(root_be),

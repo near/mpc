@@ -82,7 +82,11 @@ async fn mpc_cluster__should_dkg_and_sign_frost_cheetah() {
         .expect("CheetahSignature is 64 bytes (c ‖ s)");
     tracing::info!("FrostCheetah MPC threshold signature returned + verified on-chain");
 
-    let state = cluster.contract.state().await.expect("fetch contract state");
+    let state = cluster
+        .contract
+        .state()
+        .await
+        .expect("fetch contract state");
     let ProtocolContractState::Running(rs) = state else {
         panic!("expected Running state")
     };

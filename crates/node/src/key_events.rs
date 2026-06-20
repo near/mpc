@@ -28,6 +28,7 @@ use near_mpc_contract_interface::types::DomainConfig;
 use near_mpc_crypto_types::{KeyForDomain, Keyset};
 use std::sync::Arc;
 use std::time::Duration;
+use threshold_signatures::frost::cheetah::verifying_key_to_bytes;
 use threshold_signatures::{
     ReconstructionThreshold, confidential_key_derivation as ckd, frost_ed25519, frost_secp256k1,
 };
@@ -97,7 +98,7 @@ pub async fn keygen_computation_inner(
             let keyshare =
                 CheetahSignatureProvider::run_key_generation_client(threshold, channel).await?;
             let public_key = dtos::PublicKey::Cheetah(dtos::CheetahPublicKey::from(
-                threshold_signatures::frost::cheetah::verifying_key_to_bytes(&keyshare.public_key),
+                verifying_key_to_bytes(&keyshare.public_key),
             ));
             (KeyshareData::Cheetah(keyshare), public_key)
         }

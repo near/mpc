@@ -25,11 +25,11 @@ use frost_core::{
 use rand_core::{CryptoRng, RngCore};
 use subtle::{ConstantTimeEq, ConstantTimeLess};
 
+pub use cheetah::message_from_digest;
 use cheetah::{
     A_GEN, A_ID, Belt, CheetahPoint, F6lt, G_ORDER, G_ORDER_NZ, U256, ch_add, ch_neg, ch_scal_big,
     digest_from_message, hash_varlen, tip5_to_bytes, trunc_g_order,
 };
-pub use cheetah::message_from_digest;
 use crypto_bigint::U512;
 
 use crate::crypto::ciphersuite::{BytesOrder, ScalarSerializationFormat};
