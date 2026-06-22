@@ -423,8 +423,7 @@ pub mod tests {
         let new_participants_2 = new_participants_1
             .subset(new_participants_1.len() - old_participants.len()..new_participants_1.len());
         let new_params_1 = ThresholdParameters::new(new_participants_1, new_threshold).unwrap();
-        let new_threshold_2 = Threshold::new((3 * new_participants_2.len() as u64).div_ceil(5));
-        let new_params_2 = ThresholdParameters::new(new_participants_2, new_threshold_2).unwrap();
+        let new_params_2 = ThresholdParameters::new(new_participants_2, new_threshold).unwrap();
         // Proposals carry an empty (no-change) set of per-domain threshold updates.
         let proposed_1 = ProposedThresholdParameters::new(new_params_1.clone(), BTreeMap::new());
         let proposed_2 = ProposedThresholdParameters::new(new_params_2.clone(), BTreeMap::new());
