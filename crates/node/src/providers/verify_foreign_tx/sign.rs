@@ -64,23 +64,36 @@ where
         let domain_data = self
             .ecdsa_signature_provider
             .domain_data(foreign_tx_request.domain_id)?;
-        let (presignature_id, presignature) = domain_data.presignature_store.take_owned().await;
-        let participants = presignature.participants.clone();
-
+        let foreign_chains_configs = self
+            .foreign_chain_policy_reader
+            .get_foreign_chains_configs()
+            .await?;
         let requested_chain = foreign_tx_request.request.chain();
-        check_chain_support(
-            &participants,
-            self.ecdsa_signature_provider.participants_config(),
-            &self.foreign_chain_policy_reader,
-            &requested_chain,
-        )
-        .await
-        .with_context(|| {
-            format!(
-                "presignature {presignature_id:?} includes participants that do not support \
-                 chain {requested_chain:?}; the request will be retried"
-            )
-        })?;
+
+        let max_attempts = domain_data.presignature_store.num_owned().max(1);
+        let mut incompatible = 0usize;
+
+        let (presignature_id, presignature) = loop {
+            let (id, ps) = domain_data.presignature_store.take_owned().await;
+            if participants_support_chain(
+                &ps.participants,
+                self.ecdsa_signature_provider.participants_config(),
+                &foreign_chains_configs,
+                &requested_chain,
+            ) {
+                break (id, ps);
+            }
+            domain_data.presignature_store.add_owned(id, ps);
+            incompatible += 1;
+            if incompatible >= max_attempts {
+                bail!(
+                    "no presignature found whose participants all support chain \
+                     {requested_chain:?} after scanning {incompatible} presignature(s); \
+                     the request will be retried"
+                );
+            }
+        };
+        let participants = presignature.participants.clone();
 
         let channel = self.ecdsa_signature_provider.new_channel_for_task(
             VerifyForeignTxTaskId::VerifyForeignTx {
@@ -397,26 +410,6 @@ async fn is_chain_available(
     }
 }
 
-async fn check_chain_support(
-    participants: &[ParticipantId],
-    participants_config: &ParticipantsConfig,
-    foreign_chain_policy_reader: &impl ReadAvailableForeignChains,
-    chain: &contract_dtos::ForeignChain,
-) -> anyhow::Result<()> {
-    let foreign_chains_configs = foreign_chain_policy_reader
-        .get_foreign_chains_configs()
-        .await?;
-    if !participants_support_chain(
-        participants,
-        participants_config,
-        &foreign_chains_configs,
-        chain,
-    ) {
-        anyhow::bail!("not all participants support chain {chain:?}");
-    }
-    Ok(())
-}
-
 fn participants_support_chain(
     participants: &[ParticipantId],
     participants_config: &ParticipantsConfig,
@@ -471,16 +464,6 @@ mod tests {
         config: dtos::ForeignChainsConfig,
     ) -> dtos::ForeignChainsConfigs {
         BTreeMap::from([(key, config)]).into()
-    }
-
-    fn mock_reader_for_configs(
-        configs: dtos::ForeignChainsConfigs,
-    ) -> MockReadAvailableForeignChains {
-        let mut reader = MockReadAvailableForeignChains::new();
-        reader
-            .expect_get_foreign_chains_configs()
-            .returning(move || Box::pin(std::future::ready(Ok(configs.clone()))));
-        reader
     }
 
     fn bitcoin_request() -> dtos::ForeignChainRpcRequest {
@@ -587,56 +570,6 @@ mod tests {
             &configs,
             &dtos::ForeignChain::Bitcoin,
         ));
-    }
-
-    // ── check_chain_support ───────────────────────────────────────────────────
-
-    #[tokio::test]
-    async fn check_chain_support__should_err_when_participant_not_registered() {
-        // Given
-        let key = make_signing_key(1);
-        let participants_config = ParticipantsConfig {
-            threshold: 1,
-            participants: vec![make_participant_info(1, &key)],
-        };
-        // No TLS-key entry: the gate must reject.
-        let reader = mock_reader_for_configs(dtos::ForeignChainsConfigs::default());
-
-        // when, then:
-        assert_matches!(
-            check_chain_support(
-                &[ParticipantId::from_raw(1)],
-                &participants_config,
-                &reader,
-                &dtos::ForeignChain::Bitcoin,
-            )
-            .await,
-            Err(_)
-        );
-    }
-
-    #[tokio::test]
-    async fn check_chain_support__should_succeed_when_all_participants_support_chain() {
-        // Given
-        let key = make_signing_key(1);
-        let participants_config = ParticipantsConfig {
-            threshold: 1,
-            participants: vec![make_participant_info(1, &key)],
-        };
-        let configs = foreign_chains_configs_with(tls_key_for(&key), bitcoin_chain_config());
-        let reader = mock_reader_for_configs(configs);
-
-        // when, then:
-        assert_matches!(
-            check_chain_support(
-                &[ParticipantId::from_raw(1)],
-                &participants_config,
-                &reader,
-                &dtos::ForeignChain::Bitcoin,
-            )
-            .await,
-            Ok(())
-        );
     }
 
     // ── is_chain_available ────────────────────────────────────────────────────
