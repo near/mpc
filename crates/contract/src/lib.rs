@@ -2592,7 +2592,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::errors::{InvalidThreshold, NodeMigrationError};
+    use crate::errors::{InvalidCandidateSet, InvalidThreshold, NodeMigrationError};
     use crate::pending_requests::MAX_PENDING_REQUEST_FAN_OUT;
     use crate::primitives::participants::{ParticipantId, ParticipantInfo, Participants};
     use crate::primitives::test_utils::{
@@ -4032,9 +4032,8 @@ mod tests {
     }
 
     #[test]
-    fn vote_new_parameters__should_reject_when_shrinking_below_unchanged_domain_threshold() {
-        // Given: a Running contract with 4 participants (GovernanceThreshold 3) and a
-        // domain whose reconstruction threshold is 3.
+    fn vote_new_parameters__should_reject_when_shrinking_below_governance_threshold() {
+        // Given: a Running contract with 4 participants and a GovernanceThreshold of 3.
         let (mut contract, participants, signer, _domain_id) =
             setup_running_contract_with_domain(4, 3, 3);
         // ...and a proposal that shrinks the participant set to 2 without touching
@@ -4047,14 +4046,13 @@ mod tests {
         // When
         let result = vote_params(&mut contract, &signer, &proposal);
 
-        // Then: the domain's unchanged threshold of 3 exceeds the 2 proposed
-        // participants, so the guard rejects it.
+        // Then: the candidate-set guard rejects the proposal first, because only 2
+        // old participants remain — fewer than the GovernanceThreshold of 3. (Under
+        // the GovernanceThreshold >= max(ReconstructionThreshold) invariant this guard
+        // always fires before any per-domain ReconstructionThreshold check could.)
         assert_matches!(
             result.unwrap_err(),
-            Error::DomainError(DomainError::ReconstructionThresholdExceedsParticipants {
-                threshold: 3,
-                participants: 2,
-            })
+            Error::InvalidCandidateSet(InvalidCandidateSet::InsufficientOldParticipants)
         );
     }
 
