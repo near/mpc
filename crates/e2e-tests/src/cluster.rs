@@ -851,6 +851,10 @@ impl MpcCluster {
             .await
     }
     /// View the foreign chains the contract accepts requests for.
+    #[expect(
+        deprecated,
+        reason = "We need to keep until deprecated methods are dropped https://github.com/near/mpc/issues/3630"
+    )]
     pub async fn view_foreign_chains_supported_by_contract(
         &self,
     ) -> anyhow::Result<near_mpc_contract_interface::types::SupportedForeignChains> {
@@ -859,12 +863,34 @@ impl MpcCluster {
             .await
     }
 
+    /// View the available foreign chains (threshold-covered + whitelisted).
+    pub async fn view_available_foreign_chains(
+        &self,
+    ) -> anyhow::Result<near_mpc_contract_interface::types::AvailableForeignChains> {
+        self.contract
+            .view(method_names::GET_AVAILABLE_FOREIGN_CHAINS)
+            .await
+    }
+
     /// View the per-node foreign chain configurations registered with the contract.
+    #[expect(
+        deprecated,
+        reason = "We need to keep until deprecated methods are dropped https://github.com/near/mpc/issues/3630"
+    )]
     pub async fn view_foreign_chain_configurations(
         &self,
     ) -> anyhow::Result<near_mpc_contract_interface::types::ForeignChainSupportByNode> {
         self.contract
             .view(method_names::GET_FOREIGN_CHAIN_SUPPORT_BY_NODE)
+            .await
+    }
+
+    /// View the per-node foreign chain configs keyed by TLS public key.
+    pub async fn view_foreign_chains_configs(
+        &self,
+    ) -> anyhow::Result<near_mpc_contract_interface::types::ForeignChainsConfigs> {
+        self.contract
+            .view(method_names::GET_FOREIGN_CHAINS_CONFIGS)
             .await
     }
 

@@ -1,4 +1,4 @@
-use crate::indexer::ReadSupportedForeignChain;
+use crate::indexer::ReadAvailableForeignChains;
 use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::tx_sender::TransactionSender;
 use crate::indexer::types::{
@@ -88,7 +88,7 @@ fn is_heavy_generation_task(task_id: &MpcTaskId) -> bool {
 
 impl<ForeignChainPolicyReader> MpcClient<ForeignChainPolicyReader>
 where
-    ForeignChainPolicyReader: ReadSupportedForeignChain + 'static,
+    ForeignChainPolicyReader: ReadAvailableForeignChains + 'static,
 {
     #[expect(clippy::too_many_arguments)]
     pub fn new(

@@ -2130,6 +2130,9 @@ impl MpcContract {
         dtos::Config::from(&self.config)
     }
 
+    #[deprecated(
+        note = "use get_available_foreign_chains, see https://github.com/near/mpc/issues/3630"
+    )]
     pub fn get_supported_foreign_chains(&self) -> dtos::SupportedForeignChains {
         let active_participant_account_ids = self
             .protocol_state
@@ -2174,6 +2177,9 @@ impl MpcContract {
             .into()
     }
 
+    #[deprecated(
+        note = "use get_foreign_chains_configs; see https://github.com/near/mpc/issues/3630"
+    )]
     pub fn get_foreign_chain_support_by_node(&self) -> dtos::ForeignChainSupportByNode {
         self.node_foreign_chain_support.to_dto()
     }

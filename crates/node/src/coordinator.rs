@@ -6,7 +6,7 @@ use crate::indexer::participants::{
     ContractKeyEventInstance, ContractResharingState, ContractRunningState, ContractState,
 };
 use crate::indexer::types::{ChainRegisterForeignChainConfigArgs, ChainSendTransactionRequest};
-use crate::indexer::{IndexerAPI, ReadSupportedForeignChain, tx_sender};
+use crate::indexer::{IndexerAPI, ReadAvailableForeignChains, tx_sender};
 use crate::key_events::{
     ResharingArgs, keygen_follower, keygen_leader, resharing_follower, resharing_leader,
 };
@@ -102,7 +102,7 @@ impl<TransactionSender, ForeignChainPolicyReader>
     Coordinator<TransactionSender, ForeignChainPolicyReader>
 where
     TransactionSender: tx_sender::TransactionSender + 'static,
-    ForeignChainPolicyReader: ReadSupportedForeignChain + Clone + Send + Sync + 'static,
+    ForeignChainPolicyReader: ReadAvailableForeignChains + Clone + Send + Sync + 'static,
 {
     pub async fn run(mut self) -> anyhow::Result<()> {
         loop {

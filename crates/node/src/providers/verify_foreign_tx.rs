@@ -170,7 +170,7 @@ impl From<VerifyForeignTxTaskId> for MpcTaskId {
 impl<ForeignChainPolicyReader> SignatureProvider
     for VerifyForeignTxProvider<ForeignChainPolicyReader>
 where
-    ForeignChainPolicyReader: crate::indexer::ReadSupportedForeignChain,
+    ForeignChainPolicyReader: crate::indexer::ReadAvailableForeignChains,
 {
     type PublicKey = VerifyingKey;
     type SecretShare = SigningShare;

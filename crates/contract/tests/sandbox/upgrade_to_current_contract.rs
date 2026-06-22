@@ -534,6 +534,10 @@ async fn upgrade_preserves_per_node_foreign_chain_support(
 
     // Then: each node's supported-chain set matches the chains it originally
     // registered (RPC providers are dropped by the new layout).
+    #[expect(
+        deprecated,
+        reason = "We need to keep until deprecated methods are dropped https://github.com/near/mpc/issues/3630"
+    )]
     let support: dtos::ForeignChainSupportByNode = contract
         .view(method_names::GET_FOREIGN_CHAIN_SUPPORT_BY_NODE)
         .await?
