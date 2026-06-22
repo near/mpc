@@ -52,11 +52,7 @@ impl ThresholdParameters {
     /// - threshold must be at least `MIN_THRESHOLD_ABSOLUTE`
     /// - threshold can not exceed the number of shares `n_shares`.
     /// - threshold must be at least 60% of the number of shares (rounded upwards).
-    /// - threshold must not exceed `MAX_THRESHOLD_NUMERATOR / MAX_THRESHOLD_DENOMINATOR`
-    ///   of the number of shares (rounded downwards), clamped up to the 60% lower bound so
-    ///   the feasible window is never empty for small `n_shares`. This relative upper cap is
-    ///   currently set to 100%, so in practice it never binds below the absolute `k <= n`
-    ///   check above.
+    /// - threshold must not exceed the upper bound (now set to 100%)
     fn validate_threshold(n_shares: u64, k: Threshold) -> Result<(), Error> {
         if k.value() > n_shares {
             return Err(InvalidThreshold::MaxRequirementFailed {
