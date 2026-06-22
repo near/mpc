@@ -3387,7 +3387,7 @@ expression: abi
               "minimum": 0.0
             },
             "tee_verifier_account_id": {
-              "description": "Account whose `verify_quote` method the contract trusts for DCAP verification. Optional: fresh deploys may set it here, otherwise the contract starts from an unconfigured placeholder and participants vote one in via `vote_tee_verifier_change`.",
+              "description": "Contract account trusted for DCAP verification.",
               "type": [
                 "string",
                 "null"
