@@ -58,7 +58,7 @@ where
     Scalar<C>: Send,
 {
     let mut rng = MockCryptoRng::seed_from_u64(42);
-    let protocols = prepare_dkg::<C, _>(n, threshold, &mut rng);
+    let protocols = prepare_dkg::<C, _>(n, threshold, &mut rng).protocols;
     let (results, metrics) = run_simulation(protocols, &config.latency);
     assert_eq!(results.len(), n);
     let first_pk = results[0].1.public_key;
