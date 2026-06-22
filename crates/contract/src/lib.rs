@@ -4032,6 +4032,33 @@ mod tests {
     }
 
     #[test]
+    fn vote_new_parameters__should_reject_when_shrinking_below_unchanged_domain_threshold() {
+        // Given: a Running contract with 4 participants (GovernanceThreshold 3) and a
+        // domain whose reconstruction threshold is 3.
+        let (mut contract, participants, signer, _domain_id) =
+            setup_running_contract_with_domain(4, 3, 3);
+        // ...and a proposal that shrinks the participant set to 2 without touching
+        // the per-domain thresholds.
+        let proposal = ProposedThresholdParameters::new(
+            ThresholdParameters::new(participants.subset(0..2), Threshold::new(2)).unwrap(),
+            BTreeMap::new(),
+        );
+
+        // When
+        let result = vote_params(&mut contract, &signer, &proposal);
+
+        // Then: the domain's unchanged threshold of 3 exceeds the 2 proposed
+        // participants, so the guard rejects it.
+        assert_matches!(
+            result.unwrap_err(),
+            Error::DomainError(DomainError::ReconstructionThresholdExceedsParticipants {
+                threshold: 3,
+                participants: 2,
+            })
+        );
+    }
+
+    #[test]
     fn vote_new_parameters__should_reject_when_signing_threshold_exceeds_participants() {
         // Given: a Running contract with 3 participants and one domain.
         let (mut contract, participants, signer, _domain_id) =
