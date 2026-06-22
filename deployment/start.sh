@@ -95,7 +95,7 @@ migration_web_ui: 0.0.0.0:8079
 pprof_bind_address: 0.0.0.0:34001
 triple:
   concurrency: 2
-  desired_triples_to_buffer: 1000000
+  desired_triples_to_buffer: 16384
   timeout_sec: 60
   parallel_triple_generation_stagger_time_sec: 1
 presignature:

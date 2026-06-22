@@ -1,5 +1,5 @@
 #![allow(clippy::expect_fun_call)] // to reduce verbosity of expect calls
-use crate::account::{OperatingAccessKey, OperatingAccounts};
+use crate::account::{OperatingAccessKey, OperatingAccounts, resolve_funding_account};
 use crate::cli::{
     DeployParallelSignContractCmd, ListLoadtestCmd, NewLoadtestCmd, RunLoadtestCmd,
     UpdateLoadtestCmd,
@@ -84,6 +84,7 @@ impl NewLoadtestCmd {
             self.near_per_account,
         );
 
+        let funding_account = resolve_funding_account(&config);
         let mut setup = OperatingDevnetSetup::load(config.rpc).await;
         if setup.loadtest_setups.contains_key(name) {
             println!(
@@ -104,7 +105,7 @@ impl NewLoadtestCmd {
             &mut setup.accounts,
             loadtest_setup,
             self.num_accounts,
-            config.funding_account,
+            funding_account,
         )
         .await;
     }
@@ -114,6 +115,7 @@ impl UpdateLoadtestCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
         println!("Going to update loadtest setup {}", name);
 
+        let funding_account = resolve_funding_account(&config);
         let mut setup = OperatingDevnetSetup::load(config.rpc).await;
         let loadtest_setup = setup
             .loadtest_setups
@@ -135,7 +137,7 @@ impl UpdateLoadtestCmd {
             &mut setup.accounts,
             loadtest_setup,
             desired_num_accounts,
-            config.funding_account,
+            funding_account,
         )
         .await;
     }
@@ -153,6 +155,7 @@ impl DeployParallelSignContractCmd {
             .unwrap_or(DEFAULT_PARALLEL_SIGN_CONTRACT_PATH.to_string());
         let contract_data = std::fs::read(&contract_path).unwrap();
 
+        let funding_account = resolve_funding_account(&config);
         let mut setup = OperatingDevnetSetup::load(config.rpc).await;
         let loadtest_setup = setup
             .loadtest_setups
@@ -186,7 +189,7 @@ impl DeployParallelSignContractCmd {
         let contract_account = fund_accounts(
             &mut setup.accounts,
             vec![contract_account_to_fund],
-            config.funding_account,
+            funding_account,
         )
         .await
         .into_iter()
