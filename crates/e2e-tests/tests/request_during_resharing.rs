@@ -11,11 +11,11 @@ use rand::SeedableRng;
 ///
 /// Setup: 6 nodes, 5 initial participants (threshold 5). Domains cover
 /// classic ECDSA (CaitSith), robust ECDSA (DamgardEtAl), EdDSA (Frost) and
-/// CKD (ConfidentialKeyDerivation). Threshold is 5 because robust ECDSA
-/// requires ≥ 5 signers (see `robust_ecdsa::translate_threshold`). Begin
-/// resharing to all 6 with threshold 6, then kill node 5 so resharing can't
-/// complete. Requests should still succeed using the old threshold of 5
-/// across all signing schemes.
+/// CKD (ConfidentialKeyDerivation). The robust-ECDSA domain uses a
+/// reconstruction threshold of `t = 3`, which requires `2t - 1 = 5` signers,
+/// so we need at least 5 participants. Begin resharing to all 6 with threshold
+/// 6, then kill node 5 so resharing can't complete. Requests should still
+/// succeed using the previous running state across all signing schemes.
 #[tokio::test]
 async fn test_request_during_resharing() {
     // given

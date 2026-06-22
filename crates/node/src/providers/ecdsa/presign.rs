@@ -12,7 +12,6 @@ use crate::providers::ecdsa::{EcdsaSignatureProvider, EcdsaTaskId, KeygenOutput,
 use crate::tracking::AutoAbortTaskCollection;
 use crate::{metrics, tracking};
 use mpc_node_config::PresignatureConfig;
-use mpc_primitives::ReconstructionThreshold;
 use mpc_primitives::domain::DomainId;
 use near_time::Clock;
 use serde::{Deserialize, Serialize};
@@ -179,11 +178,17 @@ impl EcdsaSignatureProvider {
         paired_triple_id.validate_owned_by(leader)?;
         let domain_data = self.domain_data(domain_id)?;
 
-        // Triple store to consume from is keyed by the presign's `t`, which
-        // equals the number of presign participants (same as triple
-        // participants — the leader pairs them).
-        let threshold_usize: usize = channel.participants().len();
-        let threshold = ReconstructionThreshold::new(threshold_usize.try_into()?);
+        // The triple store is keyed by the domain's reconstruction threshold
+        // `t`. For cait-sith the leader pairs exactly `t` participants, so the
+        // channel participant count must match — cross-check it.
+        let threshold = domain_data.reconstruction_threshold;
+        let threshold_usize: usize = threshold.inner().try_into()?;
+        anyhow::ensure!(
+            channel.participants().len() == threshold_usize,
+            "presign participant count ({}) does not match domain threshold t={}",
+            channel.participants().len(),
+            threshold_usize,
+        );
         let triple_store = self.triple_store_for_t(threshold)?;
         FollowerPresignComputation {
             threshold: TSReconstructionThreshold::from(threshold_usize),

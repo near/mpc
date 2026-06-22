@@ -38,7 +38,6 @@ use near_time::Clock;
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
-use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
 use threshold_signatures::{confidential_key_derivation, ecdsa, frost::eddsa};
 use tokio::select;
 use tokio::sync::mpsc::unbounded_channel;
@@ -331,15 +330,12 @@ where
         let (sender, receiver) = new_tls_mesh_network(&mpc_config, p2p_key).await?;
         let (network_client, channel_receiver, _handle) =
             run_network_client(Arc::new(sender), Box::new(receiver));
-        let threshold: usize = mpc_config.participants.threshold.try_into()?;
-        let threshold = TSReconstructionThreshold::from(threshold);
         if mpc_config.is_leader_for_key_event() {
             keygen_leader(
                 network_client,
                 keyshare_storage,
                 key_event_receiver,
                 chain_txn_sender,
-                threshold,
             )
             .await?;
         } else {
@@ -348,7 +344,6 @@ where
                 keyshare_storage,
                 key_event_receiver,
                 chain_txn_sender,
-                threshold,
             )
             .await?;
         }
@@ -392,12 +387,18 @@ where
                 epoch_id: current_epoch_id,
                 participants: current_participants_config,
             };
-            // TODO(#3164): once each domain may declare its own
-            // `reconstruction_threshold`, collect the distinct `t`s across all
-            // CaitSith domains here instead of just the network-wide threshold.
-            let triple_thresholds = vec![ReconstructionThreshold::new(
-                running_state.participants.threshold,
-            )];
+            // Triples are keyed by the reconstruction threshold `t` they were
+            // generated for. Collect the distinct `t`s across the CaitSith
+            // domains (the only protocol that uses triples) so stale assets are
+            // cleaned for every store this node maintains.
+            let mut triple_thresholds: Vec<ReconstructionThreshold> = running_state
+                .domains
+                .iter()
+                .filter(|d| d.protocol == Protocol::CaitSith)
+                .map(|d| d.reconstruction_threshold)
+                .collect();
+            triple_thresholds.sort();
+            triple_thresholds.dedup();
             delete_stale_triples_and_presignatures(
                 &secret_db,
                 current_epoch_data,
@@ -607,6 +608,11 @@ where
                     .iter()
                     .map(|d| (d.id, d.protocol))
                     .collect();
+                let domain_to_threshold: HashMap<DomainId, ReconstructionThreshold> = running_state
+                    .domains
+                    .iter()
+                    .map(|d| (d.id, d.reconstruction_threshold))
+                    .collect();
 
                 for keyshare in keyshares {
                     let domain_id = keyshare.key_id.domain_id;
@@ -652,6 +658,7 @@ where
                     secret_db.clone(),
                     sign_request_store.clone(),
                     ecdsa_keyshares,
+                    domain_to_threshold.clone(),
                 )?);
 
                 let robust_ecdsa_signature_provider = Arc::new(RobustEcdsaSignatureProvider::new(
@@ -662,6 +669,7 @@ where
                     secret_db,
                     sign_request_store.clone(),
                     robust_ecdsa_keyshares,
+                    domain_to_threshold.clone(),
                 )?);
 
                 let eddsa_signature_provider = Arc::new(EddsaSignatureProvider::new(
@@ -670,7 +678,8 @@ where
                     network_client.clone(),
                     sign_request_store.clone(),
                     eddsa_keyshares,
-                ));
+                    domain_to_threshold.clone(),
+                )?);
 
                 let ckd_provider = Arc::new(CKDProvider::new(
                     config_file.clone().into(),
@@ -678,7 +687,8 @@ where
                     network_client.clone(),
                     ckd_request_store.clone(),
                     ckd_keyshares,
-                ));
+                    domain_to_threshold,
+                )?);
 
                 let verify_foreign_tx_provider = Arc::new(VerifyForeignTxProvider::new(
                     config_file.clone().into(),
@@ -776,11 +786,19 @@ where
             None
         };
 
-        let new_threshold: usize = mpc_config.participants.threshold.try_into()?;
+        // The previous epoch's per-domain reconstruction thresholds. The new
+        // threshold for each key is read from the resharing key event's domain
+        // config inside `resharing_computation_inner`.
+        let old_reconstruction_thresholds: HashMap<DomainId, ReconstructionThreshold> =
+            current_running_state
+                .domains
+                .iter()
+                .map(|d| (d.id, d.reconstruction_threshold))
+                .collect();
         let args = Arc::new(ResharingArgs {
             previous_keyset,
             existing_keyshares,
-            new_threshold: TSReconstructionThreshold::from(new_threshold),
+            old_reconstruction_thresholds,
             old_participants: current_running_state.participants,
         });
 
