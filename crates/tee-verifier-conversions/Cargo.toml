@@ -1,0 +1,16 @@
+[package]
+name = "tee-verifier-conversions"
+version = { workspace = true }
+license = { workspace = true }
+edition = { workspace = true }
+
+[dependencies]
+dcap-qvl = { workspace = true }
+tee-verifier-interface = { workspace = true }
+
+[dev-dependencies]
+borsh = { workspace = true }
+rstest = { workspace = true }
+
+[lints]
+workspace = true

@@ -3,6 +3,7 @@ use crate::rpc::NearRpcClients;
 use crate::types::{DevnetSetupRepository, LoadtestSetup, MpcNetworkSetup};
 use futures::FutureExt;
 use near_jsonrpc_client::methods;
+use near_primitives::hash::CryptoHash;
 use near_primitives::types::{BlockReference, Finality};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -19,8 +20,7 @@ pub struct OperatingDevnetSetup {
 impl OperatingDevnetSetup {
     const SETUP_FILENAME: &str = "devnet_setup.yaml";
 
-    /// Load the setup from disk.
-    pub async fn load(client: Arc<NearRpcClients>) -> Self {
+    fn read_or_create_repository() -> DevnetSetupRepository {
         if !std::fs::exists(Self::SETUP_FILENAME).unwrap() {
             std::fs::write(
                 Self::SETUP_FILENAME,
@@ -29,7 +29,12 @@ impl OperatingDevnetSetup {
             .unwrap();
         }
         let setup_data = std::fs::read_to_string(Self::SETUP_FILENAME).unwrap();
-        let setup: DevnetSetupRepository = serde_yaml::from_str(&setup_data).unwrap();
+        serde_yaml::from_str(&setup_data).unwrap()
+    }
+
+    /// Load the setup from disk, fetching a recent block hash so transactions can be signed.
+    pub async fn load(client: Arc<NearRpcClients>) -> Self {
+        let setup = Self::read_or_create_repository();
         // Retry the initial block fetch: a transient RPC failure (e.g. a 429
         // from a rate-limited provider) shouldn't kill an otherwise long-
         // running CLI invocation.
@@ -53,6 +58,19 @@ impl OperatingDevnetSetup {
         .hash;
 
         let accounts = OperatingAccounts::new(setup.accounts, recent_block_hash, client);
+        Self {
+            accounts,
+            mpc_setups: setup.mpc_setups,
+            loadtest_setups: setup.loadtest_setups,
+        }
+    }
+
+    /// Load the setup without contacting the chain, for terraform-only or metadata-only commands
+    /// that never submit transactions (e.g. bringing up the cluster and validator before the
+    /// localnet chain is live). The block hash is a placeholder and must not be used to sign.
+    pub fn load_offline(client: Arc<NearRpcClients>) -> Self {
+        let setup = Self::read_or_create_repository();
+        let accounts = OperatingAccounts::new(setup.accounts, CryptoHash::default(), client);
         Self {
             accounts,
             mpc_setups: setup.mpc_setups,

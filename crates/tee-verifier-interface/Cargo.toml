@@ -6,10 +6,21 @@ edition = { workspace = true }
 
 [features]
 borsh-schema = ["borsh/unstable__schema"]
+# Off by default. Derives serde only on the verifier *input* types
+# (`QuoteBytes`, `Collateral`) for off-chain callers that embed them in serde
+# structs. The Borsh cross-contract ABI never enables it.
+serde = ["dep:serde"]
 
 [dependencies]
 borsh = { workspace = true }
 derive_more = { workspace = true }
+# Declared directly (not via the workspace) so this `no_std` crate can pin
+# `default-features = false`; the workspace `serde` enables `std`. Off by
+# default via the `serde` feature.
+serde = { version = "1.0", optional = true, default-features = false, features = [
+    "derive",
+    "alloc",
+] }
 
 [dev-dependencies]
 rstest = { workspace = true }

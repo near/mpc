@@ -1,37 +1,26 @@
-use borsh::{BorshDeserialize, BorshSerialize};
-use derive_more::{Deref, From, Into};
-use serde::{Deserialize, Serialize};
+//! Quote collateral (Intel certificates + TCB info) used to verify a quote.
+//!
+//! `Collateral` is re-exported from `tee-verifier-interface`, not redefined,
+//! so it has a single canonical definition.
+//!
+//! The `test-utils` JSON parser below lives here, not in the wire crate:
+//! `tee-verifier-interface` is Borsh-only on the cross-contract call, so
+//! adding `serde_json` + `hex` there would bloat every consumer's WASM. The
+//! only place collateral exists as JSON is off-chain test fixtures.
+pub use tee_verifier_interface::Collateral;
 
 #[cfg(feature = "test-utils")]
-use {
-    alloc::{string::String, vec::Vec},
-    core::str::FromStr,
-    hex::FromHexError,
-    serde_json::Value,
-    thiserror::Error,
-};
-
-pub use dcap_qvl::QuoteCollateralV3;
-
-/// Supplemental data for the TEE quote, including Intel certificates to verify it came from genuine
-/// Intel hardware, along with details about the Trusted Computing Base (TCB) versioning, status,
-/// and other relevant info.
-#[derive(
-    Clone, From, Deref, Into, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
-)]
-#[cfg_attr(feature = "test-utils", serde(try_from = "Value"))]
-pub struct Collateral(QuoteCollateralV3);
+pub use parse::{CollateralError, collateral_from_json, collateral_from_str};
 
 #[cfg(feature = "test-utils")]
-impl Collateral {
-    /// Attempts to create a [`Collateral`] from a JSON value containing quote collateral data.
-    ///
-    /// # Errors
-    ///
-    /// Returns a [`CollateralError`] if:
-    /// - Any required field is missing or has an invalid type
-    /// - Hex fields cannot be decoded
-    pub fn try_from_json(v: Value) -> Result<Self, CollateralError> {
+mod parse {
+    use super::Collateral;
+    use alloc::{string::String, vec::Vec};
+    use hex::FromHexError;
+    use serde_json::Value;
+    use thiserror::Error;
+
+    pub fn collateral_from_json(v: Value) -> Result<Collateral, CollateralError> {
         fn get_str(v: &Value, key: &str) -> Result<String, CollateralError> {
             v.get(key)
                 .and_then(Value::as_str)
@@ -47,64 +36,37 @@ impl Collateral {
             })
         }
 
-        let quote_collateral = QuoteCollateralV3 {
+        Ok(Collateral {
+            pck_crl_issuer_chain: get_str(&v, "pck_crl_issuer_chain")?,
+            root_ca_crl: get_hex(&v, "root_ca_crl")?,
+            pck_crl: get_hex(&v, "pck_crl")?,
             tcb_info_issuer_chain: get_str(&v, "tcb_info_issuer_chain")?,
             tcb_info: get_str(&v, "tcb_info")?,
             tcb_info_signature: get_hex(&v, "tcb_info_signature")?,
             qe_identity_issuer_chain: get_str(&v, "qe_identity_issuer_chain")?,
             qe_identity: get_str(&v, "qe_identity")?,
             qe_identity_signature: get_hex(&v, "qe_identity_signature")?,
-            pck_crl_issuer_chain: get_str(&v, "pck_crl_issuer_chain")?,
-            root_ca_crl: get_hex(&v, "root_ca_crl")?,
-            pck_crl: get_hex(&v, "pck_crl")?,
             pck_certificate_chain: get_str(&v, "pck_certificate_chain").ok(),
-        };
-        Ok(Self(quote_collateral))
+        })
     }
-}
 
-#[cfg(feature = "test-utils")]
-impl FromStr for Collateral {
-    type Err = CollateralError;
-
-    /// Attempts to parse a JSON string into a [`Collateral`].
-    ///
-    /// This is a convenience method that first parses the string as JSON, then attempts to convert
-    /// it to a [`Collateral`].
-    ///
-    /// # Errors
-    ///
-    /// Returns a [`CollateralError`] if:
-    /// - The string is not valid JSON
-    /// - The JSON doesn't contain the required collateral fields
-    /// - Hex fields cannot be decoded
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    pub fn collateral_from_str(s: &str) -> Result<Collateral, CollateralError> {
         let json_value: Value =
             serde_json::from_str(s).map_err(|_| CollateralError::InvalidJson)?;
-        Self::try_from_json(json_value)
+        collateral_from_json(json_value)
     }
-}
 
-#[cfg(feature = "test-utils")]
-impl TryFrom<Value> for Collateral {
-    type Error = CollateralError;
-
-    fn try_from(value: Value) -> Result<Self, Self::Error> {
-        Self::try_from_json(value)
+    #[derive(Debug, Error)]
+    pub enum CollateralError {
+        #[error("Missing or invalid field: {0}")]
+        MissingField(String),
+        #[error("Failed to decode hex field '{field}': {source}")]
+        HexDecode {
+            field: String,
+            #[source]
+            source: FromHexError,
+        },
+        #[error("Invalid JSON format")]
+        InvalidJson,
     }
-}
-
-#[cfg(feature = "test-utils")]
-#[derive(Debug, Error)]
-pub enum CollateralError {
-    #[error("Missing or invalid field: {0}")]
-    MissingField(String),
-    #[error("Failed to decode hex field '{field}': {source}")]
-    HexDecode {
-        field: String,
-        #[source]
-        source: FromHexError,
-    },
-    #[error("Invalid JSON format")]
-    InvalidJson,
 }
