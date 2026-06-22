@@ -1,7 +1,7 @@
 use super::initializing::InitializingContractState;
 use super::key_event::KeyEvent;
 use super::resharing::ResharingContractState;
-use crate::errors::{ConversionError, DomainError, Error, InvalidParameters, VoteError};
+use crate::errors::{DomainError, Error, InvalidParameters, VoteError};
 use crate::primitives::{
     domain::{
         AddDomainsVotes, DomainRegistry, max_reconstruction_threshold, validate_domain_purpose,
@@ -150,11 +150,8 @@ impl RunningContractState {
 
         // Validate effective per-domain thresholds (updates override, absent
         // domains keep theirs) against the proposed participant count.
-        let new_num_participants = u64::try_from(proposal.participants().len()).map_err(|e| {
-            ConversionError::DataConversion {
-                reason: format!("participant count does not fit in u64: {e}"),
-            }
-        })?;
+        let new_num_participants = u64::try_from(proposal.participants().len())
+            .expect("participant count fits in u64");
         let threshold_updates = proposal.per_domain_thresholds();
         // Reject unknown domain IDs: the loop below iterates existing domains, so
         // an unknown ID would otherwise be silently ignored here (it's caught at
@@ -221,12 +218,8 @@ impl RunningContractState {
         if domains.is_empty() {
             return Err(DomainError::AddDomainsMustAddAtLeastOneDomain.into());
         }
-        let num_participants =
-            u64::try_from(self.parameters.participants().len()).map_err(|e| {
-                ConversionError::DataConversion {
-                    reason: format!("participant count does not fit in u64: {e}"),
-                }
-            })?;
+        let num_participants = u64::try_from(self.parameters.participants().len())
+            .expect("participant count fits in u64");
         for domain in &domains {
             validate_domain_purpose(domain)?;
             validate_domain_threshold(domain, num_participants)?;
