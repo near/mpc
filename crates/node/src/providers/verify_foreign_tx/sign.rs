@@ -88,8 +88,7 @@ where
             if incompatible >= max_attempts {
                 bail!(
                     "no presignature found whose participants all support chain \
-                     {requested_chain:?} after scanning {incompatible} presignature(s); \
-                     the request will be retried"
+                     {requested_chain:?} after scanning {incompatible} presignature(s)"
                 );
             }
         };
@@ -420,7 +419,7 @@ fn participants_support_chain(
         let Some(info) = participants_config.get_info(*participant_id) else {
             return false;
         };
-        let tls_key = Ed25519PublicKey(info.p2p_public_key.to_bytes());
+        let tls_key = Ed25519PublicKey::from(&info.p2p_public_key);
         foreign_chains_configs
             .get(&tls_key)
             .is_some_and(|config| config.contains(chain))
@@ -452,7 +451,7 @@ mod tests {
     }
 
     fn tls_key_for(signing_key: &SigningKey) -> Ed25519PublicKey {
-        Ed25519PublicKey(signing_key.verifying_key().to_bytes())
+        Ed25519PublicKey::from(&signing_key.verifying_key())
     }
 
     fn bitcoin_chain_config() -> dtos::ForeignChainsConfig {

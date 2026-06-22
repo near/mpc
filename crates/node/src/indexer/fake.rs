@@ -124,19 +124,18 @@ impl FakeMpcContractState {
             return;
         };
 
-        let is_participant = state
+        let Some((_, _, info)) = state
             .parameters
             .participants()
             .participants()
             .iter()
-            .any(|(participant_id, _, _)| participant_id == &account_id);
-
-        if !is_participant {
+            .find(|(id, _, _)| id == &account_id)
+        else {
             tracing::info!(
                 "register_foreign_chain_config transaction ignored because signer is not a participant"
             );
             return;
-        }
+        };
 
         let voter = account_id.clone();
 
@@ -148,16 +147,8 @@ impl FakeMpcContractState {
             .foreign_chain_support_by_node
             .insert(voter, local_foreign_chain_support.clone());
 
-        if let Some((_, _, info)) = state
-            .parameters
-            .participants()
-            .participants()
-            .iter()
-            .find(|(id, _, _)| id == &account_id)
-        {
-            self.foreign_chains_configs
-                .insert(info.tls_public_key.clone(), chains.into());
-        }
+        self.foreign_chains_configs
+            .insert(info.tls_public_key.clone(), chains.into());
 
         // Derive supported_foreign_chains as intersection of all active participants' votes
         let active_participant_account_ids: BTreeSet<dtos::AccountId> = state

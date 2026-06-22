@@ -78,7 +78,7 @@ pub const GET_ATTESTATION: &str = "get_attestation";
     note = "use get_available_foreign_chains, see https://github.com/near/mpc/issues/3630"
 )]
 pub const GET_SUPPORTED_FOREIGN_CHAINS: &str = "get_supported_foreign_chains";
-#[deprecated(note = "use GET_FOREIGN_CHAINS_CONFIGS, see https://github.com/near/mpc/issues/3630")]
+#[deprecated(note = "use get_foreign_chains_configs, see https://github.com/near/mpc/issues/3630")]
 pub const GET_FOREIGN_CHAIN_SUPPORT_BY_NODE: &str = "get_foreign_chain_support_by_node";
 pub const GET_AVAILABLE_FOREIGN_CHAINS: &str = "get_available_foreign_chains";
 pub const GET_FOREIGN_CHAINS_CONFIGS: &str = "get_foreign_chains_configs";
