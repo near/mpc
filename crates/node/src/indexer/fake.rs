@@ -190,6 +190,26 @@ impl FakeMpcContractState {
             .into();
     }
 
+    pub fn register_foreign_chains_config(
+        &mut self,
+        account_id: AccountId,
+        foreign_chains_config: dtos::ForeignChainsConfig,
+    ) {
+        let ProtocolContractState::Running(state) = &self.state else {
+            return;
+        };
+        if let Some((_, _, info)) = state
+            .parameters
+            .participants()
+            .participants()
+            .iter()
+            .find(|(id, _, _)| id == &account_id)
+        {
+            self.foreign_chains_configs
+                .insert(info.tls_public_key.clone(), foreign_chains_config);
+        }
+    }
+
     pub fn initialize(&mut self, participants: ParticipantsConfig) {
         assert_matches!(self.state, ProtocolContractState::NotInitialized);
 
@@ -706,6 +726,11 @@ impl FakeIndexerCore {
                             account_id,
                             args.foreign_chain_configuration,
                         );
+                    }
+                    ChainSendTransactionRequest::RegisterForeignChainsConfig(args) => {
+                        let mut contract = contract.lock().await;
+                        contract
+                            .register_foreign_chains_config(account_id, args.foreign_chains_config);
                     }
                     ChainSendTransactionRequest::StartKeygen(start) => {
                         // TODO: timeout logic in fake indexer?

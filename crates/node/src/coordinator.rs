@@ -5,7 +5,10 @@ use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::participants::{
     ContractKeyEventInstance, ContractResharingState, ContractRunningState, ContractState,
 };
-use crate::indexer::types::{ChainRegisterForeignChainConfigArgs, ChainSendTransactionRequest};
+use crate::indexer::types::{
+    ChainRegisterForeignChainConfigArgs, ChainRegisterForeignChainsConfigArgs,
+    ChainSendTransactionRequest,
+};
 use crate::indexer::{IndexerAPI, ReadAvailableForeignChains, tx_sender};
 use crate::key_events::{
     ResharingArgs, keygen_follower, keygen_leader, resharing_follower, resharing_leader,
@@ -34,6 +37,7 @@ use futures::future::BoxFuture;
 use mpc_node_config::ConfigFile;
 use mpc_primitives::domain::{Curve, DomainId, Protocol};
 use mpc_primitives::{EpochId, ReconstructionThreshold};
+use near_mpc_contract_interface::types as dtos;
 use near_time::Clock;
 use std::collections::HashMap;
 use std::future::Future;
@@ -430,7 +434,9 @@ where
             return Ok(MpcJobResult::HaltUntilInterrupted);
         };
 
-        // Register locally supported foreign chains with the contract.
+        // Register locally supported foreign chains with the contract (both APIs).
+        // TODO(#3630): drop RegisterForeignChainConfig once contract is
+        // upgraded containing new API.
         let foreign_chain_configuration = config_file.foreign_chains.configured_chains();
         if let Err(err) = chain_txn_sender
             .send(ChainSendTransactionRequest::RegisterForeignChainConfig(
@@ -441,6 +447,22 @@ where
             .await
         {
             tracing::warn!(error = ?err, "failed to send register supported foreign chains transaction");
+        }
+        let foreign_chains_config: dtos::ForeignChainsConfig = config_file
+            .foreign_chains
+            .iter_chains()
+            .map(|(chain, _)| chain)
+            .collect::<std::collections::BTreeSet<_>>()
+            .into();
+        if let Err(err) = chain_txn_sender
+            .send(ChainSendTransactionRequest::RegisterForeignChainsConfig(
+                ChainRegisterForeignChainsConfigArgs {
+                    foreign_chains_config,
+                },
+            ))
+            .await
+        {
+            tracing::warn!(error = ?err, "failed to send register foreign chains config transaction");
         }
 
         tracing::info!("Creating tls mesh");

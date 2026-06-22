@@ -20,6 +20,7 @@ mpc-node-config = { workspace = true }
 near-account-id = { workspace = true }
 near-indexer-primitives = { workspace = true }
 near-kit = { workspace = true }
+near-mpc-bounded-collections = { workspace = true }
 near-mpc-contract-interface = { workspace = true }
 near-mpc-crypto-types = { workspace = true, features = ["ed25519-dalek", "blstrs"] }
 near-sandbox = { workspace = true }

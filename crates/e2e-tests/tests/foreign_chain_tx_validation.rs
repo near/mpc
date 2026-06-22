@@ -199,21 +199,7 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
 
     let fc_config = build_foreign_chains_config(&urls);
 
-    let (cluster, _running) =
-        common::must_setup_cluster(common::FOREIGN_TX_VALIDATION_PORT_SEED, |c| {
-            c.num_nodes = 2;
-            c.threshold = 2;
-            c.domains = vec![DomainConfig {
-                id: DomainId(0),
-                protocol: Protocol::CaitSith,
-                reconstruction_threshold: ReconstructionThreshold::new(2),
-                purpose: DomainPurpose::ForeignTx,
-            }];
-            c.node_foreign_chains_configs = vec![fc_config.clone(), fc_config];
-        })
-        .await;
-
-    let expected_supported_chains: std::collections::BTreeSet<ForeignChain> = [
+    let expected_chains: std::collections::BTreeSet<ForeignChain> = [
         ForeignChain::Bitcoin,
         ForeignChain::Abstract,
         ForeignChain::Bnb,
@@ -226,18 +212,33 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
     .into_iter()
     .collect();
 
+    let (cluster, _running) =
+        common::must_setup_cluster(common::FOREIGN_TX_VALIDATION_PORT_SEED, |c| {
+            c.num_nodes = 2;
+            c.threshold = 2;
+            c.domains = vec![DomainConfig {
+                id: DomainId(0),
+                protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(2),
+                purpose: DomainPurpose::ForeignTx,
+            }];
+            c.node_foreign_chains_configs = vec![fc_config.clone(), fc_config];
+            c.whitelisted_chains = expected_chains.clone();
+        })
+        .await;
+
     (|| async {
-        let supported = cluster
-            .view_foreign_chains_supported_by_contract()
+        let available = cluster
+            .view_available_foreign_chains()
             .await
-            .context("failed to view supported chains")?;
-        let supported_set: std::collections::BTreeSet<ForeignChain> =
-            supported.iter().copied().collect();
+            .context("failed to view available chains")?;
+        let available_set: std::collections::BTreeSet<ForeignChain> =
+            available.iter().copied().collect();
         anyhow::ensure!(
-            supported_set == expected_supported_chains,
-            "expected supported chains {:?}, got {:?}",
-            expected_supported_chains,
-            supported_set
+            available_set == expected_chains,
+            "expected available chains {:?}, got {:?}",
+            expected_chains,
+            available_set
         );
         Ok(())
     })
@@ -249,7 +250,7 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
             ),
     )
     .await
-    .context("timed out waiting for every participant to register its foreign chains")?;
+    .context("timed out waiting for all chains to become available")?;
 
     let state = cluster
         .get_contract_state()
