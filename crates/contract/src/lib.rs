@@ -1674,7 +1674,7 @@ impl MpcContract {
                 let max_reconstruction_threshold =
                     max_reconstruction_threshold(running_state.domains.domains());
                 if let Err(err) = ThresholdParameters::validate_governance_against_reconstruction(
-                    remaining as u64,
+                    u64::try_from(remaining).expect("participant count fits in u64"),
                     current_params.threshold(),
                     max_reconstruction_threshold,
                 ) {
@@ -1695,7 +1695,8 @@ impl MpcContract {
                 //let n_participants_new = new_participants.len();
                 //let new_threshold = (3 * n_participants_new + 4) / 5; // minimum 60%
                 //let new_threshold = new_threshold.max(2); // but also minimum 2
-                let new_threshold = current_params.threshold().value() as usize;
+                let new_threshold = usize::try_from(current_params.threshold().value())
+                    .expect("threshold value fits in usize");
 
                 let threshold_parameters = ThresholdParameters::new(
                     participants_with_valid_attestation,
