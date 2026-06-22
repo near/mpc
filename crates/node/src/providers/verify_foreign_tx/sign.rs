@@ -571,8 +571,6 @@ mod tests {
         ));
     }
 
-    // ── is_chain_available ────────────────────────────────────────────────────
-
     #[tokio::test]
     async fn is_chain_available__should_succeed_when_chain_is_present() {
         // Given
