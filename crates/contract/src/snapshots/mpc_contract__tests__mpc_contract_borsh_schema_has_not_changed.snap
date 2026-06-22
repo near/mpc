@@ -701,7 +701,7 @@ BorshSchemaContainer {
                     ),
                     (
                         "tee_verifier_account_id",
-                        "AccountId",
+                        "Option<AccountId>",
                     ),
                     (
                         "tee_verifier_votes",
@@ -750,6 +750,21 @@ BorshSchemaContainer {
                     ),
                 ],
             ),
+        },
+        "Option<AccountId>": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "None",
+                    "()",
+                ),
+                (
+                    1,
+                    "Some",
+                    "AccountId",
+                ),
+            ],
         },
         "Option<EpochId>": Enum {
             tag_width: 1,

@@ -1,3 +1,5 @@
+use crate::types::primitives::AccountId;
+
 /// The initial configuration parameters for when initializing the contract.
 /// All fields are optional, as the contract can fill in defaults for any
 /// missing fields.
@@ -47,11 +49,9 @@ pub struct InitConfig {
     pub remove_non_participant_update_votes_tera_gas: Option<u64>,
     /// Prepaid gas for a `clean_foreign_chain_data` call.
     pub clean_foreign_chain_data_tera_gas: Option<u64>,
-    /// Account whose `verify_quote` method the contract trusts for DCAP
-    /// verification. Optional: fresh deploys may set it here, otherwise the
-    /// contract starts from an unconfigured placeholder and participants vote
-    /// one in via `vote_tee_verifier_change`.
-    pub tee_verifier_account_id: Option<crate::types::primitives::AccountId>,
+    /// Contract account trusted for DCAP verification.
+    // TODO(#3639): make non-optional once a verifier has been voted in.
+    pub tee_verifier_account_id: Option<AccountId>,
 }
 
 /// Configuration parameters of the contract.
