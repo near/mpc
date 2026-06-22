@@ -3,11 +3,13 @@ use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{BackupServiceInfo, DestinationNodeInfo};
 use near_mpc_crypto_types::Keyset;
 use serde::Serialize;
-use tokio_util::sync::CancellationToken;
 
 use crate::{
-    config::{NodeStatus, ParticipantStatus},
-    indexer::{migrations::ContractMigrationInfo, participants::ContractState},
+    config::{MpcConfig, NodeStatus, ParticipantStatus},
+    indexer::{
+        migrations::ContractMigrationInfo,
+        participants::{ContractInitializingState, ContractRunningState, ContractState},
+    },
 };
 
 pub struct NodeBackupServiceInfo {
@@ -45,30 +47,47 @@ impl MigrationInfo {
     }
 }
 
-#[derive(Clone)]
-pub(crate) struct OnboardingTask {
-    pub job: OnboardingJob,
-    pub cancellation_token: CancellationToken,
-}
-
-#[derive(Clone, PartialEq, Debug)]
-pub(crate) enum OnboardingJob {
-    /// Onboarding is complete; nothing to do.
-    Done,
-    /// Waiting for contract or migration state to change.
-    WaitForStateChange,
-    /// Should start onboarding with the given keyset.
+/// Unified classification of "what should this node be doing right now?"
+///
+/// Replaces the previous `OnboardingJob` (3 arms: Done / Onboard / Wait)
+/// and folds in the per-state dispatch that used to live inside
+/// `Coordinator::run` (Initializing vs Running, with the in-line
+/// participant-check that returned `MpcJobResult::HaltUntilInterrupted`
+/// when the node was not in the contract's participant list).
+///
+/// The active-participant arms carry their pre-derived `MpcConfig`, so
+/// the worker functions in `coordinator.rs` no longer re-derive it (and
+/// no longer need the defensive `HaltUntilInterrupted` short-circuit).
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub(crate) enum NodeJob {
+    /// Not an active participant; the migration record says we should
+    /// onboard with this keyset.
     Onboard(Keyset),
+    /// Nothing actionable until contract or migration state changes.
+    WaitForStateChange,
+    /// Active participant in an Initializing contract — drive key generation.
+    Initialize {
+        state: ContractInitializingState,
+        mpc_config: MpcConfig,
+    },
+    /// Active participant in a Running contract (with or without resharing
+    /// in-flight — the resharing sub-mode is encoded in
+    /// `state.resharing_state`).
+    Run {
+        state: ContractRunningState,
+        mpc_config: MpcConfig,
+    },
 }
 
-impl OnboardingJob {
-    /// Constructs the onboarding job for the current node based on the contract and migration
-    /// state
+impl NodeJob {
+    /// Constructs the current job for this node from contract + migration state.
     ///
-    /// Returns:
-    /// - [`Done`] if the node is already active,
-    /// - [`Onboard`] if onboarding should begin,
-    /// - [`WaitForStateChange`] otherwise.
+    /// Active-participant paths derive `MpcConfig` once here, so callers
+    /// never repeat the participant check. If the contract reports the
+    /// node as Active but `MpcConfig::from_participants_with_near_account_id`
+    /// returns `None` (e.g. participants list is being mutated mid-flight),
+    /// we conservatively return `WaitForStateChange` — same defensive
+    /// posture as the deleted in-line check.
     pub fn new(
         my_migration_info: MigrationInfo,
         contract: ContractState,
@@ -76,25 +95,50 @@ impl OnboardingJob {
         tls_public_key: &VerifyingKey,
     ) -> Self {
         match contract.node_status(my_near_account_id, tls_public_key) {
-            ParticipantStatus::Inactive => OnboardingJob::WaitForStateChange,
-            ParticipantStatus::Active(node_status) => match node_status {
-                NodeStatus::Active => OnboardingJob::Done,
-                NodeStatus::Idle => {
-                    if my_migration_info.active_migration {
-                        match contract {
-                            ContractState::Invalid => OnboardingJob::WaitForStateChange,
-                            ContractState::Initializing(_) => OnboardingJob::WaitForStateChange,
-                            ContractState::Running(running_state) => {
-                                if running_state.resharing_state.is_none() {
-                                    OnboardingJob::Onboard(running_state.keyset)
-                                } else {
-                                    OnboardingJob::WaitForStateChange
-                                }
-                            }
+            ParticipantStatus::Inactive => NodeJob::WaitForStateChange,
+            ParticipantStatus::Active(NodeStatus::Idle) => {
+                if my_migration_info.active_migration {
+                    match contract {
+                        ContractState::Running(running_state)
+                            if running_state.resharing_state.is_none() =>
+                        {
+                            NodeJob::Onboard(running_state.keyset)
                         }
-                    } else {
-                        OnboardingJob::WaitForStateChange
+                        _ => NodeJob::WaitForStateChange,
                     }
+                } else {
+                    NodeJob::WaitForStateChange
+                }
+            }
+            ParticipantStatus::Active(NodeStatus::Active) => match contract {
+                ContractState::Invalid => NodeJob::WaitForStateChange,
+                ContractState::Initializing(state) => {
+                    let Some(mpc_config) = MpcConfig::from_participants_with_near_account_id(
+                        state.participants.clone(),
+                        my_near_account_id,
+                        tls_public_key,
+                    ) else {
+                        return NodeJob::WaitForStateChange;
+                    };
+                    NodeJob::Initialize { state, mpc_config }
+                }
+                ContractState::Running(state) => {
+                    // During resharing, the mpc_config uses the *new* participants
+                    // (post-resharing set) — mirrors the participants_config
+                    // derivation that used to live inside `run_mpc`. Outside of
+                    // resharing, it uses the current running participants.
+                    let participants_for_config = match &state.resharing_state {
+                        Some(resharing_state) => resharing_state.new_participants.clone(),
+                        None => state.participants.clone(),
+                    };
+                    let Some(mpc_config) = MpcConfig::from_participants_with_near_account_id(
+                        participants_for_config,
+                        my_near_account_id,
+                        tls_public_key,
+                    ) else {
+                        return NodeJob::WaitForStateChange;
+                    };
+                    NodeJob::Run { state, mpc_config }
                 }
             },
         }
@@ -154,7 +198,7 @@ pub mod tests {
         tests::dto_conversions::keyset_to_dto,
     };
 
-    use super::{BackupServiceInfo, DestinationNodeInfo, MigrationInfo, OnboardingJob};
+    use super::{BackupServiceInfo, DestinationNodeInfo, MigrationInfo, NodeJob};
 
     #[test]
     fn test_migration_get_pk_backup_service() {
@@ -226,178 +270,189 @@ pub mod tests {
         assert_eq!(res.backup_service_info, Some(backup_service_info.clone()));
     }
 
-    struct OnboardingJobConstructorTestCase {
+    struct NodeJobConstructorTestCase {
         case: String,
         migration_info: MigrationInfo,
         contract: ContractState,
         node_id: TestNodeId,
-        expected_outcome: OnboardingJob,
+        /// Predicate over the resulting `NodeJob`. We use a predicate
+        /// rather than `assert_eq!` because the active-participant arms
+        /// (`Initialize`, `Run`) carry an `MpcConfig` payload — reconstructing
+        /// the exact `MpcConfig` in the test would duplicate the classifier
+        /// itself. Variant-shape assertions are sufficient for these
+        /// classification tests; the payload's correctness is exercised by
+        /// the coordinator's per-arm tests.
+        expected: fn(&NodeJob) -> bool,
     }
 
-    impl OnboardingJobConstructorTestCase {
+    impl NodeJobConstructorTestCase {
         fn run(self) {
-            assert_eq!(
-                OnboardingJob::new(
-                    self.migration_info,
-                    self.contract,
-                    &self.node_id.account_id,
-                    &self.node_id.p2p_public_key
-                ),
-                self.expected_outcome,
-                "case: {}",
-                self.case
+            let job = NodeJob::new(
+                self.migration_info,
+                self.contract,
+                &self.node_id.account_id,
+                &self.node_id.p2p_public_key,
+            );
+            assert!(
+                (self.expected)(&job),
+                "case: {}, got: {:?}",
+                self.case,
+                job
             );
         }
     }
 
     #[test]
-    fn test_onboarding_job_participants() {
-        let setup = OnboardingJobConstructorTestSetup::new();
-        // Being a participant must always result in "Done"
-        // initializing
-        OnboardingJobConstructorTestCase {
+    fn test_node_job_participants() {
+        let setup = NodeJobConstructorTestSetup::new();
+        // Active participant in Initializing -> NodeJob::Initialize{..}
+        NodeJobConstructorTestCase {
             case: "Initializing Participant".into(),
             migration_info: setup.active_migration.clone(),
             contract: setup.initializing.contract.clone(),
             node_id: setup.initializing.participant_node.clone(),
-            expected_outcome: OnboardingJob::Done,
+            expected: |j| matches!(j, NodeJob::Initialize { .. }),
         }
         .run();
 
-        // resharing
-        OnboardingJobConstructorTestCase {
+        // Active participant in Running (with resharing) -> NodeJob::Run{..}
+        NodeJobConstructorTestCase {
             case: "Resharing Participant".into(),
             migration_info: setup.active_migration.clone(),
             contract: setup.resharing.contract.clone(),
             node_id: setup.resharing.participant_node.clone(),
-            expected_outcome: OnboardingJob::Done,
+            expected: |j| matches!(j, NodeJob::Run { .. }),
         }
         .run();
 
-        // running
-        OnboardingJobConstructorTestCase {
+        // Active participant in Running (no resharing) -> NodeJob::Run{..}
+        NodeJobConstructorTestCase {
             case: "Running Participant".into(),
             migration_info: setup.active_migration.clone(),
             contract: setup.running.contract.clone(),
             node_id: setup.running.participant_node.clone(),
-            expected_outcome: OnboardingJob::Done,
+            expected: |j| matches!(j, NodeJob::Run { .. }),
         }
         .run();
     }
 
     #[test]
-    fn test_onboarding_job_inactive() {
-        let setup = OnboardingJobConstructorTestSetup::new();
+    fn test_node_job_inactive() {
+        let setup = NodeJobConstructorTestSetup::new();
         // An inactive migration for an onboarding participant should always result in a "wait"
         // initializing
-        OnboardingJobConstructorTestCase {
+        NodeJobConstructorTestCase {
             case: "Initializing inactive".into(),
             migration_info: setup.inactive_migration.clone(),
             contract: setup.initializing.contract.clone(),
             node_id: setup.initializing.onboarding_node.clone(),
-            expected_outcome: OnboardingJob::WaitForStateChange,
+            expected: |j| matches!(j, NodeJob::WaitForStateChange),
         }
         .run();
         // resharing
-        OnboardingJobConstructorTestCase {
+        NodeJobConstructorTestCase {
             case: "Resharing inactive".into(),
             migration_info: setup.inactive_migration.clone(),
             contract: setup.resharing.contract.clone(),
             node_id: setup.resharing.onboarding_node.clone(),
-            expected_outcome: OnboardingJob::WaitForStateChange,
+            expected: |j| matches!(j, NodeJob::WaitForStateChange),
         }
         .run();
         // running
-        OnboardingJobConstructorTestCase {
+        NodeJobConstructorTestCase {
             case: "Running inactive".into(),
             migration_info: setup.inactive_migration.clone(),
             contract: setup.running.contract.clone(),
             node_id: setup.running.onboarding_node.clone(),
-            expected_outcome: OnboardingJob::WaitForStateChange,
+            expected: |j| matches!(j, NodeJob::WaitForStateChange),
         }
         .run();
     }
     #[test]
-    fn test_onboarding_job_active() {
-        let setup = OnboardingJobConstructorTestSetup::new();
-        // Running with active migration and an onboarding participant result in a "onboarding"
-        OnboardingJobConstructorTestCase {
-            case: "Running active".into(),
-            migration_info: setup.active_migration.clone(),
-            contract: setup.running.contract.clone(),
-            node_id: setup.running.onboarding_node.clone(),
-            expected_outcome: OnboardingJob::Onboard(setup.running_keyset.clone()),
+    fn test_node_job_active() {
+        let setup = NodeJobConstructorTestSetup::new();
+        // Running with active migration and an onboarding participant result in onboarding.
+        // Asserted inline because the keyset comparison is value-dependent and the
+        // NodeJobConstructorTestCase predicate is `fn`, not a capturing closure.
+        let job = NodeJob::new(
+            setup.active_migration.clone(),
+            setup.running.contract.clone(),
+            &setup.running.onboarding_node.account_id,
+            &setup.running.onboarding_node.p2p_public_key,
+        );
+        match job {
+            NodeJob::Onboard(k) => assert_eq!(k, setup.running_keyset),
+            other => panic!("expected Onboard, got {:?}", other),
         }
-        .run();
 
         // but not when we have an ongoing key generation or resharing
         // initializing
-        OnboardingJobConstructorTestCase {
+        NodeJobConstructorTestCase {
             case: "Initializing active".into(),
             migration_info: setup.active_migration.clone(),
             contract: setup.initializing.contract.clone(),
             node_id: setup.initializing.onboarding_node.clone(),
-            expected_outcome: OnboardingJob::WaitForStateChange,
+            expected: |j| matches!(j, NodeJob::WaitForStateChange),
         }
         .run();
         // resharing
-        OnboardingJobConstructorTestCase {
+        NodeJobConstructorTestCase {
             case: "Resharing active".into(),
             migration_info: setup.active_migration.clone(),
             contract: setup.resharing.contract.clone(),
             node_id: setup.resharing.onboarding_node.clone(),
-            expected_outcome: OnboardingJob::WaitForStateChange,
+            expected: |j| matches!(j, NodeJob::WaitForStateChange),
         }
         .run();
     }
 
     #[test]
-    fn test_onboarding_job_non_participant() {
-        let setup = OnboardingJobConstructorTestSetup::new();
+    fn test_node_job_non_participant() {
+        let setup = NodeJobConstructorTestSetup::new();
         // a non-participant must always wait for a state change
         // initializing
-        OnboardingJobConstructorTestCase {
+        NodeJobConstructorTestCase {
             case: "Non-participant initializing".into(),
             migration_info: setup.active_migration.clone(),
             contract: setup.initializing.contract.clone(),
             node_id: setup.non_participant.clone(),
-            expected_outcome: OnboardingJob::WaitForStateChange,
+            expected: |j| matches!(j, NodeJob::WaitForStateChange),
         }
         .run();
         // resharing
-        OnboardingJobConstructorTestCase {
+        NodeJobConstructorTestCase {
             case: "Non-participant resharing".into(),
             migration_info: setup.active_migration.clone(),
             contract: setup.resharing.contract.clone(),
             node_id: setup.non_participant.clone(),
-            expected_outcome: OnboardingJob::WaitForStateChange,
+            expected: |j| matches!(j, NodeJob::WaitForStateChange),
         }
         .run();
         // running
-        OnboardingJobConstructorTestCase {
+        NodeJobConstructorTestCase {
             case: "Non-participant running".into(),
             migration_info: setup.active_migration.clone(),
             contract: setup.running.contract.clone(),
             node_id: setup.non_participant.clone(),
-            expected_outcome: OnboardingJob::WaitForStateChange,
+            expected: |j| matches!(j, NodeJob::WaitForStateChange),
         }
         .run();
     }
     #[test]
-    fn test_onboarding_job_invalid() {
-        let setup = OnboardingJobConstructorTestSetup::new();
+    fn test_node_job_invalid() {
+        let setup = NodeJobConstructorTestSetup::new();
         // invalid must result in Wait:
-        OnboardingJobConstructorTestCase {
+        NodeJobConstructorTestCase {
             case: "Invalid".into(),
             migration_info: setup.active_migration.clone(),
             contract: ContractState::Invalid,
             node_id: setup.running.participant_node.clone(),
-            expected_outcome: OnboardingJob::WaitForStateChange,
+            expected: |j| matches!(j, NodeJob::WaitForStateChange),
         }
         .run();
     }
 
-    impl OnboardingJobConstructorTestSetup {
+    impl NodeJobConstructorTestSetup {
         fn new() -> Self {
             let active_migration = MigrationInfo {
                 backup_service_info: None,
@@ -429,7 +484,7 @@ pub mod tests {
         }
     }
 
-    struct OnboardingJobConstructorTestSetup {
+    struct NodeJobConstructorTestSetup {
         active_migration: MigrationInfo,
         inactive_migration: MigrationInfo,
         running: ContractCase,

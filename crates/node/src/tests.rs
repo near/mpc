@@ -23,7 +23,7 @@ use crate::indexer::handler::{
     VerifyForeignTxRequestFromChain,
 };
 use crate::keyshare::{KeyStorageConfig, Keyshare};
-use crate::migration_service::spawn_recovery_server_and_run_onboarding;
+use crate::migration_service::spawn_recovery_server;
 use crate::p2p::testing::{PortSeed, generate_test_p2p_configs};
 use mpc_node_config::{
     CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, PresignatureConfig,
@@ -138,19 +138,17 @@ impl OneNodeTestConfig {
                         .expect("require keystore for integration tests"),
                 ));
 
-                spawn_recovery_server_and_run_onboarding(
+                let migration_info_receiver = self.indexer.my_migration_info_receiver.clone();
+                let import_keyshares_receiver = spawn_recovery_server(
                     self.config.migration_web_ui,
-                    (&self.secrets).into(),
-                    self.config.my_near_account_id.clone(),
+                    &(&self.secrets).into(),
                     keystore.clone(),
-                    self.indexer.my_migration_info_receiver.clone(),
-                    self.indexer.contract_state_receiver.clone(),
-                    self.indexer.txn_sender.clone(),
+                    migration_info_receiver.clone(),
                 )
                 .await
                 .unwrap();
 
-                let coordinator = Coordinator {
+                let mut coordinator = Coordinator {
                     clock: self.clock,
                     config_file: self.config,
                     secrets: self.secrets,
@@ -160,6 +158,8 @@ impl OneNodeTestConfig {
                     indexer: self.indexer,
                     currently_running_job_name: self.currently_running_job_name,
                     debug_request_sender,
+                    migration_info_receiver,
+                    import_keyshares_receiver,
                 };
                 coordinator.run().await
             };

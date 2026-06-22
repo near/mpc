@@ -10,7 +10,7 @@ use crate::{
         tx_sender::TransactionSender,
     },
     keyshare::{GcpPermanentKeyStorageConfig, KeyStorageConfig, KeyshareStorage},
-    migration_service::spawn_recovery_server_and_run_onboarding,
+    migration_service::spawn_recovery_server,
     profiler,
     tracing::init_logging,
     tracking::{self, start_root_task},
@@ -410,18 +410,20 @@ where
     let keyshare_storage: Arc<RwLock<KeyshareStorage>> =
         RwLock::new(key_storage_config.create().await?).into();
 
-    spawn_recovery_server_and_run_onboarding(
+    let migration_info_receiver = indexer_api.my_migration_info_receiver.clone();
+
+    // The recovery web server is process-lifetime: started once here so
+    // back-migrations can drop fresh keyshares on the same socket without a
+    // restart. The receiver feeds the coordinator's onboarding arm.
+    let import_keyshares_receiver = spawn_recovery_server(
         config.migration_web_ui,
-        (&secrets).into(),
-        config.my_near_account_id.clone(),
+        &(&secrets).into(),
         keyshare_storage.clone(),
-        indexer_api.my_migration_info_receiver.clone(),
-        indexer_api.contract_state_receiver.clone(),
-        indexer_api.txn_sender.clone(),
+        migration_info_receiver.clone(),
     )
     .await?;
 
-    let coordinator = Coordinator {
+    let mut coordinator = Coordinator {
         clock: Clock::real(),
         config_file: config,
         secrets,
@@ -430,6 +432,8 @@ where
         indexer: indexer_api,
         currently_running_job_name: Arc::new(Mutex::new(String::new())),
         debug_request_sender,
+        migration_info_receiver,
+        import_keyshares_receiver,
     };
     coordinator.run().await
 }

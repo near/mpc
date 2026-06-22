@@ -1,18 +1,24 @@
 use crate::assets::cleanup::{EpochData, delete_stale_triples_and_presignatures};
-use crate::config::{MpcConfig, ParticipantsConfig, SecretsConfig};
+use crate::config::{MpcConfig, SecretsConfig};
 use crate::db::SecretDB;
 use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::participants::{
-    ContractKeyEventInstance, ContractResharingState, ContractRunningState, ContractState,
+    ContractInitializingState, ContractKeyEventInstance, ContractRunningState,
 };
 use crate::indexer::types::{ChainRegisterForeignChainConfigArgs, ChainSendTransactionRequest};
 use crate::indexer::{IndexerAPI, ReadSupportedForeignChain, tx_sender};
 use crate::key_events::{
     ResharingArgs, keygen_follower, keygen_leader, resharing_follower, resharing_leader,
 };
-use crate::keyshare::{KeyshareData, KeyshareStorage};
+use crate::keyshare::{Keyshare, KeyshareData, KeyshareStorage};
 use crate::metrics;
 use crate::metrics::tokio_runtime_metrics::run_monitor_loop;
+use crate::migration_service::{
+    decide_current_job,
+    onboarding::run_onboarding,
+    types::{MigrationInfo, NodeJob},
+    wait_until_job_changes,
+};
 use crate::mpc_client::MpcClient;
 use crate::network::{
     MeshNetworkClient, MeshNetworkTransportSender, NetworkTaskChannel, run_network_client,
@@ -29,11 +35,12 @@ use crate::storage::SignRequestStorage;
 use crate::storage::{CKDRequestStorage, VerifyForeignTransactionRequestStorage};
 use crate::tracking::{self};
 use crate::web::DebugRequest;
+use anyhow::Context as _;
 use futures::FutureExt;
 use futures::future::BoxFuture;
 use mpc_node_config::ConfigFile;
 use mpc_primitives::domain::{Curve, DomainId, Protocol};
-use mpc_primitives::{EpochId, ReconstructionThreshold};
+use mpc_primitives::ReconstructionThreshold;
 use near_time::Clock;
 use std::collections::HashMap;
 use std::future::Future;
@@ -47,11 +54,19 @@ use tokio_metrics::RuntimeMonitor;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
-/// Main entry point for the MPC node logic. Assumes the existence of an
-/// indexer. Queries and monitors the contract for state transitions, and act
-/// accordingly: if the contract says we need to generate keys, we generate
-/// keys; if the contract says we're running, we run the MPC protocol; if the
-/// contract says we need to perform key resharing, we perform key resharing.
+/// Main entry point for the MPC node logic.
+///
+/// `Coordinator::run` is the *only* orchestration loop in the node: it owns
+/// the unified `watch::Receiver<NodeJob>` produced by `decide_current_job`
+/// and dispatches each role transition to the matching per-arm handler
+/// (onboarding, run_initialization, run_mpc, run_key_resharing). Every
+/// handler self-terminates when the receiver moves to a different variant,
+/// at which point the loop re-classifies and re-enters.
+///
+/// This replaces the previous design where onboarding and the MPC
+/// state-dispatch ran sequentially (no back-migration without restart) or in
+/// parallel under a `select!` with cleanup by `Future::drop` (the #3406
+/// dispatcher PR).
 pub struct Coordinator<TransactionSender, ForeignChainPolicyReader> {
     pub clock: Clock,
     pub secrets: SecretsConfig,
@@ -69,33 +84,14 @@ pub struct Coordinator<TransactionSender, ForeignChainPolicyReader> {
 
     /// For debug UI to send us debug requests.
     pub debug_request_sender: broadcast::Sender<DebugRequest>,
-}
 
-type StopFn = Box<dyn Fn(&ContractState) -> bool + Send>;
+    /// Watch channel for this node's migration record. Consumed by the
+    /// onboarding arm and by `decide_current_job` for role classification.
+    pub migration_info_receiver: watch::Receiver<MigrationInfo>,
 
-/// Represents a top-level task that we run for the current contract state.
-/// There is a different one of these for each contract state.
-struct MpcJob {
-    /// Friendly name for the currently running task.
-    name: &'static str,
-    /// The future for the MPC task (keygen, resharing, or normal run).
-    fut: BoxFuture<'static, anyhow::Result<MpcJobResult>>,
-    /// a function that looks at a new contract state and returns true iff the
-    /// current task should be killed.
-    stop_fn: StopFn,
-}
-
-/// When an MpcJob future returns successfully, it returns one of the following.
-#[derive(Debug)]
-enum MpcJobResult {
-    /// This MpcJob has been completed successfully.
-    Done,
-    /// This MpcJob could not run because the contract is in a state that we
-    /// cannot handle (such as the contract being invalid or we're not a current
-    /// participant). If this is returned, the coordinator should do nothing
-    /// until either timeout or the contract state changed. During this time,
-    /// block updates are buffered.
-    HaltUntilInterrupted,
+    /// Watch channel fed by the recovery web server (started in `run.rs`);
+    /// the onboarding arm reads imported keyshares from it.
+    pub import_keyshares_receiver: watch::Receiver<Vec<Keyshare>>,
 }
 
 impl<TransactionSender, ForeignChainPolicyReader>
@@ -104,61 +100,88 @@ where
     TransactionSender: tx_sender::TransactionSender + 'static,
     ForeignChainPolicyReader: ReadSupportedForeignChain + Clone + Send + Sync + 'static,
 {
-    pub async fn run(mut self) -> anyhow::Result<()> {
-        loop {
-            let state = self.indexer.contract_state_receiver.borrow().clone();
-            let mut job: MpcJob = match state {
-                ContractState::Invalid => {
-                    // Invalid state. Similar to initial state; we do nothing until the state changes.
-                    MpcJob {
-                        name: "Invalid",
-                        fut: futures::future::ready(Ok(MpcJobResult::HaltUntilInterrupted)).boxed(),
-                        stop_fn: Box::new(|_| true),
+    /// The node's single orchestration loop. Classifies the current role via
+    /// `decide_current_job` and dispatches each transition to the matching
+    /// per-arm handler; on the handler's return, awaits the next role change
+    /// and re-dispatches.
+    pub async fn run(&mut self) -> anyhow::Result<()> {
+        let tls_public_key = self.secrets.persistent_secrets.p2p_private_key.verifying_key();
+        let (monitor_cancel, mut job_receiver) = decide_current_job(
+            self.indexer.contract_state_receiver.clone(),
+            self.migration_info_receiver.clone(),
+            self.config_file.my_near_account_id.clone(),
+            tls_public_key,
+        );
+
+        let result: anyhow::Result<()> = async {
+            loop {
+                let current = job_receiver.borrow_and_update().clone();
+                match current {
+                    NodeJob::Onboard(keyset) => {
+                        tracing::info!("coordinator: onboarding");
+                        let _report_guard = ReportCurrentJobGuard::new(
+                            "Onboard",
+                            self.currently_running_job_name.clone(),
+                        );
+                        run_onboarding(
+                            keyset,
+                            job_receiver.clone(),
+                            self.keyshare_storage.clone(),
+                            self.import_keyshares_receiver.clone(),
+                            self.indexer.txn_sender.clone(),
+                            self.migration_info_receiver.clone(),
+                        )
+                        .await?;
                     }
-                }
-                ContractState::Initializing(state) => {
-                    // For initialization state, we generate keys and vote for the public key.
-                    // We give it a timeout, so that if somehow the keygen and voting fail to
-                    // progress, we can retry.
-                    let (key_event_receiver, stop_fn) = make_initializing_stop_fn(state.key_event);
-                    MpcJob {
-                        name: "Initializing",
-                        fut: Self::create_runtime_and_run(
+                    NodeJob::WaitForStateChange => {
+                        tracing::info!("coordinator: waiting for state change");
+                        let _report_guard = ReportCurrentJobGuard::new(
+                            "Wait",
+                            self.currently_running_job_name.clone(),
+                        );
+                        // Fall through to .changed() below.
+                    }
+                    NodeJob::Initialize { state, mpc_config } => {
+                        tracing::info!("coordinator: initializing");
+                        let _report_guard = ReportCurrentJobGuard::new(
+                            "Initializing",
+                            self.currently_running_job_name.clone(),
+                        );
+                        let work = Self::create_runtime_and_run(
                             "Initializing",
                             self.config_file.cores,
                             Self::run_initialization(
                                 self.secrets.clone(),
-                                self.config_file.clone(),
                                 self.keyshare_storage.clone(),
-                                state.participants.clone(),
+                                mpc_config,
+                                state,
                                 self.indexer.txn_sender.clone(),
-                                key_event_receiver,
                             ),
-                        )?,
-                        stop_fn,
+                        )?;
+                        tokio::select! {
+                            res = work => { res?; }
+                            res = wait_until_job_changes(
+                                &mut job_receiver,
+                                |j| matches!(j, NodeJob::Initialize { .. }),
+                            ) => { res?; }
+                        }
                     }
-                }
-                ContractState::Running(running_state) => {
-                    tracing::info!("Resharing process is: {:?}", &running_state.resharing_state);
-
-                    let (job_name, key_event_receiver, stop_fn): (_, _, StopFn) =
-                        match running_state.resharing_state.clone() {
-                            Some(resharing_state) => {
-                                let (receiver, stop_fn) = make_resharing_stop_fn(resharing_state);
-                                ("Resharing", Some(receiver), stop_fn)
-                            }
-                            None => {
-                                let stop_fn = make_running_stop_fn(
-                                    running_state.keyset.epoch_id,
-                                    running_state.participants.clone(),
-                                );
-                                ("Running", None, stop_fn)
-                            }
-                        };
-
-                    MpcJob {
-                        name: job_name,
-                        fut: Self::create_runtime_and_run(
+                    NodeJob::Run { state, mpc_config } => {
+                        tracing::info!(
+                            "coordinator: running (resharing={})",
+                            state.resharing_state.is_some(),
+                        );
+                        let _report_guard = ReportCurrentJobGuard::new(
+                            if state.resharing_state.is_some() { "Resharing" } else { "Running" },
+                            self.currently_running_job_name.clone(),
+                        );
+                        let block_update_receiver = self
+                            .indexer
+                            .block_update_receiver
+                            .clone()
+                            .lock_owned()
+                            .await;
+                        let work = Self::create_runtime_and_run(
                             "Running",
                             self.config_file.cores,
                             Self::run_mpc(
@@ -167,70 +190,40 @@ where
                                 self.secrets.clone(),
                                 self.config_file.clone(),
                                 self.keyshare_storage.clone(),
-                                running_state.clone(),
+                                state,
+                                mpc_config,
                                 self.indexer.txn_sender.clone(),
                                 self.indexer.foreign_chain_policy_reader.clone(),
-                                self.indexer
-                                    .block_update_receiver
-                                    .clone()
-                                    .lock_owned()
-                                    .await,
+                                block_update_receiver,
                                 self.debug_request_sender.subscribe(),
-                                key_event_receiver,
                             ),
-                        )?,
-                        stop_fn,
-                    }
-                }
-            };
-
-            tracing::info!("[{}] Starting", job.name);
-            let _report_guard =
-                ReportCurrentJobGuard::new(job.name, self.currently_running_job_name.clone());
-
-            loop {
-                tokio::select! {
-                    res = &mut job.fut => {
-                        match res {
-                            Err(e) => {
-                                tracing::error!("[{}] failed: {:?}", job.name, e);
-                                break;
-                            }
-                            Ok(MpcJobResult::Done) => {
-                                tracing::info!("[{}] finished successfully", job.name);
-                                break;
-                            }
-                            Ok(MpcJobResult::HaltUntilInterrupted) => {
-                                tracing::info!("[{}] halted; waiting for state change or timeout", job.name);
-                                // Replace it with a never-completing future so next iteration we wait for
-                                // only state change or timeout.
-                                job.fut = futures::future::pending().boxed();
-                                continue;
-                            }
-                        }
-                    }
-                    res = self.indexer.contract_state_receiver.changed() => {
-                        if res.is_err() {
-                            anyhow::bail!("[{}] contract state receiver closed", job.name);
-                        }
-                        if (job.stop_fn)(&self.indexer.contract_state_receiver.borrow()) {
-                            tracing::info!(
-                                "[{}] contract state changed incompatibly, stopping",
-                                job.name
-                            );
-                            break;
+                        )?;
+                        tokio::select! {
+                            res = work => { res?; }
+                            res = wait_until_job_changes(
+                                &mut job_receiver,
+                                |j| matches!(j, NodeJob::Run { .. }),
+                            ) => { res?; }
                         }
                     }
                 }
+                job_receiver
+                    .changed()
+                    .await
+                    .context("current-job channel closed")?;
             }
         }
+        .await;
+
+        monitor_cancel.cancel();
+        result
     }
 
     fn create_runtime_and_run(
         description: &str,
         cores: Option<usize>,
-        task: impl Future<Output = anyhow::Result<MpcJobResult>> + Send + 'static,
-    ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<MpcJobResult>>> {
+        task: impl Future<Output = anyhow::Result<()>> + Send + 'static,
+    ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
         let task_handle = tracking::current_task();
 
         // Create a separate runtime, as opposed to making a runtime when the
@@ -303,25 +296,27 @@ where
     }
 
     /// Entry point to handle the Initializing state of the contract.
+    ///
+    /// `mpc_config` is pre-derived by `NodeJob::new` from `state.participants`
+    /// — the in-line `MpcConfig::from_participants_with_near_account_id`
+    /// re-check + `HaltUntilInterrupted` short-circuit are gone.
     async fn run_initialization(
         secrets: SecretsConfig,
-        config_file: ConfigFile,
         keyshare_storage: Arc<RwLock<KeyshareStorage>>,
-        participants: ParticipantsConfig,
+        mpc_config: MpcConfig,
+        state: ContractInitializingState,
         chain_txn_sender: TransactionSender,
-        key_event_receiver: watch::Receiver<ContractKeyEventInstance>,
-    ) -> anyhow::Result<MpcJobResult> {
+    ) -> anyhow::Result<()> {
         let p2p_key = &secrets.persistent_secrets.p2p_private_key;
-        let Some(mpc_config) = MpcConfig::from_participants_with_near_account_id(
-            participants,
-            &config_file.my_near_account_id,
-            &p2p_key.verifying_key(),
-        ) else {
-            tracing::info!(
-                "We are not a participant in the current epoch; doing nothing until contract state change"
-            );
-            return Ok(MpcJobResult::HaltUntilInterrupted);
-        };
+        // Single-value key-event channel for this run. Mid-flight key-event
+        // advances are handled by the outer dispatcher loop: when the
+        // classifier sees the new key_event, it emits an updated
+        // NodeJob::Initialize and the worker is restarted (the work future
+        // is dropped via select! and the new arm dispatched). This relies on
+        // the predicate in the outer select! distinguishing key_event ids
+        // — a follow-up tightens the predicate from `matches!(j,
+        // NodeJob::Initialize {..})` to also compare `state.key_event.id`.
+        let (_key_event_sender, key_event_receiver) = watch::channel(state.key_event);
 
         tracking::set_progress(&format!(
             "Generating key(s) as participant {}",
@@ -352,12 +347,20 @@ where
             )
             .await?;
         }
-        Ok(MpcJobResult::Done)
+        Ok(())
     }
 
     /// Entry point to handle the Running state of the contract.
     /// In this state, we generate triples and presignatures, and listen to
     /// signature requests and submit signature responses.
+    ///
+    /// `mpc_config` is the pre-derived outer config (for the new participants
+    /// during resharing, the running participants otherwise) — same as what
+    /// `NodeJob::new` computes. The in-line outer
+    /// `MpcConfig::from_participants_with_near_account_id` + `HaltUntilInterrupted`
+    /// check is gone. The inner `running_mpc_config` re-derivation (for the
+    /// post-resharing running-participants subset) still happens inside; a
+    /// follow-up would carry that subset in the `NodeJob::Run` arm too.
     #[expect(clippy::too_many_arguments)]
     async fn run_mpc(
         clock: Clock,
@@ -366,14 +369,22 @@ where
         config_file: ConfigFile,
         keyshare_storage: Arc<RwLock<KeyshareStorage>>,
         running_state: ContractRunningState,
+        mpc_config: MpcConfig,
         chain_txn_sender: TransactionSender,
         foreign_chain_policy_reader: ForeignChainPolicyReader,
         block_update_receiver: tokio::sync::OwnedMutexGuard<
             mpsc::UnboundedReceiver<ChainBlockUpdate>,
         >,
         debug_request_receiver: broadcast::Receiver<DebugRequest>,
-        resharing_state_receiver: Option<watch::Receiver<ContractKeyEventInstance>>,
-    ) -> anyhow::Result<MpcJobResult> {
+    ) -> anyhow::Result<()> {
+        // Derive the key-event receiver for the resharing sub-mode from
+        // `running_state`. Mid-flight resharing-event advances rely on the
+        // outer dispatcher's classifier re-emitting `NodeJob::Run` (follow-up:
+        // tighten the predicate to compare resharing_state.key_event.id).
+        let resharing_state_receiver = running_state
+            .resharing_state
+            .as_ref()
+            .map(|rs| watch::channel(rs.key_event.clone()).1);
         tracing::info!("Entering running state.");
 
         // `_gen_runtime` is kept alive for the lifetime of `run` below;
@@ -407,28 +418,20 @@ where
             )?;
         }
         let mut running_participants = running_state.participants.clone();
-
         let participants_config = match &running_state.resharing_state {
             Some(resharing_state) => resharing_state.new_participants.clone(),
             None => running_participants.clone(),
         };
-
         // Only consider the running participants that are also members of the new resharing state.
         running_participants
             .participants
             .retain(|p| participants_config.participants.contains(p));
 
         let p2p_key = &secrets.persistent_secrets.p2p_private_key;
-        let Some(mpc_config) = MpcConfig::from_participants_with_near_account_id(
-            participants_config,
-            &config_file.my_near_account_id,
-            &p2p_key.verifying_key(),
-        ) else {
-            tracing::info!(
-                "We are not a participant in the current epoch; doing nothing until contract state change"
-            );
-            return Ok(MpcJobResult::HaltUntilInterrupted);
-        };
+        // `mpc_config` is the pre-derived outer config from NodeJob::Run; the
+        // assertion below mirrors the participants set the deleted in-line
+        // `from_participants_with_near_account_id` call would have used.
+        debug_assert_eq!(mpc_config.participants, participants_config);
 
         // Register locally supported foreign chains with the contract.
         let foreign_chain_configuration = config_file.foreign_chains.configured_chains();
@@ -525,18 +528,23 @@ where
         });
         let p2p_public_key = p2p_key.verifying_key();
 
-        let running_handle = tracking::spawn::<_, anyhow::Result<MpcJobResult>>(
+        let running_handle = tracking::spawn::<_, anyhow::Result<()>>(
             "running mpc job",
             async move {
+                // Inner running-participants subset: during resharing, this is
+                // the intersection of last-epoch and new participants (so a
+                // node that's only in `new_participants` won't be in this set
+                // yet). Follow-up: carry this in NodeJob::Run too and remove
+                // the re-derivation.
                 let Some(running_mpc_config) = MpcConfig::from_participants_with_near_account_id(
                     running_participants.clone(),
                     &config_file.my_near_account_id,
                     &p2p_public_key,
                 ) else {
                     tracing::info!(
-                        "We are not a participant in the current epoch; doing nothing until contract state change"
+                        "Not in running participants subset; idle until next role change"
                     );
-                    return Ok(MpcJobResult::HaltUntilInterrupted);
+                    return Ok(());
                 };
 
                 let keyshares = match keyshare_storage
@@ -548,16 +556,16 @@ where
                     Ok(keyshares) => keyshares,
                     Err(e) => {
                         tracing::error!(
-                            "Failed to load keyshares: {:?}; doing nothing until contract state changes.",
+                            "Failed to load keyshares: {:?}; idle until next role change",
                             e
                         );
-                        return Ok(MpcJobResult::HaltUntilInterrupted);
+                        return Ok(());
                     }
                 };
 
                 if keyshares.is_empty() {
-                    tracing::info!("We have no keyshares. Waiting for Initialization.");
-                    return Ok(MpcJobResult::HaltUntilInterrupted);
+                    tracing::info!("No keyshares yet; idle until next role change");
+                    return Ok(());
                 }
 
                 tracking::set_progress(&format!(
@@ -711,7 +719,7 @@ where
                     )
                     .await?;
 
-                Ok(MpcJobResult::Done)
+                Ok(())
             },
         );
 
@@ -733,7 +741,7 @@ where
         channel_receiver: mpsc::UnboundedReceiver<NetworkTaskChannel>,
         chain_txn_sender: TransactionSender,
         key_event_receiver: watch::Receiver<ContractKeyEventInstance>,
-    ) -> anyhow::Result<MpcJobResult> {
+    ) -> anyhow::Result<()> {
         tracing::info!("Starting key resharing.");
 
         let previous_keyset = current_running_state.keyset;
@@ -756,7 +764,7 @@ where
                         previous_keyset.epoch_id,
                         e
                     );
-                    return Ok(MpcJobResult::HaltUntilInterrupted);
+                    return Ok(());
                 }
             };
             Some(keyshares)
@@ -803,7 +811,7 @@ where
             )
             .await?;
         }
-        Ok(MpcJobResult::Done)
+        Ok(())
     }
 }
 
@@ -837,130 +845,3 @@ impl Drop for ReportCurrentJobGuard {
     }
 }
 
-/// returns true if one of the following occurs:
-/// - the epoch id changes
-/// - a resharing starts
-/// - the participant set changes
-fn stop_running(
-    new_state: &ContractState,
-    current_running_epoch_id: EpochId,
-    current_participant_set: ParticipantsConfig,
-) -> bool {
-    match new_state {
-        ContractState::Running(new_state) => {
-            if new_state.keyset.epoch_id != current_running_epoch_id {
-                tracing::info!("Epoch id changed.");
-                return true;
-            }
-            if new_state.resharing_state.is_some() {
-                tracing::info!("A resharing started.");
-                return true;
-            }
-            if new_state.participants != current_participant_set {
-                tracing::info!("Participant details changed.");
-                return true;
-            }
-            false
-        }
-        _ => {
-            tracing::info!("No longer in Running state.");
-            true
-        }
-    }
-}
-
-fn make_running_stop_fn(
-    current_running_epoch_id: EpochId,
-    current_participant_set: ParticipantsConfig,
-) -> StopFn {
-    Box::new(move |new_state| {
-        stop_running(
-            new_state,
-            current_running_epoch_id,
-            current_participant_set.clone(),
-        )
-    })
-}
-
-/// returns true if one of the following occurs:
-///     - epoch id changed
-///     - resharing concludes
-///     - key event receiver closes the channel.
-fn stop_resharing(
-    new_state: &ContractState,
-    current_resharing_epoch_id: EpochId,
-    key_event_sender: &tokio::sync::watch::Sender<ContractKeyEventInstance>,
-) -> bool {
-    match new_state {
-        ContractState::Running(new_state) => {
-            let Some(new_resharing_state) = &new_state.resharing_state else {
-                tracing::info!("Concluded resharing state.");
-                return true;
-            };
-
-            if new_resharing_state.key_event.id.epoch_id != current_resharing_epoch_id {
-                tracing::info!("Epoch changed. We exit resharing state.");
-                return true;
-            }
-
-            if key_event_sender
-                .send(new_resharing_state.key_event.clone())
-                .is_err()
-            {
-                tracing::info!("Key event receiver closed.");
-                return true;
-            }
-
-            false
-        }
-        _ => true,
-    }
-}
-
-fn make_resharing_stop_fn(
-    resharing_state: ContractResharingState,
-) -> (watch::Receiver<ContractKeyEventInstance>, StopFn) {
-    let (key_event_sender, key_event_receiver) = watch::channel(resharing_state.key_event.clone());
-    let current_resharing_epoch_id = resharing_state.key_event.id.epoch_id;
-    let stop_fn = Box::new(move |new_state: &ContractState| {
-        stop_resharing(new_state, current_resharing_epoch_id, &key_event_sender)
-    });
-    (key_event_receiver, stop_fn)
-}
-
-fn stop_initializing(
-    new_state: &ContractState,
-    current_epoch_id: EpochId,
-    key_event_sender: &tokio::sync::watch::Sender<ContractKeyEventInstance>,
-) -> bool {
-    match new_state {
-        ContractState::Initializing(new_state) => {
-            if new_state.key_event.id.epoch_id != current_epoch_id {
-                tracing::info!("Epoch id changed");
-                return true;
-            }
-            if key_event_sender.send(new_state.key_event.clone()).is_err() {
-                tracing::info!("Key event receiver closed");
-                return true;
-            }
-            false
-        }
-        _ => {
-            tracing::info!("Protocol State changed.");
-            true
-        }
-    }
-}
-
-fn make_initializing_stop_fn(
-    key_event: ContractKeyEventInstance,
-) -> (watch::Receiver<ContractKeyEventInstance>, StopFn) {
-    let (key_event_sender, key_event_receiver) = watch::channel(key_event.clone());
-    let key_event_sender = key_event_sender.clone();
-    (
-        key_event_receiver,
-        Box::new(move |new_state| {
-            stop_initializing(new_state, key_event.id.epoch_id, &key_event_sender)
-        }),
-    )
-}

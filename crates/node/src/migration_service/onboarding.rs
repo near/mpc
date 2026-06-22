@@ -2,155 +2,66 @@ use std::{sync::Arc, time::Duration};
 
 use anyhow::Context;
 use backon::{ExponentialBuilder, Retryable};
-use ed25519_dalek::VerifyingKey;
 use futures::TryFutureExt;
-use near_account_id::AccountId;
 use near_mpc_crypto_types::Keyset;
 use tokio::sync::{RwLock, watch};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
     indexer::{
-        participants::ContractState,
         tx_sender::TransactionSender,
         types::{ChainSendTransactionRequest, ConcludeNodeMigrationArgs},
     },
     keyshare::{Keyshare, KeyshareStorage},
-    migration_service::types::{MigrationInfo, OnboardingJob, OnboardingTask},
+    migration_service::{
+        types::{MigrationInfo, NodeJob},
+        wait_until_job_changes,
+    },
 };
 
-/// Waits until the node becomes an active participant in the current epoch or
-/// terminates if the keyshare channel closes.
-/// Internally, this function monitors contract and migration state changes and
-/// runs onboarding tasks as needed.
+/// Runs onboarding for the given keyset until either:
+///   - `execute_onboarding` returns (success: conclude-tx submitted and contract
+///     reflected completion, or unrecoverable error: keyshare sender dropped), or
+///   - the unified `job_receiver` moves to a different variant (the role changed,
+///     e.g. to `NodeJob::Initialize` once we became an active participant, or
+///     to `NodeJob::WaitForStateChange` if the contract changed underneath us).
 ///
-/// Returns `Ok(())` when this node is an active participant in the current epoch.
-pub(crate) async fn onboard(
-    contract_state_receiver: watch::Receiver<ContractState>,
-    my_migration_info_receiver: watch::Receiver<MigrationInfo>,
-    my_near_account_id: AccountId,
-    tls_public_key: VerifyingKey,
-    tx_sender: impl TransactionSender,
+/// In the role-change case, we fire the import cancellation token to stop the
+/// in-flight import cleanly. The outer coordinator loop reads the next
+/// `NodeJob` from the same receiver and dispatches the new arm.
+pub(crate) async fn run_onboarding(
+    importing_keyset: Keyset,
+    mut job_receiver: watch::Receiver<NodeJob>,
     keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     keyshare_receiver: watch::Receiver<Vec<Keyshare>>,
+    tx_sender: impl TransactionSender,
+    my_migration_info_receiver: watch::Receiver<MigrationInfo>,
 ) -> anyhow::Result<()> {
-    tracing::info!(?my_near_account_id, "starting onboarding");
-    let (cancel_monitoring_task, mut onboarding_job_receiver) = start_onboarding_monitoring_task(
-        contract_state_receiver,
-        my_migration_info_receiver.clone(),
-        my_near_account_id.clone(),
-        tls_public_key,
-    );
-
-    loop {
-        let OnboardingTask {
-            job,
-            cancellation_token,
-        } = onboarding_job_receiver.borrow_and_update().clone();
-
-        match job {
-            OnboardingJob::Done => {
-                tracing::info!(?my_near_account_id, "done onboarding");
-                cancel_monitoring_task.cancel();
-                return Ok(());
-            }
-            OnboardingJob::WaitForStateChange => {
-                tracing::info!(?my_near_account_id, "waiting for state change");
-                cancellation_token.cancelled().await;
-                continue;
-            }
-            OnboardingJob::Onboard(importing_keyset) => {
-                tracing::info!(?my_near_account_id, "execute onboarding");
-                let res = execute_onboarding(
-                    importing_keyset.clone(),
-                    keyshare_storage.clone(),
-                    keyshare_receiver.clone(),
-                    tx_sender.clone(),
-                    my_migration_info_receiver.clone(),
-                    cancellation_token.clone(),
-                )
-                .await;
-                if cancellation_token.is_cancelled() {
-                    continue;
-                }
-
-                // the only unrecoverable error is if the keyshare sender drops.
-                if let Err(err) = res {
-                    cancel_monitoring_task.cancel();
-                    anyhow::bail!("keyshare sender dropped, quitting onboarding: {}", err);
-                }
-                // The monitoring function will cancel this task once the contract state changes.
-                cancellation_token.cancelled().await;
-            }
+    let cancel_import_token = CancellationToken::new();
+    tokio::select! {
+        // execute_onboarding returns Err only if the keyshare sender drops
+        // (unrecoverable). Returns Ok when the conclude tx is reflected on
+        // chain — at that point the role moves to Active and the coordinator
+        // loop's next iteration will pick up NodeJob::Initialize / Run.
+        res = execute_onboarding(
+            importing_keyset,
+            keyshare_storage,
+            keyshare_receiver,
+            tx_sender,
+            my_migration_info_receiver,
+            cancel_import_token.clone(),
+        ) => {
+            res.context("execute_onboarding failed (keyshare sender dropped)")
+        }
+        res = wait_until_job_changes(
+            &mut job_receiver,
+            |j| matches!(j, NodeJob::Onboard(_)),
+        ) => {
+            tracing::info!("onboarding: role changed; cancelling import");
+            cancel_import_token.cancel();
+            res
         }
     }
-}
-
-/// Starts a background task that monitors onboarding-related state changes.
-///
-/// The task watches the contract state and migration info and updates the
-/// returned [`watch::Receiver`] with a new [`OnboardingTask`] whenever the
-/// corresponding [`OnboardingJob`] changes.
-/// The previous task’s cancellation token is triggered each time a new job
-/// replaces it.
-///
-/// Returns a tuple of:
-/// - A [`CancellationToken`] to stop the monitoring task.
-/// - A [`watch::Receiver<OnboardingTask>`] that emits updates.
-fn start_onboarding_monitoring_task(
-    mut contract_state_receiver: watch::Receiver<ContractState>,
-    mut my_migration_info_receiver: watch::Receiver<MigrationInfo>,
-    my_near_account_id: AccountId,
-    tls_public_key: VerifyingKey,
-) -> (CancellationToken, watch::Receiver<OnboardingTask>) {
-    let cancel_monitoring_task = CancellationToken::new();
-    let contract = contract_state_receiver.borrow_and_update().clone();
-    let my_migration_info = my_migration_info_receiver.borrow_and_update().clone();
-    let init_job = OnboardingJob::new(
-        my_migration_info,
-        contract,
-        &my_near_account_id,
-        &tls_public_key,
-    );
-    let cancellation_token = CancellationToken::new();
-    let init_task = OnboardingTask {
-        job: init_job,
-        cancellation_token,
-    };
-
-    let cancel_monitoring_task_clone = cancel_monitoring_task.clone();
-    let (sender, receiver) = watch::channel(init_task);
-    tokio::spawn(async move {
-        loop {
-            let contract = contract_state_receiver.borrow_and_update().clone();
-            let my_migration_info = my_migration_info_receiver.borrow_and_update().clone();
-            let job = OnboardingJob::new(
-                my_migration_info,
-                contract,
-                &my_near_account_id,
-                &tls_public_key,
-            );
-            sender.send_if_modified(|watched_state| {
-                if watched_state.job != job {
-                    watched_state.cancellation_token.cancel();
-                    let cancellation_token = CancellationToken::new();
-                    *watched_state = OnboardingTask {
-                        job,
-                        cancellation_token,
-                    };
-                    true
-                } else {
-                    false
-                }
-            });
-            tokio::select! {
-                _ = contract_state_receiver.changed() => {},
-                _ = my_migration_info_receiver.changed() =>  {}
-                _ = cancel_monitoring_task_clone.cancelled() => {return;}
-            }
-        }
-    });
-    (cancel_monitoring_task, receiver)
 }
 
 /// Retries `conclude_node_migration` until the contract reflects completion.
@@ -342,26 +253,13 @@ mod tests {
     use tokio_util::sync::CancellationToken;
 
     use crate::{
-        config::tests::gen_participant,
-        indexer::participants::ContractState,
         keyshare::{generate_key_storage_config, test_utils::KeysetBuilder},
-        migration_service::{
-            onboarding::{
-                IMPORT_CANCELLED_MSG, IMPORT_FAILURE_MSG, IMPORT_SUCCESS_MSG,
-                KEYSHARE_SENDER_CLOSED_MSG, START_IMPORT_LOOP_MSG, wait_for_and_import_keyshares,
-            },
-            types::{
-                MigrationInfo, OnboardingJob, OnboardingTask,
-                tests::{
-                    ContractCase, TestNodeId, make_initializing_contract_case,
-                    make_resharing_contract_case, make_running_contract_case,
-                },
-            },
+        migration_service::onboarding::{
+            IMPORT_CANCELLED_MSG, IMPORT_FAILURE_MSG, IMPORT_SUCCESS_MSG,
+            KEYSHARE_SENDER_CLOSED_MSG, START_IMPORT_LOOP_MSG, wait_for_and_import_keyshares,
         },
     };
     use tracing_test::{self, traced_test};
-
-    use super::start_onboarding_monitoring_task;
 
     const EPOCH_ID: u64 = 3;
     const NUM_KEYS: u64 = 5;
@@ -470,164 +368,4 @@ mod tests {
         assert!(err.contains(KEYSHARE_SENDER_CLOSED_MSG));
     }
 
-    const INACTIVE_MIGRATION: MigrationInfo = MigrationInfo {
-        backup_service_info: None,
-        active_migration: false,
-    };
-    const ACTIVE_MIGRATION: MigrationInfo = MigrationInfo {
-        backup_service_info: None,
-        active_migration: true,
-    };
-
-    async fn conclude_onboarding_and_assert_done(
-        contract_case: ContractCase,
-        contract_state_sender: &watch::Sender<ContractState>,
-        task_receiver: &mut watch::Receiver<OnboardingTask>,
-        monitoring_cancellation_token: CancellationToken,
-    ) {
-        let task = task_receiver.borrow_and_update().clone();
-        assert!(!task.cancellation_token.is_cancelled());
-        let ContractCase {
-            mut contract,
-            onboarding_node,
-            ..
-        } = contract_case;
-        contract.change_participant_pk(&onboarding_node.account_id, onboarding_node.p2p_public_key);
-        contract_state_sender.send(contract.clone()).unwrap();
-        // wait for cancellation
-        tokio::time::timeout(
-            std::time::Duration::from_secs(10),
-            task.cancellation_token.cancelled(),
-        )
-        .await
-        .unwrap();
-        // now we should be done
-        assert!(task.cancellation_token.is_cancelled());
-        let task = task_receiver.borrow_and_update().clone();
-        assert_eq!(task.job, OnboardingJob::Done);
-
-        monitoring_cancellation_token.cancel();
-        let _ = task_receiver
-            .changed()
-            .await
-            .expect_err("Task receiver should close after monitoring cancellation");
-        assert!(contract_state_sender.is_closed());
-    }
-    struct OnboardingMonitoringTaskSetup {
-        my_migration_info_sender: watch::Sender<MigrationInfo>,
-        contract_state_sender: watch::Sender<ContractState>,
-        task_receiver: watch::Receiver<OnboardingTask>,
-        monitoring_cancellation_token: CancellationToken,
-    }
-    fn setup_test(onboarding_node: TestNodeId) -> OnboardingMonitoringTaskSetup {
-        let (contract_state_sender, contract_state_receiver) =
-            watch::channel(ContractState::Invalid);
-        let (my_migration_info_sender, my_migration_info_receiver) =
-            watch::channel(INACTIVE_MIGRATION);
-        let (monitoring_cancellation_token, task_receiver) = start_onboarding_monitoring_task(
-            contract_state_receiver,
-            my_migration_info_receiver,
-            onboarding_node.account_id,
-            onboarding_node.p2p_public_key,
-        );
-        OnboardingMonitoringTaskSetup {
-            task_receiver,
-            contract_state_sender,
-            my_migration_info_sender,
-            monitoring_cancellation_token,
-        }
-    }
-    async fn setup_and_assert_invalid_state(
-        onboarding_node: TestNodeId,
-    ) -> OnboardingMonitoringTaskSetup {
-        let mut setup = setup_test(onboarding_node);
-        let OnboardingMonitoringTaskSetup {
-            task_receiver,
-            my_migration_info_sender,
-            ..
-        } = &mut setup;
-        let task = task_receiver.borrow_and_update().clone();
-        assert_eq!(task.job, OnboardingJob::WaitForStateChange);
-        assert!(!task.cancellation_token.is_cancelled());
-        // active migration does not matter if the contract is not in running state.
-        my_migration_info_sender.send(ACTIVE_MIGRATION).unwrap();
-        assert!(!task.cancellation_token.is_cancelled());
-        setup
-    }
-    #[tokio::test]
-    async fn test_start_onboarding_monitoring_task_running() {
-        let non_participant = gen_participant();
-        let onboarding_node_p2p_public_key = non_participant.p2p_public_key;
-        let (running_state_case, keyset) =
-            make_running_contract_case(onboarding_node_p2p_public_key);
-        let OnboardingMonitoringTaskSetup {
-            mut task_receiver,
-            contract_state_sender,
-            monitoring_cancellation_token,
-            ..
-        } = setup_and_assert_invalid_state(running_state_case.onboarding_node.clone()).await;
-
-        let task = task_receiver.borrow_and_update().clone();
-        contract_state_sender
-            .send(running_state_case.contract.clone())
-            .unwrap();
-        // wait for cancellation, we should be onboarding
-        tokio::time::timeout(
-            std::time::Duration::from_secs(10),
-            task.cancellation_token.cancelled(),
-        )
-        .await
-        .unwrap();
-        assert!(task.cancellation_token.is_cancelled());
-        let task = task_receiver.borrow_and_update().clone();
-        assert_eq!(task.job, OnboardingJob::Onboard(keyset));
-
-        conclude_onboarding_and_assert_done(
-            running_state_case,
-            &contract_state_sender,
-            &mut task_receiver,
-            monitoring_cancellation_token,
-        )
-        .await;
-    }
-    #[tokio::test]
-    async fn test_start_onboarding_monitoring_task_resharing() {
-        let non_participant = gen_participant();
-        let onboarding_node_p2p_public_key = non_participant.p2p_public_key;
-        let resharing_state_case = make_resharing_contract_case(onboarding_node_p2p_public_key);
-        let OnboardingMonitoringTaskSetup {
-            mut task_receiver,
-            contract_state_sender,
-            monitoring_cancellation_token,
-            ..
-        } = setup_and_assert_invalid_state(resharing_state_case.onboarding_node.clone()).await;
-        conclude_onboarding_and_assert_done(
-            resharing_state_case,
-            &contract_state_sender,
-            &mut task_receiver,
-            monitoring_cancellation_token,
-        )
-        .await;
-    }
-    #[tokio::test]
-    async fn test_start_onboarding_monitoring_task_initializing() {
-        let non_participant = gen_participant();
-        let onboarding_node_p2p_public_key = non_participant.p2p_public_key;
-        let initializing_contract_case =
-            make_initializing_contract_case(onboarding_node_p2p_public_key);
-        let OnboardingMonitoringTaskSetup {
-            mut task_receiver,
-            contract_state_sender,
-            monitoring_cancellation_token,
-            ..
-        } = setup_and_assert_invalid_state(initializing_contract_case.onboarding_node.clone())
-            .await;
-        conclude_onboarding_and_assert_done(
-            initializing_contract_case,
-            &contract_state_sender,
-            &mut task_receiver,
-            monitoring_cancellation_token,
-        )
-        .await;
-    }
 }

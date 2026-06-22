@@ -22,7 +22,7 @@ pub type AesKey128 = [u8; 16];
 
 /// Configuration about the MPC protocol. It can come from either the contract
 /// on chain, or static offline config file.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MpcConfig {
     pub my_participant_id: ParticipantId,
     pub participants: ParticipantsConfig,
