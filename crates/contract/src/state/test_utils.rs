@@ -91,7 +91,12 @@ pub fn gen_resharing_state(num_domains: usize) -> (Environment, ResharingContrac
 /// generated threshold parameters.
 pub fn gen_running_state(num_domains: usize) -> RunningContractState {
     let max_n = 30;
-    gen_running_state_with_threshold_params(num_domains, gen_threshold_params(max_n))
+    let parameters = gen_threshold_params(max_n);
+    gen_running_state_with_params(
+        num_domains,
+        parameters.participants().len(),
+        parameters.threshold().value(),
+    )
 }
 
 /// Like [`gen_running_state`], but pins the participant count and
@@ -101,18 +106,12 @@ pub fn gen_running_state_with_params(
     num_participants: usize,
     governance_threshold: u64,
 ) -> RunningContractState {
-    let parameters = ThresholdParameters::new(
+    let threshold_parameters = ThresholdParameters::new(
         gen_participants(num_participants),
         Threshold::new(governance_threshold),
     )
     .expect("valid threshold parameters");
-    gen_running_state_with_threshold_params(num_domains, parameters)
-}
 
-fn gen_running_state_with_threshold_params(
-    num_domains: usize,
-    threshold_parameters: ThresholdParameters,
-) -> RunningContractState {
     let epoch_id = EpochId::new(rand::thread_rng().r#gen());
     let domains = gen_domain_registry(num_domains);
 
