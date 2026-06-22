@@ -669,9 +669,12 @@ pub mod running_tests {
         // (the fixture default) and a proposal for a second CaitSith at t = 3.
         // Require GovernanceThreshold >= 3 so a reconstruction threshold of 3 is allowed.
         let mut state = gen_running_state(1);
-        while state.parameters.threshold().value() < 3 {
-            state = gen_running_state(1);
-        }
+        // Max out the GovernanceThreshold (== participant count, the upper bound)
+        // so a reconstruction threshold of 3 is comfortably allowed.
+        let participants = state.parameters.participants().clone();
+        let governance =
+            Threshold::new(u64::try_from(participants.len()).expect("participant count fits in u64"));
+        state.parameters = ThresholdParameters::new(participants, governance).unwrap();
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
         let proposal = single_domain_proposal(&state, Protocol::CaitSith, DomainPurpose::Sign, 3);
@@ -707,9 +710,12 @@ pub mod running_tests {
         // adding two CaitSith domains at different thresholds.
         // Require GovernanceThreshold >= 3 so reconstruction thresholds 2 and 3 are both allowed.
         let mut state = gen_running_state(0);
-        while state.parameters.threshold().value() < 3 {
-            state = gen_running_state(0);
-        }
+        // Max out the GovernanceThreshold (== participant count, the upper bound)
+        // so reconstruction thresholds of 2 and 3 are comfortably allowed.
+        let participants = state.parameters.participants().clone();
+        let governance =
+            Threshold::new(u64::try_from(participants.len()).expect("participant count fits in u64"));
+        state.parameters = ThresholdParameters::new(participants, governance).unwrap();
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
         let next_id = state.domains.next_domain_id();
