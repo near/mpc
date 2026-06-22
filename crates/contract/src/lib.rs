@@ -1958,10 +1958,6 @@ impl MpcContract {
         let initial_participants = parameters.participants();
         let tee_state = TeeState::with_mocked_participant_attestations(initial_participants);
 
-        let tee_verifier_account_id = init_config
-            .as_ref()
-            .and_then(|c| c.tee_verifier_account_id.clone());
-
         Ok(Self {
             protocol_state: ProtocolContractState::Running(RunningContractState::new(
                 DomainRegistry::default(),
@@ -1985,7 +1981,7 @@ impl MpcContract {
                 StorageKey::ForeignChainMetadata,
                 ForeignChainsMetadata::default(),
             ),
-            tee_verifier_account_id,
+            tee_verifier_account_id: None,
             tee_verifier_votes: TeeVerifierVotes::default(),
         })
     }
@@ -2035,10 +2031,6 @@ impl MpcContract {
         let initial_participants = parameters.participants();
         let tee_state = TeeState::with_mocked_participant_attestations(initial_participants);
 
-        let tee_verifier_account_id = init_config
-            .as_ref()
-            .and_then(|c| c.tee_verifier_account_id.clone());
-
         Ok(MpcContract {
             config: init_config.map(Into::into).unwrap_or_default(),
             protocol_state: ProtocolContractState::Running(RunningContractState::new(
@@ -2062,7 +2054,7 @@ impl MpcContract {
                 StorageKey::ForeignChainMetadata,
                 ForeignChainsMetadata::default(),
             ),
-            tee_verifier_account_id,
+            tee_verifier_account_id: None,
             tee_verifier_votes: TeeVerifierVotes::default(),
         })
     }
