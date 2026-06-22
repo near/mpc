@@ -1266,6 +1266,18 @@ impl MpcContract {
                     Gas::from_tgas(self.config.clean_foreign_chain_data_tera_gas),
                 )
                 .detach();
+            // Spawn a promise to drop verifier-change votes cast by non-participants
+            Promise::new(env::current_account_id())
+                .function_call(
+                    method_names::REMOVE_NON_PARTICIPANT_TEE_VERIFIER_VOTES.to_string(),
+                    vec![],
+                    NearToken::from_yoctonear(0),
+                    Gas::from_tgas(
+                        self.config
+                            .remove_non_participant_tee_verifier_votes_tera_gas,
+                    ),
+                )
+                .detach();
         }
 
         Ok(())
@@ -1925,6 +1937,26 @@ impl MpcContract {
             .rpc_whitelist
             .votes
             .retain(participants);
+
+        Ok(())
+    }
+
+    /// Private endpoint to drop verifier-change votes cast by non-participants
+    /// after resharing.
+    #[private]
+    #[handle_result]
+    pub fn remove_non_participant_tee_verifier_votes(&mut self) -> Result<(), Error> {
+        log!(
+            "remove_non_participant_tee_verifier_votes: signer={}",
+            env::signer_account_id()
+        );
+
+        let participants = match &self.protocol_state {
+            ProtocolContractState::Running(state) => state.parameters.participants(),
+            _ => {
+                return Err(InvalidState::ProtocolStateNotRunning.into());
+            }
+        };
 
         self.tee_verifier_votes.retain(participants);
 

@@ -102,6 +102,7 @@ async fn contract_configuration_can_be_set_on_initialization() {
         cleanup_orphaned_node_migrations_tera_gas: Some(11),
         remove_non_participant_update_votes_tera_gas: Some(12),
         clean_foreign_chain_data_tera_gas: Some(13),
+        remove_non_participant_tee_verifier_votes_tera_gas: Some(14),
     };
 
     let SandboxTestSetup { contract, .. } = SandboxTestSetup::builder()
