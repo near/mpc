@@ -13,7 +13,7 @@ use crate::primitives::{
     test_utils::{gen_participant, gen_threshold_params},
     thresholds::{
         ProposedThresholdParameters, Threshold, ThresholdParameters,
-        governance_threshold_lower_bound,
+        governance_threshold_lower_relative_bound,
     },
 };
 use rand::Rng;
@@ -61,7 +61,7 @@ pub fn gen_valid_params_proposal(params: &ThresholdParameters) -> ProposedThresh
         next_id = next_id.next();
     }
 
-    let threshold = governance_threshold_lower_bound(new_participants.len() as u64);
+    let threshold = governance_threshold_lower_relative_bound(new_participants.len() as u64);
     let parameters = ThresholdParameters::new(new_participants, Threshold::new(threshold)).unwrap();
     // Empty per-domain threshold updates (no change); see the doc comment.
     ProposedThresholdParameters::new(parameters, BTreeMap::new())
