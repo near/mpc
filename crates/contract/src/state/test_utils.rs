@@ -87,8 +87,32 @@ pub fn gen_resharing_state(num_domains: usize) -> (Environment, ResharingContrac
         resharing_state.expect("Should've transitioned into resharing"),
     )
 }
-/// Generates a Running state that contains this many domains.
+/// Generates a Running state that contains this many domains, with randomly
+/// generated threshold parameters.
 pub fn gen_running_state(num_domains: usize) -> RunningContractState {
+    let max_n = 30;
+    gen_running_state_with_threshold_params(num_domains, gen_threshold_params(max_n))
+}
+
+/// Like [`gen_running_state`], but pins the participant count and
+/// GovernanceThreshold instead of randomizing them.
+pub fn gen_running_state_with_params(
+    num_domains: usize,
+    num_participants: usize,
+    governance_threshold: u64,
+) -> RunningContractState {
+    let parameters = ThresholdParameters::new(
+        gen_participants(num_participants),
+        Threshold::new(governance_threshold),
+    )
+    .expect("valid threshold parameters");
+    gen_running_state_with_threshold_params(num_domains, parameters)
+}
+
+fn gen_running_state_with_threshold_params(
+    num_domains: usize,
+    threshold_parameters: ThresholdParameters,
+) -> RunningContractState {
     let epoch_id = EpochId::new(rand::thread_rng().r#gen());
     let domains = gen_domain_registry(num_domains);
 
@@ -106,8 +130,6 @@ pub fn gen_running_state(num_domains: usize) -> RunningContractState {
             key: bogus_ed25519_public_key_extended(),
         });
     }
-    let max_n = 30;
-    let threshold_parameters = gen_threshold_params(max_n);
     RunningContractState::new(
         domains,
         Keyset::new(epoch_id, keys),
