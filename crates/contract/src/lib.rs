@@ -5571,7 +5571,9 @@ mod tests {
         let participants = gen_participants(PARTICIPANT_COUNT);
         let parameters = ThresholdParameters::new(
             participants.clone(),
-            Threshold::new(u64::try_from(PARTICIPANT_COUNT).expect("participant count fits in u64")),
+            Threshold::new(
+                u64::try_from(PARTICIPANT_COUNT).expect("participant count fits in u64"),
+            ),
         )
         .unwrap();
         let domain_id = DomainId::default();

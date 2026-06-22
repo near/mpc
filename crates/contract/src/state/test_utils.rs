@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 use crate::primitives::{
     key_state::{EpochId, KeyForDomain, Keyset},
     participants::{ParticipantId, Participants},
-    test_utils::{gen_participant, gen_threshold_params},
+    test_utils::{gen_participant, gen_participants, gen_threshold_params},
     thresholds::{
         ProposedThresholdParameters, Threshold, ThresholdParameters,
         governance_threshold_lower_relative_bound,

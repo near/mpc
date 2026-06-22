@@ -150,8 +150,8 @@ impl RunningContractState {
 
         // Validate effective per-domain thresholds (updates override, absent
         // domains keep theirs) against the proposed participant count.
-        let new_num_participants = u64::try_from(proposal.participants().len())
-            .expect("participant count fits in u64");
+        let new_num_participants =
+            u64::try_from(proposal.participants().len()).expect("participant count fits in u64");
         let threshold_updates = proposal.per_domain_thresholds();
         // Reject unknown domain IDs: the loop below iterates existing domains, so
         // an unknown ID would otherwise be silently ignored here (it's caught at
@@ -672,8 +672,9 @@ pub mod running_tests {
         // Max out the GovernanceThreshold (== participant count, the upper bound)
         // so a reconstruction threshold of 3 is comfortably allowed.
         let participants = state.parameters.participants().clone();
-        let governance =
-            Threshold::new(u64::try_from(participants.len()).expect("participant count fits in u64"));
+        let governance = Threshold::new(
+            u64::try_from(participants.len()).expect("participant count fits in u64"),
+        );
         state.parameters = ThresholdParameters::new(participants, governance).unwrap();
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);
@@ -713,8 +714,9 @@ pub mod running_tests {
         // Max out the GovernanceThreshold (== participant count, the upper bound)
         // so reconstruction thresholds of 2 and 3 are comfortably allowed.
         let participants = state.parameters.participants().clone();
-        let governance =
-            Threshold::new(u64::try_from(participants.len()).expect("participant count fits in u64"));
+        let governance = Threshold::new(
+            u64::try_from(participants.len()).expect("participant count fits in u64"),
+        );
         state.parameters = ThresholdParameters::new(participants, governance).unwrap();
         let mut env = Environment::new(None, None, None);
         env.set_signer(&state.parameters.participants().participants()[0].0);

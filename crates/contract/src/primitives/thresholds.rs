@@ -280,7 +280,8 @@ mod tests {
             test_utils::{gen_participant, gen_participants, gen_threshold_params},
             thresholds::{
                 ProposedThresholdParameters, Threshold, ThresholdParameters,
-                governance_threshold_lower_relative_bound, governance_threshold_upper_relative_bound,
+                governance_threshold_lower_relative_bound,
+                governance_threshold_upper_relative_bound,
             },
         },
         state::test_utils::gen_valid_params_proposal,
