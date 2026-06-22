@@ -4,11 +4,12 @@ use crate::sandbox::utils::{
     transactions::execute_async_transactions,
 };
 use dtos::{AttemptId, EpochId, KeyEventId};
-use mpc_contract::primitives::thresholds::ThresholdParameters;
+use mpc_contract::primitives::thresholds::{ProposedThresholdParameters, ThresholdParameters};
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{self as dtos, ProtocolContractState};
 use near_workspaces::{Account, Contract};
 use serde_json::json;
+use std::collections::BTreeMap;
 
 pub async fn conclude_resharing(
     contract: &Contract,
@@ -61,6 +62,7 @@ pub async fn vote_new_parameters(
     persistent_participants: &[Account],
     new_participants: &[Account],
 ) -> anyhow::Result<()> {
+    let proposal = ProposedThresholdParameters::new(proposal.clone(), BTreeMap::new());
     let json_args = json!({
         "prospective_epoch_id": prospective_epoch_id,
         "proposal": proposal,

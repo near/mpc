@@ -6,7 +6,7 @@ mod bench_utils;
 use bench_utils::prepare_dkg;
 
 use threshold_signatures::{
-    Ciphersuite, Element, ReconstructionLowerBound, Scalar,
+    Ciphersuite, Element, ReconstructionThreshold, Scalar,
     confidential_key_derivation::ciphersuite::BLS12381SHA256,
     frost_ed25519::Ed25519Sha512,
     frost_secp256k1::Secp256K1Sha256,
@@ -15,7 +15,7 @@ use threshold_signatures::{
 
 fn main() {
     let config = BenchConfig::from_env();
-    let threshold = ReconstructionLowerBound::from(config.threshold);
+    let threshold = ReconstructionThreshold::from(config.threshold);
     let n = config.num_participants;
 
     println!("Protocol simulation: DKG");
@@ -50,7 +50,7 @@ fn main() {
 
 fn run_dkg<C: Ciphersuite>(
     n: usize,
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     config: &BenchConfig,
 ) -> SimulationMetrics
 where

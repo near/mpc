@@ -87,7 +87,7 @@ The node (`crates/node/`) imports types from **both** the internal contract crat
 ```
 Contract ThresholdParameters.threshold (Threshold(u64))
   → Coordinator extracts: threshold: usize = mpc_config.participants.threshold.try_into()?
-  → Converts to: ReconstructionLowerBound::from(threshold)
+  → Converts to: ReconstructionThreshold::from(threshold)
   → For CaitSith/FROST: passed directly to keygen/sign
   → For DamgardEtAl: translate_threshold() → MaxMalicious::from((n_signers - 1) / 2)
 ```
@@ -348,12 +348,10 @@ pub fn validate_governance(governance: &GovernanceBody) -> Result<(), Error> {
     if t < min_relative {
         return Err(Error::GovernanceThresholdBelowMinimumRelative);
     }
-    // Governance relative upper cap, expressed as a fraction of n. Currently set to
-    // 100% (5/5 = n) — effectively disabled — so it never binds below the absolute
-    // `t <= n` check above. Kept as an explicit fraction (clamped up to the 60% lower
-    // bound so the window is never empty) so a stricter cap can be re-introduced later.
-    // See §7.1.
-    let max_relative = (5 * n / 5).max(min_relative);
+    // Currently, the governance relative upper cap is set to 100% but could and should
+    // be lowered to prevent getting the smart contract locked when a participant stops
+    // suddenly voting
+    let max_relative = n;
     if t > max_relative {
         return Err(Error::GovernanceThresholdAboveMaximumRelative);
     }
@@ -914,7 +912,7 @@ During resharing, each domain's key must be reshared with its own `Reconstructio
 ```rust
 // Current (hack):
 let threshold: usize = mpc_config.participants.threshold.try_into()?;
-let threshold = ReconstructionLowerBound::from(threshold);
+let threshold = ReconstructionThreshold::from(threshold);
 
 // Proposed (clean):
 let dk = distributed_key_registry.get(distributed_key_id);
@@ -924,7 +922,7 @@ let threshold = match dk.protocol {
         let max_malicious = MaxMalicious::from(dk.reconstruction_threshold.inner() - 1);
         // Use MaxMalicious directly, no translation needed
     }
-    _ => ReconstructionLowerBound::from(dk.reconstruction_threshold.inner()),
+    _ => ReconstructionThreshold::from(dk.reconstruction_threshold.inner()),
 };
 ```
 
@@ -937,7 +935,8 @@ let threshold = match dk.protocol {
 Resolved: the `GovernanceThreshold` is now constrained relative to the cryptographic `ReconstructionThreshold`. Concretely, for `n` participants and per-domain reconstruction thresholds `t_i`:
 
 - `max(t_i) <= GovernanceThreshold` — a governance majority can never approve a reshare into a set smaller than what any domain needs to reconstruct its key (keeps trust assumptions consistent).
-- `ceil(0.6*n) <= GovernanceThreshold <= n` — the existing 60% lower bound. A relative upper cap (`MAX_THRESHOLD_NUMERATOR / MAX_THRESHOLD_DENOMINATOR`) is retained in the code but currently set to 100% (5/5 = n), so it is effectively disabled and only the absolute `GovernanceThreshold <= n` check binds. An 80%-floor cap was considered (to stop a minority that stops serving from locking the contract) but not adopted; the fraction is kept explicit so a stricter cap can be re-introduced later.
+- `ceil(0.6*n) <= GovernanceThreshold <= n` — the existing 60% lower bound. A relative upper cap is retained in the code but currently set to 100%
+(effectively disabled due to non-convergence of opinions on what would be a good upper bound).
 
 These are enforced at every mutation point (governance threshold updates, reconstruction threshold updates, participant add, participant kick) and re-validated once on migration, where a violation hard-blocks the upgrade (panic) — state that breaks the relation must be corrected via `vote_new_parameters` before upgrading. See `ThresholdParameters::validate_threshold` and `validate_governance_against_reconstruction` in `crates/contract/src/primitives/thresholds.rs`.
 

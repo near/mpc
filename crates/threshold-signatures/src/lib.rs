@@ -36,7 +36,7 @@ use crate::errors::InitializationError;
 use crate::participants::Participant;
 use crate::protocol::Protocol;
 use crate::protocol::internal::{Comms, make_protocol};
-pub use crate::thresholds::{MaxMalicious, ReconstructionLowerBound};
+pub use crate::thresholds::{MaxMalicious, ReconstructionThreshold};
 use rand_core::CryptoRngCore;
 use std::marker::Send;
 
@@ -101,7 +101,7 @@ pub fn keygen<C, T, R>(
 ) -> Result<impl Protocol<Output = KeygenOutput<C>> + use<C, T, R>, InitializationError>
 where
     C: Ciphersuite,
-    T: Into<ReconstructionLowerBound> + Send + Copy + 'static,
+    T: Into<ReconstructionThreshold> + Send + Copy + 'static,
     R: CryptoRngCore + Send + 'static,
 {
     let comms = Comms::with_buffer_capacity(DKG_MAX_INCOMING_BUFFER_ENTRIES);
@@ -124,8 +124,8 @@ pub fn reshare<C, OT, NT, R>(
 ) -> Result<impl Protocol<Output = KeygenOutput<C>> + use<C, OT, NT, R>, InitializationError>
 where
     C: Ciphersuite,
-    OT: Into<ReconstructionLowerBound> + Send + 'static,
-    NT: Into<ReconstructionLowerBound> + Copy + Send + 'static,
+    OT: Into<ReconstructionThreshold> + Send + 'static,
+    NT: Into<ReconstructionThreshold> + Copy + Send + 'static,
     R: CryptoRngCore + Send + 'static,
 {
     let comms = Comms::with_buffer_capacity(DKG_MAX_INCOMING_BUFFER_ENTRIES);
@@ -162,7 +162,7 @@ pub fn refresh<C, T, R>(
 ) -> Result<impl Protocol<Output = KeygenOutput<C>> + use<C, T, R>, InitializationError>
 where
     C: Ciphersuite,
-    T: Into<ReconstructionLowerBound> + Copy + Send + 'static,
+    T: Into<ReconstructionThreshold> + Copy + Send + 'static,
     R: CryptoRngCore + Send + 'static,
 {
     if old_signing_key.is_none() {

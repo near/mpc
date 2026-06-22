@@ -71,17 +71,14 @@ pub fn validate_domain_threshold(
     Ok(())
 }
 
-/// The largest `ReconstructionThreshold` across `domains`, or 0 if there are none
+/// The largest `ReconstructionThreshold` across `domains`, or `None` if there are none
 /// (an empty set imposes no cross-domain lower bound on the GovernanceThreshold).
 /// Feeds [`ThresholdParameters::validate_governance_against_reconstruction`](crate::primitives::thresholds::ThresholdParameters::validate_governance_against_reconstruction).
-pub fn max_reconstruction_threshold<'a>(
-    domains: impl IntoIterator<Item = &'a DomainConfig>,
-) -> u64 {
+pub fn max_reconstruction_threshold(domains: &[DomainConfig]) -> Option<ReconstructionThreshold> {
     domains
-        .into_iter()
-        .map(|domain| domain.reconstruction_threshold.inner())
+        .iter()
+        .map(|domain| domain.reconstruction_threshold)
         .max()
-        .unwrap_or(0)
 }
 
 /// All the domains present in the contract, as well as the next domain ID which is kept to ensure
@@ -97,6 +94,11 @@ pub struct DomainRegistry {
 impl DomainRegistry {
     pub fn domains(&self) -> &[DomainConfig] {
         &self.domains
+    }
+
+    #[cfg(test)]
+    pub fn domains_mut(&mut self) -> &mut [DomainConfig] {
+        &mut self.domains
     }
 
     /// Append `domain` at `next_domain_id`, returning its assigned DomainId.

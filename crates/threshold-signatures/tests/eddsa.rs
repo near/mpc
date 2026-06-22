@@ -9,7 +9,7 @@ use common::{
 use rand_core::OsRng;
 
 use threshold_signatures::{
-    self, ReconstructionLowerBound,
+    self, ReconstructionThreshold,
     frost::eddsa::{
         Ed25519Sha512, PresignOutput, SignatureOption,
         sign::{sign_v1, sign_v2},
@@ -22,7 +22,7 @@ type C = Ed25519Sha512;
 type KeygenOutput = threshold_signatures::KeygenOutput<C>;
 
 fn run_sign_v1(
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     participants: &[(Participant, KeygenOutput)],
     coordinator: Participant,
     msg_hash: &[u8],
@@ -49,7 +49,7 @@ fn run_sign_v1(
 }
 
 fn run_sign_v2(
-    threshold: ReconstructionLowerBound,
+    threshold: ReconstructionThreshold,
     participants: &[(Participant, KeygenOutput)],
     coordinator: Participant,
     presig: &[(Participant, PresignOutput)],

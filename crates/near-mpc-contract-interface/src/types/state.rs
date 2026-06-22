@@ -150,13 +150,7 @@ pub struct ThresholdParameters {
 /// keeps the current ones; a populated map must reference only existing domains
 /// (contract-validated), is applied to the `DomainRegistry` on resharing, and
 /// never persists onto the stored [`ThresholdParameters`].
-//
-// Native nested shape; serde is routed through
-// [`ProposedThresholdParametersCompat`] for wire back-compat (flat JSON), borsh
-// stays positional. The ABI reflects this nested shape, not the flat compat JSON
-// (schemars can't see serde `from`/`into`) — intentional, gone after 3.11.2.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
-#[serde(try_from = "ProposedThresholdParametersCompat")]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
@@ -165,48 +159,6 @@ pub struct ProposedThresholdParameters {
     pub parameters: ThresholdParameters,
     #[serde(default)]
     pub per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
-}
-
-// TODO(#3495): delete this struct after version 3.12 is deployed.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct ProposedThresholdParametersCompat {
-    participants: Option<Participants>,
-    threshold: Option<Threshold>,
-    parameters: Option<ThresholdParameters>,
-    per_domain_thresholds: Option<BTreeMap<DomainId, ReconstructionThreshold>>,
-}
-
-impl TryFrom<ProposedThresholdParametersCompat> for ProposedThresholdParameters {
-    type Error = ProposedThresholdParametersDecodeError;
-    fn try_from(compat: ProposedThresholdParametersCompat) -> Result<Self, Self::Error> {
-        match (
-            compat.participants,
-            compat.threshold,
-            compat.parameters,
-            compat.per_domain_thresholds,
-        ) {
-            (Some(participants), Some(threshold), None, None) => Ok(Self {
-                parameters: ThresholdParameters {
-                    participants,
-                    threshold,
-                },
-                per_domain_thresholds: BTreeMap::new(),
-            }),
-            (None, None, Some(parameters), per_domain_thresholds) => Ok(Self {
-                parameters,
-                per_domain_thresholds: per_domain_thresholds.unwrap_or(BTreeMap::new()),
-            }),
-            _ => Err(Self::Error::IncorrectShape),
-        }
-    }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum ProposedThresholdParametersDecodeError {
-    #[error(
-        "ProposedThresholdParameters must be compatible with 3.11 ThresholdParameters or 3.12 ProposedThresholdParameters"
-    )]
-    IncorrectShape,
 }
 
 // =============================================================================
@@ -501,24 +453,6 @@ mod tests {
                 },
             )],
         }
-    }
-
-    #[test]
-    #[expect(non_snake_case)]
-    fn proposed_threshold_parameters__handles_legacy_proposal_payload() {
-        // Given
-        let participants = sample_participants();
-        let legacy = serde_json::to_value(ThresholdParameters {
-            participants,
-            threshold: Threshold::new(1),
-        })
-        .unwrap();
-
-        // When
-        let parsed: ProposedThresholdParameters = serde_json::from_value(legacy).unwrap();
-
-        // Then
-        assert!(parsed.per_domain_thresholds.is_empty());
     }
 
     #[test]
