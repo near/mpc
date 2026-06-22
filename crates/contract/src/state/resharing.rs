@@ -207,7 +207,7 @@ impl ResharingContractState {
 }
 #[cfg(test)]
 pub mod tests {
-    use crate::primitives::test_utils::{NUM_PROTOCOLS, gen_participants};
+    use crate::primitives::test_utils::NUM_PROTOCOLS;
     use crate::state::{
         key_event::tests::{Environment, find_leader},
         running::RunningContractState,
@@ -220,7 +220,7 @@ pub mod tests {
             threshold_votes::ThresholdParametersVotes,
             thresholds::{ProposedThresholdParameters, Threshold, ThresholdParameters},
         },
-        state::test_utils::{gen_resharing_state, gen_running_state},
+        state::test_utils::{gen_resharing_state, gen_running_state_with_params},
     };
     use near_account_id::AccountId;
     use near_mpc_contract_interface::types::{DomainId, ReconstructionThreshold};
@@ -503,9 +503,7 @@ pub mod tests {
         // Given a CaitSith domain at the default threshold 2 and a key-refresh proposal
         // moving it to the GovernanceThreshold.
         let mut env = Environment::new(Some(100), None, None);
-        let mut running = gen_running_state(1);
-        running.parameters =
-            ThresholdParameters::new(gen_participants(5), Threshold::new(4)).unwrap();
+        let mut running = gen_running_state_with_params(1, 5, 4);
         let current_params = running.parameters.clone();
         let domain_id = running.domains.domains()[0].id;
         let original_threshold = running.domains.domains()[0].reconstruction_threshold;
@@ -570,9 +568,7 @@ pub mod tests {
         // Given CaitSith (index 0) and Frost (index 1) at default threshold 2, and a
         // proposal moving only Frost to the GovernanceThreshold.
         let mut env = Environment::new(Some(100), None, None);
-        let mut running = gen_running_state(2);
-        running.parameters =
-            ThresholdParameters::new(gen_participants(5), Threshold::new(4)).unwrap();
+        let mut running = gen_running_state_with_params(2, 5, 4);
         let current_params = running.parameters.clone();
         let caitsith_id = running.domains.domains()[0].id;
         let frost_id = running.domains.domains()[1].id;
