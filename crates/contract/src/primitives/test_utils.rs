@@ -148,8 +148,8 @@ pub fn gen_participants(n: usize) -> Participants {
 }
 
 /// Build `n` participants and pre-authenticate each, returning the set alongside
-/// each participant's [`AuthenticatedParticipantId`]. The `testing_env!` resets all
-/// run *before* any storage-backed state is touched, so later vote ops can write to
+/// each participant's [`AuthenticatedParticipantId`]. All `testing_env!` resets run
+/// *before* any storage-backed state is touched, so later vote ops can write to
 /// mocked storage without an env reset wiping prior writes.
 pub fn gen_authenticated_participants(n: usize) -> (Participants, Vec<AuthenticatedParticipantId>) {
     let participants = gen_participants(n);
