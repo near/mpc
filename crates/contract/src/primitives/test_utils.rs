@@ -3,7 +3,10 @@ use crate::{
     crypto_shared::types::{PublicKeyExtended, serializable::SerializableEdwardsPoint},
     primitives::{
         participants::{ParticipantInfo, Participants},
-        thresholds::{ProposedThresholdParameters, Threshold, ThresholdParameters},
+        thresholds::{
+            ProposedThresholdParameters, Threshold, ThresholdParameters,
+            governance_threshold_lower_relative_bound, governance_threshold_upper_relative_bound,
+        },
     },
 };
 use curve25519_dalek::edwards::CompressedEdwardsY;
@@ -11,7 +14,7 @@ use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
     DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
 };
-use rand::{Rng, distributions::Uniform};
+use rand::{Rng, SeedableRng, distributions::Uniform, rngs::StdRng};
 use std::collections::BTreeMap;
 // Re-export for convenience
 
@@ -129,10 +132,6 @@ pub fn gen_participant(i: usize) -> (AccountId, ParticipantInfo) {
     )
 }
 
-pub fn min_thrershold(n: usize) -> usize {
-    ((n as f64) * 0.6).ceil() as usize
-}
-
 pub fn gen_accounts_and_info(n: usize) -> BTreeMap<AccountId, ParticipantInfo> {
     (0..n).map(gen_participant).collect()
 }
@@ -157,9 +156,11 @@ pub fn gen_threshold_params(max_n: usize) -> ThresholdParameters {
     // Lower bound is 3 (not 2) so the produced parameters are compatible with
     // every protocol — `DamgardEtAl` requires `n >= 2t - 1`, which forces
     // `n >= 3` even at the minimum `t = 2`.
-    let n: usize = rand::thread_rng().gen_range(3..max_n + 1);
-    let k_min = min_thrershold(n);
-    let k = rand::thread_rng().gen_range(k_min..n + 1);
+    let mut rng = StdRng::seed_from_u64(42);
+    let n: usize = rng.gen_range(3..max_n + 1);
+    let k_min = governance_threshold_lower_relative_bound(n as u64) as usize;
+    let k_max = governance_threshold_upper_relative_bound(n as u64) as usize;
+    let k = rng.gen_range(k_min..k_max + 1);
     ThresholdParameters::new(gen_participants(n), Threshold::new(k as u64)).unwrap()
 }
 

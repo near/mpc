@@ -343,11 +343,22 @@ pub fn validate_governance(governance: &GovernanceBody) -> Result<(), Error> {
     let t = governance.governance_threshold.0;
     if t < 2 { return Err(Error::GovernanceThresholdTooLow); }
     if t > n { return Err(Error::GovernanceThresholdExceedsParticipants); }
-    // Governance minimum: >= 60% (same policy as current)
+    // Governance lower bound: >= 60% (same policy as current)
     let min_relative = (3 * n).div_ceil(5);
     if t < min_relative {
         return Err(Error::GovernanceThresholdBelowMinimumRelative);
     }
+    // Currently, the governance relative upper cap is set to 100% but could and should
+    // be lowered to prevent getting the smart contract locked when a participant stops
+    // suddenly voting
+    let max_relative = n;
+    if t > max_relative {
+        return Err(Error::GovernanceThresholdAboveMaximumRelative);
+    }
+    // Cross-domain rule: GovernanceThreshold must dominate every ReconstructionThreshold,
+    // checked wherever governance, a reconstruction threshold, or the participant set
+    // changes (see §7.1). Implemented as
+    // `ThresholdParameters::validate_governance_against_reconstruction`.
     Ok(())
 }
 ```
@@ -919,11 +930,15 @@ let threshold = match dk.protocol {
 
 ## 7. Open Questions
 
-### 7.1 Governance Threshold Validation
+### 7.1 Governance Threshold Validation — RESOLVED (#3499)
 
-Should the governance `GovernanceThreshold` be constrained relative to the cryptographic `ReconstructionThreshold`? For example, should we require `governance_threshold >= max(reconstruction_threshold for all configs)`?
+Resolved: the `GovernanceThreshold` is now constrained relative to the cryptographic `ReconstructionThreshold`. Concretely, for `n` participants and per-domain reconstruction thresholds `t_i`:
 
-If not, it is possible for a governance majority to approve a resharing that a cryptographic protocol cannot support.
+- `max(t_i) <= GovernanceThreshold` — a governance majority can never approve a reshare into a set smaller than what any domain needs to reconstruct its key (keeps trust assumptions consistent).
+- `ceil(0.6*n) <= GovernanceThreshold <= n` — the existing 60% lower bound. A relative upper cap is retained in the code but currently set to 100%
+(effectively disabled due to non-convergence of opinions on what would be a good upper bound).
+
+These are enforced at every mutation point (governance threshold updates, reconstruction threshold updates, participant add, participant kick) and re-validated once on migration, where a violation hard-blocks the upgrade (panic) — state that breaks the relation must be corrected via `vote_new_parameters` before upgrading. See `ThresholdParameters::validate_threshold` and `validate_governance_against_reconstruction` in `crates/contract/src/primitives/thresholds.rs`.
 
 ### 7.2 Backward-Compatible View Methods
 
