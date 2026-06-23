@@ -54,7 +54,7 @@ pub async fn keygen_computation_inner(
     // The reconstruction threshold `t` is the per-domain source of truth. For
     // every protocol (including robust-ECDSA, whose reconstruction lower bound
     // equals `t`) the keygen runs with lower bound `t`.
-    let reconstruction_threshold =
+    let threshold =
         ReconstructionThreshold::from(usize::try_from(domain.reconstruction_threshold.inner())?);
     let keyshare_handle = keyshare_storage
         .write()
@@ -68,41 +68,31 @@ pub async fn keygen_computation_inner(
 
     let (keyshare, public_key) = match domain.protocol {
         Protocol::CaitSith => {
-            let keyshare = EcdsaSignatureProvider::run_key_generation_client(
-                reconstruction_threshold,
-                channel,
-            )
-            .await?;
+            let keyshare =
+                EcdsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
             let public_key = dtos::PublicKey::Secp256k1(dtos::Secp256k1PublicKey::try_from(
                 keyshare.public_key.to_element().to_affine(),
             )?);
             (KeyshareData::Secp256k1(keyshare), public_key)
         }
         Protocol::DamgardEtAl => {
-            let keyshare = RobustEcdsaSignatureProvider::run_key_generation_client(
-                reconstruction_threshold,
-                channel,
-            )
-            .await?;
+            let keyshare =
+                RobustEcdsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
             let public_key = dtos::PublicKey::Secp256k1(dtos::Secp256k1PublicKey::try_from(
                 keyshare.public_key.to_element().to_affine(),
             )?);
             (KeyshareData::Secp256k1(keyshare), public_key)
         }
         Protocol::Frost => {
-            let keyshare = EddsaSignatureProvider::run_key_generation_client(
-                reconstruction_threshold,
-                channel,
-            )
-            .await?;
+            let keyshare =
+                EddsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
             let public_key = dtos::PublicKey::Ed25519(dtos::Ed25519PublicKey::from(
                 keyshare.public_key.to_element().compress(),
             ));
             (KeyshareData::Ed25519(keyshare), public_key)
         }
         Protocol::ConfidentialKeyDerivation => {
-            let keyshare =
-                CKDProvider::run_key_generation_client(reconstruction_threshold, channel).await?;
+            let keyshare = CKDProvider::run_key_generation_client(threshold, channel).await?;
             let public_key = dtos::PublicKey::Bls12381(dtos::Bls12381G2PublicKey::from(
                 &keyshare.public_key.to_element(),
             ));
@@ -200,9 +190,9 @@ async fn resharing_computation_inner(
 ) -> anyhow::Result<()> {
     anyhow::ensure!(key_id.domain_id == domain.id, "Domain mismatch");
 
-    let new_reconstruction_threshold =
+    let new_threshold =
         ReconstructionThreshold::from(usize::try_from(domain.reconstruction_threshold.inner())?);
-    let old_reconstruction_threshold = ReconstructionThreshold::from(usize::try_from(
+    let old_threshold = ReconstructionThreshold::from(usize::try_from(
         args.old_reconstruction_thresholds
             .get(&key_id.domain_id)
             .ok_or_else(|| {
@@ -257,8 +247,8 @@ async fn resharing_computation_inner(
                 })
                 .transpose()?;
             let res = EcdsaSignatureProvider::run_key_resharing_client(
-                new_reconstruction_threshold,
-                old_reconstruction_threshold,
+                new_threshold,
+                old_threshold,
                 my_share,
                 public_key,
                 &args.old_participants,
@@ -280,8 +270,8 @@ async fn resharing_computation_inner(
                 })
                 .transpose()?;
             let res = RobustEcdsaSignatureProvider::run_key_resharing_client(
-                new_reconstruction_threshold,
-                old_reconstruction_threshold,
+                new_threshold,
+                old_threshold,
                 my_share,
                 public_key,
                 &args.old_participants,
@@ -302,8 +292,8 @@ async fn resharing_computation_inner(
                 })
                 .transpose()?;
             let res = EddsaSignatureProvider::run_key_resharing_client(
-                new_reconstruction_threshold,
-                old_reconstruction_threshold,
+                new_threshold,
+                old_threshold,
                 my_share,
                 public_key,
                 &args.old_participants,
@@ -321,8 +311,8 @@ async fn resharing_computation_inner(
                 })
                 .transpose()?;
             let res = CKDProvider::run_key_resharing_client(
-                new_reconstruction_threshold,
-                old_reconstruction_threshold,
+                new_threshold,
+                old_threshold,
                 my_share,
                 public_key,
                 &args.old_participants,

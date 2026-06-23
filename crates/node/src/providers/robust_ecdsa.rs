@@ -65,7 +65,7 @@ impl RobustEcdsaSignatureProvider {
         db: Arc<SecretDB>,
         sign_request_store: Arc<SignRequestStorage>,
         keyshares: HashMap<DomainId, KeygenOutput>,
-        reconstruction_thresholds: HashMap<DomainId, MpcReconstructionThreshold>,
+        thresholds: HashMap<DomainId, MpcReconstructionThreshold>,
     ) -> anyhow::Result<Self> {
         let active_participants_query = {
             let network_client = client.clone();
@@ -74,10 +74,9 @@ impl RobustEcdsaSignatureProvider {
 
         let mut per_domain_data = HashMap::new();
         for (domain_id, keyshare) in keyshares {
-            let reconstruction_threshold =
-                *reconstruction_thresholds.get(&domain_id).ok_or_else(|| {
-                    anyhow::anyhow!("No reconstruction threshold for domain {:?}", domain_id)
-                })?;
+            let threshold = *thresholds.get(&domain_id).ok_or_else(|| {
+                anyhow::anyhow!("No reconstruction threshold for domain {:?}", domain_id)
+            })?;
             let presignature_store = Arc::new(PresignatureStorage::new(
                 clock.clone(),
                 db.clone(),
@@ -90,7 +89,7 @@ impl RobustEcdsaSignatureProvider {
                 PerDomainData {
                     keyshare,
                     presignature_store,
-                    reconstruction_threshold,
+                    reconstruction_threshold: threshold,
                 },
             );
         }
@@ -154,23 +153,19 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
     }
 
     async fn run_key_generation_client(
-        reconstruction_threshold: ReconstructionThreshold,
+        threshold: ReconstructionThreshold,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
         // robust-ECDSA shares the secret on a degree `MaxMalicious = t - 1`
         // polynomial, i.e. reconstruction lower bound `= MaxMalicious + 1 = t`.
-        // `reconstruction_threshold` is already that lower bound (= the domain's
+        // `threshold` is already that lower bound (= the domain's
         // `t`), so the keygen is identical to cait-sith — pass it straight through.
-        EcdsaSignatureProvider::run_key_generation_client_internal(
-            reconstruction_threshold,
-            channel,
-        )
-        .await
+        EcdsaSignatureProvider::run_key_generation_client_internal(threshold, channel).await
     }
 
     async fn run_key_resharing_client(
-        new_reconstruction_threshold: ReconstructionThreshold,
-        old_reconstruction_threshold: ReconstructionThreshold,
+        new_threshold: ReconstructionThreshold,
+        old_threshold: ReconstructionThreshold,
         my_share: Option<SigningShare>,
         public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
@@ -178,8 +173,8 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
     ) -> anyhow::Result<Self::KeygenOutput> {
         // For robust-ECDSA the reconstruction lower bound equals `t`, so resharing is identical to cait-sith.
         EcdsaSignatureProvider::run_key_resharing_client_internal(
-            new_reconstruction_threshold,
-            old_reconstruction_threshold,
+            new_threshold,
+            old_threshold,
             my_share,
             public_key,
             old_participants,

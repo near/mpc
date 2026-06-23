@@ -13,17 +13,17 @@ use threshold_signatures::participants::Participant;
 
 impl CKDProvider {
     pub(super) async fn run_key_resharing_client_internal(
-        new_reconstruction_threshold: ReconstructionThreshold,
-        old_reconstruction_threshold: ReconstructionThreshold,
+        new_threshold: ReconstructionThreshold,
+        old_threshold: ReconstructionThreshold,
         my_share: Option<SigningShare>,
         public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<KeygenOutput> {
         let new_keyshare = KeyResharingComputation {
-            reconstruction_threshold: new_reconstruction_threshold,
+            threshold: new_threshold,
             old_participants: old_participants.participants.iter().map(|p| p.id).collect(),
-            old_reconstruction_threshold,
+            old_threshold,
             my_share,
             public_key,
         }
@@ -49,9 +49,9 @@ impl CKDProvider {
 ///       the old threshold; or
 ///     - the threshold is larger than the number of participants.
 pub struct KeyResharingComputation {
-    reconstruction_threshold: ReconstructionThreshold,
+    threshold: ReconstructionThreshold,
     old_participants: Vec<ParticipantId>,
-    old_reconstruction_threshold: ReconstructionThreshold,
+    old_threshold: ReconstructionThreshold,
     my_share: Option<SigningShare>,
     public_key: VerifyingKey,
 }
@@ -75,11 +75,11 @@ impl MpcLeaderCentricComputation<KeygenOutput> for KeyResharingComputation {
 
         let protocol = threshold_signatures::reshare::<BLS12381SHA256, _, _, _>(
             &old_participants,
-            self.old_reconstruction_threshold,
+            self.old_threshold,
             self.my_share,
             self.public_key,
             &new_participants,
-            self.reconstruction_threshold,
+            self.threshold,
             me.into(),
             OsRng,
         )?;
@@ -155,9 +155,9 @@ mod tests {
                             .ok_or_else(|| anyhow::anyhow!("No channel"))?
                     };
                     let key = KeyResharingComputation {
-                        reconstruction_threshold: ReconstructionThreshold::from(THRESHOLD),
+                        threshold: ReconstructionThreshold::from(THRESHOLD),
                         old_participants,
-                        old_reconstruction_threshold: ReconstructionThreshold::from(THRESHOLD),
+                        old_threshold: ReconstructionThreshold::from(THRESHOLD),
                         my_share: keyshare,
                         public_key: pubkey,
                     }

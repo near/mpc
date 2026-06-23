@@ -25,9 +25,8 @@ impl EddsaSignatureProvider {
         let sign_request = self.sign_request_store.get(id).await?;
 
         let domain_data = self.domain_data(sign_request.domain)?;
-        let reconstruction_threshold: usize =
-            domain_data.reconstruction_threshold.inner().try_into()?;
-        let reconstruction_threshold = ReconstructionThreshold::from(reconstruction_threshold);
+        let threshold: usize = domain_data.reconstruction_threshold.inner().try_into()?;
+        let threshold = ReconstructionThreshold::from(threshold);
         let running_participants: Vec<_> = self
             .mpc_config
             .participants
@@ -39,7 +38,7 @@ impl EddsaSignatureProvider {
         let participants = self
             .client
             .select_random_active_participants_including_me(
-                reconstruction_threshold.value(),
+                threshold.value(),
                 &running_participants,
             )
             .context("Can't choose active participants for a eddsa signature")?;
@@ -50,7 +49,7 @@ impl EddsaSignatureProvider {
 
         let result = SignComputation {
             keygen_output: domain_data.keyshare,
-            reconstruction_threshold,
+            threshold,
             message: sign_request
                 .payload
                 .as_eddsa()
@@ -94,14 +93,13 @@ impl EddsaSignatureProvider {
         metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_LOOKUP_SUCCEEDED.inc();
 
         let domain_data = self.domain_data(sign_request.domain)?;
-        let reconstruction_threshold: usize =
-            domain_data.reconstruction_threshold.inner().try_into()?;
-        let reconstruction_threshold = ReconstructionThreshold::from(reconstruction_threshold);
+        let threshold: usize = domain_data.reconstruction_threshold.inner().try_into()?;
+        let threshold = ReconstructionThreshold::from(threshold);
 
         let participants = channel.participants().to_vec();
         let _ = SignComputation {
             keygen_output: domain_data.keyshare,
-            reconstruction_threshold,
+            threshold,
             message: sign_request
                 .payload
                 .as_eddsa()
@@ -133,7 +131,7 @@ impl EddsaSignatureProvider {
 /// The tweak allows key derivation
 pub struct SignComputation {
     pub keygen_output: KeygenOutput,
-    pub reconstruction_threshold: ReconstructionThreshold,
+    pub threshold: ReconstructionThreshold,
     pub message: Vec<u8>,
     pub tweak: Tweak,
 }
@@ -160,7 +158,7 @@ impl MpcLeaderCentricComputation<Option<(Signature, VerifyingKey)>> for SignComp
 
         let protocol = sign(
             cs_participants.as_slice(),
-            self.reconstruction_threshold,
+            self.threshold,
             channel.my_participant_id().into(),
             channel.sender().get_leader().into(),
             derived_keygen_output.clone(),

@@ -66,7 +66,7 @@ impl PresignatureStorage {
 pub(super) async fn run_background_presignature_generation(
     client: Arc<MeshNetworkClient>,
     mpc_config: Arc<MpcConfig>,
-    reconstruction_threshold: ReconstructionThreshold,
+    threshold: ReconstructionThreshold,
     config: Arc<PresignatureConfig>,
     domain_id: DomainId,
     presignature_store: Arc<PresignatureStorage>,
@@ -88,7 +88,7 @@ pub(super) async fn run_background_presignature_generation(
         .map(|p| p.id)
         .collect();
 
-    let (num_signers, robust_ecdsa_threshold) = compute_thresholds(reconstruction_threshold)?;
+    let (num_signers, robust_ecdsa_threshold) = compute_thresholds(threshold)?;
 
     loop {
         progress_tracker.update_progress();
@@ -181,9 +181,9 @@ pub(super) async fn run_background_presignature_generation(
 /// reconstruction threshold `t`. Returns an error if `t < 2`,
 /// which the contract's threshold validation already rejects.
 pub(super) fn compute_thresholds(
-    reconstruction_threshold: ReconstructionThreshold,
+    threshold: ReconstructionThreshold,
 ) -> anyhow::Result<(usize, MaxMalicious)> {
-    let t: usize = reconstruction_threshold.inner().try_into()?;
+    let t: usize = threshold.inner().try_into()?;
     anyhow::ensure!(
         t >= 2,
         "robust-ECDSA requires a reconstruction threshold of at least 2, got {t}"

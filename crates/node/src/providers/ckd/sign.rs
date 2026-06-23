@@ -30,9 +30,8 @@ impl CKDProvider {
         let ckd_request = self.ckd_request_store.get(id).await?;
 
         let domain_data = self.domain_data(ckd_request.domain_id)?;
-        let reconstruction_threshold: usize =
-            domain_data.reconstruction_threshold.inner().try_into()?;
-        let reconstruction_threshold = ReconstructionThreshold::from(reconstruction_threshold);
+        let threshold: usize = domain_data.reconstruction_threshold.inner().try_into()?;
+        let threshold = ReconstructionThreshold::from(threshold);
         let running_participants: Vec<_> = self
             .mpc_config
             .participants
@@ -44,7 +43,7 @@ impl CKDProvider {
         let participants = self
             .client
             .select_random_active_participants_including_me(
-                reconstruction_threshold.value(),
+                threshold.value(),
                 &running_participants,
             )
             .context("Could not choose active participants for a ckd")?;

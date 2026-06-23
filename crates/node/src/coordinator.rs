@@ -608,12 +608,11 @@ where
                     .iter()
                     .map(|d| (d.id, d.protocol))
                     .collect();
-                let domain_to_reconstruction_threshold: HashMap<DomainId, ReconstructionThreshold> =
-                    running_state
-                        .domains
-                        .iter()
-                        .map(|d| (d.id, d.reconstruction_threshold))
-                        .collect();
+                let domain_to_threshold: HashMap<DomainId, ReconstructionThreshold> = running_state
+                    .domains
+                    .iter()
+                    .map(|d| (d.id, d.reconstruction_threshold))
+                    .collect();
 
                 for keyshare in keyshares {
                     let domain_id = keyshare.key_id.domain_id;
@@ -659,7 +658,7 @@ where
                     secret_db.clone(),
                     sign_request_store.clone(),
                     ecdsa_keyshares,
-                    domain_to_reconstruction_threshold.clone(),
+                    domain_to_threshold.clone(),
                 )?);
 
                 let robust_ecdsa_signature_provider = Arc::new(RobustEcdsaSignatureProvider::new(
@@ -670,7 +669,7 @@ where
                     secret_db,
                     sign_request_store.clone(),
                     robust_ecdsa_keyshares,
-                    domain_to_reconstruction_threshold.clone(),
+                    domain_to_threshold.clone(),
                 )?);
 
                 let eddsa_signature_provider = Arc::new(EddsaSignatureProvider::new(
@@ -679,7 +678,7 @@ where
                     network_client.clone(),
                     sign_request_store.clone(),
                     eddsa_keyshares,
-                    domain_to_reconstruction_threshold.clone(),
+                    domain_to_threshold.clone(),
                 )?);
 
                 let ckd_provider = Arc::new(CKDProvider::new(
@@ -688,7 +687,7 @@ where
                     network_client.clone(),
                     ckd_request_store.clone(),
                     ckd_keyshares,
-                    domain_to_reconstruction_threshold,
+                    domain_to_threshold,
                 )?);
 
                 let verify_foreign_tx_provider = Arc::new(VerifyForeignTxProvider::new(

@@ -46,13 +46,10 @@ pub fn triple_v2_key(t: ReconstructionThreshold, id: UniqueId) -> Vec<u8> {
 /// data, the local participant's ID, and the reconstruction threshold so
 /// callers don't have to restate the magic number alongside the fixture.
 pub fn gen_four_participants() -> (EpochData, ParticipantId, ReconstructionThreshold) {
-    let reconstruction_threshold = ReconstructionThreshold::new(3);
+    let threshold = ReconstructionThreshold::new(3);
     let epoch_id = EpochId::new(rand::thread_rng().next_u64());
-    let parameters = ThresholdParameters::new(
-        gen_participants(4),
-        Threshold::new(reconstruction_threshold.inner()),
-    )
-    .unwrap();
+    let parameters =
+        ThresholdParameters::new(gen_participants(4), Threshold::new(threshold.inner())).unwrap();
     let parameters_dto: near_mpc_contract_interface::types::ThresholdParameters = parameters.into();
     let participants: ParticipantsConfig = convert_participant_infos(parameters_dto, None).unwrap();
     let epoch_data = EpochData {
@@ -60,7 +57,7 @@ pub fn gen_four_participants() -> (EpochData, ParticipantId, ReconstructionThres
         participants,
     };
     let my_participant_id = epoch_data.participants.participants.first().unwrap().id;
-    (epoch_data, my_participant_id, reconstruction_threshold)
+    (epoch_data, my_participant_id, threshold)
 }
 
 pub fn get_participant_ids(epoch_data: EpochData) -> Vec<ParticipantId> {

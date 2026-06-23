@@ -186,7 +186,7 @@ where
     }
 
     async fn run_key_generation_client(
-        _reconstruction_threshold: ReconstructionThreshold,
+        _threshold: ReconstructionThreshold,
         _channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
         anyhow::bail!(
@@ -195,8 +195,8 @@ where
     }
 
     async fn run_key_resharing_client(
-        _new_reconstruction_threshold: ReconstructionThreshold,
-        _old_reconstruction_threshold: ReconstructionThreshold,
+        _new_threshold: ReconstructionThreshold,
+        _old_threshold: ReconstructionThreshold,
         _key_share: Option<SigningShare>,
         _public_key: VerifyingKey,
         _old_participants: &ParticipantsConfig,

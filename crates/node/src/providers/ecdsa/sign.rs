@@ -31,13 +31,12 @@ impl EcdsaSignatureProvider {
     ) -> anyhow::Result<(Signature, VerifyingKey)> {
         let domain_data = self.domain_data(sign_request.domain)?;
         let participants = presignature.participants.clone();
-        let reconstruction_threshold: usize =
-            domain_data.reconstruction_threshold.inner().try_into()?;
-        let reconstruction_threshold = ReconstructionThreshold::from(reconstruction_threshold);
+        let threshold: usize = domain_data.reconstruction_threshold.inner().try_into()?;
+        let threshold = ReconstructionThreshold::from(threshold);
 
         let (signature, public_key) = SignComputation {
             keygen_out: domain_data.keyshare,
-            reconstruction_threshold,
+            threshold,
             presign_out: presignature.presignature,
             msg_hash: *sign_request
                 .payload
@@ -93,14 +92,13 @@ impl EcdsaSignatureProvider {
         // The presignature must be owned by the leader, never one of ours.
         presignature_id.validate_owned_by(channel.sender().get_leader())?;
         let domain_data = self.domain_data(sign_request.domain)?;
-        let reconstruction_threshold: usize =
-            domain_data.reconstruction_threshold.inner().try_into()?;
-        let reconstruction_threshold = ReconstructionThreshold::from(reconstruction_threshold);
+        let threshold: usize = domain_data.reconstruction_threshold.inner().try_into()?;
+        let threshold = ReconstructionThreshold::from(threshold);
 
         let participants = channel.participants().to_vec();
         FollowerSignComputation {
             keygen_out: domain_data.keyshare,
-            reconstruction_threshold,
+            threshold,
             presignature_store: domain_data.presignature_store.clone(),
             presignature_id,
             msg_hash: *sign_request
@@ -151,7 +149,7 @@ impl EcdsaSignatureProvider {
 /// The tweak allows key derivation
 pub struct SignComputation {
     pub keygen_out: KeygenOutput,
-    pub reconstruction_threshold: ReconstructionThreshold,
+    pub threshold: ReconstructionThreshold,
     pub presign_out: PresignOutput,
     pub msg_hash: [u8; 32],
     pub tweak: Tweak,
@@ -200,7 +198,7 @@ impl MpcLeaderCentricComputation<(SignatureOption, VerifyingKey)> for SignComput
         let protocol = threshold_signatures::ecdsa::ot_based_ecdsa::sign::sign(
             &cs_participants,
             channel.sender().get_leader().into(),
-            self.reconstruction_threshold,
+            self.threshold,
             channel.my_participant_id().into(),
             derived_public_key,
             rerandomized_presignature,
@@ -220,7 +218,7 @@ impl MpcLeaderCentricComputation<(SignatureOption, VerifyingKey)> for SignComput
 /// The difference is that the follower needs to look up the presignature, which may fail.
 pub struct FollowerSignComputation {
     pub keygen_out: KeygenOutput,
-    pub reconstruction_threshold: ReconstructionThreshold,
+    pub threshold: ReconstructionThreshold,
     pub presignature_id: UniqueId,
     pub presignature_store: Arc<PresignatureStorage>,
     pub msg_hash: [u8; 32],
@@ -237,7 +235,7 @@ impl MpcLeaderCentricComputation<()> for FollowerSignComputation {
             .presignature;
         SignComputation {
             keygen_out: self.keygen_out,
-            reconstruction_threshold: self.reconstruction_threshold,
+            threshold: self.threshold,
             presign_out,
             msg_hash: self.msg_hash,
             tweak: self.tweak,

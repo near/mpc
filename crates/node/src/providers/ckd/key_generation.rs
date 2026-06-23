@@ -10,14 +10,12 @@ use threshold_signatures::participants::Participant;
 
 impl CKDProvider {
     pub(super) async fn run_key_generation_client_internal(
-        reconstruction_threshold: ReconstructionThreshold,
+        threshold: ReconstructionThreshold,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<KeygenOutput> {
-        let key = KeyGenerationComputation {
-            reconstruction_threshold,
-        }
-        .perform_leader_centric_computation(channel, std::time::Duration::from_secs(60))
-        .await?;
+        let key = KeyGenerationComputation { threshold }
+            .perform_leader_centric_computation(channel, std::time::Duration::from_secs(60))
+            .await?;
         tracing::info!("CKD key generation completed");
 
         Ok(key)
@@ -27,7 +25,7 @@ impl CKDProvider {
 /// Runs the key generation protocol, returning the key generated.
 /// This protocol is identical for the leader and the followers.
 pub struct KeyGenerationComputation {
-    reconstruction_threshold: ReconstructionThreshold,
+    threshold: ReconstructionThreshold,
 }
 
 #[async_trait::async_trait]
@@ -43,7 +41,7 @@ impl MpcLeaderCentricComputation<KeygenOutput> for KeyGenerationComputation {
         let protocol = threshold_signatures::keygen::<BLS12381SHA256, _, _>(
             &cs_participants,
             me.into(),
-            self.reconstruction_threshold,
+            self.threshold,
             OsRng,
         )?;
         run_protocol("CKD key generation", channel, protocol).await
@@ -122,7 +120,7 @@ mod tests {
                 .ok_or_else(|| anyhow::anyhow!("No channel"))?
         };
         let key = KeyGenerationComputation {
-            reconstruction_threshold: ReconstructionThreshold::from(3),
+            threshold: ReconstructionThreshold::from(3),
         }
         .perform_leader_centric_computation(channel, std::time::Duration::from_secs(60))
         .await?;
