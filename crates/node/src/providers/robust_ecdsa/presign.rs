@@ -179,9 +179,7 @@ pub(super) async fn run_background_presignature_generation(
 }
 
 /// Derives `(num_signers, max_malicious)` for robust-ECDSA from the domain's
-/// reconstruction threshold `t`: the scheme tolerates `MaxMalicious = t - 1`
-/// dishonest parties and signs over `num_signers = 2t - 1` participants (the
-/// honest-majority bound `2 * max_malicious + 1`). Returns an error if `t < 2`,
+/// reconstruction threshold `t`. Returns an error if `t < 2`,
 /// which the contract's threshold validation already rejects.
 pub(super) fn compute_thresholds(
     reconstruction_threshold: ReconstructionThreshold,
