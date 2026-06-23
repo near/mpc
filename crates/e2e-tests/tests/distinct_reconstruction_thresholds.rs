@@ -15,9 +15,8 @@ use rand::SeedableRng;
 #[expect(non_snake_case)]
 async fn distinct_reconstruction_thresholds__should_sign_for_every_scheme() {
     // Given
-    let (cluster, contract_state) = common::must_setup_cluster(
-        common::DISTINCT_RECONSTRUCTION_THRESHOLDS_PORT_SEED,
-        |c| {
+    let (cluster, contract_state) =
+        common::must_setup_cluster(common::DISTINCT_RECONSTRUCTION_THRESHOLDS_PORT_SEED, |c| {
             c.num_nodes = 6;
             c.initial_participant_indices = (0..6).collect();
             c.threshold = 4;
@@ -29,9 +28,8 @@ async fn distinct_reconstruction_thresholds__should_sign_for_every_scheme() {
                 reconstruction_threshold: ReconstructionThreshold::new(3),
                 purpose: DomainPurpose::Sign,
             });
-        },
-    )
-    .await;
+        })
+        .await;
 
     let ecdsa_domain = contract_state
         .domains
