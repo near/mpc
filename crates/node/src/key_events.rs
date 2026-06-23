@@ -936,7 +936,10 @@ mod tests {
         Arc::new(ResharingArgs {
             previous_keyset: Keyset::new(EpochId::new(5), vec![]),
             existing_keyshares: None,
-            old_reconstruction_thresholds: HashMap::new(),
+            old_reconstruction_thresholds: HashMap::from([(
+                DomainId(1),
+                MpcReconstructionThreshold::new(3),
+            )]),
             old_participants: ParticipantsConfig {
                 threshold: 3,
                 participants: vec![],
