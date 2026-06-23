@@ -19,6 +19,7 @@ use near_account_id::AccountId;
 use near_async::ActorSystem;
 use near_indexer::Indexer;
 use near_mpc_contract_interface::types::ProtocolContractState;
+use std::future::Future;
 use std::path::PathBuf;
 use std::sync::Arc;
 #[cfg(feature = "network-hardship-simulation")]
@@ -110,14 +111,40 @@ pub fn spawn_real_indexer(
 
             let indexer = Indexer::from_near_node(near_indexer_config, near_config, &near_node);
 
-            let stream = indexer.streamer();
-
             let indexer_state = Arc::new(IndexerState::new(
                 near_node.view_client,
                 near_node.client,
                 near_node.rpc_handler,
                 mpc_indexer_config.mpc_contract_id.clone(),
             ));
+
+            tracing::info!("Indexer waiting for node to finish syncing before streaming blocks.");
+
+            // Defer all indexing work until the node has finished syncing. On a
+            // node that state-syncs from scratch, neard sits at genesis until
+            // sync completes; starting the streamer then pins its cursor at
+            // genesis (`LatestSynced`), below the node's block tail, so it can
+            // never reach the chain tip. (#3623)
+            //
+            // The wait is raced against `shutdown_token` so a SIGTERM during the
+            // (possibly long) initial state sync still tears the thread down
+            // cleanly instead of blocking until sync finishes.
+            if !await_sync_or_shutdown(
+                indexer_state.client.wait_for_full_sync(),
+                &shutdown_token,
+            )
+            .await
+            {
+                tracing::info!(
+                    "Indexer thread received shutdown signal before sync completed; exiting."
+                );
+                let _ = indexer_exit_sender.send(Ok(()));
+                return;
+            }
+
+            // The node is fully synced by this point, so `LatestSynced` resolves
+            // to the chain tip rather than genesis.
+            let stream = indexer.streamer();
 
             let txn_sender_result = TransactionProcessorHandle::start_transaction_processor(
                 my_near_account_id_clone,
@@ -287,5 +314,56 @@ pub fn spawn_real_indexer(
         attested_nodes_receiver: tee_accounts_receiver,
         my_migration_info_receiver,
         foreign_chain_policy_reader,
+    }
+}
+
+/// Waits for `sync` to resolve, racing it against `shutdown`.
+///
+/// Returns `true` if `sync` completed first, or `false` if `shutdown` was
+/// requested first. Racing the wait keeps a SIGTERM responsive during a long
+/// initial state sync.
+async fn await_sync_or_shutdown(
+    sync: impl Future<Output = ()>,
+    shutdown: &CancellationToken,
+) -> bool {
+    tokio::select! {
+        _ = sync => true,
+        _ = shutdown.cancelled() => false,
+    }
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)] // tests follow `<system_under_test>__should_<assertion>` convention
+mod tests {
+    use super::await_sync_or_shutdown;
+    use std::future::pending;
+    use tokio_util::sync::CancellationToken;
+
+    #[tokio::test]
+    async fn await_sync_or_shutdown__should_return_true_when_sync_completes_first() {
+        // Given
+        let shutdown = CancellationToken::new();
+
+        // When
+        let synced = await_sync_or_shutdown(async {}, &shutdown).await;
+
+        // Then
+        assert!(synced);
+    }
+
+    /// The dominant production path: a SIGTERM arrives while the node is still
+    /// syncing, so the wait must yield to shutdown rather than block on sync.
+    #[tokio::test]
+    async fn await_sync_or_shutdown__should_return_false_when_shutdown_during_sync() {
+        // Given
+        let shutdown = CancellationToken::new();
+        let shutdown_clone = shutdown.clone();
+        tokio::spawn(async move { shutdown_clone.cancel() });
+
+        // When
+        let synced = await_sync_or_shutdown(pending::<()>(), &shutdown).await;
+
+        // Then
+        assert!(!synced);
     }
 }
