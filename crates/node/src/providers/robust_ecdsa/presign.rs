@@ -189,9 +189,14 @@ pub(super) fn compute_thresholds(
         t >= 2,
         "robust-ECDSA requires a reconstruction threshold of at least 2, got {t}"
     );
-    let max_malicious = MaxMalicious::from(t - 1);
-    let num_signers = 2 * t - 1;
-    Ok((num_signers, max_malicious))
+    let max_malicious = t
+        .checked_sub(1)
+        .ok_or_else(|| anyhow::anyhow!("robust-ECDSA max_malicious underflow for t={t}"))?;
+    let num_signers = t
+        .checked_mul(2)
+        .and_then(|two_t| two_t.checked_sub(1))
+        .ok_or_else(|| anyhow::anyhow!("robust-ECDSA signer count overflow for t={t}"))?;
+    Ok((num_signers, MaxMalicious::from(max_malicious)))
 }
 
 impl RobustEcdsaSignatureProvider {
