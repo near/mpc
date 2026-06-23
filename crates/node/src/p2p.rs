@@ -1017,6 +1017,7 @@ pub mod testing {
         pub const FOREIGN_CHAIN_POLICY_TEST: Self = Self::new(20);
         pub const BACKUP_CLI_WEBSERVER_PUT_KEYSHARES_HOSTNAME: Self = Self::new(21);
         pub const ASSET_GENERATION_SIGNING_CONTENTION_TEST: Self = Self::new(22);
+        pub const DISTINCT_RECONSTRUCTION_THRESHOLDS_TEST: Self = Self::new(23);
     }
 
     pub fn generate_test_p2p_configs(
