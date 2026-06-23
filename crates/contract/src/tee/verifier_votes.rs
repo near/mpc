@@ -50,8 +50,8 @@ impl Default for TeeVerifierVotes {
     fn default() -> Self {
         Self {
             pending: Votes::new(
-                StorageKey::TeeVerifierVotesByVoterV1,
-                StorageKey::TeeVerifierVotesByProposalV1,
+                StorageKey::TeeVerifierVotesByVoter,
+                StorageKey::TeeVerifierVotesByProposal,
             ),
         }
     }
