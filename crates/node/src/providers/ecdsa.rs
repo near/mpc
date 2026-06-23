@@ -309,12 +309,12 @@ impl SignatureProvider for EcdsaSignatureProvider {
             ));
         }
 
-        // Triple gauges are summed across all per-`t` stores by one reporter so
-        // concurrent generators don't clobber each other's values.
-        generate_triples.push(tracking::spawn(
+        // Held outside the join group below: this reporter never completes, so
+        // joining it would mask generator failures. Aborted on drop when this returns.
+        let _metrics_task = tracking::spawn(
             "report triple metrics",
             Self::run_triple_metrics_reporting(self.triple_stores.values().cloned().collect()),
-        ));
+        );
 
         let mut generate_presignatures = Vec::new();
         for (domain_id, data) in &self.per_domain_data {
