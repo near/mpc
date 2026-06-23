@@ -45,10 +45,11 @@ use crate::{
     primitives::{
         ckd::{CKDRequest, app_public_key_check, ckd_output_check},
         domain::AddDomainsVotes,
+        votes::ProposalHash,
     },
-    state::ContractNotInitialized,
     storage_keys::StorageKey,
     tee::tee_state::{TeeQuoteStatus, TeeState},
+    tee::verifier_votes::{TeeVerifierVotes, VerifierChangeProposal},
     update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId},
 };
 use config::Config;
@@ -70,7 +71,7 @@ use near_mpc_contract_interface::types::{
 use near_mpc_contract_interface::{method_names, types::CKDRequestArgs};
 
 use dtos::{Curve, DomainConfig, DomainId, DomainPurpose, Protocol};
-use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash};
+use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, TeeVerifierCodeHash};
 use near_sdk::{
     AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue, env,
     log, near,
@@ -163,6 +164,12 @@ pub struct MpcContract {
     // TODO(#2937): Remove via state migration.
     metrics: Metrics,
     foreign_chains: Lazy<ForeignChainsMetadata>,
+    /// The verifier contract account trusted for DCAP verification, or [`None`]
+    /// until participants vote one in. Not yet used to dispatch verification.
+    // TODO(#3639): once participants have voted a verifier in, make this
+    // non-optional via a migration that requires it be set.
+    tee_verifier_account_id: Option<AccountId>,
+    tee_verifier_votes: TeeVerifierVotes,
 }
 
 #[near(serializers=[borsh])]
@@ -1249,6 +1256,18 @@ impl MpcContract {
                     Gas::from_tgas(self.config.clean_foreign_chain_data_tera_gas),
                 )
                 .detach();
+            // Spawn a promise to drop verifier-change votes cast by non-participants
+            Promise::new(env::current_account_id())
+                .function_call(
+                    method_names::REMOVE_NON_PARTICIPANT_TEE_VERIFIER_VOTES.to_string(),
+                    vec![],
+                    NearToken::from_yoctonear(0),
+                    Gas::from_tgas(
+                        self.config
+                            .remove_non_participant_tee_verifier_votes_tera_gas,
+                    ),
+                )
+                .detach();
         }
 
         Ok(())
@@ -1428,12 +1447,7 @@ impl MpcContract {
         );
         self.voter_or_panic();
 
-        let threshold_parameters = match self.protocol_state.threshold_parameters() {
-            Ok(threshold_parameters) => threshold_parameters,
-            Err(ContractNotInitialized) => env::panic_str(
-                "Contract is not initialized. Can not vote for a new image hash before initialization.",
-            ),
-        };
+        let threshold_parameters = self.protocol_state.threshold_parameters_or_panic();
 
         let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
         let votes = self.tee_state.vote(code_hash, &participant);
@@ -1466,12 +1480,7 @@ impl MpcContract {
         );
         self.voter_or_panic();
 
-        let threshold_parameters = match self.protocol_state.threshold_parameters() {
-            Ok(threshold_parameters) => threshold_parameters,
-            Err(ContractNotInitialized) => env::panic_str(
-                "Contract is not initialized. Cannot vote for a new launcher hash before initialization.",
-            ),
-        };
+        let threshold_parameters = self.protocol_state.threshold_parameters_or_panic();
 
         let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
         let action = LauncherVoteAction::Add(launcher_hash);
@@ -1504,12 +1513,7 @@ impl MpcContract {
         );
         self.voter_or_panic();
 
-        let threshold_parameters = match self.protocol_state.threshold_parameters() {
-            Ok(threshold_parameters) => threshold_parameters,
-            Err(ContractNotInitialized) => env::panic_str(
-                "Contract is not initialized. Cannot vote to remove a launcher hash before initialization.",
-            ),
-        };
+        let threshold_parameters = self.protocol_state.threshold_parameters_or_panic();
 
         let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
         let action = LauncherVoteAction::Remove(launcher_hash);
@@ -1538,12 +1542,7 @@ impl MpcContract {
         );
         self.voter_or_panic();
 
-        let threshold_parameters = match self.protocol_state.threshold_parameters() {
-            Ok(threshold_parameters) => threshold_parameters,
-            Err(ContractNotInitialized) => env::panic_str(
-                "Contract is not initialized. Cannot vote for an OS measurement before initialization.",
-            ),
-        };
+        let threshold_parameters = self.protocol_state.threshold_parameters_or_panic();
 
         let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
         let action = MeasurementVoteAction::Add(measurement.clone());
@@ -1571,12 +1570,7 @@ impl MpcContract {
         );
         self.voter_or_panic();
 
-        let threshold_parameters = match self.protocol_state.threshold_parameters() {
-            Ok(threshold_parameters) => threshold_parameters,
-            Err(ContractNotInitialized) => env::panic_str(
-                "Contract is not initialized. Cannot vote to remove an OS measurement before initialization.",
-            ),
-        };
+        let threshold_parameters = self.protocol_state.threshold_parameters_or_panic();
 
         let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
         let action = MeasurementVoteAction::Remove(measurement.clone());
@@ -1648,6 +1642,63 @@ impl MpcContract {
             self.recompute_available_foreign_chains();
         }
         Ok(applied)
+    }
+
+    /// Vote for a candidate account to become the trusted verifier contract
+    /// account, committing to the code hash the voter audited. When the proposal
+    /// crosses the signing threshold, the trusted verifier account is updated
+    /// and all pending verifier-change votes are cleared.
+    #[handle_result]
+    pub fn vote_tee_verifier_change(
+        &mut self,
+        candidate_account_id: AccountId,
+        expected_code_hash: TeeVerifierCodeHash,
+    ) -> Result<(), Error> {
+        log!(
+            "vote_tee_verifier_change: signer={}, candidate={}, expected_code_hash={}",
+            env::signer_account_id(),
+            candidate_account_id,
+            expected_code_hash,
+        );
+        self.voter_or_panic();
+
+        // Voting in the already-current verifier is a no-op
+        if self.tee_verifier_account_id.as_ref() == Some(&candidate_account_id) {
+            return Ok(());
+        }
+
+        let threshold_parameters = self.protocol_state.threshold_parameters_or_panic();
+        let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
+
+        let proposal = VerifierChangeProposal {
+            candidate_account_id,
+            expected_code_hash,
+        };
+        if let Some(new_verifier) =
+            self.tee_verifier_votes
+                .vote(proposal, participant, threshold_parameters)?
+        {
+            log!("vote_tee_verifier_change: new verifier = {}", new_verifier);
+            self.tee_verifier_account_id = Some(new_verifier);
+        }
+        Ok(())
+    }
+
+    /// Withdraw the caller's current vote on any pending verifier-change
+    /// proposal. No-op if the caller has not voted.
+    #[handle_result]
+    pub fn withdraw_tee_verifier_vote(&mut self) -> Result<(), Error> {
+        log!(
+            "withdraw_tee_verifier_vote: signer={}",
+            env::signer_account_id(),
+        );
+        self.voter_or_panic();
+
+        let threshold_parameters = self.protocol_state.threshold_parameters_or_panic();
+        let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
+
+        self.tee_verifier_votes.withdraw(&participant);
+        Ok(())
     }
 
     /// On-chain RPC provider whitelist keyed by `ForeignChain`. Nodes read this at
@@ -1878,6 +1929,28 @@ impl MpcContract {
 
         Ok(())
     }
+
+    /// Private endpoint to drop verifier-change votes cast by non-participants
+    /// after resharing.
+    #[private]
+    #[handle_result]
+    pub fn remove_non_participant_tee_verifier_votes(&mut self) -> Result<(), Error> {
+        log!(
+            "remove_non_participant_tee_verifier_votes: signer={}",
+            env::signer_account_id()
+        );
+
+        let participants = match &self.protocol_state {
+            ProtocolContractState::Running(state) => state.parameters.participants(),
+            _ => {
+                return Err(InvalidState::ProtocolStateNotRunning.into());
+            }
+        };
+
+        self.tee_verifier_votes.retain(participants);
+
+        Ok(())
+    }
 }
 
 // Contract developer helper API
@@ -1929,6 +2002,8 @@ impl MpcContract {
                 StorageKey::ForeignChainMetadata,
                 ForeignChainsMetadata::default(),
             ),
+            tee_verifier_account_id: None,
+            tee_verifier_votes: TeeVerifierVotes::default(),
         })
     }
 
@@ -2006,6 +2081,8 @@ impl MpcContract {
                 StorageKey::ForeignChainMetadata,
                 ForeignChainsMetadata::default(),
             ),
+            tee_verifier_account_id: None,
+            tee_verifier_votes: TeeVerifierVotes::default(),
         })
     }
 
@@ -2075,6 +2152,13 @@ impl MpcContract {
     /// Returns the current code hash votes, showing each participant's vote.
     pub fn code_hash_votes(&self) -> CodeHashesVotes {
         self.tee_state.votes.clone()
+    }
+
+    /// Returns the pending TEE verifier-change votes, keyed by proposal.
+    pub fn tee_verifier_votes(
+        &self,
+    ) -> BTreeMap<ProposalHash, BTreeSet<AuthenticatedParticipantId>> {
+        self.tee_verifier_votes.pending()
     }
 
     /// Presence check for a pending signature request, exposed as a view call.
@@ -3845,6 +3929,106 @@ mod tests {
         (contract, participants, first_participant_id)
     }
 
+    #[test]
+    #[expect(non_snake_case)]
+    fn vote_tee_verifier_change__should_apply_candidate_when_threshold_reached() {
+        // Given a running contract with 3 participants, signing threshold 2,
+        // starting unconfigured.
+        let (mut contract, participants, _) = setup_tee_test_contract(3, 2);
+        assert_eq!(contract.tee_verifier_account_id, None);
+        let participant_account_ids: Vec<AccountId> = participants
+            .participants()
+            .iter()
+            .map(|(account_id, _, _)| account_id.clone())
+            .collect();
+        let candidate: AccountId = "verifier.near".parse().unwrap();
+        let code_hash = TeeVerifierCodeHash::new([7u8; 32]);
+
+        let vote_as = |contract: &mut MpcContract, account_id: &AccountId| {
+            testing_env!(
+                VMContextBuilder::new()
+                    .signer_account_id(account_id.clone())
+                    .predecessor_account_id(account_id.clone())
+                    .build()
+            );
+            contract
+                .vote_tee_verifier_change(candidate.clone(), code_hash)
+                .expect("vote should succeed");
+        };
+
+        // When the first participant votes (below threshold), the verifier is unchanged.
+        vote_as(&mut contract, &participant_account_ids[0]);
+        assert_eq!(contract.tee_verifier_account_id, None);
+
+        // When the second participant votes, threshold is reached and the
+        // candidate becomes the trusted verifier.
+        vote_as(&mut contract, &participant_account_ids[1]);
+        assert_eq!(contract.tee_verifier_account_id, Some(candidate));
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn remove_non_participant_tee_verifier_votes__should_drop_votes_from_dropped_participants() {
+        // Given a running contract with 3 participants, signing threshold 3, where
+        // two participants have cast votes for distinct candidates (neither crosses
+        // threshold, so both stay pending).
+        let (mut contract, participants, _) = setup_tee_test_contract(3, 3);
+        let voters = participant_account_ids(&contract);
+        let code_hash = TeeVerifierCodeHash::new([7u8; 32]);
+
+        // Vote as `account_id` for `candidate`, returning that voter's authenticated id.
+        let vote_as =
+            |contract: &mut MpcContract, account_id: &AccountId, candidate: &AccountId| {
+                Environment::new(None, Some(account_id.clone()), None);
+                contract
+                    .vote_tee_verifier_change(candidate.clone(), code_hash)
+                    .expect("vote should succeed");
+                AuthenticatedParticipantId::new(&participants).unwrap()
+            };
+
+        // The single-voter pending bucket: proposal(candidate) -> {voter}.
+        let bucket = |candidate: &AccountId, voter: &AuthenticatedParticipantId| {
+            let proposal = VerifierChangeProposal {
+                candidate_account_id: candidate.clone(),
+                expected_code_hash: code_hash,
+            };
+            (
+                ProposalHash::from(proposal),
+                BTreeSet::from([voter.clone()]),
+            )
+        };
+
+        let candidate_a: AccountId = "verifier-a.near".parse().unwrap();
+        let candidate_b: AccountId = "verifier-b.near".parse().unwrap();
+        let auth_a = vote_as(&mut contract, &voters[0], &candidate_a);
+        let auth_b = vote_as(&mut contract, &voters[1], &candidate_b);
+
+        // Then both single-voter buckets are pending.
+        assert_eq!(
+            contract.tee_verifier_votes(),
+            BTreeMap::from([bucket(&candidate_a, &auth_a), bucket(&candidate_b, &auth_b)]),
+        );
+
+        // When resharing drops the first participant and the post-resharing cleanup runs.
+        {
+            let ProtocolContractState::Running(ref mut state) = contract.protocol_state else {
+                panic!("expected Running");
+            };
+            state.parameters =
+                ThresholdParameters::new(participants.subset(1..3), Threshold::new(2)).unwrap();
+        }
+        Environment::new(None, Some(env::current_account_id()), None);
+        contract
+            .remove_non_participant_tee_verifier_votes()
+            .unwrap();
+
+        // Then only the still-participant's vote (candidate B) remains.
+        assert_eq!(
+            contract.tee_verifier_votes(),
+            BTreeMap::from([bucket(&candidate_b, &auth_b)]),
+        );
+    }
+
     fn submit_attestation(
         contract: &mut MpcContract,
         participants: &Participants,
@@ -4454,6 +4638,8 @@ mod tests {
                     StorageKey::ForeignChainMetadata,
                     ForeignChainsMetadata::default(),
                 ),
+                tee_verifier_account_id: None,
+                tee_verifier_votes: Default::default(),
             }
         }
     }
