@@ -34,7 +34,7 @@ fn bench_triples(c: &mut Criterion) {
         |b| {
             b.iter_batched(
                 || ot_ecdsa_prepare_triples(participants_num(), threshold, &mut rng),
-                |preps| run_protocol(preps.protocols),
+                |preps| run_protocol(preps.protocols).expect("protocol should complete"),
                 criterion::BatchSize::SmallInput,
             );
         },
@@ -59,7 +59,7 @@ fn bench_presign(c: &mut Criterion) {
         |b| {
             b.iter_batched(
                 || ot_ecdsa_prepare_presign(&two_triples, threshold, &mut rng),
-                |preps| run_protocol(preps.protocols),
+                |preps| run_protocol(preps.protocols).expect("protocol should complete"),
                 criterion::BatchSize::SmallInput,
             );
         },
@@ -89,7 +89,7 @@ fn bench_sign(c: &mut Criterion) {
         |b| {
             b.iter_batched(
                 || ot_ecdsa_prepare_sign(&result, threshold, pk, &mut rng),
-                |preps| run_protocol(preps.protocols),
+                |preps| run_protocol(preps.protocols).expect("protocol should complete"),
                 criterion::BatchSize::SmallInput,
             );
         },
