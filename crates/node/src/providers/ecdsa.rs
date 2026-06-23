@@ -224,6 +224,7 @@ impl SignatureProvider for EcdsaSignatureProvider {
 
     async fn run_key_resharing_client(
         new_reconstruction_threshold: TSReconstructionThreshold,
+        old_reconstruction_threshold: TSReconstructionThreshold,
         my_share: Option<SigningShare>,
         public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
@@ -231,6 +232,7 @@ impl SignatureProvider for EcdsaSignatureProvider {
     ) -> anyhow::Result<Self::KeygenOutput> {
         EcdsaSignatureProvider::run_key_resharing_client_internal(
             new_reconstruction_threshold,
+            old_reconstruction_threshold,
             my_share,
             public_key,
             old_participants,

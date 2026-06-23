@@ -71,7 +71,7 @@ pub(super) async fn run_background_presignature_generation(
     domain_id: DomainId,
     presignature_store: Arc<PresignatureStorage>,
     keygen_out: KeygenOutput,
-) -> ! {
+) -> anyhow::Result<()> {
     let in_flight_generations = InFlightGenerationTracker::new();
     let progress_tracker = Arc::new(PresignatureGenerationProgressTracker {
         desired_presignatures_to_buffer: config.desired_presignatures_to_buffer,
@@ -88,8 +88,7 @@ pub(super) async fn run_background_presignature_generation(
         .map(|p| p.id)
         .collect();
 
-    let (num_signers, robust_ecdsa_threshold) = compute_thresholds(reconstruction_threshold)
-        .expect("invalid reconstruction threshold for robust-ECDSA");
+    let (num_signers, robust_ecdsa_threshold) = compute_thresholds(reconstruction_threshold)?;
 
     loop {
         progress_tracker.update_progress();

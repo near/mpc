@@ -196,6 +196,7 @@ where
 
     async fn run_key_resharing_client(
         _new_reconstruction_threshold: ReconstructionThreshold,
+        _old_reconstruction_threshold: ReconstructionThreshold,
         _key_share: Option<SigningShare>,
         _public_key: VerifyingKey,
         _old_participants: &ParticipantsConfig,

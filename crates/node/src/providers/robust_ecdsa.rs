@@ -170,18 +170,16 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
 
     async fn run_key_resharing_client(
         new_reconstruction_threshold: ReconstructionThreshold,
+        old_reconstruction_threshold: ReconstructionThreshold,
         my_share: Option<SigningShare>,
         public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
-        // Both `new_reconstruction_threshold` and `old_participants.threshold` are
-        // already the per-domain reconstruction thresholds `t` (the caller patches
-        // the old one per-key in `resharing_computation_inner`). For robust-ECDSA
-        // the reconstruction lower bound equals `t`, so resharing is identical to
-        // cait-sith — delegate straight to the shared internal.
+        // For robust-ECDSA the reconstruction lower bound equals `t`, so resharing is identical to cait-sith.
         EcdsaSignatureProvider::run_key_resharing_client_internal(
             new_reconstruction_threshold,
+            old_reconstruction_threshold,
             my_share,
             public_key,
             old_participants,
@@ -246,10 +244,16 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
             })
             .collect::<Vec<_>>();
 
-        for Err(join_error) in futures::future::join_all(generate_presignatures).await {
-            tracing::error!(
-                "robust-ecdsa background presignature task ended unexpectedly: {join_error}"
-            );
+        for result in futures::future::join_all(generate_presignatures).await {
+            match result {
+                Err(join_error) => tracing::error!(
+                    "robust-ecdsa background presignature task panicked: {join_error}"
+                ),
+                Ok(Err(task_error)) => tracing::error!(
+                    "robust-ecdsa background presignature task errored: {task_error}"
+                ),
+                Ok(Ok(())) => {}
+            }
         }
 
         Ok(())

@@ -174,11 +174,8 @@ async fn keygen_computation(
 pub struct ResharingArgs {
     pub previous_keyset: Keyset,
     pub existing_keyshares: Option<Vec<Keyshare>>,
-    /// The previous epoch's per-domain reconstruction thresholds. The new
-    /// threshold for each key comes from the resharing key event's
-    /// `DomainConfig.reconstruction_threshold`; the old one is patched into
-    /// `old_participants.threshold` per-key so the underlying resharing protocol
-    /// sees the right `t` on each side of the transition.
+    /// The previous epoch's per-domain reconstruction thresholds, passed to the
+    /// resharing protocol as the old-side `t` for each key.
     pub old_reconstruction_thresholds: HashMap<DomainId, MpcReconstructionThreshold>,
     pub old_participants: ParticipantsConfig,
 }
@@ -203,25 +200,19 @@ async fn resharing_computation_inner(
 ) -> anyhow::Result<()> {
     anyhow::ensure!(key_id.domain_id == domain.id, "Domain mismatch");
 
-    // The new reconstruction threshold comes from the resharing key event's
-    // domain config; the old one is the previous epoch's per-domain `t`. We patch
-    // `old_participants.threshold` per-key so the underlying resharing protocol
-    // sees the correct `t` on each side of the transition. For robust-ECDSA the
-    // reconstruction lower bound equals `t`, so no protocol-specific translation
-    // is needed here.
     let new_reconstruction_threshold =
         ReconstructionThreshold::from(usize::try_from(domain.reconstruction_threshold.inner())?);
-    let old_reconstruction_threshold = args
-        .old_reconstruction_thresholds
-        .get(&key_id.domain_id)
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "No previous reconstruction threshold for domain {:?}",
-                key_id.domain_id
-            )
-        })?;
-    let mut old_participants = args.old_participants.clone();
-    old_participants.threshold = old_reconstruction_threshold.inner();
+    let old_reconstruction_threshold = ReconstructionThreshold::from(usize::try_from(
+        args.old_reconstruction_thresholds
+            .get(&key_id.domain_id)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "No previous reconstruction threshold for domain {:?}",
+                    key_id.domain_id
+                )
+            })?
+            .inner(),
+    )?);
 
     let keyshare_handle = keyshare_storage
         .write()
@@ -267,9 +258,10 @@ async fn resharing_computation_inner(
                 .transpose()?;
             let res = EcdsaSignatureProvider::run_key_resharing_client(
                 new_reconstruction_threshold,
+                old_reconstruction_threshold,
                 my_share,
                 public_key,
-                &old_participants,
+                &args.old_participants,
                 channel,
             )
             .await?;
@@ -289,9 +281,10 @@ async fn resharing_computation_inner(
                 .transpose()?;
             let res = RobustEcdsaSignatureProvider::run_key_resharing_client(
                 new_reconstruction_threshold,
+                old_reconstruction_threshold,
                 my_share,
                 public_key,
-                &old_participants,
+                &args.old_participants,
                 channel,
             )
             .await?;
@@ -310,9 +303,10 @@ async fn resharing_computation_inner(
                 .transpose()?;
             let res = EddsaSignatureProvider::run_key_resharing_client(
                 new_reconstruction_threshold,
+                old_reconstruction_threshold,
                 my_share,
                 public_key,
-                &old_participants,
+                &args.old_participants,
                 channel,
             )
             .await?;
@@ -328,9 +322,10 @@ async fn resharing_computation_inner(
                 .transpose()?;
             let res = CKDProvider::run_key_resharing_client(
                 new_reconstruction_threshold,
+                old_reconstruction_threshold,
                 my_share,
                 public_key,
-                &old_participants,
+                &args.old_participants,
                 channel,
             )
             .await?;
