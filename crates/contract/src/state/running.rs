@@ -267,11 +267,8 @@ pub mod running_tests {
     use super::RunningContractState;
     use crate::errors::{Error, InvalidThreshold};
     use crate::primitives::domain::AddDomainsVotes;
-    use crate::primitives::test_utils::{
-        NUM_PROTOCOLS, gen_participants, gen_proposed_threshold_params,
-    };
+    use crate::primitives::test_utils::{NUM_PROTOCOLS, gen_proposed_threshold_params};
     use crate::primitives::threshold_votes::ThresholdParametersVotes;
-    use crate::primitives::thresholds::{Threshold, ThresholdParameters};
     use crate::state::key_event::tests::Environment;
     use crate::state::test_utils::{
         gen_running_state, gen_running_state_with_params, gen_valid_params_proposal,
