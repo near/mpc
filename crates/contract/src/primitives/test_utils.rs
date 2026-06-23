@@ -2,6 +2,7 @@ use super::domain::DomainRegistry;
 use crate::{
     crypto_shared::types::{PublicKeyExtended, serializable::SerializableEdwardsPoint},
     primitives::{
+        key_state::AuthenticatedParticipantId,
         participants::{ParticipantInfo, Participants},
         thresholds::{
             ProposedThresholdParameters, Threshold, ThresholdParameters,
@@ -14,6 +15,7 @@ use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
     DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
 };
+use near_sdk::{test_utils::VMContextBuilder, testing_env};
 use rand::{Rng, SeedableRng, distributions::Uniform, rngs::StdRng};
 use std::collections::BTreeMap;
 // Re-export for convenience
@@ -143,6 +145,22 @@ pub fn gen_participants(n: usize) -> Participants {
         let _ = participants.insert(account_id, info);
     }
     participants
+}
+
+/// Build `n` participants and pre-authenticate each, returning the set alongside
+/// each participant's [`AuthenticatedParticipantId`]. The `testing_env!` resets all
+/// run *before* any storage-backed state is touched, so later vote ops can write to
+/// mocked storage without an env reset wiping prior writes.
+pub fn gen_authenticated_participants(n: usize) -> (Participants, Vec<AuthenticatedParticipantId>) {
+    let participants = gen_participants(n);
+    let mut auth_ids = Vec::with_capacity(n);
+    for (account_id, _, _) in participants.participants() {
+        let mut ctx = VMContextBuilder::new();
+        ctx.signer_account_id(account_id.clone());
+        testing_env!(ctx.build());
+        auth_ids.push(AuthenticatedParticipantId::new(&participants).unwrap());
+    }
+    (participants, auth_ids)
 }
 
 pub fn gen_seed() -> [u8; 32] {
