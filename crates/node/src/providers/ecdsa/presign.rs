@@ -183,12 +183,14 @@ impl EcdsaSignatureProvider {
         // channel participant count must match — cross-check it.
         let reconstruction_threshold = domain_data.reconstruction_threshold;
         let reconstruction_threshold_usize: usize = reconstruction_threshold.inner().try_into()?;
-        anyhow::ensure!(
-            channel.participants().len() == reconstruction_threshold_usize,
-            "presign participant count ({}) does not match domain threshold t={}",
-            channel.participants().len(),
-            reconstruction_threshold_usize,
-        );
+        if channel.participants().len() != reconstruction_threshold_usize {
+            metrics::MPC_NUM_BAD_PEER_PRESIGN_REQUESTS.inc();
+            anyhow::bail!(
+                "presign participant count ({}) does not match domain threshold t={}",
+                channel.participants().len(),
+                reconstruction_threshold_usize,
+            );
+        }
         let triple_store = self.triple_store_for_t(reconstruction_threshold)?;
         FollowerPresignComputation {
             reconstruction_threshold: TSReconstructionThreshold::from(
