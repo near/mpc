@@ -1,13 +1,13 @@
 #![allow(clippy::indexing_slicing)]
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use rand::{Rng, RngCore};
+use rand::Rng;
 use rand_core::SeedableRng;
 
 mod bench_utils;
 use crate::bench_utils::{
     MAX_MALICIOUS, PreparedOutputs, RECONSTRUCTION_LOWER_BOUND, SAMPLE_SIZE,
-    analyze_received_sizes, ed25519_prepare_presign, ed25519_prepare_sign_v2,
+    analyze_received_sizes, ed25519_prepare_presign, ed25519_prepare_sign_v2, participant_rng,
 };
 use threshold_signatures::{
     ReconstructionThreshold,
@@ -40,7 +40,10 @@ fn bench_presign(c: &mut Criterion) {
         |b| {
             b.iter_batched(
                 || prepare_simulate_presign(&setup),
-                |preps| run_simulated_protocol(preps.participant, preps.protocol, preps.simulator),
+                |preps| {
+                    run_simulated_protocol(preps.participant, preps.protocol, preps.simulator)
+                        .expect("simulated replay should complete")
+                },
                 criterion::BatchSize::SmallInput,
             );
         },
@@ -63,7 +66,10 @@ fn bench_sign(c: &mut Criterion) {
         |b| {
             b.iter_batched(
                 || prepare_simulated_sign(&setup, *RECONSTRUCTION_LOWER_BOUND),
-                |preps| run_simulated_protocol(preps.participant, preps.protocol, preps.simulator),
+                |preps| {
+                    run_simulated_protocol(preps.participant, preps.protocol, preps.simulator)
+                        .expect("simulated replay should complete")
+                },
                 criterion::BatchSize::SmallInput,
             );
         },
@@ -95,16 +101,8 @@ fn setup_presign_snapshot(num_participants: usize) -> PresignSetup {
     let index_real_participant = rng.gen_range(0..num_participants);
     let (real_participant, keygen_out) = preps.key_packages[index_real_participant].clone();
 
-    // recreate rng using by real_participant to generate presignatures
-    let mut real_participant_rng = MockCryptoRng::seed_from_u64(42);
-    for (i, _) in preps.key_packages.iter().enumerate() {
-        let seed = real_participant_rng.next_u64();
-
-        if i == index_real_participant {
-            real_participant_rng = MockCryptoRng::seed_from_u64(seed);
-            break;
-        }
-    }
+    // rebuild the exact rng the real participant used during snapshot capture
+    let real_participant_rng = participant_rng(&preps.seeds, real_participant);
 
     let cached_simulator = Simulator::new(real_participant, &protocol_snapshot)
         .expect("Simulator should not be empty");

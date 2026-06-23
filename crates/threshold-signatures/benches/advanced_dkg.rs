@@ -4,7 +4,8 @@ use rand_core::SeedableRng;
 
 mod bench_utils;
 use crate::bench_utils::{
-    MAX_MALICIOUS, PreparedOutputs, SAMPLE_SIZE, analyze_received_sizes, prepare_dkg,
+    MAX_MALICIOUS, PreparedOutputs, SAMPLE_SIZE, analyze_received_sizes, participant_rng,
+    prepare_dkg,
 };
 
 use threshold_signatures::{
@@ -48,7 +49,10 @@ where
         |b| {
             b.iter_batched(
                 || prepare_simulated_dkg::<C>(&setup, threshold()),
-                |preps| run_simulated_protocol(preps.participant, preps.protocol, preps.simulator),
+                |preps| {
+                    run_simulated_protocol(preps.participant, preps.protocol, preps.simulator)
+                        .expect("simulated replay should complete")
+                },
                 criterion::BatchSize::SmallInput,
             );
         },
@@ -89,8 +93,9 @@ where
 {
     let mut rng = MockCryptoRng::seed_from_u64(42);
     let preps = prepare_dkg::<C, _>(participants_num(), threshold, &mut rng);
-    let participants: Vec<_> = preps.iter().map(|(p, _)| *p).collect();
-    let (_, protocol_snapshot) = run_protocol_and_take_snapshots(preps)
+    let participants: Vec<_> = preps.protocols.iter().map(|(p, _)| *p).collect();
+    let seeds = preps.seeds;
+    let (_, protocol_snapshot) = run_protocol_and_take_snapshots(preps.protocols)
         .expect("Running protocol with snapshot should not have issues");
 
     // choose the real_participant at random
@@ -98,13 +103,16 @@ where
         .choose(&mut rng)
         .expect("participant list is not empty");
 
+    // rebuild the exact rng the real participant used during snapshot capture
+    let rng_for_protocol = participant_rng(&seeds, real_participant);
+
     let cached_simulator = Simulator::new(real_participant, &protocol_snapshot)
         .expect("Simulator should not be empty");
 
     DkgSetup {
         participants,
         real_participant,
-        rng_for_protocol: rng,
+        rng_for_protocol,
         cached_simulator,
     }
 }
