@@ -1818,9 +1818,9 @@ dependencies = [
 
 [[package]]
 name = "cheetah-curve"
-version = "0.3.2"
+version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f97b0f33116ba395748a7091a9bf4632b2ee4d2fc35dfd3fef9f9bf9eceda3a4"
+checksum = "9168df27c1db8bf555af753f29c9ce288ddfd1d9a963fd3b3fa74117e7e50b17"
 dependencies = [
  "arrayref",
  "bs58 0.5.1",
