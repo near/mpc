@@ -47,6 +47,8 @@ pub struct InitConfig {
     pub remove_non_participant_update_votes_tera_gas: Option<u64>,
     /// Prepaid gas for a `clean_foreign_chain_data` call.
     pub clean_foreign_chain_data_tera_gas: Option<u64>,
+    /// Prepaid gas for a `remove_non_participant_tee_verifier_votes` call.
+    pub remove_non_participant_tee_verifier_votes_tera_gas: Option<u64>,
 }
 
 /// Configuration parameters of the contract.
@@ -95,6 +97,8 @@ pub struct Config {
     pub remove_non_participant_update_votes_tera_gas: u64,
     /// Prepaid gas for a `clean_foreign_chain_data` call.
     pub clean_foreign_chain_data_tera_gas: u64,
+    /// Prepaid gas for a `remove_non_participant_tee_verifier_votes` call.
+    pub remove_non_participant_tee_verifier_votes_tera_gas: u64,
 }
 
 #[cfg(test)]
@@ -118,6 +122,7 @@ mod tests {
             cleanup_orphaned_node_migrations_tera_gas: Some(3),
             remove_non_participant_update_votes_tera_gas: Some(5),
             clean_foreign_chain_data_tera_gas: Some(5),
+            remove_non_participant_tee_verifier_votes_tera_gas: Some(5),
         };
         let json = serde_json::to_string(&original_config).unwrap();
         let serialized_and_deserialized_config: InitConfig = serde_json::from_str(&json).unwrap();
@@ -167,6 +172,7 @@ mod tests {
             cleanup_orphaned_node_migrations_tera_gas: None,
             remove_non_participant_update_votes_tera_gas: None,
             clean_foreign_chain_data_tera_gas: None,
+            remove_non_participant_tee_verifier_votes_tera_gas: None,
         };
 
         assert_eq!(default_config, config_with_all_values_as_none);

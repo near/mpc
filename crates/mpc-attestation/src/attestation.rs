@@ -21,8 +21,11 @@ use sha2::{Digest as _, Sha256};
 use crate::alloc::format;
 use crate::alloc::string::{String, ToString};
 
+/// How long an accepted attestation stays trusted before it must be
+/// re-verified via [`VerifiedAttestation::re_verify`]. Nodes resubmit hourly,
+/// well within this window, so valid attestations refresh in time.
 // TODO(#1639): extract timestamp from certificate itself
-pub const DEFAULT_EXPIRATION_DURATION_SECONDS: u64 = 60 * 60 * 24 * 7; // 7 days
+pub const DEFAULT_EXPIRATION_DURATION_SECONDS: u64 = 60 * 60 * 24; // 1 day
 
 #[expect(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]

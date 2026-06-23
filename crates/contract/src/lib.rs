@@ -45,10 +45,11 @@ use crate::{
     primitives::{
         ckd::{CKDRequest, app_public_key_check, ckd_output_check},
         domain::AddDomainsVotes,
+        votes::ProposalHash,
     },
-    state::ContractNotInitialized,
     storage_keys::StorageKey,
     tee::tee_state::{TeeQuoteStatus, TeeState},
+    tee::verifier_votes::{TeeVerifierVotes, VerifierChangeProposal},
     update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId},
 };
 use config::Config;
@@ -58,8 +59,7 @@ use crypto_shared::{
     types::{PublicKeyExtended, PublicKeyExtendedConversionError},
 };
 use errors::{
-    DomainError, InvalidParameters, InvalidState, InvalidThreshold, PublicKeyError, RespondError,
-    TeeError,
+    DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError, TeeError,
 };
 use k256::elliptic_curve::PrimeField;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
@@ -71,7 +71,7 @@ use near_mpc_contract_interface::types::{
 use near_mpc_contract_interface::{method_names, types::CKDRequestArgs};
 
 use dtos::{Curve, DomainConfig, DomainId, DomainPurpose, Protocol};
-use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash};
+use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, TeeVerifierCodeHash};
 use near_sdk::{
     AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue, env,
     log, near,
@@ -79,7 +79,7 @@ use near_sdk::{
 };
 use node_migrations::NodeMigrations;
 use primitives::{
-    domain::DomainRegistry,
+    domain::{DomainRegistry, max_reconstruction_threshold},
     key_state::{AuthenticatedParticipantId, EpochId, KeyEventId, Keyset},
     signature::{SignRequestArgs, SignatureRequest, YieldIndex},
     thresholds::{ProposedThresholdParameters, Threshold, ThresholdParameters},
@@ -164,6 +164,12 @@ pub struct MpcContract {
     // TODO(#2937): Remove via state migration.
     metrics: Metrics,
     foreign_chains: Lazy<ForeignChainsMetadata>,
+    /// The verifier contract account trusted for DCAP verification, or [`None`]
+    /// until participants vote one in. Not yet used to dispatch verification.
+    // TODO(#3639): once participants have voted a verifier in, make this
+    // non-optional via a migration that requires it be set.
+    tee_verifier_account_id: Option<AccountId>,
+    tee_verifier_votes: TeeVerifierVotes,
 }
 
 #[near(serializers=[borsh])]
@@ -890,10 +896,6 @@ impl MpcContract {
             proposal,
         );
 
-        // Defense in depth: never reshare into a participant set smaller than any
-        // threshold (see `assert_proposal_meets_all_thresholds`).
-        self.assert_proposal_meets_all_thresholds(&proposal)?;
-
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
@@ -934,47 +936,6 @@ impl MpcContract {
                 .into())
             }
         }
-    }
-
-    /// Defense-in-depth guard for [`Self::vote_new_parameters`]: rejects a
-    /// proposal whose participant set is smaller than the proposed signing
-    /// threshold or any domain's effective reconstruction threshold (proposed
-    /// override if present, else the domain's current value). Such a set would
-    /// leave a key un-signable or un-reconstructible. Redundant with
-    /// `RunningContractState::process_new_parameters_proposal`.
-    fn assert_proposal_meets_all_thresholds(
-        &self,
-        proposal: &ProposedThresholdParameters,
-    ) -> Result<(), Error> {
-        let num_participants = u64::try_from(proposal.participants().len())
-            .expect("participant list should be wayyyy smaller than u64::MAX");
-
-        let threshold = proposal.threshold().value();
-        if threshold > num_participants {
-            return Err(InvalidThreshold::MaxRequirementFailed {
-                max: num_participants,
-                found: threshold,
-            }
-            .into());
-        }
-
-        let domains = self.protocol_state.domain_registry()?;
-        let updates = proposal.per_domain_thresholds();
-        for domain in domains.domains() {
-            let effective = updates
-                .get(&domain.id)
-                .copied()
-                .unwrap_or(domain.reconstruction_threshold)
-                .inner();
-            if effective > num_participants {
-                return Err(DomainError::ReconstructionThresholdExceedsParticipants {
-                    threshold: effective,
-                    participants: num_participants,
-                }
-                .into());
-            }
-        }
-        Ok(())
     }
 
     /// Propose adding a new set of domains for the MPC network.
@@ -1260,6 +1221,18 @@ impl MpcContract {
                     Gas::from_tgas(self.config.clean_foreign_chain_data_tera_gas),
                 )
                 .detach();
+            // Spawn a promise to drop verifier-change votes cast by non-participants
+            Promise::new(env::current_account_id())
+                .function_call(
+                    method_names::REMOVE_NON_PARTICIPANT_TEE_VERIFIER_VOTES.to_string(),
+                    vec![],
+                    NearToken::from_yoctonear(0),
+                    Gas::from_tgas(
+                        self.config
+                            .remove_non_participant_tee_verifier_votes_tera_gas,
+                    ),
+                )
+                .detach();
         }
 
         Ok(())
@@ -1439,12 +1412,7 @@ impl MpcContract {
         );
         self.voter_or_panic();
 
-        let threshold_parameters = match self.protocol_state.threshold_parameters() {
-            Ok(threshold_parameters) => threshold_parameters,
-            Err(ContractNotInitialized) => env::panic_str(
-                "Contract is not initialized. Can not vote for a new image hash before initialization.",
-            ),
-        };
+        let threshold_parameters = self.protocol_state.threshold_parameters_or_panic();
 
         let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
         let votes = self.tee_state.vote(code_hash, &participant);
@@ -1477,12 +1445,7 @@ impl MpcContract {
         );
         self.voter_or_panic();
 
-        let threshold_parameters = match self.protocol_state.threshold_parameters() {
-            Ok(threshold_parameters) => threshold_parameters,
-            Err(ContractNotInitialized) => env::panic_str(
-                "Contract is not initialized. Cannot vote for a new launcher hash before initialization.",
-            ),
-        };
+        let threshold_parameters = self.protocol_state.threshold_parameters_or_panic();
 
         let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
         let action = LauncherVoteAction::Add(launcher_hash);
@@ -1515,12 +1478,7 @@ impl MpcContract {
         );
         self.voter_or_panic();
 
-        let threshold_parameters = match self.protocol_state.threshold_parameters() {
-            Ok(threshold_parameters) => threshold_parameters,
-            Err(ContractNotInitialized) => env::panic_str(
-                "Contract is not initialized. Cannot vote to remove a launcher hash before initialization.",
-            ),
-        };
+        let threshold_parameters = self.protocol_state.threshold_parameters_or_panic();
 
         let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
         let action = LauncherVoteAction::Remove(launcher_hash);
@@ -1549,12 +1507,7 @@ impl MpcContract {
         );
         self.voter_or_panic();
 
-        let threshold_parameters = match self.protocol_state.threshold_parameters() {
-            Ok(threshold_parameters) => threshold_parameters,
-            Err(ContractNotInitialized) => env::panic_str(
-                "Contract is not initialized. Cannot vote for an OS measurement before initialization.",
-            ),
-        };
+        let threshold_parameters = self.protocol_state.threshold_parameters_or_panic();
 
         let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
         let action = MeasurementVoteAction::Add(measurement.clone());
@@ -1582,12 +1535,7 @@ impl MpcContract {
         );
         self.voter_or_panic();
 
-        let threshold_parameters = match self.protocol_state.threshold_parameters() {
-            Ok(threshold_parameters) => threshold_parameters,
-            Err(ContractNotInitialized) => env::panic_str(
-                "Contract is not initialized. Cannot vote to remove an OS measurement before initialization.",
-            ),
-        };
+        let threshold_parameters = self.protocol_state.threshold_parameters_or_panic();
 
         let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
         let action = MeasurementVoteAction::Remove(measurement.clone());
@@ -1661,6 +1609,63 @@ impl MpcContract {
         Ok(applied)
     }
 
+    /// Vote for a candidate account to become the trusted verifier contract
+    /// account, committing to the code hash the voter audited. When the proposal
+    /// crosses the signing threshold, the trusted verifier account is updated
+    /// and all pending verifier-change votes are cleared.
+    #[handle_result]
+    pub fn vote_tee_verifier_change(
+        &mut self,
+        candidate_account_id: AccountId,
+        expected_code_hash: TeeVerifierCodeHash,
+    ) -> Result<(), Error> {
+        log!(
+            "vote_tee_verifier_change: signer={}, candidate={}, expected_code_hash={}",
+            env::signer_account_id(),
+            candidate_account_id,
+            expected_code_hash,
+        );
+        self.voter_or_panic();
+
+        // Voting in the already-current verifier is a no-op
+        if self.tee_verifier_account_id.as_ref() == Some(&candidate_account_id) {
+            return Ok(());
+        }
+
+        let threshold_parameters = self.protocol_state.threshold_parameters_or_panic();
+        let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
+
+        let proposal = VerifierChangeProposal {
+            candidate_account_id,
+            expected_code_hash,
+        };
+        if let Some(new_verifier) =
+            self.tee_verifier_votes
+                .vote(proposal, participant, threshold_parameters)?
+        {
+            log!("vote_tee_verifier_change: new verifier = {}", new_verifier);
+            self.tee_verifier_account_id = Some(new_verifier);
+        }
+        Ok(())
+    }
+
+    /// Withdraw the caller's current vote on any pending verifier-change
+    /// proposal. No-op if the caller has not voted.
+    #[handle_result]
+    pub fn withdraw_tee_verifier_vote(&mut self) -> Result<(), Error> {
+        log!(
+            "withdraw_tee_verifier_vote: signer={}",
+            env::signer_account_id(),
+        );
+        self.voter_or_panic();
+
+        let threshold_parameters = self.protocol_state.threshold_parameters_or_panic();
+        let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
+
+        self.tee_verifier_votes.withdraw(&participant);
+        Ok(())
+    }
+
     /// On-chain RPC provider whitelist keyed by `ForeignChain`. Nodes read this at
     /// startup to validate their local `foreign_chains.yaml`. Borsh-encoded result.
     #[result_serializer(borsh)]
@@ -1709,26 +1714,24 @@ impl MpcContract {
             TeeValidationResult::Partial {
                 participants_with_valid_attestation,
             } => {
-                let threshold = current_params.threshold().value() as usize;
                 let remaining = participants_with_valid_attestation.len();
-                // Defense in depth: the surviving participant set must cover every
-                // threshold the network is bound to — the governance threshold and
-                // each domain's reconstruction threshold (the kickout keeps the
-                // existing per-domain thresholds). Resharing into a smaller set
-                // would leave a key un-signable, so we refuse and wait for manual
-                // intervention.
-                let max_reconstruction_threshold = running_state
-                    .domains
-                    .domains()
-                    .iter()
-                    .map(|domain| domain.reconstruction_threshold.inner() as usize)
-                    .max()
-                    .unwrap_or(0);
-                let required = threshold.max(max_reconstruction_threshold);
-                if required > remaining {
+                // Defense in depth: the surviving participant set must keep the full
+                // threshold relation intact — the GovernanceThreshold must still sit
+                // within its bounds for the smaller set (in particular it must not
+                // exceed the remaining participant count or the upper cap) and must
+                // remain at least every domain's ReconstructionThreshold (the kickout
+                // keeps the existing per-domain thresholds). Otherwise we refuse and
+                // wait for manual intervention.
+                let max_reconstruction_threshold =
+                    max_reconstruction_threshold(running_state.domains.domains());
+                if let Err(err) = ThresholdParameters::validate_governance_against_reconstruction(
+                    u64::try_from(remaining).expect("participant count fits in u64"),
+                    current_params.threshold(),
+                    max_reconstruction_threshold,
+                ) {
                     log!(
-                        "Fewer than the required number of participants ({}) are left with a valid TEE status ({}). This requires manual intervention. We will not accept new signature requests as a safety precaution.",
-                        required,
+                        "Kicking out participants with an invalid TEE status would break the threshold relation ({:?}); {} participants remain with a valid TEE status. This requires manual intervention. We will not accept new signature requests as a safety precaution.",
+                        err,
                         remaining,
                     );
                     self.accept_requests = false;
@@ -1743,7 +1746,8 @@ impl MpcContract {
                 //let n_participants_new = new_participants.len();
                 //let new_threshold = (3 * n_participants_new + 4) / 5; // minimum 60%
                 //let new_threshold = new_threshold.max(2); // but also minimum 2
-                let new_threshold = threshold;
+                let new_threshold = usize::try_from(current_params.threshold().value())
+                    .expect("threshold value fits in usize");
 
                 let threshold_parameters = ThresholdParameters::new(
                     participants_with_valid_attestation,
@@ -1890,6 +1894,28 @@ impl MpcContract {
 
         Ok(())
     }
+
+    /// Private endpoint to drop verifier-change votes cast by non-participants
+    /// after resharing.
+    #[private]
+    #[handle_result]
+    pub fn remove_non_participant_tee_verifier_votes(&mut self) -> Result<(), Error> {
+        log!(
+            "remove_non_participant_tee_verifier_votes: signer={}",
+            env::signer_account_id()
+        );
+
+        let participants = match &self.protocol_state {
+            ProtocolContractState::Running(state) => state.parameters.participants(),
+            _ => {
+                return Err(InvalidState::ProtocolStateNotRunning.into());
+            }
+        };
+
+        self.tee_verifier_votes.retain(participants);
+
+        Ok(())
+    }
 }
 
 // Contract developer helper API
@@ -1941,6 +1967,8 @@ impl MpcContract {
                 StorageKey::ForeignChainMetadata,
                 ForeignChainsMetadata::default(),
             ),
+            tee_verifier_account_id: None,
+            tee_verifier_votes: TeeVerifierVotes::default(),
         })
     }
 
@@ -1974,6 +2002,12 @@ impl MpcContract {
         for domain in domains.domains() {
             crate::primitives::domain::validate_domain_threshold(domain, num_participants)?;
         }
+        // Keep the GovernanceThreshold at least as large as the largest ReconstructionThreshold.
+        ThresholdParameters::validate_governance_against_reconstruction(
+            num_participants,
+            parameters.threshold(),
+            max_reconstruction_threshold(domains.domains()),
+        )?;
 
         // Check that the domains match exactly those in the keyset.
         let domain_ids_from_domains = domains.domains().iter().map(|d| d.id).collect::<Vec<_>>();
@@ -2012,6 +2046,8 @@ impl MpcContract {
                 StorageKey::ForeignChainMetadata,
                 ForeignChainsMetadata::default(),
             ),
+            tee_verifier_account_id: None,
+            tee_verifier_votes: TeeVerifierVotes::default(),
         })
     }
 
@@ -2081,6 +2117,13 @@ impl MpcContract {
     /// Returns the current code hash votes, showing each participant's vote.
     pub fn code_hash_votes(&self) -> CodeHashesVotes {
         self.tee_state.votes.clone()
+    }
+
+    /// Returns the pending TEE verifier-change votes, keyed by proposal.
+    pub fn tee_verifier_votes(
+        &self,
+    ) -> BTreeMap<ProposalHash, BTreeSet<AuthenticatedParticipantId>> {
+        self.tee_verifier_votes.pending()
     }
 
     /// Presence check for a pending signature request, exposed as a view call.
@@ -2639,7 +2682,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::errors::NodeMigrationError;
+    use crate::errors::{InvalidCandidateSet, InvalidThreshold, NodeMigrationError};
     use crate::pending_requests::MAX_PENDING_REQUEST_FAN_OUT;
     use crate::primitives::participants::{ParticipantId, ParticipantInfo, Participants};
     use crate::primitives::test_utils::{
@@ -3837,6 +3880,106 @@ mod tests {
         (contract, participants, first_participant_id)
     }
 
+    #[test]
+    #[expect(non_snake_case)]
+    fn vote_tee_verifier_change__should_apply_candidate_when_threshold_reached() {
+        // Given a running contract with 3 participants, signing threshold 2,
+        // starting unconfigured.
+        let (mut contract, participants, _) = setup_tee_test_contract(3, 2);
+        assert_eq!(contract.tee_verifier_account_id, None);
+        let participant_account_ids: Vec<AccountId> = participants
+            .participants()
+            .iter()
+            .map(|(account_id, _, _)| account_id.clone())
+            .collect();
+        let candidate: AccountId = "verifier.near".parse().unwrap();
+        let code_hash = TeeVerifierCodeHash::new([7u8; 32]);
+
+        let vote_as = |contract: &mut MpcContract, account_id: &AccountId| {
+            testing_env!(
+                VMContextBuilder::new()
+                    .signer_account_id(account_id.clone())
+                    .predecessor_account_id(account_id.clone())
+                    .build()
+            );
+            contract
+                .vote_tee_verifier_change(candidate.clone(), code_hash)
+                .expect("vote should succeed");
+        };
+
+        // When the first participant votes (below threshold), the verifier is unchanged.
+        vote_as(&mut contract, &participant_account_ids[0]);
+        assert_eq!(contract.tee_verifier_account_id, None);
+
+        // When the second participant votes, threshold is reached and the
+        // candidate becomes the trusted verifier.
+        vote_as(&mut contract, &participant_account_ids[1]);
+        assert_eq!(contract.tee_verifier_account_id, Some(candidate));
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn remove_non_participant_tee_verifier_votes__should_drop_votes_from_dropped_participants() {
+        // Given a running contract with 3 participants, signing threshold 3, where
+        // two participants have cast votes for distinct candidates (neither crosses
+        // threshold, so both stay pending).
+        let (mut contract, participants, _) = setup_tee_test_contract(3, 3);
+        let voters = participant_account_ids(&contract);
+        let code_hash = TeeVerifierCodeHash::new([7u8; 32]);
+
+        // Vote as `account_id` for `candidate`, returning that voter's authenticated id.
+        let vote_as =
+            |contract: &mut MpcContract, account_id: &AccountId, candidate: &AccountId| {
+                Environment::new(None, Some(account_id.clone()), None);
+                contract
+                    .vote_tee_verifier_change(candidate.clone(), code_hash)
+                    .expect("vote should succeed");
+                AuthenticatedParticipantId::new(&participants).unwrap()
+            };
+
+        // The single-voter pending bucket: proposal(candidate) -> {voter}.
+        let bucket = |candidate: &AccountId, voter: &AuthenticatedParticipantId| {
+            let proposal = VerifierChangeProposal {
+                candidate_account_id: candidate.clone(),
+                expected_code_hash: code_hash,
+            };
+            (
+                ProposalHash::from(proposal),
+                BTreeSet::from([voter.clone()]),
+            )
+        };
+
+        let candidate_a: AccountId = "verifier-a.near".parse().unwrap();
+        let candidate_b: AccountId = "verifier-b.near".parse().unwrap();
+        let auth_a = vote_as(&mut contract, &voters[0], &candidate_a);
+        let auth_b = vote_as(&mut contract, &voters[1], &candidate_b);
+
+        // Then both single-voter buckets are pending.
+        assert_eq!(
+            contract.tee_verifier_votes(),
+            BTreeMap::from([bucket(&candidate_a, &auth_a), bucket(&candidate_b, &auth_b)]),
+        );
+
+        // When resharing drops the first participant and the post-resharing cleanup runs.
+        {
+            let ProtocolContractState::Running(ref mut state) = contract.protocol_state else {
+                panic!("expected Running");
+            };
+            state.parameters =
+                ThresholdParameters::new(participants.subset(1..3), Threshold::new(2)).unwrap();
+        }
+        Environment::new(None, Some(env::current_account_id()), None);
+        contract
+            .remove_non_participant_tee_verifier_votes()
+            .unwrap();
+
+        // Then only the still-participant's vote (candidate B) remains.
+        assert_eq!(
+            contract.tee_verifier_votes(),
+            BTreeMap::from([bucket(&candidate_b, &auth_b)]),
+        );
+    }
+
     fn submit_attestation(
         contract: &mut MpcContract,
         participants: &Participants,
@@ -4079,11 +4222,10 @@ mod tests {
     }
 
     #[test]
-    fn vote_new_parameters__should_reject_when_shrinking_below_unchanged_domain_threshold() {
-        // Given: a Running contract with 3 participants and a domain whose
-        // reconstruction threshold is 3.
+    fn vote_new_parameters__should_reject_when_shrinking_below_governance_threshold() {
+        // Given: a Running contract with 4 participants and a GovernanceThreshold of 3.
         let (mut contract, participants, signer, _domain_id) =
-            setup_running_contract_with_domain(3, 3, 3);
+            setup_running_contract_with_domain(4, 3, 3);
         // ...and a proposal that shrinks the participant set to 2 without touching
         // the per-domain thresholds.
         let proposal = ProposedThresholdParameters::new(
@@ -4094,14 +4236,13 @@ mod tests {
         // When
         let result = vote_params(&mut contract, &signer, &proposal);
 
-        // Then: the domain's unchanged threshold of 3 exceeds the 2 proposed
-        // participants, so the guard rejects it.
+        // Then: the candidate-set guard rejects the proposal first, because only 2
+        // old participants remain — fewer than the GovernanceThreshold of 3. (Under
+        // the GovernanceThreshold >= max(ReconstructionThreshold) invariant this guard
+        // always fires before any per-domain ReconstructionThreshold check could.)
         assert_matches!(
             result.unwrap_err(),
-            Error::DomainError(DomainError::ReconstructionThresholdExceedsParticipants {
-                threshold: 3,
-                participants: 2,
-            })
+            Error::InvalidCandidateSet(InvalidCandidateSet::InsufficientOldParticipants)
         );
     }
 
@@ -4128,15 +4269,15 @@ mod tests {
 
     #[test]
     fn vote_new_parameters__should_accept_per_domain_threshold_within_participant_count() {
-        // Given: a Running contract with 3 participants and one domain.
+        // Given: a Running contract with 5 participants (GovernanceThreshold 4) and one domain.
         let (mut contract, participants, signer, domain_id) =
-            setup_running_contract_with_domain(3, 2, 2);
-        // ...and a proposal raising the domain's reconstruction threshold to 3,
-        // which still fits the 3 participants.
+            setup_running_contract_with_domain(5, 4, 2);
+        // ...and a proposal raising the domain's reconstruction threshold to 4,
+        // which fits the 5 participants and does not exceed the GovernanceThreshold.
         let mut per_domain = BTreeMap::new();
-        per_domain.insert(domain_id, ReconstructionThreshold::new(3));
+        per_domain.insert(domain_id, ReconstructionThreshold::new(4));
         let proposal = ProposedThresholdParameters::new(
-            ThresholdParameters::new(participants, Threshold::new(2)).unwrap(),
+            ThresholdParameters::new(participants, Threshold::new(4)).unwrap(),
             per_domain,
         );
 
@@ -4145,6 +4286,33 @@ mod tests {
 
         // Then: the guard passes and the vote is recorded.
         assert_matches!(result, Ok(()));
+    }
+
+    #[test]
+    fn vote_new_parameters__should_reject_governance_below_max_reconstruction() {
+        // Given: a Running contract with 5 participants, GovernanceThreshold 4, and a
+        // domain whose reconstruction threshold is 4.
+        let (mut contract, participants, signer, _domain_id) =
+            setup_running_contract_with_domain(5, 4, 4);
+        // ...and a proposal lowering the GovernanceThreshold to 3 (valid on its own)
+        // while the domain keeps its reconstruction threshold of 4.
+        let proposal = ProposedThresholdParameters::new(
+            ThresholdParameters::new(participants, Threshold::new(3)).unwrap(),
+            BTreeMap::new(),
+        );
+
+        // When
+        let result = vote_params(&mut contract, &signer, &proposal);
+
+        // Then: the GovernanceThreshold (3) would fall below the domain's
+        // reconstruction threshold (4), so the proposal is rejected.
+        assert_matches!(
+            result.unwrap_err(),
+            Error::InvalidThreshold(InvalidThreshold::BelowReconstructionThreshold {
+                reconstruction_threshold: 4,
+                governance_threshold: 3,
+            })
+        );
     }
 
     #[test]
@@ -4421,6 +4589,8 @@ mod tests {
                     StorageKey::ForeignChainMetadata,
                     ForeignChainsMetadata::default(),
                 ),
+                tee_verifier_account_id: None,
+                tee_verifier_votes: Default::default(),
             }
         }
     }
@@ -5603,19 +5773,26 @@ mod tests {
     }
 
     /// Tests that [`MpcContract::verify_tee`] refuses to reshare when a TEE
-    /// kickout would leave fewer participants than a domain's reconstruction
-    /// threshold, even though the remaining set still meets the governance
-    /// threshold. The contract stays Running and stops accepting requests.
+    /// kickout would leave fewer participants than the threshold relation requires.
+    /// The contract stays Running and stops accepting requests.
     #[test]
-    fn verify_tee__should_refuse_kickout_below_domain_reconstruction_threshold() {
+    fn verify_tee__should_refuse_kickout_when_remaining_breaks_threshold_relation() {
         const PARTICIPANT_COUNT: usize = 5;
         const ATTESTATION_EXPIRY_SECONDS: u64 = 5;
         const TEE_UPGRADE_DURATION: Duration = Duration::MAX;
 
-        // Given: 5 participants, governance threshold 3, and one domain whose
-        // reconstruction threshold is 5 (every participant is needed to sign).
+        // Given: 5 participants, GovernanceThreshold 5, and one domain whose
+        // reconstruction threshold is 5 (every participant is needed to sign). Dropping
+        // to 4 participants would leave the GovernanceThreshold above the participant
+        // count, breaking the threshold relation.
         let participants = gen_participants(PARTICIPANT_COUNT);
-        let parameters = ThresholdParameters::new(participants.clone(), Threshold::new(3)).unwrap();
+        let parameters = ThresholdParameters::new(
+            participants.clone(),
+            Threshold::new(
+                u64::try_from(PARTICIPANT_COUNT).expect("participant count fits in u64"),
+            ),
+        )
+        .unwrap();
         let domain_id = DomainId::default();
         let domains = vec![DomainConfig {
             id: domain_id,
@@ -5668,9 +5845,9 @@ mod tests {
         // When
         let result = contract.verify_tee();
 
-        // Then: the 4 surviving participants meet the governance threshold (3) but
-        // not the domain's reconstruction threshold (5), so verify_tee refuses to
-        // reshare, stays Running, and stops accepting requests.
+        // Then: with only 4 surviving participants the GovernanceThreshold of 5 would
+        // exceed the participant count, breaking the threshold relation, so verify_tee
+        // refuses to reshare, stays Running, and stops accepting requests.
         assert_matches!(result, Ok(false));
         assert_matches!(contract.protocol_state, ProtocolContractState::Running(_));
         assert!(!contract.accept_requests);

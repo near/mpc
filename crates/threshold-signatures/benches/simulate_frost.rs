@@ -125,10 +125,9 @@ fn run_presign(
     latency: &LatencyModel,
     rng: &mut MockCryptoRng,
 ) -> (Vec<(Participant, eddsa::PresignOutput)>, SimulationMetrics) {
-    run_simulation(
-        ed25519_build_presign_protocols(participants, key_packages, threshold, rng),
-        latency,
-    )
+    let (protocols, _seeds) =
+        ed25519_build_presign_protocols(participants, key_packages, threshold, rng);
+    run_simulation(protocols, latency)
 }
 
 fn run_sign_v1(
@@ -159,6 +158,7 @@ fn run_sign_v1(
         protocols.push((*p, Box::new(protocol) as Box<dyn Protocol<Output = _>>));
     }
     let (results, metrics) = run_simulation(protocols, latency);
+    assert_eq!(results.len(), participants.len());
     assert!(results.iter().any(|(_, sig)| sig.is_some()));
     metrics
 }
@@ -190,6 +190,7 @@ fn run_sign_v2(
         protocols.push((*p, Box::new(protocol) as Box<dyn Protocol<Output = _>>));
     }
     let (results, metrics) = run_simulation(protocols, latency);
+    assert_eq!(results.len(), participants.len());
     assert!(results.iter().any(|(_, sig)| sig.is_some()));
     metrics
 }

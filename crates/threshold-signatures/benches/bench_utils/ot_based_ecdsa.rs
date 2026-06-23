@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use rand::Rng;
 use rand_core::{CryptoRngCore, SeedableRng};
 
@@ -29,16 +31,20 @@ pub fn ot_ecdsa_prepare_triples<R: CryptoRngCore + SeedableRng + Send + 'static>
     let mut protocols: Vec<(_, Box<dyn Protocol<Output = _>>)> =
         Vec::with_capacity(participant_num);
     let participants = generate_participants_with_random_ids(participant_num, rng);
+    let mut seeds = HashMap::with_capacity(participant_num);
 
     for p in &participants {
-        let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
+        let seed = rng.next_u64();
+        let rng_p = MockCryptoRng::seed_from_u64(seed);
         let protocol = generate_triple_many::<2, _, _>(&participants, *p, threshold, rng_p)
             .expect("Triple generation should succeed");
         protocols.push((*p, Box::new(protocol)));
+        seeds.insert(*p, seed);
     }
     OTECDSAPreparedTriples {
         protocols,
         participants,
+        seeds,
     }
 }
 
@@ -87,6 +93,7 @@ pub fn ot_ecdsa_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'static>
         protocols,
         key_packages,
         participants,
+        seeds: HashMap::new(),
     }
 }
 
@@ -169,6 +176,7 @@ type TriplesProtocols = Vec<(
 pub struct OTECDSAPreparedTriples {
     pub protocols: TriplesProtocols,
     pub participants: Vec<Participant>,
+    pub seeds: HashMap<Participant, u64>,
 }
 
 pub type OTECDSAPreparedPresig = PreparedPresig<ot_based_ecdsa::PresignOutput, ecdsa::KeygenOutput>;

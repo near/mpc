@@ -16,7 +16,7 @@ use crate::primitives::{
 use initializing::InitializingContractState;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId};
-use near_sdk::near;
+use near_sdk::{env, near};
 use resharing::ResharingContractState;
 use running::RunningContractState;
 
@@ -193,6 +193,12 @@ impl ProtocolContractState {
                 Ok(&resharing_contract_state.previous_running_state.parameters)
             }
         }
+    }
+
+    /// Active threshold parameters, panicking on [`ContractNotInitialized`].
+    pub(super) fn threshold_parameters_or_panic(&self) -> &ThresholdParameters {
+        self.threshold_parameters()
+            .unwrap_or_else(|ContractNotInitialized| env::panic_str("contract is not initialized"))
     }
 }
 
