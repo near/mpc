@@ -16,10 +16,8 @@ pub(crate) fn governance_threshold_lower_relative_bound(n: u64) -> u64 {
     3_u64.saturating_mul(n).div_ceil(5)
 }
 
-/// Upper bound on the GovernanceThreshold for `n` participants:
-/// Currently set to 100% of participants but would be a discussion subject
-/// to drop this upper bound down not to have problems with smart contract
-/// being locked if t = n and if an operator stops voting
+/// Upper bound on the GovernanceThreshold for `n` participants: currently 100%.
+/// Whether to lower it is open (see `docs/design/domain-separation.md` §7).
 pub(crate) fn governance_threshold_upper_relative_bound(n: u64) -> u64 {
     n
 }
