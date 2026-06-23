@@ -1002,6 +1002,10 @@ expression: abi
                       [
                         "clean_foreign_chain_data_tera_gas",
                         "u64"
+                      ],
+                      [
+                        "remove_non_participant_tee_verifier_votes_tera_gas",
+                        "u64"
                       ]
                     ]
                   },
@@ -1199,6 +1203,20 @@ expression: abi
             }
           ]
         },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "remove_non_participant_tee_verifier_votes",
+        "doc": " Private endpoint to drop verifier-change votes cast by non-participants\n after resharing.",
+        "kind": "call",
+        "modifiers": [
+          "private"
+        ],
         "result": {
           "serialization_type": "json",
           "type_schema": {
@@ -1548,6 +1566,24 @@ expression: abi
         }
       },
       {
+        "name": "tee_verifier_votes",
+        "doc": " Returns the pending TEE verifier-change votes, keyed by proposal.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/AuthenticatedParticipantId2"
+              },
+              "uniqueItems": true
+            }
+          }
+        }
+      },
+      {
         "name": "update_config",
         "kind": "call",
         "modifiers": [
@@ -1863,6 +1899,35 @@ expression: abi
               "name": "key_event_id",
               "type_schema": {
                 "$ref": "#/definitions/KeyEventId"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "vote_tee_verifier_change",
+        "doc": " Vote for a candidate account to become the trusted verifier contract\n account, committing to the code hash the voter audited. When the proposal\n crosses the signing threshold, the trusted verifier account is updated\n and all pending verifier-change votes are cleared.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "candidate_account_id",
+              "type_schema": {
+                "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
+                "type": "string"
+              }
+            },
+            {
+              "name": "expected_code_hash",
+              "type_schema": {
+                "$ref": "#/definitions/TeeVerifierCodeHash"
               }
             }
           ]
@@ -2249,6 +2314,17 @@ expression: abi
             }
           }
         }
+      },
+      {
+        "name": "withdraw_tee_verifier_vote",
+        "doc": " Withdraw the caller's current vote on any pending verifier-change\n proposal. No-op if the caller has not voted.",
+        "kind": "call",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
       }
     ],
     "root_schema": {
@@ -2372,6 +2448,14 @@ expression: abi
         },
         "AuthenticatedParticipantId": {
           "description": "A participant ID that has been authenticated (i.e., the caller is this participant).",
+          "allOf": [
+            {
+              "$ref": "#/definitions/ParticipantId"
+            }
+          ]
+        },
+        "AuthenticatedParticipantId2": {
+          "description": "This struct is supposed to contain the participant id associated to the account `env::signer_account_id()`, but is only constructible given a set of participants that includes the signer, thus acting as a type system-based enforcement mechanism (albeit a best-effort one) for authenticating the signer.",
           "allOf": [
             {
               "$ref": "#/definitions/ParticipantId"
@@ -2632,6 +2716,7 @@ expression: abi
             "contract_upgrade_deposit_tera_gas",
             "fail_on_timeout_tera_gas",
             "key_event_timeout_blocks",
+            "remove_non_participant_tee_verifier_votes_tera_gas",
             "remove_non_participant_update_votes_tera_gas",
             "return_ck_and_clean_state_on_success_call_tera_gas",
             "return_signature_and_clean_state_on_success_call_tera_gas",
@@ -2683,6 +2768,12 @@ expression: abi
             },
             "key_event_timeout_blocks": {
               "description": "If a key event attempt has not successfully completed within this many blocks, it is considered failed.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "remove_non_participant_tee_verifier_votes_tera_gas": {
+              "description": "Prepaid gas for a `remove_non_participant_tee_verifier_votes` call.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
@@ -3294,6 +3385,15 @@ expression: abi
             },
             "key_event_timeout_blocks": {
               "description": "If a key event attempt has not successfully completed within this many blocks, it is considered failed.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "remove_non_participant_tee_verifier_votes_tera_gas": {
+              "description": "Prepaid gas for a `remove_non_participant_tee_verifier_votes` call.",
               "type": [
                 "integer",
                 "null"
@@ -4756,6 +4856,12 @@ expression: abi
               "type": "string"
             }
           }
+        },
+        "TeeVerifierCodeHash": {
+          "type": "string",
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-fA-F]+$"
         },
         "Threshold": {
           "description": "Cryptographic threshold (`k`) for a distributed key: the minimum number of participants that must collaborate to produce a signature.",

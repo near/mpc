@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use rand::Rng;
 use rand_core::{CryptoRngCore, SeedableRng};
 
@@ -28,6 +30,7 @@ pub fn prepare_ckd<R: CryptoRngCore + SeedableRng + Send + 'static>(
     let coordinator = participants[coordinator_index];
 
     let mut protocols = Vec::with_capacity(participants.len());
+    let mut seeds = HashMap::with_capacity(participants.len());
 
     let mut app_id: [u8; 32] = [0u8; 32];
     rng.fill_bytes(&mut app_id);
@@ -38,7 +41,8 @@ pub fn prepare_ckd<R: CryptoRngCore + SeedableRng + Send + 'static>(
     let app_pk = ckd::ElementG1::generator() * app_sk;
 
     for (p, keygen_out) in &key_packages {
-        let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
+        let seed = rng.next_u64();
+        let rng_p = MockCryptoRng::seed_from_u64(seed);
         let protocol = ckd::protocol::ckd(
             &participants,
             coordinator,
@@ -51,6 +55,7 @@ pub fn prepare_ckd<R: CryptoRngCore + SeedableRng + Send + 'static>(
         .map(|ckd| Box::new(ckd) as Box<dyn Protocol<Output = ckd::CKDOutputOption>>)
         .expect("Ckd should succeed");
         protocols.push((*p, protocol));
+        seeds.insert(*p, seed);
     }
 
     PreparedCkdPackage {
@@ -59,6 +64,7 @@ pub fn prepare_ckd<R: CryptoRngCore + SeedableRng + Send + 'static>(
         key_packages,
         app_id,
         app_pk,
+        seeds,
     }
 }
 
@@ -71,4 +77,5 @@ pub struct PreparedCkdPackage {
     pub key_packages: Vec<(Participant, ckd::KeygenOutput)>,
     pub app_id: ckd::AppId,
     pub app_pk: ckd::ElementG1,
+    pub seeds: HashMap<Participant, u64>,
 }

@@ -110,6 +110,7 @@ fn run_ckd(
     }
 
     let (results, metrics) = run_simulation(protocols, latency);
+    assert_eq!(results.len(), participants.len());
     assert!(results.iter().any(|(_, out)| out.is_some()));
     metrics
 }
@@ -147,6 +148,7 @@ fn run_ckd_pv(
     }
 
     let (results, metrics) = run_simulation(protocols, latency);
+    assert_eq!(results.len(), participants.len());
     assert!(results.iter().any(|(_, out)| out.is_some()));
     metrics
 }

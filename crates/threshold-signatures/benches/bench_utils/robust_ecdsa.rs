@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use rand::Rng;
 use rand_core::{CryptoRngCore, SeedableRng};
 
@@ -22,9 +24,11 @@ pub fn robust_ecdsa_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'sta
     let participants = generate_participants_with_random_ids(num_participants, rng);
     let key_packages = run_keygen(&participants, *MAX_MALICIOUS + 1, rng);
     let mut protocols: Vec<_> = Vec::with_capacity(participants.len());
+    let mut seeds = HashMap::with_capacity(participants.len());
 
     for (p, keygen_out) in &key_packages {
-        let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
+        let seed = rng.next_u64();
+        let rng_p = MockCryptoRng::seed_from_u64(seed);
         let protocol = robust_ecdsa::presign::presign(
             &participants,
             *p,
@@ -37,11 +41,13 @@ pub fn robust_ecdsa_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'sta
         .map(|presig| Box::new(presig) as Box<dyn Protocol<Output = robust_ecdsa::PresignOutput>>)
         .expect("Presignature should succeed");
         protocols.push((*p, protocol));
+        seeds.insert(*p, seed);
     }
     RobustECDSAPreparedPresig {
         protocols,
         key_packages,
         participants,
+        seeds,
     }
 }
 

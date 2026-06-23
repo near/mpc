@@ -3,14 +3,14 @@
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use frost_secp256k1::VerifyingKey;
-use rand::{Rng, RngCore, seq::SliceRandom as _};
+use rand::{Rng, seq::SliceRandom as _};
 use rand_core::SeedableRng;
 
 mod bench_utils;
 use crate::bench_utils::{
     MAX_MALICIOUS, PreparedOutputs, RECONSTRUCTION_LOWER_BOUND, SAMPLE_SIZE,
     analyze_received_sizes, ot_ecdsa_prepare_presign, ot_ecdsa_prepare_sign,
-    ot_ecdsa_prepare_triples,
+    ot_ecdsa_prepare_triples, participant_rng,
 };
 
 use threshold_signatures::{
@@ -58,7 +58,10 @@ fn bench_triples(c: &mut Criterion) {
         |b| {
             b.iter_batched(
                 || prepare_simulated_triples(&setup),
-                |preps| run_simulated_protocol(preps.participant, preps.protocol, preps.simulator),
+                |preps| {
+                    run_simulated_protocol(preps.participant, preps.protocol, preps.simulator)
+                        .expect("simulated replay should complete")
+                },
                 criterion::BatchSize::SmallInput,
             );
         },
@@ -86,7 +89,10 @@ fn bench_presign(c: &mut Criterion) {
         |b| {
             b.iter_batched(
                 || prepare_simulated_presign(&setup),
-                |preps| run_simulated_protocol(preps.participant, preps.protocol, preps.simulator),
+                |preps| {
+                    run_simulated_protocol(preps.participant, preps.protocol, preps.simulator)
+                        .expect("simulated replay should complete")
+                },
                 criterion::BatchSize::SmallInput,
             );
         },
@@ -117,7 +123,10 @@ fn bench_sign(c: &mut Criterion) {
         |b| {
             b.iter_batched(
                 || prepare_simulated_sign(&setup, *RECONSTRUCTION_LOWER_BOUND),
-                |preps| run_simulated_protocol(preps.participant, preps.protocol, preps.simulator),
+                |preps| {
+                    run_simulated_protocol(preps.participant, preps.protocol, preps.simulator)
+                        .expect("simulated replay should complete")
+                },
                 criterion::BatchSize::SmallInput,
             );
         },
@@ -149,15 +158,8 @@ fn setup_triples_snapshot(participant_num: usize) -> TriplesSetup {
         .choose(&mut rng)
         .expect("participant list is not empty");
 
-    // recreate rng using by real_participant to generate triples
-    let mut rng_copy = MockCryptoRng::seed_from_u64(42);
-    for p in &preps.participants {
-        if *p == real_participant {
-            break;
-        }
-        rng_copy.next_u64();
-    }
-    let real_participant_rng = MockCryptoRng::seed_from_u64(rng_copy.next_u64());
+    // rebuild the exact rng the real participant used during snapshot capture
+    let real_participant_rng = participant_rng(&preps.seeds, real_participant);
 
     let cached_simulator = Simulator::new(real_participant, &protocol_snapshot)
         .expect("Simulator should not be empty");

@@ -7,13 +7,26 @@ inputs:
     description: Whether this job should save the cache after running.
     required: false
     default: "false"
+outputs:
+  cache-key-hash:
+    description: >
+      Hash of the Nix inputs (flake, toolchain, lockfiles) that key the /nix
+      cache. Dependent caches (e.g. the Rust build cache) should fold this into
+      their key so they are invalidated whenever the Nix-provided toolchain
+      changes.
+    value: ${{ steps.compute-key.outputs.hash }}
 runs:
   using: composite
   steps:
+    - name: Compute Nix cache key hash
+      id: compute-key
+      shell: bash
+      run: echo "hash=${{ hashFiles('flake.nix', 'flake.lock', 'nix/**', 'rust-toolchain.toml', 'Cargo.lock') }}" >> "$GITHUB_OUTPUT"
+
     - name: Restore /nix from cache
       uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
       with:
-        primary-key: nix-${{ runner.os }}-ci-${{ hashFiles('flake.nix', 'flake.lock', 'nix/**', 'rust-toolchain.toml', 'Cargo.lock') }}
+        primary-key: nix-${{ runner.os }}-ci-${{ steps.compute-key.outputs.hash }}
         restore-prefixes-first-match: nix-${{ runner.os }}-ci-
         save: ${{ inputs.save }}
         # Target store size of 0 means always run garbage collection.
