@@ -73,7 +73,7 @@ pub async fn must_setup_cluster(
 
     let initial_participant_indices = config.participant_indices();
     let presignatures_to_buffer = config.presignatures_to_buffer;
-    let whitelisted_chains = std::mem::take(&mut config.whitelisted_chains);
+    let whitelisted_chains = config.whitelisted_chains.clone();
     let cluster = MpcCluster::start(config)
         .await
         .expect("failed to start cluster");

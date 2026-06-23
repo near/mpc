@@ -564,9 +564,43 @@ mod tests {
         // Participant ID 99 has no entry in participants_config.
         let configs = foreign_chains_configs_with(tls_key_for(&key), bitcoin_chain_config());
 
-        // when, then:
+        // When, then:
         assert!(!participants_support_chain(
             &[ParticipantId::from_raw(99)],
+            &participants_config,
+            &configs,
+            dtos::ForeignChain::Bitcoin,
+        ));
+    }
+
+    #[test]
+    fn participants_support_chain__should_return_true_when_all_three_support_chain() {
+        // Given: three participants, all registered for Bitcoin.
+        let key1 = make_signing_key(1);
+        let key2 = make_signing_key(2);
+        let key3 = make_signing_key(3);
+        let participants_config = ParticipantsConfig {
+            threshold: 2,
+            participants: vec![
+                make_participant_info(1, &key1),
+                make_participant_info(2, &key2),
+                make_participant_info(3, &key3),
+            ],
+        };
+        let configs: dtos::ForeignChainsConfigs = BTreeMap::from([
+            (tls_key_for(&key1), bitcoin_chain_config()),
+            (tls_key_for(&key2), bitcoin_chain_config()),
+            (tls_key_for(&key3), bitcoin_chain_config()),
+        ])
+        .into();
+
+        // When, then
+        assert!(participants_support_chain(
+            &[
+                ParticipantId::from_raw(1),
+                ParticipantId::from_raw(2),
+                ParticipantId::from_raw(3),
+            ],
             &participants_config,
             &configs,
             dtos::ForeignChain::Bitcoin,
@@ -594,7 +628,7 @@ mod tests {
         ])
         .into();
 
-        // When, then: if one of them don't support it should return false.
+        // When, then: all-or-nothing — one unsupported participant rejects the whole presignature.
         assert!(!participants_support_chain(
             &[
                 ParticipantId::from_raw(1),
