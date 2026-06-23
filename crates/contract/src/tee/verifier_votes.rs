@@ -16,7 +16,6 @@ use crate::{
 };
 use mpc_primitives::hash::TeeVerifierCodeHash;
 use near_sdk::{AccountId, near};
-#[cfg(test)]
 use std::collections::{BTreeMap, BTreeSet};
 
 /// A proposal to point the trusted verifier account at a candidate account.
@@ -101,8 +100,8 @@ impl TeeVerifierVotes {
             .retain_votes(|p| current.is_participant_given_participant_id(&p.get()));
     }
 
-    #[cfg(test)]
-    fn pending_votes(&self) -> BTreeMap<ProposalHash, BTreeSet<AuthenticatedParticipantId>> {
+    /// Pending votes keyed by proposal.
+    pub fn pending(&self) -> BTreeMap<ProposalHash, BTreeSet<AuthenticatedParticipantId>> {
         self.pending.all()
     }
 }
@@ -195,7 +194,7 @@ mod tests {
         // Then no candidate wins yet, and the single vote is recorded
         assert_eq!(result, None);
         assert_eq!(
-            votes.pending_votes(),
+            votes.pending(),
             expected_votes([(proposal, vec![voters[0].clone()])])
         );
     }
@@ -219,7 +218,7 @@ mod tests {
 
         // Then the candidate wins and all pending votes are cleared
         assert_eq!(result, Some(proposal.candidate_account_id));
-        assert_eq!(votes.pending_votes(), BTreeMap::new());
+        assert_eq!(votes.pending(), BTreeMap::new());
     }
 
     #[test]
@@ -245,7 +244,7 @@ mod tests {
         // (account, hash) buckets.
         assert_eq!(result, None);
         assert_eq!(
-            votes.pending_votes(),
+            votes.pending(),
             expected_votes([
                 (proposal_hash_1, vec![voters[0].clone()]),
                 (proposal_hash_2, vec![voters[1].clone()]),
@@ -271,7 +270,7 @@ mod tests {
         // Then only the b.near vote remains (the a.near bucket is gone); a
         // second voter on b.near then crosses.
         assert_eq!(
-            votes.pending_votes(),
+            votes.pending(),
             expected_votes([(second_proposal.clone(), vec![voters[0].clone()])])
         );
         let result = votes
@@ -289,7 +288,7 @@ mod tests {
             .vote(proposal.clone(), voters[0].clone(), &params)
             .unwrap();
         assert_eq!(
-            votes.pending_votes(),
+            votes.pending(),
             expected_votes([(proposal, vec![voters[0].clone()])])
         );
 
@@ -297,11 +296,11 @@ mod tests {
         votes.withdraw(&voters[0]);
 
         // Then their vote is removed
-        assert_eq!(votes.pending_votes(), BTreeMap::new());
+        assert_eq!(votes.pending(), BTreeMap::new());
 
         // When a voter who never voted withdraws, it is a no-op
         votes.withdraw(&voters[1]);
-        assert_eq!(votes.pending_votes(), BTreeMap::new());
+        assert_eq!(votes.pending(), BTreeMap::new());
     }
 
     #[test]
@@ -317,24 +316,24 @@ mod tests {
             .unwrap();
         let both_voters =
             expected_votes([(proposal.clone(), vec![voters[0].clone(), voters[1].clone()])]);
-        assert_eq!(votes.pending_votes(), both_voters);
+        assert_eq!(votes.pending(), both_voters);
 
         // When retaining against the same participant set
         votes.retain(&participants);
         // Then it is a no-op
-        assert_eq!(votes.pending_votes(), both_voters);
+        assert_eq!(votes.pending(), both_voters);
 
         // When retaining against a strict subset that excludes voter 0
         votes.retain(&participants.subset(1..3));
         // Then voter 1 is kept and voter 0 is dropped
         assert_eq!(
-            votes.pending_votes(),
+            votes.pending(),
             expected_votes([(proposal, vec![voters[1].clone()])])
         );
 
         // When retaining against an empty set (no current participants)
         votes.retain(&gen_participants(0));
         // Then all votes are dropped
-        assert_eq!(votes.pending_votes(), BTreeMap::new());
+        assert_eq!(votes.pending(), BTreeMap::new());
     }
 }

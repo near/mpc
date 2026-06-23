@@ -45,6 +45,7 @@ use crate::{
     primitives::{
         ckd::{CKDRequest, app_public_key_check, ckd_output_check},
         domain::AddDomainsVotes,
+        votes::ProposalHash,
     },
     storage_keys::StorageKey,
     tee::tee_state::{TeeQuoteStatus, TeeState},
@@ -2118,6 +2119,13 @@ impl MpcContract {
         self.tee_state.votes.clone()
     }
 
+    /// Returns the pending TEE verifier-change votes, keyed by proposal.
+    pub fn tee_verifier_votes(
+        &self,
+    ) -> BTreeMap<ProposalHash, BTreeSet<AuthenticatedParticipantId>> {
+        self.tee_verifier_votes.pending()
+    }
+
     /// Presence check for a pending signature request, exposed as a view call.
     ///
     /// **The returned `YieldIndex` is an arbitrary representative, not "the" yield
@@ -3901,6 +3909,69 @@ mod tests {
         // candidate becomes the trusted verifier.
         vote_as(&mut contract, &participant_account_ids[1]);
         assert_eq!(contract.tee_verifier_account_id, Some(candidate));
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn remove_non_participant_tee_verifier_votes__should_drop_votes_from_dropped_participants() {
+        // Given a running contract with 3 participants, signing threshold 3, where
+        // two participants have cast votes for distinct candidates (neither crosses
+        // threshold, so both stay pending).
+        let (mut contract, participants, _) = setup_tee_test_contract(3, 3);
+        let voters = participant_account_ids(&contract);
+        let code_hash = TeeVerifierCodeHash::new([7u8; 32]);
+
+        // Vote as `account_id` for `candidate`, returning that voter's authenticated id.
+        let vote_as =
+            |contract: &mut MpcContract, account_id: &AccountId, candidate: &AccountId| {
+                Environment::new(None, Some(account_id.clone()), None);
+                contract
+                    .vote_tee_verifier_change(candidate.clone(), code_hash)
+                    .expect("vote should succeed");
+                AuthenticatedParticipantId::new(&participants).unwrap()
+            };
+
+        // The single-voter pending bucket: proposal(candidate) -> {voter}.
+        let bucket = |candidate: &AccountId, voter: &AuthenticatedParticipantId| {
+            let proposal = VerifierChangeProposal {
+                candidate_account_id: candidate.clone(),
+                expected_code_hash: code_hash,
+            };
+            (
+                ProposalHash::from(proposal),
+                BTreeSet::from([voter.clone()]),
+            )
+        };
+
+        let candidate_a: AccountId = "verifier-a.near".parse().unwrap();
+        let candidate_b: AccountId = "verifier-b.near".parse().unwrap();
+        let auth_a = vote_as(&mut contract, &voters[0], &candidate_a);
+        let auth_b = vote_as(&mut contract, &voters[1], &candidate_b);
+
+        // Then both single-voter buckets are pending.
+        assert_eq!(
+            contract.tee_verifier_votes(),
+            BTreeMap::from([bucket(&candidate_a, &auth_a), bucket(&candidate_b, &auth_b)]),
+        );
+
+        // When resharing drops the first participant and the post-resharing cleanup runs.
+        {
+            let ProtocolContractState::Running(ref mut state) = contract.protocol_state else {
+                panic!("expected Running");
+            };
+            state.parameters =
+                ThresholdParameters::new(participants.subset(1..3), Threshold::new(2)).unwrap();
+        }
+        Environment::new(None, Some(env::current_account_id()), None);
+        contract
+            .remove_non_participant_tee_verifier_votes()
+            .unwrap();
+
+        // Then only the still-participant's vote (candidate B) remains.
+        assert_eq!(
+            contract.tee_verifier_votes(),
+            BTreeMap::from([bucket(&candidate_b, &auth_b)]),
+        );
     }
 
     fn submit_attestation(
