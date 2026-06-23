@@ -52,6 +52,7 @@ pub struct FakeMpcContractState {
     pub pending_ckds: BTreeMap<dtos::CkdAppId, CKDId>,
     pub pending_verify_foreign_txs: BTreeMap<dtos::ForeignChainRpcRequest, VerifyForeignTxId>,
     available_foreign_chains: dtos::AvailableForeignChains,
+    // TODO(#3630): drop this once 3.13 contract is deployed.
     supported_foreign_chains_by_node: dtos::ForeignChainSupportByNode,
     foreign_chains_configs: dtos::ForeignChainsConfigs,
     pub migration_service: NodeMigrations,
@@ -189,16 +190,36 @@ impl FakeMpcContractState {
         let ProtocolContractState::Running(state) = &self.state else {
             return;
         };
-        if let Some((_, _, info)) = state
+        let Some((_, _, info)) = state
             .parameters
             .participants()
             .participants()
             .iter()
             .find(|(id, _, _)| id == &account_id)
-        {
-            self.foreign_chains_configs
-                .insert(info.tls_public_key.clone(), foreign_chains_config);
-        }
+        else {
+            tracing::info!(
+                "register_foreign_chains_config transaction ignored because signer is not a participant"
+            );
+            return;
+        };
+        self.foreign_chains_configs
+            .insert(info.tls_public_key.clone(), foreign_chains_config);
+
+        let foreign_chains_configs = &self.foreign_chains_configs;
+        self.available_foreign_chains = state
+            .parameters
+            .participants()
+            .participants()
+            .iter()
+            .map(|(_, _, p_info)| {
+                foreign_chains_configs
+                    .get(&p_info.tls_public_key)
+                    .map(|c| c.iter().copied().collect::<BTreeSet<_>>())
+                    .unwrap_or_default()
+            })
+            .reduce(|a, b| a.intersection(&b).copied().collect())
+            .unwrap_or_default()
+            .into();
     }
 
     pub fn initialize(&mut self, participants: ParticipantsConfig) {

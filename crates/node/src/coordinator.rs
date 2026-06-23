@@ -434,36 +434,7 @@ where
             return Ok(MpcJobResult::HaltUntilInterrupted);
         };
 
-        // Register locally supported foreign chains with the contract (both APIs).
-        // TODO(#3630): drop RegisterForeignChainConfig once contract is
-        // upgraded containing new API.
-        let foreign_chain_configuration = config_file.foreign_chains.configured_chains();
-        if let Err(err) = chain_txn_sender
-            .send(ChainSendTransactionRequest::RegisterForeignChainConfig(
-                ChainRegisterForeignChainConfigArgs {
-                    foreign_chain_configuration,
-                },
-            ))
-            .await
-        {
-            tracing::warn!(error = ?err, "failed to send register supported foreign chains transaction");
-        }
-        let foreign_chains_config: dtos::ForeignChainsConfig = config_file
-            .foreign_chains
-            .iter_chains()
-            .map(|(chain, _)| chain)
-            .collect::<std::collections::BTreeSet<_>>()
-            .into();
-        if let Err(err) = chain_txn_sender
-            .send(ChainSendTransactionRequest::RegisterForeignChainsConfig(
-                ChainRegisterForeignChainsConfigArgs {
-                    foreign_chains_config,
-                },
-            ))
-            .await
-        {
-            tracing::warn!(error = ?err, "failed to send register foreign chains config transaction");
-        }
+        register_foreign_chains(&chain_txn_sender, &config_file.foreign_chains).await;
 
         tracing::info!("Creating tls mesh");
         let (sender, receiver) = new_tls_mesh_network(&mpc_config, p2p_key).await?;
@@ -971,6 +942,41 @@ fn stop_initializing(
             tracing::info!("Protocol State changed.");
             true
         }
+    }
+}
+
+/// Sends both the deprecated and the new foreign-chain registration transactions
+/// so nodes remain compatible with pre- and post-3.13 contracts during the upgrade window.
+/// TODO(#3630): drop RegisterForeignChainConfig once all contracts are upgraded.
+async fn register_foreign_chains(
+    chain_txn_sender: &impl tx_sender::TransactionSender,
+    foreign_chains: &mpc_node_config::ForeignChainsConfig,
+) {
+    let foreign_chain_configuration = foreign_chains.configured_chains();
+    if let Err(err) = chain_txn_sender
+        .send(ChainSendTransactionRequest::RegisterForeignChainConfig(
+            ChainRegisterForeignChainConfigArgs {
+                foreign_chain_configuration,
+            },
+        ))
+        .await
+    {
+        tracing::warn!(error = ?err, "failed to send register supported foreign chains transaction");
+    }
+    let foreign_chains_config: dtos::ForeignChainsConfig = foreign_chains
+        .iter_chains()
+        .map(|(chain, _)| chain)
+        .collect::<std::collections::BTreeSet<_>>()
+        .into();
+    if let Err(err) = chain_txn_sender
+        .send(ChainSendTransactionRequest::RegisterForeignChainsConfig(
+            ChainRegisterForeignChainsConfigArgs {
+                foreign_chains_config,
+            },
+        ))
+        .await
+    {
+        tracing::warn!(error = ?err, "failed to send register foreign chains config transaction");
     }
 }
 

@@ -73,13 +73,15 @@ where
         let max_attempts = domain_data.presignature_store.num_owned().max(1);
         let mut incompatible = 0usize;
 
+        // Each rejected presignature costs 2 DB writes (delete via
+        // take_owned + put via add_owned). If needed we can optimize that later.
         let (presignature_id, presignature) = loop {
             let (id, ps) = domain_data.presignature_store.take_owned().await;
             if participants_support_chain(
                 &ps.participants,
                 self.ecdsa_signature_provider.participants_config(),
                 &foreign_chains_configs,
-                &requested_chain,
+                requested_chain,
             ) {
                 break (id, ps);
             }
@@ -413,7 +415,7 @@ fn participants_support_chain(
     participants: &[ParticipantId],
     participants_config: &ParticipantsConfig,
     foreign_chains_configs: &contract_dtos::ForeignChainsConfigs,
-    chain: &contract_dtos::ForeignChain,
+    chain: contract_dtos::ForeignChain,
 ) -> bool {
     participants.iter().all(|participant_id| {
         let Some(info) = participants_config.get_info(*participant_id) else {
@@ -422,7 +424,7 @@ fn participants_support_chain(
         let tls_key = Ed25519PublicKey::from(&info.p2p_public_key);
         foreign_chains_configs
             .get(&tls_key)
-            .is_some_and(|config| config.contains(chain))
+            .is_some_and(|config| config.contains(&chain))
     })
 }
 
@@ -507,7 +509,7 @@ mod tests {
             &[ParticipantId::from_raw(1)],
             &participants_config,
             &configs,
-            &dtos::ForeignChain::Bitcoin,
+            dtos::ForeignChain::Bitcoin,
         ));
     }
 
@@ -527,7 +529,7 @@ mod tests {
             &[ParticipantId::from_raw(1)],
             &participants_config,
             &configs,
-            &dtos::ForeignChain::Bitcoin,
+            dtos::ForeignChain::Bitcoin,
         ));
     }
 
@@ -547,7 +549,7 @@ mod tests {
             &[ParticipantId::from_raw(1)],
             &participants_config,
             &configs,
-            &dtos::ForeignChain::Ethereum,
+            dtos::ForeignChain::Ethereum,
         ));
     }
 
@@ -567,7 +569,41 @@ mod tests {
             &[ParticipantId::from_raw(99)],
             &participants_config,
             &configs,
-            &dtos::ForeignChain::Bitcoin,
+            dtos::ForeignChain::Bitcoin,
+        ));
+    }
+
+    #[test]
+    fn participants_support_chain__should_return_false_when_one_of_three_does_not_support_chain() {
+        // Given: three participants; key1 and key2 support Bitcoin, key3 does not.
+        let key1 = make_signing_key(1);
+        let key2 = make_signing_key(2);
+        let key3 = make_signing_key(3);
+        let participants_config = ParticipantsConfig {
+            threshold: 2,
+            participants: vec![
+                make_participant_info(1, &key1),
+                make_participant_info(2, &key2),
+                make_participant_info(3, &key3),
+            ],
+        };
+        let configs: dtos::ForeignChainsConfigs = BTreeMap::from([
+            (tls_key_for(&key1), bitcoin_chain_config()),
+            (tls_key_for(&key2), bitcoin_chain_config()),
+            // key3 not registered
+        ])
+        .into();
+
+        // When, then: if one of them don't support it should return false.
+        assert!(!participants_support_chain(
+            &[
+                ParticipantId::from_raw(1),
+                ParticipantId::from_raw(2),
+                ParticipantId::from_raw(3),
+            ],
+            &participants_config,
+            &configs,
+            dtos::ForeignChain::Bitcoin,
         ));
     }
 
