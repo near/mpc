@@ -109,21 +109,21 @@ impl SignatureProvider for CKDProvider {
     }
 
     async fn run_key_generation_client(
-        threshold: ReconstructionThreshold,
+        reconstruction_threshold: ReconstructionThreshold,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
-        Self::run_key_generation_client_internal(threshold, channel).await
+        Self::run_key_generation_client_internal(reconstruction_threshold, channel).await
     }
 
     async fn run_key_resharing_client(
-        new_threshold: ReconstructionThreshold,
+        new_reconstruction_threshold: ReconstructionThreshold,
         key_share: Option<SigningShare>,
         public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
         Self::run_key_resharing_client_internal(
-            new_threshold,
+            new_reconstruction_threshold,
             key_share,
             public_key,
             old_participants,

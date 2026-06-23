@@ -154,30 +154,34 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
     }
 
     async fn run_key_generation_client(
-        threshold: ReconstructionThreshold,
+        reconstruction_threshold: ReconstructionThreshold,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
         // robust-ECDSA shares the secret on a degree `MaxMalicious = t - 1`
         // polynomial, i.e. reconstruction lower bound `= MaxMalicious + 1 = t`.
-        // `threshold` is already that lower bound (= the domain's `t`), so the
-        // keygen is identical to cait-sith — pass it straight through.
-        EcdsaSignatureProvider::run_key_generation_client_internal(threshold, channel).await
+        // `reconstruction_threshold` is already that lower bound (= the domain's
+        // `t`), so the keygen is identical to cait-sith — pass it straight through.
+        EcdsaSignatureProvider::run_key_generation_client_internal(
+            reconstruction_threshold,
+            channel,
+        )
+        .await
     }
 
     async fn run_key_resharing_client(
-        new_threshold: ReconstructionThreshold,
+        new_reconstruction_threshold: ReconstructionThreshold,
         my_share: Option<SigningShare>,
         public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
-        // Both `new_threshold` and `old_participants.threshold` are already the
-        // per-domain reconstruction thresholds `t` (the caller patches the old
-        // one per-key in `resharing_computation_inner`). For robust-ECDSA the
-        // reconstruction lower bound equals `t`, so resharing is identical to
+        // Both `new_reconstruction_threshold` and `old_participants.threshold` are
+        // already the per-domain reconstruction thresholds `t` (the caller patches
+        // the old one per-key in `resharing_computation_inner`). For robust-ECDSA
+        // the reconstruction lower bound equals `t`, so resharing is identical to
         // cait-sith — delegate straight to the shared internal.
         EcdsaSignatureProvider::run_key_resharing_client_internal(
-            new_threshold,
+            new_reconstruction_threshold,
             my_share,
             public_key,
             old_participants,
