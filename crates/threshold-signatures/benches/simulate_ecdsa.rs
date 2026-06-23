@@ -295,6 +295,7 @@ fn ot_run_sign(
     }
 
     let (results, metrics) = run_simulation(protocols, latency);
+    assert_eq!(results.len(), participants.len());
     assert!(results.iter().any(|(_, sig)| sig.is_some()));
     metrics
 }
@@ -377,6 +378,7 @@ fn robust_run_sign(
     }
 
     let (results, metrics) = run_simulation(protocols, latency);
+    assert_eq!(results.len(), participants.len());
     assert!(results.iter().any(|(_, sig)| sig.is_some()));
     metrics
 }

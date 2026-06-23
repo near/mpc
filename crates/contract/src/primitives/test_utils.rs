@@ -5,7 +5,7 @@ use crate::{
         participants::{ParticipantInfo, Participants},
         thresholds::{
             ProposedThresholdParameters, Threshold, ThresholdParameters,
-            governance_threshold_lower_bound, governance_threshold_upper_bound,
+            governance_threshold_lower_relative_bound, governance_threshold_upper_relative_bound,
         },
     },
 };
@@ -158,8 +158,8 @@ pub fn gen_threshold_params(max_n: usize) -> ThresholdParameters {
     // `n >= 3` even at the minimum `t = 2`.
     let mut rng = StdRng::seed_from_u64(42);
     let n: usize = rng.gen_range(3..max_n + 1);
-    let k_min = governance_threshold_lower_bound(n as u64) as usize;
-    let k_max = governance_threshold_upper_bound(n as u64) as usize;
+    let k_min = governance_threshold_lower_relative_bound(n as u64) as usize;
+    let k_max = governance_threshold_upper_relative_bound(n as u64) as usize;
     let k = rng.gen_range(k_min..k_max + 1);
     ThresholdParameters::new(gen_participants(n), Threshold::new(k as u64)).unwrap()
 }

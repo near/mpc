@@ -10,10 +10,10 @@ use std::collections::BTreeSet;
 use crate::primitives::{
     key_state::{EpochId, KeyForDomain, Keyset},
     participants::{ParticipantId, Participants},
-    test_utils::{gen_participant, gen_threshold_params},
+    test_utils::{gen_participant, gen_participants, gen_threshold_params},
     thresholds::{
         ProposedThresholdParameters, Threshold, ThresholdParameters,
-        governance_threshold_lower_bound,
+        governance_threshold_lower_relative_bound,
     },
 };
 use rand::Rng;
@@ -61,7 +61,7 @@ pub fn gen_valid_params_proposal(params: &ThresholdParameters) -> ProposedThresh
         next_id = next_id.next();
     }
 
-    let threshold = governance_threshold_lower_bound(new_participants.len() as u64);
+    let threshold = governance_threshold_lower_relative_bound(new_participants.len() as u64);
     let parameters = ThresholdParameters::new(new_participants, Threshold::new(threshold)).unwrap();
     // Empty per-domain threshold updates (no change); see the doc comment.
     ProposedThresholdParameters::new(parameters, BTreeMap::new())
@@ -87,8 +87,31 @@ pub fn gen_resharing_state(num_domains: usize) -> (Environment, ResharingContrac
         resharing_state.expect("Should've transitioned into resharing"),
     )
 }
-/// Generates a Running state that contains this many domains.
+/// Generates a Running state that contains this many domains, with randomly
+/// generated threshold parameters.
 pub fn gen_running_state(num_domains: usize) -> RunningContractState {
+    let max_n = 30;
+    let parameters = gen_threshold_params(max_n);
+    gen_running_state_with_params(
+        num_domains,
+        parameters.participants().len(),
+        parameters.threshold().value(),
+    )
+}
+
+/// Like [`gen_running_state`], but pins the participant count and
+/// GovernanceThreshold instead of randomizing them.
+pub fn gen_running_state_with_params(
+    num_domains: usize,
+    num_participants: usize,
+    governance_threshold: u64,
+) -> RunningContractState {
+    let threshold_parameters = ThresholdParameters::new(
+        gen_participants(num_participants),
+        Threshold::new(governance_threshold),
+    )
+    .expect("valid threshold parameters");
+
     let epoch_id = EpochId::new(rand::thread_rng().r#gen());
     let domains = gen_domain_registry(num_domains);
 
@@ -106,8 +129,6 @@ pub fn gen_running_state(num_domains: usize) -> RunningContractState {
             key: bogus_ed25519_public_key_extended(),
         });
     }
-    let max_n = 30;
-    let threshold_parameters = gen_threshold_params(max_n);
     RunningContractState::new(
         domains,
         Keyset::new(epoch_id, keys),

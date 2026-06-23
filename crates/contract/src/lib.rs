@@ -1674,7 +1674,7 @@ impl MpcContract {
                 let max_reconstruction_threshold =
                     max_reconstruction_threshold(running_state.domains.domains());
                 if let Err(err) = ThresholdParameters::validate_governance_against_reconstruction(
-                    remaining as u64,
+                    u64::try_from(remaining).expect("participant count fits in u64"),
                     current_params.threshold(),
                     max_reconstruction_threshold,
                 ) {
@@ -1695,7 +1695,8 @@ impl MpcContract {
                 //let n_participants_new = new_participants.len();
                 //let new_threshold = (3 * n_participants_new + 4) / 5; // minimum 60%
                 //let new_threshold = new_threshold.max(2); // but also minimum 2
-                let new_threshold = current_params.threshold().value() as usize;
+                let new_threshold = usize::try_from(current_params.threshold().value())
+                    .expect("threshold value fits in usize");
 
                 let threshold_parameters = ThresholdParameters::new(
                     participants_with_valid_attestation,
@@ -2591,7 +2592,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::errors::{InvalidThreshold, NodeMigrationError};
+    use crate::errors::{InvalidCandidateSet, InvalidThreshold, NodeMigrationError};
     use crate::pending_requests::MAX_PENDING_REQUEST_FAN_OUT;
     use crate::primitives::participants::{ParticipantId, ParticipantInfo, Participants};
     use crate::primitives::test_utils::{
@@ -4031,10 +4032,32 @@ mod tests {
     }
 
     #[test]
+    fn vote_new_parameters__should_reject_when_shrinking_below_governance_threshold() {
+        // Given: a Running contract with 4 participants and a GovernanceThreshold of 3.
+        // ...and a proposal that shrinks the participant set to 2 without touching
+        // the per-domain thresholds.
+        let proposal = ProposedThresholdParameters::new(
+            ThresholdParameters::new(participants.subset(0..2), Threshold::new(2)).unwrap(),
+            BTreeMap::new(),
+        );
+
+        // When
+        let result = vote_params(&mut contract, &signer, &proposal);
+
+        // Then: the candidate-set guard rejects the proposal first, because only 2
+        // old participants remain — fewer than the GovernanceThreshold of 3. (Under
+        // the GovernanceThreshold >= max(ReconstructionThreshold) invariant this guard
+        // always fires before any per-domain ReconstructionThreshold check could.)
+        assert_matches!(
+            result.unwrap_err(),
+            Error::InvalidCandidateSet(InvalidCandidateSet::InsufficientOldParticipants)
+        );
+    }
+
+    #[test]
     fn vote_new_parameters__should_reject_when_signing_threshold_exceeds_participants() {
         // Given: a Running contract with 3 participants and one domain.
         let (mut contract, participants, signer, _domain_id) =
-            setup_running_contract_with_domain(3, 2, 2);
         // ...and a proposal whose signing threshold (4) exceeds the participant set.
         let proposal = ProposedThresholdParameters::new(
             ThresholdParameters::new_unvalidated(participants, Threshold::new(4)),
@@ -5568,7 +5591,13 @@ mod tests {
         // to 4 participants would leave the GovernanceThreshold above the participant
         // count, breaking the threshold relation.
         let participants = gen_participants(PARTICIPANT_COUNT);
-        let parameters = ThresholdParameters::new(participants.clone(), Threshold::new(5)).unwrap();
+        let parameters = ThresholdParameters::new(
+            participants.clone(),
+            Threshold::new(
+                u64::try_from(PARTICIPANT_COUNT).expect("participant count fits in u64"),
+            ),
+        )
+        .unwrap();
         let domain_id = DomainId::default();
         let domains = vec![DomainConfig {
             id: domain_id,

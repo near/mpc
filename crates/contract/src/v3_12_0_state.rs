@@ -79,8 +79,6 @@ impl From<MpcContract> for crate::MpcContract {
     }
 }
 
-/// TODO(#3598): remove together with this module once the 3.12.0 -> current
-/// migration is retired.
 fn validate_threshold_relation_on_migration(running: &RunningContractState) {
     let num_participants = running.parameters.participants().len() as u64;
     let max_reconstruction_threshold = max_reconstruction_threshold(running.domains.domains());
