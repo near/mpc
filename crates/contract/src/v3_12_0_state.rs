@@ -9,7 +9,10 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_contract_interface::types::{Metrics, VerifyForeignTransactionRequest};
-use near_sdk::store::{Lazy, LookupMap};
+use near_sdk::{
+    env,
+    store::{Lazy, LookupMap},
+};
 
 use crate::{
     SupportedForeignChainsByNode,
@@ -18,9 +21,11 @@ use crate::{
     node_migrations::NodeMigrations,
     primitives::{
         ckd::CKDRequest,
+        domain::max_reconstruction_threshold,
         signature::{SignatureRequest, YieldIndex},
+        thresholds::ThresholdParameters,
     },
-    state::ProtocolContractState,
+    state::{ProtocolContractState, running::RunningContractState},
     storage_keys::StorageKey,
     tee::{tee_state::TeeState, verifier_votes::TeeVerifierVotes},
     update::ProposedUpdates,
@@ -95,6 +100,10 @@ pub struct MpcContract {
 
 impl From<MpcContract> for crate::MpcContract {
     fn from(old: MpcContract) -> Self {
+        if let ProtocolContractState::Running(running) = &old.protocol_state {
+            validate_threshold_relation_on_migration(running);
+        }
+
         crate::MpcContract {
             protocol_state: old.protocol_state,
             pending_signature_requests: old.pending_signature_requests,
@@ -117,5 +126,22 @@ impl From<MpcContract> for crate::MpcContract {
             tee_verifier_account_id: None,
             tee_verifier_votes: TeeVerifierVotes::default(),
         }
+    }
+}
+
+fn validate_threshold_relation_on_migration(running: &RunningContractState) {
+    let num_participants = running.parameters.participants().len() as u64;
+    let max_reconstruction_threshold = max_reconstruction_threshold(running.domains.domains());
+    if let Err(err) = ThresholdParameters::validate_governance_against_reconstruction(
+        num_participants,
+        running.parameters.threshold(),
+        max_reconstruction_threshold,
+    ) {
+        env::panic_str(&format!(
+            "Migration aborted: existing state violates the GovernanceThreshold/ReconstructionThreshold relation ({err:?}). num_participants={}, governance_threshold={}, max_reconstruction_threshold={:?}. Correct it via vote_new_parameters before upgrading.",
+            num_participants,
+            running.parameters.threshold().value(),
+            max_reconstruction_threshold.map(|t| t.inner()),
+        ));
     }
 }

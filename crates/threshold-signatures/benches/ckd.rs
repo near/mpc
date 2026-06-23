@@ -5,7 +5,8 @@ use rand_core::SeedableRng;
 
 mod bench_utils;
 use crate::bench_utils::{
-    MAX_MALICIOUS, PreparedOutputs, SAMPLE_SIZE, analyze_received_sizes, prepare_ckd,
+    MAX_MALICIOUS, PreparedOutputs, SAMPLE_SIZE, analyze_received_sizes, participant_rng,
+    prepare_ckd,
 };
 use threshold_signatures::{
     ReconstructionThreshold,
@@ -40,7 +41,10 @@ fn bench_ckd(c: &mut Criterion) {
         |b| {
             b.iter_batched(
                 || prepare_simulated_ckd(&setup),
-                |preps| run_simulated_protocol(preps.participant, preps.protocol, preps.simulator),
+                |preps| {
+                    run_simulated_protocol(preps.participant, preps.protocol, preps.simulator)
+                        .expect("simulated replay should complete")
+                },
                 criterion::BatchSize::SmallInput,
             );
         },
@@ -77,6 +81,9 @@ fn setup_ckd_snapshot(threshold: ReconstructionThreshold) -> CkdSetup {
     // choose the real_participant being the coordinator
     let (real_participant, keygen_out) = preps.key_packages[preps.index].clone();
 
+    // rebuild the exact rng the real participant used during snapshot capture
+    let rng_for_protocol = participant_rng(&preps.seeds, real_participant);
+
     let cached_simulator = Simulator::new(real_participant, &protocol_snapshot)
         .expect("Simulator should not be empty");
 
@@ -86,7 +93,7 @@ fn setup_ckd_snapshot(threshold: ReconstructionThreshold) -> CkdSetup {
         keygen_out,
         app_id: preps.app_id,
         app_pk: preps.app_pk,
-        rng_for_protocol: rng,
+        rng_for_protocol,
         cached_simulator,
     }
 }
