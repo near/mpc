@@ -4034,6 +4034,8 @@ mod tests {
     #[test]
     fn vote_new_parameters__should_reject_when_shrinking_below_governance_threshold() {
         // Given: a Running contract with 4 participants and a GovernanceThreshold of 3.
+        let (mut contract, participants, signer, _domain_id) =
+            setup_running_contract_with_domain(4, 3, 3);
         // ...and a proposal that shrinks the participant set to 2 without touching
         // the per-domain thresholds.
         let proposal = ProposedThresholdParameters::new(
@@ -4058,6 +4060,7 @@ mod tests {
     fn vote_new_parameters__should_reject_when_signing_threshold_exceeds_participants() {
         // Given: a Running contract with 3 participants and one domain.
         let (mut contract, participants, signer, _domain_id) =
+            setup_running_contract_with_domain(3, 2, 2);
         // ...and a proposal whose signing threshold (4) exceeds the participant set.
         let proposal = ProposedThresholdParameters::new(
             ThresholdParameters::new_unvalidated(participants, Threshold::new(4)),
