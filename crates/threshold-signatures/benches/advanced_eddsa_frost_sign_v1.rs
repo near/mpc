@@ -6,7 +6,7 @@ use rand_core::SeedableRng;
 mod bench_utils;
 use crate::bench_utils::{
     MAX_MALICIOUS, PreparedOutputs, RECONSTRUCTION_LOWER_BOUND, SAMPLE_SIZE,
-    analyze_received_sizes, ed25519_prepare_sign_v1,
+    analyze_received_sizes, ed25519_prepare_sign_v1, participant_rng,
 };
 use threshold_signatures::{
     ReconstructionThreshold,
@@ -35,7 +35,10 @@ fn bench_sign(c: &mut Criterion) {
         |b| {
             b.iter_batched(
                 || prepare_simulated_sign(&setup, *RECONSTRUCTION_LOWER_BOUND),
-                |preps| run_simulated_protocol(preps.participant, preps.protocol, preps.simulator),
+                |preps| {
+                    run_simulated_protocol(preps.participant, preps.protocol, preps.simulator)
+                        .expect("simulated replay should complete")
+                },
                 criterion::BatchSize::SmallInput,
             );
         },
@@ -71,6 +74,9 @@ fn setup_sign_snapshot(threshold: ReconstructionThreshold) -> SignSetup {
     // choose the real_participant being the coordinator
     let (real_participant, keygen_out) = preps.key_packages[preps.index].clone();
 
+    // rebuild the exact rng the real participant used during snapshot capture
+    let rng_for_protocol = participant_rng(&preps.seeds, real_participant);
+
     let cached_simulator = Simulator::new(real_participant, &protocol_snapshot)
         .expect("Simulator should not be empty");
 
@@ -79,7 +85,7 @@ fn setup_sign_snapshot(threshold: ReconstructionThreshold) -> SignSetup {
         real_participant,
         keygen_out,
         message: preps.message,
-        rng_for_protocol: rng,
+        rng_for_protocol,
         cached_simulator,
     }
 }
