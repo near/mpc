@@ -16,6 +16,7 @@ use crate::types::LogTransaction;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_node_config::IndexerConfig;
 use near_account_id::AccountId;
+use near_async::ActorSystem;
 use near_indexer::Indexer;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use std::path::PathBuf;
@@ -99,9 +100,13 @@ pub fn spawn_real_indexer(
                 .load_near_config()
                 .expect("near config is present");
 
-            let near_node = Indexer::start_near_node(&near_indexer_config, near_config.clone())
-                .await
-                .expect("near node has started");
+            let near_node = Indexer::start_near_node(
+                &near_indexer_config,
+                near_config.clone(),
+                ActorSystem::new(),
+            )
+            .await
+            .expect("near node has started");
 
             let indexer = Indexer::from_near_node(near_indexer_config, near_config, &near_node);
 
