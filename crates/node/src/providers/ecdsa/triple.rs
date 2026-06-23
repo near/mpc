@@ -61,6 +61,27 @@ impl Deref for TripleStorage {
 pub const SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE: usize = 64;
 
 impl EcdsaSignatureProvider {
+    /// Reports the triple-buffer gauges summed across every per-`t` store.
+    /// Each generator owns a distinct store keyed by its threshold, so a single
+    /// reporter prevents these unlabeled gauges from being clobbered by
+    /// whichever generator ticked last.
+    pub(super) async fn run_triple_metrics_reporting(triple_stores: Vec<Arc<TripleStorage>>) -> ! {
+        loop {
+            let mut online: i64 = 0;
+            let mut offline: i64 = 0;
+            let mut available: i64 = 0;
+            for store in &triple_stores {
+                online += store.num_owned_ready() as i64;
+                offline += store.num_owned_offline() as i64;
+                available += store.num_owned() as i64;
+            }
+            metrics::MPC_OWNED_NUM_TRIPLES_ONLINE.set(online);
+            metrics::MPC_OWNED_NUM_TRIPLES_WITH_OFFLINE_PARTICIPANT.set(offline);
+            metrics::MPC_OWNED_NUM_TRIPLES_AVAILABLE.set(available);
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+    }
+
     /// Continuously runs triple generation in the background, using the number of threads
     /// specified in the config, trying to maintain some number of available triples all the
     /// time as specified in the config. Generated triples will be written to `triple_store`
@@ -87,16 +108,7 @@ impl EcdsaSignatureProvider {
             .collect();
 
         loop {
-            // TODO(#3164): once per-`t` background generation lands and runs
-            // alongside this loop for other thresholds, these gauges will be
-            // overwritten by whichever generator ticks last. Either lift the
-            // updates into a single task that sums across `triple_stores`, or
-            // add a `t` label so each store reports independently.
-            metrics::MPC_OWNED_NUM_TRIPLES_ONLINE.set(triple_store.num_owned_ready() as i64);
-            metrics::MPC_OWNED_NUM_TRIPLES_WITH_OFFLINE_PARTICIPANT
-                .set(triple_store.num_owned_offline() as i64);
             let my_triples_count = triple_store.num_owned();
-            metrics::MPC_OWNED_NUM_TRIPLES_AVAILABLE.set(my_triples_count as i64);
             let should_generate = my_triples_count + in_flight_generations.num_in_flight()
                 < config.desired_triples_to_buffer;
 
