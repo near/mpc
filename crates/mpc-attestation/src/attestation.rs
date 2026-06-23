@@ -21,10 +21,9 @@ use sha2::{Digest as _, Sha256};
 use crate::alloc::format;
 use crate::alloc::string::{String, ToString};
 
-/// Bounds how long a wrongly-accepted attestation (e.g. one let through by a
-/// since-rotated verifier) stays trusted before it ages out via
-/// [`VerifiedAttestation::re_verify`]. Well above the node's hourly resubmit
-/// cadence, so nodes refresh in time.
+/// How long an accepted attestation stays trusted before it must be
+/// re-verified via [`VerifiedAttestation::re_verify`]. Nodes resubmit hourly,
+/// well within this window, so valid attestations refresh in time.
 // TODO(#1639): extract timestamp from certificate itself
 pub const DEFAULT_EXPIRATION_DURATION_SECONDS: u64 = 60 * 60 * 24; // 1 day
 
