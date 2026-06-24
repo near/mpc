@@ -500,7 +500,6 @@ pub struct TaskChannelComputationData {
     pub data: Vec<Vec<u8>>,
 }
 
-/// A peer outside the channel's participant set sent us a message.
 #[derive(Debug, thiserror::Error)]
 #[error("received {kind} from participant {from}, who is not in the channel participant set")]
 pub struct ParticipantNotInChannelError {
@@ -717,9 +716,19 @@ impl NetworkTaskChannel {
         let message = self.receive_raw().await?;
         // An out-of-set `from` would propagate into per-participant state keyed on the set.
         if !self.sender.participants.contains(&message.from) {
+            let kind = message.message.kind.variant_name();
+            tracing::warn!(
+                target: "network",
+                "[{}] [Task {:?}] Rejecting {} from participant {} (channel {:?}): not in participant set",
+                self.sender.my_participant_id,
+                self.sender.task_id,
+                kind,
+                message.from,
+                message.message.channel_id,
+            );
             return Err(ParticipantNotInChannelError {
                 from: message.from,
-                kind: message.message.kind.variant_name(),
+                kind,
             }
             .into());
         }

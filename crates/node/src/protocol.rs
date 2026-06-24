@@ -349,7 +349,10 @@ mod tests {
 
             // Then
             let err = result.expect_err("out-of-set Computation must be rejected");
-            assert!(err.downcast_ref::<ParticipantNotInChannelError>().is_some());
+            assert!(
+                err.downcast_ref::<ParticipantNotInChannelError>().is_some(),
+                "expected ParticipantNotInChannelError, got: {err:#}"
+            );
         })
         .await;
     }
