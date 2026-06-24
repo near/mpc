@@ -75,6 +75,7 @@ __abi-generate = ["abi", "near-sdk/__abi-generate"]
 
 [dependencies]
 assert_matches = { workspace = true }
+attestation = { workspace = true }
 blstrs = { workspace = true }
 borsh = { workspace = true }
 curve25519-dalek = { workspace = true }
@@ -88,7 +89,6 @@ k256 = { workspace = true, features = [
     "arithmetic",
     "expose-field",
 ] }
-attestation = { workspace = true }
 mpc-attestation = { workspace = true }
 mpc-primitives = { workspace = true }
 near-account-id = { workspace = true, features = ["serde"] }
@@ -100,11 +100,11 @@ near-mpc-contract-interface = { workspace = true, features = [
 ] }
 near-mpc-signature-verifier = { workspace = true }
 near-sdk = { workspace = true }
-tee-verifier-interface = { workspace = true }
 rand = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
+tee-verifier-interface = { workspace = true }
 thiserror = { workspace = true }
 threshold-signatures = { workspace = true, optional = true }
 
