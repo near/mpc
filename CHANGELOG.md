@@ -40,6 +40,8 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#3632](https://github.com/near/mpc/pull/3632)(@gilcu3): *(ci)* Make rust cache key depend on nix cache key (#3632)
 
+- [#3647](https://github.com/near/mpc/pull/3647)(@gilcu3): Indexer getting stuck when syncing from genesis (#3647)
+
 
 ### 💼 Other
 
@@ -109,7 +111,6 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#3645](https://github.com/near/mpc/pull/3645)(@dependabot[bot]): Bump the rust-minor-and-patch group with 5 updates (#3645)
 
 - [#3620](https://github.com/near/mpc/pull/3620)(@gilcu3): Bump nearcore to 2.13.0 rc1 (#3620)
-
 
 
 ## [3.12.0] - 2026-06-15
