@@ -1,0 +1,411 @@
+use std::collections::{BTreeMap, BTreeSet};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use anyhow::{Context, Result, bail};
+use futures::future::join_all;
+use mpc_attestation::attestation::DEFAULT_EXPIRATION_DURATION_SECONDS;
+use near_mpc_contract_interface::method_names::{GET_ATTESTATION, STATE};
+use near_mpc_contract_interface::types::{
+    AccountId, Ed25519PublicKey, EpochId, MockAttestation, ParticipantId, ProtocolContractState,
+    ThresholdParameters, VerifiedAttestation,
+};
+use serde::Serialize;
+
+use crate::client::Client;
+
+/// Mirrors `mpc_node::run::ATTESTATION_RESUBMISSION_INTERVAL`
+/// (`crates/node/src/run.rs:51`). Re-declared rather than imported to avoid
+/// pulling the entire `mpc-node` dependency tree (rocksdb, indexer, ...).
+pub const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_secs(60 * 60);
+
+/// One row per participant occurrence in some epoch's participant set.
+///
+/// In `Running` every participant yields one row. In `Resharing` a participant
+/// in both the old and the new set yields two rows (one per epoch); a
+/// participant in only one set yields a single row.
+#[derive(Debug, Clone, Serialize)]
+pub struct ParticipantRow {
+    pub epoch_id: EpochId,
+    pub account_id: AccountId,
+    pub participant_id: ParticipantId,
+    pub tls_public_key: Ed25519PublicKey,
+    pub url: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct Snapshot {
+    pub fetched_at_unix_seconds: u64,
+    pub state: ProtocolContractState,
+    pub attestations: BTreeMap<Ed25519PublicKey, AttestationResult>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+#[expect(clippy::large_enum_variant)]
+pub enum AttestationResult {
+    Ok(Option<VerifiedAttestation>),
+    Err(String),
+}
+
+pub async fn collect(client: &Client) -> Result<Snapshot> {
+    let state_bytes = client
+        .view_call(STATE, Vec::new())
+        .await
+        .context("fetching `state()`")?;
+    let state: ProtocolContractState =
+        serde_json::from_slice(&state_bytes).context("deserializing ProtocolContractState")?;
+
+    let rows = participants_with_epochs(&state);
+    if rows.is_empty() {
+        bail!(
+            "contract is in `{}` state; no participant TLS keys to query",
+            describe_state_variant(&state)
+        );
+    }
+
+    let unique_keys: BTreeSet<Ed25519PublicKey> =
+        rows.iter().map(|r| r.tls_public_key.clone()).collect();
+
+    let fetches = unique_keys.into_iter().map(|tls_public_key| async move {
+        let result = fetch_attestation(client, &tls_public_key).await;
+        let result = match result {
+            Ok(opt) => AttestationResult::Ok(opt),
+            Err(e) => AttestationResult::Err(format!("{e:#}")),
+        };
+        (tls_public_key, result)
+    });
+    let attestations: BTreeMap<_, _> = join_all(fetches).await.into_iter().collect();
+
+    Ok(Snapshot {
+        fetched_at_unix_seconds: now_unix_seconds(),
+        state,
+        attestations,
+    })
+}
+
+async fn fetch_attestation(
+    client: &Client,
+    tls_public_key: &Ed25519PublicKey,
+) -> Result<Option<VerifiedAttestation>> {
+    let args = serde_json::to_vec(&serde_json::json!({
+        "tls_public_key": tls_public_key,
+    }))?;
+    let bytes = client.view_call(GET_ATTESTATION, args).await?;
+    serde_json::from_slice(&bytes).context("deserializing get_attestation response")
+}
+
+/// Enumerate participants tagged with the epoch they belong to.
+pub fn participants_with_epochs(state: &ProtocolContractState) -> Vec<ParticipantRow> {
+    let mut out = Vec::new();
+    match state {
+        ProtocolContractState::NotInitialized | ProtocolContractState::Initializing(_) => {}
+        ProtocolContractState::Running(running) => {
+            push_participants(&mut out, running.keyset.epoch_id, &running.parameters);
+        }
+        ProtocolContractState::Resharing(resharing) => {
+            push_participants(
+                &mut out,
+                resharing.previous_running_state.keyset.epoch_id,
+                &resharing.previous_running_state.parameters,
+            );
+            push_participants(
+                &mut out,
+                resharing.resharing_key.epoch_id,
+                &resharing.resharing_key.parameters,
+            );
+        }
+    }
+    out
+}
+
+fn push_participants(
+    out: &mut Vec<ParticipantRow>,
+    epoch_id: EpochId,
+    params: &ThresholdParameters,
+) {
+    for (account_id, participant_id, info) in &params.participants.participants {
+        out.push(ParticipantRow {
+            epoch_id,
+            account_id: account_id.clone(),
+            participant_id: *participant_id,
+            tls_public_key: info.tls_public_key.clone(),
+            url: info.url.clone(),
+        });
+    }
+}
+
+fn describe_state_variant(state: &ProtocolContractState) -> &'static str {
+    match state {
+        ProtocolContractState::NotInitialized => "NotInitialized",
+        ProtocolContractState::Initializing(_) => "Initializing",
+        ProtocolContractState::Running(_) => "Running",
+        ProtocolContractState::Resharing(_) => "Resharing",
+    }
+}
+
+/// Unix seconds at which the attestation expires, or `None` for mock
+/// variants that carry no expiry.
+pub fn expiry_unix_seconds(att: &VerifiedAttestation) -> Option<u64> {
+    match att {
+        VerifiedAttestation::Dstack(d) => Some(d.expiry_timestamp_seconds),
+        VerifiedAttestation::Mock(MockAttestation::WithConstraints {
+            expiry_timestamp_seconds,
+            ..
+        }) => *expiry_timestamp_seconds,
+        VerifiedAttestation::Mock(_) => None,
+    }
+}
+
+/// Unix seconds at which the attestation was submitted, derived as
+/// `expiry - DEFAULT_EXPIRATION_DURATION_SECONDS`.
+pub fn submitted_at(att: &VerifiedAttestation) -> Option<u64> {
+    expiry_unix_seconds(att).map(|e| e.saturating_sub(DEFAULT_EXPIRATION_DURATION_SECONDS))
+}
+
+/// True if the attestation expires before the next scheduled re-submission
+/// — i.e. the node has missed at least one submission window.
+pub fn is_stale(att: &VerifiedAttestation, now_unix_seconds: u64) -> bool {
+    let Some(expiry) = expiry_unix_seconds(att) else {
+        return false;
+    };
+    let resubmission = ATTESTATION_RESUBMISSION_INTERVAL.as_secs();
+    expiry < now_unix_seconds.saturating_add(resubmission)
+}
+
+pub fn now_unix_seconds() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// Short status word used by the table renderer and the trailing summary.
+pub fn attestation_status(result: Option<&AttestationResult>, now: u64) -> &'static str {
+    match result {
+        None => "no-key",
+        Some(AttestationResult::Err(_)) => "rpc-error",
+        Some(AttestationResult::Ok(None)) => "missing",
+        Some(AttestationResult::Ok(Some(att))) => {
+            if is_stale(att, now) {
+                "stale"
+            } else {
+                "healthy"
+            }
+        }
+    }
+}
+
+/// Rows sorted by `tls_public_key`, the order the table renderer wants.
+pub fn rows_sorted_by_tls(state: &ProtocolContractState) -> Vec<ParticipantRow> {
+    let mut rows = participants_with_epochs(state);
+    rows.sort_by(|a, b| {
+        a.tls_public_key
+            .cmp(&b.tls_public_key)
+            .then_with(|| a.epoch_id.cmp(&b.epoch_id))
+    });
+    rows
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use near_mpc_contract_interface::types::{
+        AddDomainsVotes, AttemptId, DomainConfig, DomainId, DomainPurpose, DomainRegistry,
+        KeyEvent, Keyset, ParticipantId, ParticipantInfo, Participants, Protocol,
+        ReconstructionThreshold, ResharingContractState, RunningContractState, Threshold,
+        ThresholdParameters, ThresholdParametersVotes,
+    };
+
+    const KEY_A: &str = "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp";
+    const KEY_B: &str = "ed25519:H9k5eiU4xXS3M4z8HzKvBd2tnWnPFBSE4qkBJyYRkXfH";
+    const KEY_C: &str = "ed25519:5KGsoCKEoYRRZmGZxgxK7Y2EFiTuZuyqgKDLT4HFkXgN";
+
+    fn pkey(s: &str) -> Ed25519PublicKey {
+        s.parse().unwrap()
+    }
+
+    fn participant(
+        account: &str,
+        id: u32,
+        key: &str,
+        url: &str,
+    ) -> (AccountId, ParticipantId, ParticipantInfo) {
+        (
+            account.parse().unwrap(),
+            ParticipantId(id),
+            ParticipantInfo {
+                url: url.to_string(),
+                tls_public_key: pkey(key),
+            },
+        )
+    }
+
+    fn parameters(
+        entries: Vec<(AccountId, ParticipantId, ParticipantInfo)>,
+        next_id: u32,
+    ) -> ThresholdParameters {
+        ThresholdParameters {
+            participants: Participants {
+                next_id: ParticipantId(next_id),
+                participants: entries,
+            },
+            threshold: Threshold::new(1),
+        }
+    }
+
+    fn running(epoch: u64, params: ThresholdParameters) -> RunningContractState {
+        RunningContractState {
+            domains: DomainRegistry {
+                domains: Vec::new(),
+                next_domain_id: 0,
+            },
+            keyset: Keyset {
+                epoch_id: EpochId::new(epoch),
+                domains: Vec::new(),
+            },
+            parameters: params,
+            parameters_votes: ThresholdParametersVotes {
+                proposal_by_account: Default::default(),
+            },
+            add_domains_votes: AddDomainsVotes {
+                proposal_by_account: Default::default(),
+            },
+            previously_cancelled_resharing_epoch_id: None,
+        }
+    }
+
+    fn resharing_key(epoch: u64, params: ThresholdParameters) -> KeyEvent {
+        KeyEvent {
+            epoch_id: EpochId::new(epoch),
+            domain: DomainConfig {
+                id: DomainId(0),
+                protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(1),
+                purpose: DomainPurpose::Sign,
+            },
+            parameters: params,
+            instance: None,
+            next_attempt_id: AttemptId::new(),
+        }
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn participants_with_epochs__should_yield_one_row_per_participant_in_running() {
+        // Given
+        let params = parameters(
+            vec![
+                participant("a.near", 0, KEY_A, "https://a"),
+                participant("b.near", 1, KEY_B, "https://b"),
+            ],
+            2,
+        );
+        let state = ProtocolContractState::Running(running(7, params));
+
+        // When
+        let rows = participants_with_epochs(&state);
+
+        // Then
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().all(|r| r.epoch_id == EpochId::new(7)));
+        let keys: BTreeSet<_> = rows.iter().map(|r| r.tls_public_key.clone()).collect();
+        assert_eq!(keys, BTreeSet::from([pkey(KEY_A), pkey(KEY_B)]));
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn participants_with_epochs__should_yield_old_and_new_rows_in_resharing() {
+        // Given
+        let old = parameters(
+            vec![
+                participant("a.near", 0, KEY_A, "https://a"),
+                participant("b.near", 1, KEY_B, "https://b"),
+            ],
+            2,
+        );
+        let new = parameters(
+            vec![
+                participant("a.near", 0, KEY_A, "https://a"),
+                participant("c.near", 2, KEY_C, "https://c"),
+            ],
+            3,
+        );
+        let state = ProtocolContractState::Resharing(ResharingContractState {
+            previous_running_state: running(7, old),
+            reshared_keys: Vec::new(),
+            resharing_key: resharing_key(8, new),
+            cancellation_requests: Default::default(),
+            per_domain_thresholds: Default::default(),
+        });
+
+        // When
+        let rows = participants_with_epochs(&state);
+
+        // Then
+        assert_eq!(rows.len(), 4);
+        let count = |key: &str| {
+            rows.iter()
+                .filter(|r| r.tls_public_key == pkey(key))
+                .count()
+        };
+        assert_eq!(count(KEY_A), 2);
+        assert_eq!(count(KEY_B), 1);
+        assert_eq!(count(KEY_C), 1);
+
+        let key_a_epochs: BTreeSet<_> = rows
+            .iter()
+            .filter(|r| r.tls_public_key == pkey(KEY_A))
+            .map(|r| r.epoch_id)
+            .collect();
+        assert_eq!(
+            key_a_epochs,
+            BTreeSet::from([EpochId::new(7), EpochId::new(8)])
+        );
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn submitted_at__should_be_expiry_minus_validity_window() {
+        // Given
+        let expiry = 2_000_000_000u64;
+        let att = VerifiedAttestation::Mock(MockAttestation::WithConstraints {
+            mpc_docker_image_hash: None,
+            launcher_docker_compose_hash: None,
+            expiry_timestamp_seconds: Some(expiry),
+            expected_measurements: None,
+        });
+
+        // When
+        let submitted = submitted_at(&att);
+
+        // Then
+        assert_eq!(
+            submitted,
+            Some(expiry - DEFAULT_EXPIRATION_DURATION_SECONDS)
+        );
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn is_stale__should_flag_when_no_resubmission_within_interval() {
+        // Given
+        let now = 1_000_000_000u64;
+        let interval = ATTESTATION_RESUBMISSION_INTERVAL.as_secs();
+        let fresh = VerifiedAttestation::Mock(MockAttestation::WithConstraints {
+            mpc_docker_image_hash: None,
+            launcher_docker_compose_hash: None,
+            expiry_timestamp_seconds: Some(now + interval + 1),
+            expected_measurements: None,
+        });
+        let stale = VerifiedAttestation::Mock(MockAttestation::WithConstraints {
+            mpc_docker_image_hash: None,
+            launcher_docker_compose_hash: None,
+            expiry_timestamp_seconds: Some(now + interval - 1),
+            expected_measurements: None,
+        });
+
+        // When / Then
+        assert!(!is_stale(&fresh, now));
+        assert!(is_stale(&stale, now));
+    }
+}

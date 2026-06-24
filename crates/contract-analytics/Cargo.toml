@@ -1,0 +1,30 @@
+[package]
+name = "contract-analytics"
+version = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+
+[[bin]]
+name = "contract-analytics"
+path = "src/main.rs"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+futures = { workspace = true }
+mpc-attestation = { workspace = true }
+near-jsonrpc-client = { workspace = true }
+near-jsonrpc-primitives = { workspace = true }
+near-mpc-contract-interface = { workspace = true }
+near-mpc-crypto-types = { workspace = true }
+near-primitives = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+time = { workspace = true, features = ["formatting"] }
+tokio = { workspace = true }
+
+[lints]
+workspace = true

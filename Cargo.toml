@@ -8,6 +8,7 @@ members = [
     "crates/chain-gateway-test-contract",
     "crates/ckd-example-cli",
     "crates/contract",
+    "crates/contract-analytics",
     "crates/contract-history",
     "crates/devnet",
     "crates/e2e-tests",
