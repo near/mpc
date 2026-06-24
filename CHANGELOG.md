@@ -43,11 +43,6 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#3647](https://github.com/near/mpc/pull/3647)(@gilcu3): Indexer getting stuck when syncing from genesis (#3647)
 
 
-### 💼 Other
-
-- : V3.13.0
-
-
 ### 🚜 Refactor
 
 - [#3461](https://github.com/near/mpc/pull/3461)(@SimonRastikian): Reduce code redundancy in checks between presign and sign (#3461)
