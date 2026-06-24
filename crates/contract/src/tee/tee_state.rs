@@ -185,12 +185,11 @@ impl TeeState {
         tee_upgrade_deadline_duration: Duration,
     ) -> Result<ParticipantInsertion, AttestationSubmissionError> {
         let accepted_measurements = self.get_accepted_measurements();
-        // Pure, always-compiled mock verification: no DCAP, so the contract does
-        // not link `dcap-qvl`.
+        // Pure mock verification: no DCAP, so the contract does not link `dcap-qvl`.
         let AcceptedAttestation {
             attestation: verified_attestation,
             advisory_ids,
-        } = Attestation::Mock(mock).verify_mock_only(
+        } = mock.verify(
             Self::current_time_seconds(),
             &self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration),
             &self.get_allowed_launcher_compose_hashes(),

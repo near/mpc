@@ -155,7 +155,7 @@ fn refund_attestation_deposit(account_id: &AccountId, deposit: NearToken) {
 fn map_attestation_submission_error(err: AttestationSubmissionError) -> Error {
     let reason = match &err {
         AttestationSubmissionError::InvalidAttestation(_) => {
-            format!("TeeQuoteStatus is invalid: {err}")
+            format!("attestation verification failed: {err}")
         }
         AttestationSubmissionError::TlsKeyOwnedByOtherAccount => err.to_string(),
     };
@@ -4380,8 +4380,8 @@ mod tests {
         if let Err(error) = result {
             let error_string = error.to_string();
             assert!(
-                error_string.contains("TeeQuoteStatus is invalid"),
-                "Error should mention invalid TEE status, got: {}",
+                error_string.contains("attestation verification failed"),
+                "Error should mention attestation verification failure, got: {}",
                 error_string
             );
         }

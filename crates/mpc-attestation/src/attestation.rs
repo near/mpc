@@ -346,31 +346,6 @@ impl Attestation {
         }
     }
 
-    /// Verifies a `Mock` attestation, which needs no DCAP report. Used by the
-    /// contract's synchronous submission path; `Dstack` attestations go through
-    /// the async verifier-contract flow and [`Attestation::verify_with_report`].
-    pub fn verify_mock_only(
-        &self,
-        current_timestamp_seconds: u64,
-        allowed_mpc_docker_image_hashes: &[NodeImageHash],
-        allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
-        accepted_measurements: &[ExpectedMeasurements],
-    ) -> Result<AcceptedAttestation, VerificationError> {
-        match self {
-            Self::Mock(mock_attestation) => mock_attestation.verify(
-                current_timestamp_seconds,
-                allowed_mpc_docker_image_hashes,
-                allowed_launcher_docker_compose_hashes,
-                accepted_measurements,
-            ),
-            Self::Dstack(_) => {
-                unreachable!(
-                    "verify_mock_only is only called on the Mock arm of submit_participant_info"
-                )
-            }
-        }
-    }
-
     /// Full local verification: runs DCAP (`dcap_qvl::verify::verify`) and then
     /// the post-DCAP checks. Behind the `local-verify` feature, which pulls in
     /// `dcap-qvl`. Used by off-chain callers (node, tee-authority, attestation-cli);
