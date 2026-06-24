@@ -1400,7 +1400,7 @@ expression: abi
       },
       {
         "name": "resolve_verification",
-        "doc": " `.then` bridge for the cross-contract `verify_quote` call. Maps the\n verifier's response to a [`FinalOutcome`] and resumes the yield registered\n in [`Self::submit_dstack_attestation`].",
+        "doc": " `.then` bridge for the cross-contract `verify_quote` call. Maps the\n verifier's response to a [`FinalOutcome`] and resumes the yield registered\n in `submit_dstack_attestation`.",
         "kind": "call",
         "modifiers": [
           "private"
