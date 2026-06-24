@@ -5,6 +5,107 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.13.0] - 2026-06-24
+
+### 🚀 Features
+
+- : Validate aptos transactions with hardcoded tx_id in localnet.sh script (#3554)
+
+- : Add yield point in CPU bound crypto code (#3518)
+
+- : Available foreign chains contract API (#3511)
+
+- : *(devnet)* Add localnet support in devnet (#3624)
+
+- : Correlate governancethreshold with reconstructionthreshold (#3578)
+
+- : *(contract)* TEE verifier contract-account voting (#3626)
+
+- : Wire recent blocks tracker into event subscriber (#3616)
+
+
+### 🐛 Bug Fixes
+
+- : Pattern in changes.yml for detecting code changes (#3562)
+
+- : *(release)* Pin git-cliff to semver tags; restore dropped 3.12.0 changelog entries (#3573)
+
+- : Repro issues related to docker caching and skopeo versions (#3580)
+
+- : *(deployment)* Exec mpc-node in start.sh so SIGTERM reaches the process (#3502)
+
+- : Nits from available foreign chains work (contract changes) (#3617)
+
+- : *(bench)* Make sure benches do not fail by fixing determinism (#3635)
+
+- : *(ci)* Make rust cache key depend on nix cache key (#3632)
+
+
+### 🚜 Refactor
+
+- : Reduce code redundancy in checks between presign and sign (#3461)
+
+- : Renaming ReconstructionLowerBound to ReconstructionThreshold (#3567)
+
+- : Cleanup and reorganizing ECDSA files and interfaces (#3349)
+
+- : *(attestation)* Drop `dcap-qvl` dependency from the `attestation` crate (#3590)
+
+- : *(fix)* Relocate bench_utils ckd functions (#3634)
+
+- : *(contract)* Factor out shared `gen_authenticated_participants` helper (#3654)
+
+
+### 📚 Documentation
+
+- : Update engineering standards with section about code comments (#3589)
+
+- : *(localnet)* Note neard 0.0.0.0 bind + version/genesis alignment for docker localnet (#3607)
+
+- : Document back-migration known limitations (#3613)
+
+
+### ⚡ Performance
+
+- : Optimize CKD computations in contract (#3529)
+
+
+### 🧪 Testing
+
+- : Disable flaky back-migration e2e test (#3606)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- : Remove 3.11 CaitSith restriction in the contract (#3557)
+
+- : Restore external_storage_fallback_threshold for pre-3.12.0 nodes (#3572)
+
+- : Bump http from 1.4.1 to 1.4.2 in the rust-minor-and-patch group (#3575)
+
+- : Remove compat conversions in the contract (#3559)
+
+- : Allow new foreign chain config before node upgrade (#3588)
+
+- : Make the two threshold DTO conversions fallible & validating (#3577)
+
+- : Add 'every' predicate in changes workflow filter (#3591)
+
+- : Update skip condition in matrix job (#3595)
+
+- : Bump up state transition to be from 3_12_0 (#3584)
+
+- : Serve aptos rpc count (#3611)
+
+- : Drop post 3.12 migrations (#3615)
+
+- : Reuse nix dev cache in mpc-node nix build (#3629)
+
+- : Bump the rust-minor-and-patch group with 5 updates (#3645)
+
+- : Bump nearcore to 2.13.0 rc1 (#3620)
+
+
 ## [3.12.0] - 2026-06-15
 
 ### 🚀 Features
