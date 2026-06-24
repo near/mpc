@@ -12,6 +12,7 @@ use crate::{
             BlockContext, BlockUpdate, EventData, ExecutorFunctionCallSuccessWithPromiseData,
             MatchedEvent, ReceiverFunctionCallData,
         },
+        metrics::{MPC_BLOCK_UPDATES_DROPPED, MPC_BLOCKS_RECEIVED_FROM_INDEXER},
         recent_blocks_tracker::{AddBlockResult, RecentBlocksTracker},
         stats::IndexerStats,
     },
@@ -33,6 +34,7 @@ pub(super) async fn listen_blocks(
             .recv()
             .await
             .ok_or(ChainGatewayError::BlockEventIndexerDropped)?;
+        MPC_BLOCKS_RECEIVED_FROM_INDEXER.inc();
         let context = make_context(&streamer_message);
         let AddBlockResult { block_status } = recent_blocks_tracker.add_block(&context);
         let matched_events = match_block_events(streamer_message, &block_events);
@@ -52,6 +54,7 @@ pub(super) async fn listen_blocks(
                         block_context = ?context,
                         "dropping block update because channel is full",
                     );
+                    MPC_BLOCK_UPDATES_DROPPED.inc();
                     continue;
                 }
                 Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {

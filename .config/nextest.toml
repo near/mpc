@@ -18,5 +18,15 @@ max-threads = 4
 filter = 'package(e2e-tests)'
 test-group = 'e2e'
 
+# Each chain-gateway integration test stands up two nearcore nodes (~25 OS
+# threads per test). Running them concurrently oversubscribes CI runners and
+# starves the event-subscriber pipeline.
+[test-groups.chain-gateway-integration]
+max-threads = 1
+
 [profile.ci-other]
 default-filter = 'not package(mpc-node) and not package(mpc-contract) and not package(e2e-tests) and not package(contract-history) and not test(=tee_authority::tests::test_fetch_collateral_from_pccs) and not (test(/^registry::integration_tests::/) and package(tee-launcher))'
+
+[[profile.ci-other.overrides]]
+filter = 'package(chain-gateway) and binary(test)'
+test-group = 'chain-gateway-integration'
