@@ -5,6 +5,110 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.13.0] - 2026-06-24
+
+### 🚀 Features
+
+- [#3554](https://github.com/near/mpc/pull/3554)(@anodar): Validate aptos transactions with hardcoded tx_id in localnet.sh script (#3554)
+
+- [#3518](https://github.com/near/mpc/pull/3518)(@gilcu3): Add yield point in CPU bound crypto code (#3518)
+
+- [#3511](https://github.com/near/mpc/pull/3511)(@anodar): Available foreign chains contract API (#3511)
+
+- [#3624](https://github.com/near/mpc/pull/3624)(@gilcu3): *(devnet)* Add localnet support in devnet (#3624)
+
+- [#3578](https://github.com/near/mpc/pull/3578)(@SimonRastikian): Correlate governancethreshold with reconstructionthreshold (#3578)
+
+- [#3626](https://github.com/near/mpc/pull/3626)(@pbeza): *(contract)* TEE verifier contract-account voting (#3626)
+
+- [#3616](https://github.com/near/mpc/pull/3616)(@kevindeforth): Wire recent blocks tracker into event subscriber (#3616)
+
+
+### 🐛 Bug Fixes
+
+- [#3562](https://github.com/near/mpc/pull/3562)(@anodar): Pattern in changes.yml for detecting code changes (#3562)
+
+- [#3573](https://github.com/near/mpc/pull/3573)(@pbeza): *(release)* Pin git-cliff to semver tags; restore dropped 3.12.0 changelog entries (#3573)
+
+- [#3580](https://github.com/near/mpc/pull/3580)(@gilcu3): Repro issues related to docker caching and skopeo versions (#3580)
+
+- [#3502](https://github.com/near/mpc/pull/3502)(@barakeinav1): *(deployment)* Exec mpc-node in start.sh so SIGTERM reaches the process (#3502)
+
+- [#3617](https://github.com/near/mpc/pull/3617)(@anodar): Nits from available foreign chains work (contract changes) (#3617)
+
+- [#3635](https://github.com/near/mpc/pull/3635)(@gilcu3): *(bench)* Make sure benches do not fail by fixing determinism (#3635)
+
+- [#3632](https://github.com/near/mpc/pull/3632)(@gilcu3): *(ci)* Make rust cache key depend on nix cache key (#3632)
+
+- [#3647](https://github.com/near/mpc/pull/3647)(@gilcu3): Indexer getting stuck when syncing from genesis (#3647)
+
+
+### 🚜 Refactor
+
+- [#3461](https://github.com/near/mpc/pull/3461)(@SimonRastikian): Reduce code redundancy in checks between presign and sign (#3461)
+
+- [#3567](https://github.com/near/mpc/pull/3567)(@SimonRastikian): Renaming ReconstructionLowerBound to ReconstructionThreshold (#3567)
+
+- [#3349](https://github.com/near/mpc/pull/3349)(@SimonRastikian): Cleanup and reorganizing ECDSA files and interfaces (#3349)
+
+- [#3590](https://github.com/near/mpc/pull/3590)(@pbeza): *(attestation)* Drop `dcap-qvl` dependency from the `attestation` crate (#3590)
+
+- [#3634](https://github.com/near/mpc/pull/3634)(@gilcu3): *(fix)* Relocate bench_utils ckd functions (#3634)
+
+- [#3654](https://github.com/near/mpc/pull/3654)(@pbeza): *(contract)* Factor out shared `gen_authenticated_participants` helper (#3654)
+
+
+### 📚 Documentation
+
+- [#3589](https://github.com/near/mpc/pull/3589)(@kevindeforth): Update engineering standards with section about code comments (#3589)
+
+- [#3607](https://github.com/near/mpc/pull/3607)(@barakeinav1): *(localnet)* Note neard 0.0.0.0 bind + version/genesis alignment for docker localnet (#3607)
+
+- [#3613](https://github.com/near/mpc/pull/3613)(@barakeinav1): Document back-migration known limitations (#3613)
+
+
+### ⚡ Performance
+
+- [#3529](https://github.com/near/mpc/pull/3529)(@gilcu3): Optimize CKD computations in contract (#3529)
+
+
+### 🧪 Testing
+
+- [#3606](https://github.com/near/mpc/pull/3606)(@barakeinav1): Disable flaky back-migration e2e test (#3606)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- [#3557](https://github.com/near/mpc/pull/3557)(@gilcu3): Remove 3.11 CaitSith restriction in the contract (#3557)
+
+- [#3572](https://github.com/near/mpc/pull/3572)(@barakeinav1): Restore external_storage_fallback_threshold for pre-3.12.0 nodes (#3572)
+
+- [#3575](https://github.com/near/mpc/pull/3575)(@dependabot[bot]): Bump http from 1.4.1 to 1.4.2 in the rust-minor-and-patch group (#3575)
+
+- [#3559](https://github.com/near/mpc/pull/3559)(@gilcu3): Remove compat conversions in the contract (#3559)
+
+- [#3588](https://github.com/near/mpc/pull/3588)(@anodar): Allow new foreign chain config before node upgrade (#3588)
+
+- [#3577](https://github.com/near/mpc/pull/3577)(@SimonRastikian): Make the two threshold DTO conversions fallible & validating (#3577)
+
+- [#3591](https://github.com/near/mpc/pull/3591)(@anodar): Add 'every' predicate in changes workflow filter (#3591)
+
+- [#3595](https://github.com/near/mpc/pull/3595)(@anodar): Update skip condition in matrix job (#3595)
+
+- [#3584](https://github.com/near/mpc/pull/3584)(@anodar): Bump up state transition to be from 3_12_0 (#3584)
+
+- [#3611](https://github.com/near/mpc/pull/3611)(@anodar): Serve aptos rpc count (#3611)
+
+- [#3615](https://github.com/near/mpc/pull/3615)(@gilcu3): Drop post 3.12 migrations (#3615)
+
+- [#3629](https://github.com/near/mpc/pull/3629)(@gilcu3): Reuse nix dev cache in mpc-node nix build (#3629)
+
+- [#3645](https://github.com/near/mpc/pull/3645)(@dependabot[bot]): Bump the rust-minor-and-patch group with 5 updates (#3645)
+
+- [#3620](https://github.com/near/mpc/pull/3620)(@gilcu3): Bump nearcore to 2.13.0 rc1 (#3620)
+
+
+
 ## [3.12.0] - 2026-06-15
 
 ### 🚀 Features
