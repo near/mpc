@@ -151,10 +151,10 @@ impl TeeState {
         current_time_milliseconds / 1_000
     }
 
-    /// Test-only dispatcher kept for the many `Mock`-based unit tests. The
-    /// production path no longer calls this: `Mock` submissions go through
-    /// [`Self::add_mock_participant`] and `Dstack` submissions through the async
-    /// verifier flow ([`Self::finish_dstack_verify`]).
+    /// Test-only dispatcher for [`Attestation::Mock`]-based unit tests. In
+    /// production, [`Attestation::Mock`] goes through
+    /// [`Self::add_mock_participant`] and [`Attestation::Dstack`] through
+    /// [`Self::finish_dstack_verify`].
     #[cfg(test)]
     pub(crate) fn add_participant(
         &mut self,
@@ -172,12 +172,10 @@ impl TeeState {
         }
     }
 
-    /// Verifies and stores a `Mock` attestation synchronously.
+    /// Verifies and stores a [`Attestation::Mock`] attestation synchronously.
     ///
-    /// Mock attestations have no real quote, so there is no DCAP step and no
-    /// verifier round-trip — verification is local and immediate, unlike the
-    /// `Dstack` path which goes through [`Self::finish_dstack_verify`] after the
-    /// verifier contract responds.
+    /// Mock has no real quote, so verification is local and immediate, unlike
+    /// the [`Attestation::Dstack`] path through [`Self::finish_dstack_verify`].
     pub(crate) fn add_mock_participant(
         &mut self,
         node_id: NodeId,
@@ -205,11 +203,10 @@ impl TeeState {
         Ok(insertion)
     }
 
-    /// Runs the post-DCAP checks for a `Dstack` attestation against the
-    /// `VerifiedReport` the verifier contract returned, then stores the result.
-    /// Called from `resolve_verification` once the cross-contract `verify_quote`
-    /// succeeds; the DCAP cryptographic verification has already happened in the
-    /// verifier contract.
+    /// Runs the post-DCAP checks for a [`Attestation::Dstack`] attestation
+    /// against the [`VerifiedReport`] the verifier returned, then stores the
+    /// result. Called from [`crate::MpcContract::resolve_verification`]; the DCAP
+    /// verification itself has already happened in the verifier contract.
     pub(crate) fn finish_dstack_verify(
         &mut self,
         node_id: NodeId,
@@ -246,12 +243,11 @@ impl TeeState {
 
     /// Stores an already-verified attestation, enforcing TLS-key ownership.
     ///
-    /// Returns the insertion result and, when an existing entry was displaced,
-    /// the previous [`NodeAttestation`]. The caller (the async `Dstack` flow)
-    /// uses that previous entry to [`Self::revert_dstack_store`] if the storage
-    /// charge fails — the synchronous path relied on the receipt rolling back,
-    /// but the callback receipt commits regardless, so the rollback must be
-    /// explicit.
+    /// Returns the insertion result and any displaced [`NodeAttestation`], which
+    /// the async [`Attestation::Dstack`] flow feeds to
+    /// [`Self::revert_dstack_store`] if the storage charge fails: the callback
+    /// receipt commits regardless, so the rollback must be explicit (the
+    /// synchronous path relied on the receipt rolling back).
     fn store_verified_attestation(
         &mut self,
         node_id: NodeId,

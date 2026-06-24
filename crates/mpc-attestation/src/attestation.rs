@@ -346,10 +346,9 @@ impl Attestation {
         }
     }
 
-    /// Full local verification: runs DCAP (`dcap_qvl::verify::verify`) and then
-    /// the post-DCAP checks. Behind the `local-verify` feature, which pulls in
-    /// `dcap-qvl`. Used by off-chain callers (node, tee-authority, attestation-cli);
-    /// `mpc-contract` no longer links it, offloading DCAP to the verifier contract.
+    /// Full local verification: runs the DCAP quote verification and then the
+    /// post-DCAP checks. Behind the `local-verify` feature, which pulls in
+    /// `dcap-qvl`. Used by off-chain callers (node, tee-authority, attestation-cli).
     #[cfg(feature = "local-verify")]
     pub fn verify_locally(
         &self,

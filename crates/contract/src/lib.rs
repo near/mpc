@@ -144,7 +144,8 @@ fn require_deposit(minimum_deposit: NearToken, predecessor: &AccountId) {
 }
 
 /// Refunds an attestation submitter's attached deposit (no-op for a zero
-/// deposit). Used when a `Dstack` verification is rejected or times out.
+/// deposit). Used when an [`Attestation::Dstack`] verification is rejected or
+/// times out.
 fn refund_attestation_deposit(account_id: &AccountId, deposit: NearToken) {
     if deposit > NearToken::from_yoctonear(0) {
         log!("refund attestation deposit {deposit} to {account_id}");
@@ -187,16 +188,16 @@ pub struct MpcContract {
     metrics: Metrics,
     foreign_chains: Lazy<ForeignChainsMetadata>,
     /// The verifier contract account trusted for DCAP verification, or [`None`]
-    /// until participants vote one in. A `Dstack` `submit_participant_info`
+    /// until participants vote one in. An [`Attestation::Dstack`] submission
     /// offloads quote verification to this account; while it is [`None`], such
     /// submissions are rejected with [`TeeError::VerifierNotConfigured`].
     // TODO(#3639): once participants have voted a verifier in, make this
     // non-optional via a migration that requires it be set.
     tee_verifier_account_id: Option<AccountId>,
     tee_verifier_votes: TeeVerifierVotes,
-    /// In-flight `Dstack` verifications, one entry per submitter account, held
-    /// between the cross-contract `verify_quote` call and its resolution (or the
-    /// yield timeout). See [`tee::pending_attestation`].
+    /// In-flight [`Attestation::Dstack`] verifications, one entry per submitter
+    /// account, held between the cross-contract verify-quote call and its
+    /// resolution (or the yield timeout). See [`tee::pending_attestation`].
     pending_attestations: LookupMap<AccountId, PendingAttestation>,
 }
 
@@ -332,11 +333,11 @@ impl MpcContract {
         (domain_config, predecessor)
     }
 
-    /// Creates a yield-resume promise that calls back into `callback_method` with the
-    /// pre-serialized `callback_args`, and stores the resulting yield id via `insert`.
+    /// Registers a yield-resume promise for the given callback and stores its
+    /// yield id via the supplied closure.
     ///
-    /// This function calls `env::promise_return` and so must be the last operation performed
-    /// in the enclosing contract method.
+    /// Issues the promise-return host call, so it must be the last operation in
+    /// the enclosing contract method.
     fn enqueue_yield_request(
         &mut self,
         callback_method: &str,
@@ -783,16 +784,14 @@ impl MpcContract {
 
     /// (Prospective) participants submit their TEE attestation through this endpoint.
     ///
-    /// `Mock` attestations are verified synchronously and stored in this call.
-    /// `Dstack` attestations are verified asynchronously: the call yields and
-    /// dispatches a cross-contract `verify_quote` to the trusted verifier, and the
-    /// submitter's transaction resolves only once the verifier responds (or the
-    /// yield times out). A `Dstack` submission therefore requires a verifier to be
-    /// configured (else [`TeeError::VerifierNotConfigured`]) and rejects a second
-    /// submission from the same account while one is in flight
+    /// [`Attestation::Mock`] is verified synchronously in this call.
+    /// [`Attestation::Dstack`] is verified asynchronously: the call yields on a
+    /// cross-contract verify-quote call and resolves only once the verifier
+    /// responds (or the yield times out). It therefore needs a verifier
+    /// configured (else [`TeeError::VerifierNotConfigured`]) and rejects a
+    /// concurrent submission from the same account
     /// ([`TeeError::VerificationAlreadyPending`]). The attached deposit covers
-    /// attestation storage on success and is refunded if verification is rejected
-    /// or times out.
+    /// storage on success and is refunded on failure.
     #[payable]
     #[handle_result]
     pub fn submit_participant_info(
@@ -861,9 +860,9 @@ impl MpcContract {
         }
     }
 
-    /// Async `Dstack` submission: register a yield, fire a cross-contract
-    /// `verify_quote` at the trusted verifier, and bridge its response back into
-    /// a `promise_yield_resume` via the `resolve_verification` callback.
+    /// Async [`Attestation::Dstack`] submission: registers a yield, fires the
+    /// cross-contract verify-quote call, and resumes via
+    /// [`Self::resolve_verification`].
     fn submit_dstack_attestation(
         &mut self,
         node_id: NodeId,
@@ -2390,9 +2389,8 @@ impl MpcContract {
         }
     }
 
-    /// `.then` bridge for the cross-contract `verify_quote` call. Maps the
-    /// verifier's response to a [`FinalOutcome`] and resumes the yield registered
-    /// in `submit_dstack_attestation`.
+    /// Verify-quote callback: maps the verifier's response to a [`FinalOutcome`]
+    /// and resumes the yield.
     #[private]
     pub fn resolve_verification(
         &mut self,
@@ -2445,10 +2443,10 @@ impl MpcContract {
         );
     }
 
-    /// Runs the post-DCAP checks and stores the attestation for a verifier
-    /// `Verified` response. Returns the outcome to resume the yield with; on a
-    /// post-DCAP or storage failure, reverts the store (the callback receipt
-    /// commits regardless, unlike the synchronous path).
+    /// Runs the post-DCAP checks and stores the attestation for a
+    /// [`VerificationResult::Verified`] response, returning the outcome to resume
+    /// the yield with. On failure it reverts the store explicitly, since the
+    /// callback receipt commits regardless (unlike the synchronous path).
     fn finish_verified_attestation(
         &mut self,
         node_id: &NodeId,
@@ -2502,9 +2500,10 @@ impl MpcContract {
         }
     }
 
-    /// Yield-resume callback for a `Dstack` submission. On success resolves the
-    /// caller's transaction; on a verifier rejection or the ~200-block timeout
-    /// it cleans up, refunds, and fails the transaction from a separate receipt.
+    /// Yield-resume callback for a [`Attestation::Dstack`] submission. On
+    /// success it resolves the caller's transaction; on a rejection or the
+    /// ~200-block timeout it cleans up, refunds, and fails from a separate
+    /// receipt.
     #[private]
     pub fn on_attestation_verified(
         &mut self,
@@ -2538,10 +2537,9 @@ impl MpcContract {
         PromiseOrValue::Promise(promise.as_return())
     }
 
-    /// Fails the original `submit_participant_info` transaction with `reason`,
-    /// from a receipt separate from the cleanup so the cleanup is not rolled back.
-    /// Reached for every failure outcome (verifier rejection, post-DCAP failure,
-    /// or yield timeout), not just timeouts.
+    /// Fails the original [`Self::submit_participant_info`] transaction, from a
+    /// receipt separate from the cleanup so the cleanup is not rolled back.
+    /// Reached for every failure outcome, not just timeouts.
     #[private]
     pub fn fail_attestation_submission(#[serializer(borsh)] reason: String) {
         env::panic_str(&reason);

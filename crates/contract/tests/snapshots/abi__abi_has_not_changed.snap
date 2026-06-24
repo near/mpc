@@ -560,7 +560,7 @@ expression: abi
       },
       {
         "name": "fail_attestation_submission",
-        "doc": " Fails the original `submit_participant_info` transaction with `reason`,\n from a receipt separate from the cleanup so the cleanup is not rolled back.\n Reached for every failure outcome (verifier rejection, post-DCAP failure,\n or yield timeout), not just timeouts.",
+        "doc": " Fails the original [`Self::submit_participant_info`] transaction, from a\n receipt separate from the cleanup so the cleanup is not rolled back.\n Reached for every failure outcome, not just timeouts.",
         "kind": "view",
         "modifiers": [
           "private"
@@ -956,7 +956,7 @@ expression: abi
       },
       {
         "name": "on_attestation_verified",
-        "doc": " Yield-resume callback for a `Dstack` submission. On success resolves the\n caller's transaction; on a verifier rejection or the ~200-block timeout\n it cleans up, refunds, and fails the transaction from a separate receipt.",
+        "doc": " Yield-resume callback for a [`Attestation::Dstack`] submission. On\n success it resolves the caller's transaction; on a rejection or the\n ~200-block timeout it cleans up, refunds, and fails from a separate\n receipt.",
         "kind": "call",
         "modifiers": [
           "private"
@@ -1400,7 +1400,7 @@ expression: abi
       },
       {
         "name": "resolve_verification",
-        "doc": " `.then` bridge for the cross-contract `verify_quote` call. Maps the\n verifier's response to a [`FinalOutcome`] and resumes the yield registered\n in `submit_dstack_attestation`.",
+        "doc": " Verify-quote callback: maps the verifier's response to a [`FinalOutcome`]\n and resumes the yield.",
         "kind": "call",
         "modifiers": [
           "private"
@@ -2139,7 +2139,7 @@ expression: abi
       },
       {
         "name": "submit_participant_info",
-        "doc": " (Prospective) participants submit their TEE attestation through this endpoint.\n\n `Mock` attestations are verified synchronously and stored in this call.\n `Dstack` attestations are verified asynchronously: the call yields and\n dispatches a cross-contract `verify_quote` to the trusted verifier, and the\n submitter's transaction resolves only once the verifier responds (or the\n yield times out). A `Dstack` submission therefore requires a verifier to be\n configured (else [`TeeError::VerifierNotConfigured`]) and rejects a second\n submission from the same account while one is in flight\n ([`TeeError::VerificationAlreadyPending`]). The attached deposit covers\n attestation storage on success and is refunded if verification is rejected\n or times out.",
+        "doc": " (Prospective) participants submit their TEE attestation through this endpoint.\n\n [`Attestation::Mock`] is verified synchronously in this call.\n [`Attestation::Dstack`] is verified asynchronously: the call yields on a\n cross-contract verify-quote call and resolves only once the verifier\n responds (or the yield times out). It therefore needs a verifier\n configured (else [`TeeError::VerifierNotConfigured`]) and rejects a\n concurrent submission from the same account\n ([`TeeError::VerificationAlreadyPending`]). The attached deposit covers\n storage on success and is refunded on failure.",
         "kind": "call",
         "modifiers": [
           "payable"
