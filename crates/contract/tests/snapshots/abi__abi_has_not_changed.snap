@@ -559,8 +559,8 @@ expression: abi
         }
       },
       {
-        "name": "fail_on_attestation_timeout",
-        "doc": " Fails the original `submit_participant_info` transaction with `reason`,\n from a receipt separate from the cleanup so the cleanup is not rolled back.",
+        "name": "fail_attestation_submission",
+        "doc": " Fails the original `submit_participant_info` transaction with `reason`,\n from a receipt separate from the cleanup so the cleanup is not rolled back.\n Reached for every failure outcome (verifier rejection, post-DCAP failure,\n or yield timeout), not just timeouts.",
         "kind": "view",
         "modifiers": [
           "private"

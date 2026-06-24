@@ -878,6 +878,25 @@ impl MpcContract {
         let attached_deposit = env::attached_deposit();
         let tls_public_key = node_id.tls_public_key.clone();
 
+        // Detached cross-contract call to the verifier; its `.then` bridges the
+        // response into a `promise_yield_resume` on the yield registered below.
+        // Built before `enqueue_yield_request` so that the latter's
+        // `promise_return` stays the final host call (see its doc comment).
+        Promise::new(verifier_account_id)
+            .function_call(
+                method_names::VERIFY_QUOTE.to_string(),
+                borsh::to_vec(&(quote, collateral))
+                    .expect("borsh serialization of verify_quote args must succeed"),
+                NearToken::from_yoctonear(0),
+                Gas::from_tgas(self.config.verifier_tera_gas),
+            )
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(Gas::from_tgas(self.config.resolve_verification_tera_gas))
+                    .resolve_verification(node_id),
+            )
+            .detach();
+
         self.enqueue_yield_request(
             method_names::ON_ATTESTATION_VERIFIED,
             borsh::to_vec(&account_id).expect("borsh serialization of account_id must succeed"),
@@ -895,23 +914,6 @@ impl MpcContract {
                 );
             },
         );
-
-        // Cross-contract call to the verifier; its `.then` bridges the response
-        // into a `promise_yield_resume` on the yield registered above.
-        Promise::new(verifier_account_id)
-            .function_call(
-                method_names::VERIFY_QUOTE.to_string(),
-                borsh::to_vec(&(quote, collateral))
-                    .expect("borsh serialization of verify_quote args must succeed"),
-                NearToken::from_yoctonear(0),
-                Gas::from_tgas(self.config.verifier_tera_gas),
-            )
-            .then(
-                Self::ext(env::current_account_id())
-                    .with_static_gas(Gas::from_tgas(self.config.resolve_verification_tera_gas))
-                    .resolve_verification(node_id),
-            )
-            .detach();
 
         // The yield handle is already the return value (`enqueue_yield_request`
         // called `promise_return`); nothing further to return.
@@ -2514,7 +2516,7 @@ impl MpcContract {
         // Fail the submitter's transaction from a separate receipt so the
         // cleanup above commits (a panic here would roll it back).
         let promise = Promise::new(env::current_account_id()).function_call(
-            method_names::FAIL_ON_ATTESTATION_TIMEOUT.to_string(),
+            method_names::FAIL_ATTESTATION_SUBMISSION.to_string(),
             borsh::to_vec(&reason).expect("borsh serialization of reason must succeed"),
             NearToken::from_near(0),
             Gas::from_tgas(self.config.fail_on_timeout_tera_gas),
@@ -2524,8 +2526,10 @@ impl MpcContract {
 
     /// Fails the original `submit_participant_info` transaction with `reason`,
     /// from a receipt separate from the cleanup so the cleanup is not rolled back.
+    /// Reached for every failure outcome (verifier rejection, post-DCAP failure,
+    /// or yield timeout), not just timeouts.
     #[private]
-    pub fn fail_on_attestation_timeout(#[serializer(borsh)] reason: String) {
+    pub fn fail_attestation_submission(#[serializer(borsh)] reason: String) {
         env::panic_str(&reason);
     }
 
