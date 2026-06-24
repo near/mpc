@@ -147,8 +147,7 @@ impl TeeState {
     }
 
     fn current_time_seconds() -> u64 {
-        let current_time_milliseconds = env::block_timestamp_ms();
-        current_time_milliseconds / 1_000
+        env::block_timestamp_ms() / 1_000
     }
 
     /// Test-only dispatcher for [`Attestation::Mock`]-based unit tests. In
