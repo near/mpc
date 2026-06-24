@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::path::Path;
 
 use near_account_id::AccountId;
@@ -153,7 +154,7 @@ fn run_node(
     ready_sender: tokio::sync::oneshot::Sender<RunNodeResult>,
     near_config: nearcore::NearConfig,
     home_dir: &Path,
-    shutdown_receiver: tokio::sync::oneshot::Receiver<()>,
+    mut shutdown_receiver: tokio::sync::oneshot::Receiver<()>,
     streamer_setup: Option<StreamerSetup>,
 ) {
     let rt = tokio::runtime::Builder::new_multi_thread()
@@ -185,6 +186,24 @@ fn run_node(
         let rpc_handler = NearRpcActorHandle::new(near_node.rpc_handler);
 
         let stream = if let Some((indexer, streamer_config)) = indexer_and_params {
+            // Don't start the streamer until synced, or its `LatestSynced`
+            // cursor pins at genesis. Raced against shutdown to stay responsive.
+            tracing::info!(
+                "chain-gateway waiting for node to finish syncing before streaming blocks."
+            );
+            let synced = await_sync_or_shutdown(client.wait_for_full_sync(), async {
+                let _ = (&mut shutdown_receiver).await;
+            })
+            .await;
+            if !synced {
+                tracing::info!("shutdown requested before sync completed; exiting startup.");
+                let _ = ready_sender.send(Err(ChainGatewayError::StartupFailed {
+                    msg: "shutdown requested before node finished syncing".to_string(),
+                }));
+                actor_system.stop();
+                return;
+            }
+
             let raw_stream: Receiver<StreamerMessage> = indexer.streamer();
             match event_subscriber::streamer::start(
                 streamer_config,
@@ -231,4 +250,49 @@ struct StreamerSetup {
     subscriber: BlockEventSubscriptions,
     indexer_config: near_indexer::IndexerConfig,
     near_config: NearConfig,
+}
+
+async fn await_sync_or_shutdown(
+    sync: impl Future<Output = ()>,
+    shutdown: impl Future<Output = ()>,
+) -> bool {
+    tokio::select! {
+        _ = sync => true,
+        _ = shutdown => false,
+    }
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::await_sync_or_shutdown;
+    use std::future::pending;
+
+    #[tokio::test]
+    async fn await_sync_or_shutdown__should_return_true_when_sync_completes_first() {
+        // Given
+        let sync = async {};
+        let shutdown = pending::<()>();
+
+        // When
+        let synced = await_sync_or_shutdown(sync, shutdown).await;
+
+        // Then
+        assert!(synced);
+    }
+
+    /// A shutdown (or abandoned startup) arriving while the node is still
+    /// syncing must win the race rather than block on sync.
+    #[tokio::test]
+    async fn await_sync_or_shutdown__should_return_false_when_shutdown_first() {
+        // Given
+        let sync = pending::<()>();
+        let shutdown = async {};
+
+        // When
+        let synced = await_sync_or_shutdown(sync, shutdown).await;
+
+        // Then
+        assert!(!synced);
+    }
 }
