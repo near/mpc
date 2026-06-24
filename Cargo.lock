@@ -11222,7 +11222,7 @@ dependencies = [
 
 [[package]]
 name = "test-tee-verifier"
-version = "3.12.0"
+version = "3.13.0"
 dependencies = [
  "borsh",
  "getrandom 0.2.17",
