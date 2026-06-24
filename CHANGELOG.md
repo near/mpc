@@ -113,6 +113,7 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#3620](https://github.com/near/mpc/pull/3620)(@gilcu3): Bump nearcore to 2.13.0 rc1 (#3620)
 
 
+
 ## [3.12.0] - 2026-06-15
 
 ### 🚀 Features
