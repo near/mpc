@@ -4,6 +4,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use anyhow::{Context, Result, bail};
 use futures::future::join_all;
 use mpc_attestation::attestation::DEFAULT_EXPIRATION_DURATION_SECONDS;
+use mpc_primitives::hash::NodeImageHash;
 use near_mpc_contract_interface::method_names::{GET_ATTESTATION, STATE};
 use near_mpc_contract_interface::types::{
     AccountId, Ed25519PublicKey, EpochId, MockAttestation, ParticipantId, ProtocolContractState,
@@ -12,6 +13,7 @@ use near_mpc_contract_interface::types::{
 use serde::Serialize;
 
 use crate::client::Client;
+use crate::docker_hub;
 
 /// Mirrors `mpc_node::run::ATTESTATION_RESUBMISSION_INTERVAL`
 /// (`crates/node/src/run.rs:51`). Re-declared rather than imported to avoid
@@ -37,6 +39,7 @@ pub struct Snapshot {
     pub fetched_at_unix_seconds: u64,
     pub state: ProtocolContractState,
     pub attestations: BTreeMap<Ed25519PublicKey, AttestationResult>,
+    pub mpc_image_versions: BTreeMap<NodeImageHash, String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -66,7 +69,23 @@ pub async fn collect(client: &Client) -> Result<Snapshot> {
     let unique_keys: BTreeSet<Ed25519PublicKey> =
         rows.iter().map(|r| r.tls_public_key.clone()).collect();
 
-    let fetches = unique_keys.into_iter().map(|tls_public_key| async move {
+    let attestation_fetch = fetch_all_attestations(client, unique_keys);
+    let version_fetch = docker_hub::fetch_mpc_image_versions();
+    let (attestations, mpc_image_versions) = tokio::join!(attestation_fetch, version_fetch);
+
+    Ok(Snapshot {
+        fetched_at_unix_seconds: now_unix_seconds(),
+        state,
+        attestations,
+        mpc_image_versions,
+    })
+}
+
+async fn fetch_all_attestations(
+    client: &Client,
+    keys: BTreeSet<Ed25519PublicKey>,
+) -> BTreeMap<Ed25519PublicKey, AttestationResult> {
+    let fetches = keys.into_iter().map(|tls_public_key| async move {
         let result = fetch_attestation(client, &tls_public_key).await;
         let result = match result {
             Ok(opt) => AttestationResult::Ok(opt),
@@ -74,13 +93,7 @@ pub async fn collect(client: &Client) -> Result<Snapshot> {
         };
         (tls_public_key, result)
     });
-    let attestations: BTreeMap<_, _> = join_all(fetches).await.into_iter().collect();
-
-    Ok(Snapshot {
-        fetched_at_unix_seconds: now_unix_seconds(),
-        state,
-        attestations,
-    })
+    join_all(fetches).await.into_iter().collect()
 }
 
 async fn fetch_attestation(

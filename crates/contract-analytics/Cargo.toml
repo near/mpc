@@ -15,12 +15,15 @@ path = "src/lib.rs"
 anyhow = { workspace = true }
 clap = { workspace = true }
 futures = { workspace = true }
+hex = { workspace = true }
 mpc-attestation = { workspace = true }
+mpc-primitives = { workspace = true }
 near-jsonrpc-client = { workspace = true }
 near-jsonrpc-primitives = { workspace = true }
 near-mpc-contract-interface = { workspace = true }
 near-mpc-crypto-types = { workspace = true }
 near-primitives = { workspace = true }
+reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 time = { workspace = true, features = ["formatting"] }

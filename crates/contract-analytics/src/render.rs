@@ -1,7 +1,9 @@
+use std::collections::BTreeMap;
 use std::io::{IsTerminal, Write};
 
 use anyhow::Result;
-use near_mpc_contract_interface::types::{MockAttestation, VerifiedAttestation};
+use mpc_primitives::hash::NodeImageHash;
+use near_mpc_contract_interface::types::{Ed25519PublicKey, MockAttestation, VerifiedAttestation};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
@@ -9,6 +11,8 @@ use crate::report::{
     AttestationResult, ParticipantRow, Snapshot, attestation_status, expiry_unix_seconds, is_stale,
     rows_sorted_by_tls,
 };
+
+const NUM_COLS: usize = 10;
 
 pub fn json(snapshot: &Snapshot) -> Result<()> {
     let stdout = std::io::stdout();
@@ -23,7 +27,7 @@ pub fn table(snapshot: &Snapshot) -> Result<()> {
     let rows = rows_sorted_by_tls(&snapshot.state);
     let now = snapshot.fetched_at_unix_seconds;
 
-    let header = [
+    let header: [&str; NUM_COLS] = [
         "ACCOUNT_ID",
         "TLS_KEY",
         "PARTICIPANT_ID",
@@ -31,11 +35,12 @@ pub fn table(snapshot: &Snapshot) -> Result<()> {
         "URL",
         "MPC_IMAGE_HASH",
         "LAUNCHER_COMPOSE_HASH",
+        "MPC_VERSION",
         "EXPIRES_AT",
         "EXPIRES_IN",
     ];
 
-    let mut data: Vec<[String; 9]> = Vec::with_capacity(rows.len());
+    let mut data: Vec<[String; NUM_COLS]> = Vec::with_capacity(rows.len());
     let mut stale_count = 0usize;
     let mut missing_count = 0usize;
     let mut healthy_count = 0usize;
@@ -49,7 +54,12 @@ pub fn table(snapshot: &Snapshot) -> Result<()> {
             "healthy" => healthy_count += 1,
             _ => {}
         }
-        data.push(format_row(row, attestation, now)?);
+        data.push(format_row(
+            row,
+            attestation,
+            &snapshot.mpc_image_versions,
+            now,
+        )?);
     }
 
     print_table(
@@ -74,9 +84,11 @@ pub fn table(snapshot: &Snapshot) -> Result<()> {
 fn format_row(
     row: &ParticipantRow,
     attestation: Option<&AttestationResult>,
+    versions: &BTreeMap<NodeImageHash, String>,
     now: u64,
-) -> Result<[String; 9]> {
+) -> Result<[String; NUM_COLS]> {
     let (mpc_hash, launcher_hash, expires_at, expires_in) = attestation_columns(attestation, now)?;
+    let mpc_version = mpc_version_cell(attestation, versions);
     Ok([
         row.account_id.to_string(),
         String::from(&row.tls_public_key),
@@ -85,9 +97,29 @@ fn format_row(
         row.url.clone(),
         mpc_hash,
         launcher_hash,
+        mpc_version,
         expires_at,
         expires_in,
     ])
+}
+
+fn mpc_version_cell(
+    result: Option<&AttestationResult>,
+    versions: &BTreeMap<NodeImageHash, String>,
+) -> String {
+    match result {
+        Some(AttestationResult::Ok(Some(VerifiedAttestation::Dstack(d)))) => {
+            if let Some(tag) = versions.get(&d.mpc_image_hash) {
+                tag.clone()
+            } else if versions.is_empty() {
+                "n/a".to_string()
+            } else {
+                "?".to_string()
+            }
+        }
+        Some(AttestationResult::Ok(Some(VerifiedAttestation::Mock(_)))) => "mock".to_string(),
+        _ => dash(),
+    }
 }
 
 fn attestation_columns(
@@ -141,17 +173,14 @@ fn hashes(att: &VerifiedAttestation) -> (String, String) {
 }
 
 fn print_table(
-    header: &[&str; 9],
-    data: &[[String; 9]],
+    header: &[&str; NUM_COLS],
+    data: &[[String; NUM_COLS]],
     rows: &[ParticipantRow],
-    attestations: &std::collections::BTreeMap<
-        near_mpc_contract_interface::types::Ed25519PublicKey,
-        AttestationResult,
-    >,
+    attestations: &BTreeMap<Ed25519PublicKey, AttestationResult>,
     now: u64,
     use_color: bool,
 ) -> Result<()> {
-    let mut widths = [0usize; 9];
+    let mut widths = [0usize; NUM_COLS];
     for (i, h) in header.iter().enumerate() {
         widths[i] = h.len();
     }
@@ -175,7 +204,7 @@ fn print_table(
     Ok(())
 }
 
-fn print_header(header: &[&str; 9], widths: &[usize; 9]) {
+fn print_header(header: &[&str; NUM_COLS], widths: &[usize; NUM_COLS]) {
     let mut line = String::new();
     for (i, h) in header.iter().enumerate() {
         if i > 0 {
@@ -187,7 +216,7 @@ fn print_header(header: &[&str; 9], widths: &[usize; 9]) {
     println!("{}", "-".repeat(line.len()));
 }
 
-fn print_row(row: &[String; 9], widths: &[usize; 9], use_color: bool, stale: bool) {
+fn print_row(row: &[String; NUM_COLS], widths: &[usize; NUM_COLS], use_color: bool, stale: bool) {
     let mut line = String::new();
     for (i, cell) in row.iter().enumerate() {
         if i > 0 {
