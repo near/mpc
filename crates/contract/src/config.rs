@@ -39,8 +39,9 @@ const DEFAULT_VERIFIER_TERA_GAS: u64 = 100;
 /// Prepaid gas for the `resolve_verification` callback. Carries the bulk of the
 /// post-DCAP work (allowlist match, RTMR3 replay, app-compose validation, store).
 const DEFAULT_RESOLVE_VERIFICATION_TERA_GAS: u64 = 60;
-/// Prepaid gas for the `on_attestation_verified` yield-callback. Only a trivial
-/// map of the resumed outcome back to the caller, so it needs little.
+/// Prepaid gas for the `on_attestation_verified` yield-callback. Sized for its
+/// heaviest (timeout) branch, which removes the pending entry and schedules both
+/// a refund transfer and the `fail_attestation_submission` promise.
 const DEFAULT_ON_ATTESTATION_VERIFIED_TERA_GAS: u64 = 10;
 
 /// Config for V2 of the contract.

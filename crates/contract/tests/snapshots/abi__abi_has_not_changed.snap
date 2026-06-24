@@ -2139,7 +2139,7 @@ expression: abi
       },
       {
         "name": "submit_participant_info",
-        "doc": " (Prospective) Participants can submit their tee participant information through this\n endpoint.",
+        "doc": " (Prospective) participants submit their TEE attestation through this endpoint.\n\n `Mock` attestations are verified synchronously and stored in this call.\n `Dstack` attestations are verified asynchronously: the call yields and\n dispatches a cross-contract `verify_quote` to the trusted verifier, and the\n submitter's transaction resolves only once the verifier responds (or the\n yield times out). A `Dstack` submission therefore requires a verifier to be\n configured (else [`TeeError::VerifierNotConfigured`]) and rejects a second\n submission from the same account while one is in flight\n ([`TeeError::VerificationAlreadyPending`]). The attached deposit covers\n attestation storage on success and is refunded if verification is rejected\n or times out.",
         "kind": "call",
         "modifiers": [
           "payable"
@@ -2164,7 +2164,7 @@ expression: abi
         "result": {
           "serialization_type": "json",
           "type_schema": {
-            "$ref": "#/definitions/PromiseOrValueNull"
+            "type": "null"
           }
         }
       },

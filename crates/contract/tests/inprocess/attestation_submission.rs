@@ -221,11 +221,8 @@ impl TestSetup {
     ) -> Result<(), mpc_contract::errors::Error> {
         let context = create_context_for_participant(&node_id.account_id);
         testing_env!(context);
-        // These tests submit `Mock` attestations, which resolve synchronously to
-        // `PromiseOrValue::Value(())`; discard the value and surface only errors.
         self.contract
             .submit_participant_info(attestation, node_id.tls_public_key.clone())
-            .map(|_| ())
     }
 
     /// Switches testing context to a given participant at a specific timestamp
@@ -335,13 +332,10 @@ fn submit_participant_info__should_reject_overwrite_from_other_account() {
             .attached_deposit(NearToken::from_near(1))
             .build()
     );
-    let attack_result = setup
-        .contract
-        .submit_participant_info(
-            Attestation::Mock(MockAttestation::Valid),
-            attacker_node.tls_public_key.clone(),
-        )
-        .map(|_| ());
+    let attack_result = setup.contract.submit_participant_info(
+        Attestation::Mock(MockAttestation::Valid),
+        attacker_node.tls_public_key.clone(),
+    );
 
     // Then: the contract rejects the call with the TLS-ownership error and the victim's
     // entry is unchanged.

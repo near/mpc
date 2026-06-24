@@ -363,9 +363,11 @@ impl Attestation {
                 allowed_launcher_docker_compose_hashes,
                 accepted_measurements,
             ),
-            Self::Dstack(_) => Err(VerificationError::Custom(
-                "verify_mock_only called on a Dstack attestation".to_string(),
-            )),
+            Self::Dstack(_) => {
+                unreachable!(
+                    "verify_mock_only is only called on the Mock arm of submit_participant_info"
+                )
+            }
         }
     }
 

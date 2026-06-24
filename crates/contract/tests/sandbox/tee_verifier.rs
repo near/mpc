@@ -90,7 +90,8 @@ fn tls_key() -> dtos::Ed25519PublicKey {
 }
 
 #[tokio::test]
-async fn submit_participant_info__rejects_dstack_when_verifier_not_configured() -> Result<()> {
+async fn submit_participant_info__should_reject_dstack_when_verifier_not_configured() -> Result<()>
+{
     // Given: a running contract with no verifier voted in.
     let SandboxTestSetup {
         mpc_signer_accounts,
@@ -121,7 +122,8 @@ async fn submit_participant_info__rejects_dstack_when_verifier_not_configured() 
 }
 
 #[tokio::test]
-async fn submit_participant_info__refunds_and_stores_nothing_on_verifier_rejection() -> Result<()> {
+async fn submit_participant_info__should_refund_and_store_nothing_on_verifier_rejection()
+-> Result<()> {
     // Given: a contract whose trusted verifier always rejects.
     let SandboxTestSetup {
         worker,
@@ -154,8 +156,9 @@ async fn submit_participant_info__refunds_and_stores_nothing_on_verifier_rejecti
     .await?;
 
     // Then: nothing is stored, the pending entry is cleaned up, and the deposit
-    // is refunded. (The rejection resolves in the yield-resume receipt, not the
-    // original call, so we assert observable state rather than the outer tx flag.)
+    // is refunded. The rejection resolves in the verifier's response receipt (a
+    // later receipt than the original call), so the outcome is observable in
+    // state rather than on the original transaction's result.
     let stored = get_participant_attestation(&contract, &tls_key()).await?;
     assert!(stored.is_none(), "a rejected quote must not be stored");
     assert!(
@@ -167,7 +170,7 @@ async fn submit_participant_info__refunds_and_stores_nothing_on_verifier_rejecti
 }
 
 #[tokio::test]
-async fn submit_participant_info__cleans_up_on_verifier_crash() -> Result<()> {
+async fn submit_participant_info__should_clean_up_on_verifier_crash() -> Result<()> {
     // Given: a contract whose trusted verifier panics (no verdict).
     let SandboxTestSetup {
         worker,
@@ -192,6 +195,9 @@ async fn submit_participant_info__cleans_up_on_verifier_crash() -> Result<()> {
     // `on_attestation_verified`'s timeout branch.
     let submitter = &mpc_signer_accounts[0];
     let balance_before = submitter.view_account().await?.balance;
+    // Unlike the rejection test, the outer-tx result isn't asserted here: the
+    // failure only resolves when the yield times out, which `near-workspaces`
+    // does not surface on the original `transact()` — so we assert state instead.
     let _ = submit_participant_info_with_deposit(
         submitter,
         &contract,

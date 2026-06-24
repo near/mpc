@@ -781,15 +781,25 @@ impl MpcContract {
         )
     }
 
-    /// (Prospective) Participants can submit their tee participant information through this
-    /// endpoint.
+    /// (Prospective) participants submit their TEE attestation through this endpoint.
+    ///
+    /// `Mock` attestations are verified synchronously and stored in this call.
+    /// `Dstack` attestations are verified asynchronously: the call yields and
+    /// dispatches a cross-contract `verify_quote` to the trusted verifier, and the
+    /// submitter's transaction resolves only once the verifier responds (or the
+    /// yield times out). A `Dstack` submission therefore requires a verifier to be
+    /// configured (else [`TeeError::VerifierNotConfigured`]) and rejects a second
+    /// submission from the same account while one is in flight
+    /// ([`TeeError::VerificationAlreadyPending`]). The attached deposit covers
+    /// attestation storage on success and is refunded if verification is rejected
+    /// or times out.
     #[payable]
     #[handle_result]
     pub fn submit_participant_info(
         &mut self,
         proposed_participant_attestation: dtos::Attestation,
         tls_public_key: dtos::Ed25519PublicKey,
-    ) -> Result<PromiseOrValue<()>, Error> {
+    ) -> Result<(), Error> {
         let proposed_participant_attestation =
             proposed_participant_attestation.try_into_contract_type()?;
 
@@ -843,10 +853,10 @@ impl MpcContract {
                     caller_is_not_participant,
                     env::attached_deposit(),
                 )?;
-                Ok(PromiseOrValue::Value(()))
+                Ok(())
             }
             Attestation::Dstack(dstack) => {
-                Ok(self.submit_dstack_attestation(node_id, dstack, caller_is_not_participant)?)
+                self.submit_dstack_attestation(node_id, dstack, caller_is_not_participant)
             }
         }
     }
@@ -859,7 +869,7 @@ impl MpcContract {
         node_id: NodeId,
         dstack: DstackAttestation,
         caller_is_not_participant: bool,
-    ) -> Result<PromiseOrValue<()>, Error> {
+    ) -> Result<(), Error> {
         let account_id = node_id.account_id.clone();
 
         // One in-flight verification per account: a duplicate submit before the
@@ -874,18 +884,19 @@ impl MpcContract {
             return Err(TeeError::VerifierNotConfigured.into());
         };
 
-        let (quote, collateral) = (dstack.quote.clone(), dstack.collateral.clone());
         let attached_deposit = env::attached_deposit();
         let tls_public_key = node_id.tls_public_key.clone();
 
         // Detached cross-contract call to the verifier; its `.then` bridges the
         // response into a `promise_yield_resume` on the yield registered below.
         // Built before `enqueue_yield_request` so that the latter's
-        // `promise_return` stays the final host call (see its doc comment).
+        // `promise_return` stays the method's final host call (see its doc
+        // comment). Serialize the quote/collateral by reference so `dstack` can
+        // move into the pending entry below without cloning the (large) payload.
         Promise::new(verifier_account_id)
             .function_call(
                 method_names::VERIFY_QUOTE.to_string(),
-                borsh::to_vec(&(quote, collateral))
+                borsh::to_vec(&(&dstack.quote, &dstack.collateral))
                     .expect("borsh serialization of verify_quote args must succeed"),
                 NearToken::from_yoctonear(0),
                 Gas::from_tgas(self.config.verifier_tera_gas),
@@ -915,9 +926,10 @@ impl MpcContract {
             },
         );
 
-        // The yield handle is already the return value (`enqueue_yield_request`
-        // called `promise_return`); nothing further to return.
-        Ok(PromiseOrValue::Value(()))
+        // The yield is the method's return value: `enqueue_yield_request` called
+        // `promise_return` as the final host call, so returning unit here adds no
+        // `value_return` that would override it.
+        Ok(())
     }
 
     fn charge_attestation_storage(
@@ -2450,7 +2462,9 @@ impl MpcContract {
         let dstack = pending.dstack.clone();
         let caller_is_not_participant = pending.caller_is_not_participant;
         let attached_deposit = pending.attached_deposit;
-        let tls_public_key = node_id.tls_public_key.clone();
+        // The key `revert_dstack_store` unwinds; equal to `node_id`'s by
+        // construction, but read it from the pending entry for rollback symmetry.
+        let tls_public_key = pending.tls_public_key.clone();
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
@@ -4254,9 +4268,7 @@ mod tests {
             .build();
         testing_env!(participant_context);
 
-        contract
-            .submit_participant_info(Attestation::Mock(attestation), dto_public_key)
-            .map(|_| ())
+        contract.submit_participant_info(Attestation::Mock(attestation), dto_public_key)
     }
 
     fn submit_valid_attestations(
@@ -4673,7 +4685,7 @@ mod tests {
             .build();
         testing_env!(ctx);
 
-        let _ = contract
+        contract
             .submit_participant_info(valid_attestation, participant_info.tls_public_key.clone())
             .expect("Expected panic if predecessor != signer");
     }
@@ -4700,7 +4712,7 @@ mod tests {
             .build();
         testing_env!(ctx);
 
-        let _ = contract
+        contract
             .submit_participant_info(valid_attestation, dto_public_key)
             .expect("Outsider attestation submission should succeed");
 
@@ -4762,7 +4774,7 @@ mod tests {
                 .build()
         );
 
-        let _ = contract
+        contract
             .submit_participant_info(Attestation::Mock(MockAttestation::Valid), dto_public_key)
             .unwrap();
 
