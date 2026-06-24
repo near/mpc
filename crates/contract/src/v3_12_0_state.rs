@@ -125,6 +125,8 @@ impl From<MpcContract> for crate::MpcContract {
             ),
             tee_verifier_account_id: None,
             tee_verifier_votes: TeeVerifierVotes::default(),
+            // Nothing is in-flight across an upgrade: start with an empty map.
+            pending_attestations: LookupMap::new(StorageKey::PendingAttestationsV1),
         }
     }
 }

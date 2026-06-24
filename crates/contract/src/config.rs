@@ -34,6 +34,14 @@ const DEFAULT_REMOVE_NON_PARTICIPANT_UPDATE_VOTES_TERA_GAS: u64 = 5;
 const DEFAULT_CLEAN_FOREIGN_CHAIN_DATA_TERA_GAS: u64 = 5;
 /// Prepaid gas for a `remove_non_participant_tee_verifier_votes` call
 const DEFAULT_REMOVE_NON_PARTICIPANT_TEE_VERIFIER_VOTES_TERA_GAS: u64 = 5;
+/// Gas attached to the cross-contract `verify_quote` call on the TEE verifier.
+const DEFAULT_VERIFIER_TERA_GAS: u64 = 100;
+/// Prepaid gas for the `resolve_verification` callback. Carries the bulk of the
+/// post-DCAP work (allowlist match, RTMR3 replay, app-compose validation, store).
+const DEFAULT_RESOLVE_VERIFICATION_TERA_GAS: u64 = 60;
+/// Prepaid gas for the `on_attestation_verified` yield-callback. Only a trivial
+/// map of the resumed outcome back to the caller, so it needs little.
+const DEFAULT_ON_ATTESTATION_VERIFIED_TERA_GAS: u64 = 10;
 
 /// Config for V2 of the contract.
 #[near(serializers=[borsh, json])]
@@ -68,6 +76,12 @@ pub(crate) struct Config {
     pub(crate) clean_foreign_chain_data_tera_gas: u64,
     /// Prepaid gas for a `remove_non_participant_tee_verifier_votes` call.
     pub(crate) remove_non_participant_tee_verifier_votes_tera_gas: u64,
+    /// Gas attached to the cross-contract `verify_quote` call on the verifier.
+    pub(crate) verifier_tera_gas: u64,
+    /// Prepaid gas for the `resolve_verification` callback.
+    pub(crate) resolve_verification_tera_gas: u64,
+    /// Prepaid gas for the `on_attestation_verified` yield-callback.
+    pub(crate) on_attestation_verified_tera_gas: u64,
 }
 
 impl Default for Config {
@@ -94,6 +108,9 @@ impl Default for Config {
             clean_foreign_chain_data_tera_gas: DEFAULT_CLEAN_FOREIGN_CHAIN_DATA_TERA_GAS,
             remove_non_participant_tee_verifier_votes_tera_gas:
                 DEFAULT_REMOVE_NON_PARTICIPANT_TEE_VERIFIER_VOTES_TERA_GAS,
+            verifier_tera_gas: DEFAULT_VERIFIER_TERA_GAS,
+            resolve_verification_tera_gas: DEFAULT_RESOLVE_VERIFICATION_TERA_GAS,
+            on_attestation_verified_tera_gas: DEFAULT_ON_ATTESTATION_VERIFIED_TERA_GAS,
         }
     }
 }

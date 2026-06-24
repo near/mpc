@@ -65,6 +65,7 @@ abi = [
     "near-mpc-contract-interface/abi",
     "mpc-attestation/abi",
     "mpc-primitives/abi",
+    "tee-verifier-interface/borsh-schema",
     "schemars",
 ]
 # This is used when running `cargo clippy --all-features`, because otherwise `abi` feat will break compilation.
@@ -87,7 +88,8 @@ k256 = { workspace = true, features = [
     "arithmetic",
     "expose-field",
 ] }
-mpc-attestation = { workspace = true, features = ["local-verify"] }
+attestation = { workspace = true }
+mpc-attestation = { workspace = true }
 mpc-primitives = { workspace = true }
 near-account-id = { workspace = true, features = ["serde"] }
 near-mpc-bounded-collections = { workspace = true }
@@ -98,6 +100,7 @@ near-mpc-contract-interface = { workspace = true, features = [
 ] }
 near-mpc-signature-verifier = { workspace = true }
 near-sdk = { workspace = true }
+tee-verifier-interface = { workspace = true }
 rand = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

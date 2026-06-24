@@ -4,6 +4,7 @@ use test_utils::contract_build::ContractBuilder;
 const MPC_CONTRACT_MANIFEST: &str = "crates/contract/Cargo.toml";
 const MIGRATION_CONTRACT_MANIFEST: &str = "crates/test-migration-contract/Cargo.toml";
 const PARALLEL_CONTRACT_MANIFEST: &str = "crates/test-parallel-contract/Cargo.toml";
+const STUB_TEE_VERIFIER_MANIFEST: &str = "crates/test-tee-verifier/Cargo.toml";
 const MPC_CONTRACT_OUT_DIR: &str = "target/near/contract-noabi";
 const MPC_CONTRACT_BENCH_OUT_DIR: &str = "target/near/contract-noabi-bench";
 const MPC_CONTRACT_SANDBOX_OUT_DIR: &str = "target/near/contract-noabi-sandbox";
@@ -13,6 +14,7 @@ static CONTRACT_WITH_BENCH_METHODS: OnceLock<Vec<u8>> = OnceLock::new();
 static CONTRACT_WITH_SANDBOX_TEST_METHODS: OnceLock<Vec<u8>> = OnceLock::new();
 static MIGRATION_CONTRACT: OnceLock<Vec<u8>> = OnceLock::new();
 static PARALLEL_CONTRACT: OnceLock<Vec<u8>> = OnceLock::new();
+static STUB_TEE_VERIFIER_CONTRACT: OnceLock<Vec<u8>> = OnceLock::new();
 
 /// Returns the current contract WASM without benchmark utilities.
 /// Use this for most sandbox tests.
@@ -53,4 +55,11 @@ pub fn migration_contract() -> &'static [u8] {
 
 pub fn parallel_contract() -> &'static [u8] {
     PARALLEL_CONTRACT.get_or_init(|| ContractBuilder::new(PARALLEL_CONTRACT_MANIFEST).build())
+}
+
+/// Returns the `test-tee-verifier` stub WASM, used by the async attestation
+/// sandbox tests as a stand-in for the real `tee-verifier` contract.
+pub fn stub_tee_verifier_contract() -> &'static [u8] {
+    STUB_TEE_VERIFIER_CONTRACT
+        .get_or_init(|| ContractBuilder::new(STUB_TEE_VERIFIER_MANIFEST).build())
 }

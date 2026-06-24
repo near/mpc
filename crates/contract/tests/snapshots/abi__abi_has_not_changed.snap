@@ -559,6 +559,40 @@ expression: abi
         }
       },
       {
+        "name": "fail_on_attestation_timeout",
+        "doc": " Fails the original `submit_participant_info` transaction with `reason`,\n from a receipt separate from the cleanup so the cleanup is not rolled back.",
+        "kind": "view",
+        "modifiers": [
+          "private"
+        ],
+        "params": {
+          "serialization_type": "borsh",
+          "args": [
+            {
+              "name": "reason",
+              "type_schema": {
+                "declaration": "String",
+                "definitions": {
+                  "String": {
+                    "Sequence": {
+                      "length_width": 4,
+                      "length_range": {
+                        "start": 0,
+                        "end": 4294967295
+                      },
+                      "elements": "u8"
+                    }
+                  },
+                  "u8": {
+                    "Primitive": 1
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
         "name": "fail_on_timeout",
         "kind": "view",
         "modifiers": [
@@ -921,6 +955,99 @@ expression: abi
         }
       },
       {
+        "name": "on_attestation_verified",
+        "doc": " Yield-resume callback for a `Dstack` submission. On success resolves the\n caller's transaction; on a verifier rejection or the ~200-block timeout\n it cleans up, refunds, and fails the transaction from a separate receipt.",
+        "kind": "call",
+        "modifiers": [
+          "private"
+        ],
+        "params": {
+          "serialization_type": "borsh",
+          "args": [
+            {
+              "name": "account_id",
+              "type_schema": {
+                "declaration": "AccountId",
+                "definitions": {
+                  "AccountId": {
+                    "Struct": [
+                      "String"
+                    ]
+                  },
+                  "String": {
+                    "Sequence": {
+                      "length_width": 4,
+                      "length_range": {
+                        "start": 0,
+                        "end": 4294967295
+                      },
+                      "elements": "u8"
+                    }
+                  },
+                  "u8": {
+                    "Primitive": 1
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "callbacks": [
+          {
+            "serialization_type": "borsh",
+            "type_schema": {
+              "declaration": "FinalOutcome",
+              "definitions": {
+                "FinalOutcome": {
+                  "Enum": {
+                    "tag_width": 1,
+                    "variants": [
+                      [
+                        0,
+                        "Ok",
+                        "FinalOutcome__Ok"
+                      ],
+                      [
+                        1,
+                        "Err",
+                        "FinalOutcome__Err"
+                      ]
+                    ]
+                  }
+                },
+                "FinalOutcome__Err": {
+                  "Struct": [
+                    "String"
+                  ]
+                },
+                "FinalOutcome__Ok": {
+                  "Struct": null
+                },
+                "String": {
+                  "Sequence": {
+                    "length_width": 4,
+                    "length_range": {
+                      "start": 0,
+                      "end": 4294967295
+                    },
+                    "elements": "u8"
+                  }
+                },
+                "u8": {
+                  "Primitive": 1
+                }
+              }
+            }
+          }
+        ],
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/PromiseOrValueNull"
+          }
+        }
+      },
+      {
         "name": "os_measurement_votes",
         "doc": " Returns the current OS measurement votes, showing each participant's vote.",
         "kind": "view",
@@ -1005,6 +1132,18 @@ expression: abi
                       ],
                       [
                         "remove_non_participant_tee_verifier_votes_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "verifier_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "resolve_verification_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "on_attestation_verified_tera_gas",
                         "u64"
                       ]
                     ]
@@ -1258,6 +1397,470 @@ expression: abi
             }
           ]
         }
+      },
+      {
+        "name": "resolve_verification",
+        "doc": " `.then` bridge for the cross-contract `verify_quote` call. Maps the\n verifier's response to a [`FinalOutcome`] and resumes the yield registered\n in [`Self::submit_dstack_attestation`].",
+        "kind": "call",
+        "modifiers": [
+          "private"
+        ],
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "node_id",
+              "type_schema": {
+                "$ref": "#/definitions/NodeId"
+              }
+            }
+          ]
+        },
+        "callbacks": [
+          {
+            "serialization_type": "borsh",
+            "type_schema": {
+              "declaration": "VerificationResult",
+              "definitions": {
+                "EnclaveReport": {
+                  "Struct": [
+                    [
+                      "cpu_svn",
+                      "[u8; 16]"
+                    ],
+                    [
+                      "misc_select",
+                      "u32"
+                    ],
+                    [
+                      "reserved1",
+                      "[u8; 28]"
+                    ],
+                    [
+                      "attributes",
+                      "[u8; 16]"
+                    ],
+                    [
+                      "mr_enclave",
+                      "[u8; 32]"
+                    ],
+                    [
+                      "reserved2",
+                      "[u8; 32]"
+                    ],
+                    [
+                      "mr_signer",
+                      "[u8; 32]"
+                    ],
+                    [
+                      "reserved3",
+                      "[u8; 96]"
+                    ],
+                    [
+                      "isv_prod_id",
+                      "u16"
+                    ],
+                    [
+                      "isv_svn",
+                      "u16"
+                    ],
+                    [
+                      "reserved4",
+                      "[u8; 60]"
+                    ],
+                    [
+                      "report_data",
+                      "[u8; 64]"
+                    ]
+                  ]
+                },
+                "Report": {
+                  "Enum": {
+                    "tag_width": 1,
+                    "variants": [
+                      [
+                        0,
+                        "SgxEnclave",
+                        "Report__SgxEnclave"
+                      ],
+                      [
+                        1,
+                        "TD10",
+                        "Report__TD10"
+                      ],
+                      [
+                        2,
+                        "TD15",
+                        "Report__TD15"
+                      ]
+                    ]
+                  }
+                },
+                "Report__SgxEnclave": {
+                  "Struct": [
+                    "EnclaveReport"
+                  ]
+                },
+                "Report__TD10": {
+                  "Struct": [
+                    "TDReport10"
+                  ]
+                },
+                "Report__TD15": {
+                  "Struct": [
+                    "TDReport15"
+                  ]
+                },
+                "String": {
+                  "Sequence": {
+                    "length_width": 4,
+                    "length_range": {
+                      "start": 0,
+                      "end": 4294967295
+                    },
+                    "elements": "u8"
+                  }
+                },
+                "TDReport10": {
+                  "Struct": [
+                    [
+                      "tee_tcb_svn",
+                      "[u8; 16]"
+                    ],
+                    [
+                      "mr_seam",
+                      "[u8; 48]"
+                    ],
+                    [
+                      "mr_signer_seam",
+                      "[u8; 48]"
+                    ],
+                    [
+                      "seam_attributes",
+                      "[u8; 8]"
+                    ],
+                    [
+                      "td_attributes",
+                      "[u8; 8]"
+                    ],
+                    [
+                      "xfam",
+                      "[u8; 8]"
+                    ],
+                    [
+                      "mr_td",
+                      "[u8; 48]"
+                    ],
+                    [
+                      "mr_config_id",
+                      "[u8; 48]"
+                    ],
+                    [
+                      "mr_owner",
+                      "[u8; 48]"
+                    ],
+                    [
+                      "mr_owner_config",
+                      "[u8; 48]"
+                    ],
+                    [
+                      "rt_mr0",
+                      "[u8; 48]"
+                    ],
+                    [
+                      "rt_mr1",
+                      "[u8; 48]"
+                    ],
+                    [
+                      "rt_mr2",
+                      "[u8; 48]"
+                    ],
+                    [
+                      "rt_mr3",
+                      "[u8; 48]"
+                    ],
+                    [
+                      "report_data",
+                      "[u8; 64]"
+                    ]
+                  ]
+                },
+                "TDReport15": {
+                  "Struct": [
+                    [
+                      "base",
+                      "TDReport10"
+                    ],
+                    [
+                      "tee_tcb_svn2",
+                      "[u8; 16]"
+                    ],
+                    [
+                      "mr_service_td",
+                      "[u8; 48]"
+                    ]
+                  ]
+                },
+                "TcbStatus": {
+                  "Enum": {
+                    "tag_width": 1,
+                    "variants": [
+                      [
+                        0,
+                        "UpToDate",
+                        "TcbStatus__UpToDate"
+                      ],
+                      [
+                        1,
+                        "OutOfDateConfigurationNeeded",
+                        "TcbStatus__OutOfDateConfigurationNeeded"
+                      ],
+                      [
+                        2,
+                        "OutOfDate",
+                        "TcbStatus__OutOfDate"
+                      ],
+                      [
+                        3,
+                        "ConfigurationAndSWHardeningNeeded",
+                        "TcbStatus__ConfigurationAndSWHardeningNeeded"
+                      ],
+                      [
+                        4,
+                        "ConfigurationNeeded",
+                        "TcbStatus__ConfigurationNeeded"
+                      ],
+                      [
+                        5,
+                        "SWHardeningNeeded",
+                        "TcbStatus__SWHardeningNeeded"
+                      ],
+                      [
+                        6,
+                        "Revoked",
+                        "TcbStatus__Revoked"
+                      ]
+                    ]
+                  }
+                },
+                "TcbStatusWithAdvisory": {
+                  "Struct": [
+                    [
+                      "status",
+                      "TcbStatus"
+                    ],
+                    [
+                      "advisory_ids",
+                      "Vec<String>"
+                    ]
+                  ]
+                },
+                "TcbStatus__ConfigurationAndSWHardeningNeeded": {
+                  "Struct": null
+                },
+                "TcbStatus__ConfigurationNeeded": {
+                  "Struct": null
+                },
+                "TcbStatus__OutOfDate": {
+                  "Struct": null
+                },
+                "TcbStatus__OutOfDateConfigurationNeeded": {
+                  "Struct": null
+                },
+                "TcbStatus__Revoked": {
+                  "Struct": null
+                },
+                "TcbStatus__SWHardeningNeeded": {
+                  "Struct": null
+                },
+                "TcbStatus__UpToDate": {
+                  "Struct": null
+                },
+                "Vec<String>": {
+                  "Sequence": {
+                    "length_width": 4,
+                    "length_range": {
+                      "start": 0,
+                      "end": 4294967295
+                    },
+                    "elements": "String"
+                  }
+                },
+                "Vec<u8>": {
+                  "Sequence": {
+                    "length_width": 4,
+                    "length_range": {
+                      "start": 0,
+                      "end": 4294967295
+                    },
+                    "elements": "u8"
+                  }
+                },
+                "VerificationResult": {
+                  "Enum": {
+                    "tag_width": 1,
+                    "variants": [
+                      [
+                        0,
+                        "Verified",
+                        "VerificationResult__Verified"
+                      ],
+                      [
+                        1,
+                        "Rejected",
+                        "VerificationResult__Rejected"
+                      ]
+                    ]
+                  }
+                },
+                "VerificationResult__Rejected": {
+                  "Struct": [
+                    "VerifierError"
+                  ]
+                },
+                "VerificationResult__Verified": {
+                  "Struct": [
+                    "VerifiedReport"
+                  ]
+                },
+                "VerifiedReport": {
+                  "Struct": [
+                    [
+                      "status",
+                      "String"
+                    ],
+                    [
+                      "advisory_ids",
+                      "Vec<String>"
+                    ],
+                    [
+                      "report",
+                      "Report"
+                    ],
+                    [
+                      "ppid",
+                      "Vec<u8>"
+                    ],
+                    [
+                      "qe_status",
+                      "TcbStatusWithAdvisory"
+                    ],
+                    [
+                      "platform_status",
+                      "TcbStatusWithAdvisory"
+                    ]
+                  ]
+                },
+                "VerifierError": {
+                  "Enum": {
+                    "tag_width": 1,
+                    "variants": [
+                      [
+                        0,
+                        "DcapVerification",
+                        "VerifierError__DcapVerification"
+                      ]
+                    ]
+                  }
+                },
+                "VerifierError__DcapVerification": {
+                  "Struct": [
+                    "String"
+                  ]
+                },
+                "[u8; 16]": {
+                  "Sequence": {
+                    "length_width": 0,
+                    "length_range": {
+                      "start": 16,
+                      "end": 16
+                    },
+                    "elements": "u8"
+                  }
+                },
+                "[u8; 28]": {
+                  "Sequence": {
+                    "length_width": 0,
+                    "length_range": {
+                      "start": 28,
+                      "end": 28
+                    },
+                    "elements": "u8"
+                  }
+                },
+                "[u8; 32]": {
+                  "Sequence": {
+                    "length_width": 0,
+                    "length_range": {
+                      "start": 32,
+                      "end": 32
+                    },
+                    "elements": "u8"
+                  }
+                },
+                "[u8; 48]": {
+                  "Sequence": {
+                    "length_width": 0,
+                    "length_range": {
+                      "start": 48,
+                      "end": 48
+                    },
+                    "elements": "u8"
+                  }
+                },
+                "[u8; 60]": {
+                  "Sequence": {
+                    "length_width": 0,
+                    "length_range": {
+                      "start": 60,
+                      "end": 60
+                    },
+                    "elements": "u8"
+                  }
+                },
+                "[u8; 64]": {
+                  "Sequence": {
+                    "length_width": 0,
+                    "length_range": {
+                      "start": 64,
+                      "end": 64
+                    },
+                    "elements": "u8"
+                  }
+                },
+                "[u8; 8]": {
+                  "Sequence": {
+                    "length_width": 0,
+                    "length_range": {
+                      "start": 8,
+                      "end": 8
+                    },
+                    "elements": "u8"
+                  }
+                },
+                "[u8; 96]": {
+                  "Sequence": {
+                    "length_width": 0,
+                    "length_range": {
+                      "start": 96,
+                      "end": 96
+                    },
+                    "elements": "u8"
+                  }
+                },
+                "u16": {
+                  "Primitive": 2
+                },
+                "u32": {
+                  "Primitive": 4
+                },
+                "u8": {
+                  "Primitive": 1
+                }
+              }
+            }
+          }
+        ]
       },
       {
         "name": "respond",
@@ -1561,7 +2164,7 @@ expression: abi
         "result": {
           "serialization_type": "json",
           "type_schema": {
-            "type": "null"
+            "$ref": "#/definitions/PromiseOrValueNull"
           }
         }
       },
@@ -2716,12 +3319,15 @@ expression: abi
             "contract_upgrade_deposit_tera_gas",
             "fail_on_timeout_tera_gas",
             "key_event_timeout_blocks",
+            "on_attestation_verified_tera_gas",
             "remove_non_participant_tee_verifier_votes_tera_gas",
             "remove_non_participant_update_votes_tera_gas",
+            "resolve_verification_tera_gas",
             "return_ck_and_clean_state_on_success_call_tera_gas",
             "return_signature_and_clean_state_on_success_call_tera_gas",
             "sign_call_gas_attachment_requirement_tera_gas",
-            "tee_upgrade_deadline_duration_seconds"
+            "tee_upgrade_deadline_duration_seconds",
+            "verifier_tera_gas"
           ],
           "properties": {
             "ckd_call_gas_attachment_requirement_tera_gas": {
@@ -2772,6 +3378,12 @@ expression: abi
               "format": "uint64",
               "minimum": 0.0
             },
+            "on_attestation_verified_tera_gas": {
+              "description": "Prepaid gas for the `on_attestation_verified` yield-callback.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
             "remove_non_participant_tee_verifier_votes_tera_gas": {
               "description": "Prepaid gas for a `remove_non_participant_tee_verifier_votes` call.",
               "type": "integer",
@@ -2780,6 +3392,12 @@ expression: abi
             },
             "remove_non_participant_update_votes_tera_gas": {
               "description": "Prepaid gas for a `remove_non_participant_update_votes` call.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "resolve_verification_tera_gas": {
+              "description": "Prepaid gas for the `resolve_verification` callback.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
@@ -2804,6 +3422,12 @@ expression: abi
             },
             "tee_upgrade_deadline_duration_seconds": {
               "description": "The grace period duration for expiry of old mpc image hashes once a new one is added.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "verifier_tera_gas": {
+              "description": "Gas attached to the cross-contract `verify_quote` call on the verifier.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
@@ -3392,6 +4016,15 @@ expression: abi
               "format": "uint64",
               "minimum": 0.0
             },
+            "on_attestation_verified_tera_gas": {
+              "description": "Prepaid gas for the `on_attestation_verified` yield-callback.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
             "remove_non_participant_tee_verifier_votes_tera_gas": {
               "description": "Prepaid gas for a `remove_non_participant_tee_verifier_votes` call.",
               "type": [
@@ -3403,6 +4036,15 @@ expression: abi
             },
             "remove_non_participant_update_votes_tera_gas": {
               "description": "Prepaid gas for a `remove_non_participant_update_votes` call.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "resolve_verification_tera_gas": {
+              "description": "Prepaid gas for the `resolve_verification` callback.",
               "type": [
                 "integer",
                 "null"
@@ -3439,6 +4081,15 @@ expression: abi
             },
             "tee_upgrade_deadline_duration_seconds": {
               "description": "The grace period duration for expiry of old mpc image hashes once a new one is added.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "verifier_tera_gas": {
+              "description": "Gas attached to the cross-contract `verify_quote` call on the verifier.",
               "type": [
                 "integer",
                 "null"
@@ -4050,6 +4701,9 @@ expression: abi
               "$ref": "#/definitions/Bls12381G1PublicKey"
             }
           }
+        },
+        "PromiseOrValueNull": {
+          "type": "null"
         },
         "PromiseOrValueSignatureResponse": {
           "oneOf": [

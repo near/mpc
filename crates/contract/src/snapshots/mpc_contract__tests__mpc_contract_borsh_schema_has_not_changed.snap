@@ -258,6 +258,18 @@ BorshSchemaContainer {
                         "remove_non_participant_tee_verifier_votes_tera_gas",
                         "u64",
                     ),
+                    (
+                        "verifier_tera_gas",
+                        "u64",
+                    ),
+                    (
+                        "resolve_verification_tera_gas",
+                        "u64",
+                    ),
+                    (
+                        "on_attestation_verified_tera_gas",
+                        "u64",
+                    ),
                 ],
             ),
         },
@@ -710,6 +722,10 @@ BorshSchemaContainer {
                     (
                         "tee_verifier_votes",
                         "TeeVerifierVotes",
+                    ),
+                    (
+                        "pending_attestations",
+                        "LookupMap",
                     ),
                 ],
             ),

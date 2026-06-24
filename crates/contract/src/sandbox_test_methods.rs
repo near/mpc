@@ -11,7 +11,7 @@
 use crate::MpcContract;
 use crate::primitives::ckd::CKDRequest;
 use crate::primitives::signature::SignatureRequest;
-use near_sdk::near;
+use near_sdk::{AccountId, near};
 
 // Import the generated extension trait from near
 use crate::MpcContractExt;
@@ -47,5 +47,12 @@ impl MpcContract {
             .unwrap_or(0);
         u32::try_from(len)
             .expect("queue length must fit in u32 — bounded by MAX_PENDING_REQUEST_FAN_OUT")
+    }
+
+    /// Whether an in-flight `Dstack` attestation verification is pending for
+    /// `account_id`. Lets the async attestation sandbox tests assert that the
+    /// pending entry was cleaned up after a rejection or yield timeout.
+    pub fn has_pending_attestation(&self, account_id: AccountId) -> bool {
+        self.pending_attestations.contains_key(&account_id)
     }
 }

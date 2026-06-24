@@ -48,6 +48,7 @@ use crate::{
         votes::ProposalHash,
     },
     storage_keys::StorageKey,
+    tee::pending_attestation::{FinalOutcome, PendingAttestation},
     tee::tee_state::{TeeQuoteStatus, TeeState},
     tee::verifier_votes::{TeeVerifierVotes, VerifierChangeProposal},
     update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId},
@@ -71,6 +72,7 @@ use near_mpc_contract_interface::types::{
 use near_mpc_contract_interface::{method_names, types::CKDRequestArgs};
 
 use dtos::{Curve, DomainConfig, DomainId, DomainPurpose, Protocol};
+use mpc_attestation::attestation::{Attestation, DstackAttestation};
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, TeeVerifierCodeHash};
 use near_sdk::{
     AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue, env,
@@ -86,6 +88,7 @@ use primitives::{
 };
 use tee::measurements::{ContractExpectedMeasurements, MeasurementVoteAction, MeasurementVotes};
 use tee::proposal::{CodeHashesVotes, LauncherHashVotes};
+use tee_verifier_interface::{VerificationResult, VerifiedReport};
 
 use state::{ProtocolContractState, running::RunningContractState};
 use tee::{
@@ -140,6 +143,25 @@ fn require_deposit(minimum_deposit: NearToken, predecessor: &AccountId) {
     }
 }
 
+/// Refunds an attestation submitter's attached deposit (no-op for a zero
+/// deposit). Used when a `Dstack` verification is rejected or times out.
+fn refund_attestation_deposit(account_id: &AccountId, deposit: NearToken) {
+    if deposit > NearToken::from_yoctonear(0) {
+        log!("refund attestation deposit {deposit} to {account_id}");
+        Promise::new(account_id.clone()).transfer(deposit).detach();
+    }
+}
+
+fn map_attestation_submission_error(err: AttestationSubmissionError) -> Error {
+    let reason = match &err {
+        AttestationSubmissionError::InvalidAttestation(_) => {
+            format!("TeeQuoteStatus is invalid: {err}")
+        }
+        AttestationSubmissionError::TlsKeyOwnedByOtherAccount => err.to_string(),
+    };
+    InvalidParameters::InvalidTeeRemoteAttestation { reason }.into()
+}
+
 impl Default for MpcContract {
     fn default() -> Self {
         env::panic_str("Calling default not allowed.");
@@ -165,11 +187,17 @@ pub struct MpcContract {
     metrics: Metrics,
     foreign_chains: Lazy<ForeignChainsMetadata>,
     /// The verifier contract account trusted for DCAP verification, or [`None`]
-    /// until participants vote one in. Not yet used to dispatch verification.
+    /// until participants vote one in. A `Dstack` `submit_participant_info`
+    /// offloads quote verification to this account; while it is [`None`], such
+    /// submissions are rejected with [`TeeError::VerifierNotConfigured`].
     // TODO(#3639): once participants have voted a verifier in, make this
     // non-optional via a migration that requires it be set.
     tee_verifier_account_id: Option<AccountId>,
     tee_verifier_votes: TeeVerifierVotes,
+    /// In-flight `Dstack` verifications, one entry per submitter account, held
+    /// between the cross-contract `verify_quote` call and its resolution (or the
+    /// yield timeout). See [`tee::pending_attestation`].
+    pending_attestations: LookupMap<AccountId, PendingAttestation>,
 }
 
 #[near(serializers=[borsh])]
@@ -761,7 +789,7 @@ impl MpcContract {
         &mut self,
         proposed_participant_attestation: dtos::Attestation,
         tls_public_key: dtos::Ed25519PublicKey,
-    ) -> Result<(), Error> {
+    ) -> Result<PromiseOrValue<()>, Error> {
         let proposed_participant_attestation =
             proposed_participant_attestation.try_into_contract_type()?;
 
@@ -774,10 +802,6 @@ impl MpcContract {
             proposed_participant_attestation,
             account_key
         );
-
-        // Save the initial storage usage to know how much to charge the proposer for the storage
-        // used
-        let initial_storage = env::storage_usage();
 
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
@@ -792,62 +816,141 @@ impl MpcContract {
             }
         })?;
 
-        // Add the participant information to the contract state
-        let attestation_insertion_result = self
-            .tee_state
-            .add_participant(
-                NodeId {
-                    account_id: account_id.clone(),
-                    tls_public_key,
-                    account_public_key,
-                },
-                proposed_participant_attestation,
-                tee_upgrade_deadline_duration,
-            )
-            .map_err(|err| {
-                let reason = match &err {
-                    AttestationSubmissionError::InvalidAttestation(_) => {
-                        format!("TeeQuoteStatus is invalid: {err}")
-                    }
-                    AttestationSubmissionError::TlsKeyOwnedByOtherAccount => err.to_string(),
-                };
-                InvalidParameters::InvalidTeeRemoteAttestation { reason }
-            })?;
-
+        let node_id = NodeId {
+            account_id: account_id.clone(),
+            tls_public_key,
+            account_public_key,
+        };
+        // Frozen at submit time and consumed later in the resolution callback.
+        // The callback receipt's predecessor is the contract itself, so participant
+        // status cannot be re-derived there — capture it now. A resharing that
+        // drops this submitter mid-flight therefore won't reclassify the storage
+        // charge, which is acceptable (the alternative is unavailable).
         let caller_is_not_participant = self.voter_account().is_err();
-        let is_new_attestation = matches!(
-            attestation_insertion_result,
-            ParticipantInsertion::NewlyInsertedParticipant
-        );
 
-        let attestation_storage_must_be_paid_by_caller =
-            is_new_attestation || caller_is_not_participant;
-
-        if attestation_storage_must_be_paid_by_caller {
-            // `saturating_sub`: if a re-submission shrinks the entry, charge nothing
-            // rather than underflow. Intentional asymmetry: we do not refund freed bytes
-            // either — the caller already paid for the larger entry, and we'd rather
-            // accept that asymmetry than open a refund path for payload-shrinking games.
-            let storage_used = env::storage_usage().saturating_sub(initial_storage);
-            let cost = env::storage_byte_cost().saturating_mul(storage_used as u128);
-            let attached = env::attached_deposit();
-
-            if attached < cost {
-                return Err(InvalidParameters::InsufficientDeposit {
-                    attached: attached.as_yoctonear(),
-                    required: cost.as_yoctonear(),
-                }
-                .into());
+        match proposed_participant_attestation {
+            Attestation::Mock(mock) => {
+                // Synchronous path: no DCAP, store immediately.
+                let initial_storage = env::storage_usage();
+                let insertion = self
+                    .tee_state
+                    .add_mock_participant(node_id, mock, tee_upgrade_deadline_duration)
+                    .map_err(map_attestation_submission_error)?;
+                self.charge_attestation_storage(
+                    &account_id,
+                    initial_storage,
+                    insertion,
+                    caller_is_not_participant,
+                    env::attached_deposit(),
+                )?;
+                Ok(PromiseOrValue::Value(()))
             }
-
-            // Refund the difference if the proposer attached more than required
-            if let Some(diff) = attached.checked_sub(cost)
-                && diff > NearToken::from_yoctonear(0)
-            {
-                Promise::new(account_id).transfer(diff).detach();
+            Attestation::Dstack(dstack) => {
+                Ok(self.submit_dstack_attestation(node_id, dstack, caller_is_not_participant)?)
             }
         }
+    }
 
+    /// Async `Dstack` submission: register a yield, fire a cross-contract
+    /// `verify_quote` at the trusted verifier, and bridge its response back into
+    /// a `promise_yield_resume` via the `resolve_verification` callback.
+    fn submit_dstack_attestation(
+        &mut self,
+        node_id: NodeId,
+        dstack: DstackAttestation,
+        caller_is_not_participant: bool,
+    ) -> Result<PromiseOrValue<()>, Error> {
+        let account_id = node_id.account_id.clone();
+
+        // One in-flight verification per account: a duplicate submit before the
+        // previous one finishes (verifier response or yield timeout) is rejected.
+        if self.pending_attestations.contains_key(&account_id) {
+            return Err(TeeError::VerificationAlreadyPending.into());
+        }
+
+        // Refuse to submit until a verifier has been voted in: there is no
+        // account to call `verify_quote` on.
+        let Some(verifier_account_id) = self.tee_verifier_account_id.clone() else {
+            return Err(TeeError::VerifierNotConfigured.into());
+        };
+
+        let (quote, collateral) = (dstack.quote.clone(), dstack.collateral.clone());
+        let attached_deposit = env::attached_deposit();
+        let tls_public_key = node_id.tls_public_key.clone();
+
+        self.enqueue_yield_request(
+            method_names::ON_ATTESTATION_VERIFIED,
+            borsh::to_vec(&account_id).expect("borsh serialization of account_id must succeed"),
+            Gas::from_tgas(self.config.on_attestation_verified_tera_gas),
+            |this, data_id| {
+                this.pending_attestations.insert(
+                    account_id.clone(),
+                    PendingAttestation {
+                        dstack,
+                        tls_public_key,
+                        attached_deposit,
+                        caller_is_not_participant,
+                        data_id,
+                    },
+                );
+            },
+        );
+
+        // Cross-contract call to the verifier; its `.then` bridges the response
+        // into a `promise_yield_resume` on the yield registered above.
+        Promise::new(verifier_account_id)
+            .function_call(
+                method_names::VERIFY_QUOTE.to_string(),
+                borsh::to_vec(&(quote, collateral))
+                    .expect("borsh serialization of verify_quote args must succeed"),
+                NearToken::from_yoctonear(0),
+                Gas::from_tgas(self.config.verifier_tera_gas),
+            )
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(Gas::from_tgas(self.config.resolve_verification_tera_gas))
+                    .resolve_verification(node_id),
+            )
+            .detach();
+
+        // The yield handle is already the return value (`enqueue_yield_request`
+        // called `promise_return`); nothing further to return.
+        Ok(PromiseOrValue::Value(()))
+    }
+
+    fn charge_attestation_storage(
+        &self,
+        account_id: &AccountId,
+        initial_storage: u64,
+        insertion: ParticipantInsertion,
+        caller_is_not_participant: bool,
+        attached: NearToken,
+    ) -> Result<(), Error> {
+        let is_new_attestation =
+            matches!(insertion, ParticipantInsertion::NewlyInsertedParticipant);
+        if !(is_new_attestation || caller_is_not_participant) {
+            return Ok(());
+        }
+
+        // `saturating_sub`: if a re-submission shrinks the entry, charge nothing
+        // rather than underflow. Intentional asymmetry: we do not refund freed
+        // bytes either — the caller already paid for the larger entry.
+        let storage_used = env::storage_usage().saturating_sub(initial_storage);
+        let cost = env::storage_byte_cost().saturating_mul(storage_used as u128);
+
+        if attached < cost {
+            return Err(InvalidParameters::InsufficientDeposit {
+                attached: attached.as_yoctonear(),
+                required: cost.as_yoctonear(),
+            }
+            .into());
+        }
+
+        if let Some(diff) = attached.checked_sub(cost)
+            && diff > NearToken::from_yoctonear(0)
+        {
+            Promise::new(account_id.clone()).transfer(diff).detach();
+        }
         Ok(())
     }
 
@@ -1969,6 +2072,7 @@ impl MpcContract {
             ),
             tee_verifier_account_id: None,
             tee_verifier_votes: TeeVerifierVotes::default(),
+            pending_attestations: LookupMap::new(StorageKey::PendingAttestationsV1),
         })
     }
 
@@ -2048,6 +2152,7 @@ impl MpcContract {
             ),
             tee_verifier_account_id: None,
             tee_verifier_votes: TeeVerifierVotes::default(),
+            pending_attestations: LookupMap::new(StorageKey::PendingAttestationsV1),
         })
     }
 
@@ -2269,6 +2374,159 @@ impl MpcContract {
                 near_sdk::PromiseOrValue::Promise(promise.as_return())
             }
         }
+    }
+
+    /// `.then` bridge for the cross-contract `verify_quote` call. Maps the
+    /// verifier's response to a [`FinalOutcome`] and resumes the yield registered
+    /// in [`Self::submit_dstack_attestation`].
+    #[private]
+    pub fn resolve_verification(
+        &mut self,
+        node_id: NodeId,
+        #[serializer(borsh)]
+        #[callback_result]
+        result: Result<VerificationResult, PromiseError>,
+    ) {
+        let account_id = node_id.account_id.clone();
+
+        // A late verifier response can arrive after the ~200-block yield timeout
+        // has already fired and `on_attestation_verified` cleaned up the pending
+        // entry. The yield is then already resolved, so there is nothing to do:
+        // log and return rather than panic on a missing entry or resume twice.
+        if !self.pending_attestations.contains_key(&account_id) {
+            log!(
+                "resolve_verification: no pending attestation for {account_id} (late response or already cleaned up); ignoring"
+            );
+            return;
+        }
+
+        let final_outcome = match result {
+            Err(promise_err) => {
+                // No verdict; let the yield timeout clean up. Do NOT resume, or
+                // we'd race the timeout for ownership of the cleanup path.
+                log!("verifier did not answer for {account_id}: {promise_err:?}");
+                return;
+            }
+            Ok(VerificationResult::Rejected(reason)) => {
+                log!("verifier rejected quote for {account_id}: {reason}");
+                FinalOutcome::Err(format!("verifier rejected quote: {reason}"))
+            }
+            Ok(VerificationResult::Verified(report)) => {
+                self.finish_verified_attestation(&node_id, &report)
+            }
+        };
+
+        let pending = self.pending_attestations.remove(&account_id).expect(
+            "checked contains_key above; no host call between mutates pending_attestations",
+        );
+        if matches!(final_outcome, FinalOutcome::Err(_)) {
+            refund_attestation_deposit(&account_id, pending.attached_deposit);
+        }
+        // MUST be the last host call: anything after could panic and roll back
+        // the state mutations above.
+        env::promise_yield_resume(
+            &pending.data_id,
+            borsh::to_vec(&final_outcome)
+                .expect("borsh serialization of FinalOutcome must succeed"),
+        );
+    }
+
+    /// Runs the post-DCAP checks and stores the attestation for a verifier
+    /// `Verified` response. Returns the outcome to resume the yield with; on a
+    /// post-DCAP or storage failure, reverts the store (the callback receipt
+    /// commits regardless, unlike the synchronous path).
+    fn finish_verified_attestation(
+        &mut self,
+        node_id: &NodeId,
+        report: &VerifiedReport,
+    ) -> FinalOutcome {
+        let account_id = node_id.account_id.clone();
+        let pending = self
+            .pending_attestations
+            .get(&account_id)
+            .expect("resolve_verification confirmed the pending entry before calling us");
+        let dstack = pending.dstack.clone();
+        let caller_is_not_participant = pending.caller_is_not_participant;
+        let attached_deposit = pending.attached_deposit;
+        let tls_public_key = node_id.tls_public_key.clone();
+        let tee_upgrade_deadline_duration =
+            Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
+
+        let initial_storage = env::storage_usage();
+        let (insertion, previous) = match self.tee_state.finish_dstack_verify(
+            node_id.clone(),
+            dstack,
+            report,
+            tee_upgrade_deadline_duration,
+        ) {
+            Ok(result) => result,
+            Err(err) => {
+                log!("post-DCAP check failed for {account_id}: {err}");
+                return FinalOutcome::Err(format!("post-DCAP check failed: {err}"));
+            }
+        };
+
+        match self.charge_attestation_storage(
+            &account_id,
+            initial_storage,
+            insertion,
+            caller_is_not_participant,
+            attached_deposit,
+        ) {
+            Ok(()) => FinalOutcome::Ok,
+            Err(err) => {
+                // This receipt commits even though we resume the yield with an
+                // error, so the store above is NOT rolled back automatically
+                // (unlike the synchronous path). Undo it explicitly, or the
+                // caller would get storage for free plus a full refund.
+                self.tee_state
+                    .revert_dstack_store(&tls_public_key, previous);
+                FinalOutcome::Err(err.to_string())
+            }
+        }
+    }
+
+    /// Yield-resume callback for a `Dstack` submission. On success resolves the
+    /// caller's transaction; on a verifier rejection or the ~200-block timeout
+    /// it cleans up, refunds, and fails the transaction from a separate receipt.
+    #[private]
+    pub fn on_attestation_verified(
+        &mut self,
+        #[serializer(borsh)] account_id: AccountId,
+        #[serializer(borsh)]
+        #[callback_result]
+        result: Result<FinalOutcome, PromiseError>,
+    ) -> PromiseOrValue<()> {
+        let reason = match result {
+            Ok(FinalOutcome::Ok) => return PromiseOrValue::Value(()),
+            Ok(FinalOutcome::Err(reason)) => reason,
+            Err(_promise_err) => {
+                // Timeout: the resolution callback never resumed us, so the
+                // pending entry is still here. Clean it up and refund.
+                if let Some(pending) = self.pending_attestations.remove(&account_id) {
+                    refund_attestation_deposit(&account_id, pending.attached_deposit);
+                    log!("yield timeout for {account_id}: refunded and cleaned up");
+                }
+                "verifier did not respond within the yield-resume window".to_string()
+            }
+        };
+
+        // Fail the submitter's transaction from a separate receipt so the
+        // cleanup above commits (a panic here would roll it back).
+        let promise = Promise::new(env::current_account_id()).function_call(
+            method_names::FAIL_ON_ATTESTATION_TIMEOUT.to_string(),
+            borsh::to_vec(&reason).expect("borsh serialization of reason must succeed"),
+            NearToken::from_near(0),
+            Gas::from_tgas(self.config.fail_on_timeout_tera_gas),
+        );
+        PromiseOrValue::Promise(promise.as_return())
+    }
+
+    /// Fails the original `submit_participant_info` transaction with `reason`,
+    /// from a receipt separate from the cleanup so the cleanup is not rolled back.
+    #[private]
+    pub fn fail_on_attestation_timeout(#[serializer(borsh)] reason: String) {
+        env::panic_str(&reason);
     }
 
     /// Yield-resume callback for a single queued CKD request.
@@ -2703,7 +2961,6 @@ mod tests {
     use mpc_attestation::attestation::{
         Attestation as MpcAttestation, MockAttestation as MpcMockAttestation, VerifiedAttestation,
     };
-    use mpc_primitives::hash::DockerImageHash;
     use near_mpc_bounded_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet};
     use near_mpc_contract_interface::types::BackupServiceInfo;
     use near_mpc_contract_interface::types::CKDAppPublicKey;
@@ -2721,10 +2978,6 @@ mod tests {
     use rstest::rstest;
     use sha2::{Digest, Sha256};
 
-    use test_utils::attestation::{
-        VALID_ATTESTATION_TIMESTAMP, image_digest, launcher_image_hash,
-        mock_dto_dstack_attestation, near_account_key, p2p_tls_key,
-    };
     use test_utils::contract_types::dummy_config;
     use threshold_signatures::confidential_key_derivation as ckd;
     use threshold_signatures::frost_core::Group as _;
@@ -3997,7 +4250,9 @@ mod tests {
             .build();
         testing_env!(participant_context);
 
-        contract.submit_participant_info(Attestation::Mock(attestation), dto_public_key)
+        contract
+            .submit_participant_info(Attestation::Mock(attestation), dto_public_key)
+            .map(|_| ())
     }
 
     fn submit_valid_attestations(
@@ -4414,7 +4669,7 @@ mod tests {
             .build();
         testing_env!(ctx);
 
-        contract
+        let _ = contract
             .submit_participant_info(valid_attestation, participant_info.tls_public_key.clone())
             .expect("Expected panic if predecessor != signer");
     }
@@ -4441,7 +4696,7 @@ mod tests {
             .build();
         testing_env!(ctx);
 
-        contract
+        let _ = contract
             .submit_participant_info(valid_attestation, dto_public_key)
             .expect("Outsider attestation submission should succeed");
 
@@ -4503,7 +4758,7 @@ mod tests {
                 .build()
         );
 
-        contract
+        let _ = contract
             .submit_participant_info(Attestation::Mock(MockAttestation::Valid), dto_public_key)
             .unwrap();
 
@@ -4585,6 +4840,7 @@ mod tests {
                 ),
                 tee_verifier_account_id: None,
                 tee_verifier_votes: Default::default(),
+                pending_attestations: LookupMap::new(StorageKey::PendingAttestationsV1),
             }
         }
     }
@@ -5845,247 +6101,6 @@ mod tests {
         assert_matches!(result, Ok(false));
         assert_matches!(contract.protocol_state, ProtocolContractState::Running(_));
         assert!(!contract.accept_requests);
-    }
-
-    /// Sets up a complete TEE test environment with contract, accounts, mock dstack attestation, TLS key and the node's near public key.
-    /// This is a helper function that provides all the common components needed for TEE-related tests.
-    fn setup_tee_test() -> (
-        MpcContract,
-        Vec<near_sdk::AccountId>,
-        Attestation,
-        dtos::Ed25519PublicKey,
-        DockerImageHash,
-        near_sdk::PublicKey,
-    ) {
-        let (_context, contract, _secret_key) = basic_setup(Curve::Bls12381, &mut OsRng);
-
-        let participant_account_ids: Vec<_> = contract
-            .protocol_state
-            .threshold_parameters()
-            .unwrap()
-            .participants()
-            .participants()
-            .iter()
-            .map(|(account_id, _, _)| account_id.clone())
-            .collect();
-
-        let attestation = mock_dto_dstack_attestation();
-        let tls_key = p2p_tls_key().into();
-        let mpc_hash = image_digest();
-        let near_public_key = near_account_key();
-
-        (
-            contract,
-            participant_account_ids,
-            attestation,
-            tls_key,
-            mpc_hash,
-            near_public_key,
-        )
-    }
-
-    /// Sets up a contract with an approved MPC hash by having the participants vote for it.
-    /// Also adds the legacy launcher image hash so that compose hashes are derived correctly.
-    /// This is a helper function commonly used in tests that require pre-approved hashes.
-    fn setup_approved_mpc_hash(
-        contract: &mut MpcContract,
-        participant_account_ids: &[near_sdk::AccountId],
-        mpc_hash: &DockerImageHash,
-        block_timestamp_ns: u64,
-    ) {
-        // Add the legacy launcher image first, so that compose hashes are derived
-        // when the MPC hash is voted in.
-        setup_approved_launcher_hash(contract, participant_account_ids, block_timestamp_ns);
-
-        for participant_account_id in participant_account_ids {
-            testing_env!(
-                VMContextBuilder::new()
-                    .signer_account_id(participant_account_id.clone())
-                    .predecessor_account_id(participant_account_id.clone())
-                    .block_timestamp(block_timestamp_ns)
-                    .build()
-            );
-
-            contract.vote_code_hash(*mpc_hash).expect("vote succeeds");
-        }
-    }
-
-    /// Adds the launcher image hash from test attestation assets.
-    /// The hash is extracted from `test-utils/assets/launcher_image_compose.yaml`.
-    fn setup_approved_launcher_hash(
-        contract: &mut MpcContract,
-        participant_account_ids: &[near_sdk::AccountId],
-        block_timestamp_ns: u64,
-    ) {
-        let launcher_hash = launcher_image_hash();
-
-        for participant_account_id in participant_account_ids {
-            testing_env!(
-                VMContextBuilder::new()
-                    .signer_account_id(participant_account_id.clone())
-                    .predecessor_account_id(participant_account_id.clone())
-                    .block_timestamp(block_timestamp_ns)
-                    .build()
-            );
-
-            contract
-                .vote_add_launcher_hash(launcher_hash)
-                .expect("launcher vote succeeds");
-        }
-    }
-
-    /// Adds the default OS measurements so that Dstack attestation verification passes.
-    fn setup_approved_measurements(
-        contract: &mut MpcContract,
-        participant_account_ids: &[near_sdk::AccountId],
-        block_timestamp_ns: u64,
-    ) {
-        for measurement in mpc_attestation::attestation::default_measurements() {
-            let contract_measurement = ContractExpectedMeasurements::from(*measurement);
-            for participant_account_id in participant_account_ids {
-                testing_env!(
-                    VMContextBuilder::new()
-                        .signer_account_id(participant_account_id.clone())
-                        .predecessor_account_id(participant_account_id.clone())
-                        .block_timestamp(block_timestamp_ns)
-                        .build()
-                );
-
-                contract
-                    .vote_add_os_measurement(contract_measurement.clone())
-                    .expect("measurement vote succeeds");
-            }
-        }
-    }
-
-    /// **Test method with matching measurements** - Tests that participant info submission succeeds with the test-only method.
-    /// Unlike the test above, this one has an approved MPC hash. It uses the test method with custom measurements that match
-    /// the attestation data.
-    #[test]
-    fn test_submit_participant_info_succeeds_with_valid_dstack_attestation() {
-        // given
-        let (
-            mut contract,
-            participant_account_ids,
-            attestation,
-            tls_key,
-            mpc_hash,
-            near_public_key,
-        ) = setup_tee_test();
-
-        let block_timestamp_ns = VALID_ATTESTATION_TIMESTAMP * 1_000_000_000;
-
-        // when
-        setup_approved_mpc_hash(
-            &mut contract,
-            &participant_account_ids,
-            &mpc_hash,
-            block_timestamp_ns,
-        );
-        setup_approved_measurements(&mut contract, &participant_account_ids, block_timestamp_ns);
-
-        let account_id = participant_account_ids[0].clone();
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .signer_account_pk(near_public_key.clone())
-                .attached_deposit(NearToken::from_near(1))
-                .block_timestamp(block_timestamp_ns)
-                .build()
-        );
-        let result = contract.submit_participant_info(attestation, tls_key);
-
-        // then
-        assert_matches::assert_matches!(result, Ok(()));
-    }
-
-    /// Note - this test uses attestation data from a real MPC node. After Any change to the expected contract measurement, /test-utils/assets need to be updated.
-    ///  see crates/test-utils/assets/README.md for details.
-    /// **No MPC hash approval** - Tests that participant info submission fails when no MPC hash has been approved yet.
-    /// This verifies the prerequisite step: the contract requires MPC hash approval before accepting any participant TEE information.
-    #[test]
-    fn test_submit_participant_info_fails_without_approved_mpc_hash() {
-        // given
-        let (
-            mut contract,
-            participant_account_ids,
-            attestation,
-            tls_key,
-            _mpc_hash,
-            near_public_key,
-        ) = setup_tee_test();
-
-        let block_timestamp_ns = VALID_ATTESTATION_TIMESTAMP * 1_000_000_000;
-
-        // when
-
-        let account_id = participant_account_ids[0].clone();
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .signer_account_pk(near_public_key.clone())
-                .attached_deposit(NearToken::from_near(1))
-                .block_timestamp(block_timestamp_ns)
-                .build()
-        );
-        let result = contract.submit_participant_info(attestation, tls_key);
-
-        // then
-        let error_string = result.unwrap_err().to_string();
-        assert!(error_string
-        .contains("Invalid TEE Remote Attestation: TeeQuoteStatus is invalid: the submitted attestation failed verification, reason: Custom(\"the allowed mpc image hashes list is empty\")"), "Got error: {}", &error_string);
-    }
-
-    /// **TLS key validation** - Tests that TEE attestation fails when TLS key doesn't match the one in report data.
-    /// Similar to the successful test method case above, but uses a deliberately corrupted TLS key to verify
-    /// that attestation validation properly checks the TLS key embedded in the attestation report.
-    #[test]
-    fn test_tee_attestation_fails_with_invalid_tls_key() {
-        let (
-            mut contract,
-            participant_account_ids,
-            attestation,
-            tls_key,
-            mpc_hash,
-            near_public_key,
-        ) = setup_tee_test();
-
-        let block_timestamp_ns = VALID_ATTESTATION_TIMESTAMP * 1_000_000_000;
-
-        // when
-        setup_approved_mpc_hash(
-            &mut contract,
-            &participant_account_ids,
-            &mpc_hash,
-            block_timestamp_ns,
-        );
-        setup_approved_measurements(&mut contract, &participant_account_ids, block_timestamp_ns);
-
-        // Create invalid TLS key by flipping the last bit
-        let mut invalid_tls_key_bytes = *tls_key.as_bytes();
-        let last_byte_idx = invalid_tls_key_bytes.len() - 1;
-        invalid_tls_key_bytes[last_byte_idx] ^= 0x01;
-        let invalid_tls_key = Ed25519PublicKey::from(invalid_tls_key_bytes);
-
-        let account_id = participant_account_ids[0].clone();
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .signer_account_pk(near_public_key.clone())
-                .attached_deposit(NearToken::from_near(1))
-                .block_timestamp(block_timestamp_ns)
-                .build()
-        );
-
-        let result = contract.submit_participant_info(attestation, invalid_tls_key);
-
-        // then
-        let error_string = result.unwrap_err().to_string();
-        assert!(error_string
-        .contains("Invalid TEE Remote Attestation: TeeQuoteStatus is invalid: the submitted attestation failed verification, reason: WrongHash { name: \"report_data\""), "Got error: {}", &error_string);
     }
 
     fn make_launcher_hash(byte: u8) -> LauncherImageHash {

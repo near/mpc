@@ -57,6 +57,60 @@ pub async fn submit_participant_info(
     Ok(result)
 }
 
+/// Like [`submit_participant_info`] but attaches `deposit` — used by the async
+/// `Dstack` tests that assert the deposit is refunded on rejection/timeout.
+pub async fn submit_participant_info_with_deposit(
+    account: &Account,
+    contract: &Contract,
+    attestation: &Attestation,
+    tls_key: &Ed25519PublicKey,
+    deposit: near_workspaces::types::NearToken,
+) -> anyhow::Result<ExecutionFinalResult> {
+    let result = account
+        .call(contract.id(), method_names::SUBMIT_PARTICIPANT_INFO)
+        .args_json((attestation, tls_key))
+        .deposit(deposit)
+        .max_gas()
+        .transact()
+        .await?;
+    Ok(result)
+}
+
+/// Reads the `sandbox-test-methods`-only `has_pending_attestation` view. The
+/// contract under test must be built with that feature (`with_sandbox_test_methods`).
+pub async fn has_pending_attestation(
+    contract: &Contract,
+    account_id: &near_workspaces::AccountId,
+) -> anyhow::Result<bool> {
+    let result = contract
+        .view("has_pending_attestation")
+        .args_json(serde_json::json!({ "account_id": account_id }))
+        .await?;
+    Ok(result.json()?)
+}
+
+pub async fn vote_tee_verifier_change(
+    account: &Account,
+    contract: &Contract,
+    candidate_account_id: &near_workspaces::AccountId,
+    expected_code_hash: [u8; 32],
+) -> anyhow::Result<()> {
+    // `expected_code_hash` is a `TeeVerifierCodeHash`, which the contract
+    // deserializes from a hex string (not a byte array), so wrap it in the typed
+    // hash to get the right JSON form.
+    let expected_code_hash = mpc_primitives::hash::TeeVerifierCodeHash::new(expected_code_hash);
+    let result = account
+        .call(contract.id(), method_names::VOTE_TEE_VERIFIER_CHANGE)
+        .args_json(serde_json::json!({
+            "candidate_account_id": candidate_account_id,
+            "expected_code_hash": expected_code_hash,
+        }))
+        .transact()
+        .await?;
+    all_receipts_successful(result)?;
+    Ok(())
+}
+
 pub async fn get_participant_attestation(
     contract: &Contract,
     tls_key: &Ed25519PublicKey,
