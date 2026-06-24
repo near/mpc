@@ -110,25 +110,11 @@ impl TeeVerifierVotes {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use crate::primitives::test_utils::gen_participants;
+    use crate::primitives::test_utils::{gen_authenticated_participants, gen_participants};
     use mpc_primitives::Threshold;
-    use near_sdk::{test_utils::VMContextBuilder, testing_env};
 
     fn threshold_params(participants: &Participants, threshold: u64) -> ThresholdParameters {
         ThresholdParameters::new_unvalidated(participants.clone(), Threshold::new(threshold))
-    }
-
-    /// Build `n` participants and pre-authenticate each.
-    fn setup(n: usize) -> (Participants, Vec<AuthenticatedParticipantId>) {
-        let participants = gen_participants(n);
-        let mut auth_ids = Vec::with_capacity(n);
-        for (account_id, _, _) in participants.participants() {
-            let mut ctx = VMContextBuilder::new();
-            ctx.signer_account_id(account_id.clone());
-            testing_env!(ctx.build());
-            auth_ids.push(AuthenticatedParticipantId::new(&participants).unwrap());
-        }
-        (participants, auth_ids)
     }
 
     fn proposal(account: &str, hash_byte: u8) -> VerifierChangeProposal {
@@ -148,7 +134,7 @@ mod tests {
         Vec<AuthenticatedParticipantId>,
         TeeVerifierVotes,
     ) {
-        let (participants, voters) = setup(3);
+        let (participants, voters) = gen_authenticated_participants(3);
         let params = threshold_params(&participants, threshold);
         (
             participants.clone(),
