@@ -2392,7 +2392,7 @@ impl MpcContract {
 
     /// `.then` bridge for the cross-contract `verify_quote` call. Maps the
     /// verifier's response to a [`FinalOutcome`] and resumes the yield registered
-    /// in [`Self::submit_dstack_attestation`].
+    /// in `submit_dstack_attestation`.
     #[private]
     pub fn resolve_verification(
         &mut self,
