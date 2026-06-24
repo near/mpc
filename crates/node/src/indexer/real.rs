@@ -317,11 +317,6 @@ pub fn spawn_real_indexer(
     }
 }
 
-/// Waits for `sync` to resolve, racing it against `shutdown`.
-///
-/// Returns `true` if `sync` completed first, or `false` if `shutdown` was
-/// requested first. Racing the wait keeps a SIGTERM responsive during a long
-/// initial state sync.
 async fn await_sync_or_shutdown(
     sync: impl Future<Output = ()>,
     shutdown: &CancellationToken,
@@ -333,7 +328,7 @@ async fn await_sync_or_shutdown(
 }
 
 #[cfg(test)]
-#[expect(non_snake_case)] // tests follow `<system_under_test>__should_<assertion>` convention
+#[expect(non_snake_case)]
 mod tests {
     use super::await_sync_or_shutdown;
     use std::future::pending;

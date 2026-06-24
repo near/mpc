@@ -252,8 +252,6 @@ struct StreamerSetup {
     near_config: NearConfig,
 }
 
-/// Races `sync` against `shutdown`. Returns `true` if `sync` completed first,
-/// `false` if `shutdown` resolved first.
 async fn await_sync_or_shutdown(
     sync: impl Future<Output = ()>,
     shutdown: impl Future<Output = ()>,
@@ -265,7 +263,7 @@ async fn await_sync_or_shutdown(
 }
 
 #[cfg(test)]
-#[expect(non_snake_case)] // tests follow `<system_under_test>__should_<assertion>` convention
+#[expect(non_snake_case)]
 mod tests {
     use super::await_sync_or_shutdown;
     use std::future::pending;
