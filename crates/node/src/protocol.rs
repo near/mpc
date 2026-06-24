@@ -189,31 +189,32 @@ impl MessageCounters {
     }
 
     pub fn queue_send(&self, participant: ParticipantId, num_messages: usize) {
-        self.counters
-            .get(&participant)
-            .unwrap()
-            .in_flight
-            .fetch_add(num_messages, std::sync::atomic::Ordering::Relaxed);
-        self.report_progress();
+        if let Some(counters) = self.counters.get(&participant) {
+            counters
+                .in_flight
+                .fetch_add(num_messages, std::sync::atomic::Ordering::Relaxed);
+            self.report_progress();
+        }
     }
 
     pub fn sent(&self, participant: ParticipantId, num_messages: usize) {
-        let counters = self.counters.get(&participant).unwrap();
-        counters
-            .sent
-            .fetch_add(num_messages, std::sync::atomic::Ordering::Relaxed);
-        counters
-            .in_flight
-            .fetch_sub(num_messages, std::sync::atomic::Ordering::Relaxed);
-        self.report_progress();
+        if let Some(counters) = self.counters.get(&participant) {
+            counters
+                .sent
+                .fetch_add(num_messages, std::sync::atomic::Ordering::Relaxed);
+            counters
+                .in_flight
+                .fetch_sub(num_messages, std::sync::atomic::Ordering::Relaxed);
+            self.report_progress();
+        }
     }
 
     pub fn received(&self, participant: ParticipantId, num_messages: usize) {
-        self.counters
-            .get(&participant)
-            .unwrap()
-            .received
-            .fetch_add(num_messages, std::sync::atomic::Ordering::Relaxed);
+        if let Some(counters) = self.counters.get(&participant) {
+            counters
+                .received
+                .fetch_add(num_messages, std::sync::atomic::Ordering::Relaxed);
+        }
         self.current_action
             .store(0, std::sync::atomic::Ordering::Relaxed);
     }
@@ -256,10 +257,10 @@ impl MessageCounters {
 
 #[cfg(test)]
 mod tests {
-    use super::run_protocol;
-    use crate::network::testing::run_test_clients;
-    use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-    use crate::primitives::UniqueId;
+    use super::{MessageCounters, run_protocol};
+    use crate::network::testing::{new_task_channel_for_test, run_test_clients};
+    use crate::network::{MeshNetworkClient, NetworkTaskChannel, ParticipantNotInChannelError};
+    use crate::primitives::{ChannelId, MpcMessage, MpcMessageKind, MpcPeerMessage, UniqueId};
     use crate::providers::ecdsa::EcdsaTaskId;
     use crate::tests::into_participant_ids;
     use crate::tracking;
@@ -306,6 +307,67 @@ mod tests {
 
             // Then
             assert!(results.contains(&Some(42)));
+        })
+        .await;
+    }
+
+    /// A `Computation` from outside the participant set must error, not crash the node.
+    #[test_log::test(tokio::test)]
+    #[expect(non_snake_case)]
+    async fn run_protocol__should_reject_computation_from_non_participant() {
+        tracking::testing::start_root_task_with_periodic_dump(async {
+            // Given
+            let ids = into_participant_ids(&generate_participants(3));
+            let participants = vec![ids[0], ids[1]];
+            let outsider = ids[2];
+            let task_id = EcdsaTaskId::ManyTriples {
+                start: UniqueId::new(ids[0], 0, 0),
+                count: 2,
+            };
+            let (mut channel, raw_sender) =
+                new_task_channel_for_test(task_id.into(), ids[0], ids[0], participants);
+            raw_sender
+                .send(MpcPeerMessage {
+                    from: outsider,
+                    message: MpcMessage {
+                        channel_id: ChannelId(UniqueId::new(outsider, 0, 0)),
+                        kind: MpcMessageKind::Computation(vec![vec![1u8]]),
+                    },
+                })
+                .unwrap();
+            let protocol = ScriptedProtocol {
+                script: [Action::Wait].into(),
+            };
+
+            // When
+            let result = tokio::time::timeout(
+                Duration::from_secs(5),
+                run_protocol("scripted", &mut channel, protocol),
+            )
+            .await
+            .expect("run_protocol must return an error, not hang or panic");
+
+            // Then
+            let err = result.expect_err("out-of-set Computation must be rejected");
+            assert!(err.downcast_ref::<ParticipantNotInChannelError>().is_some());
+        })
+        .await;
+    }
+
+    /// Counter updates for an untracked participant must be ignored, not panic.
+    #[test_log::test(tokio::test)]
+    #[expect(non_snake_case)]
+    async fn message_counters__should_ignore_unknown_participant() {
+        tracking::testing::start_root_task_with_periodic_dump(async {
+            // Given
+            let ids = into_participant_ids(&generate_participants(2));
+            let counters = MessageCounters::new("test".to_string(), &[ids[0]]);
+            let unknown = ids[1];
+
+            // When / Then
+            counters.queue_send(unknown, 1);
+            counters.sent(unknown, 1);
+            counters.received(unknown, 1);
         })
         .await;
     }
