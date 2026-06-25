@@ -9,11 +9,12 @@ use near_mpc_contract_interface::types::{
 };
 use rand::SeedableRng;
 
-/// Every scheme signs when its domain's reconstruction threshold `t` differs
-/// from the governance threshold (4): CaitSith/Frost/CKD at `t=2`, DamgardEtAl
-/// at `t=3` (6 nodes). Robust ECDSA is the discriminator — it signs over `2t-1`
-/// participants, so `t=3` needs 5 signers; using the governance threshold would
-/// need `2*4-1=7` and fail. A pass proves the per-domain `t` is used.
+/// Each domain signs using its own reconstruction threshold rather than the
+/// governance threshold. The governance threshold is 4 with a total of 6 nodes.
+/// The signing procedure succeeds despite Damgard et al. requiring at least 7
+/// participants under a governance-threshold signing model.
+/// Therefore, signing is performed using the reconstruction threshold,
+/// not the governance threshold.
 #[tokio::test]
 #[expect(non_snake_case)]
 async fn distinct_reconstruction_thresholds__should_sign_for_every_scheme() {
