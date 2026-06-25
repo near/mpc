@@ -1,5 +1,6 @@
 use crate::errors::{Error, InvalidCandidateSet, InvalidParameters};
 
+use mpc_primitives::NodeAddress;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_sdk::near;
@@ -85,13 +86,20 @@ impl Participants {
     pub fn validate(&self) -> Result<(), Error> {
         let mut ids: BTreeSet<ParticipantId> = BTreeSet::new();
         let mut accounts: BTreeSet<AccountId> = BTreeSet::new();
-        for (acc_id, pid, _) in &self.participants {
+        for (acc_id, pid, info) in &self.participants {
             accounts.insert(acc_id.clone());
             ids.insert(*pid);
             if self.next_id.get() <= pid.get() {
                 return Err(InvalidCandidateSet::ParticipantIdNotLessThanNextId {
                     id: pid.get(),
                     next_id: self.next_id.get(),
+                }
+                .into());
+            }
+            if let Err(reason) = info.url.parse::<NodeAddress>() {
+                return Err(InvalidParameters::InvalidUrl {
+                    url: info.url.clone(),
+                    reason: reason.to_string(),
                 }
                 .into());
             }
@@ -204,14 +212,16 @@ impl Participants {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 pub mod tests {
     use crate::{
-        errors::{Error, InvalidCandidateSet},
+        errors::{Error, InvalidCandidateSet, InvalidParameters},
         primitives::{
             participants::{ParticipantId, Participants},
             test_utils::{gen_accounts_and_info, gen_participant},
         },
     };
+    use assert_matches::assert_matches;
     use rand::Rng;
 
     #[test]
@@ -274,6 +284,42 @@ pub mod tests {
         assert_eq!(
             participants.validate().unwrap_err(),
             Error::from(InvalidCandidateSet::DuplicateAccountIds)
+        );
+    }
+
+    /// A scheme-less `host:port` is a valid participant address.
+    #[test]
+    fn validate__should_accept_scheme_less_url() {
+        // Given
+        let (account, mut info) = gen_participant(0);
+        info.url = "node.example.com:3000".to_string();
+        let participants =
+            Participants::init(ParticipantId(1), vec![(account, ParticipantId(0), info)]);
+
+        // When
+        let result = participants.validate();
+
+        // Then
+        result.expect("scheme-less host:port should validate");
+    }
+
+    /// An unparseable participant URL anywhere in the set must be rejected, so it cannot
+    /// enter the participant set via a resharing proposal or initialization.
+    #[test]
+    fn validate__should_reject_participant_with_unparseable_url() {
+        // Given
+        let (account, mut info) = gen_participant(0);
+        info.url = "http://:3000".to_string();
+        let participants =
+            Participants::init(ParticipantId(1), vec![(account, ParticipantId(0), info)]);
+
+        // When
+        let result = participants.validate();
+
+        // Then
+        assert_matches!(
+            result.unwrap_err(),
+            Error::InvalidParameters(InvalidParameters::InvalidUrl { .. })
         );
     }
 

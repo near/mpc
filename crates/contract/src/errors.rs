@@ -151,6 +151,8 @@ pub enum InvalidParameters {
     CallerNotSigner,
     #[error("Requested foreign chain, {requested:?}, is not supported.")]
     ForeignChainNotSupported { requested: ForeignChain },
+    #[error("Invalid participant url '{url}': {reason}")]
+    InvalidUrl { url: String, reason: String },
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]

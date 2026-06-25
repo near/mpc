@@ -266,7 +266,7 @@ Output should look like this:
 You'll need:
 - **New node's P2P public key**: $P2P_KEY from step above.
 - **New node's signer account public key**: $near_signer_public_key from step above.
-- **New node's address**: The URL where the new node will be accessible (e.g., `new-node.example.com:80`)
+- **New node's address**: The URL where the new node will be accessible, including the scheme (e.g., `http://new-node.example.com:80`).
 
 ### start_node_migration on contract
 

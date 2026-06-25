@@ -2,7 +2,8 @@ use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_node::{config::AesKey256, keyshare::Keyshare, migration_service::web::client};
 use near_mpc_contract_interface::types::Keyset;
 
-use crate::{cli::NodeAddress, ports};
+use crate::ports;
+use mpc_primitives::NodeAddress;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -87,9 +88,9 @@ mod tests {
     use rand::SeedableRng as _;
 
     use crate::adapters::p2p_client::MpcP2PClient;
-    use crate::cli::NodeAddress;
     use crate::ports::P2PClient;
     use mpc_node::keyshare::test_utils::KeysetBuilder;
+    use mpc_primitives::NodeAddress;
 
     #[tokio::test]
     async fn test_get_keyshares() {

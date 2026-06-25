@@ -71,6 +71,7 @@ use near_mpc_contract_interface::types::{
 use near_mpc_contract_interface::{method_names, types::CKDRequestArgs};
 
 use dtos::{Curve, DomainConfig, DomainId, DomainPurpose, Protocol};
+use mpc_primitives::NodeAddress;
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, TeeVerifierCodeHash};
 use near_sdk::{
     AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue, env,
@@ -2518,6 +2519,16 @@ impl MpcContract {
             }
             .into());
         }
+
+        let url = &destination_node_info.destination_node_info.url;
+        if let Err(reason) = url.parse::<NodeAddress>() {
+            return Err(errors::InvalidParameters::InvalidUrl {
+                url: url.clone(),
+                reason: reason.to_string(),
+            }
+            .into());
+        }
+
         self.node_migrations
             .set_destination_node_info(account_id, destination_node_info);
         Ok(())
@@ -4651,6 +4662,54 @@ mod tests {
             signer_account_pk: bogus_ed25519_public_key(),
             destination_node_info: participant_info.into(),
         }
+    }
+
+    fn start_migration_with_url(url: &str) -> Result<(), Error> {
+        let running_state = ProtocolContractState::Running(gen_running_state(NUM_DOMAINS));
+        let mut contract = MpcContract::new_from_protocol_state(running_state);
+        let account_id = {
+            let ProtocolContractState::Running(running) = &contract.protocol_state else {
+                panic!("expected running state");
+            };
+            running.parameters.participants().participants()[0]
+                .0
+                .clone()
+        };
+        let mut test_env = Environment::new(None, None, None);
+        test_env.set_signer(&account_id);
+        let mut destination_node_info = gen_random_destination_info();
+        destination_node_info.destination_node_info.url = url.to_string();
+        contract.start_node_migration(destination_node_info)
+    }
+
+    /// A scheme-less `host:port` is a valid participant address and must be accepted.
+    #[test]
+    fn start_node_migration__should_accept_scheme_less_url() {
+        // Given
+        let url = "new-node.example.com:80";
+
+        // When
+        let res = start_migration_with_url(url);
+
+        // Then
+        res.expect("scheme-less host:port should be accepted");
+    }
+
+    /// An unparseable address must be rejected at submission so it never enters the
+    /// participant set and stalls the network.
+    #[test]
+    fn start_node_migration__should_reject_address_without_host() {
+        // Given
+        let url = "http://:3000";
+
+        // When
+        let res = start_migration_with_url(url);
+
+        // Then
+        assert_matches!(
+            res.unwrap_err(),
+            Error::InvalidParameters(InvalidParameters::InvalidUrl { .. })
+        );
     }
 
     fn test_start_migration_node_failure_not_running(mut contract: MpcContract) {
