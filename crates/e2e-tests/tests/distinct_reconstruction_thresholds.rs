@@ -1,12 +1,9 @@
 use crate::common::{
-    DISTINCT_RECONSTRUCTION_THRESHOLDS_PORT_SEED, generate_ckd_app_public_key,
+    DISTINCT_RECONSTRUCTION_THRESHOLDS_PORT_SEED, damgard_etal_domain, generate_ckd_app_public_key,
     generate_ecdsa_payload, generate_eddsa_payload, must_get_domain, must_setup_cluster,
 };
 
-use mpc_primitives::domain::DomainId;
-use near_mpc_contract_interface::types::{
-    DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
-};
+use near_mpc_contract_interface::types::Protocol;
 use rand::SeedableRng;
 
 /// Each domain signs using its own reconstruction threshold rather than the
@@ -26,12 +23,8 @@ async fn distinct_reconstruction_thresholds__should_sign_for_every_scheme() {
             c.threshold = 4;
             c.triples_to_buffer = 2;
             c.presignatures_to_buffer = 2;
-            c.domains.push(DomainConfig {
-                id: DomainId(c.domains.len() as u64),
-                protocol: Protocol::DamgardEtAl,
-                reconstruction_threshold: ReconstructionThreshold::new(3),
-                purpose: DomainPurpose::Sign,
-            });
+            c.domains
+                .push(damgard_etal_domain(c.domains.len() as u64, 3));
         })
         .await;
 

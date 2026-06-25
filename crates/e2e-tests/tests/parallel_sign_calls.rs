@@ -25,12 +25,7 @@ async fn mpc_cluster_should_successfully_process_parallel_requests() {
             c.initial_participant_indices = (0..6).collect();
             c.threshold = 5;
             c.domains = vec![
-                DomainConfig {
-                    id: DomainId(0),
-                    protocol: Protocol::DamgardEtAl,
-                    reconstruction_threshold: ReconstructionThreshold::new(3),
-                    purpose: DomainPurpose::Sign,
-                },
+                common::damgard_etal_domain(0, 3),
                 DomainConfig {
                     id: DomainId(1),
                     protocol: Protocol::CaitSith,

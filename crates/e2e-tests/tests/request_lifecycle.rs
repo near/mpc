@@ -1,12 +1,10 @@
 use crate::common::{
-    ROBUST_ECDSA_PORT_SEED, SIGN_REQUEST_PER_SCHEME_PORT_SEED, generate_ckd_app_public_key,
-    generate_ecdsa_payload, generate_eddsa_payload, must_get_domain, must_setup_cluster,
+    ROBUST_ECDSA_PORT_SEED, SIGN_REQUEST_PER_SCHEME_PORT_SEED, damgard_etal_domain,
+    generate_ckd_app_public_key, generate_ecdsa_payload, generate_eddsa_payload, must_get_domain,
+    must_setup_cluster,
 };
 
-use near_mpc_contract_interface::types::{
-    Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
-    SignatureResponse,
-};
+use near_mpc_contract_interface::types::{Curve, DomainPurpose, Protocol, SignatureResponse};
 use rand::SeedableRng;
 
 #[tokio::test]
@@ -92,12 +90,7 @@ async fn mpc_cluster__should_successfully_process_robust_ecdsa_requests() {
         c.num_nodes = 6;
         c.initial_participant_indices = (0..6).collect();
         c.threshold = 5;
-        c.domains = vec![DomainConfig {
-            id: DomainId(0),
-            protocol: Protocol::DamgardEtAl,
-            reconstruction_threshold: ReconstructionThreshold::new(3),
-            purpose: DomainPurpose::Sign,
-        }];
+        c.domains = vec![damgard_etal_domain(0, 3)];
         c.triples_to_buffer = 0;
         c.presignatures_to_buffer = 6;
     })

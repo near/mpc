@@ -8,7 +8,8 @@ use e2e_tests::{CLUSTER_WAIT_TIMEOUT, MpcCluster, MpcClusterConfig, metrics};
 use group::Group;
 use near_mpc_contract_interface::types::{
     Bls12381G2PublicKey, CKDAppPublicKey, Curve, DomainConfig, DomainId, DomainPurpose, Protocol,
-    ProtocolContractState, PublicKey, PublicKeyExtended, RunningContractState,
+    ProtocolContractState, PublicKey, PublicKeyExtended, ReconstructionThreshold,
+    RunningContractState,
 };
 use near_mpc_crypto_types::Bls12381G1PublicKey;
 use serde_json::json;
@@ -374,6 +375,16 @@ pub fn must_get_bls_public_key(
             public_key: PublicKey::Bls12381(g2),
         } => g2.clone(),
         other => panic!("expected Bls12381 key, got {other:?}"),
+    }
+}
+
+/// Builds a `DamgardEtAl` signing domain with reconstruction threshold `t`, which needs `2t - 1` signers.
+pub fn damgard_etal_domain(id: u64, t: u64) -> DomainConfig {
+    DomainConfig {
+        id: DomainId(id),
+        protocol: Protocol::DamgardEtAl,
+        reconstruction_threshold: ReconstructionThreshold::new(t),
+        purpose: DomainPurpose::Sign,
     }
 }
 
