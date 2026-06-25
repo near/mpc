@@ -1,10 +1,25 @@
 use crate::common;
 
-use mpc_primitives::domain::{Curve, DomainId};
+use mpc_primitives::domain::DomainId;
 use near_mpc_contract_interface::types::{
     DomainConfig, DomainPurpose, Protocol, ProtocolContractState, ReconstructionThreshold,
+    RunningContractState,
 };
 use rand::SeedableRng;
+
+/// Returns the single domain running `protocol_type`.
+///
+/// Each protocol appears at most once in this test's domain registry, so the
+/// protocol uniquely identifies its domain.
+fn create_domain(contract_state: &RunningContractState, protocol_type: Protocol) -> DomainConfig {
+    contract_state
+        .domains
+        .domains
+        .iter()
+        .find(|d| d.protocol == protocol_type)
+        .unwrap_or_else(|| panic!("no domain with protocol {protocol_type:?}"))
+        .clone()
+}
 
 /// Tests that signature and CKD requests are processed using the previous
 /// running state's threshold while resharing is in progress.
@@ -46,36 +61,10 @@ async fn test_request_during_resharing() {
     cluster.kill_nodes(&[5]).expect("failed to kill node 5");
 
     // then
-    let ecdsa_domain = contract_state
-        .domains
-        .domains
-        .iter()
-        .find(|d| {
-            Curve::from(d.protocol) == Curve::Secp256k1
-                && d.protocol == Protocol::CaitSith
-                && d.purpose == DomainPurpose::Sign
-        })
-        .expect("no CaitSith Sign domain");
-    let robust_ecdsa_domain = contract_state
-        .domains
-        .domains
-        .iter()
-        .find(|d| d.protocol == Protocol::DamgardEtAl && d.purpose == DomainPurpose::Sign)
-        .expect("no DamgardEtAl Sign domain");
-    let eddsa_domain = contract_state
-        .domains
-        .domains
-        .iter()
-        .find(|d| {
-            Curve::from(d.protocol) == Curve::Edwards25519 && d.purpose == DomainPurpose::Sign
-        })
-        .expect("no Edwards25519 Sign domain");
-    let ckd_domain = contract_state
-        .domains
-        .domains
-        .iter()
-        .find(|d| d.purpose == DomainPurpose::CKD)
-        .expect("no CKD domain");
+    let ecdsa_domain = create_domain(&contract_state, Protocol::CaitSith);
+    let robust_ecdsa_domain = create_domain(&contract_state, Protocol::DamgardEtAl);
+    let eddsa_domain = create_domain(&contract_state, Protocol::Frost);
+    let ckd_domain = create_domain(&contract_state, Protocol::ConfidentialKeyDerivation);
 
     let mut rng = rand::rngs::StdRng::seed_from_u64(0);
     for i in 0..3 {
