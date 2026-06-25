@@ -51,18 +51,19 @@ impl EddsaSignatureProvider {
         client: Arc<MeshNetworkClient>,
         sign_request_store: Arc<SignRequestStorage>,
         keyshares: HashMap<DomainId, KeygenOutput>,
-        thresholds: HashMap<DomainId, MpcReconstructionThreshold>,
+        reconstruction_thresholds: HashMap<DomainId, MpcReconstructionThreshold>,
     ) -> anyhow::Result<Self> {
         let mut per_domain_data = HashMap::new();
         for (domain_id, keyshare) in keyshares {
-            let threshold = *thresholds.get(&domain_id).ok_or_else(|| {
-                anyhow::anyhow!("No reconstruction threshold for domain {:?}", domain_id)
-            })?;
+            let reconstruction_threshold =
+                *reconstruction_thresholds.get(&domain_id).ok_or_else(|| {
+                    anyhow::anyhow!("No reconstruction threshold for domain {:?}", domain_id)
+                })?;
             per_domain_data.insert(
                 domain_id,
                 PerDomainData {
                     keyshare,
-                    reconstruction_threshold: threshold,
+                    reconstruction_threshold,
                 },
             );
         }
@@ -114,23 +115,23 @@ impl SignatureProvider for EddsaSignatureProvider {
     }
 
     async fn run_key_generation_client(
-        threshold: ReconstructionThreshold,
+        reconstruction_threshold: ReconstructionThreshold,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
-        Self::run_key_generation_client_internal(threshold, channel).await
+        Self::run_key_generation_client_internal(reconstruction_threshold, channel).await
     }
 
     async fn run_key_resharing_client(
-        new_threshold: ReconstructionThreshold,
-        old_threshold: ReconstructionThreshold,
+        new_reconstruction_threshold: ReconstructionThreshold,
+        old_reconstruction_threshold: ReconstructionThreshold,
         key_share: Option<SigningShare>,
         public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
         Self::run_key_resharing_client_internal(
-            new_threshold,
-            old_threshold,
+            new_reconstruction_threshold,
+            old_reconstruction_threshold,
             key_share,
             public_key,
             old_participants,
