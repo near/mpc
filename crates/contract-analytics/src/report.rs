@@ -1,18 +1,24 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
 use futures::future::join_all;
 use mpc_attestation::attestation::DEFAULT_EXPIRATION_DURATION_SECONDS;
+use mpc_devnet::mpc::read_contract_state;
+use mpc_devnet::rpc::NearRpcClients;
 use mpc_primitives::hash::NodeImageHash;
-use near_mpc_contract_interface::method_names::{GET_ATTESTATION, STATE};
+use near_jsonrpc_client::methods::query::RpcQueryRequest;
+use near_jsonrpc_primitives::types::query::QueryResponseKind;
+use near_mpc_contract_interface::method_names::GET_ATTESTATION;
 use near_mpc_contract_interface::types::{
     AccountId, Ed25519PublicKey, EpochId, MockAttestation, ParticipantId, ProtocolContractState,
     ThresholdParameters, VerifiedAttestation,
 };
+use near_primitives::types::{BlockReference, Finality, FunctionArgs};
+use near_primitives::views::QueryRequest;
 use serde::Serialize;
 
-use crate::client::Client;
 use crate::docker_hub;
 
 /// Mirrors `mpc_node::run::ATTESTATION_RESUBMISSION_INTERVAL`
@@ -50,13 +56,8 @@ pub enum AttestationResult {
     Err(String),
 }
 
-pub async fn collect(client: &Client) -> Result<Snapshot> {
-    let state_bytes = client
-        .view_call(STATE, Vec::new())
-        .await
-        .context("fetching `state()`")?;
-    let state: ProtocolContractState =
-        serde_json::from_slice(&state_bytes).context("deserializing ProtocolContractState")?;
+pub async fn collect(rpc: &Arc<NearRpcClients>, contract: &AccountId) -> Result<Snapshot> {
+    let state = read_contract_state(rpc, contract).await;
 
     let rows = participants_with_epochs(&state);
     if rows.is_empty() {
@@ -69,7 +70,7 @@ pub async fn collect(client: &Client) -> Result<Snapshot> {
     let unique_keys: BTreeSet<Ed25519PublicKey> =
         rows.iter().map(|r| r.tls_public_key.clone()).collect();
 
-    let attestation_fetch = fetch_all_attestations(client, unique_keys);
+    let attestation_fetch = fetch_all_attestations(rpc, contract, unique_keys);
     let version_fetch = docker_hub::fetch_mpc_image_versions();
     let (attestations, mpc_image_versions) = tokio::join!(attestation_fetch, version_fetch);
 
@@ -82,11 +83,12 @@ pub async fn collect(client: &Client) -> Result<Snapshot> {
 }
 
 async fn fetch_all_attestations(
-    client: &Client,
+    rpc: &Arc<NearRpcClients>,
+    contract: &AccountId,
     keys: BTreeSet<Ed25519PublicKey>,
 ) -> BTreeMap<Ed25519PublicKey, AttestationResult> {
     let fetches = keys.into_iter().map(|tls_public_key| async move {
-        let result = fetch_attestation(client, &tls_public_key).await;
+        let result = fetch_attestation(rpc, contract, &tls_public_key).await;
         let result = match result {
             Ok(opt) => AttestationResult::Ok(opt),
             Err(e) => AttestationResult::Err(format!("{e:#}")),
@@ -97,14 +99,31 @@ async fn fetch_all_attestations(
 }
 
 async fn fetch_attestation(
-    client: &Client,
+    rpc: &Arc<NearRpcClients>,
+    contract: &AccountId,
     tls_public_key: &Ed25519PublicKey,
 ) -> Result<Option<VerifiedAttestation>> {
     let args = serde_json::to_vec(&serde_json::json!({
         "tls_public_key": tls_public_key,
     }))?;
-    let bytes = client.view_call(GET_ATTESTATION, args).await?;
-    serde_json::from_slice(&bytes).context("deserializing get_attestation response")
+    let request = RpcQueryRequest {
+        block_reference: BlockReference::Finality(Finality::Final),
+        request: QueryRequest::CallFunction {
+            account_id: contract.clone(),
+            method_name: GET_ATTESTATION.to_string(),
+            args: FunctionArgs::from(args),
+        },
+    };
+    let response = rpc
+        .submit(request)
+        .await
+        .context("RPC query for get_attestation failed")?;
+    match response.kind {
+        QueryResponseKind::CallResult(r) => {
+            serde_json::from_slice(&r.result).context("deserializing get_attestation response")
+        }
+        other => bail!("unexpected response kind: {other:?}"),
+    }
 }
 
 /// Enumerate participants tagged with the epoch they belong to.

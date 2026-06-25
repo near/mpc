@@ -1,19 +1,5 @@
 use clap::Parser;
-use cli::Cli;
-
-mod account;
-mod cli;
-mod constants;
-mod contracts;
-mod devnet;
-mod funding;
-mod loadtest;
-mod mpc;
-mod queries;
-mod rpc;
-mod terraform;
-mod tx;
-mod types;
+use mpc_devnet::cli::Cli;
 
 #[tokio::main]
 async fn main() {

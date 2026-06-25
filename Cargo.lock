@@ -2123,6 +2123,7 @@ dependencies = [
  "futures",
  "hex",
  "mpc-attestation",
+ "mpc-devnet",
  "mpc-primitives",
  "near-jsonrpc-client",
  "near-jsonrpc-primitives 0.36.0",

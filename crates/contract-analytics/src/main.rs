@@ -1,10 +1,13 @@
+use std::sync::Arc;
+
 use anyhow::Result;
 use clap::Parser;
 use contract_analytics::{
-    client::Client,
     network::{Network, resolve},
     render, report,
 };
+use mpc_devnet::rpc::NearRpcClients;
+use mpc_devnet::types::RpcConfig;
 use near_primitives::types::AccountId;
 
 #[derive(Parser, Debug)]
@@ -24,8 +27,16 @@ struct Cli {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
     let endpoint = resolve(cli.network, cli.rpc_url, cli.contract)?;
-    let client = Client::new(&endpoint.rpc_url, endpoint.contract_id);
-    let snapshot = report::collect(&client).await?;
+    let rpc = Arc::new(
+        NearRpcClients::new(vec![RpcConfig {
+            url: endpoint.rpc_url,
+            rate_limit: 20,
+            max_concurrency: 20,
+            api_key: None,
+        }])
+        .await,
+    );
+    let snapshot = report::collect(&rpc, &endpoint.contract_id).await?;
     if cli.pretty_print {
         render::table(&snapshot)?;
     } else {
