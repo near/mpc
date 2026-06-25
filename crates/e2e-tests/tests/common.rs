@@ -7,8 +7,8 @@ use blstrs::{G1Projective, Scalar};
 use e2e_tests::{CLUSTER_WAIT_TIMEOUT, MpcCluster, MpcClusterConfig, metrics};
 use group::Group;
 use near_mpc_contract_interface::types::{
-    Bls12381G2PublicKey, CKDAppPublicKey, Curve, DomainId, DomainPurpose, ProtocolContractState,
-    PublicKey, PublicKeyExtended, RunningContractState,
+    Bls12381G2PublicKey, CKDAppPublicKey, Curve, DomainConfig, DomainId, DomainPurpose, Protocol,
+    ProtocolContractState, PublicKey, PublicKeyExtended, RunningContractState,
 };
 use near_mpc_crypto_types::Bls12381G1PublicKey;
 use serde_json::json;
@@ -375,6 +375,18 @@ pub fn must_get_bls_public_key(
         } => g2.clone(),
         other => panic!("expected Bls12381 key, got {other:?}"),
     }
+}
+
+/// Returns the domain running `protocol_type`, panicking if absent. Each
+/// protocol appears at most once per registry, so it identifies a unique domain.
+pub fn must_get_domain(running: &RunningContractState, protocol_type: Protocol) -> DomainConfig {
+    running
+        .domains
+        .domains
+        .iter()
+        .find(|d| d.protocol == protocol_type)
+        .unwrap_or_else(|| panic!("no domain with protocol {protocol_type:?}"))
+        .clone()
 }
 
 /// Send a sign request and assert the network produced a successful response.

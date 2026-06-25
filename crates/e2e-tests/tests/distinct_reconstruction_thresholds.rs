@@ -1,5 +1,7 @@
-use crate::common;
-use crate::request_during_resharing::must_get_domain;
+use crate::common::{
+    DISTINCT_RECONSTRUCTION_THRESHOLDS_PORT_SEED, generate_ckd_app_public_key,
+    generate_ecdsa_payload, generate_eddsa_payload, must_get_domain, must_setup_cluster,
+};
 
 use mpc_primitives::domain::DomainId;
 use near_mpc_contract_interface::types::{
@@ -17,7 +19,7 @@ use rand::SeedableRng;
 async fn distinct_reconstruction_thresholds__should_sign_for_every_scheme() {
     // Given
     let (cluster, contract_state) =
-        common::must_setup_cluster(common::DISTINCT_RECONSTRUCTION_THRESHOLDS_PORT_SEED, |c| {
+        must_setup_cluster(DISTINCT_RECONSTRUCTION_THRESHOLDS_PORT_SEED, |c| {
             c.num_nodes = 6;
             c.initial_participant_indices = (0..6).collect();
             c.threshold = 4;
@@ -45,9 +47,9 @@ async fn distinct_reconstruction_thresholds__should_sign_for_every_scheme() {
         ("EdDSA", eddsa_domain.id, true),
     ] {
         let payload = if is_eddsa {
-            common::generate_eddsa_payload(&mut rng)
+            generate_eddsa_payload(&mut rng)
         } else {
-            common::generate_ecdsa_payload(&mut rng)
+            generate_ecdsa_payload(&mut rng)
         };
         let outcome = cluster
             .send_sign_request(domain_id, payload, cluster.default_user_account())
@@ -63,7 +65,7 @@ async fn distinct_reconstruction_thresholds__should_sign_for_every_scheme() {
     let outcome = cluster
         .send_ckd_request(
             ckd_domain.id,
-            common::generate_ckd_app_public_key(&mut rng),
+            generate_ckd_app_public_key(&mut rng),
             cluster.default_user_account(),
         )
         .await

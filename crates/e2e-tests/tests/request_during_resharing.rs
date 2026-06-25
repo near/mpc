@@ -1,28 +1,13 @@
-use crate::common;
+use crate::common::{
+    REQUEST_DURING_RESHARING_PORT_SEED, generate_ckd_app_public_key, generate_ecdsa_payload,
+    generate_eddsa_payload, must_get_domain, must_setup_cluster,
+};
 
 use mpc_primitives::domain::DomainId;
 use near_mpc_contract_interface::types::{
     DomainConfig, DomainPurpose, Protocol, ProtocolContractState, ReconstructionThreshold,
-    RunningContractState,
 };
 use rand::SeedableRng;
-
-/// Returns the single domain running `protocol_type`.
-///
-/// Each protocol appears at most once in this test's domain registry, so the
-/// protocol uniquely identifies its domain.
-pub(crate) fn must_get_domain(
-    contract_state: &RunningContractState,
-    protocol_type: Protocol,
-) -> DomainConfig {
-    contract_state
-        .domains
-        .domains
-        .iter()
-        .find(|d| d.protocol == protocol_type)
-        .unwrap_or_else(|| panic!("no domain with protocol {protocol_type:?}"))
-        .clone()
-}
 
 /// Tests that signature and CKD requests are processed using the previous
 /// running state's threshold while resharing is in progress.
@@ -38,7 +23,7 @@ pub(crate) fn must_get_domain(
 async fn test_request_during_resharing() {
     // given
     let (mut cluster, contract_state) =
-        common::must_setup_cluster(common::REQUEST_DURING_RESHARING_PORT_SEED, |c| {
+        must_setup_cluster(REQUEST_DURING_RESHARING_PORT_SEED, |c| {
             c.num_nodes = 6;
             c.initial_participant_indices = (0..5).collect();
             c.threshold = 5;
@@ -77,9 +62,9 @@ async fn test_request_during_resharing() {
             ("EdDSA", eddsa_domain.id, true),
         ] {
             let payload = if is_eddsa {
-                common::generate_eddsa_payload(&mut rng)
+                generate_eddsa_payload(&mut rng)
             } else {
-                common::generate_ecdsa_payload(&mut rng)
+                generate_ecdsa_payload(&mut rng)
             };
             tracing::info!(i, label, "sending sign request during resharing");
             let outcome = cluster
@@ -97,7 +82,7 @@ async fn test_request_during_resharing() {
         let outcome = cluster
             .send_ckd_request(
                 ckd_domain.id,
-                common::generate_ckd_app_public_key(&mut rng),
+                generate_ckd_app_public_key(&mut rng),
                 cluster.default_user_account(),
             )
             .await
