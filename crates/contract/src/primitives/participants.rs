@@ -83,6 +83,7 @@ impl Participants {
     ///  - All participant IDs are unique.
     ///  - All account IDs are unique.
     ///  - The next_id is greater than all participant IDs.
+    ///  - Every participant URL parses as a `host:port` address.
     pub fn validate(&self) -> Result<(), Error> {
         let mut ids: BTreeSet<ParticipantId> = BTreeSet::new();
         let mut accounts: BTreeSet<AccountId> = BTreeSet::new();

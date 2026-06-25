@@ -339,7 +339,7 @@ pub async fn monitor_contract_state(
 /// from RFC 5737 TEST-NET-1 (`192.0.2.0/24`) is guaranteed unroutable, so the participant
 /// is kept in the set but treated as unreachable rather than failing the whole conversion
 /// and stalling every node.
-const UNREACHABLE_PARTICIPANT_ADDRESS: &str = "192.0.2.0";
+const UNREACHABLE_PARTICIPANT_ADDRESS: &str = "192.0.2.1";
 
 pub fn convert_participant_infos(
     threshold_parameters: ThresholdParameters,
@@ -586,5 +586,34 @@ mod tests {
             .find(|p| p.near_account_id == account)
             .unwrap();
         assert_eq!(entry.address, UNREACHABLE_PARTICIPANT_ADDRESS);
+        assert_eq!(entry.port, 0);
+    }
+
+    /// `port_override` still applies to a participant whose address is unparseable.
+    #[test]
+    fn convert_participant_infos__should_apply_port_override_to_unreachable_participant() {
+        // Given
+        let mut entries = create_chain_participant_infos().participants;
+        entries[0].2.url = "http://:3000".to_string();
+        let account = entries[0].0.clone();
+        let params = ThresholdParameters {
+            participants: Participants {
+                next_id: ParticipantId(entries.len() as u32),
+                participants: entries,
+            },
+            threshold: Threshold(3),
+        };
+
+        // When
+        let converted = convert_participant_infos(params, Some(8080)).unwrap();
+
+        // Then
+        let entry = converted
+            .participants
+            .iter()
+            .find(|p| p.near_account_id == account)
+            .unwrap();
+        assert_eq!(entry.address, UNREACHABLE_PARTICIPANT_ADDRESS);
+        assert_eq!(entry.port, 8080);
     }
 }
