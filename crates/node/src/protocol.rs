@@ -189,24 +189,28 @@ impl MessageCounters {
     }
 
     pub fn queue_send(&self, participant: ParticipantId, num_messages: usize) {
-        if let Some(counters) = self.counters.get(&participant) {
-            counters
-                .in_flight
-                .fetch_add(num_messages, std::sync::atomic::Ordering::Relaxed);
-            self.report_progress();
-        }
+        let Some(counters) = self.counters.get(&participant) else {
+            self.warn_unknown_participant(participant);
+            return;
+        };
+        counters
+            .in_flight
+            .fetch_add(num_messages, std::sync::atomic::Ordering::Relaxed);
+        self.report_progress();
     }
 
     pub fn sent(&self, participant: ParticipantId, num_messages: usize) {
-        if let Some(counters) = self.counters.get(&participant) {
-            counters
-                .sent
-                .fetch_add(num_messages, std::sync::atomic::Ordering::Relaxed);
-            counters
-                .in_flight
-                .fetch_sub(num_messages, std::sync::atomic::Ordering::Relaxed);
-            self.report_progress();
-        }
+        let Some(counters) = self.counters.get(&participant) else {
+            self.warn_unknown_participant(participant);
+            return;
+        };
+        counters
+            .sent
+            .fetch_add(num_messages, std::sync::atomic::Ordering::Relaxed);
+        counters
+            .in_flight
+            .fetch_sub(num_messages, std::sync::atomic::Ordering::Relaxed);
+        self.report_progress();
     }
 
     pub fn received(&self, participant: ParticipantId, num_messages: usize) {
@@ -214,9 +218,21 @@ impl MessageCounters {
             counters
                 .received
                 .fetch_add(num_messages, std::sync::atomic::Ordering::Relaxed);
+        } else {
+            self.warn_unknown_participant(participant);
         }
         self.current_action
             .store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Counters are keyed by the task's participant set, so a missing participant is unexpected.
+    fn warn_unknown_participant(&self, participant: ParticipantId) {
+        tracing::warn!(
+            target: "network",
+            "[{}] counter update for participant {} not in participant set",
+            self.name,
+            participant,
+        );
     }
 
     pub fn set_receiving(&self) {

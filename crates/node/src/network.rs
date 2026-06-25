@@ -714,7 +714,6 @@ impl NetworkTaskChannel {
     /// computation message.
     async fn receive_one(&mut self) -> anyhow::Result<Option<TaskChannelComputationData>> {
         let message = self.receive_raw().await?;
-        // An out-of-set `from` would propagate into per-participant state keyed on the set.
         if !self.sender.participants.contains(&message.from) {
             let kind = message.message.kind.variant_name();
             tracing::warn!(
