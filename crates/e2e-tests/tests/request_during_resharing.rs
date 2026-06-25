@@ -11,7 +11,10 @@ use rand::SeedableRng;
 ///
 /// Each protocol appears at most once in this test's domain registry, so the
 /// protocol uniquely identifies its domain.
-fn create_domain(contract_state: &RunningContractState, protocol_type: Protocol) -> DomainConfig {
+pub(crate) fn must_get_domain(
+    contract_state: &RunningContractState,
+    protocol_type: Protocol,
+) -> DomainConfig {
     contract_state
         .domains
         .domains
@@ -61,10 +64,10 @@ async fn test_request_during_resharing() {
     cluster.kill_nodes(&[5]).expect("failed to kill node 5");
 
     // then
-    let ecdsa_domain = create_domain(&contract_state, Protocol::CaitSith);
-    let robust_ecdsa_domain = create_domain(&contract_state, Protocol::DamgardEtAl);
-    let eddsa_domain = create_domain(&contract_state, Protocol::Frost);
-    let ckd_domain = create_domain(&contract_state, Protocol::ConfidentialKeyDerivation);
+    let ecdsa_domain = must_get_domain(&contract_state, Protocol::CaitSith);
+    let robust_ecdsa_domain = must_get_domain(&contract_state, Protocol::DamgardEtAl);
+    let eddsa_domain = must_get_domain(&contract_state, Protocol::Frost);
+    let ckd_domain = must_get_domain(&contract_state, Protocol::ConfidentialKeyDerivation);
 
     let mut rng = rand::rngs::StdRng::seed_from_u64(0);
     for i in 0..3 {

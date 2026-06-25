@@ -1,6 +1,7 @@
 use crate::common;
+use crate::request_during_resharing::must_get_domain;
 
-use mpc_primitives::domain::{Curve, DomainId};
+use mpc_primitives::domain::DomainId;
 use near_mpc_contract_interface::types::{
     DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
 };
@@ -31,32 +32,10 @@ async fn distinct_reconstruction_thresholds__should_sign_for_every_scheme() {
         })
         .await;
 
-    let ecdsa_domain = contract_state
-        .domains
-        .domains
-        .iter()
-        .find(|d| d.protocol == Protocol::CaitSith && d.purpose == DomainPurpose::Sign)
-        .expect("no CaitSith Sign domain");
-    let robust_ecdsa_domain = contract_state
-        .domains
-        .domains
-        .iter()
-        .find(|d| d.protocol == Protocol::DamgardEtAl && d.purpose == DomainPurpose::Sign)
-        .expect("no DamgardEtAl Sign domain");
-    let eddsa_domain = contract_state
-        .domains
-        .domains
-        .iter()
-        .find(|d| {
-            Curve::from(d.protocol) == Curve::Edwards25519 && d.purpose == DomainPurpose::Sign
-        })
-        .expect("no Edwards25519 Sign domain");
-    let ckd_domain = contract_state
-        .domains
-        .domains
-        .iter()
-        .find(|d| d.purpose == DomainPurpose::CKD)
-        .expect("no CKD domain");
+    let ecdsa_domain = must_get_domain(&contract_state, Protocol::CaitSith);
+    let robust_ecdsa_domain = must_get_domain(&contract_state, Protocol::DamgardEtAl);
+    let eddsa_domain = must_get_domain(&contract_state, Protocol::Frost);
+    let ckd_domain = must_get_domain(&contract_state, Protocol::ConfidentialKeyDerivation);
 
     // When / Then
     let mut rng = rand::rngs::StdRng::seed_from_u64(0);
