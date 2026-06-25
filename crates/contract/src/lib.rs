@@ -2493,6 +2493,7 @@ impl MpcContract {
     /// # Errors
     /// - [`InvalidState::ProtocolStateNotRunning`] if the protocol is not in the `Running` state.
     /// - [`InvalidState::NotParticipant`] if the signer is not a current participant.
+    /// - [`InvalidParameters::InvalidUrl`] if the destination node's URL does not parse as a `host:port` address.
     /// # Note:
     /// - might require a deposit
     #[handle_result]
