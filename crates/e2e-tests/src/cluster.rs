@@ -905,6 +905,22 @@ impl MpcCluster {
             .await
     }
 
+    /// Update the registered URL of a specific node, called from that node's own operator account.
+    pub async fn update_participant_info(
+        &self,
+        node_index: usize,
+        url: String,
+    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
+        let client = self.operator_client_for(node_index)?;
+        self.contract
+            .call_from(
+                &client,
+                method_names::UPDATE_PARTICIPANT_INFO,
+                json!({ "url": url }),
+            )
+            .await
+    }
+
     /// Send a verify_foreign_transaction request from the default user account.
     pub async fn send_verify_foreign_transaction(
         &self,

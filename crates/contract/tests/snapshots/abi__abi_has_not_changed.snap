@@ -1602,6 +1602,28 @@ expression: abi
         }
       },
       {
+        "name": "update_participant_info",
+        "doc": " Updates the registered network URL of the calling participant.\n\n This is the lightweight, self-service counterpart to the node-migration flow\n (`start_node_migration` / `conclude_node_migration`): it changes only the participant's\n `url`, leaving the TLS public key and participant ID untouched, and requires no keyset\n transfer. Use it to correct a typo or move a node to a new address while keeping the same\n P2P identity.\n\n Must be called directly from the participant's own NEAR account\n (`assert_caller_is_signer()` requires `signer_account_id == predecessor_account_id`).\n Because the TLS public key is unchanged, a misconfigured URL can only make the caller's\n own node unreachable — it cannot redirect peers to an impostor, as the TLS handshake still\n pins the original key.\n\n # Errors\n - [`InvalidParameters::InvalidUrl`] if `url` is not a well-formed `scheme://host` URL.\n - [`InvalidState::ProtocolStateNotRunning`] if the protocol is not in the `Running` state.\n - [`InvalidState::NotParticipant`] if the signer is not a current participant.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "url",
+              "type_schema": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
         "name": "verify_foreign_transaction",
         "doc": " Submit a verification + signing request for a foreign chain transaction.\n MPC nodes will verify the transaction on the foreign chain before signing.\n The signed payload is derived from the transaction ID (hash of tx_id).",
         "kind": "call",

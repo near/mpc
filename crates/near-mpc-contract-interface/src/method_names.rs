@@ -47,6 +47,7 @@ pub const FAIL_ON_TIMEOUT: &str = "fail_on_timeout";
 
 // TEE / Participant
 pub const SUBMIT_PARTICIPANT_INFO: &str = "submit_participant_info";
+pub const UPDATE_PARTICIPANT_INFO: &str = "update_participant_info";
 pub const VERIFY_TEE: &str = "verify_tee";
 pub const CONCLUDE_NODE_MIGRATION: &str = "conclude_node_migration";
 pub const START_NODE_MIGRATION: &str = "start_node_migration";

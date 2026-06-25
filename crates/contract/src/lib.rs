@@ -557,6 +557,59 @@ impl MpcContract {
     }
 }
 
+/// Lightweight structural validation of a participant URL.
+///
+/// The authoritative parse happens node-side (`convert_participant_infos` requires a host and
+/// a resolvable port); this guard only rejects the obvious mistakes — empty input or a missing
+/// `scheme://host` — so an operator gets immediate feedback instead of an update that every node
+/// silently ignores.
+fn validate_participant_url(url: &str) -> Result<(), Error> {
+    let Some((scheme, rest)) = url.split_once("://") else {
+        return Err(InvalidParameters::InvalidUrl {
+            reason: "expected a scheme://host url".to_string(),
+        }
+        .into());
+    };
+    let host = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    if scheme.is_empty() || host.is_empty() {
+        return Err(InvalidParameters::InvalidUrl {
+            reason: "url must contain a non-empty scheme and host".to_string(),
+        }
+        .into());
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod url_validation_tests {
+    use super::validate_participant_url;
+
+    #[test]
+    fn validate_participant_url__should_accept_well_formed_urls() {
+        for url in [
+            "https://node.example.com:8080",
+            "http://1.2.3.4:24567",
+            "https://host/path",
+        ] {
+            assert!(
+                validate_participant_url(url).is_ok(),
+                "{url} should be accepted"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_participant_url__should_reject_malformed_urls() {
+        for url in ["", "   ", "no-scheme.com:8080", "://nohost", "https://"] {
+            assert!(
+                validate_participant_url(url).is_err(),
+                "{url} should be rejected"
+            );
+        }
+    }
+}
+
 // Node API
 #[near]
 impl MpcContract {
@@ -866,6 +919,51 @@ impl MpcContract {
                     .clone()
                     .into_dto_type()
             }))
+    }
+
+    /// Updates the registered network URL of the calling participant.
+    ///
+    /// This is the lightweight, self-service counterpart to the node-migration flow
+    /// (`start_node_migration` / `conclude_node_migration`): it changes only the participant's
+    /// `url`, leaving the TLS public key and participant ID untouched, and requires no keyset
+    /// transfer. Use it to correct a typo or move a node to a new address while keeping the same
+    /// P2P identity.
+    ///
+    /// Must be called directly from the participant's own NEAR account
+    /// (`assert_caller_is_signer()` requires `signer_account_id == predecessor_account_id`).
+    /// Because the TLS public key is unchanged, a misconfigured URL can only make the caller's
+    /// own node unreachable — it cannot redirect peers to an impostor, as the TLS handshake still
+    /// pins the original key.
+    ///
+    /// # Errors
+    /// - [`InvalidParameters::InvalidUrl`] if `url` is not a well-formed `scheme://host` URL.
+    /// - [`InvalidState::ProtocolStateNotRunning`] if the protocol is not in the `Running` state.
+    /// - [`InvalidState::NotParticipant`] if the signer is not a current participant.
+    #[handle_result]
+    pub fn update_participant_info(&mut self, url: String) -> Result<(), Error> {
+        let account_id = Self::assert_caller_is_signer();
+        log!(
+            "update_participant_info: signer={:?}, url={:?}",
+            account_id,
+            url
+        );
+
+        validate_participant_url(&url)?;
+
+        let ProtocolContractState::Running(running_state) = &mut self.protocol_state else {
+            return Err(errors::InvalidState::ProtocolStateNotRunning.into());
+        };
+
+        let Some(existing_info) = running_state.parameters.participants().info(&account_id) else {
+            return Err(errors::InvalidState::NotParticipant { account_id }.into());
+        };
+
+        let new_info = crate::primitives::participants::ParticipantInfo {
+            url,
+            tls_public_key: existing_info.tls_public_key.clone(),
+        };
+
+        running_state.parameters.update_info(account_id, new_info)
     }
 
     /// Propose new parameters for the MPC network: participants, governance
