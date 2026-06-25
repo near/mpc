@@ -7,7 +7,7 @@ use near_mpc_contract_interface::types::{
 };
 use serde_json::json;
 
-/// 9 parallel calls (3 robust ECDSA + 2 ECDSA + 2 EdDSA + 2 CKD) via the test parallel
+/// 9 parallel calls (3 DamgardEtAl + 2 ECDSA + 2 EdDSA + 2 CKD) via the test parallel
 /// contract, against a 6-node / threshold-5 cluster that carries all four signing-scheme
 /// domains. Verifies all calls succeed and both the signature and CKD queues drain.
 #[tokio::test]

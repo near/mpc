@@ -13,8 +13,8 @@ use rand::SeedableRng;
 /// running state's threshold while resharing is in progress.
 ///
 /// Setup: 6 nodes, 5 initial participants (threshold 5). Domains cover
-/// classic ECDSA (CaitSith), robust ECDSA (DamgardEtAl), EdDSA (Frost) and
-/// CKD (ConfidentialKeyDerivation). The robust-ECDSA domain uses a
+/// classic ECDSA (CaitSith), DamgardEtAl, EdDSA (Frost) and
+/// CKD (ConfidentialKeyDerivation). The DamgardEtAl domain uses a
 /// reconstruction threshold of `t = 3`, which requires `2t - 1 = 5` signers,
 /// so we need at least 5 participants. Begin resharing to all 6 with threshold
 /// 6, then kill node 5 so resharing can't complete. Requests should still
