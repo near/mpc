@@ -17,12 +17,13 @@ use crate::types::{
     VerifyForeignTransactionRequestArgs,
 };
 
-/// Gas for votes, admin, and init calls.
-const MAX_GAS: NearGas = NearGas::from_tgas(300);
+/// Gas for votes, admin, and init calls (the full block budget); also the default for any
+/// node-originated contract call.
+pub const MAX_GAS: NearGas = NearGas::from_tgas(300);
 /// Gas for a `sign` (and `verify_foreign_transaction`) request.
-const SIGN_GAS: NearGas = NearGas::from_tgas(15);
+pub const SIGN_GAS: NearGas = NearGas::from_tgas(15);
 /// Gas for a `request_app_private_key` (CKD) request.
-const CKD_GAS: NearGas = NearGas::from_tgas(100);
+pub const CKD_GAS: NearGas = NearGas::from_tgas(100);
 const NO_DEPOSIT: NearToken = NearToken::from_yoctonear(0);
 /// The 1 yoctoNEAR attached to user requests for full-access-key confirmation.
 const ONE_YOCTO: NearToken = NearToken::from_yoctonear(1);

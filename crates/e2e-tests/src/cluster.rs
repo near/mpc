@@ -32,10 +32,6 @@ pub const DEFAULT_PRESIGNATURES_TO_BUFFER: usize = 10;
 // triple/presignature generation past 120 s; the most pressure-sensitive
 // consumer is `wait_for_presignatures` (see `parallel_sign_calls` test).
 pub const CLUSTER_WAIT_TIMEOUT: Duration = Duration::from_secs(240);
-const SIGN_GAS: near_kit::Gas = near_kit::Gas::from_tgas(15);
-// AppPublicKeyPV does an on-chain bls12381_pairing_check (2 pairs) before yielding,
-// which costs significantly more than a plain CKD or sign request.
-const CKD_PV_GAS: near_kit::Gas = near_kit::Gas::from_tgas(100);
 const SIGN_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_yoctonear(1);
 // The contract's default `key_event_timeout_blocks = 30` is ~18 s on
 // mainnet (~600 ms blocks). The e2e sandbox runs ~8 blocks/s, so the
@@ -784,7 +780,7 @@ impl MpcCluster {
             }
         });
         self.contract
-            .call_from_with_deposit(&client, method_names::SIGN, args, SIGN_GAS, SIGN_DEPOSIT)
+            .call_from_with_deposit(&client, method_names::SIGN, args, call_args::SIGN_GAS, SIGN_DEPOSIT)
             .await
     }
 
@@ -798,8 +794,10 @@ impl MpcCluster {
         account_id: &AccountId,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
         let gas = match app_public_key {
-            CKDAppPublicKey::AppPublicKey(_) => SIGN_GAS,
-            CKDAppPublicKey::AppPublicKeyPV(_) => CKD_PV_GAS,
+            CKDAppPublicKey::AppPublicKey(_) => call_args::SIGN_GAS,
+            // AppPublicKeyPV does an on-chain bls12381_pairing_check (2 pairs) before yielding,
+            // which costs significantly more than a plain CKD or sign request.
+            CKDAppPublicKey::AppPublicKeyPV(_) => call_args::CKD_GAS,
         };
         let client = self.user_client(account_id)?;
         let args = json!({

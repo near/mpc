@@ -12,21 +12,13 @@ use near_mpc_contract_interface::{
         Protocol, SignRequestArgs,
     },
 };
+use mpc_call_args::{FunctionCallArgs, NearToken};
 use near_primitives::action::Action;
-use near_primitives::types::{Balance, Gas};
+use near_primitives::types::Gas;
 use rand::Rng;
 use rand::RngCore;
 use rand::rngs::OsRng;
 use serde::Serialize;
-
-/// Gas attached to a `sign` (or legacy `sign`) request. Matches the e2e
-/// test cluster's `SIGN_GAS` and the contract's
-/// `sign_call_gas_attachment_requirement_tera_gas` minimum.
-const SIGN_TGAS: u64 = 15;
-/// Gas attached to a `make_parallel_sign_calls` invocation on the
-/// parallel-sign helper contract. The helper schedules up to ~10
-/// sub-calls into the MPC contract, so this needs the full block budget.
-const PARALLEL_SIGN_TGAS: u64 = 300;
 
 #[derive(Clone)]
 pub struct ActionCall {
@@ -85,9 +77,9 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
             }
             ActionCall {
                 receiver_id: args.parallel_sign_contract,
-                actions: vec![make_action(
-                    "make_parallel_sign_calls",
-                    &serde_json::to_vec(&ParallelSignArgsV2 {
+                actions: vec![function_call_action(FunctionCallArgs {
+                    method_name: "make_parallel_sign_calls".to_string(),
+                    args: serde_json::to_vec(&ParallelSignArgsV2 {
                         target_contract: args.mpc_contract,
                         ecdsa_calls_by_domain,
                         robust_ecdsa_calls_by_domain,
@@ -96,9 +88,11 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
                         seed: rand::random(),
                     })
                     .unwrap(),
-                    PARALLEL_SIGN_TGAS,
-                    1,
-                )],
+                    // The helper schedules up to ~10 sub-calls into the MPC contract, so this needs
+                    // the full block budget.
+                    gas: call_args::MAX_GAS,
+                    deposit: NearToken::from_yoctonear(1),
+                })],
             }
         }
         ContractActionCall::Sign(args) => {
@@ -109,19 +103,14 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
             });
             ActionCall {
                 receiver_id: args.mpc_contract,
-                actions: vec![make_action(
-                    &call.method_name,
-                    &call.args,
-                    call.gas.as_tgas(),
-                    call.deposit.as_yoctonear(),
-                )],
+                actions: vec![function_call_action(call)],
             }
         }
         ContractActionCall::LegacySign(args) => ActionCall {
             receiver_id: args.mpc_contract,
-            actions: vec![make_action(
-                method_names::SIGN,
-                &serde_json::to_vec(&SignArgsV1 {
+            actions: vec![function_call_action(FunctionCallArgs {
+                method_name: method_names::SIGN.to_string(),
+                args: serde_json::to_vec(&SignArgsV1 {
                     request: SignRequestV1 {
                         key_version: 0,
                         path: "".to_string(),
@@ -129,9 +118,9 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
                     },
                 })
                 .unwrap(),
-                SIGN_TGAS,
-                1,
-            )],
+                gas: call_args::SIGN_GAS,
+                deposit: NearToken::from_yoctonear(1),
+            })],
         },
         ContractActionCall::Ckd(args) => {
             let call = call_args::make_request_app_private_key(CKDRequestArgs {
@@ -141,12 +130,7 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
             });
             ActionCall {
                 receiver_id: args.mpc_contract,
-                actions: vec![make_action(
-                    &call.method_name,
-                    &call.args,
-                    call.gas.as_tgas(),
-                    call.deposit.as_yoctonear(),
-                )],
+                actions: vec![function_call_action(call)],
             }
         }
     }
@@ -208,11 +192,11 @@ fn random_app_public_key() -> Bls12381G1PublicKey {
     (&point).into()
 }
 
-fn make_action(method: &str, args: &[u8], tgas: u64, deposit: u128) -> Action {
+pub(crate) fn function_call_action(call: FunctionCallArgs) -> Action {
     Action::FunctionCall(Box::new(near_primitives::action::FunctionCallAction {
-        method_name: method.to_string(),
-        args: args.to_vec(),
-        gas: Gas::from_teragas(tgas),
-        deposit: Balance::from_yoctonear(deposit),
+        method_name: call.method_name,
+        args: call.args,
+        gas: Gas::from_gas(call.gas.as_gas()),
+        deposit: call.deposit,
     }))
 }

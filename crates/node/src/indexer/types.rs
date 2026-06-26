@@ -5,7 +5,7 @@ use k256::{
     ecdsa::RecoveryId,
     elliptic_curve::{Curve, CurveArithmetic, ops::Reduce, point::AffineCoordinates},
 };
-use mpc_call_args::{FunctionCallArgs, NearGas, NearToken};
+use mpc_call_args::{FunctionCallArgs, NearToken};
 use mpc_primitives::domain::DomainId;
 use near_mpc_contract_interface::call_args;
 use near_mpc_contract_interface::method_names::{
@@ -253,14 +253,11 @@ impl ChainSendTransactionRequest {
     }
 }
 
-/// 300 Tgas, no deposit — every node-originated call.
-const NODE_GAS: NearGas = NearGas::from_tgas(300);
-
 fn json_call<T: Serialize>(method_name: &'static str, args: &T) -> FunctionCallArgs {
     FunctionCallArgs {
         method_name: method_name.to_string(),
         args: serde_json::to_vec(args).expect("contract call args are serializable"),
-        gas: NODE_GAS,
+        gas: call_args::MAX_GAS,
         deposit: NearToken::from_yoctonear(0),
     }
 }

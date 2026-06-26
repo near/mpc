@@ -6,24 +6,19 @@ pub use near_mpc_contract_interface::types::SubmitParticipantInfoArgs;
 pub use types::{AllowedTeeHashes, TeeNodeIdentity};
 
 use chain_gateway::{
-    NearGas, NearToken,
     state_viewer::{SubscribeToContractMethod, WatchContractState},
     transaction_sender::{SubmitFunctionCall, TransactionSigner},
-    types::FunctionCallArgs,
 };
 use near_account_id::AccountId;
+use near_mpc_contract_interface::call_args;
 use near_mpc_contract_interface::method_names::{
-    ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_LAUNCHER_COMPOSE_HASHES, SUBMIT_PARTICIPANT_INFO,
-    VERIFY_TEE,
+    ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_LAUNCHER_COMPOSE_HASHES,
 };
 use near_mpc_contract_interface::types::{Attestation, Ed25519PublicKey};
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 
 use mpc_primitives::hash::{DockerImageHash, LauncherDockerComposeHash};
-
-const SUBMIT_ATTESTATION_GAS: NearGas = NearGas::from_tgas(300);
-const VERIFY_TEE_GAS: NearGas = NearGas::from_tgas(300);
 
 /// Shared TEE attestation lifecycle context.
 ///
@@ -99,18 +94,12 @@ where
             proposed_participant_attestation: attestation,
             tls_public_key,
         };
-        let args_json = serde_json::to_vec(&args)?;
 
         self.submitter
             .submit_function_call_tx(
                 signer,
                 self.governance_contract.clone(),
-                FunctionCallArgs {
-                    method_name: SUBMIT_PARTICIPANT_INFO.to_string(),
-                    args: args_json,
-                    gas: SUBMIT_ATTESTATION_GAS,
-                    deposit: NearToken::from_yoctonear(0),
-                },
+                call_args::make_submit_participant_info(&args),
             )
             .await
             .map(|_| ())
@@ -123,12 +112,7 @@ where
             .submit_function_call_tx(
                 signer,
                 self.governance_contract.clone(),
-                FunctionCallArgs {
-                    method_name: VERIFY_TEE.to_string(),
-                    args: b"{}".to_vec(),
-                    gas: VERIFY_TEE_GAS,
-                    deposit: NearToken::from_yoctonear(0),
-                },
+                call_args::make_verify_tee(),
             )
             .await
             .map(|_| ())

@@ -394,10 +394,7 @@ impl MpcInitContractCmd {
         access_key
             .submit_tx_to_call_function(
                 &contract,
-                &call.method_name,
-                &call.args,
-                call.gas.as_tgas(),
-                call.deposit.as_yoctonear(),
+                call,
                 near_primitives::views::TxExecutionStatus::Final,
                 true,
             )
@@ -503,10 +500,7 @@ impl MpcProposeUpdateContractCmd {
             .await
             .submit_tx_to_call_function(
                 &contract,
-                &call.method_name,
-                &call.args,
-                call.gas.as_tgas(),
-                call.deposit.as_yoctonear(),
+                call,
                 near_primitives::views::TxExecutionStatus::Final,
                 false,
             )
@@ -557,10 +551,7 @@ impl MpcVoteUpdateCmd {
                 let call = call_args::make_vote_update(self.update_id);
                 key.submit_tx_to_call_function(
                     &contract,
-                    &call.method_name,
-                    &call.args,
-                    call.gas.as_tgas(),
-                    call.deposit.as_yoctonear(),
+                    call,
                     near_primitives::views::TxExecutionStatus::Final,
                     true,
                 )
@@ -650,10 +641,7 @@ impl MpcVoteAddDomainsCmd {
                 let call = call_args::make_vote_add_domains(proposal);
                 key.submit_tx_to_call_function(
                     &contract,
-                    &call.method_name,
-                    &call.args,
-                    call.gas.as_tgas(),
-                    call.deposit.as_yoctonear(),
+                    call,
                     near_primitives::views::TxExecutionStatus::Final,
                     true,
                 )
@@ -773,10 +761,7 @@ impl MpcVoteNewParametersCmd {
                 let call = call_args::make_vote_new_parameters(prospective_epoch_id, proposal);
                 key.submit_tx_to_call_function(
                     &contract,
-                    &call.method_name,
-                    &call.args,
-                    call.gas.as_tgas(),
-                    call.deposit.as_yoctonear(),
+                    call,
                     near_primitives::views::TxExecutionStatus::Final,
                     true,
                 )
@@ -840,10 +825,7 @@ impl MpcVoteApprovedHashCmd {
                 let call = call_args::make_vote_code_hash(code_hash);
                 key.submit_tx_to_call_function(
                     &contract,
-                    &call.method_name,
-                    &call.args,
-                    call.gas.as_tgas(),
-                    call.deposit.as_yoctonear(),
+                    call,
                     near_primitives::views::TxExecutionStatus::Final,
                     true,
                 )
