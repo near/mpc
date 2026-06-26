@@ -857,7 +857,7 @@ impl MpcCluster {
     /// View the foreign chains the contract accepts requests for.
     #[expect(
         deprecated,
-        reason = "We need to keep until deprecated methods are dropped https://github.com/near/mpc/issues/3630"
+        reason = "TODO(#3630) Drop this once contract is upgraded to 3.13"
     )]
     pub async fn view_foreign_chains_supported_by_contract(
         &self,
@@ -879,7 +879,7 @@ impl MpcCluster {
     /// View the per-node foreign chain configurations registered with the contract.
     #[expect(
         deprecated,
-        reason = "We need to keep until deprecated methods are dropped https://github.com/near/mpc/issues/3630"
+        reason = "TODO(#3630) Drop this once contract is upgraded to 3.13"
     )]
     pub async fn view_foreign_chain_configurations(
         &self,
@@ -931,15 +931,15 @@ impl MpcCluster {
         };
         let mut providers = NonEmptyBTreeMap::new(
             ProviderId("alchemy".to_string()),
-            provider("https://api.alchemy.com/v2/"),
+            provider("https://example1.com/v2/"),
         );
         providers.insert(
             ProviderId("quicknode".to_string()),
-            provider("https://api.quicknode.com/"),
+            provider("https://example2.com/"),
         );
         providers.insert(
             ProviderId("public".to_string()),
-            provider("https://rpc.public.io/"),
+            provider("https://example3.com/"),
         );
         let placeholder = ChainEntry {
             providers,
