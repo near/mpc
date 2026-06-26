@@ -58,7 +58,7 @@ args = ["sort", "--workspace", "--grouped", "--check", "--check-format"]
 
 [tasks.cargo-shear]
 command = "cargo"
-args = ["shear"]
+args = ["shear", "--deny-warnings"]
 
 
 [tasks.nextest]
