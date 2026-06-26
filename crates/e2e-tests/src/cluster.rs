@@ -6,6 +6,7 @@ use anyhow::Context;
 use backon::{ConstantBuilder, Retryable};
 use ed25519_dalek::SigningKey;
 use near_kit::AccountId;
+use near_mpc_contract_interface::call_args;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
     AccountId as ContractAccountId, CKDAppPublicKey, DomainConfig, DomainId, DomainPurpose,
@@ -45,7 +46,6 @@ const SIGN_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_yoctonear(1)
 // budget over mainnet's effective headroom.
 const KEY_EVENT_TIMEOUT_BLOCKS: u64 = 240;
 const CONTRACT_UPDATE_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_millinear(17_000);
-const CONTRACT_UPDATE_GAS: near_kit::Gas = near_kit::Gas::from_tgas(300);
 const CONTRACT_DEPLOY_TIMEOUT: Duration = Duration::from_secs(15);
 const PROPOSER_NODE_INDEX: usize = 0;
 
@@ -503,10 +503,9 @@ impl MpcCluster {
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
         let client = self.operator_client_for(node_index)?;
         self.contract
-            .call_from(
+            .call_from_args(
                 &client,
-                method_names::VOTE_CANCEL_KEYGEN,
-                json!({ "next_domain_id": next_domain_id }),
+                call_args::make_vote_cancel_keygen(next_domain_id),
             )
             .await
             .with_context(|| format!("node {node_index} failed to send cancel keygen vote"))
@@ -653,7 +652,7 @@ impl MpcCluster {
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
         let client = self.operator_client_for(node_index)?;
         self.contract
-            .call_from(&client, method_names::VOTE_CANCEL_RESHARING, json!({}))
+            .call_from_args(&client, call_args::make_vote_cancel_resharing())
             .await
             .with_context(|| format!("node {node_index} failed to send cancel resharing vote"))
     }
@@ -879,12 +878,9 @@ impl MpcCluster {
             .blockchain
             .client_for(node.account_id().as_ref(), &self.operator_keys[node_index])?;
         self.contract
-            .call_from(
+            .call_from_args(
                 &client,
-                method_names::REGISTER_FOREIGN_CHAIN_SUPPORT,
-                json!({
-                    "foreign_chain_support": serde_json::to_value(foreign_chain_support)?,
-                }),
+                call_args::make_register_foreign_chain_support(foreign_chain_support.clone()),
             )
             .await
     }
@@ -913,12 +909,9 @@ impl MpcCluster {
         let user = self.default_user_account().clone();
         let client = self.user_client(&user)?;
         self.contract
-            .call_from_with_deposit(
+            .call_from_args(
                 &client,
-                method_names::VERIFY_FOREIGN_TRANSACTION,
-                json!({ "request": serde_json::to_value(request)? }),
-                SIGN_GAS,
-                SIGN_DEPOSIT,
+                call_args::make_verify_foreign_transaction(request.clone()),
             )
             .await
     }
@@ -933,19 +926,12 @@ impl MpcCluster {
             "cannot propose contract update with no nodes"
         );
 
-        let propose_args = ProposeUpdateArgsBorsh {
-            code: Some(new_wasm),
-            config: None,
-        };
         let proposer_client = self.operator_client_for(PROPOSER_NODE_INDEX)?;
         let outcome = self
             .contract
-            .call_from_borsh_with_deposit(
+            .call_from_args(
                 &proposer_client,
-                method_names::PROPOSE_UPDATE,
-                propose_args,
-                CONTRACT_UPDATE_GAS,
-                CONTRACT_UPDATE_DEPOSIT,
+                call_args::make_propose_update(Some(new_wasm.to_vec()), CONTRACT_UPDATE_DEPOSIT),
             )
             .await
             .context("failed to call propose_update")?;
@@ -962,10 +948,9 @@ impl MpcCluster {
             let client = self.operator_client_for(i)?;
             let vote_outcome = self
                 .contract
-                .call_from(
+                .call_from_args(
                     &client,
-                    method_names::VOTE_UPDATE,
-                    json!({ "id": proposal_id }),
+                    call_args::make_vote_update(proposal_id.0),
                 )
                 .await
                 .with_context(|| format!("node {i} failed to call vote_update"))?;
@@ -1214,13 +1199,14 @@ async fn add_initial_domains(
     domains: &[DomainConfig],
 ) -> anyhow::Result<()> {
     tracing::info!(count = domains.len(), "adding domains");
-    let args = json!({ "domains": domains });
-
     for &i in participant_indices {
         let account = format!("node{i}.{SANDBOX_ROOT_ACCOUNT}");
         let client = blockchain.client_for(&account, &operator_keys[i])?;
         contract
-            .call_from(&client, method_names::VOTE_ADD_DOMAINS, args.clone())
+            .call_from_args(
+                &client,
+                call_args::make_vote_add_domains(domains.to_vec()),
+            )
             .await
             .with_context(|| format!("node {i} failed to vote add domains"))?;
     }
@@ -1336,16 +1322,6 @@ async fn create_user_accounts(
         map.insert(account, key);
     }
     Ok(map)
-}
-
-/// Borsh-encoded mirror of the contract's `ProposeUpdateArgs`. We keep it
-/// local rather than depending on `mpc-contract` for two fields. `Config` is
-/// modeled as `Option<()>` because we never propose a config-only update; the
-/// `None` discriminator is `[0u8]` regardless of the inner type.
-#[derive(borsh::BorshSerialize)]
-struct ProposeUpdateArgsBorsh<'a> {
-    code: Option<&'a [u8]>,
-    config: Option<()>,
 }
 
 /// JSON mirror of the contract's `UpdateId`. `propose_update` returns it and

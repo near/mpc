@@ -14,7 +14,6 @@ use crate::rpc::NearRpcClients;
 use crate::terraform::get_urls;
 use crate::tx::IntoReturnValueExt;
 use crate::types::{MpcNetworkSetup, MpcParticipantSetup, NearAccount, ParsedConfig};
-use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_primitives::domain::DomainId;
 use near_account_id::AccountId;
@@ -22,19 +21,19 @@ use near_jsonrpc_client::errors::{JsonRpcError, JsonRpcServerError};
 use near_jsonrpc_client::methods;
 use near_jsonrpc_client::methods::query::RpcQueryError;
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
+use mpc_call_args::NearToken;
+use near_mpc_contract_interface::call_args;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
-    DomainConfig, DomainPurpose, EpochId, NodeImageHash, ParticipantId, ParticipantInfo,
+    DomainConfig, DomainPurpose, ParticipantId, ParticipantInfo,
     Participants, ProposedThresholdParameters, Protocol, ProtocolContractState,
     ReconstructionThreshold, Threshold, ThresholdParameters, protocol_state_to_string,
 };
 use near_primitives::types::{BlockReference, Finality, FunctionArgs};
 use near_primitives::views::QueryRequest;
-use near_sdk::borsh;
 use node_types::http_server::StaticWebData;
 use rand::rngs::OsRng;
 use reqwest::Client;
-use serde::Serialize;
 use std::sync::Arc;
 
 impl ListMpcCmd {
@@ -387,19 +386,18 @@ impl MpcInitContractCmd {
             },
             threshold: Threshold::new(self.threshold),
         };
-        let args = serde_json::to_vec(&InitV2Args {
+        let call = call_args::make_init(
             parameters,
-            init_config: near_mpc_contract_interface::types::InitConfig::default(),
-        })
-        .unwrap();
+            Some(near_mpc_contract_interface::types::InitConfig::default()),
+        );
 
         access_key
             .submit_tx_to_call_function(
                 &contract,
-                method_names::INIT,
-                &args,
-                300,
-                0,
+                &call.method_name,
+                &call.args,
+                call.gas.as_tgas(),
+                call.deposit.as_yoctonear(),
                 near_primitives::views::TxExecutionStatus::Final,
                 true,
             )
@@ -407,12 +405,6 @@ impl MpcInitContractCmd {
             .into_return_value()
             .unwrap();
     }
-}
-
-#[derive(Serialize)]
-struct InitV2Args {
-    parameters: ThresholdParameters,
-    init_config: near_mpc_contract_interface::types::InitConfig,
 }
 
 fn mpc_account_to_participant_info(account: &OperatingAccount, index: usize) -> ParticipantInfo {
@@ -502,19 +494,19 @@ impl MpcProposeUpdateContractCmd {
         fund_accounts(&mut setup.accounts, vec![account_to_fund], funding_account).await;
         let proposer = setup.accounts.account(proposer_account_id);
 
+        let call = call_args::make_propose_update(
+            Some(contract_code),
+            NearToken::from_yoctonear(self.deposit_near * ONE_NEAR),
+        );
         let result = proposer
             .any_access_key()
             .await
             .submit_tx_to_call_function(
                 &contract,
-                method_names::PROPOSE_UPDATE,
-                &borsh::to_vec(&ProposeUpdateArgs {
-                    contract: Some(contract_code),
-                    config: None,
-                })
-                .unwrap(),
-                300,
-                self.deposit_near * ONE_NEAR,
+                &call.method_name,
+                &call.args,
+                call.gas.as_tgas(),
+                call.deposit.as_yoctonear(),
                 near_primitives::views::TxExecutionStatus::Final,
                 false,
             )
@@ -537,12 +529,6 @@ impl MpcProposeUpdateContractCmd {
             self_exe, name, update_id
         );
     }
-}
-
-#[derive(BorshSerialize, BorshDeserialize)]
-pub struct ProposeUpdateArgs {
-    pub contract: Option<Vec<u8>>,
-    pub config: Option<()>, // unsupported
 }
 
 impl MpcVoteUpdateCmd {
@@ -568,12 +554,13 @@ impl MpcVoteUpdateCmd {
             let mut key = account.any_access_key().await;
             let contract = contract.clone();
             futs.push(async move {
+                let call = call_args::make_vote_update(self.update_id);
                 key.submit_tx_to_call_function(
                     &contract,
-                    method_names::VOTE_UPDATE,
-                    &serde_json::to_vec(&VoteUpdateArgs { id: self.update_id }).unwrap(),
-                    300,
-                    0,
+                    &call.method_name,
+                    &call.args,
+                    call.gas.as_tgas(),
+                    call.deposit.as_yoctonear(),
                     near_primitives::views::TxExecutionStatus::Final,
                     true,
                 )
@@ -595,11 +582,6 @@ impl MpcVoteUpdateCmd {
             }
         }
     }
-}
-
-#[derive(Serialize)]
-struct VoteUpdateArgs {
-    id: u64,
 }
 
 impl MpcVoteAddDomainsCmd {
@@ -665,12 +647,13 @@ impl MpcVoteAddDomainsCmd {
             let contract = contract.clone();
             let proposal = proposal.clone();
             futs.push(async move {
+                let call = call_args::make_vote_add_domains(proposal);
                 key.submit_tx_to_call_function(
                     &contract,
-                    method_names::VOTE_ADD_DOMAINS,
-                    &serde_json::to_vec(&VoteAddDomainsArgs { domains: proposal }).unwrap(),
-                    300,
-                    0,
+                    &call.method_name,
+                    &call.args,
+                    call.gas.as_tgas(),
+                    call.deposit.as_yoctonear(),
                     near_primitives::views::TxExecutionStatus::Final,
                     true,
                 )
@@ -689,11 +672,6 @@ impl MpcVoteAddDomainsCmd {
             }
         }
     }
-}
-
-#[derive(Serialize)]
-struct VoteAddDomainsArgs {
-    domains: Vec<DomainConfig>,
 }
 
 impl MpcVoteNewParametersCmd {
@@ -792,16 +770,13 @@ impl MpcVoteNewParametersCmd {
             let contract = contract.clone();
             let proposal = proposal.clone();
             futs.push(async move {
+                let call = call_args::make_vote_new_parameters(prospective_epoch_id, proposal);
                 key.submit_tx_to_call_function(
                     &contract,
-                    method_names::VOTE_NEW_PARAMETERS,
-                    &serde_json::to_vec(&VoteNewParametersArgs {
-                        prospective_epoch_id,
-                        proposal,
-                    })
-                    .unwrap(),
-                    300,
-                    0,
+                    &call.method_name,
+                    &call.args,
+                    call.gas.as_tgas(),
+                    call.deposit.as_yoctonear(),
                     near_primitives::views::TxExecutionStatus::Final,
                     true,
                 )
@@ -862,12 +837,13 @@ impl MpcVoteApprovedHashCmd {
             let code_hash = self.mpc_docker_image_hash.into();
 
             voting_futures.push(async move {
+                let call = call_args::make_vote_code_hash(code_hash);
                 key.submit_tx_to_call_function(
                     &contract,
-                    method_names::VOTE_CODE_HASH,
-                    &serde_json::to_vec(&VoteCodeHashArgs { code_hash }).unwrap(),
-                    300,
-                    0,
+                    &call.method_name,
+                    &call.args,
+                    call.gas.as_tgas(),
+                    call.deposit.as_yoctonear(),
                     near_primitives::views::TxExecutionStatus::Final,
                     true,
                 )
@@ -925,17 +901,6 @@ pub async fn read_contract_state(
             panic!("Unexpected error: {:?}", err);
         }
     }
-}
-
-#[derive(Serialize)]
-struct VoteNewParametersArgs {
-    prospective_epoch_id: EpochId,
-    proposal: ProposedThresholdParameters,
-}
-
-#[derive(Serialize)]
-struct VoteCodeHashArgs {
-    code_hash: NodeImageHash,
 }
 
 impl MpcDescribeCmd {

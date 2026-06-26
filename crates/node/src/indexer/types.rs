@@ -253,12 +253,14 @@ impl ChainSendTransactionRequest {
     }
 }
 
-/// 300 Tgas, no deposit — matches every node-originated call.
+/// 300 Tgas, no deposit — every node-originated call.
+const NODE_GAS: NearGas = NearGas::from_tgas(300);
+
 fn json_call<T: Serialize>(method_name: &'static str, args: &T) -> FunctionCallArgs {
     FunctionCallArgs {
         method_name: method_name.to_string(),
         args: serde_json::to_vec(args).expect("contract call args are serializable"),
-        gas: NearGas::from_tgas(300),
+        gas: NODE_GAS,
         deposit: NearToken::from_yoctonear(0),
     }
 }

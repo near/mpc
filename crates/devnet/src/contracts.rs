@@ -5,7 +5,7 @@ use group::Group;
 use near_account_id::AccountId;
 use near_mpc_bounded_collections::BoundedVec;
 use near_mpc_contract_interface::{
-    method_names,
+    call_args, method_names,
     types::{
         Bls12381G1PublicKey, CKDAppPublicKey, CKDRequestArgs, DomainConfig,
         EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES, Payload,
@@ -23,11 +23,6 @@ use serde::Serialize;
 /// test cluster's `SIGN_GAS` and the contract's
 /// `sign_call_gas_attachment_requirement_tera_gas` minimum.
 const SIGN_TGAS: u64 = 15;
-/// Gas attached to a `request_app_private_key` (CKD) call. Matches the
-/// e2e cluster's `CKD_PV_GAS`. CKD is more expensive than `sign` because
-/// `AppPublicKeyPV` does an on-chain bls12381 pairing check before
-/// yielding.
-const CKD_TGAS: u64 = 100;
 /// Gas attached to a `make_parallel_sign_calls` invocation on the
 /// parallel-sign helper contract. The helper schedules up to ~10
 /// sub-calls into the MPC contract, so this needs the full block budget.
@@ -106,22 +101,22 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
                 )],
             }
         }
-        ContractActionCall::Sign(args) => ActionCall {
-            receiver_id: args.mpc_contract,
-            actions: vec![make_action(
-                method_names::SIGN,
-                &serde_json::to_vec(&SignArgsV2 {
-                    request: SignRequestArgs {
-                        domain_id: args.domain_config.id,
-                        path: "".to_string(),
-                        payload: make_payload(args.domain_config.protocol),
-                    },
-                })
-                .unwrap(),
-                SIGN_TGAS,
-                1,
-            )],
-        },
+        ContractActionCall::Sign(args) => {
+            let call = call_args::make_sign(SignRequestArgs {
+                domain_id: args.domain_config.id,
+                path: "".to_string(),
+                payload: make_payload(args.domain_config.protocol),
+            });
+            ActionCall {
+                receiver_id: args.mpc_contract,
+                actions: vec![make_action(
+                    &call.method_name,
+                    &call.args,
+                    call.gas.as_tgas(),
+                    call.deposit.as_yoctonear(),
+                )],
+            }
+        }
         ContractActionCall::LegacySign(args) => ActionCall {
             receiver_id: args.mpc_contract,
             actions: vec![make_action(
@@ -138,22 +133,22 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
                 1,
             )],
         },
-        ContractActionCall::Ckd(args) => ActionCall {
-            receiver_id: args.mpc_contract,
-            actions: vec![make_action(
-                method_names::REQUEST_APP_PRIVATE_KEY,
-                &serde_json::to_vec(&CKDArgs {
-                    request: CKDRequestArgs {
-                        derivation_path: "".to_string(),
-                        domain_id: args.domain_config.id,
-                        app_public_key: CKDAppPublicKey::AppPublicKey(random_app_public_key()),
-                    },
-                })
-                .unwrap(),
-                CKD_TGAS,
-                1,
-            )],
-        },
+        ContractActionCall::Ckd(args) => {
+            let call = call_args::make_request_app_private_key(CKDRequestArgs {
+                derivation_path: "".to_string(),
+                domain_id: args.domain_config.id,
+                app_public_key: CKDAppPublicKey::AppPublicKey(random_app_public_key()),
+            });
+            ActionCall {
+                receiver_id: args.mpc_contract,
+                actions: vec![make_action(
+                    &call.method_name,
+                    &call.args,
+                    call.gas.as_tgas(),
+                    call.deposit.as_yoctonear(),
+                )],
+            }
+        }
     }
 }
 
@@ -167,16 +162,6 @@ struct SignRequestV1 {
     payload: [u8; 32],
     path: String,
     key_version: u32,
-}
-
-#[derive(Serialize)]
-struct SignArgsV2 {
-    pub request: SignRequestArgs,
-}
-
-#[derive(Serialize)]
-struct CKDArgs {
-    pub request: CKDRequestArgs,
 }
 
 #[derive(Serialize)]
