@@ -2,6 +2,11 @@ use anyhow::{Context, Result, bail};
 use clap::ValueEnum;
 use near_primitives::types::AccountId;
 
+const MAINNET_RPC_URL: &str = "https://rpc.mainnet.near.org";
+const TESTNET_RPC_URL: &str = "https://rpc.testnet.near.org";
+const MAINNET_CONTRACT_ID: &str = "v1.signer";
+const TESTNET_CONTRACT_ID: &str = "v1.signer-prod.testnet";
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
 pub enum Network {
     Mainnet,
@@ -12,16 +17,16 @@ pub enum Network {
 impl Network {
     pub fn default_rpc_url(self) -> Option<&'static str> {
         match self {
-            Self::Mainnet => Some("https://rpc.mainnet.near.org"),
-            Self::Testnet => Some("https://rpc.testnet.near.org"),
+            Self::Mainnet => Some(MAINNET_RPC_URL),
+            Self::Testnet => Some(TESTNET_RPC_URL),
             Self::Localnet => None,
         }
     }
 
     pub fn default_contract(self) -> Option<&'static str> {
         match self {
-            Self::Mainnet => Some("v1.signer"),
-            Self::Testnet => Some("v1.signer-prod.testnet"),
+            Self::Mainnet => Some(MAINNET_CONTRACT_ID),
+            Self::Testnet => Some(TESTNET_CONTRACT_ID),
             Self::Localnet => None,
         }
     }

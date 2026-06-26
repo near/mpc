@@ -2115,29 +2115,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
 
 [[package]]
-name = "contract-analytics"
-version = "3.13.0"
-dependencies = [
- "anyhow",
- "clap",
- "futures",
- "hex",
- "mpc-attestation",
- "mpc-devnet",
- "mpc-primitives",
- "near-jsonrpc-client",
- "near-jsonrpc-primitives 0.36.0",
- "near-mpc-contract-interface",
- "near-mpc-crypto-types",
- "near-primitives 0.36.0",
- "reqwest 0.13.4",
- "serde",
- "serde_json",
- "time",
- "tokio",
-]
-
-[[package]]
 name = "contract-history"
 version = "3.13.0"
 dependencies = [
@@ -7740,6 +7717,29 @@ dependencies = [
  "tracing",
  "url",
  "xz2",
+]
+
+[[package]]
+name = "network-analytics"
+version = "3.13.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "futures",
+ "hex",
+ "mpc-attestation",
+ "mpc-devnet",
+ "mpc-primitives",
+ "near-jsonrpc-client",
+ "near-jsonrpc-primitives 0.36.0",
+ "near-mpc-contract-interface",
+ "near-mpc-crypto-types",
+ "near-primitives 0.36.0",
+ "reqwest 0.13.4",
+ "serde",
+ "serde_json",
+ "time",
+ "tokio",
 ]
 
 [[package]]

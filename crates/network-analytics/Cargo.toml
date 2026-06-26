@@ -1,11 +1,11 @@
 [package]
-name = "contract-analytics"
+name = "network-analytics"
 version = { workspace = true }
 edition = { workspace = true }
 license = { workspace = true }
 
 [[bin]]
-name = "contract-analytics"
+name = "network-analytics"
 path = "src/main.rs"
 
 [lib]
