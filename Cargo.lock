@@ -1282,7 +1282,7 @@ dependencies = [
  "bitflags 2.11.0",
  "cexpr",
  "clang-sys",
- "itertools 0.10.5",
+ "itertools 0.13.0",
  "proc-macro2",
  "quote",
  "regex",
@@ -1783,6 +1783,7 @@ dependencies = [
  "derive_more 2.1.1",
  "ed25519-dalek",
  "insta",
+ "mpc-call-args",
  "near-account-id",
  "near-async",
  "near-client",
@@ -1792,6 +1793,7 @@ dependencies = [
  "near-o11y 2.13.0-rc.1",
  "near-sdk",
  "near-store",
+ "near-token",
  "nearcore",
  "prometheus",
  "rand 0.8.6",
@@ -1812,7 +1814,7 @@ name = "chain-gateway-test-contract"
 version = "3.13.0"
 dependencies = [
  "borsh",
- "derive_more 2.1.1",
+ "mpc-call-args",
  "near-sdk",
  "serde_json",
 ]
@@ -5750,6 +5752,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "mpc-call-args"
+version = "3.13.0"
+dependencies = [
+ "near-gas",
+ "near-token",
+]
+
+[[package]]
 name = "mpc-contract"
 version = "3.13.0"
 dependencies = [
@@ -7401,9 +7411,9 @@ dependencies = [
 
 [[package]]
 name = "near-token"
-version = "0.3.3"
+version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34de6b54d82d0790b2a56b677e7b4ecb7f021a7e8559f8611065c890d56cfcda"
+checksum = "2a8000d5859172ce4cd29d51ae1af18a80571939f2975ffcae2c00d241ef4507"
 dependencies = [
  "borsh",
  "schemars 0.8.22",

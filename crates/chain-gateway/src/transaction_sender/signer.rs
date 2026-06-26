@@ -4,10 +4,10 @@ use near_indexer::near_primitives::account::AccessKey;
 use near_indexer_primitives::near_primitives::transaction::{
     FunctionCallAction, SignedTransaction, Transaction, TransactionV0,
 };
-use near_indexer_primitives::types::{Balance, Gas};
+use near_indexer_primitives::types::Gas;
 use std::sync::Mutex;
 
-use crate::types::LatestFinalBlockInfo;
+use crate::types::{FunctionCallArgs, LatestFinalBlockInfo};
 
 pub struct TransactionSigner {
     signing_key: SigningKey,
@@ -43,16 +43,14 @@ impl TransactionSigner {
     pub(crate) fn create_and_sign_function_call_tx(
         &self,
         receiver_id: AccountId,
-        method_name: String,
-        args: Vec<u8>,
-        gas: Gas,
+        args: FunctionCallArgs,
         info: LatestFinalBlockInfo,
     ) -> SignedTransaction {
         let action = FunctionCallAction {
-            method_name,
-            args,
-            gas,
-            deposit: Balance::from_near(0),
+            method_name: args.method_name,
+            args: args.args,
+            gas: Gas::from_gas(args.gas.as_gas()),
+            deposit: args.deposit,
         };
 
         let verifying_key = self.signing_key.verifying_key();
@@ -90,14 +88,16 @@ impl TransactionSigner {
 #[cfg(test)]
 mod tests {
     use ed25519_dalek::SigningKey;
+    use mpc_call_args::{FunctionCallArgs, NearGas};
     use near_account_id::AccountId;
     use near_indexer::near_primitives::{account::AccessKey, transaction::Transaction};
     use near_indexer_primitives::types::Gas;
+    use near_token::NearToken;
     use rand::{SeedableRng, rngs::StdRng};
 
     use crate::{transaction_sender::TransactionSigner, types::LatestFinalBlockInfo};
 
-    const TEST_GAS: Gas = Gas::from_gas(300_000_000_000_000);
+    const TEST_GAS: NearGas = NearGas::from_gas(300_000_000_000_000);
 
     #[test]
     fn test_public_key_derives_from_signing_key() {
@@ -141,6 +141,15 @@ mod tests {
         assert_eq!(third, first + 2);
     }
 
+    fn test_function_call() -> FunctionCallArgs {
+        FunctionCallArgs {
+            method_name: "do_something".to_string(),
+            args: b"test args".to_vec(),
+            gas: TEST_GAS,
+            deposit: NearToken::from_yoctonear(0),
+        }
+    }
+
     #[test]
     fn test_create_and_sign_returns_valid_transaction() {
         // Given: a signer
@@ -148,9 +157,7 @@ mod tests {
         let signer = TransactionSigner::from_rng(&mut StdRng::seed_from_u64(SEED));
         let signer_clone = TransactionSigner::from_rng(&mut StdRng::seed_from_u64(SEED));
         let receiver_id: AccountId = "receiver.near".parse().unwrap();
-        let args = b"test args".to_vec();
-        let gas = TEST_GAS;
-        let method_name = "do_something".to_string();
+        let args = test_function_call();
         let info = LatestFinalBlockInfo {
             observed_at: 100.into(),
             value: near_indexer_primitives::CryptoHash::hash_bytes(b"test_bytes"),
@@ -159,9 +166,7 @@ mod tests {
         // When: it signs a transaction
         let signed_tx = signer.create_and_sign_function_call_tx(
             receiver_id.clone(),
-            method_name.clone(),
             args.clone(),
-            gas,
             info.clone(),
         );
 
@@ -178,9 +183,9 @@ mod tests {
         assert_eq!(tx.actions.len(), 1);
         match &tx.actions[0] {
             near_indexer_primitives::near_primitives::transaction::Action::FunctionCall(action) => {
-                assert_eq!(action.method_name, method_name);
-                assert_eq!(action.args, args);
-                assert_eq!(action.gas, gas);
+                assert_eq!(action.method_name, args.method_name);
+                assert_eq!(action.args, args.args);
+                assert_eq!(action.gas, Gas::from_gas(args.gas.as_gas()));
             }
             other => panic!("expected FunctionCall action, got {other:?}"),
         }
@@ -205,9 +210,7 @@ mod tests {
 
         // When: the two signers sign the same transaction
         let receiver_id: AccountId = "receiver.near".parse().unwrap();
-        let args = b"test args".to_vec();
-        let gas = TEST_GAS;
-        let method_name = "do_something".to_string();
+        let args = test_function_call();
         let info = LatestFinalBlockInfo {
             observed_at: 100.into(),
             value: near_indexer_primitives::CryptoHash::hash_bytes(b"test_bytes"),
@@ -216,18 +219,11 @@ mod tests {
         // Then: expect the signed transactions to be an exact match
         let signed_tx = signer.create_and_sign_function_call_tx(
             receiver_id.clone(),
-            method_name.clone(),
             args.clone(),
-            gas,
             info.clone(),
         );
-        let signed_tx_clone = signer_clone.create_and_sign_function_call_tx(
-            receiver_id.clone(),
-            method_name.clone(),
-            args.clone(),
-            gas,
-            info.clone(),
-        );
+        let signed_tx_clone =
+            signer_clone.create_and_sign_function_call_tx(receiver_id.clone(), args, info.clone());
         assert_eq!(signed_tx, signed_tx_clone);
     }
 }

@@ -2,6 +2,8 @@ use derive_more::{Display, From, Into};
 use near_indexer_primitives::CryptoHash;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
+pub use mpc_call_args::FunctionCallArgs;
+
 use crate::errors::ChainGatewayError;
 
 /// An empty argument struct for contract view calls that take no arguments.
