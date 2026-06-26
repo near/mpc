@@ -1,4 +1,6 @@
 #![doc = include_str!("../README.md")]
+#[cfg(feature = "call-args")]
+pub mod call_args;
 pub mod method_names;
 pub mod types {
     pub use attestation::{
