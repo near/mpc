@@ -1,19 +1,14 @@
-//! Builders for the contract calls the MPC node makes.
+//! Builders for the contract calls the MPC node makes, each returning a [`FunctionCallArgs`].
 //!
-//! Each `make_*` returns a [`FunctionCallArgs`] (method name + JSON-encoded args + gas + deposit).
-//! The JSON keys match the contract's parameter names so the encoded args are what the contract
-//! deserializes.
+//! The `respond` family is absent: the node sends node-side request wrappers (the contract's
+//! `SignatureRequest`/`CKDRequest` are receive-only and not `Serialize`), so the node builds those.
 
 use mpc_call_args::{FunctionCallArgs, NearGas, NearToken};
 use serde::Serialize;
 
 use crate::method_names;
-use crate::types::{
-    CKDRequest, CKDResponse, KeyEventId, Keyset, PublicKey, SignatureRequest, SignatureResponse,
-    SubmitParticipantInfoArgs, VerifyForeignTransactionRequest, VerifyForeignTransactionResponse,
-};
+use crate::types::{KeyEventId, Keyset, PublicKey, SubmitParticipantInfoArgs};
 
-/// Node-originated contract calls all use the 300 Tgas maximum and attach no deposit.
 const GAS: NearGas = NearGas::from_tgas(300);
 const NO_DEPOSIT: NearToken = NearToken::from_yoctonear(0);
 
@@ -90,37 +85,4 @@ pub fn make_verify_tee() -> FunctionCallArgs {
         gas: GAS,
         deposit: NO_DEPOSIT,
     }
-}
-
-pub fn make_respond(request: SignatureRequest, response: SignatureResponse) -> FunctionCallArgs {
-    #[derive(Serialize)]
-    struct Args {
-        request: SignatureRequest,
-        response: SignatureResponse,
-    }
-    encode(method_names::RESPOND, &Args { request, response })
-}
-
-pub fn make_respond_ckd(request: CKDRequest, response: CKDResponse) -> FunctionCallArgs {
-    #[derive(Serialize)]
-    struct Args {
-        request: CKDRequest,
-        response: CKDResponse,
-    }
-    encode(method_names::RESPOND_CKD, &Args { request, response })
-}
-
-pub fn make_respond_verify_foreign_tx(
-    request: VerifyForeignTransactionRequest,
-    response: VerifyForeignTransactionResponse,
-) -> FunctionCallArgs {
-    #[derive(Serialize)]
-    struct Args {
-        request: VerifyForeignTransactionRequest,
-        response: VerifyForeignTransactionResponse,
-    }
-    encode(
-        method_names::RESPOND_VERIFY_FOREIGN_TX,
-        &Args { request, response },
-    )
 }

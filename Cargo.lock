@@ -5892,6 +5892,7 @@ dependencies = [
  "mappings",
  "mockall",
  "mpc-attestation",
+ "mpc-call-args",
  "mpc-contract",
  "mpc-node-config",
  "mpc-primitives",
