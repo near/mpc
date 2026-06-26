@@ -322,7 +322,7 @@ fn parse_per_domain_threshold(s: &str) -> anyhow::Result<(u64, u64)> {
 }
 
 #[derive(clap::Parser)]
-pub struct MpcVoteApprovedHashCmd {
+pub(crate) struct MpcVoteApprovedHashCmd {
     /// The Docker image hash to approve on the contract.
     #[clap(long, value_parser = Self::mpc_docker_image_hash_parser)]
     pub mpc_docker_image_hash: [u8; 32],

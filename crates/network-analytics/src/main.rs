@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
 use mpc_devnet::rpc::NearRpcClients;
 use mpc_devnet::types::RpcConfig;
@@ -19,12 +18,12 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Command {
-    /// Fetch attestation expiries for every TLS key in the MPC contract.
-    Attestations(AttestationsArgs),
+    /// Provides a concise overview of the current network state
+    Overview(OverviewArgs),
 }
 
 #[derive(Args, Debug)]
-struct AttestationsArgs {
+struct OverviewArgs {
     #[arg(long, value_enum, default_value_t = Network::Mainnet)]
     network: Network,
     #[arg(long)]
@@ -36,14 +35,14 @@ struct AttestationsArgs {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Command::Attestations(args) => run_attestations(args).await,
+        Command::Overview(args) => run_attestations(args).await,
     }
 }
 
-async fn run_attestations(args: AttestationsArgs) -> Result<()> {
+async fn run_attestations(args: OverviewArgs) -> anyhow::Result<()> {
     let endpoint = resolve(args.network, args.rpc_url, args.contract)?;
     let rpc = Arc::new(
         NearRpcClients::new(vec![RpcConfig {

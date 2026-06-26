@@ -1,20 +1,19 @@
 use std::collections::BTreeMap;
 use std::io::{IsTerminal, Write};
 
-use anyhow::Result;
 use mpc_primitives::hash::NodeImageHash;
 use near_mpc_contract_interface::types::{Ed25519PublicKey, MockAttestation, VerifiedAttestation};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
 use crate::report::{
-    AttestationResult, ParticipantRow, Snapshot, attestation_status, expiry_unix_seconds, is_stale,
-    rows_sorted_by_tls,
+    AttestationResult, NetworkSnapshot, ParticipantRow, attestation_status, expiry_unix_seconds,
+    is_stale, rows_sorted_by_tls,
 };
 
 const NUM_COLS: usize = 10;
 
-pub fn json(snapshot: &Snapshot) -> Result<()> {
+pub fn json(snapshot: &NetworkSnapshot) -> anyhow::Result<()> {
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
     serde_json::to_writer_pretty(&mut out, snapshot)?;
@@ -22,7 +21,7 @@ pub fn json(snapshot: &Snapshot) -> Result<()> {
     Ok(())
 }
 
-pub fn table(snapshot: &Snapshot) -> Result<()> {
+pub fn table(snapshot: &NetworkSnapshot) -> anyhow::Result<()> {
     let use_color = std::io::stdout().is_terminal();
     let rows = rows_sorted_by_tls(&snapshot.state);
     let now = snapshot.fetched_at_unix_seconds;
@@ -86,7 +85,7 @@ fn format_row(
     attestation: Option<&AttestationResult>,
     versions: &BTreeMap<NodeImageHash, String>,
     now: u64,
-) -> Result<[String; NUM_COLS]> {
+) -> anyhow::Result<[String; NUM_COLS]> {
     let (mpc_hash, launcher_hash, expires_at, expires_in) = attestation_columns(attestation, now)?;
     let mpc_version = mpc_version_cell(attestation, versions);
     Ok([
@@ -125,7 +124,7 @@ fn mpc_version_cell(
 fn attestation_columns(
     result: Option<&AttestationResult>,
     now: u64,
-) -> Result<(String, String, String, String)> {
+) -> anyhow::Result<(String, String, String, String)> {
     match result {
         None => Ok((dash(), dash(), dash(), "no-attestation-key".to_string())),
         Some(AttestationResult::Err(e)) => Ok((dash(), dash(), dash(), format!("rpc-error: {e}"))),
@@ -179,7 +178,7 @@ fn print_table(
     attestations: &BTreeMap<Ed25519PublicKey, AttestationResult>,
     now: u64,
     use_color: bool,
-) -> Result<()> {
+) -> anyhow::Result<()> {
     let mut widths = [0usize; NUM_COLS];
     for (i, h) in header.iter().enumerate() {
         widths[i] = h.len();

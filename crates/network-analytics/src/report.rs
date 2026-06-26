@@ -2,10 +2,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use anyhow::{Context, Result, bail};
+use anyhow::Context;
 use futures::future::join_all;
 use mpc_attestation::attestation::DEFAULT_EXPIRATION_DURATION_SECONDS;
-use mpc_devnet::mpc::read_contract_state;
+use mpc_devnet::read_contract_state;
 use mpc_devnet::rpc::NearRpcClients;
 use mpc_primitives::hash::NodeImageHash;
 use near_jsonrpc_client::methods::query::RpcQueryRequest;
@@ -41,7 +41,7 @@ pub struct ParticipantRow {
 }
 
 #[derive(Debug, Serialize)]
-pub struct Snapshot {
+pub struct NetworkSnapshot {
     pub fetched_at_unix_seconds: u64,
     pub state: ProtocolContractState,
     pub attestations: BTreeMap<Ed25519PublicKey, AttestationResult>,
@@ -56,12 +56,12 @@ pub enum AttestationResult {
     Err(String),
 }
 
-pub async fn collect(rpc: &Arc<NearRpcClients>, contract: &AccountId) -> Result<Snapshot> {
+pub async fn collect(rpc: &Arc<NearRpcClients>, contract: &AccountId) -> anyhow::Result<NetworkSnapshot> {
     let state = read_contract_state(rpc, contract).await;
 
     let rows = participants_with_epochs(&state);
     if rows.is_empty() {
-        bail!(
+        anyhow::bail!(
             "contract is in `{}` state; no participant TLS keys to query",
             describe_state_variant(&state)
         );
@@ -74,7 +74,7 @@ pub async fn collect(rpc: &Arc<NearRpcClients>, contract: &AccountId) -> Result<
     let version_fetch = docker_hub::fetch_mpc_image_versions();
     let (attestations, mpc_image_versions) = tokio::join!(attestation_fetch, version_fetch);
 
-    Ok(Snapshot {
+    Ok(NetworkSnapshot {
         fetched_at_unix_seconds: now_unix_seconds(),
         state,
         attestations,
@@ -102,7 +102,7 @@ async fn fetch_attestation(
     rpc: &Arc<NearRpcClients>,
     contract: &AccountId,
     tls_public_key: &Ed25519PublicKey,
-) -> Result<Option<VerifiedAttestation>> {
+) -> anyhow::Result<Option<VerifiedAttestation>> {
     let args = serde_json::to_vec(&serde_json::json!({
         "tls_public_key": tls_public_key,
     }))?;
@@ -122,7 +122,7 @@ async fn fetch_attestation(
         QueryResponseKind::CallResult(r) => {
             serde_json::from_slice(&r.result).context("deserializing get_attestation response")
         }
-        other => bail!("unexpected response kind: {other:?}"),
+        other => anyhow::bail!("unexpected response kind: {other:?}"),
     }
 }
 

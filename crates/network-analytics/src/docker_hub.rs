@@ -2,7 +2,7 @@ mod consts;
 
 use std::collections::BTreeMap;
 
-use anyhow::{Context, Result};
+use anyhow::Context;
 use mpc_primitives::hash::NodeImageHash;
 use serde::Deserialize;
 
@@ -40,7 +40,7 @@ pub async fn fetch_mpc_image_versions() -> BTreeMap<NodeImageHash, String> {
     }
 }
 
-async fn fetch_inner(repo: &str) -> Result<BTreeMap<NodeImageHash, String>> {
+async fn fetch_inner(repo: &str) -> anyhow::Result<BTreeMap<NodeImageHash, String>> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(TIMEOUT_SECS))
         .build()?;
