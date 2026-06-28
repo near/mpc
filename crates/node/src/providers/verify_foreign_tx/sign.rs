@@ -27,6 +27,7 @@ use near_mpc_contract_interface::types as contract_dtos;
 use near_mpc_contract_interface::types::{self as dtos, ECDSA_PAYLOAD_SIZE_BYTES};
 use near_mpc_contract_interface::types::{Payload, Tweak};
 use near_mpc_crypto_types::Ed25519PublicKey;
+use std::collections::HashSet;
 use tokio::time::{Duration, timeout};
 
 const FOREIGN_CHAIN_INSPECTION_TIMEOUT: Duration = Duration::from_secs(5);
@@ -70,30 +71,29 @@ where
             .await?;
         let requested_chain = foreign_tx_request.request.chain();
 
-        let max_attempts = domain_data.presignature_store.num_owned().max(1);
-        let mut incompatible = 0usize;
+        let participants_config = self.ecdsa_signature_provider.participants_config();
+        let eligible_participants: Vec<ParticipantId> = self
+            .ecdsa_signature_provider
+            .alive_participant_ids()
+            .into_iter()
+            .filter(|participant_id| {
+                participants_support_chain(
+                    std::slice::from_ref(participant_id),
+                    participants_config,
+                    &foreign_chains_configs,
+                    requested_chain,
+                )
+            })
+            .collect();
 
-        // Each rejected presignature costs 2 DB writes (delete via
-        // take_owned + put via add_owned). If needed we can optimize that later.
-        let (presignature_id, presignature) = loop {
-            let (id, ps) = domain_data.presignature_store.take_owned().await;
-            if participants_support_chain(
-                &ps.participants,
-                self.ecdsa_signature_provider.participants_config(),
-                &foreign_chains_configs,
-                requested_chain,
-            ) {
-                break (id, ps);
-            }
-            domain_data.presignature_store.add_owned(id, ps);
-            incompatible += 1;
-            if incompatible >= max_attempts {
-                bail!(
-                    "no presignature found whose participants all support chain \
-                     {requested_chain:?} after scanning {incompatible} presignature(s)"
-                );
-            }
-        };
+        let (presignature_id, presignature) = domain_data
+            .presignature_store
+            .take_owned_matching(eligible_participants)
+            .with_context(|| {
+                format!(
+                    "no owned presignature whose participants all support chain {requested_chain:?}"
+                )
+            })?;
         let participants = presignature.participants.clone();
 
         let channel = self.ecdsa_signature_provider.new_channel_for_task(
@@ -118,6 +118,37 @@ where
             .make_signature_leader_given_parameters(sign_request, presignature, channel)
             .await?;
         Ok(((response_payload, response.0), response.1))
+    }
+
+    /// Per-node foreign-chain RPC configs.
+    pub(crate) async fn get_foreign_chains_configs(
+        &self,
+    ) -> anyhow::Result<contract_dtos::ForeignChainsConfigs> {
+        self.foreign_chain_policy_reader
+            .get_foreign_chains_configs()
+            .await
+    }
+
+    /// Narrows `eligible` to the participants that support chain.
+    pub(crate) fn leaders_supporting_chain(
+        &self,
+        eligible: &HashSet<ParticipantId>,
+        foreign_chains_configs: &contract_dtos::ForeignChainsConfigs,
+        chain: contract_dtos::ForeignChain,
+    ) -> HashSet<ParticipantId> {
+        let participants_config = self.ecdsa_signature_provider.participants_config();
+        eligible
+            .iter()
+            .copied()
+            .filter(|participant_id| {
+                participants_support_chain(
+                    std::slice::from_ref(participant_id),
+                    participants_config,
+                    foreign_chains_configs,
+                    chain,
+                )
+            })
+            .collect()
     }
 
     pub(super) async fn make_verify_foreign_tx_follower(

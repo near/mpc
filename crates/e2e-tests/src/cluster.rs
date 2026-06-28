@@ -857,7 +857,7 @@ impl MpcCluster {
     /// View the foreign chains the contract accepts requests for.
     #[expect(
         deprecated,
-        reason = "TODO(#3630) Drop this once contract is upgraded to 3.13"
+        reason = "TODO(#3630): Drop this once contract is upgraded to 3.13"
     )]
     pub async fn view_foreign_chains_supported_by_contract(
         &self,
@@ -879,7 +879,7 @@ impl MpcCluster {
     /// View the per-node foreign chain configurations registered with the contract.
     #[expect(
         deprecated,
-        reason = "TODO(#3630) Drop this once contract is upgraded to 3.13"
+        reason = "TODO(#3630): Drop this once contract is upgraded to 3.13"
     )]
     pub async fn view_foreign_chain_configurations(
         &self,

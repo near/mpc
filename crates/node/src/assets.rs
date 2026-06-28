@@ -165,6 +165,23 @@ impl<T, CondVal: Default + Eq> ColdQueue<T, CondVal> {
         self.cold_queue.push_back((id, value));
         ColdQueueAddIfNotSatisfiedResult::Enqueued
     }
+
+    pub(self) fn ingest(&mut self, id: UniqueId, value: T) {
+        self.cold_queue.push_back((id, value));
+        self.cold_ready = 0;
+        self.cold_available = self.cold_queue.len();
+    }
+
+    pub(self) fn take_first_matching(&mut self, cond_val: &CondVal) -> Option<(UniqueId, T)> {
+        let pos = self
+            .cold_queue
+            .iter()
+            .position(|(_, value)| (self.condition)(cond_val, value))?;
+        let result = self.cold_queue.remove(pos);
+        self.cold_ready = 0;
+        self.cold_available = self.cold_queue.len();
+        result
+    }
 }
 
 enum ColdQueueTakeResult<T> {
@@ -268,6 +285,14 @@ where
                 }
             }
         }
+    }
+
+    pub fn take_owned_matching(&self, cond_val: CondVal) -> Option<(UniqueId, T)> {
+        let mut cold = self.cold_queue.lock().unwrap();
+        while let Some(Ok((id, value))) = self.hot_receiver.recv_async().now_or_never() {
+            cold.ingest(id, value);
+        }
+        cold.take_first_matching(&cond_val)
     }
 
     /// Process `num_elements_to_process`, removing any that doesn't satisfy condition.
@@ -502,6 +527,16 @@ where
             .commit()
             .expect("Unrecoverable error writing to database");
         (id, asset)
+    }
+
+    pub fn take_owned_matching(&self, active: Vec<ParticipantId>) -> Option<(UniqueId, T)> {
+        let (id, asset) = self.owned_queue.take_owned_matching(active)?;
+        let mut update = self.db.update();
+        update.delete(self.col, &self.make_key(id));
+        update
+            .commit()
+            .expect("Unrecoverable error writing to database");
+        Some((id, asset))
     }
 
     /// Adds an owned asset to the storage.
