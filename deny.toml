@@ -29,7 +29,7 @@ ignore = [
 ]
 
 [bans]
-multiple-versions = "warn"
+multiple-versions = "allow"
 skip = [{ name = "windows-sys" }]
 skip-tree = [
   { name = "axum" },

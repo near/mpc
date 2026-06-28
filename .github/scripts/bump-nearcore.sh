@@ -18,8 +18,17 @@ NEW_TAG=${NEARCORE_TAG:-$(gh release view --repo near/nearcore --json tagName -q
 echo "Current: $CURRENT_TAG"
 echo "Target:  $NEW_TAG"
 
-if [[ "$CURRENT_TAG" == "$NEW_TAG" ]]; then
-  echo "Already at $NEW_TAG, nothing to do."
+# True when $1 is a strictly newer semver than $2. A prerelease (`-rc.N`) ranks
+# below its final release, matching semver; `~` makes `sort -V` honor that.
+semver_gt() {
+  local a="${1/-/\~}" b="${2/-/\~}"
+  [[ "$a" != "$b" && "$(printf '%s\n%s\n' "$a" "$b" | sort -V | tail -n1)" == "$a" ]]
+}
+
+# `gh release view` returns the latest stable release, so when we are pinned to a
+# prerelease ahead of it the target can be older. Only bump when it is newer.
+if ! semver_gt "$NEW_TAG" "$CURRENT_TAG"; then
+  echo "Target $NEW_TAG is not newer than current $CURRENT_TAG, nothing to do."
   exit 0
 fi
 
