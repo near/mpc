@@ -16,6 +16,7 @@ members = [
     "crates/include-measurements",
     "crates/launcher-interface",
     "crates/mpc-attestation",
+    "crates/mpc-call-args",
     "crates/near-mpc-bounded-collections",
     "crates/near-mpc-contract-interface",
     "crates/near-mpc-crypto-types",
@@ -56,6 +57,7 @@ foreign-chain-rpc-interfaces = { path = "crates/foreign-chain-rpc-interfaces" }
 include-measurements = { path = "crates/include-measurements" }
 launcher-interface = { path = "crates/launcher-interface" }
 mpc-attestation = { path = "crates/mpc-attestation" }
+mpc-call-args = { path = "crates/mpc-call-args" }
 mpc-contract = { path = "crates/contract", features = ["dev-utils"] }
 mpc-node = { path = "crates/node" }
 mpc-node-config = { path = "crates/node-config" }
@@ -185,6 +187,7 @@ near-account-id = "2.6.0"
 # Must be bumped in lockstep with `near-primitives`: its types appear in
 # near-primitives' transaction API but are not re-exported there.
 near-crypto-public = { version = "0.36.0", package = "near-crypto" }
+near-gas = "0.3.4"
 near-jsonrpc-client = "0.21.1"
 near-jsonrpc-primitives = "0.36.0"
 near-kit = { version = "0.11.0", default-features = false }
@@ -194,6 +197,7 @@ near-sdk = { version = "5.28.0", features = [
     "legacy",
     "unstable",
 ] }
+near-token = "0.3.4"
 near-workspaces = { version = "0.22.2" }
 num_enum = { version = "0.7.6", features = ["complex-expressions"] }
 pairing = { version = "0.23.0" }

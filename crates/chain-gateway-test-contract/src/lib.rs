@@ -1,8 +1,9 @@
 pub mod args;
 pub mod consts;
 
-use args::{Call, make_private_set_args, make_set_value_in_promise_args};
+use args::{make_private_set_args, make_set_value_in_promise_args};
 use consts::DEFAULT_VALUE;
+use mpc_call_args::FunctionCallArgs;
 
 use near_sdk::{
     Promise,
@@ -47,17 +48,17 @@ impl Contract {
         if return_error {
             Err("computer says no".to_string())
         } else {
-            let Call {
-                method,
+            let FunctionCallArgs {
+                method_name,
                 args,
                 deposit,
                 gas,
             } = make_private_set_args(&value, true);
             Ok(Promise::new(env::current_account_id()).function_call(
-                method,
+                method_name,
                 args,
                 deposit,
-                gas.into(),
+                gas,
             ))
         }
     }
@@ -72,32 +73,24 @@ impl Contract {
         end_marker: String,
     ) -> Promise {
         // spawn first promise
-        let Call {
-            method,
+        let FunctionCallArgs {
+            method_name,
             args,
             deposit,
             gas,
         } = make_set_value_in_promise_args("doesn't matter", !successfully_spawn_promise);
-        let promise = Promise::new(env::current_account_id()).function_call(
-            method,
-            args,
-            deposit,
-            gas.into(),
-        );
+        let promise =
+            Promise::new(env::current_account_id()).function_call(method_name, args, deposit, gas);
 
         // spawn callback promise to mark conclusion of first promise
-        let Call {
-            method,
+        let FunctionCallArgs {
+            method_name,
             args,
             deposit,
             gas,
         } = make_private_set_args(&end_marker, true);
-        let callback = Promise::new(env::current_account_id()).function_call(
-            method,
-            args,
-            deposit,
-            gas.into(),
-        );
+        let callback =
+            Promise::new(env::current_account_id()).function_call(method_name, args, deposit, gas);
         promise.then(callback)
     }
 
