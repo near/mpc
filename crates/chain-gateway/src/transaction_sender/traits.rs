@@ -68,13 +68,11 @@ mod tests {
         errors::{ChainGatewayError, ChainGatewayOp},
         mock::{MockChainStateBuilder, MockError},
         transaction_sender::{SubmitFunctionCall, TransactionSigner},
-        types::{FunctionCallArgs, LatestFinalBlockInfo},
+        types::LatestFinalBlockInfo,
     };
 
+    use mpc_call_args::{FunctionCallArgs, NearGas, NearToken};
     use near_account_id::AccountId;
-
-    use crate::NearGas;
-    use near_token::NearToken;
     use rand::{SeedableRng, rngs::StdRng};
 
     fn generate_test_call<R>(rng: &mut R) -> (AccountId, FunctionCallArgs)

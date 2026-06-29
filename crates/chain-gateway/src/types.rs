@@ -1,10 +1,16 @@
 use derive_more::{Display, From, Into};
 use near_indexer_primitives::CryptoHash;
+use near_indexer_primitives::types::Gas;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 pub use mpc_call_args::FunctionCallArgs;
+use mpc_call_args::NearGas;
 
 use crate::errors::ChainGatewayError;
+
+pub(crate) fn to_action_gas(gas: NearGas) -> Gas {
+    Gas::from_gas(gas.as_gas())
+}
 
 /// An empty argument struct for contract view calls that take no arguments.
 #[derive(Serialize)]
