@@ -831,9 +831,11 @@ impl MpcContract {
             Attestation::Mock(mock) => {
                 // Synchronous path: no DCAP, store immediately.
                 let initial_storage = env::storage_usage();
-                let insertion = self
-                    .tee_state
-                    .add_mock_participant(node_id, mock, tee_upgrade_deadline_duration)?;
+                let insertion = self.tee_state.add_mock_participant(
+                    node_id,
+                    mock,
+                    tee_upgrade_deadline_duration,
+                )?;
                 self.charge_attestation_storage(
                     &account_id,
                     initial_storage,
