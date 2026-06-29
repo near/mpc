@@ -27,7 +27,7 @@ pub struct PendingAttestation {
     /// Participant status at submit time, which decides whether the caller pays
     /// for storage. Captured because the callback receipt is no longer the
     /// caller, so it can no longer be re-derived.
-    pub caller_is_not_participant: bool,
+    pub caller_is_participant: bool,
     /// Yield handle, read back by the callback to resume the yield.
     pub data_id: CryptoHash,
 }

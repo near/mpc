@@ -187,7 +187,7 @@ pub struct MpcContract {
     tee_verifier_votes: TeeVerifierVotes,
     /// In-flight [`Attestation::Dstack`] verifications, one entry per submitter
     /// account, held between the cross-contract verify-quote call and its
-    /// resolution (or the yield timeout). See [`tee::pending_attestation`].
+    /// resolution (or the yield timeout). See [`crate::tee::pending_attestation`].
     pending_attestations: LookupMap<AccountId, PendingAttestation>,
 }
 
@@ -323,11 +323,11 @@ impl MpcContract {
         (domain_config, predecessor)
     }
 
-    /// Registers a yield-resume promise for the given callback and stores its
-    /// yield id via the supplied closure.
+    /// Creates a yield-resume promise that calls back into `callback_method` with the
+    /// pre-serialized `callback_args`, and stores the resulting yield id via `insert`.
     ///
-    /// Issues the promise-return host call, so it must be the last operation in
-    /// the enclosing contract method.
+    /// This function calls `env::promise_return` and so must be the last operation performed
+    /// in the enclosing contract method.
     fn enqueue_yield_request(
         &mut self,
         callback_method: &str,
@@ -772,16 +772,14 @@ impl MpcContract {
         )
     }
 
-    /// (Prospective) participants submit their TEE attestation through this endpoint.
+    /// Submit a TEE attestation for a current or prospective participant.
     ///
-    /// [`Attestation::Mock`] is verified synchronously in this call.
-    /// [`Attestation::Dstack`] is verified asynchronously: the call yields on a
-    /// cross-contract verify-quote call and resolves only once the verifier
-    /// responds (or the yield times out). It therefore needs a verifier
-    /// configured (else [`TeeError::VerifierNotConfigured`]) and rejects a
-    /// concurrent submission from the same account
-    /// ([`TeeError::VerificationAlreadyPending`]). The attached deposit covers
-    /// storage on success and is refunded on failure.
+    /// - [`Attestation::Mock`] is verified synchronously.
+    /// - [`Attestation::Dstack`] is verified asynchronously, by yielding on a
+    ///   cross-contract verify-quote call. It rejects a second submission from
+    ///   the same account while one is still in flight.
+    ///
+    /// The attached deposit pays for storage on success, and is refunded on failure.
     #[payable]
     #[handle_result]
     pub fn submit_participant_info(
@@ -802,9 +800,6 @@ impl MpcContract {
             account_key
         );
 
-        let tee_upgrade_deadline_duration =
-            Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
-
         // The node always signs submissions with an Ed25519 key
         // (`near_signer_key`), so the signer key here is Ed25519 in practice.
         // Reject non-Ed25519 signer keys rather than silently storing a value
@@ -820,16 +815,15 @@ impl MpcContract {
             tls_public_key,
             account_public_key,
         };
-        // Frozen at submit time and consumed later in the resolution callback.
-        // The callback receipt's predecessor is the contract itself, so participant
-        // status cannot be re-derived there — capture it now. A resharing that
-        // drops this submitter mid-flight therefore won't reclassify the storage
-        // charge, which is acceptable (the alternative is unavailable).
-        let caller_is_not_participant = self.voter_account().is_err();
+        // Decides who pays for storage. Captured now because the async Dstack
+        // path checks it in a later callback, where the caller is the contract
+        // itself and participant status can no longer be derived.
+        let caller_is_participant = self.voter_account().is_ok();
 
         match proposed_participant_attestation {
             Attestation::Mock(mock) => {
-                // Synchronous path: no DCAP, store immediately.
+                let tee_upgrade_deadline_duration =
+                    Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
                 let initial_storage = env::storage_usage();
                 let insertion = self.tee_state.add_mock_participant(
                     node_id,
@@ -840,13 +834,13 @@ impl MpcContract {
                     &account_id,
                     initial_storage,
                     insertion,
-                    caller_is_not_participant,
+                    caller_is_participant,
                     env::attached_deposit(),
                 )?;
                 Ok(())
             }
             Attestation::Dstack(dstack) => {
-                self.submit_dstack_attestation(node_id, dstack, caller_is_not_participant)
+                self.submit_dstack_attestation(node_id, dstack, caller_is_participant)
             }
         }
     }
@@ -858,18 +852,14 @@ impl MpcContract {
         &mut self,
         node_id: NodeId,
         dstack: DstackAttestation,
-        caller_is_not_participant: bool,
+        caller_is_participant: bool,
     ) -> Result<(), Error> {
         let account_id = node_id.account_id.clone();
 
-        // One in-flight verification per account: a duplicate submit before the
-        // previous one finishes (verifier response or yield timeout) is rejected.
         if self.pending_attestations.contains_key(&account_id) {
             return Err(TeeError::VerificationAlreadyPending.into());
         }
 
-        // Refuse to submit until a verifier has been voted in: there is no
-        // account to call `verify_quote` on.
         let Some(verifier_account_id) = self.tee_verifier_account_id.clone() else {
             return Err(TeeError::VerifierNotConfigured.into());
         };
@@ -877,12 +867,9 @@ impl MpcContract {
         let attached_deposit = env::attached_deposit();
         let tls_public_key = node_id.tls_public_key.clone();
 
-        // Detached cross-contract call to the verifier; its `.then` bridges the
-        // response into a `promise_yield_resume` on the yield registered below.
-        // Built before `enqueue_yield_request` so that the latter's
-        // `promise_return` stays the method's final host call (see its doc
-        // comment). Serialize the quote/collateral by reference so `dstack` can
-        // move into the pending entry below without cloning the (large) payload.
+        // Call the verifier; `resolve_verification` bridges its response back into
+        // the yield registered below. Scheduled before `enqueue_yield_request` so
+        // that helper's `promise_return` stays the method's last host call.
         Promise::new(verifier_account_id)
             .function_call(
                 method_names::VERIFY_QUOTE.to_string(),
@@ -910,7 +897,7 @@ impl MpcContract {
                         dstack,
                         tls_public_key,
                         attached_deposit,
-                        caller_is_not_participant,
+                        caller_is_participant,
                         data_id,
                     },
                 );
@@ -928,12 +915,13 @@ impl MpcContract {
         account_id: &AccountId,
         initial_storage: u64,
         insertion: ParticipantInsertion,
-        caller_is_not_participant: bool,
+        caller_is_participant: bool,
         attached: NearToken,
     ) -> Result<(), Error> {
         let is_new_attestation =
             matches!(insertion, ParticipantInsertion::NewlyInsertedParticipant);
-        if !(is_new_attestation || caller_is_not_participant) {
+        // A participant refreshing an existing attestation is not charged.
+        if caller_is_participant && !is_new_attestation {
             return Ok(());
         }
 
@@ -2467,7 +2455,7 @@ impl MpcContract {
             account_id,
             initial_storage,
             insertion,
-            pending.caller_is_not_participant,
+            pending.caller_is_participant,
             pending.attached_deposit,
         ) {
             Ok(()) => AttestationResult::Ok,
