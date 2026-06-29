@@ -500,6 +500,13 @@ pub struct TaskChannelComputationData {
     pub data: Vec<Vec<u8>>,
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("received {kind} from participant {from}, who is not in the channel participant set")]
+pub struct ParticipantNotInChannelError {
+    pub from: ParticipantId,
+    pub kind: &'static str,
+}
+
 impl Drop for NetworkTaskChannel {
     fn drop(&mut self) {
         if let Some(drop) = self.drop.take() {
@@ -707,6 +714,23 @@ impl NetworkTaskChannel {
     /// computation message.
     async fn receive_one(&mut self) -> anyhow::Result<Option<TaskChannelComputationData>> {
         let message = self.receive_raw().await?;
+        if !self.sender.participants.contains(&message.from) {
+            let kind = message.message.kind.variant_name();
+            tracing::warn!(
+                target: "network",
+                "[{}] [Task {:?}] Rejecting {} from participant {} (channel {:?}): not in participant set",
+                self.sender.my_participant_id,
+                self.sender.task_id,
+                kind,
+                message.from,
+                message.message.channel_id,
+            );
+            return Err(ParticipantNotInChannelError {
+                from: message.from,
+                kind,
+            }
+            .into());
+        }
         match message.message.kind {
             MpcMessageKind::Computation(data) => {
                 return Ok(Some(TaskChannelComputationData {
@@ -787,12 +811,15 @@ impl NetworkTaskChannel {
 
 #[cfg(test)]
 pub mod testing {
-    use super::MeshNetworkTransportSender;
     use super::conn::{ConnectionVersion, NodeConnectivityInterface};
-    use crate::primitives::{MpcPeerMessage, ParticipantId, PeerMessage};
+    use super::{
+        ChannelId, MeshNetworkTransportSender, NetworkTaskChannel, NetworkTaskChannelSender,
+    };
+    use crate::primitives::{MpcPeerMessage, MpcTaskId, ParticipantId, PeerMessage, UniqueId};
     use crate::tracking;
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
     use std::sync::Arc;
+    use tokio::sync::mpsc;
 
     pub struct TestMeshTransport {
         participant_ids: Vec<ParticipantId>,
@@ -919,6 +946,45 @@ pub mod testing {
         }
 
         transports
+    }
+
+    /// Builds a channel over the given participant set, returning the raw inbound sender so
+    /// tests can inject arbitrary `MpcPeerMessage`s, including ones from outside the set.
+    pub fn new_task_channel_for_test(
+        task_id: MpcTaskId,
+        leader: ParticipantId,
+        my_participant_id: ParticipantId,
+        participants: Vec<ParticipantId>,
+    ) -> (NetworkTaskChannel, mpsc::UnboundedSender<MpcPeerMessage>) {
+        let (raw_sender, receiver) = mpsc::unbounded_channel();
+        let transport = Arc::new(TestMeshTransport {
+            participant_ids: participants.clone(),
+            senders: HashMap::new(),
+        });
+        let transport_sender = Arc::new(TestMeshTransportSender {
+            transport,
+            my_participant_id,
+        });
+        let connection_versions = participants
+            .iter()
+            .filter(|id| **id != my_participant_id)
+            .map(|id| (*id, transport_sender.connectivity(*id).connection_version()))
+            .collect();
+        let channel = NetworkTaskChannel {
+            sender: Arc::new(NetworkTaskChannelSender {
+                channel_id: ChannelId(UniqueId::generate(leader)),
+                task_id,
+                leader,
+                my_participant_id,
+                participants,
+                connection_versions,
+                transport_sender,
+            }),
+            successful_participants: HashSet::new(),
+            receiver,
+            drop: None,
+        };
+        (channel, raw_sender)
     }
 
     pub async fn run_test_clients<T: 'static + Send, F, FR>(
