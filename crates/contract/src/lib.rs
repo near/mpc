@@ -2402,36 +2402,36 @@ impl MpcContract {
     ) {
         let account_id = node_id.account_id.clone();
 
-        // A late verifier response can arrive after the ~200-block yield timeout
-        // has already fired and `on_attestation_verified` cleaned up the pending
-        // entry. The yield is then already resolved, so there is nothing to do:
-        // log and return rather than panic on a missing entry or resume twice.
-        if !self.pending_attestations.contains_key(&account_id) {
+        // No verdict (verifier unreachable, panicked, or out of gas). Don't resume;
+        // the yield timeout fires `on_attestation_verified` to clean up and refund.
+        let result = match result {
+            Ok(result) => result,
+            Err(promise_err) => {
+                log!("verifier did not answer for {account_id}: {promise_err:?}");
+                return;
+            }
+        };
+
+        // Take the pending entry now. A late verifier response can arrive after the
+        // ~200-block yield timeout already fired and `on_attestation_verified` removed
+        // the entry and resolved the yield; there is then nothing to do.
+        let Some(pending) = self.pending_attestations.remove(&account_id) else {
             log!(
                 "resolve_verification: no pending attestation for {account_id} (late response or already cleaned up); ignoring"
             );
             return;
-        }
+        };
 
         let final_outcome = match result {
-            Err(promise_err) => {
-                // No verdict; let the yield timeout clean up. Do NOT resume, or
-                // we'd race the timeout for ownership of the cleanup path.
-                log!("verifier did not answer for {account_id}: {promise_err:?}");
-                return;
-            }
-            Ok(VerificationResult::Rejected(reason)) => {
+            VerificationResult::Rejected(reason) => {
                 log!("verifier rejected quote for {account_id}: {reason}");
                 FinalOutcome::Err(format!("verifier rejected quote: {reason}"))
             }
-            Ok(VerificationResult::Verified(report)) => {
-                self.finish_verified_attestation(&node_id, &report)
+            VerificationResult::Verified(report) => {
+                self.finish_verified_attestation(&node_id, &pending, &report)
             }
         };
 
-        let pending = self.pending_attestations.remove(&account_id).expect(
-            "checked contains_key above; no host call between mutates pending_attestations",
-        );
         if matches!(final_outcome, FinalOutcome::Err(_)) {
             refund_attestation_deposit(&account_id, pending.attached_deposit);
         }
@@ -2451,18 +2451,10 @@ impl MpcContract {
     fn finish_verified_attestation(
         &mut self,
         node_id: &NodeId,
+        pending: &PendingAttestation,
         report: &VerifiedReport,
     ) -> FinalOutcome {
-        let account_id = node_id.account_id.clone();
-        let pending = self
-            .pending_attestations
-            .get(&account_id)
-            .expect("resolve_verification confirmed the pending entry before calling us");
-        let caller_is_not_participant = pending.caller_is_not_participant;
-        let attached_deposit = pending.attached_deposit;
-        // The key `revert_dstack_store` unwinds; equal to `node_id`'s by
-        // construction, but read it from the pending entry for rollback symmetry.
-        let tls_public_key = pending.tls_public_key.clone();
+        let account_id = &node_id.account_id;
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
@@ -2481,11 +2473,11 @@ impl MpcContract {
         };
 
         match self.charge_attestation_storage(
-            &account_id,
+            account_id,
             initial_storage,
             insertion,
-            caller_is_not_participant,
-            attached_deposit,
+            pending.caller_is_not_participant,
+            pending.attached_deposit,
         ) {
             Ok(()) => FinalOutcome::Ok,
             Err(err) => {
@@ -2494,7 +2486,7 @@ impl MpcContract {
                 // (unlike the synchronous path). Undo it explicitly, or the
                 // caller would get storage for free plus a full refund.
                 self.tee_state
-                    .revert_dstack_store(&tls_public_key, previous);
+                    .revert_dstack_store(&pending.tls_public_key, previous);
                 FinalOutcome::Err(err.to_string())
             }
         }
