@@ -2457,7 +2457,6 @@ impl MpcContract {
             .pending_attestations
             .get(&account_id)
             .expect("resolve_verification confirmed the pending entry before calling us");
-        let dstack = pending.dstack.clone();
         let caller_is_not_participant = pending.caller_is_not_participant;
         let attached_deposit = pending.attached_deposit;
         // The key `revert_dstack_store` unwinds; equal to `node_id`'s by
@@ -2469,7 +2468,7 @@ impl MpcContract {
         let initial_storage = env::storage_usage();
         let (insertion, previous) = match self.tee_state.finish_dstack_verify(
             node_id.clone(),
-            dstack,
+            &pending.dstack,
             report,
             tee_upgrade_deadline_duration,
         ) {

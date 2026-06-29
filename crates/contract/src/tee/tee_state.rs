@@ -12,7 +12,7 @@ use crate::{
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_attestation::{
     attestation::{
-        self, AcceptedAttestation, Attestation, DstackAttestation, MockAttestation,
+        self, AcceptedAttestation, DstackAttestation, DstackVerify, MockAttestation,
         VerifiedAttestation,
     },
     report_data::{ReportData, ReportDataV1},
@@ -22,6 +22,9 @@ use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_sdk::{env, near, store::IterableMap};
 use std::time::Duration;
 use tee_verifier_interface::VerifiedReport;
+
+#[cfg(test)]
+use mpc_attestation::attestation::Attestation;
 
 pub use near_mpc_contract_interface::types::NodeId;
 
@@ -209,7 +212,7 @@ impl TeeState {
     pub(crate) fn finish_dstack_verify(
         &mut self,
         node_id: NodeId,
-        dstack: DstackAttestation,
+        dstack: &DstackAttestation,
         report: &VerifiedReport,
         tee_upgrade_deadline_duration: Duration,
     ) -> Result<(ParticipantInsertion, Option<NodeAttestation>), AttestationSubmissionError> {
@@ -218,7 +221,7 @@ impl TeeState {
         let AcceptedAttestation {
             attestation: verified_attestation,
             advisory_ids,
-        } = Attestation::Dstack(dstack).verify_with_report(
+        } = dstack.verify(
             report,
             expected_report_data,
             Self::current_time_seconds(),
