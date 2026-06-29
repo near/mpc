@@ -74,7 +74,7 @@ impl TestTeeVerifier {
         match &self.response {
             StubResponse::Verified(report) => VerificationResult::Verified(report.clone()),
             StubResponse::Rejected(reason) => {
-                VerificationResult::Rejected(VerifierError::DcapVerification(reason.clone()))
+                VerificationResult::Rejected(VerifierError::DcapVerification(reason.to_string()))
             }
             StubResponse::Panic => env::panic_str("stub verifier: simulated crash"),
         }

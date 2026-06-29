@@ -1,6 +1,7 @@
 use crate::crypto_shared::kdf::TweakNotOnCurve;
 use crate::primitives::domain::MIN_RECONSTRUCTION_THRESHOLD;
 use crate::primitives::key_state::{EpochId, Keyset};
+use crate::tee::tee_state::AttestationSubmissionError;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::{DomainId, DomainPurpose, ForeignChain, Protocol};
@@ -326,6 +327,9 @@ pub enum Error {
     // Tee errors
     #[error(transparent)]
     NodeMigrationError(#[from] NodeMigrationError),
+    // Tee attestation submission errors
+    #[error(transparent)]
+    AttestationSubmission(#[from] AttestationSubmissionError),
 }
 
 impl near_sdk::FunctionError for Error {

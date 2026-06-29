@@ -93,7 +93,7 @@ use tee_verifier_interface::{VerificationResult, VerifiedReport};
 use state::{ProtocolContractState, running::RunningContractState};
 use tee::{
     proposal::{LauncherVoteAction, NodeImageHash},
-    tee_state::{AttestationSubmissionError, NodeId, ParticipantInsertion, TeeValidationResult},
+    tee_state::{NodeId, ParticipantInsertion, TeeValidationResult},
 };
 
 /// Register used to receive data id from `promise_await_data`.
@@ -151,16 +151,6 @@ fn refund_attestation_deposit(account_id: &AccountId, deposit: NearToken) {
         log!("refund attestation deposit {deposit} to {account_id}");
         Promise::new(account_id.clone()).transfer(deposit).detach();
     }
-}
-
-fn map_attestation_submission_error(err: AttestationSubmissionError) -> Error {
-    let reason = match &err {
-        AttestationSubmissionError::InvalidAttestation(_) => {
-            format!("attestation verification failed: {err}")
-        }
-        AttestationSubmissionError::TlsKeyOwnedByOtherAccount => err.to_string(),
-    };
-    InvalidParameters::InvalidTeeRemoteAttestation { reason }.into()
 }
 
 impl Default for MpcContract {
@@ -843,8 +833,7 @@ impl MpcContract {
                 let initial_storage = env::storage_usage();
                 let insertion = self
                     .tee_state
-                    .add_mock_participant(node_id, mock, tee_upgrade_deadline_duration)
-                    .map_err(map_attestation_submission_error)?;
+                    .add_mock_participant(node_id, mock, tee_upgrade_deadline_duration)?;
                 self.charge_attestation_storage(
                     &account_id,
                     initial_storage,
@@ -4368,7 +4357,7 @@ mod tests {
         if let Err(error) = result {
             let error_string = error.to_string();
             assert!(
-                error_string.contains("attestation verification failed"),
+                error_string.contains("failed verification"),
                 "Error should mention attestation verification failure, got: {}",
                 error_string
             );

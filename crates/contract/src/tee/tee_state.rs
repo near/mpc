@@ -40,8 +40,8 @@ pub enum TeeQuoteStatus {
     Invalid(String),
 }
 
-#[derive(Debug, Clone, thiserror::Error)]
-pub(crate) enum AttestationSubmissionError {
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum AttestationSubmissionError {
     #[error("the submitted attestation failed verification, reason: {:?}", .0)]
     InvalidAttestation(#[from] attestation::VerificationError),
     #[error(
