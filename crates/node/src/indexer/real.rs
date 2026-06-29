@@ -1,6 +1,6 @@
-use super::epoch_sync_reset::{await_and_handle_reset, wipe_data_dir_if_reset_requested};
 use super::handler::listen_blocks;
 use super::migrations::{ContractMigrationInfo, monitor_migrations};
+use super::near_data_wipe::wipe_near_data_if_requested;
 use super::participants::monitor_contract_state;
 use super::stats::indexer_logger;
 use super::{IndexerAPI, IndexerState, RealForeignChainPolicyReader};
@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 #[cfg(feature = "network-hardship-simulation")]
 use std::time::Duration;
-use tokio::sync::{Mutex, broadcast, mpsc, oneshot, watch};
+use tokio::sync::{Mutex, mpsc, oneshot, watch};
 use tokio_util::sync::CancellationToken;
 
 #[cfg(feature = "network-hardship-simulation")]
@@ -61,7 +61,6 @@ pub fn spawn_real_indexer(
     account_secret_key: SigningKey,
     respond_config: RespondConfig,
     indexer_exit_sender: oneshot::Sender<anyhow::Result<()>>,
-    epoch_sync_reset_sender: mpsc::Sender<()>,
     protocol_state_sender: watch::Sender<ProtocolContractState>,
     migration_state_sender: watch::Sender<(u64, ContractMigrationInfo)>,
     tls_public_key: VerifyingKey,
@@ -103,10 +102,8 @@ pub fn spawn_real_indexer(
                 .load_near_config()
                 .expect("near config is present");
 
-            // nearcore wipes and re-syncs its data dir when it detects stale
-            // chain data (EpochSyncDataReset). Honor any pending reset from a
-            // previous run before the store is opened; the mpc secret DB lives
-            // in the sibling `assets` dir and is never touched.
+            // Operator-driven one-time wipe: when `wipe_near_data_once` is set, wipe the
+            // data dir once before the store is opened.
             let hot_store_path = home_dir.join(
                 near_config
                     .config
@@ -115,27 +112,21 @@ pub fn spawn_real_indexer(
                     .as_deref()
                     .unwrap_or_else(|| Path::new("data")),
             );
-            wipe_data_dir_if_reset_requested(&hot_store_path, near_config.client_config.archive)
-                .expect("failed to wipe nearcore data dir on epoch sync reset");
-
-            // `Start the node directly to wire the `EpochSyncDataReset` channel.
-            let (reset_signal_sender, reset_signal_receiver) = broadcast::channel(16);
-            let near_node = nearcore::start_with_config_and_synchronization(
+            wipe_near_data_if_requested(
                 &home_dir,
+                &hot_store_path,
+                mpc_indexer_config.wipe_near_data_once,
+                near_config.client_config.archive,
+            )
+            .expect("failed to wipe nearcore data dir");
+
+            let near_node = Indexer::start_near_node(
+                &near_indexer_config,
                 near_config.clone(),
                 ActorSystem::new(),
-                Some(reset_signal_sender),
-                None,
             )
             .await
             .expect("near node has started");
-
-            tokio::spawn(await_and_handle_reset(
-                reset_signal_receiver,
-                hot_store_path,
-                mpc_indexer_config.reset_stale_near_data,
-                epoch_sync_reset_sender,
-            ));
 
             let indexer = Indexer::from_near_node(near_indexer_config, near_config, &near_node);
 

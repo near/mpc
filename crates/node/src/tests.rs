@@ -209,7 +209,7 @@ impl IntegrationTestSetup {
                     finality: Finality::Final,
                     mpc_contract_id: "test".parse().unwrap(),
                     port_override: None,
-                    reset_stale_near_data: true,
+                    wipe_near_data_once: false,
                     sync_mode: SyncMode::Latest,
                     validate_genesis: false,
                 },

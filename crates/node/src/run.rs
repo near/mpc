@@ -202,10 +202,6 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
 
     // Create Indexer and wait for indexer to be synced.
     let (indexer_exit_sender, indexer_exit_receiver) = oneshot::channel();
-    // nearcore signals here when it reports stale chain data. The indexer
-    // writes the reset marker (when `indexer.reset_stale_near_data` is enabled),
-    // then this trips a non-zero exit so the supervisor restarts and wipes.
-    let (epoch_sync_reset_sender, mut epoch_sync_reset_receiver) = mpsc::channel(1);
     // Dedicated cancellation token for the indexer thread. Cancelled after
     // `shutdown_all_actors()` below so the indexer's terminal `listen_blocks`
     // race exits, its tokio runtime drops, and the Arc<RocksDB> references
@@ -219,7 +215,6 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
         persistent_secrets.near_signer_key.clone(),
         respond_config,
         indexer_exit_sender,
-        epoch_sync_reset_sender,
         protocol_state_sender,
         migration_state_sender,
         *tls_public_key,
@@ -286,11 +281,6 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
             // contract-state channel closed) is logged a few lines below via
             // `info!(?exit_result, "Image hash watcher exited.")`.
             Err(anyhow!("TEE allowed-image-hashes watcher exited unexpectedly."))
-        }
-        Some(()) = epoch_sync_reset_receiver.recv() => {
-            Err(anyhow!(
-                "nearcore reported stale chain data (epoch sync data reset), exiting"
-            ))
         }
     };
 

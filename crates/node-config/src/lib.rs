@@ -86,9 +86,11 @@ pub struct IndexerConfig {
     pub mpc_contract_id: AccountId,
     /// If specified, replaces the port number in any ParticipantInfos read from chain
     pub port_override: Option<u16>,
-    /// Don't auto-wipe by default.
+    /// When set, the nearcore data dir (`home_dir/data`) is wiped once on the next
+    /// startup, then a sentinel is written so it is not wiped again until the
+    /// operator removes the sentinel. Defaults to false.
     #[serde(default)]
-    pub reset_stale_near_data: bool,
+    pub wipe_near_data_once: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

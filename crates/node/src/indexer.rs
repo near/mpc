@@ -40,9 +40,9 @@ use tokio::sync::{
 use types::ChainSendTransactionRequest;
 
 pub mod configs;
-pub mod epoch_sync_reset;
 pub mod handler;
 pub mod migrations;
+pub mod near_data_wipe;
 pub mod participants;
 pub mod real;
 pub mod stats;
