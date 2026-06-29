@@ -1,9 +1,8 @@
 use std::time::{Duration, Instant};
 
-use chain_gateway::Gas;
 use chain_gateway::types::NoArgs;
 use chain_gateway::{state_viewer::ViewMethod, transaction_sender::SubmitFunctionCall};
-use chain_gateway_test_contract::args::{Call, make_set_value_args};
+use chain_gateway_test_contract::args::make_set_value_args;
 use chain_gateway_test_contract::consts::{DEFAULT_VALUE, VIEW_VALUE};
 
 use crate::common::localnet::LocalnetBuilder;
@@ -37,18 +36,10 @@ async fn test_submit_set_value_and_read_back() {
 
     // Submit set_value transaction via the observer, using a separate user account
     let new_value = "updated by sender test";
-    let Call {
-        method, args, gas, ..
-    } = make_set_value_args(new_value);
+    let call = make_set_value_args(new_value);
 
     observer_gw
-        .submit_function_call_tx(
-            &signer,
-            contract_id.clone(),
-            method,
-            args,
-            Gas::from_teragas(gas.into()),
-        )
+        .submit_function_call_tx(&signer, contract_id.clone(), call)
         .await
         .unwrap();
 

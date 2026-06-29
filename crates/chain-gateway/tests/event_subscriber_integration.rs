@@ -3,7 +3,6 @@ use std::time::Duration;
 use super::common::localnet::Localnet;
 use crate::common::{accounts::TestAccount, localnet::LocalnetBuilder};
 use chain_gateway::{
-    Gas,
     event_subscriber::{
         block_events::{
             BlockEventId, BlockUpdate, EventData, ExecutorFunctionCallSuccessWithPromiseData,
@@ -16,8 +15,7 @@ use chain_gateway::{
 };
 use chain_gateway_test_contract::{
     args::{
-        Call, make_private_set_args, make_set_value_in_promise_args,
-        make_spawn_promise_in_callback_args,
+        make_private_set_args, make_set_value_in_promise_args, make_spawn_promise_in_callback_args,
     },
     consts::{PRIVATE_SET, SET_VALUE_IN_PROMISE, VIEW_VALUE},
 };
@@ -85,18 +83,10 @@ async fn test_event_subscriber_executor_function_call_success_success_calls_are_
     let observer_gw = &localnet.observer.chain_gateway;
 
     // When: A transaction returning a promise succeeds
-    let Call {
-        method, args, gas, ..
-    } = make_set_value_in_promise_args("succeeds", false);
+    let call = make_set_value_in_promise_args("succeeds", false);
 
     observer_gw
-        .submit_function_call_tx(
-            &test_account.signer,
-            contract_id,
-            method,
-            args.clone(),
-            Gas::from_teragas(gas.into()),
-        )
+        .submit_function_call_tx(&test_account.signer, contract_id, call.clone())
         .await
         .unwrap();
 
@@ -125,7 +115,7 @@ async fn test_event_subscriber_executor_function_call_success_success_calls_are_
         *predecessor_id, test_account.account_id,
         "predecessor_id should match user account"
     );
-    assert_eq!(*args_raw, args, "args must match");
+    assert_eq!(*args_raw, call.args, "args must match");
 
     localnet.shutdown().await;
 }
@@ -148,17 +138,9 @@ async fn test_event_subscriber_executor_function_call_success_failure_calls_are_
     // Add a backmarker to not wait indefinitely or be subject to race conditions.
     let end_marker: &str = "if you read this, you can be sure that the spawned promise has failed";
 
-    let Call {
-        method, args, gas, ..
-    } = make_spawn_promise_in_callback_args(false, end_marker);
+    let call = make_spawn_promise_in_callback_args(false, end_marker);
     observer_gw
-        .submit_function_call_tx(
-            &test_account.signer,
-            contract_id.clone(),
-            method,
-            args,
-            Gas::from_teragas(gas.into()),
-        )
+        .submit_function_call_tx(&test_account.signer, contract_id.clone(), call)
         .await
         .unwrap();
 
@@ -252,21 +234,10 @@ async fn test_event_subscriber_receiver(#[case] expect_success: bool) {
     let observer_gw = &localnet.observer.chain_gateway;
 
     // When: the contract calls itself:
-    let Call {
-        method,
-        args,
-        deposit: _,
-        gas,
-    } = make_private_set_args("maybe it works, maybe it doesn't", expect_success);
+    let call = make_private_set_args("maybe it works, maybe it doesn't", expect_success);
 
     observer_gw
-        .submit_function_call_tx(
-            &contract_signer,
-            contract_id,
-            method,
-            args,
-            Gas::from_teragas(gas.into()),
-        )
+        .submit_function_call_tx(&contract_signer, contract_id, call)
         .await
         .unwrap();
 
@@ -306,21 +277,10 @@ async fn test_event_subscriber_receiver_error_if_non_private_call() {
     let observer_gw = &localnet.observer.chain_gateway;
 
     // When: other than the contract calls it:
-    let Call {
-        method,
-        args,
-        deposit: _,
-        gas,
-    } = make_private_set_args("this will fail", true);
+    let call = make_private_set_args("this will fail", true);
 
     observer_gw
-        .submit_function_call_tx(
-            &test_account.signer,
-            contract_id,
-            method,
-            args,
-            Gas::from_teragas(gas.into()),
-        )
+        .submit_function_call_tx(&test_account.signer, contract_id, call)
         .await
         .unwrap();
 
@@ -371,17 +331,9 @@ async fn test_event_subscriber_channel_buffer_handles_backpressure(
         .await;
 
     for target in ["first", "second"] {
-        let Call {
-            method, args, gas, ..
-        } = make_private_set_args(target, true);
+        let call = make_private_set_args(target, true);
         observer_gw
-            .submit_function_call_tx(
-                &contract_signer,
-                contract_id.clone(),
-                method,
-                args,
-                Gas::from_teragas(gas.into()),
-            )
+            .submit_function_call_tx(&contract_signer, contract_id.clone(), call)
             .await
             .unwrap();
         loop {
@@ -429,17 +381,9 @@ async fn test_block_status_handle_becomes_final() {
 
     // When: one tx that triggers an event and changes contract state.
     let target_value = "becomes-final";
-    let Call {
-        method, args, gas, ..
-    } = make_set_value_in_promise_args(target_value, false);
+    let call = make_set_value_in_promise_args(target_value, false);
     observer_gw
-        .submit_function_call_tx(
-            &test_account.signer,
-            contract_id.clone(),
-            method,
-            args,
-            Gas::from_teragas(gas.into()),
-        )
+        .submit_function_call_tx(&test_account.signer, contract_id.clone(), call)
         .await
         .unwrap();
 
