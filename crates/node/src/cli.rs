@@ -502,7 +502,7 @@ mod testing {
                 mpc_contract_id: "test0".parse().unwrap(),
                 finality: Finality::None,
                 port_override: None,
-                wipe_near_data_generation: 0,
+                wipe_near_data_counter: 0,
             },
             triple: TripleConfig {
                 concurrency: 2,

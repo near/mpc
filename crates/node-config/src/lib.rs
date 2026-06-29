@@ -92,7 +92,7 @@ pub struct IndexerConfig {
     /// records the new value. Bump it to force another wipe. Defaults to 0 (never
     /// wipe).
     #[serde(default)]
-    pub wipe_near_data_generation: u64,
+    pub wipe_near_data_counter: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
