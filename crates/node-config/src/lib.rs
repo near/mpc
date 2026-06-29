@@ -88,7 +88,7 @@ pub struct IndexerConfig {
     pub port_override: Option<u16>,
     /// Wipe token for the nearcore data dir (`home_dir/data`). On startup, whenever
     /// this value is non-zero and differs from the last value the node acted on
-    /// (persisted across restarts), the node records the new value and then wipes the
+    /// (persisted across restarts), the node records the new value and then wipes the data.
     /// Change it and restart the node to force a wipe (the wipe runs once at startup, before the store is
     /// opened).
     /// Defaults to 0 (never wipe). Setting it back to 0, or leaving it

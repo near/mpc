@@ -57,7 +57,6 @@ pub(crate) fn wipe_near_data_if_requested(
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
         Err(err) => return Err(err),
     }
-
     Ok(())
 }
 
