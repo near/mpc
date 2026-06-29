@@ -2086,7 +2086,7 @@ impl MpcContract {
             ),
             tee_verifier_account_id: None,
             tee_verifier_votes: TeeVerifierVotes::default(),
-            pending_attestations: LookupMap::new(StorageKey::PendingAttestationsV1),
+            pending_attestations: LookupMap::new(StorageKey::PendingAttestations),
         })
     }
 
@@ -2166,7 +2166,7 @@ impl MpcContract {
             ),
             tee_verifier_account_id: None,
             tee_verifier_votes: TeeVerifierVotes::default(),
-            pending_attestations: LookupMap::new(StorageKey::PendingAttestationsV1),
+            pending_attestations: LookupMap::new(StorageKey::PendingAttestations),
         })
     }
 
@@ -4852,7 +4852,7 @@ mod tests {
                 ),
                 tee_verifier_account_id: None,
                 tee_verifier_votes: Default::default(),
-                pending_attestations: LookupMap::new(StorageKey::PendingAttestationsV1),
+                pending_attestations: LookupMap::new(StorageKey::PendingAttestations),
             }
         }
     }
