@@ -86,11 +86,13 @@ pub struct IndexerConfig {
     pub mpc_contract_id: AccountId,
     /// If specified, replaces the port number in any ParticipantInfos read from chain
     pub port_override: Option<u16>,
-    /// When set, the nearcore data dir (`home_dir/data`) is wiped once on the next
-    /// startup, then a sentinel is written so it is not wiped again until the
-    /// operator removes the sentinel. Defaults to false.
+    /// Monotonic counter that triggers a one-time wipe of the nearcore data dir
+    /// (`home_dir/data`). On startup the node wipes the dir whenever this value is
+    /// greater than the last value it acted on (persisted across restarts), then
+    /// records the new value. Bump it to force another wipe. Defaults to 0 (never
+    /// wipe).
     #[serde(default)]
-    pub wipe_near_data_once: bool,
+    pub wipe_near_data_generation: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

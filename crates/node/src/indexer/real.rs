@@ -102,8 +102,9 @@ pub fn spawn_real_indexer(
                 .load_near_config()
                 .expect("near config is present");
 
-            // Operator-driven one-time wipe: when `wipe_near_data_once` is set, wipe the
-            // data dir once before the store is opened.
+            // Operator-driven one-time wipe: when `wipe_near_data_generation` is
+            // bumped past the last applied value, wipe the data dir once before the
+            // store is opened.
             let hot_store_path = home_dir.join(
                 near_config
                     .config
@@ -115,7 +116,7 @@ pub fn spawn_real_indexer(
             wipe_near_data_if_requested(
                 &home_dir,
                 &hot_store_path,
-                mpc_indexer_config.wipe_near_data_once,
+                mpc_indexer_config.wipe_near_data_generation,
                 near_config.client_config.archive,
             )
             .expect("failed to wipe nearcore data dir");
