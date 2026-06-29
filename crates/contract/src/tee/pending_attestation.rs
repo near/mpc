@@ -38,7 +38,7 @@ pub struct PendingAttestation {
 /// callbacks (sign, CKD, foreign-tx).
 #[near(serializers = [json])]
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FinalOutcome {
+pub enum AttestationResult {
     Ok,
     Err(String),
 }
@@ -49,10 +49,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn final_outcome__should_round_trip_json() {
-        for original in [FinalOutcome::Ok, FinalOutcome::Err("rejected".to_string())] {
+    fn attestation_result__should_round_trip_json() {
+        for original in [
+            AttestationResult::Ok,
+            AttestationResult::Err("rejected".to_string()),
+        ] {
             let bytes = serde_json::to_vec(&original).expect("serialize");
-            let decoded: FinalOutcome = serde_json::from_slice(&bytes).expect("deserialize");
+            let decoded: AttestationResult = serde_json::from_slice(&bytes).expect("deserialize");
             assert_eq!(original, decoded);
         }
     }

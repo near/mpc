@@ -977,7 +977,7 @@ expression: abi
           {
             "serialization_type": "json",
             "type_schema": {
-              "$ref": "#/definitions/FinalOutcome"
+              "$ref": "#/definitions/AttestationResult"
             }
           }
         ],
@@ -1341,7 +1341,7 @@ expression: abi
       },
       {
         "name": "resolve_verification",
-        "doc": " Verify-quote callback: maps the verifier's response to a [`FinalOutcome`]\n and resumes the yield.",
+        "doc": " Verify-quote callback: maps the verifier's response to an [`AttestationResult`]\n and resumes the yield.",
         "kind": "call",
         "modifiers": [
           "private"
@@ -2986,6 +2986,29 @@ expression: abi
             }
           ]
         },
+        "AttestationResult": {
+          "description": "Outcome the resolution callback resumes the yield with.\n\nJSON-serialized on the wire, matching the contract's other yield-resume callbacks (sign, CKD, foreign-tx).",
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": [
+                "Ok"
+              ]
+            },
+            {
+              "type": "object",
+              "required": [
+                "Err"
+              ],
+              "properties": {
+                "Err": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
         "AuthenticatedAccountId": {
           "description": "An account ID that has been authenticated (i.e., the caller is this account).",
           "type": "string"
@@ -3663,29 +3686,6 @@ expression: abi
         "EvmTxId": {
           "type": "string",
           "pattern": "^(?:[0-9A-Fa-f]{2})*$"
-        },
-        "FinalOutcome": {
-          "description": "Outcome the resolution callback resumes the yield with.\n\nJSON-serialized on the wire, matching the contract's other yield-resume callbacks (sign, CKD, foreign-tx).",
-          "oneOf": [
-            {
-              "type": "string",
-              "enum": [
-                "Ok"
-              ]
-            },
-            {
-              "type": "object",
-              "required": [
-                "Err"
-              ],
-              "properties": {
-                "Err": {
-                  "type": "string"
-                }
-              },
-              "additionalProperties": false
-            }
-          ]
         },
         "ForeignChain": {
           "type": "string",

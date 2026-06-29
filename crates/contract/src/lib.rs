@@ -48,7 +48,7 @@ use crate::{
         votes::ProposalHash,
     },
     storage_keys::StorageKey,
-    tee::pending_attestation::{FinalOutcome, PendingAttestation},
+    tee::pending_attestation::{AttestationResult, PendingAttestation},
     tee::tee_state::{TeeQuoteStatus, TeeState},
     tee::verifier_votes::{TeeVerifierVotes, VerifierChangeProposal},
     update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId},
@@ -2390,7 +2390,7 @@ impl MpcContract {
         }
     }
 
-    /// Verify-quote callback: maps the verifier's response to a [`FinalOutcome`]
+    /// Verify-quote callback: maps the verifier's response to an [`AttestationResult`]
     /// and resumes the yield.
     #[private]
     pub fn resolve_verification(
@@ -2422,25 +2422,25 @@ impl MpcContract {
             return;
         };
 
-        let final_outcome = match result {
+        let attestation_result = match result {
             VerificationResult::Rejected(reason) => {
                 log!("verifier rejected quote for {account_id}: {reason}");
-                FinalOutcome::Err(format!("verifier rejected quote: {reason}"))
+                AttestationResult::Err(format!("verifier rejected quote: {reason}"))
             }
             VerificationResult::Verified(report) => {
                 self.finish_verified_attestation(&node_id, &pending, &report)
             }
         };
 
-        if matches!(final_outcome, FinalOutcome::Err(_)) {
+        if matches!(attestation_result, AttestationResult::Err(_)) {
             refund_attestation_deposit(&account_id, pending.attached_deposit);
         }
         // MUST be the last host call: anything after could panic and roll back
         // the state mutations above.
         env::promise_yield_resume(
             &pending.data_id,
-            serde_json::to_vec(&final_outcome)
-                .expect("json serialization of FinalOutcome must succeed"),
+            serde_json::to_vec(&attestation_result)
+                .expect("json serialization of AttestationResult must succeed"),
         );
     }
 
@@ -2453,7 +2453,7 @@ impl MpcContract {
         node_id: &NodeId,
         pending: &PendingAttestation,
         report: &VerifiedReport,
-    ) -> FinalOutcome {
+    ) -> AttestationResult {
         let account_id = &node_id.account_id;
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
@@ -2468,7 +2468,7 @@ impl MpcContract {
             Ok(result) => result,
             Err(err) => {
                 log!("post-DCAP check failed for {account_id}: {err}");
-                return FinalOutcome::Err(format!("post-DCAP check failed: {err}"));
+                return AttestationResult::Err(format!("post-DCAP check failed: {err}"));
             }
         };
 
@@ -2479,7 +2479,7 @@ impl MpcContract {
             pending.caller_is_not_participant,
             pending.attached_deposit,
         ) {
-            Ok(()) => FinalOutcome::Ok,
+            Ok(()) => AttestationResult::Ok,
             Err(err) => {
                 // This receipt commits even though we resume the yield with an
                 // error, so the store above is NOT rolled back automatically
@@ -2487,7 +2487,7 @@ impl MpcContract {
                 // caller would get storage for free plus a full refund.
                 self.tee_state
                     .revert_dstack_store(&pending.tls_public_key, previous);
-                FinalOutcome::Err(err.to_string())
+                AttestationResult::Err(err.to_string())
             }
         }
     }
@@ -2500,11 +2500,11 @@ impl MpcContract {
     pub fn on_attestation_verified(
         &mut self,
         account_id: AccountId,
-        #[callback_result] result: Result<FinalOutcome, PromiseError>,
+        #[callback_result] result: Result<AttestationResult, PromiseError>,
     ) -> PromiseOrValue<()> {
         let reason = match result {
-            Ok(FinalOutcome::Ok) => return PromiseOrValue::Value(()),
-            Ok(FinalOutcome::Err(reason)) => reason,
+            Ok(AttestationResult::Ok) => return PromiseOrValue::Value(()),
+            Ok(AttestationResult::Err(reason)) => reason,
             Err(_promise_err) => {
                 // Timeout: the resolution callback never resumed us, so the
                 // pending entry is still here. Clean it up and refund.
