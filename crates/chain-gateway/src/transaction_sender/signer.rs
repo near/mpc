@@ -90,6 +90,7 @@ mod tests {
     use mpc_call_args::{FunctionCallArgs, NearGas, NearToken};
     use near_account_id::AccountId;
     use near_indexer::near_primitives::{account::AccessKey, transaction::Transaction};
+    use near_indexer_primitives::types::Gas;
     use rand::{SeedableRng, rngs::StdRng};
 
     use crate::{transaction_sender::TransactionSigner, types::LatestFinalBlockInfo};
@@ -182,7 +183,7 @@ mod tests {
             near_indexer_primitives::near_primitives::transaction::Action::FunctionCall(action) => {
                 assert_eq!(action.method_name, args.method_name);
                 assert_eq!(action.args, args.args);
-                assert_eq!(action.gas, crate::types::to_action_gas(args.gas));
+                assert_eq!(action.gas, Gas::from_gas(TEST_GAS.as_gas()));
             }
             other => panic!("expected FunctionCall action, got {other:?}"),
         }
