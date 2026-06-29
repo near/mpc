@@ -5892,6 +5892,7 @@ dependencies = [
  "near-sdk",
  "near-store",
  "near-time 2.13.0-rc.1",
+ "nearcore",
  "node-types",
  "num_enum",
  "pprof",

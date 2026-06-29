@@ -60,6 +60,7 @@ near-o11y = { workspace = true }
 near-sdk = { workspace = true, features = ["non-contract-usage"] }
 near-store = { workspace = true }
 near-time = { workspace = true }
+nearcore = { workspace = true }
 node-types = { workspace = true }
 num_enum = { workspace = true }
 pprof = { workspace = true }
@@ -118,6 +119,7 @@ mockall = { workspace = true }
 mpc-contract = { workspace = true, features = ["test-utils"] }
 rstest = { workspace = true }
 serial_test = { workspace = true }
+tempfile = { workspace = true }
 test-log = { workspace = true }
 threshold-signatures = { workspace = true, features = ["test-utils"] }
 tokio = { workspace = true, features = ["test-util"] }

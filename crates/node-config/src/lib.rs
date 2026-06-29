@@ -86,6 +86,9 @@ pub struct IndexerConfig {
     pub mpc_contract_id: AccountId,
     /// If specified, replaces the port number in any ParticipantInfos read from chain
     pub port_override: Option<u16>,
+    /// Don't auto-wipe by default.
+    #[serde(default)]
+    pub reset_stale_near_data: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
