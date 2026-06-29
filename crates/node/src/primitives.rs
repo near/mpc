@@ -213,6 +213,17 @@ pub enum MpcMessageKind {
     Success,
 }
 
+impl MpcMessageKind {
+    pub fn variant_name(&self) -> &'static str {
+        match self {
+            MpcMessageKind::Start(_) => "Start",
+            MpcMessageKind::Computation(_) => "Computation",
+            MpcMessageKind::Abort(_) => "Abort",
+            MpcMessageKind::Success => "Success",
+        }
+    }
+}
+
 /// Redacts the raw bytes in Computation messages.
 /// These bytes contain serialized protocol round data (commitments, encrypted shares, proofs)
 /// which must not be leaked to logs.

@@ -103,20 +103,7 @@ impl SecretDB {
             .into_iter()
             .collect();
         let all_cfs: Vec<&String> = known_cfs.union(&on_disk_cfs).collect();
-        let mut db = rocksdb::DB::open_cf(&options, path, &all_cfs)?;
-
-        // One-time cleanup: drop the legacy unprefixed triple column family
-        // (former `DBCol::Triple`) if a pre-3.12 binary left it on disk. Its
-        // contents are dead — every triple now lives in the per-`t`
-        // `DBCol::TripleV2`. Dropping reclaims the SST files rather than leaving
-        // tombstones behind.
-        // TODO(#3456): remove this cleanup once 3.12 has rolled out to all
-        // nodes, so no node still carries the column on disk.
-        let legacy_triple = "triple";
-        if on_disk_cfs.contains(legacy_triple) {
-            db.drop_cf(legacy_triple)?;
-            tracing::info!("Dropped legacy '{legacy_triple}' column family on startup");
-        }
+        let db = rocksdb::DB::open_cf(&options, path, &all_cfs)?;
 
         Ok(Self { db, cipher }.into())
     }
@@ -301,35 +288,6 @@ mod tests {
         );
 
         Ok(())
-    }
-
-    #[test]
-    #[expect(non_snake_case)]
-    fn secret_db_new__should_drop_legacy_triple_column_family_on_startup() {
-        // Given a DB that still carries the populated legacy "triple" column
-        // family on disk (as a pre-3.12 binary would have left it).
-        let dir = tempfile::tempdir().expect("tempdir should be created");
-        let key = [1; 16];
-        let legacy_triple = "triple";
-        {
-            let mut options = rocksdb::Options::default();
-            options.create_if_missing(true);
-            options.create_missing_column_families(true);
-            let cfs = [legacy_triple, "triple_v2", "presignature"];
-            let db = rocksdb::DB::open_cf(&options, dir.path(), cfs).expect("db should open");
-            let cf = db.cf_handle(legacy_triple).unwrap();
-            db.put_cf(&cf, b"key", b"value").unwrap();
-        }
-
-        // When the DB is opened through SecretDB and then closed.
-        {
-            let _db = SecretDB::new(dir.path(), key).expect("SecretDB should open");
-        }
-
-        // Then the legacy column family is gone from disk.
-        let options = rocksdb::Options::default();
-        let on_disk = rocksdb::DB::list_cf(&options, dir.path()).expect("list_cf should succeed");
-        assert!(!on_disk.contains(&legacy_triple.to_string()));
     }
 
     #[test]

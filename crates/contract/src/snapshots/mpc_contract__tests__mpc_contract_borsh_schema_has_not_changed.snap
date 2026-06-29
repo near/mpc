@@ -126,16 +126,6 @@ BorshSchemaContainer {
                 ],
             ),
         },
-        "AllowedProviders": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "entries",
-                        "IterableMap",
-                    ),
-                ],
-            ),
-        },
         "AttemptId": Struct {
             fields: UnnamedFields(
                 [
@@ -264,6 +254,10 @@ BorshSchemaContainer {
                         "clean_foreign_chain_data_tera_gas",
                         "u64",
                     ),
+                    (
+                        "remove_non_participant_tee_verifier_votes_tera_gas",
+                        "u64",
+                    ),
                 ],
             ),
         },
@@ -383,20 +377,6 @@ BorshSchemaContainer {
             fields: UnnamedFields(
                 [
                     "u64",
-                ],
-            ),
-        },
-        "ForeignChainRpcWhitelist": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "entries",
-                        "AllowedProviders",
-                    ),
-                    (
-                        "votes",
-                        "ProviderVotes",
-                    ),
                 ],
             ),
         },
@@ -599,6 +579,16 @@ BorshSchemaContainer {
                 ],
             ),
         },
+        "Lazy": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "storage_key",
+                        "Vec<u8>",
+                    ),
+                ],
+            ),
+        },
         "LookupMap": Struct {
             fields: NamedFields(
                 [
@@ -710,8 +700,16 @@ BorshSchemaContainer {
                         "Metrics",
                     ),
                     (
-                        "foreign_chain_rpc_whitelist",
-                        "ForeignChainRpcWhitelist",
+                        "foreign_chains",
+                        "Lazy",
+                    ),
+                    (
+                        "tee_verifier_account_id",
+                        "Option<AccountId>",
+                    ),
+                    (
+                        "tee_verifier_votes",
+                        "TeeVerifierVotes",
                     ),
                 ],
             ),
@@ -756,6 +754,21 @@ BorshSchemaContainer {
                     ),
                 ],
             ),
+        },
+        "Option<AccountId>": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "None",
+                    "()",
+                ),
+                (
+                    1,
+                    "Some",
+                    "AccountId",
+                ),
+            ],
         },
         "Option<EpochId>": Enum {
             tag_width: 1,
@@ -954,16 +967,6 @@ BorshSchemaContainer {
         },
         "Protocol__Frost": Struct {
             fields: Empty,
-        },
-        "ProviderVotes": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "pending",
-                        "Votes<(AuthenticatedParticipantId, ForeignChain)>",
-                    ),
-                ],
-            ),
         },
         "PublicKey": Struct {
             fields: NamedFields(
@@ -1176,6 +1179,16 @@ BorshSchemaContainer {
                 ],
             ),
         },
+        "TeeVerifierVotes": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "pending",
+                        "Votes<AuthenticatedParticipantId>",
+                    ),
+                ],
+            ),
+        },
         "Threshold": Struct {
             fields: UnnamedFields(
                 [
@@ -1275,7 +1288,7 @@ BorshSchemaContainer {
                 ],
             ),
         },
-        "Votes<(AuthenticatedParticipantId, ForeignChain)>": Struct {
+        "Votes<AuthenticatedParticipantId>": Struct {
             fields: NamedFields(
                 [
                     (

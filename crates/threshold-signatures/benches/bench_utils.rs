@@ -5,6 +5,8 @@
     clippy::indexing_slicing
 )]
 
+#[path = "bench_utils/ckd.rs"]
+mod ckd;
 #[path = "bench_utils/dkg.rs"]
 mod dkg;
 #[path = "bench_utils/frost_eddsa.rs"]
@@ -14,6 +16,7 @@ mod ot_based_ecdsa;
 #[path = "bench_utils/robust_ecdsa.rs"]
 mod robust_ecdsa;
 
+pub use ckd::*;
 pub use dkg::*;
 pub use frost_eddsa::*;
 pub use ot_based_ecdsa::*;
@@ -21,15 +24,28 @@ pub use robust_ecdsa::*;
 
 use average::{Estimate, Quantile, Variance};
 use k256::AffinePoint;
-use std::{env, sync::LazyLock};
+use std::{collections::HashMap, env, sync::LazyLock};
 
+use rand_core::SeedableRng;
 use threshold_signatures::{
     ReconstructionThreshold,
     ecdsa::{self, Scalar},
     participants::Participant,
     protocol::Protocol,
-    test_utils::Simulator,
+    test_utils::{MockCryptoRng, Simulator},
 };
+
+/// Rebuilds the RNG a participant's protocol was seeded with during snapshot
+/// capture, so the simulated replay reproduces the exact recorded run.
+pub fn participant_rng<S: std::hash::BuildHasher>(
+    seeds: &HashMap<Participant, u64, S>,
+    participant: Participant,
+) -> MockCryptoRng {
+    let seed = *seeds
+        .get(&participant)
+        .expect("participant must have a recorded seed");
+    MockCryptoRng::seed_from_u64(seed)
+}
 
 // fix malicious number of participants
 pub static MAX_MALICIOUS: LazyLock<usize> = std::sync::LazyLock::new(|| {
@@ -60,6 +76,9 @@ pub struct PreparedPresig<PresignOutput, KeygenOutput> {
     pub protocols: Vec<(Participant, Box<dyn Protocol<Output = PresignOutput>>)>,
     pub key_packages: Vec<(Participant, KeygenOutput)>,
     pub participants: Vec<Participant>,
+    /// Per-participant RNG seed used to build each presign protocol; empty when
+    /// the protocol is built from deterministic inputs.
+    pub seeds: HashMap<Participant, u64>,
 }
 
 pub struct PreparedSig<RerandomizedPresignOutput> {

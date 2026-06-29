@@ -185,7 +185,7 @@ impl AtomicBlockStatus {
 /// Consumers can read the current finality status but cannot hold a strong
 /// reference to the underlying atomic. Pruning a block from the tracker
 /// drops its ref count to zero.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct BlockStatusHandle(Weak<AtomicBlockStatus>);
 
 impl BlockStatusHandle {

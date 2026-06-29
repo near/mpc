@@ -25,7 +25,7 @@ fn bench_presign(c: &mut Criterion) {
         |b| {
             b.iter_batched(
                 || robust_ecdsa_prepare_presign(num, &mut rng),
-                |preps| run_protocol(preps.protocols),
+                |preps| run_protocol(preps.protocols).expect("protocol should complete"),
                 criterion::BatchSize::SmallInput,
             );
         },
@@ -49,7 +49,7 @@ fn bench_sign(c: &mut Criterion) {
         |b| {
             b.iter_batched(
                 || robust_ecdsa_prepare_sign(&result, max_malicious.into(), pk, &mut rng),
-                |preps| run_protocol(preps.protocols),
+                |preps| run_protocol(preps.protocols).expect("protocol should complete"),
                 criterion::BatchSize::SmallInput,
             );
         },

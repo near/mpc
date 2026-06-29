@@ -142,6 +142,7 @@ jobs:
         uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
 
       - name: Restore /nix from cache
+        id: nix-cache
         if: needs.changes.outputs.code_changed != 'false'
         uses: ./.github/actions/restore-nix-cache
 
@@ -153,7 +154,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
-          prefix-key: v1-rust-tests-${{ matrix.group }}-week-${{ env.WEEK }}
+          prefix-key: v1-rust-tests-${{ matrix.group }}-week-${{ env.WEEK }}-nix-${{ steps.nix-cache.outputs.cache-key-hash }}
 
       - name: Run cargo-nextest
         if: needs.changes.outputs.code_changed != 'false'
@@ -241,6 +242,7 @@ jobs:
         uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
 
       - name: Restore /nix from cache
+        id: nix-cache
         uses: ./.github/actions/restore-nix-cache
 
       - run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
@@ -249,7 +251,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
-          prefix-key: v1-rust-week-${{ env.WEEK }}
+          prefix-key: v1-rust-week-${{ env.WEEK }}-nix-${{ steps.nix-cache.outputs.cache-key-hash }}
 
       - name: Run cargo-make fast checks
         run: nix develop --command cargo make check-all-fast
@@ -273,6 +275,7 @@ jobs:
         uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
 
       - name: Restore /nix from cache
+        id: nix-cache
         uses: ./.github/actions/restore-nix-cache
 
       - run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
@@ -281,7 +284,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
-          prefix-key: v1-rust-e2e-week-${{ env.WEEK }}
+          prefix-key: v1-rust-e2e-week-${{ env.WEEK }}-nix-${{ steps.nix-cache.outputs.cache-key-hash }}
 
       - name: Build mpc-node
         run: nix develop --command cargo make build-mpc-node-network-hardship-simulation

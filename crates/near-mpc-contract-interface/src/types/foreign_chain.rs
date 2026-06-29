@@ -9,8 +9,8 @@ use serde_with::{hex::Hex, serde_as};
 use sha2::Digest;
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::types::SignatureResponse;
 use crate::types::primitives::{AccountId, DomainId};
+use crate::types::{Ed25519PublicKey, SignatureResponse};
 
 /// Maximum number of significant data bits a TON Cell may hold.
 ///
@@ -1143,6 +1143,76 @@ pub struct ForeignChainConfiguration(BTreeMap<ForeignChain, NonEmptyBTreeSet<Rpc
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct SupportedForeignChains(BTreeSet<ForeignChain>);
+
+/// Set of foreign chains a node reports it can serve; aggregated into [`AvailableForeignChains`] by the contract.
+#[derive(
+    Debug,
+    Clone,
+    Default,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::From,
+    derive_more::Deref,
+    derive_more::DerefMut,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct ForeignChainsConfig(BTreeSet<ForeignChain>);
+
+/// Per-node foreign-chain configs, keyed by each node's TLS public key.
+#[derive(
+    Debug,
+    Clone,
+    Default,
+    Eq,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::From,
+    derive_more::Deref,
+    derive_more::DerefMut,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct ForeignChainsConfigs(BTreeMap<Ed25519PublicKey, ForeignChainsConfig>);
+
+/// The set of foreign chains available across the threshold of active participants. Returned by
+/// `get_available_foreign_chains`; computed from the per-node [`ForeignChainsConfig`] reports.
+#[derive(
+    Debug,
+    Clone,
+    Default,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::From,
+    derive_more::Deref,
+    derive_more::DerefMut,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct AvailableForeignChains(BTreeSet<ForeignChain>);
 
 #[derive(
     Debug,

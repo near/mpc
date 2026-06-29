@@ -135,6 +135,11 @@ impl AllowedProviders {
             .map(|(c, e)| (*c, e.clone().into()))
             .collect()
     }
+
+    /// Whether `chain` is currently whitelisted (has a voted-in `ChainEntry`).
+    pub fn is_whitelisted(&self, chain: &ForeignChain) -> bool {
+        self.entries.contains_key(chain)
+    }
 }
 
 #[near(serializers=[borsh])]
@@ -241,12 +246,12 @@ impl ForeignChainRpcWhitelist {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use crate::primitives::{key_state::AuthenticatedParticipantId, test_utils::gen_participants};
+    use crate::primitives::{
+        key_state::AuthenticatedParticipantId, test_utils::gen_authenticated_participants,
+    };
     use assert_matches::assert_matches;
     use mpc_primitives::Threshold;
     use near_mpc_contract_interface::types::AuthScheme;
-    use near_sdk::test_utils::VMContextBuilder;
-    use near_sdk::testing_env;
 
     /// Build a `ThresholdParameters` for tests, bypassing the relative-threshold
     /// validation so tests can express edge-case combinations (e.g. the stale-votes
@@ -293,22 +298,6 @@ mod tests {
     ) -> NonEmptyBTreeMap<ForeignChain, dtos::ChainEntry> {
         let map: BTreeMap<_, _> = entries.into_iter().collect();
         NonEmptyBTreeMap::try_from(map).expect("test setup: batch must be non-empty")
-    }
-
-    /// Build `n` participants and pre-authenticate each one. The pattern intentionally
-    /// runs all `testing_env!` resets *before* any storage-backed state is touched —
-    /// later vote ops can then write to the mocked storage without an env reset
-    /// wiping prior writes.
-    fn setup(n: usize) -> (Participants, Vec<AuthenticatedParticipantId>) {
-        let participants = gen_participants(n);
-        let mut auth_ids = Vec::with_capacity(n);
-        for (account_id, _, _) in participants.participants() {
-            let mut ctx = VMContextBuilder::new();
-            ctx.signer_account_id(account_id.clone());
-            testing_env!(ctx.build());
-            auth_ids.push(AuthenticatedParticipantId::new(&participants).unwrap());
-        }
-        (participants, auth_ids)
     }
 
     fn assert_malformed(err: Error, reason_substring: &str) {
@@ -358,7 +347,7 @@ mod tests {
     #[test]
     fn vote__should_apply_chain_when_all_participants_match() {
         // Given
-        let (participants, auth_ids) = setup(2);
+        let (participants, auth_ids) = gen_authenticated_participants(2);
         let mut wl = ForeignChainRpcWhitelist::default();
 
         // When
@@ -401,7 +390,7 @@ mod tests {
     fn vote__should_canonicalize_provider_order_for_threshold_comparison() {
         // Two participants submit the same logical set in different orders.
         // Given
-        let (participants, auth_ids) = setup(2);
+        let (participants, auth_ids) = gen_authenticated_participants(2);
         let mut wl = ForeignChainRpcWhitelist::default();
 
         // When
@@ -426,7 +415,7 @@ mod tests {
     #[test]
     fn vote__should_apply_chains_independently() {
         // Given
-        let (participants, auth_ids) = setup(2);
+        let (participants, auth_ids) = gen_authenticated_participants(2);
         let mut wl = ForeignChainRpcWhitelist::default();
 
         // When: both participants agree on Ethereum, disagree on Polygon.
@@ -470,7 +459,7 @@ mod tests {
     #[test]
     fn vote__should_overwrite_only_mentioned_chain_slots_on_recast() {
         // Given
-        let (participants, auth_ids) = setup(2);
+        let (participants, auth_ids) = gen_authenticated_participants(2);
         let mut wl = ForeignChainRpcWhitelist::default();
         let p0 = auth_ids[0].clone();
         wl.vote(
@@ -496,7 +485,7 @@ mod tests {
     #[test]
     fn vote__should_overwrite_same_chain_slot_with_latest_proposal() {
         // Given: p0 has voted Polygon with providers=[alchemy], response quorum=1.
-        let (participants, auth_ids) = setup(2);
+        let (participants, auth_ids) = gen_authenticated_participants(2);
         let mut wl = ForeignChainRpcWhitelist::default();
         let p0 = auth_ids[0].clone();
         wl.vote(
@@ -537,7 +526,7 @@ mod tests {
     #[test]
     fn vote__should_replace_full_chain_state_on_apply() {
         // Given: chain currently holds [alchemy, ankr].
-        let (participants, auth_ids) = setup(2);
+        let (participants, auth_ids) = gen_authenticated_participants(2);
         let mut wl = ForeignChainRpcWhitelist::default();
         wl.vote(
             auth_ids[0].clone(),
@@ -578,7 +567,7 @@ mod tests {
 
     #[test]
     fn vote__should_return_err_on_zero_quorum() {
-        let (participants, auth_ids) = setup(2);
+        let (participants, auth_ids) = gen_authenticated_participants(2);
         let mut wl = ForeignChainRpcWhitelist::default();
         let err = wl
             .vote(
@@ -592,7 +581,7 @@ mod tests {
 
     #[test]
     fn vote__should_return_err_on_quorum_exceeding_providers_len() {
-        let (participants, auth_ids) = setup(2);
+        let (participants, auth_ids) = gen_authenticated_participants(2);
         let mut wl = ForeignChainRpcWhitelist::default();
         let err = wl
             .vote(
@@ -606,7 +595,7 @@ mod tests {
 
     #[test]
     fn vote__should_return_err_on_path_segment_with_slash() {
-        let (participants, auth_ids) = setup(2);
+        let (participants, auth_ids) = gen_authenticated_participants(2);
         let mut wl = ForeignChainRpcWhitelist::default();
         let bad = (
             ProviderId("ankr".to_string()),
@@ -636,7 +625,7 @@ mod tests {
 
     #[test]
     fn vote__should_return_err_on_query_param_name_colliding_with_auth_query() {
-        let (participants, auth_ids) = setup(2);
+        let (participants, auth_ids) = gen_authenticated_participants(2);
         let mut wl = ForeignChainRpcWhitelist::default();
         let bad = (
             ProviderId("drpc".to_string()),
@@ -670,7 +659,7 @@ mod tests {
     #[test]
     fn vote__should_accept_non_colliding_query_param_and_auth_query() {
         // Given
-        let (participants, auth_ids) = setup(2);
+        let (participants, auth_ids) = gen_authenticated_participants(2);
         let mut wl = ForeignChainRpcWhitelist::default();
         let drpc = || {
             (
@@ -722,7 +711,7 @@ mod tests {
     fn vote__should_not_count_stale_non_participant_votes() {
         // Given: 3 participants; p0 and p1 each vote the same proposal — chain
         // hasn't applied yet (count = 2, threshold = 3).
-        let (participants, auth_ids) = setup(3);
+        let (participants, auth_ids) = gen_authenticated_participants(3);
         let mut wl = ForeignChainRpcWhitelist::default();
         wl.vote(
             auth_ids[0].clone(),
@@ -760,7 +749,7 @@ mod tests {
     #[test]
     fn clean_non_participant_votes__should_drop_stale_votes() {
         // Given
-        let (participants, auth_ids) = setup(3);
+        let (participants, auth_ids) = gen_authenticated_participants(3);
         let mut wl = ForeignChainRpcWhitelist::default();
         let p0 = auth_ids[0].clone();
         let p1 = auth_ids[1].clone();

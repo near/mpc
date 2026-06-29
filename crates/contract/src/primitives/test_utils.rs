@@ -2,8 +2,12 @@ use super::domain::DomainRegistry;
 use crate::{
     crypto_shared::types::{PublicKeyExtended, serializable::SerializableEdwardsPoint},
     primitives::{
+        key_state::AuthenticatedParticipantId,
         participants::{ParticipantInfo, Participants},
-        thresholds::{ProposedThresholdParameters, Threshold, ThresholdParameters},
+        thresholds::{
+            ProposedThresholdParameters, Threshold, ThresholdParameters,
+            governance_threshold_lower_relative_bound, governance_threshold_upper_relative_bound,
+        },
     },
 };
 use curve25519_dalek::edwards::CompressedEdwardsY;
@@ -11,7 +15,8 @@ use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
     DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
 };
-use rand::{Rng, distributions::Uniform};
+use near_sdk::{test_utils::VMContextBuilder, testing_env};
+use rand::{Rng, SeedableRng, distributions::Uniform, rngs::StdRng};
 use std::collections::BTreeMap;
 // Re-export for convenience
 
@@ -129,10 +134,6 @@ pub fn gen_participant(i: usize) -> (AccountId, ParticipantInfo) {
     )
 }
 
-pub fn min_thrershold(n: usize) -> usize {
-    ((n as f64) * 0.6).ceil() as usize
-}
-
 pub fn gen_accounts_and_info(n: usize) -> BTreeMap<AccountId, ParticipantInfo> {
     (0..n).map(gen_participant).collect()
 }
@@ -146,6 +147,20 @@ pub fn gen_participants(n: usize) -> Participants {
     participants
 }
 
+/// Build `n` participants and pre-authenticate each, returning the set alongside
+/// each participant's [`AuthenticatedParticipantId`].
+pub fn gen_authenticated_participants(n: usize) -> (Participants, Vec<AuthenticatedParticipantId>) {
+    let participants = gen_participants(n);
+    let mut auth_ids = Vec::with_capacity(n);
+    for (account_id, _, _) in participants.participants() {
+        let mut ctx = VMContextBuilder::new();
+        ctx.signer_account_id(account_id.clone());
+        testing_env!(ctx.build());
+        auth_ids.push(AuthenticatedParticipantId::new(&participants).unwrap());
+    }
+    (participants, auth_ids)
+}
+
 pub fn gen_seed() -> [u8; 32] {
     let mut rng = rand::thread_rng();
     let mut seed = [0u8; 32];
@@ -157,9 +172,11 @@ pub fn gen_threshold_params(max_n: usize) -> ThresholdParameters {
     // Lower bound is 3 (not 2) so the produced parameters are compatible with
     // every protocol — `DamgardEtAl` requires `n >= 2t - 1`, which forces
     // `n >= 3` even at the minimum `t = 2`.
-    let n: usize = rand::thread_rng().gen_range(3..max_n + 1);
-    let k_min = min_thrershold(n);
-    let k = rand::thread_rng().gen_range(k_min..n + 1);
+    let mut rng = StdRng::seed_from_u64(42);
+    let n: usize = rng.gen_range(3..max_n + 1);
+    let k_min = governance_threshold_lower_relative_bound(n as u64) as usize;
+    let k_max = governance_threshold_upper_relative_bound(n as u64) as usize;
+    let k = rng.gen_range(k_min..k_max + 1);
     ThresholdParameters::new(gen_participants(n), Threshold::new(k as u64)).unwrap()
 }
 

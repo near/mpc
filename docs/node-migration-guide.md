@@ -280,7 +280,7 @@ near contract call-function as-transaction \
     \"destination_node_info\": {
       \"signer_account_pk\": \"$near_signer_public_key\",
       \"destination_node_info\": {
-        \"url\": \"new-node.example.com:80\",
+        \"url\": \"http://new-node.example.com:80\",
         \"tls_public_key\": \"$P2P_KEY\"
       }
     }
@@ -292,6 +292,8 @@ near contract call-function as-transaction \
   sign-with-keychain \
   send
 ```
+
+**Note:** The `url` in `destination_node_info` above must contain the `http://` prefix, please do not forget adding it.
 
 ### Verify Migration Was Registered on the Contract
 
@@ -387,4 +389,10 @@ If backup-cli cannot connect to your node:
 
 - **Verify firewall rules**: Ensure the backup service can reach the node's address and that port 8079 is open and accessible.
 
+## Known Limitations
 
+The back-migration flow (returning to a previously-active node, i.e. A → B → A) has two operator-facing limitations:
+
+1. **Restart Node A before initiating the back-migration.** Stop and start A so its migration service is reinitialized and ready to receive keyshares from B. The restart also forces A to submit a fresh on-chain attestation (see next bullet).
+
+2. **A's on-chain attestation must be current.** The contract rejects the back-migration if A's attestation has expired or been revoked while A was outside the participant set. Restarting A (limitation 1) forces a fresh attestation submission immediately; otherwise, A's normal periodic resubmission updates the attestation roughly every hour.

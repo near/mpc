@@ -71,6 +71,16 @@ pub fn validate_domain_threshold(
     Ok(())
 }
 
+/// The largest `ReconstructionThreshold` across `domains`, or `None` if there are none
+/// (an empty set imposes no cross-domain lower bound on the GovernanceThreshold).
+/// Feeds [`ThresholdParameters::validate_governance_against_reconstruction`](crate::primitives::thresholds::ThresholdParameters::validate_governance_against_reconstruction).
+pub fn max_reconstruction_threshold(domains: &[DomainConfig]) -> Option<ReconstructionThreshold> {
+    domains
+        .iter()
+        .map(|domain| domain.reconstruction_threshold)
+        .max()
+}
+
 /// All the domains present in the contract, as well as the next domain ID which is kept to ensure
 /// that we never reuse domain IDs. (Domains may be deleted in only one case: when we decided to
 /// add domains but ultimately canceled that process.)
@@ -84,6 +94,11 @@ pub struct DomainRegistry {
 impl DomainRegistry {
     pub fn domains(&self) -> &[DomainConfig] {
         &self.domains
+    }
+
+    #[cfg(test)]
+    pub fn domains_mut(&mut self) -> &mut [DomainConfig] {
+        &mut self.domains
     }
 
     /// Append `domain` at `next_domain_id`, returning its assigned DomainId.
@@ -270,16 +285,13 @@ impl AddDomainsVotes {
 #[expect(non_snake_case)]
 pub mod tests {
     use super::{
-        AddDomainsVotes, Curve, DomainConfig, DomainId, DomainPurpose, DomainRegistry,
-        Participants, Protocol, is_valid_protocol_for_purpose, validate_domain_purpose,
+        AddDomainsVotes, Curve, DomainConfig, DomainId, DomainPurpose, DomainRegistry, Protocol,
+        is_valid_protocol_for_purpose, validate_domain_purpose,
     };
-    use crate::primitives::key_state::AuthenticatedParticipantId;
     use crate::primitives::test_utils::{
-        gen_participant, gen_participants, infer_purpose_from_protocol,
+        gen_authenticated_participants, gen_participants, infer_purpose_from_protocol,
     };
     use near_mpc_contract_interface::types::ReconstructionThreshold;
-    use near_sdk::test_utils::VMContextBuilder;
-    use near_sdk::testing_env;
     use rstest::rstest;
     use std::collections::BTreeMap;
 
@@ -483,24 +495,6 @@ pub mod tests {
         assert_eq!(validate_domain_purpose(&domain).is_ok(), expected_ok);
     }
 
-    fn setup_participants(n: usize) -> (Participants, Vec<AuthenticatedParticipantId>) {
-        let mut participants = Participants::new();
-        let mut accounts = Vec::new();
-        for i in 0..n {
-            let (account_id, info) = gen_participant(i);
-            accounts.push(account_id.clone());
-            participants.insert(account_id, info).unwrap();
-        }
-        let mut auth_ids = Vec::new();
-        for account_id in &accounts {
-            let mut ctx = VMContextBuilder::new();
-            ctx.signer_account_id(account_id.clone());
-            testing_env!(ctx.build());
-            auth_ids.push(AuthenticatedParticipantId::new(&participants).unwrap());
-        }
-        (participants, auth_ids)
-    }
-
     fn sample_proposal() -> Vec<DomainConfig> {
         vec![DomainConfig {
             id: DomainId(0),
@@ -526,7 +520,7 @@ pub mod tests {
     #[test]
     fn test_get_remaining_votes_all_voters_still_participants() {
         // Given
-        let (participants, auth_ids) = setup_participants(3);
+        let (participants, auth_ids) = gen_authenticated_participants(3);
         let proposal = sample_proposal();
         let mut votes = AddDomainsVotes::default();
         for auth_id in &auth_ids {
@@ -543,7 +537,7 @@ pub mod tests {
     #[test]
     fn test_get_remaining_votes_some_voters_removed() {
         // Given
-        let (participants, auth_ids) = setup_participants(3);
+        let (participants, auth_ids) = gen_authenticated_participants(3);
         let proposal = sample_proposal();
         let mut votes = AddDomainsVotes::default();
         for auth_id in &auth_ids {
@@ -562,7 +556,7 @@ pub mod tests {
     #[test]
     fn test_get_remaining_votes_all_voters_removed() {
         // Given
-        let (_, auth_ids) = setup_participants(3);
+        let (_, auth_ids) = gen_authenticated_participants(3);
         let proposal = sample_proposal();
         let mut votes = AddDomainsVotes::default();
         for auth_id in &auth_ids {
@@ -580,7 +574,7 @@ pub mod tests {
     #[test]
     fn test_get_remaining_votes_preserves_different_proposals() {
         // Given
-        let (participants, auth_ids) = setup_participants(3);
+        let (participants, auth_ids) = gen_authenticated_participants(3);
         let proposal_a = vec![DomainConfig {
             id: DomainId(0),
             protocol: Protocol::CaitSith,

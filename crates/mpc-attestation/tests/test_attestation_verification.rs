@@ -1,3 +1,7 @@
+//! Exercises the full local DCAP + post-DCAP path (`verify_locally`), so it
+//! requires the off-chain `local-verify` feature.
+#![cfg(feature = "local-verify")]
+
 use assert_matches::assert_matches;
 use attestation::attestation::VerificationError;
 use attestation::measurements::{ExpectedMeasurements, Measurements};
@@ -21,7 +25,7 @@ fn valid_mock_attestation_succeeds_verification() {
     let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
 
     assert_matches!(
-        valid_attestation.verify(report_data.into(), timestamp_s, &[], &[], &[]),
+        valid_attestation.verify_locally(report_data.into(), timestamp_s, &[], &[], &[]),
         Ok(AcceptedAttestation {
             attestation: VerifiedAttestation::Mock(MockAttestation::Valid),
             advisory_ids,
@@ -39,7 +43,7 @@ fn invalid_mock_attestation_fails_verification() {
     let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
 
     assert_matches!(
-        valid_attestation.verify(report_data.into(), timestamp_s, &[], &[], &[]),
+        valid_attestation.verify_locally(report_data.into(), timestamp_s, &[], &[], &[]),
         Err(VerificationError::InvalidMockAttestation)
     );
 }
@@ -56,7 +60,7 @@ fn validated_dstack_attestation_can_be_reverified() {
     let allowed_launcher_hashes = [launcher_compose_digest()];
 
     let validated = attestation
-        .verify(
+        .verify_locally(
             report_data.into(),
             timestamp_s,
             &allowed_mpc_hashes,
@@ -90,7 +94,7 @@ fn validated_dstack_attestation_fails_reverification_when_expired() {
     let allowed_launcher_hashes = [launcher_compose_digest()];
 
     let validated = attestation
-        .verify(
+        .verify_locally(
             report_data.into(),
             timestamp_s,
             &allowed_mpc_hashes,
@@ -123,7 +127,7 @@ fn validated_mock_attestation_passes_reverification() {
     let report_data: ReportData = ReportDataV1::new(tls_key, account_key).into();
 
     let validated = valid_attestation
-        .verify(report_data.into(), 0, &[], &[], &[])
+        .verify_locally(report_data.into(), 0, &[], &[], &[])
         .expect("Initial verification failed")
         .attestation;
 
@@ -144,7 +148,7 @@ fn validated_dstack_attestation_fails_reverification_with_rotated_hashes() {
 
     // 1. Initial verify succeeds with the "old" allowed list
     let validated = attestation
-        .verify(
+        .verify_locally(
             report_data.into(),
             creation_time,
             &allowed_mpc_hashes,
@@ -183,7 +187,7 @@ fn validated_dstack_attestation_fails_reverification_with_removed_measurements()
     let allowed_launcher_hashes = [launcher_compose_digest()];
 
     let validated = attestation
-        .verify(
+        .verify_locally(
             report_data.into(),
             creation_time,
             &allowed_mpc_hashes,
@@ -227,7 +231,7 @@ fn validated_dstack_attestation_fails_reverification_with_empty_measurements() {
     let allowed_launcher_hashes = [launcher_compose_digest()];
 
     let validated = attestation
-        .verify(
+        .verify_locally(
             report_data.into(),
             creation_time,
             &allowed_mpc_hashes,
@@ -261,7 +265,7 @@ fn validated_dstack_attestation_passes_reverification_with_superset_measurements
     let allowed_launcher_hashes = [launcher_compose_digest()];
 
     let validated = attestation
-        .verify(
+        .verify_locally(
             report_data.into(),
             creation_time,
             &allowed_mpc_hashes,

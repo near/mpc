@@ -2,12 +2,12 @@
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use frost_secp256k1::VerifyingKey;
-use rand::{RngCore, seq::SliceRandom as _};
+use rand::seq::SliceRandom as _;
 use rand_core::SeedableRng;
 
 mod bench_utils;
 use crate::bench_utils::{
-    MAX_MALICIOUS, PreparedOutputs, SAMPLE_SIZE, analyze_received_sizes,
+    MAX_MALICIOUS, PreparedOutputs, SAMPLE_SIZE, analyze_received_sizes, participant_rng,
     robust_ecdsa_prepare_presign, robust_ecdsa_prepare_sign,
 };
 use threshold_signatures::{
@@ -51,7 +51,10 @@ fn bench_presign(c: &mut Criterion) {
         |b| {
             b.iter_batched(
                 || prepare_simulate_presign(&setup),
-                |preps| run_simulated_protocol(preps.participant, preps.protocol, preps.simulator),
+                |preps| {
+                    run_simulated_protocol(preps.participant, preps.protocol, preps.simulator)
+                        .expect("simulated replay should complete")
+                },
                 criterion::BatchSize::SmallInput,
             );
         },
@@ -79,7 +82,10 @@ fn bench_sign(c: &mut Criterion) {
         |b| {
             b.iter_batched(
                 || prepare_simulated_sign(&setup, max_malicious),
-                |preps| run_simulated_protocol(preps.participant, preps.protocol, preps.simulator),
+                |preps| {
+                    run_simulated_protocol(preps.participant, preps.protocol, preps.simulator)
+                        .expect("simulated replay should complete")
+                },
                 criterion::BatchSize::SmallInput,
             );
         },
@@ -114,15 +120,8 @@ fn setup_presign_snapshot(num_participants: usize) -> PresignSetup {
         .expect("participant list is not empty")
         .clone();
 
-    // recreate rng using by real_participant to generate presignatures
-    let mut rng_copy = MockCryptoRng::seed_from_u64(42);
-    for p in &preps.participants {
-        if *p == real_participant {
-            break;
-        }
-        rng_copy.next_u64();
-    }
-    let real_participant_rng = MockCryptoRng::seed_from_u64(rng_copy.next_u64());
+    // rebuild the exact rng the real participant used during snapshot capture
+    let real_participant_rng = participant_rng(&preps.seeds, real_participant);
 
     let cached_simulator = Simulator::new(real_participant, &protocol_snapshot)
         .expect("Simulator should not be empty");

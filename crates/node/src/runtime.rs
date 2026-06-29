@@ -64,14 +64,13 @@ impl Drop for AsyncDroppableRuntime {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::*;
     use thread_priority::get_current_thread_priority;
 
     // Synchronous so the runtime is dropped outside an async context (dropping a
     // runtime inside one panics).
-    #[cfg(target_os = "linux")]
     #[test]
     #[expect(non_snake_case)]
     fn build_lower_priority_runtime__should_start_worker_threads_at_min_priority() {
