@@ -11,8 +11,8 @@ use std::path::Path;
 /// Stores the last `wipe_near_data_counter` the node acted on.
 const WIPE_COUNTER_FILE_NAME: &str = ".near_data_wipe_counter";
 
-/// Wipes nearcore's data dir when `requested_counter` is greater than the last
-/// counter recorded on disk, then records it.
+/// When `requested_counter` is greater than the last counter recorded on disk,
+/// records it and then wipes nearcore's data dir.
 pub(crate) fn wipe_near_data_if_requested(
     home_dir: &Path,
     hot_store_path: &Path,
@@ -25,7 +25,6 @@ pub(crate) fn wipe_near_data_if_requested(
     let counter_path = home_dir.join(WIPE_COUNTER_FILE_NAME);
     let last_counter = read_last_counter(&counter_path);
     if requested_counter <= last_counter {
-        // Already applied this counter; bump it to wipe again.
         return Ok(());
     }
     if is_archival {
@@ -37,19 +36,20 @@ pub(crate) fn wipe_near_data_if_requested(
         return Ok(());
     }
 
-    // Wipe first, then record the counter so that in case of crash in between
-    // it's still wiped.
+    write_last_counter(&counter_path, requested_counter)?;
+
     match std::fs::remove_dir_all(hot_store_path) {
         Ok(()) => tracing::info!(
             ?hot_store_path,
             requested_counter,
             "wiped nearcore data dir (wipe_near_data_counter)"
         ),
+        // Fresh node: nothing to wipe.
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
         Err(err) => return Err(err),
     }
 
-    write_last_counter(&counter_path, requested_counter)
+    Ok(())
 }
 
 // Defaults to 0 if it can't read or parse file content.
