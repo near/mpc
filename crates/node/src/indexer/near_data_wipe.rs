@@ -1,48 +1,57 @@
 //! Operator-driven one-time wipe of nearcore's data dir, triggered by a wipe
-//! counter config flag.
+//! token config flag.
 //!
-//! The node persists the last counter value it acted on in a file under
-//! `home_dir` (a sibling of `data`, so it survives the wipe). When the configured
-//! `wipe_near_data_counter` exceeds that value, the data dir is wiped once and the
-//! new value recorded.
+//! The node persists the last token value it acted on in a file under `home_dir`
+//! (a sibling of `data`, so it survives the wipe). When the configured
+//! `wipe_near_data_token` is non-zero and differs from that value, the node records
+//! it and then wipes the data dir once.
 
-use std::path::Path;
+use std::io::Write;
+use std::path::{Component, Path};
 
-/// Stores the last `wipe_near_data_counter` the node acted on.
-const WIPE_COUNTER_FILE_NAME: &str = ".near_data_wipe_counter";
+/// Stores the last [`wipe_near_data_token`] the node acted on.
+///
+/// [`wipe_near_data_token`]: mpc_node_config::IndexerConfig::wipe_near_data_token
+const WIPE_TOKEN_FILE_NAME: &str = ".near_data_wipe_token";
 
-/// When `requested_counter` is greater than the last counter recorded on disk,
-/// records it and then wipes nearcore's data dir.
+/// Records `requested_token` if it is non-zero and differs
+/// from the last value recorded on disk, then wipes the data. Skipped, with a
+/// warning, on archival nodes.
 pub(crate) fn wipe_near_data_if_requested(
     home_dir: &Path,
     hot_store_path: &Path,
-    requested_counter: u64,
+    requested_token: u64,
     is_archival: bool,
 ) -> std::io::Result<()> {
-    if requested_counter == 0 {
+    // 0 is the "off" value: never wipe.
+    if requested_token == 0 {
         return Ok(());
     }
-    let counter_path = home_dir.join(WIPE_COUNTER_FILE_NAME);
-    let last_counter = read_last_counter(&counter_path);
-    if requested_counter <= last_counter {
+    let token_path = home_dir.join(WIPE_TOKEN_FILE_NAME);
+    if requested_token == read_last_token(&token_path) {
+        // Already applied this value, change it to any other non-zero value to wipe.
         return Ok(());
     }
     if is_archival {
         tracing::warn!(
             ?hot_store_path,
-            requested_counter,
-            "wipe_near_data_counter bumped but node is archival; ignoring"
+            requested_token,
+            "wipe_near_data_token changed but node is archival, ignoring"
         );
         return Ok(());
     }
 
-    write_last_counter(&counter_path, requested_counter)?;
+    // Guard against a misconfigured store.path (absolute, `..`, or the home dir
+    // itself) turning the wipe into a `remove_dir_all` outside the node's data tree.
+    ensure_within_home(home_dir, hot_store_path)?;
+
+    write_last_token(&token_path, requested_token)?;
 
     match std::fs::remove_dir_all(hot_store_path) {
         Ok(()) => tracing::info!(
             ?hot_store_path,
-            requested_counter,
-            "wiped nearcore data dir (wipe_near_data_counter)"
+            requested_token,
+            "wiped nearcore data dir (wipe_near_data_token)"
         ),
         // Fresh node: nothing to wipe.
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
@@ -52,41 +61,67 @@ pub(crate) fn wipe_near_data_if_requested(
     Ok(())
 }
 
-// Defaults to 0 if it can't read or parse file content.
-fn read_last_counter(counter_path: &Path) -> u64 {
-    match std::fs::read_to_string(counter_path) {
+/// Rejects a wipe target that is not a normal subdirectory of `home_dir` (an
+/// absolute path, a `..` traversal, `.`, or `home_dir` itself), so a misconfigured
+/// store.path can't make the wipe destructive outside the node's data tree.
+fn ensure_within_home(home_dir: &Path, hot_store_path: &Path) -> std::io::Result<()> {
+    let within = match hot_store_path.strip_prefix(home_dir) {
+        Ok(relative) => {
+            let mut components = relative.components().peekable();
+            // Non-empty (not `home_dir` itself) and every component a plain name.
+            components.peek().is_some() && components.all(|c| matches!(c, Component::Normal(_)))
+        }
+        Err(_) => false,
+    };
+    if within {
+        Ok(())
+    } else {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("refusing to wipe {hot_store_path:?}: not a subdirectory of {home_dir:?}"),
+        ))
+    }
+}
+
+fn read_last_token(token_path: &Path) -> u64 {
+    match std::fs::read_to_string(token_path) {
         Ok(contents) => contents.trim().parse().unwrap_or_else(|_| {
             tracing::warn!(
-                ?counter_path,
+                ?token_path,
                 contents,
-                "unparseable near-data wipe counter, treating as 0"
+                "unparseable near-data wipe token, treating as 0"
             );
             0
         }),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => 0,
         Err(err) => {
             tracing::warn!(
-                ?counter_path,
+                ?token_path,
                 ?err,
-                "could not read wipe counter, treating as 0"
+                "could not read wipe token, treating as 0"
             );
             0
         }
     }
 }
 
-/// Writes and fsyncs the counter (and its parent dir) so it survives a crash
-/// before the impending restart.
-fn write_last_counter(counter_path: &Path, counter: u64) -> std::io::Result<()> {
-    if let Some(parent) = counter_path.parent() {
+/// Writes and fsyncs the token (and its parent dir) so it survives a crash before
+/// the impending restart.
+fn write_last_token(token_path: &Path, token: u64) -> std::io::Result<()> {
+    if let Some(parent) = token_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(counter_path, counter.to_string())?;
-    std::fs::File::open(counter_path)?.sync_all()?;
-    if let Some(parent) = counter_path.parent() {
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(token_path)?;
+    file.write_all(token.to_string().as_bytes())?;
+    file.sync_all()?;
+    if let Some(parent) = token_path.parent() {
         std::fs::File::open(parent)?.sync_all()?;
     }
-    tracing::info!(?counter_path, counter, "recorded near-data wipe counter");
+    tracing::info!(?token_path, token, "recorded near-data wipe token");
     Ok(())
 }
 
@@ -97,23 +132,24 @@ mod tests {
     use rstest::rstest;
 
     fn read_recorded(home: &Path) -> Option<u64> {
-        std::fs::read_to_string(home.join(WIPE_COUNTER_FILE_NAME))
+        std::fs::read_to_string(home.join(WIPE_TOKEN_FILE_NAME))
             .ok()
             .map(|s| s.trim().parse().unwrap())
     }
 
     #[rstest]
-    #[case::increases_from_zero(None, true, 1, false, false, Some(1))]
-    #[case::counter_zero_is_noop(None, true, 0, false, true, None)]
-    #[case::counter_equal_is_noop(Some(5), true, 5, false, true, Some(5))]
-    #[case::counter_below_recorded_is_noop(Some(5), true, 3, false, true, Some(5))]
-    #[case::bumped_past_recorded_wipes(Some(1), true, 2, false, false, Some(2))]
+    #[case::differs_from_zero_wipes(None, true, 1, false, false, Some(1))]
+    #[case::token_zero_is_noop(None, true, 0, false, true, None)]
+    #[case::token_equal_is_noop(Some(5), true, 5, false, true, Some(5))]
+    #[case::differs_above_recorded_wipes(Some(1), true, 2, false, false, Some(2))]
+    #[case::differs_below_recorded_wipes(Some(5), true, 3, false, false, Some(3))]
+    #[case::differs_after_max_wipes(Some(u64::MAX), true, 1, false, false, Some(1))]
     #[case::archival_is_noop(None, true, 1, true, true, None)]
     #[case::missing_data_dir_records(None, false, 3, false, false, Some(3))]
-    fn wipe_near_data_if_requested__should_wipe_only_when_counter_exceeds_recorded(
+    fn wipe_near_data_if_requested__should_wipe_when_token_is_nonzero_and_differs(
         #[case] recorded: Option<u64>,
         #[case] create_data_dir: bool,
-        #[case] requested_counter: u64,
+        #[case] requested_token: u64,
         #[case] is_archival: bool,
         #[case] expect_data_dir_exists: bool,
         #[case] expect_recorded: Option<u64>,
@@ -127,14 +163,48 @@ mod tests {
             std::fs::write(data_dir.join("CURRENT"), b"db-content").unwrap();
         }
         if let Some(recorded) = recorded {
-            std::fs::write(home.join(WIPE_COUNTER_FILE_NAME), recorded.to_string()).unwrap();
+            std::fs::write(home.join(WIPE_TOKEN_FILE_NAME), recorded.to_string()).unwrap();
         }
 
         // When
-        wipe_near_data_if_requested(home, &data_dir, requested_counter, is_archival).unwrap();
+        wipe_near_data_if_requested(home, &data_dir, requested_token, is_archival).unwrap();
 
         // Then
         assert_eq!(data_dir.exists(), expect_data_dir_exists);
         assert_eq!(read_recorded(home), expect_recorded);
+    }
+
+    #[test]
+    fn wipe_near_data_if_requested__should_record_token_before_a_failing_wipe() {
+        // Given a regular file where the data dir is expected, so remove_dir_all fails.
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let not_a_dir = home.join("data");
+        std::fs::write(&not_a_dir, b"not a directory").unwrap();
+
+        // When
+        let result = wipe_near_data_if_requested(home, &not_a_dir, 1, false);
+
+        // Then — the wipe fails, but the token was recorded first, so the node does
+        // not re-wipe every restart; the operator changes the token to retry.
+        assert!(result.is_err());
+        assert_eq!(read_recorded(home), Some(1));
+    }
+
+    #[rstest]
+    #[case::normal_subdir("data", true)]
+    #[case::nested_subdir("a/b", true)]
+    #[case::home_itself("", false)]
+    #[case::current_dir(".", false)]
+    #[case::parent_traversal("../escape", false)]
+    #[case::absolute("/escape", false)]
+    fn ensure_within_home__should_reject_targets_outside_home(
+        #[case] sub: &str,
+        #[case] expect_ok: bool,
+    ) {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let hot_store_path = home.join(sub);
+        assert_eq!(ensure_within_home(home, &hot_store_path).is_ok(), expect_ok);
     }
 }
