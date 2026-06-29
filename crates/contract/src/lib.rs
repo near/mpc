@@ -909,7 +909,8 @@ impl MpcContract {
 
         self.enqueue_yield_request(
             method_names::ON_ATTESTATION_VERIFIED,
-            borsh::to_vec(&account_id).expect("borsh serialization of account_id must succeed"),
+            serde_json::to_vec(&(&account_id,))
+                .expect("json serialization of account_id must succeed"),
             Gas::from_tgas(self.config.on_attestation_verified_tera_gas),
             |this, data_id| {
                 this.pending_attestations.insert(
@@ -2438,8 +2439,8 @@ impl MpcContract {
         // the state mutations above.
         env::promise_yield_resume(
             &pending.data_id,
-            borsh::to_vec(&final_outcome)
-                .expect("borsh serialization of FinalOutcome must succeed"),
+            serde_json::to_vec(&final_outcome)
+                .expect("json serialization of FinalOutcome must succeed"),
         );
     }
 
@@ -2506,10 +2507,8 @@ impl MpcContract {
     #[private]
     pub fn on_attestation_verified(
         &mut self,
-        #[serializer(borsh)] account_id: AccountId,
-        #[serializer(borsh)]
-        #[callback_result]
-        result: Result<FinalOutcome, PromiseError>,
+        account_id: AccountId,
+        #[callback_result] result: Result<FinalOutcome, PromiseError>,
     ) -> PromiseOrValue<()> {
         let reason = match result {
             Ok(FinalOutcome::Ok) => return PromiseOrValue::Value(()),

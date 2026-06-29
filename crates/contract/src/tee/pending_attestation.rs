@@ -11,7 +11,7 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_attestation::attestation::DstackAttestation;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
-use near_sdk::{CryptoHash, NearToken};
+use near_sdk::{CryptoHash, NearToken, near};
 
 /// One in-flight verification per submitter account.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
@@ -34,13 +34,10 @@ pub struct PendingAttestation {
 
 /// Outcome the resolution callback resumes the yield with.
 ///
-/// Appears in a public callback signature, so it derives `BorshSchema` under
-/// the `abi` feature (unlike [`PendingAttestation`], which is pure state).
-#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(borsh::BorshSchema)
-)]
+/// JSON-serialized on the wire, matching the contract's other yield-resume
+/// callbacks (sign, CKD, foreign-tx).
+#[near(serializers = [json])]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FinalOutcome {
     Ok,
     Err(String),
@@ -52,23 +49,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn final_outcome__should_round_trip_borsh() {
+    fn final_outcome__should_round_trip_json() {
         for original in [FinalOutcome::Ok, FinalOutcome::Err("rejected".to_string())] {
-            let bytes = borsh::to_vec(&original).expect("serialize");
-            let decoded: FinalOutcome = borsh::from_slice(&bytes).expect("deserialize");
+            let bytes = serde_json::to_vec(&original).expect("serialize");
+            let decoded: FinalOutcome = serde_json::from_slice(&bytes).expect("deserialize");
             assert_eq!(original, decoded);
         }
-    }
-
-    /// Pins the wire bytes: a variant reorder would flip the borsh tag and
-    /// silently break callback receipts in flight across an upgrade, which the
-    /// round-trip test above cannot catch.
-    #[test]
-    fn final_outcome__should_have_pinned_borsh_layout() {
-        assert_eq!(borsh::to_vec(&FinalOutcome::Ok).unwrap(), vec![0]);
-        assert_eq!(
-            borsh::to_vec(&FinalOutcome::Err("x".to_string())).unwrap(),
-            vec![1, 1, 0, 0, 0, b'x'],
-        );
     }
 }

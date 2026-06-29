@@ -962,81 +962,22 @@ expression: abi
           "private"
         ],
         "params": {
-          "serialization_type": "borsh",
+          "serialization_type": "json",
           "args": [
             {
               "name": "account_id",
               "type_schema": {
-                "declaration": "AccountId",
-                "definitions": {
-                  "AccountId": {
-                    "Struct": [
-                      "String"
-                    ]
-                  },
-                  "String": {
-                    "Sequence": {
-                      "length_width": 4,
-                      "length_range": {
-                        "start": 0,
-                        "end": 4294967295
-                      },
-                      "elements": "u8"
-                    }
-                  },
-                  "u8": {
-                    "Primitive": 1
-                  }
-                }
+                "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
+                "type": "string"
               }
             }
           ]
         },
         "callbacks": [
           {
-            "serialization_type": "borsh",
+            "serialization_type": "json",
             "type_schema": {
-              "declaration": "FinalOutcome",
-              "definitions": {
-                "FinalOutcome": {
-                  "Enum": {
-                    "tag_width": 1,
-                    "variants": [
-                      [
-                        0,
-                        "Ok",
-                        "FinalOutcome__Ok"
-                      ],
-                      [
-                        1,
-                        "Err",
-                        "FinalOutcome__Err"
-                      ]
-                    ]
-                  }
-                },
-                "FinalOutcome__Err": {
-                  "Struct": [
-                    "String"
-                  ]
-                },
-                "FinalOutcome__Ok": {
-                  "Struct": null
-                },
-                "String": {
-                  "Sequence": {
-                    "length_width": 4,
-                    "length_range": {
-                      "start": 0,
-                      "end": 4294967295
-                    },
-                    "elements": "u8"
-                  }
-                },
-                "u8": {
-                  "Primitive": 1
-                }
-              }
+              "$ref": "#/definitions/FinalOutcome"
             }
           }
         ],
@@ -3722,6 +3663,29 @@ expression: abi
         "EvmTxId": {
           "type": "string",
           "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+        },
+        "FinalOutcome": {
+          "description": "Outcome the resolution callback resumes the yield with.\n\nJSON-serialized on the wire, matching the contract's other yield-resume callbacks (sign, CKD, foreign-tx).",
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": [
+                "Ok"
+              ]
+            },
+            {
+              "type": "object",
+              "required": [
+                "Err"
+              ],
+              "properties": {
+                "Err": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
         },
         "ForeignChain": {
           "type": "string",
