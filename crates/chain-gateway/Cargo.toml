@@ -19,7 +19,6 @@ near-crypto = { workspace = true }
 near-indexer = { workspace = true }
 near-indexer-primitives = { workspace = true }
 near-o11y = { workspace = true }
-near-token = { workspace = true }
 nearcore = { workspace = true }
 prometheus = { workspace = true }
 serde = { workspace = true }

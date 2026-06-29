@@ -1793,7 +1793,6 @@ dependencies = [
  "near-o11y 2.13.0-rc.1",
  "near-sdk",
  "near-store",
- "near-token",
  "nearcore",
  "prometheus",
  "rand 0.8.6",
