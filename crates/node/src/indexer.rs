@@ -42,6 +42,7 @@ use types::ChainSendTransactionRequest;
 pub mod configs;
 pub mod handler;
 pub mod migrations;
+pub mod near_data_wipe;
 pub mod participants;
 pub mod real;
 pub mod stats;
