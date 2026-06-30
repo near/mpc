@@ -5,7 +5,11 @@ use std::time::Duration;
 use anyhow::Context;
 use backon::{ConstantBuilder, Retryable};
 use ed25519_dalek::SigningKey;
+use mpc_call_args::FunctionCallArgs;
 use near_kit::AccountId;
+use near_mpc_contract_interface::call_args::{
+    make_ckd_request_args, make_sign_request_args, make_verify_foreign_chain_tx_args,
+};
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
     AccountId as ContractAccountId, CKDAppPublicKey, DomainConfig, DomainId, DomainPurpose,
@@ -776,17 +780,9 @@ impl MpcCluster {
         payload: serde_json::Value,
         account_id: &AccountId,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
+        let call_args = make_sign_request_args(domain_id, payload);
         let client = self.user_client(account_id)?;
-        let args = json!({
-            "request": {
-                "domain_id": domain_id,
-                "path": "test",
-                "payload_v2": payload,
-            }
-        });
-        self.contract
-            .call_from_with_deposit(&client, method_names::SIGN, args, SIGN_GAS, SIGN_DEPOSIT)
-            .await
+        self.contract.call_with_args(&client, call_args).await
     }
 
     /// Send a CKD (Confidential Key Derivation) request from the given user account.
@@ -798,27 +794,9 @@ impl MpcCluster {
         app_public_key: CKDAppPublicKey,
         account_id: &AccountId,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
-        let gas = match app_public_key {
-            CKDAppPublicKey::AppPublicKey(_) => SIGN_GAS,
-            CKDAppPublicKey::AppPublicKeyPV(_) => CKD_PV_GAS,
-        };
+        let call_args = make_ckd_request_args(domain_id, app_public_key);
         let client = self.user_client(account_id)?;
-        let args = json!({
-            "request": {
-                "domain_id": domain_id,
-                "derivation_path": "test",
-                "app_public_key": app_public_key,
-            }
-        });
-        self.contract
-            .call_from_with_deposit(
-                &client,
-                method_names::REQUEST_APP_PRIVATE_KEY,
-                args,
-                gas,
-                SIGN_DEPOSIT,
-            )
-            .await
+        self.contract.call_with_args(&client, call_args).await
     }
 
     /// View migration info from the contract.
@@ -912,15 +890,8 @@ impl MpcCluster {
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
         let user = self.default_user_account().clone();
         let client = self.user_client(&user)?;
-        self.contract
-            .call_from_with_deposit(
-                &client,
-                method_names::VERIFY_FOREIGN_TRANSACTION,
-                json!({ "request": serde_json::to_value(request)? }),
-                SIGN_GAS,
-                SIGN_DEPOSIT,
-            )
-            .await
+        let call_args = make_verify_foreign_chain_tx_args(request)?;
+        self.contract.call_with_args(&client, call_args).await
     }
 
     /// Propose a contract code update and cast votes until `vote_update` reports

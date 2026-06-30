@@ -1,4 +1,5 @@
 use ed25519_dalek::SigningKey;
+use mpc_call_args::FunctionCallArgs;
 use near_kit::FinalExecutionOutcome;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use serde::de::DeserializeOwned;
@@ -147,23 +148,20 @@ impl DeployedContract {
             .map_err(|e| anyhow::anyhow!("contract call `{method}` (external signer) failed: {e}"))
     }
 
-    pub async fn call_from_with_deposit(
+    pub async fn call_with_args(
         &self,
         client: &ClientHandle,
-        method: &str,
-        args: serde_json::Value,
-        gas: near_kit::Gas,
-        deposit: near_kit::NearToken,
+        call: FunctionCallArgs,
     ) -> anyhow::Result<FinalExecutionOutcome> {
         client
             .inner
-            .call(&self.contract_id, method)
-            .args(args)
-            .gas(gas)
-            .deposit(deposit)
+            .call(&self.contract_id, &call.method_name)
+            .args_raw(call.args)
+            .gas(call.gas)
+            .deposit(call.deposit)
             .send()
             .await
-            .map_err(|e| anyhow::anyhow!("contract call `{method}` (with deposit) failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("contract call `{}` failed: {e}", call.method_name))
     }
 
     /// Call a method whose arguments are borsh-serialized (e.g. `propose_update`).
