@@ -21,7 +21,7 @@ use crate::{
     },
 };
 use mpc_primitives::KeyEventId;
-use mpc_primitives::ReconstructionThreshold as MpcReconstructionThreshold;
+use mpc_primitives::ReconstructionThreshold;
 use mpc_primitives::domain::{DomainId, Protocol};
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::DomainConfig;
@@ -30,7 +30,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use threshold_signatures::{
-    ReconstructionThreshold, confidential_key_derivation as ckd, frost_ed25519, frost_secp256k1,
+    ReconstructionThreshold as TSReconstructionThreshold, confidential_key_derivation as ckd,
+    frost_ed25519, frost_secp256k1,
 };
 use tokio::sync::{RwLock, mpsc, watch};
 use tokio::time::timeout;
@@ -55,7 +56,7 @@ pub async fn keygen_computation_inner(
     // every protocol (including robust-ECDSA, whose reconstruction lower bound
     // equals `t`) the keygen runs with lower bound `t`.
     let threshold =
-        ReconstructionThreshold::from(usize::try_from(domain.reconstruction_threshold.inner())?);
+        TSReconstructionThreshold::from(usize::try_from(domain.reconstruction_threshold.inner())?);
     let keyshare_handle = keyshare_storage
         .write()
         .await
@@ -166,7 +167,7 @@ pub struct ResharingArgs {
     pub existing_keyshares: Option<Vec<Keyshare>>,
     /// The previous epoch's per-domain reconstruction thresholds, passed to the
     /// resharing protocol as the old-side `t` for each key.
-    pub old_reconstruction_thresholds: HashMap<DomainId, MpcReconstructionThreshold>,
+    pub old_reconstruction_thresholds: HashMap<DomainId, ReconstructionThreshold>,
     pub old_participants: ParticipantsConfig,
 }
 
@@ -191,8 +192,8 @@ async fn resharing_computation_inner(
     anyhow::ensure!(key_id.domain_id == domain.id, "Domain mismatch");
 
     let new_threshold =
-        ReconstructionThreshold::from(usize::try_from(domain.reconstruction_threshold.inner())?);
-    let old_threshold = ReconstructionThreshold::from(usize::try_from(
+        TSReconstructionThreshold::from(usize::try_from(domain.reconstruction_threshold.inner())?);
+    let old_threshold = TSReconstructionThreshold::from(usize::try_from(
         args.old_reconstruction_thresholds
             .get(&key_id.domain_id)
             .ok_or_else(|| {
@@ -923,7 +924,7 @@ mod tests {
             existing_keyshares: None,
             old_reconstruction_thresholds: HashMap::from([(
                 DomainId(1),
-                MpcReconstructionThreshold::new(3),
+                ReconstructionThreshold::new(3),
             )]),
             old_participants: ParticipantsConfig {
                 threshold: 3,
