@@ -454,6 +454,9 @@ mod tests {
         let config = read_near_config_json(home_dir.path());
 
         // Then
-        assert_eq!(config, serde_json::json!({ "genesis_file": "genesis.json" }));
+        assert_eq!(
+            config,
+            serde_json::json!({ "genesis_file": "genesis.json" })
+        );
     }
 }
