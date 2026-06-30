@@ -5,21 +5,20 @@ use crate::primitives::UniqueId;
 use crate::protocol::run_protocol;
 use crate::providers::robust_ecdsa::{
     EcdsaMessageHash, KeygenOutput, PresignatureStorage, RobustEcdsaSignatureProvider,
-    RobustEcdsaTaskId,
+    RobustEcdsaTaskId, presign::compute_thresholds,
 };
 use crate::types::SignatureId;
 use anyhow::Context;
-use k256::Scalar;
-use k256::elliptic_curve::PrimeField;
+use k256::{Scalar, elliptic_curve::PrimeField};
 use near_mpc_contract_interface::types::Tweak;
-use std::sync::Arc;
-use std::time::Duration;
-use threshold_signatures::MaxMalicious;
-use threshold_signatures::ParticipantList;
-use threshold_signatures::ecdsa::robust_ecdsa::{PresignOutput, RerandomizedPresignOutput};
-use threshold_signatures::ecdsa::{RerandomizationArguments, Signature, SignatureOption};
-use threshold_signatures::frost_secp256k1::VerifyingKey;
-use threshold_signatures::participants::Participant;
+use std::{sync::Arc, time::Duration};
+use threshold_signatures::{
+    MaxMalicious, ParticipantList,
+    ecdsa::robust_ecdsa::{PresignOutput, RerandomizedPresignOutput},
+    ecdsa::{RerandomizationArguments, Signature, SignatureOption},
+    frost_secp256k1::VerifyingKey,
+    participants::Participant,
+};
 use tokio::time::timeout;
 
 impl RobustEcdsaSignatureProvider {
@@ -38,8 +37,8 @@ impl RobustEcdsaSignatureProvider {
             },
             presignature.participants,
         )?;
-        let (_num_signers, robust_ecdsa_threshold) =
-            super::presign::compute_thresholds(domain_data.reconstruction_threshold)?;
+        let (_num_signers, damgard_et_al_threshold) =
+            compute_thresholds(domain_data.reconstruction_threshold)?;
 
         let msg_hash = *sign_request
             .payload
@@ -48,7 +47,7 @@ impl RobustEcdsaSignatureProvider {
 
         let (signature, public_key) = SignComputation {
             keygen_out: domain_data.keyshare,
-            max_malicious: robust_ecdsa_threshold,
+            max_malicious: damgard_et_al_threshold,
             presign_out: presignature.presignature,
             msg_hash: msg_hash.into(),
             tweak: sign_request.tweak,
@@ -90,8 +89,8 @@ impl RobustEcdsaSignatureProvider {
         metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_LOOKUP_SUCCEEDED.inc();
 
         let domain_data = self.domain_data(sign_request.domain)?;
-        let (_num_signers, robust_ecdsa_threshold) =
-            super::presign::compute_thresholds(domain_data.reconstruction_threshold)?;
+        let (_num_signers, damgard_et_al_threshold) =
+            compute_thresholds(domain_data.reconstruction_threshold)?;
 
         let msg_hash = *sign_request
             .payload
@@ -101,7 +100,7 @@ impl RobustEcdsaSignatureProvider {
         let participants = channel.participants().to_vec();
         FollowerSignComputation {
             keygen_out: domain_data.keyshare,
-            max_malicious: robust_ecdsa_threshold,
+            max_malicious: damgard_et_al_threshold,
             presignature_store: domain_data.presignature_store.clone(),
             presignature_id,
             msg_hash: msg_hash.into(),

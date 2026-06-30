@@ -1,6 +1,6 @@
 use crate::common::{
     REQUEST_DURING_RESHARING_PORT_SEED, damgard_etal_domain, generate_ckd_app_public_key,
-    generate_ecdsa_payload, generate_eddsa_payload, must_get_domain, must_setup_cluster,
+    must_get_domain, must_setup_cluster, sign_all_schemes,
 };
 
 use near_mpc_contract_interface::types::{Protocol, ProtocolContractState};
@@ -42,34 +42,12 @@ async fn test_request_during_resharing() {
     cluster.kill_nodes(&[5]).expect("failed to kill node 5");
 
     // then
-    let ecdsa_domain = must_get_domain(&contract_state, Protocol::CaitSith);
-    let robust_ecdsa_domain = must_get_domain(&contract_state, Protocol::DamgardEtAl);
-    let eddsa_domain = must_get_domain(&contract_state, Protocol::Frost);
     let ckd_domain = must_get_domain(&contract_state, Protocol::ConfidentialKeyDerivation);
 
     let mut rng = rand::rngs::StdRng::seed_from_u64(0);
     for i in 0..3 {
-        for (label, domain_id, is_eddsa) in [
-            ("ECDSA", ecdsa_domain.id, false),
-            ("robust ECDSA", robust_ecdsa_domain.id, false),
-            ("EdDSA", eddsa_domain.id, true),
-        ] {
-            let payload = if is_eddsa {
-                generate_eddsa_payload(&mut rng)
-            } else {
-                generate_ecdsa_payload(&mut rng)
-            };
-            tracing::info!(i, label, "sending sign request during resharing");
-            let outcome = cluster
-                .send_sign_request(domain_id, payload, cluster.default_user_account())
-                .await
-                .expect("sign request failed");
-            assert!(
-                outcome.is_success(),
-                "{label} sign request {i} failed: {:?}",
-                outcome.failure_message()
-            );
-        }
+        tracing::info!(i, "sending sign requests during resharing");
+        sign_all_schemes(&cluster, &contract_state, &mut rng).await;
 
         tracing::info!(i, "sending CKD request during resharing");
         let outcome = cluster

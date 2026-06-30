@@ -430,6 +430,38 @@ pub async fn send_sign_request(
     Ok(())
 }
 
+/// Send a sign request for each signing scheme (classic ECDSA, robust ECDSA and
+/// EdDSA) in `running`, asserting every request produces a successful response.
+///
+/// Panics if a domain is missing or a request can't be submitted: both are
+/// test-setup bugs the caller cannot recover from.
+pub async fn sign_all_schemes(
+    cluster: &MpcCluster,
+    running: &RunningContractState,
+    rng: &mut impl rand::Rng,
+) {
+    for (label, protocol) in [
+        ("ECDSA", Protocol::CaitSith),
+        ("Damgard et al", Protocol::DamgardEtAl),
+        ("EdDSA", Protocol::Frost),
+    ] {
+        let domain = must_get_domain(running, protocol);
+        let payload = match Curve::from(protocol) {
+            Curve::Edwards25519 => generate_eddsa_payload(rng),
+            _ => generate_ecdsa_payload(rng),
+        };
+        let outcome = cluster
+            .send_sign_request(domain.id, payload, cluster.default_user_account())
+            .await
+            .expect("sign request failed");
+        assert!(
+            outcome.is_success(),
+            "{label} sign request failed: {:?}",
+            outcome.failure_message()
+        );
+    }
+}
+
 /// Send a CKD request and assert the network produced a successful response.
 ///
 /// Panics if the request can't be submitted to the contract — the test cannot

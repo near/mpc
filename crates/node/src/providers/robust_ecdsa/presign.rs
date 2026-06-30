@@ -88,7 +88,7 @@ pub(super) async fn run_background_presignature_generation(
         .map(|p| p.id)
         .collect();
 
-    let (num_signers, robust_ecdsa_threshold) = compute_thresholds(threshold)?;
+    let (num_signers, damgard_et_al_threshold) = compute_thresholds(threshold)?;
 
     loop {
         progress_tracker.update_progress();
@@ -146,7 +146,7 @@ pub(super) async fn run_background_presignature_generation(
                         let _in_flight = in_flight;
                         let _semaphore_guard = parallelism_limiter.acquire().await?;
                         let presignature = PresignComputation {
-                            max_malicious: robust_ecdsa_threshold,
+                            max_malicious: damgard_et_al_threshold,
                             keygen_out,
                         }
                         .perform_leader_centric_computation(
@@ -208,11 +208,11 @@ impl RobustEcdsaSignatureProvider {
         id.validate_owned_by(channel.sender().get_leader())?;
         let domain_data = self.domain_data(domain_id)?;
 
-        let (_num_signers, robust_ecdsa_threshold) =
+        let (_num_signers, damgard_et_al_threshold) =
             compute_thresholds(domain_data.reconstruction_threshold)?;
 
         FollowerPresignComputation {
-            max_malicious: robust_ecdsa_threshold,
+            max_malicious: damgard_et_al_threshold,
             keygen_out: domain_data.keyshare,
             out_presignature_store: domain_data.presignature_store,
             out_presignature_id: id,
