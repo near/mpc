@@ -186,7 +186,7 @@ impl EcdsaSignatureProvider {
         if channel.participants().len() != threshold_usize {
             metrics::MPC_NUM_BAD_PEER_PRESIGN_REQUESTS.inc();
             anyhow::bail!(
-                "presign participant count ({}) does not match domain threshold t={}",
+                "CaitSith presign participant count ({}) does not match domain threshold t={}",
                 channel.participants().len(),
                 threshold_usize,
             );
