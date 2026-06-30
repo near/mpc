@@ -239,16 +239,8 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
             })
             .collect::<Vec<_>>();
 
-        for result in futures::future::join_all(generate_presignatures).await {
-            match result {
-                Err(join_error) => tracing::error!(
-                    "robust-ecdsa background presignature task panicked: {join_error}"
-                ),
-                Ok(Err(task_error)) => tracing::error!(
-                    "robust-ecdsa background presignature task errored: {task_error}"
-                ),
-                Ok(Ok(())) => {}
-            }
+        for Err(join_error) in futures::future::join_all(generate_presignatures).await {
+            tracing::error!("Damgard et al background presignature task ended unexpectedly: {join_error}");
         }
 
         Ok(())
