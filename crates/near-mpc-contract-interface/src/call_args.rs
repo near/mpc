@@ -5,7 +5,7 @@ use serde_json::json;
 
 use crate::{
     method_names::{PROPOSE_UPDATE, REQUEST_APP_PRIVATE_KEY, SIGN, VERIFY_FOREIGN_TRANSACTION},
-    types::{ProposeUpdateArgs, VerifyForeignTransactionRequestArgs},
+    types::{ProposeUpdateArgs, SignRequestArgs, VerifyForeignTransactionRequestArgs},
 };
 
 // todo: probably you want a const file for these
@@ -40,19 +40,11 @@ pub fn make_ckd_request_args(
     }
 }
 
-pub fn make_sign_request_args(domain_id: DomainId, payload: serde_json::Value) -> FunctionCallArgs {
-    let args = json!({
-        "request": {
-            "domain_id": domain_id,
-            "path": "test",
-            "payload_v2": payload,
-        }
-    })
-    .to_string()
-    .into_bytes();
+pub fn make_sign_request_args(args: SignRequestArgs) -> FunctionCallArgs {
+    let body = json!({ "request": args }).to_string().into_bytes();
     FunctionCallArgs {
         method_name: SIGN.to_string(),
-        args,
+        args: body,
         gas: SIGN_GAS,
         deposit: SIGN_DEPOSIT,
     }

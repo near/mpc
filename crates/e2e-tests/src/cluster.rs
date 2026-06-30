@@ -13,9 +13,9 @@ use near_mpc_contract_interface::call_args::{
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
     AccountId as ContractAccountId, CKDAppPublicKey, DomainConfig, DomainId, DomainPurpose,
-    Ed25519PublicKey, EpochId, ParticipantId, ParticipantInfo, Participants,
+    Ed25519PublicKey, EpochId, ParticipantId, ParticipantInfo, Participants, Payload,
     ProposedThresholdParameters, Protocol, ProtocolContractState, ReconstructionThreshold,
-    Threshold, ThresholdParameters,
+    SignRequestArgs, Threshold, ThresholdParameters,
 };
 use rand::SeedableRng;
 use rand::rngs::StdRng;
@@ -772,10 +772,15 @@ impl MpcCluster {
     pub async fn send_sign_request(
         &self,
         domain_id: DomainId,
-        payload: serde_json::Value,
+        payload: Payload,
         account_id: &AccountId,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
-        let call_args = make_sign_request_args(domain_id, payload);
+        let args = SignRequestArgs {
+            path: "test".into(),
+            payload,
+            domain_id,
+        };
+        let call_args = make_sign_request_args(args);
         let client = self.user_client(account_id)?;
         self.contract.call_with_args(&client, call_args).await
     }

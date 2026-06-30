@@ -6,10 +6,10 @@ use std::collections::BTreeMap;
 
 type Sha256Digest = [u8; 32];
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[derive(Clone, Debug, PartialEq, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
+    derive(borsh::BorshSchema)
 )]
 pub struct ProposeUpdateArgs {
     pub code: Option<Vec<u8>>,
