@@ -12,9 +12,9 @@ use near_mpc_contract_interface::call_args::{
 };
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
-    AccountId as ContractAccountId, CKDAppPublicKey, DomainConfig, DomainId, DomainPurpose,
-    Ed25519PublicKey, EpochId, ParticipantId, ParticipantInfo, Participants, Payload,
-    ProposedThresholdParameters, Protocol, ProtocolContractState, ReconstructionThreshold,
+    AccountId as ContractAccountId, CKDAppPublicKey, CKDRequestArgs, DomainConfig, DomainId,
+    DomainPurpose, Ed25519PublicKey, EpochId, ParticipantId, ParticipantInfo, Participants,
+    Payload, ProposedThresholdParameters, Protocol, ProtocolContractState, ReconstructionThreshold,
     SignRequestArgs, Threshold, ThresholdParameters,
 };
 use rand::SeedableRng;
@@ -780,7 +780,7 @@ impl MpcCluster {
             payload,
             domain_id,
         };
-        let call_args = make_sign_request_args(args);
+        let call_args = make_sign_request_args(&args)?;
         let client = self.user_client(account_id)?;
         self.contract.call_with_args(&client, call_args).await
     }
@@ -794,7 +794,12 @@ impl MpcCluster {
         app_public_key: CKDAppPublicKey,
         account_id: &AccountId,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
-        let call_args = make_ckd_request_args(domain_id, app_public_key);
+        let ckd_args = CKDRequestArgs {
+            derivation_path: "test".to_string(),
+            app_public_key,
+            domain_id,
+        };
+        let call_args = make_ckd_request_args(&ckd_args)?;
         let client = self.user_client(account_id)?;
         self.contract.call_with_args(&client, call_args).await
     }

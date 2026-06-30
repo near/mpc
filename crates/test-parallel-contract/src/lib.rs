@@ -8,6 +8,7 @@ use near_sdk::{AccountId, Gas, NearToken, Promise, env, near, serde_json};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
+// todo: change this too
 #[derive(Serialize)]
 struct SignArgs {
     pub request: SignRequestArgs,

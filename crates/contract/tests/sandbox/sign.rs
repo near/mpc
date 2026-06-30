@@ -1,5 +1,5 @@
 use crate::sandbox::{
-    common::{SandboxTestSetup, candidates, create_account_given_id, init},
+    common::{SandboxTestSetup, call_with_args_async, candidates, create_account_given_id, init},
     utils::{
         consts::ALL_PROTOCOLS,
         shared_key_utils::SharedSecretKey,
@@ -18,8 +18,8 @@ use mpc_contract::{
     },
 };
 use near_account_id::AccountId;
-use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::Protocol;
+use near_mpc_contract_interface::method_names;
 use near_workspaces::types::NearToken;
 use rand::SeedableRng;
 
@@ -196,28 +196,9 @@ async fn test_contract_request_deposits_all_schemes() -> anyhow::Result<()> {
     for key in &keys {
         // Try to sign with no deposit, should fail.
         let req = DomainResponseTest::new(&mut rng, key, predecessor_id);
-        let status = match &req {
-            DomainResponseTest::Sign(req) => {
-                let status = contract
-                    .call(method_names::SIGN)
-                    .args_json(req.request_json_args())
-                    .max_gas()
-                    .transact_async()
-                    .await?;
-                dbg!(&status);
-                status
-            }
-            DomainResponseTest::CKD(req) => {
-                let status = contract
-                    .call(method_names::REQUEST_APP_PRIVATE_KEY)
-                    .args_json(req.request_json_args())
-                    .max_gas()
-                    .transact_async()
-                    .await?;
-                dbg!(&status);
-                status
-            }
-        };
+        let mut call_args = req.make_function_call_args()?;
+        call_args.deposit = NearToken::from_yoctonear(0);
+        let status = call_with_args_async(contract.as_account(), &contract, call_args).await?;
 
         // Responding to the request should fail with missing request because the deposit is too low,
         // so the request should have never made it into the request queue and subsequently the MPC network.
@@ -267,7 +248,6 @@ async fn test_sign_v1_compatibility() -> anyhow::Result<()> {
 
     for _ in 0..NUM_MSGS {
         let req = gen_secp_256k1_sign_test(&mut rng, key.domain_id(), predecessor_id, sk);
-
         let status = contract
             .call(method_names::SIGN)
             .args_json(serde_json::json!({

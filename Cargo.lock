@@ -5789,6 +5789,7 @@ dependencies = [
  "insta",
  "k256",
  "mpc-attestation",
+ "mpc-call-args",
  "mpc-contract",
  "mpc-primitives",
  "near-abi",

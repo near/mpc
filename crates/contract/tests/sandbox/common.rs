@@ -9,6 +9,7 @@ use crate::sandbox::utils::{
 use digest::Digest;
 use dtos::ProtocolContractState;
 use k256::ecdsa::SigningKey;
+use mpc_call_args::FunctionCallArgs;
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
@@ -38,7 +39,11 @@ use near_mpc_contract_interface::{
     },
 };
 use near_mpc_sdk::foreign_chain::{ExtractedValue, ForeignChainRpcRequest, Hash256};
-use near_workspaces::{Account, Worker, result::Execution};
+use near_workspaces::{
+    Account, Worker,
+    operations::TransactionStatus,
+    result::{Execution, ExecutionFinalResult},
+};
 use near_workspaces::{Contract, network::Sandbox, result::ExecutionSuccess};
 use rand_core::CryptoRngCore;
 use serde_json::json;
@@ -884,4 +889,36 @@ pub fn aptos_request() -> ForeignChainRpcRequest {
         finality: AptosFinality::Committed,
         extractors: vec![AptosExtractor::Event { event_index: 0 }],
     })
+}
+
+pub async fn call_with_args_async(
+    account: &Account,
+    contract: &Contract,
+    call_args: FunctionCallArgs,
+) -> anyhow::Result<TransactionStatus> {
+    let status = account
+        .call(contract.id(), &call_args.method_name)
+        .args(call_args.args)
+        .gas(call_args.gas)
+        .deposit(call_args.deposit)
+        .transact_async()
+        .await?;
+    dbg!(&status);
+    Ok(status)
+}
+
+pub async fn call_with_args(
+    account: &Account,
+    contract: &Contract,
+    call_args: FunctionCallArgs,
+) -> anyhow::Result<ExecutionFinalResult> {
+    let status = account
+        .call(contract.id(), &call_args.method_name)
+        .args(call_args.args)
+        .gas(call_args.gas)
+        .deposit(call_args.deposit)
+        .transact()
+        .await?;
+    dbg!(&status);
+    Ok(status)
 }
