@@ -174,9 +174,6 @@ fn patch_near_config(
 /// via the `/debug/nearcore_config` endpoint. Returns `None` (and logs) when
 /// the file is missing or malformed, so a debug-endpoint failure never blocks
 /// startup.
-///
-/// Only `config.json` is exposed — never the node/validator key files it
-/// references, which hold secrets.
 pub(crate) fn read_near_config_json(home_dir: &Path) -> Option<serde_json::Value> {
     let path = near_config_file(home_dir);
     let raw = match std::fs::read_to_string(&path) {

@@ -68,8 +68,6 @@ struct WebServerState {
     migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
     static_web_data: StaticWebData,
     node_config: NodeConfigResponse,
-    /// Parsed nearcore `config.json` served by `/debug/nearcore_config`.
-    /// `None` if the file could not be read or parsed at startup.
     nearcore_config: Option<serde_json::Value>,
     /// In-memory log behind the `/debug/recent_transactions` handler.
     recent_transactions: SharedRecentTransactions,
