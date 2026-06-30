@@ -430,11 +430,7 @@ pub async fn send_sign_request(
     Ok(())
 }
 
-/// Send a sign request for each signing scheme (classic ECDSA, robust ECDSA and
-/// EdDSA) in `running`, asserting every request produces a successful response.
-///
-/// Panics if a domain is missing or a request can't be submitted: both are
-/// test-setup bugs the caller cannot recover from.
+/// Sign with every scheme in `running`, asserting each request succeeds.
 pub async fn sign_all_schemes(
     cluster: &MpcCluster,
     running: &RunningContractState,
