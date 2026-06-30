@@ -4,16 +4,16 @@ use crate::sandbox::common::{
     SandboxTestSetup, abstract_evm_request, aptos_extracted_values, aptos_request,
     arbitrum_evm_request, await_pending_foreign_tx_request_observed_on_contract, base_evm_request,
     bitcoin_extracted_values, bitcoin_request, bnb_evm_request, bogus_ton_log_extracted_value,
-    ethereum_evm_request, evm_block_hash_extracted_values, hyper_evm_request, polygon_evm_request,
-    register_foreign_chain_configuration, sign_foreign_tx_response, starknet_extracted_values,
-    starknet_request, ton_request,
+    call_with_args, call_with_args_async, ethereum_evm_request, evm_block_hash_extracted_values,
+    hyper_evm_request, polygon_evm_request, register_foreign_chain_configuration,
+    sign_foreign_tx_response, starknet_extracted_values, starknet_request, ton_request,
 };
+use near_mpc_contract_interface::call_args::make_verify_foreign_chain_tx_args;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
     self as dtos, ExtractedValue, ForeignChainRpcRequest, ForeignTxPayloadVersion,
     VerifyForeignTransactionRequest, VerifyForeignTransactionResponse,
 };
-use near_workspaces::types::NearToken;
 use rstest::rstest;
 use serde_json::json;
 
@@ -53,15 +53,8 @@ async fn verify_foreign_transaction__should_succeed(
         request: rpc_request.clone(),
     };
 
-    let status = user
-        .call(
-            setup.contract.id(),
-            method_names::VERIFY_FOREIGN_TRANSACTION,
-        )
-        .args_json(json!({ "request": request_args }))
-        .deposit(NearToken::from_yoctonear(1))
-        .max_gas()
-        .transact_async()
+    let call_args = make_verify_foreign_chain_tx_args(&request_args).unwrap();
+    let status = call_with_args_async(&user, &setup.contract, call_args)
         .await
         .unwrap();
 
@@ -130,28 +123,20 @@ async fn verify_foreign_transaction__should_fan_out_response_to_duplicates_from_
     };
 
     // When
-    let status_alice = alice
-        .call(
-            setup.contract.id(),
-            method_names::VERIFY_FOREIGN_TRANSACTION,
-        )
-        .args_json(json!({ "request": request_args }))
-        .deposit(NearToken::from_yoctonear(1))
-        .max_gas()
-        .transact_async()
-        .await
-        .unwrap();
-    let status_bob = bob
-        .call(
-            setup.contract.id(),
-            method_names::VERIFY_FOREIGN_TRANSACTION,
-        )
-        .args_json(json!({ "request": request_args }))
-        .deposit(NearToken::from_yoctonear(1))
-        .max_gas()
-        .transact_async()
-        .await
-        .unwrap();
+    let status_alice = call_with_args_async(
+        &alice,
+        &setup.contract,
+        make_verify_foreign_chain_tx_args(&request_args).unwrap(),
+    )
+    .await
+    .unwrap();
+    let status_bob = call_with_args_async(
+        &bob,
+        &setup.contract,
+        make_verify_foreign_chain_tx_args(&request_args).unwrap(),
+    )
+    .await
+    .unwrap();
     await_pending_foreign_tx_request_observed_on_contract(&setup.contract, &verify_request).await;
 
     let (payload, response) = sign_foreign_tx_response(
@@ -222,15 +207,8 @@ async fn verify_foreign_transaction__should_reject_without_policy(
         request: rpc_request,
     };
 
-    let result = user
-        .call(
-            setup.contract.id(),
-            method_names::VERIFY_FOREIGN_TRANSACTION,
-        )
-        .args_json(json!({ "request": request_args }))
-        .deposit(NearToken::from_yoctonear(1))
-        .max_gas()
-        .transact()
+    let call_args = make_verify_foreign_chain_tx_args(&request_args).unwrap();
+    let result = call_with_args(&user, &setup.contract, call_args)
         .await
         .unwrap()
         .into_result();
@@ -273,15 +251,8 @@ async fn verify_foreign_transaction__should_timeout_without_response(
         request: rpc_request,
     };
 
-    let status = user
-        .call(
-            setup.contract.id(),
-            method_names::VERIFY_FOREIGN_TRANSACTION,
-        )
-        .args_json(json!({ "request": request_args }))
-        .deposit(NearToken::from_yoctonear(1))
-        .max_gas()
-        .transact_async()
+    let call_args = make_verify_foreign_chain_tx_args(&request_args).unwrap();
+    let status = call_with_args_async(&user, &setup.contract, call_args)
         .await
         .unwrap();
 

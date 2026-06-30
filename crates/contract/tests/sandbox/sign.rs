@@ -18,8 +18,8 @@ use mpc_contract::{
     },
 };
 use near_account_id::AccountId;
-use near_mpc_contract_interface::types::Protocol;
 use near_mpc_contract_interface::method_names;
+use near_mpc_contract_interface::types::Protocol;
 use near_workspaces::types::NearToken;
 use rand::SeedableRng;
 
