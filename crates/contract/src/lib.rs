@@ -187,7 +187,7 @@ pub struct MpcContract {
     tee_verifier_votes: TeeVerifierVotes,
     /// In-flight [`Attestation::Dstack`] verifications, one entry per submitter
     /// account, held between the cross-contract verify-quote call and its
-    /// resolution (or the yield timeout). See [`crate::tee::pending_attestation`].
+    /// resolution (or the yield timeout).
     pending_attestations: LookupMap<AccountId, PendingAttestation>,
 }
 
@@ -2944,7 +2944,7 @@ mod tests {
     use elliptic_curve::Group;
     use k256::{self, Secp256k1, ecdsa::SigningKey, elliptic_curve};
     use mpc_attestation::attestation::{
-        Attestation as MpcAttestation, MockAttestation as MpcMockAttestation, VerifiedAttestation,
+        MockAttestation as MpcMockAttestation, VerifiedAttestation,
     };
     use near_mpc_bounded_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet};
     use near_mpc_contract_interface::types::BackupServiceInfo;
@@ -5275,14 +5275,13 @@ mod tests {
                     destination_node_info,
                 );
             }
-            let valid_participant_attestation = mpc_attestation::attestation::Attestation::Mock(
-                mpc_attestation::attestation::MockAttestation::Valid,
-            );
+            let valid_participant_attestation =
+                mpc_attestation::attestation::MockAttestation::Valid;
 
             let tee_upgrade_duration =
                 Duration::from_secs(contract.config.tee_upgrade_deadline_duration_seconds);
 
-            let insertion_result = contract.tee_state.add_participant(
+            let insertion_result = contract.tee_state.add_mock_participant(
                 NodeId {
                     account_id: self.signer_account_id.clone(),
                     tls_public_key: self.attestation_tls_key.clone(),
@@ -5936,15 +5935,15 @@ mod tests {
             tls_public_key: target_participant_info.tls_public_key.clone(),
             account_public_key: bogus_ed25519_public_key(),
         };
-        let expiring_attestation = MpcAttestation::Mock(MpcMockAttestation::WithConstraints {
+        let expiring_attestation = MpcMockAttestation::WithConstraints {
             mpc_docker_image_hash: None,
             launcher_docker_compose_hash: None,
             expiry_timestamp_seconds: Some(ATTESTATION_EXPIRY_SECONDS),
             expected_measurements: None,
-        });
+        };
         contract
             .tee_state
-            .add_participant(node_id, expiring_attestation, TEE_UPGRADE_DURATION)
+            .add_mock_participant(node_id, expiring_attestation, TEE_UPGRADE_DURATION)
             .expect("mock attestation is not yet expired and valid");
 
         // Capture the running state before verify_tee for comparison
@@ -6055,15 +6054,15 @@ mod tests {
             tls_public_key: target_participant_info.tls_public_key.clone(),
             account_public_key: bogus_ed25519_public_key(),
         };
-        let expiring_attestation = MpcAttestation::Mock(MpcMockAttestation::WithConstraints {
+        let expiring_attestation = MpcMockAttestation::WithConstraints {
             mpc_docker_image_hash: None,
             launcher_docker_compose_hash: None,
             expiry_timestamp_seconds: Some(ATTESTATION_EXPIRY_SECONDS),
             expected_measurements: None,
-        });
+        };
         contract
             .tee_state
-            .add_participant(node_id, expiring_attestation, TEE_UPGRADE_DURATION)
+            .add_mock_participant(node_id, expiring_attestation, TEE_UPGRADE_DURATION)
             .expect("mock attestation is not yet expired and valid");
 
         let (first_account_id, _, _) = &participant_list[0];
@@ -7502,13 +7501,13 @@ mod tests {
         // Add attestation for the new node (mirrors what ConcludeNodeMigrationTestSetup::setup does).
         contract
             .tee_state
-            .add_participant(
+            .add_mock_participant(
                 NodeId {
                     account_id: operator4.clone(),
                     tls_public_key: new_tls_key.clone(),
                     account_public_key: new_signer_pk.clone(),
                 },
-                mpc_attestation::attestation::Attestation::Mock(MpcMockAttestation::Valid),
+                MpcMockAttestation::Valid,
                 Duration::from_secs(contract.config.tee_upgrade_deadline_duration_seconds),
             )
             .expect("attestation insertion should succeed");
