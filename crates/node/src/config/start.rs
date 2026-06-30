@@ -169,6 +169,31 @@ fn patch_near_config(
     Ok(())
 }
 
+/// Reads and parses the NEAR node `config.json` under `home_dir`, for serving
+/// via the `/debug/nearcore_config` endpoint. Returns `None` (and logs) when
+/// the file is missing or malformed, so a debug-endpoint failure never blocks
+/// startup.
+///
+/// Only `config.json` is exposed — never the node/validator key files it
+/// references, which hold secrets.
+pub(crate) fn read_near_config_json(home_dir: &Path) -> Option<serde_json::Value> {
+    let path = home_dir.join("config.json");
+    let raw = match std::fs::read_to_string(&path) {
+        Ok(raw) => raw,
+        Err(error) => {
+            tracing::warn!(%error, path = %path.display(), "could not read NEAR config.json for debug endpoint");
+            return None;
+        }
+    };
+    match serde_json::from_str(&raw) {
+        Ok(value) => Some(value),
+        Err(error) => {
+            tracing::warn!(%error, path = %path.display(), "NEAR config.json is not valid JSON");
+            None
+        }
+    }
+}
+
 /// Pure JSON-manipulation half of [`patch_near_config`], extracted so it can
 /// be unit-tested without filesystem I/O or constructing a full `ConfigFile`.
 fn apply_near_config_patches(
@@ -426,5 +451,50 @@ mod tests {
             // When / Then
             require_tier3_public_addr(&init).expect("localnet must not require tier3_public_addr");
         }
+    }
+
+    #[test]
+    fn read_near_config_json__should_return_parsed_config_when_present() {
+        // Given
+        let home_dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            home_dir.path().join("config.json"),
+            r#"{ "genesis_file": "genesis.json" }"#,
+        )
+        .unwrap();
+
+        // When
+        let config = read_near_config_json(home_dir.path());
+
+        // Then
+        assert_eq!(
+            config,
+            Some(serde_json::json!({ "genesis_file": "genesis.json" }))
+        );
+    }
+
+    #[test]
+    fn read_near_config_json__should_return_none_when_file_missing() {
+        // Given
+        let home_dir = tempfile::tempdir().unwrap();
+
+        // When
+        let config = read_near_config_json(home_dir.path());
+
+        // Then
+        assert_eq!(config, None);
+    }
+
+    #[test]
+    fn read_near_config_json__should_return_none_when_file_malformed() {
+        // Given
+        let home_dir = tempfile::tempdir().unwrap();
+        std::fs::write(home_dir.path().join("config.json"), "not json").unwrap();
+
+        // When
+        let config = read_near_config_json(home_dir.path());
+
+        // Then
+        assert_eq!(config, None);
     }
 }
