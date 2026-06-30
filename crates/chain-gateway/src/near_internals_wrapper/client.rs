@@ -2,7 +2,10 @@ use std::sync::Arc;
 
 use near_async::messaging::CanSendAsync as _;
 
-use crate::{errors::NearClientError, primitives::IsSyncing};
+use crate::{
+    errors::NearClientError,
+    primitives::{IsSyncing, SyncStatus},
+};
 
 /// Arc-wrapper around near-internal struct
 #[derive(Clone)]
@@ -23,12 +26,14 @@ impl NearClientActorHandle {
 /// Implement IsSyncing for our near client
 impl IsSyncing for NearClientActorHandle {
     type Error = NearClientError;
-    async fn is_syncing(&self) -> Result<bool, Self::Error> {
+    async fn sync_status(&self) -> Result<SyncStatus, Self::Error> {
+        // `detailed: true` so the response carries connected-peer heights, which
+        // we use to confirm the head has actually caught up.
         let status_request = near_client::Status {
             is_health_check: false,
-            detailed: false,
+            detailed: true,
         };
-        let status = &self
+        let status = self
             .client
             .send_async(
                 near_o11y::span_wrapped_msg::SpanWrappedMessageExt::span_wrap(status_request),
@@ -40,6 +45,18 @@ impl IsSyncing for NearClientActorHandle {
             .map_err(|err| NearClientError::ResponseError {
                 message: err.to_string(),
             })?;
-        Ok(status.sync_info.syncing)
+        let max_peer_height = status.detailed_debug_status.as_ref().and_then(|detailed| {
+            detailed
+                .network_info
+                .connected_peers
+                .iter()
+                .filter_map(|peer| peer.height)
+                .max()
+        });
+        Ok(SyncStatus {
+            syncing: status.sync_info.syncing,
+            head_height: status.sync_info.latest_block_height,
+            max_peer_height,
+        })
     }
 }

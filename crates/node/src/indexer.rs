@@ -21,7 +21,7 @@ use near_async::{
 use near_client::{RpcHandlerActor, Status, ViewClientActor, client_actor::ClientActor};
 use near_indexer::near_primitives::transaction::SignedTransaction;
 use near_indexer_primitives::{
-    types::{BlockReference, Finality},
+    types::{BlockHeight, BlockReference, Finality},
     views::{BlockView, QueryRequest, QueryResponseKind},
 };
 use near_mpc_contract_interface::method_names::{
@@ -421,14 +421,21 @@ struct IndexerClient {
 
 const INTERVAL: Duration = Duration::from_millis(500);
 
+/// How far behind the highest peer the local head may be while still counting
+/// as caught up. Absorbs peers advancing a block or two between polls; the
+/// `syncing` flag carries the steady state.
+const SYNC_HEIGHT_TOLERANCE: BlockHeight = 5;
+
 impl IndexerClient {
     async fn wait_for_full_sync(&self) {
         loop {
             tokio::time::sleep(INTERVAL).await;
 
+            // `detailed: true` so the response carries connected-peer heights,
+            // which we use to confirm the head has actually caught up.
             let status_request = Status {
                 is_health_check: false,
-                detailed: false,
+                detailed: true,
             };
             let status_response = self
                 .client
@@ -441,10 +448,46 @@ impl IndexerClient {
                 continue;
             };
 
-            if !status.sync_info.syncing {
+            let max_peer_height = status.detailed_debug_status.as_ref().and_then(|detailed| {
+                detailed
+                    .network_info
+                    .connected_peers
+                    .iter()
+                    .filter_map(|peer| peer.height)
+                    .max()
+            });
+
+            if head_caught_up_to_peers(
+                status.sync_info.syncing,
+                status.sync_info.latest_block_height,
+                max_peer_height,
+            ) {
                 return;
             }
         }
+    }
+}
+
+/// Whether the node is fully synced to the network head.
+///
+/// The `syncing` flag alone is insufficient: on a freshly state-syncing node
+/// (or one returning from long downtime) it reads `false` during the startup
+/// window before the node has learned it is behind, which would pin the
+/// streamer's `LatestSynced` cursor at a stale head it can never reach. We also
+/// require the head to be within [`SYNC_HEIGHT_TOLERANCE`] of the highest
+/// connected peer. While no peer reports a height we cannot confirm we are
+/// caught up, so we keep waiting.
+fn head_caught_up_to_peers(
+    syncing: bool,
+    head_height: BlockHeight,
+    max_peer_height: Option<BlockHeight>,
+) -> bool {
+    if syncing {
+        return false;
+    }
+    match max_peer_height {
+        None => false,
+        Some(peer_height) => peer_height.saturating_sub(head_height) <= SYNC_HEIGHT_TOLERANCE,
     }
 }
 
@@ -502,4 +545,113 @@ pub struct IndexerAPI<TransactionSender, ForeignChainPolicyReader> {
     pub my_migration_info_receiver: watch::Receiver<MigrationInfo>,
 
     pub foreign_chain_policy_reader: ForeignChainPolicyReader,
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::{SYNC_HEIGHT_TOLERANCE, head_caught_up_to_peers};
+
+    #[test]
+    fn head_caught_up_to_peers__should_be_false_while_node_reports_syncing() {
+        // Given
+        let syncing = true;
+
+        // When
+        let caught_up = head_caught_up_to_peers(syncing, 257_000_000, Some(257_000_000));
+
+        // Then
+        assert!(!caught_up);
+    }
+
+    /// The #3623 wedge: at fresh boot the node sits at genesis with `syncing`
+    /// transiently `false` before it has learned a peer is far ahead. The
+    /// `syncing` flag alone would declare it synced; the peer-height gate must
+    /// keep waiting.
+    #[test]
+    fn head_caught_up_to_peers__should_be_false_at_genesis_before_sync_starts() {
+        // Given
+        let syncing = false;
+        let genesis_head = 42_376_888;
+        let peer_head = 257_409_058;
+
+        // When
+        let caught_up = head_caught_up_to_peers(syncing, genesis_head, Some(peer_head));
+
+        // Then
+        assert!(!caught_up);
+    }
+
+    /// Same wedge after long downtime: the stale head is far above genesis but
+    /// still far below the peers, so a genesis-only floor would miss it.
+    #[test]
+    fn head_caught_up_to_peers__should_be_false_with_stale_head_far_above_genesis() {
+        // Given
+        let syncing = false;
+        let stale_head = 200_000_000;
+        let peer_head = 257_409_058;
+
+        // When
+        let caught_up = head_caught_up_to_peers(syncing, stale_head, Some(peer_head));
+
+        // Then
+        assert!(!caught_up);
+    }
+
+    /// Until a peer advertises a height we cannot confirm we are caught up, so
+    /// we must keep waiting rather than risk pinning at a stale head.
+    #[test]
+    fn head_caught_up_to_peers__should_be_false_when_no_peer_height_known() {
+        // Given
+        let syncing = false;
+
+        // When
+        let caught_up = head_caught_up_to_peers(syncing, 257_409_058, None);
+
+        // Then
+        assert!(!caught_up);
+    }
+
+    #[test]
+    fn head_caught_up_to_peers__should_be_true_when_head_reaches_peer_height() {
+        // Given
+        let syncing = false;
+        let peer_head = 257_409_058;
+
+        // When
+        let caught_up = head_caught_up_to_peers(syncing, peer_head, Some(peer_head));
+
+        // Then
+        assert!(caught_up);
+    }
+
+    /// Peers may advance a few blocks between polls; being within the tolerance
+    /// still counts as caught up.
+    #[test]
+    fn head_caught_up_to_peers__should_be_true_within_tolerance_of_peer_height() {
+        // Given
+        let syncing = false;
+        let peer_head = 257_409_058;
+        let head = peer_head - SYNC_HEIGHT_TOLERANCE;
+
+        // When
+        let caught_up = head_caught_up_to_peers(syncing, head, Some(peer_head));
+
+        // Then
+        assert!(caught_up);
+    }
+
+    /// A node slightly ahead of the peers it currently sees is caught up.
+    #[test]
+    fn head_caught_up_to_peers__should_be_true_when_head_above_peer_height() {
+        // Given
+        let syncing = false;
+        let peer_head = 257_409_058;
+
+        // When
+        let caught_up = head_caught_up_to_peers(syncing, peer_head + 10, Some(peer_head));
+
+        // Then
+        assert!(caught_up);
+    }
 }

@@ -1,5 +1,5 @@
 use crate::primitives::{
-    FetchLatestFinalBlockInfo, IsSyncing, QueryViewFunction, SubmitSignedTransaction,
+    FetchLatestFinalBlockInfo, IsSyncing, QueryViewFunction, SubmitSignedTransaction, SyncStatus,
 };
 use crate::types::{LatestFinalBlockInfo, ObservedState};
 use near_account_id::AccountId;
@@ -137,8 +137,23 @@ impl MockChainStateBuilder {
 
 impl IsSyncing for MockChainState {
     type Error = MockError;
-    async fn is_syncing(&self) -> Result<bool, Self::Error> {
-        self.sync_response.lock().unwrap().clone()
+    async fn sync_status(&self) -> Result<SyncStatus, Self::Error> {
+        // The mock is driven by a single "is it syncing" bool: `false` maps to a
+        // caught-up head, `true` to a head still behind its peers.
+        let syncing = self.sync_response.lock().unwrap().clone()?;
+        Ok(if syncing {
+            SyncStatus {
+                syncing: true,
+                head_height: 0,
+                max_peer_height: Some(100),
+            }
+        } else {
+            SyncStatus {
+                syncing: false,
+                head_height: 100,
+                max_peer_height: Some(100),
+            }
+        })
     }
 }
 
