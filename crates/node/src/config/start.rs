@@ -1,3 +1,4 @@
+use crate::home_paths::near_config_file;
 use anyhow::Context;
 use launcher_interface::types::{PccsEndpointConfig, TeeAuthorityConfig, TeeConfig};
 use mpc_node_config::{ConfigFile, DownloadConfigType, NearInitConfig, StartConfig};
@@ -51,7 +52,7 @@ impl StartConfigExt for StartConfig {
             return Ok(());
         };
 
-        let near_config_path = self.home_dir.join("config.json");
+        let near_config_path = near_config_file(&self.home_dir);
         if near_config_path.exists() {
             tracing::info!("NEAR node already initialized, skipping init");
             return Ok(());
@@ -177,7 +178,7 @@ fn patch_near_config(
 /// Only `config.json` is exposed — never the node/validator key files it
 /// references, which hold secrets.
 pub(crate) fn read_near_config_json(home_dir: &Path) -> Option<serde_json::Value> {
-    let path = home_dir.join("config.json");
+    let path = near_config_file(home_dir);
     let raw = match std::fs::read_to_string(&path) {
         Ok(raw) => raw,
         Err(error) => {
@@ -458,7 +459,7 @@ mod tests {
         // Given
         let home_dir = tempfile::tempdir().unwrap();
         std::fs::write(
-            home_dir.path().join("config.json"),
+            near_config_file(home_dir.path()),
             r#"{ "genesis_file": "genesis.json" }"#,
         )
         .unwrap();
@@ -489,7 +490,7 @@ mod tests {
     fn read_near_config_json__should_return_none_when_file_malformed() {
         // Given
         let home_dir = tempfile::tempdir().unwrap();
-        std::fs::write(home_dir.path().join("config.json"), "not json").unwrap();
+        std::fs::write(near_config_file(home_dir.path()), "not json").unwrap();
 
         // When
         let config = read_near_config_json(home_dir.path());
