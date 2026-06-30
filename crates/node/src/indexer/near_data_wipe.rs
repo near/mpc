@@ -55,7 +55,17 @@ pub(crate) fn wipe_near_data_if_requested(
         ),
         // Fresh node: nothing to wipe.
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-        Err(err) => return Err(err),
+        Err(err) => {
+            tracing::error!(
+                ?hot_store_path,
+                requested_token,
+                ?err,
+                "failed to wipe nearcore data dir, the store may be partially deleted and the \
+                 wipe will NOT be retried automatically (token already recorded) — fix the \
+                 cause and set wipe_near_data_token to a new value to retry"
+            );
+            return Err(err);
+        }
     }
     Ok(())
 }
@@ -63,6 +73,10 @@ pub(crate) fn wipe_near_data_if_requested(
 /// Rejects a wipe target that is not a normal subdirectory of `home_dir` (an
 /// absolute path, a `..` traversal, `.`, or `home_dir` itself), so a misconfigured
 /// store.path can't make the wipe destructive outside the node's data tree.
+///
+/// This does not resolve symlinks. Safe because the node never creates
+/// symlinks under `home_dir` and `remove_dir_all` unlinks symlinks instead of
+/// following them.
 fn ensure_within_home(home_dir: &Path, hot_store_path: &Path) -> std::io::Result<()> {
     let within = match hot_store_path.strip_prefix(home_dir) {
         Ok(relative) => {
@@ -104,19 +118,22 @@ fn read_last_token(token_path: &Path) -> u64 {
     }
 }
 
-/// Writes and fsyncs the token (and its parent dir) so it survives a crash before
-/// the impending restart.
+/// Atomically records the token: write a temp file, fsync it, then `rename` it into
+/// place and fsync the parent dir. The old file stays intact until the rename, so a
+/// crash mid-write can't leave a truncated token that reads as 0 and triggers an
+/// extra wipe next boot.
 fn write_last_token(token_path: &Path, token: u64) -> std::io::Result<()> {
     if let Some(parent) = token_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(token_path)?;
-    file.write_all(token.to_string().as_bytes())?;
-    file.sync_all()?;
+    let tmp_path = token_path.with_extension("tmp");
+    {
+        let mut tmp = std::fs::File::create(&tmp_path)?;
+        tmp.write_all(token.to_string().as_bytes())?;
+        tmp.sync_all()?;
+    }
+    std::fs::rename(&tmp_path, token_path)?;
+    // fsync the dir so the rename (the durable record) survives a crash.
     if let Some(parent) = token_path.parent() {
         std::fs::File::open(parent)?.sync_all()?;
     }

@@ -122,7 +122,10 @@ pub fn spawn_real_indexer(
                 mpc_indexer_config.wipe_near_data_token,
                 near_config.client_config.archive,
             )
-            .expect("failed to wipe nearcore data dir");
+            .expect(
+                "wipe_near_data_token is set but wiping the nearcore data dir failed, \
+                 fix the cause and set wipe_near_data_token to a new value to retry",
+            );
 
             let near_node = Indexer::start_near_node(
                 &near_indexer_config,
