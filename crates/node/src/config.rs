@@ -1,3 +1,4 @@
+use crate::home_paths::{backup_encryption_key_file, secrets_file};
 use crate::primitives::ParticipantId;
 use mpc_node_config::{AuthConfig, ConfigFile};
 
@@ -213,7 +214,7 @@ pub fn generate_and_write_backup_encryption_key_to_disk(home_dir: &Path) -> anyh
     tracing::info!("generating encryption key");
     let mut key = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut key);
-    let key_path = crate::home_paths::backup_encryption_key_file(home_dir);
+    let key_path = backup_encryption_key_file(home_dir);
     let key_hex = hex::encode(key);
     write_secret_file(&key_path, key_hex.as_bytes())?;
     tracing::info!("wrote encryption key to disk {:?}", key_path);
@@ -262,7 +263,7 @@ pub struct PersistentSecrets {
 
 impl PersistentSecrets {
     fn maybe_get_existing(home_dir: &Path) -> anyhow::Result<Option<PersistentSecrets>> {
-        let file_path = crate::home_paths::secrets_file(home_dir);
+        let file_path = secrets_file(home_dir);
         let secrets = if file_path.exists() {
             let str = std::fs::read_to_string(&file_path)?;
             let secrets_file: PersistentSecrets = serde_json::from_str(&str)?;
@@ -295,7 +296,7 @@ impl PersistentSecrets {
             near_responder_keys,
         };
 
-        let path = crate::home_paths::secrets_file(home_dir);
+        let path = secrets_file(home_dir);
         if path.exists() {
             anyhow::bail!("secrets.json already exists. Refusing to overwrite.");
         }

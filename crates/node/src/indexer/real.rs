@@ -7,6 +7,7 @@ use super::{IndexerAPI, IndexerState, RealForeignChainPolicyReader};
 use crate::config::RespondConfig;
 #[cfg(feature = "network-hardship-simulation")]
 use crate::config::load_listening_blocks_file;
+use crate::home_paths::near_data_dir;
 use crate::indexer::configs::IndexerConfigExt;
 use crate::indexer::tee::{
     monitor_allowed_docker_images, monitor_allowed_foreign_chain_providers,
@@ -110,7 +111,7 @@ pub fn spawn_real_indexer(
             // the next restart.
             let hot_store_path = match near_config.config.store.path.as_deref() {
                 Some(path) => home_dir.join(path),
-                None => crate::home_paths::near_data_dir(&home_dir),
+                None => near_data_dir(&home_dir),
             };
             wipe_near_data_if_requested(
                 &home_dir,

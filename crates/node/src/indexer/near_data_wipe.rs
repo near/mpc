@@ -141,6 +141,7 @@ fn write_last_token(token_path: &Path, token: u64) -> std::io::Result<()> {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use crate::home_paths::near_data_dir;
     use rstest::rstest;
 
     fn must_read_recorded(home: &Path) -> Option<u64> {
@@ -169,7 +170,7 @@ mod tests {
         // Given
         let tmp = tempfile::tempdir().unwrap();
         let home = tmp.path();
-        let data_dir = crate::home_paths::near_data_dir(home);
+        let data_dir = near_data_dir(home);
         if create_data_dir {
             std::fs::create_dir_all(&data_dir).unwrap();
             std::fs::write(data_dir.join("CURRENT"), b"db-content").unwrap();
@@ -191,7 +192,7 @@ mod tests {
         // Given a regular file where the data dir is expected, so remove_dir_all fails.
         let tmp = tempfile::tempdir().unwrap();
         let home = tmp.path();
-        let not_a_dir = crate::home_paths::near_data_dir(home);
+        let not_a_dir = near_data_dir(home);
         std::fs::write(&not_a_dir, b"not a directory").unwrap();
 
         // When

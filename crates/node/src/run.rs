@@ -5,6 +5,7 @@ use crate::{
     },
     coordinator::Coordinator,
     db::SecretDB,
+    home_paths::assets_dir,
     indexer::{
         IndexerAPI, ReadSupportedForeignChain, real::spawn_real_indexer,
         tx_sender::TransactionSender,
@@ -342,10 +343,7 @@ where
     let account_public_key =
         Ed25519PublicKey::from(&secrets.persistent_secrets.near_signer_key.verifying_key());
 
-    let secret_db = SecretDB::new(
-        &crate::home_paths::assets_dir(&home_dir),
-        secrets.local_storage_aes_key,
-    )?;
+    let secret_db = SecretDB::new(&assets_dir(&home_dir), secrets.local_storage_aes_key)?;
 
     let key_storage_config = KeyStorageConfig {
         home_dir: home_dir.clone(),
