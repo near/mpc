@@ -337,12 +337,14 @@ The contract gains two new state fields:
 pub struct MpcContract {
     // ... existing fields ...
 
-    /// The locked account `mpc-contract` currently trusts as the verifier.
-    /// `submit_participant_info` calls `verify_quote` on this account.
-    /// Mutated only by the threshold-crossing vote above; the mutation
-    /// re-routes future submissions and does not touch already-stored
-    /// attestations.
-    tee_verifier_account_id: AccountId,
+    /// The locked account `mpc-contract` currently trusts as the verifier, or
+    /// `None` until participants vote one in (a `Dstack` `submit_participant_info`
+    /// is then rejected with `VerifierNotConfigured`). `submit_participant_info`
+    /// calls `verify_quote` on this account. Mutated only by the threshold-crossing
+    /// vote above; the mutation re-routes future submissions and does not touch
+    /// already-stored attestations. (Making this non-`Option` once a verifier is
+    /// voted in is the follow-up #3639.)
+    tee_verifier_account_id: Option<AccountId>,
 
     /// Pending votes for changing `tee_verifier_account_id`. Each voter is an
     /// active MPC participant; each proposal is hashed from
@@ -381,7 +383,7 @@ sequenceDiagram
 
 ### `mpc-contract::submit_participant_info`
 
-The method splits across three receipts joined by yield-resume — see [§Submission flow](#submission-flow) above for the architecture. The return type is [`PromiseOrValue<()>`](https://docs.rs/near-sdk/5.26.1/near_sdk/enum.PromiseOrValue.html), `near-sdk`'s "sometimes synchronous, sometimes a Promise chain" type: `Mock` attestations return `Value(())` immediately, and `Dstack` attestations return the yielded `Promise` from [`env::promise_yield_create`][promise-yield-create], which the runtime resolves either when `resolve_verification` calls [`env::promise_yield_resume`][promise-yield-resume] or after ~200 blocks of silence. The post-DCAP checks and the `stored_attestations` insert live in `resolve_verification`, not in the yield-callback — that's what keeps `on_attestation_verified` trivial enough to match the sign-request callback [`return_signature_and_clean_state_on_success`][sign-yield-callback]. Draft implementation:
+The method splits across three receipts joined by yield-resume — see [§Submission flow](#submission-flow) above for the architecture. It returns `Result<(), Error>`, like the existing yield producers (`sign` / `request_app_private_key` / `verify_foreign_transaction`): `Mock` attestations are verified synchronously and return `Ok(())`; `Dstack` attestations register a yield via [`env::promise_yield_create`][promise-yield-create] and end on `enqueue_yield_request` so that its `env::promise_return` is the method's result. The runtime resolves the yield either when `resolve_verification` calls [`env::promise_yield_resume`][promise-yield-resume] or after ~200 blocks of silence. The post-DCAP checks and the `stored_attestations` insert live in `resolve_verification`, not in the yield-callback — that's what keeps `on_attestation_verified` trivial enough to match the sign-request callback [`return_signature_and_clean_state_on_success`][sign-yield-callback]. Draft implementation:
 
 ```rust
 impl MpcContract {
@@ -389,15 +391,15 @@ impl MpcContract {
         &mut self,
         attestation: Attestation,
         tls_pk: Ed25519PublicKey,
-    ) -> PromiseOrValue<()> {
+    ) -> Result<(), Error> {
         // Existing convention: caller must be the signer of this transaction,
         // not a relayer or proxy.
         let account_id = Self::assert_caller_is_signer();
         match attestation {
-            // Unchanged from today.
+            // Synchronous: no DCAP, verified and stored in this call.
             Attestation::Mock(mock) => {
-                self.verify_mock_synchronously(mock, tls_pk);
-                PromiseOrValue::Value(())
+                self.tee_state.add_mock_participant(node_id, mock, ...)?;
+                Ok(())
             }
             // Dstack: yield-resume.
             Attestation::Dstack(dstack) => {
@@ -406,18 +408,45 @@ impl MpcContract {
                 // runtime timeout) is rejected outright — same shape as
                 // duplicate sign requests.
                 if self.pending_attestations.contains_key(&account_id) {
-                    env::panic_str("verification already pending");
+                    return Err(TeeError::VerificationAlreadyPending.into());
                 }
+                // Refuse until a verifier is voted in: there is no account to
+                // call `verify_quote` on.
+                let Some(verifier_account_id) = self.tee_verifier_account_id.clone() else {
+                    return Err(TeeError::VerifierNotConfigured.into());
+                };
 
-                let (quote, collateral) = extract_dcap_inputs(&dstack);
                 let attached_deposit = env::attached_deposit();
 
-                // Reuses the existing `enqueue_yield_request` helper that
-                // wraps `env::promise_yield_create`. The helper allocates
-                // `data_id`, registers `on_attestation_verified` as the
-                // yield-callback, and surfaces `data_id` via the `insert`
-                // closure so we can stash it together with the rest of the
-                // `PendingAttestation` fields.
+                // Cross-contract call to the verifier, built first so the
+                // `enqueue_yield_request` below stays the final host call. Its
+                // `.then` callback (`resolve_verification`) is the bridge that
+                // turns the verifier's response into a `promise_yield_resume` on
+                // the yield this method registers next. Quote/collateral are
+                // serialized by reference so `dstack` can move into the pending
+                // entry without cloning the (large) payload.
+                Promise::new(verifier_account_id)
+                    .function_call(
+                        "verify_quote".into(),
+                        borsh::to_vec(&(&dstack.quote, &dstack.collateral)).unwrap(),
+                        NearToken::from_yoctonear(0),
+                        Gas::from_tgas(VERIFIER_GAS_TGAS),
+                    )
+                    .then(
+                        Self::ext(env::current_account_id())
+                            .with_static_gas(Gas::from_tgas(RESOLVE_GAS_TGAS))
+                            .resolve_verification(node_id.clone()),
+                    )
+                    .detach();
+
+                // Reuses the existing `enqueue_yield_request` helper that wraps
+                // `env::promise_yield_create`. The helper allocates `data_id`,
+                // registers `on_attestation_verified` as the yield-callback, and
+                // surfaces `data_id` via the `insert` closure so we can stash it
+                // together with the rest of the `PendingAttestation` fields. It
+                // calls `env::promise_return` last, making the yield the method's
+                // result — so we just return `Ok(())` (no `value_return` that
+                // would override it).
                 self.enqueue_yield_request(
                     "on_attestation_verified",
                     borsh::to_vec(&account_id).unwrap(),
@@ -434,28 +463,7 @@ impl MpcContract {
                         );
                     },
                 );
-
-                // Cross-contract call to the verifier. Its `.then` callback
-                // (`resolve_verification`) is the bridge that turns the
-                // verifier's response into a `promise_yield_resume` on the
-                // yield this method registered above.
-                Promise::new(self.tee_verifier_account_id.clone())
-                    .function_call(
-                        "verify_quote".into(),
-                        borsh::to_vec(&(quote, collateral)).unwrap(),
-                        NearToken::from_yoctonear(0),
-                        Gas::from_tgas(VERIFIER_GAS_TGAS),
-                    )
-                    .then(
-                        Self::ext(env::current_account_id())
-                            .with_static_gas(Gas::from_tgas(RESOLVE_GAS_TGAS))
-                            .resolve_verification(account_id),
-                    );
-
-                // The yield handle was returned by `enqueue_yield_request`
-                // via `env::promise_return`, so the caller's `Promise`
-                // resolves with whatever the yield-callback returns.
-                PromiseOrValue::Value(())
+                Ok(())
             }
         }
     }
@@ -562,18 +570,27 @@ impl MpcContract {
         &mut self,
         account_id: AccountId,
         #[callback_result] result: Result<FinalOutcome, PromiseError>,
-    ) -> Result<(), String> {
-        match result {
-            Ok(FinalOutcome::Ok) => Ok(()),
-            Ok(FinalOutcome::Err(reason)) => Err(reason),
+    ) -> PromiseOrValue<()> {
+        let reason = match result {
+            Ok(FinalOutcome::Ok) => return PromiseOrValue::Value(()),
+            Ok(FinalOutcome::Err(reason)) => reason,
             Err(_promise_err) => {
                 if let Some(pending) = self.pending_attestations.remove(&account_id) {
                     refund_deposit(&account_id, pending.attached_deposit);
                     log!("yield timeout for {account_id}: refunded and cleaned up");
                 }
-                Err("verifier did not respond within yield-resume window".to_string())
+                "verifier did not respond within yield-resume window".to_string()
             }
-        }
+        };
+        // Fail the submitter's transaction from a SEPARATE receipt: a panic here
+        // would roll back the cleanup above.
+        let promise = Promise::new(env::current_account_id()).function_call(
+            "fail_attestation_submission".into(),
+            borsh::to_vec(&reason).unwrap(),
+            NearToken::from_near(0),
+            Gas::from_tgas(FAIL_GAS_TGAS),
+        );
+        PromiseOrValue::Promise(promise.as_return())
     }
 }
 

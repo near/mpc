@@ -35,6 +35,7 @@ members = [
     "crates/test-migration-contract",
     "crates/test-parallel-contract",
     "crates/test-port-allocator",
+    "crates/test-tee-verifier",
     "crates/test-utils",
     "crates/threshold-signatures",
     "crates/tls",
