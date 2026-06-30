@@ -71,9 +71,10 @@ impl EcdsaSignatureProvider {
             let mut offline: i64 = 0;
             let mut available: i64 = 0;
             for store in &triple_stores {
-                online += store.num_owned_ready() as i64;
-                offline += store.num_owned_offline() as i64;
-                available += store.num_owned() as i64;
+                online += i64::try_from(store.num_owned_ready()).expect("triple count fits in i64");
+                offline +=
+                    i64::try_from(store.num_owned_offline()).expect("triple count fits in i64");
+                available += i64::try_from(store.num_owned()).expect("triple count fits in i64");
             }
             metrics::MPC_OWNED_NUM_TRIPLES_ONLINE.set(online);
             metrics::MPC_OWNED_NUM_TRIPLES_WITH_OFFLINE_PARTICIPANT.set(offline);
