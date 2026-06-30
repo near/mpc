@@ -833,7 +833,7 @@ impl MpcContract {
                 self.charge_attestation_storage(
                     &account_id,
                     initial_storage,
-                    insertion,
+                    &insertion,
                     caller_is_participant,
                     env::attached_deposit(),
                 )?;
@@ -914,7 +914,7 @@ impl MpcContract {
         &self,
         account_id: &AccountId,
         initial_storage: u64,
-        insertion: ParticipantInsertion,
+        insertion: &ParticipantInsertion,
         caller_is_participant: bool,
         attached: NearToken,
     ) -> Result<(), Error> {
@@ -2438,13 +2438,13 @@ impl MpcContract {
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
         let initial_storage = env::storage_usage();
-        let (insertion, previous) = match self.tee_state.finish_dstack_verify(
+        let insertion = match self.tee_state.finish_dstack_verify(
             node_id.clone(),
             &pending.dstack,
             report,
             tee_upgrade_deadline_duration,
         ) {
-            Ok(result) => result,
+            Ok(insertion) => insertion,
             Err(err) => {
                 log!("post-DCAP check failed for {account_id}: {err}");
                 return AttestationResult::Err(format!("post-DCAP check failed: {err}"));
@@ -2454,7 +2454,7 @@ impl MpcContract {
         match self.charge_attestation_storage(
             account_id,
             initial_storage,
-            insertion,
+            &insertion,
             pending.caller_is_participant,
             pending.attached_deposit,
         ) {
@@ -2465,7 +2465,7 @@ impl MpcContract {
                 // (unlike the synchronous path). Undo it explicitly, or the
                 // caller would get storage for free plus a full refund.
                 self.tee_state
-                    .revert_dstack_store(&pending.tls_public_key, previous);
+                    .revert_dstack_store(&pending.tls_public_key, insertion);
                 AttestationResult::Err(err.to_string())
             }
         }

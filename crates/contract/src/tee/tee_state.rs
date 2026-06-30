@@ -48,9 +48,12 @@ pub enum AttestationSubmissionError {
 }
 
 #[derive(Debug)]
+#[expect(clippy::large_enum_variant)]
 pub(crate) enum ParticipantInsertion {
     NewlyInsertedParticipant,
-    UpdatedExistingParticipant,
+    /// Holds the overwritten entry so [`TeeState::revert_dstack_store`] can put
+    /// it back if the async store is rolled back.
+    UpdatedExistingParticipant(NodeAttestation),
 }
 
 #[derive(Debug)]
@@ -168,22 +171,19 @@ impl TeeState {
 
         log_informational_advisory_ids(&advisory_ids);
 
-        let (insertion, _previous) =
-            self.store_verified_attestation(node_id, verified_attestation)?;
-        Ok(insertion)
+        self.store_verified_attestation(node_id, verified_attestation)
     }
 
     /// Runs the post-DCAP checks for a [`Attestation::Dstack`] attestation
     /// against the [`VerifiedReport`] the verifier returned, then stores the
-    /// result. Called from [`crate::MpcContract::resolve_verification`]; the DCAP
-    /// verification itself has already happened in the verifier contract.
+    /// result.
     pub(crate) fn finish_dstack_verify(
         &mut self,
         node_id: NodeId,
         dstack: &DstackAttestation,
         report: &VerifiedReport,
         tee_upgrade_deadline_duration: Duration,
-    ) -> Result<(ParticipantInsertion, Option<NodeAttestation>), AttestationSubmissionError> {
+    ) -> Result<ParticipantInsertion, AttestationSubmissionError> {
         let expected_report_data = Self::expected_report_data(&node_id);
         let accepted_measurements = self.get_accepted_measurements();
         let AcceptedAttestation {
@@ -214,15 +214,15 @@ impl TeeState {
     /// Stores an already-verified attestation, rejecting a TLS key owned by a
     /// different account.
     ///
-    /// Returns the insertion result and the displaced [`NodeAttestation`], if any.
-    /// The Dstack path needs the displaced entry to undo this store via
-    /// [`Self::revert_dstack_store`], because its callback receipt commits even
-    /// when the later storage charge fails.
+    /// On an update, the returned [`ParticipantInsertion::UpdatedExistingParticipant`]
+    /// carries the displaced [`NodeAttestation`]; the Dstack path uses it to undo
+    /// this store via [`Self::revert_dstack_store`], because its callback receipt
+    /// commits even when the later storage charge fails.
     fn store_verified_attestation(
         &mut self,
         node_id: NodeId,
         verified_attestation: VerifiedAttestation,
-    ) -> Result<(ParticipantInsertion, Option<NodeAttestation>), AttestationSubmissionError> {
+    ) -> Result<ParticipantInsertion, AttestationSubmissionError> {
         let tls_pk = node_id.tls_public_key.clone();
 
         // Authorization: a TLS key registered to one account must not be
@@ -243,28 +243,27 @@ impl TeeState {
             },
         );
 
-        let insertion = match previous {
-            Some(_) => ParticipantInsertion::UpdatedExistingParticipant,
+        Ok(match previous {
+            Some(previous) => ParticipantInsertion::UpdatedExistingParticipant(previous),
             None => ParticipantInsertion::NewlyInsertedParticipant,
-        };
-        Ok((insertion, previous))
+        })
     }
 
     /// Undoes a [`Self::finish_dstack_verify`] store: restores the displaced
-    /// previous entry, or removes the newly-inserted one if there was none.
-    /// Used by the async flow when the storage charge fails after the store, so
-    /// a caller can't get storage for free in a receipt that still commits.
+    /// entry, or removes the newly-inserted one if there was none. Used by the
+    /// async flow when the storage charge fails after the store, so a caller
+    /// can't get storage for free in a receipt that still commits.
     pub(crate) fn revert_dstack_store(
         &mut self,
         tls_public_key: &Ed25519PublicKey,
-        previous: Option<NodeAttestation>,
+        insertion: ParticipantInsertion,
     ) {
-        match previous {
-            Some(previous) => {
+        match insertion {
+            ParticipantInsertion::UpdatedExistingParticipant(previous) => {
                 self.stored_attestations
                     .insert(tls_public_key.clone(), previous);
             }
-            None => {
+            ParticipantInsertion::NewlyInsertedParticipant => {
                 self.stored_attestations.remove(tls_public_key);
             }
         }
@@ -874,7 +873,7 @@ mod tests {
         // then
         assert_matches!(
             re_insertion_result,
-            Ok(ParticipantInsertion::UpdatedExistingParticipant)
+            Ok(ParticipantInsertion::UpdatedExistingParticipant(_))
         );
     }
 
@@ -1491,7 +1490,10 @@ mod tests {
         );
 
         // Then: the update is accepted and the stored entry reflects the new key.
-        assert_matches!(result, Ok(ParticipantInsertion::UpdatedExistingParticipant));
+        assert_matches!(
+            result,
+            Ok(ParticipantInsertion::UpdatedExistingParticipant(_))
+        );
         let stored = tee_state
             .stored_attestations
             .get(&rotated_node.tls_public_key)
