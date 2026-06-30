@@ -21,7 +21,7 @@ use near_async::ActorSystem;
 use near_indexer::Indexer;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use std::future::Future;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 #[cfg(feature = "network-hardship-simulation")]
 use std::time::Duration;
@@ -108,14 +108,10 @@ pub fn spawn_real_indexer(
             // opens the store, because the dir can't be removed while nearcore holds
             // it open. Runs once per process start, so a changed token takes effect on
             // the next restart.
-            let hot_store_path = home_dir.join(
-                near_config
-                    .config
-                    .store
-                    .path
-                    .as_deref()
-                    .unwrap_or_else(|| Path::new("data")),
-            );
+            let hot_store_path = match near_config.config.store.path.as_deref() {
+                Some(path) => home_dir.join(path),
+                None => crate::home_paths::near_data_dir(&home_dir),
+            };
             wipe_near_data_if_requested(
                 &home_dir,
                 &hot_store_path,

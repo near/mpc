@@ -6,13 +6,9 @@
 //! `wipe_near_data_token` is non-zero and differs from that value, the node records
 //! it and then wipes the data dir once.
 
+use crate::home_paths::wipe_token_file;
 use std::io::Write;
 use std::path::{Component, Path};
-
-/// Stores the last [`wipe_near_data_token`] the node acted on.
-///
-/// [`wipe_near_data_token`]: mpc_node_config::IndexerConfig::wipe_near_data_token
-const WIPE_TOKEN_FILE_NAME: &str = ".near_data_wipe_token";
 
 /// Records `requested_token` if it is non-zero and differs
 /// from the last value recorded on disk, then wipes the data. Skipped, with a
@@ -27,7 +23,7 @@ pub(crate) fn wipe_near_data_if_requested(
     if requested_token == 0 {
         return Ok(());
     }
-    let token_path = home_dir.join(WIPE_TOKEN_FILE_NAME);
+    let token_path = wipe_token_file(home_dir);
     if requested_token == read_last_token(&token_path) {
         // Already applied this value, change it to any other non-zero value to wipe.
         return Ok(());
@@ -148,7 +144,7 @@ mod tests {
     use rstest::rstest;
 
     fn must_read_recorded(home: &Path) -> Option<u64> {
-        std::fs::read_to_string(home.join(WIPE_TOKEN_FILE_NAME))
+        std::fs::read_to_string(wipe_token_file(home))
             .ok()
             .map(|s| s.trim().parse().unwrap())
     }
@@ -173,13 +169,13 @@ mod tests {
         // Given
         let tmp = tempfile::tempdir().unwrap();
         let home = tmp.path();
-        let data_dir = home.join("data");
+        let data_dir = crate::home_paths::near_data_dir(home);
         if create_data_dir {
             std::fs::create_dir_all(&data_dir).unwrap();
             std::fs::write(data_dir.join("CURRENT"), b"db-content").unwrap();
         }
         if let Some(recorded) = recorded {
-            std::fs::write(home.join(WIPE_TOKEN_FILE_NAME), recorded.to_string()).unwrap();
+            std::fs::write(wipe_token_file(home), recorded.to_string()).unwrap();
         }
 
         // When
@@ -195,7 +191,7 @@ mod tests {
         // Given a regular file where the data dir is expected, so remove_dir_all fails.
         let tmp = tempfile::tempdir().unwrap();
         let home = tmp.path();
-        let not_a_dir = home.join("data");
+        let not_a_dir = crate::home_paths::near_data_dir(home);
         std::fs::write(&not_a_dir, b"not a directory").unwrap();
 
         // When
