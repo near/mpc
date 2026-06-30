@@ -1,19 +1,17 @@
 use near_account_id::AccountId;
 use near_indexer_primitives::CryptoHash;
-use near_indexer_primitives::types::Gas;
 
 use crate::errors::{ChainGatewayError, ChainGatewayOp};
 use crate::primitives::{FetchLatestFinalBlockInfo, SubmitSignedTransaction};
 use crate::transaction_sender::TransactionSigner;
+use crate::types::FunctionCallArgs;
 
 pub trait SubmitFunctionCall {
     fn submit_function_call_tx(
         &self,
         signer: &TransactionSigner,
         receiver_id: AccountId,
-        method_name: String,
-        args: Vec<u8>,
-        gas: Gas,
+        call: FunctionCallArgs,
     ) -> impl Future<Output = Result<CryptoHash, ChainGatewayError>> + Send;
 }
 
@@ -25,10 +23,9 @@ where
         &self,
         signer: &TransactionSigner,
         receiver_id: AccountId,
-        method_name: String,
-        args: Vec<u8>,
-        gas: Gas,
+        call: FunctionCallArgs,
     ) -> Result<CryptoHash, ChainGatewayError> {
+        let method_name = call.method_name.clone();
         let info = self.fetch_latest_final_block_info().await.map_err(|err| {
             ChainGatewayError::FetchFinalBlock {
                 op: ChainGatewayOp::SubmitFunctionCallTransaction {
@@ -40,13 +37,7 @@ where
             }
         })?;
 
-        let transaction = signer.create_and_sign_function_call_tx(
-            receiver_id.clone(),
-            method_name.clone(),
-            args,
-            gas,
-            info,
-        );
+        let transaction = signer.create_and_sign_function_call_tx(receiver_id.clone(), call, info);
 
         let tx_hash = transaction.get_hash();
 
@@ -80,20 +71,11 @@ mod tests {
         types::LatestFinalBlockInfo,
     };
 
+    use mpc_call_args::{FunctionCallArgs, NearGas, NearToken};
     use near_account_id::AccountId;
-    use near_indexer::near_primitives::serialize::dec_format::DecType;
-
-    use near_indexer_primitives::types::Gas;
     use rand::{SeedableRng, rngs::StdRng};
 
-    struct TransactionCall {
-        receiver_id: AccountId,
-        method_name: String,
-        args: Vec<u8>,
-        gas: Gas,
-    }
-
-    fn generate_test_call<R>(rng: &mut R) -> TransactionCall
+    fn generate_test_call<R>(rng: &mut R) -> (AccountId, FunctionCallArgs)
     where
         R: rand::Rng,
     {
@@ -103,13 +85,17 @@ mod tests {
         let method_name = format!("do_something_{suffix}");
         let mut args = vec![0u8; 16];
         rng.fill(&mut args[..]);
-        let gas = Gas::from_u64(300);
-        TransactionCall {
+        let gas = NearGas::from_gas(300);
+        let deposit = NearToken::from_yoctonear(0);
+        (
             receiver_id,
-            method_name,
-            args,
-            gas,
-        }
+            FunctionCallArgs {
+                method_name,
+                args,
+                gas,
+                deposit,
+            },
+        )
     }
 
     #[tokio::test]
@@ -120,17 +106,11 @@ mod tests {
         let mock_chain_state = MockChainStateBuilder::new()
             .with_latest_block(Err(expected_source.clone()))
             .build();
-        let call = generate_test_call(&mut rng);
+        let (receiver_id, call) = generate_test_call(&mut rng);
         let signer = TransactionSigner::from_rng(&mut rng);
         // When
         let res = mock_chain_state
-            .submit_function_call_tx(
-                &signer,
-                call.receiver_id.clone(),
-                call.method_name.clone(),
-                call.args.clone(),
-                call.gas,
-            )
+            .submit_function_call_tx(&signer, receiver_id.clone(), call.clone())
             .await
             .unwrap_err();
         // Then
@@ -139,7 +119,7 @@ mod tests {
             ChainGatewayError::FetchFinalBlock {
                 op: ChainGatewayOp::SubmitFunctionCallTransaction {
                     signer: signer.account_id().to_string(),
-                    receiver_id: call.receiver_id.to_string(),
+                    receiver_id: receiver_id.to_string(),
                     method_name: call.method_name
                 },
                 message: expected_source.to_string()
@@ -154,7 +134,7 @@ mod tests {
         // Given
         const SEED: u64 = 42;
         let mut rng = StdRng::seed_from_u64(SEED);
-        let call = generate_test_call(&mut rng);
+        let (receiver_id, call) = generate_test_call(&mut rng);
         let signer = TransactionSigner::from_rng(&mut rng.clone());
         let signer_clone = TransactionSigner::from_rng(&mut rng);
 
@@ -169,24 +149,12 @@ mod tests {
 
         // When
         let res = mock_chain_state
-            .submit_function_call_tx(
-                &signer,
-                call.receiver_id.clone(),
-                call.method_name.clone(),
-                call.args.clone(),
-                call.gas,
-            )
+            .submit_function_call_tx(&signer, receiver_id.clone(), call.clone())
             .await
             .unwrap();
 
         // Then
-        let expected = signer_clone.create_and_sign_function_call_tx(
-            call.receiver_id,
-            call.method_name,
-            call.args,
-            call.gas,
-            info,
-        );
+        let expected = signer_clone.create_and_sign_function_call_tx(receiver_id, call, info);
 
         assert_eq!(expected.transaction.get_hash_and_size().0, res);
 
@@ -199,7 +167,7 @@ mod tests {
         // Given
         const SEED: u64 = 42;
         let mut rng = StdRng::seed_from_u64(SEED);
-        let call = generate_test_call(&mut rng);
+        let (receiver_id, call) = generate_test_call(&mut rng);
         let signer = TransactionSigner::from_rng(&mut StdRng::seed_from_u64(SEED));
 
         let info = LatestFinalBlockInfo {
@@ -214,13 +182,7 @@ mod tests {
 
         // When
         let res = mock_chain_state
-            .submit_function_call_tx(
-                &signer,
-                call.receiver_id.clone(),
-                call.method_name.clone(),
-                call.args.clone(),
-                call.gas,
-            )
+            .submit_function_call_tx(&signer, receiver_id.clone(), call.clone())
             .await
             .unwrap_err();
 
@@ -230,7 +192,7 @@ mod tests {
             ChainGatewayError::SubmitSignedTransaction {
                 op: ChainGatewayOp::SubmitFunctionCallTransaction {
                     signer: signer.account_id().to_string(),
-                    receiver_id: call.receiver_id.to_string(),
+                    receiver_id: receiver_id.to_string(),
                     method_name: call.method_name
                 },
                 message: expected_source.to_string()
