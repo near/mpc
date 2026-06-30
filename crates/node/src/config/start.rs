@@ -171,25 +171,14 @@ fn patch_near_config(
 }
 
 /// Reads and parses the NEAR node `config.json` under `home_dir`, for serving
-/// via the `/debug/nearcore_config` endpoint. Returns `None` (and logs) when
-/// the file is missing or malformed, so a debug-endpoint failure never blocks
-/// startup.
-pub(crate) fn read_near_config_json(home_dir: &Path) -> Option<serde_json::Value> {
+/// via the `/debug/nearcore_config` endpoint.
+///
+/// Panics if the file is missing or malformed: the embedded indexer loads the
+/// same file at startup, so it is guaranteed present here.
+pub(crate) fn read_near_config_json(home_dir: &Path) -> serde_json::Value {
     let path = near_config_file(home_dir);
-    let raw = match std::fs::read_to_string(&path) {
-        Ok(raw) => raw,
-        Err(error) => {
-            tracing::warn!(%error, path = %path.display(), "could not read NEAR config.json for debug endpoint");
-            return None;
-        }
-    };
-    match serde_json::from_str(&raw) {
-        Ok(value) => Some(value),
-        Err(error) => {
-            tracing::warn!(%error, path = %path.display(), "NEAR config.json is not valid JSON");
-            None
-        }
-    }
+    let raw = std::fs::read_to_string(&path).expect("NEAR config.json must be readable");
+    serde_json::from_str(&raw).expect("NEAR config.json must be valid JSON")
 }
 
 /// Pure JSON-manipulation half of [`patch_near_config`], extracted so it can
@@ -465,34 +454,6 @@ mod tests {
         let config = read_near_config_json(home_dir.path());
 
         // Then
-        assert_eq!(
-            config,
-            Some(serde_json::json!({ "genesis_file": "genesis.json" }))
-        );
-    }
-
-    #[test]
-    fn read_near_config_json__should_return_none_when_file_missing() {
-        // Given
-        let home_dir = tempfile::tempdir().unwrap();
-
-        // When
-        let config = read_near_config_json(home_dir.path());
-
-        // Then
-        assert_eq!(config, None);
-    }
-
-    #[test]
-    fn read_near_config_json__should_return_none_when_file_malformed() {
-        // Given
-        let home_dir = tempfile::tempdir().unwrap();
-        std::fs::write(near_config_file(home_dir.path()), "not json").unwrap();
-
-        // When
-        let config = read_near_config_json(home_dir.path());
-
-        // Then
-        assert_eq!(config, None);
+        assert_eq!(config, serde_json::json!({ "genesis_file": "genesis.json" }));
     }
 }

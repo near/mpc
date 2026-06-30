@@ -68,7 +68,7 @@ struct WebServerState {
     migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
     static_web_data: StaticWebData,
     node_config: NodeConfigResponse,
-    nearcore_config: Option<serde_json::Value>,
+    nearcore_config: serde_json::Value,
     /// In-memory log behind the `/debug/recent_transactions` handler.
     recent_transactions: SharedRecentTransactions,
 }
@@ -183,18 +183,9 @@ async fn debug_node_config(State(state): State<WebServerState>) -> Json<NodeConf
     Json(state.node_config.clone())
 }
 
-/// Serves the nearcore `config.json` the embedded indexer runs with, or 503 if
-/// it could not be loaded at startup.
-async fn debug_nearcore_config(
-    State(state): State<WebServerState>,
-) -> Result<Json<serde_json::Value>, (StatusCode, &'static str)> {
-    match state.nearcore_config {
-        Some(config) => Ok(Json(config)),
-        None => Err((
-            StatusCode::SERVICE_UNAVAILABLE,
-            "nearcore config.json unavailable",
-        )),
-    }
+/// Serves the nearcore `config.json` the embedded indexer runs with.
+async fn debug_nearcore_config(State(state): State<WebServerState>) -> Json<serde_json::Value> {
+    Json(state.nearcore_config)
 }
 
 #[derive(Clone)]
@@ -336,7 +327,7 @@ pub async fn start_web_server(
     protocol_state_receiver: watch::Receiver<ProtocolContractState>,
     migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
     config: ConfigFile,
-    nearcore_config: Option<serde_json::Value>,
+    nearcore_config: serde_json::Value,
     recent_transactions: SharedRecentTransactions,
 ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
     tracing::info!(?bind_address, "attempting to bind web server to address");
