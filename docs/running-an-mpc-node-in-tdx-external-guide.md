@@ -1858,8 +1858,40 @@ Reviewers — please add here more scenarios (with or without solutions)
 
 * do we have logs that indicate the node version/hash?
 * How to see what MPC node hash is expected by the launcher (docker-compose v.s file on disk)
-* Recovery — how to erase the indexer state (e.g data folder)
 * …..
+
+### Wiping the NEAR indexer data (force a re-sync)
+
+**Symptom:** the embedded NEAR node won't sync — it stays at genesis, reports stale/corrupt
+chain data, or is stuck far behind the chain — and a plain restart doesn't recover it. Inside
+the CVM you can't delete the data dir by hand, so the node config exposes a one-time wipe.
+
+**Fix — change the wipe token and redeploy.** Set `wipe_near_data_token` under
+`[mpc_node_config.node.indexer]` to a **new non-zero value** (different from its current
+value), then redeploy/restart the CVM:
+
+```toml
+[mpc_node_config.node.indexer]
+# … existing fields …
+wipe_near_data_token = 1
+```
+
+On the next startup — before the store is opened, so it runs in an instant and *before* sync —
+the node deletes the nearcore data dir (`data/data`), records the token in
+`data/.near_data_wipe_token`, and re-syncs the chain from scratch. The MPC secrets in
+`data/assets` (keyshares, triples, presignatures) are **not** touched, so the node keeps its
+identity and key material.
+
+Semantics:
+
+- `0` (the default) never wipes.
+- A non-zero value that **differs** from the last applied value wipes exactly once. Any change
+  triggers it — increasing *or* decreasing — so you can always wipe again by picking a
+  different value.
+- Restarting with the **same** value, or setting it back to `0`, is a no-op (the node records
+  the last value it acted on, so it won't re-wipe on every restart).
+- On **archival** nodes the wipe is skipped (a warning is logged each startup) so the archive
+  isn't destroyed.
 
 ### `gramine-sealing-key-provider` crash-loops with `AESM service returned error 44`
 
