@@ -454,6 +454,7 @@ mod tests {
                 finality: Finality::Final,
                 mpc_contract_id: "mpc.test.near".parse().unwrap(),
                 port_override: None,
+                wipe_near_data_token: 0,
                 sync_mode: SyncMode::Latest,
                 validate_genesis: false,
             },
