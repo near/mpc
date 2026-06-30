@@ -123,7 +123,7 @@ impl OneNodeTestConfig {
                     dummy_protocol_state_receiver,
                     dummy_migration_state_receiver,
                     self.config.clone(),
-                    None,
+                    serde_json::json!({}),
                     SharedRecentTransactions::default(),
                 )
                 .await?;
