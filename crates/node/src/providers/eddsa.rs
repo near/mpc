@@ -15,14 +15,14 @@ use crate::types::SignatureId;
 use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_node_config::ConfigFile;
-use mpc_primitives::ReconstructionThreshold as MpcReconstructionThreshold;
+use mpc_primitives::ReconstructionThreshold;
 use mpc_primitives::domain::DomainId;
 #[cfg(test)]
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_mpc_contract_interface::types::KeyEventId;
 use std::collections::HashMap;
 use std::sync::Arc;
-use threshold_signatures::ReconstructionThreshold;
+use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
 use threshold_signatures::frost::eddsa::KeygenOutput;
 use threshold_signatures::frost_ed25519::keys::SigningShare;
 use threshold_signatures::frost_ed25519::{Signature, VerifyingKey};
@@ -41,7 +41,7 @@ pub(super) struct PerDomainData {
     pub keyshare: KeygenOutput,
     /// Per-domain reconstruction threshold `t`, used as the FROST signing
     /// threshold.
-    pub reconstruction_threshold: MpcReconstructionThreshold,
+    pub reconstruction_threshold: ReconstructionThreshold,
 }
 
 impl EddsaSignatureProvider {
@@ -51,7 +51,7 @@ impl EddsaSignatureProvider {
         client: Arc<MeshNetworkClient>,
         sign_request_store: Arc<SignRequestStorage>,
         keyshares: HashMap<DomainId, KeygenOutput>,
-        thresholds: HashMap<DomainId, MpcReconstructionThreshold>,
+        thresholds: HashMap<DomainId, ReconstructionThreshold>,
     ) -> anyhow::Result<Self> {
         let mut per_domain_data = HashMap::new();
         for (domain_id, keyshare) in keyshares {
@@ -114,15 +114,15 @@ impl SignatureProvider for EddsaSignatureProvider {
     }
 
     async fn run_key_generation_client(
-        threshold: ReconstructionThreshold,
+        threshold: TSReconstructionThreshold,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
         Self::run_key_generation_client_internal(threshold, channel).await
     }
 
     async fn run_key_resharing_client(
-        new_threshold: ReconstructionThreshold,
-        old_threshold: ReconstructionThreshold,
+        new_threshold: TSReconstructionThreshold,
+        old_threshold: TSReconstructionThreshold,
         key_share: Option<SigningShare>,
         public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
