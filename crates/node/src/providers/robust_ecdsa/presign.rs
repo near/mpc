@@ -1,13 +1,11 @@
-use crate::assets::DistributedAssetStorage;
 use crate::background::InFlightGenerationTracker;
 use crate::config::MpcConfig;
-use crate::db::SecretDB;
 use crate::metrics::tokio_task_metrics::ROBUST_ECDSA_TASK_MONITORS;
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-use crate::primitives::{ParticipantId, UniqueId};
+use crate::primitives::UniqueId;
 use crate::protocol::run_protocol;
-use crate::providers::HasParticipants;
+use crate::providers::ecdsa_common;
 use crate::providers::robust_ecdsa::{
     KeygenOutput, RobustEcdsaSignatureProvider, RobustEcdsaTaskId,
 };
@@ -16,9 +14,7 @@ use crate::{metrics, tracking};
 use mpc_node_config::PresignatureConfig;
 use mpc_primitives::ReconstructionThreshold;
 use mpc_primitives::domain::DomainId;
-use near_time::Clock;
 use rand::rngs::OsRng;
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use std::time::Duration;
@@ -28,33 +24,8 @@ use threshold_signatures::ecdsa::robust_ecdsa::{
 };
 use threshold_signatures::participants::Participant;
 
-#[derive(derive_more::Deref)]
-pub struct PresignatureStorage(DistributedAssetStorage<PresignOutputWithParticipants>);
-
-// TODO(#1680): simplify alive_participant_ids_query parameter type
-impl PresignatureStorage {
-    pub fn new(
-        clock: Clock,
-        db: Arc<SecretDB>,
-        my_participant_id: ParticipantId,
-        alive_participant_ids_query: Arc<dyn Fn() -> Vec<ParticipantId> + Send + Sync>,
-        domain_id: DomainId,
-    ) -> anyhow::Result<Self> {
-        Ok(Self(DistributedAssetStorage::<
-            PresignOutputWithParticipants,
-        >::new(
-            clock,
-            db,
-            crate::db::DBCol::Presignature,
-            domain_id.0.to_be_bytes().to_vec(),
-            my_participant_id,
-            |participants, presignature| {
-                presignature.is_subset_of_active_participants(participants)
-            },
-            alive_participant_ids_query,
-        )?))
-    }
-}
+pub type PresignatureStorage = ecdsa_common::PresignatureStorage<PresignOutput>;
+pub type PresignOutputWithParticipants = ecdsa_common::PresignOutputWithParticipants<PresignOutput>;
 
 /// Continuously generates presignatures, trying to maintain the desired number of
 /// presignatures available, using the desired number of concurrent computations as
@@ -225,20 +196,6 @@ impl RobustEcdsaSignatureProvider {
         .await?;
 
         Ok(())
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PresignOutputWithParticipants {
-    pub presignature: PresignOutput,
-    pub participants: Vec<ParticipantId>,
-}
-
-impl HasParticipants for PresignOutputWithParticipants {
-    fn is_subset_of_active_participants(&self, active_participants: &[ParticipantId]) -> bool {
-        self.participants
-            .iter()
-            .all(|p| active_participants.contains(p))
     }
 }
 

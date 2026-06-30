@@ -10,6 +10,7 @@ use crate::db::SecretDB;
 use crate::metrics::tokio_task_metrics::ROBUST_ECDSA_TASK_MONITORS;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{MpcTaskId, UniqueId};
+use crate::providers::ecdsa_common;
 use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
 use crate::storage::SignRequestStorage;
 use crate::tracking;
@@ -24,6 +25,7 @@ use std::sync::Arc;
 use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
 use threshold_signatures::ecdsa::KeygenOutput;
 use threshold_signatures::ecdsa::Signature;
+use threshold_signatures::ecdsa::robust_ecdsa::PresignOutput;
 use threshold_signatures::frost_secp256k1::VerifyingKey;
 use threshold_signatures::frost_secp256k1::keys::SigningShare;
 
@@ -35,14 +37,7 @@ pub struct RobustEcdsaSignatureProvider {
     per_domain_data: HashMap<DomainId, PerDomainData>,
 }
 
-#[derive(Clone)]
-pub(super) struct PerDomainData {
-    pub keyshare: KeygenOutput,
-    pub presignature_store: Arc<PresignatureStorage>,
-    /// Per-domain reconstruction threshold `t`. For robust-ECDSA the signing
-    /// tolerates `MaxMalicious = t - 1` and requires `2t - 1` signers.
-    pub reconstruction_threshold: ReconstructionThreshold,
-}
+pub(super) type PerDomainData = ecdsa_common::PerDomainData<PresignOutput>;
 
 #[derive(
     Debug, Copy, Clone, Eq, Ord, PartialEq, PartialOrd, derive_more::From, derive_more::Into,
@@ -67,32 +62,8 @@ impl RobustEcdsaSignatureProvider {
         keyshares: HashMap<DomainId, KeygenOutput>,
         thresholds: HashMap<DomainId, ReconstructionThreshold>,
     ) -> anyhow::Result<Self> {
-        let active_participants_query = {
-            let network_client = client.clone();
-            Arc::new(move || network_client.all_alive_participant_ids())
-        };
-
-        let mut per_domain_data = HashMap::new();
-        for (domain_id, keyshare) in keyshares {
-            let threshold = *thresholds.get(&domain_id).ok_or_else(|| {
-                anyhow::anyhow!("No reconstruction threshold for domain {:?}", domain_id)
-            })?;
-            let presignature_store = Arc::new(PresignatureStorage::new(
-                clock.clone(),
-                db.clone(),
-                client.my_participant_id(),
-                active_participants_query.clone(),
-                domain_id,
-            )?);
-            per_domain_data.insert(
-                domain_id,
-                PerDomainData {
-                    keyshare,
-                    presignature_store,
-                    reconstruction_threshold: threshold,
-                },
-            );
-        }
+        let per_domain_data =
+            ecdsa_common::build_per_domain_data(&clock, &db, &client, keyshares, &thresholds)?;
 
         Ok(Self {
             config,
@@ -104,10 +75,7 @@ impl RobustEcdsaSignatureProvider {
     }
 
     pub(super) fn domain_data(&self, domain_id: DomainId) -> anyhow::Result<PerDomainData> {
-        self.per_domain_data
-            .get(&domain_id)
-            .cloned()
-            .ok_or_else(|| anyhow::anyhow!("No keyshare for domain {:?}", domain_id))
+        ecdsa_common::lookup_domain_data(&self.per_domain_data, domain_id)
     }
 }
 

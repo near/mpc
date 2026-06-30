@@ -8,6 +8,7 @@
 
 pub mod ckd;
 pub mod ecdsa;
+pub mod ecdsa_common;
 pub mod eddsa;
 pub mod robust_ecdsa;
 pub mod verify_foreign_tx;

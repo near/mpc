@@ -16,6 +16,7 @@ use crate::metrics::tokio_task_metrics::ECDSA_TASK_MONITORS;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{MpcTaskId, ParticipantId, UniqueId};
 use crate::providers::SignatureProvider;
+use crate::providers::ecdsa_common;
 use crate::storage::SignRequestStorage;
 use crate::tracking;
 use mpc_node_config::ConfigFile;
@@ -29,6 +30,7 @@ use std::sync::Arc;
 use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
 use threshold_signatures::ecdsa::KeygenOutput;
 use threshold_signatures::ecdsa::Signature;
+use threshold_signatures::ecdsa::ot_based_ecdsa::PresignOutput;
 use threshold_signatures::frost_secp256k1::VerifyingKey;
 use threshold_signatures::frost_secp256k1::keys::SigningShare;
 
@@ -45,14 +47,7 @@ pub struct EcdsaSignatureProvider {
     per_domain_data: HashMap<DomainId, PerDomainData>,
 }
 
-#[derive(Clone)]
-pub(super) struct PerDomainData {
-    pub keyshare: KeygenOutput,
-    pub presignature_store: Arc<PresignatureStorage>,
-    /// Per-domain reconstruction threshold `t`, the source of truth for this
-    /// domain's keygen/presign/sign and the triple store it consumes from.
-    pub reconstruction_threshold: ReconstructionThreshold,
-}
+pub(super) type PerDomainData = ecdsa_common::PerDomainData<PresignOutput>;
 
 impl EcdsaSignatureProvider {
     #[expect(clippy::too_many_arguments)]
@@ -66,32 +61,8 @@ impl EcdsaSignatureProvider {
         keyshares: HashMap<DomainId, KeygenOutput>,
         thresholds: HashMap<DomainId, ReconstructionThreshold>,
     ) -> anyhow::Result<Self> {
-        let active_participants_query = {
-            let network_client = client.clone();
-            Arc::new(move || network_client.all_alive_participant_ids())
-        };
-
-        let mut per_domain_data = HashMap::new();
-        for (domain_id, keyshare) in keyshares {
-            let threshold = *thresholds.get(&domain_id).ok_or_else(|| {
-                anyhow::anyhow!("No reconstruction threshold for domain {:?}", domain_id)
-            })?;
-            let presignature_store = Arc::new(PresignatureStorage::new(
-                clock.clone(),
-                db.clone(),
-                client.my_participant_id(),
-                active_participants_query.clone(),
-                domain_id,
-            )?);
-            per_domain_data.insert(
-                domain_id,
-                PerDomainData {
-                    keyshare,
-                    presignature_store,
-                    reconstruction_threshold: threshold,
-                },
-            );
-        }
+        let per_domain_data =
+            ecdsa_common::build_per_domain_data(&clock, &db, &client, keyshares, &thresholds)?;
 
         // cait-sith triple generation runs with exactly `t` parties, so the set
         // of stores this node maintains is the distinct per-domain
@@ -110,7 +81,7 @@ impl EcdsaSignatureProvider {
                     clock.clone(),
                     db.clone(),
                     client.my_participant_id(),
-                    active_participants_query.clone(),
+                    ecdsa_common::active_participants_query(&client),
                     t,
                 )?),
             );
@@ -127,10 +98,7 @@ impl EcdsaSignatureProvider {
     }
 
     pub(super) fn domain_data(&self, domain_id: DomainId) -> anyhow::Result<PerDomainData> {
-        self.per_domain_data
-            .get(&domain_id)
-            .cloned()
-            .ok_or_else(|| anyhow::anyhow!("No keyshare for domain {:?}", domain_id))
+        ecdsa_common::lookup_domain_data(&self.per_domain_data, domain_id)
     }
 
     /// Returns the triple store for `t`, or an error if no store was
