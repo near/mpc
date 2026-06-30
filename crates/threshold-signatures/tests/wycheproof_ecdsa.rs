@@ -4,7 +4,7 @@
 //!
 //! `verify` operates on the full `R` point, but Wycheproof signatures only carry
 //! the scalar `r`. We reconstruct a point whose x-coordinate is `r` (its
-//! y-coordinate is irrelevant, since `verify` only reads `x_coordinate(big_r)`), then
+//! y-coordinate is irrelevant — `verify` only reads `x_coordinate(big_r)`), then
 //! map results, mirroring the malleability policy `verify` enforces (rejects
 //! high-S, `r = 0`, `s = 0`):
 //!   * `Invalid`        -> rejected,
@@ -22,10 +22,7 @@ use k256::ecdsa::Signature as K256EcdsaSignature;
 use k256::{AffinePoint, EncodedPoint, PublicKey, Secp256k1};
 use sha2::{Digest, Sha256};
 use threshold_signatures::ecdsa::{Scalar, Signature};
-use wycheproof::{
-    TestResult,
-    ecdsa::{TestName, TestSet},
-};
+use wycheproof::TestResult;
 
 #[test]
 fn signature_verify__should_reject_all_wycheproof_invalid_vectors() {
@@ -137,8 +134,8 @@ fn signature_verify__should_reject_high_s_but_accept_after_normalization() {
     assert!(checked > 0, "no high-S valid vectors were exercised");
 }
 
-fn load() -> TestSet {
-    TestSet::load(TestName::EcdsaSecp256k1Sha256)
+fn load() -> wycheproof::ecdsa::TestSet {
+    wycheproof::ecdsa::TestSet::load(wycheproof::ecdsa::TestName::EcdsaSecp256k1Sha256)
         .expect("wycheproof secp256k1/sha256 vectors should load")
 }
 

@@ -18,12 +18,12 @@ use near_mpc_contract_interface::types::{
 };
 use near_mpc_signature_verifier::{verify_ecdsa_signature, verify_eddsa_signature};
 use sha2::{Digest, Sha256};
-use wycheproof::{TestResult, ecdsa, eddsa};
+use wycheproof::TestResult;
 
 #[test]
 fn verify_eddsa_signature__should_match_all_wycheproof_ed25519_vectors() {
     // Given
-    let test_set = eddsa::TestSet::load(eddsa::TestName::Ed25519)
+    let test_set = wycheproof::eddsa::TestSet::load(wycheproof::eddsa::TestName::Ed25519)
         .expect("wycheproof ed25519 vectors should load");
 
     // When / Then
@@ -156,8 +156,8 @@ fn verify_ecdsa_signature__should_reject_high_s_but_accept_after_normalization()
     assert!(checked > 0, "no high-S valid vectors were exercised");
 }
 
-fn load_ecdsa_secp256k1_sha256() -> ecdsa::TestSet {
-    ecdsa::TestSet::load(ecdsa::TestName::EcdsaSecp256k1Sha256)
+fn load_ecdsa_secp256k1_sha256() -> wycheproof::ecdsa::TestSet {
+    wycheproof::ecdsa::TestSet::load(wycheproof::ecdsa::TestName::EcdsaSecp256k1Sha256)
         .expect("wycheproof secp256k1/sha256 vectors should load")
 }
 
