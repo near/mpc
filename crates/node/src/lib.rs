@@ -29,6 +29,7 @@ pub mod config;
 mod coordinator;
 mod db;
 mod foreign_chain_whitelist_verifier;
+mod home_paths;
 mod indexer;
 mod key_events;
 pub mod keyshare;
