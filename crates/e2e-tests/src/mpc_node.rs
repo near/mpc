@@ -471,6 +471,7 @@ impl MpcNodeSetup {
                     finality: Finality::None,
                     sync_mode: SyncMode::Block(BlockArgs { height: 0 }),
                     port_override: None,
+                    wipe_near_data_token: 0,
                 },
                 triple: TripleConfig {
                     concurrency: 2,

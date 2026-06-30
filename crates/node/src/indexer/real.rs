@@ -1,11 +1,13 @@
 use super::handler::listen_blocks;
 use super::migrations::{ContractMigrationInfo, monitor_migrations};
+use super::near_data_wipe::wipe_near_data_if_requested;
 use super::participants::monitor_contract_state;
 use super::stats::indexer_logger;
 use super::{IndexerAPI, IndexerState, RealForeignChainPolicyReader};
 use crate::config::RespondConfig;
 #[cfg(feature = "network-hardship-simulation")]
 use crate::config::load_listening_blocks_file;
+use crate::home_paths::near_data_dir;
 use crate::indexer::configs::IndexerConfigExt;
 use crate::indexer::tee::{
     monitor_allowed_docker_images, monitor_allowed_foreign_chain_providers,
@@ -100,6 +102,27 @@ pub fn spawn_real_indexer(
             let near_config = near_indexer_config
                 .load_near_config()
                 .expect("near config is present");
+
+            // Operator-driven one-time wipe: when `wipe_near_data_token` is non-zero
+            // and differs from the last applied value, wipe the data dir. Must run
+            // here, after the config is loaded but before `start_near_node` below
+            // opens the store, because the dir can't be removed while nearcore holds
+            // it open. Runs once per process start, so a changed token takes effect on
+            // the next restart.
+            let hot_store_path = match near_config.config.store.path.as_deref() {
+                Some(path) => home_dir.join(path),
+                None => near_data_dir(&home_dir),
+            };
+            wipe_near_data_if_requested(
+                &home_dir,
+                &hot_store_path,
+                mpc_indexer_config.wipe_near_data_token,
+                near_config.client_config.archive,
+            )
+            .expect(
+                "wipe_near_data_token is set but wiping the nearcore data dir failed, \
+                 fix the cause and set wipe_near_data_token to a new value to retry",
+            );
 
             let near_node = Indexer::start_near_node(
                 &near_indexer_config,
