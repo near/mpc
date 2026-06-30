@@ -472,6 +472,9 @@ impl From<near_mpc_contract_interface::types::InitConfig> for Config {
         if let Some(v) = config_ext.fail_on_timeout_tera_gas {
             config.fail_on_timeout_tera_gas = v;
         }
+        if let Some(v) = config_ext.fail_attestation_submission_tera_gas {
+            config.fail_attestation_submission_tera_gas = v;
+        }
         if let Some(v) = config_ext.clean_tee_status_tera_gas {
             config.clean_tee_status_tera_gas = v;
         }
@@ -519,6 +522,7 @@ impl From<&Config> for near_mpc_contract_interface::types::Config {
             return_ck_and_clean_state_on_success_call_tera_gas: value
                 .return_ck_and_clean_state_on_success_call_tera_gas,
             fail_on_timeout_tera_gas: value.fail_on_timeout_tera_gas,
+            fail_attestation_submission_tera_gas: value.fail_attestation_submission_tera_gas,
             clean_tee_status_tera_gas: value.clean_tee_status_tera_gas,
             clean_invalid_attestations_tera_gas: value.clean_invalid_attestations_tera_gas,
             cleanup_orphaned_node_migrations_tera_gas: value
@@ -550,6 +554,7 @@ impl From<near_mpc_contract_interface::types::Config> for Config {
             return_ck_and_clean_state_on_success_call_tera_gas: value
                 .return_ck_and_clean_state_on_success_call_tera_gas,
             fail_on_timeout_tera_gas: value.fail_on_timeout_tera_gas,
+            fail_attestation_submission_tera_gas: value.fail_attestation_submission_tera_gas,
             clean_tee_status_tera_gas: value.clean_tee_status_tera_gas,
             clean_invalid_attestations_tera_gas: value.clean_invalid_attestations_tera_gas,
             cleanup_orphaned_node_migrations_tera_gas: value

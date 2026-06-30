@@ -21,6 +21,8 @@ const DEFAULT_RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS_CALL_TERA_GAS: u64 = 7
 const DEFAULT_RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS_CALL_TERA_GAS: u64 = 7;
 /// Prepaid gas for a `fail_on_timeout` call
 const DEFAULT_FAIL_ON_TIMEOUT_TERA_GAS: u64 = 2;
+/// Prepaid gas for a `fail_attestation_submission` call
+const DEFAULT_FAIL_ATTESTATION_SUBMISSION_TERA_GAS: u64 = 2;
 /// Prepaid gas for a `clean_tee_status` call
 const DEFAULT_CLEAN_TEE_STATUS_TERA_GAS: u64 = 10;
 /// Prepaid gas for the reshare-time `clean_invalid_attestations` promise.
@@ -65,6 +67,8 @@ pub(crate) struct Config {
     pub(crate) return_ck_and_clean_state_on_success_call_tera_gas: u64,
     /// Prepaid gas for a `fail_on_timeout` call.
     pub(crate) fail_on_timeout_tera_gas: u64,
+    /// Prepaid gas for a `fail_attestation_submission` call.
+    pub(crate) fail_attestation_submission_tera_gas: u64,
     /// Prepaid gas for a `clean_tee_status` call.
     pub(crate) clean_tee_status_tera_gas: u64,
     /// Prepaid gas for the reshare-time `clean_invalid_attestations` promise.
@@ -100,6 +104,7 @@ impl Default for Config {
             return_ck_and_clean_state_on_success_call_tera_gas:
                 DEFAULT_RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS_CALL_TERA_GAS,
             fail_on_timeout_tera_gas: DEFAULT_FAIL_ON_TIMEOUT_TERA_GAS,
+            fail_attestation_submission_tera_gas: DEFAULT_FAIL_ATTESTATION_SUBMISSION_TERA_GAS,
             clean_tee_status_tera_gas: DEFAULT_CLEAN_TEE_STATUS_TERA_GAS,
             clean_invalid_attestations_tera_gas: DEFAULT_CLEAN_INVALID_ATTESTATIONS_TERA_GAS,
             cleanup_orphaned_node_migrations_tera_gas:

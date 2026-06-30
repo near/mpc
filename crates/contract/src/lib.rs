@@ -2501,7 +2501,7 @@ impl MpcContract {
             method_names::FAIL_ATTESTATION_SUBMISSION.to_string(),
             borsh::to_vec(&reason).expect("borsh serialization of reason must succeed"),
             NearToken::from_near(0),
-            Gas::from_tgas(self.config.fail_on_timeout_tera_gas),
+            Gas::from_tgas(self.config.fail_attestation_submission_tera_gas),
         );
         PromiseOrValue::Promise(promise.as_return())
     }

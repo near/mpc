@@ -235,6 +235,10 @@ BorshSchemaContainer {
                         "u64",
                     ),
                     (
+                        "fail_attestation_submission_tera_gas",
+                        "u64",
+                    ),
+                    (
                         "clean_tee_status_tera_gas",
                         "u64",
                     ),

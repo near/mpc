@@ -1051,6 +1051,10 @@ expression: abi
                         "u64"
                       ],
                       [
+                        "fail_attestation_submission_tera_gas",
+                        "u64"
+                      ],
+                      [
                         "clean_tee_status_tera_gas",
                         "u64"
                       ],
@@ -3279,6 +3283,7 @@ expression: abi
             "clean_tee_status_tera_gas",
             "cleanup_orphaned_node_migrations_tera_gas",
             "contract_upgrade_deposit_tera_gas",
+            "fail_attestation_submission_tera_gas",
             "fail_on_timeout_tera_gas",
             "key_event_timeout_blocks",
             "on_attestation_verified_tera_gas",
@@ -3324,6 +3329,12 @@ expression: abi
             },
             "contract_upgrade_deposit_tera_gas": {
               "description": "Amount of gas to deposit for contract and config updates.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "fail_attestation_submission_tera_gas": {
+              "description": "Prepaid gas for a `fail_attestation_submission` call.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
@@ -3953,6 +3964,15 @@ expression: abi
             },
             "contract_upgrade_deposit_tera_gas": {
               "description": "Amount of gas to deposit for contract and config updates.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "fail_attestation_submission_tera_gas": {
+              "description": "Prepaid gas for a `fail_attestation_submission` call.",
               "type": [
                 "integer",
                 "null"
