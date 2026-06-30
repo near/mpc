@@ -8,6 +8,11 @@ pub fn near_data_dir(home_dir: &Path) -> PathBuf {
     home_dir.join("data")
 }
 
+/// nearcore's node `config.json`.
+pub fn near_config_file(home_dir: &Path) -> PathBuf {
+    home_dir.join("config.json")
+}
+
 /// SecretDB: triples and presignatures.
 pub fn assets_dir(home_dir: &Path) -> PathBuf {
     home_dir.join("assets")

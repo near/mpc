@@ -1,3 +1,4 @@
+use crate::home_paths::near_config_file;
 use anyhow::Context;
 use launcher_interface::types::{PccsEndpointConfig, TeeAuthorityConfig, TeeConfig};
 use mpc_node_config::{ConfigFile, DownloadConfigType, NearInitConfig, StartConfig};
@@ -51,7 +52,7 @@ impl StartConfigExt for StartConfig {
             return Ok(());
         };
 
-        let near_config_path = self.home_dir.join("config.json");
+        let near_config_path = near_config_file(&self.home_dir);
         if near_config_path.exists() {
             tracing::info!("NEAR node already initialized, skipping init");
             return Ok(());
@@ -167,6 +168,17 @@ fn patch_near_config(
 
     tracing::info!("NEAR node config.json patched successfully");
     Ok(())
+}
+
+/// Reads and parses the NEAR node `config.json` under `home_dir`, for serving
+/// via the `/debug/nearcore_config` endpoint.
+///
+/// Panics if the file is missing or malformed: the embedded indexer loads the
+/// same file at startup, so it is guaranteed present here.
+pub(crate) fn read_near_config_json(home_dir: &Path) -> serde_json::Value {
+    let path = near_config_file(home_dir);
+    let raw = std::fs::read_to_string(&path).expect("NEAR config.json must be readable");
+    serde_json::from_str(&raw).expect("NEAR config.json must be valid JSON")
 }
 
 /// Pure JSON-manipulation half of [`patch_near_config`], extracted so it can
@@ -426,5 +438,25 @@ mod tests {
             // When / Then
             require_tier3_public_addr(&init).expect("localnet must not require tier3_public_addr");
         }
+    }
+
+    #[test]
+    fn read_near_config_json__should_return_parsed_config_when_present() {
+        // Given
+        let home_dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            near_config_file(home_dir.path()),
+            r#"{ "genesis_file": "genesis.json" }"#,
+        )
+        .unwrap();
+
+        // When
+        let config = read_near_config_json(home_dir.path());
+
+        // Then
+        assert_eq!(
+            config,
+            serde_json::json!({ "genesis_file": "genesis.json" })
+        );
     }
 }
