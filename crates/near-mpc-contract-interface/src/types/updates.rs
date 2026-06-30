@@ -1,9 +1,20 @@
+use crate::types::config::Config;
 use crate::types::primitives::AccountId;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 type Sha256Digest = [u8; 32];
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct ProposeUpdateArgs {
+    pub code: Option<Vec<u8>>,
+    pub config: Option<Config>,
+}
 
 #[derive(
     Debug,

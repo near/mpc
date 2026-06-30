@@ -4,8 +4,8 @@ use near_mpc_crypto_types::CKDAppPublicKey;
 use serde_json::json;
 
 use crate::{
-    method_names::{REQUEST_APP_PRIVATE_KEY, SIGN, VERIFY_FOREIGN_TRANSACTION},
-    types::VerifyForeignTransactionRequestArgs,
+    method_names::{PROPOSE_UPDATE, REQUEST_APP_PRIVATE_KEY, SIGN, VERIFY_FOREIGN_TRANSACTION},
+    types::{ProposeUpdateArgs, VerifyForeignTransactionRequestArgs},
 };
 
 // todo: probably you want a const file for these
@@ -70,5 +70,22 @@ pub fn make_verify_foreign_chain_tx_args(
         args,
         gas: SIGN_GAS,
         deposit: SIGN_DEPOSIT,
+    })
+}
+
+pub fn make_propose_update_args(
+    code: &[u8],
+    gas: NearGas,
+    deposit: NearToken,
+) -> anyhow::Result<FunctionCallArgs> {
+    let args = borsh::to_vec(&ProposeUpdateArgs {
+        code: Some(code.to_vec()),
+        config: None,
+    })?;
+    Ok(FunctionCallArgs {
+        method_name: PROPOSE_UPDATE.to_string(),
+        args,
+        gas,
+        deposit,
     })
 }

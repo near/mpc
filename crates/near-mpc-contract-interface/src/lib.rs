@@ -30,7 +30,7 @@ pub mod types {
         protocol_state_to_string,
     };
     pub use tee::NodeId;
-    pub use updates::{ProposedUpdates, UpdateHash};
+    pub use updates::{ProposeUpdateArgs, ProposedUpdates, UpdateHash};
 
     // Re-export hash types used in attestation DTO fields
     pub use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash, Sha384Digest};

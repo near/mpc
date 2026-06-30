@@ -164,28 +164,6 @@ impl DeployedContract {
             .map_err(|e| anyhow::anyhow!("contract call `{}` failed: {e}", call.method_name))
     }
 
-    /// Call a method whose arguments are borsh-serialized (e.g. `propose_update`).
-    pub async fn call_from_borsh_with_deposit<A: borsh::BorshSerialize>(
-        &self,
-        client: &ClientHandle,
-        method: &str,
-        args: A,
-        gas: near_kit::Gas,
-        deposit: near_kit::NearToken,
-    ) -> anyhow::Result<FinalExecutionOutcome> {
-        client
-            .inner
-            .call(&self.contract_id, method)
-            .args_borsh(args)
-            .gas(gas)
-            .deposit(deposit)
-            .send()
-            .await
-            .map_err(|e| {
-                anyhow::anyhow!("contract call `{method}` (borsh args, with deposit) failed: {e}")
-            })
-    }
-
     pub async fn view<T: DeserializeOwned + Send + 'static>(
         &self,
         method: &str,

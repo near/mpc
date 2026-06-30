@@ -5,10 +5,10 @@ use std::time::Duration;
 use anyhow::Context;
 use backon::{ConstantBuilder, Retryable};
 use ed25519_dalek::SigningKey;
-use mpc_call_args::FunctionCallArgs;
 use near_kit::AccountId;
 use near_mpc_contract_interface::call_args::{
-    make_ckd_request_args, make_sign_request_args, make_verify_foreign_chain_tx_args,
+    make_ckd_request_args, make_propose_update_args, make_sign_request_args,
+    make_verify_foreign_chain_tx_args,
 };
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
@@ -35,11 +35,6 @@ pub const DEFAULT_PRESIGNATURES_TO_BUFFER: usize = 10;
 // triple/presignature generation past 120 s; the most pressure-sensitive
 // consumer is `wait_for_presignatures` (see `parallel_sign_calls` test).
 pub const CLUSTER_WAIT_TIMEOUT: Duration = Duration::from_secs(240);
-const SIGN_GAS: near_kit::Gas = near_kit::Gas::from_tgas(15);
-// AppPublicKeyPV does an on-chain bls12381_pairing_check (2 pairs) before yielding,
-// which costs significantly more than a plain CKD or sign request.
-const CKD_PV_GAS: near_kit::Gas = near_kit::Gas::from_tgas(100);
-const SIGN_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_yoctonear(1);
 // The contract's default `key_event_timeout_blocks = 30` is ~18 s on
 // mainnet (~600 ms blocks). The e2e sandbox runs ~8 blocks/s, so the
 // same 30 collapses to ~3.7 s — too tight for the resharing
@@ -904,20 +899,12 @@ impl MpcCluster {
             "cannot propose contract update with no nodes"
         );
 
-        let propose_args = ProposeUpdateArgsBorsh {
-            code: Some(new_wasm),
-            config: None,
-        };
+        let call_args =
+            make_propose_update_args(new_wasm, CONTRACT_UPDATE_GAS, CONTRACT_UPDATE_DEPOSIT)?;
         let proposer_client = self.operator_client_for(PROPOSER_NODE_INDEX)?;
         let outcome = self
             .contract
-            .call_from_borsh_with_deposit(
-                &proposer_client,
-                method_names::PROPOSE_UPDATE,
-                propose_args,
-                CONTRACT_UPDATE_GAS,
-                CONTRACT_UPDATE_DEPOSIT,
-            )
+            .call_with_args(&proposer_client, call_args)
             .await
             .context("failed to call propose_update")?;
         anyhow::ensure!(
@@ -1307,16 +1294,6 @@ async fn create_user_accounts(
         map.insert(account, key);
     }
     Ok(map)
-}
-
-/// Borsh-encoded mirror of the contract's `ProposeUpdateArgs`. We keep it
-/// local rather than depending on `mpc-contract` for two fields. `Config` is
-/// modeled as `Option<()>` because we never propose a config-only update; the
-/// `None` discriminator is `[0u8]` regardless of the inner type.
-#[derive(borsh::BorshSerialize)]
-struct ProposeUpdateArgsBorsh<'a> {
-    code: Option<&'a [u8]>,
-    config: Option<()>,
 }
 
 /// JSON mirror of the contract's `UpdateId`. `propose_update` returns it and
