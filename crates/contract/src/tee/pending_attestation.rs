@@ -1,9 +1,9 @@
-//! State for an in-flight [`Attestation::Dstack`] submission.
+//! State for an in-flight [`DstackAttestation`] submission.
 //!
-//! A [`Attestation::Dstack`] submission is asynchronous: it yields, fires a
-//! cross-contract verify-quote call, and resumes from the response callback.
-//! What the callback needs but cannot re-read from contract state is stashed
-//! here, keyed by the submitter's [`AccountId`], until the yield resolves.
+//! A [`DstackAttestation`] submission is asynchronous: it yields, fires a cross-contract
+//! verify-quote call, and resumes from the response callback. What the callback
+//! needs but cannot re-read from contract state is stashed here, keyed by the
+//! submitter's account id, until the yield resolves.
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_attestation::attestation::DstackAttestation;

@@ -23,14 +23,27 @@ use crate::sandbox::{
     },
 };
 use anyhow::Result;
+use borsh::BorshSerialize;
 use near_mpc_contract_interface::types::{self as dtos, Attestation};
 use near_workspaces::{Account, Contract, Worker, network::Sandbox, types::NearToken};
-use test_tee_verifier::StubResponse;
 use test_utils::attestation::{mock_dto_dstack_attestation, p2p_tls_key};
 
 /// Blocks to fast-forward past the ~200-block yield-resume timeout so the
 /// runtime fires `on_attestation_verified`'s timeout branch.
 const YIELD_TIMEOUT_BLOCKS: u64 = 250;
+
+/// Mirror of `test_tee_verifier::StubResponse`. Re-declared here (rather than
+/// depending on the stub crate) so the test only needs its Borsh encoding to
+/// initialize the deployed stub; the stub is a separate `#[near]` contract and
+/// linking its crate into this test binary would collide on ABI symbols.
+#[expect(clippy::large_enum_variant)]
+#[derive(BorshSerialize)]
+enum StubResponse {
+    #[expect(dead_code)]
+    Verified(tee_verifier_interface::VerifiedReport),
+    Rejected(String),
+    Panic,
+}
 
 /// Deploys the stub verifier with the given response, initializes it, and votes
 /// it in as `mpc-contract`'s trusted verifier (all participants vote so the
