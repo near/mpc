@@ -22,9 +22,10 @@
 //! triple, which needs to be kept secret. This method is supported by the [`generate_triple`]
 //! protocol.
 //!
-//! This protocol requires a setup protocol to be done once beforehand.
-//! After this setup protocol has been run, an arbitrary number of triples can
-//! be generated.
+//! The base OT is run fresh per multiplication. It must never be persisted or
+//! reused across runs or aborts: a fresh base OT secret per run bounds any leak
+//! through the OT-extension consistency check to that run. There is no reusable
+//! one-time setup.
 mod batch_random_ot;
 mod bits;
 
