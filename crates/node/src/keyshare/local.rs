@@ -1,5 +1,6 @@
 use super::permanent::PermanentKeyStorageBackend;
 use crate::db;
+use crate::home_paths::{permanent_key_link, permanent_keys_dir};
 use aes_gcm::{Aes128Gcm, KeyInit};
 use anyhow::Context;
 use std::path::PathBuf;
@@ -14,7 +15,7 @@ pub struct LocalPermanentKeyStorageBackend {
 
 impl LocalPermanentKeyStorageBackend {
     pub async fn new(home_dir: PathBuf, key: [u8; 16]) -> anyhow::Result<Self> {
-        let permanent_key_dir = home_dir.join("permanent_keys");
+        let permanent_key_dir = permanent_keys_dir(&home_dir);
         tokio::fs::create_dir_all(&permanent_key_dir).await?;
         Ok(Self {
             home_dir,
@@ -27,7 +28,7 @@ impl LocalPermanentKeyStorageBackend {
 #[async_trait::async_trait]
 impl PermanentKeyStorageBackend for LocalPermanentKeyStorageBackend {
     async fn load(&self) -> anyhow::Result<Option<Vec<u8>>> {
-        let keyfile = self.home_dir.join("key");
+        let keyfile = permanent_key_link(&self.home_dir);
         if !keyfile.exists() {
             return Ok(None);
         }
@@ -56,7 +57,7 @@ impl PermanentKeyStorageBackend for LocalPermanentKeyStorageBackend {
             .context("Failed to sync PermanentKeyshareData file")?;
         drop(file);
 
-        let keyfile = self.home_dir.join("key");
+        let keyfile = permanent_key_link(&self.home_dir);
         tokio::fs::remove_file(&keyfile).await.ok();
         tokio::fs::hard_link(&keyfile_for_epoch, &keyfile)
             .await

@@ -118,6 +118,7 @@ mockall = { workspace = true }
 mpc-contract = { workspace = true, features = ["test-utils"] }
 rstest = { workspace = true }
 serial_test = { workspace = true }
+tempfile = { workspace = true }
 test-log = { workspace = true }
 threshold-signatures = { workspace = true, features = ["test-utils"] }
 tokio = { workspace = true, features = ["test-util"] }
