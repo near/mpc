@@ -147,7 +147,7 @@ mod tests {
     use super::*;
     use rstest::rstest;
 
-    fn read_recorded(home: &Path) -> Option<u64> {
+    fn must_read_recorded(home: &Path) -> Option<u64> {
         std::fs::read_to_string(home.join(WIPE_TOKEN_FILE_NAME))
             .ok()
             .map(|s| s.trim().parse().unwrap())
@@ -187,7 +187,7 @@ mod tests {
 
         // Then
         assert_eq!(data_dir.exists(), expect_data_dir_exists);
-        assert_eq!(read_recorded(home), expect_recorded);
+        assert_eq!(must_read_recorded(home), expect_recorded);
     }
 
     #[test]
@@ -204,7 +204,7 @@ mod tests {
         // Then — the wipe fails, but the token was recorded first, so the node does
         // not re-wipe every restart; the operator changes the token to retry.
         assert!(result.is_err());
-        assert_eq!(read_recorded(home), Some(1));
+        assert_eq!(must_read_recorded(home), Some(1));
     }
 
     #[rstest]
