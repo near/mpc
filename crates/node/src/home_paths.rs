@@ -37,6 +37,13 @@ pub fn wipe_token_file(home_dir: &Path) -> PathBuf {
     home_dir.join(".near_data_wipe_token")
 }
 
+/// Holds the data dir mid-wipe: the wipe renames the store here in one atomic
+/// step, then deletes it. Leftovers from an interrupted delete are cleaned on
+/// the next startup.
+pub fn near_data_trash_dir(home_dir: &Path) -> PathBuf {
+    home_dir.join(".near_data_trash")
+}
+
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
@@ -67,5 +74,19 @@ mod tests {
                  a wipe would destroy it"
             );
         }
+    }
+
+    /// The wipe renames the data dir into the trash dir, which requires the two to
+    /// be siblings — neither can be nested inside the other.
+    #[test]
+    fn near_data_trash_dir__should_be_a_sibling_of_the_wipe_target() {
+        // Given
+        let home = Path::new("/home/mpc");
+        let data = near_data_dir(home);
+        let trash = near_data_trash_dir(home);
+
+        // Then
+        assert!(!trash.starts_with(&data), "{trash:?} is inside {data:?}");
+        assert!(!data.starts_with(&trash), "{data:?} is inside {trash:?}");
     }
 }

@@ -3,22 +3,28 @@
 //!
 //! The node persists the last token value it acted on in a file under `home_dir`
 //! (a sibling of `data`, so it survives the wipe). When the configured
-//! `wipe_near_data_token` is non-zero and differs from that value, the node records
-//! it and then wipes the data dir once.
+//! `wipe_near_data_token` is non-zero and differs from that value, the node
+//! records it, then renames the data dir into a trash dir (one atomic step) and
+//! deletes it. The rename makes the store vanish atomically, so a delete
+//! interrupted by a crash leaves only the trash behind — which is cleaned on the
+//! next startup.
 
-use crate::home_paths::wipe_token_file;
+use crate::home_paths::{near_data_trash_dir, wipe_token_file};
 use std::io::Write;
 use std::path::{Component, Path};
 
-/// Records `requested_token` if it is non-zero and differs
-/// from the last value recorded on disk, then wipes the data. Skipped, with a
-/// warning, on archival nodes.
+/// Cleans any leftover wipe trash, then — if `requested_token` is non-zero and
+/// differs from the last recorded value — records it and wipes the data dir.
+/// Skipped, with a warning, on archival nodes.
 pub(crate) fn wipe_near_data_if_requested(
     home_dir: &Path,
     hot_store_path: &Path,
     requested_token: u64,
     is_archival: bool,
 ) -> std::io::Result<()> {
+    let trash_path = near_data_trash_dir(home_dir);
+    remove_trash(&trash_path);
+
     // 0 is the "off" value: never wipe.
     if requested_token == 0 {
         return Ok(());
@@ -38,32 +44,49 @@ pub(crate) fn wipe_near_data_if_requested(
     }
 
     // Guard against a misconfigured store.path (absolute, `..`, or the home dir
-    // itself) turning the wipe into a `remove_dir_all` outside the node's data tree.
+    // itself) turning the wipe into a rename/remove outside the node's data tree.
     ensure_within_home(home_dir, hot_store_path)?;
 
     write_last_token(&token_path, requested_token)?;
 
-    match std::fs::remove_dir_all(hot_store_path) {
-        Ok(()) => tracing::info!(
-            ?hot_store_path,
-            requested_token,
-            "wiped nearcore data dir (wipe_near_data_token)"
-        ),
+    // Move the store aside in one atomic rename, so the data dir is gone for good
+    // even if the process dies before the (best-effort) delete below runs.
+    match std::fs::rename(hot_store_path, &trash_path) {
+        Ok(()) => {}
         // Fresh node: nothing to wipe.
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(err) => {
             tracing::error!(
                 ?hot_store_path,
                 requested_token,
                 ?err,
-                "failed to wipe nearcore data dir, the store may be partially deleted and the \
-                 wipe will NOT be retried automatically (token already recorded) — fix the \
+                "failed to move nearcore data dir aside for wiping; the data was NOT wiped and \
+                 the wipe will NOT be retried automatically (token already recorded) — fix the \
                  cause and set wipe_near_data_token to a new value to retry"
             );
             return Err(err);
         }
     }
+    remove_trash(&trash_path);
+    tracing::info!(
+        ?hot_store_path,
+        requested_token,
+        "wiped nearcore data dir (wipe_near_data_token)"
+    );
     Ok(())
+}
+
+/// Best-effort recursive delete of the wipe trash dir. Never fatal.
+fn remove_trash(trash_path: &Path) {
+    if let Err(err) = std::fs::remove_dir_all(trash_path)
+        && err.kind() != std::io::ErrorKind::NotFound
+    {
+        tracing::warn!(
+            ?trash_path,
+            ?err,
+            "could not delete near-data wipe trash dir, will retry on next startup"
+        );
+    }
 }
 
 /// Rejects a wipe target that is not a normal subdirectory of `home_dir` (an
@@ -188,8 +211,9 @@ mod tests {
     }
 
     #[test]
-    fn wipe_near_data_if_requested__should_record_token_before_a_failing_wipe() {
-        // Given a regular file where the data dir is expected, so remove_dir_all fails.
+    fn wipe_near_data_if_requested__should_succeed_when_trash_cleanup_fails() {
+        // Given a regular file where the data dir is expected: the atomic rename
+        // moves it aside, but deleting that file as a directory fails.
         let tmp = tempfile::tempdir().unwrap();
         let home = tmp.path();
         let not_a_dir = near_data_dir(home);
@@ -198,10 +222,27 @@ mod tests {
         // When
         let result = wipe_near_data_if_requested(home, &not_a_dir, 1, false);
 
-        // Then — the wipe fails, but the token was recorded first, so the node does
-        // not re-wipe every restart; the operator changes the token to retry.
-        assert!(result.is_err());
+        // Then — the data path is gone and the token recorded; the failed trash
+        // cleanup is non-fatal (retried on the next startup), so the wipe succeeds.
+        result.unwrap();
+        assert!(!not_a_dir.exists());
         assert_eq!(must_read_recorded(home), Some(1));
+    }
+
+    #[test]
+    fn wipe_near_data_if_requested__should_clean_leftover_trash_on_startup() {
+        // Given trash left by an earlier interrupted wipe, and no wipe requested now.
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let trash = near_data_trash_dir(home);
+        std::fs::create_dir_all(&trash).unwrap();
+        std::fs::write(trash.join("leftover"), b"stale").unwrap();
+
+        // When
+        wipe_near_data_if_requested(home, &near_data_dir(home), 0, false).unwrap();
+
+        // Then
+        assert!(!trash.exists());
     }
 
     #[rstest]
