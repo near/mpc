@@ -57,8 +57,6 @@ pub fn parallel_contract() -> &'static [u8] {
     PARALLEL_CONTRACT.get_or_init(|| ContractBuilder::new(PARALLEL_CONTRACT_MANIFEST).build())
 }
 
-/// Returns the `test-tee-verifier` stub WASM, used by the async attestation
-/// sandbox tests as a stand-in for the real `tee-verifier` contract.
 pub fn stub_tee_verifier_contract() -> &'static [u8] {
     STUB_TEE_VERIFIER_CONTRACT
         .get_or_init(|| ContractBuilder::new(STUB_TEE_VERIFIER_MANIFEST).build())

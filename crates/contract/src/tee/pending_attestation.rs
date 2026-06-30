@@ -4,9 +4,6 @@
 //! cross-contract verify-quote call, and resumes from the response callback.
 //! What the callback needs but cannot re-read from contract state is stashed
 //! here, keyed by the submitter's [`AccountId`], until the yield resolves.
-//!
-//! [`Attestation::Dstack`]: mpc_attestation::attestation::Attestation::Dstack
-//! [`AccountId`]: near_sdk::AccountId
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_attestation::attestation::DstackAttestation;
@@ -32,10 +29,6 @@ pub struct PendingAttestation {
     pub data_id: CryptoHash,
 }
 
-/// Outcome the resolution callback resumes the yield with.
-///
-/// JSON-serialized on the wire, matching the contract's other yield-resume
-/// callbacks (sign, CKD, foreign-tx).
 #[near(serializers = [json])]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AttestationResult {
@@ -47,16 +40,14 @@ pub enum AttestationResult {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
-    #[test]
-    fn attestation_result__should_round_trip_json() {
-        for original in [
-            AttestationResult::Ok,
-            AttestationResult::Err("rejected".to_string()),
-        ] {
-            let bytes = serde_json::to_vec(&original).expect("serialize");
-            let decoded: AttestationResult = serde_json::from_slice(&bytes).expect("deserialize");
-            assert_eq!(original, decoded);
-        }
+    #[rstest]
+    #[case(AttestationResult::Ok)]
+    #[case(AttestationResult::Err("rejected".to_string()))]
+    fn attestation_result__should_round_trip_json(#[case] original: AttestationResult) {
+        let bytes = serde_json::to_vec(&original).expect("serialize");
+        let decoded: AttestationResult = serde_json::from_slice(&bytes).expect("deserialize");
+        assert_eq!(original, decoded);
     }
 }

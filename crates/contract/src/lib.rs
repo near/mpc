@@ -927,7 +927,7 @@ impl MpcContract {
 
         // `saturating_sub`: if a re-submission shrinks the entry, charge nothing
         // rather than underflow. Intentional asymmetry: we do not refund freed
-        // bytes either — the caller already paid for the larger entry.
+        // bytes either, since the caller already paid for the larger entry.
         let storage_used = env::storage_usage().saturating_sub(initial_storage);
         let cost = env::storage_byte_cost().saturating_mul(storage_used as u128);
 
@@ -2506,14 +2506,6 @@ impl MpcContract {
         PromiseOrValue::Promise(promise.as_return())
     }
 
-    /// Fails the original [`Self::submit_participant_info`] transaction, from a
-    /// receipt separate from the cleanup so the cleanup is not rolled back.
-    /// Reached for every failure outcome, not just timeouts.
-    #[private]
-    pub fn fail_attestation_submission(#[serializer(borsh)] reason: String) {
-        env::panic_str(&reason);
-    }
-
     /// Yield-resume callback for a single queued CKD request.
     ///
     /// On success, returns the confidential key to the original caller. On timeout,
@@ -2578,6 +2570,11 @@ impl MpcContract {
                 near_sdk::PromiseOrValue::Promise(promise.as_return())
             }
         }
+    }
+
+    #[private]
+    pub fn fail_attestation_submission(#[serializer(borsh)] reason: String) {
+        env::panic_str(&reason);
     }
 
     #[private]
@@ -5275,8 +5272,7 @@ mod tests {
                     destination_node_info,
                 );
             }
-            let valid_participant_attestation =
-                mpc_attestation::attestation::MockAttestation::Valid;
+            let valid_participant_attestation = MpcMockAttestation::Valid;
 
             let tee_upgrade_duration =
                 Duration::from_secs(contract.config.tee_upgrade_deadline_duration_seconds);

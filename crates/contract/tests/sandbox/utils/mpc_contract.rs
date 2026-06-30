@@ -2,12 +2,14 @@ use std::collections::BTreeSet;
 
 use super::transactions::all_receipts_successful;
 use mpc_contract::tee::tee_state::NodeId;
-use mpc_primitives::hash::{LauncherImageHash, NodeImageHash};
-use near_mpc_contract_interface::method_names;
-use near_mpc_contract_interface::types::{
-    Attestation, Ed25519PublicKey, Participants, ProtocolContractState, Threshold,
+use mpc_primitives::hash::{LauncherImageHash, NodeImageHash, TeeVerifierCodeHash};
+use near_mpc_contract_interface::{
+    method_names,
+    types::{Attestation, Ed25519PublicKey, Participants, ProtocolContractState, Threshold},
 };
-use near_workspaces::{Account, Contract, result::ExecutionFinalResult};
+use near_workspaces::{
+    Account, AccountId, Contract, result::ExecutionFinalResult, types::NearToken,
+};
 
 pub async fn get_state(contract: &Contract) -> ProtocolContractState {
     contract
@@ -40,31 +42,28 @@ pub async fn get_tee_accounts(contract: &Contract) -> anyhow::Result<BTreeSet<No
         .collect())
 }
 
-/// Helper function to submit participant info with TEE attestation.
 pub async fn submit_participant_info(
     account: &Account,
     contract: &Contract,
     attestation: &Attestation,
     tls_key: &Ed25519PublicKey,
 ) -> anyhow::Result<ExecutionFinalResult> {
-    let result = account
-        .call(contract.id(), method_names::SUBMIT_PARTICIPANT_INFO)
-        .args_json((attestation, tls_key))
-        .max_gas()
-        .transact()
-        .await?;
-    dbg!(&result);
-    Ok(result)
+    submit_participant_info_with_deposit(
+        account,
+        contract,
+        attestation,
+        tls_key,
+        NearToken::from_near(0),
+    )
+    .await
 }
 
-/// Like [`submit_participant_info`] but attaches `deposit` — used by the async
-/// `Dstack` tests that assert the deposit is refunded on rejection/timeout.
 pub async fn submit_participant_info_with_deposit(
     account: &Account,
     contract: &Contract,
     attestation: &Attestation,
     tls_key: &Ed25519PublicKey,
-    deposit: near_workspaces::types::NearToken,
+    deposit: NearToken,
 ) -> anyhow::Result<ExecutionFinalResult> {
     Ok(account
         .call(contract.id(), method_names::SUBMIT_PARTICIPANT_INFO)
@@ -75,11 +74,9 @@ pub async fn submit_participant_info_with_deposit(
         .await?)
 }
 
-/// Reads the `sandbox-test-methods`-only `has_pending_attestation` view. The
-/// contract under test must be built with that feature (`with_sandbox_test_methods`).
 pub async fn has_pending_attestation(
     contract: &Contract,
-    account_id: &near_workspaces::AccountId,
+    account_id: &AccountId,
 ) -> anyhow::Result<bool> {
     Ok(contract
         .view("has_pending_attestation")
@@ -91,13 +88,10 @@ pub async fn has_pending_attestation(
 pub async fn vote_tee_verifier_change(
     account: &Account,
     contract: &Contract,
-    candidate_account_id: &near_workspaces::AccountId,
+    candidate_account_id: &AccountId,
     expected_code_hash: [u8; 32],
 ) -> anyhow::Result<()> {
-    // `expected_code_hash` is a `TeeVerifierCodeHash`, which the contract
-    // deserializes from a hex string (not a byte array), so wrap it in the typed
-    // hash to get the right JSON form.
-    let expected_code_hash = mpc_primitives::hash::TeeVerifierCodeHash::new(expected_code_hash);
+    let expected_code_hash = TeeVerifierCodeHash::new(expected_code_hash);
     all_receipts_successful(
         account
             .call(contract.id(), method_names::VOTE_TEE_VERIFIER_CHANGE)

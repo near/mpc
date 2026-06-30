@@ -49,9 +49,6 @@ impl MpcContract {
             .expect("queue length must fit in u32 — bounded by MAX_PENDING_REQUEST_FAN_OUT")
     }
 
-    /// Whether an in-flight `Dstack` attestation verification is pending for
-    /// `account_id`. Lets the async attestation sandbox tests assert that the
-    /// pending entry was cleaned up after a rejection or yield timeout.
     pub fn has_pending_attestation(&self, account_id: AccountId) -> bool {
         self.pending_attestations.contains_key(&account_id)
     }

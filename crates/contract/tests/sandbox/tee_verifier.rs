@@ -9,15 +9,6 @@
 //! - verifier not configured → submission rejected, nothing stored.
 //! - `Rejected` → submission fails, deposit refunded, no stored attestation.
 //! - no-verdict (stub panics) → the ~200-block yield timeout cleans up.
-//!
-//! The `Verified` + post-DCAP-pass path (attestation stored) additionally needs
-//! a stub report matching the fixture's post-DCAP expectations; it is a planned
-//! follow-up once the off-chain report helper is wired into the sandbox harness.
-//! The post-DCAP logic itself is unit-tested in `mpc-attestation`.
-//!
-//! They require the cross-contract runtime, so they live in sandbox rather than
-//! the in-process tests. The WASM build needs the contract toolchain; these run
-//! in CI.
 #![allow(non_snake_case)]
 
 use crate::sandbox::{
@@ -32,29 +23,14 @@ use crate::sandbox::{
     },
 };
 use anyhow::Result;
-use borsh::BorshSerialize;
 use near_mpc_contract_interface::types::{self as dtos, Attestation};
 use near_workspaces::{Account, Contract, Worker, network::Sandbox, types::NearToken};
+use test_tee_verifier::StubResponse;
 use test_utils::attestation::{mock_dto_dstack_attestation, p2p_tls_key};
 
 /// Blocks to fast-forward past the ~200-block yield-resume timeout so the
 /// runtime fires `on_attestation_verified`'s timeout branch.
 const YIELD_TIMEOUT_BLOCKS: u64 = 250;
-
-/// Mirror of `test_tee_verifier::StubResponse`. Re-declared here (rather than
-/// depending on the stub crate) so the test only needs its Borsh encoding to
-/// initialize the deployed stub.
-#[expect(clippy::large_enum_variant)]
-#[derive(BorshSerialize)]
-enum StubResponse {
-    // The Verified branch is exercised by the (deferred) post-DCAP-pass test; it
-    // is part of the stub's wire contract, so keep the variant even though no
-    // current test constructs it.
-    #[expect(dead_code)]
-    Verified(tee_verifier_interface::VerifiedReport),
-    Rejected(String),
-    Panic,
-}
 
 /// Deploys the stub verifier with the given response, initializes it, and votes
 /// it in as `mpc-contract`'s trusted verifier (all participants vote so the
@@ -197,7 +173,7 @@ async fn submit_participant_info__should_clean_up_on_verifier_crash() -> Result<
     let balance_before = submitter.view_account().await?.balance;
     // Unlike the rejection test, the outer-tx result isn't asserted here: the
     // failure only resolves when the yield times out, which `near-workspaces`
-    // does not surface on the original `transact()` — so we assert state instead.
+    // does not surface on the original `transact()`, so we assert state instead.
     let _ = submit_participant_info_with_deposit(
         submitter,
         &contract,
@@ -208,7 +184,7 @@ async fn submit_participant_info__should_clean_up_on_verifier_crash() -> Result<
     .await?;
     worker.fast_forward(YIELD_TIMEOUT_BLOCKS).await?;
 
-    // Then: nothing is stored, and the timeout cleanup actually committed — the
+    // Then: nothing is stored, and the timeout cleanup actually committed: the
     // pending entry is gone and the deposit refunded. (Guards the regression
     // where the cleanup was rolled back by a panic in the same receipt, leaking
     // the entry and locking the account out of resubmitting.)

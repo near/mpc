@@ -72,6 +72,7 @@ tee-authority = { path = "crates/tee-authority" }
 tee-verifier-conversions = { path = "crates/tee-verifier-conversions" }
 tee-verifier-interface = { path = "crates/tee-verifier-interface" }
 test-port-allocator = { path = "crates/test-port-allocator" }
+test-tee-verifier = { path = "crates/test-tee-verifier" }
 test-utils = { path = "crates/test-utils" }
 threshold-signatures = { path = "crates/threshold-signatures" }
 

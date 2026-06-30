@@ -5791,6 +5791,7 @@ dependencies = [
  "sha2 0.10.9",
  "signature",
  "tee-verifier-interface",
+ "test-tee-verifier",
  "test-utils",
  "thiserror 2.0.18",
  "threshold-signatures",

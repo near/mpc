@@ -560,7 +560,6 @@ expression: abi
       },
       {
         "name": "fail_attestation_submission",
-        "doc": " Fails the original [`Self::submit_participant_info`] transaction, from a\n receipt separate from the cleanup so the cleanup is not rolled back.\n Reached for every failure outcome, not just timeouts.",
         "kind": "view",
         "modifiers": [
           "private"
@@ -2080,7 +2079,7 @@ expression: abi
       },
       {
         "name": "submit_participant_info",
-        "doc": " (Prospective) participants submit their TEE attestation through this endpoint.\n\n [`Attestation::Mock`] is verified synchronously in this call.\n [`Attestation::Dstack`] is verified asynchronously: the call yields on a\n cross-contract verify-quote call and resolves only once the verifier\n responds (or the yield times out). It therefore needs a verifier\n configured (else [`TeeError::VerifierNotConfigured`]) and rejects a\n concurrent submission from the same account\n ([`TeeError::VerificationAlreadyPending`]). The attached deposit covers\n storage on success and is refunded on failure.",
+        "doc": " Submit a TEE attestation for a current or prospective participant.\n\n - [`Attestation::Mock`] is verified synchronously.\n - [`Attestation::Dstack`] is verified asynchronously, by yielding on a\n   cross-contract verify-quote call. It rejects a second submission from\n   the same account while one is still in flight.\n\n The attached deposit pays for storage on success, and is refunded on failure.",
         "kind": "call",
         "modifiers": [
           "payable"
@@ -2987,7 +2986,6 @@ expression: abi
           ]
         },
         "AttestationResult": {
-          "description": "Outcome the resolution callback resumes the yield with.\n\nJSON-serialized on the wire, matching the contract's other yield-resume callbacks (sign, CKD, foreign-tx).",
           "oneOf": [
             {
               "type": "string",
