@@ -1,7 +1,8 @@
 use crate::{
     config::{
         PersistentSecrets, RespondConfig, SecretsConfig,
-        generate_and_write_backup_encryption_key_to_disk, start::TeeAuthorityImpl as _,
+        generate_and_write_backup_encryption_key_to_disk,
+        start::{TeeAuthorityImpl as _, read_near_config_json},
     },
     coordinator::Coordinator,
     db::SecretDB,
@@ -195,6 +196,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
             protocol_state_receiver,
             migration_state_receiver,
             config.node.clone(),
+            read_near_config_json(&config.home_dir),
             recent_transactions.clone(),
         ))
         .context("Failed to create web server.")?;
