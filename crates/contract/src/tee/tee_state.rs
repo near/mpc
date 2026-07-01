@@ -1528,6 +1528,75 @@ mod tests {
     }
 
     #[test]
+    fn revert_dstack_store__restores_the_displaced_entry_on_update() {
+        // Given: `alice` has an attestation, then updates it — the second insertion
+        // returns the displaced original wrapped in `UpdatedExistingParticipant`.
+        const TEE_UPGRADE_DURATION: Duration = Duration::from_secs(10_000);
+        let mut tee_state = TeeState::default();
+        let tls_public_key = bogus_ed25519_public_key();
+        let original_node = NodeId {
+            account_id: "alice.near".parse().unwrap(),
+            tls_public_key: tls_public_key.clone(),
+            account_public_key: bogus_ed25519_public_key(),
+        };
+        tee_state
+            .verify_and_store_mock(
+                original_node.clone(),
+                MockAttestation::Valid,
+                TEE_UPGRADE_DURATION,
+            )
+            .expect("initial insertion should succeed");
+        let updated_node = NodeId {
+            account_id: "alice.near".parse().unwrap(),
+            tls_public_key: tls_public_key.clone(),
+            account_public_key: bogus_ed25519_public_key(),
+        };
+        let insertion = tee_state
+            .verify_and_store_mock(updated_node, MockAttestation::Valid, TEE_UPGRADE_DURATION)
+            .expect("update should succeed");
+        assert_matches!(
+            insertion,
+            ParticipantInsertion::UpdatedExistingParticipant(_)
+        );
+
+        // When: the store is reverted.
+        tee_state.revert_dstack_store(&tls_public_key, insertion);
+
+        // Then: the original (displaced) entry is back in place.
+        let stored = tee_state
+            .stored_attestations
+            .get(&tls_public_key)
+            .expect("original entry must be restored");
+        assert_eq!(stored.node_id, original_node);
+    }
+
+    #[test]
+    fn revert_dstack_store__removes_the_newly_inserted_entry() {
+        // Given: a brand-new attestation for `alice` (no prior entry displaced).
+        const TEE_UPGRADE_DURATION: Duration = Duration::from_secs(10_000);
+        let mut tee_state = TeeState::default();
+        let tls_public_key = bogus_ed25519_public_key();
+        let node = NodeId {
+            account_id: "alice.near".parse().unwrap(),
+            tls_public_key: tls_public_key.clone(),
+            account_public_key: bogus_ed25519_public_key(),
+        };
+        let insertion = tee_state
+            .verify_and_store_mock(node, MockAttestation::Valid, TEE_UPGRADE_DURATION)
+            .expect("insertion should succeed");
+        assert_matches!(insertion, ParticipantInsertion::NewlyInsertedParticipant);
+
+        // When: the store is reverted.
+        tee_state.revert_dstack_store(&tls_public_key, insertion);
+
+        // Then: the entry is gone.
+        assert!(
+            tee_state.stored_attestations.get(&tls_public_key).is_none(),
+            "newly inserted entry must be removed on revert"
+        );
+    }
+
+    #[test]
     fn verify_and_store_mock__should_reject_invalid_attestations() {
         let mut tee_state = TeeState::default();
         let participants = gen_participants(3);

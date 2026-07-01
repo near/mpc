@@ -3,7 +3,7 @@
 use mpc_contract::{
     MpcContract,
     crypto_shared::types::PublicKeyExtended,
-    errors::Error,
+    errors::{Error, TeeError},
     primitives::{
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantId, ParticipantInfo},
@@ -26,6 +26,7 @@ use near_account_id::AccountId;
 use near_sdk::{NearToken, VMContext, test_utils::VMContextBuilder, testing_env};
 use rstest::rstest;
 use std::{str::FromStr, time::Duration};
+use test_utils::attestation::mock_dto_dstack_attestation;
 
 const SECOND: Duration = Duration::from_secs(1);
 const NANOS_IN_SECOND: u64 = SECOND.as_nanos() as u64;
@@ -361,6 +362,25 @@ fn submit_participant_info__should_reject_overwrite_from_other_account() {
         .unwrap()
         .expect("victim attestation should still be stored");
     assert_eq!(stored_before, stored_after);
+}
+
+/// **Test that a `Dstack` submission is rejected when no verifier is configured.** The
+/// async path has nowhere to offload DCAP verification, so it must fail up front (before
+/// registering a yield) rather than leave a submission that can never resolve.
+#[test]
+fn submit_participant_info__should_reject_dstack_when_verifier_not_configured() {
+    // Given: a running contract with no TEE verifier voted in.
+    let mut setup = TestSetupBuilder::new().build();
+    let node = setup.get_participant_node_ids()[0].clone();
+
+    // When: that participant submits a Dstack attestation.
+    let result = setup.try_submit_attestation_for_node(&node, mock_dto_dstack_attestation());
+
+    // Then: it is rejected with `VerifierNotConfigured`.
+    assert_matches!(
+        &result,
+        Err(Error::TeeError(TeeError::VerifierNotConfigured))
+    );
 }
 
 /// **Test that `clean_tee_status()` is vote-only** — attestations for non-participants
