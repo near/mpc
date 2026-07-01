@@ -786,9 +786,6 @@ where
             None
         };
 
-        // The previous epoch's per-domain reconstruction thresholds. The new
-        // threshold for each key is read from the resharing key event's domain
-        // config inside `resharing_computation_inner`.
         let old_reconstruction_thresholds: HashMap<DomainId, ReconstructionThreshold> =
             current_running_state
                 .domains
