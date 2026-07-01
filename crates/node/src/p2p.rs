@@ -1,4 +1,4 @@
-use crate::config::MpcConfig;
+use crate::config::{MpcConfig, ParticipantsConfig};
 use crate::metrics::networking_metrics::{
     self, INCOMING_CONNECTION, MPC_P2P_TCP_WRITE_SIZE_BYTES, OUTGOING_CONNECTION,
 };
@@ -31,6 +31,7 @@ use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use tokio::sync::watch;
 use tokio::time::timeout;
 use tokio_rustls::TlsAcceptor;
 use tokio_util::codec::{Decoder, Framed, LengthDelimitedCodec};
@@ -403,10 +404,11 @@ impl PersistentConnection {
     pub fn new(
         client_config: Arc<ClientConfig>,
         my_id: ParticipantId,
-        target_address: String,
+        initial_target_address: String,
         target_participant_id: ParticipantId,
         participant_identities: Arc<ParticipantIdentities>,
         connectivity: Arc<NodeConnectivity<OutgoingConnection, IncomingConnection>>,
+        peer_addresses: watch::Receiver<ParticipantsConfig>,
     ) -> anyhow::Result<PersistentConnection> {
         let connectivity_clone = connectivity.clone();
         let task = tracking::spawn(
@@ -414,6 +416,15 @@ impl PersistentConnection {
             async move {
                 let mut connection_attempt = Self::MIN_CONNECTION_ID;
                 loop {
+                    // Re-read the target address on every (re)connect so that a peer URL update
+                    // in the contract is picked up without tearing down the network. Established
+                    // connections are unaffected; only the next dial uses the new address. Falls
+                    // back to the address captured at startup if the peer is (transiently) absent.
+                    let target_address = peer_addresses
+                        .borrow()
+                        .get_info(target_participant_id)
+                        .map(|info| format!("{}:{}", info.address, info.port))
+                        .unwrap_or_else(|| initial_target_address.clone());
                     let new_conn = match OutgoingConnection::new(
                         client_config.clone(),
                         &target_address,
@@ -474,9 +485,30 @@ impl SenderConnectionId for IncomingConnection {
 }
 
 /// Creates a mesh network using TLS over TCP for communication.
+///
+/// Peer addresses are fixed at the addresses in `config`. Use
+/// [`new_tls_mesh_network_with_address_updates`] to let peers' addresses be updated live.
 pub async fn new_tls_mesh_network(
     config: &MpcConfig,
     p2p_private_key: &ed25519_dalek::SigningKey,
+) -> anyhow::Result<(
+    impl MeshNetworkTransportSender + use<>,
+    impl MeshNetworkTransportReceiver + use<>,
+)> {
+    // A static watch that never updates: peer addresses stay as configured.
+    let (_tx, peer_addresses) = watch::channel(config.participants.clone());
+    new_tls_mesh_network_with_address_updates(config, p2p_private_key, peer_addresses).await
+}
+
+/// Like [`new_tls_mesh_network`], but peer addresses are re-read from `peer_addresses` on every
+/// (re)connect attempt. This lets a peer's registered URL change in the contract take effect
+/// without tearing down the network: established connections are untouched, and only subsequent
+/// reconnects dial the updated address. The participant set itself (identities, count) must not
+/// change — that requires a full restart upstream.
+pub async fn new_tls_mesh_network_with_address_updates(
+    config: &MpcConfig,
+    p2p_private_key: &ed25519_dalek::SigningKey,
+    peer_addresses: watch::Receiver<ParticipantsConfig>,
 ) -> anyhow::Result<(
     impl MeshNetworkTransportSender + use<>,
     impl MeshNetworkTransportReceiver + use<>,
@@ -530,6 +562,7 @@ pub async fn new_tls_mesh_network(
                 participant.id,
                 participant_identities.clone(),
                 connectivities.get(participant.id)?,
+                peer_addresses.clone(),
             )?),
         );
     }
@@ -1075,7 +1108,7 @@ mod tests {
     use super::{
         IncomingConnection, OutgoingConnection, ParticipantIdentities, PersistentConnection,
     };
-    use crate::config::MpcConfig;
+    use crate::config::{MpcConfig, ParticipantsConfig};
     use crate::network::conn::{AllNodeConnectivities, ConnectionVersion};
     use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
     use crate::p2p::testing::{PortSeed, generate_test_p2p_configs};
@@ -1468,6 +1501,24 @@ mod tests {
         (target_address, accept_rx, listener_task)
     }
 
+    /// A single-peer `ParticipantsConfig` mapping `target_id` to the given `host:port` socket.
+    fn single_peer_config(target_id: ParticipantId, socket_addr: &str) -> ParticipantsConfig {
+        let addr: std::net::SocketAddr = socket_addr.parse().unwrap();
+        let p2p_public_key =
+            ed25519_dalek::SigningKey::generate(&mut rand::rngs::StdRng::seed_from_u64(7))
+                .verifying_key();
+        ParticipantsConfig {
+            threshold: 1,
+            participants: vec![crate::config::ParticipantInfo {
+                id: target_id,
+                address: addr.ip().to_string(),
+                port: addr.port(),
+                p2p_public_key,
+                near_account_id: "peer.near".parse().unwrap(),
+            }],
+        }
+    }
+
     fn must_make_client_config() -> Arc<rustls::ClientConfig> {
         let signing_key =
             ed25519_dalek::SigningKey::generate(&mut rand::rngs::StdRng::seed_from_u64(42));
@@ -1525,7 +1576,12 @@ mod tests {
                     &[my_id, target_id],
                 );
 
-            // When a persistent connection keeps dialing that listener.
+            // When a persistent connection keeps dialing that listener. The empty address watch
+            // makes it fall back to the fixed `target_address`.
+            let (_peer_tx, peer_addresses) = tokio::sync::watch::channel(ParticipantsConfig {
+                threshold: 0,
+                participants: vec![],
+            });
             let _connection = PersistentConnection::new(
                 client_config,
                 my_id,
@@ -1533,6 +1589,7 @@ mod tests {
                 target_id,
                 Arc::new(ParticipantIdentities::default()),
                 connectivities.get(target_id).unwrap(),
+                peer_addresses,
             )
             .unwrap();
 
@@ -1547,5 +1604,59 @@ mod tests {
         })
         .await;
         listener_task.abort();
+    }
+
+    /// A peer URL update in the contract must be picked up on the next reconnect without
+    /// recreating the connection: the retry loop re-reads the target address from the watch.
+    #[tokio::test(start_paused = true)]
+    #[test_log::test]
+    async fn persistent_connection__should_dial_new_address_after_watch_update() {
+        // Given two silent listeners: A (the initial target) and B (the updated target).
+        let (addr_a, mut accept_a, task_a) = must_spawn_silent_listener().await;
+        let (addr_b, mut accept_b, task_b) = must_spawn_silent_listener().await;
+        let client_config = must_make_client_config();
+        let my_id = ParticipantId::from_raw(0);
+        let target_id = ParticipantId::from_raw(1);
+
+        start_root_task_with_periodic_dump(async move {
+            let connectivities =
+                AllNodeConnectivities::<OutgoingConnection, IncomingConnection>::new(
+                    my_id,
+                    &[my_id, target_id],
+                );
+            let (peer_tx, peer_addresses) =
+                tokio::sync::watch::channel(single_peer_config(target_id, &addr_a));
+
+            let _connection = PersistentConnection::new(
+                client_config,
+                my_id,
+                "127.0.0.1:1".to_string(),
+                target_id,
+                Arc::new(ParticipantIdentities::default()),
+                connectivities.get(target_id).unwrap(),
+                peer_addresses,
+            )
+            .unwrap();
+
+            // Then it first dials A.
+            timeout(Duration::from_secs(120), accept_a.recv())
+                .await
+                .expect("should dial the initial address A")
+                .unwrap();
+
+            // When the registered address is updated to B (while the dial to A is still hung).
+            peer_tx
+                .send(single_peer_config(target_id, &addr_b))
+                .unwrap();
+
+            // Then once the hung A attempt times out, the retry dials B.
+            timeout(Duration::from_secs(120), accept_b.recv())
+                .await
+                .expect("should dial the updated address B after the watch update")
+                .unwrap();
+        })
+        .await;
+        task_a.abort();
+        task_b.abort();
     }
 }

@@ -17,7 +17,7 @@ use crate::mpc_client::MpcClient;
 use crate::network::{
     MeshNetworkClient, MeshNetworkTransportSender, NetworkTaskChannel, run_network_client,
 };
-use crate::p2p::new_tls_mesh_network;
+use crate::p2p::{new_tls_mesh_network, new_tls_mesh_network_with_address_updates};
 use crate::primitives::MpcTaskId;
 use crate::providers::ckd::CKDProvider;
 use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
@@ -34,6 +34,7 @@ use futures::future::BoxFuture;
 use mpc_node_config::ConfigFile;
 use mpc_primitives::domain::{Curve, DomainId, Protocol};
 use mpc_primitives::{EpochId, ReconstructionThreshold};
+use near_account_id::AccountId;
 use near_time::Clock;
 use std::collections::HashMap;
 use std::future::Future;
@@ -151,6 +152,7 @@ where
                                 let stop_fn = make_running_stop_fn(
                                     running_state.keyset.epoch_id,
                                     running_state.participants.clone(),
+                                    self.config_file.my_near_account_id.clone(),
                                 );
                                 ("Running", None, stop_fn)
                             }
@@ -177,6 +179,7 @@ where
                                     .await,
                                 self.debug_request_sender.subscribe(),
                                 key_event_receiver,
+                                self.indexer.contract_state_receiver.clone(),
                             ),
                         )?,
                         stop_fn,
@@ -373,6 +376,7 @@ where
         >,
         debug_request_receiver: broadcast::Receiver<DebugRequest>,
         resharing_state_receiver: Option<watch::Receiver<ContractKeyEventInstance>>,
+        contract_state_receiver: watch::Receiver<ContractState>,
     ) -> anyhow::Result<MpcJobResult> {
         tracing::info!("Entering running state.");
 
@@ -443,8 +447,27 @@ where
             tracing::warn!(error = ?err, "failed to send register supported foreign chains transaction");
         }
 
+        // Feed live peer-address updates to the mesh so that a peer's URL change in the contract
+        // is picked up on the next reconnect, without tearing down the network. Identity changes
+        // still trigger a full restart upstream (see `participants_change_requires_restart`).
+        let (peer_addresses_tx, peer_addresses_rx) =
+            watch::channel(mpc_config.participants.clone());
+        let _peer_address_updater = {
+            let mut contract_state_receiver = contract_state_receiver;
+            tracking::spawn("peer address updater", async move {
+                while contract_state_receiver.changed().await.is_ok() {
+                    let updated = contract_state_receiver.borrow().mesh_participants();
+                    if let Some(updated) = updated {
+                        let _ = peer_addresses_tx.send(updated);
+                    }
+                }
+            })
+        };
+
         tracing::info!("Creating tls mesh");
-        let (sender, receiver) = new_tls_mesh_network(&mpc_config, p2p_key).await?;
+        let (sender, receiver) =
+            new_tls_mesh_network_with_address_updates(&mpc_config, p2p_key, peer_addresses_rx)
+                .await?;
         let sender = Arc::new(sender);
 
         tracing::info!("Creating network client.");
@@ -837,14 +860,53 @@ impl Drop for ReportCurrentJobGuard {
     }
 }
 
+/// Returns true if the difference between two participant sets requires the running MPC job to
+/// be torn down and rebuilt, as opposed to being absorbed by the live network.
+///
+/// A pure peer address/port change does NOT require a restart: established connections keep
+/// running and `PersistentConnection` re-reads the address on its next reconnect attempt (see
+/// [`crate::p2p::new_tls_mesh_network_with_address_updates`]). The one address-related exception
+/// is a change to *our own* listening port, which requires re-binding the TCP listener.
+fn participants_change_requires_restart(
+    old: &ParticipantsConfig,
+    new: &ParticipantsConfig,
+    my_near_account_id: &AccountId,
+) -> bool {
+    if old.threshold != new.threshold {
+        return true;
+    }
+
+    // Participant identity, excluding the hot-swappable address/port.
+    let identities = |cfg: &ParticipantsConfig| {
+        let mut ids: Vec<_> = cfg
+            .participants
+            .iter()
+            .map(|p| (p.id, p.near_account_id.clone(), p.p2p_public_key.to_bytes()))
+            .collect();
+        ids.sort();
+        ids
+    };
+    if identities(old) != identities(new) {
+        return true;
+    }
+
+    let my_port = |cfg: &ParticipantsConfig| {
+        cfg.get_info_by_account_id(my_near_account_id)
+            .map(|p| p.port)
+    };
+    my_port(old) != my_port(new)
+}
+
 /// returns true if one of the following occurs:
 /// - the epoch id changes
 /// - a resharing starts
-/// - the participant set changes
+/// - the participant set changes in a way that requires a restart
+///   (see [`participants_change_requires_restart`])
 fn stop_running(
     new_state: &ContractState,
     current_running_epoch_id: EpochId,
-    current_participant_set: ParticipantsConfig,
+    current_participant_set: &ParticipantsConfig,
+    my_near_account_id: &AccountId,
 ) -> bool {
     match new_state {
         ContractState::Running(new_state) => {
@@ -856,8 +918,12 @@ fn stop_running(
                 tracing::info!("A resharing started.");
                 return true;
             }
-            if new_state.participants != current_participant_set {
-                tracing::info!("Participant details changed.");
+            if participants_change_requires_restart(
+                current_participant_set,
+                &new_state.participants,
+                my_near_account_id,
+            ) {
+                tracing::info!("Participant set changed in a way that requires a restart.");
                 return true;
             }
             false
@@ -872,12 +938,14 @@ fn stop_running(
 fn make_running_stop_fn(
     current_running_epoch_id: EpochId,
     current_participant_set: ParticipantsConfig,
+    my_near_account_id: AccountId,
 ) -> StopFn {
     Box::new(move |new_state| {
         stop_running(
             new_state,
             current_running_epoch_id,
-            current_participant_set.clone(),
+            &current_participant_set,
+            &my_near_account_id,
         )
     })
 }
@@ -963,4 +1031,173 @@ fn make_initializing_stop_fn(
             stop_initializing(new_state, key_event.id.epoch_id, &key_event_sender)
         }),
     )
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod stop_running_tests {
+    use super::{participants_change_requires_restart, stop_running};
+    use crate::config::{ParticipantInfo, ParticipantsConfig};
+    use crate::indexer::participants::{ContractRunningState, ContractState};
+    use crate::primitives::ParticipantId;
+    use ed25519_dalek::SigningKey;
+    use mpc_primitives::EpochId;
+    use near_account_id::AccountId;
+    use near_mpc_crypto_types::Keyset;
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
+
+    fn participant(
+        id: u32,
+        account: &str,
+        address: &str,
+        port: u16,
+        key_seed: u64,
+    ) -> ParticipantInfo {
+        let signing_key = SigningKey::generate(&mut StdRng::seed_from_u64(key_seed));
+        ParticipantInfo {
+            id: ParticipantId::from_raw(id),
+            address: address.to_string(),
+            port,
+            p2p_public_key: signing_key.verifying_key(),
+            near_account_id: account.parse::<AccountId>().unwrap(),
+        }
+    }
+
+    /// Two participants with threshold 2; the local node is participant 0.
+    fn base_config() -> ParticipantsConfig {
+        ParticipantsConfig {
+            threshold: 2,
+            participants: vec![
+                participant(0, "alice.near", "alice.example.com", 8080, 1),
+                participant(1, "bob.near", "bob.example.com", 8080, 2),
+            ],
+        }
+    }
+
+    fn me() -> AccountId {
+        "alice.near".parse().unwrap()
+    }
+
+    fn running(participants: ParticipantsConfig, epoch: u64) -> ContractState {
+        ContractState::Running(ContractRunningState {
+            keyset: Keyset::new(EpochId::new(epoch), vec![]),
+            domains: vec![],
+            participants,
+            resharing_state: None,
+        })
+    }
+
+    #[test]
+    fn participants_change_requires_restart__should_be_false_for_peer_address_change() {
+        // Given a config where only a peer's address and port change.
+        let old = base_config();
+        let mut new = base_config();
+        new.participants[1].address = "bob-new.example.com".to_string();
+        new.participants[1].port = 9090;
+
+        // When / Then: no restart is needed; the address is hot-swapped on reconnect.
+        assert!(!participants_change_requires_restart(&old, &new, &me()));
+    }
+
+    #[test]
+    fn participants_change_requires_restart__should_be_true_for_own_port_change() {
+        // Given a change to the local node's own listening port.
+        let old = base_config();
+        let mut new = base_config();
+        new.participants[0].port = 9090;
+
+        // When / Then: a restart is required to re-bind the TCP listener.
+        assert!(participants_change_requires_restart(&old, &new, &me()));
+    }
+
+    #[test]
+    fn participants_change_requires_restart__should_be_false_for_own_address_change() {
+        // Given a change to only the local node's own host (it binds 0.0.0.0 regardless).
+        let old = base_config();
+        let mut new = base_config();
+        new.participants[0].address = "alice-new.example.com".to_string();
+
+        // When / Then: no restart needed.
+        assert!(!participants_change_requires_restart(&old, &new, &me()));
+    }
+
+    #[test]
+    fn participants_change_requires_restart__should_be_true_for_tls_key_change() {
+        // Given a peer whose P2P public key changes.
+        let old = base_config();
+        let mut new = base_config();
+        new.participants[1].p2p_public_key =
+            SigningKey::generate(&mut StdRng::seed_from_u64(42)).verifying_key();
+
+        // When / Then: identity changed, restart required.
+        assert!(participants_change_requires_restart(&old, &new, &me()));
+    }
+
+    #[test]
+    fn participants_change_requires_restart__should_be_true_for_membership_change() {
+        // Given a new participant added to the set.
+        let old = base_config();
+        let mut new = base_config();
+        new.participants
+            .push(participant(2, "carol.near", "carol.example.com", 8080, 3));
+
+        // When / Then: membership changed, restart required.
+        assert!(participants_change_requires_restart(&old, &new, &me()));
+    }
+
+    #[test]
+    fn participants_change_requires_restart__should_be_true_for_threshold_change() {
+        // Given an unchanged set but a different threshold.
+        let old = base_config();
+        let mut new = base_config();
+        new.threshold = 1;
+
+        // When / Then: restart required.
+        assert!(participants_change_requires_restart(&old, &new, &me()));
+    }
+
+    #[test]
+    fn stop_running__should_be_false_for_peer_address_change() {
+        // Given a Running state where only a peer address changes within the same epoch.
+        let current = base_config();
+        let mut updated = base_config();
+        updated.participants[1].address = "bob-new.example.com".to_string();
+
+        // When / Then: the job keeps running.
+        assert!(!stop_running(
+            &running(updated, 5),
+            EpochId::new(5),
+            &current,
+            &me()
+        ));
+    }
+
+    #[test]
+    fn stop_running__should_be_true_for_epoch_change() {
+        // Given identical participants but a new epoch id.
+        let current = base_config();
+
+        // When / Then: restart required.
+        assert!(stop_running(
+            &running(base_config(), 6),
+            EpochId::new(5),
+            &current,
+            &me()
+        ));
+    }
+
+    #[test]
+    fn stop_running__should_be_true_when_no_longer_running() {
+        // Given the contract leaves the Running state.
+        let current = base_config();
+
+        // When / Then: restart required.
+        assert!(stop_running(
+            &ContractState::Invalid,
+            EpochId::new(5),
+            &current,
+            &me()
+        ));
+    }
 }

@@ -234,6 +234,22 @@ impl ContractState {
         })
     }
 
+    /// The participant set the P2P mesh connects to for the currently-running job: the
+    /// prospective participants during resharing, otherwise the running participants. Returns
+    /// `None` when not in a Running state (no mesh is established).
+    ///
+    /// Used to push fresh peer addresses to the live network without a restart; the participant
+    /// identities are unchanged across such updates (an identity change triggers a restart).
+    pub fn mesh_participants(&self) -> Option<ParticipantsConfig> {
+        match self {
+            ContractState::Running(running) => Some(match &running.resharing_state {
+                Some(resharing) => resharing.new_participants.clone(),
+                None => running.participants.clone(),
+            }),
+            ContractState::Invalid | ContractState::Initializing(_) => None,
+        }
+    }
+
     /// Returns the participation status of the given node in the current contract state.
     ///
     /// Determines whether the node is active or inactive based on its account ID and P2P public key
@@ -277,7 +293,9 @@ pub async fn monitor_contract_state(
             refresh_interval_tick.tick().await;
 
             //// We wait first to catch up to the chain to avoid reading the participants from an outdated state.
-            //// We currently assume the participant set is static and do not detect or support any updates.
+            //// Participant identity changes are handled by restarting the running job (see
+            //// `coordinator::participants_change_requires_restart`); peer address/URL changes are
+            //// applied to the live network without a restart.
             tracing::debug!(target: "indexer", "awaiting full sync to read mpc contract state");
             indexer_state.client.wait_for_full_sync().await;
 

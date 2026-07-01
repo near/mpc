@@ -149,6 +149,8 @@ pub enum InvalidParameters {
     InvalidTeeRemoteAttestation { reason: String },
     #[error("Caller is not the signer account.")]
     CallerNotSigner,
+    #[error("Malformed participant url: {reason}")]
+    InvalidUrl { reason: String },
     #[error("Requested foreign chain, {requested:?}, is not supported.")]
     ForeignChainNotSupported { requested: ForeignChain },
 }
