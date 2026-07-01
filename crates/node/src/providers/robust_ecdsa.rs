@@ -52,7 +52,6 @@ impl EcdsaMessageHash {
 }
 
 impl RobustEcdsaSignatureProvider {
-    #[expect(clippy::too_many_arguments)]
     pub fn new(
         config: Arc<ConfigFile>,
         mpc_config: Arc<MpcConfig>,
@@ -60,11 +59,9 @@ impl RobustEcdsaSignatureProvider {
         clock: Clock,
         db: Arc<SecretDB>,
         sign_request_store: Arc<SignRequestStorage>,
-        keyshares: HashMap<DomainId, KeygenOutput>,
-        thresholds: HashMap<DomainId, ReconstructionThreshold>,
+        keyshares: HashMap<DomainId, (KeygenOutput, ReconstructionThreshold)>,
     ) -> anyhow::Result<Self> {
-        let per_domain_data =
-            ecdsa_common::build_per_domain_data(&clock, &db, &client, keyshares, &thresholds)?;
+        let per_domain_data = ecdsa_common::build_per_domain_data(&clock, &db, &client, keyshares)?;
 
         Ok(Self {
             config,

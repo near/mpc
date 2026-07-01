@@ -105,17 +105,13 @@ pub fn build_per_domain_data<P>(
     clock: &Clock,
     db: &Arc<SecretDB>,
     client: &Arc<MeshNetworkClient>,
-    keyshares: HashMap<DomainId, KeygenOutput>,
-    thresholds: &HashMap<DomainId, ReconstructionThreshold>,
+    keyshares: HashMap<DomainId, (KeygenOutput, ReconstructionThreshold)>,
 ) -> anyhow::Result<HashMap<DomainId, PerDomainData<P>>>
 where
     P: Serialize + DeserializeOwned + Send + 'static,
 {
     let mut per_domain_data = HashMap::new();
-    for (domain_id, keyshare) in keyshares {
-        let reconstruction_threshold = *thresholds.get(&domain_id).ok_or_else(|| {
-            anyhow::anyhow!("No reconstruction threshold for domain {:?}", domain_id)
-        })?;
+    for (domain_id, (keyshare, reconstruction_threshold)) in keyshares {
         let presignature_store = Arc::new(PresignatureStorage::new(
             clock.clone(),
             db.clone(),
@@ -188,24 +184,20 @@ mod tests {
                     let low = DomainId(0);
                     let high = DomainId(1);
                     let keygen_output = dummy_keygen_output();
-                    let keyshares =
-                        HashMap::from([(low, keygen_output.clone()), (high, keygen_output)]);
-                    let thresholds = HashMap::from([
-                        (low, ReconstructionThreshold::new(2)),
-                        (high, ReconstructionThreshold::new(3)),
+                    let keyshares = HashMap::from([
+                        (
+                            low,
+                            (keygen_output.clone(), ReconstructionThreshold::new(2)),
+                        ),
+                        (high, (keygen_output, ReconstructionThreshold::new(3))),
                     ]);
                     let dir = tempfile::tempdir().unwrap();
                     let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
 
                     // When
-                    let per_domain_data = build_per_domain_data::<Vec<u8>>(
-                        &Clock::real(),
-                        &db,
-                        &client,
-                        keyshares,
-                        &thresholds,
-                    )
-                    .unwrap();
+                    let per_domain_data =
+                        build_per_domain_data::<Vec<u8>>(&Clock::real(), &db, &client, keyshares)
+                            .unwrap();
 
                     // Then each domain keeps the threshold it was configured with
                     assert_eq!(

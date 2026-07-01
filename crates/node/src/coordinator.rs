@@ -589,34 +589,35 @@ where
 
                 let mut ecdsa_keyshares: HashMap<
                     mpc_primitives::domain::DomainId,
-                    ecdsa::KeygenOutput,
+                    (ecdsa::KeygenOutput, ReconstructionThreshold),
                 > = HashMap::new();
                 let mut robust_ecdsa_keyshares: HashMap<
                     mpc_primitives::domain::DomainId,
-                    ecdsa::KeygenOutput,
+                    (ecdsa::KeygenOutput, ReconstructionThreshold),
                 > = HashMap::new();
                 let mut eddsa_keyshares: HashMap<
                     mpc_primitives::domain::DomainId,
-                    eddsa::KeygenOutput,
+                    (eddsa::KeygenOutput, ReconstructionThreshold),
                 > = HashMap::new();
                 let mut ckd_keyshares: HashMap<
                     mpc_primitives::domain::DomainId,
-                    confidential_key_derivation::KeygenOutput,
+                    (
+                        confidential_key_derivation::KeygenOutput,
+                        ReconstructionThreshold,
+                    ),
                 > = HashMap::new();
-                let domain_to_protocol: HashMap<DomainId, Protocol> = running_state
-                    .domains
-                    .iter()
-                    .map(|d| (d.id, d.protocol))
-                    .collect();
-                let domain_to_threshold: HashMap<DomainId, ReconstructionThreshold> = running_state
-                    .domains
-                    .iter()
-                    .map(|d| (d.id, d.reconstruction_threshold))
-                    .collect();
+                let domain_registry: HashMap<DomainId, (Protocol, ReconstructionThreshold)> =
+                    running_state
+                        .domains
+                        .iter()
+                        .map(|d| (d.id, (d.protocol, d.reconstruction_threshold)))
+                        .collect();
 
                 for keyshare in keyshares {
                     let domain_id = keyshare.key_id.domain_id;
-                    let Some(protocol) = domain_to_protocol.get(&domain_id).copied() else {
+                    let Some((protocol, reconstruction_threshold)) =
+                        domain_registry.get(&domain_id).copied()
+                    else {
                         anyhow::bail!(
                             "Keyshare references domain {domain_id:?} which is not in the contract registry",
                         );
@@ -625,20 +626,21 @@ where
                     match (expected_curve, keyshare.data) {
                         (Curve::Secp256k1, KeyshareData::Secp256k1(data)) => match protocol {
                             Protocol::CaitSith => {
-                                ecdsa_keyshares.insert(domain_id, data);
+                                ecdsa_keyshares.insert(domain_id, (data, reconstruction_threshold));
                             }
                             Protocol::DamgardEtAl => {
-                                robust_ecdsa_keyshares.insert(domain_id, data);
+                                robust_ecdsa_keyshares
+                                    .insert(domain_id, (data, reconstruction_threshold));
                             }
                             other => anyhow::bail!(
                                 "Unexpected protocol {other:?} for Secp256k1 keyshare on domain {domain_id:?}",
                             ),
                         },
                         (Curve::Edwards25519, KeyshareData::Ed25519(data)) => {
-                            eddsa_keyshares.insert(domain_id, data);
+                            eddsa_keyshares.insert(domain_id, (data, reconstruction_threshold));
                         }
                         (Curve::Bls12381, KeyshareData::Bls12381(data)) => {
-                            ckd_keyshares.insert(domain_id, data);
+                            ckd_keyshares.insert(domain_id, (data, reconstruction_threshold));
                         }
                         (expected, data) => anyhow::bail!(
                             "Keyshare data does not match the domain protocol's expected curve: domain_id={:?}, protocol={:?}, expected_curve={:?}, data_kind={:?}",
@@ -650,6 +652,11 @@ where
                     }
                 }
 
+                let domain_to_protocol: HashMap<DomainId, Protocol> = domain_registry
+                    .into_iter()
+                    .map(|(id, (protocol, _))| (id, protocol))
+                    .collect();
+
                 let ecdsa_signature_provider = Arc::new(EcdsaSignatureProvider::new(
                     config_file.clone().into(),
                     running_mpc_config.clone().into(),
@@ -658,7 +665,6 @@ where
                     secret_db.clone(),
                     sign_request_store.clone(),
                     ecdsa_keyshares,
-                    domain_to_threshold.clone(),
                 )?);
 
                 let robust_ecdsa_signature_provider = Arc::new(RobustEcdsaSignatureProvider::new(
@@ -669,7 +675,6 @@ where
                     secret_db,
                     sign_request_store.clone(),
                     robust_ecdsa_keyshares,
-                    domain_to_threshold.clone(),
                 )?);
 
                 let eddsa_signature_provider = Arc::new(EddsaSignatureProvider::new(
@@ -678,8 +683,7 @@ where
                     network_client.clone(),
                     sign_request_store.clone(),
                     eddsa_keyshares,
-                    domain_to_threshold.clone(),
-                )?);
+                ));
 
                 let ckd_provider = Arc::new(CKDProvider::new(
                     config_file.clone().into(),
@@ -687,8 +691,7 @@ where
                     network_client.clone(),
                     ckd_request_store.clone(),
                     ckd_keyshares,
-                    domain_to_threshold,
-                )?);
+                ));
 
                 let verify_foreign_tx_provider = Arc::new(VerifyForeignTxProvider::new(
                     config_file.clone().into(),

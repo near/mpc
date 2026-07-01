@@ -60,29 +60,27 @@ impl CKDProvider {
         mpc_config: Arc<MpcConfig>,
         client: Arc<MeshNetworkClient>,
         ckd_request_store: Arc<CKDRequestStorage>,
-        keyshares: HashMap<DomainId, KeygenOutput>,
-        thresholds: HashMap<DomainId, ReconstructionThreshold>,
-    ) -> anyhow::Result<Self> {
-        let mut per_domain_data = HashMap::new();
-        for (domain_id, keyshare) in keyshares {
-            let threshold = *thresholds.get(&domain_id).ok_or_else(|| {
-                anyhow::anyhow!("No reconstruction threshold for domain {:?}", domain_id)
-            })?;
-            per_domain_data.insert(
-                domain_id,
-                PerDomainData {
-                    keyshare,
-                    reconstruction_threshold: threshold,
-                },
-            );
-        }
-        Ok(Self {
+        keyshares: HashMap<DomainId, (KeygenOutput, ReconstructionThreshold)>,
+    ) -> Self {
+        let per_domain_data = keyshares
+            .into_iter()
+            .map(|(domain_id, (keyshare, reconstruction_threshold))| {
+                (
+                    domain_id,
+                    PerDomainData {
+                        keyshare,
+                        reconstruction_threshold,
+                    },
+                )
+            })
+            .collect();
+        Self {
             config,
             mpc_config,
             client,
             ckd_request_store,
             per_domain_data,
-        })
+        }
     }
 
     pub(super) fn domain_data(&self, domain_id: DomainId) -> anyhow::Result<PerDomainData> {
