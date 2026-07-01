@@ -8,7 +8,9 @@ use crate::sandbox::common::{
     hyper_evm_request, polygon_evm_request, register_foreign_chain_configuration,
     sign_foreign_tx_response, starknet_extracted_values, starknet_request, ton_request,
 };
-use near_mpc_contract_interface::call_args::make_verify_foreign_chain_tx_args;
+use near_mpc_contract_interface::call_args::{
+    make_respond_verify_foreign_chain_tx_args, make_verify_foreign_chain_tx_args,
+};
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
     self as dtos, ExtractedValue, ForeignChainRpcRequest, ForeignTxPayloadVersion,
@@ -71,15 +73,8 @@ async fn verify_foreign_transaction__should_succeed(
         extracted_values,
         foreign_tx_key.as_secp256k1(),
     );
-
-    let respond_result = setup.mpc_signer_accounts[0]
-        .call(setup.contract.id(), method_names::RESPOND_VERIFY_FOREIGN_TX)
-        .args_json(json!({
-            "request": verify_request,
-            "response": response,
-        }))
-        .max_gas()
-        .transact()
+    let call_args = make_respond_verify_foreign_chain_tx_args(&verify_request, &response).unwrap();
+    let respond_result = call_with_args(&setup.mpc_signer_accounts[0], &setup.contract, call_args)
         .await
         .unwrap()
         .into_result();
@@ -144,14 +139,9 @@ async fn verify_foreign_transaction__should_fan_out_response_to_duplicates_from_
         extracted_values,
         foreign_tx_key.as_secp256k1(),
     );
-    let respond_result = setup.mpc_signer_accounts[0]
-        .call(setup.contract.id(), method_names::RESPOND_VERIFY_FOREIGN_TX)
-        .args_json(json!({
-            "request": verify_request,
-            "response": response,
-        }))
-        .max_gas()
-        .transact()
+
+    let call_args = make_respond_verify_foreign_chain_tx_args(&verify_request, &response).unwrap();
+    let respond_result = call_with_args(&setup.mpc_signer_accounts[0], &setup.contract, call_args)
         .await
         .unwrap()
         .into_result();

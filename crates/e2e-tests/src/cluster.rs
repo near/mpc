@@ -5,10 +5,14 @@ use std::time::Duration;
 use anyhow::Context;
 use backon::{ConstantBuilder, Retryable};
 use ed25519_dalek::SigningKey;
+use mpc_call_args::FunctionCallArgs;
 use near_kit::AccountId;
 use near_mpc_contract_interface::call_args::{
-    make_ckd_request_args, make_propose_update_args, make_sign_request_args,
-    make_verify_foreign_chain_tx_args,
+    make_ckd_request_args, make_propose_update_args, make_register_backup_service_args,
+    make_register_foreign_chain_support_args, make_sign_request_args,
+    make_start_node_migration_args, make_submit_participant_info_args,
+    make_verify_foreign_chain_tx_args, make_vote_add_domains_args, make_vote_cancel_keygen_args,
+    make_vote_cancel_resharing_args, make_vote_new_parameters_args, make_vote_update_args,
 };
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
@@ -481,9 +485,8 @@ impl MpcCluster {
     /// `Initializing` state. Does NOT wait for key generation to complete —
     /// use `add_domains_and_wait` for the full flow.
     pub async fn start_add_domains(&self, domains: Vec<DomainConfig>) -> anyhow::Result<()> {
-        let args = json!({ "domains": &domains });
-        self.call_from_all_nodes_concurrently(method_names::VOTE_ADD_DOMAINS, args)
-            .await?;
+        let call_args = make_vote_add_domains_args(&domains)?;
+        self.call_from_all_nodes_concurrently(call_args).await?;
 
         self.wait_for_state(
             |s| matches!(s, ProtocolContractState::Initializing(_)),
@@ -501,12 +504,9 @@ impl MpcCluster {
         next_domain_id: u64,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
         let client = self.operator_client_for(node_index)?;
+        let call_args = make_vote_cancel_keygen_args(next_domain_id)?;
         self.contract
-            .call_from(
-                &client,
-                method_names::VOTE_CANCEL_KEYGEN,
-                json!({ "next_domain_id": next_domain_id }),
-            )
+            .call_with_args(&client, call_args)
             .await
             .with_context(|| format!("node {node_index} failed to send cancel keygen vote"))
     }
@@ -543,8 +543,8 @@ impl MpcCluster {
         };
 
         tracing::info!(?prospective_epoch_id, new_threshold, "voting for resharing");
-        let args = json!({ "prospective_epoch_id": prospective_epoch_id, "proposal": proposal });
-        self.vote_resharing(current_participants, args).await?;
+        let call_args = make_vote_new_parameters_args(prospective_epoch_id, &proposal)?;
+        self.vote_resharing(current_participants, call_args).await?;
 
         self.wait_for_state(
             |s| matches!(s, ProtocolContractState::Resharing(_)),
@@ -602,7 +602,7 @@ impl MpcCluster {
     async fn vote_resharing(
         &self,
         current_participants: &Participants,
-        args: serde_json::Value,
+        call_args: FunctionCallArgs,
     ) -> anyhow::Result<()> {
         let current_accounts: std::collections::HashSet<_> = current_participants
             .participants
@@ -628,7 +628,7 @@ impl MpcCluster {
             let client = self.operator_client_for(*i)?;
             let outcome = self
                 .contract
-                .call_from(&client, method_names::VOTE_NEW_PARAMETERS, args.clone())
+                .call_with_args(&client, call_args.clone())
                 .await
                 .with_context(|| format!("node {i} failed to send resharing vote"))?;
             if !outcome.is_success() {
@@ -651,8 +651,9 @@ impl MpcCluster {
         node_index: usize,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
         let client = self.operator_client_for(node_index)?;
+        let call_args = make_vote_cancel_resharing_args()?;
         self.contract
-            .call_from(&client, method_names::VOTE_CANCEL_RESHARING, json!({}))
+            .call_with_args(&client, call_args)
             .await
             .with_context(|| format!("node {node_index} failed to send cancel resharing vote"))
     }
@@ -721,8 +722,7 @@ impl MpcCluster {
 
     async fn call_from_all_nodes_concurrently(
         &self,
-        method: &str,
-        args: serde_json::Value,
+        call_args: FunctionCallArgs,
     ) -> anyhow::Result<()> {
         let clients: Vec<_> = self
             .nodes
@@ -739,11 +739,11 @@ impl MpcCluster {
             .collect::<anyhow::Result<Vec<_>>>()?;
 
         let futures = clients.iter().map(|(i, account, client)| {
-            let args = args.clone();
-            let method = method.to_string();
+            let call_args = call_args.clone();
             async move {
+                let method = call_args.method_name.clone();
                 self.contract
-                    .call_from(client, &method, args)
+                    .call_with_args(client, call_args)
                     .await
                     .with_context(|| format!("node {i} ({account}) failed to call {method}"))
             }
@@ -825,13 +825,8 @@ impl MpcCluster {
         backup_service_info: serde_json::Value,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
         let client = self.operator_client_for(node_index)?;
-        self.contract
-            .call_from(
-                &client,
-                method_names::REGISTER_BACKUP_SERVICE,
-                json!({ "backup_service_info": backup_service_info }),
-            )
-            .await
+        let call_args = make_register_backup_service_args(backup_service_info)?;
+        self.contract.call_with_args(&client, call_args).await
     }
     /// View the foreign chains the contract accepts requests for.
     pub async fn view_foreign_chains_supported_by_contract(
@@ -861,15 +856,8 @@ impl MpcCluster {
         let client = self
             .blockchain
             .client_for(node.account_id().as_ref(), &self.operator_keys[node_index])?;
-        self.contract
-            .call_from(
-                &client,
-                method_names::REGISTER_FOREIGN_CHAIN_SUPPORT,
-                json!({
-                    "foreign_chain_support": serde_json::to_value(foreign_chain_support)?,
-                }),
-            )
-            .await
+        let call_args = make_register_foreign_chain_support_args(foreign_chain_support)?;
+        self.contract.call_with_args(&client, call_args).await
     }
 
     /// Start node migration for a specific node.
@@ -879,13 +867,8 @@ impl MpcCluster {
         destination_node_info: serde_json::Value,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
         let client = self.operator_client_for(node_index)?;
-        self.contract
-            .call_from(
-                &client,
-                method_names::START_NODE_MIGRATION,
-                json!({ "destination_node_info": destination_node_info }),
-            )
-            .await
+        let call_args = make_start_node_migration_args(destination_node_info)?;
+        self.contract.call_with_args(&client, call_args).await
     }
 
     /// Send a verify_foreign_transaction request from the default user account.
@@ -928,13 +911,10 @@ impl MpcCluster {
 
         for (i, _) in self.nodes.iter().enumerate() {
             let client = self.operator_client_for(i)?;
+            let call_args = make_vote_update_args(proposal_id.0)?;
             let vote_outcome = self
                 .contract
-                .call_from(
-                    &client,
-                    method_names::VOTE_UPDATE,
-                    json!({ "id": proposal_id }),
-                )
+                .call_with_args(&client, call_args)
                 .await
                 .with_context(|| format!("node {i} failed to call vote_update"))?;
             anyhow::ensure!(
@@ -1153,15 +1133,9 @@ async fn init_contract(
         let client = blockchain.client_for(&account, &near_keys[i])?;
         let pubkey =
             near_mpc_crypto_types::Ed25519PublicKey::from(p2p_keys[i].verifying_key().to_bytes());
+        let call_args = make_submit_participant_info_args(json!({ "Mock": "Valid" }), &pubkey)?;
         contract
-            .call_from(
-                &client,
-                method_names::SUBMIT_PARTICIPANT_INFO,
-                json!({
-                    "proposed_participant_attestation": { "Mock": "Valid" },
-                    "tls_public_key": pubkey,
-                }),
-            )
+            .call_with_args(&client, call_args)
             .await
             .with_context(|| format!("failed to submit attestation for node {i}"))?;
     }
@@ -1182,13 +1156,13 @@ async fn add_initial_domains(
     domains: &[DomainConfig],
 ) -> anyhow::Result<()> {
     tracing::info!(count = domains.len(), "adding domains");
-    let args = json!({ "domains": domains });
+    let call_args = make_vote_add_domains_args(domains)?;
 
     for &i in participant_indices {
         let account = format!("node{i}.{SANDBOX_ROOT_ACCOUNT}");
         let client = blockchain.client_for(&account, &operator_keys[i])?;
         contract
-            .call_from(&client, method_names::VOTE_ADD_DOMAINS, args.clone())
+            .call_with_args(&client, call_args.clone())
             .await
             .with_context(|| format!("node {i} failed to vote add domains"))?;
     }

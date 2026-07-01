@@ -6,7 +6,8 @@ use serde::de::DeserializeOwned;
 
 use crate::conversions::ToNearKey;
 
-const MAX_GAS: near_kit::Gas = near_kit::Gas::from_tgas(1000);
+// NEAR caps prepaid gas at 300 Tgas per transaction.
+const MAX_GAS: near_kit::Gas = near_kit::Gas::from_tgas(300);
 
 /// RPC client for any NEAR network (sandbox or testnet).
 ///
@@ -130,22 +131,6 @@ impl DeployedContract {
             .send()
             .await
             .map_err(|e| anyhow::anyhow!("contract call `{method}` failed: {e}"))
-    }
-
-    pub async fn call_from(
-        &self,
-        client: &ClientHandle,
-        method: &str,
-        args: serde_json::Value,
-    ) -> anyhow::Result<FinalExecutionOutcome> {
-        client
-            .inner
-            .call(&self.contract_id, method)
-            .args(args)
-            .gas(MAX_GAS)
-            .send()
-            .await
-            .map_err(|e| anyhow::anyhow!("contract call `{method}` (external signer) failed: {e}"))
     }
 
     pub async fn call_with_args(

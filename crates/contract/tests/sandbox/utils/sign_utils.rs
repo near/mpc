@@ -1,4 +1,4 @@
-use crate::sandbox::common::call_with_args_async;
+use crate::sandbox::common::{call_with_args, call_with_args_async};
 
 use super::consts::DEFAULT_MAX_TIMEOUT_TX_INCLUDED;
 use super::shared_key_utils::{
@@ -13,20 +13,19 @@ use k256::{
 use mpc_call_args::FunctionCallArgs;
 use mpc_contract::{
     errors,
-    primitives::{
-        ckd::CKDRequest,
-        signature::{SignatureRequest, YieldIndex},
-    },
+    primitives::signature::{SignatureRequest, YieldIndex},
 };
 use near_account_id::AccountId;
 use near_mpc_bounded_collections::BoundedVec;
-use near_mpc_contract_interface::call_args::{make_ckd_request_args, make_sign_request_args};
+use near_mpc_contract_interface::call_args::{
+    make_ckd_request_args, make_respond_args, make_respond_ckd_args, make_sign_request_args,
+};
 use near_mpc_contract_interface::method_names::{
-    GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST, RESPOND, RESPOND_CKD,
+    GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST, RESPOND_CKD,
 };
 use near_mpc_contract_interface::types::kdf::{derive_app_id, derive_tweak};
 use near_mpc_contract_interface::types::{
-    self as dtos, CKDAppPublicKey, CKDAppPublicKeyPV, CKDRequestArgs,
+    self as dtos, CKDAppPublicKey, CKDAppPublicKeyPV, CKDRequest, CKDRequestArgs,
 };
 use near_mpc_contract_interface::types::{CKDResponse, DomainId, Payload};
 use near_mpc_sdk::sign::{Ed25519Signature, K256Signature};
@@ -296,29 +295,15 @@ pub struct CKDResponseArgs {
     pub response: CKDResponse,
 }
 
-async fn submit_response(
-    contract: &Contract,
-    attested_account: &Account,
-    method: &str,
-    args: impl Serialize,
-) -> anyhow::Result<()> {
-    let respond = attested_account
-        .call(contract.id(), method)
-        .args_json(args)
-        .max_gas()
-        .transact()
-        .await?;
-    dbg!(&respond);
-    respond.into_result()?;
-    Ok(())
-}
-
 pub async fn submit_signature_response(
     response: &SignResponseArgs,
     contract: &Contract,
     attested_account: &Account,
 ) -> anyhow::Result<()> {
-    submit_response(contract, attested_account, RESPOND, response).await
+    let call_args = make_respond_args(&response.request, &response.response)?;
+    let respond = call_with_args(attested_account, contract, call_args).await?;
+    respond.into_result()?;
+    Ok(())
 }
 
 pub async fn submit_ckd_response(
@@ -326,7 +311,10 @@ pub async fn submit_ckd_response(
     contract: &Contract,
     attested_account: &Account,
 ) -> anyhow::Result<()> {
-    submit_response(contract, attested_account, RESPOND_CKD, response).await
+    let call_args = make_respond_ckd_args(&response.request, &response.response)?;
+    let respond = call_with_args(attested_account, contract, call_args).await?;
+    respond.into_result()?;
+    Ok(())
 }
 
 pub async fn submit_ckd_response_measure_gas(
@@ -334,12 +322,8 @@ pub async fn submit_ckd_response_measure_gas(
     contract: &Contract,
     attested_account: &Account,
 ) -> anyhow::Result<near_workspaces::types::Gas> {
-    let respond = attested_account
-        .call(contract.id(), RESPOND_CKD)
-        .args_json(response)
-        .max_gas()
-        .transact()
-        .await?;
+    let call_args = make_respond_ckd_args(&response.request, &response.response)?;
+    let respond = call_with_args(attested_account, contract, call_args).await?;
     let gas = respond.total_gas_burnt;
     respond.into_result()?;
     Ok(gas)
