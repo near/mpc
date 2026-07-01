@@ -6,46 +6,8 @@ set -euo pipefail
 # Required env vars: GH_TOKEN, PR_NUMBER, REPO_OWNER, REPO_NAME
 # Outputs: /tmp/pr_comments_context.txt
 
-QUERY='query($owner: String!, $repo: String!, $prNumber: Int!) {
-  repository(owner: $owner, name: $repo) {
-    pullRequest(number: $prNumber) {
-      comments(first: 100) {
-        totalCount
-        nodes {
-          author { login }
-          body
-          createdAt
-        }
-      }
-      reviewThreads(first: 100) {
-        totalCount
-        nodes {
-          isResolved
-          isOutdated
-          path
-          line
-          comments(first: 50) {
-            nodes {
-              author { login }
-              body
-              createdAt
-              diffHunk
-            }
-          }
-        }
-      }
-      reviews(first: 50) {
-        totalCount
-        nodes {
-          author { login }
-          body
-          state
-          createdAt
-        }
-      }
-    }
-  }
-}'
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+QUERY="$(cat "$SCRIPT_DIR/pr-comments.graphql")"
 
 # Execute GraphQL query and check for errors
 if ! COMMENTS_JSON=$(gh api graphql \
