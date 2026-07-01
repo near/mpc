@@ -826,7 +826,7 @@ impl MpcContract {
                 let tee_upgrade_deadline_duration =
                     Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
                 let initial_storage = env::storage_usage();
-                let insertion = self.tee_state.add_mock_participant(
+                let insertion = self.tee_state.verify_and_store_mock(
                     node_id,
                     mock,
                     tee_upgrade_deadline_duration,
@@ -869,8 +869,7 @@ impl MpcContract {
         let tls_public_key = node_id.tls_public_key.clone();
 
         // Call the verifier; `resolve_verification` bridges its response back into
-        // the yield registered below. Scheduled before `enqueue_yield_request` so
-        // that helper's `promise_return` stays the method's last host call.
+        // the yield registered below
         Promise::new(verifier_account_id)
             .function_call(
                 method_names::VERIFY_QUOTE.to_string(),
@@ -2388,10 +2387,10 @@ impl MpcContract {
     ) {
         let account_id = node_id.account_id.clone();
 
-        // No verdict (verifier unreachable, panicked, or out of gas). Don't resume;
-        // the yield timeout fires `on_attestation_verified` to clean up and refund.
         let result = match result {
             Ok(result) => result,
+            // No verdict (verifier unreachable, panicked, or out of gas). Don't resume;
+            // the yield timeout fires `on_attestation_verified` to clean up and refund.
             Err(promise_err) => {
                 log!("verifier did not answer for {account_id}: {promise_err:?}");
                 return;
@@ -2414,7 +2413,7 @@ impl MpcContract {
                 AttestationResult::Err(format!("verifier rejected quote: {reason}"))
             }
             VerificationResult::Verified(report) => {
-                self.finish_verified_attestation(&node_id, &pending, &report)
+                self.verify_post_dcap_and_store(&node_id, &pending, &report)
             }
         };
 
@@ -2434,7 +2433,7 @@ impl MpcContract {
     /// [`VerificationResult::Verified`] response, returning the outcome to resume
     /// the yield with. On failure it reverts the store explicitly, since the
     /// callback receipt commits regardless (unlike the synchronous path).
-    fn finish_verified_attestation(
+    fn verify_post_dcap_and_store(
         &mut self,
         node_id: &NodeId,
         pending: &PendingAttestation,
@@ -2445,7 +2444,7 @@ impl MpcContract {
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
         let initial_storage = env::storage_usage();
-        let insertion = match self.tee_state.finish_dstack_verify(
+        let insertion = match self.tee_state.verify_and_store_dstack(
             node_id.clone(),
             &pending.dstack,
             report,
@@ -2490,10 +2489,7 @@ impl MpcContract {
     ) -> PromiseOrValue<()> {
         let reason = match result {
             Ok(resolved) => {
-                // resolve_verification already removed the entry and refunded on failure. It
-                // removes before storing, so a verifier reply that arrives after the
-                // ~200-block yield-resume timeout (handled by the Err arm below) bails
-                // instead of storing an attestation whose deposit was already refunded.
+                // `resolve_verification` removes the entry before resuming
                 debug_assert!(!self.pending_attestations.contains_key(&account_id));
                 match resolved {
                     AttestationResult::Ok => return PromiseOrValue::Value(()),
@@ -2501,8 +2497,7 @@ impl MpcContract {
                 }
             }
             Err(_promise_err) => {
-                // Timeout: the resolution callback never resumed us, so the
-                // pending entry is still here. Clean it up and refund.
+                // ~200-block yield-resume timeout. Clean it up and refund.
                 if let Some(pending) = self.pending_attestations.remove(&account_id) {
                     refund_attestation_deposit(&account_id, pending.attached_deposit);
                     log!("yield timeout for {account_id}: refunded and cleaned up");
@@ -2512,7 +2507,7 @@ impl MpcContract {
         };
 
         // Fail the submitter's transaction from a separate receipt so the
-        // cleanup above commits (a panic here would roll it back).
+        // cleanup above commits (a panic here would roll it back)
         let promise = Promise::new(env::current_account_id()).function_call(
             method_names::FAIL_ATTESTATION_SUBMISSION.to_string(),
             borsh::to_vec(&reason).expect("borsh serialization of reason must succeed"),
@@ -5293,7 +5288,7 @@ mod tests {
             let tee_upgrade_duration =
                 Duration::from_secs(contract.config.tee_upgrade_deadline_duration_seconds);
 
-            let insertion_result = contract.tee_state.add_mock_participant(
+            let insertion_result = contract.tee_state.verify_and_store_mock(
                 NodeId {
                     account_id: self.signer_account_id.clone(),
                     tls_public_key: self.attestation_tls_key.clone(),
@@ -5955,7 +5950,7 @@ mod tests {
         };
         contract
             .tee_state
-            .add_mock_participant(node_id, expiring_attestation, TEE_UPGRADE_DURATION)
+            .verify_and_store_mock(node_id, expiring_attestation, TEE_UPGRADE_DURATION)
             .expect("mock attestation is not yet expired and valid");
 
         // Capture the running state before verify_tee for comparison
@@ -6074,7 +6069,7 @@ mod tests {
         };
         contract
             .tee_state
-            .add_mock_participant(node_id, expiring_attestation, TEE_UPGRADE_DURATION)
+            .verify_and_store_mock(node_id, expiring_attestation, TEE_UPGRADE_DURATION)
             .expect("mock attestation is not yet expired and valid");
 
         let (first_account_id, _, _) = &participant_list[0];
@@ -7513,7 +7508,7 @@ mod tests {
         // Add attestation for the new node (mirrors what ConcludeNodeMigrationTestSetup::setup does).
         contract
             .tee_state
-            .add_mock_participant(
+            .verify_and_store_mock(
                 NodeId {
                     account_id: operator4.clone(),
                     tls_public_key: new_tls_key.clone(),
