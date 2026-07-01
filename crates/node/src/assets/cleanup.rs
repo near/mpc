@@ -138,6 +138,7 @@ mod tests {
     use crate::assets::test_utils::triple_v2_key;
     use crate::db::EPOCH_ID_KEY;
     use crate::db::{DBCol, SecretDB};
+    use crate::network::testing::new_test_client;
     use crate::primitives::UniqueId;
     use crate::providers::ecdsa::triple::TripleStorage;
     use mpc_primitives::domain::DomainId;
@@ -237,17 +238,13 @@ mod tests {
         // Given a node has written a stale triple via TripleStorage.
         let (mut start_data, my_participant_id, threshold) = test_utils::gen_four_participants();
         let all_participants = get_participant_ids(start_data.clone());
-        let alive_participants = Arc::new(Mutex::new(all_participants.clone()));
+        let client = new_test_client(all_participants.clone(), my_participant_id);
         let dir = tempfile::tempdir().unwrap();
         let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
         let triple_store = TripleStorage::new(
             FakeClock::default().clock(),
             db.clone(),
-            my_participant_id,
-            {
-                let alive = alive_participants.clone();
-                Arc::new(move || alive.lock().unwrap().clone())
-            },
+            &client,
             threshold,
         )
         .unwrap();
@@ -305,17 +302,13 @@ mod tests {
             .take(all_participants.len() - 1)
             .copied()
             .collect();
-        let alive_participants = Arc::new(Mutex::new(all_participants.clone()));
+        let client = new_test_client(all_participants.clone(), my_participant_id);
         let dir = tempfile::tempdir().unwrap();
         let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
         let triple_store = TripleStorage::new(
             FakeClock::default().clock(),
             db.clone(),
-            my_participant_id,
-            {
-                let alive = alive_participants.clone();
-                Arc::new(move || alive.lock().unwrap().clone())
-            },
+            &client,
             threshold,
         )
         .unwrap();
@@ -363,17 +356,13 @@ mod tests {
             .iter()
             .find(|p| **p != my_participant_id)
             .unwrap();
-        let alive_participants = Arc::new(Mutex::new(all_participants.clone()));
+        let client = new_test_client(all_participants.clone(), my_participant_id);
         let dir = tempfile::tempdir().unwrap();
         let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
         let triple_store = TripleStorage::new(
             FakeClock::default().clock(),
             db.clone(),
-            my_participant_id,
-            {
-                let alive = alive_participants.clone();
-                Arc::new(move || alive.lock().unwrap().clone())
-            },
+            &client,
             threshold,
         )
         .unwrap();

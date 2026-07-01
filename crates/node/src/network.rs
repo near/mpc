@@ -921,6 +921,31 @@ pub mod testing {
         transports
     }
 
+    /// Builds a [`MeshNetworkClient`] synchronously (no background receiver task) for unit tests
+    /// that only need participant / alive-set queries. All participants report indexer height 0
+    /// and the test transport reports everyone bidirectionally connected, so
+    /// [`MeshNetworkClient::all_alive_participant_ids`] returns the full participant set.
+    pub fn new_test_client(
+        participants: Vec<ParticipantId>,
+        my_participant_id: ParticipantId,
+    ) -> Arc<super::MeshNetworkClient> {
+        let transport = Arc::new(TestMeshTransportSender {
+            transport: Arc::new(TestMeshTransport {
+                participant_ids: participants.clone(),
+                senders: HashMap::new(),
+            }),
+            my_participant_id,
+        });
+        let channels = Arc::new(std::sync::Mutex::new(super::NetworkTaskChannelManager::new()));
+        let indexer_heights =
+            Arc::new(crate::network::indexer_heights::IndexerHeightTracker::new(&participants));
+        Arc::new(super::MeshNetworkClient::new(
+            transport,
+            channels,
+            indexer_heights,
+        ))
+    }
+
     pub async fn run_test_clients<T: 'static + Send, F, FR>(
         participants: Vec<ParticipantId>,
         client_runner: F,

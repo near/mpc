@@ -80,8 +80,7 @@ impl EcdsaSignatureProvider {
                 Arc::new(TripleStorage::new(
                     clock.clone(),
                     db.clone(),
-                    client.my_participant_id(),
-                    ecdsa_common::active_participants_query(&client),
+                    &client,
                     t,
                 )?),
             );
