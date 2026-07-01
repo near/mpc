@@ -421,19 +421,21 @@ struct IndexerClient {
 
 const INTERVAL: Duration = Duration::from_millis(500);
 
-/// Max blocks the local head may trail the highest peer and still count as caught up.
-const SYNC_HEIGHT_TOLERANCE: BlockHeight = 5;
+/// Consecutive non-syncing polls, over which the head advances, required before
+/// we treat the node as caught up. At [`INTERVAL`] spacing this is a short
+/// stability window that outlasts the transient `syncing == false` reported at
+/// boot.
+const REQUIRED_STABLE_POLLS: u32 = 4;
 
 impl IndexerClient {
     async fn wait_for_full_sync(&self) {
+        let mut progress = SyncProgress::default();
         loop {
             tokio::time::sleep(INTERVAL).await;
 
-            // `detailed: true` so the response carries connected-peer heights,
-            // which we use to confirm the head has actually caught up.
             let status_request = Status {
                 is_health_check: false,
-                detailed: true,
+                detailed: false,
             };
             let status_response = self
                 .client
@@ -446,19 +448,9 @@ impl IndexerClient {
                 continue;
             };
 
-            let max_peer_height = status.detailed_debug_status.as_ref().and_then(|detailed| {
-                detailed
-                    .network_info
-                    .connected_peers
-                    .iter()
-                    .filter_map(|peer| peer.height)
-                    .max()
-            });
-
-            if head_caught_up_to_peers(
+            if progress.observe(
                 status.sync_info.syncing,
                 status.sync_info.latest_block_height,
-                max_peer_height,
             ) {
                 return;
             }
@@ -466,24 +458,46 @@ impl IndexerClient {
     }
 }
 
-/// Whether the node has caught up to the network head.
+/// Decides when the node has caught up to the chain tip from its own head
+/// progress.
 ///
 /// `syncing` alone is insufficient: a freshly state-syncing node reports it
-/// `false` at boot before learning it is behind, which would pin the streamer's
-/// `LatestSynced` cursor at a stale head. So we also require the head within
-/// [`SYNC_HEIGHT_TOLERANCE`] of the highest peer, and wait while no peer height
-/// is known.
-fn head_caught_up_to_peers(
-    syncing: bool,
-    head_height: BlockHeight,
-    max_peer_height: Option<BlockHeight>,
-) -> bool {
-    if syncing {
-        return false;
-    }
-    match max_peer_height {
-        None => false,
-        Some(peer_height) => peer_height.saturating_sub(head_height) <= SYNC_HEIGHT_TOLERANCE,
+/// `false` at boot before it has learned it is behind, which would pin the
+/// streamer's `LatestSynced` cursor at the stale genesis head. So we wait for a
+/// sustained run of non-syncing polls over which the head advances. Bulk sync
+/// sets `syncing == true`, and the pre-sync boot window leaves the head static,
+/// so only a node following the live chain tip clears both gates.
+///
+/// A fully halted chain (head not advancing) defers startup, which is
+/// acceptable: there would be nothing to stream.
+#[derive(Default)]
+struct SyncProgress {
+    /// Head height when the current non-syncing run began, or `None` if the last
+    /// observed poll reported syncing.
+    run_start_head: Option<BlockHeight>,
+    /// Number of consecutive non-syncing polls in the current run.
+    run_polls: u32,
+}
+
+impl SyncProgress {
+    /// Feeds one status sample; returns `true` once the node is caught up.
+    fn observe(&mut self, syncing: bool, head_height: BlockHeight) -> bool {
+        if syncing {
+            self.run_start_head = None;
+            self.run_polls = 0;
+            return false;
+        }
+        match self.run_start_head {
+            None => {
+                self.run_start_head = Some(head_height);
+                self.run_polls = 1;
+                false
+            }
+            Some(start_head) => {
+                self.run_polls += 1;
+                self.run_polls >= REQUIRED_STABLE_POLLS && head_height > start_head
+            }
+        }
     }
 }
 
@@ -546,97 +560,114 @@ pub struct IndexerAPI<TransactionSender, ForeignChainPolicyReader> {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::{SYNC_HEIGHT_TOLERANCE, head_caught_up_to_peers};
+    use super::{BlockHeight, REQUIRED_STABLE_POLLS, SyncProgress};
 
-    #[test]
-    fn head_caught_up_to_peers__should_be_false_while_node_reports_syncing() {
-        // Given
-        let syncing = true;
-
-        // When
-        let caught_up = head_caught_up_to_peers(syncing, 257_000_000, Some(257_000_000));
-
-        // Then
-        assert!(!caught_up);
+    /// Feeds `(syncing, head_height)` samples in order and returns the index of
+    /// the first sample after which the node is reported caught up, or `None`.
+    fn first_caught_up_poll(samples: &[(bool, BlockHeight)]) -> Option<usize> {
+        let mut progress = SyncProgress::default();
+        samples
+            .iter()
+            .position(|&(syncing, head)| progress.observe(syncing, head))
     }
 
     #[test]
-    fn head_caught_up_to_peers__should_be_false_at_genesis_before_sync_starts() {
+    fn observe__should_never_report_caught_up_while_syncing() {
         // Given
-        let syncing = false;
-        let genesis_head = 42_376_888;
-        let peer_head = 257_409_058;
+        let samples: Vec<_> = (0..10).map(|i| (true, 42_000_000 + i)).collect();
 
         // When
-        let caught_up = head_caught_up_to_peers(syncing, genesis_head, Some(peer_head));
+        let caught_up_at = first_caught_up_poll(&samples);
 
         // Then
-        assert!(!caught_up);
+        assert_eq!(caught_up_at, None);
+    }
+
+    /// The wedge: at boot the node sits at genesis reporting `syncing == false`
+    /// before it learns it is behind. A static head must never be mistaken for
+    /// being caught up.
+    #[test]
+    fn observe__should_never_report_caught_up_with_static_head_at_genesis() {
+        // Given
+        let genesis = 42_376_888;
+        let samples: Vec<_> = (0..10).map(|_| (false, genesis)).collect();
+
+        // When
+        let caught_up_at = first_caught_up_poll(&samples);
+
+        // Then
+        assert_eq!(caught_up_at, None);
     }
 
     #[test]
-    fn head_caught_up_to_peers__should_be_false_with_stale_head_far_above_genesis() {
+    fn observe__should_not_report_caught_up_before_required_polls() {
         // Given
-        let syncing = false;
-        let stale_head = 200_000_000;
-        let peer_head = 257_409_058;
+        let samples: Vec<_> = (0..REQUIRED_STABLE_POLLS - 1)
+            .map(|i| (false, 257_000_000 + u64::from(i)))
+            .collect();
 
         // When
-        let caught_up = head_caught_up_to_peers(syncing, stale_head, Some(peer_head));
+        let caught_up_at = first_caught_up_poll(&samples);
 
         // Then
-        assert!(!caught_up);
+        assert_eq!(caught_up_at, None);
     }
 
     #[test]
-    fn head_caught_up_to_peers__should_be_false_when_no_peer_height_known() {
+    fn observe__should_report_caught_up_after_sustained_progress() {
         // Given
-        let syncing = false;
+        let samples: Vec<_> = (0..REQUIRED_STABLE_POLLS)
+            .map(|i| (false, 257_000_000 + u64::from(i)))
+            .collect();
 
         // When
-        let caught_up = head_caught_up_to_peers(syncing, 257_409_058, None);
+        let caught_up_at = first_caught_up_poll(&samples);
 
         // Then
-        assert!(!caught_up);
+        let expected = usize::try_from(REQUIRED_STABLE_POLLS).unwrap() - 1;
+        assert_eq!(caught_up_at, Some(expected));
     }
 
+    /// Even after enough non-syncing polls, a head that has not advanced past
+    /// the start of the run is not yet caught up; it must wait for a new block.
     #[test]
-    fn head_caught_up_to_peers__should_be_true_when_head_reaches_peer_height() {
+    fn observe__should_wait_for_head_to_advance_past_run_start() {
         // Given
-        let syncing = false;
-        let peer_head = 257_409_058;
+        let head = 257_000_000;
+        let mut samples: Vec<_> = (0..REQUIRED_STABLE_POLLS + 2)
+            .map(|_| (false, head))
+            .collect();
+        samples.push((false, head + 1));
 
         // When
-        let caught_up = head_caught_up_to_peers(syncing, peer_head, Some(peer_head));
+        let caught_up_at = first_caught_up_poll(&samples);
 
         // Then
-        assert!(caught_up);
+        assert_eq!(caught_up_at, Some(samples.len() - 1));
     }
 
+    /// A resumed sync resets the run, so non-syncing polls seen before it do not
+    /// count toward the stability window.
     #[test]
-    fn head_caught_up_to_peers__should_be_true_within_tolerance_of_peer_height() {
+    fn observe__should_reset_run_when_syncing_resumes() {
         // Given
-        let syncing = false;
-        let peer_head = 257_409_058;
-        let head = peer_head - SYNC_HEIGHT_TOLERANCE;
+        let pre = [
+            (false, 42_000_000),
+            (false, 42_000_001),
+            (false, 42_000_002),
+        ];
+        let resync = [(true, 100_000_000)];
+        let post: Vec<_> = (0..REQUIRED_STABLE_POLLS)
+            .map(|i| (false, 257_000_000 + u64::from(i)))
+            .collect();
+        let samples: Vec<_> = pre.iter().chain(&resync).chain(&post).copied().collect();
 
         // When
-        let caught_up = head_caught_up_to_peers(syncing, head, Some(peer_head));
+        let caught_up_at = first_caught_up_poll(&samples);
 
         // Then
-        assert!(caught_up);
-    }
-
-    #[test]
-    fn head_caught_up_to_peers__should_be_true_when_head_above_peer_height() {
-        // Given
-        let syncing = false;
-        let peer_head = 257_409_058;
-
-        // When
-        let caught_up = head_caught_up_to_peers(syncing, peer_head + 10, Some(peer_head));
-
-        // Then
-        assert!(caught_up);
+        let expected =
+            pre.len() + resync.len() + usize::try_from(REQUIRED_STABLE_POLLS).unwrap() - 1;
+        assert_eq!(caught_up_at, Some(expected));
     }
 }
