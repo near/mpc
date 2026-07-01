@@ -77,12 +77,7 @@ impl EcdsaSignatureProvider {
             }
             triple_stores.insert(
                 t,
-                Arc::new(TripleStorage::new(
-                    clock.clone(),
-                    db.clone(),
-                    &client,
-                    t,
-                )?),
+                Arc::new(TripleStorage::new(clock.clone(), db.clone(), &client, t)?),
             );
         }
 

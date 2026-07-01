@@ -933,9 +933,12 @@ pub mod testing {
             }),
             my_participant_id,
         });
-        let channels = Arc::new(std::sync::Mutex::new(super::NetworkTaskChannelManager::new()));
-        let indexer_heights =
-            Arc::new(crate::network::indexer_heights::IndexerHeightTracker::new(&participants));
+        let channels = Arc::new(std::sync::Mutex::new(
+            super::NetworkTaskChannelManager::new(),
+        ));
+        let indexer_heights = Arc::new(crate::network::indexer_heights::IndexerHeightTracker::new(
+            &participants,
+        ));
         Arc::new(super::MeshNetworkClient::new(
             transport,
             channels,

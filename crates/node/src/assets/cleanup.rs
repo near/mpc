@@ -241,13 +241,9 @@ mod tests {
         let client = new_test_client(all_participants.clone(), my_participant_id);
         let dir = tempfile::tempdir().unwrap();
         let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
-        let triple_store = TripleStorage::new(
-            FakeClock::default().clock(),
-            db.clone(),
-            &client,
-            threshold,
-        )
-        .unwrap();
+        let triple_store =
+            TripleStorage::new(FakeClock::default().clock(), db.clone(), &client, threshold)
+                .unwrap();
         let id = triple_store.generate_and_reserve_id();
         triple_store.add_owned(id, make_triple(&all_participants));
         let v2_key = triple_v2_key(threshold, id);
@@ -305,13 +301,9 @@ mod tests {
         let client = new_test_client(all_participants.clone(), my_participant_id);
         let dir = tempfile::tempdir().unwrap();
         let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
-        let triple_store = TripleStorage::new(
-            FakeClock::default().clock(),
-            db.clone(),
-            &client,
-            threshold,
-        )
-        .unwrap();
+        let triple_store =
+            TripleStorage::new(FakeClock::default().clock(), db.clone(), &client, threshold)
+                .unwrap();
         let id = triple_store.generate_and_reserve_id();
         triple_store.add_owned(id, make_triple(&active_subset));
         let v2_key = triple_v2_key(threshold, id);
@@ -359,13 +351,9 @@ mod tests {
         let client = new_test_client(all_participants.clone(), my_participant_id);
         let dir = tempfile::tempdir().unwrap();
         let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
-        let triple_store = TripleStorage::new(
-            FakeClock::default().clock(),
-            db.clone(),
-            &client,
-            threshold,
-        )
-        .unwrap();
+        let triple_store =
+            TripleStorage::new(FakeClock::default().clock(), db.clone(), &client, threshold)
+                .unwrap();
         // Even an outright-stale peer-owned triple stays put — the peer cleans
         // its own.
         let peer_id = UniqueId::new(peer, 100, 0);
