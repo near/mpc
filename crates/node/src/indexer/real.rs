@@ -143,17 +143,11 @@ pub fn spawn_real_indexer(
 
             tracing::info!("Indexer waiting for node to finish syncing before streaming blocks.");
 
-            // Defer all indexing work until the node has finished syncing. On a
-            // node that state-syncs from scratch, neard sits at genesis until
-            // sync completes; starting the streamer then pins its cursor at
-            // genesis (`LatestSynced`), below the node's block tail, so it can
-            // never reach the chain tip. (#3623)
-            //
-            // The wait is raced against `shutdown_token` so a SIGTERM during the
-            // (possibly long) initial state sync still tears the thread down
-            // cleanly instead of blocking until sync finishes.
+            // Streaming before the node is synced pins the `LatestSynced` cursor
+            // at genesis, below the block tail it can never reach. Raced against
+            // shutdown so a SIGTERM during state sync still tears down cleanly.
             if !await_sync_or_shutdown(
-                indexer_state.client.wait_for_full_sync(),
+                indexer_state.client.ensure_head_follows_tip(),
                 &shutdown_token,
             )
             .await
