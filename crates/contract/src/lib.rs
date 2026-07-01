@@ -17,6 +17,7 @@ pub mod update;
 pub mod utils;
 
 pub mod v3_12_0_state;
+pub mod v3_13_0_state;
 
 #[cfg(feature = "bench-contract-methods")]
 mod bench;
@@ -904,9 +905,6 @@ impl MpcContract {
             },
         );
 
-        // The yield is the method's return value: `enqueue_yield_request` called
-        // `promise_return` as the final host call, so returning unit here adds no
-        // `value_return` that would override it.
         Ok(())
     }
 
@@ -920,8 +918,9 @@ impl MpcContract {
     ) -> Result<(), Error> {
         let is_new_attestation =
             matches!(insertion, ParticipantInsertion::NewlyInsertedParticipant);
-        // A participant refreshing an existing attestation is not charged.
+
         if caller_is_participant && !is_new_attestation {
+            refund_attestation_deposit(account_id, attached);
             return Ok(());
         }
 
@@ -2161,6 +2160,14 @@ impl MpcContract {
     pub fn migrate() -> Result<Self, Error> {
         log!("migrating contract");
 
+        match try_state_read::<v3_13_0_state::MpcContract>() {
+            Ok(Some(state)) => return Ok(state.into()),
+            Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
+            Err(err) => {
+                log!("failed to deserialize state into 3.13.0 state: {:?}", err);
+            }
+        };
+
         match try_state_read::<v3_12_0_state::MpcContract>() {
             Ok(Some(state)) => return Ok(state.into()),
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
@@ -2415,7 +2422,7 @@ impl MpcContract {
             refund_attestation_deposit(&account_id, pending.attached_deposit);
         }
         // MUST be the last host call: anything after could panic and roll back
-        // the state mutations above.
+        // the state mutations above
         env::promise_yield_resume(
             &pending.data_id,
             serde_json::to_vec(&attestation_result)
@@ -2482,8 +2489,17 @@ impl MpcContract {
         #[callback_result] result: Result<AttestationResult, PromiseError>,
     ) -> PromiseOrValue<()> {
         let reason = match result {
-            Ok(AttestationResult::Ok) => return PromiseOrValue::Value(()),
-            Ok(AttestationResult::Err(reason)) => reason,
+            Ok(resolved) => {
+                // resolve_verification already removed the entry and refunded on failure. It
+                // removes before storing, so a verifier reply that arrives after the
+                // ~200-block yield-resume timeout (handled by the Err arm below) bails
+                // instead of storing an attestation whose deposit was already refunded.
+                debug_assert!(!self.pending_attestations.contains_key(&account_id));
+                match resolved {
+                    AttestationResult::Ok => return PromiseOrValue::Value(()),
+                    AttestationResult::Err(reason) => reason,
+                }
+            }
             Err(_promise_err) => {
                 // Timeout: the resolution callback never resumed us, so the
                 // pending entry is still here. Clean it up and refund.
@@ -2500,7 +2516,7 @@ impl MpcContract {
         let promise = Promise::new(env::current_account_id()).function_call(
             method_names::FAIL_ATTESTATION_SUBMISSION.to_string(),
             borsh::to_vec(&reason).expect("borsh serialization of reason must succeed"),
-            NearToken::from_near(0),
+            NearToken::from_yoctonear(0),
             Gas::from_tgas(self.config.fail_attestation_submission_tera_gas),
         );
         PromiseOrValue::Promise(promise.as_return())

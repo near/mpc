@@ -13,20 +13,22 @@ use near_sdk::{CryptoHash, NearToken, near};
 /// One in-flight verification per submitter account.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct PendingAttestation {
-    /// The submitted payload the post-DCAP checks consume once the verifier
-    /// returns its report.
-    pub dstack: DstackAttestation,
+    /// The submitted payload. Only `tcb_info` is read after the verifier callback;
+    /// `quote`/`collateral` are consumed once for the pre-callback `verify_quote`
+    /// call, so storing the whole struct holds ~2-8 KiB of dead bytes per in-flight
+    /// entry. TODO(#3720): stash only `tcb_info`.
+    pub(crate) dstack: DstackAttestation,
     /// Checked against the quote's report-data during the post-DCAP checks.
-    pub tls_public_key: Ed25519PublicKey,
+    pub(crate) tls_public_key: Ed25519PublicKey,
     /// Stashed because the deposit is not visible from the callback receipt:
     /// consumed for storage on success, refunded on failure.
-    pub attached_deposit: NearToken,
+    pub(crate) attached_deposit: NearToken,
     /// Participant status at submit time, which decides whether the caller pays
     /// for storage. Captured because the callback receipt is no longer the
     /// caller, so it can no longer be re-derived.
-    pub caller_is_participant: bool,
+    pub(crate) caller_is_participant: bool,
     /// Yield handle, read back by the callback to resume the yield.
-    pub data_id: CryptoHash,
+    pub(crate) data_id: CryptoHash,
 }
 
 #[near(serializers = [json])]
