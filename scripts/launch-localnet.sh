@@ -142,12 +142,8 @@ EOF
   for ((i = 1; i <= N; i++)); do
 
     node_name="mpc-node-$i.test.near"
-    mpc-node init --dir ~/.near/$node_name --chain-id mpc-localnet --genesis ~/.near/mpc-localnet/genesis.json --boot-nodes "$NODE_PUBKEY@127.0.0.1:24566"
-    cp ~/.near/mpc-localnet/genesis.json ~/.near/$node_name/genesis.json
-    RPC_PORT=$((BASE_RPC_PORT + i)) INDEXER_PORT=$((BASE_INDEXER_PORT + i)) jq '.network.addr = "127.0.0.1:" + env.INDEXER_PORT | .rpc.addr = "127.0.0.1:" + env.RPC_PORT' ~/.near/$node_name/config.json >~/.near/$node_name/tmp.json
-    mv ~/.near/$node_name/tmp.json ~/.near/$node_name/config.json
-
-    WEB_UI_PORT=$((BASE_WEB_UI_PORT + i)) MIGRATION_PORT=$((BASE_MIGRATION_PORT + i)) PPROF_PORT=$((BASE_PPROF_PORT + i)) NEAR_ACCOUNT_NAME=$node_name envsubst <docs/localnet/mpc-configs/config.yaml.template >~/.near/$node_name/config.yaml
+    mkdir -p ~/.near/$node_name
+    MPC_NODE_ID=$node_name NEAR_ACCOUNT_ID=$node_name NEAR_BOOT_NODES="$NODE_PUBKEY@127.0.0.1:24566" RPC_PORT=$((BASE_RPC_PORT + i)) INDEXER_PORT=$((BASE_INDEXER_PORT + i)) WEB_UI_PORT=$((BASE_WEB_UI_PORT + i)) MIGRATION_WEB_UI_PORT=$((BASE_MIGRATION_PORT + i)) PPROF_PORT=$((BASE_PPROF_PORT + i)) envsubst <docs/localnet/mpc-config.template.toml >~/.near/$node_name/mpc-config.toml
 
   done
 
@@ -156,7 +152,7 @@ EOF
   for ((i = 1; i <= N; i++)); do
 
     node_name="mpc-node-$i.test.near"
-    node_cmd="RUST_LOG=info mpc-node start --home-dir ~/.near/$node_name/ 11111111111111111111111111111111 --image-hash 8b40f81f77b8c22d6c777a6e14d307a1d11cb55ab83541fbb8575d02d86a74b0 --latest-allowed-hash-file /temp/LATEST_ALLOWED_HASH_FILE.txt local"
+    node_cmd="RUST_LOG=info mpc-node start-with-config-file ~/.near/$node_name/mpc-config.toml"
     node_pid=$(run_bg $node_name "${node_cmd}")
     pids+=("${node_pid}")
   done
