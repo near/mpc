@@ -21,7 +21,10 @@ use chain_gateway_test_contract::{
 };
 use rstest::rstest;
 
-const EVENT_TIMEOUT: Duration = Duration::from_secs(10);
+// Generous: the gateway now waits for the node to catch up to its peers before
+// streaming (see `wait_for_full_sync`), which delays the first block update on a
+// loaded CI box.
+const EVENT_TIMEOUT: Duration = Duration::from_secs(30);
 
 async fn must_recv_block_update(
     receiver: &mut tokio::sync::mpsc::Receiver<BlockUpdate>,
