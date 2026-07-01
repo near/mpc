@@ -11,13 +11,11 @@ use crate::sandbox::common::{
 use near_mpc_contract_interface::call_args::{
     make_respond_verify_foreign_chain_tx_args, make_verify_foreign_chain_tx_args,
 };
-use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
     self as dtos, ExtractedValue, ForeignChainRpcRequest, ForeignTxPayloadVersion,
     VerifyForeignTransactionRequest, VerifyForeignTransactionResponse,
 };
 use rstest::rstest;
-use serde_json::json;
 
 const SIGNATURE_TIMEOUT_BLOCKS: u64 = 200;
 

@@ -18,11 +18,10 @@ use mpc_contract::{
 use near_account_id::AccountId;
 use near_mpc_bounded_collections::BoundedVec;
 use near_mpc_contract_interface::call_args::{
-    make_ckd_request_args, make_respond_args, make_respond_ckd_args, make_sign_request_args,
+    CallError, make_ckd_request_args, make_respond_args, make_respond_ckd_args,
+    make_sign_request_args,
 };
-use near_mpc_contract_interface::method_names::{
-    GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST, RESPOND_CKD,
-};
+use near_mpc_contract_interface::method_names::{GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST};
 use near_mpc_contract_interface::types::kdf::{derive_app_id, derive_tweak};
 use near_mpc_contract_interface::types::{
     self as dtos, CKDAppPublicKey, CKDAppPublicKeyPV, CKDRequest, CKDRequestArgs,
@@ -131,7 +130,7 @@ impl DomainResponseTest {
         }
     }
 
-    pub fn make_function_call_args(&self) -> anyhow::Result<FunctionCallArgs> {
+    pub fn make_function_call_args(&self) -> Result<FunctionCallArgs, CallError> {
         match self {
             Self::Sign(inner) => make_sign_request_args(&inner.args),
             Self::CKD(inner) => make_ckd_request_args(&inner.args),

@@ -318,7 +318,7 @@ struct MakeDuplicateCkdCallsArgs<'a> {
 /// CKD counterpart to [`wait_for_pending_signature_queue`]; same rationale.
 async fn wait_for_pending_ckd_queue(
     contract: &near_workspaces::Contract,
-    request: &mpc_contract::primitives::ckd::CKDRequest,
+    request: &near_mpc_contract_interface::types::CKDRequest,
     expected_len: u32,
 ) -> anyhow::Result<()> {
     let deadline = std::time::Instant::now() + Duration::from_secs(30);
