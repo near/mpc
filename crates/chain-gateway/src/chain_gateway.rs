@@ -16,7 +16,7 @@ use crate::near_internals_wrapper::{
     NearClientActorHandle, NearRpcActorHandle, NearViewClientActorHandle,
 };
 use crate::primitives::{
-    FetchLatestFinalBlockInfo, IsSyncing, QueryViewFunction, SubmitSignedTransaction, SyncStatus,
+    FetchLatestFinalBlockInfo, IsSyncing, QueryViewFunction, SubmitSignedTransaction,
 };
 use crate::types::ObservedState;
 
@@ -32,8 +32,8 @@ pub struct ChainGateway {
 
 impl IsSyncing for ChainGateway {
     type Error = NearClientError;
-    async fn sync_status(&self) -> Result<SyncStatus, Self::Error> {
-        self.client.sync_status().await
+    async fn is_syncing(&self) -> Result<bool, Self::Error> {
+        self.client.is_syncing().await
     }
 }
 
