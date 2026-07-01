@@ -12,8 +12,9 @@ use crate::tests::{
     request_signature_and_await_response,
 };
 use crate::tracking::AutoAbortTask;
-use near_mpc_contract_interface::types::{DomainConfig, Protocol};
+use near_mpc_contract_interface::types::{DomainConfig, Protocol, ReconstructionThreshold};
 use near_time::Clock;
+use std::collections::BTreeMap;
 
 // Slow enough that the DamgardEtAl domains don't flake (matches the existing
 // distinct-reconstruction-thresholds test).
@@ -209,4 +210,84 @@ async fn per_domain_reconstruction_thresholds__should_be_preserved_for_each_doma
     assert_can_sign(&mut setup.indexer, "user_drop_low", &low).await;
     assert_can_sign(&mut setup.indexer, "user_drop_mid", &mid).await;
     assert_cannot_sign(&mut setup.indexer, "user_drop_high", &high).await;
+}
+
+/// Changing a domain's reconstruction threshold via a resharing proposal takes real
+/// cryptographic effect: after lowering `t` from 4 to 2, only 2 nodes need be online to
+/// sign — impossible unless the key was genuinely re-shared to the new degree.
+#[tokio::test]
+#[test_log::test]
+#[expect(non_snake_case)]
+async fn changing_reconstruction_threshold_via_resharing__should_reshare_the_key_to_the_new_degree()
+ {
+    // Given a 5-node cluster with a single CaitSith domain at t=4.
+    const NUM_PARTICIPANTS: usize = 5;
+    const THRESHOLD: usize = 3;
+    const TXN_DELAY_BLOCKS: u64 = 1;
+    let temp_dir = tempfile::tempdir().unwrap();
+    let mut setup = IntegrationTestSetup::new(
+        Clock::real(),
+        temp_dir.path(),
+        (0..NUM_PARTICIPANTS)
+            .map(|i| format!("test{}", i).parse().unwrap())
+            .collect(),
+        THRESHOLD,
+        TXN_DELAY_BLOCKS,
+        PortSeed::RECONSTRUCTION_THRESHOLD_CHANGE_TEST,
+        BLOCK_TIME,
+    );
+
+    let domain = sign_domain(0, Protocol::CaitSith, 4);
+    {
+        let mut contract = setup.indexer.contract_mut().await;
+        contract.initialize(setup.participants.clone());
+        contract.add_domains(vec![domain.clone()]);
+    }
+
+    let _runs = setup
+        .configs
+        .into_iter()
+        .map(|config| AutoAbortTask::from(tokio::spawn(config.run())))
+        .collect::<Vec<_>>();
+
+    setup
+        .indexer
+        .wait_for_contract_state(
+            |state| matches!(state, ContractState::Running(_)),
+            DEFAULT_MAX_PROTOCOL_WAIT_TIME,
+        )
+        .await
+        .expect("must not exceed timeout");
+
+    // Sanity: at t=4 the domain signs with all nodes online.
+    assert_can_sign(&mut setup.indexer, "user_pre", &domain).await;
+
+    // When resharing lowers the threshold to t=2 (participant set unchanged).
+    let lowered = sign_domain(0, Protocol::CaitSith, 2);
+    setup
+        .indexer
+        .contract_mut()
+        .await
+        .start_resharing_with_threshold_updates(
+            setup.participants.clone(),
+            BTreeMap::from([(domain.id, ReconstructionThreshold::new(2))]),
+        );
+
+    setup
+        .indexer
+        .wait_for_contract_state(
+            |state| match state {
+                ContractState::Running(running) => running.keyset.epoch_id.get() == 1,
+                _ => false,
+            },
+            DEFAULT_MAX_PROTOCOL_WAIT_TIME,
+        )
+        .await
+        .expect("Timeout waiting for resharing to complete");
+
+    // Then two online nodes suffice; the original t=4 sharing would have needed four.
+    let _d1 = setup.indexer.disable(4.into()).await;
+    let _d2 = setup.indexer.disable(3.into()).await;
+    let _d3 = setup.indexer.disable(2.into()).await;
+    assert_can_sign(&mut setup.indexer, "user_post", &lowered).await;
 }

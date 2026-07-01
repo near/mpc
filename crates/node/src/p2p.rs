@@ -1020,6 +1020,7 @@ pub mod testing {
         pub const DISTINCT_RECONSTRUCTION_THRESHOLDS_TEST: Self = Self::new(23);
         pub const RECONSTRUCTION_THRESHOLD_AVAILABILITY_TEST: Self = Self::new(24);
         pub const RECONSTRUCTION_THRESHOLD_RESHARING_TEST: Self = Self::new(25);
+        pub const RECONSTRUCTION_THRESHOLD_CHANGE_TEST: Self = Self::new(26);
     }
 
     pub fn generate_test_p2p_configs(
