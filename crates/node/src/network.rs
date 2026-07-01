@@ -921,10 +921,7 @@ pub mod testing {
         transports
     }
 
-    /// Builds a [`MeshNetworkClient`] synchronously (no background receiver task) for unit tests
-    /// that only need participant / alive-set queries. All participants report indexer height 0
-    /// and the test transport reports everyone bidirectionally connected, so
-    /// [`MeshNetworkClient::all_alive_participant_ids`] returns the full participant set.
+    /// Synchronous [`MeshNetworkClient`] for unit tests. All participants are reported alive.
     pub fn new_test_client(
         participants: Vec<ParticipantId>,
         my_participant_id: ParticipantId,
