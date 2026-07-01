@@ -1,22 +1,21 @@
 //! ## Overview
-//! This module stores the previous contract state—the one you want to migrate from.
-//! The goal is to describe the data layout _exactly_ as it existed before.
+//! Shadows the contract state written by the `3.13.0` release so [`crate::MpcContract::migrate`]
+//! can upgrade from it. See [`crate::v3_12_0_state`] for the rationale and guideline.
 //!
-//! ## Guideline
-//! In theory, you could copy-paste every struct from the specific commit you're migrating from.
-//! However, this approach (a) requires manual effort from a developer and (b) increases the binary size.
-//! A better approach: only copy the structures that have changed and import the rest from the existing codebase.
+//! `3.13.0` differs from the live layout by four appended `Config` gas fields
+//! (`fail_attestation_submission_tera_gas`, `verifier_tera_gas`,
+//! `resolve_verification_tera_gas`, `on_attestation_verified_tera_gas`), all
+//! defaulted here, and the appended `MpcContract::pending_attestations` map.
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_contract_interface::types::{Metrics, VerifyForeignTransactionRequest};
 use near_sdk::{
-    env,
+    AccountId, env,
     store::{Lazy, LookupMap},
 };
 
 use crate::{
     SupportedForeignChainsByNode,
-    foreign_chain_rpc::ForeignChainRpcWhitelist,
     foreign_chains_metadata::ForeignChainsMetadata,
     node_migrations::NodeMigrations,
     primitives::{
@@ -31,8 +30,8 @@ use crate::{
     update::ProposedUpdates,
 };
 
-/// The `Config` layout written by the `3.12.0` contract, before
-/// `remove_non_participant_tee_verifier_votes_tera_gas` was appended.
+/// The `Config` layout written by the `3.13.0` contract, before
+/// `fail_attestation_submission_tera_gas` and the verifier gas knobs were added.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct OldConfig {
     key_event_timeout_blocks: u64,
@@ -48,6 +47,7 @@ pub struct OldConfig {
     cleanup_orphaned_node_migrations_tera_gas: u64,
     remove_non_participant_update_votes_tera_gas: u64,
     clean_foreign_chain_data_tera_gas: u64,
+    remove_non_participant_tee_verifier_votes_tera_gas: u64,
 }
 
 impl From<OldConfig> for crate::Config {
@@ -72,16 +72,17 @@ impl From<OldConfig> for crate::Config {
             remove_non_participant_update_votes_tera_gas: old
                 .remove_non_participant_update_votes_tera_gas,
             clean_foreign_chain_data_tera_gas: old.clean_foreign_chain_data_tera_gas,
-            // New in this version: default the gas for the verifier-vote cleanup
-            // promise added after `3.12.0`.
+            remove_non_participant_tee_verifier_votes_tera_gas: old
+                .remove_non_participant_tee_verifier_votes_tera_gas,
+            // New in this version: the attestation fail-call and verifier-call gas
+            // knobs, added alongside the async attestation flow.
             ..crate::Config::default()
         }
     }
 }
 
-/// Keep this module in sync with [`crate::MpcContract`]: the moment a field's borsh
-/// layout diverges, shadow the old type here (see this module's history for examples) so
-/// state written by the `3.12.0` contract still deserializes during migration.
+/// Keep this module in sync with [`crate::MpcContract`]: it is the `3.13.0` layout,
+/// which differs only by the appended `pending_attestations` map.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct MpcContract {
     protocol_state: ProtocolContractState,
@@ -95,7 +96,9 @@ pub struct MpcContract {
     accept_requests: bool,
     node_migrations: NodeMigrations,
     metrics: Metrics,
-    foreign_chain_rpc_whitelist: ForeignChainRpcWhitelist,
+    foreign_chains: Lazy<ForeignChainsMetadata>,
+    tee_verifier_account_id: Option<AccountId>,
+    tee_verifier_votes: TeeVerifierVotes,
 }
 
 impl From<MpcContract> for crate::MpcContract {
@@ -116,15 +119,9 @@ impl From<MpcContract> for crate::MpcContract {
             accept_requests: old.accept_requests,
             node_migrations: old.node_migrations,
             metrics: old.metrics,
-            foreign_chains: Lazy::new(
-                StorageKey::ForeignChainMetadata,
-                ForeignChainsMetadata {
-                    rpc_whitelist: old.foreign_chain_rpc_whitelist,
-                    ..Default::default()
-                },
-            ),
-            tee_verifier_account_id: None,
-            tee_verifier_votes: TeeVerifierVotes::default(),
+            foreign_chains: old.foreign_chains,
+            tee_verifier_account_id: old.tee_verifier_account_id,
+            tee_verifier_votes: old.tee_verifier_votes,
             pending_attestations: LookupMap::new(StorageKey::PendingAttestations),
         }
     }

@@ -3,14 +3,14 @@
 use mpc_contract::{
     MpcContract,
     crypto_shared::types::PublicKeyExtended,
-    errors::{Error, InvalidParameters},
+    errors::Error,
     primitives::{
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantId, ParticipantInfo},
         test_utils::{bogus_ed25519_public_key, gen_participants},
         thresholds::{ProposedThresholdParameters, Threshold, ThresholdParameters},
     },
-    tee::tee_state::NodeId,
+    tee::tee_state::{AttestationSubmissionError, NodeId},
 };
 use near_mpc_contract_interface::types::{
     Attestation, InitConfig, MockAttestation, Protocol, ProtocolContractState,
@@ -341,8 +341,9 @@ fn submit_participant_info__should_reject_overwrite_from_other_account() {
     // entry is unchanged.
     assert_matches!(
         &attack_result,
-        Err(Error::InvalidParameters(InvalidParameters::InvalidTeeRemoteAttestation { reason }))
-            if reason.contains("TLS public key is already registered")
+        Err(Error::AttestationSubmission(
+            AttestationSubmissionError::TlsKeyOwnedByOtherAccount
+        ))
     );
     let stored_after = setup
         .contract

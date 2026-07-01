@@ -1,6 +1,7 @@
 use crate::crypto_shared::kdf::TweakNotOnCurve;
 use crate::primitives::domain::MIN_RECONSTRUCTION_THRESHOLD;
 use crate::primitives::key_state::{EpochId, Keyset};
+use crate::tee::tee_state::AttestationSubmissionError;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::{DomainId, DomainPurpose, ForeignChain, Protocol};
@@ -28,6 +29,14 @@ pub enum TeeError {
         "Due to previously failed TEE validation, the network is not accepting new requests at this point in time. Try again later."
     )]
     TeeValidationFailed,
+    #[error(
+        "A Dstack attestation verification is already in flight for this account; wait for it to finish before resubmitting."
+    )]
+    VerificationAlreadyPending,
+    #[error(
+        "No TEE verifier is configured yet. Participants must vote one in via vote_tee_verifier_change before Dstack attestations can be submitted."
+    )]
+    VerifierNotConfigured,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -318,6 +327,9 @@ pub enum Error {
     // Tee errors
     #[error(transparent)]
     NodeMigrationError(#[from] NodeMigrationError),
+    // Tee attestation submission errors
+    #[error(transparent)]
+    AttestationSubmission(#[from] AttestationSubmissionError),
 }
 
 impl near_sdk::FunctionError for Error {
