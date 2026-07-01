@@ -1,24 +1,20 @@
-use crate::assets::DistributedAssetStorage;
 use crate::background::InFlightGenerationTracker;
 use crate::config::MpcConfig;
-use crate::db::SecretDB;
 use crate::metrics::tokio_task_metrics::ROBUST_ECDSA_TASK_MONITORS;
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-use crate::primitives::{ParticipantId, UniqueId};
+use crate::primitives::UniqueId;
 use crate::protocol::run_protocol;
-use crate::providers::HasParticipants;
+use crate::providers::ecdsa_common;
 use crate::providers::robust_ecdsa::{
-    KeygenOutput, RobustEcdsaSignatureProvider, RobustEcdsaTaskId, get_number_of_signers,
-    translate_threshold,
+    KeygenOutput, RobustEcdsaSignatureProvider, RobustEcdsaTaskId, compute_thresholds,
 };
 use crate::tracking::AutoAbortTaskCollection;
 use crate::{metrics, tracking};
 use mpc_node_config::PresignatureConfig;
+use mpc_primitives::ReconstructionThreshold;
 use mpc_primitives::domain::DomainId;
-use near_time::Clock;
 use rand::rngs::OsRng;
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use std::time::Duration;
@@ -28,33 +24,8 @@ use threshold_signatures::ecdsa::robust_ecdsa::{
 };
 use threshold_signatures::participants::Participant;
 
-#[derive(derive_more::Deref)]
-pub struct PresignatureStorage(DistributedAssetStorage<PresignOutputWithParticipants>);
-
-// TODO(#1680): simplify alive_participant_ids_query parameter type
-impl PresignatureStorage {
-    pub fn new(
-        clock: Clock,
-        db: Arc<SecretDB>,
-        my_participant_id: ParticipantId,
-        alive_participant_ids_query: Arc<dyn Fn() -> Vec<ParticipantId> + Send + Sync>,
-        domain_id: DomainId,
-    ) -> anyhow::Result<Self> {
-        Ok(Self(DistributedAssetStorage::<
-            PresignOutputWithParticipants,
-        >::new(
-            clock,
-            db,
-            crate::db::DBCol::Presignature,
-            domain_id.0.to_be_bytes().to_vec(),
-            my_participant_id,
-            |participants, presignature| {
-                presignature.is_subset_of_active_participants(participants)
-            },
-            alive_participant_ids_query,
-        )?))
-    }
-}
+pub type PresignatureStorage = ecdsa_common::PresignatureStorage<PresignOutput>;
+pub type PresignOutputWithParticipants = ecdsa_common::PresignOutputWithParticipants<PresignOutput>;
 
 /// Continuously generates presignatures, trying to maintain the desired number of
 /// presignatures available, using the desired number of concurrent computations as
@@ -66,6 +37,7 @@ impl PresignatureStorage {
 pub(super) async fn run_background_presignature_generation(
     client: Arc<MeshNetworkClient>,
     mpc_config: Arc<MpcConfig>,
+    threshold: ReconstructionThreshold,
     config: Arc<PresignatureConfig>,
     domain_id: DomainId,
     presignature_store: Arc<PresignatureStorage>,
@@ -87,11 +59,8 @@ pub(super) async fn run_background_presignature_generation(
         .map(|p| p.id)
         .collect();
 
-    let (num_signers, robust_ecdsa_threshold) = compute_thresholds(
-        mpc_config.participants.threshold,
-        running_participants.len(),
-    )
-    .expect("invalid governance threshold for robust-ECDSA");
+    let (num_signers, damgard_et_al_threshold) =
+        compute_thresholds(threshold).expect("contract validation guarantees a valid threshold");
 
     loop {
         progress_tracker.update_progress();
@@ -149,7 +118,7 @@ pub(super) async fn run_background_presignature_generation(
                         let _in_flight = in_flight;
                         let _semaphore_guard = parallelism_limiter.acquire().await?;
                         let presignature = PresignComputation {
-                            max_malicious: robust_ecdsa_threshold,
+                            max_malicious: damgard_et_al_threshold,
                             keygen_out,
                         }
                         .perform_leader_centric_computation(
@@ -180,30 +149,6 @@ pub(super) async fn run_background_presignature_generation(
     }
 }
 
-/// Computes `(num_signers, robust_ecdsa_threshold)` and validates the
-/// `2 * max_malicious + 1 <= num_signers` invariant. Returns an error only if
-/// the configured governance threshold is invalid for robust-ECDSA.
-///
-/// TODO(#3164): once the node supports per-domain thresholds, this should
-/// take the domain-specific threshold instead of the single governance threshold.
-fn compute_thresholds(
-    governance_threshold: u64,
-    num_running_participants: usize,
-) -> anyhow::Result<(usize, MaxMalicious)> {
-    let governance_threshold: usize = governance_threshold.try_into()?;
-    let num_signers = get_number_of_signers(governance_threshold, num_running_participants)?;
-    let robust_ecdsa_threshold =
-        translate_threshold(governance_threshold, num_running_participants)?;
-    anyhow::ensure!(
-        robust_ecdsa_threshold
-            .value()
-            .checked_mul(2)
-            .and_then(|v| v.checked_add(1))
-            .is_some_and(|v| v <= num_signers)
-    );
-    Ok((num_signers, robust_ecdsa_threshold))
-}
-
 impl RobustEcdsaSignatureProvider {
     pub(super) async fn run_presignature_generation_follower(
         &self,
@@ -214,12 +159,11 @@ impl RobustEcdsaSignatureProvider {
         id.validate_owned_by(channel.sender().get_leader())?;
         let domain_data = self.domain_data(domain_id)?;
 
-        let number_of_participants = self.mpc_config.participants.participants.len();
-        let threshold = self.mpc_config.participants.threshold.try_into()?;
-        let robust_ecdsa_threshold = translate_threshold(threshold, number_of_participants)?;
+        let (_num_signers, damgard_et_al_threshold) =
+            compute_thresholds(domain_data.reconstruction_threshold)?;
 
         FollowerPresignComputation {
-            max_malicious: robust_ecdsa_threshold,
+            max_malicious: damgard_et_al_threshold,
             keygen_out: domain_data.keyshare,
             out_presignature_store: domain_data.presignature_store,
             out_presignature_id: id,
@@ -231,20 +175,6 @@ impl RobustEcdsaSignatureProvider {
         .await?;
 
         Ok(())
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PresignOutputWithParticipants {
-    pub presignature: PresignOutput,
-    pub participants: Vec<ParticipantId>,
-}
-
-impl HasParticipants for PresignOutputWithParticipants {
-    fn is_subset_of_active_participants(&self, active_participants: &[ParticipantId]) -> bool {
-        self.participants
-            .iter()
-            .all(|p| active_participants.contains(p))
     }
 }
 
@@ -334,52 +264,5 @@ impl PresignatureGenerationProgressTracker {
             self.in_flight_generations
                 .load(std::sync::atomic::Ordering::Relaxed),
         ))
-    }
-}
-
-#[cfg(test)]
-#[expect(non_snake_case)]
-mod tests {
-    use super::compute_thresholds;
-
-    #[test]
-    fn compute_thresholds__should_succeed_for_valid_governance_threshold() {
-        // Given: in the current node, governance threshold == num_participants
-        let governance_threshold = 5u64;
-        let num_participants = 5;
-
-        // When
-        let result = compute_thresholds(governance_threshold, num_participants);
-
-        // Then
-        let (num_signers, robust_ecdsa_threshold) = result.unwrap();
-        assert_eq!(num_signers, 5);
-        assert!(2 * robust_ecdsa_threshold.value() < num_signers);
-    }
-
-    #[test]
-    fn compute_thresholds__should_err_when_governance_threshold_too_small_for_robust_ecdsa() {
-        // Given: robust-ECDSA requires the governance threshold to be at least 5
-        let governance_threshold = 4u64;
-        let num_participants = 4;
-
-        // When
-        let result = compute_thresholds(governance_threshold, num_participants);
-
-        // Then
-        result.unwrap_err();
-    }
-
-    #[test]
-    fn compute_thresholds__should_err_when_governance_threshold_exceeds_participants() {
-        // Given
-        let governance_threshold = 8u64;
-        let num_participants = 5;
-
-        // When
-        let result = compute_thresholds(governance_threshold, num_participants);
-
-        // Then
-        result.unwrap_err();
     }
 }

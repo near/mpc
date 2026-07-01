@@ -14,6 +14,16 @@ pub static MPC_NUM_TRIPLES_GENERATED: LazyLock<prometheus::IntCounter> = LazyLoc
     .unwrap()
 });
 
+pub static MPC_NUM_BAD_PEER_PRESIGN_REQUESTS: LazyLock<prometheus::IntCounter> = LazyLock::new(
+    || {
+        prometheus::register_int_counter!(
+            "mpc_num_bad_peer_presign_requests",
+            "CaitSith presignature requests from a peer whose participant-set size did not match the domain's reconstruction threshold (only meaningful for CaitSith, which pairs exactly `t` participants; robust ECDSA does not have this constraint)"
+        )
+        .unwrap()
+    },
+);
+
 pub static MPC_TRIPLES_GENERATION_TIME_ELAPSED: LazyLock<prometheus::Histogram> =
     LazyLock::new(|| {
         prometheus::register_histogram!(

@@ -8,6 +8,7 @@
 
 pub mod ckd;
 pub mod ecdsa;
+pub mod ecdsa_common;
 pub mod eddsa;
 pub mod robust_ecdsa;
 pub mod verify_foreign_tx;
@@ -60,6 +61,7 @@ pub trait SignatureProvider {
     /// It drains `channel_receiver` until the required task is found, meaning these clients must not be run in parallel.
     async fn run_key_resharing_client(
         new_threshold: ReconstructionThreshold,
+        old_threshold: ReconstructionThreshold,
         key_share: Option<Self::SecretShare>,
         public_key: Self::PublicKey,
         old_participants: &ParticipantsConfig,

@@ -5,13 +5,14 @@ mod sign;
 use std::{collections::HashMap, sync::Arc};
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use mpc_primitives::ReconstructionThreshold;
 use mpc_primitives::domain::DomainId;
 use near_mpc_contract_interface::types::KeyEventId;
 use threshold_signatures::confidential_key_derivation::{
     ElementG1, KeygenOutput, SigningShare, VerifyingKey,
 };
 
-use threshold_signatures::ReconstructionThreshold;
+use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
 
 use mpc_node_config::ConfigFile;
 
@@ -43,7 +44,14 @@ pub struct CKDProvider {
     mpc_config: Arc<MpcConfig>,
     client: Arc<MeshNetworkClient>,
     ckd_request_store: Arc<CKDRequestStorage>,
-    keyshares: HashMap<DomainId, KeygenOutput>,
+    per_domain_data: HashMap<DomainId, PerDomainData>,
+}
+
+#[derive(Clone)]
+pub(super) struct PerDomainData {
+    pub keyshare: KeygenOutput,
+    /// Per-domain reconstruction threshold `t`, used as the CKD threshold.
+    pub reconstruction_threshold: ReconstructionThreshold,
 }
 
 impl CKDProvider {
@@ -52,15 +60,34 @@ impl CKDProvider {
         mpc_config: Arc<MpcConfig>,
         client: Arc<MeshNetworkClient>,
         ckd_request_store: Arc<CKDRequestStorage>,
-        keyshares: HashMap<DomainId, KeygenOutput>,
+        keyshares: HashMap<DomainId, (KeygenOutput, ReconstructionThreshold)>,
     ) -> Self {
+        let per_domain_data = keyshares
+            .into_iter()
+            .map(|(domain_id, (keyshare, reconstruction_threshold))| {
+                (
+                    domain_id,
+                    PerDomainData {
+                        keyshare,
+                        reconstruction_threshold,
+                    },
+                )
+            })
+            .collect();
         Self {
             config,
             mpc_config,
             client,
             ckd_request_store,
-            keyshares,
+            per_domain_data,
         }
+    }
+
+    pub(super) fn domain_data(&self, domain_id: DomainId) -> anyhow::Result<PerDomainData> {
+        self.per_domain_data
+            .get(&domain_id)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("No keyshare for domain {:?}", domain_id))
     }
 }
 
@@ -79,14 +106,15 @@ impl SignatureProvider for CKDProvider {
     }
 
     async fn run_key_generation_client(
-        threshold: ReconstructionThreshold,
+        threshold: TSReconstructionThreshold,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
         Self::run_key_generation_client_internal(threshold, channel).await
     }
 
     async fn run_key_resharing_client(
-        new_threshold: ReconstructionThreshold,
+        new_threshold: TSReconstructionThreshold,
+        old_threshold: TSReconstructionThreshold,
         key_share: Option<SigningShare>,
         public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
@@ -94,6 +122,7 @@ impl SignatureProvider for CKDProvider {
     ) -> anyhow::Result<Self::KeygenOutput> {
         Self::run_key_resharing_client_internal(
             new_threshold,
+            old_threshold,
             key_share,
             public_key,
             old_participants,

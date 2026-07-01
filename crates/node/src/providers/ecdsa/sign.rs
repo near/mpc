@@ -31,7 +31,7 @@ impl EcdsaSignatureProvider {
     ) -> anyhow::Result<(Signature, VerifyingKey)> {
         let domain_data = self.domain_data(sign_request.domain)?;
         let participants = presignature.participants.clone();
-        let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
+        let threshold: usize = domain_data.reconstruction_threshold.inner().try_into()?;
         let threshold = ReconstructionThreshold::from(threshold);
 
         let (signature, public_key) = SignComputation {
@@ -92,7 +92,7 @@ impl EcdsaSignatureProvider {
         // The presignature must be owned by the leader, never one of ours.
         presignature_id.validate_owned_by(channel.sender().get_leader())?;
         let domain_data = self.domain_data(sign_request.domain)?;
-        let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
+        let threshold: usize = domain_data.reconstruction_threshold.inner().try_into()?;
         let threshold = ReconstructionThreshold::from(threshold);
 
         let participants = channel.participants().to_vec();

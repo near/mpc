@@ -92,8 +92,7 @@ Contract ThresholdParameters.threshold (Threshold(u64))
   → For DamgardEtAl: translate_threshold() → MaxMalicious::from((n_signers - 1) / 2)
 ```
 
-The `translate_threshold()` function in `crates/node/src/providers/robust_ecdsa.rs` is an explicit workaround for the mismatch between the contract's single threshold and DamgardEtAl's `MaxMalicious` semantics. The code itself documents this as a hack:
-> "This function translates the current threshold from the contract to the threshold expected by the robust-ecdsa scheme, which is semantically different."
+The `translate_threshold()` function in `crates/node/src/providers/robust_ecdsa.rs` was an explicit workaround for the mismatch between the contract's single threshold and DamgardEtAl's `MaxMalicious` semantics. It has since been removed: the node now derives `(num_signers, max_malicious)` from a per-domain `ReconstructionThreshold` via `compute_thresholds()` in `robust_ecdsa/presign.rs`.
 
 ### 1.5 Current Curve-Protocol Pairings
 
@@ -584,12 +583,13 @@ fn migrate(old: OldRunningContractState) -> RunningContractState {
   };
   ```
 - Coordinator reads per-key `DistributedKeyConfig` from contract state instead of using global threshold.
-- Replace `translate_threshold()` hack in `robust_ecdsa.rs` with the `min_active_participants()` helper:
+- Replace the `translate_threshold()` hack in `robust_ecdsa.rs` with `compute_thresholds()` in `robust_ecdsa/presign.rs`, which derives `(num_signers, max_malicious)` directly from the domain's `ReconstructionThreshold`:
   ```rust
-  // Node computes required active signers from DistributedKeyConfig
-  let active_signers = min_active_participants(&dk.protocol, &dk.reconstruction_threshold);
+  // Node derives the robust-ECDSA signer set from the per-domain reconstruction threshold t:
+  //   num_signers = 2t - 1, max_malicious = t - 1
+  let (num_signers, max_malicious) = compute_thresholds(dk.reconstruction_threshold)?;
   ```
-  Note: `translate_threshold()` is still needed on the `state()` fallback path (it's effectively moved into the synthetic `DistributedKeyConfig` construction above). It can be fully removed once the old contract is guaranteed gone.
+  `translate_threshold()` is removed entirely — the per-domain `ReconstructionThreshold` comes from contract state (or the synthetic `DistributedKeyConfig` on the `state()` fallback path), so no threshold translation is needed.
 - Provider routing uses `Protocol` enum instead of pattern-matching on `SignatureScheme`/`Curve`:
   ```rust
   match dk.protocol {

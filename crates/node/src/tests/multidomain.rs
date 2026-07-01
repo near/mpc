@@ -1,15 +1,101 @@
 use crate::indexer::participants::ContractState;
 use crate::p2p::testing::PortSeed;
+use crate::tests::common::{ckd_domain, sign_domain};
 use crate::tests::{
     DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME, IntegrationTestSetup,
     request_ckd_and_await_response, request_signature_and_await_response,
 };
 use crate::tracking::AutoAbortTask;
-use mpc_primitives::domain::{Curve, DomainId};
-use near_mpc_contract_interface::types::{
-    DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
-};
+use mpc_primitives::domain::Curve;
+use near_mpc_contract_interface::types::Protocol;
 use near_time::Clock;
+
+// Domains carry per-domain reconstruction thresholds `t` differing from the
+// governance threshold (4): CaitSith/Frost/CKD at `t=2`, DamgardEtAl at `t=3`
+// (5 nodes). DamgardEtAl is the discriminator — it signs over `2t-1`
+// participants, so `t=3` needs 5 signers; using the governance threshold would
+// need `2*4-1=7` and fail. A pass proves the per-domain `t` is used.
+#[tokio::test]
+#[test_log::test]
+#[expect(non_snake_case)]
+async fn multidomain_with_distinct_reconstruction_thresholds__should_sign_for_every_domain() {
+    // Given
+    const NUM_PARTICIPANTS: usize = 5;
+    const THRESHOLD: usize = 4;
+    const TXN_DELAY_BLOCKS: u64 = 1;
+    let temp_dir = tempfile::tempdir().unwrap();
+    let mut setup = IntegrationTestSetup::new(
+        Clock::real(),
+        temp_dir.path(),
+        (0..NUM_PARTICIPANTS)
+            .map(|i| format!("test{}", i).parse().unwrap())
+            .collect(),
+        THRESHOLD,
+        TXN_DELAY_BLOCKS,
+        PortSeed::DISTINCT_RECONSTRUCTION_THRESHOLDS_TEST,
+        std::time::Duration::from_millis(600), // helps to avoid flaky test
+    );
+
+    let domains = vec![
+        sign_domain(0, Protocol::CaitSith, 2),
+        sign_domain(1, Protocol::Frost, 2),
+        ckd_domain(2, 2),
+        sign_domain(3, Protocol::DamgardEtAl, 3),
+    ];
+
+    {
+        let mut contract = setup.indexer.contract_mut().await;
+        contract.initialize(setup.participants.clone());
+        contract.add_domains(domains.clone());
+    }
+
+    let _runs = setup
+        .configs
+        .into_iter()
+        .map(|config| AutoAbortTask::from(tokio::spawn(config.run())))
+        .collect::<Vec<_>>();
+
+    // When
+    setup
+        .indexer
+        .wait_for_contract_state(
+            |state| matches!(state, ContractState::Running(_)),
+            DEFAULT_MAX_PROTOCOL_WAIT_TIME * domains.len() as u32,
+        )
+        .await
+        .expect("must not exceed timeout");
+
+    // Then
+    tracing::info!("requesting signature");
+    for domain in &domains {
+        match Curve::from(domain.protocol) {
+            Curve::Secp256k1 | Curve::Edwards25519 => {
+                assert!(
+                    request_signature_and_await_response(
+                        &mut setup.indexer,
+                        &format!("user{}", domain.id.0),
+                        domain,
+                        DEFAULT_MAX_SIGNATURE_WAIT_TIME
+                    )
+                    .await
+                    .is_some()
+                );
+            }
+            Curve::Bls12381 => {
+                assert!(
+                    request_ckd_and_await_response(
+                        &mut setup.indexer,
+                        &format!("user{}", domain.id.0),
+                        domain,
+                        DEFAULT_MAX_SIGNATURE_WAIT_TIME
+                    )
+                    .await
+                    .is_some()
+                );
+            }
+        }
+    }
+}
 
 // Make a cluster of four nodes, test that we can generate keyshares
 // and then produce signatures.
@@ -32,28 +118,13 @@ async fn test_basic_multidomain() {
         std::time::Duration::from_millis(600), // helps to avoid flaky test
     );
 
-    // TODO(#1689): in this test it would be desirable to add Robust ECDSA.
+    // TODO(#1689): in this test it would be desirable to add DamgardEtAl.
     // That requires having NUM_PARTICIPANTS = 5 and THRESHOLD = 5
     // which makes this test too slow to pass in CI, which should be fixed
     let mut domains = vec![
-        DomainConfig {
-            id: DomainId(0),
-            protocol: Protocol::CaitSith,
-            reconstruction_threshold: ReconstructionThreshold::new(3),
-            purpose: DomainPurpose::Sign,
-        },
-        DomainConfig {
-            id: DomainId(1),
-            protocol: Protocol::Frost,
-            reconstruction_threshold: ReconstructionThreshold::new(3),
-            purpose: DomainPurpose::Sign,
-        },
-        DomainConfig {
-            id: DomainId(2),
-            protocol: Protocol::ConfidentialKeyDerivation,
-            reconstruction_threshold: ReconstructionThreshold::new(3),
-            purpose: DomainPurpose::CKD,
-        },
+        sign_domain(0, Protocol::CaitSith, 3),
+        sign_domain(1, Protocol::Frost, 3),
+        ckd_domain(2, 3),
     ];
 
     {
@@ -107,24 +178,9 @@ async fn test_basic_multidomain() {
         }
     }
     let new_domains = vec![
-        DomainConfig {
-            id: DomainId(3),
-            protocol: Protocol::Frost,
-            reconstruction_threshold: ReconstructionThreshold::new(3),
-            purpose: DomainPurpose::Sign,
-        },
-        DomainConfig {
-            id: DomainId(4),
-            protocol: Protocol::CaitSith,
-            reconstruction_threshold: ReconstructionThreshold::new(3),
-            purpose: DomainPurpose::Sign,
-        },
-        DomainConfig {
-            id: DomainId(5),
-            protocol: Protocol::ConfidentialKeyDerivation,
-            reconstruction_threshold: ReconstructionThreshold::new(3),
-            purpose: DomainPurpose::CKD,
-        },
+        sign_domain(3, Protocol::Frost, 3),
+        sign_domain(4, Protocol::CaitSith, 3),
+        ckd_domain(5, 3),
     ];
 
     {

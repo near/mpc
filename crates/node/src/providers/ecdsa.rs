@@ -16,6 +16,7 @@ use crate::metrics::tokio_task_metrics::ECDSA_TASK_MONITORS;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{MpcTaskId, ParticipantId, UniqueId};
 use crate::providers::SignatureProvider;
+use crate::providers::ecdsa_common;
 use crate::storage::SignRequestStorage;
 use crate::tracking;
 use mpc_node_config::ConfigFile;
@@ -29,6 +30,7 @@ use std::sync::Arc;
 use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
 use threshold_signatures::ecdsa::KeygenOutput;
 use threshold_signatures::ecdsa::Signature;
+use threshold_signatures::ecdsa::ot_based_ecdsa::PresignOutput;
 use threshold_signatures::frost_secp256k1::VerifyingKey;
 use threshold_signatures::frost_secp256k1::keys::SigningShare;
 
@@ -45,11 +47,7 @@ pub struct EcdsaSignatureProvider {
     per_domain_data: HashMap<DomainId, PerDomainData>,
 }
 
-#[derive(Clone)]
-pub(super) struct PerDomainData {
-    pub keyshare: KeygenOutput,
-    pub presignature_store: Arc<PresignatureStorage>,
-}
+pub(super) type PerDomainData = ecdsa_common::PerDomainData<PresignOutput>;
 
 impl EcdsaSignatureProvider {
     pub fn new(
@@ -59,46 +57,29 @@ impl EcdsaSignatureProvider {
         clock: Clock,
         db: Arc<SecretDB>,
         sign_request_store: Arc<SignRequestStorage>,
-        keyshares: HashMap<DomainId, KeygenOutput>,
+        keyshares: HashMap<DomainId, (KeygenOutput, ReconstructionThreshold)>,
     ) -> anyhow::Result<Self> {
-        let active_participants_query = {
-            let network_client = client.clone();
-            Arc::new(move || network_client.all_alive_participant_ids())
-        };
+        let per_domain_data = ecdsa_common::build_per_domain_data(&clock, &db, &client, keyshares)?;
 
-        // The set of distinct `t`s the node needs to serve is fully known at
-        // startup. Today every ECDSA domain shares the network-wide threshold;
-        // once #3164 lands and each domain may declare its own
-        // `reconstruction_threshold`, derive this set from the keyshares'
-        // domain configs instead.
-        let network_threshold = ReconstructionThreshold::new(mpc_config.participants.threshold);
+        // cait-sith triple generation runs with exactly `t` parties, so we keep
+        // one store per distinct per-domain reconstruction threshold — known up
+        // front, no on-demand creation. Domains may share a `t` or diverge; the
+        // contract validates each domain's threshold independently.
         let mut triple_stores = HashMap::new();
-        triple_stores.insert(
-            network_threshold,
-            Arc::new(TripleStorage::new(
-                clock.clone(),
-                db.clone(),
-                client.my_participant_id(),
-                active_participants_query.clone(),
-                network_threshold,
-            )?),
-        );
-
-        let mut per_domain_data = HashMap::new();
-        for (domain_id, keyshare) in keyshares {
-            let presignature_store = Arc::new(PresignatureStorage::new(
-                clock.clone(),
-                db.clone(),
-                client.my_participant_id(),
-                active_participants_query.clone(),
-                domain_id,
-            )?);
-            per_domain_data.insert(
-                domain_id,
-                PerDomainData {
-                    keyshare,
-                    presignature_store,
-                },
+        for data in per_domain_data.values() {
+            let t = data.reconstruction_threshold;
+            if triple_stores.contains_key(&t) {
+                continue;
+            }
+            triple_stores.insert(
+                t,
+                Arc::new(TripleStorage::new(
+                    clock.clone(),
+                    db.clone(),
+                    client.my_participant_id(),
+                    ecdsa_common::active_participants_query(&client),
+                    t,
+                )?),
             );
         }
 
@@ -113,10 +94,7 @@ impl EcdsaSignatureProvider {
     }
 
     pub(super) fn domain_data(&self, domain_id: DomainId) -> anyhow::Result<PerDomainData> {
-        self.per_domain_data
-            .get(&domain_id)
-            .cloned()
-            .ok_or_else(|| anyhow::anyhow!("No keyshare for domain {:?}", domain_id))
+        ecdsa_common::lookup_domain_data(&self.per_domain_data, domain_id)
     }
 
     /// Returns the triple store for `t`, or an error if no store was
@@ -201,6 +179,7 @@ impl SignatureProvider for EcdsaSignatureProvider {
 
     async fn run_key_resharing_client(
         new_threshold: TSReconstructionThreshold,
+        old_threshold: TSReconstructionThreshold,
         my_share: Option<SigningShare>,
         public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
@@ -208,6 +187,7 @@ impl SignatureProvider for EcdsaSignatureProvider {
     ) -> anyhow::Result<Self::KeygenOutput> {
         EcdsaSignatureProvider::run_key_resharing_client_internal(
             new_threshold,
+            old_threshold,
             my_share,
             public_key,
             old_participants,
@@ -266,47 +246,57 @@ impl SignatureProvider for EcdsaSignatureProvider {
     }
 
     async fn spawn_background_tasks(self: Arc<Self>) -> anyhow::Result<()> {
-        // TODO(#3164): once each domain may carry its own `ReconstructionThreshold`,
-        // spawn one background generator per distinct `t` across CaitSith domains
-        // and source `t` from `domain.reconstruction_threshold` rather than the
-        // network-wide threshold.
-        let threshold = ReconstructionThreshold::new(self.mpc_config.participants.threshold);
-        let threshold_usize: usize = threshold.inner().try_into()?;
-        let threshold_bound = TSReconstructionThreshold::from(threshold_usize);
-        let triple_store = self.triple_store_for_t(threshold)?;
+        // One triple generator per distinct `t` this node serves; cait-sith
+        // triples are generated with exactly `t` parties, so each store is fed
+        // by a generator running at its own threshold.
+        let mut generate_triples = Vec::new();
+        for (&t, triple_store) in &self.triple_stores {
+            let threshold_usize: usize = t.inner().try_into()?;
+            let threshold_bound = TSReconstructionThreshold::from(threshold_usize);
+            generate_triples.push(tracking::spawn(
+                &format!("generate triples for t={}", t.inner()),
+                Self::run_background_triple_generation(
+                    self.client.clone(),
+                    self.mpc_config.clone(),
+                    self.config.triple.clone().into(),
+                    triple_store.clone(),
+                    threshold_bound,
+                ),
+            ));
+        }
 
-        let generate_triples = tracking::spawn(
-            "generate triples",
-            Self::run_background_triple_generation(
-                self.client.clone(),
-                self.mpc_config.clone(),
-                self.config.triple.clone().into(),
-                triple_store.clone(),
-                threshold_bound,
-            ),
+        // Held outside the join group below: this reporter never completes, so
+        // joining it would mask generator failures. Aborted on drop when this returns.
+        let _metrics_task = tracking::spawn(
+            "report triple metrics",
+            Self::run_triple_metrics_reporting(self.triple_stores.values().cloned().collect()),
         );
 
-        let generate_presignatures = self
-            .per_domain_data
-            .iter()
-            .map(|(domain_id, data)| {
-                tracking::spawn(
-                    &format!("generate presignatures for domain {}", domain_id.0),
-                    Self::run_background_presignature_generation(
-                        self.client.clone(),
-                        threshold_bound,
-                        self.config.presignature.clone().into(),
-                        triple_store.clone(),
-                        *domain_id,
-                        data.presignature_store.clone(),
-                        data.keyshare.clone(),
-                    ),
-                )
-            })
-            .collect::<Vec<_>>();
+        let mut generate_presignatures = Vec::new();
+        for (domain_id, data) in &self.per_domain_data {
+            let t = data.reconstruction_threshold;
+            let threshold_usize: usize = t.inner().try_into()?;
+            let threshold_bound = TSReconstructionThreshold::from(threshold_usize);
+            let triple_store = self.triple_store_for_t(t)?;
+            generate_presignatures.push(tracking::spawn(
+                &format!("generate presignatures for domain {}", domain_id.0),
+                Self::run_background_presignature_generation(
+                    self.client.clone(),
+                    threshold_bound,
+                    self.config.presignature.clone().into(),
+                    triple_store,
+                    *domain_id,
+                    data.presignature_store.clone(),
+                    data.keyshare.clone(),
+                ),
+            ));
+        }
 
-        let Err(join_error) = generate_triples.await;
-        tracing::error!("ecdsa background triple generation task ended unexpectedly: {join_error}");
+        for Err(join_error) in futures::future::join_all(generate_triples).await {
+            tracing::error!(
+                "ecdsa background triple generation task ended unexpectedly: {join_error}"
+            );
+        }
         for Err(join_error) in futures::future::join_all(generate_presignatures).await {
             tracing::error!("ecdsa background presignature task ended unexpectedly: {join_error}");
         }
