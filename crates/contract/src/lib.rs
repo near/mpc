@@ -2367,7 +2367,7 @@ impl MpcContract {
                 let promise = Promise::new(env::current_account_id()).function_call(
                     method_names::FAIL_ON_TIMEOUT.to_string(),
                     vec![],
-                    NearToken::from_near(0),
+                    NearToken::from_yoctonear(0),
                     fail_on_timeout_gas,
                 );
                 near_sdk::PromiseOrValue::Promise(promise.as_return())
@@ -2542,7 +2542,7 @@ impl MpcContract {
                 let promise = Promise::new(env::current_account_id()).function_call(
                     method_names::FAIL_ON_TIMEOUT.to_string(),
                     vec![],
-                    NearToken::from_near(0),
+                    NearToken::from_yoctonear(0),
                     fail_on_timeout_gas,
                 );
                 near_sdk::PromiseOrValue::Promise(promise.as_return())
@@ -2575,7 +2575,7 @@ impl MpcContract {
                 let promise = Promise::new(env::current_account_id()).function_call(
                     method_names::FAIL_ON_TIMEOUT.to_string(),
                     vec![],
-                    NearToken::from_near(0),
+                    NearToken::from_yoctonear(0),
                     fail_on_timeout_gas,
                 );
                 near_sdk::PromiseOrValue::Promise(promise.as_return())
