@@ -105,17 +105,13 @@ pub fn build_per_domain_data<P>(
     clock: &Clock,
     db: &Arc<SecretDB>,
     client: &Arc<MeshNetworkClient>,
-    keyshares: HashMap<DomainId, KeygenOutput>,
-    thresholds: &HashMap<DomainId, ReconstructionThreshold>,
+    keyshares: HashMap<DomainId, (KeygenOutput, ReconstructionThreshold)>,
 ) -> anyhow::Result<HashMap<DomainId, PerDomainData<P>>>
 where
     P: Serialize + DeserializeOwned + Send + 'static,
 {
     let mut per_domain_data = HashMap::new();
-    for (domain_id, keyshare) in keyshares {
-        let reconstruction_threshold = *thresholds.get(&domain_id).ok_or_else(|| {
-            anyhow::anyhow!("No reconstruction threshold for domain {:?}", domain_id)
-        })?;
+    for (domain_id, (keyshare, reconstruction_threshold)) in keyshares {
         let presignature_store = Arc::new(PresignatureStorage::new(
             clock.clone(),
             db.clone(),
@@ -146,4 +142,78 @@ where
         .get(&domain_id)
         .cloned()
         .ok_or_else(|| anyhow::anyhow!("No keyshare for domain {:?}", domain_id))
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::build_per_domain_data;
+    use crate::db::SecretDB;
+    use crate::network::testing::run_test_clients;
+    use crate::tests::into_participant_ids;
+    use crate::tracking::testing::start_root_task_with_periodic_dump;
+    use mpc_primitives::ReconstructionThreshold;
+    use mpc_primitives::domain::DomainId;
+    use near_time::Clock;
+    use rand::SeedableRng;
+    use std::collections::HashMap;
+    use threshold_signatures::ecdsa::KeygenOutput;
+    use threshold_signatures::frost_secp256k1::Secp256K1Sha256;
+    use threshold_signatures::test_utils::{generate_participants, run_keygen};
+
+    fn dummy_keygen_output() -> KeygenOutput {
+        let mut rng = rand::rngs::StdRng::from_seed([7u8; 32]);
+        run_keygen::<Secp256K1Sha256, _>(&generate_participants(2), 2usize, &mut rng)
+            .into_iter()
+            .next()
+            .unwrap()
+            .1
+    }
+
+    // Directly asserts the plumbing that `multidomain_with_distinct_reconstruction_thresholds`
+    // only checks indirectly (by running a full multi-node signing round): each domain must keep
+    // its OWN reconstruction threshold, never a single shared/governance value.
+    #[tokio::test]
+    async fn build_per_domain_data__should_pair_each_domain_with_its_own_reconstruction_threshold()
+    {
+        start_root_task_with_periodic_dump(async move {
+            run_test_clients(
+                into_participant_ids(&generate_participants(2)),
+                |client, _channel_receiver| async move {
+                    // Given two domains configured with distinct reconstruction thresholds
+                    let low = DomainId(0);
+                    let high = DomainId(1);
+                    let keygen_output = dummy_keygen_output();
+                    let keyshares = HashMap::from([
+                        (
+                            low,
+                            (keygen_output.clone(), ReconstructionThreshold::new(2)),
+                        ),
+                        (high, (keygen_output, ReconstructionThreshold::new(3))),
+                    ]);
+                    let dir = tempfile::tempdir().unwrap();
+                    let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
+
+                    // When
+                    let per_domain_data =
+                        build_per_domain_data::<Vec<u8>>(&Clock::real(), &db, &client, keyshares)
+                            .unwrap();
+
+                    // Then each domain keeps the threshold it was configured with
+                    assert_eq!(
+                        per_domain_data[&low].reconstruction_threshold,
+                        ReconstructionThreshold::new(2)
+                    );
+                    assert_eq!(
+                        per_domain_data[&high].reconstruction_threshold,
+                        ReconstructionThreshold::new(3)
+                    );
+                    Ok(())
+                },
+            )
+            .await
+            .unwrap();
+        })
+        .await;
+    }
 }

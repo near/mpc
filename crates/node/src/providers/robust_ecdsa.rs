@@ -22,6 +22,7 @@ use mpc_primitives::ReconstructionThreshold;
 use mpc_primitives::domain::DomainId;
 use near_time::Clock;
 use std::sync::Arc;
+use threshold_signatures::MaxMalicious;
 use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
 use threshold_signatures::ecdsa::KeygenOutput;
 use threshold_signatures::ecdsa::Signature;
@@ -51,7 +52,6 @@ impl EcdsaMessageHash {
 }
 
 impl RobustEcdsaSignatureProvider {
-    #[expect(clippy::too_many_arguments)]
     pub fn new(
         config: Arc<ConfigFile>,
         mpc_config: Arc<MpcConfig>,
@@ -59,11 +59,9 @@ impl RobustEcdsaSignatureProvider {
         clock: Clock,
         db: Arc<SecretDB>,
         sign_request_store: Arc<SignRequestStorage>,
-        keyshares: HashMap<DomainId, KeygenOutput>,
-        thresholds: HashMap<DomainId, ReconstructionThreshold>,
+        keyshares: HashMap<DomainId, (KeygenOutput, ReconstructionThreshold)>,
     ) -> anyhow::Result<Self> {
-        let per_domain_data =
-            ecdsa_common::build_per_domain_data(&clock, &db, &client, keyshares, &thresholds)?;
+        let per_domain_data = ecdsa_common::build_per_domain_data(&clock, &db, &client, keyshares)?;
 
         Ok(Self {
             config,
@@ -210,5 +208,69 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
         }
 
         Ok(())
+    }
+}
+
+/// Derives `(num_signers, max_malicious)` for robust-ECDSA from the domain's
+/// reconstruction threshold `t`. Returns an error if `t < 2`,
+/// which the contract's threshold validation already rejects.
+pub(super) fn compute_thresholds(
+    threshold: ReconstructionThreshold,
+) -> anyhow::Result<(usize, MaxMalicious)> {
+    let t: usize = threshold.inner().try_into()?;
+    anyhow::ensure!(
+        t >= 2,
+        "robust-ECDSA requires a reconstruction threshold of at least 2, got {t}"
+    );
+    let max_malicious = t
+        .checked_sub(1)
+        .ok_or_else(|| anyhow::anyhow!("robust-ECDSA max_malicious underflow for t={t}"))?;
+    let num_signers = t
+        .checked_mul(2)
+        .and_then(|two_t| two_t.checked_sub(1))
+        .ok_or_else(|| anyhow::anyhow!("robust-ECDSA signer count overflow for t={t}"))?;
+    Ok((num_signers, MaxMalicious::from(max_malicious)))
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::compute_thresholds;
+    use mpc_primitives::ReconstructionThreshold;
+    use threshold_signatures::MaxMalicious;
+
+    #[test]
+    fn compute_thresholds__should_map_t_to_2t_minus_1_signers_and_max_malicious_t_minus_1() {
+        // Given a domain reconstruction threshold t = 3
+        let t = ReconstructionThreshold::new(3);
+
+        // When
+        let (num_signers, max_malicious) = compute_thresholds(t).unwrap();
+
+        // Then num_signers = 2t - 1 = 5 and max_malicious = t - 1 = 2
+        assert_eq!(num_signers, 5);
+        assert_eq!(max_malicious, MaxMalicious::from(2));
+        // and the honest-majority invariant 2 * max_malicious + 1 <= num_signers holds.
+        assert!(2 * max_malicious.value() < num_signers);
+    }
+
+    #[test]
+    fn compute_thresholds__should_hold_invariant_across_valid_thresholds() {
+        for t in 2..30u64 {
+            let (num_signers, max_malicious) =
+                compute_thresholds(ReconstructionThreshold::new(t)).unwrap();
+            assert_eq!(num_signers, 2 * (t as usize) - 1);
+            assert_eq!(max_malicious, MaxMalicious::from((t as usize) - 1));
+            assert!(2 * max_malicious.value() < num_signers);
+        }
+    }
+
+    #[test]
+    fn compute_thresholds__should_err_when_threshold_below_two() {
+        // Given: robust-ECDSA requires a reconstruction threshold of at least 2
+        for t in 0..2u64 {
+            // When / Then
+            compute_thresholds(ReconstructionThreshold::new(t)).unwrap_err();
+        }
     }
 }

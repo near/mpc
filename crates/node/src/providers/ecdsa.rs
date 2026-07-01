@@ -50,7 +50,6 @@ pub struct EcdsaSignatureProvider {
 pub(super) type PerDomainData = ecdsa_common::PerDomainData<PresignOutput>;
 
 impl EcdsaSignatureProvider {
-    #[expect(clippy::too_many_arguments)]
     pub fn new(
         config: Arc<ConfigFile>,
         mpc_config: Arc<MpcConfig>,
@@ -58,17 +57,14 @@ impl EcdsaSignatureProvider {
         clock: Clock,
         db: Arc<SecretDB>,
         sign_request_store: Arc<SignRequestStorage>,
-        keyshares: HashMap<DomainId, KeygenOutput>,
-        thresholds: HashMap<DomainId, ReconstructionThreshold>,
+        keyshares: HashMap<DomainId, (KeygenOutput, ReconstructionThreshold)>,
     ) -> anyhow::Result<Self> {
-        let per_domain_data =
-            ecdsa_common::build_per_domain_data(&clock, &db, &client, keyshares, &thresholds)?;
+        let per_domain_data = ecdsa_common::build_per_domain_data(&clock, &db, &client, keyshares)?;
 
-        // cait-sith triple generation runs with exactly `t` parties, so the set
-        // of stores this node maintains is the distinct per-domain
-        // reconstruction thresholds — fully known up front, no on-demand
-        // creation needed. The contract enforces a single `t` across CaitSith
-        // domains today, so this is typically one store.
+        // cait-sith triple generation runs with exactly `t` parties, so we keep
+        // one store per distinct per-domain reconstruction threshold — known up
+        // front, no on-demand creation. Domains may share a `t` or diverge; the
+        // contract validates each domain's threshold independently.
         let mut triple_stores = HashMap::new();
         for data in per_domain_data.values() {
             let t = data.reconstruction_threshold;

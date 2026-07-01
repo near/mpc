@@ -147,6 +147,26 @@ impl DomainRegistry {
         self.domains.get(index)
     }
 
+    /// Like [`Self::get_domain_by_index`], but with `reconstruction_threshold` overridden
+    /// by `threshold_updates` when present, so a resharing key event reshares to the new
+    /// degree. Matches the update [`Self::with_threshold_updates`] folds in on completion.
+    pub fn effective_domain_by_index(
+        &self,
+        index: usize,
+        threshold_updates: &BTreeMap<DomainId, ReconstructionThreshold>,
+    ) -> Option<DomainConfig> {
+        self.get_domain_by_index(index).map(|domain| {
+            let reconstruction_threshold = threshold_updates
+                .get(&domain.id)
+                .copied()
+                .unwrap_or(domain.reconstruction_threshold);
+            DomainConfig {
+                reconstruction_threshold,
+                ..domain.clone()
+            }
+        })
+    }
+
     /// Returns the given domain by the DomainId.
     pub fn get_domain_by_domain_id(&self, id: DomainId) -> Option<&DomainConfig> {
         self.domains.iter().find(|domain| domain.id == id)
@@ -791,5 +811,34 @@ pub mod tests {
             result.domains()[2].reconstruction_threshold,
             ReconstructionThreshold::new(2)
         );
+    }
+
+    #[test]
+    fn effective_domain_by_index__should_override_only_the_targeted_domains_threshold() {
+        // Given a registry with two domains and an update targeting the second.
+        let registry = registry_of(vec![
+            DomainConfig {
+                id: DomainId(0),
+                protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(2),
+                purpose: DomainPurpose::Sign,
+            },
+            DomainConfig {
+                id: DomainId(1),
+                protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(2),
+                purpose: DomainPurpose::Sign,
+            },
+        ]);
+        let updates = BTreeMap::from([(DomainId(1), ReconstructionThreshold::new(4))]);
+
+        // When reading each domain's effective config.
+        let d0 = registry.effective_domain_by_index(0, &updates).unwrap();
+        let d1 = registry.effective_domain_by_index(1, &updates).unwrap();
+
+        // Then only the targeted domain reports the new threshold.
+        assert_eq!(d0.reconstruction_threshold, ReconstructionThreshold::new(2));
+        assert_eq!(d1.reconstruction_threshold, ReconstructionThreshold::new(4));
+        assert!(registry.effective_domain_by_index(2, &updates).is_none());
     }
 }
