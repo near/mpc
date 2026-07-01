@@ -31,9 +31,7 @@ use crate::report::{ProviderResult, Status};
 
 /// Verify a node's foreign-chain RPC provider configuration.
 ///
-/// Probes every configured provider with a fixed golden request. Any API-key
-/// environment variables referenced by the config must be set, exactly as when
-/// running the node.
+/// Probes every configured provider with a fixed golden request.
 #[derive(Parser)]
 #[command(about, long_about = None)]
 struct Args {

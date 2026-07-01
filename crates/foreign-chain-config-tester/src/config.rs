@@ -151,7 +151,7 @@ rpc_url = "https://mainnet.base.org"
 kind = "none"
 "#;
 
-    const RUNTIME_YAML: &str = r#"
+    const LEGACY_YAML: &str = r#"
 my_near_account_id: sam.test.near
 foreign_chains:
   base:
@@ -185,10 +185,10 @@ foreign_chains:
     }
 
     #[test]
-    fn parse_foreign_chains__should_read_top_level_runtime_yaml() {
+    fn parse_foreign_chains__should_read_top_level_legacy_yaml() {
         // Given
         // When
-        let fc = parse_foreign_chains(RUNTIME_YAML, Path::new("config.yaml")).unwrap();
+        let fc = parse_foreign_chains(LEGACY_YAML, Path::new("config.yaml")).unwrap();
 
         // Then
         assert!(fc.base.is_some());
