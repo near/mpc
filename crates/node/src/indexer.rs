@@ -457,10 +457,6 @@ impl IndexerClient {
         }
     }
 
-    /// Returns once the node is confirmed following the chain tip. Used only at
-    /// startup: neard can report `syncing == false` while still behind (fresh
-    /// genesis, after downtime, or while disconnected from all peers), so we
-    /// confirm via [`SyncProgress`] before binding the streamer's cursor.
     async fn ensure_head_follows_tip(&self) {
         let mut progress = SyncProgress::default();
         loop {
@@ -474,9 +470,8 @@ impl IndexerClient {
     }
 }
 
-/// Reports the node as caught up only after a run of non-syncing polls over
-/// which the head actually advances, filtering out the transient
-/// `syncing == false` a behind node reports before its head starts moving.
+/// Reports caught-up only after [`REQUIRED_STABLE_POLLS`] consecutive
+/// non-syncing polls over which the head advances.
 #[derive(Default)]
 struct SyncProgress {
     run_start_head: Option<BlockHeight>,
