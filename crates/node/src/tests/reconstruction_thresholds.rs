@@ -22,9 +22,14 @@ const BLOCK_TIME: std::time::Duration = std::time::Duration::from_millis(600);
 
 async fn assert_can_sign(indexer: &mut FakeIndexerManager, user: &str, domain: &DomainConfig) {
     assert!(
-        request_signature_and_await_response(indexer, user, domain, DEFAULT_MAX_SIGNATURE_WAIT_TIME)
-            .await
-            .is_some(),
+        request_signature_and_await_response(
+            indexer,
+            user,
+            domain,
+            DEFAULT_MAX_SIGNATURE_WAIT_TIME
+        )
+        .await
+        .is_some(),
         "domain {:?} (t={}) should be able to sign with the currently-online nodes",
         domain.id,
         domain.reconstruction_threshold.inner(),
@@ -33,9 +38,14 @@ async fn assert_can_sign(indexer: &mut FakeIndexerManager, user: &str, domain: &
 
 async fn assert_cannot_sign(indexer: &mut FakeIndexerManager, user: &str, domain: &DomainConfig) {
     assert!(
-        request_signature_and_await_response(indexer, user, domain, DEFAULT_MAX_SIGNATURE_WAIT_TIME)
-            .await
-            .is_none(),
+        request_signature_and_await_response(
+            indexer,
+            user,
+            domain,
+            DEFAULT_MAX_SIGNATURE_WAIT_TIME
+        )
+        .await
+        .is_none(),
         "domain {:?} (t={}) must NOT be able to sign: too few nodes are online for its threshold",
         domain.id,
         domain.reconstruction_threshold.inner(),
@@ -219,7 +229,7 @@ async fn per_domain_reconstruction_thresholds__should_be_preserved_for_each_doma
 #[test_log::test]
 #[expect(non_snake_case)]
 async fn changing_reconstruction_threshold_via_resharing__should_reshare_the_key_to_the_new_degree()
- {
+{
     // Given a 5-node cluster with a single CaitSith domain at t=4.
     const NUM_PARTICIPANTS: usize = 5;
     const THRESHOLD: usize = 3;
