@@ -955,7 +955,7 @@ expression: abi
       },
       {
         "name": "on_attestation_verified",
-        "doc": " Yield-resume callback for a [`Attestation::Dstack`] submission. On\n success it resolves the caller's transaction; on a rejection or the\n ~200-block timeout it cleans up, refunds, and fails from a separate\n receipt.",
+        "doc": " Yield-resume callback for an [`Attestation::Dstack`] submission. On\n success it resolves the caller's transaction; on a rejection or the\n ~200-block timeout it cleans up, refunds, and fails from a separate\n receipt.",
         "kind": "call",
         "modifiers": [
           "private"
