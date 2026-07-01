@@ -18,7 +18,7 @@ pub static MPC_NUM_BAD_PEER_PRESIGN_REQUESTS: LazyLock<prometheus::IntCounter> =
     || {
         prometheus::register_int_counter!(
             "mpc_num_bad_peer_presign_requests",
-            "Presignature requests from a peer whose participant-set size did not match the domain's reconstruction threshold"
+            "CaitSith presignature requests from a peer whose participant-set size did not match the domain's reconstruction threshold (only meaningful for CaitSith, which pairs exactly `t` participants; robust ECDSA does not have this constraint)"
         )
         .unwrap()
     },
