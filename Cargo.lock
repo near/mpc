@@ -5773,6 +5773,7 @@ version = "3.13.0"
 dependencies = [
  "anyhow",
  "assert_matches",
+ "base64 0.22.1",
  "blstrs",
  "borsh",
  "cargo-near-build",
