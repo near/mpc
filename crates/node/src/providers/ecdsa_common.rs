@@ -46,8 +46,7 @@ where
     pub fn new(
         clock: Clock,
         db: Arc<SecretDB>,
-        my_participant_id: ParticipantId,
-        alive_participant_ids_query: Arc<dyn Fn() -> Vec<ParticipantId> + Send + Sync>,
+        client: &Arc<MeshNetworkClient>,
         domain_id: DomainId,
     ) -> anyhow::Result<Self> {
         Ok(Self(DistributedAssetStorage::<
@@ -57,11 +56,11 @@ where
             db,
             crate::db::DBCol::Presignature,
             domain_id.0.to_be_bytes().to_vec(),
-            my_participant_id,
+            client.my_participant_id(),
             |participants, presignature| {
                 presignature.is_subset_of_active_participants(participants)
             },
-            alive_participant_ids_query,
+            active_participants_query(client),
         )?))
     }
 }
@@ -120,8 +119,7 @@ where
         let presignature_store = Arc::new(PresignatureStorage::new(
             clock.clone(),
             db.clone(),
-            client.my_participant_id(),
-            active_participants_query(client),
+            client,
             domain_id,
         )?);
         per_domain_data.insert(
