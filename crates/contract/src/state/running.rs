@@ -67,7 +67,10 @@ impl RunningContractState {
         &mut self,
         proposal: &ProposedThresholdParameters,
     ) -> Option<ResharingContractState> {
-        if let Some(first_domain) = self.domains.get_domain_by_index(0) {
+        if let Some(first_domain) = self
+            .domains
+            .effective_domain_by_index(0, proposal.per_domain_thresholds())
+        {
             let epoch_id = self.prospective_epoch_id();
 
             Some(ResharingContractState {
@@ -78,11 +81,7 @@ impl RunningContractState {
                     self.add_domains_votes.clone(),
                 ),
                 reshared_keys: Vec::new(),
-                resharing_key: KeyEvent::new(
-                    epoch_id,
-                    first_domain.clone(),
-                    proposal.parameters().clone(),
-                ),
+                resharing_key: KeyEvent::new(epoch_id, first_domain, proposal.parameters().clone()),
                 cancellation_requests: HashSet::new(),
                 per_domain_thresholds: proposal.per_domain_thresholds().clone(),
             })
@@ -638,6 +637,28 @@ pub mod running_tests {
         assert!(
             err.to_string().contains("not in the current registry"),
             "Expected UnknownDomainInProposal, got: {err}"
+        );
+    }
+
+    #[test]
+    fn transition_to_resharing__should_carry_threshold_update_into_the_resharing_key_event() {
+        // Given a running state with one domain and a proposal changing its threshold.
+        let mut state = gen_running_state_with_params(1, 5, 5);
+        let domain_id = state.domains.get_domain_by_index(0).unwrap().id;
+        let proposal = gen_valid_params_proposal(&state.parameters).with_per_domain_thresholds(
+            BTreeMap::from([(domain_id, ReconstructionThreshold::new(3))]),
+        );
+
+        // When transitioning into resharing.
+        let resharing = state
+            .transition_to_resharing_no_checks(&proposal)
+            .expect("state has a domain, so it transitions into resharing");
+
+        // Then the resharing key event carries the updated threshold, so the node
+        // reshares to the new degree rather than the stale one.
+        assert_eq!(
+            resharing.resharing_key.domain().reconstruction_threshold,
+            ReconstructionThreshold::new(3),
         );
     }
 
