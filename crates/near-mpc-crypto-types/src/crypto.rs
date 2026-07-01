@@ -6,6 +6,7 @@ const ED25519_PUBLIC_KEY_SIZE: usize = 32;
 const SECP256K1_PUBLIC_KEY_SIZE: usize = 64;
 const BLS12381G1_PUBLIC_KEY_SIZE: usize = 48;
 const BLS12381G2_PUBLIC_KEY_SIZE: usize = 96;
+const CHEETAH_PUBLIC_KEY_SIZE: usize = 97;
 
 #[derive(
     Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, From, BorshSerialize, BorshDeserialize,
@@ -18,6 +19,7 @@ pub enum PublicKey {
     Secp256k1(Secp256k1PublicKey),
     Ed25519(Ed25519PublicKey),
     Bls12381(Bls12381G2PublicKey),
+    Cheetah(CheetahPublicKey),
 }
 
 // Manual BorshSchema impl to avoid name collision with near_sdk::PublicKey
@@ -36,6 +38,7 @@ impl borsh::BorshSchema for PublicKey {
         <Secp256k1PublicKey as borsh::BorshSchema>::add_definitions_recursively(definitions);
         <Ed25519PublicKey as borsh::BorshSchema>::add_definitions_recursively(definitions);
         <Bls12381G2PublicKey as borsh::BorshSchema>::add_definitions_recursively(definitions);
+        <CheetahPublicKey as borsh::BorshSchema>::add_definitions_recursively(definitions);
         definitions.insert(
             Self::declaration(),
             borsh::schema::Definition::Enum {
@@ -55,6 +58,11 @@ impl borsh::BorshSchema for PublicKey {
                         2,
                         "Bls12381".to_string(),
                         <Bls12381G2PublicKey as borsh::BorshSchema>::declaration(),
+                    ),
+                    (
+                        3,
+                        "Cheetah".to_string(),
+                        <CheetahPublicKey as borsh::BorshSchema>::declaration(),
                     ),
                 ],
             },
@@ -137,6 +145,94 @@ pub struct Bls12381G2PublicKey(pub [u8; BLS12381G2_PUBLIC_KEY_SIZE]);
     derive(borsh::BorshSchema)
 )]
 pub struct Bls12381G1PublicKey(pub [u8; BLS12381G1_PUBLIC_KEY_SIZE]);
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Deref,
+    From,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(borsh::BorshSchema)
+)]
+pub struct CheetahPublicKey(pub [u8; CHEETAH_PUBLIC_KEY_SIZE]);
+
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+impl schemars::JsonSchema for CheetahPublicKey {
+    fn is_referenceable() -> bool {
+        true
+    }
+
+    fn schema_name() -> String {
+        "CheetahPublicKey".to_string()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::schema::Schema {
+        String::json_schema(generator)
+    }
+}
+
+impl AsRef<[u8]> for CheetahPublicKey {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl From<&CheetahPublicKey> for String {
+    fn from(public_key: &CheetahPublicKey) -> Self {
+        ["cheetah:", &bs58::encode(public_key).into_string()].concat()
+    }
+}
+
+impl std::str::FromStr for CheetahPublicKey {
+    type Err = ParsePublicKeyError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let Some((prefix, key_data)) = value.split_once(':') else {
+            return Err(ParsePublicKeyError::MissingSeparator);
+        };
+
+        if prefix != "cheetah" {
+            return Err(ParsePublicKeyError::WrongPrefix);
+        }
+
+        let data = bs58::decode(&key_data)
+            .into_vec()
+            .map_err(|_| ParsePublicKeyError::InvalidBs58Encoding)?;
+        let bytes = data
+            .try_into()
+            .map_err(|_| ParsePublicKeyError::InvalidKeyLength)?;
+        Ok(Self(bytes))
+    }
+}
+
+impl serde::Serialize for CheetahPublicKey {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&String::from(self))
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for CheetahPublicKey {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s: String = serde::Deserialize::deserialize(deserializer)?;
+        s.parse::<CheetahPublicKey>()
+            .map_err(serde::de::Error::custom)
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum ParsePublicKeyError {
@@ -249,6 +345,7 @@ impl From<&PublicKey> for String {
             PublicKey::Secp256k1(inner) => String::from(inner),
             PublicKey::Ed25519(inner) => String::from(inner),
             PublicKey::Bls12381(inner) => String::from(inner),
+            PublicKey::Cheetah(inner) => String::from(inner),
         }
     }
 }
@@ -289,6 +386,7 @@ impl TryFrom<&PublicKeyExtended> for PublicKey {
                 ..
             } => std::str::FromStr::from_str(near_public_key_compressed.as_str()),
             PublicKeyExtended::Bls12381 { public_key } => Ok(public_key.clone()),
+            PublicKeyExtended::Cheetah { public_key } => Ok(public_key.clone()),
         }
     }
 }
@@ -306,6 +404,9 @@ impl From<PublicKey> for PublicKeyExtended {
             PublicKey::Bls12381(inner) => PublicKeyExtended::Bls12381 {
                 public_key: PublicKey::Bls12381(inner),
             },
+            PublicKey::Cheetah(inner) => PublicKeyExtended::Cheetah {
+                public_key: PublicKey::Cheetah(inner),
+            },
         }
     }
 }
@@ -320,6 +421,7 @@ impl std::str::FromStr for PublicKey {
                 "ed25519" => Ok(Self::Ed25519(Ed25519PublicKey::from_str(value)?)),
                 "secp256k1" => Ok(Self::Secp256k1(Secp256k1PublicKey::from_str(value)?)),
                 "bls12381g2" => Ok(Self::Bls12381(Bls12381G2PublicKey::from_str(value)?)),
+                "cheetah" => Ok(Self::Cheetah(CheetahPublicKey::from_str(value)?)),
                 _ => Err(ParsePublicKeyError::WrongPrefix),
             }
         } else {
@@ -545,6 +647,11 @@ pub enum PublicKeyExtended {
     },
     /// BLS12-381 public key.
     Bls12381 {
+        /// The public key.
+        public_key: PublicKey,
+    },
+    /// Nockchain Cheetah public key.
+    Cheetah {
         /// The public key.
         public_key: PublicKey,
     },

@@ -34,6 +34,9 @@ pub enum PublicKeyExtended {
     Bls12381 {
         public_key: dtos::PublicKey,
     },
+    Cheetah {
+        public_key: dtos::PublicKey,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -69,6 +72,11 @@ impl TryFrom<PublicKeyExtended> for near_sdk::PublicKey {
                     reason: "Cannot convert Bls12381 key to near_sdk::PublicKey".into(),
                 })?
             }
+            PublicKeyExtended::Cheetah { public_key: _ } => {
+                Err(errors::ConversionError::DataConversion {
+                    reason: "Cannot convert Cheetah key to near_sdk::PublicKey".into(),
+                })?
+            }
         }
     }
 }
@@ -84,6 +92,7 @@ impl From<PublicKeyExtended> for dtos::PublicKey {
                 ..
             } => dtos::PublicKey::from(&near_public_key_compressed),
             PublicKeyExtended::Bls12381 { public_key } => public_key,
+            PublicKeyExtended::Cheetah { public_key } => public_key,
         }
     }
 }
@@ -143,6 +152,9 @@ impl TryFrom<dtos::PublicKey> for PublicKeyExtended {
                 Self::Secp256k1 { near_public_key }
             }
             dtos::PublicKey::Bls12381(inner_public_key) => Self::Bls12381 {
+                public_key: dtos::PublicKey::from(inner_public_key),
+            },
+            dtos::PublicKey::Cheetah(inner_public_key) => Self::Cheetah {
                 public_key: dtos::PublicKey::from(inner_public_key),
             },
         };

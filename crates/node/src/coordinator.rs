@@ -19,6 +19,7 @@ use crate::network::{
 };
 use crate::p2p::new_tls_mesh_network;
 use crate::primitives::MpcTaskId;
+use crate::providers::cheetah::CheetahSignatureProvider;
 use crate::providers::ckd::CKDProvider;
 use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
 use crate::providers::robust_ecdsa::RobustEcdsaSignatureProvider;
@@ -39,7 +40,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
 use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
-use threshold_signatures::{confidential_key_derivation, ecdsa, frost::eddsa};
+use threshold_signatures::{confidential_key_derivation, ecdsa, frost::cheetah, frost::eddsa};
 use tokio::select;
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::{RwLock, broadcast, mpsc, watch};
@@ -598,6 +599,10 @@ where
                     mpc_primitives::domain::DomainId,
                     eddsa::KeygenOutput,
                 > = HashMap::new();
+                let mut cheetah_keyshares: HashMap<
+                    mpc_primitives::domain::DomainId,
+                    cheetah::KeygenOutput,
+                > = HashMap::new();
                 let mut ckd_keyshares: HashMap<
                     mpc_primitives::domain::DomainId,
                     confidential_key_derivation::KeygenOutput,
@@ -633,6 +638,9 @@ where
                         }
                         (Curve::Bls12381, KeyshareData::Bls12381(data)) => {
                             ckd_keyshares.insert(domain_id, data);
+                        }
+                        (Curve::Cheetah, KeyshareData::Cheetah(data)) => {
+                            cheetah_keyshares.insert(domain_id, data);
                         }
                         (expected, data) => anyhow::bail!(
                             "Keyshare data does not match the domain protocol's expected curve: domain_id={:?}, protocol={:?}, expected_curve={:?}, data_kind={:?}",
@@ -672,6 +680,14 @@ where
                     eddsa_keyshares,
                 ));
 
+                let cheetah_signature_provider = Arc::new(CheetahSignatureProvider::new(
+                    config_file.clone().into(),
+                    running_mpc_config.clone().into(),
+                    network_client.clone(),
+                    sign_request_store.clone(),
+                    cheetah_keyshares,
+                ));
+
                 let ckd_provider = Arc::new(CKDProvider::new(
                     config_file.clone().into(),
                     running_mpc_config.clone().into(),
@@ -696,6 +712,7 @@ where
                     ecdsa_signature_provider,
                     robust_ecdsa_signature_provider,
                     eddsa_signature_provider,
+                    cheetah_signature_provider,
                     ckd_provider,
                     verify_foreign_tx_provider,
                     domain_to_protocol,

@@ -1,4 +1,5 @@
 use crate::providers::EcdsaTaskId;
+use crate::providers::cheetah::CheetahTaskId;
 use crate::providers::eddsa::EddsaTaskId;
 use crate::providers::robust_ecdsa::RobustEcdsaTaskId;
 use crate::providers::{ckd::CKDTaskId, verify_foreign_tx::VerifyForeignTxTaskId};
@@ -264,6 +265,7 @@ pub enum MpcTaskId {
     CKDTaskId(CKDTaskId),
     RobustEcdsaTaskId(RobustEcdsaTaskId),
     VerifyForeignTxTaskId(VerifyForeignTxTaskId),
+    CheetahTaskId(CheetahTaskId),
 }
 
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]

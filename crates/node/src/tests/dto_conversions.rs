@@ -41,6 +41,9 @@ fn public_key_extended_to_dto(key: &PublicKeyExtended) -> dtos::PublicKeyExtende
         PublicKeyExtended::Bls12381 { public_key } => dtos::PublicKeyExtended::Bls12381 {
             public_key: public_key.clone(),
         },
+        PublicKeyExtended::Cheetah { public_key } => dtos::PublicKeyExtended::Cheetah {
+            public_key: public_key.clone(),
+        },
     }
 }
 

@@ -1,3 +1,4 @@
+pub mod cheetah;
 pub mod eddsa;
 mod presign;
 pub mod redjubjub;

@@ -19,6 +19,7 @@ pub fn is_valid_protocol_for_purpose(purpose: DomainPurpose, protocol: Protocol)
         (DomainPurpose::Sign, Protocol::CaitSith)
             | (DomainPurpose::Sign, Protocol::DamgardEtAl)
             | (DomainPurpose::Sign, Protocol::Frost)
+            | (DomainPurpose::Sign, Protocol::FrostCheetah)
             | (DomainPurpose::ForeignTx, Protocol::CaitSith)
             | (DomainPurpose::CKD, Protocol::ConfidentialKeyDerivation)
     )
@@ -455,6 +456,7 @@ pub mod tests {
     #[case(DomainPurpose::Sign, Protocol::CaitSith, true)]
     #[case(DomainPurpose::Sign, Protocol::DamgardEtAl, true)]
     #[case(DomainPurpose::Sign, Protocol::Frost, true)]
+    #[case(DomainPurpose::Sign, Protocol::FrostCheetah, true)]
     #[case(DomainPurpose::ForeignTx, Protocol::CaitSith, true)]
     #[case(DomainPurpose::CKD, Protocol::ConfidentialKeyDerivation, true)]
     // Invalid combinations

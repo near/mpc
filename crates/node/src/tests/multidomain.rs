@@ -80,7 +80,7 @@ async fn test_basic_multidomain() {
     tracing::info!("requesting signature");
     for domain in &domains {
         match Curve::from(domain.protocol) {
-            Curve::Secp256k1 | Curve::Edwards25519 => {
+            Curve::Secp256k1 | Curve::Edwards25519 | Curve::Cheetah => {
                 assert!(
                     request_signature_and_await_response(
                         &mut setup.indexer,
@@ -152,7 +152,7 @@ async fn test_basic_multidomain() {
 
     for domain in &domains {
         match Curve::from(domain.protocol) {
-            Curve::Secp256k1 | Curve::Edwards25519 => {
+            Curve::Secp256k1 | Curve::Edwards25519 | Curve::Cheetah => {
                 assert!(
                     request_signature_and_await_response(
                         &mut setup.indexer,
@@ -203,7 +203,7 @@ async fn test_basic_multidomain() {
 
     for domain in &domains {
         match Curve::from(domain.protocol) {
-            Curve::Secp256k1 | Curve::Edwards25519 => {
+            Curve::Secp256k1 | Curve::Edwards25519 | Curve::Cheetah => {
                 assert!(
                     request_signature_and_await_response(
                         &mut setup.indexer,

@@ -645,7 +645,10 @@ impl MpcVoteAddDomainsCmd {
         for protocol in &protocols {
             let purpose = match protocol {
                 Protocol::ConfidentialKeyDerivation => DomainPurpose::CKD,
-                Protocol::CaitSith | Protocol::DamgardEtAl | Protocol::Frost => DomainPurpose::Sign,
+                Protocol::CaitSith
+                | Protocol::DamgardEtAl
+                | Protocol::Frost
+                | Protocol::FrostCheetah => DomainPurpose::Sign,
             };
             proposal.push(DomainConfig {
                 id: DomainId(next_domain),

@@ -297,7 +297,10 @@ impl RunLoadtestCmd {
                         domain_config,
                     })
                 }
-                Protocol::CaitSith | Protocol::DamgardEtAl | Protocol::Frost => {
+                Protocol::CaitSith
+                | Protocol::DamgardEtAl
+                | Protocol::Frost
+                | Protocol::FrostCheetah => {
                     ContractActionCall::Sign(crate::contracts::RequestActionCallArgs {
                         mpc_contract: mpc_account,
                         domain_config,

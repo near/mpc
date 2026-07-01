@@ -19,7 +19,9 @@ use super::DEFAULT_BLOCK_TIME;
 fn infer_purpose_from_protocol(protocol: Protocol) -> DomainPurpose {
     match protocol {
         Protocol::ConfidentialKeyDerivation => DomainPurpose::CKD,
-        Protocol::CaitSith | Protocol::Frost | Protocol::DamgardEtAl => DomainPurpose::Sign,
+        Protocol::CaitSith | Protocol::Frost | Protocol::DamgardEtAl | Protocol::FrostCheetah => {
+            DomainPurpose::Sign
+        }
     }
 }
 
@@ -86,7 +88,7 @@ async fn test_key_resharing_simple(
 
     // Sanity check.
     match Curve::from(domain.protocol) {
-        Curve::Secp256k1 | Curve::Edwards25519 => {
+        Curve::Secp256k1 | Curve::Edwards25519 | Curve::Cheetah => {
             assert!(
                 request_signature_and_await_response(
                     &mut setup.indexer,
@@ -134,7 +136,7 @@ async fn test_key_resharing_simple(
         .expect("Timeout waiting for resharing to complete");
 
     match Curve::from(domain.protocol) {
-        Curve::Secp256k1 | Curve::Edwards25519 => {
+        Curve::Secp256k1 | Curve::Edwards25519 | Curve::Cheetah => {
             assert!(
                 request_signature_and_await_response(
                     &mut setup.indexer,

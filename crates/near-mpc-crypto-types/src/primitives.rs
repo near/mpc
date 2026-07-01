@@ -161,6 +161,7 @@ pub struct CKDResponse {
 pub enum SignatureResponse {
     Secp256k1(K256Signature),
     Ed25519 { signature: Ed25519Signature },
+    Cheetah { signature: CheetahSignature },
 }
 
 #[serde_as]
@@ -184,6 +185,36 @@ pub enum SignatureResponse {
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct Ed25519Signature(
+    #[cfg_attr(
+            all(feature = "abi", not(target_arch = "wasm32")),
+            schemars(with = "Vec<u8>") // Schemars doesn't support arrays of size greater than 32.
+        )]
+    #[serde_as(as = "[_; 64]")]
+    [u8; 64],
+);
+
+/// Nockchain Cheetah Schnorr signature: `c ‖ s`, two 32-byte little-endian scalars.
+#[serde_as]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::From,
+    derive_more::Deref,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct CheetahSignature(
     #[cfg_attr(
             all(feature = "abi", not(target_arch = "wasm32")),
             schemars(with = "Vec<u8>") // Schemars doesn't support arrays of size greater than 32.

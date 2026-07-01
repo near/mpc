@@ -26,6 +26,7 @@ impl TryFrom<PublicKey> for near_sdk::PublicKey {
             PublicKey::Secp256k1(inner) => Ok(near_sdk::PublicKey::from(inner)),
             PublicKey::Ed25519(inner) => Ok(near_sdk::PublicKey::from(inner)),
             PublicKey::Bls12381(_) => Err(CryptoConversionError::UnsupportedCurve),
+            PublicKey::Cheetah(_) => Err(CryptoConversionError::UnsupportedCurve),
         }
     }
 }
@@ -86,6 +87,7 @@ impl TryFrom<&PublicKeyExtended> for near_sdk::PublicKey {
                 .parse()
                 .map_err(|_| CryptoConversionError::InvalidPublicKey),
             PublicKeyExtended::Bls12381 { .. } => Err(CryptoConversionError::UnsupportedCurve),
+            PublicKeyExtended::Cheetah { .. } => Err(CryptoConversionError::UnsupportedCurve),
         }
     }
 }

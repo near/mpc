@@ -192,6 +192,8 @@ pub fn gen_proposed_threshold_params(max_n: usize) -> ProposedThresholdParameter
 pub fn infer_purpose_from_protocol(protocol: Protocol) -> DomainPurpose {
     match protocol {
         Protocol::ConfidentialKeyDerivation => DomainPurpose::CKD,
-        Protocol::CaitSith | Protocol::Frost | Protocol::DamgardEtAl => DomainPurpose::Sign,
+        Protocol::CaitSith | Protocol::Frost | Protocol::DamgardEtAl | Protocol::FrostCheetah => {
+            DomainPurpose::Sign
+        }
     }
 }

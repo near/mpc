@@ -17,7 +17,8 @@ use crate::{
     keyshare::{Keyshare, KeyshareData, KeyshareStorage},
     network::NetworkTaskChannel,
     providers::{
-        CKDProvider, EcdsaSignatureProvider, RobustEcdsaSignatureProvider, SignatureProvider,
+        CKDProvider, CheetahSignatureProvider, EcdsaSignatureProvider,
+        RobustEcdsaSignatureProvider, SignatureProvider,
     },
 };
 use mpc_primitives::KeyEventId;
@@ -27,6 +28,7 @@ use near_mpc_contract_interface::types::DomainConfig;
 use near_mpc_crypto_types::{KeyForDomain, Keyset};
 use std::sync::Arc;
 use std::time::Duration;
+use threshold_signatures::frost::cheetah::verifying_key_to_bytes;
 use threshold_signatures::{
     ReconstructionThreshold, confidential_key_derivation as ckd, frost_ed25519, frost_secp256k1,
 };
@@ -91,6 +93,14 @@ pub async fn keygen_computation_inner(
                 &keyshare.public_key.to_element(),
             ));
             (KeyshareData::Bls12381(keyshare), public_key)
+        }
+        Protocol::FrostCheetah => {
+            let keyshare =
+                CheetahSignatureProvider::run_key_generation_client(threshold, channel).await?;
+            let public_key = dtos::PublicKey::Cheetah(dtos::CheetahPublicKey::from(
+                verifying_key_to_bytes(&keyshare.public_key),
+            ));
+            (KeyshareData::Cheetah(keyshare), public_key)
         }
     };
 
@@ -295,6 +305,26 @@ async fn resharing_computation_inner(
             )
             .await?;
             KeyshareData::Bls12381(res)
+        }
+        (dtos::PublicKey::Cheetah(inner_public_key), Protocol::FrostCheetah) => {
+            let public_key = threshold_signatures::frost_core::VerifyingKey::<
+                threshold_signatures::frost::cheetah::CheetahTip5,
+            >::deserialize(inner_public_key.as_ref())?;
+            let my_share = existing_keyshare
+                .map(|keyshare| match keyshare.data {
+                    KeyshareData::Cheetah(data) => Ok(data.private_share),
+                    _ => Err(anyhow::anyhow!("Expected cheetah keyshare!")),
+                })
+                .transpose()?;
+            let res = CheetahSignatureProvider::run_key_resharing_client(
+                args.new_threshold,
+                my_share,
+                public_key,
+                &args.old_participants,
+                channel,
+            )
+            .await?;
+            KeyshareData::Cheetah(res)
         }
         (public_key, protocol) => {
             return Err(anyhow::anyhow!(

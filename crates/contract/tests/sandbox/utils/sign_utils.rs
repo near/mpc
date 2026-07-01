@@ -72,6 +72,9 @@ impl DomainResponseTest {
             SharedSecretKey::Bls12381(sk) => {
                 DomainResponseTest::CKD(CKDRequestTest::new(rng, domain_id, predecessor_id, sk))
             }
+            SharedSecretKey::Cheetah(_) => {
+                panic!("Cheetah sandbox sign tests are not implemented yet");
+            }
         }
     }
 

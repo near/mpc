@@ -6,6 +6,7 @@
 //!
 //! As a reference, check the existing implementations.
 
+pub mod cheetah;
 pub mod ckd;
 pub mod ecdsa;
 pub mod eddsa;
@@ -16,6 +17,7 @@ use crate::config::ParticipantsConfig;
 use crate::network::NetworkTaskChannel;
 use crate::primitives::{MpcTaskId, ParticipantId};
 use crate::types::SignatureId;
+pub use cheetah::CheetahSignatureProvider;
 pub use ckd::CKDProvider;
 pub use ecdsa::EcdsaSignatureProvider;
 pub use ecdsa::EcdsaTaskId;

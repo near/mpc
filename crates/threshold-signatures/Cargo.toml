@@ -17,6 +17,8 @@ auto_ops.workspace = true
 blstrs.workspace = true
 borsh.workspace = true
 byteorder.workspace = true
+cheetah = { package = "cheetah-curve", version = "0.3.2" }
+crypto-bigint = { version = "0.7.4", default-features = false, features = ["subtle"] }
 derive_more = { workspace = true, features = ["deref_mut"] }
 digest.workspace = true
 ecdsa.workspace = true
@@ -24,8 +26,8 @@ elliptic-curve.workspace = true
 frost-core.workspace = true
 frost-ed25519.workspace = true
 frost-secp256k1.workspace = true
-futures.workspace = true
 futures-lite.workspace = true
+futures.workspace = true
 hex.workspace = true
 hkdf.workspace = true
 itertools.workspace = true

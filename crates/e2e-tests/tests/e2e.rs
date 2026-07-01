@@ -1,4 +1,5 @@
 mod cancellation_of_resharing;
+mod cheetah_sign;
 mod ckd_verification;
 mod cleanup_lagging_node;
 mod common;

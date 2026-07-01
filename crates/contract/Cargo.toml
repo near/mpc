@@ -76,6 +76,7 @@ __abi-generate = ["abi", "near-sdk/__abi-generate"]
 assert_matches = { workspace = true }
 blstrs = { workspace = true }
 borsh = { workspace = true }
+cheetah = { package = "cheetah-curve", version = "0.3.3" }
 curve25519-dalek = { workspace = true }
 derive_more = { workspace = true, features = ["from", "deref"] }
 elliptic-curve = { workspace = true }

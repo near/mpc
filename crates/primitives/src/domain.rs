@@ -63,6 +63,7 @@ pub enum Curve {
     Secp256k1,
     Edwards25519,
     Bls12381,
+    Cheetah,
 }
 
 /// MPC protocol run for a domain.
@@ -90,6 +91,7 @@ pub enum Protocol {
     Frost,
     ConfidentialKeyDerivation,
     DamgardEtAl,
+    FrostCheetah,
 }
 
 impl From<Protocol> for Curve {
@@ -98,6 +100,7 @@ impl From<Protocol> for Curve {
             Protocol::CaitSith | Protocol::DamgardEtAl => Curve::Secp256k1,
             Protocol::Frost => Curve::Edwards25519,
             Protocol::ConfidentialKeyDerivation => Curve::Bls12381,
+            Protocol::FrostCheetah => Curve::Cheetah,
         }
     }
 }
@@ -128,5 +131,10 @@ mod tests {
             Curve::from(Protocol::ConfidentialKeyDerivation),
             Curve::Bls12381
         );
+    }
+
+    #[test]
+    fn from_protocol_for_curve__should_map_frost_cheetah_to_cheetah() {
+        assert_eq!(Curve::from(Protocol::FrostCheetah), Curve::Cheetah);
     }
 }
