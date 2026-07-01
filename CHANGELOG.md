@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.13.1] - 2026-07-01
+
+### 🚀 Features
+
+- [#3711](https://github.com/near/mpc/pull/3711)(@anodar): Support flag for wiping nearcore data (#3711)
+
+- [#3712](https://github.com/near/mpc/pull/3712)(@gilcu3): Add nearcore node config endpoint (#3706) (#3712)
+
+
+### 🐛 Bug Fixes
+
+- [#3710](https://github.com/near/mpc/pull/3710)(@gilcu3): A single participant with wrong url should not break the node (#3710)
+
+- [#3722](https://github.com/near/mpc/pull/3722)(@gilcu3): Indexer wedging on startup (#3713) (#3722)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- [#3718](https://github.com/near/mpc/pull/3718)(@gilcu3): Bump nearcore to 2.13.0-rc.2 (#3717) (#3718)
+
+
 ## [3.13.0] - 2026-06-24
 
 ### 🚀 Features
