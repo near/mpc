@@ -24,6 +24,7 @@ derive_more = { workspace = true }
 ed25519-dalek = { workspace = true }
 flume = { workspace = true }
 foreign-chain-inspector = { workspace = true }
+foreign-chain-rpc-auth = { workspace = true }
 foreign-chain-rpc-interfaces = { workspace = true }
 futures = { workspace = true }
 gcloud-sdk = { workspace = true }
