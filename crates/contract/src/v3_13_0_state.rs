@@ -1,5 +1,5 @@
 //! ## Overview
-//! Shadows the contract state written by the `3.13.0` release so [`crate::migrate`]
+//! Shadows the contract state written by the `3.13.0` release so [`crate::MpcContract::migrate`]
 //! can upgrade from it. See [`crate::v3_12_0_state`] for the rationale and guideline.
 //!
 //! `3.13.0` differs from the live layout only by the two fields this version adds:
