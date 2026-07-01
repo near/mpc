@@ -534,6 +534,10 @@ async fn upgrade_preserves_per_node_foreign_chain_support(
 
     // Then: each node's supported-chain set matches the chains it originally
     // registered (RPC providers are dropped by the new layout).
+    #[expect(
+        deprecated,
+        reason = "TODO(#3630): Drop after contract is upgraded to 3.13"
+    )]
     let support: dtos::ForeignChainSupportByNode = contract
         .view(method_names::GET_FOREIGN_CHAIN_SUPPORT_BY_NODE)
         .await?

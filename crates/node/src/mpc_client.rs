@@ -1,4 +1,4 @@
-use crate::indexer::ReadSupportedForeignChain;
+use crate::indexer::ReadAvailableForeignChains;
 use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::tx_sender::TransactionSender;
 use crate::indexer::types::{
@@ -30,7 +30,7 @@ use mpc_node_config::ConfigFile;
 use mpc_primitives::domain::{DomainId, Protocol};
 use near_mpc_contract_interface::types::CKDResponse;
 use near_time::Clock;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -88,7 +88,7 @@ fn is_heavy_generation_task(task_id: &MpcTaskId) -> bool {
 
 impl<ForeignChainPolicyReader> MpcClient<ForeignChainPolicyReader>
 where
-    ForeignChainPolicyReader: ReadSupportedForeignChain + 'static,
+    ForeignChainPolicyReader: ReadAvailableForeignChains + 'static,
 {
     #[expect(clippy::too_many_arguments)]
     pub fn new(
@@ -339,7 +339,8 @@ where
             if start_time.elapsed() < INITIAL_STARTUP_PROCESSING_DELAY {
                 continue;
             }
-            let signature_attempts = pending_signatures.get_requests_to_attempt();
+            let signature_attempts =
+                pending_signatures.get_requests_to_attempt(|_, eligible| eligible.clone());
 
             for signature_attempt in signature_attempts {
                 let this = self.clone();
@@ -460,7 +461,7 @@ where
                     },
                 );
             }
-            let ckd_attempts = pending_ckds.get_requests_to_attempt();
+            let ckd_attempts = pending_ckds.get_requests_to_attempt(|_, eligible| eligible.clone());
 
             for ckd_attempt in ckd_attempts {
                 let this = self.clone();
@@ -548,7 +549,32 @@ where
                 );
             }
 
-            let verify_foreign_tx_attempts = pending_verify_foreign_txs.get_requests_to_attempt();
+            let foreign_chains_configs = match self
+                .verify_foreign_tx_provider
+                .get_foreign_chains_configs()
+                .await
+            {
+                Ok(configs) => Some(configs),
+                Err(err) => {
+                    tracing::warn!(
+                        target: "request",
+                        ?err,
+                        "failed to read foreign-chain configs, deferring verify_foreign_tx leader election this cycle"
+                    );
+                    None
+                }
+            };
+            let verify_foreign_tx_attempts =
+                pending_verify_foreign_txs.get_requests_to_attempt(|req, eligible| {
+                    match &foreign_chains_configs {
+                        Some(configs) => self.verify_foreign_tx_provider.leaders_supporting_chain(
+                            eligible,
+                            configs,
+                            req.request.chain(),
+                        ),
+                        None => HashSet::new(),
+                    }
+                });
 
             for verify_foreign_tx_attempt in verify_foreign_tx_attempts {
                 let this = self.clone();

@@ -112,6 +112,14 @@ impl EcdsaSignatureProvider {
         })
     }
 
+    pub(crate) fn participants_config(&self) -> &ParticipantsConfig {
+        &self.mpc_config.participants
+    }
+
+    pub(crate) fn alive_participant_ids(&self) -> Vec<ParticipantId> {
+        self.client.all_alive_participant_ids()
+    }
+
     pub(super) fn domain_data(&self, domain_id: DomainId) -> anyhow::Result<PerDomainData> {
         self.per_domain_data
             .get(&domain_id)

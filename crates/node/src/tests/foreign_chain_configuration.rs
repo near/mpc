@@ -79,7 +79,7 @@ async fn foreign_chain_configuration_auto_registered_to_contract_on_startup__sho
         loop {
             {
                 let contract = setup.indexer.contract_mut().await;
-                if **contract.supported_foreign_chains() == expected_foreign_chains {
+                if **contract.available_foreign_chains() == expected_foreign_chains {
                     break;
                 }
             }
@@ -93,7 +93,7 @@ async fn foreign_chain_configuration_auto_registered_to_contract_on_startup__sho
     let contract = setup.indexer.contract_mut().await;
 
     assert_eq!(
-        **contract.supported_foreign_chains(),
+        **contract.available_foreign_chains(),
         expected_foreign_chains
     );
 

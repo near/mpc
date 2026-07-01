@@ -6,17 +6,18 @@ use anyhow::{Context, bail};
 use backon::{ConstantBuilder, Retryable};
 use e2e_tests::CLUSTER_WAIT_TIMEOUT;
 use e2e_tests::foreign_chain_mock::{
-    MockServerExt, setup_bitcoin_mock, setup_evm_mock, setup_starknet_mock,
+    MockServerExt, setup_aptos_mock, setup_bitcoin_mock, setup_evm_mock, setup_starknet_mock,
 };
 use httpmock::prelude::*;
+use mpc_node_config::foreign_chains::RpcProviderName;
 use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::types::{
-    BitcoinExtractor, BitcoinRpcRequest, BitcoinTxId, BlockConfirmations, DomainConfig, DomainId,
-    DomainPurpose, EvmExtractor, EvmFinality, EvmRpcRequest, EvmTxId, ForeignChain,
-    ForeignChainRpcRequest, ForeignTxPayloadVersion, Protocol, ReconstructionThreshold,
-    StarknetExtractor, StarknetFelt, StarknetFinality, StarknetRpcRequest, StarknetTxId,
-    VerifyForeignTransactionRequestArgs,
+    AptosExtractor, AptosRpcRequest, AptosTxId, BitcoinExtractor, BitcoinRpcRequest, BitcoinTxId,
+    BlockConfirmations, DomainConfig, DomainId, DomainPurpose, EvmExtractor, EvmFinality,
+    EvmRpcRequest, EvmTxId, ForeignChain, ForeignChainRpcRequest, ForeignTxPayloadVersion,
+    Protocol, ReconstructionThreshold, StarknetExtractor, StarknetFelt, StarknetFinality,
+    StarknetRpcRequest, StarknetTxId, VerifyForeignTransactionRequestArgs,
 };
 
 struct ForeignTxTestEnv {
@@ -26,6 +27,9 @@ struct ForeignTxTestEnv {
     /// Polygon is configured with multiple RPC providers so the test can verify
     /// that `FanOut` queries every one of them.
     polygon_mocks: Vec<MockServerExt>,
+    /// Aptos is configured with multiple RPC providers so the test can verify
+    /// that `FanOut` queries every one of them.
+    aptos_mocks: Vec<MockServerExt>,
 }
 
 struct MockServerUrls {
@@ -37,6 +41,33 @@ struct MockServerUrls {
     arbitrum: String,
     hyper_evm: String,
     polygon: Vec<String>,
+    aptos: Vec<String>,
+}
+
+fn build_providers_from_urls<'a>(
+    mut urls: impl Iterator<Item = (usize, &'a String)>,
+    chain_name: &str,
+) -> NonEmptyBTreeMap<RpcProviderName, ForeignChainProviderConfig> {
+    let (i, first_url) = urls
+        .next()
+        .expect("at least one polygon provider must be configured");
+    let mut providers = NonEmptyBTreeMap::new(
+        format!("mock-{chain_name}-{i}").into(),
+        ForeignChainProviderConfig {
+            rpc_url: first_url.clone(),
+            auth: Default::default(),
+        },
+    );
+    for (i, url) in urls {
+        providers.insert(
+            format!("mock-{chain_name}-{i}").into(),
+            ForeignChainProviderConfig {
+                rpc_url: url.clone(),
+                auth: Default::default(),
+            },
+        );
+    }
+    providers
 }
 
 fn build_foreign_chains_config(urls: &MockServerUrls) -> ForeignChainsConfig {
@@ -122,27 +153,16 @@ fn build_foreign_chains_config(urls: &MockServerUrls) -> ForeignChainsConfig {
             timeout_sec: NonZeroU64::new(30).unwrap(),
             max_retries: NonZeroU64::new(3).unwrap(),
             providers: {
-                let mut iter = urls.polygon.iter().enumerate();
-                let (i, first_url) = iter
-                    .next()
-                    .expect("at least one polygon provider must be configured");
-                let mut providers = NonEmptyBTreeMap::new(
-                    format!("mock-{i}").into(),
-                    ForeignChainProviderConfig {
-                        rpc_url: first_url.clone(),
-                        auth: Default::default(),
-                    },
-                );
-                for (i, url) in iter {
-                    providers.insert(
-                        format!("mock-{i}").into(),
-                        ForeignChainProviderConfig {
-                            rpc_url: url.clone(),
-                            auth: Default::default(),
-                        },
-                    );
-                }
-                providers
+                let iter = urls.polygon.iter().enumerate();
+                build_providers_from_urls(iter, "polygon")
+            },
+        }),
+        aptos: Some(ForeignChainConfig {
+            timeout_sec: NonZeroU64::new(30).unwrap(),
+            max_retries: NonZeroU64::new(3).unwrap(),
+            providers: {
+                let urls = urls.aptos.iter().enumerate();
+                build_providers_from_urls(urls, "aptos")
             },
         }),
         ..Default::default()
@@ -176,6 +196,14 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
         })
         .collect();
 
+    let aptos_mocks: Vec<MockServerExt> = (0..3)
+        .map(|_| {
+            let server = MockServer::start();
+            let mock_id = setup_aptos_mock(&server);
+            MockServerExt::new(server, mock_id)
+        })
+        .collect();
+
     let urls = MockServerUrls {
         bitcoin: bitcoin_server.url("/"),
         abstract_chain: abstract_server.url("/"),
@@ -185,6 +213,7 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
         arbitrum: arbitrum_server.url("/"),
         hyper_evm: hyper_evm_server.url("/"),
         polygon: polygon_mocks.iter().map(|m| m.server.url("/")).collect(),
+        aptos: aptos_mocks.iter().map(|m| m.server.url("/")).collect(),
     };
 
     let mock_servers = vec![
@@ -199,6 +228,20 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
 
     let fc_config = build_foreign_chains_config(&urls);
 
+    let expected_chains: std::collections::BTreeSet<ForeignChain> = [
+        ForeignChain::Bitcoin,
+        ForeignChain::Abstract,
+        ForeignChain::Bnb,
+        ForeignChain::Starknet,
+        ForeignChain::Base,
+        ForeignChain::Arbitrum,
+        ForeignChain::HyperEvm,
+        ForeignChain::Polygon,
+        ForeignChain::Aptos,
+    ]
+    .into_iter()
+    .collect();
+
     let (cluster, _running) =
         common::must_setup_cluster(common::FOREIGN_TX_VALIDATION_PORT_SEED, |c| {
             c.num_nodes = 2;
@@ -210,34 +253,22 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
                 purpose: DomainPurpose::ForeignTx,
             }];
             c.node_foreign_chains_configs = vec![fc_config.clone(), fc_config];
+            c.whitelisted_chains = expected_chains.clone();
         })
         .await;
 
-    let expected_supported_chains: std::collections::BTreeSet<ForeignChain> = [
-        ForeignChain::Bitcoin,
-        ForeignChain::Abstract,
-        ForeignChain::Bnb,
-        ForeignChain::Starknet,
-        ForeignChain::Base,
-        ForeignChain::Arbitrum,
-        ForeignChain::HyperEvm,
-        ForeignChain::Polygon,
-    ]
-    .into_iter()
-    .collect();
-
     (|| async {
-        let supported = cluster
-            .view_foreign_chains_supported_by_contract()
+        let available = cluster
+            .view_available_foreign_chains()
             .await
-            .context("failed to view supported chains")?;
-        let supported_set: std::collections::BTreeSet<ForeignChain> =
-            supported.iter().copied().collect();
+            .context("failed to view available chains")?;
+        let available_set: std::collections::BTreeSet<ForeignChain> =
+            available.iter().copied().collect();
         anyhow::ensure!(
-            supported_set == expected_supported_chains,
-            "expected supported chains {:?}, got {:?}",
-            expected_supported_chains,
-            supported_set
+            available_set == expected_chains,
+            "expected available chains {:?}, got {:?}",
+            expected_chains,
+            available_set
         );
         Ok(())
     })
@@ -249,7 +280,7 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
             ),
     )
     .await
-    .context("timed out waiting for every participant to register its foreign chains")?;
+    .context("timed out waiting for all chains to become available")?;
 
     let state = cluster
         .get_contract_state()
@@ -272,6 +303,7 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
         foreign_tx_domain_id,
         _mock_servers: mock_servers,
         polygon_mocks,
+        aptos_mocks,
     })
 }
 
@@ -459,6 +491,22 @@ fn assert_fan_out_queried_every_polygon_provider(env: &ForeignTxTestEnv) {
     }
 }
 
+/// Verifies that every Aptos RPC provider configured in the fan-out received
+/// at least one HTTP request during the preceding `verify_aptos` call.
+///
+/// A regression in `FanOut` (e.g. routing each verify request to a single
+/// provider instead of fanning out to all of them) would leave at least one
+/// mock untouched and this assertion would fail.
+fn assert_fan_out_queried_every_aptos_provider(env: &ForeignTxTestEnv) {
+    for (i, aptos) in env.aptos_mocks.iter().enumerate() {
+        let calls = aptos.calls();
+        assert!(
+            calls > 0,
+            "aptos provider #{i} was not queried by FanOut; expected >= 1 RPC hit, got {calls}"
+        );
+    }
+}
+
 async fn verify_polygon(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
     let request = VerifyForeignTransactionRequestArgs {
         request: ForeignChainRpcRequest::Polygon(EvmRpcRequest {
@@ -474,6 +522,24 @@ async fn verify_polygon(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
         .send_verify_foreign_transaction(&request)
         .await
         .context("verify_foreign_transaction (Polygon) failed")?;
+    verify_foreign_tx_response(&outcome)
+}
+
+async fn verify_aptos(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
+    let request = VerifyForeignTransactionRequestArgs {
+        request: ForeignChainRpcRequest::Aptos(AptosRpcRequest {
+            tx_id: AptosTxId([0xcc; 32]),
+            extractors: vec![AptosExtractor::Event { event_index: 0 }],
+            finality: near_mpc_contract_interface::types::AptosFinality::Committed,
+        }),
+        domain_id: env.foreign_tx_domain_id,
+        payload_version: ForeignTxPayloadVersion::V1,
+    };
+    let outcome = env
+        .cluster
+        .send_verify_foreign_transaction(&request)
+        .await
+        .context("verify_foreign_transaction (Aptos) failed")?;
     verify_foreign_tx_response(&outcome)
 }
 
@@ -512,7 +578,9 @@ async fn verify_foreign_transaction__should_sign_all_supported_chains() {
     verify_polygon(&env)
         .await
         .expect("polygon verification failed");
+    verify_aptos(&env).await.expect("aptos verification failed");
     assert_fan_out_queried_every_polygon_provider(&env);
+    assert_fan_out_queried_every_aptos_provider(&env);
 
     // When — requesting Ethereum, which is not in the foreign chain config
     let request = VerifyForeignTransactionRequestArgs {

@@ -12,8 +12,10 @@ use foreign_chain_inspector::{EthereumFinality, ForeignChainInspector};
 use threshold_signatures::{ecdsa::Signature, frost_secp256k1::VerifyingKey};
 use tokio_util::time::FutureExt;
 
-use crate::indexer::ReadSupportedForeignChain;
+use crate::config::ParticipantsConfig;
+use crate::indexer::ReadAvailableForeignChains;
 use crate::metrics;
+use crate::primitives::ParticipantId;
 use crate::providers::verify_foreign_tx::VerifyForeignTxTaskId;
 use crate::types::{SignatureRequest, VerifyForeignTxRequest};
 use crate::{
@@ -21,8 +23,11 @@ use crate::{
     providers::verify_foreign_tx::VerifyForeignTxProvider, types::SignatureId,
 };
 use near_mpc_bounded_collections::BoundedVec;
+use near_mpc_contract_interface::types as contract_dtos;
 use near_mpc_contract_interface::types::{self as dtos, ECDSA_PAYLOAD_SIZE_BYTES};
 use near_mpc_contract_interface::types::{Payload, Tweak};
+use near_mpc_crypto_types::Ed25519PublicKey;
+use std::collections::HashSet;
 use tokio::time::{Duration, timeout};
 
 const FOREIGN_CHAIN_INSPECTION_TIMEOUT: Duration = Duration::from_secs(5);
@@ -49,7 +54,7 @@ fn build_signature_request(
 
 impl<ForeignChainPolicyReader> VerifyForeignTxProvider<ForeignChainPolicyReader>
 where
-    ForeignChainPolicyReader: ReadSupportedForeignChain,
+    ForeignChainPolicyReader: ReadAvailableForeignChains,
 {
     pub(super) async fn make_verify_foreign_tx_leader(
         &self,
@@ -60,8 +65,37 @@ where
         let domain_data = self
             .ecdsa_signature_provider
             .domain_data(foreign_tx_request.domain_id)?;
-        let (presignature_id, presignature) = domain_data.presignature_store.take_owned().await;
+        let foreign_chains_configs = self
+            .foreign_chain_policy_reader
+            .get_foreign_chains_configs()
+            .await?;
+        let requested_chain = foreign_tx_request.request.chain();
+
+        let participants_config = self.ecdsa_signature_provider.participants_config();
+        let eligible_participants: Vec<ParticipantId> = self
+            .ecdsa_signature_provider
+            .alive_participant_ids()
+            .into_iter()
+            .filter(|participant_id| {
+                participants_support_chain(
+                    std::slice::from_ref(participant_id),
+                    participants_config,
+                    &foreign_chains_configs,
+                    requested_chain,
+                )
+            })
+            .collect();
+
+        let (presignature_id, presignature) = domain_data
+            .presignature_store
+            .take_owned_matching(eligible_participants)
+            .with_context(|| {
+                format!(
+                    "no owned presignature whose participants all support chain {requested_chain:?}"
+                )
+            })?;
         let participants = presignature.participants.clone();
+
         let channel = self.ecdsa_signature_provider.new_channel_for_task(
             VerifyForeignTxTaskId::VerifyForeignTx {
                 id,
@@ -84,6 +118,37 @@ where
             .make_signature_leader_given_parameters(sign_request, presignature, channel)
             .await?;
         Ok(((response_payload, response.0), response.1))
+    }
+
+    /// Per-node foreign-chain RPC configs.
+    pub(crate) async fn get_foreign_chains_configs(
+        &self,
+    ) -> anyhow::Result<contract_dtos::ForeignChainsConfigs> {
+        self.foreign_chain_policy_reader
+            .get_foreign_chains_configs()
+            .await
+    }
+
+    /// Narrows `eligible` to the participants that support chain.
+    pub(crate) fn leaders_supporting_chain(
+        &self,
+        eligible: &HashSet<ParticipantId>,
+        foreign_chains_configs: &contract_dtos::ForeignChainsConfigs,
+        chain: contract_dtos::ForeignChain,
+    ) -> HashSet<ParticipantId> {
+        let participants_config = self.ecdsa_signature_provider.participants_config();
+        eligible
+            .iter()
+            .copied()
+            .filter(|participant_id| {
+                participants_support_chain(
+                    std::slice::from_ref(participant_id),
+                    participants_config,
+                    foreign_chains_configs,
+                    chain,
+                )
+            })
+            .collect()
     }
 
     pub(super) async fn make_verify_foreign_tx_follower(
@@ -119,7 +184,7 @@ where
         request: &dtos::ForeignChainRpcRequest,
         payload_version: dtos::ForeignTxPayloadVersion,
     ) -> anyhow::Result<dtos::ForeignTxSignPayload> {
-        chain_is_supported(&self.foreign_chain_policy_reader, request).await?;
+        is_chain_available(&self.foreign_chain_policy_reader, request).await?;
 
         let values: Vec<dtos::ExtractedValue> = match request {
             dtos::ForeignChainRpcRequest::Ethereum(_request) => {
@@ -348,42 +413,90 @@ where
 }
 
 #[derive(Debug, thiserror::Error)]
-enum ForeignChainSupportError {
-    #[error("failed to fetch supported chains on the contract")]
+enum ForeignChainAvailabilityError {
+    #[error("failed to fetch available chains from the contract")]
     FailedToReadContract(#[source] anyhow::Error),
     #[error(
-        "requested chain {requested:?} is not present in the list of supported foreign chains on the MPC contract"
+        "requested chain {requested:?} is not in the list of available foreign chains on the MPC contract"
     )]
-    ChainNotSupported { requested: dtos::ForeignChain },
+    ChainNotAvailable { requested: dtos::ForeignChain },
 }
 
-async fn chain_is_supported(
-    policy_reader: &impl ReadSupportedForeignChain,
+async fn is_chain_available(
+    policy_reader: &impl ReadAvailableForeignChains,
     request: &dtos::ForeignChainRpcRequest,
-) -> Result<(), ForeignChainSupportError> {
-    let on_chain_foreign_chains_support = policy_reader
-        .get_supported_chains()
+) -> Result<(), ForeignChainAvailabilityError> {
+    let available_chains = policy_reader
+        .get_available_chains()
         .await
-        .map_err(ForeignChainSupportError::FailedToReadContract)?;
+        .map_err(ForeignChainAvailabilityError::FailedToReadContract)?;
 
     let requested_chain = request.chain();
 
-    if on_chain_foreign_chains_support.contains(&requested_chain) {
+    if available_chains.contains(&requested_chain) {
         Ok(())
     } else {
-        Err(ForeignChainSupportError::ChainNotSupported {
+        Err(ForeignChainAvailabilityError::ChainNotAvailable {
             requested: requested_chain,
         })
     }
+}
+
+fn participants_support_chain(
+    participants: &[ParticipantId],
+    participants_config: &ParticipantsConfig,
+    foreign_chains_configs: &contract_dtos::ForeignChainsConfigs,
+    chain: contract_dtos::ForeignChain,
+) -> bool {
+    participants.iter().all(|participant_id| {
+        let Some(info) = participants_config.get_info(*participant_id) else {
+            return false;
+        };
+        let tls_key = Ed25519PublicKey::from(&info.p2p_public_key);
+        foreign_chains_configs
+            .get(&tls_key)
+            .is_some_and(|config| config.contains(&chain))
+    })
 }
 
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use crate::indexer::MockReadSupportedForeignChain;
+    use crate::config::{ParticipantInfo, ParticipantsConfig};
+    use crate::indexer::MockReadAvailableForeignChains;
     use assert_matches::assert_matches;
-    use std::collections::BTreeSet;
+    use ed25519_dalek::SigningKey;
+    use std::collections::{BTreeMap, BTreeSet};
+
+    fn make_signing_key(seed: u8) -> SigningKey {
+        SigningKey::from_bytes(&[seed; 32])
+    }
+
+    fn make_participant_info(id: u32, key: &SigningKey) -> ParticipantInfo {
+        ParticipantInfo {
+            id: ParticipantId::from_raw(id),
+            address: "127.0.0.1".to_string(),
+            port: 3000,
+            p2p_public_key: key.verifying_key(),
+            near_account_id: format!("node{id}.near").parse().unwrap(),
+        }
+    }
+
+    fn tls_key_for(signing_key: &SigningKey) -> Ed25519PublicKey {
+        Ed25519PublicKey::from(&signing_key.verifying_key())
+    }
+
+    fn bitcoin_chain_config() -> dtos::ForeignChainsConfig {
+        BTreeSet::from([dtos::ForeignChain::Bitcoin]).into()
+    }
+
+    fn foreign_chains_configs_with(
+        key: Ed25519PublicKey,
+        config: dtos::ForeignChainsConfig,
+    ) -> dtos::ForeignChainsConfigs {
+        BTreeMap::from([(key, config)]).into()
+    }
 
     fn bitcoin_request() -> dtos::ForeignChainRpcRequest {
         dtos::ForeignChainRpcRequest::Bitcoin(dtos::BitcoinRpcRequest {
@@ -393,39 +506,196 @@ mod tests {
         })
     }
 
-    fn bitcoin_chain_policy() -> dtos::SupportedForeignChains {
+    fn bitcoin_available_chains() -> dtos::AvailableForeignChains {
         BTreeSet::from([dtos::ForeignChain::Bitcoin]).into()
     }
 
-    fn mock_policy_reader(policy: dtos::SupportedForeignChains) -> MockReadSupportedForeignChain {
-        let mut reader = MockReadSupportedForeignChain::new();
+    fn mock_policy_reader(
+        available: dtos::AvailableForeignChains,
+    ) -> MockReadAvailableForeignChains {
+        let mut reader = MockReadAvailableForeignChains::new();
         reader
-            .expect_get_supported_chains()
-            .returning(move || Box::pin(std::future::ready(Ok(policy.clone()))));
+            .expect_get_available_chains()
+            .returning(move || Box::pin(std::future::ready(Ok(available.clone()))));
+        reader.expect_get_foreign_chains_configs().returning(|| {
+            Box::pin(std::future::ready(
+                Ok(dtos::ForeignChainsConfigs::default()),
+            ))
+        });
         reader
     }
 
-    #[tokio::test]
-    async fn chain_is_supported__should_succeed_when_chain_is_present_in_policy() {
-        let reader = mock_policy_reader(bitcoin_chain_policy());
+    #[test]
+    fn participants_support_chain__should_return_true_when_all_support_chain() {
+        // Given
+        let key = make_signing_key(1);
+        let participants_config = ParticipantsConfig {
+            threshold: 1,
+            participants: vec![make_participant_info(1, &key)],
+        };
+        let configs = foreign_chains_configs_with(tls_key_for(&key), bitcoin_chain_config());
 
-        assert_matches!(chain_is_supported(&reader, &bitcoin_request()).await, Ok(_));
+        // when, then:
+        assert!(participants_support_chain(
+            &[ParticipantId::from_raw(1)],
+            &participants_config,
+            &configs,
+            dtos::ForeignChain::Bitcoin,
+        ));
+    }
+
+    #[test]
+    fn participants_support_chain__should_return_false_when_participant_has_no_config_entry() {
+        // Given
+        let key = make_signing_key(1);
+        let participants_config = ParticipantsConfig {
+            threshold: 1,
+            participants: vec![make_participant_info(1, &key)],
+        };
+        // No entry in configs for this participant's TLS key.
+        let configs = dtos::ForeignChainsConfigs::default();
+
+        // when, then:
+        assert!(!participants_support_chain(
+            &[ParticipantId::from_raw(1)],
+            &participants_config,
+            &configs,
+            dtos::ForeignChain::Bitcoin,
+        ));
+    }
+
+    #[test]
+    fn participants_support_chain__should_return_false_when_chain_not_in_participant_config() {
+        // Given
+        let key = make_signing_key(1);
+        let participants_config = ParticipantsConfig {
+            threshold: 1,
+            participants: vec![make_participant_info(1, &key)],
+        };
+        // Participant is registered but only for Bitcoin, not Ethereum.
+        let configs = foreign_chains_configs_with(tls_key_for(&key), bitcoin_chain_config());
+
+        // when, then:
+        assert!(!participants_support_chain(
+            &[ParticipantId::from_raw(1)],
+            &participants_config,
+            &configs,
+            dtos::ForeignChain::Ethereum,
+        ));
+    }
+
+    #[test]
+    fn participants_support_chain__should_return_false_when_participant_id_not_in_config() {
+        // Given
+        let key = make_signing_key(1);
+        let participants_config = ParticipantsConfig {
+            threshold: 1,
+            participants: vec![make_participant_info(1, &key)],
+        };
+        // Participant ID 99 has no entry in participants_config.
+        let configs = foreign_chains_configs_with(tls_key_for(&key), bitcoin_chain_config());
+
+        // When, then:
+        assert!(!participants_support_chain(
+            &[ParticipantId::from_raw(99)],
+            &participants_config,
+            &configs,
+            dtos::ForeignChain::Bitcoin,
+        ));
+    }
+
+    #[test]
+    fn participants_support_chain__should_return_true_when_all_three_support_chain() {
+        // Given: three participants, all registered for Bitcoin.
+        let key1 = make_signing_key(1);
+        let key2 = make_signing_key(2);
+        let key3 = make_signing_key(3);
+        let participants_config = ParticipantsConfig {
+            threshold: 2,
+            participants: vec![
+                make_participant_info(1, &key1),
+                make_participant_info(2, &key2),
+                make_participant_info(3, &key3),
+            ],
+        };
+        let configs: dtos::ForeignChainsConfigs = BTreeMap::from([
+            (tls_key_for(&key1), bitcoin_chain_config()),
+            (tls_key_for(&key2), bitcoin_chain_config()),
+            (tls_key_for(&key3), bitcoin_chain_config()),
+        ])
+        .into();
+
+        // When, then
+        assert!(participants_support_chain(
+            &[
+                ParticipantId::from_raw(1),
+                ParticipantId::from_raw(2),
+                ParticipantId::from_raw(3),
+            ],
+            &participants_config,
+            &configs,
+            dtos::ForeignChain::Bitcoin,
+        ));
+    }
+
+    #[test]
+    fn participants_support_chain__should_return_false_when_one_of_three_does_not_support_chain() {
+        // Given: three participants; key1 and key2 support Bitcoin, key3 does not.
+        let key1 = make_signing_key(1);
+        let key2 = make_signing_key(2);
+        let key3 = make_signing_key(3);
+        let participants_config = ParticipantsConfig {
+            threshold: 2,
+            participants: vec![
+                make_participant_info(1, &key1),
+                make_participant_info(2, &key2),
+                make_participant_info(3, &key3),
+            ],
+        };
+        let configs: dtos::ForeignChainsConfigs = BTreeMap::from([
+            (tls_key_for(&key1), bitcoin_chain_config()),
+            (tls_key_for(&key2), bitcoin_chain_config()),
+            // key3 not registered
+        ])
+        .into();
+
+        // When, then: all-or-nothing — one unsupported participant rejects the whole presignature.
+        assert!(!participants_support_chain(
+            &[
+                ParticipantId::from_raw(1),
+                ParticipantId::from_raw(2),
+                ParticipantId::from_raw(3),
+            ],
+            &participants_config,
+            &configs,
+            dtos::ForeignChain::Bitcoin,
+        ));
     }
 
     #[tokio::test]
-    async fn chain_is_supported__should_fail_when_chain_is_not_present_in_policy() {
-        // On-chain policy has Bitcoin, but request is for Ethereum
-        let reader = mock_policy_reader(bitcoin_chain_policy());
+    async fn is_chain_available__should_succeed_when_chain_is_present() {
+        // Given
+        let reader = mock_policy_reader(bitcoin_available_chains());
+
+        // when, then:
+        assert_matches!(is_chain_available(&reader, &bitcoin_request()).await, Ok(_));
+    }
+
+    #[tokio::test]
+    async fn is_chain_available__should_fail_when_chain_is_not_present() {
+        // Given
+        // Available set has Bitcoin, but request is for Ethereum.
+        let reader = mock_policy_reader(bitcoin_available_chains());
         let ethereum_request = dtos::ForeignChainRpcRequest::Ethereum(dtos::EvmRpcRequest {
             tx_id: dtos::EvmTxId([0; 32]),
             extractors: vec![],
             finality: dtos::EvmFinality::Finalized,
         });
 
-        let result = chain_is_supported(&reader, &ethereum_request).await;
+        // when, then:
         assert_matches!(
-            result,
-            Err(ForeignChainSupportError::ChainNotSupported {
+            is_chain_available(&reader, &ethereum_request).await,
+            Err(ForeignChainAvailabilityError::ChainNotAvailable {
                 requested: dtos::ForeignChain::Ethereum
             })
         );

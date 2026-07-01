@@ -17,7 +17,7 @@ use crate::config::{ParticipantsConfig, PersistentSecrets, SecretsConfig};
 use crate::coordinator::Coordinator;
 use crate::db::SecretDB;
 use crate::indexer::IndexerAPI;
-use crate::indexer::fake::{FakeIndexerManager, FakeReadSupportedForeignChain};
+use crate::indexer::fake::{FakeIndexerManager, FakeReadAvailableForeignChains};
 use crate::indexer::handler::{
     CKDArgs, CKDRequestFromChain, SignArgs, SignatureRequestFromChain,
     VerifyForeignTxRequestFromChain,
@@ -73,7 +73,7 @@ pub struct OneNodeTestConfig {
     home_dir: PathBuf,
     pub config: ConfigFile,
     secrets: SecretsConfig,
-    indexer: IndexerAPI<MockTransactionSender, FakeReadSupportedForeignChain>,
+    indexer: IndexerAPI<MockTransactionSender, FakeReadAvailableForeignChains>,
     _indexer_task: AutoAbortTask<()>,
     currently_running_job_name: Arc<std::sync::Mutex<String>>,
 }

@@ -232,7 +232,7 @@ The following attestation methods must be uniform across all governance contract
 | `allowed_docker_image_hashes()` | View | Query approved image hashes |
 | `allowed_launcher_compose_hashes()` | View | Query approved launcher hashes |
 | `get_tee_accounts()` | View | Query participants with valid attestations |
-| `get_supported_foreign_chains()` | View | Query active foreign chains (opt-in) |
+| `get_available_foreign_chains()` | View | Query threshold-available & whitelisted foreign chains |
 
 > **Backup Service:** The Backup Service does not yet have TEE governance — `register_backup_service` stores only a public key, with no attestation. The [hard-launch design][backup-tee-methods] plans to add attestation via `TeeState` and the standard methods listed above, but these are not yet implemented.
 

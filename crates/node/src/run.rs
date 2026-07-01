@@ -8,7 +8,7 @@ use crate::{
     db::SecretDB,
     home_paths::assets_dir,
     indexer::{
-        IndexerAPI, ReadSupportedForeignChain, real::spawn_real_indexer,
+        IndexerAPI, ReadAvailableForeignChains, real::spawn_real_indexer,
         tx_sender::TransactionSender,
     },
     keyshare::{GcpPermanentKeyStorageConfig, KeyStorageConfig, KeyshareStorage},
@@ -332,7 +332,7 @@ async fn create_root_future<TransactionSenderImpl, ForeignChainPolicyReader>(
 ) -> anyhow::Result<()>
 where
     TransactionSenderImpl: TransactionSender + 'static,
-    ForeignChainPolicyReader: ReadSupportedForeignChain + Clone + Send + Sync + 'static,
+    ForeignChainPolicyReader: ReadAvailableForeignChains + Clone + Send + Sync + 'static,
 {
     let root_task_handle = tracking::current_task();
 
