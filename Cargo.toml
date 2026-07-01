@@ -22,6 +22,7 @@ members = [
     "crates/near-mpc-crypto-types",
     "crates/near-mpc-sdk",
     "crates/near-mpc-signature-verifier",
+    "crates/network-analytics",
     "crates/node",
     "crates/node-config",
     "crates/node-types",
@@ -59,6 +60,7 @@ launcher-interface = { path = "crates/launcher-interface" }
 mpc-attestation = { path = "crates/mpc-attestation" }
 mpc-call-args = { path = "crates/mpc-call-args" }
 mpc-contract = { path = "crates/contract", features = ["dev-utils"] }
+mpc-devnet = { path = "crates/devnet" }
 mpc-node = { path = "crates/node" }
 mpc-node-config = { path = "crates/node-config" }
 mpc-primitives = { path = "crates/primitives", features = ["abi"] }
