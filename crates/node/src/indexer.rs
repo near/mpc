@@ -425,40 +425,58 @@ const INTERVAL: Duration = Duration::from_millis(500);
 const REQUIRED_STABLE_POLLS: u32 = 4;
 
 impl IndexerClient {
+    /// Polls sync status, yielding `(syncing, head_height)`, or `None` on a
+    /// failed request.
+    async fn sync_info(&self) -> Option<(bool, BlockHeight)> {
+        let status_request = Status {
+            is_health_check: false,
+            detailed: false,
+        };
+        let Ok(Ok(status)) = self
+            .client
+            .send_async(
+                near_o11y::span_wrapped_msg::SpanWrappedMessageExt::span_wrap(status_request),
+            )
+            .await
+        else {
+            return None;
+        };
+        Some((
+            status.sync_info.syncing,
+            status.sync_info.latest_block_height,
+        ))
+    }
+
+    /// Returns once neard clears its `syncing` flag.
     async fn wait_for_full_sync(&self) {
+        loop {
+            tokio::time::sleep(INTERVAL).await;
+            if matches!(self.sync_info().await, Some((false, _))) {
+                return;
+            }
+        }
+    }
+
+    /// Returns once the node is confirmed following the chain tip. Used only at
+    /// startup: neard can report `syncing == false` while still behind (fresh
+    /// genesis, after downtime, or while disconnected from all peers), so we
+    /// confirm via [`SyncProgress`] before binding the streamer's cursor.
+    async fn ensure_head_follows_tip(&self) {
         let mut progress = SyncProgress::default();
         loop {
             tokio::time::sleep(INTERVAL).await;
-
-            let status_request = Status {
-                is_health_check: false,
-                detailed: false,
-            };
-            let status_response = self
-                .client
-                .send_async(
-                    near_o11y::span_wrapped_msg::SpanWrappedMessageExt::span_wrap(status_request),
-                )
-                .await;
-
-            let Ok(Ok(status)) = status_response else {
-                continue;
-            };
-
-            if progress.observe(
-                status.sync_info.syncing,
-                status.sync_info.latest_block_height,
-            ) {
+            if let Some((syncing, head_height)) = self.sync_info().await
+                && progress.observe(syncing, head_height)
+            {
                 return;
             }
         }
     }
 }
 
-/// Detects catch-up from head progress alone: a freshly state-syncing node
-/// briefly reports `syncing == false` at the genesis head, and returning then
-/// pins the streamer's `LatestSynced` cursor at that stale head. So we require a
-/// run of non-syncing polls over which the head actually advances.
+/// Reports the node as caught up only after a run of non-syncing polls over
+/// which the head actually advances, filtering out the transient
+/// `syncing == false` a behind node reports before its head starts moving.
 #[derive(Default)]
 struct SyncProgress {
     run_start_head: Option<BlockHeight>,
