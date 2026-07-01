@@ -64,11 +64,10 @@ impl EcdsaSignatureProvider {
         let per_domain_data =
             ecdsa_common::build_per_domain_data(&clock, &db, &client, keyshares, &thresholds)?;
 
-        // cait-sith triple generation runs with exactly `t` parties, so the set
-        // of stores this node maintains is the distinct per-domain
-        // reconstruction thresholds — fully known up front, no on-demand
-        // creation needed. The contract enforces a single `t` across CaitSith
-        // domains today, so this is typically one store.
+        // cait-sith triple generation runs with exactly `t` parties, so we keep
+        // one store per distinct per-domain reconstruction threshold — known up
+        // front, no on-demand creation. Domains may share a `t` or diverge; the
+        // contract validates each domain's threshold independently.
         let mut triple_stores = HashMap::new();
         for data in per_domain_data.values() {
             let t = data.reconstruction_threshold;
