@@ -1,3 +1,5 @@
+name: mpc-node
+
 services:
   mpc-node:
     image: "{{IMAGE_NAME}}@{{MANIFEST_DIGEST}}"
