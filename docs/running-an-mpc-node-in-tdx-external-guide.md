@@ -966,6 +966,10 @@ Full flag reference and `.env` field-by-field documentation:
 Dstack provides a dedicated web page to view CVM information, including links to the Docker logs.
 More details can be found in [Phala's guide](https://github.com/Dstack-TEE/dstack?tab=readme-ov-file#deploy-an-app).
 
+> **Log retention:** the MPC container is reused across **restarts**, so its
+> logs are preserved and remain viewable here after a restart. An **upgrade**
+> (new image) recreates the container, which clears its logs.
+
 ---
 
 #### Local Access
