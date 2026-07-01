@@ -3677,6 +3677,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
+name = "foreign-chain-config-tester"
+version = "3.13.0"
+dependencies = [
+ "anyhow",
+ "assert_matches",
+ "clap",
+ "foreign-chain-inspector",
+ "foreign-chain-rpc-auth",
+ "foreign-chain-rpc-interfaces",
+ "hex",
+ "http",
+ "httpmock",
+ "mpc-node-config",
+ "near-mpc-bounded-collections",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tokio",
+ "toml 1.1.2+spec-1.1.0",
+]
+
+[[package]]
 name = "foreign-chain-inspector"
 version = "3.13.0"
 dependencies = [
@@ -3698,6 +3720,18 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "foreign-chain-rpc-auth"
+version = "3.13.0"
+dependencies = [
+ "anyhow",
+ "assert_matches",
+ "foreign-chain-inspector",
+ "http",
+ "mpc-node-config",
+ "url",
 ]
 
 [[package]]
@@ -5873,6 +5907,7 @@ dependencies = [
  "elliptic-curve",
  "flume",
  "foreign-chain-inspector",
+ "foreign-chain-rpc-auth",
  "foreign-chain-rpc-interfaces",
  "futures",
  "gcloud-sdk",
