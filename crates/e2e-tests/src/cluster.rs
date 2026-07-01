@@ -724,30 +724,27 @@ impl MpcCluster {
         &self,
         call_args: FunctionCallArgs,
     ) -> anyhow::Result<()> {
-        let clients: Vec<_> = self
+        let futures = self
             .nodes
             .iter()
             .zip(self.node_keys.iter())
             .enumerate()
             .filter(|(_, (node, _))| matches!(node, MpcNodeState::Running(_)))
             .map(|(i, (node, key))| {
-                let client = self
-                    .blockchain
-                    .client_for(node.account_id().as_ref(), key)?;
-                Ok((i, node.account_id().clone(), client))
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?;
-
-        let futures = clients.iter().map(|(i, account, client)| {
-            let call_args = call_args.clone();
-            async move {
-                let method = call_args.method_name.clone();
-                self.contract
-                    .call_with_args(client, call_args)
-                    .await
-                    .with_context(|| format!("node {i} ({account}) failed to call {method}"))
-            }
-        });
+                let call_args = call_args.clone();
+                async move {
+                    let method = call_args.method_name.clone();
+                    let client = self
+                        .blockchain
+                        .client_for(node.account_id().as_ref(), key)?;
+                    self.contract
+                        .call_with_args(&client, call_args)
+                        .await
+                        .with_context(|| {
+                            format!("node {i} ({}) failed to call {method}", node.account_id())
+                        })
+                }
+            });
 
         futures::future::try_join_all(futures).await?;
         Ok(())
