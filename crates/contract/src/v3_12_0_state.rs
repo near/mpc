@@ -125,6 +125,7 @@ impl From<MpcContract> for crate::MpcContract {
             ),
             tee_verifier_account_id: None,
             tee_verifier_votes: TeeVerifierVotes::default(),
+            pending_attestations: LookupMap::new(StorageKey::PendingAttestations),
         }
     }
 }
