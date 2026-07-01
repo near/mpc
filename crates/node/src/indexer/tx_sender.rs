@@ -11,7 +11,7 @@ use anyhow::Context;
 use ed25519_dalek::SigningKey;
 use mpc_attestation::attestation::DEFAULT_EXPIRATION_DURATION_SECONDS;
 use near_account_id::AccountId;
-use near_indexer_primitives::types::Gas;
+use mpc_call_args::FunctionCallArgs;
 use near_mpc_contract_interface::types::{Attestation, Ed25519PublicKey, VerifiedAttestation};
 use near_time::Clock;
 use std::future::Future;
@@ -70,16 +70,10 @@ impl TransactionProcessorHandle {
                 let indexer_state = indexer_state.clone();
                 let tx_logger = tx_logger.clone();
                 tokio::spawn(async move {
-                    let Ok(txn_json) = serde_json::to_string(&tx_request) else {
-                        tracing::error!(target: "mpc", "Failed to serialize response args");
-                        return;
-                    };
-                    tracing::debug!(target = "mpc", "tx args {:?}", txn_json);
                     let (transaction_status, recent_transaction) = ensure_send_transaction(
                         tx_signer.clone(),
                         indexer_state,
                         tx_request,
-                        txn_json,
                     )
                     .await;
 
@@ -147,17 +141,13 @@ pub enum TransactionStatus {
 async fn submit_tx(
     tx_signer: Arc<TransactionSigner>,
     indexer_state: Arc<IndexerState>,
-    method: String,
-    params_ser: String,
-    gas: Gas,
+    call: FunctionCallArgs,
 ) -> anyhow::Result<SubmittedTxMetadata> {
     let block = indexer_state.view_client.latest_final_block().await?;
 
     let transaction = tx_signer.create_and_sign_function_call_tx(
         indexer_state.mpc_contract_id.clone(),
-        method,
-        params_ser.into(),
-        gas,
+        call,
         block.header.hash,
         block.header.height,
     );
@@ -330,7 +320,6 @@ async fn ensure_send_transaction(
     tx_signer: Arc<TransactionSigner>,
     indexer_state: Arc<IndexerState>,
     request: ChainSendTransactionRequest,
-    params_ser: String,
 ) -> (TransactionStatus, SubmittedTransaction) {
     let method = request.method();
     let signer = SignerContext {
@@ -341,9 +330,7 @@ async fn ensure_send_transaction(
     let submitted_metadata = submit_tx(
         tx_signer.clone(),
         indexer_state.clone(),
-        method.to_string(),
-        params_ser.clone(),
-        request.gas_required(),
+        request.to_function_call_args(),
     )
     .await;
 

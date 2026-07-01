@@ -1,11 +1,12 @@
 use ed25519_dalek::SigningKey;
+use mpc_call_args::FunctionCallArgs;
 use near_kit::FinalExecutionOutcome;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use serde::de::DeserializeOwned;
 
 use crate::conversions::ToNearKey;
 
-const MAX_GAS: near_kit::Gas = near_kit::Gas::from_tgas(1000);
+pub(crate) const MAX_GAS: near_kit::Gas = near_kit::Gas::from_tgas(1000);
 
 /// RPC client for any NEAR network (sandbox or testnet).
 ///
@@ -164,6 +165,23 @@ impl DeployedContract {
             .send()
             .await
             .map_err(|e| anyhow::anyhow!("contract call `{method}` (with deposit) failed: {e}"))
+    }
+
+    /// Submit a [`FunctionCallArgs`] (method + pre-encoded args + gas + deposit) from `client`.
+    pub async fn call_from_args(
+        &self,
+        client: &ClientHandle,
+        call: FunctionCallArgs,
+    ) -> anyhow::Result<FinalExecutionOutcome> {
+        client
+            .inner
+            .call(&self.contract_id, &call.method_name)
+            .args_raw(call.args)
+            .gas(call.gas)
+            .deposit(call.deposit)
+            .send()
+            .await
+            .map_err(|e| anyhow::anyhow!("contract call `{}` failed: {e}", call.method_name))
     }
 
     /// Call a method whose arguments are borsh-serialized (e.g. `propose_update`).

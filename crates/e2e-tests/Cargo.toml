@@ -19,8 +19,9 @@ libc = { workspace = true }
 mpc-node-config = { workspace = true }
 near-account-id = { workspace = true }
 near-indexer-primitives = { workspace = true }
+mpc-call-args = { workspace = true }
 near-kit = { workspace = true }
-near-mpc-contract-interface = { workspace = true }
+near-mpc-contract-interface = { workspace = true, features = ["call-args"] }
 near-mpc-crypto-types = { workspace = true, features = ["ed25519-dalek", "blstrs"] }
 near-sandbox = { workspace = true }
 rand = { workspace = true }

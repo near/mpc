@@ -10,7 +10,7 @@ use crate::sandbox::{
         interface::IntoContractType,
         mpc_contract::get_state,
         resharing_utils::{conclude_resharing, vote_cancel_reshaing, vote_new_parameters},
-        transactions::execute_async_transactions,
+        transactions::{call_from_args, execute_async_transactions},
     },
 };
 use assert_matches::assert_matches;
@@ -23,7 +23,7 @@ use mpc_contract::primitives::{
     thresholds::{ProposedThresholdParameters, Threshold, ThresholdParameters},
 };
 use near_mpc_contract_interface::types::ReconstructionThreshold;
-use near_mpc_contract_interface::{method_names, types as dtos};
+use near_mpc_contract_interface::{call_args, method_names, types as dtos};
 use near_workspaces::{Account, Contract, Worker, network::Sandbox};
 use rstest::rstest;
 use serde_json::json;
@@ -428,8 +428,7 @@ async fn test_cancel_resharing_vote_is_idempotent(
     // Try to submit threshold votes with just one account (should not work due to idempotency)
     let account_1 = &persistent_participants[0];
     for _ in 0..initial_threshold {
-        let result = account_1
-            .call(contract.id(), method_names::VOTE_CANCEL_RESHARING)
+        let result = call_from_args(account_1, &contract, call_args::make_vote_cancel_resharing())
             .transact()
             .await?;
         assert!(result.is_success(), "{result:#?}");
@@ -501,10 +500,13 @@ async fn test_cancel_resharing_requires_threshold_votes(
     );
 
     // Add one more vote to reach threshold
-    let result = persistent_participants[initial_threshold - 1]
-        .call(contract.id(), method_names::VOTE_CANCEL_RESHARING)
-        .transact()
-        .await?;
+    let result = call_from_args(
+        &persistent_participants[initial_threshold - 1],
+        &contract,
+        call_args::make_vote_cancel_resharing(),
+    )
+    .transact()
+    .await?;
     assert!(result.is_success(), "{result:#?}");
 
     // Verify transition back to running state
@@ -531,11 +533,14 @@ async fn test_cancel_resharing_only_previous_participants_can_vote(
 
     for new_participant_account in new_participant_accounts {
         assert!(
-            new_participant_account
-                .call(contract.id(), method_names::VOTE_CANCEL_RESHARING)
-                .transact()
-                .await?
-                .is_failure(),
+            call_from_args(
+                &new_participant_account,
+                &contract,
+                call_args::make_vote_cancel_resharing(),
+            )
+            .transact()
+            .await?
+            .is_failure(),
             "A new participant should not be able to vote for cancellation"
         );
     }

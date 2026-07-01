@@ -48,8 +48,10 @@ near-config-utils = { workspace = true }
 near-crypto = { workspace = true }
 near-indexer = { workspace = true }
 near-indexer-primitives = { workspace = true }
+mpc-call-args = { workspace = true }
 near-mpc-bounded-collections = { workspace = true }
 near-mpc-contract-interface = { workspace = true, features = [
+    "call-args",
     "k256",
     "ed25519-dalek",
     "blstrs",

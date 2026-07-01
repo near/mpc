@@ -5,8 +5,9 @@ use k256::{
     ecdsa::RecoveryId,
     elliptic_curve::{Curve, CurveArithmetic, ops::Reduce, point::AffineCoordinates},
 };
+use mpc_call_args::{FunctionCallArgs, NearToken};
 use mpc_primitives::domain::DomainId;
-use near_indexer_primitives::types::Gas;
+use near_mpc_contract_interface::call_args;
 use near_mpc_contract_interface::method_names::{
     CONCLUDE_NODE_MIGRATION, RESPOND, RESPOND_CKD, RESPOND_VERIFY_FOREIGN_TX,
     START_KEYGEN_INSTANCE, START_RESHARE_INSTANCE, SUBMIT_PARTICIPANT_INFO, VERIFY_TEE,
@@ -25,8 +26,6 @@ use threshold_signatures::frost_secp256k1::VerifyingKey;
 
 #[expect(deprecated)]
 use near_mpc_contract_interface::method_names::REGISTER_FOREIGN_CHAIN_CONFIG;
-
-const MAX_GAS: Gas = Gas::from_teragas(300);
 
 /* The format in which the chain signatures contract expects
  * to receive the details of the original request. `epsilon`
@@ -228,22 +227,38 @@ impl ChainSendTransactionRequest {
         }
     }
 
-    pub fn gas_required(&self) -> Gas {
+    /// `call_args::make_*` for DTO-arg methods; node-built JSON for the `respond` family and
+    /// deprecated foreign-chain config (whose request types are node-side wrappers).
+    pub fn to_function_call_args(&self) -> FunctionCallArgs {
+        use ChainSendTransactionRequest::*;
         match self {
-            Self::Respond(_)
-            | Self::CKDRespond(_)
-            | Self::VotePk(_)
-            | Self::VoteReshared(_)
-            | Self::RegisterForeignChainConfig(_)
-            | Self::StartReshare(_)
-            | Self::StartKeygen(_)
-            | Self::VoteAbortKeyEventInstance(_)
-            // TODO(#166): This is too high in most settings
-            | Self::VerifyTee()
-            | Self::SubmitParticipantInfo(_)
-            | Self::ConcludeNodeMigration(_)
-            | Self::VerifyForeignTransactionRespond(_) => MAX_GAS,
+            Respond(a) => json_call(RESPOND, a),
+            CKDRespond(a) => json_call(RESPOND_CKD, a),
+            VerifyForeignTransactionRespond(a) => json_call(RESPOND_VERIFY_FOREIGN_TX, a),
+            RegisterForeignChainConfig(a) => {
+                #[expect(deprecated)]
+                json_call(REGISTER_FOREIGN_CHAIN_CONFIG, a)
+            }
+            VotePk(a) => call_args::make_vote_pk(a.key_event_id, a.public_key.clone()),
+            VoteReshared(a) => call_args::make_vote_reshared(a.key_event_id),
+            StartKeygen(a) => call_args::make_start_keygen_instance(a.key_event_id),
+            StartReshare(a) => call_args::make_start_reshare_instance(a.key_event_id),
+            VoteAbortKeyEventInstance(a) => {
+                call_args::make_vote_abort_key_event_instance(a.key_event_id)
+            }
+            ConcludeNodeMigration(a) => call_args::make_conclude_node_migration(&a.keyset),
+            SubmitParticipantInfo(a) => call_args::make_submit_participant_info(a),
+            VerifyTee() => call_args::make_verify_tee(),
         }
+    }
+}
+
+fn json_call<T: Serialize>(method_name: &'static str, args: &T) -> FunctionCallArgs {
+    FunctionCallArgs {
+        method_name: method_name.to_string(),
+        args: serde_json::to_vec(args).expect("contract call args are serializable"),
+        gas: call_args::MAX_GAS,
+        deposit: NearToken::from_yoctonear(0),
     }
 }
 

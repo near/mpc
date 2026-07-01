@@ -5,33 +5,20 @@ use group::Group;
 use near_account_id::AccountId;
 use near_mpc_bounded_collections::BoundedVec;
 use near_mpc_contract_interface::{
-    method_names,
+    call_args, method_names,
     types::{
         Bls12381G1PublicKey, CKDAppPublicKey, CKDRequestArgs, DomainConfig,
         EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES, Payload,
         Protocol, SignRequestArgs,
     },
 };
+use mpc_call_args::{FunctionCallArgs, NearToken};
 use near_primitives::action::Action;
-use near_primitives::types::{Balance, Gas};
+use near_primitives::types::Gas;
 use rand::Rng;
 use rand::RngCore;
 use rand::rngs::OsRng;
 use serde::Serialize;
-
-/// Gas attached to a `sign` (or legacy `sign`) request. Matches the e2e
-/// test cluster's `SIGN_GAS` and the contract's
-/// `sign_call_gas_attachment_requirement_tera_gas` minimum.
-const SIGN_TGAS: u64 = 15;
-/// Gas attached to a `request_app_private_key` (CKD) call. Matches the
-/// e2e cluster's `CKD_PV_GAS`. CKD is more expensive than `sign` because
-/// `AppPublicKeyPV` does an on-chain bls12381 pairing check before
-/// yielding.
-const CKD_TGAS: u64 = 100;
-/// Gas attached to a `make_parallel_sign_calls` invocation on the
-/// parallel-sign helper contract. The helper schedules up to ~10
-/// sub-calls into the MPC contract, so this needs the full block budget.
-const PARALLEL_SIGN_TGAS: u64 = 300;
 
 #[derive(Clone)]
 pub struct ActionCall {
@@ -90,9 +77,9 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
             }
             ActionCall {
                 receiver_id: args.parallel_sign_contract,
-                actions: vec![make_action(
-                    "make_parallel_sign_calls",
-                    &serde_json::to_vec(&ParallelSignArgsV2 {
+                actions: vec![function_call_action(FunctionCallArgs {
+                    method_name: "make_parallel_sign_calls".to_string(),
+                    args: serde_json::to_vec(&ParallelSignArgsV2 {
                         target_contract: args.mpc_contract,
                         ecdsa_calls_by_domain,
                         robust_ecdsa_calls_by_domain,
@@ -101,32 +88,29 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
                         seed: rand::random(),
                     })
                     .unwrap(),
-                    PARALLEL_SIGN_TGAS,
-                    1,
-                )],
+                    // The helper schedules up to ~10 sub-calls into the MPC contract, so this needs
+                    // the full block budget.
+                    gas: call_args::MAX_GAS,
+                    deposit: NearToken::from_yoctonear(1),
+                })],
             }
         }
-        ContractActionCall::Sign(args) => ActionCall {
-            receiver_id: args.mpc_contract,
-            actions: vec![make_action(
-                method_names::SIGN,
-                &serde_json::to_vec(&SignArgsV2 {
-                    request: SignRequestArgs {
-                        domain_id: args.domain_config.id,
-                        path: "".to_string(),
-                        payload: make_payload(args.domain_config.protocol),
-                    },
-                })
-                .unwrap(),
-                SIGN_TGAS,
-                1,
-            )],
-        },
+        ContractActionCall::Sign(args) => {
+            let call = call_args::make_sign(SignRequestArgs {
+                domain_id: args.domain_config.id,
+                path: "".to_string(),
+                payload: make_payload(args.domain_config.protocol),
+            });
+            ActionCall {
+                receiver_id: args.mpc_contract,
+                actions: vec![function_call_action(call)],
+            }
+        }
         ContractActionCall::LegacySign(args) => ActionCall {
             receiver_id: args.mpc_contract,
-            actions: vec![make_action(
-                method_names::SIGN,
-                &serde_json::to_vec(&SignArgsV1 {
+            actions: vec![function_call_action(FunctionCallArgs {
+                method_name: method_names::SIGN.to_string(),
+                args: serde_json::to_vec(&SignArgsV1 {
                     request: SignRequestV1 {
                         key_version: 0,
                         path: "".to_string(),
@@ -134,26 +118,21 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
                     },
                 })
                 .unwrap(),
-                SIGN_TGAS,
-                1,
-            )],
+                gas: call_args::SIGN_GAS,
+                deposit: NearToken::from_yoctonear(1),
+            })],
         },
-        ContractActionCall::Ckd(args) => ActionCall {
-            receiver_id: args.mpc_contract,
-            actions: vec![make_action(
-                method_names::REQUEST_APP_PRIVATE_KEY,
-                &serde_json::to_vec(&CKDArgs {
-                    request: CKDRequestArgs {
-                        derivation_path: "".to_string(),
-                        domain_id: args.domain_config.id,
-                        app_public_key: CKDAppPublicKey::AppPublicKey(random_app_public_key()),
-                    },
-                })
-                .unwrap(),
-                CKD_TGAS,
-                1,
-            )],
-        },
+        ContractActionCall::Ckd(args) => {
+            let call = call_args::make_request_app_private_key(CKDRequestArgs {
+                derivation_path: "".to_string(),
+                domain_id: args.domain_config.id,
+                app_public_key: CKDAppPublicKey::AppPublicKey(random_app_public_key()),
+            });
+            ActionCall {
+                receiver_id: args.mpc_contract,
+                actions: vec![function_call_action(call)],
+            }
+        }
     }
 }
 
@@ -167,16 +146,6 @@ struct SignRequestV1 {
     payload: [u8; 32],
     path: String,
     key_version: u32,
-}
-
-#[derive(Serialize)]
-struct SignArgsV2 {
-    pub request: SignRequestArgs,
-}
-
-#[derive(Serialize)]
-struct CKDArgs {
-    pub request: CKDRequestArgs,
 }
 
 #[derive(Serialize)]
@@ -223,11 +192,11 @@ fn random_app_public_key() -> Bls12381G1PublicKey {
     (&point).into()
 }
 
-fn make_action(method: &str, args: &[u8], tgas: u64, deposit: u128) -> Action {
+pub(crate) fn function_call_action(call: FunctionCallArgs) -> Action {
     Action::FunctionCall(Box::new(near_primitives::action::FunctionCallAction {
-        method_name: method.to_string(),
-        args: args.to_vec(),
-        gas: Gas::from_teragas(tgas),
-        deposit: Balance::from_yoctonear(deposit),
+        method_name: call.method_name,
+        args: call.args,
+        gas: Gas::from_gas(call.gas.as_gas()),
+        deposit: call.deposit,
     }))
 }
