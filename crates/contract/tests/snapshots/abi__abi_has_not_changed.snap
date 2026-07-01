@@ -6,7 +6,7 @@ expression: abi
   "schema_version": "0.4.0",
   "metadata": {
     "name": "mpc-contract",
-    "version": "3.13.0",
+    "version": "3.13.1",
     "build": {
       "compiler": "[RUSTC_VERSION]",
       "builder": "[CARGO_NEAR_BUILD_VERSION]"
