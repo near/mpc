@@ -59,11 +59,12 @@ pub fn launch_mpc_container(
     let compose_file = render_compose_file(platform, port_mappings, image_name, manifest_digest)?;
     let compose_path = compose_file.path().display().to_string();
 
-    // Use a stable compose project (`-p`) so the container is reused across
-    // restarts rather than recreated, preserving its logs. Compose
-    // recreates it only when the rendered config (e.g. image digest) changes.
+    // The compose file pins a stable top-level project `name`, so the
+    // container is reused across restarts rather than recreated, preserving its
+    // logs. Compose recreates it only when the rendered config (e.g. image
+    // digest) changes.
     let run_output = Command::new("docker")
-        .args(["compose", "-p", "mpc", "-f", &compose_path, "up", "-d"])
+        .args(["compose", "-f", &compose_path, "up", "-d"])
         .output()
         .map_err(|inner| LauncherError::DockerRunFailed {
             image_hash: manifest_digest.clone(),
@@ -262,5 +263,20 @@ mod tests {
 
         // then
         assert!(!rendered.contains("environment:"));
+    }
+
+    #[test]
+    fn includes_stable_project_name() {
+        // given
+        let port_mappings = empty_port_mappings();
+        let digest = sample_digest();
+
+        // when
+        let rendered = render(Platform::Tee, &port_mappings, &digest);
+
+        // then — a stable top-level project name keeps Compose reusing the
+        // container across restarts instead of recreating it (which would wipe
+        // its logs)
+        assert!(rendered.contains("name: mpc-node"));
     }
 }
