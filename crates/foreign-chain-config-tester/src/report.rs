@@ -33,7 +33,9 @@ pub fn any_failed(results: &[ProviderResult]) -> bool {
         .any(|r| matches!(r.status, Status::Failed(_)))
 }
 
-/// Render the results as an aligned table plus a summary line.
+/// Render an aligned table and summary. Failure reasons are listed below the
+/// table (not in the `RESULT` column) so a long or multi-line error can't break
+/// the alignment.
 pub fn render(results: &[ProviderResult]) -> String {
     if results.is_empty() {
         return "No foreign chains configured — nothing to check.\n".to_string();
@@ -42,15 +44,15 @@ pub fn render(results: &[ProviderResult]) -> String {
     let chain_w = results
         .iter()
         .map(|r| r.chain.len())
-        .chain(std::iter::once("CHAIN".len()))
         .max()
-        .unwrap_or(0);
+        .unwrap_or(0)
+        .max("CHAIN".len());
     let provider_w = results
         .iter()
         .map(|r| r.provider.len())
-        .chain(std::iter::once("PROVIDER".len()))
         .max()
-        .unwrap_or(0);
+        .unwrap_or(0)
+        .max("PROVIDER".len());
 
     let mut out = String::new();
     let _ = writeln!(
@@ -66,9 +68,9 @@ pub fn render(results: &[ProviderResult]) -> String {
                 passed += 1;
                 "✓ ok".to_string()
             }
-            Status::Failed(reason) => {
+            Status::Failed(_) => {
                 failed += 1;
-                format!("✗ {reason}")
+                "✗ failed".to_string()
             }
             Status::Skipped(reason) => {
                 skipped += 1;
@@ -82,7 +84,17 @@ pub fn render(results: &[ProviderResult]) -> String {
         );
     }
 
-    let _ = writeln!(out, "\n{passed} passed, {failed} failed, {skipped} skipped",);
+    let _ = writeln!(out, "\n{passed} passed, {failed} failed, {skipped} skipped");
+
+    if failed > 0 {
+        let _ = writeln!(out, "\nFailures:");
+        for r in results {
+            if let Status::Failed(reason) = &r.status {
+                let _ = writeln!(out, "  {} / {}: {reason}", r.chain, r.provider);
+            }
+        }
+    }
+
     out
 }
 

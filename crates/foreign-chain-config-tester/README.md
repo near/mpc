@@ -35,15 +35,22 @@ cargo run -p foreign-chain-config-tester -- --config user-config.toml --network 
 
 ## Output
 
-A row per provider, plus a summary line. The process exits non-zero if any
-provider failed.
+A row per provider, a summary line, and the reason for each failure listed
+below the table. The process exits non-zero if any provider failed.
 
 ```
 CHAIN     PROVIDER   RESULT
 abstract  public     ✓ ok
 bitcoin   public     ✓ ok
-starknet  public     ✗ inner network client failed to fetch: Transaction hash not found
+starknet  public     ✗ failed
 aptos     public     – skipped (no testnet reference transaction for this chain)
 
 3 passed, 1 failed, 1 skipped
+
+Failures:
+  starknet / public: inner network client failed to fetch: Transaction hash not found
 ```
+
+> **Note:** for providers that carry the API key in the URL (`path` / `query`
+> auth), a failure message may include that URL, and therefore the key. Scrub any
+> secrets from the output before sharing it.

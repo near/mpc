@@ -3691,6 +3691,7 @@ dependencies = [
  "httpmock",
  "mpc-node-config",
  "near-mpc-bounded-collections",
+ "serde",
  "serde_json",
  "serde_yaml",
  "tokio",

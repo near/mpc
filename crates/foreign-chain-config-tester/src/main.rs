@@ -6,6 +6,7 @@ mod config;
 mod golden;
 mod report;
 
+use std::fs;
 use std::future::Future;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -24,6 +25,7 @@ use foreign_chain_inspector::polygon::inspector::Polygon;
 use foreign_chain_inspector::{RpcAuthentication, build_http_client};
 use foreign_chain_rpc_auth::auth_config_to_rpc_auth;
 use http::{HeaderName, HeaderValue};
+use mpc_node_config::foreign_chains::RpcProviderName;
 use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};
 
 use crate::golden::{AptosVector, BlockHashVector, Network};
@@ -48,7 +50,7 @@ struct Args {
 #[tokio::main]
 async fn main() -> anyhow::Result<ExitCode> {
     let args = Args::parse();
-    let contents = std::fs::read_to_string(&args.config)
+    let contents = fs::read_to_string(&args.config)
         .with_context(|| format!("failed to read {}", args.config.display()))?;
     let foreign_chains = config::parse_foreign_chains(&contents, &args.config)?;
     let network = match args.network {
@@ -125,7 +127,7 @@ fn timeout_of(cfg: &ForeignChainConfig) -> Duration {
     Duration::from_secs(cfg.timeout_sec.get())
 }
 
-fn provider_name(name: &mpc_node_config::foreign_chains::RpcProviderName) -> String {
+fn provider_name(name: &RpcProviderName) -> String {
     name.as_str().to_owned()
 }
 

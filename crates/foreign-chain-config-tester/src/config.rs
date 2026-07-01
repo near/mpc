@@ -7,7 +7,10 @@
 use std::path::Path;
 
 use anyhow::{Context, bail};
-use mpc_node_config::ForeignChainsConfig;
+use mpc_node_config::{ChainId, ForeignChainsConfig};
+use serde::Deserialize;
+use serde::de::IntoDeserializer;
+use serde::de::value::{Error as ValueError, StrDeserializer};
 
 use crate::golden::Network;
 
@@ -31,9 +34,13 @@ const CONTRACT_ID_PATHS: &[&[&str]] = &[
 ];
 
 fn classify_network(chain_id: Option<&str>, contract_id: Option<&str>) -> Option<Network> {
-    match chain_id {
-        Some("mainnet") => return Some(Network::Mainnet),
-        Some("testnet") => return Some(Network::Testnet),
+    let parsed = chain_id.and_then(|id| {
+        let de: StrDeserializer<'_, ValueError> = id.into_deserializer();
+        ChainId::deserialize(de).ok()
+    });
+    match parsed {
+        Some(ChainId::Mainnet) => return Some(Network::Mainnet),
+        Some(ChainId::Testnet) => return Some(Network::Testnet),
         _ => {}
     }
     match contract_id {
