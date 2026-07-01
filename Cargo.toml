@@ -11,7 +11,9 @@ members = [
     "crates/contract-history",
     "crates/devnet",
     "crates/e2e-tests",
+    "crates/foreign-chain-config-tester",
     "crates/foreign-chain-inspector",
+    "crates/foreign-chain-rpc-auth",
     "crates/foreign-chain-rpc-interfaces",
     "crates/include-measurements",
     "crates/launcher-interface",
@@ -53,6 +55,7 @@ chain-gateway = { path = "crates/chain-gateway" }
 chain-gateway-test-contract = { path = "crates/chain-gateway-test-contract" }
 contract-history = { path = "crates/contract-history" }
 foreign-chain-inspector = { path = "crates/foreign-chain-inspector" }
+foreign-chain-rpc-auth = { path = "crates/foreign-chain-rpc-auth" }
 foreign-chain-rpc-interfaces = { path = "crates/foreign-chain-rpc-interfaces" }
 include-measurements = { path = "crates/include-measurements" }
 launcher-interface = { path = "crates/launcher-interface" }

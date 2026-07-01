@@ -1,0 +1,141 @@
+//! Result aggregation and human-readable table rendering.
+
+use std::fmt::Write as _;
+
+#[derive(Debug)]
+pub enum Status {
+    Passed,
+    Failed(String),
+    Skipped(String),
+}
+
+#[derive(Debug)]
+pub struct ProviderResult {
+    pub chain: &'static str,
+    pub provider: String,
+    pub status: Status,
+}
+
+impl ProviderResult {
+    pub fn skipped(chain: &'static str, provider: String, reason: impl Into<String>) -> Self {
+        Self {
+            chain,
+            provider,
+            status: Status::Skipped(reason.into()),
+        }
+    }
+}
+
+/// Whether any provider check failed (skips do not count as failures).
+pub fn any_failed(results: &[ProviderResult]) -> bool {
+    results
+        .iter()
+        .any(|r| matches!(r.status, Status::Failed(_)))
+}
+
+/// Render the results as an aligned table plus a summary line.
+pub fn render(results: &[ProviderResult]) -> String {
+    if results.is_empty() {
+        return "No foreign chains configured — nothing to check.\n".to_string();
+    }
+
+    let chain_w = results
+        .iter()
+        .map(|r| r.chain.len())
+        .chain(std::iter::once("CHAIN".len()))
+        .max()
+        .unwrap_or(0);
+    let provider_w = results
+        .iter()
+        .map(|r| r.provider.len())
+        .chain(std::iter::once("PROVIDER".len()))
+        .max()
+        .unwrap_or(0);
+
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "{:<chain_w$}  {:<provider_w$}  RESULT",
+        "CHAIN", "PROVIDER",
+    );
+
+    let (mut passed, mut failed, mut skipped) = (0usize, 0usize, 0usize);
+    for r in results {
+        let result = match &r.status {
+            Status::Passed => {
+                passed += 1;
+                "✓ ok".to_string()
+            }
+            Status::Failed(reason) => {
+                failed += 1;
+                format!("✗ {reason}")
+            }
+            Status::Skipped(reason) => {
+                skipped += 1;
+                format!("– skipped ({reason})")
+            }
+        };
+        let _ = writeln!(
+            out,
+            "{:<chain_w$}  {:<provider_w$}  {result}",
+            r.chain, r.provider,
+        );
+    }
+
+    let _ = writeln!(out, "\n{passed} passed, {failed} failed, {skipped} skipped",);
+    out
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn any_failed__should_ignore_skips_and_passes() {
+        // Given
+        let results = vec![
+            ProviderResult {
+                chain: "base",
+                provider: "a".to_string(),
+                status: Status::Passed,
+            },
+            ProviderResult::skipped("ethereum", "b".to_string(), "unsupported"),
+        ];
+
+        // When / Then
+        assert!(!(any_failed(&results)));
+    }
+
+    #[test]
+    fn any_failed__should_detect_a_failure() {
+        // Given
+        let results = vec![ProviderResult {
+            chain: "base",
+            provider: "a".to_string(),
+            status: Status::Failed("boom".to_string()),
+        }];
+
+        // When / Then
+        assert!(any_failed(&results));
+    }
+
+    #[test]
+    fn render__should_include_chain_provider_and_reason() {
+        // Given
+        let results = vec![ProviderResult {
+            chain: "base",
+            provider: "alchemy".to_string(),
+            status: Status::Failed("bad url".to_string()),
+        }];
+
+        // When
+        let table = render(&results);
+
+        // Then
+        assert!(table.contains("base"));
+        assert!(table.contains("alchemy"));
+        assert!(table.contains("bad url"));
+        assert!(table.contains("0 passed, 1 failed, 0 skipped"));
+    }
+}
