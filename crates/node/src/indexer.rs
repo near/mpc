@@ -421,10 +421,7 @@ struct IndexerClient {
 
 const INTERVAL: Duration = Duration::from_millis(500);
 
-/// Consecutive non-syncing polls, over which the head advances, required before
-/// we treat the node as caught up. At [`INTERVAL`] spacing this is a short
-/// stability window that outlasts the transient `syncing == false` reported at
-/// boot.
+/// Consecutive non-syncing polls with head progress before the node counts as caught up.
 const REQUIRED_STABLE_POLLS: u32 = 4;
 
 impl IndexerClient {
@@ -458,29 +455,17 @@ impl IndexerClient {
     }
 }
 
-/// Decides when the node has caught up to the chain tip from its own head
-/// progress.
-///
-/// `syncing` alone is insufficient: a freshly state-syncing node reports it
-/// `false` at boot before it has learned it is behind, which would pin the
-/// streamer's `LatestSynced` cursor at the stale genesis head. So we wait for a
-/// sustained run of non-syncing polls over which the head advances. Bulk sync
-/// sets `syncing == true`, and the pre-sync boot window leaves the head static,
-/// so only a node following the live chain tip clears both gates.
-///
-/// A fully halted chain (head not advancing) defers startup, which is
-/// acceptable: there would be nothing to stream.
+/// Detects catch-up from head progress alone: a freshly state-syncing node
+/// briefly reports `syncing == false` at the genesis head, and returning then
+/// pins the streamer's `LatestSynced` cursor at that stale head. So we require a
+/// run of non-syncing polls over which the head actually advances.
 #[derive(Default)]
 struct SyncProgress {
-    /// Head height when the current non-syncing run began, or `None` if the last
-    /// observed poll reported syncing.
     run_start_head: Option<BlockHeight>,
-    /// Number of consecutive non-syncing polls in the current run.
     run_polls: u32,
 }
 
 impl SyncProgress {
-    /// Feeds one status sample; returns `true` once the node is caught up.
     fn observe(&mut self, syncing: bool, head_height: BlockHeight) -> bool {
         if syncing {
             self.run_start_head = None;
@@ -562,8 +547,6 @@ pub struct IndexerAPI<TransactionSender, ForeignChainPolicyReader> {
 mod tests {
     use super::{BlockHeight, REQUIRED_STABLE_POLLS, SyncProgress};
 
-    /// Feeds `(syncing, head_height)` samples in order and returns the index of
-    /// the first sample after which the node is reported caught up, or `None`.
     fn first_caught_up_poll(samples: &[(bool, BlockHeight)]) -> Option<usize> {
         let mut progress = SyncProgress::default();
         samples
@@ -583,9 +566,6 @@ mod tests {
         assert_eq!(caught_up_at, None);
     }
 
-    /// The wedge: at boot the node sits at genesis reporting `syncing == false`
-    /// before it learns it is behind. A static head must never be mistaken for
-    /// being caught up.
     #[test]
     fn observe__should_never_report_caught_up_with_static_head_at_genesis() {
         // Given
@@ -628,8 +608,6 @@ mod tests {
         assert_eq!(caught_up_at, Some(expected));
     }
 
-    /// Even after enough non-syncing polls, a head that has not advanced past
-    /// the start of the run is not yet caught up; it must wait for a new block.
     #[test]
     fn observe__should_wait_for_head_to_advance_past_run_start() {
         // Given
@@ -646,8 +624,6 @@ mod tests {
         assert_eq!(caught_up_at, Some(samples.len() - 1));
     }
 
-    /// A resumed sync resets the run, so non-syncing polls seen before it do not
-    /// count toward the stability window.
     #[test]
     fn observe__should_reset_run_when_syncing_resumes() {
         // Given

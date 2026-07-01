@@ -143,10 +143,9 @@ pub fn spawn_real_indexer(
 
             tracing::info!("Indexer waiting for node to finish syncing before streaming blocks.");
 
-            // Defer indexing until synced: starting the streamer while neard is
-            // still at genesis pins the `LatestSynced` cursor below the node's
-            // block tail, which it can never reach. Raced against shutdown so a
-            // SIGTERM during the (possibly long) state sync tears down cleanly.
+            // Streaming before the node is synced pins the `LatestSynced` cursor
+            // at genesis, below the block tail it can never reach. Raced against
+            // shutdown so a SIGTERM during state sync still tears down cleanly.
             if !await_sync_or_shutdown(
                 indexer_state.client.wait_for_full_sync(),
                 &shutdown_token,
@@ -160,7 +159,8 @@ pub fn spawn_real_indexer(
                 return;
             }
 
-            // Synced now, so `LatestSynced` resolves to the tip, not genesis.
+            // The node is fully synced by this point, so `LatestSynced` resolves
+            // to the chain tip rather than genesis.
             let stream = indexer.streamer();
 
             let txn_sender_result = TransactionProcessorHandle::start_transaction_processor(
