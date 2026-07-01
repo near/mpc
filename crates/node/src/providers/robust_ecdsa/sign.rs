@@ -5,7 +5,7 @@ use crate::primitives::UniqueId;
 use crate::protocol::run_protocol;
 use crate::providers::robust_ecdsa::{
     EcdsaMessageHash, KeygenOutput, PresignatureStorage, RobustEcdsaSignatureProvider,
-    RobustEcdsaTaskId, presign::compute_thresholds,
+    RobustEcdsaTaskId, compute_thresholds,
 };
 use crate::types::SignatureId;
 use anyhow::Context;
