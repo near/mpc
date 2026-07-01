@@ -124,10 +124,6 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
         threshold: TSReconstructionThreshold,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
-        // robust-ECDSA shares the secret on a degree `MaxMalicious = t - 1`
-        // polynomial, i.e. reconstruction lower bound `= MaxMalicious + 1 = t`.
-        // `threshold` is already that lower bound (= the domain's
-        // `t`), so the keygen is identical to cait-sith — pass it straight through.
         EcdsaSignatureProvider::run_key_generation_client_internal(threshold, channel).await
     }
 
