@@ -174,9 +174,8 @@ impl TeeState {
         self.store_verified_attestation(node_id, verified_attestation)
     }
 
-    /// Runs the post-DCAP checks for a [`Attestation::Dstack`] attestation
-    /// against the [`VerifiedReport`] the verifier returned, then stores the
-    /// result.
+    /// Runs the post-DCAP checks for a [`DstackAttestation`] against the
+    /// [`VerifiedReport`] the verifier returned, then stores the result.
     pub(crate) fn verify_and_store_dstack(
         &mut self,
         node_id: NodeId,
@@ -871,7 +870,7 @@ mod tests {
     }
 
     #[test]
-    fn add_participant_increases_storage_size() {
+    fn verify_and_store_mock__should_increase_storage_size() {
         // given
         let mut tee_state = TeeState::default();
         let node_id = NodeId {
@@ -895,7 +894,7 @@ mod tests {
     }
 
     #[test]
-    fn add_participant_indexes_by_tls_key() {
+    fn verify_and_store_mock__should_index_by_tls_key() {
         // given
         let mut tee_state = TeeState::default();
         let node_id = NodeId {
@@ -920,7 +919,7 @@ mod tests {
     }
 
     #[test]
-    fn add_participant_preserves_node_id_integrity() {
+    fn verify_and_store_mock__should_preserve_node_id_integrity() {
         // given
         let mut tee_state = TeeState::default();
         let node_id = NodeId {
@@ -1409,7 +1408,7 @@ mod tests {
     }
 
     #[test]
-    fn add_participant__should_reject_tls_key_owned_by_other_account() {
+    fn verify_and_store_mock__should_reject_tls_key_owned_by_other_account() {
         // Given: an existing attestation registered to `alice.near` under some TLS key.
         const TEE_UPGRADE_DURATION: Duration = Duration::from_secs(10_000);
 
@@ -1454,7 +1453,7 @@ mod tests {
     }
 
     #[test]
-    fn add_participant__should_allow_same_account_to_update_its_own_entry() {
+    fn verify_and_store_mock__should_allow_same_account_to_update_its_own_entry() {
         // Given: an existing attestation registered to `alice.near`.
         const TEE_UPGRADE_DURATION: Duration = Duration::from_secs(10_000);
 
@@ -1495,7 +1494,7 @@ mod tests {
     }
 
     #[test]
-    fn add_participant_rejects_invalid_attestations() {
+    fn verify_and_store_mock__should_reject_invalid_attestations() {
         let mut tee_state = TeeState::default();
         let participants = gen_participants(3);
         let participant_list: Vec<_> = participants.participants().to_vec();

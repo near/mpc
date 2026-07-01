@@ -2477,7 +2477,7 @@ impl MpcContract {
         }
     }
 
-    /// Yield-resume callback for a [`Attestation::Dstack`] submission. On
+    /// Yield-resume callback for an [`Attestation::Dstack`] submission. On
     /// success it resolves the caller's transaction; on a rejection or the
     /// ~200-block timeout it cleans up, refunds, and fails from a separate
     /// receipt.
