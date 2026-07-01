@@ -59,13 +59,11 @@ pub fn launch_mpc_container(
     let compose_file = render_compose_file(platform, port_mappings, image_name, manifest_digest)?;
     let compose_path = compose_file.path().display().to_string();
 
-    // Remove any existing container from a previous run (by name, independent of compose file)
-    let _ = Command::new("docker")
-        .args(["rm", "-f", MPC_CONTAINER_NAME])
-        .output();
-
+    // Use a stable compose project (`-p`) so the container is reused across
+    // restarts rather than recreated, preserving its logs. Compose
+    // recreates it only when the rendered config (e.g. image digest) changes.
     let run_output = Command::new("docker")
-        .args(["compose", "-f", &compose_path, "up", "-d"])
+        .args(["compose", "-p", "mpc", "-f", &compose_path, "up", "-d"])
         .output()
         .map_err(|inner| LauncherError::DockerRunFailed {
             image_hash: manifest_digest.clone(),
