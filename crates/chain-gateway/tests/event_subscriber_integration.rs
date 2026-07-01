@@ -21,9 +21,8 @@ use chain_gateway_test_contract::{
 };
 use rstest::rstest;
 
-// Generous: the gateway now waits for the node to catch up to its peers before
-// streaming (see `wait_for_full_sync`), which delays the first block update on a
-// loaded CI box.
+// Generous: the gateway waits for the node to catch up before streaming, which
+// delays the first block update on a loaded CI box.
 const EVENT_TIMEOUT: Duration = Duration::from_secs(30);
 
 async fn must_recv_block_update(

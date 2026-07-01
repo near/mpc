@@ -421,9 +421,7 @@ struct IndexerClient {
 
 const INTERVAL: Duration = Duration::from_millis(500);
 
-/// How far behind the highest peer the local head may be while still counting
-/// as caught up. Absorbs peers advancing a block or two between polls; the
-/// `syncing` flag carries the steady state.
+/// Max blocks the local head may trail the highest peer and still count as caught up.
 const SYNC_HEIGHT_TOLERANCE: BlockHeight = 5;
 
 impl IndexerClient {
@@ -468,15 +466,13 @@ impl IndexerClient {
     }
 }
 
-/// Whether the node is fully synced to the network head.
+/// Whether the node has caught up to the network head.
 ///
-/// The `syncing` flag alone is insufficient: on a freshly state-syncing node
-/// (or one returning from long downtime) it reads `false` during the startup
-/// window before the node has learned it is behind, which would pin the
-/// streamer's `LatestSynced` cursor at a stale head it can never reach. We also
-/// require the head to be within [`SYNC_HEIGHT_TOLERANCE`] of the highest
-/// connected peer. While no peer reports a height we cannot confirm we are
-/// caught up, so we keep waiting.
+/// `syncing` alone is insufficient: a freshly state-syncing node reports it
+/// `false` at boot before learning it is behind, which would pin the streamer's
+/// `LatestSynced` cursor at a stale head. So we also require the head within
+/// [`SYNC_HEIGHT_TOLERANCE`] of the highest peer, and wait while no peer height
+/// is known.
 fn head_caught_up_to_peers(
     syncing: bool,
     head_height: BlockHeight,
@@ -564,10 +560,6 @@ mod tests {
         assert!(!caught_up);
     }
 
-    /// The #3623 wedge: at fresh boot the node sits at genesis with `syncing`
-    /// transiently `false` before it has learned a peer is far ahead. The
-    /// `syncing` flag alone would declare it synced; the peer-height gate must
-    /// keep waiting.
     #[test]
     fn head_caught_up_to_peers__should_be_false_at_genesis_before_sync_starts() {
         // Given
@@ -582,8 +574,6 @@ mod tests {
         assert!(!caught_up);
     }
 
-    /// Same wedge after long downtime: the stale head is far above genesis but
-    /// still far below the peers, so a genesis-only floor would miss it.
     #[test]
     fn head_caught_up_to_peers__should_be_false_with_stale_head_far_above_genesis() {
         // Given
@@ -598,8 +588,6 @@ mod tests {
         assert!(!caught_up);
     }
 
-    /// Until a peer advertises a height we cannot confirm we are caught up, so
-    /// we must keep waiting rather than risk pinning at a stale head.
     #[test]
     fn head_caught_up_to_peers__should_be_false_when_no_peer_height_known() {
         // Given
@@ -625,8 +613,6 @@ mod tests {
         assert!(caught_up);
     }
 
-    /// Peers may advance a few blocks between polls; being within the tolerance
-    /// still counts as caught up.
     #[test]
     fn head_caught_up_to_peers__should_be_true_within_tolerance_of_peer_height() {
         // Given
@@ -641,7 +627,6 @@ mod tests {
         assert!(caught_up);
     }
 
-    /// A node slightly ahead of the peers it currently sees is caught up.
     #[test]
     fn head_caught_up_to_peers__should_be_true_when_head_above_peer_height() {
         // Given
