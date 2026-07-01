@@ -1,0 +1,32 @@
+[package]
+name = "foreign-chain-config-tester"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "foreign-chain-config-tester"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+foreign-chain-inspector = { workspace = true }
+foreign-chain-rpc-auth = { workspace = true }
+foreign-chain-rpc-interfaces = { workspace = true }
+hex = { workspace = true }
+http = { workspace = true }
+mpc-node-config = { workspace = true }
+serde = { workspace = true }
+serde_yaml = { workspace = true }
+tokio = { workspace = true }
+toml = { workspace = true }
+
+[dev-dependencies]
+assert_matches = { workspace = true }
+httpmock = { workspace = true }
+near-mpc-bounded-collections = { workspace = true }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true
