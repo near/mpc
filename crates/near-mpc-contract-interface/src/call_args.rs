@@ -26,22 +26,22 @@ pub struct VerifyForeignTransactionRespondArgs {
     pub response: VerifyForeignTransactionResponse,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct GetPendingSignatureRequestArgs {
     pub request: SignatureRequest,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct GetPendingCKDRequestArgs {
     pub request: CKDRequest,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct GetPendingVerifyForeignTxRequestArgs {
     pub request: VerifyForeignTransactionRequest,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct GetAttestationArgs<'a> {
     pub tls_public_key: &'a Ed25519PublicKey,
 }

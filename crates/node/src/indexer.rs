@@ -97,9 +97,9 @@ impl IndexerViewClient {
         chain_signature_request: &contract_args::SignatureRequest,
     ) -> anyhow::Result<Option<YieldIndex>> {
         let get_pending_request_args: Vec<u8> =
-            serde_json::to_string(&contract_args::GetPendingSignatureRequestArgs {
-                request: chain_signature_request.clone(),
-            })
+            serde_json::to_string(&contract_args::GetPendingSignatureRequestArgs::new(
+                chain_signature_request.clone(),
+            ))
             .unwrap()
             .into_bytes();
 
@@ -138,9 +138,9 @@ impl IndexerViewClient {
         chain_ckd_request: &contract_args::CKDRequest,
     ) -> anyhow::Result<Option<YieldIndex>> {
         let get_pending_request_args: Vec<u8> =
-            serde_json::to_string(&contract_args::GetPendingCKDRequestArgs {
-                request: chain_ckd_request.clone(),
-            })
+            serde_json::to_string(&contract_args::GetPendingCKDRequestArgs::new(
+                chain_ckd_request.clone(),
+            ))
             .unwrap()
             .into_bytes();
 
@@ -179,9 +179,9 @@ impl IndexerViewClient {
         chain_verify_foreign_tx_request: &dtos::VerifyForeignTransactionRequest,
     ) -> anyhow::Result<Option<YieldIndex>> {
         let get_pending_request_args: Vec<u8> =
-            serde_json::to_string(&contract_args::GetPendingVerifyForeignTxRequestArgs {
-                request: chain_verify_foreign_tx_request.clone(),
-            })
+            serde_json::to_string(&contract_args::GetPendingVerifyForeignTxRequestArgs::new(
+                chain_verify_foreign_tx_request.clone(),
+            ))
             .unwrap()
             .into_bytes();
 
@@ -220,9 +220,9 @@ impl IndexerViewClient {
         participant_tls_public_key: &near_mpc_contract_interface::types::Ed25519PublicKey,
     ) -> anyhow::Result<Option<near_mpc_contract_interface::types::VerifiedAttestation>> {
         let get_attestation_args: Vec<u8> =
-            serde_json::to_string(&contract_args::GetAttestationArgs {
-                tls_public_key: participant_tls_public_key,
-            })
+            serde_json::to_string(&contract_args::GetAttestationArgs::new(
+                participant_tls_public_key,
+            ))
             .unwrap()
             .into_bytes();
 
