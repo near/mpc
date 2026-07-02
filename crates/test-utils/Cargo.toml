@@ -7,7 +7,8 @@ edition = { workspace = true }
 [dependencies]
 cargo-near-build = { workspace = true }
 hex = { workspace = true }
-mpc-attestation = { workspace = true, features = ["test-utils"] }
+mpc-attestation = { workspace = true, features = ["test-utils", "local-verify"] }
+tee-verifier-interface = { workspace = true }
 mpc-primitives = { workspace = true }
 near-mpc-contract-interface = { workspace = true }
 near-sdk = { workspace = true, features = ["non-contract-usage"] }

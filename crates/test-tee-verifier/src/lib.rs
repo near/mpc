@@ -25,6 +25,11 @@ getrandom::register_custom_getrandom!(randomness_unsupported);
 
 /// What the stub's `verify_quote` should do, chosen by the test at deploy time.
 #[expect(clippy::large_enum_variant)]
+// KEEP THE VARIANT ORDER IN SYNC with the `StubResponse` mirror in
+// `crates/contract/tests/sandbox/tee_verifier.rs`: the test serializes with that
+// copy and this contract deserializes with this one, so the Borsh discriminants
+// (declaration index) must match. That mirror's `stub_response_discriminants`
+// test pins the indices.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -33,7 +38,7 @@ getrandom::register_custom_getrandom!(randomness_unsupported);
 pub enum StubResponse {
     /// Return `VerificationResult::Verified` with this exact report. Tests that
     /// want the post-DCAP checks to pass supply the report obtained from the
-    /// real fixture quote (e.g. via `DstackAttestation::dcap_report`).
+    /// real fixture quote.
     Verified(tee_verifier_interface::VerifiedReport),
     /// Return `VerificationResult::Rejected` with this reason.
     Rejected(String),

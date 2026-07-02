@@ -28,7 +28,7 @@ use anyhow::Result;
 use borsh::BorshSerialize;
 use near_mpc_contract_interface::types::{self as dtos, Attestation};
 use near_workspaces::{Account, Contract, Worker, network::Sandbox, types::NearToken};
-use test_utils::attestation::{mock_dto_dstack_attestation, p2p_tls_key};
+use test_utils::attestation::{mock_dto_dstack_attestation, p2p_tls_key, verified_report};
 
 /// Blocks to fast-forward past the ~200-block yield-resume timeout so the
 /// runtime fires `on_attestation_verified`'s timeout branch.
@@ -38,10 +38,14 @@ const YIELD_TIMEOUT_BLOCKS: u64 = 250;
 /// depending on the stub crate) so the test only needs its Borsh encoding to
 /// initialize the deployed stub; the stub is a separate `#[near]` contract and
 /// linking its crate into this test binary would collide on ABI symbols.
+///
+/// KEEP THE VARIANT ORDER IN SYNC with `test_tee_verifier::StubResponse`: Borsh
+/// encodes an enum as a u8 discriminant equal to the declaration index, so a
+/// reorder on either side silently misroutes the response. `stub_response_discriminants`
+/// below pins the indices so a divergence fails loudly.
 #[expect(clippy::large_enum_variant)]
 #[derive(BorshSerialize)]
 enum StubResponse {
-    #[expect(dead_code)]
     Verified(tee_verifier_interface::VerifiedReport),
     Rejected(String),
     Panic,
@@ -102,10 +106,17 @@ async fn submit_participant_info__should_reject_dstack_when_verifier_not_configu
     )
     .await?;
 
-    // Then: it is rejected (no verifier configured) and nothing is stored.
+    // Then: it fails synchronously with the VerifierNotConfigured error (the
+    // early return in submit_dstack_attestation, before any yield is registered),
+    // and nothing is stored. Assert the specific message so an unrelated failure
+    // (gas, encoding) can't pass as success.
+    let err = result
+        .into_result()
+        .expect_err("Dstack submit must fail when no verifier is configured")
+        .to_string();
     assert!(
-        result.is_failure(),
-        "Dstack submit must fail when no verifier is configured: {result:#?}"
+        err.contains("No TEE verifier is configured"),
+        "expected VerifierNotConfigured, got: {err}"
     );
     let stored = get_participant_attestation(&contract, &tls_key()).await?;
     assert!(stored.is_none(), "no attestation should be stored");
@@ -216,14 +227,27 @@ async fn submit_participant_info__should_clean_up_on_verifier_crash() -> Result<
     Ok(())
 }
 
+// TODO(#3730): un-ignore once the fixture allowlist setup lands. To make
+// `resolve_verification` actually run out of gas, execution must reach the
+// expensive RTMR3 replay inside `verify_post_dcap_and_store` before exhausting
+// the 1 TGas budget. That requires the post-DCAP checks to get *past* the
+// allowlist gate first, i.e. the contract must have the fixture's MPC image hash
+// (`image_digest()`), launcher compose hash (`launcher_compose_digest()`), and
+// measurements voted in, and the submitter must use the fixture keys so the
+// report-data binding matches. With an empty allowlist (as here) the check
+// fails fast and cheap, so `resolve_verification` completes at 1 TGas and this
+// re-tests the rejection path instead. Shares that setup with the (also pending)
+// Verified happy-path test.
+#[ignore = "needs fixture allowlist setup to reach the gas-heavy post-DCAP path; see TODO(#3730)"]
 #[tokio::test]
 async fn submit_participant_info__should_clean_up_when_resolve_verification_runs_out_of_gas()
 -> Result<()> {
     // Given: a contract configured with a `resolve_verification` gas budget far
-    // too small to run the post-DCAP work and resume the yield, so the callback
-    // receipt runs out of gas mid-execution and rolls back atomically. The stub
-    // answers (here, a rejection) so `resolve_verification` actually runs rather
-    // than hitting the no-verdict early return.
+    // too small to run the post-DCAP work and resume the yield. The stub returns
+    // `Verified` so `resolve_verification` enters `verify_post_dcap_and_store`
+    // (the heavy RTMR3-replay path), which then exhausts the 1 TGas budget and
+    // rolls the whole receipt back. A `Rejected` response would not work here:
+    // its branch is light enough to complete even at 1 TGas.
     let init_config = dtos::InitConfig {
         resolve_verification_tera_gas: Some(1),
         ..Default::default()
@@ -243,15 +267,14 @@ async fn submit_participant_info__should_clean_up_when_resolve_verification_runs
         &worker,
         &contract,
         &mpc_signer_accounts,
-        StubResponse::Rejected("would-refund-if-resolve-had-gas".to_string()),
+        StubResponse::Verified(verified_report()),
     )
     .await?;
 
     // When: a participant submits. The verifier answers, but `resolve_verification`
-    // runs out of gas before `promise_yield_resume`, so its whole receipt — the
-    // pending-entry removal and the refund included — rolls back and the yield is
-    // never resumed. The chain then advances past the ~200-block timeout so the
-    // runtime fires `on_attestation_verified`'s timeout branch.
+    // runs out of gas before `promise_yield_resume`, so its whole receipt (the
+    // pending-entry removal and the refund included) rolls back and the yield is
+    // never resumed.
     let submitter = &mpc_signer_accounts[0];
     let balance_before = submitter.view_account().await?.balance;
     let _ = submit_participant_info_with_deposit(
@@ -262,13 +285,24 @@ async fn submit_participant_info__should_clean_up_when_resolve_verification_runs
         NearToken::from_near(1),
     )
     .await?;
+
+    // Distinguish this path from the rejection test: because
+    // `resolve_verification` rolled back rather than resuming, the pending entry
+    // is still present here. The rejection path would have removed it already.
+    assert!(
+        has_pending_attestation(&contract, submitter.id()).await?,
+        "pending entry must survive an OOG resolve_verification (cleanup is left to the timeout)"
+    );
+
+    // Advancing past the ~200-block window fires `on_attestation_verified`'s
+    // timeout branch, which is what actually cleans up in this path.
     worker.fast_forward(YIELD_TIMEOUT_BLOCKS).await?;
 
-    // Then: an out-of-gas `resolve_verification` is recovered exactly like an
-    // unreachable verifier — nothing stored, the pending entry cleaned up by the
-    // timeout branch, and the deposit refunded. This is the guarantee that a
-    // partial `resolve_verification` receipt cannot leave a refunded-but-still-
-    // pending entry: the receipt is atomic, so the account is not wedged.
+    // Then: an out-of-gas `resolve_verification` is recovered like an unreachable
+    // verifier: nothing stored, the pending entry cleaned up by the timeout
+    // branch, and the deposit refunded. This is the guarantee that a partial
+    // `resolve_verification` receipt cannot leave a refunded-but-still-pending
+    // entry: the receipt is atomic, so the account is not wedged.
     let stored = get_participant_attestation(&contract, &tls_key()).await?;
     assert!(
         stored.is_none(),
@@ -282,18 +316,40 @@ async fn submit_participant_info__should_clean_up_when_resolve_verification_runs
     Ok(())
 }
 
-/// Asserts the 1 NEAR storage deposit was returned: the net spend since
-/// `balance_before` is well under 1 NEAR (only gas), rather than the full
-/// deposit being retained by the contract.
+/// Asserts the full 1 NEAR storage deposit was returned: the net spend since
+/// `balance_before` is only gas, well under any fraction of the deposit.
 async fn assert_deposit_refunded(account: &Account, balance_before: NearToken) -> Result<()> {
     let balance_after = account.view_account().await?.balance;
     // Raw subtraction (not `saturating_sub`): if the contract over-refunds so
     // `balance_after > balance_before`, this underflows and panics rather than
-    // clamping to 0 and silently passing the `< 1 NEAR` check.
+    // clamping to 0 and silently passing.
     let net_spent = balance_before.as_yoctonear() - balance_after.as_yoctonear();
+    // Bound to the gas envelope, not the deposit: max gas (~0.03 NEAR at the
+    // sandbox price) sits far below this ceiling, while any partial retention of
+    // the 1 NEAR deposit (e.g. 0.5 NEAR) would exceed it and fail.
+    let gas_ceiling = NearToken::from_millinear(50).as_yoctonear();
     assert!(
-        net_spent < NearToken::from_near(1).as_yoctonear(),
-        "deposit should be refunded (net spent {net_spent} yoctoNEAR should be < 1 NEAR, gas only)"
+        net_spent < gas_ceiling,
+        "deposit should be fully refunded (net spent {net_spent} yoctoNEAR should be gas-only, < {gas_ceiling})"
     );
     Ok(())
+}
+
+/// Pins the Borsh discriminant of each [`StubResponse`] variant to its declaration
+/// index. The deployed `test_tee_verifier::StubResponse` deserializes what this
+/// mirror serializes, so a reorder on either side must fail loudly here rather
+/// than silently misroute a response. `Verified` is index 0 by position (a
+/// `VerifiedReport` fixture is not needed to guard the reorder that matters).
+#[test]
+fn stub_response_discriminants() {
+    assert_eq!(
+        borsh::to_vec(&StubResponse::Rejected(String::new())).unwrap()[0],
+        1,
+        "Rejected must be Borsh discriminant 1"
+    );
+    assert_eq!(
+        borsh::to_vec(&StubResponse::Panic).unwrap()[0],
+        2,
+        "Panic must be Borsh discriminant 2"
+    );
 }

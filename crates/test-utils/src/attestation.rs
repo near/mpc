@@ -107,6 +107,22 @@ pub fn mock_dstack_attestation() -> Attestation {
     Attestation::Dstack(DstackAttestation::new(quote, collateral, tcb_info))
 }
 
+/// The [`VerifiedReport`] the real `tee-verifier` would return for the fixture
+/// quote. Minted here by running the DCAP step at [`VALID_ATTESTATION_TIMESTAMP`]
+/// (when the fixture collateral is valid), so tests can feed it to the stub
+/// verifier's `Verified` response and drive the contract's post-DCAP path.
+pub fn verified_report() -> tee_verifier_interface::VerifiedReport {
+    let dstack = DstackAttestation::new(
+        quote(),
+        mpc_attestation::collateral::collateral_from_str(include_str!("../assets/collateral.json"))
+            .expect("collateral.json is valid collateral"),
+        serde_json::from_str(TEST_TCB_INFO_STRING).unwrap(),
+    );
+    dstack
+        .verify_dcap_quote(VALID_ATTESTATION_TIMESTAMP)
+        .expect("fixture quote verifies at VALID_ATTESTATION_TIMESTAMP")
+}
+
 pub fn mock_dto_dstack_attestation() -> near_mpc_contract_interface::types::Attestation {
     let quote = HexVec::from(Vec::from(quote()));
     let collateral_json_string = include_str!("../assets/collateral.json");
