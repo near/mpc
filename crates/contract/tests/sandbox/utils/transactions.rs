@@ -1,6 +1,17 @@
+use mpc_call_args::FunctionCallArgs;
 use near_sdk::Gas;
-use near_workspaces::{Account, Contract, result::ExecutionFinalResult};
+use near_workspaces::{Account, Contract, operations::CallTransaction, result::ExecutionFinalResult};
 use serde::Serialize;
+
+/// Builds a [`CallTransaction`] from a [`call_args`](near_mpc_contract_interface::call_args) builder,
+/// so tests share the node's gas/deposit/encoding. Caller drives it (`.transact()`, assertions).
+pub fn call_from_args(account: &Account, contract: &Contract, call: FunctionCallArgs) -> CallTransaction {
+    account
+        .call(contract.id(), &call.method_name)
+        .args(call.args)
+        .gas(call.gas)
+        .deposit(call.deposit)
+}
 
 pub async fn execute_async_transactions(
     accounts: &[Account],

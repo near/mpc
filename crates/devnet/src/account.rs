@@ -17,13 +17,14 @@
     reason = "devnet tooling uses `near_crypto_public::SecretKey` to build signed transactions via the legacy `near_jsonrpc_client` API."
 )]
 use crate::constants::{LOCALNET_MASTER_ACCOUNT_ID, LOCALNET_VALIDATOR_KEY_PATH};
-use crate::contracts::ActionCall;
+use crate::contracts::{ActionCall, function_call_action};
 use crate::queries;
 use crate::rpc::NearRpcClients;
 use crate::types::{
     ContractSetup, MpcParticipantSetup, NearAccount, NearAccountKind, ParsedConfig,
 };
 use ed25519_dalek::{SigningKey, VerifyingKey};
+use mpc_call_args::FunctionCallArgs;
 use futures::FutureExt;
 use near_account_id::AccountId;
 use near_crypto_public::{ED25519SecretKey, InMemorySigner, SecretKey, Signer};
@@ -35,7 +36,7 @@ use near_primitives::account::AccessKey;
 use near_primitives::action::{Action, AddKeyAction};
 use near_primitives::hash::CryptoHash;
 use near_primitives::types::Finality;
-use near_primitives::types::{Balance, BlockReference, FunctionArgs, Gas};
+use near_primitives::types::{Balance, BlockReference, FunctionArgs};
 use near_primitives::views::{CallResult, QueryRequest, TxExecutionStatus};
 use rand::rngs::OsRng;
 use reqwest::StatusCode;
@@ -292,14 +293,10 @@ impl OperatingAccessKey {
     }
 
     /// Submits a transaction to the chain to mutably call a function on a contract.
-    #[expect(clippy::too_many_arguments)]
     pub async fn submit_tx_to_call_function(
         &mut self,
         contract_id: &AccountId,
-        method: &str,
-        args: &[u8],
-        tgas: u64,
-        deposit: u128,
+        call: FunctionCallArgs,
         wait_until: TxExecutionStatus,
         verbose: bool,
     ) -> anyhow::Result<RpcTransactionResponse> {
@@ -308,8 +305,8 @@ impl OperatingAccessKey {
                 "[{}] Calling {}::{} with args {}",
                 self.account_id,
                 contract_id,
-                method,
-                String::from_utf8_lossy(args),
+                call.method_name,
+                String::from_utf8_lossy(&call.args),
             );
         }
         let request = methods::send_tx::RpcSendTransactionRequest {
@@ -318,14 +315,7 @@ impl OperatingAccessKey {
                 self.account_id.clone(),
                 contract_id.clone(),
                 &self.signer,
-                vec![Action::FunctionCall(Box::new(
-                    near_primitives::action::FunctionCallAction {
-                        method_name: method.to_string(),
-                        args: args.to_vec(),
-                        gas: Gas::from_teragas(tgas),
-                        deposit: Balance::from_yoctonear(deposit),
-                    },
-                ))],
+                vec![function_call_action(call)],
                 self.recent_block_hash,
             ),
             wait_until,
