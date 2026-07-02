@@ -1,8 +1,8 @@
 //! Mock JSON-RPC servers for foreign chain e2e tests.
 //!
 //! Uses [`httpmock`] to set up lightweight mock servers that mimic Bitcoin, EVM,
-//! and Starknet JSON-RPC endpoints plus the Aptos REST API, returning hardcoded
-//! responses for the methods the MPC nodes call during `verify_foreign_transaction`.
+//! and Starknet JSON-RPC endpoints, returning hardcoded responses for the methods
+//! the MPC nodes call during `verify_foreign_transaction`.
 
 use httpmock::prelude::*;
 use httpmock::{HttpMockRequest, HttpMockResponse};
@@ -181,47 +181,6 @@ pub fn setup_starknet_mock(server: &MockServer) -> usize {
                     "result": result,
                     "jsonrpc": "2.0",
                     "id": id,
-                });
-
-                HttpMockResponse::builder()
-                    .status(200)
-                    .header("content-type", "application/json")
-                    .body(serde_json::to_string(&response_body).unwrap())
-                    .build()
-            });
-        })
-        .id
-}
-
-/// Mocks the Aptos REST API (`GET /v1/transactions/by_hash/{hash}`), echoing the
-/// requested hash back as a committed, successful `user_transaction` with one event.
-pub fn setup_aptos_mock(server: &MockServer) -> usize {
-    server
-        .mock(|when, then| {
-            when.method(GET).path_includes("/transactions/by_hash/");
-            then.respond_with(move |req: &HttpMockRequest| {
-                let hash = req
-                    .uri()
-                    .path()
-                    .rsplit('/')
-                    .next()
-                    .unwrap_or_default()
-                    .to_string();
-
-                let response_body = serde_json::json!({
-                    "type": "user_transaction",
-                    "hash": hash,
-                    "sender": "0x1",
-                    "sequence_number": "0",
-                    "success": true,
-                    "vm_status": "Executed successfully",
-                    "version": "1",
-                    "events": [{
-                        "guid": { "creation_number": "0", "account_address": "0x0" },
-                        "sequence_number": "0",
-                        "type": "0x1::omni_bridge::InitTransfer",
-                        "data": { "amount": "100" },
-                    }],
                 });
 
                 HttpMockResponse::builder()
