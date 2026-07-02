@@ -1,11 +1,13 @@
 use super::handler::listen_blocks;
 use super::migrations::{ContractMigrationInfo, monitor_migrations};
+use super::near_data_wipe::wipe_near_data_if_requested;
 use super::participants::monitor_contract_state;
 use super::stats::indexer_logger;
 use super::{IndexerAPI, IndexerState, RealForeignChainPolicyReader};
 use crate::config::RespondConfig;
 #[cfg(feature = "network-hardship-simulation")]
 use crate::config::load_listening_blocks_file;
+use crate::home_paths::near_data_dir;
 use crate::indexer::configs::IndexerConfigExt;
 use crate::indexer::tee::{
     monitor_allowed_docker_images, monitor_allowed_foreign_chain_providers,
@@ -101,6 +103,27 @@ pub fn spawn_real_indexer(
                 .load_near_config()
                 .expect("near config is present");
 
+            // Operator-driven one-time wipe: when `wipe_near_data_token` is non-zero
+            // and differs from the last applied value, wipe the data dir. Must run
+            // here, after the config is loaded but before `start_near_node` below
+            // opens the store, because the dir can't be removed while nearcore holds
+            // it open. Runs once per process start, so a changed token takes effect on
+            // the next restart.
+            let hot_store_path = match near_config.config.store.path.as_deref() {
+                Some(path) => home_dir.join(path),
+                None => near_data_dir(&home_dir),
+            };
+            wipe_near_data_if_requested(
+                &home_dir,
+                &hot_store_path,
+                mpc_indexer_config.wipe_near_data_token,
+                near_config.client_config.archive,
+            )
+            .expect(
+                "wipe_near_data_token is set but wiping the nearcore data dir failed, \
+                 fix the cause and set wipe_near_data_token to a new value to retry",
+            );
+
             let near_node = Indexer::start_near_node(
                 &near_indexer_config,
                 near_config.clone(),
@@ -120,17 +143,11 @@ pub fn spawn_real_indexer(
 
             tracing::info!("Indexer waiting for node to finish syncing before streaming blocks.");
 
-            // Defer all indexing work until the node has finished syncing. On a
-            // node that state-syncs from scratch, neard sits at genesis until
-            // sync completes; starting the streamer then pins its cursor at
-            // genesis (`LatestSynced`), below the node's block tail, so it can
-            // never reach the chain tip. (#3623)
-            //
-            // The wait is raced against `shutdown_token` so a SIGTERM during the
-            // (possibly long) initial state sync still tears the thread down
-            // cleanly instead of blocking until sync finishes.
+            // Streaming before the node is synced pins the `LatestSynced` cursor
+            // at genesis, below the block tail it can never reach. Raced against
+            // shutdown so a SIGTERM during state sync still tears down cleanly.
             if !await_sync_or_shutdown(
-                indexer_state.client.wait_for_full_sync(),
+                indexer_state.client.ensure_head_follows_tip(),
                 &shutdown_token,
             )
             .await

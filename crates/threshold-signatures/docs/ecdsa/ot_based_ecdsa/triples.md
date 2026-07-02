@@ -66,9 +66,17 @@ as two points, providing a key derivation function $\mathbb{G} \to \mathbb{F}_2^
 
 # Setup Phase
 
+> **Implementation note.** This crate does **not** run the setup once and reuse
+> it. The base OT (`Batch-Random-OT`) is run fresh inside every `Multiplication`
+> call and is never persisted or reused across runs or aborts. A fresh $\Delta$
+> per run bounds any information a malicious peer might extract through the
+> `Random-OT-Extension` consistency check to that single ephemeral run.
+> Changing the base OT into a reusable one-time setup, as the abstract spec
+> below suggests, would be a security regression.
+
 The goal of the setup phase is for each unordered pair of parties $P_a$
 and $P_b$ to run a $\lambda$ batched random OT.
-Each pair will be run only once, so we need to agree on a canonical
+We need to agree on a canonical
 way to determine which of two parties $P_a$ and $P_b$
 will act as the sender.
 We do this by imposing a total order $<$ on the parties, and $P_a$
@@ -115,9 +123,10 @@ has $\Delta_i$ and $K_{ij}^{\Delta_i}$ from that setup phase.
 $\mathcal{R}$ has an input matrix $X_{ij}$, with $i \in [\kappa]$, and $j \in [\lambda]$.
 
 We also require a pseudo-random generator $\text{PRG} : \mathbb{F}_2^{\lambda} \to \mathbb{F}_2^{\kappa}$.
-This generator is parameterized by a session id $\text{sid}$, allowing the same
-setup to be used for multiple extensions, so long as $\text{sid}$ is **unique**
-for each execution.
+This generator is parameterized by a session id $\text{sid}$, which must be
+**unique** for each execution. While a unique $\text{sid}$ would in principle
+permit reusing one setup across extensions, this crate does not do so: the setup
+is fresh per `Multiplication` call (see the implementation note above).
 
 1. $\mathcal{R}$ computes: $T_ {ij}^b \gets \text{PRG}_ {\text{sid}}(K^b_ {j \bullet})_ i$.
 2. $\mathcal{S}$ computes: $T_ {ij}^{\Delta_ j} \gets \text{PRG}_ {\text{sid}}(K^{\Delta_ j}_ {j \bullet})_ i$.
@@ -242,8 +251,10 @@ We run the `MTA` protocol for each unordered pair of parties, giving each party
 two shares $\gamma^0_i$, and $\gamma^1_i$, which they then add to $a_{i} b_i$ to
 get their share $c_i$.
 
-The protocol is also parameterized by a unique session id $\text{sid}$,
-and requires the triple setup phase to have been performed.
+The protocol is also parameterized by a unique session id $\text{sid}$.
+It requires a triple setup, but rather than relying on a pre-existing shared
+setup this implementation runs a fresh `Batch-Random-OT` internally on every
+call (see the implementation note in the [Setup Phase](#setup-phase)).
 
 Protocol `Multiplication`:
 
