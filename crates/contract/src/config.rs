@@ -34,6 +34,10 @@ const DEFAULT_REMOVE_NON_PARTICIPANT_UPDATE_VOTES_TERA_GAS: u64 = 5;
 const DEFAULT_CLEAN_FOREIGN_CHAIN_DATA_TERA_GAS: u64 = 5;
 /// Prepaid gas for a `remove_non_participant_tee_verifier_votes` call
 const DEFAULT_REMOVE_NON_PARTICIPANT_TEE_VERIFIER_VOTES_TERA_GAS: u64 = 5;
+/// Default TTL after which a launcher image hash unused by any participant is evicted.
+const DEFAULT_LAUNCHER_HASH_UNUSED_TTL_SECONDS: u64 = 14 * 24 * 60 * 60; // 14 days
+/// Prepaid gas for a `clean_expired_launcher_hashes` call.
+const DEFAULT_CLEAN_EXPIRED_LAUNCHER_HASHES_TERA_GAS: u64 = 5;
 
 /// Config for V2 of the contract.
 #[near(serializers=[borsh, json])]
@@ -68,6 +72,10 @@ pub(crate) struct Config {
     pub(crate) clean_foreign_chain_data_tera_gas: u64,
     /// Prepaid gas for a `remove_non_participant_tee_verifier_votes` call.
     pub(crate) remove_non_participant_tee_verifier_votes_tera_gas: u64,
+    /// TTL after which a launcher image hash unused by any participant is evicted.
+    pub(crate) launcher_hash_unused_ttl_seconds: u64,
+    /// Prepaid gas for a `clean_expired_launcher_hashes` call.
+    pub(crate) clean_expired_launcher_hashes_tera_gas: u64,
 }
 
 impl Default for Config {
@@ -94,6 +102,23 @@ impl Default for Config {
             clean_foreign_chain_data_tera_gas: DEFAULT_CLEAN_FOREIGN_CHAIN_DATA_TERA_GAS,
             remove_non_participant_tee_verifier_votes_tera_gas:
                 DEFAULT_REMOVE_NON_PARTICIPANT_TEE_VERIFIER_VOTES_TERA_GAS,
+            launcher_hash_unused_ttl_seconds: DEFAULT_LAUNCHER_HASH_UNUSED_TTL_SECONDS,
+            clean_expired_launcher_hashes_tera_gas: DEFAULT_CLEAN_EXPIRED_LAUNCHER_HASHES_TERA_GAS,
         }
+    }
+}
+
+impl Config {
+    /// Invariant: a launcher hash backing a still-valid attestation must never expire,
+    /// so its unused-TTL must be at least the attestation validity window.
+    pub(crate) fn validate(&self) -> Result<(), &'static str> {
+        if self.launcher_hash_unused_ttl_seconds
+            < mpc_attestation::attestation::DEFAULT_EXPIRATION_DURATION_SECONDS
+        {
+            return Err(
+                "launcher_hash_unused_ttl_seconds must be >= DEFAULT_EXPIRATION_DURATION_SECONDS",
+            );
+        }
+        Ok(())
     }
 }
