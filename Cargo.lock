@@ -5831,6 +5831,7 @@ dependencies = [
  "futures",
  "group",
  "hex",
+ "mpc-call-args",
  "mpc-primitives",
  "near-account-id",
  "near-crypto 0.36.0",

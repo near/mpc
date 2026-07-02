@@ -477,6 +477,12 @@ impl OperatingAccount {
         self.keys[0].clone().lock_owned().await
     }
 
+    /// Returns a clonable handle to the first access key, for building a
+    /// [`DevnetCaller`](crate::caller::DevnetCaller) that locks internally.
+    pub fn any_access_key_arc(&self) -> Arc<tokio::sync::Mutex<OperatingAccessKey>> {
+        self.keys[0].clone()
+    }
+
     /// Returns all access keys, for transactions that need full parallelism.
     pub async fn all_access_keys(&self) -> Vec<OwnedMutexGuard<OperatingAccessKey>> {
         futures::future::join_all(self.keys.iter().map(|key| key.clone().lock_owned())).await

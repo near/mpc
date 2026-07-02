@@ -11,12 +11,14 @@ use super::request_factory::{
     make_respond_verify_foreign_chain_tx_args, make_sign_request_args,
     make_start_node_migration_args, make_submit_participant_info_args,
     make_verify_foreign_chain_tx_args, make_vote_add_domains_args, make_vote_cancel_keygen_args,
-    make_vote_cancel_resharing_args, make_vote_new_parameters_args, make_vote_update_args,
+    make_vote_cancel_resharing_args, make_vote_code_hash_args, make_vote_new_parameters_args,
+    make_vote_update_args,
 };
 use crate::types::{
-    CKDRequestArgs, DomainConfig, Ed25519PublicKey, EpochId, ProposedThresholdParameters,
-    SignRequestArgs, SupportedForeignChains, VerifyForeignTransactionRequest,
-    VerifyForeignTransactionRequestArgs, VerifyForeignTransactionResponse,
+    CKDRequestArgs, DomainConfig, Ed25519PublicKey, EpochId, NodeImageHash,
+    ProposedThresholdParameters, SignRequestArgs, SupportedForeignChains,
+    VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
+    VerifyForeignTransactionResponse,
 };
 
 /// A client that can execute a [`FunctionCallArgs`] against a deployed MPC
@@ -72,4 +74,5 @@ call_helpers! {
     register_foreign_chain_support => make_register_foreign_chain_support_args(foreign_chain_support: &SupportedForeignChains);
     start_node_migration => make_start_node_migration_args(destination_node_info: serde_json::Value);
     submit_participant_info => make_submit_participant_info_args(proposed_participant_attestation: serde_json::Value, tls_public_key: &Ed25519PublicKey);
+    vote_code_hash => make_vote_code_hash_args(code_hash: NodeImageHash);
 }

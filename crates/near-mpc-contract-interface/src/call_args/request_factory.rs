@@ -11,11 +11,11 @@ use crate::{
         PROPOSE_UPDATE, REGISTER_BACKUP_SERVICE, REGISTER_FOREIGN_CHAIN_SUPPORT,
         REQUEST_APP_PRIVATE_KEY, RESPOND, RESPOND_CKD, RESPOND_VERIFY_FOREIGN_TX, SIGN,
         START_NODE_MIGRATION, SUBMIT_PARTICIPANT_INFO, VERIFY_FOREIGN_TRANSACTION,
-        VOTE_ADD_DOMAINS, VOTE_CANCEL_KEYGEN, VOTE_CANCEL_RESHARING, VOTE_NEW_PARAMETERS,
-        VOTE_UPDATE,
+        VOTE_ADD_DOMAINS, VOTE_CANCEL_KEYGEN, VOTE_CANCEL_RESHARING, VOTE_CODE_HASH,
+        VOTE_NEW_PARAMETERS, VOTE_UPDATE,
     },
     types::{
-        CKDRequestArgs, DomainConfig, Ed25519PublicKey, EpochId, ProposeUpdateArgs,
+        CKDRequestArgs, DomainConfig, Ed25519PublicKey, EpochId, NodeImageHash, ProposeUpdateArgs,
         ProposedThresholdParameters, SignRequestArgs, SupportedForeignChains,
         VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
         VerifyForeignTransactionResponse,
@@ -248,6 +248,18 @@ pub fn make_submit_participant_info_args(
     .into_bytes();
     Ok(FunctionCallArgs {
         method_name: SUBMIT_PARTICIPANT_INFO.to_string(),
+        args,
+        gas: MAX_GAS,
+        deposit: NearToken::from_near(0),
+    })
+}
+
+pub fn make_vote_code_hash_args(code_hash: NodeImageHash) -> Result<FunctionCallArgs, CallError> {
+    let args = json!({ "code_hash": serde_json::to_value(code_hash)? })
+        .to_string()
+        .into_bytes();
+    Ok(FunctionCallArgs {
+        method_name: VOTE_CODE_HASH.to_string(),
         args,
         gas: MAX_GAS,
         deposit: NearToken::from_near(0),
