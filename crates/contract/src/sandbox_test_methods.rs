@@ -49,6 +49,11 @@ impl MpcContract {
             .expect("queue length must fit in u32 — bounded by MAX_PENDING_REQUEST_FAN_OUT")
     }
 
+    /// Whether an in-flight attestation entry exists for `account_id`.
+    ///
+    /// Used by the yield-resume sandbox tests to assert the pending entry is
+    /// cleaned up after a rejection, the yield timeout, or an out-of-gas
+    /// `resolve_verification`.
     pub fn has_pending_attestation(&self, account_id: AccountId) -> bool {
         self.pending_attestations.contains_key(&account_id)
     }

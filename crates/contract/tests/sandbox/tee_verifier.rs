@@ -287,10 +287,13 @@ async fn submit_participant_info__should_clean_up_when_resolve_verification_runs
 /// deposit being retained by the contract.
 async fn assert_deposit_refunded(account: &Account, balance_before: NearToken) -> Result<()> {
     let balance_after = account.view_account().await?.balance;
-    let net_spent = balance_before.saturating_sub(balance_after);
+    // Raw subtraction (not `saturating_sub`): if the contract over-refunds so
+    // `balance_after > balance_before`, this underflows and panics rather than
+    // clamping to 0 and silently passing the `< 1 NEAR` check.
+    let net_spent = balance_before.as_yoctonear() - balance_after.as_yoctonear();
     assert!(
-        net_spent < NearToken::from_near(1),
-        "deposit should be refunded (net spent {net_spent} should be < 1 NEAR, gas only)"
+        net_spent < NearToken::from_near(1).as_yoctonear(),
+        "deposit should be refunded (net spent {net_spent} yoctoNEAR should be < 1 NEAR, gas only)"
     );
     Ok(())
 }
