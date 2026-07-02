@@ -1,15 +1,16 @@
 #![allow(non_snake_case)]
 
 use crate::sandbox::common::{
-    SandboxTestSetup, abstract_evm_request, aptos_extracted_values, aptos_request,
-    arbitrum_evm_request, await_pending_foreign_tx_request_observed_on_contract, base_evm_request,
+    SandboxAsyncCaller, SandboxCaller, SandboxTestSetup, abstract_evm_request,
+    aptos_extracted_values, aptos_request, arbitrum_evm_request,
+    await_pending_foreign_tx_request_observed_on_contract, base_evm_request,
     bitcoin_extracted_values, bitcoin_request, bnb_evm_request, bogus_ton_log_extracted_value,
-    call_with_args, call_with_args_async, ethereum_evm_request, evm_block_hash_extracted_values,
-    hyper_evm_request, polygon_evm_request, register_foreign_chain_configuration,
-    sign_foreign_tx_response, starknet_extracted_values, starknet_request, ton_request,
+    ethereum_evm_request, evm_block_hash_extracted_values, hyper_evm_request, polygon_evm_request,
+    register_foreign_chain_configuration, sign_foreign_tx_response, starknet_extracted_values,
+    starknet_request, ton_request,
 };
 use near_mpc_contract_interface::call_args::{
-    make_respond_verify_foreign_chain_tx_args, make_verify_foreign_chain_tx_args,
+    respond_verify_foreign_transaction, send_verify_foreign_transaction,
 };
 use near_mpc_contract_interface::types::{
     self as dtos, ExtractedValue, ForeignChainRpcRequest, ForeignTxPayloadVersion,
@@ -53,10 +54,13 @@ async fn verify_foreign_transaction__should_succeed(
         request: rpc_request.clone(),
     };
 
-    let call_args = make_verify_foreign_chain_tx_args(&request_args).unwrap();
-    let status = call_with_args_async(&user, &setup.contract, call_args)
-        .await
-        .unwrap();
+    let status = send_verify_foreign_transaction(
+        &SandboxAsyncCaller(&user),
+        setup.contract.id(),
+        &request_args,
+    )
+    .await
+    .unwrap();
 
     let verify_request = VerifyForeignTransactionRequest {
         domain_id,
@@ -71,11 +75,15 @@ async fn verify_foreign_transaction__should_succeed(
         extracted_values,
         foreign_tx_key.as_secp256k1(),
     );
-    let call_args = make_respond_verify_foreign_chain_tx_args(&verify_request, &response).unwrap();
-    let respond_result = call_with_args(&setup.mpc_signer_accounts[0], &setup.contract, call_args)
-        .await
-        .unwrap()
-        .into_result();
+    let respond_result = respond_verify_foreign_transaction(
+        &SandboxCaller(&setup.mpc_signer_accounts[0]),
+        setup.contract.id(),
+        &verify_request,
+        &response,
+    )
+    .await
+    .unwrap()
+    .into_result();
 
     assert!(
         respond_result.is_ok(),
@@ -116,17 +124,17 @@ async fn verify_foreign_transaction__should_fan_out_response_to_duplicates_from_
     };
 
     // When
-    let status_alice = call_with_args_async(
-        &alice,
-        &setup.contract,
-        make_verify_foreign_chain_tx_args(&request_args).unwrap(),
+    let status_alice = send_verify_foreign_transaction(
+        &SandboxAsyncCaller(&alice),
+        setup.contract.id(),
+        &request_args,
     )
     .await
     .unwrap();
-    let status_bob = call_with_args_async(
-        &bob,
-        &setup.contract,
-        make_verify_foreign_chain_tx_args(&request_args).unwrap(),
+    let status_bob = send_verify_foreign_transaction(
+        &SandboxAsyncCaller(&bob),
+        setup.contract.id(),
+        &request_args,
     )
     .await
     .unwrap();
@@ -138,11 +146,15 @@ async fn verify_foreign_transaction__should_fan_out_response_to_duplicates_from_
         foreign_tx_key.as_secp256k1(),
     );
 
-    let call_args = make_respond_verify_foreign_chain_tx_args(&verify_request, &response).unwrap();
-    let respond_result = call_with_args(&setup.mpc_signer_accounts[0], &setup.contract, call_args)
-        .await
-        .unwrap()
-        .into_result();
+    let respond_result = respond_verify_foreign_transaction(
+        &SandboxCaller(&setup.mpc_signer_accounts[0]),
+        setup.contract.id(),
+        &verify_request,
+        &response,
+    )
+    .await
+    .unwrap()
+    .into_result();
 
     // Then
     assert!(
@@ -195,11 +207,11 @@ async fn verify_foreign_transaction__should_reject_without_policy(
         request: rpc_request,
     };
 
-    let call_args = make_verify_foreign_chain_tx_args(&request_args).unwrap();
-    let result = call_with_args(&user, &setup.contract, call_args)
-        .await
-        .unwrap()
-        .into_result();
+    let result =
+        send_verify_foreign_transaction(&SandboxCaller(&user), setup.contract.id(), &request_args)
+            .await
+            .unwrap()
+            .into_result();
 
     assert!(
         result.is_err(),
@@ -239,10 +251,13 @@ async fn verify_foreign_transaction__should_timeout_without_response(
         request: rpc_request,
     };
 
-    let call_args = make_verify_foreign_chain_tx_args(&request_args).unwrap();
-    let status = call_with_args_async(&user, &setup.contract, call_args)
-        .await
-        .unwrap();
+    let status = send_verify_foreign_transaction(
+        &SandboxAsyncCaller(&user),
+        setup.contract.id(),
+        &request_args,
+    )
+    .await
+    .unwrap();
 
     setup
         .worker

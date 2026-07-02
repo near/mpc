@@ -904,45 +904,42 @@ impl CallContract for SandboxCaller<'_> {
         contract_id: &AccountId,
         call_args: FunctionCallArgs,
     ) -> Result<ExecutionFinalResult, CallError> {
-        self.0
+        let status = self
+            .0
             .call(contract_id, &call_args.method_name)
             .args(call_args.args)
             .gas(call_args.gas)
             .deposit(call_args.deposit)
             .transact()
             .await
-            .map_err(|e| CallError::Call(Box::new(e)))
+            .map_err(|e| CallError::Call(Box::new(e)))?;
+        dbg!(&status);
+        Ok(status)
     }
 }
 
-pub async fn call_with_args_async(
-    account: &Account,
-    contract: &Contract,
-    call_args: FunctionCallArgs,
-) -> anyhow::Result<TransactionStatus> {
-    let status = account
-        .call(contract.id(), &call_args.method_name)
-        .args(call_args.args)
-        .gas(call_args.gas)
-        .deposit(call_args.deposit)
-        .transact_async()
-        .await?;
-    dbg!(&status);
-    Ok(status)
-}
+/// Async counterpart of [`SandboxCaller`]: submits via `transact_async` and
+/// yields the [`TransactionStatus`] handle to await later.
+pub struct SandboxAsyncCaller<'a>(pub &'a Account);
 
-pub async fn call_with_args(
-    account: &Account,
-    contract: &Contract,
-    call_args: FunctionCallArgs,
-) -> anyhow::Result<ExecutionFinalResult> {
-    let status = account
-        .call(contract.id(), &call_args.method_name)
-        .args(call_args.args)
-        .gas(call_args.gas)
-        .deposit(call_args.deposit)
-        .transact()
-        .await?;
-    dbg!(&status);
-    Ok(status)
+impl CallContract for SandboxAsyncCaller<'_> {
+    type Output = TransactionStatus;
+
+    async fn call_contract(
+        &self,
+        contract_id: &AccountId,
+        call_args: FunctionCallArgs,
+    ) -> Result<TransactionStatus, CallError> {
+        let status = self
+            .0
+            .call(contract_id, &call_args.method_name)
+            .args(call_args.args)
+            .gas(call_args.gas)
+            .deposit(call_args.deposit)
+            .transact_async()
+            .await
+            .map_err(|e| CallError::Call(Box::new(e)))?;
+        dbg!(&status);
+        Ok(status)
+    }
 }

@@ -36,192 +36,40 @@ pub trait CallContract {
     ) -> impl Future<Output = Result<Self::Output, CallError>> + Send;
 }
 
-// --- user requests ---
-
-pub async fn send_sign_request<C: CallContract>(
-    client: &C,
-    contract_id: &AccountId,
-    request: &SignRequestArgs,
-) -> Result<C::Output, CallError> {
-    client
-        .call_contract(contract_id, make_sign_request_args(request)?)
-        .await
+/// Generates one typed call helper per contract method. Each expands to
+/// `client.call_contract(contract_id, <factory>(<args>)?).await`, so it works on
+/// any [`CallContract`] backend regardless of its `Output`.
+macro_rules! call_helpers {
+    ($( $helper:ident => $factory:ident ( $( $arg:ident : $ty:ty ),* $(,)? ) );* $(;)?) => {
+        $(
+            pub async fn $helper<C: CallContract>(
+                client: &C,
+                contract_id: &AccountId,
+                $( $arg : $ty ),*
+            ) -> Result<C::Output, CallError> {
+                client
+                    .call_contract(contract_id, $factory($( $arg ),*)?)
+                    .await
+            }
+        )*
+    };
 }
 
-pub async fn send_ckd_request<C: CallContract>(
-    client: &C,
-    contract_id: &AccountId,
-    request: &CKDRequestArgs,
-) -> Result<C::Output, CallError> {
-    client
-        .call_contract(contract_id, make_ckd_request_args(request)?)
-        .await
-}
-
-pub async fn send_verify_foreign_transaction<C: CallContract>(
-    client: &C,
-    contract_id: &AccountId,
-    request: &VerifyForeignTransactionRequestArgs,
-) -> Result<C::Output, CallError> {
-    client
-        .call_contract(contract_id, make_verify_foreign_chain_tx_args(request)?)
-        .await
-}
-
-// --- node responses ---
-
-pub async fn respond<C: CallContract>(
-    client: &C,
-    contract_id: &AccountId,
-    request: &SignatureRequest,
-    response: &SignatureResponse,
-) -> Result<C::Output, CallError> {
-    client
-        .call_contract(contract_id, make_respond_args(request, response)?)
-        .await
-}
-
-pub async fn respond_ckd<C: CallContract>(
-    client: &C,
-    contract_id: &AccountId,
-    request: &CKDRequest,
-    response: &CKDResponse,
-) -> Result<C::Output, CallError> {
-    client
-        .call_contract(contract_id, make_respond_ckd_args(request, response)?)
-        .await
-}
-
-pub async fn respond_verify_foreign_transaction<C: CallContract>(
-    client: &C,
-    contract_id: &AccountId,
-    request: &VerifyForeignTransactionRequest,
-    response: &VerifyForeignTransactionResponse,
-) -> Result<C::Output, CallError> {
-    client
-        .call_contract(
-            contract_id,
-            make_respond_verify_foreign_chain_tx_args(request, response)?,
-        )
-        .await
-}
-
-// --- governance / admin ---
-
-pub async fn propose_update<C: CallContract>(
-    client: &C,
-    contract_id: &AccountId,
-    code: &[u8],
-    gas: NearGas,
-    deposit: NearToken,
-) -> Result<C::Output, CallError> {
-    client
-        .call_contract(contract_id, make_propose_update_args(code, gas, deposit)?)
-        .await
-}
-
-pub async fn vote_new_parameters<C: CallContract>(
-    client: &C,
-    contract_id: &AccountId,
-    prospective_epoch_id: EpochId,
-    proposal: &ProposedThresholdParameters,
-) -> Result<C::Output, CallError> {
-    client
-        .call_contract(
-            contract_id,
-            make_vote_new_parameters_args(prospective_epoch_id, proposal)?,
-        )
-        .await
-}
-
-pub async fn vote_add_domains<C: CallContract>(
-    client: &C,
-    contract_id: &AccountId,
-    domains: &[DomainConfig],
-) -> Result<C::Output, CallError> {
-    client
-        .call_contract(contract_id, make_vote_add_domains_args(domains)?)
-        .await
-}
-
-pub async fn vote_cancel_keygen<C: CallContract>(
-    client: &C,
-    contract_id: &AccountId,
-    next_domain_id: u64,
-) -> Result<C::Output, CallError> {
-    client
-        .call_contract(contract_id, make_vote_cancel_keygen_args(next_domain_id)?)
-        .await
-}
-
-pub async fn vote_cancel_resharing<C: CallContract>(
-    client: &C,
-    contract_id: &AccountId,
-) -> Result<C::Output, CallError> {
-    client
-        .call_contract(contract_id, make_vote_cancel_resharing_args()?)
-        .await
-}
-
-pub async fn vote_update<C: CallContract>(
-    client: &C,
-    contract_id: &AccountId,
-    id: u64,
-) -> Result<C::Output, CallError> {
-    client
-        .call_contract(contract_id, make_vote_update_args(id)?)
-        .await
-}
-
-pub async fn register_backup_service<C: CallContract>(
-    client: &C,
-    contract_id: &AccountId,
-    backup_service_info: serde_json::Value,
-) -> Result<C::Output, CallError> {
-    client
-        .call_contract(
-            contract_id,
-            make_register_backup_service_args(backup_service_info)?,
-        )
-        .await
-}
-
-pub async fn register_foreign_chain_support<C: CallContract>(
-    client: &C,
-    contract_id: &AccountId,
-    foreign_chain_support: &SupportedForeignChains,
-) -> Result<C::Output, CallError> {
-    client
-        .call_contract(
-            contract_id,
-            make_register_foreign_chain_support_args(foreign_chain_support)?,
-        )
-        .await
-}
-
-pub async fn start_node_migration<C: CallContract>(
-    client: &C,
-    contract_id: &AccountId,
-    destination_node_info: serde_json::Value,
-) -> Result<C::Output, CallError> {
-    client
-        .call_contract(
-            contract_id,
-            make_start_node_migration_args(destination_node_info)?,
-        )
-        .await
-}
-
-pub async fn submit_participant_info<C: CallContract>(
-    client: &C,
-    contract_id: &AccountId,
-    proposed_participant_attestation: serde_json::Value,
-    tls_public_key: &Ed25519PublicKey,
-) -> Result<C::Output, CallError> {
-    client
-        .call_contract(
-            contract_id,
-            make_submit_participant_info_args(proposed_participant_attestation, tls_public_key)?,
-        )
-        .await
+call_helpers! {
+    send_sign_request => make_sign_request_args(request: &SignRequestArgs);
+    send_ckd_request => make_ckd_request_args(request: &CKDRequestArgs);
+    send_verify_foreign_transaction => make_verify_foreign_chain_tx_args(request: &VerifyForeignTransactionRequestArgs);
+    respond => make_respond_args(request: &SignatureRequest, response: &SignatureResponse);
+    respond_ckd => make_respond_ckd_args(request: &CKDRequest, response: &CKDResponse);
+    respond_verify_foreign_transaction => make_respond_verify_foreign_chain_tx_args(request: &VerifyForeignTransactionRequest, response: &VerifyForeignTransactionResponse);
+    propose_update => make_propose_update_args(code: &[u8], gas: NearGas, deposit: NearToken);
+    vote_new_parameters => make_vote_new_parameters_args(prospective_epoch_id: EpochId, proposal: &ProposedThresholdParameters);
+    vote_add_domains => make_vote_add_domains_args(domains: &[DomainConfig]);
+    vote_cancel_keygen => make_vote_cancel_keygen_args(next_domain_id: u64);
+    vote_cancel_resharing => make_vote_cancel_resharing_args();
+    vote_update => make_vote_update_args(id: u64);
+    register_backup_service => make_register_backup_service_args(backup_service_info: serde_json::Value);
+    register_foreign_chain_support => make_register_foreign_chain_support_args(foreign_chain_support: &SupportedForeignChains);
+    start_node_migration => make_start_node_migration_args(destination_node_info: serde_json::Value);
+    submit_participant_info => make_submit_participant_info_args(proposed_participant_attestation: serde_json::Value, tls_public_key: &Ed25519PublicKey);
 }

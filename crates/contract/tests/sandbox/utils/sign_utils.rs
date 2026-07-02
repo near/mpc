@@ -1,4 +1,4 @@
-use crate::sandbox::common::{call_with_args, call_with_args_async};
+use crate::sandbox::common::{SandboxAsyncCaller, SandboxCaller};
 
 use super::consts::DEFAULT_MAX_TIMEOUT_TX_INCLUDED;
 use super::shared_key_utils::{
@@ -18,8 +18,7 @@ use mpc_contract::{
 use near_account_id::AccountId;
 use near_mpc_bounded_collections::BoundedVec;
 use near_mpc_contract_interface::call_args::{
-    CallError, make_ckd_request_args, make_respond_args, make_respond_ckd_args,
-    make_sign_request_args,
+    CallContract, CallError, make_ckd_request_args, make_sign_request_args, respond, respond_ckd,
 };
 use near_mpc_contract_interface::method_names::{GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST};
 use near_mpc_contract_interface::types::kdf::{derive_app_id, derive_tweak};
@@ -109,7 +108,9 @@ impl DomainResponseTest {
         contract: &Contract,
     ) -> anyhow::Result<TransactionStatus> {
         let call_args = self.make_function_call_args()?;
-        let status = call_with_args_async(account, contract, call_args).await?;
+        let status = SandboxAsyncCaller(account)
+            .call_contract(contract.id(), call_args)
+            .await?;
 
         match self {
             Self::Sign(inner) => {
@@ -299,9 +300,14 @@ pub async fn submit_signature_response(
     contract: &Contract,
     attested_account: &Account,
 ) -> anyhow::Result<()> {
-    let call_args = make_respond_args(&response.request, &response.response)?;
-    let respond = call_with_args(attested_account, contract, call_args).await?;
-    respond.into_result()?;
+    let outcome = respond(
+        &SandboxCaller(attested_account),
+        contract.id(),
+        &response.request,
+        &response.response,
+    )
+    .await?;
+    outcome.into_result()?;
     Ok(())
 }
 
@@ -310,9 +316,14 @@ pub async fn submit_ckd_response(
     contract: &Contract,
     attested_account: &Account,
 ) -> anyhow::Result<()> {
-    let call_args = make_respond_ckd_args(&response.request, &response.response)?;
-    let respond = call_with_args(attested_account, contract, call_args).await?;
-    respond.into_result()?;
+    let outcome = respond_ckd(
+        &SandboxCaller(attested_account),
+        contract.id(),
+        &response.request,
+        &response.response,
+    )
+    .await?;
+    outcome.into_result()?;
     Ok(())
 }
 
@@ -321,10 +332,15 @@ pub async fn submit_ckd_response_measure_gas(
     contract: &Contract,
     attested_account: &Account,
 ) -> anyhow::Result<near_workspaces::types::Gas> {
-    let call_args = make_respond_ckd_args(&response.request, &response.response)?;
-    let respond = call_with_args(attested_account, contract, call_args).await?;
-    let gas = respond.total_gas_burnt;
-    respond.into_result()?;
+    let outcome = respond_ckd(
+        &SandboxCaller(attested_account),
+        contract.id(),
+        &response.request,
+        &response.response,
+    )
+    .await?;
+    let gas = outcome.total_gas_burnt;
+    outcome.into_result()?;
     Ok(gas)
 }
 
@@ -460,7 +476,8 @@ pub async fn make_and_submit_requests(
         for _ in 0..NUM_TESTS {
             let test = DomainResponseTest::new(rng, key, alice_id);
             let call_args = test.make_function_call_args().unwrap();
-            let transaction = call_with_args_async(&alice, contract, call_args)
+            let transaction = SandboxAsyncCaller(&alice)
+                .call_contract(contract.id(), call_args)
                 .await
                 .unwrap();
             match test {

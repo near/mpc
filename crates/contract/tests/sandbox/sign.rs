@@ -1,5 +1,5 @@
 use crate::sandbox::{
-    common::{SandboxTestSetup, call_with_args_async, candidates, create_account_given_id, init},
+    common::{SandboxAsyncCaller, SandboxTestSetup, candidates, create_account_given_id, init},
     utils::{
         consts::ALL_PROTOCOLS,
         shared_key_utils::SharedSecretKey,
@@ -18,6 +18,7 @@ use mpc_contract::{
     },
 };
 use near_account_id::AccountId;
+use near_mpc_contract_interface::call_args::CallContract;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::Protocol;
 use near_workspaces::types::NearToken;
@@ -198,7 +199,9 @@ async fn test_contract_request_deposits_all_schemes() -> anyhow::Result<()> {
         let req = DomainResponseTest::new(&mut rng, key, predecessor_id);
         let mut call_args = req.make_function_call_args()?;
         call_args.deposit = NearToken::from_yoctonear(0);
-        let status = call_with_args_async(contract.as_account(), &contract, call_args).await?;
+        let status = SandboxAsyncCaller(contract.as_account())
+            .call_contract(contract.id(), call_args)
+            .await?;
 
         // Responding to the request should fail with missing request because the deposit is too low,
         // so the request should have never made it into the request queue and subsequently the MPC network.

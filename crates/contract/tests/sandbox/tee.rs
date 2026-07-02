@@ -2,7 +2,7 @@
 
 use crate::sandbox::{
     common::{
-        SandboxTestSetup, build_sandbox_node_ids, call_with_args, gen_accounts,
+        SandboxCaller, SandboxTestSetup, build_sandbox_node_ids, gen_accounts,
         submit_tee_attestations,
     },
     utils::{
@@ -22,7 +22,7 @@ use mpc_contract::primitives::{participants::Participants, test_utils::bogus_ed2
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
 use near_mpc_contract_interface::types::Protocol;
 use near_mpc_contract_interface::types::{self as dtos, Attestation, MockAttestation};
-use near_mpc_contract_interface::{call_args::make_sign_request_args, method_names};
+use near_mpc_contract_interface::{call_args::send_sign_request, method_names};
 use near_workspaces::Contract;
 use rand::SeedableRng;
 use test_utils::attestation::{image_digest, p2p_tls_key};
@@ -950,9 +950,8 @@ async fn verify_tee__should_keep_participants_and_stop_signing_when_kickout_drop
     ) else {
         panic!("CaitSith domain must yield a sign request");
     };
-    let sign_call_args = make_sign_request_args(&sign_request.args)?;
-
-    let sign_result = call_with_args(requester, &contract, sign_call_args).await?;
+    let sign_result =
+        send_sign_request(&SandboxCaller(requester), contract.id(), &sign_request.args).await?;
 
     let Err(sign_err) = sign_result.into_result() else {
         panic!("sign request must be refused while the network is not accepting requests");
