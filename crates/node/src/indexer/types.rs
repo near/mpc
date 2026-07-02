@@ -7,14 +7,13 @@ use k256::{
     elliptic_curve::{Curve, CurveArithmetic, ops::Reduce, point::AffineCoordinates},
 };
 use near_indexer_primitives::types::Gas;
+use near_mpc_contract_interface::call_args as contract_args;
 use near_mpc_contract_interface::method_names::{
     CONCLUDE_NODE_MIGRATION, RESPOND, RESPOND_CKD, RESPOND_VERIFY_FOREIGN_TX,
     START_KEYGEN_INSTANCE, START_RESHARE_INSTANCE, SUBMIT_PARTICIPANT_INFO, VERIFY_TEE,
     VOTE_ABORT_KEY_EVENT_INSTANCE, VOTE_PK, VOTE_RESHARED,
 };
-use near_mpc_contract_interface::types::{
-    self as dtos, VerifyForeignTransactionRequest, VerifyForeignTransactionResponse,
-};
+use near_mpc_contract_interface::types::{self as dtos};
 use serde::Serialize;
 use threshold_signatures::ecdsa::Signature;
 use threshold_signatures::frost_ed25519;
@@ -24,8 +23,6 @@ use threshold_signatures::frost_secp256k1::VerifyingKey;
 use near_mpc_contract_interface::method_names::REGISTER_FOREIGN_CHAIN_CONFIG;
 
 const MAX_GAS: Gas = Gas::from_teragas(300);
-
-use near_mpc_contract_interface::call_args as contract_args;
 
 const MAX_RECOVERY_ID: u8 = 3;
 
@@ -227,12 +224,12 @@ impl VerifyForeignTransactionRespondArgsExt for contract_args::VerifyForeignTran
             recovery_id,
         };
         Ok(contract_args::VerifyForeignTransactionRespondArgs::new(
-            VerifyForeignTransactionRequest {
+            dtos::VerifyForeignTransactionRequest {
                 request: request.request,
                 domain_id: request.domain_id,
                 payload_version: request.payload_version,
             },
-            VerifyForeignTransactionResponse {
+            dtos::VerifyForeignTransactionResponse {
                 payload_hash,
                 signature: dtos::SignatureResponse::Secp256k1(dto_signature),
             },
