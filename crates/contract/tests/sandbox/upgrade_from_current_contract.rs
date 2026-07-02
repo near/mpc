@@ -119,7 +119,7 @@ async fn test_propose_update_config() {
         remove_non_participant_update_votes_tera_gas: 12,
         clean_foreign_chain_data_tera_gas: 13,
         remove_non_participant_tee_verifier_votes_tera_gas: 14,
-        // Must satisfy `Config::validate` (>= 7 days).
+        // Must satisfy `Config::validate` (>= DEFAULT_EXPIRATION_DURATION_SECONDS).
         launcher_hash_unused_ttl_seconds: 14 * 24 * 60 * 60,
         clean_expired_launcher_hashes_tera_gas: 14,
     };

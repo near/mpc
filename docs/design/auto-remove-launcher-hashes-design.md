@@ -32,10 +32,10 @@ An entry is **expired** when `max(added, last_attested) + TTL < now`.
 TTL is a new config field `launcher_hash_unused_ttl_seconds`, default **14 days**.
 Config validation enforces `launcher_hash_unused_ttl_seconds >=
 mpc_attestation::attestation::DEFAULT_EXPIRATION_DURATION_SECONDS` (the
-attestation validity window, currently 7 days) — see Safety invariants. Note
-this is the *attestation validity* constant, not the similarly-valued
+attestation validity window, currently 1 day) — see Safety invariants. Note
+this is the *attestation validity* constant, not
 `DEFAULT_TEE_UPGRADE_DEADLINE_DURATION_SECONDS` (the MPC docker-image grace
-period).
+period, 7 days).
 
 Three parts:
 
@@ -73,11 +73,12 @@ resets its `added` timestamp (threshold vote, not unanimity).
 
 - A hash backing a **valid participant attestation is never expired**: a
   current participant resubmits hourly, so its valid attestation (at most
-  `DEFAULT_EXPIRATION_DURATION_SECONDS` (7d) old) refreshed the entry within the
-  last 7d, and `last_attested + TTL >= now` holds whenever
-  `TTL >= DEFAULT_EXPIRATION_DURATION_SECONDS`. Enforced by config validation
+  `DEFAULT_EXPIRATION_DURATION_SECONDS`, currently 1 day, old) refreshed the
+  entry that recently, and `last_attested + TTL >= now` holds whenever
+  `TTL >= DEFAULT_EXPIRATION_DURATION_SECONDS` — regardless of the constant's
+  exact value. Enforced by config validation
   (`launcher_hash_unused_ttl_seconds >= DEFAULT_EXPIRATION_DURATION_SECONDS`);
-  the 14-day default leaves a 7-day margin.
+  the 14-day default leaves ample margin.
 - The list is **never empty / never fully rejected** (sweep keeps newest,
   read fallback returns newest).
 
