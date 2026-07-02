@@ -6,9 +6,10 @@ pub use near_mpc_contract_interface::types::SubmitParticipantInfoArgs;
 pub use types::{AllowedTeeHashes, TeeNodeIdentity};
 
 use chain_gateway::{
-    Gas,
+    NearGas, NearToken,
     state_viewer::{SubscribeToContractMethod, WatchContractState},
     transaction_sender::{SubmitFunctionCall, TransactionSigner},
+    types::FunctionCallArgs,
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::method_names::{
@@ -21,8 +22,8 @@ use tokio_util::sync::CancellationToken;
 
 use mpc_primitives::hash::{DockerImageHash, LauncherDockerComposeHash};
 
-const SUBMIT_ATTESTATION_GAS: Gas = Gas::from_teragas(300);
-const VERIFY_TEE_GAS: Gas = Gas::from_teragas(300);
+const SUBMIT_ATTESTATION_GAS: NearGas = NearGas::from_tgas(300);
+const VERIFY_TEE_GAS: NearGas = NearGas::from_tgas(300);
 
 /// Shared TEE attestation lifecycle context.
 ///
@@ -104,9 +105,12 @@ where
             .submit_function_call_tx(
                 signer,
                 self.governance_contract.clone(),
-                SUBMIT_PARTICIPANT_INFO.to_string(),
-                args_json,
-                SUBMIT_ATTESTATION_GAS,
+                FunctionCallArgs {
+                    method_name: SUBMIT_PARTICIPANT_INFO.to_string(),
+                    args: args_json,
+                    gas: SUBMIT_ATTESTATION_GAS,
+                    deposit: NearToken::from_yoctonear(0),
+                },
             )
             .await
             .map(|_| ())
@@ -119,9 +123,12 @@ where
             .submit_function_call_tx(
                 signer,
                 self.governance_contract.clone(),
-                VERIFY_TEE.to_string(),
-                b"{}".to_vec(),
-                VERIFY_TEE_GAS,
+                FunctionCallArgs {
+                    method_name: VERIFY_TEE.to_string(),
+                    args: b"{}".to_vec(),
+                    gas: VERIFY_TEE_GAS,
+                    deposit: NearToken::from_yoctonear(0),
+                },
             )
             .await
             .map(|_| ())
