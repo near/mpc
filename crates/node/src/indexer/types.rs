@@ -118,8 +118,7 @@ impl ChainSendTransactionRequest {
     }
 }
 
-/// Node-side constructors for the chain `respond` args (the DTOs live in
-/// `near-mpc-contract-interface`, so the signing logic is attached here via an extension trait).
+/// Extension trait for constructing SignatueRespond arguments from node-internal types.
 pub trait SignatureRespondArgsExt {
     fn new_ecdsa(
         request: &SignatureRequest,

@@ -14,7 +14,7 @@ pub struct SignatureRequest {
     pub domain_id: DomainId,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, derive_more::Constructor)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CKDRequest {
     pub app_public_key: CKDAppPublicKey,
     pub app_id: CkdAppId,

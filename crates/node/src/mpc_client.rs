@@ -501,11 +501,14 @@ where
                                         .await??;
 
                                         let response = contract_args::CKDRespondArgs {
-                                            request: contract_args::CKDRequest::new(
-                                                ckd_attempt.request.app_public_key.clone(),
-                                                ckd_attempt.request.app_id.clone(),
-                                                ckd_attempt.request.domain_id,
-                                            ),
+                                            request: contract_args::CKDRequest {
+                                                app_public_key: ckd_attempt
+                                                    .request
+                                                    .app_public_key
+                                                    .clone(),
+                                                app_id: ckd_attempt.request.app_id.clone(),
+                                                domain_id: ckd_attempt.request.domain_id,
+                                            },
                                             response: CKDResponse {
                                                 big_y: (&response.0.0).into(),
                                                 big_c: (&response.0.1).into(),
