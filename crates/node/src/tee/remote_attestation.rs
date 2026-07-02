@@ -30,7 +30,7 @@ const BACKOFF_FACTOR: f32 = 1.5;
 
 /// Submits a remote attestation transaction to the MPC contract, retrying with backoff until success.
 ///
-/// This function continuously attempts to submit a [`SubmitParticipantInfoArgs`] transaction containing
+/// This function continuously attempts to submit a [`contract_args::SubmitParticipantInfoArgs`] transaction containing
 /// the given participant's attestation and TLS public key. It uses the provided
 /// [`TransactionSender`] to send the transaction and waits until [`TransactionStatus::Executed`]
 /// is observed.
