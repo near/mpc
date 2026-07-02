@@ -17,6 +17,6 @@ pub fn dummy_config(value: u64) -> near_mpc_contract_interface::types::Config {
         remove_non_participant_tee_verifier_votes_tera_gas: value + 13,
         // Must satisfy `Config::validate` (>= DEFAULT_EXPIRATION_DURATION_SECONDS = 7 days).
         launcher_hash_unused_ttl_seconds: value + (14 * 24 * 60 * 60),
-        clean_expired_launcher_hashes_tera_gas: value + 13,
+        clean_expired_launcher_hashes_tera_gas: value + 14,
     }
 }

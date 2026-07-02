@@ -1998,6 +1998,13 @@ impl MpcContract {
         let initial_participants = parameters.participants();
         let tee_state = TeeState::with_mocked_participant_attestations(initial_participants);
 
+        let config: Config = init_config.map(Into::into).unwrap_or_default();
+        config
+            .validate()
+            .map_err(|reason| InvalidParameters::MalformedPayload {
+                reason: reason.to_string(),
+            })?;
+
         Ok(Self {
             protocol_state: ProtocolContractState::Running(RunningContractState::new(
                 DomainRegistry::default(),
@@ -2011,7 +2018,7 @@ impl MpcContract {
                 StorageKey::PendingVerifyForeignTxRequestsV2,
             ),
             proposed_updates: ProposedUpdates::default(),
-            config: init_config.map(Into::into).unwrap_or_default(),
+            config,
             tee_state,
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
@@ -2077,8 +2084,15 @@ impl MpcContract {
         let initial_participants = parameters.participants();
         let tee_state = TeeState::with_mocked_participant_attestations(initial_participants);
 
+        let config: Config = init_config.map(Into::into).unwrap_or_default();
+        config
+            .validate()
+            .map_err(|reason| InvalidParameters::MalformedPayload {
+                reason: reason.to_string(),
+            })?;
+
         Ok(MpcContract {
-            config: init_config.map(Into::into).unwrap_or_default(),
+            config,
             protocol_state: ProtocolContractState::Running(RunningContractState::new(
                 domains,
                 keyset,
@@ -3937,6 +3951,33 @@ mod tests {
         let contract = MpcContract::init((&parameters).into_dto_type(), None).unwrap();
 
         (contract, participants, first_participant_id)
+    }
+
+    #[test]
+    fn init_rejects_launcher_ttl_below_attestation_validity() {
+        let participants = gen_participants(3);
+        let signer = participants.participants()[0].0.clone();
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(signer.clone())
+                .predecessor_account_id(signer)
+                .attached_deposit(NearToken::from_near(1))
+                .build()
+        );
+        let parameters = ThresholdParameters::new(participants, Threshold::new(2)).unwrap();
+        let bad_config = dtos::InitConfig {
+            launcher_hash_unused_ttl_seconds: Some(
+                mpc_attestation::attestation::DEFAULT_EXPIRATION_DURATION_SECONDS - 1,
+            ),
+            ..Default::default()
+        };
+
+        let err = MpcContract::init((&parameters).into_dto_type(), Some(bad_config))
+            .expect_err("init must reject a launcher TTL below the attestation validity window");
+        assert!(
+            format!("{err:?}").contains("launcher_hash_unused_ttl_seconds"),
+            "error should point at the invalid config field, got: {err:?}"
+        );
     }
 
     #[test]
