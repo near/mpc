@@ -16,6 +16,8 @@ abi = [
     "schemars",
 ]
 blstrs = ["near-mpc-crypto-types/blstrs"]
+# Helper to build mpc contract function call arguments
+call-args = []
 ed25519-dalek = ["near-mpc-crypto-types/ed25519-dalek"]
 k256 = ["near-mpc-crypto-types/k256"]
 near = ["near-mpc-crypto-types/near"]

@@ -3,7 +3,7 @@ use std::time::Duration;
 use crate::{
     indexer::{
         tx_sender::{TransactionSender, TransactionStatus},
-        types::{ChainSendTransactionRequest, SubmitParticipantInfoArgs},
+        types::ChainSendTransactionRequest,
     },
     trait_extensions::convert_to_contract_dto::IntoContractInterfaceType,
 };
@@ -19,6 +19,7 @@ use tokio_util::time::FutureExt;
 
 use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash};
 use near_account_id::AccountId;
+use near_mpc_contract_interface::call_args as contract_args;
 use near_mpc_contract_interface::types::NodeId;
 use tokio::sync::watch;
 
@@ -38,7 +39,7 @@ pub async fn submit_remote_attestation(
     attestation: Attestation,
     tls_public_key: Ed25519PublicKey,
 ) -> anyhow::Result<()> {
-    let submit_participant_info_args = SubmitParticipantInfoArgs {
+    let submit_participant_info_args = contract_args::SubmitParticipantInfoArgs {
         proposed_participant_attestation: attestation.into_contract_interface_type(),
         tls_public_key,
     };

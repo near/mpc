@@ -1,8 +1,5 @@
 use crate::indexer::participants::KeyEventIdComparisonResult;
 use crate::indexer::tx_sender::TransactionSender;
-use crate::indexer::types::{
-    ChainStartKeygenArgs, ChainStartReshareArgs, ChainVoteAbortKeyEventInstanceArgs,
-};
 use crate::network::MeshNetworkClient;
 use crate::primitives::{MpcTaskId, ParticipantId};
 use crate::providers::EcdsaTaskId;
@@ -10,10 +7,7 @@ use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
 use crate::tracking::AutoAbortTaskCollection;
 use crate::{
     config::ParticipantsConfig,
-    indexer::{
-        participants::ContractKeyEventInstance,
-        types::{ChainSendTransactionRequest, ChainVotePkArgs, ChainVoteResharedArgs},
-    },
+    indexer::{participants::ContractKeyEventInstance, types::ChainSendTransactionRequest},
     keyshare::{Keyshare, KeyshareData, KeyshareStorage},
     network::NetworkTaskChannel,
     providers::{
@@ -22,6 +16,7 @@ use crate::{
 };
 use mpc_primitives::KeyEventId;
 use mpc_primitives::domain::Protocol;
+use near_mpc_contract_interface::call_args as contract_args;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::DomainConfig;
 use near_mpc_crypto_types::{KeyForDomain, Keyset};
@@ -106,10 +101,12 @@ pub async fn keygen_computation_inner(
         key_id
     );
     chain_txn_sender
-        .send(ChainSendTransactionRequest::VotePk(ChainVotePkArgs {
-            key_event_id: key_id,
-            public_key,
-        }))
+        .send(ChainSendTransactionRequest::VotePk(
+            contract_args::VotePkArgs {
+                key_event_id: key_id,
+                public_key,
+            },
+        ))
         .await?;
     Ok(())
 }
@@ -145,7 +142,7 @@ async fn keygen_computation(
                 },
                 Err(err) => {
                     tracing::error!("Key generation attempt {:?} failed: {:?}; sending vote_abort_key_event_instance", key_id, err);
-                    chain_txn_sender.send(ChainSendTransactionRequest::VoteAbortKeyEventInstance(ChainVoteAbortKeyEventInstanceArgs {
+                    chain_txn_sender.send(ChainSendTransactionRequest::VoteAbortKeyEventInstance(contract_args::VoteAbortKeyEventInstanceArgs {
                         key_event_id: key_id,
                     })).await?;
                 },
@@ -317,7 +314,7 @@ async fn resharing_computation_inner(
     );
     chain_txn_sender
         .send(ChainSendTransactionRequest::VoteReshared(
-            ChainVoteResharedArgs {
+            contract_args::VoteResharedArgs {
                 key_event_id: key_id,
             },
         ))
@@ -356,7 +353,7 @@ async fn resharing_computation(
                 },
                 Err(err) => {
                     tracing::error!("Key resharing attempt {:?} failed: {:?}; sending vote_abort_key_event_instance", key_id, err);
-                    chain_txn_sender.send(ChainSendTransactionRequest::VoteAbortKeyEventInstance(ChainVoteAbortKeyEventInstanceArgs {
+                    chain_txn_sender.send(ChainSendTransactionRequest::VoteAbortKeyEventInstance(contract_args::VoteAbortKeyEventInstanceArgs {
                         key_event_id: key_id,
                     })).await?;
                 },
@@ -432,7 +429,7 @@ pub async fn keygen_leader(
         // wait for it. If it doesn't happen after some time, we try again.
         chain_txn_sender
             .send(ChainSendTransactionRequest::StartKeygen(
-                ChainStartKeygenArgs { key_event_id },
+                contract_args::StartKeygenArgs { key_event_id },
             ))
             .await?;
 
@@ -564,7 +561,7 @@ pub async fn resharing_leader(
 
         chain_txn_sender
             .send(ChainSendTransactionRequest::StartReshare(
-                ChainStartReshareArgs { key_event_id },
+                contract_args::StartReshareArgs { key_event_id },
             ))
             .await
             .inspect_err(|e| {

@@ -2,8 +2,7 @@ use crate::indexer::ReadSupportedForeignChain;
 use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::tx_sender::TransactionSender;
 use crate::indexer::types::{
-    ChainCKDRespondArgs, ChainSendTransactionRequest, ChainSignatureRespondArgs,
-    ChainVerifyForeignTransactionRespondArgs,
+    ChainSendTransactionRequest, SignatureRespondArgsExt, VerifyForeignTransactionRespondArgsExt,
 };
 use crate::metrics;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
@@ -26,6 +25,7 @@ use crate::types::{CKDRequest, RequestsUpdate, VerifyForeignTxRequest};
 use crate::web::{DebugRequest, DebugRequestKind};
 use chain_gateway::event_subscriber::recent_blocks_tracker::{AddBlockResult, RecentBlocksTracker};
 use mpc_node_config::ConfigFile;
+use near_mpc_contract_interface::call_args as contract_args;
 
 use mpc_primitives::domain::{DomainId, Protocol};
 use near_mpc_contract_interface::types::CKDResponse;
@@ -234,13 +234,13 @@ where
     ) {
         let mut tasks = AutoAbortTaskCollection::new();
         let mut pending_signatures =
-            PendingRequests::<SignatureRequest, ChainSignatureRespondArgs>::new(
+            PendingRequests::<SignatureRequest, contract_args::SignatureRespondArgs>::new(
                 Clock::real(),
                 self.client.all_participant_ids(),
                 self.client.my_participant_id(),
                 self.client.clone(),
             );
-        let mut pending_ckds = PendingRequests::<CKDRequest, ChainCKDRespondArgs>::new(
+        let mut pending_ckds = PendingRequests::<CKDRequest, contract_args::CKDRespondArgs>::new(
             Clock::real(),
             self.client.all_participant_ids(),
             self.client.my_participant_id(),
@@ -248,7 +248,7 @@ where
         );
         let mut pending_verify_foreign_txs = PendingRequests::<
             VerifyForeignTxRequest,
-            ChainVerifyForeignTransactionRespondArgs,
+            contract_args::VerifyForeignTransactionRespondArgs,
         >::new(
             Clock::real(),
             self.client.all_participant_ids(),
@@ -379,11 +379,12 @@ where
                                         )
                                         .await??;
 
-                                        let response = ChainSignatureRespondArgs::new_ecdsa(
-                                            &signature_attempt.request,
-                                            &signature,
-                                            &public_key,
-                                        )?;
+                                        let response =
+                                            contract_args::SignatureRespondArgs::new_ecdsa(
+                                                &signature_attempt.request,
+                                                &signature,
+                                                &public_key,
+                                            )?;
 
                                         Ok(response)
                                     }
@@ -396,10 +397,11 @@ where
                                         )
                                         .await??;
 
-                                        let response = ChainSignatureRespondArgs::new_eddsa(
-                                            &signature_attempt.request,
-                                            &signature,
-                                        )?;
+                                        let response =
+                                            contract_args::SignatureRespondArgs::new_eddsa(
+                                                &signature_attempt.request,
+                                                &signature,
+                                            )?;
 
                                         Ok(response)
                                     }
@@ -418,11 +420,12 @@ where
                                         )
                                         .await??;
 
-                                        let response = ChainSignatureRespondArgs::new_ecdsa(
-                                            &signature_attempt.request,
-                                            &signature,
-                                            &public_key,
-                                        )?;
+                                        let response =
+                                            contract_args::SignatureRespondArgs::new_ecdsa(
+                                                &signature_attempt.request,
+                                                &signature,
+                                                &public_key,
+                                            )?;
 
                                         Ok(response)
                                     }
@@ -497,13 +500,17 @@ where
                                         )
                                         .await??;
 
-                                        let response = ChainCKDRespondArgs::new_ckd(
-                                            &ckd_attempt.request,
-                                            &CKDResponse {
+                                        let response = contract_args::CKDRespondArgs {
+                                            request: contract_args::CKDRequest::new(
+                                                ckd_attempt.request.app_public_key.clone(),
+                                                ckd_attempt.request.app_id.clone(),
+                                                ckd_attempt.request.domain_id,
+                                            ),
+                                            response: CKDResponse {
                                                 big_y: (&response.0.0).into(),
                                                 big_c: (&response.0.1).into(),
                                             },
-                                        )?;
+                                        };
 
                                         Ok(response)
                                     }
@@ -589,13 +596,12 @@ where
                                         .await??;
 
                                         let payload_hash = response.0.0.compute_msg_hash()?;
-                                        let response =
-                                            ChainVerifyForeignTransactionRespondArgs::new(
-                                                verify_foreign_tx_attempt.request.clone(),
-                                                payload_hash,
-                                                response.0.1,
-                                                response.1,
-                                            )?;
+                                        let response = contract_args::VerifyForeignTransactionRespondArgs::new(
+                                            verify_foreign_tx_attempt.request.clone(),
+                                            payload_hash,
+                                            response.0.1,
+                                            response.1,
+                                        )?;
 
                                         Ok(response)
                                     }

@@ -1,24 +1,20 @@
-use crate::types::{CKDRequest, SignatureRequest, VerifyForeignTxRequest};
+use crate::types::{SignatureRequest, VerifyForeignTxRequest};
 use anyhow::Context;
 use k256::{
     AffinePoint, Scalar, Secp256k1,
     ecdsa::RecoveryId,
     elliptic_curve::{Curve, CurveArithmetic, ops::Reduce, point::AffineCoordinates},
 };
-use mpc_primitives::domain::DomainId;
 use near_indexer_primitives::types::Gas;
 use near_mpc_contract_interface::method_names::{
     CONCLUDE_NODE_MIGRATION, RESPOND, RESPOND_CKD, RESPOND_VERIFY_FOREIGN_TX,
     START_KEYGEN_INSTANCE, START_RESHARE_INSTANCE, SUBMIT_PARTICIPANT_INFO, VERIFY_TEE,
     VOTE_ABORT_KEY_EVENT_INSTANCE, VOTE_PK, VOTE_RESHARED,
 };
-pub use near_mpc_contract_interface::types::SubmitParticipantInfoArgs;
 use near_mpc_contract_interface::types::{
     self as dtos, VerifyForeignTransactionRequest, VerifyForeignTransactionResponse,
 };
-use near_mpc_contract_interface::types::{CKDResponse, Tweak};
-use near_mpc_contract_interface::types::{KeyEventId, Keyset};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use threshold_signatures::ecdsa::Signature;
 use threshold_signatures::frost_ed25519;
 use threshold_signatures::frost_secp256k1::VerifyingKey;
@@ -28,47 +24,7 @@ use near_mpc_contract_interface::method_names::REGISTER_FOREIGN_CHAIN_CONFIG;
 
 const MAX_GAS: Gas = Gas::from_teragas(300);
 
-/* The format in which the chain signatures contract expects
- * to receive the details of the original request. `epsilon`
- * is used to refer to the (serializable) tweak derived from the caller's
- * account id and the derivation path.
- */
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct ChainSignatureRequest {
-    pub tweak: Tweak,
-    pub payload: Payload,
-    pub domain_id: DomainId,
-}
-
-impl ChainSignatureRequest {
-    pub fn new(tweak: Tweak, payload: Payload, domain_id: DomainId) -> Self {
-        ChainSignatureRequest {
-            tweak,
-            payload,
-            domain_id,
-        }
-    }
-}
-
-/* The format in which the chain contract expects
- * to receive the details of the original ckd request.
- */
-#[derive(Serialize, Deserialize, Debug, Clone, derive_more::Constructor)]
-pub struct ChainCKDRequest {
-    pub app_public_key: dtos::CKDAppPublicKey,
-    pub app_id: dtos::CkdAppId,
-    pub domain_id: DomainId,
-}
-
-pub type ChainVerifyForeignTransactionRequest =
-    near_mpc_contract_interface::types::VerifyForeignTransactionRequest;
-
-pub type ChainSignatureResponse = near_mpc_contract_interface::types::SignatureResponse;
-pub type ChainCKDResponse = CKDResponse;
-pub type ChainVerifyForeignTransactionResponse =
-    near_mpc_contract_interface::types::VerifyForeignTransactionResponse;
-
-use near_mpc_contract_interface::types::Payload;
+use near_mpc_contract_interface::call_args as contract_args;
 
 const MAX_RECOVERY_ID: u8 = 3;
 
@@ -76,11 +32,11 @@ fn k256_signature_response(
     big_r: AffinePoint,
     s: Scalar,
     recovery_id: u8,
-) -> anyhow::Result<ChainSignatureResponse> {
+) -> anyhow::Result<dtos::SignatureResponse> {
     if recovery_id > MAX_RECOVERY_ID {
         anyhow::bail!("Invalid Recovery Id: recovery id larger than 3.");
     }
-    Ok(ChainSignatureResponse::Secp256k1(dtos::K256Signature {
+    Ok(dtos::SignatureResponse::Secp256k1(dtos::K256Signature {
         big_r: dtos::K256AffinePoint::from(big_r),
         s: dtos::K256Scalar::from(s),
         recovery_id,
@@ -88,107 +44,22 @@ fn k256_signature_response(
 }
 pub trait ChainRespondArgs {}
 
-/* These arguments are passed to the `respond` function of the
- * chain signatures contract. It takes both the details of the
- * original request and the completed signature, then verifies
- * that the signature matches the requested key and payload.
- */
-#[derive(Serialize, Debug, Deserialize, Clone)]
-pub struct ChainSignatureRespondArgs {
-    pub request: ChainSignatureRequest,
-    response: ChainSignatureResponse,
-}
+impl ChainRespondArgs for contract_args::SignatureRespondArgs {}
+impl ChainRespondArgs for contract_args::CKDRespondArgs {}
+impl ChainRespondArgs for contract_args::VerifyForeignTransactionRespondArgs {}
 
-impl ChainRespondArgs for ChainSignatureRespondArgs {}
-
-/* These arguments are passed to the `respond_ckd` function of the
- * chain contract. It takes both the details of the
- * original request and the completed ckd.
- */
-#[derive(Serialize, Debug, Deserialize, Clone)]
-pub struct ChainCKDRespondArgs {
-    pub request: ChainCKDRequest,
-    response: ChainCKDResponse,
-}
-
-impl ChainRespondArgs for ChainCKDRespondArgs {}
-
-#[derive(Serialize, Debug, Deserialize, Clone)]
-pub struct ChainVerifyForeignTransactionRespondArgs {
-    pub request: ChainVerifyForeignTransactionRequest,
-    response: ChainVerifyForeignTransactionResponse,
-}
-
-impl ChainRespondArgs for ChainVerifyForeignTransactionRespondArgs {}
-
-#[derive(Serialize, Debug)]
-pub struct ChainGetPendingSignatureRequestArgs {
-    pub request: ChainSignatureRequest,
-}
-
-#[derive(Serialize, Debug)]
-pub struct ChainGetPendingCKDRequestArgs {
-    pub request: ChainCKDRequest,
-}
-
-#[derive(Serialize, Debug)]
-pub struct ChainGetPendingVerifyForeignTxRequestArgs {
-    pub request: ChainVerifyForeignTransactionRequest,
-}
-
-#[derive(Serialize, Debug)]
-pub struct GetAttestationArgs<'a> {
-    pub tls_public_key: &'a near_mpc_contract_interface::types::Ed25519PublicKey,
-}
-
-#[derive(Serialize, Debug)]
-pub struct ChainVotePkArgs {
-    pub key_event_id: KeyEventId,
-    pub public_key: dtos::PublicKey,
-}
-
-#[derive(Serialize, Debug)]
-pub struct ChainVoteResharedArgs {
-    pub key_event_id: KeyEventId,
-}
-
-#[derive(Serialize, Debug)]
-pub struct ChainRegisterForeignChainConfigArgs {
-    #[expect(deprecated)]
-    pub foreign_chain_configuration: dtos::ForeignChainConfiguration,
-}
-
-#[derive(Serialize, Debug)]
-pub struct ChainStartReshareArgs {
-    pub key_event_id: KeyEventId,
-}
-
-#[derive(Serialize, Debug)]
-pub struct ChainStartKeygenArgs {
-    pub key_event_id: KeyEventId,
-}
-
-#[derive(Serialize, Debug)]
-pub struct ChainVoteAbortKeyEventInstanceArgs {
-    pub key_event_id: KeyEventId,
-}
-
-#[derive(Serialize, Debug)]
-pub struct ConcludeNodeMigrationArgs {
-    pub keyset: Keyset,
-}
 /// Request to send a transaction to the contract on chain.
 #[derive(Serialize, Debug)]
 #[serde(untagged)]
 pub enum ChainSendTransactionRequest {
-    Respond(ChainSignatureRespondArgs),
-    CKDRespond(ChainCKDRespondArgs),
-    VotePk(ChainVotePkArgs),
-    StartKeygen(ChainStartKeygenArgs),
-    VoteReshared(ChainVoteResharedArgs),
-    RegisterForeignChainConfig(ChainRegisterForeignChainConfigArgs),
-    StartReshare(ChainStartReshareArgs),
-    VoteAbortKeyEventInstance(ChainVoteAbortKeyEventInstanceArgs),
+    Respond(contract_args::SignatureRespondArgs),
+    CKDRespond(contract_args::CKDRespondArgs),
+    VotePk(contract_args::VotePkArgs),
+    StartKeygen(contract_args::StartKeygenArgs),
+    VoteReshared(contract_args::VoteResharedArgs),
+    RegisterForeignChainConfig(contract_args::RegisterForeignChainConfigArgs),
+    StartReshare(contract_args::StartReshareArgs),
+    VoteAbortKeyEventInstance(contract_args::VoteAbortKeyEventInstanceArgs),
     VerifyTee(),
     // Boxed as this variant is big, 2168 bytes.
     // Big discrepancies in variant sizes will lead to memory fragmentation
@@ -196,10 +67,10 @@ pub enum ChainSendTransactionRequest {
     //
     // For more info see clippy lint:
     // https://rust-lang.github.io/rust-clippy/master/index.html#large_enum_variant
-    SubmitParticipantInfo(Box<SubmitParticipantInfoArgs>),
+    SubmitParticipantInfo(Box<contract_args::SubmitParticipantInfoArgs>),
 
-    ConcludeNodeMigration(ConcludeNodeMigrationArgs),
-    VerifyForeignTransactionRespond(ChainVerifyForeignTransactionRespondArgs),
+    ConcludeNodeMigration(contract_args::ConcludeNodeMigrationArgs),
+    VerifyForeignTransactionRespond(contract_args::VerifyForeignTransactionRespondArgs),
 }
 
 impl ChainSendTransactionRequest {
@@ -247,13 +118,32 @@ impl ChainSendTransactionRequest {
     }
 }
 
-impl ChainSignatureRespondArgs {
-    pub fn new_ecdsa(
+/// Node-side constructors for the chain `respond` args (the DTOs live in
+/// `near-mpc-contract-interface`, so the signing logic is attached here via an extension trait).
+pub trait SignatureRespondArgsExt {
+    fn new_ecdsa(
+        request: &SignatureRequest,
+        response: &Signature,
+        public_key: &VerifyingKey,
+    ) -> anyhow::Result<Self>
+    where
+        Self: Sized;
+
+    fn new_eddsa(
+        request: &SignatureRequest,
+        response: &frost_ed25519::Signature,
+    ) -> anyhow::Result<Self>
+    where
+        Self: Sized;
+}
+
+impl SignatureRespondArgsExt for contract_args::SignatureRespondArgs {
+    fn new_ecdsa(
         request: &SignatureRequest,
         response: &Signature,
         public_key: &VerifyingKey,
     ) -> anyhow::Result<Self> {
-        let recovery_id = Self::brute_force_recovery_id(
+        let recovery_id = brute_force_recovery_id(
             &public_key.to_element().to_affine(),
             response,
             request
@@ -261,17 +151,17 @@ impl ChainSignatureRespondArgs {
                 .as_ecdsa()
                 .ok_or_else(|| anyhow::anyhow!("Payload is not an ECDSA payload"))?,
         )?;
-        Ok(ChainSignatureRespondArgs {
-            request: ChainSignatureRequest::new(
-                request.tweak.clone(),
-                request.payload.clone(),
-                request.domain,
-            ),
+        Ok(contract_args::SignatureRespondArgs {
+            request: contract_args::SignatureRequest {
+                tweak: request.tweak.clone(),
+                payload: request.payload.clone(),
+                domain_id: request.domain,
+            },
             response: k256_signature_response(response.big_r, response.s, recovery_id)?,
         })
     }
 
-    pub fn new_eddsa(
+    fn new_eddsa(
         request: &SignatureRequest,
         response: &frost_ed25519::Signature,
     ) -> anyhow::Result<Self> {
@@ -280,62 +170,60 @@ impl ChainSignatureRespondArgs {
             .try_into()
             .map_err(|_| anyhow::anyhow!("Response is not 64 bytes"))?;
 
-        Ok(ChainSignatureRespondArgs {
-            request: ChainSignatureRequest::new(
-                request.tweak.clone(),
-                request.payload.clone(),
-                request.domain,
-            ),
+        Ok(contract_args::SignatureRespondArgs {
+            request: contract_args::SignatureRequest {
+                tweak: request.tweak.clone(),
+                payload: request.payload.clone(),
+                domain_id: request.domain,
+            },
             response: dtos::SignatureResponse::Ed25519 {
                 signature: dtos::Ed25519Signature::from(response),
             },
         })
     }
+}
 
-    /// Brute forces the recovery id to find a recovery_id that matches the public key
-    pub(crate) fn brute_force_recovery_id(
-        expected_pk: &AffinePoint,
-        signature: &Signature,
-        msg_hash: &[u8; 32],
-    ) -> anyhow::Result<u8> {
-        let partial_signature = k256::ecdsa::Signature::from_scalars(
-            <<Secp256k1 as CurveArithmetic>::Scalar as Reduce<<Secp256k1 as Curve>::Uint>>
-            ::reduce_bytes(&signature.big_r.x()), signature.s)
-            .context("Cannot create signature from cait_sith signature")?;
-        let expected_pk = match k256::ecdsa::VerifyingKey::from_affine(*expected_pk) {
-            Ok(pk) => pk,
-            _ => anyhow::bail!("The affine point cannot be transformed into a verifying key"),
-        };
-        match RecoveryId::trial_recovery_from_prehash(&expected_pk, msg_hash, &partial_signature) {
-            Ok(rec_id) => Ok(rec_id.to_byte()),
-            _ => anyhow::bail!(
-                "No recovery id found for such a tuple of public key, signature, message hash"
-            ),
-        }
+/// Brute forces the recovery id to find a recovery_id that matches the public key
+pub(crate) fn brute_force_recovery_id(
+    expected_pk: &AffinePoint,
+    signature: &Signature,
+    msg_hash: &[u8; 32],
+) -> anyhow::Result<u8> {
+    let partial_signature = k256::ecdsa::Signature::from_scalars(
+        <<Secp256k1 as CurveArithmetic>::Scalar as Reduce<<Secp256k1 as Curve>::Uint>>
+        ::reduce_bytes(&signature.big_r.x()), signature.s)
+        .context("Cannot create signature from cait_sith signature")?;
+    let expected_pk = match k256::ecdsa::VerifyingKey::from_affine(*expected_pk) {
+        Ok(pk) => pk,
+        _ => anyhow::bail!("The affine point cannot be transformed into a verifying key"),
+    };
+    match RecoveryId::trial_recovery_from_prehash(&expected_pk, msg_hash, &partial_signature) {
+        Ok(rec_id) => Ok(rec_id.to_byte()),
+        _ => anyhow::bail!(
+            "No recovery id found for such a tuple of public key, signature, message hash"
+        ),
     }
 }
 
-impl ChainCKDRespondArgs {
-    pub fn new_ckd(request: &CKDRequest, response: &CKDResponse) -> anyhow::Result<Self> {
-        Ok(ChainCKDRespondArgs {
-            request: ChainCKDRequest::new(
-                request.app_public_key.clone(),
-                request.app_id.clone(),
-                request.domain_id,
-            ),
-            response: response.clone(),
-        })
-    }
+pub trait VerifyForeignTransactionRespondArgsExt {
+    fn new(
+        request: VerifyForeignTxRequest,
+        payload_hash: dtos::Hash256,
+        signature: Signature,
+        public_key: VerifyingKey,
+    ) -> anyhow::Result<Self>
+    where
+        Self: Sized;
 }
 
-impl ChainVerifyForeignTransactionRespondArgs {
-    pub fn new(
+impl VerifyForeignTransactionRespondArgsExt for contract_args::VerifyForeignTransactionRespondArgs {
+    fn new(
         request: VerifyForeignTxRequest,
         payload_hash: dtos::Hash256,
         signature: Signature,
         public_key: VerifyingKey,
     ) -> anyhow::Result<Self> {
-        let recovery_id = ChainSignatureRespondArgs::brute_force_recovery_id(
+        let recovery_id = brute_force_recovery_id(
             &public_key.to_element().to_affine(),
             &signature,
             payload_hash.as_ref(),
@@ -346,7 +234,7 @@ impl ChainVerifyForeignTransactionRespondArgs {
             s: dtos::K256Scalar::from(signature.s),
             recovery_id,
         };
-        Ok(ChainVerifyForeignTransactionRespondArgs {
+        Ok(contract_args::VerifyForeignTransactionRespondArgs {
             request: VerifyForeignTransactionRequest {
                 request: request.request,
                 domain_id: request.domain_id,
@@ -363,7 +251,7 @@ impl ChainVerifyForeignTransactionRespondArgs {
 // TODO(#1957): This code does not belong here in the indexer module
 #[cfg(test)]
 mod recovery_id_tests {
-    use crate::indexer::types::ChainSignatureRespondArgs;
+    use crate::indexer::types::brute_force_recovery_id;
     use k256::AffinePoint;
     use k256::ecdsa::{RecoveryId, SigningKey};
     use k256::elliptic_curve::{PrimeField, point::DecompressPoint};
@@ -395,7 +283,7 @@ mod recovery_id_tests {
                         s: *s.as_ref(),
                     };
 
-                    let tested_recid = ChainSignatureRespondArgs::brute_force_recovery_id(
+                    let tested_recid = brute_force_recovery_id(
                         signing_key.verifying_key().as_affine(),
                         &full_sig,
                         &prehash,

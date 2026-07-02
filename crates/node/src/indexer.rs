@@ -1,14 +1,6 @@
-use crate::{
-    indexer::{
-        migrations::ContractMigrationInfo,
-        types::{
-            ChainCKDRequest, ChainGetPendingCKDRequestArgs, ChainGetPendingSignatureRequestArgs,
-            ChainGetPendingVerifyForeignTxRequestArgs, ChainSignatureRequest,
-            ChainVerifyForeignTransactionRequest, GetAttestationArgs,
-        },
-    },
-    migration_service::types::MigrationInfo,
-};
+use near_mpc_contract_interface::call_args as contract_args;
+
+use crate::{indexer::migrations::ContractMigrationInfo, migration_service::types::MigrationInfo};
 
 use self::stats::IndexerStats;
 use anyhow::Context;
@@ -102,10 +94,10 @@ impl IndexerViewClient {
     pub(crate) async fn get_pending_request(
         &self,
         mpc_contract_id: &AccountId,
-        chain_signature_request: &ChainSignatureRequest,
+        chain_signature_request: &contract_args::SignatureRequest,
     ) -> anyhow::Result<Option<YieldIndex>> {
         let get_pending_request_args: Vec<u8> =
-            serde_json::to_string(&ChainGetPendingSignatureRequestArgs {
+            serde_json::to_string(&contract_args::GetPendingSignatureRequestArgs {
                 request: chain_signature_request.clone(),
             })
             .unwrap()
@@ -143,10 +135,10 @@ impl IndexerViewClient {
     pub(crate) async fn get_pending_ckd_request(
         &self,
         mpc_contract_id: &AccountId,
-        chain_ckd_request: &ChainCKDRequest,
+        chain_ckd_request: &contract_args::CKDRequest,
     ) -> anyhow::Result<Option<YieldIndex>> {
         let get_pending_request_args: Vec<u8> =
-            serde_json::to_string(&ChainGetPendingCKDRequestArgs {
+            serde_json::to_string(&contract_args::GetPendingCKDRequestArgs {
                 request: chain_ckd_request.clone(),
             })
             .unwrap()
@@ -184,10 +176,10 @@ impl IndexerViewClient {
     pub(crate) async fn get_pending_verify_foreign_tx_request(
         &self,
         mpc_contract_id: &AccountId,
-        chain_verify_foreign_tx_request: &ChainVerifyForeignTransactionRequest,
+        chain_verify_foreign_tx_request: &dtos::VerifyForeignTransactionRequest,
     ) -> anyhow::Result<Option<YieldIndex>> {
         let get_pending_request_args: Vec<u8> =
-            serde_json::to_string(&ChainGetPendingVerifyForeignTxRequestArgs {
+            serde_json::to_string(&contract_args::GetPendingVerifyForeignTxRequestArgs {
                 request: chain_verify_foreign_tx_request.clone(),
             })
             .unwrap()
@@ -227,11 +219,12 @@ impl IndexerViewClient {
         mpc_contract_id: &AccountId,
         participant_tls_public_key: &near_mpc_contract_interface::types::Ed25519PublicKey,
     ) -> anyhow::Result<Option<near_mpc_contract_interface::types::VerifiedAttestation>> {
-        let get_attestation_args: Vec<u8> = serde_json::to_string(&GetAttestationArgs {
-            tls_public_key: participant_tls_public_key,
-        })
-        .unwrap()
-        .into_bytes();
+        let get_attestation_args: Vec<u8> =
+            serde_json::to_string(&contract_args::GetAttestationArgs {
+                tls_public_key: participant_tls_public_key,
+            })
+            .unwrap()
+            .into_bytes();
 
         let request = QueryRequest::CallFunction {
             account_id: mpc_contract_id.clone(),
