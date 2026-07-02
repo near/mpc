@@ -435,9 +435,7 @@ where
         let foreign_chain_configuration = config_file.foreign_chains.configured_chains();
         if let Err(err) = chain_txn_sender
             .send(ChainSendTransactionRequest::RegisterForeignChainConfig(
-                contract_args::RegisterForeignChainConfigArgs {
-                    foreign_chain_configuration,
-                },
+                contract_args::RegisterForeignChainConfigArgs::new(foreign_chain_configuration),
             ))
             .await
         {

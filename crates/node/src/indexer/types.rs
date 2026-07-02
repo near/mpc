@@ -120,7 +120,7 @@ impl ChainSendTransactionRequest {
 
 /// Extension trait for constructing SignatueRespond arguments from node-internal types.
 pub trait SignatureRespondArgsExt {
-    fn new_ecdsa(
+    fn from_ecdsa(
         request: &SignatureRequest,
         response: &Signature,
         public_key: &VerifyingKey,
@@ -128,7 +128,7 @@ pub trait SignatureRespondArgsExt {
     where
         Self: Sized;
 
-    fn new_eddsa(
+    fn from_eddsa(
         request: &SignatureRequest,
         response: &frost_ed25519::Signature,
     ) -> anyhow::Result<Self>
@@ -137,7 +137,7 @@ pub trait SignatureRespondArgsExt {
 }
 
 impl SignatureRespondArgsExt for contract_args::SignatureRespondArgs {
-    fn new_ecdsa(
+    fn from_ecdsa(
         request: &SignatureRequest,
         response: &Signature,
         public_key: &VerifyingKey,
@@ -150,17 +150,17 @@ impl SignatureRespondArgsExt for contract_args::SignatureRespondArgs {
                 .as_ecdsa()
                 .ok_or_else(|| anyhow::anyhow!("Payload is not an ECDSA payload"))?,
         )?;
-        Ok(contract_args::SignatureRespondArgs {
-            request: contract_args::SignatureRequest {
+        Ok(contract_args::SignatureRespondArgs::new(
+            dtos::SignatureRequest {
                 tweak: request.tweak.clone(),
                 payload: request.payload.clone(),
                 domain_id: request.domain,
             },
-            response: k256_signature_response(response.big_r, response.s, recovery_id)?,
-        })
+            k256_signature_response(response.big_r, response.s, recovery_id)?,
+        ))
     }
 
-    fn new_eddsa(
+    fn from_eddsa(
         request: &SignatureRequest,
         response: &frost_ed25519::Signature,
     ) -> anyhow::Result<Self> {
@@ -169,16 +169,16 @@ impl SignatureRespondArgsExt for contract_args::SignatureRespondArgs {
             .try_into()
             .map_err(|_| anyhow::anyhow!("Response is not 64 bytes"))?;
 
-        Ok(contract_args::SignatureRespondArgs {
-            request: contract_args::SignatureRequest {
+        Ok(contract_args::SignatureRespondArgs::new(
+            dtos::SignatureRequest {
                 tweak: request.tweak.clone(),
                 payload: request.payload.clone(),
                 domain_id: request.domain,
             },
-            response: dtos::SignatureResponse::Ed25519 {
+            dtos::SignatureResponse::Ed25519 {
                 signature: dtos::Ed25519Signature::from(response),
             },
-        })
+        ))
     }
 }
 
@@ -205,7 +205,7 @@ pub(crate) fn brute_force_recovery_id(
 }
 
 pub trait VerifyForeignTransactionRespondArgsExt {
-    fn new(
+    fn from_signature(
         request: VerifyForeignTxRequest,
         payload_hash: dtos::Hash256,
         signature: Signature,
@@ -216,7 +216,7 @@ pub trait VerifyForeignTransactionRespondArgsExt {
 }
 
 impl VerifyForeignTransactionRespondArgsExt for contract_args::VerifyForeignTransactionRespondArgs {
-    fn new(
+    fn from_signature(
         request: VerifyForeignTxRequest,
         payload_hash: dtos::Hash256,
         signature: Signature,
@@ -233,17 +233,17 @@ impl VerifyForeignTransactionRespondArgsExt for contract_args::VerifyForeignTran
             s: dtos::K256Scalar::from(signature.s),
             recovery_id,
         };
-        Ok(contract_args::VerifyForeignTransactionRespondArgs {
-            request: VerifyForeignTransactionRequest {
+        Ok(contract_args::VerifyForeignTransactionRespondArgs::new(
+            VerifyForeignTransactionRequest {
                 request: request.request,
                 domain_id: request.domain_id,
                 payload_version: request.payload_version,
             },
-            response: VerifyForeignTransactionResponse {
+            VerifyForeignTransactionResponse {
                 payload_hash,
                 signature: dtos::SignatureResponse::Secp256k1(dto_signature),
             },
-        })
+        ))
     }
 }
 

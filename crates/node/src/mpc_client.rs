@@ -380,7 +380,7 @@ where
                                         .await??;
 
                                         let response =
-                                            contract_args::SignatureRespondArgs::new_ecdsa(
+                                            contract_args::SignatureRespondArgs::from_ecdsa(
                                                 &signature_attempt.request,
                                                 &signature,
                                                 &public_key,
@@ -398,7 +398,7 @@ where
                                         .await??;
 
                                         let response =
-                                            contract_args::SignatureRespondArgs::new_eddsa(
+                                            contract_args::SignatureRespondArgs::from_eddsa(
                                                 &signature_attempt.request,
                                                 &signature,
                                             )?;
@@ -421,7 +421,7 @@ where
                                         .await??;
 
                                         let response =
-                                            contract_args::SignatureRespondArgs::new_ecdsa(
+                                            contract_args::SignatureRespondArgs::from_ecdsa(
                                                 &signature_attempt.request,
                                                 &signature,
                                                 &public_key,
@@ -500,8 +500,8 @@ where
                                         )
                                         .await??;
 
-                                        let response = contract_args::CKDRespondArgs {
-                                            request: contract_args::CKDRequest {
+                                        let response = contract_args::CKDRespondArgs::new(
+                                            near_mpc_contract_interface::types::CKDRequest {
                                                 app_public_key: ckd_attempt
                                                     .request
                                                     .app_public_key
@@ -509,11 +509,11 @@ where
                                                 app_id: ckd_attempt.request.app_id.clone(),
                                                 domain_id: ckd_attempt.request.domain_id,
                                             },
-                                            response: CKDResponse {
+                                            CKDResponse {
                                                 big_y: (&response.0.0).into(),
                                                 big_c: (&response.0.1).into(),
                                             },
-                                        };
+                                        );
 
                                         Ok(response)
                                     }
@@ -599,7 +599,7 @@ where
                                         .await??;
 
                                         let payload_hash = response.0.0.compute_msg_hash()?;
-                                        let response = contract_args::VerifyForeignTransactionRespondArgs::new(
+                                        let response = contract_args::VerifyForeignTransactionRespondArgs::from_signature(
                                             verify_foreign_tx_attempt.request.clone(),
                                             payload_hash,
                                             response.0.1,

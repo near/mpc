@@ -94,14 +94,13 @@ impl IndexerViewClient {
     pub(crate) async fn get_pending_request(
         &self,
         mpc_contract_id: &AccountId,
-        chain_signature_request: &contract_args::SignatureRequest,
+        chain_signature_request: &dtos::SignatureRequest,
     ) -> anyhow::Result<Option<YieldIndex>> {
-        let get_pending_request_args: Vec<u8> =
-            serde_json::to_string(&contract_args::GetPendingSignatureRequestArgs::new(
-                chain_signature_request.clone(),
-            ))
-            .unwrap()
-            .into_bytes();
+        let get_pending_request_args: Vec<u8> = serde_json::to_string(
+            &contract_args::GetPendingSignatureRequestArgs::new(chain_signature_request.clone()),
+        )
+        .unwrap()
+        .into_bytes();
 
         let request = QueryRequest::CallFunction {
             account_id: mpc_contract_id.clone(),
@@ -135,14 +134,13 @@ impl IndexerViewClient {
     pub(crate) async fn get_pending_ckd_request(
         &self,
         mpc_contract_id: &AccountId,
-        chain_ckd_request: &contract_args::CKDRequest,
+        chain_ckd_request: &dtos::CKDRequest,
     ) -> anyhow::Result<Option<YieldIndex>> {
-        let get_pending_request_args: Vec<u8> =
-            serde_json::to_string(&contract_args::GetPendingCKDRequestArgs::new(
-                chain_ckd_request.clone(),
-            ))
-            .unwrap()
-            .into_bytes();
+        let get_pending_request_args: Vec<u8> = serde_json::to_string(
+            &contract_args::GetPendingCKDRequestArgs::new(chain_ckd_request.clone()),
+        )
+        .unwrap()
+        .into_bytes();
 
         let request = QueryRequest::CallFunction {
             account_id: mpc_contract_id.clone(),
@@ -219,12 +217,11 @@ impl IndexerViewClient {
         mpc_contract_id: &AccountId,
         participant_tls_public_key: &near_mpc_contract_interface::types::Ed25519PublicKey,
     ) -> anyhow::Result<Option<near_mpc_contract_interface::types::VerifiedAttestation>> {
-        let get_attestation_args: Vec<u8> =
-            serde_json::to_string(&contract_args::GetAttestationArgs::new(
-                participant_tls_public_key,
-            ))
-            .unwrap()
-            .into_bytes();
+        let get_attestation_args: Vec<u8> = serde_json::to_string(
+            &contract_args::GetAttestationArgs::new(participant_tls_public_key),
+        )
+        .unwrap()
+        .into_bytes();
 
         let request = QueryRequest::CallFunction {
             account_id: mpc_contract_id.clone(),

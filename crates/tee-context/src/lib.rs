@@ -95,10 +95,7 @@ where
         attestation: Attestation,
         tls_public_key: Ed25519PublicKey,
     ) -> Result<(), TeeContextError> {
-        let args = contract_args::SubmitParticipantInfoArgs {
-            proposed_participant_attestation: attestation,
-            tls_public_key,
-        };
+        let args = contract_args::SubmitParticipantInfoArgs::new(attestation, tls_public_key);
         let args_json = serde_json::to_vec(&args)?;
 
         self.submitter

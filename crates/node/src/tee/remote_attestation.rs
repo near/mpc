@@ -39,10 +39,10 @@ pub async fn submit_remote_attestation(
     attestation: Attestation,
     tls_public_key: Ed25519PublicKey,
 ) -> anyhow::Result<()> {
-    let submit_participant_info_args = contract_args::SubmitParticipantInfoArgs {
-        proposed_participant_attestation: attestation.into_contract_interface_type(),
+    let submit_participant_info_args = contract_args::SubmitParticipantInfoArgs::new(
+        attestation.into_contract_interface_type(),
         tls_public_key,
-    };
+    );
 
     let set_attestation = move || {
         let tx_sender = tx_sender.clone();

@@ -102,10 +102,7 @@ pub async fn keygen_computation_inner(
     );
     chain_txn_sender
         .send(ChainSendTransactionRequest::VotePk(
-            contract_args::VotePkArgs {
-                key_event_id: key_id,
-                public_key,
-            },
+            contract_args::VotePkArgs::new(key_id, public_key),
         ))
         .await?;
     Ok(())
@@ -142,9 +139,7 @@ async fn keygen_computation(
                 },
                 Err(err) => {
                     tracing::error!("Key generation attempt {:?} failed: {:?}; sending vote_abort_key_event_instance", key_id, err);
-                    chain_txn_sender.send(ChainSendTransactionRequest::VoteAbortKeyEventInstance(contract_args::VoteAbortKeyEventInstanceArgs {
-                        key_event_id: key_id,
-                    })).await?;
+                    chain_txn_sender.send(ChainSendTransactionRequest::VoteAbortKeyEventInstance(contract_args::VoteAbortKeyEventInstanceArgs::new(key_id))).await?;
                 },
             }
         },
@@ -314,9 +309,7 @@ async fn resharing_computation_inner(
     );
     chain_txn_sender
         .send(ChainSendTransactionRequest::VoteReshared(
-            contract_args::VoteResharedArgs {
-                key_event_id: key_id,
-            },
+            contract_args::VoteResharedArgs::new(key_id),
         ))
         .await?;
     Ok(())
@@ -353,9 +346,7 @@ async fn resharing_computation(
                 },
                 Err(err) => {
                     tracing::error!("Key resharing attempt {:?} failed: {:?}; sending vote_abort_key_event_instance", key_id, err);
-                    chain_txn_sender.send(ChainSendTransactionRequest::VoteAbortKeyEventInstance(contract_args::VoteAbortKeyEventInstanceArgs {
-                        key_event_id: key_id,
-                    })).await?;
+                    chain_txn_sender.send(ChainSendTransactionRequest::VoteAbortKeyEventInstance(contract_args::VoteAbortKeyEventInstanceArgs::new(key_id))).await?;
                 },
             }
         },
@@ -429,7 +420,7 @@ pub async fn keygen_leader(
         // wait for it. If it doesn't happen after some time, we try again.
         chain_txn_sender
             .send(ChainSendTransactionRequest::StartKeygen(
-                contract_args::StartKeygenArgs { key_event_id },
+                contract_args::StartKeygenArgs::new(key_event_id),
             ))
             .await?;
 
@@ -561,7 +552,7 @@ pub async fn resharing_leader(
 
         chain_txn_sender
             .send(ChainSendTransactionRequest::StartReshare(
-                contract_args::StartReshareArgs { key_event_id },
+                contract_args::StartReshareArgs::new(key_event_id),
             ))
             .await
             .inspect_err(|e| {
