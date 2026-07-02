@@ -1,11 +1,14 @@
 use ed25519_dalek::SigningKey;
+use mpc_call_args::FunctionCallArgs;
 use near_kit::FinalExecutionOutcome;
-use near_mpc_contract_interface::types::ProtocolContractState;
+use near_mpc_contract_interface::call_args::{CallContract, CallError};
+use near_mpc_contract_interface::types::{AccountId, ProtocolContractState};
 use serde::de::DeserializeOwned;
 
 use crate::conversions::ToNearKey;
 
-const MAX_GAS: near_kit::Gas = near_kit::Gas::from_tgas(1000);
+// NEAR caps prepaid gas at 300 Tgas per transaction.
+const MAX_GAS: near_kit::Gas = near_kit::Gas::from_tgas(300);
 
 /// RPC client for any NEAR network (sandbox or testnet).
 ///
@@ -22,6 +25,25 @@ pub struct NearBlockchain {
 /// making it easier to swap the underlying client (e.g. for testnet).
 pub struct ClientHandle {
     inner: near_kit::Near,
+}
+
+impl CallContract for ClientHandle {
+    type Output = FinalExecutionOutcome;
+
+    async fn call_contract(
+        &self,
+        contract_id: &AccountId,
+        call: FunctionCallArgs,
+    ) -> Result<FinalExecutionOutcome, CallError> {
+        self.inner
+            .call(contract_id.as_str(), &call.method_name)
+            .args_raw(call.args)
+            .gas(call.gas)
+            .deposit(call.deposit)
+            .send()
+            .await
+            .map_err(|e| CallError::Call(Box::new(e)))
+    }
 }
 
 impl NearBlockchain {
@@ -117,6 +139,13 @@ impl DeployedContract {
         &self.contract_id
     }
 
+    /// The contract account as a typed [`AccountId`], for the `call_args` helpers.
+    pub fn account_id(&self) -> anyhow::Result<AccountId> {
+        self.contract_id
+            .parse()
+            .map_err(|e| anyhow::anyhow!("invalid contract account id `{}`: {e}", self.contract_id))
+    }
+
     pub async fn call(
         &self,
         method: &str,
@@ -129,63 +158,6 @@ impl DeployedContract {
             .send()
             .await
             .map_err(|e| anyhow::anyhow!("contract call `{method}` failed: {e}"))
-    }
-
-    pub async fn call_from(
-        &self,
-        client: &ClientHandle,
-        method: &str,
-        args: serde_json::Value,
-    ) -> anyhow::Result<FinalExecutionOutcome> {
-        client
-            .inner
-            .call(&self.contract_id, method)
-            .args(args)
-            .gas(MAX_GAS)
-            .send()
-            .await
-            .map_err(|e| anyhow::anyhow!("contract call `{method}` (external signer) failed: {e}"))
-    }
-
-    pub async fn call_from_with_deposit(
-        &self,
-        client: &ClientHandle,
-        method: &str,
-        args: serde_json::Value,
-        gas: near_kit::Gas,
-        deposit: near_kit::NearToken,
-    ) -> anyhow::Result<FinalExecutionOutcome> {
-        client
-            .inner
-            .call(&self.contract_id, method)
-            .args(args)
-            .gas(gas)
-            .deposit(deposit)
-            .send()
-            .await
-            .map_err(|e| anyhow::anyhow!("contract call `{method}` (with deposit) failed: {e}"))
-    }
-
-    /// Call a method whose arguments are borsh-serialized (e.g. `propose_update`).
-    pub async fn call_from_borsh_with_deposit<A: borsh::BorshSerialize>(
-        &self,
-        client: &ClientHandle,
-        method: &str,
-        args: A,
-        gas: near_kit::Gas,
-        deposit: near_kit::NearToken,
-    ) -> anyhow::Result<FinalExecutionOutcome> {
-        client
-            .inner
-            .call(&self.contract_id, method)
-            .args_borsh(args)
-            .gas(gas)
-            .deposit(deposit)
-            .send()
-            .await
-            .map_err(|e| {
-                anyhow::anyhow!("contract call `{method}` (borsh args, with deposit) failed: {e}")
-            })
     }
 
     pub async fn view<T: DeserializeOwned + Send + 'static>(

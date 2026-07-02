@@ -123,8 +123,8 @@ impl NearBlockchain {
 ```
 
 `DeployedContract` wraps the contract's account ID plus its own `near-kit`
-client. It exposes `call` (from the contract account), `call_from`/
-`call_from_with_deposit` (from an arbitrary `ClientHandle`), `view`, and
+client. It exposes `call` (from the contract account), `call_with_args`
+(a typed `FunctionCallArgs` from an arbitrary `ClientHandle`), `view`, and
 `state()` (parsed `ProtocolContractState`).
 
 `ClientHandle` exists so tests can re-use a signer for a non-contract account

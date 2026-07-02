@@ -9,6 +9,7 @@ use crate::sandbox::utils::{
 use digest::Digest;
 use dtos::ProtocolContractState;
 use k256::ecdsa::SigningKey;
+use mpc_call_args::FunctionCallArgs;
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
@@ -21,6 +22,7 @@ use mpc_contract::{
     update::{ProposeUpdateArgs, UpdateId},
 };
 use near_account_id::AccountId;
+use near_mpc_contract_interface::call_args::{CallContract, CallError};
 use near_mpc_contract_interface::types::{
     AptosAddress, AptosEvent, AptosExtractedValue, AptosExtractor, AptosFinality, AptosRpcRequest,
     AptosTxId, Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
@@ -38,7 +40,11 @@ use near_mpc_contract_interface::{
     },
 };
 use near_mpc_sdk::foreign_chain::{ExtractedValue, ForeignChainRpcRequest, Hash256};
-use near_workspaces::{Account, Worker, result::Execution};
+use near_workspaces::{
+    Account, Worker,
+    operations::TransactionStatus,
+    result::{Execution, ExecutionFinalResult},
+};
 use near_workspaces::{Contract, network::Sandbox, result::ExecutionSuccess};
 use rand_core::CryptoRngCore;
 use serde_json::json;
@@ -884,4 +890,56 @@ pub fn aptos_request() -> ForeignChainRpcRequest {
         finality: AptosFinality::Committed,
         extractors: vec![AptosExtractor::Event { event_index: 0 }],
     })
+}
+
+/// Local newtype so we can implement the foreign [`CallContract`] trait for the
+/// foreign near-workspaces [`Account`] (orphan rule).
+pub struct SandboxCaller<'a>(pub &'a Account);
+
+impl CallContract for SandboxCaller<'_> {
+    type Output = ExecutionFinalResult;
+
+    async fn call_contract(
+        &self,
+        contract_id: &AccountId,
+        call_args: FunctionCallArgs,
+    ) -> Result<ExecutionFinalResult, CallError> {
+        let status = self
+            .0
+            .call(contract_id, &call_args.method_name)
+            .args(call_args.args)
+            .gas(call_args.gas)
+            .deposit(call_args.deposit)
+            .transact()
+            .await
+            .map_err(|e| CallError::Call(Box::new(e)))?;
+        dbg!(&status);
+        Ok(status)
+    }
+}
+
+/// Async counterpart of [`SandboxCaller`]: submits via `transact_async` and
+/// yields the [`TransactionStatus`] handle to await later.
+pub struct SandboxAsyncCaller<'a>(pub &'a Account);
+
+impl CallContract for SandboxAsyncCaller<'_> {
+    type Output = TransactionStatus;
+
+    async fn call_contract(
+        &self,
+        contract_id: &AccountId,
+        call_args: FunctionCallArgs,
+    ) -> Result<TransactionStatus, CallError> {
+        let status = self
+            .0
+            .call(contract_id, &call_args.method_name)
+            .args(call_args.args)
+            .gas(call_args.gas)
+            .deposit(call_args.deposit)
+            .transact_async()
+            .await
+            .map_err(|e| CallError::Call(Box::new(e)))?;
+        dbg!(&status);
+        Ok(status)
+    }
 }

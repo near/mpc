@@ -1,4 +1,6 @@
 #![doc = include_str!("../README.md")]
+#[cfg(feature = "call-args")]
+pub mod call_args;
 pub mod method_names;
 pub mod types {
     pub use attestation::{
@@ -28,7 +30,7 @@ pub mod types {
         protocol_state_to_string,
     };
     pub use tee::NodeId;
-    pub use updates::{ProposedUpdates, UpdateHash};
+    pub use updates::{ProposeUpdateArgs, ProposedUpdates, UpdateHash};
 
     // Re-export hash types used in attestation DTO fields
     pub use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash, Sha384Digest};
