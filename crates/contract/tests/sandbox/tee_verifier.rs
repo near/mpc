@@ -9,6 +9,8 @@
 //! - verifier not configured → submission rejected, nothing stored.
 //! - `Rejected` → submission fails, deposit refunded, no stored attestation.
 //! - no-verdict (stub panics) → the ~200-block yield timeout cleans up.
+//! - `resolve_verification` runs out of gas → its receipt rolls back atomically
+//!   and the same ~200-block timeout cleans up (no half-committed state).
 #![allow(non_snake_case)]
 
 use crate::sandbox::{
@@ -209,6 +211,72 @@ async fn submit_participant_info__should_clean_up_on_verifier_crash() -> Result<
     assert!(
         !has_pending_attestation(&contract, submitter.id()).await?,
         "the pending entry must be cleaned up after the yield timeout"
+    );
+    assert_deposit_refunded(submitter, balance_before).await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn submit_participant_info__should_clean_up_when_resolve_verification_runs_out_of_gas()
+-> Result<()> {
+    // Given: a contract configured with a `resolve_verification` gas budget far
+    // too small to run the post-DCAP work and resume the yield, so the callback
+    // receipt runs out of gas mid-execution and rolls back atomically. The stub
+    // answers (here, a rejection) so `resolve_verification` actually runs rather
+    // than hitting the no-verdict early return.
+    let init_config = dtos::InitConfig {
+        resolve_verification_tera_gas: Some(1),
+        ..Default::default()
+    };
+    let SandboxTestSetup {
+        worker,
+        mpc_signer_accounts,
+        contract,
+        ..
+    } = SandboxTestSetup::builder()
+        .with_protocols(ALL_PROTOCOLS)
+        .with_sandbox_test_methods()
+        .with_init_config(init_config)
+        .build()
+        .await;
+    deploy_and_trust_stub(
+        &worker,
+        &contract,
+        &mpc_signer_accounts,
+        StubResponse::Rejected("would-refund-if-resolve-had-gas".to_string()),
+    )
+    .await?;
+
+    // When: a participant submits. The verifier answers, but `resolve_verification`
+    // runs out of gas before `promise_yield_resume`, so its whole receipt — the
+    // pending-entry removal and the refund included — rolls back and the yield is
+    // never resumed. The chain then advances past the ~200-block timeout so the
+    // runtime fires `on_attestation_verified`'s timeout branch.
+    let submitter = &mpc_signer_accounts[0];
+    let balance_before = submitter.view_account().await?.balance;
+    let _ = submit_participant_info_with_deposit(
+        submitter,
+        &contract,
+        &dstack_attestation(),
+        &tls_key(),
+        NearToken::from_near(1),
+    )
+    .await?;
+    worker.fast_forward(YIELD_TIMEOUT_BLOCKS).await?;
+
+    // Then: an out-of-gas `resolve_verification` is recovered exactly like an
+    // unreachable verifier — nothing stored, the pending entry cleaned up by the
+    // timeout branch, and the deposit refunded. This is the guarantee that a
+    // partial `resolve_verification` receipt cannot leave a refunded-but-still-
+    // pending entry: the receipt is atomic, so the account is not wedged.
+    let stored = get_participant_attestation(&contract, &tls_key()).await?;
+    assert!(
+        stored.is_none(),
+        "nothing should be stored when resolve_verification runs out of gas"
+    );
+    assert!(
+        !has_pending_attestation(&contract, submitter.id()).await?,
+        "the pending entry must be cleaned up by the yield timeout after an OOG resolve_verification"
     );
     assert_deposit_refunded(submitter, balance_before).await?;
     Ok(())
