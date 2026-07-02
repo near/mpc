@@ -1,3 +1,4 @@
+use crate::trait_extensions::convert_to_contract_dto::IntoContractInterfaceType;
 use crate::types::{SignatureRequest, VerifyForeignTxRequest};
 use anyhow::Context;
 use k256::{
@@ -151,11 +152,7 @@ impl SignatureRespondArgsExt for contract_args::SignatureRespondArgs {
                 .ok_or_else(|| anyhow::anyhow!("Payload is not an ECDSA payload"))?,
         )?;
         Ok(contract_args::SignatureRespondArgs::new(
-            dtos::SignatureRequest {
-                tweak: request.tweak.clone(),
-                payload: request.payload.clone(),
-                domain_id: request.domain,
-            },
+            request.into_contract_interface_type(),
             k256_signature_response(response.big_r, response.s, recovery_id)?,
         ))
     }
@@ -170,11 +167,7 @@ impl SignatureRespondArgsExt for contract_args::SignatureRespondArgs {
             .map_err(|_| anyhow::anyhow!("Response is not 64 bytes"))?;
 
         Ok(contract_args::SignatureRespondArgs::new(
-            dtos::SignatureRequest {
-                tweak: request.tweak.clone(),
-                payload: request.payload.clone(),
-                domain_id: request.domain,
-            },
+            request.into_contract_interface_type(),
             dtos::SignatureResponse::Ed25519 {
                 signature: dtos::Ed25519Signature::from(response),
             },

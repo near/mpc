@@ -20,6 +20,7 @@ use crate::storage::{
     CKDRequestStorage, SignRequestStorage, VerifyForeignTransactionRequestStorage,
 };
 use crate::tracking::{self, AutoAbortTaskCollection};
+use crate::trait_extensions::convert_to_contract_dto::IntoContractInterfaceType;
 use crate::types::SignatureRequest;
 use crate::types::{CKDRequest, RequestsUpdate, VerifyForeignTxRequest};
 use crate::web::{DebugRequest, DebugRequestKind};
@@ -501,14 +502,7 @@ where
                                         .await??;
 
                                         let response = contract_args::CKDRespondArgs::new(
-                                            near_mpc_contract_interface::types::CKDRequest {
-                                                app_public_key: ckd_attempt
-                                                    .request
-                                                    .app_public_key
-                                                    .clone(),
-                                                app_id: ckd_attempt.request.app_id.clone(),
-                                                domain_id: ckd_attempt.request.domain_id,
-                                            },
+                                            (&ckd_attempt.request).into_contract_interface_type(),
                                             CKDResponse {
                                                 big_y: (&response.0.0).into(),
                                                 big_c: (&response.0.1).into(),
