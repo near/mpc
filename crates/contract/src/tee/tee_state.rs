@@ -1383,9 +1383,9 @@ mod tests {
     }
 
     #[test]
-    fn revert_dstack_store__restores_the_displaced_entry_on_update() {
-        // Given: `alice` has an attestation, then updates it — the second insertion
-        // returns the displaced original wrapped in `UpdatedExistingParticipant`.
+    fn revert_dstack_store__should_restore_the_displaced_entry_on_update() {
+        // Given: `alice` has an attestation, then updates it (the second insertion
+        // returns the displaced original wrapped in `UpdatedExistingParticipant`).
         const TEE_UPGRADE_DURATION: Duration = Duration::from_secs(10_000);
         let mut tee_state = TeeState::default();
         let tls_public_key = bogus_ed25519_public_key();
@@ -1426,7 +1426,7 @@ mod tests {
     }
 
     #[test]
-    fn revert_dstack_store__removes_the_newly_inserted_entry() {
+    fn revert_dstack_store__should_remove_the_newly_inserted_entry() {
         // Given: a brand-new attestation for `alice` (no prior entry displaced).
         const TEE_UPGRADE_DURATION: Duration = Duration::from_secs(10_000);
         let mut tee_state = TeeState::default();

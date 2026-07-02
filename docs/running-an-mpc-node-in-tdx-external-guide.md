@@ -2062,8 +2062,7 @@ The error after `err=` is the NEAR runtime error. Common ones:
 If the transaction reaches execution and the contract panics, the node logs only the generic retry line above; the actual message lives in the transaction receipt. Find the tx on `https://testnet.nearblocks.io/address/<your-account>` and open the failed `submit_participant_info` call — the error appears under the action's status / logs. The contract wraps the attestation-side error like this:
 
 ```
-Invalid TEE Remote Attestation: attestation verification failed:
-  the submitted attestation failed verification, reason: Custom("...")
+the submitted attestation failed verification, reason: Custom("...")
 ```
 
 The `reason` is the same `VerificationError` the client-side WARN reports (see section 1) — for example `Custom("the allowed mpc image hashes list is empty")`. Errors that **only** surface on-chain (because they're checked against the contract's allowed-measurements list, the contract's deposit logic, or the contract's caller assertion):
