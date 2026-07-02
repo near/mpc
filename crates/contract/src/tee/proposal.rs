@@ -269,6 +269,8 @@ impl AllowedLauncherImage {
     fn is_expired(&self, ttl: Duration, now: Timestamp) -> bool {
         match self.last_active().checked_add(ttl) {
             Some(deadline) => deadline < now,
+            // Overflow means the deadline is unrepresentably far in the future, so the
+            // entry is not expired. Never panic here: a bogus timestamp must not evict a hash.
             None => false,
         }
     }
@@ -299,6 +301,8 @@ impl AllowedLauncherImages {
             .iter_mut()
             .find(|e| e.launcher_hash == launcher_hash)
         {
+            // Re-vote refreshes only the clock; compose hashes are maintained
+            // separately via `add_mpc_image_compose_hashes`.
             log!("launcher hash already in allowed list, refreshing");
             existing.added = Timestamp::now();
             return true;

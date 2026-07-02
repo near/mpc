@@ -332,8 +332,9 @@ impl TeeState {
 
     /// Refreshes the `last_attested` timestamp of the launcher image referenced by the
     /// stored attestation for `tls_public_key` — the "refresh on use" signal that keeps an
-    /// in-use launcher hash from expiring. Requires an [`AuthenticatedParticipantId`] so a
-    /// non-participant submission cannot keep a launcher hash alive.
+    /// in-use launcher hash from expiring. The [`AuthenticatedParticipantId`] is a
+    /// capability token (value intentionally unused): requiring it means a non-participant
+    /// submission cannot keep a launcher hash alive.
     pub(crate) fn refresh_launcher_usage(
         &mut self,
         tls_public_key: &Ed25519PublicKey,
