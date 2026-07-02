@@ -1,25 +1,12 @@
 //! Argument types for the NEAR MPC signer contract function calls.
 
 use crate::types::{
-    Attestation, CKDAppPublicKey, CKDResponse, CkdAppId, DomainId, Ed25519PublicKey, KeyEventId,
-    Keyset, Payload, PublicKey, SignatureResponse, Tweak, VerifyForeignTransactionRequest,
-    VerifyForeignTransactionResponse,
+    Attestation, CKDResponse, Ed25519PublicKey, KeyEventId, Keyset, PublicKey, SignatureResponse,
+    VerifyForeignTransactionRequest, VerifyForeignTransactionResponse,
 };
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct SignatureRequest {
-    pub tweak: Tweak,
-    pub payload: Payload,
-    pub domain_id: DomainId,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct CKDRequest {
-    pub app_public_key: CKDAppPublicKey,
-    pub app_id: CkdAppId,
-    pub domain_id: DomainId,
-}
+pub use crate::types::{CKDRequest, SignatureRequest};
 
 #[derive(Serialize, Debug, Deserialize, Clone)]
 pub struct SignatureRespondArgs {
