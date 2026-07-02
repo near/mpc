@@ -12,7 +12,10 @@ use crate::{
         tx_sender::TransactionSender,
     },
     keyshare::{GcpPermanentKeyStorageConfig, KeyStorageConfig, KeyshareStorage},
-    migration_service::spawn_recovery_server_and_run_onboarding,
+    migration_service::{
+        onboarding::onboard, start_migration_web_server, types::OnboardingJob,
+        wait_until_role_change,
+    },
     profiler,
     tracing::init_logging,
     tracking::{self, start_root_task},
@@ -413,26 +416,87 @@ where
     let keyshare_storage: Arc<RwLock<KeyshareStorage>> =
         RwLock::new(key_storage_config.create().await?).into();
 
-    spawn_recovery_server_and_run_onboarding(
+    // Migration web server stays alive for the whole process; the receiver
+    // is cloned into every onboarding cycle below so back-migrations can be
+    // served without a restart. See `docs/design/migration-onboarding-dispatcher.md`.
+    let migration_secrets = (&secrets).into();
+    let import_keyshares_receiver = start_migration_web_server(
         config.migration_web_ui,
-        (&secrets).into(),
-        config.my_near_account_id.clone(),
+        &migration_secrets,
         keyshare_storage.clone(),
         indexer_api.my_migration_info_receiver.clone(),
-        indexer_api.contract_state_receiver.clone(),
-        indexer_api.txn_sender.clone(),
     )
     .await?;
 
-    let coordinator = Coordinator {
+    let my_near_account_id = config.my_near_account_id.clone();
+    let tls_pub_key = secrets.persistent_secrets.p2p_private_key.verifying_key();
+    let tx_sender = indexer_api.txn_sender.clone();
+    let contract_state_receiver_for_dispatcher = indexer_api.contract_state_receiver.clone();
+    let migration_info_receiver_for_dispatcher = indexer_api.my_migration_info_receiver.clone();
+
+    let mut coordinator = Coordinator {
         clock: Clock::real(),
         config_file: config,
         secrets,
         secret_db,
-        keyshare_storage,
+        keyshare_storage: keyshare_storage.clone(),
         indexer: indexer_api,
         currently_running_job_name: Arc::new(Mutex::new(String::new())),
         debug_request_sender,
     };
-    coordinator.run().await
+
+    // State-driven dispatcher: run the coordinator while this node is an
+    // active participant; otherwise drive onboarding. The two are mutually
+    // exclusive — the coordinator is cancelled when the role changes away
+    // from `Done`, and onboarding returns once it reaches `Done`.
+    loop {
+        let current_role = OnboardingJob::new(
+            migration_info_receiver_for_dispatcher.borrow().clone(),
+            contract_state_receiver_for_dispatcher.borrow().clone(),
+            &my_near_account_id,
+            &tls_pub_key,
+        );
+
+        match current_role {
+            OnboardingJob::Done => {
+                tracing::info!("dispatcher: active participant — running coordinator");
+                // When the role-change arm wins, `select!` drops the
+                // coordinator future; cleanup cascades through the
+                // `drop_guard` on its internal cancellation token.
+                tokio::select! {
+                    res = coordinator.run() => {
+                        res?;
+                        tracing::info!(
+                            "dispatcher: coordinator returned without role change"
+                        );
+                    }
+                    res = wait_until_role_change(
+                        contract_state_receiver_for_dispatcher.clone(),
+                        migration_info_receiver_for_dispatcher.clone(),
+                        &my_near_account_id,
+                        &tls_pub_key,
+                        OnboardingJob::Done,
+                    ) => {
+                        res?;
+                        tracing::info!(
+                            "dispatcher: role changed away from active participant"
+                        );
+                    }
+                }
+            }
+            OnboardingJob::Onboard(_) | OnboardingJob::WaitForStateChange => {
+                tracing::info!("dispatcher: not an active participant — running onboarding");
+                onboard(
+                    contract_state_receiver_for_dispatcher.clone(),
+                    migration_info_receiver_for_dispatcher.clone(),
+                    my_near_account_id.clone(),
+                    tls_pub_key,
+                    tx_sender.clone(),
+                    keyshare_storage.clone(),
+                    import_keyshares_receiver.clone(),
+                )
+                .await?;
+            }
+        }
+    }
 }
