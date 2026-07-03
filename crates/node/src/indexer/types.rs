@@ -116,7 +116,7 @@ impl ChainSendTransactionRequest {
     }
 }
 
-/// Extension trait for constructing SignatueRespond arguments from node-internal types.
+/// Extension trait for constructing SignatureRespond arguments from node-internal types.
 pub trait SignatureRespondArgsExt {
     fn from_ecdsa(
         request: &SignatureRequest,
