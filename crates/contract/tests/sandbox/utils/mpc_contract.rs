@@ -80,7 +80,7 @@ pub async fn has_pending_attestation(
     account_id: &AccountId,
 ) -> anyhow::Result<bool> {
     Ok(contract
-        .view("has_pending_attestation")
+        .view(method_names::HAS_PENDING_ATTESTATION)
         .args_json(serde_json::json!({ "account_id": account_id }))
         .await?
         .json()?)

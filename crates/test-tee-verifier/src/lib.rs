@@ -1,12 +1,7 @@
 //! Test-only stub of the `tee-verifier` contract.
 //!
-//! [`TestTeeVerifier::verify_quote`] ignores its inputs and returns a response
-//! fixed at init time, instead of running real `dcap_qvl::verify`. This lets
-//! `mpc-contract` sandbox tests drive every branch of the async attestation flow
-//! deterministically: a [`StubResponse::Verified`] report (which the test
-//! supplies so it matches the fixture's post-DCAP expectations), a
-//! [`StubResponse::Rejected`] verdict, or a panic (the no-verdict /
-//! verifier-unreachable path).
+//! [`TestTeeVerifier::verify_quote`] returns a [`StubResponse`] fixed at init
+//! time instead of running real `dcap_qvl::verify`.
 
 use near_sdk::{env, near};
 use tee_verifier_interface::{Collateral, QuoteBytes, VerificationResult, VerifierError};
@@ -40,9 +35,8 @@ impl TestTeeVerifier {
         Self { response }
     }
 
-    /// Stub mirror of the real `tee-verifier` contract's verify-quote method:
-    /// ignores the quote and collateral and returns the canned response. Panics
-    /// on [`StubResponse::Panic`].
+    /// Ignores its inputs and returns the configured response, panicking on
+    /// [`StubResponse::Panic`].
     #[result_serializer(borsh)]
     pub fn verify_quote(
         &self,
