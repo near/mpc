@@ -5,7 +5,10 @@ use block_processor::listen_blocks;
 use config::StreamerConfig;
 use near_indexer::StreamerMessage;
 
-use crate::{errors::ChainGatewayError, primitives::FetchLatestFinalBlockInfo};
+use crate::{
+    errors::ChainGatewayError, event_subscriber::consts::DEFAULT_NUMBER_OF_TRACKED_BLOCKS,
+    primitives::FetchLatestFinalBlockInfo,
+};
 
 use super::{
     block_events::BlockUpdate,
@@ -22,11 +25,24 @@ pub(crate) async fn start(
         buffer_size,
         block_events,
     } = block_event_subscriber.into();
+    let number_of_tracked_blocks = DEFAULT_NUMBER_OF_TRACKED_BLOCKS.max(
+        buffer_size
+            .try_into()
+            .expect("usize is expected to fit into u64"),
+    );
     let (stats_tx, stats_rx) = tokio::sync::watch::channel(IndexerStats::new());
     let (block_tx, block_rx) = tokio::sync::mpsc::channel(buffer_size);
 
     tokio::spawn(async move {
-        if let Err(err) = listen_blocks(stream, block_events, stats_tx, block_tx).await {
+        if let Err(err) = listen_blocks(
+            stream,
+            block_events,
+            stats_tx,
+            block_tx,
+            number_of_tracked_blocks,
+        )
+        .await
+        {
             tracing::error!(target: "chain gateway", "block event listener stopped: {err}");
         }
     });

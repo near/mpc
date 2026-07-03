@@ -1,12 +1,11 @@
 use std::time::Duration;
 
 use chain_gateway::{
-    Gas,
     state_viewer::{SubscribeToContractMethod, WatchContractState},
     transaction_sender::SubmitFunctionCall,
 };
 use chain_gateway_test_contract::{
-    args::{Call, make_set_value_args},
+    args::make_set_value_args,
     consts::{DEFAULT_VALUE, VIEW_VALUE},
 };
 
@@ -33,18 +32,10 @@ async fn test_subscription() {
     // Submit set_value transaction via the observer, using a separate user account
     let new_value = "updated by sender test";
 
-    let Call {
-        method, args, gas, ..
-    } = make_set_value_args(new_value);
+    let call = make_set_value_args(new_value);
 
     observer_gw
-        .submit_function_call_tx(
-            &signer,
-            contract_id,
-            method,
-            args,
-            Gas::from_teragas(gas.into()),
-        )
+        .submit_function_call_tx(&signer, contract_id, call)
         .await
         .unwrap();
 

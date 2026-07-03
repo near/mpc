@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use attestation_cli::cli::Cli;
 use attestation_cli::verify;
-use mpc_attestation::attestation::Attestation;
+use mpc_attestation::attestation::{Attestation, DEFAULT_EXPIRATION_DURATION_SECONDS};
 use near_mpc_crypto_types::Ed25519PublicKey;
 use node_types::http_server::StaticWebData;
 use test_utils::attestation::{
@@ -56,7 +56,7 @@ fn full_verification_succeeds_with_valid_attestation() {
     assert_eq!(result.mpc_image_hash.as_hex(), TEST_MPC_IMAGE_DIGEST_HEX);
     assert_eq!(
         result.expiry_timestamp_seconds,
-        VALID_ATTESTATION_TIMESTAMP + 60 * 60 * 24 * 7
+        VALID_ATTESTATION_TIMESTAMP + DEFAULT_EXPIRATION_DURATION_SECONDS
     );
 }
 

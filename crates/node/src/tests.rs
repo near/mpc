@@ -124,6 +124,7 @@ impl OneNodeTestConfig {
                     dummy_protocol_state_receiver,
                     dummy_migration_state_receiver,
                     self.config.clone(),
+                    serde_json::json!({}),
                     SharedRecentTransactions::default(),
                 )
                 .await?;
@@ -210,6 +211,7 @@ impl IntegrationTestSetup {
                     finality: Finality::Final,
                     mpc_contract_id: "test".parse().unwrap(),
                     port_override: None,
+                    wipe_near_data_token: 0,
                     sync_mode: SyncMode::Latest,
                     validate_genesis: false,
                 },

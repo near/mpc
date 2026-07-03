@@ -24,6 +24,7 @@ derive_more = { workspace = true }
 ed25519-dalek = { workspace = true }
 flume = { workspace = true }
 foreign-chain-inspector = { workspace = true }
+foreign-chain-rpc-auth = { workspace = true }
 foreign-chain-rpc-interfaces = { workspace = true }
 futures = { workspace = true }
 gcloud-sdk = { workspace = true }
@@ -50,6 +51,7 @@ near-indexer = { workspace = true }
 near-indexer-primitives = { workspace = true }
 near-mpc-bounded-collections = { workspace = true }
 near-mpc-contract-interface = { workspace = true, features = [
+    "call-args",
     "k256",
     "ed25519-dalek",
     "blstrs",
@@ -118,6 +120,7 @@ mockall = { workspace = true }
 mpc-contract = { workspace = true, features = ["test-utils"] }
 rstest = { workspace = true }
 serial_test = { workspace = true }
+tempfile = { workspace = true }
 test-log = { workspace = true }
 threshold-signatures = { workspace = true, features = ["test-utils"] }
 tokio = { workspace = true, features = ["test-util"] }

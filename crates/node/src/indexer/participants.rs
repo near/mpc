@@ -348,19 +348,48 @@ pub async fn monitor_contract_state(
     contract_state_receiver
 }
 
+/// Sentinel address used when a participant's stored address cannot be parsed. Any value
+/// from RFC 5737 TEST-NET-1 (`192.0.2.0/24`) is guaranteed unroutable, so the participant
+/// is kept in the set but treated as unreachable rather than failing the whole conversion
+/// and stalling every node.
+const UNREACHABLE_PARTICIPANT_ADDRESS: &str = "192.0.2.1";
+
+fn parse_participant_address(
+    url: &str,
+    port_override: Option<u16>,
+) -> anyhow::Result<(String, u16)> {
+    let parsed =
+        Url::parse(url).with_context(|| format!("could not parse participant url {url}"))?;
+    let Some(address) = parsed.host_str() else {
+        anyhow::bail!("no host found in participant url {url}");
+    };
+    let Some(port) = port_override.or(parsed.port_or_known_default()) else {
+        anyhow::bail!("no port found in participant url {url}");
+    };
+    Ok((address.to_string(), port))
+}
+
 pub fn convert_participant_infos(
     threshold_parameters: ThresholdParameters,
     port_override: Option<u16>,
 ) -> anyhow::Result<ParticipantsConfig> {
     let mut converted = Vec::new();
     for (account_id, id, info) in &threshold_parameters.participants.participants {
-        let url = Url::parse(&info.url)
-            .with_context(|| format!("could not parse participant url {}", info.url))?;
-        let Some(address) = url.host_str() else {
-            anyhow::bail!("no host found in participant url {}", info.url);
-        };
-        let Some(port) = port_override.or(url.port_or_known_default()) else {
-            anyhow::bail!("no port found in participant url {}", info.url);
+        let (address, port) = match parse_participant_address(&info.url, port_override) {
+            Ok(address) => address,
+            Err(error) => {
+                tracing::warn!(
+                    target: "mpc",
+                    participant = %account_id,
+                    url = %info.url,
+                    %error,
+                    "participant address unparseable; treating node as unreachable"
+                );
+                (
+                    UNREACHABLE_PARTICIPANT_ADDRESS.to_string(),
+                    port_override.unwrap_or(0),
+                )
+            }
         };
 
         let p2p_public_key = ed25519_dalek::VerifyingKey::try_from(&info.tls_public_key)
@@ -372,7 +401,7 @@ pub fn convert_participant_infos(
 
         converted.push(ParticipantInfo {
             id: (*id).into(),
-            address: address.to_string(),
+            address,
             port,
             p2p_public_key,
             near_account_id,
@@ -412,7 +441,10 @@ pub mod test_utils {
 #[expect(non_snake_case)]
 mod tests {
     use super::ContractState;
-    use crate::{indexer::participants::convert_participant_infos, providers::PublicKeyConversion};
+    use crate::indexer::participants::{
+        UNREACHABLE_PARTICIPANT_ADDRESS, convert_participant_infos,
+    };
+    use crate::providers::PublicKeyConversion;
     use mpc_contract::state::{
         ProtocolContractState as InternalContractState, test_utils::gen_resharing_state,
     };
@@ -444,24 +476,6 @@ mod tests {
         ]
     }
 
-    fn create_invalid_participant_data_raw() -> Vec<(String, String, String)> {
-        // It's really only possible to have bad data in the urls, which are arbitrary strings.
-        vec![
-            // Bad URL format (missing host)
-            (
-                "multichain-node-dev-5.testnet".to_string(),
-                "http://:3000".to_string(),
-                "ed25519:5op5eGtWrVAWmNjyaLhZMm4itc8bWottr8PGUJEzcKHd".to_string(),
-            ),
-            // Bad URL format (missing http prefix)
-            (
-                "multichain-node-dev-6.testnet".to_string(),
-                "10.101.0.122:3000".to_string(),
-                "ed25519:41VQ8NxWF11cjse5WjiJBtbrGDPKLQ712Kg1oGyM9w9P".to_string(),
-            ),
-        ]
-    }
-
     fn create_dto_participants_from_raw(raw: Vec<(String, String, String)>) -> Participants {
         let mut entries: Vec<(DtoAccountId, ParticipantId, ParticipantInfo)> = Vec::new();
 
@@ -488,10 +502,6 @@ mod tests {
 
     fn create_chain_participant_infos() -> Participants {
         create_dto_participants_from_raw(create_participant_data_raw())
-    }
-
-    fn create_invalid_chain_participant_infos() -> Participants {
-        create_dto_participants_from_raw(create_invalid_participant_data_raw())
     }
 
     // Check that the participant ids are assigned 0 to N-1 by AccountId order
@@ -549,35 +559,64 @@ mod tests {
             .for_each(|p| assert!(p.port == 443));
     }
 
-    // It is fatal if any of the participants has bad data, even if the others are OK
+    /// One participant's unparseable address must not fail the whole conversion: the entry
+    /// is kept (so participant count / threshold stay consistent with the contract) but
+    /// pointed at an unreachable sentinel address.
     #[test]
-    fn test_bad_participant_data() {
-        let chain_infos = create_chain_participant_infos();
-        for (account_id, _, bad_data) in &create_invalid_chain_participant_infos().participants {
-            let mut new_entries = chain_infos.participants.clone();
-            // Replace or add the bad entry
-            if let Some(entry) = new_entries.iter_mut().find(|(a, _, _)| a == account_id) {
-                entry.2 = bad_data.clone();
-            } else {
-                new_entries.push((
-                    account_id.clone(),
-                    ParticipantId(new_entries.len() as u32),
-                    bad_data.clone(),
-                ));
-            }
-            let new_infos = Participants {
-                next_id: ParticipantId(new_entries.len() as u32),
-                participants: new_entries,
-            };
-            let params = ThresholdParameters {
-                participants: new_infos,
-                threshold: Threshold(3),
-            };
-            print!("\n\nmy params: \n{:?}\n", params);
-            let converted = convert_participant_infos(params, None);
-            print!("\n\nmyconverted: \n{:?}\n", converted);
-            let _ = converted.expect_err("Invalid participant data should be rejected");
-        }
+    fn convert_participant_infos__should_keep_unreachable_participant_when_address_unparseable() {
+        // Given
+        let mut entries = create_chain_participant_infos().participants;
+        let original_count = entries.len();
+        entries[0].2.url = "http://:3000".to_string();
+        let account = entries[0].0.clone();
+        let params = ThresholdParameters {
+            participants: Participants {
+                next_id: ParticipantId(entries.len() as u32),
+                participants: entries,
+            },
+            threshold: Threshold(3),
+        };
+
+        // When
+        let converted = convert_participant_infos(params, None).unwrap();
+
+        // Then
+        assert_eq!(converted.participants.len(), original_count);
+        let entry = converted
+            .participants
+            .iter()
+            .find(|p| p.near_account_id == account)
+            .unwrap();
+        assert_eq!(entry.address, UNREACHABLE_PARTICIPANT_ADDRESS);
+        assert_eq!(entry.port, 0);
+    }
+
+    /// `port_override` still applies to a participant whose address is unparseable.
+    #[test]
+    fn convert_participant_infos__should_apply_port_override_to_unreachable_participant() {
+        // Given
+        let mut entries = create_chain_participant_infos().participants;
+        entries[0].2.url = "http://:3000".to_string();
+        let account = entries[0].0.clone();
+        let params = ThresholdParameters {
+            participants: Participants {
+                next_id: ParticipantId(entries.len() as u32),
+                participants: entries,
+            },
+            threshold: Threshold(3),
+        };
+
+        // When
+        let converted = convert_participant_infos(params, Some(8080)).unwrap();
+
+        // Then
+        let entry = converted
+            .participants
+            .iter()
+            .find(|p| p.near_account_id == account)
+            .unwrap();
+        assert_eq!(entry.address, UNREACHABLE_PARTICIPANT_ADDRESS);
+        assert_eq!(entry.port, 8080);
     }
 
     #[test]

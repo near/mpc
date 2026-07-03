@@ -6,4 +6,4 @@ pub mod contract_types;
 /// Single source of truth shared by the e2e-tests crate and the contract test crates.
 /// `scripts/check-sandbox-image-version.sh` enforces that this stays in lockstep with
 /// the workspace's nearcore tag.
-pub const DEFAULT_SANDBOX_VERSION: &str = "2.12.0";
+pub const DEFAULT_SANDBOX_VERSION: &str = "2.13.0-rc.2";

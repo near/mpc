@@ -1,11 +1,13 @@
 use super::handler::listen_blocks;
 use super::migrations::{ContractMigrationInfo, monitor_migrations};
+use super::near_data_wipe::wipe_near_data_if_requested;
 use super::participants::monitor_contract_state;
 use super::stats::indexer_logger;
 use super::{IndexerAPI, IndexerState, RealForeignChainPolicyReader};
 use crate::config::RespondConfig;
 #[cfg(feature = "network-hardship-simulation")]
 use crate::config::load_listening_blocks_file;
+use crate::home_paths::near_data_dir;
 use crate::indexer::configs::IndexerConfigExt;
 use crate::indexer::tee::{
     monitor_allowed_docker_images, monitor_allowed_foreign_chain_providers,
@@ -16,8 +18,10 @@ use crate::types::LogTransaction;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_node_config::IndexerConfig;
 use near_account_id::AccountId;
+use near_async::ActorSystem;
 use near_indexer::Indexer;
 use near_mpc_contract_interface::types::ProtocolContractState;
+use std::future::Future;
 use std::path::PathBuf;
 use std::sync::Arc;
 #[cfg(feature = "network-hardship-simulation")]
@@ -99,13 +103,36 @@ pub fn spawn_real_indexer(
                 .load_near_config()
                 .expect("near config is present");
 
-            let near_node = Indexer::start_near_node(&near_indexer_config, near_config.clone())
-                .await
-                .expect("near node has started");
+            // Operator-driven one-time wipe: when `wipe_near_data_token` is non-zero
+            // and differs from the last applied value, wipe the data dir. Must run
+            // here, after the config is loaded but before `start_near_node` below
+            // opens the store, because the dir can't be removed while nearcore holds
+            // it open. Runs once per process start, so a changed token takes effect on
+            // the next restart.
+            let hot_store_path = match near_config.config.store.path.as_deref() {
+                Some(path) => home_dir.join(path),
+                None => near_data_dir(&home_dir),
+            };
+            wipe_near_data_if_requested(
+                &home_dir,
+                &hot_store_path,
+                mpc_indexer_config.wipe_near_data_token,
+                near_config.client_config.archive,
+            )
+            .expect(
+                "wipe_near_data_token is set but wiping the nearcore data dir failed, \
+                 fix the cause and set wipe_near_data_token to a new value to retry",
+            );
+
+            let near_node = Indexer::start_near_node(
+                &near_indexer_config,
+                near_config.clone(),
+                ActorSystem::new(),
+            )
+            .await
+            .expect("near node has started");
 
             let indexer = Indexer::from_near_node(near_indexer_config, near_config, &near_node);
-
-            let stream = indexer.streamer();
 
             let indexer_state = Arc::new(IndexerState::new(
                 near_node.view_client,
@@ -113,6 +140,28 @@ pub fn spawn_real_indexer(
                 near_node.rpc_handler,
                 mpc_indexer_config.mpc_contract_id.clone(),
             ));
+
+            tracing::info!("Indexer waiting for node to finish syncing before streaming blocks.");
+
+            // Streaming before the node is synced pins the `LatestSynced` cursor
+            // at genesis, below the block tail it can never reach. Raced against
+            // shutdown so a SIGTERM during state sync still tears down cleanly.
+            if !await_sync_or_shutdown(
+                indexer_state.client.ensure_head_follows_tip(),
+                &shutdown_token,
+            )
+            .await
+            {
+                tracing::info!(
+                    "Indexer thread received shutdown signal before sync completed; exiting."
+                );
+                let _ = indexer_exit_sender.send(Ok(()));
+                return;
+            }
+
+            // The node is fully synced by this point, so `LatestSynced` resolves
+            // to the chain tip rather than genesis.
+            let stream = indexer.streamer();
 
             let txn_sender_result = TransactionProcessorHandle::start_transaction_processor(
                 my_near_account_id_clone,
@@ -282,5 +331,51 @@ pub fn spawn_real_indexer(
         attested_nodes_receiver: tee_accounts_receiver,
         my_migration_info_receiver,
         foreign_chain_policy_reader,
+    }
+}
+
+async fn await_sync_or_shutdown(
+    sync: impl Future<Output = ()>,
+    shutdown: &CancellationToken,
+) -> bool {
+    tokio::select! {
+        _ = sync => true,
+        _ = shutdown.cancelled() => false,
+    }
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::await_sync_or_shutdown;
+    use std::future::pending;
+    use tokio_util::sync::CancellationToken;
+
+    #[tokio::test]
+    async fn await_sync_or_shutdown__should_return_true_when_sync_completes_first() {
+        // Given
+        let shutdown = CancellationToken::new();
+
+        // When
+        let synced = await_sync_or_shutdown(async {}, &shutdown).await;
+
+        // Then
+        assert!(synced);
+    }
+
+    /// The dominant production path: a SIGTERM arrives while the node is still
+    /// syncing, so the wait must yield to shutdown rather than block on sync.
+    #[tokio::test]
+    async fn await_sync_or_shutdown__should_return_false_when_shutdown_during_sync() {
+        // Given
+        let shutdown = CancellationToken::new();
+        let shutdown_clone = shutdown.clone();
+        tokio::spawn(async move { shutdown_clone.cancel() });
+
+        // When
+        let synced = await_sync_or_shutdown(pending::<()>(), &shutdown).await;
+
+        // Then
+        assert!(!synced);
     }
 }
