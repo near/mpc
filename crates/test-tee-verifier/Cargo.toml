@@ -17,12 +17,17 @@ crate-type = ["cdylib", "lib"]
 [features]
 # Enabled by `cargo near build` / `--all-features` for ABI generation, mirroring
 # the real `tee-verifier`: pulls in the borsh schema for the wire DTOs.
-abi = ["borsh/unstable__schema", "tee-verifier-interface/borsh-schema"]
+abi = [
+    "borsh/unstable__schema",
+    "tee-verifier-interface/borsh-schema",
+    "test-tee-verifier-types/abi",
+]
 
 [dependencies]
 borsh = { workspace = true }
 near-sdk = { workspace = true }
 tee-verifier-interface = { workspace = true }
+test-tee-verifier-types = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { workspace = true, features = ["custom"] }

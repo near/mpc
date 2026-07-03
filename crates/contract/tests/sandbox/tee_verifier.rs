@@ -25,31 +25,14 @@ use crate::sandbox::{
     },
 };
 use anyhow::Result;
-use borsh::BorshSerialize;
 use near_mpc_contract_interface::types::{self as dtos, Attestation};
 use near_workspaces::{Account, Contract, Worker, network::Sandbox, types::NearToken};
+use test_tee_verifier_types::StubResponse;
 use test_utils::attestation::{mock_dto_dstack_attestation, p2p_tls_key, verified_report};
 
 /// Blocks to fast-forward past the ~200-block yield-resume timeout so the
 /// runtime fires `on_attestation_verified`'s timeout branch.
 const YIELD_TIMEOUT_BLOCKS: u64 = 250;
-
-/// Mirror of `test_tee_verifier::StubResponse`. Re-declared here (rather than
-/// depending on the stub crate) so the test only needs its Borsh encoding to
-/// initialize the deployed stub; the stub is a separate `#[near]` contract and
-/// linking its crate into this test binary would collide on ABI symbols.
-///
-/// KEEP THE VARIANT ORDER IN SYNC with `test_tee_verifier::StubResponse`: Borsh
-/// encodes an enum as a u8 discriminant equal to the declaration index, so a
-/// reorder on either side silently misroutes the response. `stub_response_discriminants`
-/// below pins the indices so a divergence fails loudly.
-#[expect(clippy::large_enum_variant)]
-#[derive(BorshSerialize)]
-enum StubResponse {
-    Verified(tee_verifier_interface::VerifiedReport),
-    Rejected(String),
-    Panic,
-}
 
 /// Deploys the stub verifier with the given response, initializes it, and votes
 /// it in as `mpc-contract`'s trusted verifier (all participants vote so the
@@ -333,23 +316,4 @@ async fn assert_deposit_refunded(account: &Account, balance_before: NearToken) -
         "deposit should be fully refunded (net spent {net_spent} yoctoNEAR should be gas-only, < {gas_ceiling})"
     );
     Ok(())
-}
-
-/// Pins the Borsh discriminant of each [`StubResponse`] variant to its declaration
-/// index. The deployed `test_tee_verifier::StubResponse` deserializes what this
-/// mirror serializes, so a reorder on either side must fail loudly here rather
-/// than silently misroute a response. `Verified` is index 0 by position (a
-/// `VerifiedReport` fixture is not needed to guard the reorder that matters).
-#[test]
-fn stub_response_discriminants() {
-    assert_eq!(
-        borsh::to_vec(&StubResponse::Rejected(String::new())).unwrap()[0],
-        1,
-        "Rejected must be Borsh discriminant 1"
-    );
-    assert_eq!(
-        borsh::to_vec(&StubResponse::Panic).unwrap()[0],
-        2,
-        "Panic must be Borsh discriminant 2"
-    );
 }
