@@ -222,10 +222,13 @@ impl FakeMpcContractState {
             }
             _ => panic!("Cannot start resharing from non-running state"),
         };
+        // Mirror the real contract: `resharing_key` keeps the old threshold; the update
+        // travels only in `per_domain_thresholds`, which the node applies itself.
         let resharing_domain = previous_running_state
             .domains
-            .effective_domain_by_index(0, &per_domain_thresholds)
-            .unwrap();
+            .get_domain_by_index(0)
+            .unwrap()
+            .clone();
         self.state = ProtocolContractState::Resharing(ResharingContractState {
             previous_running_state: RunningContractState::new(
                 previous_running_state.domains.clone(),

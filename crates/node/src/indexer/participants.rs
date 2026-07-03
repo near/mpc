@@ -8,7 +8,7 @@ use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::{KeyEvent, ProtocolContractState, ThresholdParameters};
 use near_mpc_crypto_types::{KeyForDomain as ContractKeyForDomain, Keyset as ContractKeyset};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use tokio::sync::watch;
 use url::Url;
@@ -123,6 +123,10 @@ pub struct ContractResharingState {
     pub new_participants: ParticipantsConfig,
     pub reshared_keys: ContractKeyset,
     pub key_event: ContractKeyEventInstance,
+    /// Per-domain threshold updates from the accepted proposal. The contract keeps
+    /// `resharing_key` at the old threshold and only folds these into the registry on
+    /// completion, so the node applies them to the resharing key event itself.
+    pub per_domain_thresholds: BTreeMap<dtos::DomainId, dtos::ReconstructionThreshold>,
 }
 
 /// A stripped-down version of the contract state, containing only the state
@@ -202,6 +206,19 @@ impl ContractState {
                 })
             }
             ProtocolContractState::Resharing(state) => {
+                let mut key_event = convert_key_event_to_instance(
+                    &state.resharing_key,
+                    height,
+                    state.reshared_keys.clone(),
+                )
+                .context("failed to convert resharing key event")?;
+
+                // Reshare to the new degree: the contract carries the update only in
+                // `per_domain_thresholds`, not on the resharing key event's domain.
+                if let Some(new_threshold) = state.per_domain_thresholds.get(&key_event.domain.id) {
+                    key_event.domain.reconstruction_threshold = *new_threshold;
+                }
+
                 let resharing_state = Some(ContractResharingState {
                     new_participants: convert_participant_infos(
                         state.resharing_key.parameters.clone(),
@@ -211,12 +228,8 @@ impl ContractState {
                         epoch_id: state.resharing_key.epoch_id,
                         domains: state.reshared_keys.clone(),
                     },
-                    key_event: convert_key_event_to_instance(
-                        &state.resharing_key,
-                        height,
-                        state.reshared_keys.clone(),
-                    )
-                    .context("failed to convert resharing key event")?,
+                    key_event,
+                    per_domain_thresholds: state.per_domain_thresholds.clone(),
                 });
 
                 let running_state = state.previous_running_state.clone();
