@@ -2,7 +2,6 @@ mod errors;
 mod types;
 
 pub use errors::TeeContextError;
-pub use near_mpc_contract_interface::types::SubmitParticipantInfoArgs;
 pub use types::{AllowedTeeHashes, TeeNodeIdentity};
 
 use chain_gateway::{
@@ -12,6 +11,7 @@ use chain_gateway::{
     types::FunctionCallArgs,
 };
 use near_account_id::AccountId;
+use near_mpc_contract_interface::call_args as contract_args;
 use near_mpc_contract_interface::method_names::{
     ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_LAUNCHER_COMPOSE_HASHES, SUBMIT_PARTICIPANT_INFO,
     VERIFY_TEE,
@@ -95,10 +95,7 @@ where
         attestation: Attestation,
         tls_public_key: Ed25519PublicKey,
     ) -> Result<(), TeeContextError> {
-        let args = SubmitParticipantInfoArgs {
-            proposed_participant_attestation: attestation,
-            tls_public_key,
-        };
+        let args = contract_args::SubmitParticipantInfoArgs::new(attestation, tls_public_key);
         let args_json = serde_json::to_vec(&args)?;
 
         self.submitter

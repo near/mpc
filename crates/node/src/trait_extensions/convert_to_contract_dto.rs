@@ -170,3 +170,23 @@ impl IntoContractInterfaceType<near_mpc_contract_interface::types::EventLog> for
         }
     }
 }
+
+impl IntoContractInterfaceType<dtos::SignatureRequest> for &crate::types::SignatureRequest {
+    fn into_contract_interface_type(self) -> dtos::SignatureRequest {
+        dtos::SignatureRequest {
+            tweak: self.tweak.clone(),
+            payload: self.payload.clone(),
+            domain_id: self.domain,
+        }
+    }
+}
+
+impl IntoContractInterfaceType<dtos::CKDRequest> for &crate::types::CKDRequest {
+    fn into_contract_interface_type(self) -> dtos::CKDRequest {
+        dtos::CKDRequest {
+            app_public_key: self.app_public_key.clone(),
+            app_id: self.app_id.clone(),
+            domain_id: self.domain_id,
+        }
+    }
+}
