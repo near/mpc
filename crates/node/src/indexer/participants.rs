@@ -409,14 +409,20 @@ pub mod test_utils {
     }
 }
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
+    use super::ContractState;
     use crate::{indexer::participants::convert_participant_infos, providers::PublicKeyConversion};
+    use mpc_contract::state::{
+        ProtocolContractState as InternalContractState, test_utils::gen_resharing_state,
+    };
     use near_indexer_primitives::types::AccountId;
     use near_mpc_contract_interface::types::AccountId as DtoAccountId;
     use near_mpc_contract_interface::types::{
-        ParticipantId, ParticipantInfo, Participants, Threshold, ThresholdParameters,
+        ParticipantId, ParticipantInfo, Participants, ProtocolContractState,
+        ReconstructionThreshold, Threshold, ThresholdParameters,
     };
-    use std::collections::HashMap;
+    use std::collections::{BTreeMap, HashMap};
 
     fn create_participant_data_raw() -> Vec<(String, String, String)> {
         vec![
@@ -572,5 +578,66 @@ mod tests {
             print!("\n\nmyconverted: \n{:?}\n", converted);
             let _ = converted.expect_err("Invalid participant data should be rejected");
         }
+    }
+
+    #[test]
+    fn from_contract_state__should_override_resharing_key_threshold_from_per_domain_thresholds() {
+        // Given a resharing state where the threshold update travels only in
+        // per_domain_thresholds; the contract leaves resharing_key at the old degree.
+        let (_, mut resharing) = gen_resharing_state(1);
+        let domain_id = resharing.resharing_key.domain().id;
+        let old_threshold = resharing.resharing_key.domain().reconstruction_threshold;
+        let new_threshold = ReconstructionThreshold::new(old_threshold.inner() + 1);
+        resharing.per_domain_thresholds = BTreeMap::from([(domain_id, new_threshold)]);
+        let dto: ProtocolContractState = InternalContractState::Resharing(resharing).into();
+
+        // When converting the on-chain state into the node's representation.
+        let state = ContractState::from_contract_state(&dto, 0, None).unwrap();
+
+        // Then the resharing key event carries the new degree, the update is retained,
+        // and the previous registry (old side of the reshare) keeps the old threshold.
+        let ContractState::Running(running) = state else {
+            panic!("resharing maps to a running state with resharing_state populated");
+        };
+        let resharing_state = running.resharing_state.expect("resharing state present");
+        assert_eq!(
+            resharing_state.key_event.domain.reconstruction_threshold,
+            new_threshold
+        );
+        assert_eq!(
+            resharing_state.per_domain_thresholds,
+            BTreeMap::from([(domain_id, new_threshold)])
+        );
+        assert_eq!(
+            running
+                .domains
+                .iter()
+                .find(|d| d.id == domain_id)
+                .unwrap()
+                .reconstruction_threshold,
+            old_threshold
+        );
+    }
+
+    #[test]
+    fn from_contract_state__should_keep_resharing_key_threshold_when_no_update_present() {
+        // Given a resharing state with no per-domain threshold updates.
+        let (_, resharing) = gen_resharing_state(1);
+        let old_threshold = resharing.resharing_key.domain().reconstruction_threshold;
+        assert!(resharing.per_domain_thresholds.is_empty());
+        let dto: ProtocolContractState = InternalContractState::Resharing(resharing).into();
+
+        // When converting the on-chain state.
+        let state = ContractState::from_contract_state(&dto, 0, None).unwrap();
+
+        // Then the resharing key event keeps the existing threshold.
+        let ContractState::Running(running) = state else {
+            panic!("resharing maps to a running state with resharing_state populated");
+        };
+        let resharing_state = running.resharing_state.expect("resharing state present");
+        assert_eq!(
+            resharing_state.key_event.domain.reconstruction_threshold,
+            old_threshold
+        );
     }
 }
