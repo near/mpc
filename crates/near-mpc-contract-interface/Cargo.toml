@@ -16,6 +16,9 @@ abi = [
     "schemars",
 ]
 blstrs = ["near-mpc-crypto-types/blstrs"]
+# Helpers that build `FunctionCallArgs` for the contract's methods (off in the wasm contract build).
+# Pulls the curve features so the crypto DTOs in the call args are `Serialize`.
+call-args = ["dep:serde_json", "dep:mpc-call-args", "dep:thiserror", "blstrs", "ed25519-dalek", "k256"]
 ed25519-dalek = ["near-mpc-crypto-types/ed25519-dalek"]
 k256 = ["near-mpc-crypto-types/k256"]
 near = ["near-mpc-crypto-types/near"]
@@ -23,13 +26,16 @@ near = ["near-mpc-crypto-types/near"]
 [dependencies]
 borsh = { workspace = true }
 derive_more = { workspace = true }
+mpc-call-args = { workspace = true, optional = true }
 mpc-primitives = { workspace = true }
 near-mpc-bounded-collections = { workspace = true }
-near-mpc-crypto-types = { workspace = true }
+near-mpc-crypto-types = { workspace = true, optional = true }
 serde = { workspace = true }
+serde_json = { workspace = true, optional = true }
 serde_repr = { workspace = true }
 serde_with = { workspace = true }
 sha2 = { workspace = true }
+thiserror = { workspace = true, optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 schemars = { workspace = true, optional = true }

@@ -1,5 +1,6 @@
 #![allow(clippy::expect_fun_call)] // to reduce verbosity of expect calls
 use crate::account::{OperatingAccount, OperatingAccounts, resolve_funding_account};
+use crate::caller::DevnetCaller;
 use crate::cli::{
     ListMpcCmd, MpcAddKeysCmd, MpcDeployContractCmd, MpcDescribeCmd, MpcInitContractCmd,
     MpcProposeUpdateContractCmd, MpcViewContractCmd, MpcVoteAddDomainsCmd, MpcVoteApprovedHashCmd,
@@ -14,23 +15,25 @@ use crate::rpc::NearRpcClients;
 use crate::terraform::get_urls;
 use crate::tx::IntoReturnValueExt;
 use crate::types::{MpcNetworkSetup, MpcParticipantSetup, NearAccount, ParsedConfig};
-use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::{SigningKey, VerifyingKey};
+use mpc_call_args::{NearGas, NearToken};
 use mpc_primitives::domain::DomainId;
 use near_account_id::AccountId;
 use near_jsonrpc_client::errors::{JsonRpcError, JsonRpcServerError};
 use near_jsonrpc_client::methods;
 use near_jsonrpc_client::methods::query::RpcQueryError;
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
+use near_mpc_contract_interface::call_args::{
+    propose_update, vote_add_domains, vote_code_hash, vote_new_parameters, vote_update,
+};
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
-    DomainConfig, DomainPurpose, EpochId, NodeImageHash, ParticipantId, ParticipantInfo,
-    Participants, ProposedThresholdParameters, Protocol, ProtocolContractState,
-    ReconstructionThreshold, Threshold, ThresholdParameters, protocol_state_to_string,
+    DomainConfig, DomainPurpose, ParticipantId, ParticipantInfo, Participants,
+    ProposedThresholdParameters, Protocol, ProtocolContractState, ReconstructionThreshold,
+    Threshold, ThresholdParameters, protocol_state_to_string,
 };
 use near_primitives::types::{BlockReference, Finality, FunctionArgs};
 use near_primitives::views::QueryRequest;
-use near_sdk::borsh;
 use node_types::http_server::StaticWebData;
 use rand::rngs::OsRng;
 use reqwest::Client;
@@ -502,25 +505,17 @@ impl MpcProposeUpdateContractCmd {
         fund_accounts(&mut setup.accounts, vec![account_to_fund], funding_account).await;
         let proposer = setup.accounts.account(proposer_account_id);
 
-        let result = proposer
-            .any_access_key()
-            .await
-            .submit_tx_to_call_function(
-                &contract,
-                method_names::PROPOSE_UPDATE,
-                &borsh::to_vec(&ProposeUpdateArgs {
-                    contract: Some(contract_code),
-                    config: None,
-                })
-                .unwrap(),
-                300,
-                self.deposit_near * ONE_NEAR,
-                near_primitives::views::TxExecutionStatus::Final,
-                false,
-            )
-            .await
-            .into_return_value()
-            .expect("Failed to propose update");
+        let caller = DevnetCaller::verbose(proposer.any_access_key_arc(), false);
+        let result = propose_update(
+            &caller,
+            &contract,
+            &contract_code,
+            NearGas::from_tgas(300),
+            NearToken::from_yoctonear(self.deposit_near * ONE_NEAR),
+        )
+        .await
+        .into_return_value()
+        .expect("Failed to propose update");
         let update_id: u64 = serde_json::from_slice(&result).expect(&format!(
             "Failed to deserialize result: {}",
             String::from_utf8_lossy(&result)
@@ -537,12 +532,6 @@ impl MpcProposeUpdateContractCmd {
             self_exe, name, update_id
         );
     }
-}
-
-#[derive(BorshSerialize, BorshDeserialize)]
-pub struct ProposeUpdateArgs {
-    pub contract: Option<Vec<u8>>,
-    pub config: Option<()>, // unsupported
 }
 
 impl MpcVoteUpdateCmd {
@@ -564,21 +553,10 @@ impl MpcVoteUpdateCmd {
 
         let mut futs = Vec::new();
         for account_id in from_accounts {
-            let account = setup.accounts.account(account_id);
-            let mut key = account.any_access_key().await;
+            let caller = DevnetCaller::new(setup.accounts.account(account_id).any_access_key_arc());
             let contract = contract.clone();
-            futs.push(async move {
-                key.submit_tx_to_call_function(
-                    &contract,
-                    method_names::VOTE_UPDATE,
-                    &serde_json::to_vec(&VoteUpdateArgs { id: self.update_id }).unwrap(),
-                    300,
-                    0,
-                    near_primitives::views::TxExecutionStatus::Final,
-                    true,
-                )
-                .await
-            });
+            let id = self.update_id;
+            futs.push(async move { vote_update(&caller, &contract, id).await });
         }
         let results = futures::future::join_all(futs).await;
         for (i, result) in results.into_iter().enumerate() {
@@ -595,11 +573,6 @@ impl MpcVoteUpdateCmd {
             }
         }
     }
-}
-
-#[derive(Serialize)]
-struct VoteUpdateArgs {
-    id: u64,
 }
 
 impl MpcVoteAddDomainsCmd {
@@ -660,22 +633,10 @@ impl MpcVoteAddDomainsCmd {
 
         let mut futs = Vec::new();
         for account_id in from_accounts {
-            let account = setup.accounts.account(account_id);
-            let mut key = account.any_access_key().await;
+            let caller = DevnetCaller::new(setup.accounts.account(account_id).any_access_key_arc());
             let contract = contract.clone();
             let proposal = proposal.clone();
-            futs.push(async move {
-                key.submit_tx_to_call_function(
-                    &contract,
-                    method_names::VOTE_ADD_DOMAINS,
-                    &serde_json::to_vec(&VoteAddDomainsArgs { domains: proposal }).unwrap(),
-                    300,
-                    0,
-                    near_primitives::views::TxExecutionStatus::Final,
-                    true,
-                )
-                .await
-            });
+            futs.push(async move { vote_add_domains(&caller, &contract, &proposal).await });
         }
         let results = futures::future::join_all(futs).await;
         for (i, result) in results.into_iter().enumerate() {
@@ -689,11 +650,6 @@ impl MpcVoteAddDomainsCmd {
             }
         }
     }
-}
-
-#[derive(Serialize)]
-struct VoteAddDomainsArgs {
-    domains: Vec<DomainConfig>,
 }
 
 impl MpcVoteNewParametersCmd {
@@ -787,25 +743,11 @@ impl MpcVoteNewParametersCmd {
 
         let mut futs = Vec::new();
         for account_id in from_accounts {
-            let account = setup.accounts.account(account_id);
-            let mut key = account.any_access_key().await;
+            let caller = DevnetCaller::new(setup.accounts.account(account_id).any_access_key_arc());
             let contract = contract.clone();
             let proposal = proposal.clone();
             futs.push(async move {
-                key.submit_tx_to_call_function(
-                    &contract,
-                    method_names::VOTE_NEW_PARAMETERS,
-                    &serde_json::to_vec(&VoteNewParametersArgs {
-                        prospective_epoch_id,
-                        proposal,
-                    })
-                    .unwrap(),
-                    300,
-                    0,
-                    near_primitives::views::TxExecutionStatus::Final,
-                    true,
-                )
-                .await
+                vote_new_parameters(&caller, &contract, prospective_epoch_id, &proposal).await
             });
         }
         let results = futures::future::join_all(futs).await;
@@ -856,23 +798,11 @@ impl MpcVoteApprovedHashCmd {
         let mut voting_futures = vec![];
 
         for account_id in accounts.iter().take(threshold as usize) {
-            let account = setup.accounts.account(account_id);
-            let mut key = account.any_access_key().await;
+            let caller = DevnetCaller::new(setup.accounts.account(account_id).any_access_key_arc());
             let contract = contract.clone();
             let code_hash = self.mpc_docker_image_hash.into();
 
-            voting_futures.push(async move {
-                key.submit_tx_to_call_function(
-                    &contract,
-                    method_names::VOTE_CODE_HASH,
-                    &serde_json::to_vec(&VoteCodeHashArgs { code_hash }).unwrap(),
-                    300,
-                    0,
-                    near_primitives::views::TxExecutionStatus::Final,
-                    true,
-                )
-                .await
-            });
+            voting_futures.push(async move { vote_code_hash(&caller, &contract, code_hash).await });
         }
 
         let voting_results = futures::future::join_all(voting_futures).await;
@@ -925,17 +855,6 @@ pub async fn read_contract_state(
             panic!("Unexpected error: {:?}", err);
         }
     }
-}
-
-#[derive(Serialize)]
-struct VoteNewParametersArgs {
-    prospective_epoch_id: EpochId,
-    proposal: ProposedThresholdParameters,
-}
-
-#[derive(Serialize)]
-struct VoteCodeHashArgs {
-    code_hash: NodeImageHash,
 }
 
 impl MpcDescribeCmd {

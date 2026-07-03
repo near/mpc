@@ -1,21 +1,22 @@
 #![allow(non_snake_case)]
 
 use crate::sandbox::common::{
-    SandboxTestSetup, abstract_evm_request, aptos_extracted_values, aptos_request,
-    arbitrum_evm_request, await_pending_foreign_tx_request_observed_on_contract, base_evm_request,
+    SandboxAsyncCaller, SandboxCaller, SandboxTestSetup, abstract_evm_request,
+    aptos_extracted_values, aptos_request, arbitrum_evm_request,
+    await_pending_foreign_tx_request_observed_on_contract, base_evm_request,
     bitcoin_extracted_values, bitcoin_request, bnb_evm_request, bogus_ton_log_extracted_value,
     ethereum_evm_request, evm_block_hash_extracted_values, hyper_evm_request, polygon_evm_request,
     register_foreign_chain_configuration, sign_foreign_tx_response, starknet_extracted_values,
     starknet_request, ton_request,
 };
-use near_mpc_contract_interface::method_names;
+use near_mpc_contract_interface::call_args::{
+    respond_verify_foreign_transaction, send_verify_foreign_transaction,
+};
 use near_mpc_contract_interface::types::{
     self as dtos, ExtractedValue, ForeignChainRpcRequest, ForeignTxPayloadVersion,
     VerifyForeignTransactionRequest, VerifyForeignTransactionResponse,
 };
-use near_workspaces::types::NearToken;
 use rstest::rstest;
-use serde_json::json;
 
 const SIGNATURE_TIMEOUT_BLOCKS: u64 = 200;
 
@@ -53,17 +54,13 @@ async fn verify_foreign_transaction__should_succeed(
         request: rpc_request.clone(),
     };
 
-    let status = user
-        .call(
-            setup.contract.id(),
-            method_names::VERIFY_FOREIGN_TRANSACTION,
-        )
-        .args_json(json!({ "request": request_args }))
-        .deposit(NearToken::from_yoctonear(1))
-        .max_gas()
-        .transact_async()
-        .await
-        .unwrap();
+    let status = send_verify_foreign_transaction(
+        &SandboxAsyncCaller(&user),
+        setup.contract.id(),
+        &request_args,
+    )
+    .await
+    .unwrap();
 
     let verify_request = VerifyForeignTransactionRequest {
         domain_id,
@@ -78,18 +75,15 @@ async fn verify_foreign_transaction__should_succeed(
         extracted_values,
         foreign_tx_key.as_secp256k1(),
     );
-
-    let respond_result = setup.mpc_signer_accounts[0]
-        .call(setup.contract.id(), method_names::RESPOND_VERIFY_FOREIGN_TX)
-        .args_json(json!({
-            "request": verify_request,
-            "response": response,
-        }))
-        .max_gas()
-        .transact()
-        .await
-        .unwrap()
-        .into_result();
+    let respond_result = respond_verify_foreign_transaction(
+        &SandboxCaller(&setup.mpc_signer_accounts[0]),
+        setup.contract.id(),
+        &verify_request,
+        &response,
+    )
+    .await
+    .unwrap()
+    .into_result();
 
     assert!(
         respond_result.is_ok(),
@@ -130,28 +124,20 @@ async fn verify_foreign_transaction__should_fan_out_response_to_duplicates_from_
     };
 
     // When
-    let status_alice = alice
-        .call(
-            setup.contract.id(),
-            method_names::VERIFY_FOREIGN_TRANSACTION,
-        )
-        .args_json(json!({ "request": request_args }))
-        .deposit(NearToken::from_yoctonear(1))
-        .max_gas()
-        .transact_async()
-        .await
-        .unwrap();
-    let status_bob = bob
-        .call(
-            setup.contract.id(),
-            method_names::VERIFY_FOREIGN_TRANSACTION,
-        )
-        .args_json(json!({ "request": request_args }))
-        .deposit(NearToken::from_yoctonear(1))
-        .max_gas()
-        .transact_async()
-        .await
-        .unwrap();
+    let status_alice = send_verify_foreign_transaction(
+        &SandboxAsyncCaller(&alice),
+        setup.contract.id(),
+        &request_args,
+    )
+    .await
+    .unwrap();
+    let status_bob = send_verify_foreign_transaction(
+        &SandboxAsyncCaller(&bob),
+        setup.contract.id(),
+        &request_args,
+    )
+    .await
+    .unwrap();
     await_pending_foreign_tx_request_observed_on_contract(&setup.contract, &verify_request).await;
 
     let (payload, response) = sign_foreign_tx_response(
@@ -159,17 +145,16 @@ async fn verify_foreign_transaction__should_fan_out_response_to_duplicates_from_
         extracted_values,
         foreign_tx_key.as_secp256k1(),
     );
-    let respond_result = setup.mpc_signer_accounts[0]
-        .call(setup.contract.id(), method_names::RESPOND_VERIFY_FOREIGN_TX)
-        .args_json(json!({
-            "request": verify_request,
-            "response": response,
-        }))
-        .max_gas()
-        .transact()
-        .await
-        .unwrap()
-        .into_result();
+
+    let respond_result = respond_verify_foreign_transaction(
+        &SandboxCaller(&setup.mpc_signer_accounts[0]),
+        setup.contract.id(),
+        &verify_request,
+        &response,
+    )
+    .await
+    .unwrap()
+    .into_result();
 
     // Then
     assert!(
@@ -222,18 +207,11 @@ async fn verify_foreign_transaction__should_reject_without_policy(
         request: rpc_request,
     };
 
-    let result = user
-        .call(
-            setup.contract.id(),
-            method_names::VERIFY_FOREIGN_TRANSACTION,
-        )
-        .args_json(json!({ "request": request_args }))
-        .deposit(NearToken::from_yoctonear(1))
-        .max_gas()
-        .transact()
-        .await
-        .unwrap()
-        .into_result();
+    let result =
+        send_verify_foreign_transaction(&SandboxCaller(&user), setup.contract.id(), &request_args)
+            .await
+            .unwrap()
+            .into_result();
 
     assert!(
         result.is_err(),
@@ -273,17 +251,13 @@ async fn verify_foreign_transaction__should_timeout_without_response(
         request: rpc_request,
     };
 
-    let status = user
-        .call(
-            setup.contract.id(),
-            method_names::VERIFY_FOREIGN_TRANSACTION,
-        )
-        .args_json(json!({ "request": request_args }))
-        .deposit(NearToken::from_yoctonear(1))
-        .max_gas()
-        .transact_async()
-        .await
-        .unwrap();
+    let status = send_verify_foreign_transaction(
+        &SandboxAsyncCaller(&user),
+        setup.contract.id(),
+        &request_args,
+    )
+    .await
+    .unwrap();
 
     setup
         .worker

@@ -15,6 +15,7 @@ flume = { workspace = true }
 futures = { workspace = true }
 group = { workspace = true }
 hex = { workspace = true }
+mpc-call-args = { workspace = true }
 mpc-primitives = { workspace = true }
 near-account-id = { workspace = true }
 near-crypto-public = { workspace = true }
@@ -23,6 +24,7 @@ near-jsonrpc-primitives = { workspace = true }
 near-mpc-bounded-collections = { workspace = true }
 near-mpc-contract-interface = { workspace = true, features = [
     "blstrs",
+    "call-args",
     "ed25519-dalek",
     "near",
 ] }

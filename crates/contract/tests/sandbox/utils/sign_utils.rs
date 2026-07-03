@@ -1,3 +1,5 @@
+use crate::sandbox::common::{SandboxAsyncCaller, SandboxCaller};
+
 use super::consts::DEFAULT_MAX_TIMEOUT_TX_INCLUDED;
 use super::shared_key_utils::{
     DomainKey, SharedSecretKey, derive_secret_key_ed25519, derive_secret_key_secp256k1,
@@ -8,29 +10,25 @@ use k256::{
     FieldBytes,
     elliptic_curve::{Field as _, Group as _},
 };
+use mpc_call_args::FunctionCallArgs;
 use mpc_contract::{
     errors,
-    primitives::{
-        ckd::CKDRequest,
-        signature::{SignatureRequest, YieldIndex},
-    },
+    primitives::signature::{SignatureRequest, YieldIndex},
 };
 use near_account_id::AccountId;
 use near_mpc_bounded_collections::BoundedVec;
-use near_mpc_contract_interface::method_names::{
-    GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST, REQUEST_APP_PRIVATE_KEY, RESPOND, RESPOND_CKD,
-    SIGN,
+use near_mpc_contract_interface::call_args::{
+    CallContract, CallError, make_ckd_request_args, make_sign_request_args, respond, respond_ckd,
 };
+use near_mpc_contract_interface::method_names::{GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST};
 use near_mpc_contract_interface::types::kdf::{derive_app_id, derive_tweak};
 use near_mpc_contract_interface::types::{
-    self as dtos, CKDAppPublicKey, CKDAppPublicKeyPV, CKDRequestArgs,
+    self as dtos, CKDAppPublicKey, CKDAppPublicKeyPV, CKDRequest, CKDRequestArgs,
 };
 use near_mpc_contract_interface::types::{CKDResponse, DomainId, Payload};
 use near_mpc_sdk::sign::{Ed25519Signature, K256Signature};
 use near_mpc_sdk::sign::{SignRequestArgs, SignRequestBuilder, SignatureRequestResponse};
-use near_workspaces::{
-    Account, Contract, Worker, network::Sandbox, operations::TransactionStatus, types::NearToken,
-};
+use near_workspaces::{Account, Contract, Worker, network::Sandbox, operations::TransactionStatus};
 use rand::{Rng, rngs::OsRng};
 use rand_core::CryptoRngCore;
 use serde::Serialize;
@@ -109,14 +107,17 @@ impl DomainResponseTest {
         account: &Account,
         contract: &Contract,
     ) -> anyhow::Result<TransactionStatus> {
+        let call_args = self.make_function_call_args()?;
+        let status = SandboxAsyncCaller(account)
+            .call_contract(contract.id(), call_args)
+            .await?;
+
         match self {
             Self::Sign(inner) => {
-                let status = submit_sign_request(account, &inner.args, contract).await?;
                 await_request_in_contract_queue(contract, &inner.response.request, None).await?;
                 Ok(status)
             }
             Self::CKD(inner) => {
-                let status = submit_ckd_request(account, &inner.args, contract).await?;
                 await_request_in_contract_queue(contract, &inner.response.request, None).await?;
                 Ok(status)
             }
@@ -127,6 +128,13 @@ impl DomainResponseTest {
         match self {
             Self::Sign(inner) => inner.verify_execution_outcome(status).await,
             Self::CKD(inner) => inner.verify_execution_outcome(status).await,
+        }
+    }
+
+    pub fn make_function_call_args(&self) -> Result<FunctionCallArgs, CallError> {
+        match self {
+            Self::Sign(inner) => make_sign_request_args(&inner.args),
+            Self::CKD(inner) => make_ckd_request_args(&inner.args),
         }
     }
 }
@@ -287,62 +295,20 @@ pub struct CKDResponseArgs {
     pub response: CKDResponse,
 }
 
-async fn submit_request(
-    account: &Account,
-    contract: &Contract,
-    method: &str,
-    args: impl Serialize,
-) -> anyhow::Result<TransactionStatus> {
-    let status = account
-        .call(contract.id(), method)
-        .args_json(serde_json::json!({ "request": args }))
-        .deposit(NearToken::from_yoctonear(1))
-        .max_gas()
-        .transact_async()
-        .await?;
-    dbg!(&status);
-    Ok(status)
-}
-
-async fn submit_sign_request(
-    account: &Account,
-    request: &SignRequestArgs,
-    contract: &Contract,
-) -> anyhow::Result<TransactionStatus> {
-    submit_request(account, contract, SIGN, request).await
-}
-
-async fn submit_ckd_request(
-    account: &Account,
-    request: &CKDRequestArgs,
-    contract: &Contract,
-) -> anyhow::Result<TransactionStatus> {
-    submit_request(account, contract, REQUEST_APP_PRIVATE_KEY, request).await
-}
-
-async fn submit_response(
-    contract: &Contract,
-    attested_account: &Account,
-    method: &str,
-    args: impl Serialize,
-) -> anyhow::Result<()> {
-    let respond = attested_account
-        .call(contract.id(), method)
-        .args_json(args)
-        .max_gas()
-        .transact()
-        .await?;
-    dbg!(&respond);
-    respond.into_result()?;
-    Ok(())
-}
-
 pub async fn submit_signature_response(
     response: &SignResponseArgs,
     contract: &Contract,
     attested_account: &Account,
 ) -> anyhow::Result<()> {
-    submit_response(contract, attested_account, RESPOND, response).await
+    let outcome = respond(
+        &SandboxCaller(attested_account),
+        contract.id(),
+        &response.request,
+        &response.response,
+    )
+    .await?;
+    outcome.into_result()?;
+    Ok(())
 }
 
 pub async fn submit_ckd_response(
@@ -350,7 +316,15 @@ pub async fn submit_ckd_response(
     contract: &Contract,
     attested_account: &Account,
 ) -> anyhow::Result<()> {
-    submit_response(contract, attested_account, RESPOND_CKD, response).await
+    let outcome = respond_ckd(
+        &SandboxCaller(attested_account),
+        contract.id(),
+        &response.request,
+        &response.response,
+    )
+    .await?;
+    outcome.into_result()?;
+    Ok(())
 }
 
 pub async fn submit_ckd_response_measure_gas(
@@ -358,14 +332,15 @@ pub async fn submit_ckd_response_measure_gas(
     contract: &Contract,
     attested_account: &Account,
 ) -> anyhow::Result<near_workspaces::types::Gas> {
-    let respond = attested_account
-        .call(contract.id(), RESPOND_CKD)
-        .args_json(response)
-        .max_gas()
-        .transact()
-        .await?;
-    let gas = respond.total_gas_burnt;
-    respond.into_result()?;
+    let outcome = respond_ckd(
+        &SandboxCaller(attested_account),
+        contract.id(),
+        &response.request,
+        &response.response,
+    )
+    .await?;
+    let gas = outcome.total_gas_burnt;
+    outcome.into_result()?;
     Ok(gas)
 }
 
@@ -499,20 +474,20 @@ pub async fn make_and_submit_requests(
 
     for key in keys {
         for _ in 0..NUM_TESTS {
-            match DomainResponseTest::new(rng, key, alice_id) {
+            let test = DomainResponseTest::new(rng, key, alice_id);
+            let call_args = test.make_function_call_args().unwrap();
+            let transaction = SandboxAsyncCaller(&alice)
+                .call_contract(contract.id(), call_args)
+                .await
+                .unwrap();
+            match test {
                 DomainResponseTest::Sign(inner) => {
-                    let transaction = submit_sign_request(&alice, &inner.args, contract)
-                        .await
-                        .unwrap();
                     pending_sign_requests.push(PendingSignRequest {
                         transaction,
                         response: inner.response,
                     });
                 }
                 DomainResponseTest::CKD(inner) => {
-                    let transaction = submit_ckd_request(&alice, &inner.args, contract)
-                        .await
-                        .unwrap();
                     pending_ckd_requests.push(PendingCKDRequest {
                         transaction,
                         ckd_response: inner.response,
