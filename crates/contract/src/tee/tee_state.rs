@@ -66,7 +66,7 @@ pub enum TeeValidationResult {
     },
 }
 
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(borsh::BorshSchema)
@@ -1533,12 +1533,9 @@ mod tests {
         // returns the displaced original wrapped in `UpdatedExistingParticipant`).
         const TEE_UPGRADE_DURATION: Duration = Duration::from_secs(10_000);
         let mut tee_state = TeeState::default();
+        let account_id = "alice.near".parse().unwrap();
         let tls_public_key = bogus_ed25519_public_key();
-        let original_node = NodeId {
-            account_id: "alice.near".parse().unwrap(),
-            tls_public_key: tls_public_key.clone(),
-            account_public_key: bogus_ed25519_public_key(),
-        };
+        let original_node = create_node_id(&account_id, &tls_public_key);
         tee_state
             .verify_and_store_mock(
                 original_node.clone(),
@@ -1546,28 +1543,29 @@ mod tests {
                 TEE_UPGRADE_DURATION,
             )
             .expect("initial insertion should succeed");
-        let updated_node = NodeId {
-            account_id: "alice.near".parse().unwrap(),
-            tls_public_key: tls_public_key.clone(),
-            account_public_key: bogus_ed25519_public_key(),
-        };
+        let updated_node = create_node_id(&account_id, &tls_public_key);
         let insertion = tee_state
             .verify_and_store_mock(updated_node, MockAttestation::Valid, TEE_UPGRADE_DURATION)
             .expect("update should succeed");
-        assert_matches!(
-            insertion,
-            ParticipantInsertion::UpdatedExistingParticipant(_)
-        );
+
+        let original_entry = NodeAttestation {
+            node_id: original_node,
+            verified_attestation: VerifiedAttestation::Mock(MockAttestation::Valid),
+        };
+        let ParticipantInsertion::UpdatedExistingParticipant(displaced) = &insertion else {
+            panic!("expected an update, got {insertion:?}");
+        };
+        assert_eq!(*displaced, original_entry);
 
         // When: the store is reverted.
         tee_state.revert_dstack_store(&tls_public_key, insertion);
 
-        // Then: the original (displaced) entry is back in place.
+        // Then: the whole original entry is back in place.
         let stored = tee_state
             .stored_attestations
             .get(&tls_public_key)
             .expect("original entry must be restored");
-        assert_eq!(stored.node_id, original_node);
+        assert_eq!(*stored, original_entry);
     }
 
     #[test]
@@ -1575,12 +1573,9 @@ mod tests {
         // Given: a brand-new attestation for `alice` (no prior entry displaced).
         const TEE_UPGRADE_DURATION: Duration = Duration::from_secs(10_000);
         let mut tee_state = TeeState::default();
+        let account_id = "alice.near".parse().unwrap();
         let tls_public_key = bogus_ed25519_public_key();
-        let node = NodeId {
-            account_id: "alice.near".parse().unwrap(),
-            tls_public_key: tls_public_key.clone(),
-            account_public_key: bogus_ed25519_public_key(),
-        };
+        let node = create_node_id(&account_id, &tls_public_key);
         let insertion = tee_state
             .verify_and_store_mock(node, MockAttestation::Valid, TEE_UPGRADE_DURATION)
             .expect("insertion should succeed");

@@ -364,9 +364,7 @@ fn submit_participant_info__should_reject_overwrite_from_other_account() {
     assert_eq!(stored_before, stored_after);
 }
 
-/// **Test that a `Dstack` submission is rejected when no verifier is configured.** The
-/// async path has nowhere to offload DCAP verification, so it must fail up front (before
-/// registering a yield) rather than leave a submission that can never resolve.
+/// Test that a `Dstack` submission is rejected when no verifier is configured.
 #[test]
 fn submit_participant_info__should_reject_dstack_when_verifier_not_configured() {
     // Given: a running contract with no TEE verifier voted in.
