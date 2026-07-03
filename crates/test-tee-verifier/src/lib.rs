@@ -1,15 +1,12 @@
 //! Test-only stub of the `tee-verifier` contract.
 //!
-//! `verify_quote` ignores its inputs and returns a response fixed at init time,
-//! instead of running real `dcap_qvl::verify`. This lets `mpc-contract` sandbox
-//! tests drive every branch of the async attestation flow deterministically:
-//! a `Verified` report (which the test supplies so it matches the fixture's
-//! post-DCAP expectations), a `Rejected` verdict, or a panic (the no-verdict /
+//! [`TestTeeVerifier::verify_quote`] ignores its inputs and returns a response
+//! fixed at init time, instead of running real `dcap_qvl::verify`. This lets
+//! `mpc-contract` sandbox tests drive every branch of the async attestation flow
+//! deterministically: a [`StubResponse::Verified`] report (which the test
+//! supplies so it matches the fixture's post-DCAP expectations), a
+//! [`StubResponse::Rejected`] verdict, or a panic (the no-verdict /
 //! verifier-unreachable path).
-//!
-//! It speaks the same `tee-verifier-interface` Borsh DTOs and uses the same
-//! `#[result_serializer(borsh)]` as the real verifier, so `mpc-contract` cannot
-//! tell the two apart.
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use near_sdk::{env, near};
@@ -23,7 +20,8 @@ fn randomness_unsupported(_buf: &mut [u8]) -> Result<(), getrandom::Error> {
 #[cfg(target_arch = "wasm32")]
 getrandom::register_custom_getrandom!(randomness_unsupported);
 
-/// What the stub's `verify_quote` should do, chosen by the test at deploy time.
+/// What the stub's [`TestTeeVerifier::verify_quote`] should do, chosen by the
+/// test at deploy time.
 #[expect(clippy::large_enum_variant)]
 // KEEP THE VARIANT ORDER IN SYNC with the `StubResponse` mirror in
 // `crates/contract/tests/sandbox/tee_verifier.rs`: the test serializes with that
@@ -36,14 +34,14 @@ getrandom::register_custom_getrandom!(randomness_unsupported);
     derive(borsh::BorshSchema)
 )]
 pub enum StubResponse {
-    /// Return `VerificationResult::Verified` with this exact report. Tests that
+    /// Return [`VerificationResult::Verified`] with this exact report. Tests that
     /// want the post-DCAP checks to pass supply the report obtained from the
     /// real fixture quote.
     Verified(tee_verifier_interface::VerifiedReport),
-    /// Return `VerificationResult::Rejected` with this reason.
+    /// Return [`VerificationResult::Rejected`] with this reason.
     Rejected(String),
     /// Panic, simulating an unreachable / crashing verifier (the no-verdict
-    /// path that `mpc-contract` resolves via the yield timeout).
+    /// path that mpc-contract resolves via the yield timeout).
     Panic,
 }
 
@@ -68,8 +66,9 @@ impl TestTeeVerifier {
         Self { response }
     }
 
-    /// Stub mirror of `tee_verifier::verify_quote`: ignores `quote`/`collateral`
-    /// and returns the canned response. Panics on `StubResponse::Panic`.
+    /// Stub mirror of the real `tee-verifier` contract's verify-quote method:
+    /// ignores the quote and collateral and returns the canned response. Panics
+    /// on [`StubResponse::Panic`].
     #[result_serializer(borsh)]
     pub fn verify_quote(
         &self,
