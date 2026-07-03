@@ -72,10 +72,6 @@ impl ReadAvailableForeignChains for FakeReadAvailableForeignChains {
             .available_foreign_chains()
             .clone())
     }
-
-    async fn get_foreign_chains_configs(&self) -> anyhow::Result<dtos::ForeignChainsConfigs> {
-        Ok(self.contract.lock().await.foreign_chains_configs().clone())
-    }
 }
 
 impl FakeMpcContractState {
@@ -106,10 +102,6 @@ impl FakeMpcContractState {
 
     pub fn supported_foreign_chains_by_node(&self) -> &dtos::ForeignChainSupportByNode {
         &self.supported_foreign_chains_by_node
-    }
-
-    pub fn foreign_chains_configs(&self) -> &dtos::ForeignChainsConfigs {
-        &self.foreign_chains_configs
     }
 
     #[expect(deprecated)]
@@ -1121,6 +1113,7 @@ impl FakeIndexerManager {
             attested_nodes_receiver: watch::channel(vec![]).1,
             my_migration_info_receiver,
             foreign_chain_policy_reader,
+            foreign_chains_configs_receiver: watch::channel(Default::default()).1,
         };
 
         let currently_running_job_name = Arc::new(std::sync::Mutex::new("".to_string()));

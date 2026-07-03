@@ -14,6 +14,12 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, Weak};
 use time::ext::InstantExt as _;
 
+/// Per-request refinement of the eligible-leader set: given a request and the globally eligible
+/// leaders, returns the subset allowed to lead that request (e.g. verify-foreign-tx restricts to
+/// participants that support the request's chain). `None` at the call site means no refinement.
+type RefineEligibleLeaders<RequestType> =
+    Box<dyn Fn(&RequestType, &HashSet<ParticipantId>) -> HashSet<ParticipantId>>;
+
 /// Thin API that the queue needs from the network.
 pub trait NetworkAPIForRequests: Send + Sync + 'static {
     /// Returns the participants that are currently connected to us.
@@ -525,7 +531,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
 
     /// Returns the set of participants that are eligible to be leaders for the requests,
     /// as well as the maximum height available.
-    pub(super) fn eligible_leaders_and_maximum_height(&self) -> (HashSet<ParticipantId>, u64) {
+    pub(crate) fn eligible_leaders_and_maximum_height(&self) -> (HashSet<ParticipantId>, u64) {
         // Collect the indexer heights and alive participants. Calculate maximum available height
         // from the alive nodes. Then, filter out the participants that are not alive or are too
         // stale.
@@ -562,10 +568,9 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
     /// leader set (e.g. to those that support particular chain for this request).
     pub fn get_requests_to_attempt(
         &mut self,
-        refine_eligible_leaders: impl Fn(
-            &RequestType,
-            &HashSet<ParticipantId>,
-        ) -> HashSet<ParticipantId>,
+        eligible_leaders: &HashSet<ParticipantId>,
+        maximum_height: u64,
+        refine_eligible_leaders: Option<RefineEligibleLeaders<RequestType>>,
     ) -> Vec<Arc<GenerationAttempt<RequestType, ChainRespondArgsType>>> {
         let (
             mpc_pending_queue_finalized_responses,
@@ -590,7 +595,6 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
         };
         let now = self.clock.now();
 
-        let (eligible_leaders, maximum_height) = self.eligible_leaders_and_maximum_height();
         tracing::debug!(target: "request", "Eligible leaders: {:?}", eligible_leaders);
 
         let mut result = Vec::new();
@@ -621,14 +625,21 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 block_height = %request.block_height,
             )
             .entered();
-            let request_eligible_leaders =
-                refine_eligible_leaders(&request.request, &eligible_leaders);
-            match request.process(
-                self.my_participant_id,
-                &request_eligible_leaders,
-                cutoff_block,
-                now,
-            ) {
+            let status = match &refine_eligible_leaders {
+                Some(refine) => {
+                    let request_eligible_leaders = refine(&request.request, eligible_leaders);
+                    request.process(
+                        self.my_participant_id,
+                        &request_eligible_leaders,
+                        cutoff_block,
+                        now,
+                    )
+                }
+                None => {
+                    request.process(self.my_participant_id, eligible_leaders, cutoff_block, now)
+                }
+            };
+            match status {
                 RequestStatus::Drop(reason) => {
                     tracing::debug!(target: "request", reason = %reason, "removing request");
                     if matches!(RequestType::get_type(), types::RequestType::Signature) {
@@ -703,6 +714,16 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
         mpc_pending_requests_queue_size.set(self.requests.len() as i64);
         mpc_pending_requests_queue_attempts_generated.inc_by(result.len() as u64);
         result
+    }
+
+    /// Test-only convenience: compute the current eligible leaders and attempt requests with no
+    /// per-request refinement (mirrors the production signature/CKD path).
+    #[cfg(test)]
+    fn get_requests_to_attempt_no_refine(
+        &mut self,
+    ) -> Vec<Arc<GenerationAttempt<RequestType, ChainRespondArgsType>>> {
+        let (eligible_leaders, maximum_height) = self.eligible_leaders_and_maximum_height();
+        self.get_requests_to_attempt(&eligible_leaders, maximum_height, None)
     }
 }
 
@@ -970,7 +991,7 @@ mod tests {
         setup.update(&mut pending_requests);
 
         // Then: req1 is not attempted because we're not the leader. req2 is attempted.
-        let to_attempt1 = pending_requests.get_requests_to_attempt(|_, eligible| eligible.clone());
+        let to_attempt1 = pending_requests.get_requests_to_attempt_no_refine();
         assert_eq!(to_attempt1.len(), 1);
         assert_eq!(to_attempt1[0].request.id, req2.id);
 
@@ -978,9 +999,7 @@ mod tests {
         // Another attempt should not be issued while the first one is still ongoing.
         setup.advance_clock(2 * CHECK_EACH_REQUEST_INTERVAL);
         assert_eq!(
-            pending_requests
-                .get_requests_to_attempt(|_, eligible| eligible.clone())
-                .len(),
+            pending_requests.get_requests_to_attempt_no_refine().len(),
             0
         );
 
@@ -990,7 +1009,7 @@ mod tests {
         setup.update(&mut pending_requests);
 
         // Then: req3 should be attempted, while request 4 should be ignored, as we're not leader.
-        let to_attempt2 = pending_requests.get_requests_to_attempt(|_, eligible| eligible.clone());
+        let to_attempt2 = pending_requests.get_requests_to_attempt_no_refine();
         assert_eq!(to_attempt2.len(), 1);
         assert_eq!(to_attempt2[0].request.id, req3.id);
 
@@ -998,9 +1017,7 @@ mod tests {
         // Another attempt should not be issued while the first one is still ongoing.
         setup.advance_clock(2 * CHECK_EACH_REQUEST_INTERVAL);
         assert_eq!(
-            pending_requests
-                .get_requests_to_attempt(|_, eligible| eligible.clone())
-                .len(),
+            pending_requests.get_requests_to_attempt_no_refine().len(),
             0
         );
 
@@ -1009,14 +1026,12 @@ mod tests {
         // Then: It should not immediately retry, because we need to wait
         // for at least a second before retrying anything.
         assert_eq!(
-            pending_requests
-                .get_requests_to_attempt(|_, eligible| eligible.clone())
-                .len(),
+            pending_requests.get_requests_to_attempt_no_refine().len(),
             0
         );
         // Then: we should retry after the interval passed
         setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
-        let to_attempt3 = pending_requests.get_requests_to_attempt(|_, eligible| eligible.clone());
+        let to_attempt3 = pending_requests.get_requests_to_attempt_no_refine();
         assert_eq!(to_attempt3.len(), 1);
         assert_eq!(to_attempt3[0].request.id, req2.id);
     }
@@ -1028,7 +1043,7 @@ mod tests {
         let (mut pending_requests, mut setup) = TestSetup::new();
         let req = setup.add_request_leader();
         setup.update(&mut pending_requests);
-        let to_attempt1 = pending_requests.get_requests_to_attempt(|_, eligible| eligible.clone());
+        let to_attempt1 = pending_requests.get_requests_to_attempt_no_refine();
         assert_eq!(to_attempt1.len(), 1);
         assert_eq!(to_attempt1[0].request.id, req.id);
 
@@ -1045,14 +1060,12 @@ mod tests {
         // because we're still waiting for the chain to ack the submission.
         setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
         assert_eq!(
-            pending_requests
-                .get_requests_to_attempt(|_, eligible| eligible.clone())
-                .len(),
+            pending_requests.get_requests_to_attempt_no_refine().len(),
             0
         );
         // Then: retry once that window elapses, because the chain still doesn't show our response.
         setup.advance_clock(MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE);
-        let to_attempt2 = pending_requests.get_requests_to_attempt(|_, eligible| eligible.clone());
+        let to_attempt2 = pending_requests.get_requests_to_attempt_no_refine();
         assert_eq!(to_attempt2.len(), 1);
         assert_eq!(to_attempt2[0].request.id, req.id);
 
@@ -1065,9 +1078,7 @@ mod tests {
         // it to finalize.
         setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
         assert_eq!(
-            pending_requests
-                .get_requests_to_attempt(|_, eligible| eligible.clone())
-                .len(),
+            pending_requests.get_requests_to_attempt_no_refine().len(),
             0
         );
 
@@ -1078,9 +1089,7 @@ mod tests {
         // Then: we still don't re-attempt — the request is resolved.
         setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
         assert_eq!(
-            pending_requests
-                .get_requests_to_attempt(|_, eligible| eligible.clone())
-                .len(),
+            pending_requests.get_requests_to_attempt_no_refine().len(),
             0
         );
     }
@@ -1092,7 +1101,7 @@ mod tests {
         let (mut pending_requests, mut setup) = TestSetup::new();
         let req = setup.add_request_leader();
         setup.update(&mut pending_requests);
-        let to_attempt1 = pending_requests.get_requests_to_attempt(|_, eligible| eligible.clone());
+        let to_attempt1 = pending_requests.get_requests_to_attempt_no_refine();
         assert_eq!(to_attempt1.len(), 1);
         assert_eq!(to_attempt1[0].request.id, req.id);
         drop(to_attempt1);
@@ -1109,7 +1118,7 @@ mod tests {
         // Then: the queue should re-attempt the request — a non-canonical response does NOT
         // short-circuit `process()`, so the request flows through the normal leader path.
         setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
-        let to_attempt2 = pending_requests.get_requests_to_attempt(|_, eligible| eligible.clone());
+        let to_attempt2 = pending_requests.get_requests_to_attempt_no_refine();
         assert_eq!(to_attempt2.len(), 1);
         assert_eq!(to_attempt2[0].request.id, req.id);
     }
@@ -1125,8 +1134,7 @@ mod tests {
         setup.update(&mut pending_requests);
         // then: attempt exactly `MAX_ATTEMPTS_PER_REQUEST_AS_LEADER
         for i in 0..MAX_ATTEMPTS_PER_REQUEST_AS_LEADER {
-            let to_attempt =
-                pending_requests.get_requests_to_attempt(|_, eligible| eligible.clone());
+            let to_attempt = pending_requests.get_requests_to_attempt_no_refine();
             assert_eq!(to_attempt.len(), 1);
             assert_eq!(to_attempt[0].request.id, req1.id);
             assert_eq!(
@@ -1137,9 +1145,7 @@ mod tests {
             setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
         }
         assert_eq!(
-            pending_requests
-                .get_requests_to_attempt(|_, eligible| eligible.clone())
-                .len(),
+            pending_requests.get_requests_to_attempt_no_refine().len(),
             0
         );
     }
@@ -1159,7 +1165,7 @@ mod tests {
         setup.set_participant_network_height(block_height_req_1 + REQUEST_EXPIRATION_BLOCKS);
 
         // Then: The first request expired, so only the second one is returned.
-        let to_attempt1 = pending_requests.get_requests_to_attempt(|_, eligible| eligible.clone());
+        let to_attempt1 = pending_requests.get_requests_to_attempt_no_refine();
         assert_eq!(to_attempt1.len(), 1);
         assert_eq!(to_attempt1[0].request.id, req2.id);
 
@@ -1169,9 +1175,7 @@ mod tests {
         setup.set_participant_network_height(block_height_req_2 + REQUEST_EXPIRATION_BLOCKS);
         // Then: it should not retry.
         assert_eq!(
-            pending_requests
-                .get_requests_to_attempt(|_, eligible| eligible.clone())
-                .len(),
+            pending_requests.get_requests_to_attempt_no_refine().len(),
             0
         );
 
@@ -1181,7 +1185,7 @@ mod tests {
         setup.update(&mut pending_requests);
 
         // Then: we should attempt it
-        let to_attempt2 = pending_requests.get_requests_to_attempt(|_, eligible| eligible.clone());
+        let to_attempt2 = pending_requests.get_requests_to_attempt_no_refine();
         assert_eq!(to_attempt2.len(), 1);
         assert_eq!(to_attempt2[0].request.id, req3.id);
 
@@ -1193,7 +1197,7 @@ mod tests {
         setup.update_canonical_fork(&mut pending_requests);
 
         // Then: Req3 is now on a non-canonical fork so should not be attempted.
-        let to_attempt3 = pending_requests.get_requests_to_attempt(|_, eligible| eligible.clone());
+        let to_attempt3 = pending_requests.get_requests_to_attempt_no_refine();
         assert_eq!(to_attempt3.len(), 1);
         assert_eq!(to_attempt3[0].request.id, req4.id);
 
@@ -1204,7 +1208,7 @@ mod tests {
         setup.update(&mut pending_requests);
 
         // Then: we should attempt that instead.
-        let to_attempt4 = pending_requests.get_requests_to_attempt(|_, eligible| eligible.clone());
+        let to_attempt4 = pending_requests.get_requests_to_attempt_no_refine();
         assert_eq!(to_attempt4.len(), 2);
         assert!(set_equals(
             &to_attempt4.iter().map(|a| a.request.id).collect::<Vec<_>>(),
@@ -1234,7 +1238,7 @@ mod tests {
 
         // Then: Since 0 and 2 are unavailable, and we are the first available leader for req1 and req2,
         // we should attempt these.
-        let to_attempt1 = pending_requests.get_requests_to_attempt(|_, eligible| eligible.clone());
+        let to_attempt1 = pending_requests.get_requests_to_attempt_no_refine();
         assert_eq!(to_attempt1.len(), 2);
         assert!(set_equals(
             &to_attempt1.iter().map(|a| a.request.id).collect::<Vec<_>>(),
@@ -1250,16 +1254,14 @@ mod tests {
         let req4 = setup.add_request_leader_order(&[1]);
         setup.update(&mut pending_requests);
         assert_eq!(
-            pending_requests
-                .get_requests_to_attempt(|_, eligible| eligible.clone())
-                .len(),
+            pending_requests.get_requests_to_attempt_no_refine().len(),
             0
         );
 
         // Bring down node 0 again. Now, node 1 should retry req1, req2 again, as well as trying req4.
         setup.network_api.bring_down(setup.participant_ids[0]);
         setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
-        let to_attempt2 = pending_requests.get_requests_to_attempt(|_, eligible| eligible.clone());
+        let to_attempt2 = pending_requests.get_requests_to_attempt_no_refine();
         assert_eq!(to_attempt2.len(), 3);
         assert!(set_equals(
             &to_attempt2.iter().map(|a| a.request.id).collect::<Vec<_>>(),
@@ -1276,7 +1278,7 @@ mod tests {
         setup.update(&mut pending_requests);
         setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
 
-        let to_attempt3 = pending_requests.get_requests_to_attempt(|_, eligible| eligible.clone());
+        let to_attempt3 = pending_requests.get_requests_to_attempt_no_refine();
         assert_eq!(to_attempt3.len(), 1);
         assert_eq!(to_attempt3[0].request.id, req2.id);
     }
@@ -1301,7 +1303,7 @@ mod tests {
         setup.advance_clock(Duration::seconds(1));
         // Poll so the queue notices the response is final and records latency into
         // `recently_completed_requests` via the `Resolve` arm.
-        let _ = pending_requests.get_requests_to_attempt(|_, eligible| eligible.clone());
+        let _ = pending_requests.get_requests_to_attempt_no_refine();
 
         // Then: we expect to see the time delay reflected in the debug message
         let debug = format!("{:?}", pending_requests);
@@ -1333,7 +1335,7 @@ mod tests {
         setup.set_participant_network_height(block_height + REQUEST_EXPIRATION_BLOCKS - 1);
 
         // Then: request is NOT expired (returned by get_requests_to_attempt)
-        let to_attempt = pending_requests.get_requests_to_attempt(|_, eligible| eligible.clone());
+        let to_attempt = pending_requests.get_requests_to_attempt_no_refine();
         assert_eq!(to_attempt.len(), 1);
         assert_eq!(to_attempt[0].request.id, req1.id);
     }
@@ -1355,7 +1357,7 @@ mod tests {
 
         // Then: request IS expired, not returned by get_requests_to_attempt and removed from
         // queue.
-        let to_attempt = pending_requests.get_requests_to_attempt(|_, eligible| eligible.clone());
+        let to_attempt = pending_requests.get_requests_to_attempt_no_refine();
         assert_eq!(to_attempt.len(), 0);
         assert!(
             !pending_requests.requests.contains_key(&req1.id),

@@ -11,7 +11,7 @@ use crate::home_paths::near_data_dir;
 use crate::indexer::configs::IndexerConfigExt;
 use crate::indexer::tee::{
     monitor_allowed_docker_images, monitor_allowed_foreign_chain_providers,
-    monitor_allowed_launcher_compose_hashes, monitor_tee_accounts,
+    monitor_allowed_launcher_compose_hashes, monitor_foreign_chains_configs, monitor_tee_accounts,
 };
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
 use crate::types::LogTransaction;
@@ -79,6 +79,8 @@ pub fn spawn_real_indexer(
     let (allowed_launcher_compose_sender, allowed_launcher_compose_receiver) =
         watch::channel(vec![]);
     let (tee_accounts_sender, tee_accounts_receiver) = watch::channel(vec![]);
+    let (foreign_chains_configs_sender, foreign_chains_configs_receiver) =
+        watch::channel(near_mpc_contract_interface::types::ForeignChainsConfigs::default());
 
     let my_near_account_id_clone = my_near_account_id.clone();
     let respond_config_clone = respond_config.clone();
@@ -214,6 +216,11 @@ pub fn spawn_real_indexer(
                 indexer_state.clone(),
             ));
 
+            tokio::spawn(monitor_foreign_chains_configs(
+                foreign_chains_configs_sender,
+                indexer_state.clone(),
+            ));
+
             let (foreign_chain_whitelist_sender, foreign_chain_whitelist_receiver) =
                 watch::channel(std::collections::BTreeMap::new());
             tokio::spawn(monitor_allowed_foreign_chain_providers(
@@ -331,6 +338,7 @@ pub fn spawn_real_indexer(
         attested_nodes_receiver: tee_accounts_receiver,
         my_migration_info_receiver,
         foreign_chain_policy_reader,
+        foreign_chains_configs_receiver,
     }
 }
 

@@ -7,7 +7,7 @@ use crate::indexer::types::{
 };
 use crate::metrics;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-use crate::primitives::MpcTaskId;
+use crate::primitives::{MpcTaskId, ParticipantId};
 use crate::providers::ckd::CKDProvider;
 use crate::providers::ecdsa::EcdsaTaskId;
 use crate::providers::eddsa::EddsaSignatureProvider;
@@ -339,8 +339,14 @@ where
             if start_time.elapsed() < INITIAL_STARTUP_PROCESSING_DELAY {
                 continue;
             }
+
+            // Eligible leaders and the max indexer height are a shared network view; compute
+            // once per tick and pass into each queue.
+            let (eligible_leaders, maximum_height) =
+                pending_signatures.eligible_leaders_and_maximum_height();
+
             let signature_attempts =
-                pending_signatures.get_requests_to_attempt(|_, eligible| eligible.clone());
+                pending_signatures.get_requests_to_attempt(&eligible_leaders, maximum_height, None);
 
             for signature_attempt in signature_attempts {
                 let this = self.clone();
@@ -461,7 +467,8 @@ where
                     },
                 );
             }
-            let ckd_attempts = pending_ckds.get_requests_to_attempt(|_, eligible| eligible.clone());
+            let ckd_attempts =
+                pending_ckds.get_requests_to_attempt(&eligible_leaders, maximum_height, None);
 
             for ckd_attempt in ckd_attempts {
                 let this = self.clone();
@@ -549,32 +556,23 @@ where
                 );
             }
 
-            let foreign_chains_configs = match self
+            // Foreign-chain support is served from a cached watch map; intersect it with the
+            // eligible leaders once per tick, then each request just looks up its chain.
+            let leaders_by_foreign_chain = self
                 .verify_foreign_tx_provider
-                .get_foreign_chains_configs()
-                .await
-            {
-                Ok(configs) => Some(configs),
-                Err(err) => {
-                    tracing::warn!(
-                        target: "request",
-                        ?err,
-                        "failed to read foreign-chain configs, deferring verify_foreign_tx leader election this cycle"
-                    );
-                    None
-                }
-            };
-            let verify_foreign_tx_attempts =
-                pending_verify_foreign_txs.get_requests_to_attempt(|req, eligible| {
-                    match &foreign_chains_configs {
-                        Some(configs) => self.verify_foreign_tx_provider.leaders_supporting_chain(
-                            eligible,
-                            configs,
-                            req.request.chain(),
-                        ),
-                        None => HashSet::new(),
-                    }
-                });
+                .alive_participants_by_foreign_chain(&eligible_leaders);
+            let verify_foreign_tx_attempts = pending_verify_foreign_txs.get_requests_to_attempt(
+                &eligible_leaders,
+                maximum_height,
+                Some(Box::new(
+                    move |req: &VerifyForeignTxRequest, _eligible: &HashSet<ParticipantId>| {
+                        leaders_by_foreign_chain
+                            .get(&req.request.chain())
+                            .cloned()
+                            .unwrap_or_default()
+                    },
+                )),
+            );
 
             for verify_foreign_tx_attempt in verify_foreign_tx_attempts {
                 let this = self.clone();

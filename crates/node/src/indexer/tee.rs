@@ -5,7 +5,7 @@ use std::{sync::Arc, time::Duration};
 use backon::{BackoffBuilder, ExponentialBuilder};
 use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash};
 use near_account_id::AccountId;
-use near_mpc_contract_interface::types::{ChainEntry, ForeignChain, NodeId};
+use near_mpc_contract_interface::types::{ChainEntry, ForeignChain, ForeignChainsConfigs, NodeId};
 use tokio::sync::watch;
 
 use crate::indexer::IndexerState;
@@ -192,6 +192,58 @@ pub async fn monitor_allowed_foreign_chain_providers(
         sender.send_if_modified(|previous| {
             if *previous != whitelist {
                 *previous = whitelist;
+                true
+            } else {
+                false
+            }
+        });
+        tokio::time::sleep(FOREIGN_CHAIN_PROVIDERS_REFRESH_INTERVAL).await;
+    }
+}
+
+/// Fetches the per-node foreign-chain configs (`ForeignChainsConfigs`, keyed by TLS public key)
+/// from the contract with retry logic.
+async fn fetch_foreign_chains_configs_with_retry(
+    indexer_state: &IndexerState,
+) -> ForeignChainsConfigs {
+    let mut backoff = ExponentialBuilder::default()
+        .with_min_delay(MIN_BACKOFF_DURATION)
+        .with_max_delay(MAX_BACKOFF_DURATION)
+        .without_max_times()
+        .with_jitter()
+        .build();
+
+    loop {
+        match indexer_state
+            .view_client
+            .get_foreign_chains_configs(&indexer_state.mpc_contract_id)
+            .await
+        {
+            Ok(configs) => return configs,
+            Err(e) => {
+                tracing::error!(target: "mpc", "error reading foreign_chains_configs from chain: {:?}", e);
+                let backoff_duration = backoff.next().unwrap_or(MAX_BACKOFF_DURATION);
+                tokio::time::sleep(backoff_duration).await;
+            }
+        }
+    }
+}
+
+/// Monitors the per-node foreign-chain configs stored in the contract and publishes them into a
+/// watch channel, updating only when they change. The support policy is quasi-static, so this
+/// lets consumers (verify-foreign-tx leader selection) read a cached value instead of querying the
+/// view client per request. Keyed by TLS public key; consumers join to `ParticipantId` locally.
+pub async fn monitor_foreign_chains_configs(
+    sender: watch::Sender<ForeignChainsConfigs>,
+    indexer_state: Arc<IndexerState>,
+) {
+    indexer_state.client.wait_for_full_sync().await;
+
+    loop {
+        let configs = fetch_foreign_chains_configs_with_retry(&indexer_state).await;
+        sender.send_if_modified(|previous| {
+            if *previous != configs {
+                *previous = configs;
                 true
             } else {
                 false

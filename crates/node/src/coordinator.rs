@@ -174,6 +174,7 @@ where
                                 running_state.clone(),
                                 self.indexer.txn_sender.clone(),
                                 self.indexer.foreign_chain_policy_reader.clone(),
+                                self.indexer.foreign_chains_configs_receiver.clone(),
                                 self.indexer
                                     .block_update_receiver
                                     .clone()
@@ -372,6 +373,7 @@ where
         running_state: ContractRunningState,
         chain_txn_sender: TransactionSender,
         foreign_chain_policy_reader: ForeignChainPolicyReader,
+        foreign_chains_configs: watch::Receiver<dtos::ForeignChainsConfigs>,
         block_update_receiver: tokio::sync::OwnedMutexGuard<
             mpsc::UnboundedReceiver<ChainBlockUpdate>,
         >,
@@ -676,6 +678,7 @@ where
                 let verify_foreign_tx_provider = Arc::new(VerifyForeignTxProvider::new(
                     config_file.clone().into(),
                     foreign_chain_policy_reader.clone(),
+                    foreign_chains_configs,
                     verify_foreign_tx_request_store.clone(),
                     ecdsa_signature_provider.clone(),
                 )?);

@@ -28,6 +28,7 @@ use threshold_signatures::ReconstructionThreshold;
 use threshold_signatures::ecdsa::{KeygenOutput, Signature};
 use threshold_signatures::frost_secp256k1::VerifyingKey;
 use threshold_signatures::frost_secp256k1::keys::SigningShare;
+use tokio::sync::watch;
 
 /// Pre-built HTTP clients for each foreign chain, keyed in provider config order.
 ///
@@ -132,6 +133,9 @@ pub struct VerifyForeignTxProvider<ForeignChainPolicyReader> {
     config: Arc<ConfigFile>,
     inspectors: ForeignChainInspectors<HttpClient>,
     foreign_chain_policy_reader: ForeignChainPolicyReader,
+    /// Cached per-node foreign-chain support configs (keyed by TLS public key), refreshed on
+    /// change by the indexer. Read in place of per-request view-client queries.
+    foreign_chains_configs: watch::Receiver<dtos::ForeignChainsConfigs>,
     verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
 }
@@ -140,6 +144,7 @@ impl<ForeignChainPolicyReader> VerifyForeignTxProvider<ForeignChainPolicyReader>
     pub fn new(
         config: Arc<ConfigFile>,
         foreign_chain_policy_reader: ForeignChainPolicyReader,
+        foreign_chains_configs: watch::Receiver<dtos::ForeignChainsConfigs>,
         verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
         ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
     ) -> anyhow::Result<Self> {
@@ -148,6 +153,7 @@ impl<ForeignChainPolicyReader> VerifyForeignTxProvider<ForeignChainPolicyReader>
             config,
             inspectors,
             foreign_chain_policy_reader,
+            foreign_chains_configs,
             verify_foreign_tx_request_store,
             ecdsa_signature_provider,
         })

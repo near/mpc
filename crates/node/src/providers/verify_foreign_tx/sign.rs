@@ -65,26 +65,27 @@ where
         let domain_data = self
             .ecdsa_signature_provider
             .domain_data(foreign_tx_request.domain_id)?;
-        let foreign_chains_configs = self
-            .foreign_chain_policy_reader
-            .get_foreign_chains_configs()
-            .await?;
         let requested_chain = foreign_tx_request.request.chain();
 
-        let participants_config = self.ecdsa_signature_provider.participants_config();
-        let eligible_participants: Vec<ParticipantId> = self
-            .ecdsa_signature_provider
-            .alive_participant_ids()
-            .into_iter()
-            .filter(|participant_id| {
-                participants_support_chain(
-                    std::slice::from_ref(participant_id),
-                    participants_config,
-                    &foreign_chains_configs,
-                    requested_chain,
-                )
-            })
-            .collect();
+        // Read the cached foreign-chain support configs (refreshed by the indexer) instead of
+        // querying the view client per request. Scoped so the `watch::Ref` guard is dropped before
+        // the `.await`s below (it is not `Send`).
+        let eligible_participants: Vec<ParticipantId> = {
+            let participants_config = self.ecdsa_signature_provider.participants_config();
+            let foreign_chains_configs = self.foreign_chains_configs.borrow();
+            self.ecdsa_signature_provider
+                .alive_participant_ids()
+                .into_iter()
+                .filter(|participant_id| {
+                    participants_support_chain(
+                        std::slice::from_ref(participant_id),
+                        participants_config,
+                        &foreign_chains_configs,
+                        requested_chain,
+                    )
+                })
+                .collect()
+        };
 
         let (presignature_id, presignature) = domain_data
             .presignature_store
@@ -120,35 +121,33 @@ where
         Ok(((response_payload, response.0), response.1))
     }
 
-    /// Per-node foreign-chain RPC configs.
-    pub(crate) async fn get_foreign_chains_configs(
-        &self,
-    ) -> anyhow::Result<contract_dtos::ForeignChainsConfigs> {
-        self.foreign_chain_policy_reader
-            .get_foreign_chains_configs()
-            .await
-    }
-
-    /// Narrows `eligible` to the participants that support chain.
-    pub(crate) fn leaders_supporting_chain(
+    /// The eligible leaders that support each foreign chain, keyed by chain.
+    ///
+    /// Joins the cached per-node support configs (keyed by TLS public key) against the current
+    /// participants and intersects with `eligible`, so callers get a ready `ParticipantId` set per
+    /// chain with no view-client query and no per-request recomputation.
+    pub(crate) fn alive_participants_by_foreign_chain(
         &self,
         eligible: &HashSet<ParticipantId>,
-        foreign_chains_configs: &contract_dtos::ForeignChainsConfigs,
-        chain: contract_dtos::ForeignChain,
-    ) -> HashSet<ParticipantId> {
+    ) -> std::collections::BTreeMap<contract_dtos::ForeignChain, HashSet<ParticipantId>> {
         let participants_config = self.ecdsa_signature_provider.participants_config();
-        eligible
-            .iter()
-            .copied()
-            .filter(|participant_id| {
-                participants_support_chain(
-                    std::slice::from_ref(participant_id),
-                    participants_config,
-                    foreign_chains_configs,
-                    chain,
-                )
-            })
-            .collect()
+        let foreign_chains_configs = self.foreign_chains_configs.borrow();
+        let mut by_chain: std::collections::BTreeMap<
+            contract_dtos::ForeignChain,
+            HashSet<ParticipantId>,
+        > = std::collections::BTreeMap::new();
+        for participant_id in eligible {
+            let Some(info) = participants_config.get_info(*participant_id) else {
+                continue;
+            };
+            let tls_key = Ed25519PublicKey::from(&info.p2p_public_key);
+            if let Some(chains) = foreign_chains_configs.get(&tls_key) {
+                for chain in chains.iter() {
+                    by_chain.entry(*chain).or_default().insert(*participant_id);
+                }
+            }
+        }
+        by_chain
     }
 
     pub(super) async fn make_verify_foreign_tx_follower(
@@ -517,11 +516,6 @@ mod tests {
         reader
             .expect_get_available_chains()
             .returning(move || Box::pin(std::future::ready(Ok(available.clone()))));
-        reader.expect_get_foreign_chains_configs().returning(|| {
-            Box::pin(std::future::ready(
-                Ok(dtos::ForeignChainsConfigs::default()),
-            ))
-        });
         reader
     }
 

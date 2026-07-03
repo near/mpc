@@ -402,10 +402,6 @@ pub(crate) trait ReadAvailableForeignChains: Send + Sync {
     fn get_available_chains(
         &self,
     ) -> impl Future<Output = anyhow::Result<dtos::AvailableForeignChains>> + Send;
-
-    fn get_foreign_chains_configs(
-        &self,
-    ) -> impl Future<Output = anyhow::Result<dtos::ForeignChainsConfigs>> + Send;
 }
 
 #[derive(Clone)]
@@ -424,13 +420,6 @@ impl ReadAvailableForeignChains for RealForeignChainPolicyReader {
         self.indexer_state
             .view_client
             .get_available_chains(&self.indexer_state.mpc_contract_id)
-            .await
-    }
-
-    async fn get_foreign_chains_configs(&self) -> anyhow::Result<dtos::ForeignChainsConfigs> {
-        self.indexer_state
-            .view_client
-            .get_foreign_chains_configs(&self.indexer_state.mpc_contract_id)
             .await
     }
 }
@@ -574,6 +563,10 @@ pub struct IndexerAPI<TransactionSender, ForeignChainPolicyReader> {
     pub my_migration_info_receiver: watch::Receiver<MigrationInfo>,
 
     pub foreign_chain_policy_reader: ForeignChainPolicyReader,
+
+    /// Per-node foreign-chain support configs (keyed by TLS public key), refreshed on change.
+    /// Consumed by verify-foreign-tx leader selection to avoid per-request view queries.
+    pub foreign_chains_configs_receiver: watch::Receiver<dtos::ForeignChainsConfigs>,
 }
 
 #[cfg(test)]
