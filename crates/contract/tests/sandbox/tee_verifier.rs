@@ -238,7 +238,7 @@ async fn submit_participant_info__should_clean_up_on_verifier_crash() -> Result<
 // fails fast and cheap, so `resolve_verification` completes at 1 TGas and this
 // re-tests the rejection path instead. Shares that setup with the (also pending)
 // Verified happy-path test.
-#[ignore = "needs fixture allowlist setup to reach the gas-heavy post-DCAP path; see TODO(#3730)"]
+#[ignore = "needs fixture allowlist setup to reach the gas-heavy post-DCAP path; tracked in #3730"]
 #[tokio::test]
 async fn submit_participant_info__should_clean_up_when_resolve_verification_runs_out_of_gas()
 -> Result<()> {
