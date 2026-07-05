@@ -5,7 +5,7 @@ use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::participants::{
     ContractKeyEventInstance, ContractResharingState, ContractRunningState, ContractState,
 };
-use crate::indexer::types::{ChainRegisterForeignChainConfigArgs, ChainSendTransactionRequest};
+use crate::indexer::types::ChainSendTransactionRequest;
 use crate::indexer::{IndexerAPI, ReadSupportedForeignChain, tx_sender};
 use crate::key_events::{
     ResharingArgs, keygen_follower, keygen_leader, resharing_follower, resharing_leader,
@@ -34,6 +34,7 @@ use futures::future::BoxFuture;
 use mpc_node_config::ConfigFile;
 use mpc_primitives::domain::{Curve, DomainId, Protocol};
 use mpc_primitives::{EpochId, ReconstructionThreshold};
+use near_mpc_contract_interface::call_args as contract_args;
 use near_time::Clock;
 use std::collections::HashMap;
 use std::future::Future;
@@ -434,9 +435,7 @@ where
         let foreign_chain_configuration = config_file.foreign_chains.configured_chains();
         if let Err(err) = chain_txn_sender
             .send(ChainSendTransactionRequest::RegisterForeignChainConfig(
-                ChainRegisterForeignChainConfigArgs {
-                    foreign_chain_configuration,
-                },
+                contract_args::RegisterForeignChainConfigArgs::new(foreign_chain_configuration),
             ))
             .await
         {

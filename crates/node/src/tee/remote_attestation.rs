@@ -3,7 +3,7 @@ use std::time::Duration;
 use crate::{
     indexer::{
         tx_sender::{TransactionSender, TransactionStatus},
-        types::{ChainSendTransactionRequest, SubmitParticipantInfoArgs},
+        types::ChainSendTransactionRequest,
     },
     trait_extensions::convert_to_contract_dto::IntoContractInterfaceType,
 };
@@ -19,6 +19,7 @@ use tokio_util::time::FutureExt;
 
 use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash};
 use near_account_id::AccountId;
+use near_mpc_contract_interface::call_args as contract_args;
 use near_mpc_contract_interface::types::NodeId;
 use tokio::sync::watch;
 
@@ -29,7 +30,7 @@ const BACKOFF_FACTOR: f32 = 1.5;
 
 /// Submits a remote attestation transaction to the MPC contract, retrying with backoff until success.
 ///
-/// This function continuously attempts to submit a [`SubmitParticipantInfoArgs`] transaction containing
+/// This function continuously attempts to submit a [`contract_args::SubmitParticipantInfoArgs`] transaction containing
 /// the given participant's attestation and TLS public key. It uses the provided
 /// [`TransactionSender`] to send the transaction and waits until [`TransactionStatus::Executed`]
 /// is observed.
@@ -38,10 +39,10 @@ pub async fn submit_remote_attestation(
     attestation: Attestation,
     tls_public_key: Ed25519PublicKey,
 ) -> anyhow::Result<()> {
-    let submit_participant_info_args = SubmitParticipantInfoArgs {
-        proposed_participant_attestation: attestation.into_contract_interface_type(),
+    let submit_participant_info_args = contract_args::SubmitParticipantInfoArgs::new(
+        attestation.into_contract_interface_type(),
         tls_public_key,
-    };
+    );
 
     let set_attestation = move || {
         let tx_sender = tx_sender.clone();
