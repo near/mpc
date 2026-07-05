@@ -209,10 +209,11 @@ async fn read_pre_submit_attestation_expiry(
     })
 }
 
-/// Confirms a `submit_participant_info` landed: a successful submit re-stamps the stored expiry
-/// forward, a failed one leaves it unchanged, and expiry only advances via our own submit for this
-/// key — so an advance past `pre_submit_expiry` confirms the submit with no risk of a false
-/// positive. `None` means nothing was stored before, so an entry existing now means it landed.
+/// Confirms a `submit_participant_info` landed by checking the stored expiry advanced past the
+/// pre-submit baseline: a successful submit re-stamps expiry forward, a failed one leaves it
+/// unchanged, and expiry only advances via our own submit for this key — so this never yields a
+/// false positive. Returns `true` iff `stored_expiry > pre_submit_expiry`, or there is no baseline
+/// (`None`).
 ///
 /// Avoids reconstructing creation time as `expiry - constant`, which breaks under node/contract
 /// version skew and the verifier-rotation expiry cap (stored expiry is not `creation + constant`).
