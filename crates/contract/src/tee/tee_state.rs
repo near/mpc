@@ -21,6 +21,12 @@ use std::time::Duration;
 
 pub use near_mpc_contract_interface::types::NodeId;
 
+/// Window that stored attestations are shortened to when a verifier rotation happens, bounding how
+/// long an entry accepted by the rotated-out (possibly buggy) verifier can linger. Deliberately
+/// much shorter than the steady-state `DEFAULT_EXPIRATION_DURATION_SECONDS`; see the
+/// attestation-verifier design doc, §Governance and upgrades.
+const VERIFIER_ROTATION_EXPIRY_CAP_SECONDS: u64 = 60 * 60 * 24; // 1 day
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TeeQuoteStatus {
     /// TEE quote and Docker image verification both passed successfully.
@@ -399,6 +405,26 @@ impl TeeState {
         self.measurement_votes = self.measurement_votes.get_remaining_votes(participants);
     }
 
+    /// Shortens every stored attestation to the rotation cap window. Called once when a verifier
+    /// rotation crosses threshold, so entries the rotated-out (possibly buggy) verifier accepted
+    /// age out within the cap window, while entries submitted afterwards are verified by the new
+    /// verifier and keep the normal `DEFAULT_EXPIRATION_DURATION_SECONDS`.
+    pub(crate) fn cap_stored_attestation_expiries_on_rotation(&mut self) {
+        let ceiling = Self::current_time_seconds() + VERIFIER_ROTATION_EXPIRY_CAP_SECONDS;
+        self.cap_stored_attestation_expiries(ceiling);
+    }
+
+    /// Lowers every stored attestation's expiry to `ceiling_seconds` (never extending one that
+    /// already expires sooner). One bounded rewrite over `stored_attestations`; the set is bounded
+    /// by the participant plus recent-submitter count, so this fits within one transaction's gas.
+    fn cap_stored_attestation_expiries(&mut self, ceiling_seconds: u64) {
+        for (_, node_attestation) in self.stored_attestations.iter_mut() {
+            node_attestation
+                .verified_attestation
+                .cap_expiry(ceiling_seconds);
+        }
+    }
+
     /// Scans up to `max_scan` entries from `stored_attestations` and removes any whose
     /// attestation no longer passes `re_verify` under the current docker-hash /
     /// launcher-hash / measurement whitelists, or whose attestation has expired.
@@ -687,6 +713,71 @@ mod tests {
                 .stored_attestations
                 .contains_key(&stale_node.tls_public_key)
         );
+    }
+
+    #[test]
+    fn cap_stored_attestation_expiries__should_cap_above_ceiling_and_preserve_below() {
+        // Given: one attestation expiring after the ceiling and one already before it.
+        const HIGH_EXPIRY_SECONDS: u64 = 10_000;
+        const LOW_EXPIRY_SECONDS: u64 = 1_000;
+        const CEILING_SECONDS: u64 = 5_000;
+
+        testing_env!(VMContextBuilder::new().block_timestamp(0).build());
+        let mut tee_state = TeeState::default();
+
+        let high_node = NodeId {
+            account_id: "high.near".parse().unwrap(),
+            tls_public_key: bogus_ed25519_public_key(),
+            account_public_key: bogus_ed25519_public_key(),
+        };
+        let low_node = NodeId {
+            account_id: "low.near".parse().unwrap(),
+            tls_public_key: bogus_ed25519_public_key(),
+            account_public_key: bogus_ed25519_public_key(),
+        };
+        let mock_with_expiry = |expiry| {
+            Attestation::Mock(MockAttestation::WithConstraints {
+                mpc_docker_image_hash: None,
+                launcher_docker_compose_hash: None,
+                expiry_timestamp_seconds: Some(expiry),
+                expected_measurements: None,
+            })
+        };
+        tee_state
+            .add_participant(
+                high_node.clone(),
+                mock_with_expiry(HIGH_EXPIRY_SECONDS),
+                Duration::from_secs(0),
+            )
+            .unwrap();
+        tee_state
+            .add_participant(
+                low_node.clone(),
+                mock_with_expiry(LOW_EXPIRY_SECONDS),
+                Duration::from_secs(0),
+            )
+            .unwrap();
+
+        // When: the stored entries are capped at the ceiling.
+        tee_state.cap_stored_attestation_expiries(CEILING_SECONDS);
+
+        // Then: the later expiry is lowered to the ceiling; the earlier one is untouched.
+        let stored_expiry = |node: &NodeId| -> Option<u64> {
+            match &tee_state
+                .stored_attestations
+                .get(&node.tls_public_key)
+                .unwrap()
+                .verified_attestation
+            {
+                VerifiedAttestation::Mock(MockAttestation::WithConstraints {
+                    expiry_timestamp_seconds,
+                    ..
+                }) => *expiry_timestamp_seconds,
+                other => panic!("unexpected attestation variant: {other:?}"),
+            }
+        };
+        assert_eq!(stored_expiry(&high_node), Some(CEILING_SECONDS));
+        assert_eq!(stored_expiry(&low_node), Some(LOW_EXPIRY_SECONDS));
     }
 
     #[test]
