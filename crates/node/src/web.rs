@@ -68,6 +68,7 @@ struct WebServerState {
     migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
     static_web_data: StaticWebData,
     node_config: NodeConfigResponse,
+    nearcore_config: serde_json::Value,
     /// In-memory log behind the `/debug/recent_transactions` handler.
     recent_transactions: SharedRecentTransactions,
 }
@@ -180,6 +181,11 @@ async fn debug_tasks(State(state): State<WebServerState>) -> String {
 
 async fn debug_node_config(State(state): State<WebServerState>) -> Json<NodeConfigResponse> {
     Json(state.node_config.clone())
+}
+
+/// Serves the nearcore `config.json` the embedded indexer runs with.
+async fn debug_nearcore_config(State(state): State<WebServerState>) -> Json<serde_json::Value> {
+    Json(state.nearcore_config)
 }
 
 #[derive(Clone)]
@@ -321,6 +327,7 @@ pub async fn start_web_server(
     protocol_state_receiver: watch::Receiver<ProtocolContractState>,
     migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
     config: ConfigFile,
+    nearcore_config: serde_json::Value,
     recent_transactions: SharedRecentTransactions,
 ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
     tracing::info!(?bind_address, "attempting to bind web server to address");
@@ -338,6 +345,10 @@ pub async fn start_web_server(
         )
         .route("/debug/migrations", axum::routing::get(migrations))
         .route("/debug/node_config", axum::routing::get(debug_node_config))
+        .route(
+            "/debug/nearcore_config",
+            axum::routing::get(debug_nearcore_config),
+        )
         .route("/licenses", axum::routing::get(third_party_licenses))
         .route("/health", axum::routing::get(|| async { "OK" }))
         .route("/public_data", axum::routing::get(public_data))
@@ -348,6 +359,7 @@ pub async fn start_web_server(
             migration_state_receiver,
             static_web_data,
             node_config: NodeConfigResponse::from(config),
+            nearcore_config,
             recent_transactions,
         });
 
@@ -431,6 +443,7 @@ mod tests {
                 finality: Finality::Final,
                 mpc_contract_id: "mpc.test.near".parse().unwrap(),
                 port_override: None,
+                wipe_near_data_token: 0,
                 sync_mode: SyncMode::Latest,
                 validate_genesis: false,
             },

@@ -201,6 +201,17 @@ async fn test_web_endpoints() {
         .await
         .expect("debug/contract endpoint failed");
 
+        // The nearcore config endpoint exposes the effective on-disk config.json;
+        // `genesis_file` is always present in a loaded config.
+        ensure_body_contains(
+            &client,
+            i,
+            &format!("http://{web_addr}/debug/nearcore_config"),
+            &["genesis_file"],
+        )
+        .await
+        .expect("debug/nearcore_config endpoint failed");
+
         // Check the recent-transactions page lists this node's transactions.
         // During keygen every node submits one `vote_pk` transaction per domain,
         // so the page should show the header plus exactly one matching row per

@@ -1,10 +1,12 @@
 use crate::{
     config::{
         PersistentSecrets, RespondConfig, SecretsConfig,
-        generate_and_write_backup_encryption_key_to_disk, start::TeeAuthorityImpl as _,
+        generate_and_write_backup_encryption_key_to_disk,
+        start::{TeeAuthorityImpl as _, read_near_config_json},
     },
     coordinator::Coordinator,
     db::SecretDB,
+    home_paths::assets_dir,
     indexer::{
         IndexerAPI, ReadSupportedForeignChain, real::spawn_real_indexer,
         tx_sender::TransactionSender,
@@ -194,6 +196,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
             protocol_state_receiver,
             migration_state_receiver,
             config.node.clone(),
+            read_near_config_json(&config.home_dir),
             recent_transactions.clone(),
         ))
         .context("Failed to create web server.")?;
@@ -342,7 +345,7 @@ where
     let account_public_key =
         Ed25519PublicKey::from(&secrets.persistent_secrets.near_signer_key.verifying_key());
 
-    let secret_db = SecretDB::new(&home_dir.join("assets"), secrets.local_storage_aes_key)?;
+    let secret_db = SecretDB::new(&assets_dir(&home_dir), secrets.local_storage_aes_key)?;
 
     let key_storage_config = KeyStorageConfig {
         home_dir: home_dir.clone(),

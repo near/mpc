@@ -1,14 +1,6 @@
-use crate::{
-    indexer::{
-        migrations::ContractMigrationInfo,
-        types::{
-            ChainCKDRequest, ChainGetPendingCKDRequestArgs, ChainGetPendingSignatureRequestArgs,
-            ChainGetPendingVerifyForeignTxRequestArgs, ChainSignatureRequest,
-            ChainVerifyForeignTransactionRequest, GetAttestationArgs,
-        },
-    },
-    migration_service::types::MigrationInfo,
-};
+use near_mpc_contract_interface::call_args as contract_args;
+
+use crate::{indexer::migrations::ContractMigrationInfo, migration_service::types::MigrationInfo};
 
 use self::stats::IndexerStats;
 use anyhow::Context;
@@ -21,7 +13,7 @@ use near_async::{
 use near_client::{RpcHandlerActor, Status, ViewClientActor, client_actor::ClientActor};
 use near_indexer::near_primitives::transaction::SignedTransaction;
 use near_indexer_primitives::{
-    types::{BlockReference, Finality},
+    types::{BlockHeight, BlockReference, Finality},
     views::{BlockView, QueryRequest, QueryResponseKind},
 };
 use near_mpc_contract_interface::method_names::{
@@ -42,6 +34,7 @@ use types::ChainSendTransactionRequest;
 pub mod configs;
 pub mod handler;
 pub mod migrations;
+pub mod near_data_wipe;
 pub mod participants;
 pub mod real;
 pub mod stats;
@@ -101,14 +94,13 @@ impl IndexerViewClient {
     pub(crate) async fn get_pending_request(
         &self,
         mpc_contract_id: &AccountId,
-        chain_signature_request: &ChainSignatureRequest,
+        chain_signature_request: &dtos::SignatureRequest,
     ) -> anyhow::Result<Option<YieldIndex>> {
-        let get_pending_request_args: Vec<u8> =
-            serde_json::to_string(&ChainGetPendingSignatureRequestArgs {
-                request: chain_signature_request.clone(),
-            })
-            .unwrap()
-            .into_bytes();
+        let get_pending_request_args: Vec<u8> = serde_json::to_string(
+            &contract_args::GetPendingSignatureRequestArgs::new(chain_signature_request.clone()),
+        )
+        .unwrap()
+        .into_bytes();
 
         let request = QueryRequest::CallFunction {
             account_id: mpc_contract_id.clone(),
@@ -142,14 +134,13 @@ impl IndexerViewClient {
     pub(crate) async fn get_pending_ckd_request(
         &self,
         mpc_contract_id: &AccountId,
-        chain_ckd_request: &ChainCKDRequest,
+        chain_ckd_request: &dtos::CKDRequest,
     ) -> anyhow::Result<Option<YieldIndex>> {
-        let get_pending_request_args: Vec<u8> =
-            serde_json::to_string(&ChainGetPendingCKDRequestArgs {
-                request: chain_ckd_request.clone(),
-            })
-            .unwrap()
-            .into_bytes();
+        let get_pending_request_args: Vec<u8> = serde_json::to_string(
+            &contract_args::GetPendingCKDRequestArgs::new(chain_ckd_request.clone()),
+        )
+        .unwrap()
+        .into_bytes();
 
         let request = QueryRequest::CallFunction {
             account_id: mpc_contract_id.clone(),
@@ -183,12 +174,12 @@ impl IndexerViewClient {
     pub(crate) async fn get_pending_verify_foreign_tx_request(
         &self,
         mpc_contract_id: &AccountId,
-        chain_verify_foreign_tx_request: &ChainVerifyForeignTransactionRequest,
+        chain_verify_foreign_tx_request: &dtos::VerifyForeignTransactionRequest,
     ) -> anyhow::Result<Option<YieldIndex>> {
         let get_pending_request_args: Vec<u8> =
-            serde_json::to_string(&ChainGetPendingVerifyForeignTxRequestArgs {
-                request: chain_verify_foreign_tx_request.clone(),
-            })
+            serde_json::to_string(&contract_args::GetPendingVerifyForeignTxRequestArgs::new(
+                chain_verify_foreign_tx_request.clone(),
+            ))
             .unwrap()
             .into_bytes();
 
@@ -226,9 +217,9 @@ impl IndexerViewClient {
         mpc_contract_id: &AccountId,
         participant_tls_public_key: &near_mpc_contract_interface::types::Ed25519PublicKey,
     ) -> anyhow::Result<Option<near_mpc_contract_interface::types::VerifiedAttestation>> {
-        let get_attestation_args: Vec<u8> = serde_json::to_string(&GetAttestationArgs {
-            tls_public_key: participant_tls_public_key,
-        })
+        let get_attestation_args: Vec<u8> = serde_json::to_string(
+            &contract_args::GetAttestationArgs::new(participant_tls_public_key),
+        )
         .unwrap()
         .into_bytes();
 
@@ -420,28 +411,79 @@ struct IndexerClient {
 
 const INTERVAL: Duration = Duration::from_millis(500);
 
+/// Consecutive non-syncing polls with head progress before the node counts as caught up.
+const REQUIRED_STABLE_POLLS: u32 = 4;
+
 impl IndexerClient {
+    /// Polls sync status, yielding `(syncing, head_height)`, or `None` on a
+    /// failed request.
+    async fn sync_info(&self) -> Option<(bool, BlockHeight)> {
+        let status_request = Status {
+            is_health_check: false,
+            detailed: false,
+        };
+        let Ok(Ok(status)) = self
+            .client
+            .send_async(
+                near_o11y::span_wrapped_msg::SpanWrappedMessageExt::span_wrap(status_request),
+            )
+            .await
+        else {
+            return None;
+        };
+        Some((
+            status.sync_info.syncing,
+            status.sync_info.latest_block_height,
+        ))
+    }
+
+    /// Returns once neard clears its `syncing` flag.
     async fn wait_for_full_sync(&self) {
         loop {
             tokio::time::sleep(INTERVAL).await;
-
-            let status_request = Status {
-                is_health_check: false,
-                detailed: false,
-            };
-            let status_response = self
-                .client
-                .send_async(
-                    near_o11y::span_wrapped_msg::SpanWrappedMessageExt::span_wrap(status_request),
-                )
-                .await;
-
-            let Ok(Ok(status)) = status_response else {
-                continue;
-            };
-
-            if !status.sync_info.syncing {
+            if matches!(self.sync_info().await, Some((false, _))) {
                 return;
+            }
+        }
+    }
+
+    async fn ensure_head_follows_tip(&self) {
+        let mut progress = SyncProgress::default();
+        loop {
+            tokio::time::sleep(INTERVAL).await;
+            if let Some((syncing, head_height)) = self.sync_info().await
+                && progress.observe(syncing, head_height)
+            {
+                return;
+            }
+        }
+    }
+}
+
+/// Reports caught-up only after [`REQUIRED_STABLE_POLLS`] consecutive
+/// non-syncing polls over which the head advances.
+#[derive(Default)]
+struct SyncProgress {
+    run_start_head: Option<BlockHeight>,
+    run_polls: u32,
+}
+
+impl SyncProgress {
+    fn observe(&mut self, syncing: bool, head_height: BlockHeight) -> bool {
+        if syncing {
+            self.run_start_head = None;
+            self.run_polls = 0;
+            return false;
+        }
+        match self.run_start_head {
+            None => {
+                self.run_start_head = Some(head_height);
+                self.run_polls = 1;
+                false
+            }
+            Some(start_head) => {
+                self.run_polls += 1;
+                self.run_polls >= REQUIRED_STABLE_POLLS && head_height > start_head
             }
         }
     }
@@ -501,4 +543,110 @@ pub struct IndexerAPI<TransactionSender, ForeignChainPolicyReader> {
     pub my_migration_info_receiver: watch::Receiver<MigrationInfo>,
 
     pub foreign_chain_policy_reader: ForeignChainPolicyReader,
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::{BlockHeight, REQUIRED_STABLE_POLLS, SyncProgress};
+
+    fn first_caught_up_poll(samples: &[(bool, BlockHeight)]) -> Option<usize> {
+        let mut progress = SyncProgress::default();
+        samples
+            .iter()
+            .position(|&(syncing, head)| progress.observe(syncing, head))
+    }
+
+    #[test]
+    fn observe__should_never_report_caught_up_while_syncing() {
+        // Given
+        let samples: Vec<_> = (0..10).map(|i| (true, 42_000_000 + i)).collect();
+
+        // When
+        let caught_up_at = first_caught_up_poll(&samples);
+
+        // Then
+        assert_eq!(caught_up_at, None);
+    }
+
+    #[test]
+    fn observe__should_never_report_caught_up_with_static_head_at_genesis() {
+        // Given
+        let genesis = 42_376_888;
+        let samples: Vec<_> = (0..10).map(|_| (false, genesis)).collect();
+
+        // When
+        let caught_up_at = first_caught_up_poll(&samples);
+
+        // Then
+        assert_eq!(caught_up_at, None);
+    }
+
+    #[test]
+    fn observe__should_not_report_caught_up_before_required_polls() {
+        // Given
+        let samples: Vec<_> = (0..REQUIRED_STABLE_POLLS - 1)
+            .map(|i| (false, 257_000_000 + u64::from(i)))
+            .collect();
+
+        // When
+        let caught_up_at = first_caught_up_poll(&samples);
+
+        // Then
+        assert_eq!(caught_up_at, None);
+    }
+
+    #[test]
+    fn observe__should_report_caught_up_after_sustained_progress() {
+        // Given
+        let samples: Vec<_> = (0..REQUIRED_STABLE_POLLS)
+            .map(|i| (false, 257_000_000 + u64::from(i)))
+            .collect();
+
+        // When
+        let caught_up_at = first_caught_up_poll(&samples);
+
+        // Then
+        let expected = usize::try_from(REQUIRED_STABLE_POLLS).unwrap() - 1;
+        assert_eq!(caught_up_at, Some(expected));
+    }
+
+    #[test]
+    fn observe__should_wait_for_head_to_advance_past_run_start() {
+        // Given
+        let head = 257_000_000;
+        let mut samples: Vec<_> = (0..REQUIRED_STABLE_POLLS + 2)
+            .map(|_| (false, head))
+            .collect();
+        samples.push((false, head + 1));
+
+        // When
+        let caught_up_at = first_caught_up_poll(&samples);
+
+        // Then
+        assert_eq!(caught_up_at, Some(samples.len() - 1));
+    }
+
+    #[test]
+    fn observe__should_reset_run_when_syncing_resumes() {
+        // Given
+        let pre = [
+            (false, 42_000_000),
+            (false, 42_000_001),
+            (false, 42_000_002),
+        ];
+        let resync = [(true, 100_000_000)];
+        let post: Vec<_> = (0..REQUIRED_STABLE_POLLS)
+            .map(|i| (false, 257_000_000 + u64::from(i)))
+            .collect();
+        let samples: Vec<_> = pre.iter().chain(&resync).chain(&post).copied().collect();
+
+        // When
+        let caught_up_at = first_caught_up_poll(&samples);
+
+        // Then
+        let expected =
+            pre.len() + resync.len() + usize::try_from(REQUIRED_STABLE_POLLS).unwrap() - 1;
+        assert_eq!(caught_up_at, Some(expected));
+    }
 }

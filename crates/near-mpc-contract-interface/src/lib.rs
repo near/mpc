@@ -1,10 +1,12 @@
 #![doc = include_str!("../README.md")]
+#[cfg(feature = "call-args")]
+pub mod call_args;
+
 pub mod method_names;
 pub mod types {
     pub use attestation::{
         AppCompose, Attestation, Collateral, DstackAttestation, EventLog, HexVec, MockAttestation,
-        SubmitParticipantInfoArgs, TcbInfo, VerifiedAttestation, VerifiedDstackAttestation,
-        VerifiedMeasurements,
+        TcbInfo, VerifiedAttestation, VerifiedDstackAttestation, VerifiedMeasurements,
     };
     pub use config::{Config, InitConfig};
     pub use foreign_chain::*;

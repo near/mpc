@@ -5,15 +5,15 @@ use backon::{ExponentialBuilder, Retryable};
 use ed25519_dalek::VerifyingKey;
 use futures::TryFutureExt;
 use near_account_id::AccountId;
+use near_mpc_contract_interface::call_args as contract_args;
 use near_mpc_crypto_types::Keyset;
 use tokio::sync::{RwLock, watch};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
     indexer::{
-        participants::ContractState,
-        tx_sender::TransactionSender,
-        types::{ChainSendTransactionRequest, ConcludeNodeMigrationArgs},
+        participants::ContractState, tx_sender::TransactionSender,
+        types::ChainSendTransactionRequest,
     },
     keyshare::{Keyshare, KeyshareStorage},
     migration_service::types::{MigrationInfo, OnboardingJob, OnboardingTask},
@@ -271,10 +271,9 @@ async fn send_conclude_onboarding(
     imported_keyset: Keyset,
     tx_sender: impl TransactionSender,
 ) -> anyhow::Result<()> {
-    let transaction =
-        ChainSendTransactionRequest::ConcludeNodeMigration(ConcludeNodeMigrationArgs {
-            keyset: imported_keyset,
-        });
+    let transaction = ChainSendTransactionRequest::ConcludeNodeMigration(
+        contract_args::ConcludeNodeMigrationArgs::new(imported_keyset),
+    );
     tx_sender.send(transaction).await?;
     Ok(())
 }

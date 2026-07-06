@@ -609,12 +609,27 @@ For more information, see [local-key-provider-from-phala](https://github.com/Dst
      --format 'table {{.Names}}\t{{.Status}}'
    ```
 
-   Both should show `Up` (`gramine-sealing-key-provider` listens on
-   `127.0.0.1:3443`). The bundled `sgx_default_qcnl.conf` works for any platform
-   **registered with Intel** (step 9.2); if `gramine-sealing-key-provider`
-   instead crash-loops (`Restarting`) with `AESM service returned error 44`, the
-   platform is almost always not registered — see
-   [Troubleshooting](#gramine-sealing-key-provider-crash-loops-with-aesm-service-returned-error-44).
+   Both should report `Up` (not `Restarting`). The bundled
+   `sgx_default_qcnl.conf` works for any platform **registered with Intel**
+   (step 9.2).
+
+   Then confirm the key provider actually came up and is listening:
+
+   ```bash
+   docker logs gramine-sealing-key-provider 2>&1 | tail -n 50
+   ```
+
+   A healthy provider ends with these lines and shows **no** `ERROR` lines:
+
+   ```
+   [INFO  gramine_sealing_key_provider] Running in PRODUCTION mode - full security enabled
+   [INFO  gramine_sealing_key_provider::server] Listening on 0.0.0.0:3443
+   ```
+
+   If a container is `Restarting`, or the log shows an error such as
+   `AESM service returned error 44` or `DCAP error`, see
+   [`gramine-sealing-key-provider` failures](#gramine-sealing-key-provider-failures)
+   in the Troubleshooting section.
 
 ## MPC Node Setup and Deployment
 
@@ -950,6 +965,10 @@ Full flag reference and `.env` field-by-field documentation:
 
 Dstack provides a dedicated web page to view CVM information, including links to the Docker logs.
 More details can be found in [Phala's guide](https://github.com/Dstack-TEE/dstack?tab=readme-ov-file#deploy-an-app).
+
+> **Log retention:** the MPC container is reused across **restarts**, so its
+> logs are preserved and remain viewable here after a restart. An **upgrade**
+> (new image) recreates the container, which clears its logs.
 
 ---
 
@@ -1853,15 +1872,50 @@ python $VMM_CLI_PATH --url $VMM_URL start <vm-id>
 
 ## Troubleshooting
 
-TBD [#912](https://github.com/near/mpc/issues/912)
-Reviewers — please add here more scenarios (with or without solutions)
+Common failure scenarios and how to diagnose them. This section grows as new
+cases are identified.
 
-* do we have logs that indicate the node version/hash?
-* How to see what MPC node hash is expected by the launcher (docker-compose v.s file on disk)
-* Recovery — how to erase the indexer state (e.g data folder)
-* …..
+### Wiping the NEAR indexer data (force a re-sync)
 
-### `gramine-sealing-key-provider` crash-loops with `AESM service returned error 44`
+**Symptom:** the embedded NEAR node won't sync — it stays at genesis, reports stale/corrupt
+chain data, or is stuck far behind the chain — and a plain restart doesn't recover it. Inside
+the CVM you can't delete the data dir by hand, so the node config exposes a one-time wipe.
+
+**Fix — change the wipe token and redeploy.** Set `wipe_near_data_token` under
+`[mpc_node_config.node.indexer]` to a **new non-zero value** (different from its current
+value), then redeploy/restart the CVM:
+
+```toml
+[mpc_node_config.node.indexer]
+# … existing fields …
+wipe_near_data_token = 1
+```
+
+On the next startup — before the store is opened, so it runs in an instant and *before* sync —
+the node deletes the nearcore data dir (`data/data`), records the token in
+`data/.near_data_wipe_token`, and re-syncs the chain from scratch. The MPC secrets in
+`data/assets` (keyshares, triples, presignatures) are **not** touched, so the node keeps its
+identity and key material.
+
+Semantics:
+
+- `0` (the default) never wipes.
+- A non-zero value that **differs** from the last applied value wipes exactly once. Any change
+  triggers it — increasing *or* decreasing — so you can always wipe again by picking a
+  different value.
+- Restarting with the **same** value, or setting it back to `0`, is a no-op (the node records
+  the last value it acted on, so it won't re-wipe on every restart).
+- On **archival** nodes the wipe is skipped (a warning is logged each startup) so the archive
+  isn't destroyed.
+
+### `gramine-sealing-key-provider` failures
+
+These all present the same way — the `gramine-sealing-key-provider` container
+crash-loops and the CVM won't boot — but have different causes. They are ordered
+by where they occur in the quote lifecycle: **generation** (platform
+registration), then **verification** (collateral fetch, then the TCB check).
+
+#### Platform not registered — `AESM service returned error 44`
 
 Symptom: the `gramine-sealing-key-provider` container keeps `Restarting`, and
 `docker logs gramine-sealing-key-provider` shows:
@@ -1891,6 +1945,39 @@ If it's a local PCCS, its log (`sudo journalctl -u pccs` or
   platform not registered (404, not 401, so the API key is fine). Register as above.
 - **`401` / "API key"** — the local PCCS Intel PCS API key is missing/invalid;
   set it via `sudo /usr/bin/pccs-configure` and `sudo systemctl restart pccs`.
+
+#### Quote verification fails — `DCAP error` / "Failed to get sealing key"
+
+The platform is registered and quote *generation* succeeds, but the CVM
+crash-loops at boot. Guest log:
+
+```
+Failed to get sealing key: Invalid status code: 400, path=GetSealingKey
+```
+
+Key provider log:
+
+```
+gramine_sealing_key_provider::server: connection error ...: DCAP error
+```
+
+Before releasing the sealing key the key provider **verifies the CVM's quote**,
+and `DCAP error` is a catch-all for that verification failing. Two causes:
+
+- **Collateral fetch** — the PCCS (reached via the `aesmd` qcnl) doesn't serve
+  the **TDX** collateral (TCB info / QE identity) for the platform's FMSPC. Point
+  the PCCS at Intel so it caches it; see
+  [Self-hosting a local PCCS](#appendix-self-hosting-a-local-pccs).
+- **TCB check** — the platform's TCB is below what Intel's current TCB info
+  accepts ("No matching TCB level"). The **TDX module (SEAM) SVN is evaluated
+  separately from CPU microcode**, so current microcode does *not* imply a
+  current TDX module. Check the loaded module with
+  `sudo dmesg | grep -i "tdx module"`; the fix is a **vendor BIOS/firmware
+  update** that bundles a newer Intel TDX module — an `intel-microcode` update
+  alone won't move it.
+
+> Confirmed in the field: a Granite Rapids host with this signature was fixed by
+> a vendor BIOS update bundling a newer Intel TDX module.
 
 ### `submit_participant_info` failures
 
