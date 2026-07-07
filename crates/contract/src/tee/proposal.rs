@@ -660,10 +660,8 @@ mod tests {
 
         // Refreshing an unknown compose hash returns false.
         assert!(
-            !allowed.refresh_last_used(&get_docker_compose_hash(
-                &dummy_launcher_hash(9),
-                &mpc_hash
-            ))
+            !allowed
+                .refresh_last_used(&get_docker_compose_hash(&dummy_launcher_hash(9), &mpc_hash))
         );
     }
 
@@ -682,7 +680,10 @@ mod tests {
         // At t=200 with a 100s TTL, launcher_1 (last_used=1) is hidden.
         set_block_secs(200);
         let small_ttl = Duration::from_secs(100);
-        assert_eq!(allowed.launcher_hashes(small_ttl), vec![dummy_launcher_hash(2)]);
+        assert_eq!(
+            allowed.launcher_hashes(small_ttl),
+            vec![dummy_launcher_hash(2)]
+        );
 
         // A larger TTL at the same instant un-hides it — the entry was never deleted.
         let large_ttl = Duration::from_secs(1_000);
