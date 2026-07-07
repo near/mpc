@@ -3,12 +3,9 @@ use super::ReadForeignChainPolicy;
 use super::handler::{ChainBlockUpdate, SignatureRequestFromChain};
 use super::migrations::ContractMigrationInfo;
 use super::participants::ContractState;
-use super::types::{
-    ChainSendTransactionRequest, ChainSignatureRespondArgs, ConcludeNodeMigrationArgs,
-};
+use super::types::ChainSendTransactionRequest;
 use crate::config::{self, ParticipantsConfig};
 use crate::indexer::handler::{CKDRequestFromChain, VerifyForeignTxRequestFromChain};
-use crate::indexer::types::{ChainCKDRespondArgs, ChainVerifyForeignTransactionRespondArgs};
 use crate::migration_service::types::MigrationInfo;
 use crate::tests::common::MockTransactionSender;
 use crate::tests::dto_conversions::keyset_to_dto;
@@ -34,6 +31,7 @@ use mpc_contract::state::{
     running::RunningContractState,
 };
 use near_account_id::AccountId;
+use near_mpc_contract_interface::call_args as contract_args;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_crypto_types::Payload;
 use near_time::{Clock, Duration};
@@ -437,7 +435,7 @@ impl FakeMpcContractState {
     pub fn conclude_node_migration(
         &mut self,
         account_id: AccountId,
-        args: ConcludeNodeMigrationArgs,
+        args: contract_args::ConcludeNodeMigrationArgs,
     ) {
         let (account_id, _, node) = self.migration_service.get_for_account(&account_id);
         let node_info = node.expect("expected node info");
@@ -505,18 +503,18 @@ struct FakeIndexerCore {
     /// When the core receives signature response txns, it processes them by sending them through
     /// this sender. The receiver end of this is in FakeIndexManager to be received by the test
     /// code.
-    signature_response_sender: mpsc::UnboundedSender<ChainSignatureRespondArgs>,
+    signature_response_sender: mpsc::UnboundedSender<contract_args::SignatureRespondArgs>,
 
     /// When the core receives ckd response txns, it processes them by sending them through
     /// this sender. The receiver end of this is in FakeIndexManager to be received by the test
     /// code.
-    ckd_response_sender: mpsc::UnboundedSender<ChainCKDRespondArgs>,
+    ckd_response_sender: mpsc::UnboundedSender<contract_args::CKDRespondArgs>,
 
     /// When the core receives verify foreign response txns, it processes them by sending them through
     /// this sender. The receiver end of this is in FakeIndexManager to be received by the test
     /// code.
     verify_foreign_tx_response_sender:
-        mpsc::UnboundedSender<ChainVerifyForeignTransactionRespondArgs>,
+        mpsc::UnboundedSender<contract_args::VerifyForeignTransactionRespondArgs>,
 
     /// How long to wait before generating the next block.
     block_time: std::time::Duration,
@@ -800,20 +798,20 @@ pub struct FakeIndexerManager {
 
     /// Collects signature responses from the core. When the core processes signature
     /// response transactions, it sends them to this receiver. See `next_response()`.
-    signature_response_receiver: mpsc::UnboundedReceiver<ChainSignatureRespondArgs>,
+    signature_response_receiver: mpsc::UnboundedReceiver<contract_args::SignatureRespondArgs>,
     /// Used to send signature requests to the core.
     signature_request_sender: mpsc::UnboundedSender<SignatureRequestFromChain>,
 
     /// Collects ckd responses from the core. When the core processes ckd
     /// response transactions, it sends them to this receiver. See `next_response_ckd()`.
-    ckd_response_receiver: mpsc::UnboundedReceiver<ChainCKDRespondArgs>,
+    ckd_response_receiver: mpsc::UnboundedReceiver<contract_args::CKDRespondArgs>,
     /// Used to send ckd requests to the core.
     ckd_request_sender: mpsc::UnboundedSender<CKDRequestFromChain>,
 
     /// Collects verify foreign tx responses from the core. When the core processes verify foreign tx
     /// response transactions, it sends them to this receiver. See `next_response_verify_foreign_tx()`.
     verify_foreign_tx_response_receiver:
-        mpsc::UnboundedReceiver<ChainVerifyForeignTransactionRespondArgs>,
+        mpsc::UnboundedReceiver<contract_args::VerifyForeignTransactionRespondArgs>,
     /// Used to send verify foreign tx requests to the core.
     verify_foreign_tx_request_sender: mpsc::UnboundedSender<VerifyForeignTxRequestFromChain>,
 
@@ -1051,19 +1049,19 @@ impl FakeIndexerManager {
     }
 
     /// Waits for the next signature response submitted by any node.
-    pub async fn next_response(&mut self) -> ChainSignatureRespondArgs {
+    pub async fn next_response(&mut self) -> contract_args::SignatureRespondArgs {
         self.signature_response_receiver.recv().await.unwrap()
     }
 
     /// Waits for the next ckd response submitted by any node.
-    pub async fn next_response_ckd(&mut self) -> ChainCKDRespondArgs {
+    pub async fn next_response_ckd(&mut self) -> contract_args::CKDRespondArgs {
         self.ckd_response_receiver.recv().await.unwrap()
     }
 
     /// Waits for the next verify foreign tx response submitted by any node.
     pub async fn next_response_verify_foreign_tx(
         &mut self,
-    ) -> ChainVerifyForeignTransactionRespondArgs {
+    ) -> contract_args::VerifyForeignTransactionRespondArgs {
         self.verify_foreign_tx_response_receiver
             .recv()
             .await

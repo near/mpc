@@ -710,7 +710,6 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
 #[cfg(test)]
 mod tests {
     use super::{NetworkAPIForRequests, PendingRequests, QueuedRequest};
-    use crate::indexer::types::ChainSignatureRespondArgs;
     use crate::primitives::ParticipantId;
     use crate::requests::queue::{
         CHECK_EACH_REQUEST_INTERVAL, MAX_ATTEMPTS_PER_REQUEST_AS_LEADER,
@@ -724,6 +723,7 @@ mod tests {
     };
     use mpc_primitives::domain::DomainId;
     use near_indexer_primitives::CryptoHash;
+    use near_mpc_contract_interface::call_args as contract_args;
     use near_mpc_contract_interface::types::{Payload, Tweak};
     use near_time::{Duration, FakeClock};
     use std::borrow::Cow;
@@ -805,7 +805,7 @@ mod tests {
     }
 
     type TestRequest = SignatureRequest;
-    type TestRequestRespondArgs = ChainSignatureRespondArgs;
+    type TestRequestRespondArgs = contract_args::SignatureRespondArgs;
 
     struct TestSetup {
         clock: FakeClock,
