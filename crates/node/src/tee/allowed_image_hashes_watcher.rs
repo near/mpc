@@ -3,6 +3,7 @@ use itertools::Itertools;
 use launcher_interface::types::{ApprovedHashes, DockerSha256Digest};
 use mpc_primitives::hash::NodeImageHash;
 use near_mpc_bounded_collections::NonEmptyVec;
+use near_mpc_contract_interface::types::AllowedMpcDockerImageHash;
 use std::{future::Future, io, panic, path::PathBuf};
 use thiserror::Error;
 use tokio::{
@@ -13,6 +14,8 @@ use tokio::{
     },
 };
 use tokio_util::sync::CancellationToken;
+
+use crate::tee::image_expiry_metrics;
 
 #[cfg(test)]
 use mockall::automock;
@@ -90,7 +93,7 @@ pub enum ExitError {
 pub async fn monitor_allowed_image_hashes<Storage>(
     cancellation_token: CancellationToken,
     current_image: NodeImageHash,
-    allowed_hashes_in_contract: watch::Receiver<Vec<NodeImageHash>>,
+    allowed_hashes_in_contract: watch::Receiver<Vec<AllowedMpcDockerImageHash>>,
     image_hash_storage: Storage,
     shutdown_signal_sender: mpsc::Sender<()>,
 ) -> Result<(), ExitError>
@@ -110,7 +113,7 @@ where
 
 struct AllowedImageHashesWatcher<A> {
     cancellation_token: CancellationToken,
-    allowed_hashes_in_contract: watch::Receiver<Vec<NodeImageHash>>,
+    allowed_hashes_in_contract: watch::Receiver<Vec<AllowedMpcDockerImageHash>>,
     current_image: NodeImageHash,
     image_hash_storage: A,
     shutdown_signal_sender: mpsc::Sender<()>,
@@ -166,9 +169,13 @@ where
             "Set of allowed image hashes on contract has changed. Storing hashes to disk."
         );
 
-        let allowed_hashes = self.allowed_hashes_in_contract.borrow_and_update().clone();
+        let allowed_images = self.allowed_hashes_in_contract.borrow_and_update().clone();
 
-        let Ok(allowed_hashes) = NonEmptyVec::from_vec(allowed_hashes) else {
+        let image_hashes = allowed_images
+            .iter()
+            .map(|entry| entry.image_hash)
+            .collect();
+        let Ok(allowed_hashes) = NonEmptyVec::from_vec(image_hashes) else {
             tracing::warn!("indexer provided an empty list of allowed image hashes.");
             return Ok(());
         };
@@ -181,6 +188,8 @@ where
         if running_image_is_not_allowed {
             tracing::error!("Currently running node image is NOT in the allowed hash list!");
         }
+
+        image_expiry_metrics::update_own_image_hash_gauges(&self.current_image, &allowed_images);
 
         Ok(())
     }
@@ -210,6 +219,16 @@ mod tests {
         NodeImageHash::from([3; 32])
     }
 
+    fn entries(image_hashes: Vec<NodeImageHash>) -> Vec<AllowedMpcDockerImageHash> {
+        image_hashes
+            .into_iter()
+            .map(|image_hash| AllowedMpcDockerImageHash {
+                image_hash,
+                expiry_timestamp_seconds: None,
+            })
+            .collect()
+    }
+
     /// Ensures that whenever the allowed image hash list changes,
     /// the MPC node writes the full list of allowed hashes to storage,
     /// preserving the ordering received from the contract.
@@ -224,7 +243,7 @@ mod tests {
 
         for current_hash in allowed_images.iter().take(2) {
             let cancellation_token = CancellationToken::new();
-            let (sender, receiver) = watch::channel(allowed_images.clone().to_vec());
+            let (sender, receiver) = watch::channel(entries(allowed_images.clone().to_vec()));
             let (sender_shutdown, mut receiver_shutdown) = mpsc::channel(1);
 
             let write_is_called = Arc::new(Notify::new());
@@ -283,7 +302,7 @@ mod tests {
             .returning(|_| Box::pin(async { Err(io::Error::other("Expected test error.")) }));
 
         let cancellation_token = CancellationToken::new();
-        let (_sender, receiver) = watch::channel(allowed_images);
+        let (_sender, receiver) = watch::channel(entries(allowed_images));
         let (sender_shutdown, mut receiver_shutdown) = mpsc::channel(1);
 
         let join_handle = tokio::spawn(monitor_allowed_image_hashes(
@@ -319,7 +338,7 @@ mod tests {
         let expected_non_empty = NonEmptyVec::from_vec(allowed_list.clone()).unwrap();
 
         let cancellation_token = CancellationToken::new();
-        let (_sender, receiver) = watch::channel(allowed_list.clone());
+        let (_sender, receiver) = watch::channel(entries(allowed_list.clone()));
         let (sender_shutdown, mut receiver_shutdown) = mpsc::channel(1);
 
         let write_is_called = Arc::new(Notify::new());
@@ -373,7 +392,7 @@ mod tests {
         let allowed_images = vec![image_hash_1(), image_hash_2(), image_hash_3()];
 
         // Create the watcher channel and then immediately drop sender
-        let (sender, receiver) = watch::channel(allowed_images.clone());
+        let (sender, receiver) = watch::channel(entries(allowed_images.clone()));
         drop(sender); // <- simulate indexer shutting down
 
         let (sender_shutdown, mut receiver_shutdown) = mpsc::channel(1);
@@ -425,7 +444,7 @@ mod tests {
         let current_image = image_hash_1();
 
         let cancellation_token = CancellationToken::new();
-        let (_sender, receiver) = watch::channel(allowed_images.clone());
+        let (_sender, receiver) = watch::channel(entries(allowed_images.clone()));
         let (sender_shutdown, mut receiver_shutdown) = mpsc::channel(1);
 
         let write_is_called = Arc::new(Notify::new());
@@ -475,7 +494,7 @@ mod tests {
         let current_image = image_hash_1();
 
         let cancellation_token = CancellationToken::new();
-        let (_sender, receiver) = watch::channel(allowed_images);
+        let (_sender, receiver) = watch::channel(entries(allowed_images));
         let (sender_shutdown, mut receiver_shutdown) = mpsc::channel(1);
 
         // Storage must NOT be called

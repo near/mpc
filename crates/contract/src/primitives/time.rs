@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use near_sdk::env;
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct Timestamp {
     duration_since_unix_epoch: Duration,
@@ -21,6 +23,17 @@ impl Timestamp {
         Some(Timestamp {
             duration_since_unix_epoch: new_time_stamp,
         })
+    }
+
+    pub(crate) fn add_or_panic(self, duration: Duration) -> Self {
+        let Some(res) = self.checked_add(duration) else {
+            env::panic_str("overflowed adding duration to timestamp")
+        };
+        res
+    }
+
+    pub(crate) fn as_secs(self) -> u64 {
+        self.duration_since_unix_epoch.as_secs()
     }
 }
 

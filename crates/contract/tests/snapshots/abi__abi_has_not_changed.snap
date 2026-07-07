@@ -17,14 +17,14 @@ expression: abi
     "functions": [
       {
         "name": "allowed_docker_image_hashes",
-        "doc": " Returns all allowed code hashes in order from most recent to least recent allowed code hashes. The first element is the most recent allowed code hash.",
+        "doc": " Returns all allowed code hashes in descending order of their expiry\n date. Note that the expiration depends on the contract configuration\n (c.f. [`Config::tee_upgrade_deadline_duration_seconds`]).",
         "kind": "view",
         "result": {
           "serialization_type": "json",
           "type_schema": {
             "type": "array",
             "items": {
-              "$ref": "#/definitions/DockerImageHash"
+              "$ref": "#/definitions/AllowedMpcDockerImageHash"
             }
           }
         }
@@ -2347,6 +2347,26 @@ expression: abi
                   "$ref": "#/definitions/DomainConfig"
                 }
               }
+            }
+          }
+        },
+        "AllowedMpcDockerImageHash": {
+          "type": "object",
+          "required": [
+            "image_hash"
+          ],
+          "properties": {
+            "expiry_timestamp_seconds": {
+              "description": "block-time at which this hash is evicted from the allowlist. None if expiration date is not yet known.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "image_hash": {
+              "$ref": "#/definitions/DockerImageHash"
             }
           }
         },

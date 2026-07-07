@@ -11119,6 +11119,7 @@ dependencies = [
  "mpc-primitives",
  "near-account-id",
  "near-mpc-contract-interface",
+ "serde",
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
