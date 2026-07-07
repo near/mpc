@@ -181,24 +181,19 @@ async fn submit_tx(
     })
 }
 
-/// Reads the attestation expiry currently stored for a `submit_participant_info` request, to
-/// use as the pre-submit baseline for the advanced-expiry confirmation in [`observe_tx_result`].
-/// Must be called before submitting. Returns `Ok(None)` for other request types or when no
-/// Dstack attestation is stored yet.
-async fn read_pre_submit_attestation_expiry(
+/// Reads the Dstack attestation expiry currently stored on chain for `tls_public_key`, or `None`
+/// if none is stored. This is the baseline for confirming our own `submit_participant_info` landed
+/// (see [`confirm_participant_info_submission`]): a successful submit *changes* the stored expiry,
+/// so the baseline is read *before* submitting and compared afterwards. It is read per attempt
+/// (where the view client lives); correctness does not depend on re-reading, since the confirmation
+/// only checks that the expiry changed (see [`attestation_expiry_changed`]).
+async fn read_stored_dstack_expiry(
     indexer_state: &IndexerState,
-    request: &ChainSendTransactionRequest,
+    tls_public_key: &Ed25519PublicKey,
 ) -> anyhow::Result<Option<u64>> {
-    let SubmitParticipantInfo(submit_participant_info_args) = request else {
-        return Ok(None);
-    };
-
     let stored_attestation = indexer_state
         .view_client
-        .get_participant_attestation(
-            &indexer_state.mpc_contract_id,
-            &submit_participant_info_args.tls_public_key,
-        )
+        .get_participant_attestation(&indexer_state.mpc_contract_id, tls_public_key)
         .await?;
 
     Ok(match stored_attestation {
@@ -209,24 +204,34 @@ async fn read_pre_submit_attestation_expiry(
     })
 }
 
-/// Confirms a `submit_participant_info` landed by checking the stored expiry advanced past the
-/// pre-submit baseline: a successful submit re-stamps expiry forward, a failed one leaves it
-/// unchanged, and expiry only advances via our own submit for this key — so this never yields a
-/// false positive. Returns `true` iff `stored_expiry > pre_submit_expiry`, or there is no baseline
-/// (`None`).
+/// Confirms a `submit_participant_info` landed by checking the stored expiry *changed* from the
+/// pre-submit baseline: a successful submit re-stamps the expiry to a new value, while a failed one
+/// leaves it untouched. Returns `true` iff `stored_expiry != pre_submit_expiry`, or there is no
+/// baseline (`None`, i.e. nothing was stored before).
 ///
-/// Avoids reconstructing creation time as `expiry - constant`, which breaks under node/contract
-/// version skew and the verifier-rotation expiry cap (stored expiry is not `creation + constant`).
+/// We compare for inequality rather than `stored_expiry > baseline`: a contract upgrade that lowers
+/// the expiration constant can make a landed submit set an *earlier* expiry than a stale stored
+/// entry, which `>` would miss. The only thing that changes our key's expiry other than our own
+/// submit is the verifier-rotation cap (#3734) lowering it — a rare race that would read as landed,
+/// bounded and self-correcting via the hourly resubmit. Avoids reconstructing the creation time as
+/// `expiry - constant`, which breaks under node/contract version skew and under that cap.
 // TODO(#1639): confirm via a creation timestamp read from the certificate itself.
-fn attestation_expiry_advanced(pre_submit_expiry: Option<u64>, stored_expiry: u64) -> bool {
+fn attestation_expiry_changed(pre_submit_expiry: Option<u64>, stored_expiry: u64) -> bool {
     match pre_submit_expiry {
-        Some(expiry_before_submit) => stored_expiry > expiry_before_submit,
+        Some(expiry_before_submit) => stored_expiry != expiry_before_submit,
         None => true,
     }
 }
 
-/// Whether the attestation we submitted is the one now stored on chain. Dstack is confirmed via
-/// [`attestation_expiry_advanced`]; Mock (tests) by direct equality. Mismatched kinds never match.
+/// Whether the attestation we submitted is the one now stored on chain.
+///
+/// Mock attestations (tests) carry a full identity, so we match `submitted` against `stored`
+/// directly. Dstack can't be matched that way: the stored `VerifiedDstackAttestation` is a
+/// different type from the submitted `DstackAttestation` and keeps no per-submission identity (no
+/// creation time) to compare on — so `submitted` is unused in that arm and we confirm indirectly,
+/// via [`attestation_expiry_changed`] against the pre-submit baseline.
+// TODO(#1639): give Dstack a real per-submission identity (a certificate creation timestamp) so it
+// can be matched directly like Mock, instead of via the expiry-change heuristic.
 fn submitted_attestation_landed(
     pre_submit_expiry: Option<u64>,
     stored: &VerifiedAttestation,
@@ -234,21 +239,67 @@ fn submitted_attestation_landed(
 ) -> bool {
     match (stored, submitted) {
         (VerifiedAttestation::Dstack(stored), Attestation::Dstack(_)) => {
-            attestation_expiry_advanced(pre_submit_expiry, stored.expiry_timestamp_seconds)
+            attestation_expiry_changed(pre_submit_expiry, stored.expiry_timestamp_seconds)
         }
         (VerifiedAttestation::Mock(stored), Attestation::Mock(submitted)) => stored == submitted,
         _ => false,
     }
 }
 
+/// Confirms whether a `submit_participant_info` landed: reads the currently-stored attestation and
+/// checks, via [`submitted_attestation_landed`], that it matches what we submitted. `pre_submit_expiry`
+/// is the expiry observed *before* submitting (see [`read_stored_dstack_expiry`]), used as the
+/// baseline for the Dstack expiry-advance check.
+async fn confirm_participant_info_submission(
+    indexer_state: &IndexerState,
+    tls_public_key: &Ed25519PublicKey,
+    submitted_attestation: &Attestation,
+    pre_submit_expiry: anyhow::Result<Option<u64>>,
+) -> anyhow::Result<TransactionStatus> {
+    let stored_attestation = indexer_state
+        .view_client
+        .get_participant_attestation(&indexer_state.mpc_contract_id, tls_public_key)
+        .await?;
+
+    let Some(stored_attestation) = stored_attestation else {
+        tracing::debug!(
+            ?tls_public_key,
+            "no attestation stored on chain for our key; submission not yet landed"
+        );
+        return Ok(TransactionStatus::NotExecuted);
+    };
+
+    let pre_submit_expiry = pre_submit_expiry?;
+    let stored_expiry = match &stored_attestation {
+        VerifiedAttestation::Dstack(stored) => Some(stored.expiry_timestamp_seconds),
+        VerifiedAttestation::Mock(_) => None,
+    };
+    let attestation_landed = submitted_attestation_landed(
+        pre_submit_expiry,
+        &stored_attestation,
+        submitted_attestation,
+    );
+
+    tracing::info!(
+        ?pre_submit_expiry,
+        ?stored_expiry,
+        attestation_landed,
+        "checked attestation submission on chain"
+    );
+
+    Ok(if attestation_landed {
+        TransactionStatus::Executed
+    } else {
+        TransactionStatus::NotExecuted
+    })
+}
+
 /// Confirms whether the intended effect of the transaction request has been observed on chain.
-///
-/// `pre_submit_expiry` is the attestation expiry read *before* submitting, used by the
-/// `submit_participant_info` confirmation (see [`read_pre_submit_attestation_expiry`]).
+/// `SubmitParticipantInfo` is confirmed separately by [`confirm_participant_info_submission`] (it
+/// needs a pre-submit baseline), so it is never routed here.
 async fn observe_tx_result(
     indexer_state: Arc<IndexerState>,
     request: &ChainSendTransactionRequest,
-    pre_submit_expiry: anyhow::Result<Option<u64>>,
 ) -> anyhow::Result<TransactionStatus> {
     match request {
         Respond(respond_args) => {
@@ -302,48 +353,10 @@ async fn observe_tx_result(
 
             Ok(transaction_status)
         }
-        SubmitParticipantInfo(submit_participant_info_args) => {
-            let tls_public_key = &submit_participant_info_args.tls_public_key;
-
-            let attestation_stored_on_contract = indexer_state
-                .view_client
-                .get_participant_attestation(&indexer_state.mpc_contract_id, tls_public_key)
-                .await?;
-
-            let Some(stored_attestation) = attestation_stored_on_contract else {
-                tracing::debug!(
-                    ?tls_public_key,
-                    "no attestation stored on chain for our key; submission not yet landed"
-                );
-                return Ok(TransactionStatus::NotExecuted);
-            };
-
-            let submitted_attestation =
-                &submit_participant_info_args.proposed_participant_attestation;
-
-            let pre_submit_expiry = pre_submit_expiry?;
-            let stored_expiry = match &stored_attestation {
-                VerifiedAttestation::Dstack(stored) => Some(stored.expiry_timestamp_seconds),
-                VerifiedAttestation::Mock(_) => None,
-            };
-            let attestation_landed = submitted_attestation_landed(
-                pre_submit_expiry,
-                &stored_attestation,
-                submitted_attestation,
-            );
-
-            tracing::info!(
-                ?pre_submit_expiry,
-                ?stored_expiry,
-                attestation_landed,
-                "checked attestation submission on chain"
-            );
-
-            if attestation_landed {
-                Ok(TransactionStatus::Executed)
-            } else {
-                Ok(TransactionStatus::NotExecuted)
-            }
+        SubmitParticipantInfo(_) => {
+            unreachable!(
+                "submit_participant_info is confirmed by confirm_participant_info_submission"
+            )
         }
         // We don't care. The contract state change will handle this.
         StartKeygen(_)
@@ -373,10 +386,14 @@ async fn ensure_send_transaction(
         public_key: Ed25519PublicKey::from(&tx_signer.public_key()),
         method,
     };
-    // Baseline for the submit_participant_info confirmation: the attestation expiry stored
-    // before we submit. Captured before submit_tx so a successful submit is detected as an
-    // advance in observe_tx_result.
-    let pre_submit_expiry = read_pre_submit_attestation_expiry(&indexer_state, &request).await;
+    // Only submit_participant_info needs a pre-submit baseline (its confirmation checks that the
+    // stored expiry advanced); read it before submitting, and only for that request type.
+    let pre_submit_expiry = match &request {
+        SubmitParticipantInfo(args) => {
+            read_stored_dstack_expiry(&indexer_state, &args.tls_public_key).await
+        }
+        _ => Ok(None),
+    };
 
     let submitted_metadata = submit_tx(
         tx_signer.clone(),
@@ -409,8 +426,18 @@ async fn ensure_send_transaction(
     time::sleep(TRANSACTION_TIMEOUT).await;
 
     // Then try to check whether it had the intended effect
-    let transaction_status =
-        observe_tx_result(indexer_state.clone(), &request, pre_submit_expiry).await;
+    let transaction_status = match &request {
+        SubmitParticipantInfo(args) => {
+            confirm_participant_info_submission(
+                &indexer_state,
+                &args.tls_public_key,
+                &args.proposed_participant_attestation,
+                pre_submit_expiry,
+            )
+            .await
+        }
+        _ => observe_tx_result(indexer_state.clone(), &request).await,
+    };
 
     let (outcome_label, recorded_status) = match &transaction_status {
         Ok(TransactionStatus::Executed) => ("succeeded", SubmittedTransactionStatus::Executed),
@@ -436,18 +463,18 @@ async fn ensure_send_transaction(
 #[cfg(test)]
 mod tests {
     use super::{
-        Attestation, VerifiedAttestation, attestation_expiry_advanced, submitted_attestation_landed,
+        Attestation, VerifiedAttestation, attestation_expiry_changed, submitted_attestation_landed,
     };
     use near_mpc_contract_interface::types::MockAttestation;
 
     #[test]
     #[expect(non_snake_case)]
-    fn attestation_expiry_advanced__should_confirm_when_expiry_advances() {
+    fn attestation_expiry_changed__should_confirm_when_expiry_increases() {
         // Given: an attestation was stored before submitting
         let pre_submit_expiry = Some(100);
 
-        // When: the stored expiry is now higher than before
-        let landed = attestation_expiry_advanced(pre_submit_expiry, 200);
+        // When: the stored expiry is now higher than before (a fresh submit landed)
+        let landed = attestation_expiry_changed(pre_submit_expiry, 200);
 
         // Then: our submission is confirmed to have landed
         assert!(landed);
@@ -455,12 +482,12 @@ mod tests {
 
     #[test]
     #[expect(non_snake_case)]
-    fn attestation_expiry_advanced__should_reject_when_expiry_unchanged() {
+    fn attestation_expiry_changed__should_reject_when_expiry_unchanged() {
         // Given: an attestation was stored before submitting
         let pre_submit_expiry = Some(200);
 
         // When: the stored expiry is unchanged (our submit did not land)
-        let landed = attestation_expiry_advanced(pre_submit_expiry, 200);
+        let landed = attestation_expiry_changed(pre_submit_expiry, 200);
 
         // Then: the submission is treated as not executed
         assert!(!landed);
@@ -468,27 +495,27 @@ mod tests {
 
     #[test]
     #[expect(non_snake_case)]
-    fn attestation_expiry_advanced__should_reject_when_expiry_regresses() {
-        // Given: an attestation was stored before submitting, and a verifier rotation has since
-        // capped the stored expiry to a lower value
+    fn attestation_expiry_changed__should_confirm_when_expiry_decreases() {
+        // Given: an attestation was stored before submitting, and a contract upgrade has lowered
+        // the expiration constant, so a landed submit now stamps an *earlier* expiry
         let pre_submit_expiry = Some(300);
 
         // When: the stored expiry is now lower than before
-        let landed = attestation_expiry_advanced(pre_submit_expiry, 200);
+        let landed = attestation_expiry_changed(pre_submit_expiry, 200);
 
-        // Then: the submission is treated as not executed (a harmless false negative that
-        // self-heals on the next resubmission, never a false positive)
-        assert!(!landed);
+        // Then: the change still confirms our submission landed (this is why we compare for
+        // inequality rather than a strict increase)
+        assert!(landed);
     }
 
     #[test]
     #[expect(non_snake_case)]
-    fn attestation_expiry_advanced__should_confirm_when_no_prior_attestation() {
+    fn attestation_expiry_changed__should_confirm_when_no_prior_attestation() {
         // Given: no attestation was stored before submitting
         let pre_submit_expiry = None;
 
         // When: an attestation is now stored
-        let landed = attestation_expiry_advanced(pre_submit_expiry, 200);
+        let landed = attestation_expiry_changed(pre_submit_expiry, 200);
 
         // Then: its presence confirms our submission landed
         assert!(landed);

@@ -44,6 +44,10 @@ pub async fn submit_remote_attestation(
         tls_public_key,
     );
 
+    // TODO(#3746): this loop retries the *same* attestation for up to `MAX_RETRY_DURATION` and
+    // returns an error on timeout (stopping the caller task), so a late success can store a stale
+    // attestation. #3746 will split this into an inner submit loop and an outer loop that
+    // re-generates a fresh attestation.
     let set_attestation = move || {
         let tx_sender = tx_sender.clone();
         let propose_join_args_clone = submit_participant_info_args.clone();
