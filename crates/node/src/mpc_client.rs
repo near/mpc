@@ -1,4 +1,4 @@
-use crate::indexer::ReadAvailableForeignChains;
+use crate::indexer::ReadForeignChainPolicy;
 use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::tx_sender::TransactionSender;
 use crate::indexer::types::{
@@ -7,7 +7,7 @@ use crate::indexer::types::{
 };
 use crate::metrics;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-use crate::primitives::MpcTaskId;
+use crate::primitives::{MpcTaskId, ParticipantId};
 use crate::providers::ckd::CKDProvider;
 use crate::providers::ecdsa::EcdsaTaskId;
 use crate::providers::eddsa::EddsaSignatureProvider;
@@ -28,9 +28,11 @@ use chain_gateway::event_subscriber::recent_blocks_tracker::{AddBlockResult, Rec
 use mpc_node_config::ConfigFile;
 
 use mpc_primitives::domain::{DomainId, Protocol};
-use near_mpc_contract_interface::types::CKDResponse;
+use near_mpc_contract_interface::types::{CKDResponse, ForeignChain};
 use near_time::Clock;
-use std::collections::{HashMap, HashSet};
+use std::borrow::Cow;
+use std::cell::OnceCell;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -88,7 +90,7 @@ fn is_heavy_generation_task(task_id: &MpcTaskId) -> bool {
 
 impl<ForeignChainPolicyReader> MpcClient<ForeignChainPolicyReader>
 where
-    ForeignChainPolicyReader: ReadAvailableForeignChains + 'static,
+    ForeignChainPolicyReader: ReadForeignChainPolicy + 'static,
 {
     #[expect(clippy::too_many_arguments)]
     pub fn new(
@@ -258,6 +260,11 @@ where
 
         let mut recent_blocks = RecentBlocksTracker::new(REQUEST_EXPIRATION_BLOCKS);
         let start_time = Clock::real().now();
+
+        // The provider's foreign-chain policy cache is refreshed only when the indexer
+        // observes a policy-mutating contract call (plus once at startup.
+        let mut refresh_chain_policy_until_height: Option<u64> = Some(0);
+
         loop {
             tokio::select! {
                 _ = tokio::time::sleep(CHECK_EACH_REQUEST_INTERVAL.unsigned_abs()) => {
@@ -270,6 +277,10 @@ where
                     };
 
                     self.client.update_indexer_height(block_update.block.height.into());
+
+                    if block_update.foreign_chain_policy_updated {
+                        refresh_chain_policy_until_height = Some(block_update.block.height.into());
+                    }
 
                     let AddBlockResult{ block_status } = recent_blocks.add_block(&block_update.block);
 
@@ -340,7 +351,7 @@ where
                 continue;
             }
             let signature_attempts =
-                pending_signatures.get_requests_to_attempt(|_, eligible| eligible.clone());
+                pending_signatures.get_requests_to_attempt(|_, eligible| Cow::Borrowed(eligible));
 
             for signature_attempt in signature_attempts {
                 let this = self.clone();
@@ -461,7 +472,8 @@ where
                     },
                 );
             }
-            let ckd_attempts = pending_ckds.get_requests_to_attempt(|_, eligible| eligible.clone());
+            let ckd_attempts =
+                pending_ckds.get_requests_to_attempt(|_, eligible| Cow::Borrowed(eligible));
 
             for ckd_attempt in ckd_attempts {
                 let this = self.clone();
@@ -549,32 +561,52 @@ where
                 );
             }
 
-            let foreign_chains_configs = match self
-                .verify_foreign_tx_provider
-                .get_foreign_chains_configs()
-                .await
-            {
-                Ok(configs) => Some(configs),
-                Err(err) => {
-                    tracing::warn!(
-                        target: "request",
-                        ?err,
-                        "failed to read foreign-chain configs, deferring verify_foreign_tx leader election this cycle"
-                    );
-                    None
-                }
-            };
-            let verify_foreign_tx_attempts =
-                pending_verify_foreign_txs.get_requests_to_attempt(|req, eligible| {
-                    match &foreign_chains_configs {
-                        Some(configs) => self.verify_foreign_tx_provider.leaders_supporting_chain(
-                            eligible,
-                            configs,
-                            req.request.chain(),
-                        ),
-                        None => HashSet::new(),
+            if let Some(refresh_until_height) = refresh_chain_policy_until_height {
+                match self
+                    .verify_foreign_tx_provider
+                    .refresh_foreign_chain_policy()
+                    .await
+                {
+                    Ok(queried_height) => {
+                        if queried_height >= refresh_until_height {
+                            refresh_chain_policy_until_height = None;
+                        }
                     }
-                });
+                    Err(err) => {
+                        tracing::warn!(
+                            target: "request",
+                            ?err,
+                            "failed to refresh foreign-chain policy; keeping the previous view"
+                        );
+                    }
+                }
+            }
+
+            // Combine the cached per-chain supporter sets with the current
+            // eligible-leader view once per iteration (lazily, on the first
+            // pending request), so per-request refinement is a map lookup.
+            let verify_foreign_tx_attempts = {
+                let participants_by_foreign_chain = self
+                    .verify_foreign_tx_provider
+                    .participants_by_foreign_chain();
+                let alive_supporters_by_chain: OnceCell<
+                    BTreeMap<ForeignChain, HashSet<ParticipantId>>,
+                > = OnceCell::new();
+                pending_verify_foreign_txs.get_requests_to_attempt(|req, eligible| {
+                    let alive_supporters = alive_supporters_by_chain.get_or_init(|| {
+                        participants_by_foreign_chain
+                            .iter()
+                            .map(|(chain, supporters)| (*chain, supporters & eligible))
+                            .collect()
+                    });
+                    Cow::Owned(
+                        alive_supporters
+                            .get(&req.request.chain())
+                            .cloned()
+                            .unwrap_or_default(),
+                    )
+                })
+            };
 
             for verify_foreign_tx_attempt in verify_foreign_tx_attempts {
                 let this = self.clone();
@@ -608,9 +640,10 @@ where
                                     Some(Protocol::CaitSith) => {
                                         let response = timeout(
                                             Duration::from_secs(this.config.signature.timeout_sec),
-                                            this.verify_foreign_tx_provider.clone().make_signature(
-                                                verify_foreign_tx_attempt.request.id,
-                                            ),
+                                            this.verify_foreign_tx_provider
+                                                .make_verify_foreign_tx_leader(
+                                                    verify_foreign_tx_attempt.request.id,
+                                                ),
                                         )
                                         .await??;
 

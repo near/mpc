@@ -14,9 +14,11 @@ use near_indexer_primitives::views::{
     ActionView, ExecutionOutcomeWithIdView, ExecutionStatusView, ReceiptEnumView, ReceiptView,
 };
 use near_mpc_contract_interface::method_names::{
-    FAIL_ON_TIMEOUT, REQUEST_APP_PRIVATE_KEY, RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS,
+    CLEAN_FOREIGN_CHAIN_DATA, FAIL_ON_TIMEOUT, REGISTER_FOREIGN_CHAINS_CONFIG,
+    REQUEST_APP_PRIVATE_KEY, RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS,
     RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS,
     RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS, SIGN, VERIFY_FOREIGN_TRANSACTION,
+    VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
 };
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::CKDRequestArgs;
@@ -89,6 +91,7 @@ pub struct ChainBlockUpdate {
     pub completed_ckds: Vec<CKDId>,
     pub verify_foreign_tx_requests: Vec<VerifyForeignTxRequestFromChain>,
     pub completed_verify_foreign_txs: Vec<VerifyForeignTxId>,
+    pub foreign_chain_policy_updated: bool,
 }
 
 #[cfg(feature = "network-hardship-simulation")]
@@ -163,6 +166,7 @@ async fn handle_message(
     let mut completed_ckds = vec![];
     let mut verify_foreign_tx_requests = vec![];
     let mut completed_verify_foreign_txs = vec![];
+    let mut foreign_chain_policy_updated = false;
 
     for shard in streamer_message.shards {
         for outcome in shard.receipt_execution_outcomes {
@@ -221,6 +225,14 @@ async fn handle_message(
                 }
             }
 
+            if is_successful_foreign_chain_policy_change(
+                &receipt,
+                &execution_outcome,
+                mpc_contract_id,
+            ) {
+                foreign_chain_policy_updated = true;
+            }
+
             if let Some(request_id) = try_get_request_completion(&receipt, mpc_contract_id)
                 && let Some((_, method_name)) = try_extract_function_call_args(&receipt)
             {
@@ -264,6 +276,7 @@ async fn handle_message(
             completed_ckds,
             verify_foreign_tx_requests,
             completed_verify_foreign_txs,
+            foreign_chain_policy_updated,
         })
         .inspect_err(|err| {
             tracing::error!(target: "mpc", %err, "error sending block update to mpc node");
@@ -276,6 +289,35 @@ async fn handle_message(
     stats_lock.last_processed_block_height = block_height;
     drop(stats_lock);
     Ok(())
+}
+
+/// Contract methods whose successful execution can change the foreign-chain policy
+/// (per-node configs, provider whitelist, or the derived available chains).
+const FOREIGN_CHAIN_POLICY_METHODS: [&str; 3] = [
+    REGISTER_FOREIGN_CHAINS_CONFIG,
+    VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
+    CLEAN_FOREIGN_CHAIN_DATA,
+];
+
+/// True if `receipt` is a successful policy-mutating foreign-chain call on the MPC contract.
+fn is_successful_foreign_chain_policy_change(
+    receipt: &ReceiptView,
+    execution_outcome: &ExecutionOutcomeWithIdView,
+    mpc_contract_id: &AccountId,
+) -> bool {
+    if &receipt.receiver_id != mpc_contract_id {
+        return false;
+    }
+    let Some((_, method_name)) = try_extract_function_call_args(receipt) else {
+        return false;
+    };
+    if !FOREIGN_CHAIN_POLICY_METHODS.contains(&method_name.as_str()) {
+        return false;
+    }
+    matches!(
+        execution_outcome.outcome.status,
+        ExecutionStatusView::SuccessValue(_) | ExecutionStatusView::SuccessReceiptId(_)
+    )
 }
 
 fn try_extract_function_call_args(receipt: &ReceiptView) -> Option<(&FunctionArgs, &String)> {

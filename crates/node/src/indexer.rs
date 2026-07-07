@@ -262,24 +262,20 @@ impl IndexerViewClient {
         }
     }
 
-    pub(crate) async fn get_available_chains(
-        &self,
-        mpc_contract_id: &AccountId,
-    ) -> anyhow::Result<dtos::AvailableForeignChains> {
-        let (_height, chains) = self
-            .get_mpc_state(mpc_contract_id.clone(), GET_AVAILABLE_FOREIGN_CHAINS)
-            .await?;
-        Ok(chains)
-    }
-
     pub(crate) async fn get_foreign_chains_configs(
         &self,
         mpc_contract_id: &AccountId,
-    ) -> anyhow::Result<dtos::ForeignChainsConfigs> {
-        let (_height, configs) = self
-            .get_mpc_state(mpc_contract_id.clone(), GET_FOREIGN_CHAINS_CONFIGS)
-            .await?;
-        Ok(configs)
+    ) -> anyhow::Result<(u64, dtos::ForeignChainsConfigs)> {
+        self.get_mpc_state(mpc_contract_id.clone(), GET_FOREIGN_CHAINS_CONFIGS)
+            .await
+    }
+
+    pub(crate) async fn get_available_chains(
+        &self,
+        mpc_contract_id: &AccountId,
+    ) -> anyhow::Result<(u64, dtos::AvailableForeignChains)> {
+        self.get_mpc_state(mpc_contract_id.clone(), GET_AVAILABLE_FOREIGN_CHAINS)
+            .await
     }
 
     /// Borsh-decoding view-fn query (`get_mpc_state` is JSON-only).
@@ -397,15 +393,20 @@ impl IndexerViewClient {
     }
 }
 
+/// Reads the contract's foreign-chain policy. Each method also returns the block
+/// height the state was read at, so callers can detect when a cached view has
+/// caught up with a change observed at a known block.
 #[cfg_attr(test, mockall::automock)]
-pub(crate) trait ReadAvailableForeignChains: Send + Sync {
-    fn get_available_chains(
-        &self,
-    ) -> impl Future<Output = anyhow::Result<dtos::AvailableForeignChains>> + Send;
-
+pub(crate) trait ReadForeignChainPolicy: Send + Sync {
+    /// Per-node foreign-chain configs.
     fn get_foreign_chains_configs(
         &self,
-    ) -> impl Future<Output = anyhow::Result<dtos::ForeignChainsConfigs>> + Send;
+    ) -> impl Future<Output = anyhow::Result<(u64, dtos::ForeignChainsConfigs)>> + Send;
+
+    /// The contract's available chains: whitelisted and supported by a signing quorum.
+    fn get_available_chains(
+        &self,
+    ) -> impl Future<Output = anyhow::Result<(u64, dtos::AvailableForeignChains)>> + Send;
 }
 
 #[derive(Clone)]
@@ -419,18 +420,20 @@ impl RealForeignChainPolicyReader {
     }
 }
 
-impl ReadAvailableForeignChains for RealForeignChainPolicyReader {
-    async fn get_available_chains(&self) -> anyhow::Result<dtos::AvailableForeignChains> {
-        self.indexer_state
-            .view_client
-            .get_available_chains(&self.indexer_state.mpc_contract_id)
-            .await
-    }
-
-    async fn get_foreign_chains_configs(&self) -> anyhow::Result<dtos::ForeignChainsConfigs> {
+impl ReadForeignChainPolicy for RealForeignChainPolicyReader {
+    async fn get_foreign_chains_configs(
+        &self,
+    ) -> anyhow::Result<(u64, dtos::ForeignChainsConfigs)> {
         self.indexer_state
             .view_client
             .get_foreign_chains_configs(&self.indexer_state.mpc_contract_id)
+            .await
+    }
+
+    async fn get_available_chains(&self) -> anyhow::Result<(u64, dtos::AvailableForeignChains)> {
+        self.indexer_state
+            .view_client
+            .get_available_chains(&self.indexer_state.mpc_contract_id)
             .await
     }
 }
