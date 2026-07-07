@@ -347,7 +347,7 @@ impl TeeState {
             attestation.verified_attestation.launcher_compose_hash()
         {
             self.allowed_launcher_images
-                .refresh_last_attested(&launcher_compose_hash);
+                .refresh_last_used(&launcher_compose_hash);
         }
     }
 
@@ -846,7 +846,7 @@ mod tests {
         );
     }
 
-    /// `refresh_launcher_usage` resets `last_attested` for the launcher an attestation
+    /// `refresh_launcher_usage` resets `last_used` for the launcher an attestation
     /// references, keeping it alive past its original TTL. A second, un-refreshed launcher
     /// still expires, so the refresh is what selects which hash survives (the newest-only
     /// fallback would otherwise mask this).

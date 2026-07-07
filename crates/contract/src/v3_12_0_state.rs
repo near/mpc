@@ -79,8 +79,8 @@ impl From<OldConfig> for crate::Config {
     }
 }
 
-/// `3.12.0` layout of `AllowedLauncherImage`: the current type appends `added` and
-/// `last_attested` timestamps, so the real type can no longer decode old bytes.
+/// `3.12.0` layout of `AllowedLauncherImage`: the current type appends a `last_used`
+/// timestamp, so the real type can no longer decode old bytes.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 struct OldAllowedLauncherImage {
     launcher_hash: mpc_primitives::hash::LauncherImageHash,
@@ -119,8 +119,7 @@ impl From<OldTeeState> for crate::tee::tee_state::TeeState {
             .map(|e| crate::tee::proposal::AllowedLauncherImage {
                 launcher_hash: e.launcher_hash,
                 compose_hashes: e.compose_hashes,
-                added: now,
-                last_attested: now,
+                last_used: now,
             })
             .collect();
         crate::tee::tee_state::TeeState {
@@ -215,11 +214,11 @@ mod tests {
     use near_sdk::store::IterableMap;
     use near_sdk::{test_utils::VMContextBuilder, testing_env};
 
-    /// The `3.12.0` launcher layout (two fields, no timestamps) must deserialize under the
-    /// shadow and migrate: launcher hash + compose hashes preserved, and `added`/`last_attested`
-    /// set to the migration time (NOT the borsh/epoch default, which would immediately expire
-    /// every migrated hash). Two entries + a short TTL defeat the newest-only read fallback, so
-    /// both surviving proves the timestamps were stamped to "now".
+    /// The `3.12.0` launcher layout (no timestamp) must deserialize under the shadow and
+    /// migrate: launcher hash + compose hashes preserved, and `last_used` set to the
+    /// migration time (NOT the borsh/epoch default, which would immediately expire every
+    /// migrated hash). Two entries + a short TTL defeat the newest-only read fallback, so
+    /// both surviving proves the timestamp was stamped to "now".
     #[test]
     fn migrating_launcher_images_preserves_hashes_and_stamps_timestamps() {
         const MIGRATION_TIME_SECS: u64 = 1_000_000;
