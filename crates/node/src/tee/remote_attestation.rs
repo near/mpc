@@ -38,6 +38,7 @@ pub async fn submit_remote_attestation(
     tx_sender: impl TransactionSender,
     attestation: Attestation,
     tls_public_key: Ed25519PublicKey,
+    pre_submit_expiry: Option<u64>,
 ) -> anyhow::Result<()> {
     let submit_participant_info_args = contract_args::SubmitParticipantInfoArgs::new(
         attestation.into_contract_interface_type(),
@@ -51,8 +52,10 @@ pub async fn submit_remote_attestation(
     let set_attestation = move || {
         let tx_sender = tx_sender.clone();
         let propose_join_args_clone = submit_participant_info_args.clone();
-        let chain_args =
-            ChainSendTransactionRequest::SubmitParticipantInfo(Box::new(propose_join_args_clone));
+        let chain_args = ChainSendTransactionRequest::SubmitParticipantInfo {
+            args: Box::new(propose_join_args_clone),
+            pre_submit_expiry,
+        };
 
         async move {
             let attestation_submission_response = tx_sender
@@ -125,6 +128,7 @@ pub async fn validate_and_submit_remote_attestation(
     account_public_key: Ed25519PublicKey,
     allowed_docker_image_hashes: &[NodeImageHash],
     allowed_launcher_compose_hashes: &[LauncherDockerComposeHash],
+    pre_submit_expiry: Option<u64>,
 ) -> anyhow::Result<()> {
     let _ = validate_remote_attestation(
         &attestation,
@@ -138,9 +142,10 @@ pub async fn validate_and_submit_remote_attestation(
         // attestation failure error and letting the submission continue
         tracing::warn!("Attestation is not valid: {err}");
     });
-    submit_remote_attestation(tx_sender, attestation, tls_public_key).await
+    submit_remote_attestation(tx_sender, attestation, tls_public_key, pre_submit_expiry).await
 }
 
+#[expect(clippy::too_many_arguments)]
 #[tracing::instrument(skip_all)]
 pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Tick>(
     tee_authority: TeeAuthority,
@@ -149,6 +154,7 @@ pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Ti
     account_public_key: Ed25519PublicKey,
     allowed_image_hashes_in_contract: watch::Receiver<Vec<NodeImageHash>>,
     allowed_launcher_compose_hashes_in_contract: watch::Receiver<Vec<LauncherDockerComposeHash>>,
+    attestation_reader: std::sync::Arc<dyn crate::indexer::ReadAttestationExpiry>,
     mut interval_ticker: I,
 ) -> anyhow::Result<()> {
     let report_data: ReportData =
@@ -184,6 +190,16 @@ pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Ti
         let allowed_image_hashes_in_contract = allowed_image_hashes_in_contract.borrow().clone();
         let allowed_launcher_compose_hashes_in_contract =
             allowed_launcher_compose_hashes_in_contract.borrow().clone();
+        let pre_submit_expiry = match attestation_reader
+            .read_stored_dstack_expiry(&tls_public_key)
+            .await
+        {
+            Ok(baseline) => baseline, // Some(expiry) = prior attestation; None = none stored yet (e.g. first submit)
+            Err(error) => {
+                tracing::warn!(%error, "could not read pre-submit attestation baseline; skipping this round");
+                continue; // next tick. Do NOT submit with an unknown baseline.
+            }
+        };
         validate_and_submit_remote_attestation(
             tx_sender.clone(),
             fresh_attestation.clone(),
@@ -191,6 +207,7 @@ pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Ti
             account_public_key.clone(),
             &allowed_image_hashes_in_contract,
             &allowed_launcher_compose_hashes_in_contract,
+            pre_submit_expiry,
         )
         .await?;
     }
@@ -219,6 +236,7 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
     account_public_key: Ed25519PublicKey,
     allowed_image_hashes_in_contract: watch::Receiver<Vec<NodeImageHash>>,
     allowed_launcher_compose_hashes_in_contract: watch::Receiver<Vec<LauncherDockerComposeHash>>,
+    attestation_reader: std::sync::Arc<dyn crate::indexer::ReadAttestationExpiry>,
     mut tee_accounts_receiver: watch::Receiver<Vec<NodeId>>,
 ) -> anyhow::Result<()> {
     let node_id = NodeId {
@@ -290,6 +308,17 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
                 allowed_image_hashes_in_contract.borrow().clone();
             let allowed_launcher_compose_hashes_in_contract =
                 allowed_launcher_compose_hashes_in_contract.borrow().clone();
+            let pre_submit_expiry = match attestation_reader
+                .read_stored_dstack_expiry(&tls_public_key)
+                .await
+            {
+                Ok(baseline) => baseline, // Some(expiry) = prior attestation; None = none stored yet (e.g. first submit)
+                Err(error) => {
+                    tracing::warn!(%error, "could not read pre-submit attestation baseline; skipping this round");
+                    was_available = is_available;
+                    continue; // next event. Do NOT submit with an unknown baseline.
+                }
+            };
             validate_and_submit_remote_attestation(
                 tx_sender.clone(),
                 fresh_attestation.clone(),
@@ -297,6 +326,7 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
                 account_public_key.clone(),
                 &allowed_image_hashes_in_contract,
                 &allowed_launcher_compose_hashes_in_contract,
+                pre_submit_expiry,
             )
             .await?;
         }
@@ -348,6 +378,19 @@ mod tests {
             } else {
                 std::future::pending::<()>().await;
             }
+        }
+    }
+
+    struct StubAttestationExpiryReader;
+
+    impl crate::indexer::ReadAttestationExpiry for StubAttestationExpiryReader {
+        fn read_stored_dstack_expiry<'a>(
+            &'a self,
+            _tls_public_key: &'a Ed25519PublicKey,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = anyhow::Result<Option<u64>>> + Send + 'a>,
+        > {
+            Box::pin(async { Ok(None) })
         }
     }
 
@@ -433,6 +476,7 @@ mod tests {
             account_key,
             allowed_image_hashes_receiver,
             allowed_launcher_compose_hashes_receiver,
+            Arc::new(StubAttestationExpiryReader),
             MockTicker::new(TEST_SUBMISSION_COUNT),
         ));
 
@@ -474,6 +518,7 @@ mod tests {
             account_public_key,
             allowed_image_hashes_receiver,
             allowed_launcher_compose_hashes_receiver,
+            Arc::new(StubAttestationExpiryReader),
             receiver,
         ));
 

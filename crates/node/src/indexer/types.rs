@@ -65,7 +65,14 @@ pub enum ChainSendTransactionRequest {
     //
     // For more info see clippy lint:
     // https://rust-lang.github.io/rust-clippy/master/index.html#large_enum_variant
-    SubmitParticipantInfo(Box<contract_args::SubmitParticipantInfoArgs>),
+    SubmitParticipantInfo {
+        #[serde(flatten)]
+        args: Box<contract_args::SubmitParticipantInfoArgs>,
+        /// Attestation expiry stored on chain before this submission, captured once by the caller
+        /// for the landing check in observe_tx_result. Node-internal; NOT part of the on-chain call.
+        #[serde(skip)]
+        pre_submit_expiry: Option<u64>,
+    },
 
     ConcludeNodeMigration(contract_args::ConcludeNodeMigrationArgs),
     VerifyForeignTransactionRespond(contract_args::VerifyForeignTransactionRespondArgs),
@@ -89,7 +96,7 @@ impl ChainSendTransactionRequest {
                 VOTE_ABORT_KEY_EVENT_INSTANCE
             }
             ChainSendTransactionRequest::VerifyTee() => VERIFY_TEE,
-            ChainSendTransactionRequest::SubmitParticipantInfo(_) => SUBMIT_PARTICIPANT_INFO,
+            ChainSendTransactionRequest::SubmitParticipantInfo { .. } => SUBMIT_PARTICIPANT_INFO,
             ChainSendTransactionRequest::ConcludeNodeMigration(_) => CONCLUDE_NODE_MIGRATION,
             ChainSendTransactionRequest::VerifyForeignTransactionRespond(_) => {
                 RESPOND_VERIFY_FOREIGN_TX
@@ -109,7 +116,7 @@ impl ChainSendTransactionRequest {
             | Self::VoteAbortKeyEventInstance(_)
             // TODO(#166): This is too high in most settings
             | Self::VerifyTee()
-            | Self::SubmitParticipantInfo(_)
+            | Self::SubmitParticipantInfo { .. }
             | Self::ConcludeNodeMigration(_)
             | Self::VerifyForeignTransactionRespond(_) => MAX_GAS,
         }

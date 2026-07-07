@@ -364,6 +364,7 @@ where
     let allowed_docker_images_receiver_clone = indexer_api.allowed_docker_images_receiver.clone();
     let allowed_launcher_compose_receiver_clone =
         indexer_api.allowed_launcher_compose_receiver.clone();
+    let attestation_reader_clone = indexer_api.attestation_reader.clone();
     tokio::spawn(async move {
         if let Err(e) = periodic_attestation_submission(
             tee_authority_clone,
@@ -372,6 +373,7 @@ where
             account_public_key_clone,
             allowed_docker_images_receiver_clone,
             allowed_launcher_compose_receiver_clone,
+            attestation_reader_clone,
             tokio::time::interval(ATTESTATION_RESUBMISSION_INTERVAL),
         )
         .await
@@ -390,6 +392,7 @@ where
     let allowed_docker_images_receiver_clone = indexer_api.allowed_docker_images_receiver.clone();
     let allowed_launcher_compose_receiver_clone =
         indexer_api.allowed_launcher_compose_receiver.clone();
+    let attestation_reader_clone = indexer_api.attestation_reader.clone();
     tokio::spawn(async move {
         if let Err(e) = monitor_attestation_removal(
             account_id_clone,
@@ -399,6 +402,7 @@ where
             account_public_key,
             allowed_docker_images_receiver_clone,
             allowed_launcher_compose_receiver_clone,
+            attestation_reader_clone,
             tee_accounts_receiver,
         )
         .await

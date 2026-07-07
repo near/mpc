@@ -181,29 +181,6 @@ async fn submit_tx(
     })
 }
 
-/// Reads the Dstack attestation expiry currently stored on chain for `tls_public_key`, or `None`
-/// if none is stored. This is the baseline for confirming our own `submit_participant_info` landed
-/// (see [`confirm_participant_info_submission`]): a successful submit *changes* the stored expiry,
-/// so the baseline is read *before* submitting and compared afterwards. It is read per attempt
-/// (where the view client lives); correctness does not depend on re-reading, since the confirmation
-/// only checks that the expiry changed (see [`attestation_expiry_changed`]).
-async fn read_stored_dstack_expiry(
-    indexer_state: &IndexerState,
-    tls_public_key: &Ed25519PublicKey,
-) -> anyhow::Result<Option<u64>> {
-    let stored_attestation = indexer_state
-        .view_client
-        .get_participant_attestation(&indexer_state.mpc_contract_id, tls_public_key)
-        .await?;
-
-    Ok(match stored_attestation {
-        Some(VerifiedAttestation::Dstack(attestation)) => {
-            Some(attestation.expiry_timestamp_seconds)
-        }
-        _ => None,
-    })
-}
-
 /// Confirms a `submit_participant_info` landed by checking the stored expiry *changed* from the
 /// pre-submit baseline: a successful submit re-stamps the expiry to a new value, while a failed one
 /// leaves it untouched. Returns `true` iff `stored_expiry != pre_submit_expiry`, or there is no
@@ -246,57 +223,7 @@ fn submitted_attestation_landed(
     }
 }
 
-/// Confirms whether a `submit_participant_info` landed: reads the currently-stored attestation and
-/// checks, via [`submitted_attestation_landed`], that it matches what we submitted. `pre_submit_expiry`
-/// is the expiry observed *before* submitting (see [`read_stored_dstack_expiry`]), used as the
-/// baseline for the Dstack expiry-advance check.
-async fn confirm_participant_info_submission(
-    indexer_state: &IndexerState,
-    tls_public_key: &Ed25519PublicKey,
-    submitted_attestation: &Attestation,
-    pre_submit_expiry: anyhow::Result<Option<u64>>,
-) -> anyhow::Result<TransactionStatus> {
-    let stored_attestation = indexer_state
-        .view_client
-        .get_participant_attestation(&indexer_state.mpc_contract_id, tls_public_key)
-        .await?;
-
-    let Some(stored_attestation) = stored_attestation else {
-        tracing::debug!(
-            ?tls_public_key,
-            "no attestation stored on chain for our key; submission not yet landed"
-        );
-        return Ok(TransactionStatus::NotExecuted);
-    };
-
-    let pre_submit_expiry = pre_submit_expiry?;
-    let stored_expiry = match &stored_attestation {
-        VerifiedAttestation::Dstack(stored) => Some(stored.expiry_timestamp_seconds),
-        VerifiedAttestation::Mock(_) => None,
-    };
-    let attestation_landed = submitted_attestation_landed(
-        pre_submit_expiry,
-        &stored_attestation,
-        submitted_attestation,
-    );
-
-    tracing::info!(
-        ?pre_submit_expiry,
-        ?stored_expiry,
-        attestation_landed,
-        "checked attestation submission on chain"
-    );
-
-    Ok(if attestation_landed {
-        TransactionStatus::Executed
-    } else {
-        TransactionStatus::NotExecuted
-    })
-}
-
 /// Confirms whether the intended effect of the transaction request has been observed on chain.
-/// `SubmitParticipantInfo` is confirmed separately by [`confirm_participant_info_submission`] (it
-/// needs a pre-submit baseline), so it is never routed here.
 async fn observe_tx_result(
     indexer_state: Arc<IndexerState>,
     request: &ChainSendTransactionRequest,
@@ -353,10 +280,46 @@ async fn observe_tx_result(
 
             Ok(transaction_status)
         }
-        SubmitParticipantInfo(_) => {
-            unreachable!(
-                "submit_participant_info is confirmed by confirm_participant_info_submission"
-            )
+        SubmitParticipantInfo {
+            args,
+            pre_submit_expiry,
+        } => {
+            // A successful submit *changes* the stored expiry from the pre-submit baseline
+            // captured by the caller; confirm by comparing against what is now stored.
+            let stored_attestation = indexer_state
+                .view_client
+                .get_participant_attestation(&indexer_state.mpc_contract_id, &args.tls_public_key)
+                .await?;
+
+            let Some(stored_attestation) = stored_attestation else {
+                tracing::debug!(
+                    "no attestation stored on chain for our key; submission not yet landed"
+                );
+                return Ok(TransactionStatus::NotExecuted);
+            };
+
+            let stored_expiry = match &stored_attestation {
+                VerifiedAttestation::Dstack(stored) => Some(stored.expiry_timestamp_seconds),
+                VerifiedAttestation::Mock(_) => None,
+            };
+            let attestation_landed = submitted_attestation_landed(
+                *pre_submit_expiry,
+                &stored_attestation,
+                &args.proposed_participant_attestation,
+            );
+
+            tracing::info!(
+                pre_submit_expiry = ?pre_submit_expiry,
+                ?stored_expiry,
+                attestation_landed,
+                "checked attestation submission on chain"
+            );
+
+            Ok(if attestation_landed {
+                TransactionStatus::Executed
+            } else {
+                TransactionStatus::NotExecuted
+            })
         }
         // We don't care. The contract state change will handle this.
         StartKeygen(_)
@@ -386,15 +349,6 @@ async fn ensure_send_transaction(
         public_key: Ed25519PublicKey::from(&tx_signer.public_key()),
         method,
     };
-    // Only submit_participant_info needs a pre-submit baseline (its confirmation checks that the
-    // stored expiry advanced); read it before submitting, and only for that request type.
-    let pre_submit_expiry = match &request {
-        SubmitParticipantInfo(args) => {
-            read_stored_dstack_expiry(&indexer_state, &args.tls_public_key).await
-        }
-        _ => Ok(None),
-    };
-
     let submitted_metadata = submit_tx(
         tx_signer.clone(),
         indexer_state.clone(),
@@ -426,18 +380,7 @@ async fn ensure_send_transaction(
     time::sleep(TRANSACTION_TIMEOUT).await;
 
     // Then try to check whether it had the intended effect
-    let transaction_status = match &request {
-        SubmitParticipantInfo(args) => {
-            confirm_participant_info_submission(
-                &indexer_state,
-                &args.tls_public_key,
-                &args.proposed_participant_attestation,
-                pre_submit_expiry,
-            )
-            .await
-        }
-        _ => observe_tx_result(indexer_state.clone(), &request).await,
-    };
+    let transaction_status = observe_tx_result(indexer_state.clone(), &request).await;
 
     let (outcome_label, recorded_status) = match &transaction_status {
         Ok(TransactionStatus::Executed) => ("succeeded", SubmittedTransactionStatus::Executed),

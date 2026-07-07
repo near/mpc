@@ -3,7 +3,7 @@ use super::migrations::{ContractMigrationInfo, monitor_migrations};
 use super::near_data_wipe::wipe_near_data_if_requested;
 use super::participants::monitor_contract_state;
 use super::stats::indexer_logger;
-use super::{IndexerAPI, IndexerState, RealForeignChainPolicyReader};
+use super::{IndexerAPI, IndexerState, RealAttestationExpiryReader, RealForeignChainPolicyReader};
 use crate::config::RespondConfig;
 #[cfg(feature = "network-hardship-simulation")]
 use crate::config::load_listening_blocks_file;
@@ -73,6 +73,7 @@ pub fn spawn_real_indexer(
     let (migration_info_sender_oneshot, migration_info_receiver_oneshot) = oneshot::channel();
     let (foreign_chain_policy_reader_sender, foreign_chain_policy_reader_receiver) =
         oneshot::channel();
+    let (attestation_reader_sender, attestation_reader_receiver) = oneshot::channel();
 
     let (block_update_sender, block_update_receiver) = mpsc::unbounded_channel();
     let (allowed_docker_images_sender, allowed_docker_images_receiver) = watch::channel(vec![]);
@@ -188,6 +189,12 @@ pub fn spawn_real_indexer(
                 .is_err()
             {
                 tracing::error!("failed to send foreign chain policy reader back to main thread")
+            };
+
+            let attestation_reader: std::sync::Arc<dyn super::ReadAttestationExpiry> =
+                std::sync::Arc::new(RealAttestationExpiryReader::new(indexer_state.clone()));
+            if attestation_reader_sender.send(attestation_reader).is_err() {
+                tracing::error!("failed to send attestation reader back to main thread")
             };
 
             #[cfg(feature = "network-hardship-simulation")]
@@ -322,6 +329,10 @@ pub fn spawn_real_indexer(
         .blocking_recv()
         .expect("foreign chain policy reader must be returned by indexer");
 
+    let attestation_reader = attestation_reader_receiver
+        .blocking_recv()
+        .expect("attestation reader must be returned by indexer");
+
     IndexerAPI {
         contract_state_receiver,
         block_update_receiver: Arc::new(Mutex::new(block_update_receiver)),
@@ -331,6 +342,7 @@ pub fn spawn_real_indexer(
         attested_nodes_receiver: tee_accounts_receiver,
         my_migration_info_receiver,
         foreign_chain_policy_reader,
+        attestation_reader,
     }
 }
 

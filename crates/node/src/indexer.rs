@@ -404,6 +404,46 @@ impl ReadSupportedForeignChain for RealForeignChainPolicyReader {
     }
 }
 
+pub(crate) trait ReadAttestationExpiry: Send + Sync {
+    /// Reads the Dstack attestation expiry currently stored for `tls_public_key`, or `None` if
+    /// none is stored. Used as the pre-submit baseline for the submit_participant_info
+    /// confirmation.
+    fn read_stored_dstack_expiry<'a>(
+        &'a self,
+        tls_public_key: &'a dtos::Ed25519PublicKey,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<Option<u64>>> + Send + 'a>>;
+}
+
+pub(crate) struct RealAttestationExpiryReader {
+    indexer_state: Arc<IndexerState>,
+}
+
+impl RealAttestationExpiryReader {
+    pub(crate) fn new(indexer_state: Arc<IndexerState>) -> Self {
+        Self { indexer_state }
+    }
+}
+
+impl ReadAttestationExpiry for RealAttestationExpiryReader {
+    fn read_stored_dstack_expiry<'a>(
+        &'a self,
+        tls_public_key: &'a dtos::Ed25519PublicKey,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<Option<u64>>> + Send + 'a>>
+    {
+        Box::pin(async move {
+            let stored = self
+                .indexer_state
+                .view_client
+                .get_participant_attestation(&self.indexer_state.mpc_contract_id, tls_public_key)
+                .await?;
+            Ok(match stored {
+                Some(dtos::VerifiedAttestation::Dstack(a)) => Some(a.expiry_timestamp_seconds),
+                _ => None,
+            })
+        })
+    }
+}
+
 #[derive(Clone)]
 struct IndexerClient {
     client: TokioRuntimeHandle<ClientActor>,
@@ -543,6 +583,8 @@ pub struct IndexerAPI<TransactionSender, ForeignChainPolicyReader> {
     pub my_migration_info_receiver: watch::Receiver<MigrationInfo>,
 
     pub foreign_chain_policy_reader: ForeignChainPolicyReader,
+
+    pub(crate) attestation_reader: std::sync::Arc<dyn ReadAttestationExpiry>,
 }
 
 #[cfg(test)]
