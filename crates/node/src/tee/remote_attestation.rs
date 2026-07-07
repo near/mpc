@@ -45,10 +45,8 @@ pub async fn submit_remote_attestation(
         tls_public_key,
     );
 
-    // TODO(#3746): this loop retries the *same* attestation for up to `MAX_RETRY_DURATION` and
-    // returns an error on timeout (stopping the caller task), so a late success can store a stale
-    // attestation. #3746 will split this into an inner submit loop and an outer loop that
-    // re-generates a fresh attestation.
+    // TODO(#3746): retries the same attestation and errors on timeout, so a late success can store
+    // a stale one; #3746 splits this into a submit loop and an outer regenerate loop.
     let set_attestation = move || {
         let tx_sender = tx_sender.clone();
         let propose_join_args_clone = submit_participant_info_args.clone();
@@ -194,7 +192,7 @@ pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Ti
             .read_stored_dstack_expiry(&tls_public_key)
             .await
         {
-            Ok(baseline) => baseline, // Some(expiry) = prior attestation; None = none stored yet (e.g. first submit)
+            Ok(baseline) => baseline, // Some = prior expiry; None = nothing stored yet (first submit) -- both proceed
             Err(error) => {
                 tracing::warn!(%error, "could not read pre-submit attestation baseline; skipping this round");
                 continue; // next tick. Do NOT submit with an unknown baseline.
@@ -312,7 +310,7 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
                 .read_stored_dstack_expiry(&tls_public_key)
                 .await
             {
-                Ok(baseline) => baseline, // Some(expiry) = prior attestation; None = none stored yet (e.g. first submit)
+                Ok(baseline) => baseline, // Some = prior expiry; None = nothing stored yet (first submit) -- both proceed
                 Err(error) => {
                     tracing::warn!(%error, "could not read pre-submit attestation baseline; skipping this round");
                     was_available = is_available;

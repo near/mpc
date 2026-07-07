@@ -181,18 +181,11 @@ async fn submit_tx(
     })
 }
 
-/// Confirms a `submit_participant_info` landed by checking the stored expiry *changed* from the
-/// pre-submit baseline: a successful submit re-stamps the expiry to a new value, while a failed one
-/// leaves it untouched. Returns `true` iff `stored_expiry != pre_submit_expiry`, or there is no
-/// baseline (`None`, i.e. nothing was stored before).
-///
-/// We compare for inequality rather than `stored_expiry > baseline`: a contract upgrade that lowers
-/// the expiration constant can make a landed submit set an *earlier* expiry than a stale stored
-/// entry, which `>` would miss. The only thing that changes our key's expiry other than our own
-/// submit is the verifier-rotation cap (#3734) lowering it — a rare race that would read as landed,
-/// bounded and self-correcting via the hourly resubmit. Avoids reconstructing the creation time as
-/// `expiry - constant`, which breaks under node/contract version skew and under that cap.
-// TODO(#1639): confirm via a creation timestamp read from the certificate itself.
+/// Whether our `submit_participant_info` landed: a successful submit re-stamps the stored expiry to
+/// a new value, a failed one leaves it unchanged, so a change from the baseline (or no prior entry)
+/// means it landed. Inequality rather than `>` because a lowered expiry constant can make a landed
+/// submit stamp an *earlier* expiry.
+// TODO(#1639): match a certificate-derived identity instead of this expiry heuristic.
 fn attestation_expiry_changed(pre_submit_expiry: Option<u64>, stored_expiry: u64) -> bool {
     match pre_submit_expiry {
         Some(expiry_before_submit) => stored_expiry != expiry_before_submit,
@@ -200,15 +193,9 @@ fn attestation_expiry_changed(pre_submit_expiry: Option<u64>, stored_expiry: u64
     }
 }
 
-/// Whether the attestation we submitted is the one now stored on chain.
-///
-/// Mock attestations (tests) carry a full identity, so we match `submitted` against `stored`
-/// directly. Dstack can't be matched that way: the stored `VerifiedDstackAttestation` is a
-/// different type from the submitted `DstackAttestation` and keeps no per-submission identity (no
-/// creation time) to compare on — so `submitted` is unused in that arm and we confirm indirectly,
-/// via [`attestation_expiry_changed`] against the pre-submit baseline.
-// TODO(#1639): give Dstack a real per-submission identity (a certificate creation timestamp) so it
-// can be matched directly like Mock, instead of via the expiry-change heuristic.
+/// Whether the attestation we submitted is the one now stored. Mock carries a full identity and is
+/// matched directly; a Dstack entry has none to match (it's a different stored type), so it's
+/// confirmed indirectly via [`attestation_expiry_changed`].
 fn submitted_attestation_landed(
     pre_submit_expiry: Option<u64>,
     stored: &VerifiedAttestation,
@@ -284,8 +271,6 @@ async fn observe_tx_result(
             args,
             pre_submit_expiry,
         } => {
-            // A successful submit *changes* the stored expiry from the pre-submit baseline
-            // captured by the caller; confirm by comparing against what is now stored.
             let stored_attestation = indexer_state
                 .view_client
                 .get_participant_attestation(&indexer_state.mpc_contract_id, &args.tls_public_key)
