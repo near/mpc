@@ -263,7 +263,7 @@ where
         let start_time = Clock::real().now();
 
         // The provider's foreign-chain policy cache is refreshed only when the indexer
-        // observes a policy-mutating contract call (plus once at startup.
+        // observes a policy-mutating contract call (plus once at startup).
         let mut refresh_chain_policy_until_height: Option<u64> = Some(0);
 
         loop {

@@ -30,6 +30,7 @@ use near_mpc_contract_interface::types::{self as dtos, ECDSA_PAYLOAD_SIZE_BYTES}
 use near_mpc_contract_interface::types::{Payload, Tweak};
 use near_mpc_crypto_types::Ed25519PublicKey;
 use std::collections::{BTreeMap, HashSet};
+use std::sync::Arc;
 use tokio::time::{Duration, timeout};
 
 const FOREIGN_CHAIN_INSPECTION_TIMEOUT: Duration = Duration::from_secs(5);
@@ -123,18 +124,15 @@ where
     /// across the reads, so callers can tell when the view has caught up with a
     /// change seen at a known block.
     pub(crate) async fn refresh_foreign_chain_policy(&self) -> anyhow::Result<u64> {
-        let (configs_height, configs) = self
-            .foreign_chain_policy_reader
-            .get_foreign_chains_configs()
-            .await?;
-        let (available_height, available_chains) = self
-            .foreign_chain_policy_reader
-            .get_available_chains()
-            .await?;
-        let participants_by_chain = supporters_by_foreign_chain(
+        let ((configs_height, configs), (available_height, available_chains)) = tokio::try_join!(
+            self.foreign_chain_policy_reader
+                .get_foreign_chains_configs(),
+            self.foreign_chain_policy_reader.get_available_chains(),
+        )?;
+        let participants_by_chain = Arc::new(supporters_by_foreign_chain(
             self.ecdsa_signature_provider.participants_config(),
             &configs,
-        );
+        ));
         *self.foreign_chain_policy.write().unwrap() = ForeignChainPolicy {
             available_chains,
             participants_by_chain,
@@ -145,7 +143,7 @@ where
     /// Snapshot of the cached supporters-by-chain map.
     pub(crate) fn participants_by_foreign_chain(
         &self,
-    ) -> BTreeMap<contract_dtos::ForeignChain, HashSet<ParticipantId>> {
+    ) -> Arc<BTreeMap<contract_dtos::ForeignChain, HashSet<ParticipantId>>> {
         self.foreign_chain_policy
             .read()
             .unwrap()

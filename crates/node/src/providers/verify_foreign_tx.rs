@@ -132,8 +132,8 @@ pub(crate) struct ForeignChainPolicy {
     pub(crate) available_chains: dtos::AvailableForeignChains,
     /// Participants supporting each foreign chain, derived from the per-node configs,
     /// chains without a signing quorum are omitted. Drives leader election and leader
-    /// presignature selection.
-    pub(crate) participants_by_chain: BTreeMap<dtos::ForeignChain, HashSet<ParticipantId>>,
+    /// presignature selection. Behind `Arc` so snapshots don't clone the map.
+    pub(crate) participants_by_chain: Arc<BTreeMap<dtos::ForeignChain, HashSet<ParticipantId>>>,
 }
 
 pub struct VerifyForeignTxProvider<ForeignChainPolicyReader> {
