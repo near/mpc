@@ -197,10 +197,25 @@ impl SuiExtractor {
                     .as_deref()
                     .map(normalize_type_tag)
                     .ok_or_else(|| malformed_event_field("event_type"))?;
-                let bcs = event
+                let contents = event
                     .contents
                     .as_ref()
-                    .and_then(|contents| contents.value.as_ref())
+                    .ok_or_else(|| malformed_event_field("bcs contents"))?;
+                // When present, the type name shipped alongside the BCS bytes must agree with
+                // the event type we sign; a mismatch means the payload and its claimed type
+                // come apart. Both sides are normalized so a provider that renders the two
+                // fields with different address forms is not rejected spuriously.
+                if let Some(name) = contents.name.as_deref() {
+                    let normalized_name = normalize_type_tag(name);
+                    if normalized_name != type_tag {
+                        return Err(ForeignChainInspectionError::MalformedRpcResponse(format!(
+                            "event contents type {normalized_name:?} does not match the event type {type_tag:?}"
+                        )));
+                    }
+                }
+                let bcs = contents
+                    .value
+                    .as_ref()
                     .map(|value| value.to_vec())
                     .ok_or_else(|| malformed_event_field("bcs contents"))?;
 

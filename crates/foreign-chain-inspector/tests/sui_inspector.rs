@@ -125,7 +125,13 @@ async fn extract__should_return_normalized_event_for_checkpointed_transaction() 
 #[tokio::test]
 async fn extract__should_return_correct_event_for_specific_index() {
     // Given a transaction with two events.
-    let second = framework_event().with_event_type("0x3::validator::StakingRequestEvent");
+    let second = framework_event()
+        .with_event_type("0x3::validator::StakingRequestEvent")
+        .with_contents(
+            Bcs::default()
+                .with_name("0x3::validator::StakingRequestEvent")
+                .with_value(EVENT_BCS_BYTES.to_vec()),
+        );
     let tx = checkpointed_tx(vec![framework_event(), second]);
     let inspector = SuiInspector::new(MockSuiClient::transaction(tx));
 
@@ -327,6 +333,87 @@ async fn extract__should_reject_event_missing_bcs_contents_as_malformed() {
     assert_matches!(
         response,
         Err(ForeignChainInspectionError::MalformedRpcResponse(_))
+    );
+}
+
+#[tokio::test]
+async fn extract__should_reject_event_whose_contents_type_differs() {
+    // Given — the type name shipped with the BCS bytes disagrees with the event type.
+    let event = framework_event().with_contents(
+        Bcs::default()
+            .with_name("0x3::validator::StakingRequestEvent")
+            .with_value(EVENT_BCS_BYTES.to_vec()),
+    );
+    let inspector = SuiInspector::new(MockSuiClient::transaction(checkpointed_tx(vec![event])));
+
+    // When
+    let response = inspector
+        .extract(
+            tx_id(),
+            SuiFinality::Checkpointed,
+            vec![SuiExtractor::Event { event_index: 0 }],
+        )
+        .await;
+
+    // Then
+    assert_matches!(
+        response,
+        Err(ForeignChainInspectionError::MalformedRpcResponse(_))
+    );
+}
+
+#[tokio::test]
+async fn extract__should_accept_event_without_contents_type_name() {
+    // Given — the type name inside the BCS message is optional metadata.
+    let event =
+        framework_event().with_contents(Bcs::default().with_value(EVENT_BCS_BYTES.to_vec()));
+    let inspector = SuiInspector::new(MockSuiClient::transaction(checkpointed_tx(vec![event])));
+
+    // When
+    let extracted_values = inspector
+        .extract(
+            tx_id(),
+            SuiFinality::Checkpointed,
+            vec![SuiExtractor::Event { event_index: 0 }],
+        )
+        .await
+        .expect("extract should succeed");
+
+    // Then
+    assert_eq!(
+        extracted_values,
+        vec![SuiExtractedValue::Event(expected_event())],
+    );
+}
+
+#[tokio::test]
+async fn extract__should_accept_contents_type_in_different_address_form() {
+    // Given — the same type, rendered long-form in the contents name and short-form in the
+    // event type; normalization must reconcile the two.
+    let event = framework_event().with_contents(
+        Bcs::default()
+            .with_name(format!(
+                "0x{}3::validator_set::ValidatorEpochInfoEventV2",
+                "0".repeat(63)
+            ))
+            .with_value(EVENT_BCS_BYTES.to_vec()),
+    );
+    let inspector = SuiInspector::new(MockSuiClient::transaction(checkpointed_tx(vec![event])));
+
+    // When
+    let extracted_values = inspector
+        .extract(
+            tx_id(),
+            SuiFinality::Checkpointed,
+            vec![SuiExtractor::Event { event_index: 0 }],
+        )
+        .await
+        .expect("extract should succeed");
+
+    // Then
+    assert_eq!(
+        extracted_values,
+        vec![SuiExtractedValue::Event(expected_event())],
     );
 }
 
