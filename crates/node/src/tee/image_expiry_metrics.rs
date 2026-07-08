@@ -28,6 +28,7 @@ pub fn update_own_image_hash_gauges(
 /// - first bool indicates if `current_image` is still valid
 /// - second bool indicates if `current_image` is the most recent image_hash
 /// - last value indicates expiry timestamp (-1 if no expiry timestamp is given)
+///
 /// Expects `allowed_images` to be in increasing order of expiration timestamp
 fn infer_image_status(
     current_image: &NodeImageHash,

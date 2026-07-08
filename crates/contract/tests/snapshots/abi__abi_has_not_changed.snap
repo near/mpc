@@ -17,7 +17,7 @@ expression: abi
     "functions": [
       {
         "name": "allowed_docker_image_hashes",
-        "doc": " Returns all allowed code hashes in descending order of their expiry\n date. Note that the expiration depends on the contract configuration\n (c.f. [`Config::tee_upgrade_deadline_duration_seconds`]).",
+        "doc": " Returns all allowed code hashes in descending order of their expiry\n date. Note that the expiration depends on the contract configuration\n (c.f. [`dtos::Config::tee_upgrade_deadline_duration_seconds`]).",
         "kind": "view",
         "result": {
           "serialization_type": "json",
