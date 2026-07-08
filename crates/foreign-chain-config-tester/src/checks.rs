@@ -3,6 +3,7 @@
 use std::time::Duration;
 
 use anyhow::{Context, bail, ensure};
+use foreign_chain_inspector::ForeignChainInspectionError;
 use foreign_chain_inspector::{
     BlockConfirmations, EthereumFinality, ForeignChainInspector,
     aptos::{
@@ -20,12 +21,15 @@ use foreign_chain_inspector::{
         inspector::{StarknetExtractor, StarknetFinality, StarknetInspector},
     },
     sui::{
-        SuiExtractedValue, SuiTransactionDigest,
-        inspector::{SuiExtractor, SuiFinality, SuiInspector},
+        SuiTransactionDigest,
+        inspector::{SuiFinality, SuiInspector},
     },
 };
 use foreign_chain_rpc_interfaces::aptos::ReqwestAptosClient;
+use foreign_chain_rpc_interfaces::sui::SuiRpcClient;
 use http::{HeaderName, HeaderValue};
+
+use crate::golden;
 
 fn verify_block_hash(expected: [u8; 32], got: [u8; 32]) -> anyhow::Result<()> {
     if got != expected {
@@ -106,35 +110,52 @@ pub async fn check_starknet(
     }
 }
 
-pub async fn check_sui(
-    client: HttpClient,
-    tx: [u8; 32],
-    expected_type_tag: &str,
-    expected_package_id: [u8; 32],
-) -> anyhow::Result<()> {
+/// Sui providers prune the gRPC read path after a few weeks, so unlike the other chains
+/// there is no long-lived reference transaction to pin extracted values against. Instead
+/// this verifies the provider's chain identity (the genesis digest never changes) and runs
+/// the real inspector over a transaction from the provider's latest checkpoint.
+pub async fn check_sui(client: impl SuiRpcClient, expected_chain_id: &str) -> anyhow::Result<()> {
+    let info = client
+        .get_service_info()
+        .await
+        .context("failed to fetch service info")?;
+    let chain_id = info
+        .chain_id
+        .as_deref()
+        .context("provider returned no chain id")?;
+    ensure!(
+        chain_id == expected_chain_id,
+        "chain id mismatch: expected {expected_chain_id}, got {chain_id} — is this provider on the expected network?",
+    );
+    let height = info
+        .checkpoint_height
+        .context("provider returned no checkpoint height")?;
+
+    let checkpoint = client
+        .get_checkpoint(height)
+        .await
+        .context("failed to fetch the latest checkpoint")?
+        .checkpoint
+        .context("provider returned no checkpoint")?;
+    let digest = checkpoint
+        .transactions
+        .first()
+        .and_then(|tx| tx.digest.as_deref())
+        .context("latest checkpoint carries no transaction digest")?;
+    let tx = golden::base58_32(digest)?;
+
     let inspector = SuiInspector::new(client);
-    let values = inspector
+    match inspector
         .extract(
             SuiTransactionDigest::from(tx),
             SuiFinality::Checkpointed,
-            vec![SuiExtractor::Event { event_index: 0 }],
+            vec![],
         )
-        .await?;
-    match values.into_iter().next().context("RPC returned no value")? {
-        SuiExtractedValue::Event(event) => {
-            ensure!(
-                event.type_tag == expected_type_tag,
-                "event type tag mismatch: expected {expected_type_tag}, got {} — is this provider on the expected network?",
-                event.type_tag,
-            );
-            ensure!(
-                event.package_id.0 == expected_package_id,
-                "event package id mismatch: expected 0x{}, got 0x{}",
-                hex::encode(expected_package_id),
-                hex::encode(event.package_id.0),
-            );
-            Ok(())
-        }
+        .await
+    {
+        // A failed transaction still proves the provider serves canonical checkpointed data.
+        Ok(_) | Err(ForeignChainInspectionError::TransactionFailed) => Ok(()),
+        Err(e) => Err(e).context("failed to inspect a transaction from the latest checkpoint"),
     }
 }
 
@@ -226,86 +247,90 @@ mod tests {
         mock.assert_async().await;
     }
 
-    fn golden_sui_body(vector: &golden::SuiVector, type_tag: &str) -> serde_json::Value {
-        serde_json::json!({
-            "digest": vector.tx,
-            "effects": { "status": { "status": "success" } },
-            "events": [{
-                "id": { "txDigest": vector.tx, "eventSeq": "0" },
-                "packageId": vector.event_package_id,
-                "transactionModule": "sui_system",
-                "sender": "0x0000000000000000000000000000000000000000000000000000000000000000",
-                "type": type_tag,
-                "bcsEncoding": "base64",
-                "bcs": "AQAAAAAAAAA="
-            }],
-            "checkpoint": "9769"
-        })
+    use foreign_chain_rpc_interfaces::sui::proto::{
+        Checkpoint, ExecutedTransaction, ExecutionStatus, GetCheckpointResponse,
+        GetServiceInfoResponse, GetTransactionResponse, TransactionEffects,
+    };
+    use foreign_chain_rpc_interfaces::sui::{Status, SuiRpcClient};
+
+    const CHECKPOINT_HEIGHT: u64 = 296_112_296;
+
+    struct MockSuiClient {
+        chain_id: String,
     }
 
-    fn sui_rpc_mock(server: &MockServer, result: serde_json::Value) {
-        server.mock(|when, then| {
-            when.method(POST).path("/");
-            then.status(200)
-                .header("content-type", "application/json")
-                .json_body(serde_json::json!({
-                    "jsonrpc": "2.0",
-                    "result": result,
-                    "id": 0
-                }));
-        });
+    impl MockSuiClient {
+        fn probe_digest() -> String {
+            bs58::encode([0xab; 32]).into_string()
+        }
+    }
+
+    impl SuiRpcClient for MockSuiClient {
+        async fn get_transaction(&self, digest: &str) -> Result<GetTransactionResponse, Status> {
+            Ok(GetTransactionResponse::default().with_transaction(
+                ExecutedTransaction::default()
+                    .with_digest(digest)
+                    .with_effects(
+                        TransactionEffects::default()
+                            .with_status(ExecutionStatus::default().with_success(true)),
+                    )
+                    .with_checkpoint(CHECKPOINT_HEIGHT),
+            ))
+        }
+
+        async fn get_service_info(&self) -> Result<GetServiceInfoResponse, Status> {
+            Ok(GetServiceInfoResponse::default()
+                .with_chain_id(self.chain_id.clone())
+                .with_checkpoint_height(CHECKPOINT_HEIGHT))
+        }
+
+        async fn get_checkpoint(
+            &self,
+            sequence_number: u64,
+        ) -> Result<GetCheckpointResponse, Status> {
+            Ok(GetCheckpointResponse::default().with_checkpoint(
+                Checkpoint::default()
+                    .with_sequence_number(sequence_number)
+                    .with_transactions(vec![
+                        ExecutedTransaction::default().with_digest(Self::probe_digest()),
+                    ]),
+            ))
+        }
     }
 
     #[tokio::test]
-    async fn check_sui__should_pass_when_provider_returns_golden_event() {
+    async fn check_sui__should_pass_when_provider_is_on_the_expected_network() {
         // Given
-        let server = MockServer::start_async().await;
         let sui = golden::golden_set(golden::Network::Mainnet).sui.unwrap();
-        sui_rpc_mock(&server, golden_sui_body(&sui, sui.event_type_tag));
-        let client = foreign_chain_inspector::build_http_client(
-            server.base_url(),
-            foreign_chain_inspector::RpcAuthentication::KeyInUrl,
-        )
-        .unwrap();
+        let client = MockSuiClient {
+            chain_id: sui.chain_id.to_string(),
+        };
 
         // When
-        let result = check_sui(
-            client,
-            golden::base58_32(sui.tx).unwrap(),
-            sui.event_type_tag,
-            golden::hex32(sui.event_package_id).unwrap(),
-        )
-        .await;
+        let result = check_sui(client, sui.chain_id).await;
 
         // Then
         result.unwrap();
     }
 
     #[tokio::test]
-    async fn check_sui__should_fail_when_event_type_tag_differs() {
-        // Given — the provider serves an event of a different type (short-form here; the
-        // inspector normalizes it to the long form before the comparison).
-        let server = MockServer::start_async().await;
-        let sui = golden::golden_set(golden::Network::Mainnet).sui.unwrap();
-        sui_rpc_mock(&server, golden_sui_body(&sui, "0xdead::wrong::Event"));
-        let client = foreign_chain_inspector::build_http_client(
-            server.base_url(),
-            foreign_chain_inspector::RpcAuthentication::KeyInUrl,
-        )
-        .unwrap();
+    async fn check_sui__should_fail_when_chain_id_differs() {
+        // Given — a provider on a different network.
+        let client = MockSuiClient {
+            chain_id: golden::golden_set(golden::Network::Testnet)
+                .sui
+                .unwrap()
+                .chain_id
+                .to_string(),
+        };
+        let expected = golden::golden_set(golden::Network::Mainnet).sui.unwrap();
 
         // When
-        let result = check_sui(
-            client,
-            golden::base58_32(sui.tx).unwrap(),
-            sui.event_type_tag,
-            golden::hex32(sui.event_package_id).unwrap(),
-        )
-        .await;
+        let result = check_sui(client, expected.chain_id).await;
 
         // Then
         let error = result.unwrap_err().to_string();
-        assert!(error.contains("event type tag mismatch"), "{error}");
+        assert!(error.contains("chain id mismatch"), "{error}");
     }
 
     #[tokio::test]

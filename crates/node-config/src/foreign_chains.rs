@@ -119,8 +119,8 @@ impl ForeignChainsConfig {
 
         let mut seen_rpc_urls = BTreeSet::new();
 
-        for (foreign_chain_config, _identifier) in configured_chains {
-            for provider in foreign_chain_config.providers.values() {
+        for (foreign_chain_config, identifier) in configured_chains {
+            for (provider_name, provider) in foreign_chain_config.providers.iter() {
                 let rpc_url = &provider.rpc_url;
 
                 // is a valid URL
@@ -136,6 +136,16 @@ impl ForeignChainsConfig {
 
                 // valid auth configuration
                 provider.validate_auth_config()?;
+
+                // Sui providers are reached over gRPC, which carries credentials in request
+                // metadata; a token substituted into the URL path or query would never be sent.
+                if identifier == dtos::ForeignChain::Sui {
+                    anyhow::ensure!(
+                        matches!(provider.auth, AuthConfig::None | AuthConfig::Header { .. }),
+                        "sui provider `{}` uses path or query auth, but gRPC providers support only header auth",
+                        provider_name.as_str(),
+                    );
+                }
             }
         }
 
@@ -807,7 +817,7 @@ foreign_chains:
 
     #[test]
     fn config_parsing__should_succeed_with_sui_auth_providers() {
-        // Given — one provider with the API key in the URL path and one with a header token.
+        // Given — gRPC providers authenticate via headers; one bearer token and one API key.
         let yaml = r#"
 my_near_account_id: test.near
 near_responder_account_id: test.near
@@ -844,10 +854,11 @@ foreign_chains:
     max_retries: 3
     providers:
       blockdaemon:
-        rpc_url: "https://svc.blockdaemon.com/sui/mainnet/native/{api_key}"
+        rpc_url: "https://svc.blockdaemon.com"
         auth:
-          kind: path
-          placeholder: "{api_key}"
+          kind: header
+          name: Authorization
+          scheme: Bearer
           token:
             val: "blockdaemon-secret"
       nownodes:
@@ -873,5 +884,62 @@ foreign_chains:
             .as_ref()
             .expect("sui config should be present");
         assert_eq!(sui.providers.len(), 2);
+    }
+
+    #[test]
+    fn config_validation__should_reject_sui_provider_with_path_auth() {
+        // Given — path auth substitutes the token into the URL, which gRPC never sends.
+        let yaml = r#"
+my_near_account_id: test.near
+near_responder_account_id: test.near
+number_of_responder_keys: 1
+web_ui:
+  host: localhost
+  port: 8080
+migration_web_ui:
+  host: localhost
+  port: 8081
+pprof_bind_address: 127.0.0.1:34001
+indexer:
+  validate_genesis: false
+  sync_mode: Latest
+  finality: optimistic
+  concurrency: 1
+  mpc_contract_id: mpc-contract.test.near
+triple:
+  concurrency: 1
+  desired_triples_to_buffer: 1
+  timeout_sec: 60
+  parallel_triple_generation_stagger_time_sec: 1
+presignature:
+  concurrency: 1
+  desired_presignatures_to_buffer: 1
+  timeout_sec: 60
+signature:
+  timeout_sec: 60
+ckd:
+  timeout_sec: 60
+foreign_chains:
+  sui:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      keyinpath:
+        rpc_url: "https://sui.example.com/{api_key}"
+        auth:
+          kind: path
+          placeholder: "{api_key}"
+          token:
+            val: "secret"
+"#;
+
+        // When
+        let config: ConfigFile =
+            serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
+        let result = config.validate();
+
+        // Then
+        let error = result.unwrap_err().to_string();
+        assert!(error.contains("support only header auth"), "{error}");
     }
 }

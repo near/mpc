@@ -66,6 +66,6 @@ foreign_chains:
     max_retries: 3
     providers:
       public:
-        rpc_url: "https://fullnode.mainnet.sui.io"
+        rpc_url: "https://archive.mainnet.sui.io"
         auth:
           kind: none
