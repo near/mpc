@@ -46,7 +46,7 @@ fn build_providers_from_urls<'a>(
 ) -> NonEmptyBTreeMap<RpcProviderName, ForeignChainProviderConfig> {
     let (i, first_url) = urls
         .next()
-        .expect("at least one polygon provider must be configured");
+        .expect("at least one provider must be configured");
     let mut providers = NonEmptyBTreeMap::new(
         format!("mock-{chain_name}-{i}").into(),
         ForeignChainProviderConfig {
