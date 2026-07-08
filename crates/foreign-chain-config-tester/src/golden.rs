@@ -156,6 +156,13 @@ pub fn felt32(felt: &str) -> anyhow::Result<[u8; 32]> {
 
 /// Decode a base58-encoded 32-byte digest (the form Sui APIs use).
 pub fn base58_32(digest: &str) -> anyhow::Result<[u8; 32]> {
+    // 32 bytes encode to at most 44 base58 characters; rejecting longer inputs up front
+    // also bounds `bs58`'s superlinear decode.
+    anyhow::ensure!(
+        digest.len() <= 44,
+        "base58 digest too long: {} characters",
+        digest.len()
+    );
     let bytes = bs58::decode(digest)
         .into_vec()
         .with_context(|| format!("invalid base58: {digest}"))?;
@@ -242,5 +249,6 @@ mod tests {
         );
         base58_32("not-base58-0OIl").unwrap_err();
         base58_32("abc").unwrap_err();
+        base58_32(&"1".repeat(45)).unwrap_err();
     }
 }

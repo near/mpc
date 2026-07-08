@@ -21,6 +21,12 @@ const DIGEST_MAX_BASE58_LEN: usize = 44;
 /// current nodes send base64, which decodes in linear time.
 const EVENT_BCS_MAX_BASE58_LEN: usize = 16_384;
 
+/// Upper bound on a base64 event payload we will decode. Base64 decoding is linear, so unlike
+/// [`EVENT_BCS_MAX_BASE58_LEN`] this is not a CPU guard — it rejects absurd responses before
+/// allocating for them. Sized above the base64 form (~342k characters) of Sui's protocol limit
+/// on emitted event size (`max_event_emit_size`, 256 KB), so every protocol-legal event passes.
+const EVENT_BCS_MAX_BASE64_LEN: usize = 400_000;
+
 /// Message prefix a Sui node returns for an unknown (or pruned) transaction digest.
 /// Its JSON-RPC error code (-32602) is shared with invalid-params errors, so the
 /// message is the only discriminator.
@@ -228,13 +234,21 @@ fn ensure_event_id_consistent(
 
 fn decode_event_bcs(event: &SuiEventResponse) -> Result<Vec<u8>, ForeignChainInspectionError> {
     match event.bcs_encoding.as_deref() {
-        Some("base64") => base64::engine::general_purpose::STANDARD
-            .decode(&event.bcs)
-            .map_err(|e| {
-                ForeignChainInspectionError::MalformedRpcResponse(format!(
-                    "non-base64 event bcs: {e}"
-                ))
-            }),
+        Some("base64") => {
+            if event.bcs.len() > EVENT_BCS_MAX_BASE64_LEN {
+                return Err(ForeignChainInspectionError::MalformedRpcResponse(format!(
+                    "base64 event bcs is too long: {} characters",
+                    event.bcs.len()
+                )));
+            }
+            base64::engine::general_purpose::STANDARD
+                .decode(&event.bcs)
+                .map_err(|e| {
+                    ForeignChainInspectionError::MalformedRpcResponse(format!(
+                        "non-base64 event bcs: {e}"
+                    ))
+                })
+        }
         // Nodes before v1.26 emitted base58 without a `bcsEncoding` tag.
         Some("base58") | None => {
             if event.bcs.len() > EVENT_BCS_MAX_BASE58_LEN {
@@ -597,6 +611,20 @@ mod tests {
         let mut event = event_response("0", "digest");
         event.bcs = "1".repeat(1_000_000);
         event.bcs_encoding = Some("base58".to_string());
+
+        // When / Then
+        assert_matches!(
+            decode_event_bcs(&event),
+            Err(ForeignChainInspectionError::MalformedRpcResponse(_))
+        );
+    }
+
+    #[test]
+    fn decode_event_bcs__should_reject_oversized_base64() {
+        // Given — a base64 payload beyond the protocol's maximum emitted event size.
+        let mut event = event_response("0", "digest");
+        event.bcs = "A".repeat(EVENT_BCS_MAX_BASE64_LEN + 4);
+        event.bcs_encoding = Some("base64".to_string());
 
         // When / Then
         assert_matches!(
