@@ -156,7 +156,7 @@ Copy this key and set it as the `BACKUP_ENCRYPTION_KEY` environment variable for
 backup_encryption_key_hex = "<your 32-byte hex key>"
 ```
 
-This is the key you pass to the backup-cli. The node reads it from the config on every start, so you can add or change it on a running node via `update-user-config` + restart.
+This is the key you pass to the backup-cli — if the node is already deployed, it is the value you set in `backup_encryption_key_hex` at deploy time. The node reads it from the config on every start, so you can add or change it on a running node via `update-user-config` + restart.
 
 
 
@@ -177,9 +177,16 @@ Now backup the keyshares from your currently running node.
 
 You'll need:
 - **MPC node address**: The host where your node is running (e.g., `node.example.com`)
-- **MPC node P2P public key**: The Ed25519 public key used for P2P communication (found in your node's startup logs or configuration)
+- **MPC node P2P public key**: The Ed25519 public key used for P2P communication
 
-Both those values can be found on the contract.
+On a TDX node these are **not** available in the node's startup logs or config (you can't access them). Get both from either source:
+
+- **The contract** — your node is registered there. In the `state` view (or `get_tee_accounts`), your participant entry gives the address as `url` and the P2P public key as `tls_public_key`.
+- **The node's public-data endpoint:**
+
+  ```bash
+  export P2P_KEY=$(curl -s http://<IP>:8080/public_data | jq -r ".near_p2p_public_key")
+  ```
 
 ### Get Contract State
 
