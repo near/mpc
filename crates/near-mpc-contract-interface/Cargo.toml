@@ -33,6 +33,7 @@ sha2 = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 schemars = { workspace = true, optional = true }
+strum = { version = "0.26.3", features = ["derive"] }
 
 [dev-dependencies]
 assert_matches = { workspace = true }

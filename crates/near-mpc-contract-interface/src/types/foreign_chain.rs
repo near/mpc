@@ -1080,6 +1080,7 @@ pub enum StarknetExtractedValue {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
+#[cfg_attr(not(target_arch = "wasm32"), derive(strum::EnumIter))]
 #[non_exhaustive]
 pub enum ForeignChain {
     Solana,

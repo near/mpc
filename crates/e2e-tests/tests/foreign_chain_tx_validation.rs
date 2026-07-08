@@ -12,6 +12,7 @@ use httpmock::prelude::*;
 use mpc_node_config::foreign_chains::RpcProviderName;
 use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
+use strum::IntoEnumIterator;
 use near_mpc_contract_interface::types::{
     AptosExtractor, AptosRpcRequest, AptosTxId, BitcoinExtractor, BitcoinRpcRequest, BitcoinTxId,
     BlockConfirmations, DomainConfig, DomainId, DomainPurpose, EvmExtractor, EvmFinality,
@@ -228,19 +229,29 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
 
     let fc_config = build_foreign_chains_config(&urls);
 
-    let expected_chains: std::collections::BTreeSet<ForeignChain> = [
-        ForeignChain::Bitcoin,
-        ForeignChain::Abstract,
-        ForeignChain::Bnb,
-        ForeignChain::Starknet,
-        ForeignChain::Base,
-        ForeignChain::Arbitrum,
-        ForeignChain::HyperEvm,
-        ForeignChain::Polygon,
-        ForeignChain::Aptos,
-    ]
-    .into_iter()
-    .collect();
+    // Chains deliberately NOT exercised here; every other `ForeignChain` variant is
+    // expected, so a newly added chain is covered automatically unless excluded below.
+    //   - Solana:   no inspector wired for foreign-tx verification.
+    //   - Ethereum: left unconfigured; reused below as the unsupported-chain rejection case.
+    //   - Ton:      not wired for foreign-tx (no `mpc_node_config` field / mock).
+    let excluded: std::collections::BTreeSet<ForeignChain> =
+        [ForeignChain::Solana, ForeignChain::Ethereum, ForeignChain::Ton]
+            .into_iter()
+            .collect();
+    let expected_chains: std::collections::BTreeSet<ForeignChain> =
+        ForeignChain::iter().filter(|c| !excluded.contains(c)).collect();
+
+    // Sync guard: every expected chain must actually be configured on the nodes by
+    // `build_foreign_chains_config`, otherwise it can't be node-available and the
+    // `available_set == expected_chains` assertion below would time out. On a new
+    // `ForeignChain` variant, wire it into the config/mocks or add it to `excluded`.
+    let configured_chains: std::collections::BTreeSet<ForeignChain> =
+        fc_config.iter_chains().map(|(chain, _)| chain).collect();
+    assert_eq!(
+        expected_chains, configured_chains,
+        "expected_chains must match chains configured by build_foreign_chains_config; \
+         add the new variant to the config/mocks or to `excluded`",
+    );
 
     let (cluster, _running) =
         common::must_setup_cluster(common::FOREIGN_TX_VALIDATION_PORT_SEED, |c| {
