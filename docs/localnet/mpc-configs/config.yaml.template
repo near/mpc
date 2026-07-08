@@ -61,3 +61,11 @@ foreign_chains:
         rpc_url: "https://fullnode.mainnet.aptoslabs.com/v1"
         auth:
           kind: none
+  sui:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      public:
+        rpc_url: "https://fullnode.mainnet.sui.io"
+        auth:
+          kind: none

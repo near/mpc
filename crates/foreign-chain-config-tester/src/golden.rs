@@ -33,6 +33,15 @@ pub struct AptosVector {
     pub event_sequence_number: u64,
 }
 
+/// `tx` is the base58 transaction digest; `event_type_tag` is in the normalized
+/// canonical long form the inspector emits; `event_package_id` is full-length hex.
+#[derive(Clone, Copy)]
+pub struct SuiVector {
+    pub tx: &'static str,
+    pub event_type_tag: &'static str,
+    pub event_package_id: &'static str,
+}
+
 pub struct GoldenSet {
     pub base: Option<BlockHashVector>,
     pub bnb: Option<BlockHashVector>,
@@ -43,6 +52,7 @@ pub struct GoldenSet {
     pub bitcoin: Option<BlockHashVector>,
     pub starknet: Option<BlockHashVector>,
     pub aptos: Option<AptosVector>,
+    pub sui: Option<SuiVector>,
 }
 
 pub fn golden_set(network: Network) -> GoldenSet {
@@ -90,6 +100,11 @@ const MAINNET: GoldenSet = GoldenSet {
         event_type_tag: "0x1::block::NewBlockEvent",
         event_sequence_number: 822_198_006,
     }),
+    sui: Some(SuiVector {
+        tx: "8eBMXpC8Np7RNDwwiGwSmeev1cSoc7w3fPXdikhH7RZo",
+        event_type_tag: "0x0000000000000000000000000000000000000000000000000000000000000003::validator_set::ValidatorEpochInfoEventV2",
+        event_package_id: "0x0000000000000000000000000000000000000000000000000000000000000003",
+    }),
 };
 
 const TESTNET: GoldenSet = GoldenSet {
@@ -115,6 +130,11 @@ const TESTNET: GoldenSet = GoldenSet {
         event_type_tag: "0x1::block::NewBlockEvent",
         event_sequence_number: 302_761_912,
     }),
+    sui: Some(SuiVector {
+        tx: "tWa95dbKCRHEGwTijpMdDJrQTRw3YsafoWtxgwnu7pH",
+        event_type_tag: "0x0000000000000000000000000000000000000000000000000000000000000003::validator::StakingRequestEvent",
+        event_package_id: "0x0000000000000000000000000000000000000000000000000000000000000003",
+    }),
 };
 
 /// Decode a 32-byte hash from hex, tolerating an optional `0x` prefix.
@@ -132,6 +152,16 @@ pub fn felt32(felt: &str) -> anyhow::Result<[u8; 32]> {
     let stripped = felt.strip_prefix("0x").unwrap_or(felt);
     anyhow::ensure!(stripped.len() <= 64, "felt too long: {felt}");
     hex32(&format!("{stripped:0>64}"))
+}
+
+/// Decode a base58-encoded 32-byte digest (the form Sui APIs use).
+pub fn base58_32(digest: &str) -> anyhow::Result<[u8; 32]> {
+    let bytes = bs58::decode(digest)
+        .into_vec()
+        .with_context(|| format!("invalid base58: {digest}"))?;
+    bytes
+        .try_into()
+        .map_err(|b: Vec<u8>| anyhow::anyhow!("expected 32 bytes, got {}: {digest}", b.len()))
 }
 
 #[cfg(test)]
@@ -190,6 +220,27 @@ mod tests {
             if let Some(v) = set.aptos {
                 hex32(v.tx).unwrap();
             }
+            if let Some(v) = set.sui {
+                base58_32(v.tx).unwrap();
+                hex32(v.event_package_id).unwrap();
+            }
         }
+    }
+
+    #[test]
+    fn base58_32__should_decode_sui_digest() {
+        // Given
+        let digest = "8eBMXpC8Np7RNDwwiGwSmeev1cSoc7w3fPXdikhH7RZo";
+
+        // When
+        let bytes = base58_32(digest).unwrap();
+
+        // Then
+        assert_eq!(
+            hex::encode(bytes),
+            "7188017648e8e95bfa6c0591988f3c7a6ec6caf3967e294f70d906a376d5e4fe"
+        );
+        base58_32("not-base58-0OIl").unwrap_err();
+        base58_32("abc").unwrap_err();
     }
 }

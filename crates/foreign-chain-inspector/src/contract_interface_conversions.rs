@@ -10,6 +10,8 @@ use crate::bitcoin::inspector::BitcoinExtractor;
 use crate::evm::inspector::{EvmChain, EvmExtractedValue, EvmExtractor};
 use crate::starknet::StarknetExtractedValue;
 use crate::starknet::inspector::{StarknetExtractor, StarknetFinality};
+use crate::sui::SuiExtractedValue;
+use crate::sui::inspector::{SuiExtractor, SuiFinality};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConversionError {
@@ -363,6 +365,85 @@ impl From<AptosExtractedValue> for dtos::ExtractedValue {
     }
 }
 
+impl From<SuiFinality> for dtos::SuiFinality {
+    fn from(value: SuiFinality) -> Self {
+        match value {
+            SuiFinality::Checkpointed => dtos::SuiFinality::Checkpointed,
+        }
+    }
+}
+
+impl TryFrom<dtos::SuiFinality> for SuiFinality {
+    type Error = ConversionError;
+    fn try_from(value: dtos::SuiFinality) -> Result<Self, Self::Error> {
+        match value {
+            dtos::SuiFinality::Checkpointed => Ok(SuiFinality::Checkpointed),
+            _ => Err(ConversionError::UnsupportedVariant {
+                context: "SuiFinality",
+            }),
+        }
+    }
+}
+
+impl TryFrom<SuiExtractor> for dtos::SuiExtractor {
+    type Error = ConversionError;
+    fn try_from(value: SuiExtractor) -> Result<Self, Self::Error> {
+        match value {
+            SuiExtractor::Event { event_index } => Ok(dtos::SuiExtractor::Event {
+                event_index: u64::try_from(event_index).map_err(|_| {
+                    ConversionError::IntegerOverflow {
+                        context: "SuiExtractor::Event event_index exceeds u64",
+                    }
+                })?,
+            }),
+        }
+    }
+}
+
+impl TryFrom<dtos::SuiExtractor> for SuiExtractor {
+    type Error = ConversionError;
+    fn try_from(value: dtos::SuiExtractor) -> Result<Self, Self::Error> {
+        match value {
+            dtos::SuiExtractor::Event { event_index } => Ok(SuiExtractor::Event {
+                event_index: usize::try_from(event_index).map_err(|_| {
+                    ConversionError::IntegerOverflow {
+                        context: "SuiExtractor::Event event_index exceeds platform usize",
+                    }
+                })?,
+            }),
+            _ => Err(ConversionError::UnsupportedVariant {
+                context: "SuiExtractor",
+            }),
+        }
+    }
+}
+
+impl From<SuiExtractedValue> for dtos::SuiExtractedValue {
+    fn from(value: SuiExtractedValue) -> Self {
+        match value {
+            SuiExtractedValue::Event(event) => dtos::SuiExtractedValue::Event(event),
+        }
+    }
+}
+
+impl TryFrom<dtos::SuiExtractedValue> for SuiExtractedValue {
+    type Error = ConversionError;
+    fn try_from(value: dtos::SuiExtractedValue) -> Result<Self, Self::Error> {
+        match value {
+            dtos::SuiExtractedValue::Event(event) => Ok(SuiExtractedValue::Event(event)),
+            _ => Err(ConversionError::UnsupportedVariant {
+                context: "SuiExtractedValue",
+            }),
+        }
+    }
+}
+
+impl From<SuiExtractedValue> for dtos::ExtractedValue {
+    fn from(value: SuiExtractedValue) -> Self {
+        dtos::ExtractedValue::SuiExtractedValue(value.into())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -374,7 +455,7 @@ mod tests {
     use crate::starknet::StarknetBlockHash;
     use assert_matches::assert_matches;
     use foreign_chain_rpc_interfaces::evm::Log;
-    use near_mpc_contract_interface::types::{AptosAddress, AptosEvent};
+    use near_mpc_contract_interface::types::{AptosAddress, AptosEvent, SuiAddress, SuiEvent};
 
     #[test]
     fn block_confirmations_roundtrip() {
@@ -613,6 +694,41 @@ mod tests {
         });
         let contract = dtos::AptosExtractedValue::from(inspector.clone());
         let back = AptosExtractedValue::try_from(contract).unwrap();
+        assert_eq!(inspector, back);
+    }
+
+    #[test]
+    fn sui_finality_roundtrip() {
+        assert_eq!(
+            dtos::SuiFinality::Checkpointed,
+            dtos::SuiFinality::from(SuiFinality::Checkpointed)
+        );
+        assert_eq!(
+            SuiFinality::Checkpointed,
+            SuiFinality::try_from(dtos::SuiFinality::Checkpointed).unwrap()
+        );
+    }
+
+    #[test]
+    fn sui_extractor_roundtrip() {
+        let inspector = SuiExtractor::Event { event_index: 3 };
+        let contract = dtos::SuiExtractor::try_from(inspector.clone()).unwrap();
+        assert_matches!(contract, dtos::SuiExtractor::Event { event_index: 3 });
+        let back = SuiExtractor::try_from(contract).unwrap();
+        assert_eq!(inspector, back);
+    }
+
+    #[test]
+    fn sui_extracted_value_roundtrip() {
+        let inspector = SuiExtractedValue::Event(SuiEvent {
+            package_id: SuiAddress([0x01; 32]),
+            transaction_module: "omni_bridge".to_string(),
+            sender: SuiAddress([0x02; 32]),
+            type_tag: format!("0x{}::omni_bridge::InitTransfer", "01".repeat(32)),
+            bcs: vec![0xde, 0xad, 0xbe, 0xef],
+        });
+        let contract = dtos::SuiExtractedValue::from(inspector.clone());
+        let back = SuiExtractedValue::try_from(contract).unwrap();
         assert_eq!(inspector, back);
     }
 }

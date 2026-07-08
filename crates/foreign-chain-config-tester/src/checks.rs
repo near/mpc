@@ -19,6 +19,10 @@ use foreign_chain_inspector::{
         StarknetExtractedValue, StarknetTransactionHash,
         inspector::{StarknetExtractor, StarknetFinality, StarknetInspector},
     },
+    sui::{
+        SuiExtractedValue, SuiTransactionDigest,
+        inspector::{SuiExtractor, SuiFinality, SuiInspector},
+    },
 };
 use foreign_chain_rpc_interfaces::aptos::ReqwestAptosClient;
 use http::{HeaderName, HeaderValue};
@@ -99,6 +103,38 @@ pub async fn check_starknet(
             verify_block_hash(expected_block_hash, got)
         }
         StarknetExtractedValue::Log(_) => bail!("expected a block hash, got a log"),
+    }
+}
+
+pub async fn check_sui(
+    client: HttpClient,
+    tx: [u8; 32],
+    expected_type_tag: &str,
+    expected_package_id: [u8; 32],
+) -> anyhow::Result<()> {
+    let inspector = SuiInspector::new(client);
+    let values = inspector
+        .extract(
+            SuiTransactionDigest::from(tx),
+            SuiFinality::Checkpointed,
+            vec![SuiExtractor::Event { event_index: 0 }],
+        )
+        .await?;
+    match values.into_iter().next().context("RPC returned no value")? {
+        SuiExtractedValue::Event(event) => {
+            ensure!(
+                event.type_tag == expected_type_tag,
+                "event type tag mismatch: expected {expected_type_tag}, got {} — is this provider on the expected network?",
+                event.type_tag,
+            );
+            ensure!(
+                event.package_id.0 == expected_package_id,
+                "event package id mismatch: expected 0x{}, got 0x{}",
+                hex::encode(expected_package_id),
+                hex::encode(event.package_id.0),
+            );
+            Ok(())
+        }
     }
 }
 
@@ -188,6 +224,88 @@ mod tests {
         // Then
         result.unwrap();
         mock.assert_async().await;
+    }
+
+    fn golden_sui_body(vector: &golden::SuiVector, type_tag: &str) -> serde_json::Value {
+        serde_json::json!({
+            "digest": vector.tx,
+            "effects": { "status": { "status": "success" } },
+            "events": [{
+                "id": { "txDigest": vector.tx, "eventSeq": "0" },
+                "packageId": vector.event_package_id,
+                "transactionModule": "sui_system",
+                "sender": "0x0000000000000000000000000000000000000000000000000000000000000000",
+                "type": type_tag,
+                "bcsEncoding": "base64",
+                "bcs": "AQAAAAAAAAA="
+            }],
+            "checkpoint": "9769"
+        })
+    }
+
+    fn sui_rpc_mock(server: &MockServer, result: serde_json::Value) {
+        server.mock(|when, then| {
+            when.method(POST).path("/");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "result": result,
+                    "id": 0
+                }));
+        });
+    }
+
+    #[tokio::test]
+    async fn check_sui__should_pass_when_provider_returns_golden_event() {
+        // Given
+        let server = MockServer::start_async().await;
+        let sui = golden::golden_set(golden::Network::Mainnet).sui.unwrap();
+        sui_rpc_mock(&server, golden_sui_body(&sui, sui.event_type_tag));
+        let client = foreign_chain_inspector::build_http_client(
+            server.base_url(),
+            foreign_chain_inspector::RpcAuthentication::KeyInUrl,
+        )
+        .unwrap();
+
+        // When
+        let result = check_sui(
+            client,
+            golden::base58_32(sui.tx).unwrap(),
+            sui.event_type_tag,
+            golden::hex32(sui.event_package_id).unwrap(),
+        )
+        .await;
+
+        // Then
+        result.unwrap();
+    }
+
+    #[tokio::test]
+    async fn check_sui__should_fail_when_event_type_tag_differs() {
+        // Given — the provider serves an event of a different type (short-form here; the
+        // inspector normalizes it to the long form before the comparison).
+        let server = MockServer::start_async().await;
+        let sui = golden::golden_set(golden::Network::Mainnet).sui.unwrap();
+        sui_rpc_mock(&server, golden_sui_body(&sui, "0xdead::wrong::Event"));
+        let client = foreign_chain_inspector::build_http_client(
+            server.base_url(),
+            foreign_chain_inspector::RpcAuthentication::KeyInUrl,
+        )
+        .unwrap();
+
+        // When
+        let result = check_sui(
+            client,
+            golden::base58_32(sui.tx).unwrap(),
+            sui.event_type_tag,
+            golden::hex32(sui.event_package_id).unwrap(),
+        )
+        .await;
+
+        // Then
+        let error = result.unwrap_err().to_string();
+        assert!(error.contains("event type tag mismatch"), "{error}");
     }
 
     #[tokio::test]

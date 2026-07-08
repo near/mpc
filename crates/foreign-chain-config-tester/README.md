@@ -43,9 +43,10 @@ CHAIN     PROVIDER   RESULT
 abstract  public     ✓ ok
 bitcoin   public     ✓ ok
 starknet  public     ✗ failed
-aptos     public     – skipped (no testnet reference transaction for this chain)
+aptos     public     ✓ ok
+sui       public     ✓ ok
 
-3 passed, 1 failed, 1 skipped
+4 passed, 1 failed, 0 skipped
 
 Failures:
   starknet / public: inner network client failed to fetch: Transaction hash not found

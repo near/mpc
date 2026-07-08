@@ -10,6 +10,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = { workspace = true }
+bs58 = { workspace = true }
 clap = { workspace = true }
 foreign-chain-inspector = { workspace = true }
 foreign-chain-rpc-auth = { workspace = true }

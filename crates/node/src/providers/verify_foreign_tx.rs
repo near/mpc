@@ -17,6 +17,7 @@ use foreign_chain_inspector::http_client::HttpClient;
 use foreign_chain_inspector::hyperevm::inspector::HyperEvmInspector;
 use foreign_chain_inspector::polygon::inspector::PolygonInspector;
 use foreign_chain_inspector::starknet::inspector::StarknetInspector;
+use foreign_chain_inspector::sui::inspector::SuiInspector;
 use foreign_chain_inspector::{FanOut, RpcAuthentication};
 use foreign_chain_rpc_auth::auth_config_to_rpc_auth;
 use foreign_chain_rpc_interfaces::aptos::ReqwestAptosClient;
@@ -43,6 +44,7 @@ pub(crate) struct ForeignChainInspectors<Client> {
     pub hyper_evm: Option<FanOut<HyperEvmInspector<Client>>>,
     pub polygon: Option<FanOut<PolygonInspector<Client>>>,
     pub aptos: Option<FanOut<AptosInspector<ReqwestAptosClient>>>,
+    pub sui: Option<FanOut<SuiInspector<Client>>>,
 }
 
 impl ForeignChainInspectors<HttpClient> {
@@ -124,6 +126,7 @@ impl ForeignChainInspectors<HttpClient> {
                 with_http_client(PolygonInspector::new),
             )?,
             aptos: build_fanout(config.aptos.as_ref(), new_aptos_inspector)?,
+            sui: build_fanout(config.sui.as_ref(), with_http_client(SuiInspector::new))?,
         })
     }
 }
