@@ -5,8 +5,8 @@ use crate::{
         AllowedMeasurements, ContractExpectedMeasurements, MeasurementVoteAction, MeasurementVotes,
     },
     tee::proposal::{
-        AllowedDockerImageHashes, AllowedLauncherImages, AllowedMpcDockerImage, CodeHashesVotes,
-        LauncherHashVotes, LauncherVoteAction, NodeImageHash,
+        AddOutcome, AllowedDockerImageHashes, AllowedLauncherImages, AllowedMpcDockerImage,
+        CodeHashesVotes, LauncherHashVotes, LauncherVoteAction, NodeImageHash,
     },
 };
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -330,7 +330,7 @@ impl TeeState {
         self.allowed_launcher_images.all_compose_hashes(ttl)
     }
 
-    /// Refreshes the `last_attested` timestamp of the launcher image referenced by the
+    /// Refreshes the `last_used` timestamp of the launcher image referenced by the
     /// stored attestation for `tls_public_key` — the "refresh on use" signal that keeps an
     /// in-use launcher hash from expiring. The [`AuthenticatedParticipantId`] is a
     /// capability token (value intentionally unused): requiring it means a non-participant
@@ -361,19 +361,19 @@ impl TeeState {
         self.launcher_votes.vote(action, participant)
     }
 
-    /// Adds a new launcher image to the allowed set, computing compose hashes
-    /// for all currently allowed MPC images. Clears launcher votes.
+    /// Adds a launcher image to the allowed set, computing compose hashes for all currently
+    /// allowed MPC images. If already present, refreshes it instead. Clears launcher votes.
     pub fn add_launcher_image(
         &mut self,
         launcher_hash: LauncherImageHash,
         tee_upgrade_deadline_duration: Duration,
-    ) -> bool {
+    ) -> AddOutcome {
         self.launcher_votes.clear_votes();
         let mpc_image_hashes = self
             .allowed_docker_image_hashes
             .get_image_hashes(tee_upgrade_deadline_duration);
         self.allowed_launcher_images
-            .add(launcher_hash, &mpc_image_hashes)
+            .add_or_refresh(launcher_hash, &mpc_image_hashes)
     }
 
     /// Removes a launcher image from the allowed set. Clears launcher votes.
@@ -873,7 +873,7 @@ mod tests {
         let mut tee_state = TeeState::default();
         tee_state
             .allowed_launcher_images
-            .add(launcher_1, &[mpc_hash]);
+            .add_or_refresh(launcher_1, &[mpc_hash]);
 
         // A second (newer) launcher so the list is never empty — this defeats the
         // newest-only read fallback and lets us observe real expiry.
@@ -884,7 +884,7 @@ mod tests {
         );
         tee_state
             .allowed_launcher_images
-            .add(launcher_2, &[mpc_hash]);
+            .add_or_refresh(launcher_2, &[mpc_hash]);
 
         let node_id = NodeId {
             account_id: "alice.near".parse().unwrap(),

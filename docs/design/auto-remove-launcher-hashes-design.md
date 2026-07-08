@@ -23,12 +23,12 @@ without any vote.
 pub struct AllowedLauncherImage {
     launcher_hash: LauncherImageHash,
     compose_hashes: Vec<LauncherDockerComposeHash>,
-    added: Timestamp,          // NEW: when (last) voted in
-    last_attested: Timestamp,  // NEW: last attestation by a *current participant* using this launcher
+    last_used: Timestamp,  // NEW: stamped when voted in / re-voted, and refreshed on
+                           // each attestation by a *current participant*.
 }
 ```
 
-An entry is **expired** when `max(added, last_attested) + TTL < now`.
+An entry is **expired** when `last_used + TTL < now`.
 TTL is a new config field `launcher_hash_unused_ttl_seconds`, default **14 days**.
 Config validation enforces `launcher_hash_unused_ttl_seconds >=
 mpc_attestation::attestation::DEFAULT_EXPIRATION_DURATION_SECONDS` (the
@@ -40,7 +40,7 @@ period, 7 days).
 Three parts:
 
 1. **Refresh on use** — after a successful verify in `submit_participant_info`
-   (hourly per node), the contract sets `last_attested = now` on the entry
+   (hourly per node), the contract sets `last_used = now` on the entry
    owning the validated compose hash. No node-side changes.
    **Only a current participant's submission refreshes the timestamp.**
    `submit_participant_info` is also callable by prospective (non-participant)
@@ -64,17 +64,17 @@ Three parts:
    `clean_tee_status_tera_gas` etc. used by the post-resharing cleanups in
    `vote_reshared`.
 
-Counting from `added` means a hash voted in but **never adopted** (e.g. a
-newly voted launcher image no node ever migrated to) also expires after one
-TTL window. Recovery: `vote_add_launcher_hash` for an already-present entry
-resets its `added` timestamp (threshold vote, not unanimity).
+Stamping `last_used` at vote-in means a hash voted in but **never adopted**
+(e.g. a newly voted launcher image no node ever migrated to) also expires after
+one TTL window. Recovery: `vote_add_launcher_hash` for an already-present entry
+refreshes its `last_used` (threshold vote, not unanimity).
 
 ### Safety invariants
 
 - A hash backing a **valid participant attestation is never expired**: a
   current participant resubmits hourly, so its valid attestation (at most
   `DEFAULT_EXPIRATION_DURATION_SECONDS`, currently 1 day, old) refreshed the
-  entry that recently, and `last_attested + TTL >= now` holds whenever
+  entry's `last_used` that recently, and `last_used + TTL >= now` holds whenever
   `TTL >= DEFAULT_EXPIRATION_DURATION_SECONDS` — regardless of the constant's
   exact value. Enforced by config validation
   (`launcher_hash_unused_ttl_seconds >= DEFAULT_EXPIRATION_DURATION_SECONDS`);
@@ -98,12 +98,12 @@ sequenceDiagram
     participant N as Nodes
 
     Ops->>C: vote_add_launcher_hash(B), threshold reached
-    Note over C: B.added = now, 14-day adoption clock starts
+    Note over C: B.last_used = now, 14-day adoption clock starts
     N->>C: hourly submit_participant_info with launcher A
-    Note over C: A.last_attested refreshed hourly
+    Note over C: A.last_used refreshed hourly
     N->>C: hourly submit_participant_info with launcher B (after migration)
     Note over C: B refreshed. A freezes once the last node leaves it
-    Note over C: A.last_attested + 14d passes. A is rejected by all reads
+    Note over C: A.last_used + 14d passes. A is rejected by all reads
     Ops->>C: verify_tee (routine)
     Note over C: spawns detached self-call clean_expired_launcher_hashes
     C-->>C: clean_expired_launcher_hashes (private, separate receipt)
@@ -117,15 +117,15 @@ sequenceDiagram
 | **Normal rotation** | Vote in `B`, migrate nodes. 14 days after the last node leaves `A`, it is auto-evicted. No removal vote. |
 | **Rollback** | `B` broken; revert to `A` within 14 days — still valid, refreshes resume. `B` ages out. |
 | **Slow rollout** (vote → migration > 14d) | `B` expires unused; re-vote it (threshold) to reset the clock. Rule of thumb: vote within 14 days of migrating. |
-| **Node offline > 14d on an old launcher** | Its hash may age out (its attestation already expired at day 7). Recover by upgrading or re-voting the hash. |
+| **Node offline > 14d on an old launcher** | Its hash may age out (its attestation already lapsed at the 1-day validity window). Recover by upgrading or re-voting the hash. |
 | **Network outage > 14d** | All entries expire; newest still honored via fallback, others re-votable. |
 | **Compromised launcher** | Unanimous `vote_remove_launcher_hash`, as today. |
 
 ## Migration
 
-New borsh fields ⇒ state migration: existing entries get
-`added = last_attested = migration time` — every current hash starts a fresh
-14-day clock; stale testnet hashes age out with no further action.
+New borsh field ⇒ state migration: existing entries get
+`last_used = migration time` — every current hash starts a fresh 14-day clock;
+stale testnet hashes age out with no further action.
 
 ## Alternatives considered
 

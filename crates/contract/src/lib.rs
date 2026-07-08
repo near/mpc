@@ -1480,10 +1480,10 @@ impl MpcContract {
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
         if votes >= self.threshold()?.value() {
-            let added = self
+            let outcome = self
                 .tee_state
                 .add_launcher_image(launcher_hash, tee_upgrade_deadline_duration);
-            log!("launcher hash add result: {}", added);
+            log!("launcher hash {:?}: {:?}", outcome, launcher_hash);
         }
 
         Ok(())
