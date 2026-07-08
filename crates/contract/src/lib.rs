@@ -2088,7 +2088,7 @@ impl MpcContract {
 
     /// Returns all allowed code hashes in descending order of their expiry
     /// date. Note that the expiration depends on the contract configuration
-    /// (c.f. [`Config::tee_upgrade_deadline_duration_seconds`]).
+    /// (c.f. [`dtos::Config::tee_upgrade_deadline_duration_seconds`]).
     pub fn allowed_docker_image_hashes(&self) -> Vec<dtos::AllowedMpcDockerImageHash> {
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
