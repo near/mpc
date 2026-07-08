@@ -181,11 +181,6 @@ async fn submit_tx(
     })
 }
 
-/// Whether our `submit_participant_info` landed: a successful submit re-stamps the stored expiry to
-/// a new value, a failed one leaves it unchanged, so a change from the baseline (or no prior entry)
-/// means it landed. Inequality rather than `>` because a lowered expiry constant can make a landed
-/// submit stamp an *earlier* expiry.
-// TODO(#1639): match a certificate-derived identity instead of this expiry heuristic.
 fn attestation_expiry_changed(pre_submit_expiry: Option<u64>, stored_expiry: u64) -> bool {
     match pre_submit_expiry {
         Some(expiry_before_submit) => stored_expiry != expiry_before_submit,
@@ -193,9 +188,14 @@ fn attestation_expiry_changed(pre_submit_expiry: Option<u64>, stored_expiry: u64
     }
 }
 
-/// Whether the attestation we submitted is the one now stored. Mock carries a full identity and is
-/// matched directly; a Dstack entry has none to match (it's a different stored type), so it's
-/// confirmed indirectly via [`attestation_expiry_changed`].
+/// Whether the attestation we submitted is now the one stored on chain.
+///
+/// Mock is matched by identity. A Dstack entry keeps no stored per-submission identity, so it is
+/// confirmed via [`attestation_expiry_changed`]: an accepted submit re-stamps the entry's expiry
+/// (to the submit block time plus
+/// [`DEFAULT_EXPIRATION_DURATION_SECONDS`](mpc_attestation::attestation::DEFAULT_EXPIRATION_DURATION_SECONDS)),
+/// and only the owning account may rewrite it, so a changed expiry means our submit landed.
+// TODO(#1639): match a certificate-derived identity instead of this expiry heuristic.
 fn submitted_attestation_landed(
     pre_submit_expiry: Option<u64>,
     stored: &VerifiedAttestation,

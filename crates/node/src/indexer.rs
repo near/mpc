@@ -405,9 +405,8 @@ impl ReadSupportedForeignChain for RealForeignChainPolicyReader {
 }
 
 pub(crate) trait ReadAttestationExpiry: Send + Sync {
-    /// Reads the Dstack attestation expiry currently stored for `tls_public_key`, or `None` if
-    /// none is stored. Used as the pre-submit baseline for the submit_participant_info
-    /// confirmation.
+    /// The Dstack attestation expiry currently stored for `tls_public_key`, or `None` if none is
+    /// stored.
     fn read_stored_dstack_expiry<'a>(
         &'a self,
         tls_public_key: &'a dtos::Ed25519PublicKey,

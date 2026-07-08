@@ -68,8 +68,8 @@ pub enum ChainSendTransactionRequest {
     SubmitParticipantInfo {
         #[serde(flatten)]
         args: Box<contract_args::SubmitParticipantInfoArgs>,
-        /// Attestation expiry stored on chain before this submission, captured once by the caller
-        /// for the landing check in observe_tx_result. Node-internal; NOT part of the on-chain call.
+        /// Pre-submit expiry baseline for the landing check. Skipped from serialization so it never
+        /// reaches the on-chain call args.
         #[serde(skip)]
         pre_submit_expiry: Option<u64>,
     },

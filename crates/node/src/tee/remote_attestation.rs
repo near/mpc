@@ -192,7 +192,7 @@ pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Ti
             .read_stored_dstack_expiry(&tls_public_key)
             .await
         {
-            Ok(baseline) => baseline, // Some = prior expiry; None = nothing stored yet (first submit) -- both proceed
+            Ok(baseline) => baseline, // None just means nothing stored yet (e.g. first submit)
             Err(error) => {
                 tracing::warn!(%error, "could not read pre-submit attestation baseline; skipping this round");
                 continue; // next tick. Do NOT submit with an unknown baseline.
@@ -310,7 +310,7 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
                 .read_stored_dstack_expiry(&tls_public_key)
                 .await
             {
-                Ok(baseline) => baseline, // Some = prior expiry; None = nothing stored yet (first submit) -- both proceed
+                Ok(baseline) => baseline, // None just means nothing stored yet (e.g. first submit)
                 Err(error) => {
                     tracing::warn!(%error, "could not read pre-submit attestation baseline; skipping this round");
                     was_available = is_available;
