@@ -149,7 +149,14 @@ export BACKUP_ENCRYPTION_KEY=$(cat $MPC_HOME_DIR/backup_encryption_key.hex)
 
 Copy this key and set it as the `BACKUP_ENCRYPTION_KEY` environment variable for the backup-cli when running `get-keyshares`.
 
-> **TEE (TDX/dstack) nodes:** `$MPC_HOME_DIR` (`/data`) is inside the CVM's encrypted disk, so you cannot read the auto-generated `backup_encryption_key.hex`. Provide the key yourself instead: set `backup_encryption_key_hex` in the `[mpc_node_config.secrets]` block of the node's user-config and keep a copy outside the CVM — that is the key you pass to the backup-cli. The node reads it from the config on every start, so you can add or change it on a running node via `update-user-config` + restart.
+**TEE (TDX/dstack) nodes:** `$MPC_HOME_DIR` (`/data`) is inside the CVM's encrypted disk, so you cannot read the auto-generated `backup_encryption_key.hex`. Provide the key yourself instead: set it in the `[mpc_node_config.secrets]` block of the node's `user-config.toml` (see [Prepare MPC Node Configuration](https://github.com/near/mpc/blob/main/docs/running-an-mpc-node-in-tdx-external-guide.md#prepare-mpc-node-configuration) in the operator guide) and keep a copy outside the CVM:
+
+```toml
+[mpc_node_config.secrets]
+backup_encryption_key_hex = "<your 32-byte hex key>"
+```
+
+This is the key you pass to the backup-cli. The node reads it from the config on every start, so you can add or change it on a running node via `update-user-config` + restart.
 
 
 
