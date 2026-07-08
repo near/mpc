@@ -160,11 +160,12 @@ fn make_dtos_docker_image_hash(
 ) -> dtos::AllowedMpcDockerImageHash {
     dtos::AllowedMpcDockerImageHash {
         image_hash: prev.image_hash,
-        expiry_timestamp_seconds: Some(
-            next.added
-                .add_or_panic(tee_upgrade_deadline_duration)
-                .as_secs(),
-        ),
+        // A timestamp overflow means the grace period never ends, so the entry
+        // never expires.
+        expiry_timestamp_seconds: next
+            .added
+            .checked_add(tee_upgrade_deadline_duration)
+            .map(Timestamp::as_secs),
     }
 }
 
@@ -182,8 +183,8 @@ pub(super) struct StoredDockerImageHashes {
 }
 
 impl StoredDockerImageHashes {
-    /// Returns the list of currently allowed docker image hashes (sorted by expiration timestamp
-    /// in ascending order).
+    /// Returns the list of currently allowed docker image hashes, oldest first; the newest entry
+    /// has no expiry.
     pub fn allowed_images(
         &self,
         tee_upgrade_deadline_duration: Duration,

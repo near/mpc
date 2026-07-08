@@ -171,6 +171,8 @@ where
 
         let allowed_images = self.allowed_hashes_in_contract.borrow_and_update().clone();
 
+        image_expiry_metrics::update_own_image_hash_gauges(&self.current_image, &allowed_images);
+
         let image_hashes = allowed_images
             .iter()
             .map(|entry| entry.image_hash)
@@ -188,8 +190,6 @@ where
         if running_image_is_not_allowed {
             tracing::error!("Currently running node image is NOT in the allowed hash list!");
         }
-
-        image_expiry_metrics::update_own_image_hash_gauges(&self.current_image, &allowed_images);
 
         Ok(())
     }
