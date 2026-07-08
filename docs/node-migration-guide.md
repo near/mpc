@@ -139,15 +139,41 @@ For additional security, the backup and restore process encrypts keyshares durin
 **Important:** The `MPC_BACKUP_ENCRYPTION_KEY_HEX` must be the same between the backup-cli and the node it is currently communicating with (e.g., the old node when running `get-keyshares`, and the new node when running `put-keyshares`).
 
 
-### Retrieve a key from an existing node.
+### Obtain the encryption key (differs for TEE vs non-TEE nodes)
 
-**Note:** If your node has been running without the `MPC_BACKUP_ENCRYPTION_KEY_HEX` environment variable set, the node automatically generates an encryption key and stores it in a file called `backup_encryption_key.hex` in your `$MPC_HOME_DIR` directory. You can retrieve it with:
+How you obtain `MPC_BACKUP_ENCRYPTION_KEY_HEX` depends on whether the node runs
+inside a TEE (TDX/dstack) or not.
+
+If the key is not provided (neither the `MPC_BACKUP_ENCRYPTION_KEY_HEX` env var nor
+the `[mpc_node_config.secrets] backup_encryption_key_hex` config field is set), the
+node auto-generates one and writes it to `$MPC_HOME_DIR/backup_encryption_key.hex`.
+Whether you can *read that file back* is the difference:
+
+**Non-TEE nodes.** `$MPC_HOME_DIR` is on the host filesystem, so you can retrieve
+the auto-generated key directly:
 
 ```bash
 export BACKUP_ENCRYPTION_KEY=$(cat $MPC_HOME_DIR/backup_encryption_key.hex)
 ```
 
-Copy this key and set it as the `BACKUP_ENCRYPTION_KEY` environment variable for the backup-cli when running `get-keyshares`.
+**TEE (TDX/dstack) nodes.** `$MPC_HOME_DIR` (`/data`) lives **inside the CVM's
+encrypted disk**, which the operator cannot read, and `/public_data` does not
+expose the key. So an auto-generated key is **unrecoverable** — you could never
+give `backup-cli` a matching key. You must instead **set the key yourself before
+first start**, in the node's user-config, and keep a copy outside the CVM:
+
+```toml
+[mpc_node_config.secrets]
+backup_encryption_key_hex = "<your 32-byte hex key>"
+```
+
+Store that value in your secret store — it is the `BACKUP_ENCRYPTION_KEY` you pass
+to `backup-cli`. The user-config is **not measured**, so you can set or rotate it
+via `update-user-config` without affecting the sealed disk (see the
+[TDX external guide](https://github.com/near/mpc/blob/main/docs/running-an-mpc-node-in-tdx-external-guide.md)).
+
+In both cases, set the resulting key as the `BACKUP_ENCRYPTION_KEY` environment
+variable for the backup-cli when running `get-keyshares`.
 
 
 
