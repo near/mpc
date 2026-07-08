@@ -110,6 +110,9 @@ pub async fn check_starknet(
     }
 }
 
+/// How far behind the reported tip the Sui probe transaction is taken from.
+const CHECKPOINT_PROBE_OFFSET: u64 = 10;
+
 /// Sui providers prune the gRPC read path after a few weeks, so unlike the other chains
 /// there is no long-lived reference transaction to pin extracted values against. Instead
 /// this verifies the provider's chain identity (the genesis digest never changes) and runs
@@ -130,9 +133,12 @@ pub async fn check_sui(client: impl SuiRpcClient, expected_chain_id: &str) -> an
     let height = info
         .checkpoint_height
         .context("provider returned no checkpoint height")?;
+    // Load-balanced providers may answer consecutive calls from different backends; probing
+    // slightly behind the reported tip keeps the check off the backend-sync race.
+    let probe_height = height.saturating_sub(CHECKPOINT_PROBE_OFFSET);
 
     let checkpoint = client
-        .get_checkpoint(height)
+        .get_checkpoint(probe_height)
         .await
         .context("failed to fetch the latest checkpoint")?
         .checkpoint

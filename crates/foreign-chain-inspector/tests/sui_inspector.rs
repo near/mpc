@@ -213,6 +213,28 @@ async fn extract__should_reject_response_missing_execution_status_as_malformed()
 }
 
 #[tokio::test]
+async fn extract__should_reject_status_without_success_flag_as_malformed() {
+    // Given — a status message whose `success` flag is unset. Real servers always populate
+    // it (verified live for both outcomes); a response without it violates the API contract
+    // and no verdict is derived from it.
+    let mut tx = checkpointed_tx(vec![]);
+    tx.effects = Some(TransactionEffects::default().with_status(ExecutionStatus::default()));
+    let inspector = SuiInspector::new(MockSuiClient::transaction(tx));
+
+    // When
+    let response = inspector
+        .extract(tx_id(), SuiFinality::Checkpointed, vec![])
+        .await;
+
+    // Then
+    assert_matches!(
+        response,
+        Err(ForeignChainInspectionError::MalformedRpcResponse(_))
+    );
+    assert!(!response.unwrap_err().is_transient());
+}
+
+#[tokio::test]
 async fn extract__should_reject_response_missing_transaction_as_malformed() {
     // Given — a `GetTransactionResponse` whose transaction section is absent entirely.
     let inspector = SuiInspector::new(MockSuiClient {

@@ -31,6 +31,11 @@ pub enum SuiExtractor {
     Event { event_index: usize },
 }
 
+/// Unlike the JSON-RPC API, the gRPC [`Event`](foreign_chain_rpc_interfaces::sui::proto::Event)
+/// carries no per-event sequence number or transaction digest, so a provider serving a
+/// reordered event list cannot be detected from a single response; the array order is the
+/// certified order as served. Cross-provider protection comes from the fan-out quorum, and
+/// the type name embedded in the event's BCS message is cross-checked against the event type.
 impl<Client> ForeignChainInspector for SuiInspector<Client>
 where
     Client: SuiRpcClient,
@@ -68,7 +73,7 @@ where
 
         match finality {
             SuiFinality::Checkpointed => {
-                // The node sets `checkpoint` only once the transaction is included in a
+                // The server sets `checkpoint` only once the transaction is included in a
                 // certified checkpoint; until then the verdict is "not final yet", not an error.
                 if tx.checkpoint.is_none() {
                     return Err(ForeignChainInspectionError::NotFinalized);
