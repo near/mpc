@@ -179,7 +179,7 @@ You'll need:
 - **MPC node address**: The host where your node is running (e.g., `node.example.com`)
 - **MPC node P2P public key**: The Ed25519 public key used for P2P communication
 
-On a TDX node these are **not** available in the node's startup logs or config (you can't access them). Get both from either source:
+Both are available from either source:
 
 - **The contract** — your node is registered there. In the `state` view (or `get_tee_accounts`), your participant entry gives the address as `url` and the P2P public key as `tls_public_key`.
 - **The node's public-data endpoint:**
