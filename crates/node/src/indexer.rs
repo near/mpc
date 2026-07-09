@@ -576,6 +576,16 @@ mod tests {
     use mpc_primitives::hash::NodeImageHash;
 
     #[test]
+    fn allowed_docker_image_hashes_response__should_deserialize_with_expiry_objects() {
+        let json = r#"[
+        { "image_hash": "1111111111111111111111111111111111111111111111111111111111111111", "expiry_timestamp_seconds": 42 },
+        { "image_hash": "2222222222222222222222222222222222222222222222222222222222222222", "expiry_timestamp_seconds": null }
+    ]"#;
+        let response: AllowedDockerImageHashesResponse = serde_json::from_str(json).unwrap();
+        assert_matches!(response, AllowedDockerImageHashesResponse::WithExpiry(entries) if entries.len() == 2);
+    }
+
+    #[test]
     fn allowed_docker_image_hashes_response__should_deserialize_legacy_bare_hashes() {
         // Given: the shape returned by contracts predating expiry reporting.
         let json = r#"[

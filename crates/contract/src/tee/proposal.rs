@@ -150,7 +150,7 @@ impl LauncherHashVotes {
 )]
 struct WhitelistedMpcDockerImageHash {
     image_hash: NodeImageHash,
-    added: Timestamp,
+    added_at: Timestamp,
 }
 
 fn make_dtos_docker_image_hash(
@@ -163,7 +163,7 @@ fn make_dtos_docker_image_hash(
         // A timestamp overflow means the grace period never ends, so the entry
         // never expires.
         expiry_timestamp_seconds: next
-            .added
+            .added_at
             .checked_add(tee_upgrade_deadline_duration)
             .map(Timestamp::as_secs),
     }
@@ -221,7 +221,7 @@ impl StoredDockerImageHashes {
             .iter()
             .rposition(|allowed_docker_image| {
                 let Some(grace_period_deadline) = allowed_docker_image
-                    .added
+                    .added_at
                     .checked_add(tee_upgrade_deadline_duration)
                 else {
                     log!("Error: timestamp overflowed when calculating grace_period_deadline.");
@@ -241,7 +241,7 @@ impl StoredDockerImageHashes {
     }
 
     /// Inserts a new code hash into the list after cleaning expired entries. Maintains the sorted
-    /// order by `added` (ascending).
+    /// order by `added_at` (ascending).
     pub fn insert(&mut self, code_hash: NodeImageHash, tee_upgrade_deadline_duration: Duration) {
         self.cleanup_expired_hashes(tee_upgrade_deadline_duration);
 
@@ -256,16 +256,16 @@ impl StoredDockerImageHashes {
 
         let new_entry = WhitelistedMpcDockerImageHash {
             image_hash: code_hash,
-            added: Timestamp::now(),
+            added_at: Timestamp::now(),
         };
 
-        // Find the correct position to maintain sorted order by `added`
+        // Find the correct position to maintain sorted order by `added_at`
         let insert_index = self
             .allowed_tee_proposals
             .iter()
             // strictly less, `<`, such that new entries take higher precedence
             // if two entries have the exact same time stamp.
-            .rposition(|entry| new_entry.added < entry.added)
+            .rposition(|entry| new_entry.added_at < entry.added_at)
             .unwrap_or(self.allowed_tee_proposals.len());
 
         self.allowed_tee_proposals.insert(insert_index, new_entry);
