@@ -132,6 +132,21 @@ pub trait SignatureRespondArgsExt {
     ) -> anyhow::Result<Self>
     where
         Self: Sized;
+
+    /// Build a Cheetah (Nockchain Schnorr) respond payload. Converts the FROST
+    /// signature `(R, z)` into the chain `(c, s)` using the same message the
+    /// provider signed (`payload.as_eddsa()`) and the derived verifying key.
+    fn from_cheetah(
+        request: &SignatureRequest,
+        signature: &threshold_signatures::frost_core::Signature<
+            threshold_signatures::frost::cheetah::CheetahTip5,
+        >,
+        public_key: &threshold_signatures::frost_core::VerifyingKey<
+            threshold_signatures::frost::cheetah::CheetahTip5,
+        >,
+    ) -> anyhow::Result<Self>
+    where
+        Self: Sized;
 }
 
 impl SignatureRespondArgsExt for contract_args::SignatureRespondArgs {
@@ -168,13 +183,10 @@ impl SignatureRespondArgsExt for contract_args::SignatureRespondArgs {
             dtos::SignatureResponse::Ed25519 {
                 signature: dtos::Ed25519Signature::from(response),
             },
-        })
+        ))
     }
 
-    /// Build a Cheetah (Nockchain Schnorr) respond payload. Converts the FROST
-    /// signature `(R, z)` into the chain `(c, s)` using the same message the
-    /// provider signed (`payload.as_eddsa()`) and the derived verifying key.
-    pub fn new_cheetah(
+    fn from_cheetah(
         request: &SignatureRequest,
         signature: &threshold_signatures::frost_core::Signature<
             threshold_signatures::frost::cheetah::CheetahTip5,
@@ -191,13 +203,9 @@ impl SignatureRespondArgsExt for contract_args::SignatureRespondArgs {
             signature, public_key, message,
         )
         .map_err(|e| anyhow::anyhow!("Cheetah chain signature failed: {e:?}"))?;
-        Ok(ChainSignatureRespondArgs {
-            request: ChainSignatureRequest::new(
-                request.tweak.clone(),
-                request.payload.clone(),
-                request.domain,
-            ),
-            response: dtos::SignatureResponse::Cheetah {
+        Ok(contract_args::SignatureRespondArgs::new(
+            request.into_contract_interface_type(),
+            dtos::SignatureResponse::Cheetah {
                 signature: dtos::CheetahSignature::from(signature_bytes),
             },
         ))

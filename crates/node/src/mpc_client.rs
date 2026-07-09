@@ -420,11 +420,12 @@ where
                                         )
                                         .await??;
 
-                                        let response = ChainSignatureRespondArgs::new_cheetah(
-                                            &signature_attempt.request,
-                                            &signature,
-                                            &public_key,
-                                        )?;
+                                        let response =
+                                            contract_args::SignatureRespondArgs::from_cheetah(
+                                                &signature_attempt.request,
+                                                &signature,
+                                                &public_key,
+                                            )?;
 
                                         Ok(response)
                                     }
