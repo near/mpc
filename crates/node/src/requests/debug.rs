@@ -238,18 +238,17 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs> Debug
 #[cfg(test)]
 mod tests {
     use super::{CompletedRequest, CompletedRequests};
-    use crate::{
-        indexer::types::{ChainCKDRespondArgs, ChainSignatureRespondArgs},
-        types::{CKDRequest, SignatureRequest},
-    };
+    use crate::types::{CKDRequest, SignatureRequest};
     use mpc_primitives::domain::DomainId;
     use near_indexer_primitives::CryptoHash;
+    use near_mpc_contract_interface::call_args as contract_args;
     use near_mpc_contract_interface::types::{Payload, Tweak};
     use rand::seq::SliceRandom;
 
     #[test]
     fn test_completed_ckd_requests() {
-        let mut completed = CompletedRequests::<CKDRequest, ChainCKDRespondArgs>::default();
+        let mut completed =
+            CompletedRequests::<CKDRequest, contract_args::CKDRespondArgs>::default();
         let mut indices = (0..200).collect::<Vec<_>>();
         indices.shuffle(&mut rand::thread_rng());
         for i in indices {
@@ -287,7 +286,7 @@ mod tests {
     #[test]
     fn test_completed_signature_requests() {
         let mut completed =
-            CompletedRequests::<SignatureRequest, ChainSignatureRespondArgs>::default();
+            CompletedRequests::<SignatureRequest, contract_args::SignatureRespondArgs>::default();
         let mut indices = (0..200).collect::<Vec<_>>();
         indices.shuffle(&mut rand::thread_rng());
         for i in indices {
