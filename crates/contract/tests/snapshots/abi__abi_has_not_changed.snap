@@ -856,6 +856,29 @@ expression: abi
         }
       },
       {
+        "name": "is_verification_pending",
+        "doc": " Whether the account has an [`Attestation::Dstack`] submission awaiting\n async verification, so a submitter can tell \"in flight\" from \"never\n landed\" rather than resubmit and hit a [`TeeError::VerificationAlreadyPending`].",
+        "kind": "view",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "account_id",
+              "type_schema": {
+                "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "boolean"
+          }
+        }
+      },
+      {
         "name": "latest_key_version",
         "doc": " Key versions refer new versions of the root key that we may choose to generate on cohort\n changes. Older key versions will always work but newer key versions were never held by\n older signers. Newer key versions may also add new security features, like only existing\n within a secure enclave. The signature_scheme parameter specifies which protocol\n we're querying the latest version for. The default is Secp256k1. The default is **NOT**\n to query across all protocols.",
         "kind": "view",
