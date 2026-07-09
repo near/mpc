@@ -22,7 +22,7 @@ use foreign_chain_inspector::{
     },
     sui::{
         SuiTransactionDigest,
-        inspector::{SuiFinality, SuiInspector},
+        inspector::{SuiExtractor, SuiFinality, SuiInspector},
     },
 };
 use foreign_chain_rpc_interfaces::aptos::ReqwestAptosClient;
@@ -151,16 +151,21 @@ pub async fn check_sui(client: impl SuiRpcClient, expected_chain_id: &str) -> an
     let tx = golden::base58_32(digest)?;
 
     let inspector = SuiInspector::new(client);
+    // Probe the first event so the extraction pipeline (BCS pass-through, address parsing,
+    // type-tag normalization, contents-name cross-check) is exercised whenever the probe
+    // transaction emits events. A transaction with no events (`LogIndexOutOfBounds`) or a
+    // failed one still proves the provider serves canonical checkpointed data.
     match inspector
         .extract(
             SuiTransactionDigest::from(tx),
             SuiFinality::Checkpointed,
-            vec![],
+            vec![SuiExtractor::Event { event_index: 0 }],
         )
         .await
     {
-        // A failed transaction still proves the provider serves canonical checkpointed data.
-        Ok(_) | Err(ForeignChainInspectionError::TransactionFailed) => Ok(()),
+        Ok(_)
+        | Err(ForeignChainInspectionError::TransactionFailed)
+        | Err(ForeignChainInspectionError::LogIndexOutOfBounds) => Ok(()),
         Err(e) => Err(e).context("failed to inspect a transaction from the latest checkpoint"),
     }
 }

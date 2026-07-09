@@ -222,7 +222,7 @@ impl SuiExtractor {
                     .value
                     .as_ref()
                     .map(|value| value.to_vec())
-                    .ok_or_else(|| malformed_event_field("bcs contents"))?;
+                    .ok_or_else(|| malformed_event_field("bcs contents value"))?;
 
                 Ok(SuiExtractedValue::Event(SuiEvent {
                     package_id,

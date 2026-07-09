@@ -77,8 +77,18 @@ impl ForeignChainProviderConfig {
         self.auth.strip_placeholder(&self.rpc_url)
     }
 
-    fn validate_auth_config(&self) -> anyhow::Result<()> {
-        auth::validate_auth_config(&self.auth, &self.rpc_url)
+    fn validate_auth_config(&self, chain: dtos::ForeignChain) -> anyhow::Result<()> {
+        auth::validate_auth_config(&self.auth, &self.rpc_url)?;
+
+        // Sui is reached over gRPC, which carries credentials in request metadata; a token
+        // substituted into the URL path or query would never be sent.
+        if chain == dtos::ForeignChain::Sui {
+            anyhow::ensure!(
+                matches!(self.auth, AuthConfig::None | AuthConfig::Header { .. }),
+                "path or query auth is not supported: gRPC providers support only header auth",
+            );
+        }
+        Ok(())
     }
 }
 
@@ -134,18 +144,10 @@ impl ForeignChainsConfig {
                     rpc_url
                 );
 
-                // valid auth configuration
-                provider.validate_auth_config()?;
-
-                // Sui providers are reached over gRPC, which carries credentials in request
-                // metadata; a token substituted into the URL path or query would never be sent.
-                if identifier == dtos::ForeignChain::Sui {
-                    anyhow::ensure!(
-                        matches!(provider.auth, AuthConfig::None | AuthConfig::Header { .. }),
-                        "sui provider `{}` uses path or query auth, but gRPC providers support only header auth",
-                        provider_name.as_str(),
-                    );
-                }
+                // valid auth configuration for the chain's transport
+                provider.validate_auth_config(identifier).with_context(|| {
+                    format!("provider `{}` has invalid auth", provider_name.as_str())
+                })?;
             }
         }
 
@@ -938,8 +940,9 @@ foreign_chains:
             serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
         let result = config.validate();
 
-        // Then
-        let error = result.unwrap_err().to_string();
+        // Then — the full error chain names the offending provider and the transport rule.
+        let error = format!("{:#}", result.unwrap_err());
+        assert!(error.contains("provider `keyinpath`"), "{error}");
         assert!(error.contains("support only header auth"), "{error}");
     }
 }

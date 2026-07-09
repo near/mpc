@@ -4,27 +4,52 @@ use std::time::Duration;
 use http::{HeaderName, HeaderValue};
 use sui_rpc::field::{FieldMask, FieldMaskUtil as _};
 use sui_rpc::proto::sui::rpc::v2::{
-    GetCheckpointRequest, GetCheckpointResponse, GetServiceInfoRequest, GetServiceInfoResponse,
-    GetTransactionRequest, GetTransactionResponse, get_checkpoint_request::CheckpointId,
+    Checkpoint, ExecutedTransaction, GetCheckpointRequest, GetCheckpointResponse,
+    GetServiceInfoRequest, GetServiceInfoResponse, GetTransactionRequest, GetTransactionResponse,
+    get_checkpoint_request::CheckpointId,
 };
 
 pub use sui_rpc::proto::sui::rpc::v2 as proto;
 pub use tonic::{Code, Status};
 
-/// The exact fields the inspector verifies.
-const TRANSACTION_READ_MASK: &[&str] = &[
-    "digest",
-    "checkpoint",
-    "effects.status",
-    "events.events.package_id",
-    "events.events.module",
-    "events.events.sender",
-    "events.events.event_type",
-    "events.events.contents",
-];
+fn transaction_read_mask() -> FieldMask {
+    FieldMask::from_paths([
+        ExecutedTransaction::path_builder().digest(),
+        ExecutedTransaction::path_builder().checkpoint(),
+        ExecutedTransaction::path_builder()
+            .effects()
+            .status()
+            .finish(),
+        ExecutedTransaction::path_builder()
+            .events()
+            .events()
+            .package_id(),
+        ExecutedTransaction::path_builder()
+            .events()
+            .events()
+            .module(),
+        ExecutedTransaction::path_builder()
+            .events()
+            .events()
+            .sender(),
+        ExecutedTransaction::path_builder()
+            .events()
+            .events()
+            .event_type(),
+        ExecutedTransaction::path_builder()
+            .events()
+            .events()
+            .contents()
+            .finish(),
+    ])
+}
 
-/// Sections needed to pick a probe transaction from a checkpoint.
-const CHECKPOINT_READ_MASK: &[&str] = &["sequence_number", "transactions.digest"];
+fn checkpoint_read_mask() -> FieldMask {
+    FieldMask::from_paths([
+        Checkpoint::path_builder().sequence_number(),
+        Checkpoint::path_builder().transactions().digest(),
+    ])
+}
 
 /// Client interface for the Sui gRPC API (`sui.rpc.v2.LedgerService`).
 pub trait SuiRpcClient: Send + Sync {
@@ -87,7 +112,7 @@ impl SuiRpcClient for GrpcSuiClient {
         let request = self.request_with_timeout(
             GetTransactionRequest::default()
                 .with_digest(digest)
-                .with_read_mask(FieldMask::from_paths(TRANSACTION_READ_MASK.iter().copied())),
+                .with_read_mask(transaction_read_mask()),
         );
         async move {
             let response = client.ledger_client().get_transaction(request).await?;
@@ -111,8 +136,7 @@ impl SuiRpcClient for GrpcSuiClient {
         sequence_number: u64,
     ) -> impl Future<Output = Result<GetCheckpointResponse, Status>> + Send {
         let mut client = self.client.clone();
-        let mut message = GetCheckpointRequest::default()
-            .with_read_mask(FieldMask::from_paths(CHECKPOINT_READ_MASK.iter().copied()));
+        let mut message = GetCheckpointRequest::default().with_read_mask(checkpoint_read_mask());
         message.checkpoint_id = Some(CheckpointId::SequenceNumber(sequence_number));
         let request = self.request_with_timeout(message);
         async move {
@@ -166,13 +190,30 @@ mod tests {
 
     #[test]
     fn transaction_read_mask__should_request_only_verified_sections() {
-        // Given / When
-        let request = GetTransactionRequest::default()
-            .with_digest("digest")
-            .with_read_mask(FieldMask::from_paths(TRANSACTION_READ_MASK.iter().copied()));
+        // Then — pins that the typed path builders produce exactly the wire paths the server
+        // honors (the live manual test proves those paths return the expected fields), and that
+        // the events' `json` rendering is not among them.
+        assert_eq!(
+            transaction_read_mask().paths,
+            vec![
+                "digest",
+                "checkpoint",
+                "effects.status",
+                "events.events.package_id",
+                "events.events.module",
+                "events.events.sender",
+                "events.events.event_type",
+                "events.events.contents",
+            ]
+        );
+    }
 
+    #[test]
+    fn checkpoint_read_mask__should_request_only_probe_sections() {
         // Then
-        assert_eq!(request.digest.as_deref(), Some("digest"));
-        assert_eq!(request.read_mask.unwrap().paths, TRANSACTION_READ_MASK);
+        assert_eq!(
+            checkpoint_read_mask().paths,
+            vec!["sequence_number", "transactions.digest"]
+        );
     }
 }
