@@ -188,13 +188,8 @@ impl FakeMpcContractState {
         let ProtocolContractState::Running(state) = &self.state else {
             return;
         };
-        let Some((_, _, info)) = state
-            .parameters
-            .participants()
-            .participants()
-            .iter()
-            .find(|(id, _, _)| id == &account_id)
-        else {
+        let participants = state.parameters.participants().participants();
+        let Some((_, _, info)) = participants.iter().find(|(id, _, _)| id == &account_id) else {
             tracing::info!(
                 "register_foreign_chains_config transaction ignored because signer is not a participant"
             );
@@ -203,16 +198,18 @@ impl FakeMpcContractState {
         self.foreign_chains_configs
             .insert(info.tls_public_key.clone(), foreign_chains_config);
 
+        // Availability here is the plain intersection of every participant's registered
+        // chains (a participant without a config contributes the empty set). The real
+        // contract additionally requires whitelisting and only a signing quorum of
+        // supporters, the fake intentionally keeps the simplest model that reacts to
+        // registrations, rather than replicating the contract's voting flow.
         let foreign_chains_configs = &self.foreign_chains_configs;
-        self.available_foreign_chains = state
-            .parameters
-            .participants()
-            .participants()
+        self.available_foreign_chains = participants
             .iter()
             .map(|(_, _, p_info)| {
                 foreign_chains_configs
                     .get(&p_info.tls_public_key)
-                    .map(|c| c.iter().copied().collect::<BTreeSet<_>>())
+                    .map(|c| (**c).clone())
                     .unwrap_or_default()
             })
             .reduce(|a, b| a.intersection(&b).copied().collect())
