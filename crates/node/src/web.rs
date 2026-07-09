@@ -435,6 +435,7 @@ mod tests {
             my_near_account_id: AccountId::from_str("test.near").unwrap(),
             near_responder_account_id: AccountId::from_str("test.near").unwrap(),
             number_of_responder_keys: 1,
+            foreign_chain_policy_refresh_interval_sec: 1,
             web_ui: SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 8080),
             migration_web_ui: SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 8081),
             pprof_bind_address: SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 8082),

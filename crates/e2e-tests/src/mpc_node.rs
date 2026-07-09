@@ -464,6 +464,9 @@ impl MpcNodeSetup {
                 pprof_bind_address: format!("127.0.0.1:{}", self.ports.pprof).parse()?,
                 cores: Some(4),
                 separate_asset_generation_runtime: true,
+                // Tests must observe on-chain policy changes quickly; production
+                // defaults to a relaxed cadence.
+                foreign_chain_policy_refresh_interval_sec: 1,
                 indexer: IndexerConfig {
                     validate_genesis: true,
                     concurrency: std::num::NonZeroU16::new(1).unwrap(),

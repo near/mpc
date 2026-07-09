@@ -10,7 +10,6 @@ use near_indexer_primitives::CryptoHash;
 use near_indexer_primitives::types::NumBlocks;
 use near_time::Duration;
 use sha3::Digest;
-use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, Weak};
 use time::ext::InstantExt as _;
@@ -37,6 +36,11 @@ pub const REQUEST_EXPIRATION_BLOCKS: NumBlocks = 200;
 const MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE: Duration = Duration::seconds(10);
 /// Maximum attempts we should make for each request when we are the leader.
 const MAX_ATTEMPTS_PER_REQUEST_AS_LEADER: u64 = 10;
+
+/// Narrows the eligible-leader set for a specific request (e.g. to the participants
+/// supporting the request's foreign chain).
+pub type EligibleLeadersRefiner<RequestType> =
+    Box<dyn Fn(&RequestType, &HashSet<ParticipantId>) -> HashSet<ParticipantId> + Send>;
 
 /// Manages the queue of requests that still need to be handled.
 /// The inputs to this queue are:
@@ -72,6 +76,9 @@ pub struct PendingRequests<RequestType: Request, ChainRespondArgsType: ChainResp
 
     /// Recently completed requests, for debugging purposes only.
     pub(super) recently_completed_requests: CompletedRequests<RequestType, ChainRespondArgsType>,
+
+    /// When set, narrows the eligible-leader set per request before leader selection.
+    refine_eligible_leaders: Option<EligibleLeadersRefiner<RequestType>>,
 }
 
 /// All [`IndexedRespondTx`]s observed for one queued request, across the chain's forks.
@@ -459,7 +466,18 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             requests: HashMap::new(),
             network_api,
             recently_completed_requests: CompletedRequests::default(),
+            refine_eligible_leaders: None,
         }
+    }
+
+    /// Narrows the eligible-leader set per request before leader selection
+    /// (e.g. to the participants supporting the request's foreign chain).
+    pub fn with_eligible_leaders_refiner(
+        mut self,
+        refiner: EligibleLeadersRefiner<RequestType>,
+    ) -> Self {
+        self.refine_eligible_leaders = Some(refiner);
+        self
     }
 
     /// This must be called for every block that comes from the indexer.
@@ -524,9 +542,13 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
         }
     }
 
-    /// Returns the set of participants that are eligible to be leaders for the requests,
-    /// as well as the maximum height available.
-    pub(super) fn eligible_leaders_and_maximum_height(&self) -> (HashSet<ParticipantId>, u64) {
+    /// Returns the set of participants that are eligible to be leaders, as well as the
+    /// maximum height available. When `request` is given, the set is additionally
+    /// narrowed by the queue's optional [`EligibleLeadersRefiner`].
+    pub(super) fn eligible_leaders_and_maximum_height(
+        &self,
+        request: Option<&RequestType>,
+    ) -> (HashSet<ParticipantId>, u64) {
         // Collect the indexer heights and alive participants. Calculate maximum available height
         // from the alive nodes. Then, filter out the participants that are not alive or are too
         // stale.
@@ -547,6 +569,10 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             })
             .copied()
             .collect::<HashSet<_>>();
+        let eligible_leaders = match (request, &self.refine_eligible_leaders) {
+            (Some(request), Some(refine)) => refine(request, &eligible_leaders),
+            _ => eligible_leaders,
+        };
         (eligible_leaders, maximum_height)
     }
 
@@ -558,15 +584,8 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
     ///    subject to a throttle of once per CHECK_EACH_REQUEST_INTERVAL.
     ///  - The generation is successful, and the time that the response is submitted to
     ///    the chain has been written to the `ComputationProgress`.
-    ///
-    /// `refine_eligible_leaders` callback can be used to narrow the eligible
-    /// leader set (e.g. to those that support particular chain for this request).
     pub fn get_requests_to_attempt(
         &mut self,
-        refine_eligible_leaders: impl for<'a> Fn(
-            &RequestType,
-            &'a HashSet<ParticipantId>,
-        ) -> Cow<'a, HashSet<ParticipantId>>,
     ) -> Vec<Arc<GenerationAttempt<RequestType, ChainRespondArgsType>>> {
         let (
             mpc_pending_queue_finalized_responses,
@@ -591,8 +610,25 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
         };
         let now = self.clock.now();
 
-        let (eligible_leaders, maximum_height) = self.eligible_leaders_and_maximum_height();
+        let (eligible_leaders, maximum_height) = self.eligible_leaders_and_maximum_height(None);
         tracing::debug!(target: "request", "Eligible leaders: {:?}", eligible_leaders);
+
+        // Per-request eligible-leader sets, precomputed here because the processing
+        // loop below borrows `self.requests` mutably. `None` when the queue has no
+        // refiner: every request then uses `eligible_leaders` as-is.
+        let refined_eligibility: Option<HashMap<RequestId, HashSet<ParticipantId>>> =
+            self.refine_eligible_leaders.is_some().then(|| {
+                self.requests
+                    .iter()
+                    .map(|(id, request)| {
+                        (
+                            *id,
+                            self.eligible_leaders_and_maximum_height(Some(&request.request))
+                                .0,
+                        )
+                    })
+                    .collect()
+            });
 
         let mut result = Vec::new();
 
@@ -622,11 +658,13 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 block_height = %request.block_height,
             )
             .entered();
-            let request_eligible_leaders =
-                refine_eligible_leaders(&request.request, &eligible_leaders);
+            let request_eligible_leaders = refined_eligibility
+                .as_ref()
+                .and_then(|refined| refined.get(id))
+                .unwrap_or(&eligible_leaders);
             match request.process(
                 self.my_participant_id,
-                &request_eligible_leaders,
+                request_eligible_leaders,
                 cutoff_block,
                 now,
             ) {
@@ -726,7 +764,6 @@ mod tests {
     use near_mpc_contract_interface::call_args as contract_args;
     use near_mpc_contract_interface::types::{Payload, Tweak};
     use near_time::{Duration, FakeClock};
-    use std::borrow::Cow;
     use std::collections::{HashMap, HashSet};
     use std::sync::{Arc, Mutex};
     use threshold_signatures::test_utils::generate_participants;
@@ -972,20 +1009,14 @@ mod tests {
         setup.update(&mut pending_requests);
 
         // Then: req1 is not attempted because we're not the leader. req2 is attempted.
-        let to_attempt1 =
-            pending_requests.get_requests_to_attempt(|_, eligible| Cow::Borrowed(eligible));
+        let to_attempt1 = pending_requests.get_requests_to_attempt();
         assert_eq!(to_attempt1.len(), 1);
         assert_eq!(to_attempt1[0].request.id, req2.id);
 
         // Then: `get_requests_to_attempt()` does not return the same request again
         // Another attempt should not be issued while the first one is still ongoing.
         setup.advance_clock(2 * CHECK_EACH_REQUEST_INTERVAL);
-        assert_eq!(
-            pending_requests
-                .get_requests_to_attempt(|_, eligible| Cow::Borrowed(eligible))
-                .len(),
-            0
-        );
+        assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
 
         // When: a new request is issues for which we are a leader
         let req3 = setup.add_request_leader();
@@ -993,35 +1024,23 @@ mod tests {
         setup.update(&mut pending_requests);
 
         // Then: req3 should be attempted, while request 4 should be ignored, as we're not leader.
-        let to_attempt2 =
-            pending_requests.get_requests_to_attempt(|_, eligible| Cow::Borrowed(eligible));
+        let to_attempt2 = pending_requests.get_requests_to_attempt();
         assert_eq!(to_attempt2.len(), 1);
         assert_eq!(to_attempt2[0].request.id, req3.id);
 
         // Then: `get_requests_to_attempt()` does not return the same request again
         // Another attempt should not be issued while the first one is still ongoing.
         setup.advance_clock(2 * CHECK_EACH_REQUEST_INTERVAL);
-        assert_eq!(
-            pending_requests
-                .get_requests_to_attempt(|_, eligible| Cow::Borrowed(eligible))
-                .len(),
-            0
-        );
+        assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
 
         // When: we drop the attempt for req2
         drop(to_attempt1);
         // Then: It should not immediately retry, because we need to wait
         // for at least a second before retrying anything.
-        assert_eq!(
-            pending_requests
-                .get_requests_to_attempt(|_, eligible| Cow::Borrowed(eligible))
-                .len(),
-            0
-        );
+        assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
         // Then: we should retry after the interval passed
         setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
-        let to_attempt3 =
-            pending_requests.get_requests_to_attempt(|_, eligible| Cow::Borrowed(eligible));
+        let to_attempt3 = pending_requests.get_requests_to_attempt();
         assert_eq!(to_attempt3.len(), 1);
         assert_eq!(to_attempt3[0].request.id, req2.id);
     }
@@ -1033,8 +1052,7 @@ mod tests {
         let (mut pending_requests, mut setup) = TestSetup::new();
         let req = setup.add_request_leader();
         setup.update(&mut pending_requests);
-        let to_attempt1 =
-            pending_requests.get_requests_to_attempt(|_, eligible| Cow::Borrowed(eligible));
+        let to_attempt1 = pending_requests.get_requests_to_attempt();
         assert_eq!(to_attempt1.len(), 1);
         assert_eq!(to_attempt1[0].request.id, req.id);
 
@@ -1050,16 +1068,10 @@ mod tests {
         // Then: no retry within `MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE`,
         // because we're still waiting for the chain to ack the submission.
         setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
-        assert_eq!(
-            pending_requests
-                .get_requests_to_attempt(|_, eligible| Cow::Borrowed(eligible))
-                .len(),
-            0
-        );
+        assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
         // Then: retry once that window elapses, because the chain still doesn't show our response.
         setup.advance_clock(MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE);
-        let to_attempt2 =
-            pending_requests.get_requests_to_attempt(|_, eligible| Cow::Borrowed(eligible));
+        let to_attempt2 = pending_requests.get_requests_to_attempt();
         assert_eq!(to_attempt2.len(), 1);
         assert_eq!(to_attempt2[0].request.id, req.id);
 
@@ -1071,12 +1083,7 @@ mod tests {
         // Then: we do NOT re-attempt — the response is on the canonical chain, so we wait for
         // it to finalize.
         setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
-        assert_eq!(
-            pending_requests
-                .get_requests_to_attempt(|_, eligible| Cow::Borrowed(eligible))
-                .len(),
-            0
-        );
+        assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
 
         // When: enough subsequent blocks arrive to finalize the response.
         setup.update(&mut pending_requests);
@@ -1084,12 +1091,7 @@ mod tests {
 
         // Then: we still don't re-attempt — the request is resolved.
         setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
-        assert_eq!(
-            pending_requests
-                .get_requests_to_attempt(|_, eligible| Cow::Borrowed(eligible))
-                .len(),
-            0
-        );
+        assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
     }
 
     #[test_log::test]
@@ -1099,8 +1101,7 @@ mod tests {
         let (mut pending_requests, mut setup) = TestSetup::new();
         let req = setup.add_request_leader();
         setup.update(&mut pending_requests);
-        let to_attempt1 =
-            pending_requests.get_requests_to_attempt(|_, eligible| Cow::Borrowed(eligible));
+        let to_attempt1 = pending_requests.get_requests_to_attempt();
         assert_eq!(to_attempt1.len(), 1);
         assert_eq!(to_attempt1[0].request.id, req.id);
         drop(to_attempt1);
@@ -1117,8 +1118,7 @@ mod tests {
         // Then: the queue should re-attempt the request — a non-canonical response does NOT
         // short-circuit `process()`, so the request flows through the normal leader path.
         setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
-        let to_attempt2 =
-            pending_requests.get_requests_to_attempt(|_, eligible| Cow::Borrowed(eligible));
+        let to_attempt2 = pending_requests.get_requests_to_attempt();
         assert_eq!(to_attempt2.len(), 1);
         assert_eq!(to_attempt2[0].request.id, req.id);
     }
@@ -1134,8 +1134,7 @@ mod tests {
         setup.update(&mut pending_requests);
         // then: attempt exactly `MAX_ATTEMPTS_PER_REQUEST_AS_LEADER
         for i in 0..MAX_ATTEMPTS_PER_REQUEST_AS_LEADER {
-            let to_attempt =
-                pending_requests.get_requests_to_attempt(|_, eligible| Cow::Borrowed(eligible));
+            let to_attempt = pending_requests.get_requests_to_attempt();
             assert_eq!(to_attempt.len(), 1);
             assert_eq!(to_attempt[0].request.id, req1.id);
             assert_eq!(
@@ -1145,12 +1144,7 @@ mod tests {
             drop(to_attempt);
             setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
         }
-        assert_eq!(
-            pending_requests
-                .get_requests_to_attempt(|_, eligible| Cow::Borrowed(eligible))
-                .len(),
-            0
-        );
+        assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
     }
 
     #[test_log::test]
@@ -1168,8 +1162,7 @@ mod tests {
         setup.set_participant_network_height(block_height_req_1 + REQUEST_EXPIRATION_BLOCKS);
 
         // Then: The first request expired, so only the second one is returned.
-        let to_attempt1 =
-            pending_requests.get_requests_to_attempt(|_, eligible| Cow::Borrowed(eligible));
+        let to_attempt1 = pending_requests.get_requests_to_attempt();
         assert_eq!(to_attempt1.len(), 1);
         assert_eq!(to_attempt1[0].request.id, req2.id);
 
@@ -1178,12 +1171,7 @@ mod tests {
         setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
         setup.set_participant_network_height(block_height_req_2 + REQUEST_EXPIRATION_BLOCKS);
         // Then: it should not retry.
-        assert_eq!(
-            pending_requests
-                .get_requests_to_attempt(|_, eligible| Cow::Borrowed(eligible))
-                .len(),
-            0
-        );
+        assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
 
         // When: we get a third request that is now recent enough
         setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
@@ -1191,8 +1179,7 @@ mod tests {
         setup.update(&mut pending_requests);
 
         // Then: we should attempt it
-        let to_attempt2 =
-            pending_requests.get_requests_to_attempt(|_, eligible| Cow::Borrowed(eligible));
+        let to_attempt2 = pending_requests.get_requests_to_attempt();
         assert_eq!(to_attempt2.len(), 1);
         assert_eq!(to_attempt2[0].request.id, req3.id);
 
@@ -1204,8 +1191,7 @@ mod tests {
         setup.update_canonical_fork(&mut pending_requests);
 
         // Then: Req3 is now on a non-canonical fork so should not be attempted.
-        let to_attempt3 =
-            pending_requests.get_requests_to_attempt(|_, eligible| Cow::Borrowed(eligible));
+        let to_attempt3 = pending_requests.get_requests_to_attempt();
         assert_eq!(to_attempt3.len(), 1);
         assert_eq!(to_attempt3[0].request.id, req4.id);
 
@@ -1216,8 +1202,7 @@ mod tests {
         setup.update(&mut pending_requests);
 
         // Then: we should attempt that instead.
-        let to_attempt4 =
-            pending_requests.get_requests_to_attempt(|_, eligible| Cow::Borrowed(eligible));
+        let to_attempt4 = pending_requests.get_requests_to_attempt();
         assert_eq!(to_attempt4.len(), 2);
         assert!(set_equals(
             &to_attempt4.iter().map(|a| a.request.id).collect::<Vec<_>>(),
@@ -1247,8 +1232,7 @@ mod tests {
 
         // Then: Since 0 and 2 are unavailable, and we are the first available leader for req1 and req2,
         // we should attempt these.
-        let to_attempt1 =
-            pending_requests.get_requests_to_attempt(|_, eligible| Cow::Borrowed(eligible));
+        let to_attempt1 = pending_requests.get_requests_to_attempt();
         assert_eq!(to_attempt1.len(), 2);
         assert!(set_equals(
             &to_attempt1.iter().map(|a| a.request.id).collect::<Vec<_>>(),
@@ -1263,18 +1247,12 @@ mod tests {
         setup.network_api.bring_up(setup.participant_ids[0]);
         let req4 = setup.add_request_leader_order(&[1]);
         setup.update(&mut pending_requests);
-        assert_eq!(
-            pending_requests
-                .get_requests_to_attempt(|_, eligible| Cow::Borrowed(eligible))
-                .len(),
-            0
-        );
+        assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
 
         // Bring down node 0 again. Now, node 1 should retry req1, req2 again, as well as trying req4.
         setup.network_api.bring_down(setup.participant_ids[0]);
         setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
-        let to_attempt2 =
-            pending_requests.get_requests_to_attempt(|_, eligible| Cow::Borrowed(eligible));
+        let to_attempt2 = pending_requests.get_requests_to_attempt();
         assert_eq!(to_attempt2.len(), 3);
         assert!(set_equals(
             &to_attempt2.iter().map(|a| a.request.id).collect::<Vec<_>>(),
@@ -1291,8 +1269,7 @@ mod tests {
         setup.update(&mut pending_requests);
         setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
 
-        let to_attempt3 =
-            pending_requests.get_requests_to_attempt(|_, eligible| Cow::Borrowed(eligible));
+        let to_attempt3 = pending_requests.get_requests_to_attempt();
         assert_eq!(to_attempt3.len(), 1);
         assert_eq!(to_attempt3[0].request.id, req2.id);
     }
@@ -1317,7 +1294,7 @@ mod tests {
         setup.advance_clock(Duration::seconds(1));
         // Poll so the queue notices the response is final and records latency into
         // `recently_completed_requests` via the `Resolve` arm.
-        let _ = pending_requests.get_requests_to_attempt(|_, eligible| Cow::Borrowed(eligible));
+        let _ = pending_requests.get_requests_to_attempt();
 
         // Then: we expect to see the time delay reflected in the debug message
         let debug = format!("{:?}", pending_requests);
@@ -1349,8 +1326,7 @@ mod tests {
         setup.set_participant_network_height(block_height + REQUEST_EXPIRATION_BLOCKS - 1);
 
         // Then: request is NOT expired (returned by get_requests_to_attempt)
-        let to_attempt =
-            pending_requests.get_requests_to_attempt(|_, eligible| Cow::Borrowed(eligible));
+        let to_attempt = pending_requests.get_requests_to_attempt();
         assert_eq!(to_attempt.len(), 1);
         assert_eq!(to_attempt[0].request.id, req1.id);
     }
@@ -1372,8 +1348,7 @@ mod tests {
 
         // Then: request IS expired, not returned by get_requests_to_attempt and removed from
         // queue.
-        let to_attempt =
-            pending_requests.get_requests_to_attempt(|_, eligible| Cow::Borrowed(eligible));
+        let to_attempt = pending_requests.get_requests_to_attempt();
         assert_eq!(to_attempt.len(), 0);
         assert!(
             !pending_requests.requests.contains_key(&req1.id),

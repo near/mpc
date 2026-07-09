@@ -204,6 +204,8 @@ impl IntegrationTestSetup {
             let config = ConfigFile {
                 cores: Some(4),
                 separate_asset_generation_runtime: true,
+                // Integration tests must observe fake-contract policy changes quickly.
+                foreign_chain_policy_refresh_interval_sec: 1,
                 // Indexer config is just a dummy.
                 indexer: IndexerConfig {
                     concurrency: 1.try_into().unwrap(),
