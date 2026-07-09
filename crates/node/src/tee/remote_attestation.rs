@@ -412,6 +412,19 @@ mod tests {
         }
     }
 
+    struct FailingAttestationExpiryReader;
+
+    impl crate::indexer::ReadAttestationExpiry for FailingAttestationExpiryReader {
+        fn read_stored_dstack_expiry<'a>(
+            &'a self,
+            _tls_public_key: &'a Ed25519PublicKey,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = anyhow::Result<Option<u64>>> + Send + 'a>,
+        > {
+            Box::pin(async { Err(anyhow::anyhow!("simulated baseline read failure")) })
+        }
+    }
+
     /// Simulates contract behavior by automatically adding the node back to TEE accounts
     /// when an attestation submission occurs, mimicking real contract response to successful submissions.
     struct ContractSimulator {
@@ -495,6 +508,43 @@ mod tests {
             allowed_image_hashes: allowed_image_hashes_receiver,
             allowed_launcher_compose_hashes: allowed_launcher_compose_hashes_receiver,
             attestation_reader: Arc::new(StubAttestationExpiryReader),
+        };
+        let handle = tokio::spawn(periodic_attestation_submission(
+            submitter,
+            MockTicker::new(TEST_SUBMISSION_COUNT),
+        ));
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+        assert_eq!(sender.count(), TEST_SUBMISSION_COUNT);
+        handle.abort();
+    }
+
+    #[tokio::test]
+    #[expect(non_snake_case)]
+    async fn periodic_attestation_submission__should_submit_when_baseline_read_fails() {
+        // A failing pre-submit baseline read must not block submission (the node would otherwise
+        // let its attestation lapse); submissions still happen, just without a baseline.
+        let tee_authority = TeeAuthority::from(LocalTeeAuthorityConfig::default());
+        let (dummy_sender, _) = watch::channel(vec![]);
+        let dummy_node_id = NodeId {
+            account_id: "dummy.near".parse().unwrap(),
+            tls_public_key: Ed25519PublicKey::from([0u8; 32]),
+            account_public_key: Ed25519PublicKey::from([0u8; 32]),
+        };
+        let sender = MockSender::new(dummy_sender, dummy_node_id);
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let tls_key = (&SigningKey::generate(&mut rng).verifying_key()).into();
+        let account_key = (&SigningKey::generate(&mut rng).verifying_key()).into();
+        let (_, allowed_image_hashes_receiver) = watch::channel(vec![]);
+        let (_, allowed_launcher_compose_hashes_receiver) = watch::channel(vec![]);
+        let submitter = AttestationSubmitter {
+            tee_authority,
+            tx_sender: sender.clone(),
+            tls_public_key: tls_key,
+            account_public_key: account_key,
+            allowed_image_hashes: allowed_image_hashes_receiver,
+            allowed_launcher_compose_hashes: allowed_launcher_compose_hashes_receiver,
+            attestation_reader: Arc::new(FailingAttestationExpiryReader),
         };
         let handle = tokio::spawn(periodic_attestation_submission(
             submitter,
