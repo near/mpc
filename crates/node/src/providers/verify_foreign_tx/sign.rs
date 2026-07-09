@@ -120,11 +120,9 @@ where
     }
 
     /// Re-reads the contract's foreign-chain configs and available chains and updates
-    /// the cached [`ForeignChainPolicy`]. Returns the lowest block height observed
-    /// across the reads, so callers can tell when the view has caught up with a
-    /// change seen at a known block.
-    pub(crate) async fn refresh_foreign_chain_policy(&self) -> anyhow::Result<u64> {
-        let ((configs_height, configs), (available_height, available_chains)) = tokio::try_join!(
+    /// the cached [`ForeignChainPolicy`].
+    pub(crate) async fn refresh_foreign_chain_policy(&self) -> anyhow::Result<()> {
+        let (configs, available_chains) = tokio::try_join!(
             self.foreign_chain_policy_reader
                 .get_foreign_chains_configs(),
             self.foreign_chain_policy_reader.get_available_chains(),
@@ -137,7 +135,7 @@ where
             available_chains,
             participants_by_chain,
         };
-        Ok(configs_height.min(available_height))
+        Ok(())
     }
 
     /// Snapshot of the cached supporters-by-chain map.

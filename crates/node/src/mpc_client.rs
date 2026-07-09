@@ -47,6 +47,7 @@ use tokio::time::{sleep, timeout};
 const INITIAL_STARTUP_PROCESSING_DELAY: Duration = Duration::from_secs(2);
 const TEE_CONTRACT_VERIFICATION_INVOCATION_INTERVAL_DURATION: Duration =
     Duration::from_secs(60 * 60 * 24 * 2);
+const FOREIGN_CHAIN_POLICY_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
 
 #[derive(Clone)]
 pub struct MpcClient<ForeignChainPolicyReader> {
@@ -182,6 +183,21 @@ where
             })
         };
 
+        let foreign_chain_policy_refresher = {
+            let provider = self.verify_foreign_tx_provider.clone();
+            tracking::spawn("foreign_chain_policy_refresher", async move {
+                loop {
+                    if let Err(err) = provider.refresh_foreign_chain_policy().await {
+                        tracing::warn!(
+                            ?err,
+                            "failed to refresh foreign-chain policy, keeping the previous view"
+                        );
+                    }
+                    sleep(FOREIGN_CHAIN_POLICY_REFRESH_INTERVAL).await;
+                }
+            })
+        };
+
         // Background asset generation runs on the lower-priority gen runtime. The
         // inner `tracking::spawn` calls in each provider inherit it via
         // `Handle::current()`.
@@ -223,6 +239,7 @@ where
         let _ = eddsa_background_tasks.await?;
         let _ = ckd_background_tasks.await?;
         tee_verification_handle.await?;
+        foreign_chain_policy_refresher.await?;
 
         Ok(())
     }
@@ -261,11 +278,6 @@ where
 
         let mut recent_blocks = RecentBlocksTracker::new(REQUEST_EXPIRATION_BLOCKS);
         let start_time = Clock::real().now();
-
-        // The provider's foreign-chain policy cache is refreshed only when the indexer
-        // observes a policy-mutating contract call (plus once at startup).
-        let mut refresh_chain_policy_until_height: Option<u64> = Some(0);
-
         loop {
             tokio::select! {
                 _ = tokio::time::sleep(CHECK_EACH_REQUEST_INTERVAL.unsigned_abs()) => {
@@ -278,10 +290,6 @@ where
                     };
 
                     self.client.update_indexer_height(block_update.block.height.into());
-
-                    if block_update.foreign_chain_policy_updated {
-                        refresh_chain_policy_until_height = Some(block_update.block.height.into());
-                    }
 
                     let AddBlockResult{ block_status } = recent_blocks.add_block(&block_update.block);
 
@@ -563,27 +571,6 @@ where
                         anyhow::Ok(())
                     },
                 );
-            }
-
-            if let Some(refresh_until_height) = refresh_chain_policy_until_height {
-                match self
-                    .verify_foreign_tx_provider
-                    .refresh_foreign_chain_policy()
-                    .await
-                {
-                    Ok(queried_height) => {
-                        if queried_height >= refresh_until_height {
-                            refresh_chain_policy_until_height = None;
-                        }
-                    }
-                    Err(err) => {
-                        tracing::warn!(
-                            target: "request",
-                            ?err,
-                            "failed to refresh foreign-chain policy; keeping the previous view"
-                        );
-                    }
-                }
             }
 
             // Combine the cached per-chain supporter sets with the current

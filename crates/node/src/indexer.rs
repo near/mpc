@@ -383,20 +383,18 @@ impl IndexerViewClient {
     }
 }
 
-/// Reads the contract's foreign-chain policy. Each method also returns the block
-/// height the state was read at, so callers can detect when a cached view has
-/// caught up with a change observed at a known block.
+/// Reads the contract's foreign-chain policy.
 #[cfg_attr(test, mockall::automock)]
 pub(crate) trait ReadForeignChainPolicy: Send + Sync {
     /// Per-node foreign-chain configs.
     fn get_foreign_chains_configs(
         &self,
-    ) -> impl Future<Output = anyhow::Result<(u64, dtos::ForeignChainsConfigs)>> + Send;
+    ) -> impl Future<Output = anyhow::Result<dtos::ForeignChainsConfigs>> + Send;
 
     /// The contract's available chains: whitelisted and supported by a signing quorum.
     fn get_available_chains(
         &self,
-    ) -> impl Future<Output = anyhow::Result<(u64, dtos::AvailableForeignChains)>> + Send;
+    ) -> impl Future<Output = anyhow::Result<dtos::AvailableForeignChains>> + Send;
 }
 
 #[derive(Clone)]
@@ -411,20 +409,22 @@ impl RealForeignChainPolicyReader {
 }
 
 impl ReadForeignChainPolicy for RealForeignChainPolicyReader {
-    async fn get_foreign_chains_configs(
-        &self,
-    ) -> anyhow::Result<(u64, dtos::ForeignChainsConfigs)> {
-        self.indexer_state
+    async fn get_foreign_chains_configs(&self) -> anyhow::Result<dtos::ForeignChainsConfigs> {
+        let (_height, configs) = self
+            .indexer_state
             .view_client
             .get_foreign_chains_configs(&self.indexer_state.mpc_contract_id)
-            .await
+            .await?;
+        Ok(configs)
     }
 
-    async fn get_available_chains(&self) -> anyhow::Result<(u64, dtos::AvailableForeignChains)> {
-        self.indexer_state
+    async fn get_available_chains(&self) -> anyhow::Result<dtos::AvailableForeignChains> {
+        let (_height, chains) = self
+            .indexer_state
             .view_client
             .get_available_chains(&self.indexer_state.mpc_contract_id)
-            .await
+            .await?;
+        Ok(chains)
     }
 }
 

@@ -62,22 +62,17 @@ pub struct FakeReadForeignChainPolicy {
 }
 
 impl ReadForeignChainPolicy for FakeReadForeignChainPolicy {
-    async fn get_foreign_chains_configs(
-        &self,
-    ) -> anyhow::Result<(u64, dtos::ForeignChainsConfigs)> {
-        let contract = self.contract.lock().await;
-        Ok((
-            contract.env.block_height,
-            contract.foreign_chains_configs().clone(),
-        ))
+    async fn get_foreign_chains_configs(&self) -> anyhow::Result<dtos::ForeignChainsConfigs> {
+        Ok(self.contract.lock().await.foreign_chains_configs().clone())
     }
 
-    async fn get_available_chains(&self) -> anyhow::Result<(u64, dtos::AvailableForeignChains)> {
-        let contract = self.contract.lock().await;
-        Ok((
-            contract.env.block_height,
-            contract.available_foreign_chains().clone(),
-        ))
+    async fn get_available_chains(&self) -> anyhow::Result<dtos::AvailableForeignChains> {
+        Ok(self
+            .contract
+            .lock()
+            .await
+            .available_foreign_chains()
+            .clone())
     }
 }
 
@@ -664,7 +659,6 @@ impl FakeIndexerCore {
                 completed_ckds: Vec::new(),
                 verify_foreign_tx_requests,
                 completed_verify_foreign_txs: Vec::new(),
-                foreign_chain_policy_updated: false,
             };
             contract.lock().await.env.set_block_height(block.height());
             for (txn, uid) in transactions_to_process {
@@ -742,13 +736,11 @@ impl FakeIndexerCore {
                             account_id,
                             args.foreign_chain_configuration,
                         );
-                        block_update.foreign_chain_policy_updated = true;
                     }
                     ChainSendTransactionRequest::RegisterForeignChainsConfig(args) => {
                         let mut contract = contract.lock().await;
                         contract
                             .register_foreign_chains_config(account_id, args.foreign_chains_config);
-                        block_update.foreign_chain_policy_updated = true;
                     }
                     ChainSendTransactionRequest::StartKeygen(start) => {
                         // TODO: timeout logic in fake indexer?
