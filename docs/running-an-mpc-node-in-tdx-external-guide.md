@@ -1888,12 +1888,11 @@ No key available with this passphrase
 Error: Failed to open encrypted data disk
 ```
 
-**Why:** with the `local-sgx` key provider the data-disk encryption key is derived
-from the boot measurements `MRTD + RTMR0..RTMR3`. The app-compose is hashed into
-`RTMR3` (as `compose_hash`) and memory/vCPU feed `RTMR0`, so any change re-derives
-a different key and the existing disk can no longer be unsealed. The web UI is
-especially easy to trip on: it re-serializes `app-compose.json` on save, which can
-change `compose_hash` even when the visible settings look unchanged.
+**Why:** the disk-encryption key is derived from the node's boot measurements,
+which include the app-compose and the memory/vCPU settings. Change any of them and
+the node derives a different key that can't unseal the existing disk. (The web UI
+can trigger this even when the visible settings look unchanged, since it
+re-serializes the app-compose on save.)
 
 **Fix — restore the exact original measurements.** The disk data is intact; do
 **not** reformat it.
