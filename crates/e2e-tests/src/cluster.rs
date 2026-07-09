@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -924,6 +924,8 @@ impl MpcCluster {
         participant_indices: &[usize],
         chains: &BTreeSet<ForeignChain>,
     ) -> anyhow::Result<()> {
+        // Every whitelisted chain gets the same placeholder entry: these tests only
+        // care about which chains are whitelisted, never about the provider content.
         let provider = |base_url: &str| ProviderConfig {
             base_url: base_url.to_string(),
             auth_scheme: AuthScheme::None,
@@ -946,15 +948,12 @@ impl MpcCluster {
             quorum: 1,
         };
 
-        let mut iter = chains.iter().copied();
-        let first = iter
-            .next()
+        let batch: NonEmptyBTreeMap<ForeignChain, ChainEntry> = chains
+            .iter()
+            .map(|&chain| (chain, placeholder.clone()))
+            .collect::<BTreeMap<_, _>>()
+            .try_into()
             .context("whitelist_foreign_chains: chains must be non-empty")?;
-        let mut batch: NonEmptyBTreeMap<ForeignChain, ChainEntry> =
-            NonEmptyBTreeMap::new(first, placeholder.clone());
-        for chain in iter {
-            batch.insert(chain, placeholder.clone());
-        }
 
         for &idx in participant_indices {
             let client = self
