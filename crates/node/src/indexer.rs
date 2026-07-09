@@ -573,6 +573,7 @@ mod tests {
     use super::{
         AllowedDockerImageHashesResponse, BlockHeight, REQUIRED_STABLE_POLLS, SyncProgress,
     };
+    use assert_matches::assert_matches;
     use mpc_primitives::hash::NodeImageHash;
 
     #[test]
