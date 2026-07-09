@@ -962,6 +962,13 @@ impl MpcContract {
             }))
     }
 
+    /// Whether the account has an [`Attestation::Dstack`] submission awaiting
+    /// async verification, so a submitter can tell "in flight" from "never
+    /// landed" rather than resubmit and hit a [`TeeError::VerificationAlreadyPending`].
+    pub fn is_verification_pending(&self, account_id: AccountId) -> bool {
+        self.pending_attestations.contains_key(&account_id)
+    }
+
     /// Propose new parameters for the MPC network: participants, governance
     /// threshold, and optional per-domain `ReconstructionThreshold` updates
     /// (empty map keeps the current ones), applied on resharing completion.
