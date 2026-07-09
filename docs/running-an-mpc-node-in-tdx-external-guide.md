@@ -1909,11 +1909,6 @@ re-serializes the app-compose on save.)
    vmm-cli.py --url $VMM_RPC stop <vm_id> && vmm-cli.py --url $VMM_RPC start <vm_id>
    ```
 
-If the original measurements can't be reproduced, the keyshares on that disk are
-unrecoverable — deploy a fresh CVM and re-establish the node via resharing. See
-also [Launcher / CVM Upgrade](#launcher--cvm-upgrade), which covers the case where
-the sealing key legitimately changes.
-
 ### Wiping the NEAR indexer data (force a re-sync)
 
 **Symptom:** the embedded NEAR node won't sync — it stays at genesis, reports stale/corrupt
