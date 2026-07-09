@@ -1,36 +1,12 @@
 use crate::sui::{SuiExtractedValue, SuiTransactionDigest};
 use crate::{ForeignChainInspectionError, ForeignChainInspector, HexBytes};
-use base64::Engine as _;
-use foreign_chain_rpc_interfaces::sui::{
-    GetTransactionBlockArgs, SuiEventResponse, TransactionBlockResponse,
-};
-use jsonrpsee::core::client::ClientT;
-use jsonrpsee::core::client::error::Error as RpcClientError;
+use foreign_chain_rpc_interfaces::sui::proto::ExecutedTransaction;
+use foreign_chain_rpc_interfaces::sui::{Code, Status, SuiRpcClient};
 use near_mpc_contract_interface::types::{SuiAddress, SuiEvent};
 use std::borrow::Cow;
 
-const GET_TRANSACTION_BLOCK_METHOD: &str = "sui_getTransactionBlock";
-
 /// A 32-byte Sui digest is at most 44 base58 characters.
 const DIGEST_MAX_BASE58_LEN: usize = 44;
-
-/// Upper bound on a base58 event payload we will decode. Like [`DIGEST_MAX_BASE58_LEN`], this
-/// caps `bs58`'s superlinear decode against an oversized provider response. It exceeds any real
-/// event payload by orders of magnitude (Sui bridge and system events are well under a kilobyte),
-/// and only the long-deprecated pre-v1.26 base58 event encoding reaches this path at all —
-/// current nodes send base64, which decodes in linear time.
-const EVENT_BCS_MAX_BASE58_LEN: usize = 16_384;
-
-/// Upper bound on a base64 event payload we will decode. Base64 decoding is linear, so unlike
-/// [`EVENT_BCS_MAX_BASE58_LEN`] this is not a CPU guard — it rejects absurd responses before
-/// allocating for them. Sized above the base64 form (~342k characters) of Sui's protocol limit
-/// on emitted event size (`max_event_emit_size`, 256 KB), so every protocol-legal event passes.
-const EVENT_BCS_MAX_BASE64_LEN: usize = 400_000;
-
-/// Message prefix a Sui node returns for an unknown (or pruned) transaction digest.
-/// Its JSON-RPC error code (-32602) is shared with invalid-params errors, so the
-/// message is the only discriminator.
-const TRANSACTION_NOT_FOUND_MESSAGE_PREFIX: &str = "Could not find the referenced transaction";
 
 #[derive(Clone)]
 pub struct SuiInspector<Client> {
@@ -55,9 +31,14 @@ pub enum SuiExtractor {
     Event { event_index: usize },
 }
 
+/// Unlike the JSON-RPC API, the gRPC [`Event`](foreign_chain_rpc_interfaces::sui::proto::Event)
+/// carries no per-event sequence number or transaction digest, so a provider serving a
+/// reordered event list cannot be detected from a single response; the array order is the
+/// certified order as served. Cross-provider protection comes from the fan-out quorum, and
+/// the type name embedded in the event's BCS message is cross-checked against the event type.
 impl<Client> ForeignChainInspector for SuiInspector<Client>
 where
-    Client: ClientT + Send + Sync,
+    Client: SuiRpcClient,
 {
     type TransactionId = SuiTransactionDigest;
     type Finality = SuiFinality;
@@ -70,21 +51,29 @@ where
         finality: SuiFinality,
         extractors: Vec<SuiExtractor>,
     ) -> Result<Vec<SuiExtractedValue>, ForeignChainInspectionError> {
-        let args = GetTransactionBlockArgs {
-            digest: bs58::encode(*tx_id).into_string(),
+        let digest = bs58::encode(*tx_id).into_string();
+
+        let response = self
+            .client
+            .get_transaction(&digest)
+            .await
+            .map_err(classify_status)?;
+        let Some(tx) = response.transaction else {
+            return Err(ForeignChainInspectionError::MalformedRpcResponse(
+                "response is missing the transaction".to_string(),
+            ));
         };
 
-        let tx: TransactionBlockResponse = self
-            .client
-            .request(GET_TRANSACTION_BLOCK_METHOD, &args)
-            .await
-            .map_err(classify_rpc_error)?;
-
-        ensure_digest_matches(&tx_id, &tx.digest)?;
+        let Some(returned_digest) = &tx.digest else {
+            return Err(ForeignChainInspectionError::MalformedRpcResponse(
+                "transaction is missing the requested digest".to_string(),
+            ));
+        };
+        ensure_digest_matches(&tx_id, returned_digest)?;
 
         match finality {
             SuiFinality::Checkpointed => {
-                // The read API sets `checkpoint` only once the transaction is included in a
+                // The server sets `checkpoint` only once the transaction is included in a
                 // certified checkpoint; until then the verdict is "not final yet", not an error.
                 if tx.checkpoint.is_none() {
                     return Err(ForeignChainInspectionError::NotFinalized);
@@ -92,12 +81,17 @@ where
             }
         }
 
-        let Some(effects) = &tx.effects else {
-            return Err(ForeignChainInspectionError::MalformedRpcResponse(
-                "transaction response is missing the requested effects".to_string(),
-            ));
-        };
-        if effects.status.status != "success" {
+        let success = tx
+            .effects
+            .as_ref()
+            .and_then(|effects| effects.status.as_ref())
+            .and_then(|status| status.success)
+            .ok_or_else(|| {
+                ForeignChainInspectionError::MalformedRpcResponse(
+                    "transaction is missing the requested execution status".to_string(),
+                )
+            })?;
+        if !success {
             return Err(ForeignChainInspectionError::TransactionFailed);
         }
 
@@ -110,27 +104,21 @@ where
     }
 }
 
-/// A `Call` error is a substantive answer from a working node: an unknown digest maps to
-/// [`ForeignChainInspectionError::TransactionNotFound`], any other rejection is
-/// deterministic and must not be dropped from the fan-out quorum as a mere hiccup.
-/// Transport-level failures stay transient via
-/// [`ForeignChainInspectionError::ClientError`].
-fn classify_rpc_error(error: RpcClientError) -> ForeignChainInspectionError {
-    match error {
-        RpcClientError::Call(object) => {
-            if object
-                .message()
-                .starts_with(TRANSACTION_NOT_FOUND_MESSAGE_PREFIX)
-            {
-                ForeignChainInspectionError::TransactionNotFound
-            } else {
-                ForeignChainInspectionError::RpcRequestRejected(object.to_string())
-            }
-        }
-        RpcClientError::ParseError(e) => {
-            ForeignChainInspectionError::MalformedRpcResponse(e.to_string())
-        }
-        other => ForeignChainInspectionError::ClientError(other),
+/// gRPC status codes carry the verdict semantics directly: `NotFound` is the node's
+/// deterministic answer for an unknown (or pruned) digest, other deterministic rejections
+/// (bad request, auth, unimplemented method) must count as substantive verdicts in the
+/// fan-out, and only genuine provider hiccups stay transient.
+fn classify_status(status: Status) -> ForeignChainInspectionError {
+    match status.code() {
+        Code::NotFound => ForeignChainInspectionError::TransactionNotFound,
+        Code::DeadlineExceeded
+        | Code::Unavailable
+        | Code::ResourceExhausted
+        | Code::Internal
+        | Code::Unknown
+        | Code::Cancelled
+        | Code::Aborted => ForeignChainInspectionError::RpcRequestFailed(status.to_string()),
+        _ => ForeignChainInspectionError::RpcRequestRejected(status.to_string()),
     }
 }
 
@@ -170,35 +158,75 @@ fn ensure_digest_matches(
 impl SuiExtractor {
     fn extract_value(
         &self,
-        tx: &TransactionBlockResponse,
+        tx: &ExecutedTransaction,
     ) -> Result<SuiExtractedValue, ForeignChainInspectionError> {
         match self {
             SuiExtractor::Event { event_index } => {
-                let event = tx
+                let events = tx
                     .events
+                    .as_ref()
+                    .map(|events| events.events.as_slice())
+                    .unwrap_or_default();
+                let event = events
                     .get(*event_index)
                     .ok_or(ForeignChainInspectionError::LogIndexOutOfBounds)?;
 
-                ensure_event_id_consistent(event, *event_index, &tx.digest)?;
-
-                let package_id = parse_sui_address(&event.package_id).map_err(|reason| {
-                    ForeignChainInspectionError::MalformedRpcResponse(format!(
-                        "failed to parse event package_id: {reason}"
-                    ))
-                })?;
-                let sender = parse_sui_address(&event.sender).map_err(|reason| {
-                    ForeignChainInspectionError::MalformedRpcResponse(format!(
-                        "failed to parse event sender: {reason}"
-                    ))
-                })?;
-
-                let bcs = decode_event_bcs(event)?;
-
-                let type_tag = normalize_type_tag(&event.event_type);
+                let package_id = event
+                    .package_id
+                    .as_deref()
+                    .ok_or_else(|| malformed_event_field("package_id"))
+                    .and_then(|s| {
+                        parse_sui_address(s).map_err(|reason| {
+                            ForeignChainInspectionError::MalformedRpcResponse(format!(
+                                "failed to parse event package_id: {reason}"
+                            ))
+                        })
+                    })?;
+                let sender = event
+                    .sender
+                    .as_deref()
+                    .ok_or_else(|| malformed_event_field("sender"))
+                    .and_then(|s| {
+                        parse_sui_address(s).map_err(|reason| {
+                            ForeignChainInspectionError::MalformedRpcResponse(format!(
+                                "failed to parse event sender: {reason}"
+                            ))
+                        })
+                    })?;
+                let transaction_module = event
+                    .module
+                    .clone()
+                    .ok_or_else(|| malformed_event_field("module"))?;
+                let type_tag = event
+                    .event_type
+                    .as_deref()
+                    .map(normalize_type_tag)
+                    .ok_or_else(|| malformed_event_field("event_type"))?;
+                let contents = event
+                    .contents
+                    .as_ref()
+                    .ok_or_else(|| malformed_event_field("bcs contents"))?;
+                // When present, the type name shipped alongside the BCS bytes must agree with
+                // the event type we sign; a mismatch means the payload and its claimed type
+                // come apart. Both sides are normalized so a provider that renders the two
+                // fields with different address forms is not rejected spuriously.
+                if let Some(name) = contents.name.as_deref() {
+                    let normalized_name = normalize_type_tag(name);
+                    if normalized_name != type_tag {
+                        return Err(ForeignChainInspectionError::MalformedRpcResponse(format!(
+                            "event contents type {normalized_name:?} does not match the event type {type_tag:?}"
+                        )));
+                    }
+                }
+                let bcs = contents
+                    .value
+                    .as_ref()
+                    .map(|value| value.to_vec())
+                    .ok_or_else(|| malformed_event_field("bcs contents"))?;
 
                 Ok(SuiExtractedValue::Event(SuiEvent {
                     package_id,
-                    transaction_module: event.transaction_module.clone(),
+                    transaction_module,
                     sender,
                     type_tag,
                     bcs,
@@ -208,65 +236,8 @@ impl SuiExtractor {
     }
 }
 
-/// The certified event order is the array order: `id.eventSeq` equals the position and
-/// `id.txDigest` echoes the transaction. A response violating either served a reordered
-/// or foreign event list, which must not be signed even when only one provider is
-/// configured.
-fn ensure_event_id_consistent(
-    event: &SuiEventResponse,
-    event_index: usize,
-    tx_digest: &str,
-) -> Result<(), ForeignChainInspectionError> {
-    if event.id.tx_digest != tx_digest {
-        return Err(ForeignChainInspectionError::MalformedRpcResponse(format!(
-            "event txDigest {:?} does not match the transaction digest {tx_digest:?}",
-            event.id.tx_digest
-        )));
-    }
-    if event.id.event_seq != event_index.to_string() {
-        return Err(ForeignChainInspectionError::MalformedRpcResponse(format!(
-            "event at position {event_index} carries eventSeq {:?}",
-            event.id.event_seq
-        )));
-    }
-    Ok(())
-}
-
-fn decode_event_bcs(event: &SuiEventResponse) -> Result<Vec<u8>, ForeignChainInspectionError> {
-    match event.bcs_encoding.as_deref() {
-        Some("base64") => {
-            if event.bcs.len() > EVENT_BCS_MAX_BASE64_LEN {
-                return Err(ForeignChainInspectionError::MalformedRpcResponse(format!(
-                    "base64 event bcs is too long: {} characters",
-                    event.bcs.len()
-                )));
-            }
-            base64::engine::general_purpose::STANDARD
-                .decode(&event.bcs)
-                .map_err(|e| {
-                    ForeignChainInspectionError::MalformedRpcResponse(format!(
-                        "non-base64 event bcs: {e}"
-                    ))
-                })
-        }
-        // Nodes before v1.26 emitted base58 without a `bcsEncoding` tag.
-        Some("base58") | None => {
-            if event.bcs.len() > EVENT_BCS_MAX_BASE58_LEN {
-                return Err(ForeignChainInspectionError::MalformedRpcResponse(format!(
-                    "base58 event bcs is too long: {} characters",
-                    event.bcs.len()
-                )));
-            }
-            bs58::decode(&event.bcs).into_vec().map_err(|e| {
-                ForeignChainInspectionError::MalformedRpcResponse(format!(
-                    "non-base58 event bcs: {e}"
-                ))
-            })
-        }
-        Some(other) => Err(ForeignChainInspectionError::MalformedRpcResponse(format!(
-            "unknown event bcs encoding: {other:?}"
-        ))),
-    }
+fn malformed_event_field(field: &str) -> ForeignChainInspectionError {
+    ForeignChainInspectionError::MalformedRpcResponse(format!("event is missing its {field}"))
 }
 
 /// Rewrites every address inside a Move struct tag to Sui's canonical long form —
@@ -328,77 +299,53 @@ fn parse_sui_address(s: &str) -> Result<SuiAddress, String> {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use jsonrpsee::types::ErrorObject;
     use rstest::rstest;
 
     #[test]
-    fn classify_rpc_error__should_map_unknown_digest_to_transaction_not_found() {
-        // Given — the exact envelope a mainnet node returns for an unknown digest.
-        let error = RpcClientError::Call(ErrorObject::owned(
-            -32602,
-            "Could not find the referenced transaction [TransactionDigest(88XKXHJRmGzkfwJa8PhoeDkqt4kxz8AEsB1UTzAbtd29)].",
-            None::<()>,
-        ));
+    fn classify_status__should_map_not_found_to_transaction_not_found() {
+        // Given — the status a node returns for an unknown or pruned digest.
+        let status =
+            Status::not_found("Transaction 88XKXHJRmGzkfwJa8PhoeDkqt4kxz8AEsB1UTzAbtd29 not found");
 
         // When
-        let classified = classify_rpc_error(error);
+        let classified = classify_status(status);
 
         // Then — a substantive (non-transient) verdict.
         assert_matches!(classified, ForeignChainInspectionError::TransactionNotFound);
         assert!(!classified.is_transient());
     }
 
-    #[test]
-    fn classify_rpc_error__should_map_other_call_errors_to_rejected() {
-        // Given
-        let error = RpcClientError::Call(ErrorObject::owned(
-            -32602,
-            "Invalid params",
-            Some("Deserialization failed"),
-        ));
+    #[rstest]
+    #[case::deadline_exceeded(Code::DeadlineExceeded)]
+    #[case::unavailable(Code::Unavailable)]
+    #[case::resource_exhausted(Code::ResourceExhausted)]
+    #[case::internal(Code::Internal)]
+    #[case::unknown(Code::Unknown)]
+    fn classify_status__should_keep_provider_hiccups_transient(#[case] code: Code) {
+        // Given / When
+        let classified = classify_status(Status::new(code, "provider hiccup"));
 
-        // When
-        let classified = classify_rpc_error(error);
+        // Then — the provider is dropped from the quorum instead of blocking it.
+        assert_matches!(classified, ForeignChainInspectionError::RpcRequestFailed(_));
+        assert!(classified.is_transient());
+    }
 
-        // Then — deterministic rejection: retrying cannot change it, and the fan-out
-        // must not validate on the remaining providers alone.
+    #[rstest]
+    #[case::invalid_argument(Code::InvalidArgument)]
+    #[case::unauthenticated(Code::Unauthenticated)]
+    #[case::permission_denied(Code::PermissionDenied)]
+    #[case::unimplemented(Code::Unimplemented)]
+    fn classify_status__should_reject_deterministic_errors(#[case] code: Code) {
+        // Given / When
+        let classified = classify_status(Status::new(code, "deterministic rejection"));
+
+        // Then — non-transient: retrying cannot change it, and the fan-out must not
+        // validate on the remaining providers alone.
         assert_matches!(
             classified,
             ForeignChainInspectionError::RpcRequestRejected(_)
         );
         assert!(!classified.is_transient());
-    }
-
-    #[test]
-    fn classify_rpc_error__should_map_parse_errors_to_malformed_response() {
-        // Given
-        let serde_error = serde_json::from_str::<u64>("not-json").unwrap_err();
-
-        // When
-        let classified = classify_rpc_error(RpcClientError::ParseError(serde_error));
-
-        // Then
-        assert_matches!(
-            classified,
-            ForeignChainInspectionError::MalformedRpcResponse(_)
-        );
-        assert!(!classified.is_transient());
-    }
-
-    #[test]
-    fn classify_rpc_error__should_keep_transport_errors_transient() {
-        // Given
-        let error = RpcClientError::Transport(Box::new(std::io::Error::new(
-            std::io::ErrorKind::ConnectionRefused,
-            "connection refused",
-        )));
-
-        // When
-        let classified = classify_rpc_error(error);
-
-        // Then — a provider hiccup: dropped from the quorum instead of blocking it.
-        assert_matches!(classified, ForeignChainInspectionError::ClientError(_));
-        assert!(classified.is_transient());
     }
 
     #[test]
@@ -533,129 +480,5 @@ mod tests {
     fn parse_sui_address__should_reject_overlong_address() {
         let too_long = format!("0x{}", "a".repeat(65));
         parse_sui_address(&too_long).unwrap_err();
-    }
-
-    fn event_response(event_seq: &str, tx_digest: &str) -> SuiEventResponse {
-        SuiEventResponse {
-            id: foreign_chain_rpc_interfaces::sui::SuiEventId {
-                tx_digest: tx_digest.to_string(),
-                event_seq: event_seq.to_string(),
-            },
-            package_id: "0x2".to_string(),
-            transaction_module: "m".to_string(),
-            sender: "0x1".to_string(),
-            event_type: "0x2::m::E".to_string(),
-            bcs: base64::engine::general_purpose::STANDARD.encode([0xde, 0xad]),
-            bcs_encoding: Some("base64".to_string()),
-        }
-    }
-
-    #[test]
-    fn ensure_event_id_consistent__should_accept_matching_id() {
-        // Given / When / Then
-        ensure_event_id_consistent(&event_response("3", "digest"), 3, "digest").unwrap();
-    }
-
-    #[rstest]
-    #[case::wrong_seq("4", "digest")]
-    #[case::wrong_digest("3", "other-digest")]
-    fn ensure_event_id_consistent__should_reject_inconsistent_id(
-        #[case] event_seq: &str,
-        #[case] event_tx_digest: &str,
-    ) {
-        // Given
-        let event = event_response(event_seq, event_tx_digest);
-
-        // When / Then
-        assert_matches!(
-            ensure_event_id_consistent(&event, 3, "digest"),
-            Err(ForeignChainInspectionError::MalformedRpcResponse(_))
-        );
-    }
-
-    #[test]
-    fn decode_event_bcs__should_decode_base64_encoding() {
-        // Given
-        let event = event_response("0", "digest");
-
-        // When / Then
-        assert_eq!(decode_event_bcs(&event).unwrap(), vec![0xde, 0xad]);
-    }
-
-    #[test]
-    fn decode_event_bcs__should_decode_legacy_base58_without_encoding_tag() {
-        // Given
-        let mut event = event_response("0", "digest");
-        event.bcs = bs58::encode([0xde, 0xad]).into_string();
-        event.bcs_encoding = None;
-
-        // When / Then
-        assert_eq!(decode_event_bcs(&event).unwrap(), vec![0xde, 0xad]);
-    }
-
-    #[test]
-    fn decode_event_bcs__should_decode_explicitly_tagged_base58() {
-        // Given — a node that tags its base58 output must decode to the same bytes as base64.
-        let mut event = event_response("0", "digest");
-        event.bcs = bs58::encode([0xde, 0xad]).into_string();
-        event.bcs_encoding = Some("base58".to_string());
-
-        // When / Then
-        assert_eq!(decode_event_bcs(&event).unwrap(), vec![0xde, 0xad]);
-    }
-
-    #[test]
-    fn decode_event_bcs__should_reject_oversized_base58_without_decoding() {
-        // Given — a base58 payload far larger than any real event; superlinear decode is
-        // bounded by rejecting it on length.
-        let mut event = event_response("0", "digest");
-        event.bcs = "1".repeat(1_000_000);
-        event.bcs_encoding = Some("base58".to_string());
-
-        // When / Then
-        assert_matches!(
-            decode_event_bcs(&event),
-            Err(ForeignChainInspectionError::MalformedRpcResponse(_))
-        );
-    }
-
-    #[test]
-    fn decode_event_bcs__should_reject_oversized_base64() {
-        // Given — a base64 payload beyond the protocol's maximum emitted event size.
-        let mut event = event_response("0", "digest");
-        event.bcs = "A".repeat(EVENT_BCS_MAX_BASE64_LEN + 4);
-        event.bcs_encoding = Some("base64".to_string());
-
-        // When / Then
-        assert_matches!(
-            decode_event_bcs(&event),
-            Err(ForeignChainInspectionError::MalformedRpcResponse(_))
-        );
-    }
-
-    #[test]
-    fn decode_event_bcs__should_reject_unknown_encoding() {
-        // Given
-        let mut event = event_response("0", "digest");
-        event.bcs_encoding = Some("hex".to_string());
-
-        // When / Then
-        assert_matches!(
-            decode_event_bcs(&event),
-            Err(ForeignChainInspectionError::MalformedRpcResponse(_))
-        );
-    }
-
-    #[test]
-    fn decode_event_bcs__should_reject_invalid_base64_as_malformed_response() {
-        // Given
-        let mut event = event_response("0", "digest");
-        event.bcs = "!!!not-base64!!!".to_string();
-
-        // When / Then
-        assert_matches!(
-            decode_event_bcs(&event),
-            Err(ForeignChainInspectionError::MalformedRpcResponse(_))
-        );
     }
 }

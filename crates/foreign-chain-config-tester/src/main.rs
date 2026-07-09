@@ -24,6 +24,7 @@ use foreign_chain_inspector::hyperevm::inspector::HyperEvm;
 use foreign_chain_inspector::polygon::inspector::Polygon;
 use foreign_chain_inspector::{RpcAuthentication, build_http_client};
 use foreign_chain_rpc_auth::auth_config_to_rpc_auth;
+use foreign_chain_rpc_interfaces::sui::GrpcSuiClient;
 use http::{HeaderName, HeaderValue};
 use mpc_node_config::foreign_chains::RpcProviderName;
 use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};
@@ -301,19 +302,10 @@ async fn run_sui(
         return;
     };
     let timeout = timeout_of(cfg);
-    let parsed = golden::base58_32(vector.tx)
-        .and_then(|tx| golden::hex32(vector.event_package_id).map(|package_id| (tx, package_id)));
     for (name, provider) in cfg.providers.iter() {
-        let status = match (&parsed, prepare_jsonrpc(provider)) {
-            (Err(e), _) => Status::Failed(format!("invalid golden vector: {e:#}")),
-            (Ok(_), Err(e)) => Status::Failed(format!("{e:#}")),
-            (Ok((tx, package_id)), Ok(client)) => {
-                run_check(
-                    timeout,
-                    checks::check_sui(client, *tx, vector.event_type_tag, *package_id),
-                )
-                .await
-            }
+        let status = match prepare_sui(provider, timeout) {
+            Err(e) => Status::Failed(format!("{e:#}")),
+            Ok(client) => run_check(timeout, checks::check_sui(client, vector.chain_id)).await,
         };
         out.push(ProviderResult {
             chain: "sui",
@@ -321,6 +313,23 @@ async fn run_sui(
             status,
         });
     }
+}
+
+fn prepare_sui(
+    provider: &ForeignChainProviderConfig,
+    timeout: Duration,
+) -> anyhow::Result<GrpcSuiClient> {
+    let mut url = provider.rpc_url.clone();
+    let auth = auth_config_to_rpc_auth(provider.auth.clone(), &mut url)?;
+    let header = match auth {
+        RpcAuthentication::KeyInUrl => None,
+        RpcAuthentication::CustomHeader {
+            header_name,
+            header_value,
+        } => Some((header_name, header_value)),
+    };
+    GrpcSuiClient::new(url, header, timeout)
+        .map_err(|e| anyhow::anyhow!("failed to build the Sui gRPC client: {e}"))
 }
 
 fn mark_skipped(

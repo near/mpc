@@ -5,7 +5,6 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-base64 = { workspace = true }
 bs58 = { workspace = true }
 derive_more = { workspace = true }
 ethereum-types = { workspace = true }

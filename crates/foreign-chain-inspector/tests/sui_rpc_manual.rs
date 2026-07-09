@@ -1,13 +1,18 @@
+use std::time::Duration;
+
 use foreign_chain_inspector::{
-    ForeignChainInspector, RpcAuthentication, build_http_client,
+    ForeignChainInspector,
     sui::{
         SuiExtractedValue, SuiTransactionDigest,
         inspector::{SuiExtractor, SuiFinality, SuiInspector},
     },
 };
+use foreign_chain_rpc_interfaces::sui::GrpcSuiClient;
 use near_mpc_contract_interface::types::SuiAddress;
 
-const PUBLIC_NODE_URL: &str = "https://fullnode.mainnet.sui.io:443";
+/// The Sui Foundation archive retains full history; regular fullnodes prune the gRPC read
+/// path after a few weeks, which would age a fixed reference digest out.
+const PUBLIC_ARCHIVE_URL: &str = "https://archive.mainnet.sui.io";
 
 /// The first epoch-change transaction on Sui mainnet (checkpoint 9769), whose first event
 /// is `0x3::validator_set::ValidatorEpochInfoEventV2` emitted by the system package `0x3`.
@@ -19,8 +24,12 @@ const EXPECTED_EVENT_MODULE: &str = "sui_system";
 #[tokio::test]
 async fn inspector_extracts_event_against_live_rpc_provider() {
     // given
-    let client =
-        build_http_client(PUBLIC_NODE_URL.to_string(), RpcAuthentication::KeyInUrl).unwrap();
+    let client = GrpcSuiClient::new(
+        PUBLIC_ARCHIVE_URL.to_string(),
+        None,
+        Duration::from_secs(10),
+    )
+    .unwrap();
     let inspector = SuiInspector::new(client);
     let tx_id = parse_tx_digest(CHECKPOINTED_TX_DIGEST);
 

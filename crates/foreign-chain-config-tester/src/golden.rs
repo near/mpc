@@ -33,13 +33,13 @@ pub struct AptosVector {
     pub event_sequence_number: u64,
 }
 
-/// `tx` is the base58 transaction digest; `event_type_tag` is in the normalized
-/// canonical long form the inspector emits; `event_package_id` is full-length hex.
+/// Sui fullnodes prune the gRPC read path after a few weeks, so a fixed reference
+/// transaction would age out. The check instead verifies the provider's chain identity
+/// (the base58 genesis checkpoint digest, which never changes) and probes a transaction
+/// from the provider's latest checkpoint.
 #[derive(Clone, Copy)]
 pub struct SuiVector {
-    pub tx: &'static str,
-    pub event_type_tag: &'static str,
-    pub event_package_id: &'static str,
+    pub chain_id: &'static str,
 }
 
 pub struct GoldenSet {
@@ -101,9 +101,7 @@ const MAINNET: GoldenSet = GoldenSet {
         event_sequence_number: 822_198_006,
     }),
     sui: Some(SuiVector {
-        tx: "8eBMXpC8Np7RNDwwiGwSmeev1cSoc7w3fPXdikhH7RZo",
-        event_type_tag: "0x0000000000000000000000000000000000000000000000000000000000000003::validator_set::ValidatorEpochInfoEventV2",
-        event_package_id: "0x0000000000000000000000000000000000000000000000000000000000000003",
+        chain_id: "4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S",
     }),
 };
 
@@ -131,9 +129,7 @@ const TESTNET: GoldenSet = GoldenSet {
         event_sequence_number: 302_761_912,
     }),
     sui: Some(SuiVector {
-        tx: "tWa95dbKCRHEGwTijpMdDJrQTRw3YsafoWtxgwnu7pH",
-        event_type_tag: "0x0000000000000000000000000000000000000000000000000000000000000003::validator::StakingRequestEvent",
-        event_package_id: "0x0000000000000000000000000000000000000000000000000000000000000003",
+        chain_id: "69WiPg3DAQiwdxfncX6wYQ2siKwAe6L9BZthQea3JNMD",
     }),
 };
 
@@ -228,8 +224,7 @@ mod tests {
                 hex32(v.tx).unwrap();
             }
             if let Some(v) = set.sui {
-                base58_32(v.tx).unwrap();
-                hex32(v.event_package_id).unwrap();
+                base58_32(v.chain_id).unwrap();
             }
         }
     }
