@@ -1296,7 +1296,7 @@ BorshSchemaContainer {
                         "DockerImageHash",
                     ),
                     (
-                        "added",
+                        "added_at",
                         "Timestamp",
                     ),
                 ],
