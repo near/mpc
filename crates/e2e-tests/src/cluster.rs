@@ -924,6 +924,9 @@ impl MpcCluster {
         participant_indices: &[usize],
         chains: &BTreeSet<ForeignChain>,
     ) -> anyhow::Result<()> {
+        if chains.is_empty() {
+            return Ok(());
+        }
         // Every whitelisted chain gets the same placeholder entry: these tests only
         // care about which chains are whitelisted, never about the provider content.
         let provider = |base_url: &str| ProviderConfig {

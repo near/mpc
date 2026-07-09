@@ -89,12 +89,10 @@ pub async fn must_setup_cluster(
         panic!("expected Running state");
     };
 
-    if !whitelisted_chains.is_empty() {
-        cluster
-            .whitelist_foreign_chains(&initial_participant_indices, &whitelisted_chains)
-            .await
-            .expect("failed to whitelist foreign chains");
-    }
+    cluster
+        .whitelist_foreign_chains(&initial_participant_indices, &whitelisted_chains)
+        .await
+        .expect("failed to whitelist foreign chains");
 
     wait_for_presignatures(
         &cluster,

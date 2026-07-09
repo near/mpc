@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::num::NonZeroU64;
 
 use crate::common;
@@ -40,30 +41,23 @@ struct MockServerUrls {
     polygon: Vec<String>,
 }
 
-fn build_providers_from_urls<'a>(
-    mut urls: impl Iterator<Item = (usize, &'a String)>,
+fn build_providers_from_urls(
+    urls: &[String],
     chain_name: &str,
 ) -> NonEmptyBTreeMap<RpcProviderName, ForeignChainProviderConfig> {
-    let (i, first_url) = urls
-        .next()
-        .expect("at least one provider must be configured");
-    let mut providers = NonEmptyBTreeMap::new(
-        format!("mock-{chain_name}-{i}").into(),
-        ForeignChainProviderConfig {
-            rpc_url: first_url.clone(),
-            auth: Default::default(),
-        },
-    );
-    for (i, url) in urls {
-        providers.insert(
-            format!("mock-{chain_name}-{i}").into(),
-            ForeignChainProviderConfig {
+    let map: BTreeMap<_, _> = urls
+        .iter()
+        .enumerate()
+        .map(|(i, url)| {
+            let cfg = ForeignChainProviderConfig {
                 rpc_url: url.clone(),
                 auth: Default::default(),
-            },
-        );
-    }
-    providers
+            };
+            (format!("mock-{chain_name}-{i}").into(), cfg)
+        })
+        .collect();
+    map.try_into()
+        .unwrap_or_else(|_| panic!("at least one {chain_name} provider must be configured"))
 }
 
 fn build_foreign_chains_config(urls: &MockServerUrls) -> ForeignChainsConfig {
@@ -148,10 +142,7 @@ fn build_foreign_chains_config(urls: &MockServerUrls) -> ForeignChainsConfig {
         polygon: Some(ForeignChainConfig {
             timeout_sec: NonZeroU64::new(30).unwrap(),
             max_retries: NonZeroU64::new(3).unwrap(),
-            providers: {
-                let iter = urls.polygon.iter().enumerate();
-                build_providers_from_urls(iter, "polygon")
-            },
+            providers: build_providers_from_urls(&urls.polygon, "polygon"),
         }),
         ..Default::default()
     }
