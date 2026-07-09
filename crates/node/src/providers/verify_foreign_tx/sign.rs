@@ -88,11 +88,7 @@ where
         let (presignature_id, presignature) = domain_data
             .presignature_store
             .take_owned_matching(eligible_participants)
-            .with_context(|| {
-                format!(
-                    "no owned presignature whose participants all support chain {requested_chain:?}"
-                )
-            })?;
+            .await;
         let participants = presignature.participants.clone();
 
         let channel = self.ecdsa_signature_provider.new_channel_for_task(

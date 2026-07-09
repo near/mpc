@@ -287,12 +287,25 @@ where
         }
     }
 
-    pub fn take_owned_matching(&self, cond_val: CondVal) -> Option<(UniqueId, T)> {
-        let mut cold = self.cold_queue.lock().unwrap();
-        while let Some(Ok((id, value))) = self.hot_receiver.recv_async().now_or_never() {
-            cold.ingest(id, value);
+    pub async fn take_owned_matching(&self, cond_val: CondVal) -> (UniqueId, T) {
+        loop {
+            {
+                let mut cold = self.cold_queue.lock().unwrap();
+                while let Some(Ok((id, value))) = self.hot_receiver.recv_async().now_or_never() {
+                    cold.ingest(id, value);
+                }
+                if let Some(taken) = cold.take_first_matching(&cond_val) {
+                    return taken;
+                }
+            }
+            tokio::select! {
+                _ = self.clock.sleep(near_time::Duration::seconds(1)) => {}
+                received = self.hot_receiver.recv_async() => {
+                    let (id, value) = received.unwrap();
+                    self.cold_queue.lock().unwrap().ingest(id, value);
+                }
+            }
         }
-        cold.take_first_matching(&cond_val)
     }
 
     /// Process `num_elements_to_process`, removing any that doesn't satisfy condition.
@@ -529,14 +542,16 @@ where
         (id, asset)
     }
 
-    pub fn take_owned_matching(&self, active: Vec<ParticipantId>) -> Option<(UniqueId, T)> {
-        let (id, asset) = self.owned_queue.take_owned_matching(active)?;
+    /// Takes an owned asset whose participants are all in `active`, waiting for
+    /// background generation if none is currently available.
+    pub async fn take_owned_matching(&self, active: Vec<ParticipantId>) -> (UniqueId, T) {
+        let (id, asset) = self.owned_queue.take_owned_matching(active).await;
         let mut update = self.db.update();
         update.delete(self.col, &self.make_key(id));
         update
             .commit()
             .expect("Unrecoverable error writing to database");
-        Some((id, asset))
+        (id, asset)
     }
 
     /// Adds an owned asset to the storage.
@@ -781,6 +796,45 @@ mod tests {
 
         assert_eq!(queue.take_owned().now_or_never().unwrap(), (id4, 4));
         assert_eq!(queue.available(), 0);
+    }
+
+    #[tokio::test]
+    #[expect(non_snake_case)]
+    async fn take_owned_matching__should_return_matching_asset_immediately() {
+        // Given: a queue holding one non-matching and one matching asset.
+        let clock = FakeClock::default();
+        let queue = DoubleQueue::new(clock.clock(), |cond, val| val % 2 == *cond, Arc::new(|| 0));
+        let id1 = UniqueId::new(ParticipantId::from_raw(42), 123, 456);
+        let id2 = id1.add_to_counter(1).unwrap();
+        queue.add_owned(id1, 2);
+        queue.add_owned(id2, 3);
+
+        // When: taking with a condition value matching only the second asset.
+        let taken = queue.take_owned_matching(1).now_or_never();
+
+        // Then
+        assert_eq!(taken, Some((id2, 3)));
+    }
+
+    #[tokio::test]
+    #[expect(non_snake_case)]
+    async fn take_owned_matching__should_wait_until_matching_asset_is_added() {
+        // Given: a queue holding only a non-matching asset.
+        let clock = FakeClock::default();
+        let queue = DoubleQueue::new(clock.clock(), |cond, val| val % 2 == *cond, Arc::new(|| 0));
+        let id1 = UniqueId::new(ParticipantId::from_raw(42), 123, 456);
+        let id2 = id1.add_to_counter(1).unwrap();
+        queue.add_owned(id1, 2);
+
+        // When: taking with a condition value nothing matches yet.
+        let mut take = Box::pin(queue.take_owned_matching(1));
+        assert!((&mut take).now_or_never().is_none());
+
+        // Then: the take completes once a matching asset is generated.
+        queue.add_owned(id2, 3);
+        assert_eq!(take.await, (id2, 3));
+        // And: the non-matching asset is still in the queue.
+        assert_eq!(queue.available(), 1);
     }
 
     // This test covers tricky cases around updates to the condition value
