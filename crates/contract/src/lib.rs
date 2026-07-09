@@ -826,13 +826,11 @@ impl MpcContract {
                 InvalidParameters::InvalidTeeRemoteAttestation { reason }
             })?;
 
-        // Refresh-on-use only; we deliberately do NOT also refresh at vote-in. This leaves a
-        // narrow window: a node voted in on a launcher whose TTL is about to lapse could be
-        // kicked if it goes silent immediately after. That is acceptable — a launcher only
-        // expires after the (14-day) TTL with no participant attestation, participants
-        // re-submit hourly (so an in-use launcher is refreshed ~1h after adoption), the
-        // `added` grace covers the gap between voting a launcher in and its first use, and an
-        // aged-out hash is recoverable by re-voting.
+        // We refresh only on a participant's submission, never at vote-in. There is a small
+        // risk: a node voted in on a launcher about to hit its TTL could be evicted if it goes
+        // silent before its next (hourly) resubmit. Accepted — it's a very small corner-case
+        // window; once the node resubmits (hourly) the launcher is refreshed, and an aged-out
+        // hash can be revived by re-voting.
         if let Some(participant) = &authenticated_participant {
             self.tee_state
                 .refresh_launcher_usage(&tls_public_key_for_refresh, participant);
@@ -2131,6 +2129,8 @@ impl MpcContract {
     pub fn migrate() -> Result<Self, Error> {
         log!("migrating contract");
 
+        // TODO(#3758): bump the migrate-from baseline to 3.13.0 once it is deployed
+        // (archive its wasm in contract-history, add v3_13_0_state, repoint here).
         match try_state_read::<v3_12_0_state::MpcContract>() {
             Ok(Some(state)) => return Ok(state.into()),
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
