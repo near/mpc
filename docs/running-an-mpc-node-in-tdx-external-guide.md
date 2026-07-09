@@ -915,18 +915,7 @@ Use the following custom settings for MPC:
 
 ![VMM Web Page (2/2)](./attachments/VMM_web_page_deploy_2.png)
 
-> **⚠️ Never change the app-compose of a running node — it can permanently destroy your keyshares.**
->
-> With the `local-sgx` key provider, the LUKS key that encrypts the CVM data disk (keyshares + P2P identity) is derived from the boot measurements `MRTD + RTMR0..RTMR3`. The app-compose — the launcher compose, the pre-launch/init scripts, and the toggles above — is hashed into `RTMR3` as the `compose_hash`. **Any change to it changes the derived key, so the existing encrypted disk can no longer be unsealed**, and the node fails to boot with `Failed to open encrypted data disk` / `No key available with this passphrase`.
->
-> Editing config through the **web UI is especially dangerous**: it re-serializes `app-compose.json` on save. dstack hashes a normalized form (sorted keys, compact separators), but the re-serialization can still alter *measured content* — e.g. dropping the trailing newline inside the embedded `docker_compose_file` string — which changes `compose_hash` even when the visible settings look unchanged. Do not use the UI to "just look at" or tweak a live node's config. Note that memory/vCPU changes are equally destructive (they feed `RTMR0`).
->
-> **Recovery** if the disk won't unseal after a config change:
-> 1. Regenerate a *byte-hash-identical* app-compose from the original inputs via [`deploy-launcher.sh`](#using-the-script) (it never adds scripts and pins vCPU/Memory).
-> 2. Confirm `sha256sum .app-compose.json` matches the pre-incident `compose_hash` — the 32 bytes after the leading `01` in the boot log's `mr_config_id`.
-> 3. Push it to the existing CVM: `vmm-cli.py --url $VMM_RPC update-app-compose <vm_id> .app-compose.json`, then `stop`/`start` the CVM.
->
-> If the hash cannot be reproduced, the keyshares on that disk are unrecoverable — deploy a fresh CVM and re-establish the node via resharing. See also [Launcher / CVM Upgrade](#launcher--cvm-upgrade), which covers the other case where the sealing key legitimately changes.
+> **⚠️ Never change the app-compose of a running node** — the node will not be able to start, since the disk is encrypted with a key derived from the app-compose measurement. If this happens, see [Troubleshooting: node won't start after an app-compose change](#node-wont-start-after-an-app-compose-change) to recover.
 
 #### Using the script
 
@@ -1887,6 +1876,44 @@ python $VMM_CLI_PATH --url $VMM_URL start <vm-id>
 
 Common failure scenarios and how to diagnose them. This section grows as new
 cases are identified.
+
+### Node won't start after an app-compose change
+
+**Symptom:** after changing the app-compose (a pre-launch/init script, a toggle,
+the launcher compose) — or editing config through the **web UI**, or changing
+**memory/vCPU** — the CVM no longer boots and `dstack-prepare` fails with:
+
+```text
+No key available with this passphrase
+Error: Failed to open encrypted data disk
+```
+
+**Why:** with the `local-sgx` key provider the data-disk encryption key is derived
+from the boot measurements `MRTD + RTMR0..RTMR3`. The app-compose is hashed into
+`RTMR3` (as `compose_hash`) and memory/vCPU feed `RTMR0`, so any change re-derives
+a different key and the existing disk can no longer be unsealed. The web UI is
+especially easy to trip on: it re-serializes `app-compose.json` on save, which can
+change `compose_hash` even when the visible settings look unchanged.
+
+**Fix — restore the exact original measurements.** The disk data is intact; do
+**not** reformat it.
+
+1. Regenerate a *byte-hash-identical* app-compose from the original inputs via
+   [`deploy-launcher.sh`](#using-the-script) (it never adds scripts and pins
+   vCPU/Memory). Revert any memory/vCPU change back to 8 vCPU / 64 GB.
+2. Confirm `sha256sum .app-compose.json` matches the original `compose_hash` — the
+   32 bytes after the leading `01` in a pre-incident boot log's `mr_config_id`.
+3. Push it to the existing CVM and restart:
+
+   ```bash
+   vmm-cli.py --url $VMM_RPC update-app-compose <vm_id> .app-compose.json
+   vmm-cli.py --url $VMM_RPC stop <vm_id> && vmm-cli.py --url $VMM_RPC start <vm_id>
+   ```
+
+If the original measurements can't be reproduced, the keyshares on that disk are
+unrecoverable — deploy a fresh CVM and re-establish the node via resharing. See
+also [Launcher / CVM Upgrade](#launcher--cvm-upgrade), which covers the case where
+the sealing key legitimately changes.
 
 ### Wiping the NEAR indexer data (force a re-sync)
 
