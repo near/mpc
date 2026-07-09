@@ -200,8 +200,9 @@ impl SignatureRespondArgsExt for contract_args::SignatureRespondArgs {
             response: dtos::SignatureResponse::Cheetah {
                 signature: dtos::CheetahSignature::from(signature_bytes),
             },
-        })
+        ))
     }
+}
 
 /// Brute forces the recovery id to find a recovery_id that matches the public key
 pub(crate) fn brute_force_recovery_id(
