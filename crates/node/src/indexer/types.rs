@@ -297,3 +297,33 @@ mod recovery_id_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod request_serialization_tests {
+    use super::{ChainSendTransactionRequest, contract_args, dtos};
+
+    fn mock_submit_args() -> contract_args::SubmitParticipantInfoArgs {
+        contract_args::SubmitParticipantInfoArgs::new(
+            dtos::Attestation::Mock(dtos::MockAttestation::Valid),
+            dtos::Ed25519PublicKey([7u8; 32]),
+        )
+    }
+
+    /// The request serializes as the on-chain call args, so the node-internal `pre_submit_expiry`
+    /// must not leak into the payload — it has to serialize exactly like the bare args. Guards the
+    /// `#[serde(flatten)]` + `#[serde(skip)]` on the `SubmitParticipantInfo` variant.
+    #[test]
+    #[expect(non_snake_case)]
+    fn submit_participant_info__should_serialize_as_bare_args() {
+        let request = ChainSendTransactionRequest::SubmitParticipantInfo {
+            args: Box::new(mock_submit_args()),
+            pre_submit_expiry: Some(123),
+        };
+
+        let request_json = serde_json::to_string(&request).unwrap();
+        let args_json = serde_json::to_string(&mock_submit_args()).unwrap();
+
+        assert_eq!(request_json, args_json);
+        assert!(!request_json.contains("pre_submit_expiry"));
+    }
+}
