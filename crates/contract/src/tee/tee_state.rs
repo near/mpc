@@ -5,8 +5,8 @@ use crate::{
         AllowedMeasurements, ContractExpectedMeasurements, MeasurementVoteAction, MeasurementVotes,
     },
     tee::proposal::{
-        AllowedDockerImageHashes, AllowedLauncherImages, AllowedMpcDockerImage, CodeHashesVotes,
-        LauncherHashVotes, LauncherVoteAction, NodeImageHash,
+        AllowedLauncherImages, CodeHashesVotes, LauncherHashVotes, LauncherVoteAction,
+        NodeImageHash, StoredDockerImageHashes,
     },
 };
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -15,7 +15,7 @@ use mpc_attestation::{
     report_data::{ReportData, ReportDataV1},
 };
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash};
-use near_mpc_contract_interface::types::Ed25519PublicKey;
+use near_mpc_contract_interface::types::{self as dtos, Ed25519PublicKey};
 use near_sdk::{env, near, store::IterableMap};
 use std::time::Duration;
 
@@ -72,7 +72,7 @@ pub(crate) struct NodeAttestation {
 #[near(serializers=[borsh])]
 #[derive(Debug)]
 pub struct TeeState {
-    pub(crate) allowed_docker_image_hashes: AllowedDockerImageHashes,
+    pub(super) allowed_docker_image_hashes: StoredDockerImageHashes,
     pub(crate) allowed_launcher_images: AllowedLauncherImages,
     pub(crate) votes: CodeHashesVotes,
     pub(crate) launcher_votes: LauncherHashVotes,
@@ -297,9 +297,9 @@ impl TeeState {
     pub fn get_allowed_mpc_docker_images(
         &self,
         tee_upgrade_deadline_duration: Duration,
-    ) -> Vec<AllowedMpcDockerImage> {
+    ) -> Vec<dtos::AllowedMpcDockerImageHash> {
         self.allowed_docker_image_hashes
-            .get(tee_upgrade_deadline_duration)
+            .allowed_images(tee_upgrade_deadline_duration)
     }
 
     pub fn whitelist_tee_proposal(
