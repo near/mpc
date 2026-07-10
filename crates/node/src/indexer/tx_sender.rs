@@ -186,7 +186,6 @@ async fn submit_tx(
 /// Confirms whether the intended effect of the transaction request has been observed on chain.
 async fn observe_tx_result(
     indexer_state: Arc<IndexerState>,
-    signer_account_id: &AccountId,
     request: &ChainSendTransactionRequest,
 ) -> anyhow::Result<TransactionStatus> {
     match request {
@@ -370,8 +369,7 @@ async fn ensure_send_transaction(
     time::sleep(TRANSACTION_TIMEOUT).await;
 
     // Then try to check whether it had the intended effect
-    let transaction_status =
-        observe_tx_result(indexer_state.clone(), tx_signer.account_id(), &request).await;
+    let transaction_status = observe_tx_result(indexer_state.clone(), &request).await;
 
     let (outcome_label, recorded_status) = match &transaction_status {
         Ok(TransactionStatus::Executed) => ("succeeded", SubmittedTransactionStatus::Executed),
