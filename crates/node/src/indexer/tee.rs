@@ -3,9 +3,11 @@ use std::future::Future;
 use std::{sync::Arc, time::Duration};
 
 use backon::{BackoffBuilder, ExponentialBuilder};
-use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash};
+use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_account_id::AccountId;
-use near_mpc_contract_interface::types::{ChainEntry, ForeignChain, NodeId};
+use near_mpc_contract_interface::types::{
+    AllowedMpcDockerImageHash, ChainEntry, ForeignChain, NodeId,
+};
 use tokio::sync::watch;
 
 use crate::indexer::IndexerState;
@@ -79,10 +81,10 @@ async fn monitor_allowed_hashes<Fetcher, T, FetcherResponseFuture>(
 
 /// This future waits for the indexer to fully sync, and returns
 /// a [`watch::Receiver`] that will be continuously updated with the latest
-/// allowed [`AllowedDockerImageHash`]es when a change is detected
+/// allowed [`AllowedMpcDockerImageHash`]es when a change is detected
 /// on the MPC smart contract.
 pub async fn monitor_allowed_docker_images(
-    sender: watch::Sender<Vec<NodeImageHash>>,
+    sender: watch::Sender<Vec<AllowedMpcDockerImageHash>>,
     indexer_state: Arc<IndexerState>,
 ) {
     let view_client = indexer_state.view_client.clone();
