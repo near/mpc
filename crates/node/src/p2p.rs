@@ -931,6 +931,7 @@ pub mod testing {
     use ed25519_dalek::SigningKey;
     use near_account_id::AccountId;
     use rand::rngs::OsRng;
+    use test_port_allocator::PortAllocationScheme;
 
     /// A unique seed for each integration test to avoid port conflicts during testing.
     #[derive(Copy, Clone)]
@@ -940,8 +941,9 @@ pub mod testing {
     }
 
     impl PortSeed {
-        // The base port number used, hoping the OS is not using ports in this range
-        pub const BASE_PORT: u16 = 10000;
+        // Base port for this allocator's lane, owned centrally by
+        // `test_port_allocator` so the deterministic ranges stay disjoint.
+        pub const BASE_PORT: u16 = test_port_allocator::PORT_SEED_BASE;
         // This constant must be equal to the total number of ports defined below
         pub const TOTAL_DEFINED_PORTS: u16 = 23;
         // Maximum number of nodes that can be handled without port collisions
@@ -951,6 +953,17 @@ pub mod testing {
         // Each function below corresponds to a port per node. Each defines an offset,
         // and all offsets must be different
         pub const TOTAL_PORTS_PER_NODE: u16 = 4;
+
+        // Every `case` occupies its own run of `TOTAL_PORTS_PER_NODE` offsets
+        // within a node, so a node reserves `MAX_CASES * TOTAL_PORTS_PER_NODE`
+        // ports. Base 10000 stays disjoint from `E2ePortAllocator` (20000+) and
+        // `test_port_allocator::reserve_port` (40000+).
+        const SCHEME: PortAllocationScheme = PortAllocationScheme::new(
+            Self::BASE_PORT,
+            0,
+            Self::MAX_CASES * Self::TOTAL_PORTS_PER_NODE,
+            Self::MAX_NODES,
+        );
 
         pub const fn new(port_number: u16) -> Self {
             Self {
@@ -967,11 +980,11 @@ pub mod testing {
         }
 
         fn compute_port(&self, node_index: u16, offset: u16) -> u16 {
-            Self::BASE_PORT
-                + self.port_number * Self::MAX_NODES * Self::MAX_CASES * Self::TOTAL_PORTS_PER_NODE
-                + node_index * Self::MAX_CASES * Self::TOTAL_PORTS_PER_NODE
-                + self.case * Self::TOTAL_PORTS_PER_NODE
-                + offset
+            Self::SCHEME.node_port(
+                self.port_number,
+                node_index as usize,
+                self.case * Self::TOTAL_PORTS_PER_NODE + offset,
+            )
         }
 
         pub fn p2p_port(&self, node_index: usize) -> u16 {

@@ -1,3 +1,5 @@
+use test_port_allocator::PortAllocationScheme;
+
 /// Deterministic port allocator for E2E tests.
 ///
 /// Each test gets a unique `test_id`. All ports are computed from it to avoid
@@ -6,70 +8,68 @@
 /// Layout per test:
 ///   - 2 cluster-level ports (NEAR sandbox RPC/network)
 ///   - 8 ports per node * MAX_NODES
+///
+/// The offset arithmetic is delegated to [`PortAllocationScheme`]; this type only
+/// assigns semantics to each offset.
 #[derive(Debug, Clone)]
 pub struct E2ePortAllocator {
     test_id: u16,
 }
 
 impl E2ePortAllocator {
-    const BASE_PORT: u16 = 20000;
+    const BASE_PORT: u16 = test_port_allocator::E2E_PORT_BASE;
     const PORTS_PER_NODE: u16 = 8;
     const MAX_NODES: u16 = 10;
     /// Cluster-level ports that are not per-node.
     const CLUSTER_PORTS: u16 = 2;
-    /// Total ports reserved per test.
-    const PORTS_PER_TEST: u16 = Self::CLUSTER_PORTS + Self::MAX_NODES * Self::PORTS_PER_NODE;
+
+    /// Base 20000 stays disjoint from `PortSeed` (10000+) and
+    /// `test_port_allocator::reserve_port` (40000+).
+    const SCHEME: PortAllocationScheme = PortAllocationScheme::new(
+        Self::BASE_PORT,
+        Self::CLUSTER_PORTS,
+        Self::PORTS_PER_NODE,
+        Self::MAX_NODES,
+    );
 
     pub const fn new(test_id: u16) -> Self {
         Self { test_id }
     }
 
-    fn base(&self) -> u16 {
-        Self::BASE_PORT + self.test_id * Self::PORTS_PER_TEST
-    }
-
     // -- Cluster-level ports --
 
     pub fn near_node_rpc_port(&self) -> u16 {
-        self.base()
+        Self::SCHEME.cluster_port(self.test_id, 0)
     }
 
     pub fn near_node_network_port(&self) -> u16 {
-        self.base() + 1
+        Self::SCHEME.cluster_port(self.test_id, 1)
     }
 
     // -- Per-node ports --
 
-    fn node_base(&self, node_index: usize) -> u16 {
-        assert!(
-            node_index < Self::MAX_NODES as usize,
-            "node_index {node_index} exceeds MAX_NODES"
-        );
-        self.base() + Self::CLUSTER_PORTS + (node_index as u16) * Self::PORTS_PER_NODE
-    }
-
     pub fn p2p_port(&self, node_index: usize) -> u16 {
-        self.node_base(node_index)
+        Self::SCHEME.node_port(self.test_id, node_index, 0)
     }
 
     pub fn web_ui_port(&self, node_index: usize) -> u16 {
-        self.node_base(node_index) + 1
+        Self::SCHEME.node_port(self.test_id, node_index, 1)
     }
 
     pub fn migration_web_ui_port(&self, node_index: usize) -> u16 {
-        self.node_base(node_index) + 2
+        Self::SCHEME.node_port(self.test_id, node_index, 2)
     }
 
     pub fn pprof_port(&self, node_index: usize) -> u16 {
-        self.node_base(node_index) + 3
+        Self::SCHEME.node_port(self.test_id, node_index, 3)
     }
 
     pub fn near_rpc_port(&self, node_index: usize) -> u16 {
-        self.node_base(node_index) + 4
+        Self::SCHEME.node_port(self.test_id, node_index, 4)
     }
 
     pub fn near_network_port(&self, node_index: usize) -> u16 {
-        self.node_base(node_index) + 5
+        Self::SCHEME.node_port(self.test_id, node_index, 5)
     }
 }
 
@@ -78,20 +78,42 @@ mod tests {
     use super::*;
 
     #[test]
-    fn no_port_overlap_between_tests() {
+    #[expect(non_snake_case)]
+    fn port_accessors__should_compute_ports_at_expected_offsets() {
+        // Given a known test id
+        // When reading each accessor
+        // Then each returns its port at the expected offset (base 20000, 2 cluster + 8/node)
+        let a = E2ePortAllocator::new(1);
+        assert_eq!(a.near_node_rpc_port(), 20082);
+        assert_eq!(a.near_node_network_port(), 20083);
+        assert_eq!(a.p2p_port(0), 20084);
+        assert_eq!(a.web_ui_port(0), 20085);
+        assert_eq!(a.migration_web_ui_port(0), 20086);
+        assert_eq!(a.pprof_port(0), 20087);
+        assert_eq!(a.near_rpc_port(0), 20088);
+        assert_eq!(a.near_network_port(0), 20089);
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn port_allocation__should_not_overlap_between_tests() {
+        // Given two adjacent test ids
+        // When comparing the last port of test 0 to the first of test 1
+        // Then the ranges are disjoint
         let a = E2ePortAllocator::new(0);
         let b = E2ePortAllocator::new(1);
-        // Last port of test 0 must be less than first port of test 1
         let a_last = a.near_network_port(E2ePortAllocator::MAX_NODES as usize - 1);
         let b_first = b.near_node_rpc_port();
         assert!(a_last < b_first, "{a_last} >= {b_first}");
     }
 
     #[test]
-    fn no_port_overlap_between_nodes() {
+    #[expect(non_snake_case)]
+    fn port_allocation__should_not_overlap_between_nodes() {
+        // Given two adjacent nodes in one test
+        // When comparing the last port of node 0 to the first of node 1
+        // Then the ranges are disjoint
         let a = E2ePortAllocator::new(0);
-        let last_of_node0 = a.near_network_port(0);
-        let first_of_node1 = a.p2p_port(1);
-        assert!(last_of_node0 < first_of_node1);
+        assert!(a.near_network_port(0) < a.p2p_port(1));
     }
 }

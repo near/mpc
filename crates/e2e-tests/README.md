@@ -229,6 +229,11 @@ maximum nodes). Cluster-level ports cover the sandbox RPC and network; per-node
 ports cover p2p, web UI, migration web UI, pprof, and the node's internal
 neard RPC/network.
 
+The offset arithmetic is shared with the `mpc-node` integration tests via
+`test_port_allocator::PortAllocationScheme`; `E2ePortAllocator` only names the offsets.
+Its base (20000+) is kept disjoint from `PortSeed` (10000+) and
+`reserve_port` (40000+).
+
 Centralising seeds in `tests/common.rs` (e.g. `CKD_VERIFICATION_PORT_SEED = 9`)
 keeps parallel tests from colliding. If a test crashes and leaves an orphan
 `mpc-node` holding its ports, the next run will fail to bind — clean up with
