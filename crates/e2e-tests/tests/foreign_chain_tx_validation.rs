@@ -21,10 +21,11 @@ use near_mpc_contract_interface::types::{
     VerifyForeignTransactionRequestArgs,
 };
 
-/// One chain per credential-carrying `AuthConfig` kind: Bitcoin uses `path`,
+/// One chain per credential-carrying [`AuthConfig`] kind: Bitcoin uses `path`,
 /// Base `header`, BNB `query`; the remaining chains use `None`.
 const PATH_AUTH_PLACEHOLDER: &str = "{api_key}";
 const PATH_AUTH_API_KEY: &str = "bitcoin-path-api-key";
+const HEADER_AUTH_NAME: &str = "authorization";
 const HEADER_AUTH_SCHEME: &str = "Bearer";
 const HEADER_AUTH_TOKEN: &str = "base-bearer-token";
 const QUERY_AUTH_PARAM: &str = "apikey";
@@ -117,7 +118,7 @@ fn build_foreign_chains_config(urls: &MockServerUrls) -> ForeignChainsConfig {
                 ForeignChainProviderConfig {
                     rpc_url: urls.base.clone(),
                     auth: AuthConfig::Header {
-                        name: "authorization".parse().expect("valid header name"),
+                        name: HEADER_AUTH_NAME.parse().expect("valid header name"),
                         scheme: Some(HEADER_AUTH_SCHEME.to_string()),
                         token: TokenConfig::Val {
                             val: HEADER_AUTH_TOKEN.to_string(),
@@ -197,7 +198,7 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
     let base_mock_id = setup_evm_mock(
         &base_server,
         MockAuthExpectation::Header {
-            name: "authorization".to_string(),
+            name: HEADER_AUTH_NAME.to_string(),
             value: format!("{HEADER_AUTH_SCHEME} {HEADER_AUTH_TOKEN}"),
         },
     );
@@ -547,7 +548,7 @@ async fn verify_polygon(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
 /// chains and non-existent domains.
 ///
 /// Bitcoin, Base and BNB providers require authentication (one per
-/// credential-carrying `AuthConfig` kind), so the test also proves the node
+/// credential-carrying [`AuthConfig`] kind), so the test also proves the node
 /// applies configured RPC credentials end to end.
 #[tokio::test]
 #[expect(non_snake_case)]
