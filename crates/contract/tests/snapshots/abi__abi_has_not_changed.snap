@@ -2335,7 +2335,7 @@ expression: abi
       },
       {
         "name": "submit_participant_info",
-        "doc": " Submit a TEE attestation for a current or prospective participant.\n\n - [`Attestation::Mock`] is verified synchronously.\n - [`Attestation::Dstack`] is verified asynchronously: the returned\n   promise calls `verify_quote` on the trusted verifier contract and the\n   submission succeeds or fails with its verdict.\n\n The attached deposit pays for storage on success, and is refunded on failure.",
+        "doc": " Submit a TEE attestation for a current or prospective participant.\n\n - [`Attestation::Mock`] is verified synchronously.\n - [`Attestation::Dstack`] is verified asynchronously, by yielding on a\n   cross-contract verify-quote call. It rejects a second submission from\n   the same account while one is still in flight.\n\n The attached deposit pays for storage on success, and is refunded on failure.",
         "kind": "call",
         "modifiers": [
           "payable"
