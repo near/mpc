@@ -252,7 +252,6 @@ impl IndexerViewClient {
         }
     }
 
-
     pub(crate) async fn get_supported_chains(
         &self,
         mpc_contract_id: &AccountId,
