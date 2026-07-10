@@ -1565,10 +1565,6 @@ expression: abi
                       [
                         "attestation",
                         "DstackAttestation"
-                      ],
-                      [
-                        "caller_is_participant",
-                        "bool"
                       ]
                     ]
                   },
@@ -1591,9 +1587,6 @@ expression: abi
                       },
                       "elements": "u8"
                     }
-                  },
-                  "bool": {
-                    "Primitive": 1
                   },
                   "u32": {
                     "Primitive": 4

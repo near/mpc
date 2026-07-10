@@ -93,7 +93,7 @@ use tee_verifier_interface::{VerificationResult, VerifiedReport};
 use state::{ProtocolContractState, running::RunningContractState};
 use tee::{
     proposal::{LauncherVoteAction, NodeImageHash},
-    tee_state::{NodeId, ParticipantInsertion, TeeValidationResult},
+    tee_state::{NodeId, TeeValidationResult},
 };
 
 /// Register used to receive data id from `promise_await_data`.
@@ -811,31 +811,22 @@ impl MpcContract {
             tls_public_key,
             account_public_key,
         };
-        // Decides who pays for storage. Captured now because the async Dstack
-        // path checks it in a later callback, where the caller is the contract
-        // itself and participant status can no longer be derived.
-        let caller_is_participant = self.voter_account().is_ok();
 
         match proposed_participant_attestation {
             Attestation::Mock(mock) => {
                 let tee_upgrade_deadline_duration =
                     Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
                 let initial_storage = env::storage_usage();
-                let insertion = self.tee_state.verify_and_store_mock(
+                self.tee_state.verify_and_store_mock(
                     node_id,
                     mock,
                     tee_upgrade_deadline_duration,
                 )?;
-                self.charge_attestation_storage(
-                    &account_id,
-                    initial_storage,
-                    &insertion,
-                    caller_is_participant,
-                )?;
+                self.charge_attestation_storage(&account_id, initial_storage)?;
                 Ok(PromiseOrValue::Value(()))
             }
             Attestation::Dstack(attestation) => Ok(PromiseOrValue::Promise(
-                self.submit_dstack_attestation(node_id, attestation, caller_is_participant)?,
+                self.submit_dstack_attestation(node_id, attestation)?,
             )),
         }
     }
@@ -847,7 +838,6 @@ impl MpcContract {
         &mut self,
         node_id: NodeId,
         attestation: DstackAttestation,
-        caller_is_participant: bool,
     ) -> Result<Promise, Error> {
         let Some(verifier_account_id) = self.tee_verifier_account_id.clone() else {
             return Err(TeeError::VerifierNotConfigured.into());
@@ -868,7 +858,6 @@ impl MpcContract {
                     .resolve_verification(VerificationContext {
                         node_id,
                         attestation,
-                        caller_is_participant,
                     }),
             ))
     }
@@ -877,17 +866,7 @@ impl MpcContract {
         &self,
         account_id: &AccountId,
         initial_storage: u64,
-        insertion: &ParticipantInsertion,
-        caller_is_participant: bool,
     ) -> Result<(), Error> {
-        let is_new_attestation =
-            matches!(insertion, ParticipantInsertion::NewlyInsertedParticipant);
-
-        if caller_is_participant && !is_new_attestation {
-            refund_deposit_to(account_id);
-            return Ok(());
-        }
-
         // `saturating_sub`: if a re-submission shrinks the entry, charge nothing
         // rather than underflow. Intentional asymmetry: we do not refund freed
         // bytes either, since the caller already paid for the larger entry.
@@ -2409,12 +2388,7 @@ impl MpcContract {
 
         // The charge is the measured storage delta, so it is only known after
         // the store; an insufficient deposit reverts the store below.
-        match self.charge_attestation_storage(
-            account_id,
-            initial_storage,
-            &insertion,
-            context.caller_is_participant,
-        ) {
+        match self.charge_attestation_storage(account_id, initial_storage) {
             Ok(()) => Ok(()),
             Err(err) => {
                 // This receipt commits even though we return an error, so the
@@ -2856,7 +2830,7 @@ mod tests {
         KeyProviderEventDigest, MrtdHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash,
     };
     use crate::tee::proposal::{LauncherVoteAction, get_docker_compose_hash};
-    use crate::tee::tee_state::{NodeAttestation, NodeId};
+    use crate::tee::tee_state::{NodeAttestation, NodeId, ParticipantInsertion};
     use assert_matches::assert_matches;
     use dtos::{Attestation, Ed25519PublicKey, ForeignTxSignPayload, MockAttestation};
     use dtos::{Curve, DomainConfig, DomainId, Payload, Protocol, ReconstructionThreshold, Tweak};
