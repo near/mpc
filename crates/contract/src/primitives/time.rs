@@ -22,6 +22,10 @@ impl Timestamp {
             duration_since_unix_epoch: new_time_stamp,
         })
     }
+
+    pub(crate) fn as_secs(self) -> u64 {
+        self.duration_since_unix_epoch.as_secs()
+    }
 }
 
 impl borsh::BorshSerialize for Timestamp {

@@ -13,7 +13,7 @@ use mpc_attestation::{
     attestation::{Attestation, VerificationError},
     report_data::{ReportData, ReportDataV1},
 };
-use near_mpc_contract_interface::types::Ed25519PublicKey;
+use near_mpc_contract_interface::types::{AllowedMpcDockerImageHash, Ed25519PublicKey};
 use tee_authority::tee_authority::TeeAuthority;
 use tokio_util::time::FutureExt;
 
@@ -143,7 +143,7 @@ pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Ti
     tx_sender: T,
     tls_public_key: Ed25519PublicKey,
     account_public_key: Ed25519PublicKey,
-    allowed_image_hashes_in_contract: watch::Receiver<Vec<NodeImageHash>>,
+    allowed_image_hashes_in_contract: watch::Receiver<Vec<AllowedMpcDockerImageHash>>,
     allowed_launcher_compose_hashes_in_contract: watch::Receiver<Vec<LauncherDockerComposeHash>>,
     mut interval_ticker: I,
 ) -> anyhow::Result<()> {
@@ -177,7 +177,11 @@ pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Ti
                 return Err(anyhow::anyhow!(e).context("TEE attestation failed, cannot continue"));
             }
         };
-        let allowed_image_hashes_in_contract = allowed_image_hashes_in_contract.borrow().clone();
+        let allowed_image_hashes_in_contract: Vec<_> = allowed_image_hashes_in_contract
+            .borrow()
+            .iter()
+            .map(|entry| entry.image_hash)
+            .collect();
         let allowed_launcher_compose_hashes_in_contract =
             allowed_launcher_compose_hashes_in_contract.borrow().clone();
         validate_and_submit_remote_attestation(
@@ -213,7 +217,7 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
     tx_sender: T,
     tls_public_key: Ed25519PublicKey,
     account_public_key: Ed25519PublicKey,
-    allowed_image_hashes_in_contract: watch::Receiver<Vec<NodeImageHash>>,
+    allowed_image_hashes_in_contract: watch::Receiver<Vec<AllowedMpcDockerImageHash>>,
     allowed_launcher_compose_hashes_in_contract: watch::Receiver<Vec<LauncherDockerComposeHash>>,
     mut tee_accounts_receiver: watch::Receiver<Vec<NodeId>>,
 ) -> anyhow::Result<()> {
@@ -282,8 +286,11 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
                     );
                 }
             };
-            let allowed_image_hashes_in_contract =
-                allowed_image_hashes_in_contract.borrow().clone();
+            let allowed_image_hashes_in_contract: Vec<_> = allowed_image_hashes_in_contract
+                .borrow()
+                .iter()
+                .map(|entry| entry.image_hash)
+                .collect();
             let allowed_launcher_compose_hashes_in_contract =
                 allowed_launcher_compose_hashes_in_contract.borrow().clone();
             validate_and_submit_remote_attestation(
