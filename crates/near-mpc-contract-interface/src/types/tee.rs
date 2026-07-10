@@ -1,5 +1,6 @@
 use crate::types::primitives::AccountId;
 use borsh::{BorshDeserialize, BorshSerialize};
+use mpc_primitives::hash::NodeImageHash;
 use near_mpc_crypto_types::Ed25519PublicKey;
 use serde::{Deserialize, Serialize};
 
@@ -27,6 +28,30 @@ pub struct NodeId {
     pub tls_public_key: Ed25519PublicKey,
     /// Full-access Ed25519 public key of the operator account.
     pub account_public_key: Ed25519PublicKey,
+}
+
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Hash,
+    Ord,
+    PartialOrd,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct AllowedMpcDockerImageHash {
+    pub image_hash: NodeImageHash,
+    /// block-time at which this hash is evicted from the allowlist.
+    /// None if expiration date is not yet known.
+    pub expiry_timestamp_seconds: Option<u64>,
 }
 
 #[cfg(test)]
