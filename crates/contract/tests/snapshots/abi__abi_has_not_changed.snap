@@ -856,29 +856,6 @@ expression: abi
         }
       },
       {
-        "name": "is_verification_pending",
-        "doc": " Whether the account has an [`Attestation::Dstack`] submission awaiting\n async verification, so a submitter can tell \"in flight\" from \"never\n landed\" rather than resubmit and hit a [`TeeError::VerificationAlreadyPending`].",
-        "kind": "view",
-        "params": {
-          "serialization_type": "json",
-          "args": [
-            {
-              "name": "account_id",
-              "type_schema": {
-                "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
-                "type": "string"
-              }
-            }
-          ]
-        },
-        "result": {
-          "serialization_type": "json",
-          "type_schema": {
-            "type": "boolean"
-          }
-        }
-      },
-      {
         "name": "latest_key_version",
         "doc": " Key versions refer new versions of the root key that we may choose to generate on cohort\n changes. Older key versions will always work but newer key versions were never held by\n older signers. Newer key versions may also add new security features, like only existing\n within a secure enclave. The signature_scheme parameter specifies which protocol\n we're querying the latest version for. The default is Secp256k1. The default is **NOT**\n to query across all protocols.",
         "kind": "view",
@@ -973,40 +950,6 @@ expression: abi
               "maxItems": 2,
               "minItems": 2
             }
-          }
-        }
-      },
-      {
-        "name": "on_attestation_verified",
-        "doc": " Yield-resume callback for an [`Attestation::Dstack`] submission. On\n success it resolves the caller's transaction; on a rejection or the\n ~200-block timeout it cleans up, refunds, and fails from a separate\n receipt.",
-        "kind": "call",
-        "modifiers": [
-          "private"
-        ],
-        "params": {
-          "serialization_type": "json",
-          "args": [
-            {
-              "name": "account_id",
-              "type_schema": {
-                "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
-                "type": "string"
-              }
-            }
-          ]
-        },
-        "callbacks": [
-          {
-            "serialization_type": "json",
-            "type_schema": {
-              "$ref": "#/definitions/AttestationResult"
-            }
-          }
-        ],
-        "result": {
-          "serialization_type": "json",
-          "type_schema": {
-            "$ref": "#/definitions/PromiseOrValueNull"
           }
         }
       },
@@ -1107,10 +1050,6 @@ expression: abi
                       ],
                       [
                         "resolve_verification_tera_gas",
-                        "u64"
-                      ],
-                      [
-                        "on_attestation_verified_tera_gas",
                         "u64"
                       ]
                     ]
@@ -1367,18 +1306,302 @@ expression: abi
       },
       {
         "name": "resolve_verification",
-        "doc": " Verify-quote callback: maps the verifier's response to an [`AttestationResult`]\n and resumes the yield.",
+        "doc": " Verify-quote callback: on a verifier verdict it runs the post-DCAP\n checks, stores the attestation, and settles the deposit.",
         "kind": "call",
         "modifiers": [
+          "payable",
           "private"
         ],
         "params": {
-          "serialization_type": "json",
+          "serialization_type": "borsh",
           "args": [
             {
-              "name": "node_id",
+              "name": "context",
               "type_schema": {
-                "$ref": "#/definitions/NodeId"
+                "declaration": "VerificationContext",
+                "definitions": {
+                  "()": {
+                    "Primitive": 0
+                  },
+                  "AccountId": {
+                    "Struct": [
+                      "String"
+                    ]
+                  },
+                  "Collateral": {
+                    "Struct": [
+                      [
+                        "pck_crl_issuer_chain",
+                        "String"
+                      ],
+                      [
+                        "root_ca_crl",
+                        "Vec<u8>"
+                      ],
+                      [
+                        "pck_crl",
+                        "Vec<u8>"
+                      ],
+                      [
+                        "tcb_info_issuer_chain",
+                        "String"
+                      ],
+                      [
+                        "tcb_info",
+                        "String"
+                      ],
+                      [
+                        "tcb_info_signature",
+                        "Vec<u8>"
+                      ],
+                      [
+                        "qe_identity_issuer_chain",
+                        "String"
+                      ],
+                      [
+                        "qe_identity",
+                        "String"
+                      ],
+                      [
+                        "qe_identity_signature",
+                        "Vec<u8>"
+                      ],
+                      [
+                        "pck_certificate_chain",
+                        "Option<String>"
+                      ]
+                    ]
+                  },
+                  "DstackAttestation": {
+                    "Struct": [
+                      [
+                        "quote",
+                        "QuoteBytes"
+                      ],
+                      [
+                        "collateral",
+                        "Collateral"
+                      ],
+                      [
+                        "tcb_info",
+                        "TcbInfo"
+                      ]
+                    ]
+                  },
+                  "Ed25519PublicKey": {
+                    "Struct": [
+                      "[u8; 32]"
+                    ]
+                  },
+                  "EventLog": {
+                    "Struct": [
+                      [
+                        "imr",
+                        "u32"
+                      ],
+                      [
+                        "event_type",
+                        "u32"
+                      ],
+                      [
+                        "digest",
+                        "HexBytes<48>"
+                      ],
+                      [
+                        "event",
+                        "String"
+                      ],
+                      [
+                        "event_payload",
+                        "String"
+                      ]
+                    ]
+                  },
+                  "HexBytes<32>": {
+                    "Struct": [
+                      "[u8; 32]"
+                    ]
+                  },
+                  "HexBytes<48>": {
+                    "Struct": [
+                      "[u8; 48]"
+                    ]
+                  },
+                  "NodeId": {
+                    "Struct": [
+                      [
+                        "account_id",
+                        "AccountId"
+                      ],
+                      [
+                        "tls_public_key",
+                        "Ed25519PublicKey"
+                      ],
+                      [
+                        "account_public_key",
+                        "Ed25519PublicKey"
+                      ]
+                    ]
+                  },
+                  "Option<HexBytes<32>>": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "None",
+                          "()"
+                        ],
+                        [
+                          1,
+                          "Some",
+                          "HexBytes<32>"
+                        ]
+                      ]
+                    }
+                  },
+                  "Option<String>": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "None",
+                          "()"
+                        ],
+                        [
+                          1,
+                          "Some",
+                          "String"
+                        ]
+                      ]
+                    }
+                  },
+                  "QuoteBytes": {
+                    "Struct": [
+                      "Vec<u8>"
+                    ]
+                  },
+                  "String": {
+                    "Sequence": {
+                      "length_width": 4,
+                      "length_range": {
+                        "start": 0,
+                        "end": 4294967295
+                      },
+                      "elements": "u8"
+                    }
+                  },
+                  "TcbInfo": {
+                    "Struct": [
+                      [
+                        "mrtd",
+                        "HexBytes<48>"
+                      ],
+                      [
+                        "rtmr0",
+                        "HexBytes<48>"
+                      ],
+                      [
+                        "rtmr1",
+                        "HexBytes<48>"
+                      ],
+                      [
+                        "rtmr2",
+                        "HexBytes<48>"
+                      ],
+                      [
+                        "rtmr3",
+                        "HexBytes<48>"
+                      ],
+                      [
+                        "os_image_hash",
+                        "Option<HexBytes<32>>"
+                      ],
+                      [
+                        "compose_hash",
+                        "HexBytes<32>"
+                      ],
+                      [
+                        "device_id",
+                        "HexBytes<32>"
+                      ],
+                      [
+                        "app_compose",
+                        "String"
+                      ],
+                      [
+                        "event_log",
+                        "Vec<EventLog>"
+                      ]
+                    ]
+                  },
+                  "Vec<EventLog>": {
+                    "Sequence": {
+                      "length_width": 4,
+                      "length_range": {
+                        "start": 0,
+                        "end": 4294967295
+                      },
+                      "elements": "EventLog"
+                    }
+                  },
+                  "Vec<u8>": {
+                    "Sequence": {
+                      "length_width": 4,
+                      "length_range": {
+                        "start": 0,
+                        "end": 4294967295
+                      },
+                      "elements": "u8"
+                    }
+                  },
+                  "VerificationContext": {
+                    "Struct": [
+                      [
+                        "node_id",
+                        "NodeId"
+                      ],
+                      [
+                        "attestation",
+                        "DstackAttestation"
+                      ],
+                      [
+                        "caller_is_participant",
+                        "bool"
+                      ]
+                    ]
+                  },
+                  "[u8; 32]": {
+                    "Sequence": {
+                      "length_width": 0,
+                      "length_range": {
+                        "start": 32,
+                        "end": 32
+                      },
+                      "elements": "u8"
+                    }
+                  },
+                  "[u8; 48]": {
+                    "Sequence": {
+                      "length_width": 0,
+                      "length_range": {
+                        "start": 48,
+                        "end": 48
+                      },
+                      "elements": "u8"
+                    }
+                  },
+                  "bool": {
+                    "Primitive": 1
+                  },
+                  "u32": {
+                    "Primitive": 4
+                  },
+                  "u8": {
+                    "Primitive": 1
+                  }
+                }
               }
             }
           ]
@@ -1827,7 +2050,13 @@ expression: abi
               }
             }
           }
-        ]
+        ],
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/PromiseOrValueNull"
+          }
+        }
       },
       {
         "name": "respond",
@@ -2106,7 +2335,7 @@ expression: abi
       },
       {
         "name": "submit_participant_info",
-        "doc": " Submit a TEE attestation for a current or prospective participant.\n\n - [`Attestation::Mock`] is verified synchronously.\n - [`Attestation::Dstack`] is verified asynchronously, by yielding on a\n   cross-contract verify-quote call. It rejects a second submission from\n   the same account while one is still in flight.\n\n The attached deposit pays for storage on success, and is refunded on failure.",
+        "doc": " Submit a TEE attestation for a current or prospective participant.\n\n - [`Attestation::Mock`] is verified synchronously.\n - [`Attestation::Dstack`] is verified asynchronously: the returned\n   promise calls `verify_quote` on the trusted verifier contract and the\n   submission succeeds or fails with its verdict.\n\n The attached deposit pays for storage on success, and is refunded on failure.",
         "kind": "call",
         "modifiers": [
           "payable"
@@ -2131,7 +2360,7 @@ expression: abi
         "result": {
           "serialization_type": "json",
           "type_schema": {
-            "type": "null"
+            "$ref": "#/definitions/PromiseOrValueNull"
           }
         }
       },
@@ -3012,28 +3241,6 @@ expression: abi
             }
           ]
         },
-        "AttestationResult": {
-          "oneOf": [
-            {
-              "type": "string",
-              "enum": [
-                "Ok"
-              ]
-            },
-            {
-              "type": "object",
-              "required": [
-                "Err"
-              ],
-              "properties": {
-                "Err": {
-                  "type": "string"
-                }
-              },
-              "additionalProperties": false
-            }
-          ]
-        },
         "AuthenticatedAccountId": {
           "description": "An account ID that has been authenticated (i.e., the caller is this account).",
           "type": "string"
@@ -3309,7 +3516,6 @@ expression: abi
             "fail_attestation_submission_tera_gas",
             "fail_on_timeout_tera_gas",
             "key_event_timeout_blocks",
-            "on_attestation_verified_tera_gas",
             "remove_non_participant_tee_verifier_votes_tera_gas",
             "remove_non_participant_update_votes_tera_gas",
             "resolve_verification_tera_gas",
@@ -3370,12 +3576,6 @@ expression: abi
             },
             "key_event_timeout_blocks": {
               "description": "If a key event attempt has not successfully completed within this many blocks, it is considered failed.",
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
-            },
-            "on_attestation_verified_tera_gas": {
-              "description": "Prepaid gas for the `on_attestation_verified` yield-callback.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
@@ -4014,15 +4214,6 @@ expression: abi
             },
             "key_event_timeout_blocks": {
               "description": "If a key event attempt has not successfully completed within this many blocks, it is considered failed.",
-              "type": [
-                "integer",
-                "null"
-              ],
-              "format": "uint64",
-              "minimum": 0.0
-            },
-            "on_attestation_verified_tera_gas": {
-              "description": "Prepaid gas for the `on_attestation_verified` yield-callback.",
               "type": [
                 "integer",
                 "null"
