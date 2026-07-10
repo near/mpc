@@ -1282,7 +1282,7 @@ dependencies = [
  "bitflags 2.11.0",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "regex",
@@ -1469,7 +1469,7 @@ version = "3.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "519bd3116aeeb42d5372c29d982d16d0170d3d4a5ed85fc7dd91642ffff3c67c"
 dependencies = [
- "darling 0.23.0",
+ "darling 0.21.3",
  "ident_case",
  "prettyplease 0.2.37",
  "proc-macro2",
@@ -7658,9 +7658,9 @@ dependencies = [
 
 [[package]]
 name = "near-workspaces"
-version = "0.22.2"
+version = "0.22.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ddcff39af8f7de41b73d1441a5471e1a6b58c5d5cd9f3508bad768623ac970a7"
+checksum = "1a7bd50f51ae16c0a9e8ea45bd9b8bf82e92280549f43c2db23c58eb22c52588"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -7679,7 +7679,7 @@ dependencies = [
  "near-sandbox",
  "near-token",
  "rand 0.8.6",
- "reqwest 0.12.28",
+ "reqwest 0.13.4",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -8952,7 +8952,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "syn 2.0.118",
@@ -8965,7 +8965,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27c6023962132f4b30eb4c172c91ce92d933da334c59c23cddee82358ddafb0b"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "syn 2.0.118",
@@ -11121,6 +11121,7 @@ dependencies = [
  "mpc-primitives",
  "near-account-id",
  "near-mpc-contract-interface",
+ "serde",
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
@@ -11580,12 +11581,12 @@ dependencies = [
 
 [[package]]
 name = "tokio-retry"
-version = "0.3.0"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f57eb36ecbe0fc510036adff84824dd3c24bb781e21bfa67b69d556aa85214f"
+checksum = "4a129d95275ebf4c493ec53bf0f8cd95f5ac161bc4f381700809a54f595d4470"
 dependencies = [
- "pin-project",
- "rand 0.8.6",
+ "pin-project-lite",
+ "rand 0.10.1",
  "tokio",
 ]
 

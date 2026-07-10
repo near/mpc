@@ -535,11 +535,11 @@ macro_rules! assert_allowed_docker_image_hashes {
     ($test_setup:expr_2021, $blocktime_ns:expr_2021, $expected_value:expr_2021 $(,)?) => {{
         set_system_time($blocktime_ns);
 
-        let mut res: Vec<[u8; 32]> = $test_setup
+        let mut res: Vec<([u8; 32], Option<u64>)> = $test_setup
             .contract
             .allowed_docker_image_hashes()
             .into_iter()
-            .map(|hash| *hash)
+            .map(|entry| (*entry.image_hash, entry.expiry_timestamp_seconds))
             .collect();
 
         res.reverse();
@@ -572,20 +572,26 @@ fn only_latest_hash_after_grace_period() {
     let old_hash = [1; 32];
     let successor_hash = [2; 32];
 
+    let old_hash_expiry = Some((SECOND_ENTRY_TIME_NS + GRACE_PERIOD_NS) / NANOS_IN_SECOND);
+
     setup.vote_with_all_participants(old_hash, FIRST_ENTRY_TIME_NS);
-    assert_allowed_docker_image_hashes!(&setup, FIRST_ENTRY_TIME_NS, &[old_hash]);
+    assert_allowed_docker_image_hashes!(&setup, FIRST_ENTRY_TIME_NS, &[(old_hash, None)]);
     setup.vote_with_all_participants(successor_hash, SECOND_ENTRY_TIME_NS);
-    assert_allowed_docker_image_hashes!(&setup, SECOND_ENTRY_TIME_NS, &[old_hash, successor_hash]);
+    assert_allowed_docker_image_hashes!(
+        &setup,
+        SECOND_ENTRY_TIME_NS,
+        &[(old_hash, old_hash_expiry), (successor_hash, None)]
+    );
 
     assert_allowed_docker_image_hashes!(
         &setup,
         SECOND_ENTRY_TIME_NS + GRACE_PERIOD_NS,
-        &[old_hash, successor_hash]
+        &[(old_hash, old_hash_expiry), (successor_hash, None)]
     );
     assert_allowed_docker_image_hashes!(
         &setup,
         SECOND_ENTRY_TIME_NS + GRACE_PERIOD_NS + 1,
-        &[successor_hash]
+        &[(successor_hash, None)]
     );
 }
 
@@ -616,9 +622,18 @@ fn latest_inserted_image_hash_takes_precedence_on_equal_time_stamps() {
     for hash in hashes {
         setup.vote_with_all_participants(hash, INITIAL_TIME);
     }
-    assert_allowed_docker_image_hashes!(&setup, INITIAL_TIME, &hashes);
+    let superseded_expiry = Some((INITIAL_TIME + GRACE_PERIOD * NANOS_IN_SECOND) / NANOS_IN_SECOND);
+    assert_allowed_docker_image_hashes!(
+        &setup,
+        INITIAL_TIME,
+        &[
+            (hash_1, superseded_expiry),
+            (hash_2, superseded_expiry),
+            (hash_3, None),
+        ]
+    );
     // Jump far in future
-    assert_allowed_docker_image_hashes!(&setup, u64::MAX, &[hash_3]);
+    assert_allowed_docker_image_hashes!(&setup, u64::MAX, &[(hash_3, None)]);
 }
 
 /// **Test for successor-based grace periods**
@@ -646,40 +661,60 @@ fn hash_grace_period_depends_on_successor_entry_time_not_latest() {
     let second_code_hash = [2; 32];
     let third_code_hash = [3; 32];
 
+    let first_hash_expiry = Some((SECOND_ENTRY_TIME_NS + GRACE_PERIOD_TIME_NS) / NANOS_IN_SECOND);
+    let second_hash_expiry = Some((THIRD_ENTRY_TIME_NS + GRACE_PERIOD_TIME_NS) / NANOS_IN_SECOND);
+
     test_setup.vote_with_all_participants(first_code_hash, FIRST_ENTRY_TIME_NS);
-    assert_allowed_docker_image_hashes!(&test_setup, FIRST_ENTRY_TIME_NS, &[first_code_hash]);
+    assert_allowed_docker_image_hashes!(
+        &test_setup,
+        FIRST_ENTRY_TIME_NS,
+        &[(first_code_hash, None)]
+    );
 
     test_setup.vote_with_all_participants(second_code_hash, SECOND_ENTRY_TIME_NS);
     assert_allowed_docker_image_hashes!(
         &test_setup,
         SECOND_ENTRY_TIME_NS,
-        &[first_code_hash, second_code_hash]
+        &[
+            (first_code_hash, first_hash_expiry),
+            (second_code_hash, None)
+        ]
     );
 
     test_setup.vote_with_all_participants(third_code_hash, THIRD_ENTRY_TIME_NS);
     assert_allowed_docker_image_hashes!(
         &test_setup,
         THIRD_ENTRY_TIME_NS,
-        &[first_code_hash, second_code_hash, third_code_hash]
+        &[
+            (first_code_hash, first_hash_expiry),
+            (second_code_hash, second_hash_expiry),
+            (third_code_hash, None),
+        ]
     );
 
     assert_allowed_docker_image_hashes!(
         &test_setup,
         SECOND_ENTRY_TIME_NS + GRACE_PERIOD_TIME_NS + 1,
-        &[second_code_hash, third_code_hash]
+        &[
+            (second_code_hash, second_hash_expiry),
+            (third_code_hash, None),
+        ]
     );
 
     let expiration_second_hash = THIRD_ENTRY_TIME_NS + GRACE_PERIOD_TIME_NS;
     assert_allowed_docker_image_hashes!(
         &test_setup,
         expiration_second_hash,
-        &[second_code_hash, third_code_hash]
+        &[
+            (second_code_hash, second_hash_expiry),
+            (third_code_hash, None),
+        ]
     );
 
     assert_allowed_docker_image_hashes!(
         &test_setup,
         expiration_second_hash + 1,
-        &[third_code_hash]
+        &[(third_code_hash, None)]
     );
 }
 
@@ -707,7 +742,7 @@ fn latest_image_never_expires_if_its_not_superseded() {
 
     // Even far in the future, latest remains allowed
 
-    assert_allowed_docker_image_hashes!(&test_setup, u64::MAX, &[only_image_code_hash]);
+    assert_allowed_docker_image_hashes!(&test_setup, u64::MAX, &[(only_image_code_hash, None)]);
 }
 
 /// **Test for nodes starting with old but valid image hashes during grace period**
@@ -775,9 +810,16 @@ fn nodes_can_start_with_old_valid_hashes_during_grace_period() {
         deployment_time += HASH_DEPLOYMENT_INTERVAL_NANOS;
     }
 
+    let v1_expiry = Some((deployment_times[1] + GRACE_PERIOD_NANOS) / NANOS_IN_SECOND);
+    let v2_expiry = Some((deployment_times[2] + GRACE_PERIOD_NANOS) / NANOS_IN_SECOND);
+
     // At T=10s: All three versions should be allowed (within grace periods)
     let test_time_1 = deployment_times[0] + GRACE_PERIOD_NANOS;
-    assert_allowed_docker_image_hashes!(&test_setup, test_time_1, &hashes);
+    assert_allowed_docker_image_hashes!(
+        &test_setup,
+        test_time_1,
+        &[(hash_v1, v1_expiry), (hash_v2, v2_expiry), (hash_v3, None)]
+    );
 
     // Use existing participant nodes for testing different hash versions
     let node_ids = test_setup.get_participant_node_ids();
@@ -797,7 +839,11 @@ fn nodes_can_start_with_old_valid_hashes_during_grace_period() {
     // but at T=20s it has expired and should be filtered out by allowed_docker_image_hashes()
     // T=20s: hash_v1 is expired. Verify that only hash_v2 and hash_v3 are allowed.
     let expected_after_v1_expiry = [hash_v2, hash_v3];
-    assert_allowed_docker_image_hashes!(&test_setup, v1_expiry_time + 1, &expected_after_v1_expiry);
+    assert_allowed_docker_image_hashes!(
+        &test_setup,
+        v1_expiry_time + 1,
+        &[(hash_v2, v2_expiry), (hash_v3, None)]
+    );
 
     // Verify that submitting attestation with expired hash_v1 now fails
     let expired_attestation = TestSetup::create_attestation_with_hash_constraint(hash_v1);
@@ -817,7 +863,7 @@ fn nodes_can_start_with_old_valid_hashes_during_grace_period() {
 
     // Advance to T=22s: hash_v2 should expire (v3 deployed at T=7s + 15s grace = T=22s)
     let v2_expiry_time = deployment_times[2] + GRACE_PERIOD_NANOS;
-    assert_allowed_docker_image_hashes!(&test_setup, v2_expiry_time + 1, &[hash_v3]);
+    assert_allowed_docker_image_hashes!(&test_setup, v2_expiry_time + 1, &[(hash_v3, None)]);
 
     // Verify that only the latest hash is now accepted
     // Reuse the third node (index 2) for final validation
@@ -838,5 +884,5 @@ fn vote_code_hash_works_in_contract_protocol_states(#[case] state: ContractProto
     let code_hash = [1; 32];
 
     setup.vote_with_all_participants(code_hash, 100);
-    assert_allowed_docker_image_hashes!(&setup, 100, &[code_hash]);
+    assert_allowed_docker_image_hashes!(&setup, 100, &[(code_hash, None)]);
 }
