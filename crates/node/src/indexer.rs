@@ -20,7 +20,7 @@ use near_mpc_contract_interface::method_names::{
     ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_FOREIGN_CHAIN_PROVIDERS, ALLOWED_LAUNCHER_COMPOSE_HASHES,
     GET_ATTESTATION, GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST,
     GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, GET_SUPPORTED_FOREIGN_CHAINS, GET_TEE_ACCOUNTS,
-    IS_VERIFICATION_PENDING, MIGRATION_INFO, STATE,
+    MIGRATION_INFO, STATE,
 };
 use near_mpc_contract_interface::types::{self as dtos, YieldIndex};
 use participants::ContractState;
@@ -252,42 +252,6 @@ impl IndexerViewClient {
         }
     }
 
-    /// Whether an async Dstack attestation verification is in flight for the
-    /// account, distinguishing "still verifying" from "submission never landed".
-    pub(crate) async fn is_verification_pending(
-        &self,
-        mpc_contract_id: &AccountId,
-        account_id: &AccountId,
-    ) -> anyhow::Result<bool> {
-        let args = serde_json::to_vec(&serde_json::json!({ "account_id": account_id }))
-            .context("failed to serialize is_verification_pending args")?;
-
-        let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id.clone(),
-            method_name: IS_VERIFICATION_PENDING.to_string(),
-            args: args.into(),
-        };
-        let query = near_client::Query {
-            block_reference: BlockReference::Finality(Finality::Final),
-            request,
-        };
-
-        let query_response = self
-            .view_client
-            .send_async(query)
-            .await
-            .context("failed to query is_verification_pending")??;
-
-        match query_response.kind {
-            QueryResponseKind::CallResult(call_result) => {
-                serde_json::from_slice::<bool>(&call_result.result)
-                    .context("failed to deserialize is_verification_pending response")
-            }
-            _ => {
-                anyhow::bail!("Unexpected result from a view client function call");
-            }
-        }
-    }
 
     pub(crate) async fn get_supported_chains(
         &self,

@@ -41,10 +41,6 @@ const DEFAULT_VERIFIER_TERA_GAS: u64 = 100;
 /// Prepaid gas for the `resolve_verification` callback. Carries the bulk of the
 /// post-DCAP work (allowlist match, RTMR3 replay, app-compose validation, store).
 const DEFAULT_RESOLVE_VERIFICATION_TERA_GAS: u64 = 60;
-/// Prepaid gas for the `on_attestation_verified` yield-callback. Sized for its
-/// heaviest (timeout) branch, which removes the pending entry and schedules both
-/// a refund transfer and the `fail_attestation_submission` promise.
-const DEFAULT_ON_ATTESTATION_VERIFIED_TERA_GAS: u64 = 10;
 
 /// Config for V2 of the contract.
 #[near(serializers=[borsh, json])]
@@ -85,8 +81,6 @@ pub(crate) struct Config {
     pub(crate) verifier_tera_gas: u64,
     /// Prepaid gas for the `resolve_verification` callback.
     pub(crate) resolve_verification_tera_gas: u64,
-    /// Prepaid gas for the `on_attestation_verified` yield-callback.
-    pub(crate) on_attestation_verified_tera_gas: u64,
 }
 
 impl Default for Config {
@@ -116,7 +110,6 @@ impl Default for Config {
                 DEFAULT_REMOVE_NON_PARTICIPANT_TEE_VERIFIER_VOTES_TERA_GAS,
             verifier_tera_gas: DEFAULT_VERIFIER_TERA_GAS,
             resolve_verification_tera_gas: DEFAULT_RESOLVE_VERIFICATION_TERA_GAS,
-            on_attestation_verified_tera_gas: DEFAULT_ON_ATTESTATION_VERIFIED_TERA_GAS,
         }
     }
 }

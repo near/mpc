@@ -17,7 +17,6 @@ pub fn dummy_config(value: u64) -> near_mpc_contract_interface::types::Config {
         remove_non_participant_tee_verifier_votes_tera_gas: value + 13,
         verifier_tera_gas: value + 14,
         resolve_verification_tera_gas: value + 15,
-        on_attestation_verified_tera_gas: value + 16,
-        fail_attestation_submission_tera_gas: value + 17,
+        fail_attestation_submission_tera_gas: value + 16,
     }
 }
