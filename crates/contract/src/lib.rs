@@ -134,22 +134,15 @@ fn require_deposit(minimum_deposit: NearToken, predecessor: &AccountId) {
                 .to_string(),
             );
         }
-        Some(diff) => {
-            if diff > NearToken::from_yoctonear(0) {
-                log!("refund excess deposit {diff} to {predecessor}");
-                Promise::new(predecessor.clone()).transfer(diff).detach();
-            }
-        }
+        Some(diff) => refund_to(predecessor, diff),
     }
 }
 
-/// Returns `env::attached_deposit()` to `account_id` via a detached transfer
-/// promise; no-op when zero.
-fn refund_deposit_to(account_id: &AccountId) {
-    let deposit = env::attached_deposit();
-    if deposit > NearToken::from_yoctonear(0) {
-        log!("refund attestation deposit {deposit} to {account_id}");
-        Promise::new(account_id.clone()).transfer(deposit).detach();
+/// Transfers `amount` to `account_id` via a detached promise; no-op when zero.
+fn refund_to(account_id: &AccountId, amount: NearToken) {
+    if amount > NearToken::from_yoctonear(0) {
+        log!("refund {amount} to {account_id}");
+        Promise::new(account_id.clone()).transfer(amount).detach();
     }
 }
 
@@ -882,10 +875,8 @@ impl MpcContract {
             .into());
         }
 
-        if let Some(diff) = attached.checked_sub(cost)
-            && diff > NearToken::from_yoctonear(0)
-        {
-            Promise::new(account_id.clone()).transfer(diff).detach();
+        if let Some(diff) = attached.checked_sub(cost) {
+            refund_to(account_id, diff);
         }
         Ok(())
     }
@@ -1363,10 +1354,8 @@ impl MpcContract {
         );
 
         // Refund the difference if the proposer attached more than required.
-        if let Some(diff) = attached.checked_sub(required)
-            && diff > NearToken::from_yoctonear(0)
-        {
-            Promise::new(proposer).transfer(diff).detach();
+        if let Some(diff) = attached.checked_sub(required) {
+            refund_to(&proposer, diff);
         }
 
         Ok(id)
@@ -2344,7 +2333,7 @@ impl MpcContract {
         match attestation_result {
             Ok(()) => PromiseOrValue::Value(()),
             Err(err) => {
-                refund_deposit_to(&account_id);
+                refund_to(&account_id, env::attached_deposit());
                 // Fail the submitter's transaction from a separate receipt so
                 // the refund above commits (a panic here would roll it back)
                 let promise = Promise::new(env::current_account_id()).function_call(
