@@ -200,7 +200,7 @@ upgrade_cluster() {
   # Check if already approved
   local current_hashes
   current_hashes="$(near_call_ro allowed_docker_image_hashes '{}' | extract_json_ro)"
-  if echo "$current_hashes" | jq -e --arg h "$new_hash" '.[] | select(. == $h)' >/dev/null 2>&1; then
+  if echo "$current_hashes" | jq -e --arg h "$new_hash" '.[] | select(.image_hash == $h)' >/dev/null 2>&1; then
     warn "Hash $new_hash is already approved — skipping vote"
   else
     # --- 2.1 Vote for new MPC hash ---
@@ -228,7 +228,7 @@ upgrade_cluster() {
     # Verify vote succeeded
     local updated_hashes
     updated_hashes="$(near_call_ro allowed_docker_image_hashes '{}' | extract_json_ro)"
-    if echo "$updated_hashes" | jq -e --arg h "$new_hash" '.[] | select(. == $h)' >/dev/null 2>&1; then
+    if echo "$updated_hashes" | jq -e --arg h "$new_hash" '.[] | select(.image_hash == $h)' >/dev/null 2>&1; then
       pass "New hash approved on-chain: $new_hash"
     else
       fail "Hash not found in approved list after voting"

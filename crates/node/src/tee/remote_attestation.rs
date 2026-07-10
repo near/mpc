@@ -13,7 +13,7 @@ use mpc_attestation::{
     attestation::{Attestation, VerificationError},
     report_data::{ReportData, ReportDataV1},
 };
-use near_mpc_contract_interface::types::Ed25519PublicKey;
+use near_mpc_contract_interface::types::{AllowedMpcDockerImageHash, Ed25519PublicKey};
 use tee_authority::tee_authority::TeeAuthority;
 use tokio_util::time::FutureExt;
 
@@ -36,7 +36,7 @@ pub struct AttestationSubmitter<T> {
     pub tx_sender: T,
     pub tls_public_key: Ed25519PublicKey,
     pub account_public_key: Ed25519PublicKey,
-    pub allowed_image_hashes: watch::Receiver<Vec<NodeImageHash>>,
+    pub allowed_image_hashes: watch::Receiver<Vec<AllowedMpcDockerImageHash>>,
     pub allowed_launcher_compose_hashes: watch::Receiver<Vec<LauncherDockerComposeHash>>,
     pub attestation_reader: std::sync::Arc<dyn crate::indexer::ReadAttestationExpiry>,
 }
@@ -200,7 +200,11 @@ pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Ti
                 return Err(anyhow::anyhow!(e).context("TEE attestation failed, cannot continue"));
             }
         };
-        let allowed_image_hashes_in_contract = allowed_image_hashes_in_contract.borrow().clone();
+        let allowed_image_hashes_in_contract: Vec<_> = allowed_image_hashes_in_contract
+            .borrow()
+            .iter()
+            .map(|entry| entry.image_hash)
+            .collect();
         let allowed_launcher_compose_hashes_in_contract =
             allowed_launcher_compose_hashes_in_contract.borrow().clone();
         let pre_submit_expiry = match attestation_reader
@@ -321,8 +325,11 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
                     );
                 }
             };
-            let allowed_image_hashes_in_contract =
-                allowed_image_hashes_in_contract.borrow().clone();
+            let allowed_image_hashes_in_contract: Vec<_> = allowed_image_hashes_in_contract
+                .borrow()
+                .iter()
+                .map(|entry| entry.image_hash)
+                .collect();
             let allowed_launcher_compose_hashes_in_contract =
                 allowed_launcher_compose_hashes_in_contract.borrow().clone();
             let pre_submit_expiry = match attestation_reader
