@@ -1,4 +1,6 @@
 use alloc::string::String;
+#[cfg(feature = "borsh-schema")]
+use alloc::string::ToString;
 use alloc::vec::Vec;
 use borsh::{BorshDeserialize, BorshSerialize};
 #[cfg(any(test, feature = "dstack-conversions"))]
