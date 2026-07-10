@@ -831,7 +831,6 @@ impl MpcContract {
                     initial_storage,
                     &insertion,
                     caller_is_participant,
-                    env::attached_deposit(),
                 )?;
                 Ok(PromiseOrValue::Value(()))
             }
@@ -880,7 +879,6 @@ impl MpcContract {
         initial_storage: u64,
         insertion: &ParticipantInsertion,
         caller_is_participant: bool,
-        attached: NearToken,
     ) -> Result<(), Error> {
         let is_new_attestation =
             matches!(insertion, ParticipantInsertion::NewlyInsertedParticipant);
@@ -893,6 +891,7 @@ impl MpcContract {
         // `saturating_sub`: if a re-submission shrinks the entry, charge nothing
         // rather than underflow. Intentional asymmetry: we do not refund freed
         // bytes either, since the caller already paid for the larger entry.
+        let attached = env::attached_deposit();
         let storage_used = env::storage_usage().saturating_sub(initial_storage);
         let cost = env::storage_byte_cost().saturating_mul(storage_used as u128);
 
@@ -2415,7 +2414,6 @@ impl MpcContract {
             initial_storage,
             &insertion,
             context.caller_is_participant,
-            env::attached_deposit(),
         ) {
             Ok(()) => Ok(()),
             Err(err) => {
