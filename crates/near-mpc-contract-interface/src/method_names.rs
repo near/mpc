@@ -64,7 +64,6 @@ pub const RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS: &str =
 pub const RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS: &str = "return_ck_and_clean_state_on_success";
 pub const RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS: &str =
     "return_verify_foreign_tx_and_clean_state_on_success";
-pub const ON_ATTESTATION_VERIFIED: &str = "on_attestation_verified";
 pub const RESOLVE_VERIFICATION: &str = "resolve_verification";
 pub const FAIL_ATTESTATION_SUBMISSION: &str = "fail_attestation_submission";
 
@@ -84,7 +83,6 @@ pub const GET_PENDING_CKD_REQUEST: &str = "get_pending_ckd_request";
 pub const GET_PENDING_VERIFY_FOREIGN_TX_REQUEST: &str = "get_pending_verify_foreign_tx_request";
 pub const GET_TEE_ACCOUNTS: &str = "get_tee_accounts";
 pub const GET_ATTESTATION: &str = "get_attestation";
-pub const IS_VERIFICATION_PENDING: &str = "is_verification_pending";
 pub const GET_SUPPORTED_FOREIGN_CHAINS: &str = "get_supported_foreign_chains";
 pub const GET_FOREIGN_CHAIN_SUPPORT_BY_NODE: &str = "get_foreign_chain_support_by_node";
 pub const GET_AVAILABLE_FOREIGN_CHAINS: &str = "get_available_foreign_chains";

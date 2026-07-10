@@ -34,5 +34,4 @@ pub enum StorageKey {
     ForeignChainMetadata,
     TeeVerifierVotesByVoter,
     TeeVerifierVotesByProposal,
-    PendingAttestations,
 }

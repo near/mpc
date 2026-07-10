@@ -186,7 +186,6 @@ async fn submit_tx(
 /// Confirms whether the intended effect of the transaction request has been observed on chain.
 async fn observe_tx_result(
     indexer_state: Arc<IndexerState>,
-    signer_account_id: &AccountId,
     request: &ChainSendTransactionRequest,
 ) -> anyhow::Result<TransactionStatus> {
     match request {
@@ -250,18 +249,7 @@ async fn observe_tx_result(
                 .await?;
 
             let Some(stored_attestation) = attestation_stored_on_contract else {
-                // A Dstack attestation is stored only once its async verification
-                // succeeds; while it's in flight, count the submission as executed
-                // so we don't resubmit while the previous submission is still pending.
-                let verification_pending = indexer_state
-                    .view_client
-                    .is_verification_pending(&indexer_state.mpc_contract_id, signer_account_id)
-                    .await?;
-                return Ok(if verification_pending {
-                    TransactionStatus::Executed
-                } else {
-                    TransactionStatus::NotExecuted
-                });
+                return Ok(TransactionStatus::NotExecuted);
             };
 
             let submitted_attestation =
@@ -381,8 +369,7 @@ async fn ensure_send_transaction(
     time::sleep(TRANSACTION_TIMEOUT).await;
 
     // Then try to check whether it had the intended effect
-    let transaction_status =
-        observe_tx_result(indexer_state.clone(), tx_signer.account_id(), &request).await;
+    let transaction_status = observe_tx_result(indexer_state.clone(), &request).await;
 
     let (outcome_label, recorded_status) = match &transaction_status {
         Ok(TransactionStatus::Executed) => ("succeeded", SubmittedTransactionStatus::Executed),

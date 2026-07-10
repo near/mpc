@@ -270,10 +270,6 @@ BorshSchemaContainer {
                         "resolve_verification_tera_gas",
                         "u64",
                     ),
-                    (
-                        "on_attestation_verified_tera_gas",
-                        "u64",
-                    ),
                 ],
             ),
         },
@@ -726,10 +722,6 @@ BorshSchemaContainer {
                     (
                         "tee_verifier_votes",
                         "TeeVerifierVotes",
-                    ),
-                    (
-                        "pending_attestations",
-                        "LookupMap",
                     ),
                 ],
             ),

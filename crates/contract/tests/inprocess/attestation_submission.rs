@@ -223,6 +223,7 @@ impl TestSetup {
         testing_env!(context);
         self.contract
             .submit_participant_info(attestation, node_id.tls_public_key.clone())
+            .map(|_| ())
     }
 
     /// Switches testing context to a given participant at a specific timestamp
@@ -332,10 +333,13 @@ fn submit_participant_info__should_reject_overwrite_from_other_account() {
             .attached_deposit(NearToken::from_near(1))
             .build()
     );
-    let attack_result = setup.contract.submit_participant_info(
-        Attestation::Mock(MockAttestation::Valid),
-        attacker_node.tls_public_key.clone(),
-    );
+    let attack_result = setup
+        .contract
+        .submit_participant_info(
+            Attestation::Mock(MockAttestation::Valid),
+            attacker_node.tls_public_key.clone(),
+        )
+        .map(|_| ());
 
     // Then: the contract rejects the call with the TLS-ownership error and the victim's
     // entry is unchanged.

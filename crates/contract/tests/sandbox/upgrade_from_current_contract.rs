@@ -122,7 +122,6 @@ async fn test_propose_update_config() {
         remove_non_participant_tee_verifier_votes_tera_gas: 14,
         verifier_tera_gas: 15,
         resolve_verification_tera_gas: 16,
-        on_attestation_verified_tera_gas: 17,
     };
 
     let mut proposals = Vec::with_capacity(mpc_signer_accounts.len());
