@@ -771,9 +771,9 @@ impl MpcContract {
     /// Submit a TEE attestation for a current or prospective participant.
     ///
     /// - [`Attestation::Mock`] is verified synchronously.
-    /// - [`Attestation::Dstack`] is verified asynchronously, by yielding on a
-    ///   cross-contract verify-quote call. It rejects a second submission from
-    ///   the same account while one is still in flight.
+    /// - [`Attestation::Dstack`] is verified asynchronously via a cross-contract
+    ///   `verify_quote` call, with [`Self::resolve_verification`] chained as its
+    ///   callback to run the post-DCAP checks and settle the deposit.
     ///
     /// The attached deposit pays for storage on success, and is refunded on failure.
     #[payable]
