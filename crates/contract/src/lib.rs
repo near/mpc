@@ -16,7 +16,7 @@ pub mod update;
 #[cfg(feature = "dev-utils")]
 pub mod utils;
 
-pub mod v3_12_0_state;
+pub mod v3_13_0_state;
 
 #[cfg(feature = "bench-contract-methods")]
 mod bench;
@@ -2123,11 +2123,11 @@ impl MpcContract {
     pub fn migrate() -> Result<Self, Error> {
         log!("migrating contract");
 
-        match try_state_read::<v3_12_0_state::MpcContract>() {
+        match try_state_read::<v3_13_0_state::MpcContract>() {
             Ok(Some(state)) => return Ok(state.into()),
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => {
-                log!("failed to deserialize state into 3.12.0 state: {:?}", err);
+                log!("failed to deserialize state into 3.13.0 state: {:?}", err);
             }
         };
 
