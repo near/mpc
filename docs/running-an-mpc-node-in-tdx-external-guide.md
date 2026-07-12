@@ -915,7 +915,7 @@ Use the following custom settings for MPC:
 
 ![VMM Web Page (2/2)](./attachments/VMM_web_page_deploy_2.png)
 
-> **⚠️ Never change the app-compose of a running node** — the node will not be able to start, since the disk is encrypted with a key derived from the app-compose measurement. If this happens, see [Troubleshooting: node won't start after an app-compose change](#node-wont-start-after-an-app-compose-change) to recover.
+> **⚠️ Never change the app-compose (or the vCPU/memory) of a running node** — it will fail to start, since the disk is encrypted with a key derived from those measured inputs. If this happens, see [Troubleshooting: node won't start after an app-compose change](#node-wont-start-after-an-app-compose-change) to recover.
 
 #### Using the script
 
@@ -1905,8 +1905,8 @@ re-serializes the app-compose on save.)
 3. Push it to the existing CVM and restart:
 
    ```bash
-   vmm-cli.py --url $VMM_RPC update-app-compose <vm_id> .app-compose.json
-   vmm-cli.py --url $VMM_RPC stop <vm_id> && vmm-cli.py --url $VMM_RPC start <vm_id>
+   python $VMM_CLI_PATH --url $VMM_URL update-app-compose <vm-id> .app-compose.json
+   python $VMM_CLI_PATH --url $VMM_URL stop <vm-id> && python $VMM_CLI_PATH --url $VMM_URL start <vm-id>
    ```
 
 ### Wiping the NEAR indexer data (force a re-sync)
