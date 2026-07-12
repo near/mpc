@@ -314,7 +314,13 @@ impl AllowedLauncherImage {
             Some(deadline) => deadline < now,
             // Overflow means the deadline is unrepresentably far in the future, so the
             // entry is not expired. Never panic here: a bogus timestamp must not evict a hash.
-            None => false,
+            // Unreachable in practice (`last_used` is contract-stamped), so log if it ever fires.
+            None => {
+                log!(
+                    "is_expired: last_used + ttl overflowed; treating launcher hash as not expired"
+                );
+                false
+            }
         }
     }
 }
@@ -868,7 +874,7 @@ mod tests {
         set_block_secs(200);
         allowed.add_or_refresh(dummy_launcher_hash(2), &mpc_hashes);
 
-        // At t=250, launcher_1 (added t=1) is expired but launcher_2 (added t=200) is live.
+        // At t=250, launcher_1 (last_used=1) is expired but launcher_2 (last_used=200) is live.
         set_block_secs(250);
         let hashes = allowed.launcher_hashes(ttl);
         assert_eq!(hashes.len(), 1);
@@ -886,7 +892,7 @@ mod tests {
         set_block_secs(50);
         allowed.add_or_refresh(dummy_launcher_hash(2), &mpc_hashes);
 
-        // Far in the future: both expired, fallback keeps the newest by `added`.
+        // Far in the future: both expired, fallback keeps the newest by `last_used`.
         set_block_secs(10_000);
         let hashes = allowed.launcher_hashes(ttl);
         assert_eq!(hashes.len(), 1);
@@ -913,7 +919,7 @@ mod tests {
                 .contains(&dummy_launcher_hash(2))
         );
 
-        // Both expired now: cleanup still keeps exactly one (the newest by `added`).
+        // Both expired now: cleanup still keeps exactly one (the newest by `last_used`).
         set_block_secs(1_000_000);
         // Re-add an older entry to have two expired entries.
         let mut allowed2 = AllowedLauncherImages::default();
