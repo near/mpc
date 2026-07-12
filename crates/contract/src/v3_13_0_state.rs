@@ -6,33 +6,36 @@
 //! In theory, you could copy-paste every struct from the specific commit you're migrating from.
 //! However, this approach (a) requires manual effort from a developer and (b) increases the binary size.
 //! A better approach: only copy the structures that have changed and import the rest from the existing codebase.
+//!
+//! Relative to `3.13.0`, this release adds two `Config` fields
+//! (`launcher_hash_unused_ttl_seconds`, `clean_expired_launcher_hashes_tera_gas`) and a
+//! `last_used` timestamp to each `AllowedLauncherImage`. Those are the only borsh-layout
+//! changes, so only `Config` and `TeeState` are shadowed here; every other field reuses the
+//! real (byte-identical) type.
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_contract_interface::types::{Metrics, VerifyForeignTransactionRequest};
 use near_sdk::{
-    env,
+    AccountId, env,
     store::{Lazy, LookupMap},
 };
 
 use crate::{
     SupportedForeignChainsByNode,
-    foreign_chain_rpc::ForeignChainRpcWhitelist,
     foreign_chains_metadata::ForeignChainsMetadata,
     node_migrations::NodeMigrations,
     primitives::{
         ckd::CKDRequest,
-        domain::max_reconstruction_threshold,
         signature::{SignatureRequest, YieldIndex},
-        thresholds::ThresholdParameters,
     },
-    state::{ProtocolContractState, running::RunningContractState},
-    storage_keys::StorageKey,
+    state::ProtocolContractState,
     tee::verifier_votes::TeeVerifierVotes,
     update::ProposedUpdates,
 };
 
-/// The `Config` layout written by the `3.12.0` contract, before
-/// `remove_non_participant_tee_verifier_votes_tera_gas` was appended.
+/// The `Config` layout written by the `3.13.0` contract, before
+/// `launcher_hash_unused_ttl_seconds` and `clean_expired_launcher_hashes_tera_gas` were
+/// appended.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct OldConfig {
     key_event_timeout_blocks: u64,
@@ -48,6 +51,7 @@ pub struct OldConfig {
     cleanup_orphaned_node_migrations_tera_gas: u64,
     remove_non_participant_update_votes_tera_gas: u64,
     clean_foreign_chain_data_tera_gas: u64,
+    remove_non_participant_tee_verifier_votes_tera_gas: u64,
 }
 
 impl From<OldConfig> for crate::Config {
@@ -72,14 +76,15 @@ impl From<OldConfig> for crate::Config {
             remove_non_participant_update_votes_tera_gas: old
                 .remove_non_participant_update_votes_tera_gas,
             clean_foreign_chain_data_tera_gas: old.clean_foreign_chain_data_tera_gas,
-            // New in this version: default the gas for the verifier-vote cleanup
-            // promise added after `3.12.0`.
+            remove_non_participant_tee_verifier_votes_tera_gas: old
+                .remove_non_participant_tee_verifier_votes_tera_gas,
+            // New in this version: default the launcher-eviction TTL and its cleanup gas.
             ..crate::Config::default()
         }
     }
 }
 
-/// `3.12.0` layout of `AllowedLauncherImage`: the current type appends a `last_used`
+/// `3.13.0` layout of `AllowedLauncherImage`: the current type appends a `last_used`
 /// timestamp, so the real type can no longer decode old bytes.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 struct OldAllowedLauncherImage {
@@ -92,12 +97,12 @@ struct OldAllowedLauncherImages {
     entries: Vec<OldAllowedLauncherImage>,
 }
 
-/// `3.12.0` layout of `TeeState`. Only `allowed_launcher_images` changed borsh
+/// `3.13.0` layout of `TeeState`. Only `allowed_launcher_images` changed borsh
 /// layout; every other field reuses the real (byte-identical) type. Field order
 /// must match [`crate::tee::tee_state::TeeState`] exactly.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 struct OldTeeState {
-    allowed_docker_image_hashes: crate::tee::proposal::AllowedDockerImageHashes,
+    allowed_docker_image_hashes: crate::tee::proposal::StoredDockerImageHashes,
     allowed_launcher_images: OldAllowedLauncherImages,
     votes: crate::tee::proposal::CodeHashesVotes,
     launcher_votes: crate::tee::proposal::LauncherHashVotes,
@@ -138,7 +143,7 @@ impl From<OldTeeState> for crate::tee::tee_state::TeeState {
 
 /// Keep this module in sync with [`crate::MpcContract`]: the moment a field's borsh
 /// layout diverges, shadow the old type here (see this module's history for examples) so
-/// state written by the `3.12.0` contract still deserializes during migration.
+/// state written by the `3.13.0` contract still deserializes during migration.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct MpcContract {
     protocol_state: ProtocolContractState,
@@ -152,13 +157,15 @@ pub struct MpcContract {
     accept_requests: bool,
     node_migrations: NodeMigrations,
     metrics: Metrics,
-    foreign_chain_rpc_whitelist: ForeignChainRpcWhitelist,
+    foreign_chains: Lazy<ForeignChainsMetadata>,
+    tee_verifier_account_id: Option<AccountId>,
+    tee_verifier_votes: TeeVerifierVotes,
 }
 
 impl From<MpcContract> for crate::MpcContract {
     fn from(old: MpcContract) -> Self {
-        if let ProtocolContractState::Running(running) = &old.protocol_state {
-            validate_threshold_relation_on_migration(running);
+        if !matches!(old.protocol_state, ProtocolContractState::Running(_)) {
+            env::panic_str("Contract must be in running state when migrating.");
         }
 
         crate::MpcContract {
@@ -173,33 +180,10 @@ impl From<MpcContract> for crate::MpcContract {
             accept_requests: old.accept_requests,
             node_migrations: old.node_migrations,
             metrics: old.metrics,
-            foreign_chains: Lazy::new(
-                StorageKey::ForeignChainMetadata,
-                ForeignChainsMetadata {
-                    rpc_whitelist: old.foreign_chain_rpc_whitelist,
-                    ..Default::default()
-                },
-            ),
-            tee_verifier_account_id: None,
-            tee_verifier_votes: TeeVerifierVotes::default(),
+            foreign_chains: old.foreign_chains,
+            tee_verifier_account_id: old.tee_verifier_account_id,
+            tee_verifier_votes: old.tee_verifier_votes,
         }
-    }
-}
-
-fn validate_threshold_relation_on_migration(running: &RunningContractState) {
-    let num_participants = running.parameters.participants().len() as u64;
-    let max_reconstruction_threshold = max_reconstruction_threshold(running.domains.domains());
-    if let Err(err) = ThresholdParameters::validate_governance_against_reconstruction(
-        num_participants,
-        running.parameters.threshold(),
-        max_reconstruction_threshold,
-    ) {
-        env::panic_str(&format!(
-            "Migration aborted: existing state violates the GovernanceThreshold/ReconstructionThreshold relation ({err:?}). num_participants={}, governance_threshold={}, max_reconstruction_threshold={:?}. Correct it via vote_new_parameters before upgrading.",
-            num_participants,
-            running.parameters.threshold().value(),
-            max_reconstruction_threshold.map(|t| t.inner()),
-        ));
     }
 }
 
@@ -208,13 +192,13 @@ mod tests {
     use super::*;
     use crate::storage_keys::StorageKey;
     use crate::tee::proposal::{
-        AllowedDockerImageHashes, CodeHashesVotes, LauncherHashVotes, get_docker_compose_hash,
+        CodeHashesVotes, LauncherHashVotes, StoredDockerImageHashes, get_docker_compose_hash,
     };
     use mpc_primitives::hash::{LauncherImageHash, NodeImageHash};
     use near_sdk::store::IterableMap;
     use near_sdk::{test_utils::VMContextBuilder, testing_env};
 
-    /// The `3.12.0` launcher layout (no timestamp) must deserialize under the shadow and
+    /// The `3.13.0` launcher layout (no timestamp) must deserialize under the shadow and
     /// migrate: launcher hash + compose hashes preserved, and `last_used` set to the
     /// migration time (NOT the borsh/epoch default, which would immediately expire every
     /// migrated hash). Two entries + a short TTL defeat the newest-only read fallback, so
@@ -235,7 +219,7 @@ mod tests {
         );
 
         let old = OldTeeState {
-            allowed_docker_image_hashes: AllowedDockerImageHashes::default(),
+            allowed_docker_image_hashes: StoredDockerImageHashes::default(),
             allowed_launcher_images: OldAllowedLauncherImages {
                 entries: vec![
                     OldAllowedLauncherImage {

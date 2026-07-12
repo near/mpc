@@ -68,16 +68,6 @@ BorshSchemaContainer {
                 ],
             ),
         },
-        "AllowedDockerImageHashes": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "allowed_tee_proposals",
-                        "Vec<AllowedMpcDockerImage>",
-                    ),
-                ],
-            ),
-        },
         "AllowedLauncherImage": Struct {
             fields: NamedFields(
                 [
@@ -112,20 +102,6 @@ BorshSchemaContainer {
                     (
                         "entries",
                         "Vec<ContractExpectedMeasurements>",
-                    ),
-                ],
-            ),
-        },
-        "AllowedMpcDockerImage": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "image_hash",
-                        "DockerImageHash",
-                    ),
-                    (
-                        "added",
-                        "Timestamp",
                     ),
                 ],
             ),
@@ -1142,6 +1118,16 @@ BorshSchemaContainer {
                 ],
             ),
         },
+        "StoredDockerImageHashes": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "allowed_tee_proposals",
+                        "Vec<WhitelistedMpcDockerImageHash>",
+                    ),
+                ],
+            ),
+        },
         "String": Sequence {
             length_width: 4,
             length_range: 0..=4294967295,
@@ -1162,7 +1148,7 @@ BorshSchemaContainer {
                 [
                     (
                         "allowed_docker_image_hashes",
-                        "AllowedDockerImageHashes",
+                        "StoredDockerImageHashes",
                     ),
                     (
                         "allowed_launcher_images",
@@ -1256,11 +1242,6 @@ BorshSchemaContainer {
             length_range: 0..=4294967295,
             elements: "AllowedLauncherImage",
         },
-        "Vec<AllowedMpcDockerImage>": Sequence {
-            length_width: 4,
-            length_range: 0..=4294967295,
-            elements: "AllowedMpcDockerImage",
-        },
         "Vec<ContractExpectedMeasurements>": Sequence {
             length_width: 4,
             length_range: 0..=4294967295,
@@ -1280,6 +1261,11 @@ BorshSchemaContainer {
             length_width: 4,
             length_range: 0..=4294967295,
             elements: "LauncherDockerComposeHash",
+        },
+        "Vec<WhitelistedMpcDockerImageHash>": Sequence {
+            length_width: 4,
+            length_range: 0..=4294967295,
+            elements: "WhitelistedMpcDockerImageHash",
         },
         "Vec<u8>": Sequence {
             length_width: 4,
@@ -1310,6 +1296,20 @@ BorshSchemaContainer {
                     (
                         "votes_by_proposal",
                         "IterableMap",
+                    ),
+                ],
+            ),
+        },
+        "WhitelistedMpcDockerImageHash": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "image_hash",
+                        "DockerImageHash",
+                    ),
+                    (
+                        "added_at",
+                        "Timestamp",
                     ),
                 ],
             ),
