@@ -16,7 +16,7 @@ pub mod update;
 #[cfg(feature = "dev-utils")]
 pub mod utils;
 
-pub mod v3_12_0_state;
+pub mod v3_13_0_state;
 
 #[cfg(feature = "bench-contract-methods")]
 mod bench;
@@ -2067,11 +2067,11 @@ impl MpcContract {
     pub fn migrate() -> Result<Self, Error> {
         log!("migrating contract");
 
-        match try_state_read::<v3_12_0_state::MpcContract>() {
+        match try_state_read::<v3_13_0_state::MpcContract>() {
             Ok(Some(state)) => return Ok(state.into()),
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => {
-                log!("failed to deserialize state into 3.12.0 state: {:?}", err);
+                log!("failed to deserialize state into 3.13.0 state: {:?}", err);
             }
         };
 
@@ -2090,19 +2090,18 @@ impl MpcContract {
         self.metrics.clone()
     }
 
-    /// Returns all allowed code hashes in order from most recent to least recent allowed code hashes. The first element is the most recent allowed code hash.
-    pub fn allowed_docker_image_hashes(&self) -> Vec<NodeImageHash> {
+    /// Returns all allowed code hashes in descending order of their expiry
+    /// date. Note that the expiration depends on the contract configuration
+    /// (c.f. [`dtos::Config::tee_upgrade_deadline_duration_seconds`]).
+    pub fn allowed_docker_image_hashes(&self) -> Vec<dtos::AllowedMpcDockerImageHash> {
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
-        let mut hashes: Vec<NodeImageHash> = self
+        let mut entries = self
             .tee_state
-            .get_allowed_mpc_docker_images(tee_upgrade_deadline_duration)
-            .into_iter()
-            .map(|allowed_image_hash| allowed_image_hash.image_hash)
-            .collect();
-        hashes.reverse();
-        hashes
+            .get_allowed_mpc_docker_images(tee_upgrade_deadline_duration);
+        entries.reverse();
+        entries
     }
 
     pub fn allowed_launcher_compose_hashes(&self) -> Vec<LauncherDockerComposeHash> {
@@ -6589,7 +6588,7 @@ mod tests {
     /// 1. Add M1, add L1 → compose: {L1,M1}
     /// 2. Add M2 → compose: {L1,M1}, {L1,M2}
     /// 3. Advance time past M2's deadline so M1 is fully expired
-    ///    (valid_entries keeps the last expired entry as cutoff, so M1 only
+    ///    (allowed_images keeps the last expired entry as cutoff, so M1 only
     ///    drops when M2's grace period also passes)
     /// 4. Stored compose hashes persist — still {L1,M1}, {L1,M2}
     /// 5. Add L2 → paired only with valid M2, not expired M1

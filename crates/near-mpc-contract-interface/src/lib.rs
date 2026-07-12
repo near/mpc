@@ -29,7 +29,8 @@ pub mod types {
         RunningContractState, Threshold, ThresholdParameters, ThresholdParametersVotes,
         protocol_state_to_string,
     };
-    pub use tee::NodeId;
+    pub use tee::{AllowedMpcDockerImageHash, NodeId};
+
     pub use updates::{ProposedUpdates, UpdateHash};
 
     // Re-export hash types used in attestation DTO fields

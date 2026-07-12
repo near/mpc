@@ -66,7 +66,7 @@ test_override() {
   # Verify the hash is in the approved list
   local approved
   approved="$(near_call_ro allowed_docker_image_hashes '{}' | extract_json_ro)"
-  if ! echo "$approved" | jq -e --arg h "$override_hash" '.[] | select(. == $h)' >/dev/null 2>&1; then
+  if ! echo "$approved" | jq -e --arg h "$override_hash" '.[] | select(.image_hash == $h)' >/dev/null 2>&1; then
     err "Hash $override_hash is NOT in the approved list. Cannot test override."
     echo "$approved"
     return 1

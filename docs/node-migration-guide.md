@@ -149,6 +149,15 @@ export BACKUP_ENCRYPTION_KEY=$(cat $MPC_HOME_DIR/backup_encryption_key.hex)
 
 Copy this key and set it as the `BACKUP_ENCRYPTION_KEY` environment variable for the backup-cli when running `get-keyshares`.
 
+**TEE (TDX/dstack) nodes:** `$MPC_HOME_DIR` (`/data`) is inside the CVM's encrypted disk, so you cannot read the auto-generated `backup_encryption_key.hex`. Provide the key yourself instead: set it in the `[mpc_node_config.secrets]` block of the node's `user-config.toml` (see [Prepare MPC Node Configuration](https://github.com/near/mpc/blob/main/docs/running-an-mpc-node-in-tdx-external-guide.md#prepare-mpc-node-configuration) in the operator guide) and keep a copy outside the CVM:
+
+```toml
+[mpc_node_config.secrets]
+backup_encryption_key_hex = "<your 32-byte hex key>"
+```
+
+This is the key you pass to the backup-cli — if the node is already deployed, it is the value you set in `backup_encryption_key_hex` at deploy time. The node reads it from the config on every start, so you can add or change it on a running node via `update-user-config` + restart.
+
 
 
 **Note on key differences:**
@@ -167,10 +176,12 @@ Now backup the keyshares from your currently running node.
 ### Obtain Node Information
 
 You'll need:
-- **MPC node address**: The host where your node is running (e.g., `node.example.com`)
-- **MPC node P2P public key**: The Ed25519 public key used for P2P communication (found in your node's startup logs or configuration)
+- **MPC node address**: The host where your node is running (e.g., `node.example.com`). Available from the contract — your participant entry's `url` in the `state` view.
+- **MPC node P2P public key**: The Ed25519 public key used for P2P communication. Available from the contract (your participant's `tls_public_key` in `state` / `get_tee_accounts`), or from the node's public-data endpoint:
 
-Both those values can be found on the contract.
+  ```bash
+  export P2P_KEY=$(curl -s http://<IP>:8080/public_data | jq -r ".near_p2p_public_key")
+  ```
 
 ### Get Contract State
 
