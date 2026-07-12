@@ -5,8 +5,8 @@ use crate::{
         AllowedMeasurements, ContractExpectedMeasurements, MeasurementVoteAction, MeasurementVotes,
     },
     tee::proposal::{
-        AddOutcome, AllowedLauncherImages, CodeHashesVotes, LauncherHashVotes, LauncherVoteAction,
-        NodeImageHash, StoredDockerImageHashes,
+        AllowedLauncherImageInsertion, AllowedLauncherImages, CodeHashesVotes, LauncherHashVotes,
+        LauncherVoteAction, NodeImageHash, StoredDockerImageHashes,
     },
 };
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -367,7 +367,7 @@ impl TeeState {
         &mut self,
         launcher_hash: LauncherImageHash,
         tee_upgrade_deadline_duration: Duration,
-    ) -> AddOutcome {
+    ) -> AllowedLauncherImageInsertion {
         self.launcher_votes.clear_votes();
         let mpc_image_hashes = self
             .allowed_docker_image_hashes

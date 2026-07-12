@@ -116,15 +116,13 @@ struct OldTeeState {
 
 impl From<OldTeeState> for crate::tee::tee_state::TeeState {
     fn from(old: OldTeeState) -> Self {
-        let now = crate::primitives::time::Timestamp::now();
+        // `new` stamps `last_used` to the migration block time (constant within this call).
         let entries = old
             .allowed_launcher_images
             .entries
             .into_iter()
-            .map(|e| crate::tee::proposal::AllowedLauncherImage {
-                launcher_hash: e.launcher_hash,
-                compose_hashes: e.compose_hashes,
-                last_used: now,
+            .map(|e| {
+                crate::tee::proposal::AllowedLauncherImage::new(e.launcher_hash, e.compose_hashes)
             })
             .collect();
         crate::tee::tee_state::TeeState {
