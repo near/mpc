@@ -1,4 +1,4 @@
-use aes_gcm::{Aes256Gcm, Key, KeyInit};
+use aes_gcm::{Aes256Gcm, Key};
 use blstrs::{G1Projective, G2Projective, Scalar};
 use elliptic_curve::{Field as _, Group as _};
 use near_mpc_contract_interface::types::ProtocolContractState;
