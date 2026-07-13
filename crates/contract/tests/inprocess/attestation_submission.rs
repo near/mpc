@@ -28,6 +28,8 @@ use std::{str::FromStr, time::Duration};
 const SECOND: Duration = Duration::from_secs(1);
 const NANOS_IN_SECOND: u64 = SECOND.as_nanos() as u64;
 
+const ATTESTATION_STORAGE_DEPOSIT: NearToken = NearToken::from_near(1);
+
 const DEFAULT_PARTICIPANT_COUNT: usize = 3;
 const DEFAULT_THRESHOLD_SIZE: u64 = 2;
 const DEFAUTL_CONTRACT_PROTOCOL_STATE: ContractProtocolState = ContractProtocolState::Running;
@@ -274,6 +276,7 @@ fn create_context_for_participant(account_id: &AccountId) -> VMContext {
         .signer_account_id(account_id.clone())
         .predecessor_account_id(account_id.clone())
         .block_timestamp(near_sdk::env::block_timestamp())
+        .attached_deposit(ATTESTATION_STORAGE_DEPOSIT)
         .build()
 }
 
@@ -298,7 +301,7 @@ fn submit_participant_info__should_reject_overwrite_from_other_account() {
 
     testing_env!(
         VMContextBuilder::new()
-            .attached_deposit(NearToken::from_near(1))
+            .attached_deposit(ATTESTATION_STORAGE_DEPOSIT)
             .build()
     );
 
@@ -330,7 +333,7 @@ fn submit_participant_info__should_reject_overwrite_from_other_account() {
         VMContextBuilder::new()
             .signer_account_id(attacker_node.account_id.clone())
             .predecessor_account_id(attacker_node.account_id.clone())
-            .attached_deposit(NearToken::from_near(1))
+            .attached_deposit(ATTESTATION_STORAGE_DEPOSIT)
             .build()
     );
     let attack_result = setup
@@ -368,7 +371,7 @@ fn clean_tee_status__should_not_touch_attestations() {
 
     testing_env!(
         VMContextBuilder::new()
-            .attached_deposit(NearToken::from_near(1))
+            .attached_deposit(ATTESTATION_STORAGE_DEPOSIT)
             .build()
     );
 
@@ -453,7 +456,7 @@ fn clean_invalid_attestations__should_remove_expired_entries() {
 
     testing_env!(
         VMContextBuilder::new()
-            .attached_deposit(NearToken::from_near(1))
+            .attached_deposit(ATTESTATION_STORAGE_DEPOSIT)
             .block_timestamp(0)
             .build()
     );
@@ -515,7 +518,7 @@ fn clean_invalid_attestations__should_reject_when_not_running() {
     // Given: contract sitting in Initializing state.
     testing_env!(
         VMContextBuilder::new()
-            .attached_deposit(NearToken::from_near(1))
+            .attached_deposit(ATTESTATION_STORAGE_DEPOSIT)
             .block_timestamp(0)
             .build()
     );
