@@ -81,10 +81,22 @@ impl AcceptedAttestation {
         }
     }
 
-    /// Assembles the acceptance for a verified `Mock` attestation.
-    fn mock(mock_attestation: &MockAttestation) -> Self {
+    /// Assembles the acceptance for a verified `Mock` attestation, stamping the
+    /// expiry just like [`AcceptedAttestation::dstack`].
+    ///
+    /// Without an expiry, a `MockAttestation::Valid` entry passes re-verification
+    /// forever and can never be removed from contract storage (see #3293). We
+    /// therefore store every accepted mock with a `DEFAULT_EXPIRATION_DURATION_SECONDS`
+    /// window so the standard re-verification / cleanup flow eventually evicts it.
+    fn mock(mock_attestation: &MockAttestation, current_timestamp_seconds: u64) -> Self {
+        let expiry_timestamp_seconds =
+            current_timestamp_seconds + DEFAULT_EXPIRATION_DURATION_SECONDS;
         Self {
-            attestation: VerifiedAttestation::Mock(mock_attestation.clone()),
+            attestation: VerifiedAttestation::Mock(
+                mock_attestation
+                    .clone()
+                    .with_expiry(expiry_timestamp_seconds),
+            ),
             advisory_ids: Vec::new(),
         }
     }
@@ -126,7 +138,36 @@ impl MockAttestation {
             allowed_launcher_docker_compose_hashes,
             accepted_measurements,
         )?;
-        Ok(AcceptedAttestation::mock(self))
+        Ok(AcceptedAttestation::mock(self, current_timestamp_seconds))
+    }
+
+    /// Returns a copy stamped with `expiry_timestamp_seconds`, unless the mock
+    /// already carries an explicit expiry (which is preserved). A bare
+    /// [`MockAttestation::Valid`] becomes an otherwise-unconstrained
+    /// [`MockAttestation::WithConstraints`] so that, once stored, it eventually
+    /// expires and becomes eligible for cleanup. [`MockAttestation::Invalid`] is
+    /// returned unchanged — it never reaches acceptance.
+    pub fn with_expiry(self, expiry_timestamp_seconds: u64) -> Self {
+        match self {
+            MockAttestation::Valid => MockAttestation::WithConstraints {
+                mpc_docker_image_hash: None,
+                launcher_docker_compose_hash: None,
+                expiry_timestamp_seconds: Some(expiry_timestamp_seconds),
+                expected_measurements: None,
+            },
+            MockAttestation::Invalid => MockAttestation::Invalid,
+            MockAttestation::WithConstraints {
+                mpc_docker_image_hash,
+                launcher_docker_compose_hash,
+                expiry_timestamp_seconds: existing_expiry,
+                expected_measurements,
+            } => MockAttestation::WithConstraints {
+                mpc_docker_image_hash,
+                launcher_docker_compose_hash,
+                expiry_timestamp_seconds: existing_expiry.or(Some(expiry_timestamp_seconds)),
+                expected_measurements,
+            },
+        }
     }
 
     /// Checks the mock's constraints, returning only pass/fail. Lets the

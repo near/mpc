@@ -54,6 +54,12 @@ impl From<MpcContract> for crate::MpcContract {
             env::panic_str("Contract must be in running state when migrating.");
         }
 
+        // #3293: legacy `MockAttestation::Valid` entries never expire and can
+        // never be cleaned up. Stamp an expiry on them so the standard cleanup
+        // flow can evict stale mock entries after the upgrade.
+        let mut tee_state = old.tee_state;
+        tee_state.stamp_expiry_on_legacy_mocks(env::block_timestamp_ms() / 1_000);
+
         crate::MpcContract {
             protocol_state: old.protocol_state,
             pending_signature_requests: old.pending_signature_requests,
@@ -62,7 +68,7 @@ impl From<MpcContract> for crate::MpcContract {
             proposed_updates: old.proposed_updates,
             node_foreign_chain_support: old.node_foreign_chain_support,
             config: old.config,
-            tee_state: old.tee_state,
+            tee_state,
             accept_requests: old.accept_requests,
             node_migrations: old.node_migrations,
             metrics: old.metrics,
