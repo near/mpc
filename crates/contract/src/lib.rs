@@ -864,8 +864,10 @@ impl MpcContract {
         // rather than underflow. Intentional asymmetry: we do not refund freed
         // bytes either, since the caller already paid for the larger entry.
         let attached = env::attached_deposit();
+        // Relies on the attestation store having flushed its insert already; it
+        // defers writes to flush-on-Drop, so an unflushed insert reads as a zero delta
         let storage_used = env::storage_usage().saturating_sub(initial_storage);
-        let cost = env::storage_byte_cost().saturating_mul(storage_used as u128);
+        let cost = env::storage_byte_cost().saturating_mul(u128::from(storage_used));
 
         if attached < cost {
             return Err(InvalidParameters::InsufficientDeposit {

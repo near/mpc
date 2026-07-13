@@ -235,6 +235,10 @@ impl TeeState {
             },
         );
 
+        // Materialize the insert before the storage-usage charge reads it;
+        // `IterableMap` otherwise defers the write to flush-on-Drop
+        self.stored_attestations.flush();
+
         Ok(match previous {
             Some(previous) => ParticipantInsertion::UpdatedExistingParticipant(previous),
             None => ParticipantInsertion::NewlyInsertedParticipant,
@@ -890,6 +894,33 @@ mod tests {
             tee_state.stored_attestations.len(),
             1,
             "Internal storage count should increase by exactly one"
+        );
+    }
+
+    #[test]
+    fn verify_and_store_mock__should_flush_so_storage_usage_grows() {
+        // Given
+        testing_env!(VMContextBuilder::new().build());
+        let mut tee_state = TeeState::default();
+        let node_id = NodeId {
+            account_id: "alice.near".parse().unwrap(),
+            tls_public_key: bogus_ed25519_public_key(),
+            account_public_key: bogus_ed25519_public_key(),
+        };
+        let storage_before = env::storage_usage();
+
+        // When
+        tee_state
+            .verify_and_store_mock(node_id, MockAttestation::Valid, Duration::from_secs(0))
+            .unwrap();
+
+        // Then: the store must flush the insert so the charged storage delta is
+        // nonzero. Without the flush the write defers to drop and this reads zero,
+        // letting a caller store an attestation without paying for it.
+        let storage_after = env::storage_usage();
+        assert!(
+            storage_after > storage_before,
+            "env::storage_usage() should grow after the store ({storage_before} -> {storage_after})"
         );
     }
 

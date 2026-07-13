@@ -984,3 +984,105 @@ async fn verify_tee__should_keep_participants_and_stop_signing_when_kickout_drop
 
     Ok(())
 }
+
+/// Regression test for the lazy-collection storage-charge bug: a brand-new
+/// attestation submitted with zero deposit must be rejected and not persisted.
+#[tokio::test]
+async fn submit_participant_info__should_reject_new_attestation_with_zero_deposit() -> Result<()> {
+    // Given
+    let SandboxTestSetup {
+        worker, contract, ..
+    } = SandboxTestSetup::builder()
+        .with_protocols(ALL_PROTOCOLS)
+        .build()
+        .await;
+    let outsider = worker.dev_create_account().await?;
+    let fresh_tls_key = bogus_ed25519_public_key();
+    let storage_before = worker.view_account(contract.id()).await?.storage_usage;
+
+    // When
+    let result = outsider
+        .call(contract.id(), method_names::SUBMIT_PARTICIPANT_INFO)
+        .args_json((
+            Attestation::Mock(MockAttestation::Valid),
+            fresh_tls_key.clone(),
+        ))
+        .deposit(NearToken::from_yoctonear(0))
+        .max_gas()
+        .transact()
+        .await?;
+
+    // Then
+    assert!(
+        !result.is_success(),
+        "zero-deposit submission of a new attestation must fail: {result:?}"
+    );
+    let error_msg = format!("{:?}", result.into_result());
+    assert!(
+        error_msg.contains("Attached deposit is lower than required"),
+        "expected an insufficient-deposit error, got: {error_msg}"
+    );
+    let stored = get_participant_attestation(&contract, &fresh_tls_key).await?;
+    assert!(
+        stored.is_none(),
+        "no attestation should be stored when the deposit is rejected"
+    );
+    let storage_after = worker.view_account(contract.id()).await?.storage_usage;
+    assert_eq!(
+        storage_after, storage_before,
+        "contract storage must not grow when the submission is rejected"
+    );
+    Ok(())
+}
+
+/// A funded submission stores the attestation and refunds the deposit that exceeds
+/// the measured storage cost, so the caller pays only for storage (plus gas).
+#[tokio::test]
+async fn submit_participant_info__should_store_and_refund_excess_with_sufficient_deposit()
+-> Result<()> {
+    // Given
+    const ATTACHED_DEPOSIT: NearToken = NearToken::from_near(1);
+    let SandboxTestSetup {
+        worker, contract, ..
+    } = SandboxTestSetup::builder()
+        .with_protocols(ALL_PROTOCOLS)
+        .build()
+        .await;
+    let outsider = worker.dev_create_account().await?;
+    let fresh_tls_key = bogus_ed25519_public_key();
+    let balance_before = outsider.view_account().await?.balance;
+
+    // When
+    let result = outsider
+        .call(contract.id(), method_names::SUBMIT_PARTICIPANT_INFO)
+        .args_json((
+            Attestation::Mock(MockAttestation::Valid),
+            fresh_tls_key.clone(),
+        ))
+        .deposit(ATTACHED_DEPOSIT)
+        .max_gas()
+        .transact()
+        .await?;
+
+    // Then
+    assert!(
+        result.is_success(),
+        "funded submission of a new attestation should succeed: {result:?}"
+    );
+    let stored = get_participant_attestation(&contract, &fresh_tls_key).await?;
+    assert!(
+        stored.is_some(),
+        "the attestation entry should be stored on-chain"
+    );
+    // A single mock attestation is a few hundred bytes; at the sandbox storage
+    // price it costs a tiny fraction of the 1 NEAR attached. The caller's net
+    // balance drop (storage cost + gas) must therefore be far below the full
+    // deposit, proving the excess was refunded rather than kept.
+    let balance_after = outsider.view_account().await?.balance;
+    let spent = balance_before.saturating_sub(balance_after);
+    assert!(
+        spent < NearToken::from_millinear(100),
+        "caller should be refunded all but the storage cost; spent {spent} of {ATTACHED_DEPOSIT}"
+    );
+    Ok(())
+}
