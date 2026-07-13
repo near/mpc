@@ -1,5 +1,4 @@
 use super::IndexerAPI;
-use super::ReadForeignChainPolicy;
 use super::handler::{ChainBlockUpdate, SignatureRequestFromChain};
 use super::migrations::ContractMigrationInfo;
 use super::participants::ContractState;
@@ -53,27 +52,11 @@ pub struct FakeMpcContractState {
     // TODO(#3630): drop this once 3.13 contract is deployed.
     supported_foreign_chains_by_node: dtos::ForeignChainSupportByNode,
     foreign_chains_configs: dtos::ForeignChainsConfigs,
+    /// Mirror `available_foreign_chains` / `foreign_chains_configs` onto watch channels,
+    /// standing in for the real indexer's foreign-chain monitors.
+    available_foreign_chains_sender: watch::Sender<dtos::AvailableForeignChains>,
+    foreign_chains_configs_sender: watch::Sender<dtos::ForeignChainsConfigs>,
     pub migration_service: NodeMigrations,
-}
-
-#[derive(Clone)]
-pub struct FakeReadForeignChainPolicy {
-    contract: Arc<tokio::sync::Mutex<FakeMpcContractState>>,
-}
-
-impl ReadForeignChainPolicy for FakeReadForeignChainPolicy {
-    async fn get_foreign_chains_configs(&self) -> anyhow::Result<dtos::ForeignChainsConfigs> {
-        Ok(self.contract.lock().await.foreign_chains_configs().clone())
-    }
-
-    async fn get_available_chains(&self) -> anyhow::Result<dtos::AvailableForeignChains> {
-        Ok(self
-            .contract
-            .lock()
-            .await
-            .available_foreign_chains()
-            .clone())
-    }
 }
 
 impl FakeMpcContractState {
@@ -94,8 +77,32 @@ impl FakeMpcContractState {
             available_foreign_chains: dtos::AvailableForeignChains::default(),
             supported_foreign_chains_by_node: dtos::ForeignChainSupportByNode::default(),
             foreign_chains_configs: dtos::ForeignChainsConfigs::default(),
+            available_foreign_chains_sender: watch::channel(Default::default()).0,
+            foreign_chains_configs_sender: watch::channel(Default::default()).0,
             migration_service: NodeMigrations::default(),
         }
+    }
+
+    /// Publishes the current policy fields; a no-op for subscribers when nothing changed.
+    fn publish_foreign_chain_policy(&self) {
+        self.available_foreign_chains_sender
+            .send_if_modified(|previous| {
+                if *previous != self.available_foreign_chains {
+                    previous.clone_from(&self.available_foreign_chains);
+                    true
+                } else {
+                    false
+                }
+            });
+        self.foreign_chains_configs_sender
+            .send_if_modified(|previous| {
+                if *previous != self.foreign_chains_configs {
+                    previous.clone_from(&self.foreign_chains_configs);
+                    true
+                } else {
+                    false
+                }
+            });
     }
 
     pub fn available_foreign_chains(&self) -> &dtos::AvailableForeignChains {
@@ -104,10 +111,6 @@ impl FakeMpcContractState {
 
     pub fn supported_foreign_chains_by_node(&self) -> &dtos::ForeignChainSupportByNode {
         &self.supported_foreign_chains_by_node
-    }
-
-    pub fn foreign_chains_configs(&self) -> &dtos::ForeignChainsConfigs {
-        &self.foreign_chains_configs
     }
 
     #[expect(deprecated)]
@@ -178,6 +181,7 @@ impl FakeMpcContractState {
             .map(|(chain, _)| chain)
             .collect::<BTreeSet<_>>()
             .into();
+        self.publish_foreign_chain_policy();
     }
 
     pub fn register_foreign_chains_config(
@@ -215,6 +219,7 @@ impl FakeMpcContractState {
             .reduce(|a, b| a.intersection(&b).copied().collect())
             .unwrap_or_default()
             .into();
+        self.publish_foreign_chain_policy();
     }
 
     pub fn initialize(&mut self, participants: ParticipantsConfig) {
@@ -811,6 +816,10 @@ pub struct FakeIndexerManager {
     /// Allows modification of the contract.
     contract: Arc<tokio::sync::Mutex<FakeMpcContractState>>,
 
+    /// Cloned to each node's `IndexerAPI`; track the fake contract's foreign-chain policy.
+    available_foreign_chains_receiver: watch::Receiver<dtos::AvailableForeignChains>,
+    foreign_chains_configs_receiver: watch::Receiver<dtos::ForeignChainsConfigs>,
+
     account_id_by_uid: Arc<std::sync::Mutex<HashMap<TestNodeUid, AccountId>>>,
 }
 
@@ -998,7 +1007,12 @@ impl FakeIndexerManager {
             mpsc::unbounded_channel();
         let (verify_foreign_tx_response_sender, verify_foreign_tx_response_receiver) =
             mpsc::unbounded_channel();
-        let contract = Arc::new(tokio::sync::Mutex::new(FakeMpcContractState::new()));
+        let contract_state = FakeMpcContractState::new();
+        let available_foreign_chains_receiver =
+            contract_state.available_foreign_chains_sender.subscribe();
+        let foreign_chains_configs_receiver =
+            contract_state.foreign_chains_configs_sender.subscribe();
+        let contract = Arc::new(tokio::sync::Mutex::new(contract_state));
         let account_id_by_uid = Arc::new(std::sync::Mutex::new(HashMap::new()));
         let core = FakeIndexerCore {
             clock: clock.clone(),
@@ -1031,6 +1045,8 @@ impl FakeIndexerManager {
             node_disabler: HashMap::new(),
             indexer_pauser: HashMap::new(),
             contract,
+            available_foreign_chains_receiver,
+            foreign_chains_configs_receiver,
             account_id_by_uid,
             verify_foreign_tx_response_receiver,
             verify_foreign_tx_request_sender,
@@ -1080,7 +1096,7 @@ impl FakeIndexerManager {
         account_id: AccountId,
         p2p_public_key: VerifyingKey,
     ) -> (
-        IndexerAPI<MockTransactionSender, FakeReadForeignChainPolicy>,
+        IndexerAPI<MockTransactionSender>,
         AutoAbortTask<()>,
         Arc<std::sync::Mutex<String>>,
     ) {
@@ -1102,9 +1118,6 @@ impl FakeIndexerManager {
         let mock_transaction_sender = MockTransactionSender {
             transaction_sender: api_txn_sender,
         };
-        let foreign_chain_policy_reader = FakeReadForeignChainPolicy {
-            contract: self.contract.clone(),
-        };
         let indexer = IndexerAPI {
             contract_state_receiver: api_state_receiver,
             block_update_receiver: Arc::new(tokio::sync::Mutex::new(
@@ -1115,7 +1128,8 @@ impl FakeIndexerManager {
             allowed_launcher_compose_receiver,
             attested_nodes_receiver: watch::channel(vec![]).1,
             my_migration_info_receiver,
-            foreign_chain_policy_reader,
+            available_foreign_chains_receiver: self.available_foreign_chains_receiver.clone(),
+            foreign_chains_configs_receiver: self.foreign_chains_configs_receiver.clone(),
         };
 
         let currently_running_job_name = Arc::new(std::sync::Mutex::new("".to_string()));

@@ -127,6 +127,7 @@ derive_more = { version = "2.1.1", features = [
     "from",
     "from_str",
     "into",
+    "into_iterator",
 ] }
 digest = "0.10.7"
 dstack-sdk = { version = "0.1.2" }

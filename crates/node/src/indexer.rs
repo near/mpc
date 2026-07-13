@@ -25,13 +25,14 @@ use near_mpc_contract_interface::method_names::{
 use near_mpc_contract_interface::types::{self as dtos, YieldIndex};
 use participants::ContractState;
 use serde::Deserialize;
-use std::{future::Future, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 use tokio::sync::{
     Mutex, {mpsc, watch},
 };
 use types::ChainSendTransactionRequest;
 
 pub mod configs;
+pub mod foreign_chain;
 pub mod handler;
 pub mod migrations;
 pub mod near_data_wipe;
@@ -383,51 +384,6 @@ impl IndexerViewClient {
     }
 }
 
-/// Reads the contract's foreign-chain policy.
-#[cfg_attr(test, mockall::automock)]
-pub(crate) trait ReadForeignChainPolicy: Send + Sync {
-    /// Per-node foreign-chain configs.
-    fn get_foreign_chains_configs(
-        &self,
-    ) -> impl Future<Output = anyhow::Result<dtos::ForeignChainsConfigs>> + Send;
-
-    /// The contract's available chains: whitelisted and supported by a signing quorum.
-    fn get_available_chains(
-        &self,
-    ) -> impl Future<Output = anyhow::Result<dtos::AvailableForeignChains>> + Send;
-}
-
-#[derive(Clone)]
-pub(crate) struct RealForeignChainPolicyReader {
-    indexer_state: Arc<IndexerState>,
-}
-
-impl RealForeignChainPolicyReader {
-    pub(crate) fn new(indexer_state: Arc<IndexerState>) -> Self {
-        Self { indexer_state }
-    }
-}
-
-impl ReadForeignChainPolicy for RealForeignChainPolicyReader {
-    async fn get_foreign_chains_configs(&self) -> anyhow::Result<dtos::ForeignChainsConfigs> {
-        let (_height, configs) = self
-            .indexer_state
-            .view_client
-            .get_foreign_chains_configs(&self.indexer_state.mpc_contract_id)
-            .await?;
-        Ok(configs)
-    }
-
-    async fn get_available_chains(&self) -> anyhow::Result<dtos::AvailableForeignChains> {
-        let (_height, chains) = self
-            .indexer_state
-            .view_client
-            .get_available_chains(&self.indexer_state.mpc_contract_id)
-            .await?;
-        Ok(chains)
-    }
-}
-
 #[derive(Clone)]
 struct IndexerClient {
     client: TokioRuntimeHandle<ClientActor>,
@@ -544,7 +500,7 @@ impl IndexerRpcHandler {
 /// The MPC node implementation needs this and only this to be able to interact
 /// with the indexer.
 /// TODO(#592): abstract away having an indexer running in a separate process
-pub struct IndexerAPI<TransactionSender, ForeignChainPolicyReader> {
+pub struct IndexerAPI<TransactionSender> {
     /// Provides the current contract state as well as updates to it.
     pub contract_state_receiver: watch::Receiver<ContractState>,
     /// Provides block updates (signature requests and other relevant receipts).
@@ -566,7 +522,10 @@ pub struct IndexerAPI<TransactionSender, ForeignChainPolicyReader> {
 
     pub my_migration_info_receiver: watch::Receiver<MigrationInfo>,
 
-    pub foreign_chain_policy_reader: ForeignChainPolicyReader,
+    /// Watcher that tracks the contract's available foreign chains.
+    pub available_foreign_chains_receiver: watch::Receiver<dtos::AvailableForeignChains>,
+    /// Watcher that tracks the contract's per-node foreign-chain configs.
+    pub foreign_chains_configs_receiver: watch::Receiver<dtos::ForeignChainsConfigs>,
 }
 
 #[cfg(test)]
