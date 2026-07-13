@@ -59,7 +59,7 @@ pub enum TeeValidationResult {
     },
 }
 
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(borsh::BorshSchema)
@@ -434,15 +434,17 @@ impl TeeState {
     }
 
     /// Migration helper: stamps an expiry on stored mock attestations that lack
-    /// one. Legacy `MockAttestation::Valid` entries pass re-verification forever
+    /// one. Legacy [`MockAttestation::Valid`] entries pass re-verification forever
     /// and can therefore never be evicted by [`TeeState::clean_invalid_attestations`]
-    /// (see #3293). Rewriting them as expiring `WithConstraints` mocks lets the
-    /// normal cleanup flow remove stale entries once the window elapses; entries
-    /// that already carry an explicit expiry are left unchanged.
+    /// (see #3293). [`MockAttestation::with_expiry`] rewrites them as expiring
+    /// [`MockAttestation::WithConstraints`] mocks so the normal cleanup flow can
+    /// remove stale entries once the window elapses, while leaving entries that
+    /// already carry an explicit expiry unchanged.
     pub(crate) fn stamp_expiry_on_legacy_mocks(&mut self, current_timestamp_seconds: u64) {
         let expiry_timestamp_seconds =
             current_timestamp_seconds + attestation::DEFAULT_EXPIRATION_DURATION_SECONDS;
 
+        // Collect keys before mutating to avoid iterator invalidation.
         let mock_tls_keys: Vec<Ed25519PublicKey> = self
             .stored_attestations
             .iter()
@@ -456,15 +458,13 @@ impl TeeState {
             .collect();
 
         for tls_pk in mock_tls_keys {
-            let Some(mut node_attestation) = self.stored_attestations.get(&tls_pk).cloned() else {
+            let Some(node_attestation) = self.stored_attestations.get_mut(&tls_pk) else {
                 continue;
             };
-            let VerifiedAttestation::Mock(mock) = node_attestation.verified_attestation else {
-                continue;
-            };
-            node_attestation.verified_attestation =
-                VerifiedAttestation::Mock(mock.with_expiry(expiry_timestamp_seconds));
-            self.stored_attestations.insert(tls_pk, node_attestation);
+            if let VerifiedAttestation::Mock(mock) = &node_attestation.verified_attestation {
+                let stamped = mock.clone().with_expiry(expiry_timestamp_seconds);
+                node_attestation.verified_attestation = VerifiedAttestation::Mock(stamped);
+            }
         }
     }
 
