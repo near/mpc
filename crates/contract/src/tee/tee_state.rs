@@ -234,6 +234,10 @@ impl TeeState {
                 verified_attestation,
             },
         );
+        // The storage charge measures the `env::storage_usage()` delta, but
+        // `IterableMap` defers its writes to flush-on-drop after the method
+        // body; flush now so the insert is visible to the charge.
+        self.stored_attestations.flush();
 
         Ok(match previous {
             Some(previous) => ParticipantInsertion::UpdatedExistingParticipant(previous),
