@@ -264,6 +264,47 @@ pub static MPC_INDEXER_LATEST_BLOCK_HEIGHT: LazyLock<prometheus::IntGauge> = Laz
     .unwrap()
 });
 
+pub static MPC_INDEXER_LATEST_BLOCK_TIMESTAMP_SECONDS: LazyLock<prometheus::IntGauge> =
+    LazyLock::new(|| {
+        prometheus::register_int_gauge!(
+            "mpc_indexer_latest_block_timestamp_seconds",
+            "Unix time of the latest block processed by the near indexer"
+        )
+        .unwrap()
+    });
+
+pub static MPC_OWN_IMAGE_HASH_ALLOWED: LazyLock<prometheus::IntGauge> = LazyLock::new(|| {
+    prometheus::register_int_gauge!(
+        "mpc_own_image_hash_allowed",
+        "Whether the Docker image hash this node is running is in the contract's \
+             allowlist (1) or not (0)"
+    )
+    .unwrap()
+});
+
+pub static MPC_OWN_IMAGE_HASH_IS_MOST_RECENT: LazyLock<prometheus::IntGauge> =
+    LazyLock::new(|| {
+        prometheus::register_int_gauge!(
+            "mpc_own_image_hash_is_most_recent",
+            "Whether the Docker image hash this node is running is the most recent \
+             hash in the contract's allowlist (1) or not (0)"
+        )
+        .unwrap()
+    });
+
+pub static MPC_OWN_IMAGE_HASH_EXPIRY_TIMESTAMP_SECONDS: LazyLock<prometheus::IntGauge> =
+    LazyLock::new(|| {
+        prometheus::register_int_gauge!(
+            "mpc_own_image_hash_expiry_timestamp_seconds",
+            "Unix time at which the Docker image hash this node is running is evicted \
+             from the contract's allowlist. -1 when the hash never expires (newest \
+             entry) or the contract does not report expiry; 0 when the hash is already \
+             evicted. Compare against mpc_indexer_latest_block_timestamp_seconds for \
+             the remaining time"
+        )
+        .unwrap()
+    });
+
 pub static MPC_ACCESS_KEY_NONCE: LazyLock<prometheus::IntGauge> = LazyLock::new(|| {
     prometheus::register_int_gauge!(
         "mpc_access_key_nonce",
