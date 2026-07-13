@@ -97,10 +97,6 @@ pub const OS_MEASUREMENT_VOTES: &str = "os_measurement_votes";
 pub const ALLOWED_OS_MEASUREMENTS: &str = "allowed_os_measurements";
 pub const MIGRATION_INFO: &str = "migration_info";
 
-// Sandbox-test-only methods (gated behind the contract's `sandbox-test-methods`
-// feature; never in the production wasm).
-pub const HAS_PENDING_ATTESTATION: &str = "has_pending_attestation";
-
 // Deprecated methods
 #[deprecated(note = "https://github.com/near/mpc/issues/3079")]
 pub const REGISTER_FOREIGN_CHAIN_CONFIG: &str = "register_foreign_chain_config";

@@ -75,17 +75,6 @@ pub async fn submit_participant_info_with_deposit(
         .await?)
 }
 
-pub async fn has_pending_attestation(
-    contract: &Contract,
-    account_id: &AccountId,
-) -> anyhow::Result<bool> {
-    Ok(contract
-        .view(method_names::HAS_PENDING_ATTESTATION)
-        .args_json(serde_json::json!({ "account_id": account_id }))
-        .await?
-        .json()?)
-}
-
 pub async fn vote_tee_verifier_change(
     account: &Account,
     contract: &Contract,
