@@ -890,7 +890,7 @@ Use the following custom settings for MPC:
 1. Launcher docker compose file - provided above.
 2. VM HW setting (use exactly those settings, since vCPU/Memory are measured):
     vCPU number=8, Memory = 64GB, disk = 1000 GB
-3. Pre-launch Script and Init Script - both must be empty (a non-empty script fails attestation). Caution: the Pre-launch Script may not be empty by default - clear it before deploying.
+3. Pre-launch Script and Init Script - both must be empty. They are part of the app-compose and are **measured** (see the warning below), so a non-empty script both fails attestation *and* changes the disk-sealing key. Caution: the Pre-launch Script may not be empty by default - clear it before deploying.
 4. user-config - provided above
 5. Toggles:
    - KMS = disable
@@ -914,6 +914,8 @@ Use the following custom settings for MPC:
 ![VMM Web Page (1/2)](./attachments/VMM_web_page_deploy_1.png)
 
 ![VMM Web Page (2/2)](./attachments/VMM_web_page_deploy_2.png)
+
+> **⚠️ Never change the app-compose (or the vCPU/memory) of a running node** — it will fail to start, since the disk is encrypted with a key derived from those measured inputs. If this happens, see [Troubleshooting: node won't start after an app-compose change](#node-wont-start-after-an-app-compose-change) to recover.
 
 #### Using the script
 
@@ -1874,6 +1876,38 @@ python $VMM_CLI_PATH --url $VMM_URL start <vm-id>
 
 Common failure scenarios and how to diagnose them. This section grows as new
 cases are identified.
+
+### Node won't start after an app-compose change
+
+**Symptom:** after changing the app-compose (a pre-launch/init script, a toggle,
+the launcher compose) — or editing config through the **web UI**, or changing
+**memory/vCPU** — the CVM no longer boots and `dstack-prepare` fails with:
+
+```text
+No key available with this passphrase
+Error: Failed to open encrypted data disk
+```
+
+**Why:** the disk-encryption key is derived from the node's boot measurements,
+which include the app-compose and the memory/vCPU settings. Change any of them and
+the node derives a different key that can't unseal the existing disk. (The web UI
+can trigger this even when the visible settings look unchanged, since it
+re-serializes the app-compose on save.)
+
+**Fix — restore the exact original measurements.** The disk data is intact; do
+**not** reformat it.
+
+1. Regenerate a *byte-hash-identical* app-compose from the original inputs via
+   [`deploy-launcher.sh`](#using-the-script) (it never adds scripts and pins
+   vCPU/Memory). Revert any memory/vCPU change back to 8 vCPU / 64 GB.
+2. Confirm `sha256sum .app-compose.json` matches the original `compose_hash` — the
+   32 bytes after the leading `01` in a pre-incident boot log's `mr_config_id`.
+3. Push it to the existing CVM and restart:
+
+   ```bash
+   python $VMM_CLI_PATH --url $VMM_URL update-app-compose <vm-id> .app-compose.json
+   python $VMM_CLI_PATH --url $VMM_URL stop <vm-id> && python $VMM_CLI_PATH --url $VMM_URL start <vm-id>
+   ```
 
 ### Wiping the NEAR indexer data (force a re-sync)
 

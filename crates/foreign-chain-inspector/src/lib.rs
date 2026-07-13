@@ -245,11 +245,23 @@ pub enum ForeignChainInspectionError {
         canonical_hash: HexBytes,
     },
     #[error(
-        "RPC backend returned a block that does not match the one queried by hash: requested={requested_hash}, returned={returned_hash}"
+        "RPC backend response does not match the hash it was queried by: requested={requested_hash}, returned={returned_hash}"
     )]
     InconsistentRpcResponse {
         requested_hash: HexBytes,
         returned_hash: HexBytes,
+    },
+    #[error(
+        "log at index {log_index} is not bound to its receipt: log points at tx={log_transaction_hash}, block={log_block_hash} (height {log_block_number}); receipt is tx={receipt_transaction_hash}, block={receipt_block_hash} (height {receipt_block_number})"
+    )]
+    LogNotBoundToReceipt {
+        log_index: u64,
+        log_transaction_hash: HexBytes,
+        log_block_hash: HexBytes,
+        log_block_number: u64,
+        receipt_transaction_hash: HexBytes,
+        receipt_block_hash: HexBytes,
+        receipt_block_number: u64,
     },
     #[error("The transaction's status was not success")]
     TransactionFailed,
