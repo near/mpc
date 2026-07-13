@@ -74,7 +74,7 @@ pub struct CKDAppPublicKeyPV {
 }
 
 /// CKD request with derived app_id.
-#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct CKDRequest {
     pub app_public_key: CKDAppPublicKey,
     pub app_id: CkdAppId,

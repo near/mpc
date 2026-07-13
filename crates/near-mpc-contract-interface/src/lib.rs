@@ -1,10 +1,12 @@
 #![doc = include_str!("../README.md")]
+#[cfg(feature = "call-args")]
+pub mod call_args;
+
 pub mod method_names;
 pub mod types {
     pub use attestation::{
         AppCompose, Attestation, Collateral, DstackAttestation, EventLog, HexVec, MockAttestation,
-        SubmitParticipantInfoArgs, TcbInfo, VerifiedAttestation, VerifiedDstackAttestation,
-        VerifiedMeasurements,
+        TcbInfo, VerifiedAttestation, VerifiedDstackAttestation, VerifiedMeasurements,
     };
     pub use config::{Config, InitConfig};
     pub use foreign_chain::*;
@@ -27,7 +29,8 @@ pub mod types {
         RunningContractState, Threshold, ThresholdParameters, ThresholdParametersVotes,
         protocol_state_to_string,
     };
-    pub use tee::NodeId;
+    pub use tee::{AllowedMpcDockerImageHash, NodeId};
+
     pub use updates::{ProposedUpdates, UpdateHash};
 
     // Re-export hash types used in attestation DTO fields

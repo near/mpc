@@ -1,14 +1,6 @@
-use crate::{
-    indexer::{
-        migrations::ContractMigrationInfo,
-        types::{
-            ChainCKDRequest, ChainGetPendingCKDRequestArgs, ChainGetPendingSignatureRequestArgs,
-            ChainGetPendingVerifyForeignTxRequestArgs, ChainSignatureRequest,
-            ChainVerifyForeignTransactionRequest, GetAttestationArgs,
-        },
-    },
-    migration_service::types::MigrationInfo,
-};
+use near_mpc_contract_interface::call_args as contract_args;
+
+use crate::{indexer::migrations::ContractMigrationInfo, migration_service::types::MigrationInfo};
 
 use self::stats::IndexerStats;
 use anyhow::Context;
@@ -53,6 +45,14 @@ pub mod types;
 
 #[cfg(test)]
 pub mod fake;
+
+// TODO(#3751): drop this struct after upgrading the contract.
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(untagged)]
+enum AllowedDockerImageHashesResponse {
+    WithExpiry(Vec<dtos::AllowedMpcDockerImageHash>),
+    Legacy(Vec<NodeImageHash>),
+}
 
 pub(crate) struct IndexerState {
     /// For querying blockchain state.
@@ -102,14 +102,13 @@ impl IndexerViewClient {
     pub(crate) async fn get_pending_request(
         &self,
         mpc_contract_id: &AccountId,
-        chain_signature_request: &ChainSignatureRequest,
+        chain_signature_request: &dtos::SignatureRequest,
     ) -> anyhow::Result<Option<YieldIndex>> {
-        let get_pending_request_args: Vec<u8> =
-            serde_json::to_string(&ChainGetPendingSignatureRequestArgs {
-                request: chain_signature_request.clone(),
-            })
-            .unwrap()
-            .into_bytes();
+        let get_pending_request_args: Vec<u8> = serde_json::to_string(
+            &contract_args::GetPendingSignatureRequestArgs::new(chain_signature_request.clone()),
+        )
+        .unwrap()
+        .into_bytes();
 
         let request = QueryRequest::CallFunction {
             account_id: mpc_contract_id.clone(),
@@ -143,14 +142,13 @@ impl IndexerViewClient {
     pub(crate) async fn get_pending_ckd_request(
         &self,
         mpc_contract_id: &AccountId,
-        chain_ckd_request: &ChainCKDRequest,
+        chain_ckd_request: &dtos::CKDRequest,
     ) -> anyhow::Result<Option<YieldIndex>> {
-        let get_pending_request_args: Vec<u8> =
-            serde_json::to_string(&ChainGetPendingCKDRequestArgs {
-                request: chain_ckd_request.clone(),
-            })
-            .unwrap()
-            .into_bytes();
+        let get_pending_request_args: Vec<u8> = serde_json::to_string(
+            &contract_args::GetPendingCKDRequestArgs::new(chain_ckd_request.clone()),
+        )
+        .unwrap()
+        .into_bytes();
 
         let request = QueryRequest::CallFunction {
             account_id: mpc_contract_id.clone(),
@@ -184,12 +182,12 @@ impl IndexerViewClient {
     pub(crate) async fn get_pending_verify_foreign_tx_request(
         &self,
         mpc_contract_id: &AccountId,
-        chain_verify_foreign_tx_request: &ChainVerifyForeignTransactionRequest,
+        chain_verify_foreign_tx_request: &dtos::VerifyForeignTransactionRequest,
     ) -> anyhow::Result<Option<YieldIndex>> {
         let get_pending_request_args: Vec<u8> =
-            serde_json::to_string(&ChainGetPendingVerifyForeignTxRequestArgs {
-                request: chain_verify_foreign_tx_request.clone(),
-            })
+            serde_json::to_string(&contract_args::GetPendingVerifyForeignTxRequestArgs::new(
+                chain_verify_foreign_tx_request.clone(),
+            ))
             .unwrap()
             .into_bytes();
 
@@ -227,9 +225,9 @@ impl IndexerViewClient {
         mpc_contract_id: &AccountId,
         participant_tls_public_key: &near_mpc_contract_interface::types::Ed25519PublicKey,
     ) -> anyhow::Result<Option<near_mpc_contract_interface::types::VerifiedAttestation>> {
-        let get_attestation_args: Vec<u8> = serde_json::to_string(&GetAttestationArgs {
-            tls_public_key: participant_tls_public_key,
-        })
+        let get_attestation_args: Vec<u8> = serde_json::to_string(
+            &contract_args::GetAttestationArgs::new(participant_tls_public_key),
+        )
         .unwrap()
         .into_bytes();
 
@@ -328,9 +326,23 @@ impl IndexerViewClient {
     pub(crate) async fn get_mpc_allowed_image_hashes(
         &self,
         mpc_contract_id: AccountId,
-    ) -> anyhow::Result<(u64, Vec<NodeImageHash>)> {
-        self.get_mpc_state(mpc_contract_id, ALLOWED_DOCKER_IMAGE_HASHES)
-            .await
+    ) -> anyhow::Result<(u64, Vec<dtos::AllowedMpcDockerImageHash>)> {
+        let (block_height, response): (u64, AllowedDockerImageHashesResponse) = self
+            .get_mpc_state(mpc_contract_id, ALLOWED_DOCKER_IMAGE_HASHES)
+            .await?;
+
+        // TODO(#3751): drop this logic after upgrading the contract.
+        let entries = match response {
+            AllowedDockerImageHashesResponse::WithExpiry(entries) => entries,
+            AllowedDockerImageHashesResponse::Legacy(hashes) => hashes
+                .into_iter()
+                .map(|image_hash| dtos::AllowedMpcDockerImageHash {
+                    image_hash,
+                    expiry_timestamp_seconds: None,
+                })
+                .collect(),
+        };
+        Ok((block_height, entries))
     }
     pub(crate) async fn get_mpc_allowed_launcher_compose_hashes(
         &self,
@@ -411,6 +423,45 @@ impl ReadSupportedForeignChain for RealForeignChainPolicyReader {
             .view_client
             .get_supported_chains(&self.indexer_state.mpc_contract_id)
             .await
+    }
+}
+
+pub(crate) trait ReadAttestationExpiry: Send + Sync {
+    /// The Dstack attestation expiry currently stored for `tls_public_key`, or `None` if none is
+    /// stored.
+    fn read_stored_dstack_expiry<'a>(
+        &'a self,
+        tls_public_key: &'a dtos::Ed25519PublicKey,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<Option<u64>>> + Send + 'a>>;
+}
+
+pub(crate) struct RealAttestationExpiryReader {
+    indexer_state: Arc<IndexerState>,
+}
+
+impl RealAttestationExpiryReader {
+    pub(crate) fn new(indexer_state: Arc<IndexerState>) -> Self {
+        Self { indexer_state }
+    }
+}
+
+impl ReadAttestationExpiry for RealAttestationExpiryReader {
+    fn read_stored_dstack_expiry<'a>(
+        &'a self,
+        tls_public_key: &'a dtos::Ed25519PublicKey,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<Option<u64>>> + Send + 'a>>
+    {
+        Box::pin(async move {
+            let stored = self
+                .indexer_state
+                .view_client
+                .get_participant_attestation(&self.indexer_state.mpc_contract_id, tls_public_key)
+                .await?;
+            Ok(match stored {
+                Some(dtos::VerifiedAttestation::Dstack(a)) => Some(a.expiry_timestamp_seconds),
+                _ => None,
+            })
+        })
     }
 }
 
@@ -543,8 +594,8 @@ pub struct IndexerAPI<TransactionSender, ForeignChainPolicyReader> {
     pub block_update_receiver: Arc<tokio::sync::Mutex<mpsc::UnboundedReceiver<ChainBlockUpdate>>>,
     /// Handle to transaction processor.
     pub txn_sender: TransactionSender,
-    /// Watcher that keeps track of allowed [`DockerImageHash`]es on the contract.
-    pub allowed_docker_images_receiver: watch::Receiver<Vec<NodeImageHash>>,
+    /// Watcher that keeps track of [`dtos::AllowedMpcDockerImageHash`]es on the contract
+    pub allowed_docker_images_receiver: watch::Receiver<Vec<dtos::AllowedMpcDockerImageHash>>,
     /// Watcher that keeps track of allowed [`LauncherDockerComposeHash`]es on the contract.
     pub allowed_launcher_compose_receiver: watch::Receiver<Vec<LauncherDockerComposeHash>>,
     /// Watcher that tracks node IDs that have TEE attestations in the contract.
@@ -553,12 +604,49 @@ pub struct IndexerAPI<TransactionSender, ForeignChainPolicyReader> {
     pub my_migration_info_receiver: watch::Receiver<MigrationInfo>,
 
     pub foreign_chain_policy_reader: ForeignChainPolicyReader,
+
+    pub(crate) attestation_reader: std::sync::Arc<dyn ReadAttestationExpiry>,
 }
 
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::{BlockHeight, REQUIRED_STABLE_POLLS, SyncProgress};
+    use super::{
+        AllowedDockerImageHashesResponse, BlockHeight, REQUIRED_STABLE_POLLS, SyncProgress,
+    };
+    use assert_matches::assert_matches;
+    use mpc_primitives::hash::NodeImageHash;
+
+    #[test]
+    fn allowed_docker_image_hashes_response__should_deserialize_with_expiry_objects() {
+        let json = r#"[
+        { "image_hash": "1111111111111111111111111111111111111111111111111111111111111111", "expiry_timestamp_seconds": 42 },
+        { "image_hash": "2222222222222222222222222222222222222222222222222222222222222222", "expiry_timestamp_seconds": null }
+    ]"#;
+        let response: AllowedDockerImageHashesResponse = serde_json::from_str(json).unwrap();
+        assert_matches!(response, AllowedDockerImageHashesResponse::WithExpiry(entries) if entries.len() == 2);
+    }
+
+    #[test]
+    fn allowed_docker_image_hashes_response__should_deserialize_legacy_bare_hashes() {
+        // Given: the shape returned by contracts predating expiry reporting.
+        let json = r#"[
+            "1111111111111111111111111111111111111111111111111111111111111111",
+            "2222222222222222222222222222222222222222222222222222222222222222"
+        ]"#;
+
+        // When
+        let response: AllowedDockerImageHashesResponse = serde_json::from_str(json).unwrap();
+
+        // Then
+        assert_eq!(
+            response,
+            AllowedDockerImageHashesResponse::Legacy(vec![
+                NodeImageHash::from([0x11; 32]),
+                NodeImageHash::from([0x22; 32]),
+            ])
+        );
+    }
 
     fn first_caught_up_poll(samples: &[(bool, BlockHeight)]) -> Option<usize> {
         let mut progress = SyncProgress::default();
