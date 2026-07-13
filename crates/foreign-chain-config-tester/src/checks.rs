@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use anyhow::{Context, bail, ensure};
+use anyhow::{Context, bail};
 use foreign_chain_inspector::ForeignChainInspectionError;
 use foreign_chain_inspector::{
     BlockConfirmations, EthereumFinality, ForeignChainInspector,
@@ -31,13 +31,47 @@ use http::{HeaderName, HeaderValue};
 
 use crate::golden;
 
+/// Typed "wrong network / wrong value" failures, so tests can assert on the kind instead of
+/// matching error-message substrings. Wrapped into `anyhow::Error` on the way out, so the
+/// operator-facing report (`{e:#}`) still renders the `Display` text below.
+#[derive(Debug)]
+pub enum Mismatch {
+    ChainId { expected: String, got: String },
+    BlockHash { expected: [u8; 32], got: [u8; 32] },
+    EventTypeTag { expected: String, got: String },
+    EventSequenceNumber { expected: u64, got: u64 },
+}
+
+impl std::fmt::Display for Mismatch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ChainId { expected, got } => write!(
+                f,
+                "chain id mismatch: expected {expected}, got {got} — is this provider on the expected network?"
+            ),
+            Self::BlockHash { expected, got } => write!(
+                f,
+                "block hash mismatch: expected 0x{}, got 0x{} — is this provider on the expected network?",
+                hex::encode(expected),
+                hex::encode(got),
+            ),
+            Self::EventTypeTag { expected, got } => write!(
+                f,
+                "event type tag mismatch: expected {expected}, got {got} — is this provider on the expected network?"
+            ),
+            Self::EventSequenceNumber { expected, got } => write!(
+                f,
+                "event sequence number mismatch: expected {expected}, got {got}"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for Mismatch {}
+
 fn verify_block_hash(expected: [u8; 32], got: [u8; 32]) -> anyhow::Result<()> {
     if got != expected {
-        return Err(anyhow::anyhow!(
-            "block hash mismatch: expected 0x{}, got 0x{} — is this provider on the expected network?",
-            hex::encode(expected),
-            hex::encode(got),
-        ));
+        return Err(Mismatch::BlockHash { expected, got }.into());
     }
     Ok(())
 }
@@ -126,16 +160,27 @@ pub async fn check_sui(client: impl SuiRpcClient, expected_chain_id: &str) -> an
         .chain_id
         .as_deref()
         .context("provider returned no chain id")?;
-    ensure!(
-        chain_id == expected_chain_id,
-        "chain id mismatch: expected {expected_chain_id}, got {chain_id} — is this provider on the expected network?",
-    );
+    if chain_id != expected_chain_id {
+        return Err(Mismatch::ChainId {
+            expected: expected_chain_id.to_string(),
+            got: chain_id.to_string(),
+        }
+        .into());
+    }
     let height = info
         .checkpoint_height
         .context("provider returned no checkpoint height")?;
     // Load-balanced providers may answer consecutive calls from different backends; probing
-    // slightly behind the reported tip keeps the check off the backend-sync race.
-    let probe_height = height.saturating_sub(CHECKPOINT_PROBE_OFFSET);
+    // slightly behind the reported tip keeps the check off the backend-sync race. checked_sub
+    // (not saturating): real checkpoint heights are 9 digits, so a height below the small
+    // offset means the provider returned something wrong — surface it instead of probing 0.
+    let probe_height = height
+        .checked_sub(CHECKPOINT_PROBE_OFFSET)
+        .with_context(|| {
+            format!(
+                "checkpoint height {height} is below the probe offset {CHECKPOINT_PROBE_OFFSET}"
+            )
+        })?;
 
     let checkpoint = client
         .get_checkpoint(probe_height)
@@ -188,16 +233,20 @@ pub async fn check_aptos(
         .await?;
     match values.into_iter().next().context("RPC returned no value")? {
         AptosExtractedValue::Event(event) => {
-            ensure!(
-                event.type_tag == expected_type_tag,
-                "event type tag mismatch: expected {expected_type_tag}, got {} — is this provider on the expected network?",
-                event.type_tag,
-            );
-            ensure!(
-                event.sequence_number == expected_sequence_number,
-                "event sequence number mismatch: expected {expected_sequence_number}, got {}",
-                event.sequence_number,
-            );
+            if event.type_tag != expected_type_tag {
+                return Err(Mismatch::EventTypeTag {
+                    expected: expected_type_tag.to_string(),
+                    got: event.type_tag.clone(),
+                }
+                .into());
+            }
+            if event.sequence_number != expected_sequence_number {
+                return Err(Mismatch::EventSequenceNumber {
+                    expected: expected_sequence_number,
+                    got: event.sequence_number,
+                }
+                .into());
+            }
             Ok(())
         }
     }
@@ -208,6 +257,7 @@ pub async fn check_aptos(
 mod tests {
     use super::*;
     use crate::golden;
+    use assert_matches::assert_matches;
     use httpmock::prelude::*;
 
     fn golden_aptos_body(tx: &str, type_tag: &str, sequence_number: u64) -> serde_json::Value {
@@ -264,7 +314,8 @@ mod tests {
     };
     use foreign_chain_rpc_interfaces::sui::{Status, SuiRpcClient};
 
-    const CHECKPOINT_HEIGHT: u64 = 296_112_296;
+    // Arbitrary; the mock just echoes it back, so the exact value carries no meaning.
+    const CHECKPOINT_HEIGHT: u64 = 123_456;
 
     struct MockSuiClient {
         chain_id: String,
@@ -340,8 +391,10 @@ mod tests {
         let result = check_sui(client, expected.chain_id).await;
 
         // Then
-        let error = result.unwrap_err().to_string();
-        assert!(error.contains("chain id mismatch"), "{error}");
+        assert_matches!(
+            result.unwrap_err().downcast_ref::<Mismatch>(),
+            Some(Mismatch::ChainId { .. })
+        );
     }
 
     #[tokio::test]
@@ -374,7 +427,9 @@ mod tests {
         .await;
 
         // Then
-        let error = result.unwrap_err().to_string();
-        assert!(error.contains("event type tag mismatch"), "{error}");
+        assert_matches!(
+            result.unwrap_err().downcast_ref::<Mismatch>(),
+            Some(Mismatch::EventTypeTag { .. })
+        );
     }
 }

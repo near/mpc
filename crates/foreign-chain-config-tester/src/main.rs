@@ -80,41 +80,65 @@ async fn run(fc: &ForeignChainsConfig, network: Network) -> Vec<ProviderResult> 
 
     if let Some(cfg) = &fc.base {
         run_evm::<Base>("base", cfg, golden.base, network, &mut out).await;
+    } else {
+        mark_not_configured("base", &mut out);
     }
     if let Some(cfg) = &fc.bnb {
         run_evm::<Bnb>("bnb", cfg, golden.bnb, network, &mut out).await;
+    } else {
+        mark_not_configured("bnb", &mut out);
     }
     if let Some(cfg) = &fc.arbitrum {
         run_evm::<Arbitrum>("arbitrum", cfg, golden.arbitrum, network, &mut out).await;
+    } else {
+        mark_not_configured("arbitrum", &mut out);
     }
     if let Some(cfg) = &fc.polygon {
         run_evm::<Polygon>("polygon", cfg, golden.polygon, network, &mut out).await;
+    } else {
+        mark_not_configured("polygon", &mut out);
     }
     if let Some(cfg) = &fc.hyper_evm {
         run_evm::<HyperEvm>("hyper_evm", cfg, golden.hyper_evm, network, &mut out).await;
+    } else {
+        mark_not_configured("hyper_evm", &mut out);
     }
     if let Some(cfg) = &fc.abstract_chain {
         run_evm::<Abstract>("abstract", cfg, golden.abstract_chain, network, &mut out).await;
+    } else {
+        mark_not_configured("abstract", &mut out);
     }
     if let Some(cfg) = &fc.bitcoin {
         run_bitcoin(cfg, golden.bitcoin, network, &mut out).await;
+    } else {
+        mark_not_configured("bitcoin", &mut out);
     }
     if let Some(cfg) = &fc.starknet {
         run_starknet(cfg, golden.starknet, network, &mut out).await;
+    } else {
+        mark_not_configured("starknet", &mut out);
     }
     if let Some(cfg) = &fc.aptos {
         run_aptos(cfg, golden.aptos, network, &mut out).await;
+    } else {
+        mark_not_configured("aptos", &mut out);
     }
     if let Some(cfg) = &fc.sui {
         run_sui(cfg, golden.sui, network, &mut out).await;
+    } else {
+        mark_not_configured("sui", &mut out);
     }
 
     // Configured but not yet supported by the node (see verify_foreign_tx/sign.rs).
     if let Some(cfg) = &fc.ethereum {
         mark_skipped("ethereum", cfg, "not yet supported by the node", &mut out);
+    } else {
+        mark_not_configured("ethereum", &mut out);
     }
     if let Some(cfg) = &fc.solana {
         mark_skipped("solana", cfg, "not yet supported by the node", &mut out);
+    } else {
+        mark_not_configured("solana", &mut out);
     }
 
     out
@@ -343,6 +367,16 @@ fn mark_skipped(
     }
 }
 
+/// A chain absent from the config has no providers to enumerate, so it gets a single
+/// placeholder row — this way every supported chain shows up in the report.
+fn mark_not_configured(chain: &'static str, out: &mut Vec<ProviderResult>) {
+    out.push(ProviderResult::skipped(
+        chain,
+        "-".to_string(),
+        "not configured",
+    ));
+}
+
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
@@ -378,9 +412,14 @@ mod tests {
         let results = run(&fc, Network::Mainnet).await;
 
         // Then
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].chain, "ethereum");
-        assert_matches!(results[0].status, Status::Skipped(_));
+        let ethereum = results
+            .iter()
+            .find(|r| r.chain == "ethereum")
+            .expect("ethereum row");
+        assert_matches!(
+            &ethereum.status,
+            Status::Skipped(reason) if reason.contains("not yet supported")
+        );
     }
 
     #[tokio::test]
@@ -402,11 +441,29 @@ mod tests {
         let results = run(&fc, Network::Mainnet).await;
 
         // Then
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].chain, "base");
-        let Status::Failed(reason) = &results[0].status else {
+        let base = results
+            .iter()
+            .find(|r| r.chain == "base")
+            .expect("base row");
+        let Status::Failed(reason) = &base.status else {
             panic!("expected Failed, got a pass/skip");
         };
         assert!(reason.contains("FCCT_DEFINITELY_UNSET_TOKEN_ENV"));
+    }
+
+    #[tokio::test]
+    async fn run__should_report_absent_chains_as_not_configured() {
+        // Given — nothing configured
+        let fc = ForeignChainsConfig::default();
+
+        // When
+        let results = run(&fc, Network::Mainnet).await;
+
+        // Then — every supported chain shows up, all reported "not configured"
+        assert!(results.iter().any(|r| r.chain == "sui"));
+        assert!(results.iter().all(|r| matches!(
+            &r.status,
+            Status::Skipped(reason) if reason.contains("not configured")
+        )));
     }
 }
