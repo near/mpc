@@ -245,7 +245,6 @@ EOF
   run_quiet_on_success "near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/localnet/args/verify_foreign_tx_bitcoin.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as ${signer_account} network-config mpc-localnet sign-with-keychain send"
   run_quiet_on_success "near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/localnet/args/verify_foreign_tx_abstract.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as ${signer_account} network-config mpc-localnet sign-with-keychain send"
   run_quiet_on_success "near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/localnet/args/verify_foreign_tx_aptos.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as ${signer_account} network-config mpc-localnet sign-with-keychain send"
-  run_quiet_on_success "near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/localnet/args/verify_foreign_tx_sui.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as ${signer_account} network-config mpc-localnet sign-with-keychain send"
 
   read -rp "Press Enter to finish the script and run clean-up steps..."
 }
