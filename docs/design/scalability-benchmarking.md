@@ -73,9 +73,11 @@ The work is therefore additive, not a rewrite:
 2. **Measure per-request latency in the load generator.** Record submission and
    response timestamps per request and compute exact p50/p95/p99 client-side —
    the node histograms are too coarse for this
-   (`mpc_signature_request_response_latency_seconds` has 1 s-wide buckets below
-   10 s). Still scrape `/metrics` at run end for the internal breakdown
-   (presignature wait, signing time, store levels).
+   (`mpc_signature_request_response_latency_seconds` uses exponential buckets
+   2 s, 3 s, 4.5 s, … — no resolution below 2 s). Note the client-side number is
+   end-to-end user latency and includes chain inclusion time in both directions;
+   the node histograms are the MPC-only view. Still scrape `/metrics` at run end
+   for the internal breakdown (presignature wait, signing time, store levels).
 3. **A scenario manifest.** Promote `loadtest-scenarios.sh` to a declarative
    manifest (cluster size, load shape, conditions, duration) so a run is fully
    described by data and is reproducible.
@@ -177,9 +179,15 @@ numbers, so harness saturation is not mistaken for MPC saturation.
      "latency_s": { "p50": 1.8, "p95": 3.2, "p99": 4.1 },
      "success_rate": 0.998,
      "timeouts": 1,
-     "presignatures": { "start": 8192, "end": 5120 }
+     "presignatures": { "start": 8192, "end": 5120 },
+     "triples": { "start": 32768, "end": 18000 },
+     "resharing": { "triggered_at": "2026-06-26T00:02:00Z", "recovery_s": 45.0 }
    }
    ```
+
+   The `resharing` block (present only for resharing conditions) is derived from
+   the load generator's throughput-over-time series, which the emitter keeps
+   in-memory to compute the dip and time-to-recovery.
 
 2. **Prometheus + Grafana — for live/time-series analysis.** Scrape cluster node
    `/metrics` into a Prometheus instance (hosted in infra-ops) and visualize in
