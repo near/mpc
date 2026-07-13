@@ -64,6 +64,15 @@ where
             )
             .await?;
 
+        // Defensive: `eth_getTransactionReceipt` looks the receipt up *by hash*, so a
+        // well-behaved backend always echoes back the hash we queried.
+        if transaction_receipt.transaction_hash != get_transaction_receipt_args.transaction_hash {
+            return Err(ForeignChainInspectionError::InconsistentRpcResponse {
+                requested_hash: get_transaction_receipt_args.transaction_hash.into(),
+                returned_hash: transaction_receipt.transaction_hash.into(),
+            });
+        }
+
         self.verify_finality_level(transaction_receipt.block_number, finality)
             .await?;
         self.verify_block_is_canonical(
@@ -188,6 +197,24 @@ impl EvmExtractor {
                     .find(|log| log.log_index == target_index)
                     .cloned()
                     .ok_or(ForeignChainInspectionError::LogIndexOutOfBounds)?;
+
+                // The receipt's transaction hash has already been checked against the
+                // requested one, so binding the log to the receipt transitively binds
+                // it to the requested transaction.
+                let log_bound_to_receipt = log.transaction_hash == rpc_response.transaction_hash
+                    && log.block_hash == rpc_response.block_hash
+                    && log.block_number == rpc_response.block_number;
+                if !log_bound_to_receipt {
+                    return Err(ForeignChainInspectionError::LogNotBoundToReceipt {
+                        log_index: *log_index,
+                        log_transaction_hash: log.transaction_hash.into(),
+                        log_block_hash: log.block_hash.into(),
+                        log_block_number: log.block_number.as_u64(),
+                        receipt_transaction_hash: rpc_response.transaction_hash.into(),
+                        receipt_block_hash: rpc_response.block_hash.into(),
+                        receipt_block_number: rpc_response.block_number.as_u64(),
+                    });
+                }
 
                 Ok(EvmExtractedValue::Log(log))
             }

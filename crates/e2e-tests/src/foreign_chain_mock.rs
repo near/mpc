@@ -165,7 +165,12 @@ pub fn setup_evm_mock(server: &MockServer, auth: MockAuthExpectation) -> usize {
                     }
                 }
                 "eth_getTransactionReceipt" => {
+                    // The inspector rejects receipts and logs that are not bound to the
+                    // queried transaction, so echo the queried hash and keep the log's
+                    // tx/block fields consistent with the receipt.
+                    let transaction_hash = body["params"][0].as_str().expect("tx hash param");
                     serde_json::json!({
+                        "transactionHash": transaction_hash,
                         "blockHash": format!("0x{MOCK_BLOCK_HASH}"),
                         "blockNumber": "0xa",
                         "status": "0x1",
@@ -177,10 +182,10 @@ pub fn setup_evm_mock(server: &MockServer, auth: MockAuthExpectation) -> usize {
                                 "0x0000000000000000000000000000000000000000000000000000000000008001",
                             ],
                             "data": "0x000000000000000000000000000000000000000000000000000006e4b5898a00",
-                            "blockHash": "0x4c93dd4a8f347e6480b0a44f8c2b7eecdfb31d711e8d542fd60112ea5d98fb02",
-                            "blockNumber": "0xfbf4b1",
+                            "blockHash": format!("0x{MOCK_BLOCK_HASH}"),
+                            "blockNumber": "0xa",
                             "l1BatchNumber": "0x4f3c",
-                            "transactionHash": "0x497fc5f5b5d81d6bc15cccc6d4d8be8ef6ad19376233b944a60dc435593f7234",
+                            "transactionHash": transaction_hash,
                             "transactionIndex": "0x0",
                             "logIndex": "0x0",
                             "transactionLogIndex": "0x0",
