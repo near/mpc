@@ -566,10 +566,12 @@ macro_rules! evm_inspector_tests {
             async fn extract__should_reject_receipt_whose_transaction_hash_differs_from_request()
             {
                 // Given
-                let tx_id = TxHash::from([1; 32]);
+                let requested_tx_bytes: [u8; 32] = [1; 32];
+                let returned_tx_bytes: [u8; 32] = [0xdd; 32];
+                let tx_id = TxHash::from(requested_tx_bytes);
 
                 let tx_response = GetTransactionReceiptResponse {
-                    transaction_hash: H256::from([0xdd; 32]),
+                    transaction_hash: H256(returned_tx_bytes),
                     block_hash: H256::from([2; 32]),
                     block_number: U64::from(90),
                     status: U64::one(),
@@ -598,20 +600,33 @@ macro_rules! evm_inspector_tests {
                     Err(ForeignChainInspectionError::InconsistentRpcResponse {
                         requested_hash,
                         returned_hash,
-                    }) if requested_hash == foreign_chain_inspector::HexBytes(vec![1; 32])
-                        && returned_hash == foreign_chain_inspector::HexBytes(vec![0xdd; 32])
+                    }) if requested_hash
+                        == foreign_chain_inspector::HexBytes(requested_tx_bytes.to_vec())
+                        && returned_hash
+                            == foreign_chain_inspector::HexBytes(returned_tx_bytes.to_vec())
                 );
             }
 
+            #[rstest]
+            #[case::transaction_hash(Log {
+                transaction_hash: H256([0xdd; 32]),
+                ..test_log()
+            })]
+            #[case::block_hash(Log {
+                block_hash: H256([0xdd; 32]),
+                ..test_log()
+            })]
+            #[case::block_number(Log {
+                block_number: U64::from(91),
+                ..test_log()
+            })]
             #[tokio::test]
-            async fn extract__should_reject_log_whose_transaction_hash_differs_from_receipt() {
+            async fn extract__should_reject_log_not_bound_to_receipt(#[case] unbound_log: Log) {
                 // Given
-                let tx_id = TxHash::from([3; 32]);
-
-                let unbound_log = Log {
-                    transaction_hash: H256([0xdd; 32]),
-                    ..test_log()
-                };
+                let tx_id_bytes: [u8; 32] = [3; 32];
+                let tx_id = TxHash::from(tx_id_bytes);
+                let expected_log = unbound_log.clone();
+                let bound_log = test_log();
 
                 // When
                 let response = extract_log_from_receipt_with(tx_id, unbound_log).await;
@@ -620,82 +635,40 @@ macro_rules! evm_inspector_tests {
                 assert_matches!(
                     response,
                     Err(ForeignChainInspectionError::LogNotBoundToReceipt {
-                        log_index: 1,
+                        log_index,
                         log_transaction_hash,
-                        receipt_transaction_hash,
-                        ..
-                    }) if log_transaction_hash
-                        == foreign_chain_inspector::HexBytes(vec![0xdd; 32])
-                        && receipt_transaction_hash
-                            == foreign_chain_inspector::HexBytes(vec![3; 32])
-                );
-            }
-
-            #[tokio::test]
-            async fn extract__should_reject_log_whose_block_hash_differs_from_receipt() {
-                // Given
-                let tx_id = TxHash::from([3; 32]);
-
-                let unbound_log = Log {
-                    block_hash: H256([0xdd; 32]),
-                    ..test_log()
-                };
-
-                // When
-                let response = extract_log_from_receipt_with(tx_id, unbound_log).await;
-
-                // Then
-                assert_matches!(
-                    response,
-                    Err(ForeignChainInspectionError::LogNotBoundToReceipt {
-                        log_index: 1,
                         log_block_hash,
+                        log_block_number,
+                        receipt_transaction_hash,
                         receipt_block_hash,
-                        ..
-                    }) if log_block_hash == foreign_chain_inspector::HexBytes(vec![0xdd; 32])
-                        && receipt_block_hash == foreign_chain_inspector::HexBytes(vec![4; 32])
+                        receipt_block_number,
+                    }) if log_index == expected_log.log_index.as_u64()
+                        && log_transaction_hash == expected_log.transaction_hash.into()
+                        && log_block_hash == expected_log.block_hash.into()
+                        && log_block_number == expected_log.block_number.as_u64()
+                        && receipt_transaction_hash
+                            == foreign_chain_inspector::HexBytes(tx_id_bytes.to_vec())
+                        && receipt_block_hash == bound_log.block_hash.into()
+                        && receipt_block_number == bound_log.block_number.as_u64()
                 );
             }
 
-            #[tokio::test]
-            async fn extract__should_reject_log_whose_block_number_differs_from_receipt() {
-                // Given
-                let tx_id = TxHash::from([3; 32]);
-
-                let unbound_log = Log {
-                    block_number: U64::from(91),
-                    ..test_log()
-                };
-
-                // When
-                let response = extract_log_from_receipt_with(tx_id, unbound_log).await;
-
-                // Then
-                assert_matches!(
-                    response,
-                    Err(ForeignChainInspectionError::LogNotBoundToReceipt {
-                        log_index: 1,
-                        log_block_number: 91,
-                        receipt_block_number: 90,
-                        ..
-                    })
-                );
-            }
-
-            /// Runs `extract` with `EvmExtractor::Log { log_index: 1 }` against a
-            /// finalized, canonical receipt for tx `[3; 32]` containing `log`.
+            /// Runs `extract` selecting `log` by its own `log_index` from a finalized,
+            /// canonical receipt for `tx_id` whose block fields match [`test_log`]'s.
             async fn extract_log_from_receipt_with(
                 tx_id: TxHash,
                 log: Log,
             ) -> Result<Vec<ExtractedValue>, ForeignChainInspectionError> {
+                let bound_log = test_log();
+                let target_log_index = log.log_index.as_u64();
                 let finality_block_response = GetBlockByNumberResponse {
                     number: U64::from(100),
                     hash: H256::from([0xaa; 32]),
                 };
                 let tx_response = GetTransactionReceiptResponse {
-                    transaction_hash: H256::from([3; 32]),
-                    block_hash: H256::from([4; 32]),
-                    block_number: U64::from(90),
+                    transaction_hash: H256(tx_id.clone().into()),
+                    block_hash: bound_log.block_hash,
+                    block_number: bound_log.block_number,
                     status: U64::one(),
                     logs: vec![log],
                 };
@@ -715,7 +688,9 @@ macro_rules! evm_inspector_tests {
                     .extract(
                         tx_id,
                         EthereumFinality::Finalized,
-                        vec![EvmExtractor::Log { log_index: 1 }],
+                        vec![EvmExtractor::Log {
+                            log_index: target_log_index,
+                        }],
                     )
                     .await
             }
