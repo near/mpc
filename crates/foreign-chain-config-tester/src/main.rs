@@ -24,11 +24,12 @@ use foreign_chain_inspector::hyperevm::inspector::HyperEvm;
 use foreign_chain_inspector::polygon::inspector::Polygon;
 use foreign_chain_inspector::{RpcAuthentication, build_http_client};
 use foreign_chain_rpc_auth::auth_config_to_rpc_auth;
+use foreign_chain_rpc_interfaces::sui::GrpcSuiClient;
 use http::{HeaderName, HeaderValue};
 use mpc_node_config::foreign_chains::RpcProviderName;
 use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};
 
-use crate::golden::{AptosVector, BlockHashVector, Network};
+use crate::golden::{AptosVector, BlockHashVector, Network, SuiVector};
 use crate::report::{ProviderResult, Status};
 
 /// Verify a node's foreign-chain RPC provider configuration.
@@ -103,6 +104,9 @@ async fn run(fc: &ForeignChainsConfig, network: Network) -> Vec<ProviderResult> 
     }
     if let Some(cfg) = &fc.aptos {
         run_aptos(cfg, golden.aptos, network, &mut out).await;
+    }
+    if let Some(cfg) = &fc.sui {
+        run_sui(cfg, golden.sui, network, &mut out).await;
     }
 
     // Configured but not yet supported by the node (see verify_foreign_tx/sign.rs).
@@ -285,6 +289,47 @@ async fn run_aptos(
             status,
         });
     }
+}
+
+async fn run_sui(
+    cfg: &ForeignChainConfig,
+    vector: Option<SuiVector>,
+    network: Network,
+    out: &mut Vec<ProviderResult>,
+) {
+    let Some(vector) = vector else {
+        mark_skipped("sui", cfg, &no_reference_reason(network), out);
+        return;
+    };
+    let timeout = timeout_of(cfg);
+    for (name, provider) in cfg.providers.iter() {
+        let status = match prepare_sui(provider, timeout) {
+            Err(e) => Status::Failed(format!("{e:#}")),
+            Ok(client) => run_check(timeout, checks::check_sui(client, vector.chain_id)).await,
+        };
+        out.push(ProviderResult {
+            chain: "sui",
+            provider: provider_name(name),
+            status,
+        });
+    }
+}
+
+fn prepare_sui(
+    provider: &ForeignChainProviderConfig,
+    timeout: Duration,
+) -> anyhow::Result<GrpcSuiClient> {
+    let mut url = provider.rpc_url.clone();
+    let auth = auth_config_to_rpc_auth(provider.auth.clone(), &mut url)?;
+    let header = match auth {
+        RpcAuthentication::KeyInUrl => None,
+        RpcAuthentication::CustomHeader {
+            header_name,
+            header_value,
+        } => Some((header_name, header_value)),
+    };
+    GrpcSuiClient::new(url, header, timeout)
+        .map_err(|e| anyhow::anyhow!("failed to build the Sui gRPC client: {e}"))
 }
 
 fn mark_skipped(
