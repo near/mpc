@@ -984,3 +984,53 @@ async fn verify_tee__should_keep_participants_and_stop_signing_when_kickout_drop
 
     Ok(())
 }
+
+/// Demonstrates that the attestation storage charge is a no-op:
+/// `stored_attestations` is a `near_sdk::store::IterableMap`, whose writes are
+/// deferred to flush-on-drop *after* the method body runs, so the storage delta
+/// measured by `charge_attestation_storage` is always zero. A brand-new entry
+/// from an outsider account is stored with zero attached deposit even though
+/// the contract account's on-chain storage does grow once the receipt commits.
+#[tokio::test]
+async fn submit_participant_info__should_store_new_attestation_with_zero_deposit() -> Result<()> {
+    // Given
+    let SandboxTestSetup {
+        worker, contract, ..
+    } = SandboxTestSetup::builder()
+        .with_protocols(ALL_PROTOCOLS)
+        .build()
+        .await;
+    let outsider = worker.dev_create_account().await?;
+    let fresh_tls_key = bogus_ed25519_public_key();
+    let storage_before = worker.view_account(contract.id()).await?.storage_usage;
+
+    // When
+    let result = outsider
+        .call(contract.id(), method_names::SUBMIT_PARTICIPANT_INFO)
+        .args_json((
+            Attestation::Mock(MockAttestation::Valid),
+            fresh_tls_key.clone(),
+        ))
+        .deposit(NearToken::from_yoctonear(0))
+        .max_gas()
+        .transact()
+        .await?;
+
+    // Then
+    assert!(
+        result.is_success(),
+        "zero-deposit submission of a new attestation should succeed: {result:?}"
+    );
+    let stored = get_participant_attestation(&contract, &fresh_tls_key).await?;
+    assert!(
+        stored.is_some(),
+        "the attestation entry should be stored on-chain"
+    );
+    let storage_after = worker.view_account(contract.id()).await?.storage_usage;
+    assert!(
+        storage_after > storage_before,
+        "contract storage should grow ({storage_before} -> {storage_after}), \
+         proving bytes were stored without being paid for"
+    );
+    Ok(())
+}
