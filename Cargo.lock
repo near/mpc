@@ -1282,7 +1282,7 @@ dependencies = [
  "bitflags 2.11.0",
  "cexpr",
  "clang-sys",
- "itertools 0.10.5",
+ "itertools 0.13.0",
  "proc-macro2",
  "quote",
  "regex",
@@ -1420,7 +1420,7 @@ version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7bc6d6292be3a19e6379786dac800f551e5865a5bb51ebbe3064ab80433f403"
 dependencies = [
- "ff",
+ "ff 0.13.1",
  "rand_core 0.6.4",
  "subtle",
 ]
@@ -1445,8 +1445,8 @@ checksum = "7a8a8ed6fefbeef4a8c7b460e4110e12c5e22a5b7cf32621aae6ad650c4dcf29"
 dependencies = [
  "blst",
  "byte-slice-cast",
- "ff",
- "group",
+ "ff 0.13.1",
+ "group 0.13.0",
  "pairing",
  "rand_core 0.6.4",
  "serde",
@@ -1469,7 +1469,7 @@ version = "3.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "519bd3116aeeb42d5372c29d982d16d0170d3d4a5ed85fc7dd91642ffff3c67c"
 dependencies = [
- "darling 0.21.3",
+ "darling 0.23.0",
  "ident_case",
  "prettyplease 0.2.37",
  "proc-macro2",
@@ -2532,6 +2532,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77727bb15fa921304124b128af125e7e3b968275d1b108b379190264f4423710"
 dependencies = [
  "hybrid-array",
+ "rand_core 0.10.1",
 ]
 
 [[package]]
@@ -2562,13 +2563,29 @@ dependencies = [
  "cpufeatures 0.2.17",
  "curve25519-dalek-derive",
  "digest 0.10.7",
- "fiat-crypto",
- "group",
+ "fiat-crypto 0.2.9",
  "rand_core 0.6.4",
+ "rustc_version 0.4.1",
+ "subtle",
+ "zeroize",
+]
+
+[[package]]
+name = "curve25519-dalek"
+version = "5.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b5eed333089e2e1c1ac8c6c0398e5e2497b4c9926ca6d0365ed1e099afa5bc23"
+dependencies = [
+ "cfg-if 1.0.4",
+ "cpufeatures 0.3.0",
+ "curve25519-dalek-derive",
+ "digest 0.11.2",
+ "fiat-crypto 0.3.0",
+ "group 0.14.0",
+ "rand_core 0.10.1",
  "rustc_version 0.4.1",
  "serde",
  "subtle",
- "zeroize",
 ]
 
 [[package]]
@@ -3145,7 +3162,7 @@ dependencies = [
  "contract-history",
  "ed25519-dalek",
  "futures",
- "group",
+ "group 0.13.0",
  "hex",
  "httpmock",
  "launcher-interface",
@@ -3221,7 +3238,7 @@ version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "70e796c081cee67dc755e1a36a0a172b897fab85fc3f6bc48307991f64e4eca9"
 dependencies = [
- "curve25519-dalek",
+ "curve25519-dalek 4.1.3",
  "ed25519",
  "rand_core 0.6.4",
  "serde",
@@ -3261,9 +3278,9 @@ dependencies = [
  "base16ct",
  "crypto-bigint",
  "digest 0.10.7",
- "ff",
+ "ff 0.13.1",
  "generic-array",
- "group",
+ "group 0.13.0",
  "pkcs8",
  "rand_core 0.6.4",
  "sec1",
@@ -3529,10 +3546,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "ff"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a1f686ab92a9fb0eaf188f6c6c87b89490baa6fdb0db4544ba4dc47f7942489f"
+dependencies = [
+ "rand_core 0.10.1",
+ "subtle",
+]
+
+[[package]]
 name = "fiat-crypto"
 version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "28dea519a9695b9977216879a3ebfddf92f1c08c05d984f8996aecd6ecdc811d"
+
+[[package]]
+name = "fiat-crypto"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "64cd1e32ddd350061ae6edb1b082d7c54915b5c672c389143b9a63403a109f24"
 
 [[package]]
 name = "filetime"
@@ -3806,7 +3839,7 @@ version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df345f704e41812a3ab238331a393126f76996c176d204296e289efe946c57f0"
 dependencies = [
- "curve25519-dalek",
+ "curve25519-dalek 4.1.3",
  "document-features",
  "frost-core",
  "frost-rerandomized",
@@ -4130,10 +4163,21 @@ version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f0f9ef7462f7c099f518d754361858f86d8a07af53ba9af0fe635bbccb151a63"
 dependencies = [
- "ff",
+ "ff 0.13.1",
  "rand 0.8.6",
  "rand_core 0.6.4",
  "rand_xorshift 0.3.0",
+ "subtle",
+]
+
+[[package]]
+name = "group"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7fd1a1c7a5206c5b7a3f5a0d7ccd3ff85d0c8f5133d62a02680255b0004af5f4"
+dependencies = [
+ "ff 0.14.0",
+ "rand_core 0.10.1",
  "subtle",
 ]
 
@@ -5287,8 +5331,8 @@ checksum = "8499f7a74008aafbecb2a2e608a3e13e4dd3e84df198b604451efe93f2de6e61"
 dependencies = [
  "bitvec",
  "bls12_381",
- "ff",
- "group",
+ "ff 0.13.1",
+ "group 0.13.0",
  "rand_core 0.6.4",
  "subtle",
 ]
@@ -5811,7 +5855,7 @@ dependencies = [
  "borsh",
  "cargo-near-build",
  "contract-history",
- "curve25519-dalek",
+ "curve25519-dalek 5.0.0",
  "derive_more 2.1.1",
  "digest 0.10.7",
  "ecdsa",
@@ -5861,7 +5905,7 @@ dependencies = [
  "ed25519-dalek",
  "flume",
  "futures",
- "group",
+ "group 0.13.0",
  "hex",
  "mpc-primitives",
  "near-account-id",
@@ -6432,7 +6476,7 @@ dependencies = [
  "blake2",
  "borsh",
  "bs58 0.4.0",
- "curve25519-dalek",
+ "curve25519-dalek 4.1.3",
  "derive_more 2.1.1",
  "ed25519-dalek",
  "hex",
@@ -6458,7 +6502,7 @@ dependencies = [
  "blake2",
  "borsh",
  "bs58 0.4.0",
- "curve25519-dalek",
+ "curve25519-dalek 4.1.3",
  "derive_more 2.1.1",
  "ed25519-dalek",
  "hex",
@@ -6849,10 +6893,10 @@ dependencies = [
  "blstrs",
  "borsh",
  "bs58 0.5.1",
- "curve25519-dalek",
+ "curve25519-dalek 5.0.0",
  "derive_more 2.1.1",
  "ed25519-dalek",
- "group",
+ "group 0.13.0",
  "insta",
  "k256",
  "mpc-primitives",
@@ -8318,7 +8362,7 @@ version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "81fec4625e73cf41ef4bb6846cafa6d44736525f442ba45e407c4a000a13996f"
 dependencies = [
- "group",
+ "group 0.13.0",
 ]
 
 [[package]]
@@ -8409,8 +8453,8 @@ version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3e57598f73cc7e1b2ac63c79c517b31a0877cd7c402cdcaa311b5208de7a095"
 dependencies = [
- "ff",
- "group",
+ "ff 0.13.1",
+ "group 0.13.0",
  "rand 0.8.6",
  "static_assertions",
  "subtle",
@@ -8950,7 +8994,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.118",
@@ -8963,7 +9007,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27c6023962132f4b30eb4c172c91ce92d933da334c59c23cddee82358ddafb0b"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.118",
@@ -9376,7 +9420,7 @@ dependencies = [
  "blake2b_simd",
  "byteorder",
  "frost-rerandomized",
- "group",
+ "group 0.13.0",
  "hex",
  "jubjub",
  "pasta_curves",
