@@ -144,6 +144,76 @@ The scheme remains correct after this rerandomization and key derivation.
 ### Outsourcing the message hash
 Providing the signing phase with raw hashes as inputs instead of the original messages is beneficial for many use cases, e.g., the signing nodes receive a hashed payload and are required to generate a signature that is valid for a "universal verifier". Note that such API is quite common in cryptographic libraries and has been intensively studied for the non-distributed case in [[PR24](https://link.springer.com/chapter/10.1007/978-3-031-57718-5_10)] and [[R25](https://www.research-collection.ethz.ch/bitstream/handle/20.500.11850/729349/uploaded-version.pdf?sequence=1)].
 
+# Additive rerandomization variant
+
+The rerandomization above is *multiplicative*: $R \gets R^\delta$. The proofs of [[GS21](https://eprint.iacr.org/2021/1330.pdf)] (Theorems 5 and 6, in the elliptic-curve generic group model) cover only *additive* rerandomization $(r, R) \gets (r_0 + \delta,\ R_0 + \delta \cdot G)$; no published analysis covers the multiplicative form. The multiplicative form is forced by the presigning phase above: it opens $w = a \cdot k$ and bakes $w^{-1}$ into the shares, so the presignature carries shares of $k^{-1}$, from which shares of $(k+\delta)^{-1}$ cannot be derived locally. The variant below enables additive rerandomization by deferring the [BB89] inversion to the signing phase, following [[GS22](https://eprint.iacr.org/2022/506)] (in their notation: $\lambda := a$, $\mu := w$, $\omega := a \cdot x$).
+
+## Presigning (additive variant)
+
+Only $R_i$ is exchanged after the share distribution; **$w$ is never opened**.
+
+**Round 1:** identical to the main scheme.
+
+**Round 2:**
+
+1. $\bullet$ Each $P_i$ waits to receive $(k_{ji}, a_{ji}, b_{ji}, d_{ji}, e_{ji})$ from each other $P_j$ and sums them as in the main scheme.
+2. Each $P_i$ computes $R_i = g^{k_i}$
+3. $\star$ Each $P_i$ sends $R_i$ to every party.
+
+**Round 3:**
+
+1. $\bullet$ Each $P_i$ waits to receive $R_j$ from each other $P_j$.
+2. $\blacktriangle$ Each $P_i$ *asserts* that: $\forall j \in \\{t+2.. n\\},\quad \mathsf{ExponentInterpolation}(R_1, \ldots R_{t+1}; j) = R_j$
+3. Each $P_i$ computes $R \gets \mathsf{ExponentInterpolation}(R_1, \ldots R_{t+1}; 0)$
+4. $\blacktriangle$ Each $P_i$ *asserts* that $R \neq Identity$
+5. Each $P_i$ computes $w_i \gets a_i \cdot k_i + b_i$ (kept secret)
+6. Each $P_i$ computes $u_i \gets a_i \cdot x_i + d_i$
+
+**Output:** the presignature $(R, a_i, w_i, u_i, e_i)$.
+
+The $W_i = R^{a_i}$ exchange of the main scheme is omitted: without a public $w$ the $W = w \cdot G$ assertion is impossible, and publishing $W_i$ would make $w \cdot G$ public, which together with the later opening of $\hat{\mu}$ reveals $a \cdot G$ — an element the analysis of [[GS22](https://eprint.iacr.org/2022/506)] does not give to the adversary. Consistency of the $a$-shares is instead enforced by the final signature verification.
+
+## Rerandomization & Key Derivation (additive variant)
+
+1. Each $P_i$ derives $\delta \gets \mathsf{HKDF}(Y, \epsilon, h, R, \rho)$ as in the main scheme.
+2. Each $P_i$ rerandomizes:
+
+    * $\hat{R} \gets R + \delta \cdot G$
+    * $\hat{\mu}_i \gets w_i + \delta \cdot a_i$
+    * $u_i \gets u_i + \epsilon \cdot a_i$
+
+## Signing (additive variant)
+
+**Round 1:**
+
+1. Each $P_i$ computes $\nu_i \gets h \cdot a_i + \hat{R}_\mathsf{x} \cdot u_i + e_i$
+2. Each $P_i$ linearizes both shares: $(\hat{\mu}_i, \nu_i) \gets \lambda_i(\mathcal{P}_2) \cdot (\hat{\mu}_i, \nu_i)$
+3. $\star$ Each $P_i$ sends $(\hat{\mu}_i, \nu_i)$ **only to the coordinator**.
+
+**Round 1 (Coordinator):**
+
+1. $\bullet$ The coordinator waits to receive $(\hat{\mu}_j, \nu_j)$ from every party.
+2. The coordinator sums $\hat{\mu} \gets \sum_j \hat{\mu}_j$ and $\nu \gets \sum_j \nu_j$
+3. $\blacktriangle$ The coordinator *asserts* that $\hat{\mu} \neq 0$
+4. The coordinator computes $s \gets \nu \cdot \hat{\mu}^{-1}$
+5. $\blacktriangle$ The coordinator *asserts* that $s \neq 0$
+6. Perform the low-S normalization, i.e. $s \gets -s$ if $s\in\\{\frac{q}{2}..~q-1\\}$
+7. $\blacktriangle$ The coordinator *asserts* that $(\hat{R}, s)$ is a valid ECDSA signature for $h$ under $Y$.
+
+**Output:** the signature $(\hat{R}, s)$.
+
+**Correctness:** $\hat{\mu} = a \cdot (k+\delta)$ and $\nu = a \cdot (h + \hat{R}_\mathsf{x} \cdot (x+\epsilon))$, hence
+
+$$
+s = \frac{h + \hat{R}_\mathsf{x} \cdot (x+\epsilon)}{k+\delta}
+\qquad \text{and} \qquad
+\hat{R} = (k+\delta) \cdot G,
+$$
+
+a standard ECDSA signature for $h$ under the derived key $Y = X + \epsilon \cdot G$ with nonce $k + \delta$.
+
+**Security rationale:** this variant instantiates the rerandomized-presignature abstraction proven secure in [[GS21](https://eprint.iacr.org/2021/1330.pdf)] §8, as deployed in [[GS22](https://eprint.iacr.org/2022/506)] §2.5: $\delta$ is derived from a fresh public seed (the entropy argument), $R$, $\epsilon$ and $h$, for which [[GS22](https://eprint.iacr.org/2022/506)] argues an "entropy preserving" hash suffices. See the [security analysis](./additive-security.md) for the full argument, including why omitting the $W_i$ checks and relying on final signature verification is sound.
+
 # Security considerations
 
 Before implementing or using the robust ECDSA scheme implemented here,

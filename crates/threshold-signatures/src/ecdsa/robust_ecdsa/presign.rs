@@ -457,7 +457,7 @@ async fn do_presign(
 }
 
 /// Generates a secret polynomial where the constant term is zero
-fn zero_secret_polynomial(
+pub(super) fn zero_secret_polynomial(
     degree: usize,
     rng: &mut impl CryptoRngCore,
 ) -> Result<Polynomial, ProtocolError> {
@@ -468,7 +468,7 @@ fn zero_secret_polynomial(
 /// Contains five shares used during presigniture
 /// (k, a, b, d, e)
 #[derive(serde::Deserialize, serde::Serialize)]
-struct Shares([SerializableScalar<C>; 5]);
+pub(super) struct Shares([SerializableScalar<C>; 5]);
 
 impl Shares {
     /// Constructs a new Shares out of five polynomials

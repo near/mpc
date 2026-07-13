@@ -1,3 +1,4 @@
+pub mod additive;
 pub mod presign;
 pub mod sign;
 

@@ -21,6 +21,10 @@ Three-round presigning protocol that produces a `PresignOutput` from polynomial 
 
 One-round online signing protocol with a designated coordinator. Takes a rerandomized presignature and the message hash, produces a standard ECDSA signature (low-S normalized). See the [protocol specification](../../../docs/ecdsa/robust_ecdsa/signing.md) for details.
 
+### `additive/`
+
+Variant of the scheme with *additive* presignature rerandomization, the form analyzed in \[[GS21](https://eprint.iacr.org/2021/1330)\]. Presigning keeps `w = a·k` secret and defers the nonce inversion to the one-round signing phase, where the coordinator opens `mu = a·(k+delta)` and `nu` and outputs `s = nu/mu`. Types: **`AdditivePresignOutput`** `(big_r, a, w, u, e)` and **`AdditiveRerandomizedPresignOutput`**.
+
 ## Types
 
 - **`PresignArguments`** -- input to presigning: keygen output + maximum number of malicious parties
@@ -36,5 +40,6 @@ Additionally, `msg_hash == 0` is rejected to prevent a related-key split-view at
 ## Further Reading
 
 - [`docs/ecdsa/robust_ecdsa/signing.md`](../../../docs/ecdsa/robust_ecdsa/signing.md) -- protocol specification with security analysis
+- [`docs/ecdsa/robust_ecdsa/additive-security.md`](../../../docs/ecdsa/robust_ecdsa/additive-security.md) -- security analysis of the additive rerandomization variant
 - [`docs/ecdsa/preliminaries.md`](../../../docs/ecdsa/preliminaries.md) -- standard ECDSA recap
 - [Parent ECDSA README](../README.md) -- comparison with OT-based ECDSA
