@@ -90,6 +90,11 @@ BorshSchemaContainer {
                     "Aptos",
                     "ForeignChain__Aptos",
                 ),
+                (
+                    12,
+                    "Sui",
+                    "ForeignChain__Sui",
+                ),
             ],
         },
         "ForeignChainRpcWhitelist": Struct {
@@ -137,6 +142,9 @@ BorshSchemaContainer {
             fields: Empty,
         },
         "ForeignChain__Starknet": Struct {
+            fields: Empty,
+        },
+        "ForeignChain__Sui": Struct {
             fields: Empty,
         },
         "ForeignChain__Ton": Struct {
