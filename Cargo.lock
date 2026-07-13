@@ -3743,6 +3743,7 @@ dependencies = [
  "rstest",
  "serde",
  "serde_json",
+ "sui-sdk-types",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
