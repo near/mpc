@@ -3,7 +3,8 @@ use std::{
     sync::Arc,
 };
 
-use aes_gcm::{Aes256Gcm, KeyInit};
+use aes_gcm::aead::Generate;
+use aes_gcm::{Aes256Gcm, Key};
 use ed25519_dalek::SigningKey;
 use near_mpc_contract_interface::types::BackupServiceInfo;
 use rand::rngs::OsRng;
@@ -32,7 +33,7 @@ pub struct TestSetup {
 }
 
 pub async fn setup(port_seed: PortSeed) -> TestSetup {
-    let backup_encryption_key = Aes256Gcm::generate_key(OsRng);
+    let backup_encryption_key = Key::<Aes256Gcm>::generate();
     let client_key = SigningKey::generate(&mut OsRng);
     let server_key = SigningKey::generate(&mut OsRng);
 
