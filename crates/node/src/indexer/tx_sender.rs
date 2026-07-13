@@ -210,6 +210,9 @@ fn submitted_attestation_landed(
         (VerifiedAttestation::Mock(stored), Attestation::Mock(submitted)) => {
             match stored.expiry_timestamp_seconds() {
                 Some(expiry) => attestation_expiry_changed(pre_submit_expiry, expiry),
+                // TODO(#3786): drop this identity fallback once every stored mock is
+                // guaranteed to carry an expiry (contracts predating #3293 and genesis
+                // sentinels store `Mock::Valid` without one).
                 None => stored == submitted,
             }
         }
