@@ -126,6 +126,8 @@ async fn assert_submission_failed_cleanly(
         !failures.is_empty(),
         "expected the promise chain to fail on a receipt, got: {result:#?}"
     );
+    // Substring-match: near-workspaces keeps `ExecutionOutcome.status`
+    // `pub(crate)`, so the error is only reachable via the Debug dump.
     let rendered = format!("{failures:?}");
     let expected = expected_error.to_string();
     assert!(
@@ -229,13 +231,13 @@ async fn submit_participant_info__should_fail_and_store_nothing_on_verifier_cras
     .await;
 }
 
-// TODO(#3738): un-ignore once the fixture allowlist setup lands. A Verified
+// TODO(#3787): un-ignore once the fixture allowlist setup lands. A Verified
 // verdict routes through `verify_post_dcap_and_store`, whose allowlist checks
 // (fixture image/launcher hashes and measurements voted in, submitter using the
 // fixture keys) must pass before the attestation is stored. With an empty
 // allowlist the post-DCAP check fails and the submission is rejected instead of
 // stored, so the happy path cannot be exercised here yet.
-#[ignore = "needs fixture allowlist setup to pass the post-DCAP checks; tracked in #3738"]
+#[ignore = "needs fixture allowlist setup to pass the post-DCAP checks; tracked in #3787"]
 #[tokio::test]
 async fn submit_participant_info__should_store_attestation_on_verified_quote() {
     // Given: a verifier that returns the report the real verifier would produce
@@ -247,8 +249,8 @@ async fn submit_participant_info__should_store_attestation_on_verified_quote() {
     let result = submit_dstack(&submitter, &contract).await;
 
     // Then: the chain succeeds and the attestation is stored; storage is charged
-    // and the excess deposit refunded (net spend is storage + gas, well under the
-    // full deposit).
+    // and the excess deposit refunded, so net spend is storage + gas, well under
+    // the full deposit.
     assert!(
         result.failures().is_empty(),
         "the verified submission chain must succeed, got: {result:#?}"
@@ -257,14 +259,24 @@ async fn submit_participant_info__should_store_attestation_on_verified_quote() {
         .await
         .unwrap();
     assert!(stored.is_some(), "a verified attestation must be stored");
+
+    // Bound net spend both sides: storage was charged (> 0), but the excess was
+    // refunded (< floor). The upper bound catches a wrongly-retained deposit.
     let balance_after = submitter.view_account().await.unwrap().balance;
+    let net_spent = balance_before.as_yoctonear() - balance_after.as_yoctonear();
+    let refund_floor = NearToken::from_millinear(100).as_yoctonear();
     assert!(
-        balance_after < balance_before,
+        net_spent > 0,
         "storage must be charged from the attached deposit"
+    );
+    assert!(
+        net_spent < refund_floor,
+        "excess deposit must be refunded (net spent {net_spent} yoctoNEAR should be \
+         storage + gas, < {refund_floor}); a retained {SUBMIT_DEPOSIT} deposit would exceed this"
     );
 }
 
-// TODO(#3738): un-ignore once the fixture allowlist setup lands. To OOG,
+// TODO(#3787): un-ignore once the fixture allowlist setup lands. To OOG,
 // `resolve_verification` must reach the heavy RTMR3 replay in the post-DCAP
 // checks, which needs the allowlist populated and the submitter using the fixture
 // keys. With an empty allowlist the post-DCAP check fails fast and
@@ -273,7 +285,7 @@ async fn submit_participant_info__should_store_attestation_on_verified_quote() {
 // receipt back atomically: nothing is stored, the runtime refunds the attached
 // deposit to the predecessor, and `fail_attestation_submission` never fires, so
 // the chain still surfaces a failed receipt. No timeout is involved.
-#[ignore = "needs fixture allowlist setup to reach the gas-heavy post-DCAP path; tracked in #3738"]
+#[ignore = "needs fixture allowlist setup to reach the gas-heavy post-DCAP path; tracked in #3787"]
 #[tokio::test]
 async fn submit_participant_info__should_fail_and_store_nothing_when_resolve_verification_runs_out_of_gas()
  {

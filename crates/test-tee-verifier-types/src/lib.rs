@@ -24,7 +24,7 @@ pub enum StubResponse {
     /// Return [`tee_verifier_interface::VerificationResult::Rejected`] with this
     /// reason.
     Rejected(String),
-    /// Panic, simulating an unreachable / crashing verifier (the no-verdict path
-    /// that mpc-contract resolves via the yield timeout).
+    /// Panic, simulating an unreachable or crashing verifier: the verify-quote
+    /// receipt fails, which mpc-contract reports as the verifier being unavailable.
     Panic,
 }
