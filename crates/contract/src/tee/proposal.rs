@@ -336,7 +336,7 @@ pub(crate) struct AllowedLauncherImages {
     entries: Vec<AllowedLauncherImage>,
 }
 
-/// Outcome of [`AllowedLauncherImages::add_or_refresh`], mirroring `ParticipantInsertion`.
+/// Outcome of `AllowedLauncherImages::add_or_refresh`, mirroring `ParticipantInsertion`.
 #[derive(Debug, PartialEq, Eq)]
 pub enum AllowedLauncherImageInsertion {
     /// A new launcher entry was created.
