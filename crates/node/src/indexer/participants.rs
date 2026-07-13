@@ -123,9 +123,7 @@ pub struct ContractResharingState {
     pub new_participants: ParticipantsConfig,
     pub reshared_keys: ContractKeyset,
     pub key_event: ContractKeyEventInstance,
-    /// Per-domain threshold updates from the accepted proposal. The contract keeps
-    /// `resharing_key` at the old threshold and only folds these into the registry on
-    /// completion, so the node applies them to the resharing key event itself.
+    /// Per-domain threshold updates from the accepted proposal.
     pub per_domain_thresholds: BTreeMap<dtos::DomainId, dtos::ReconstructionThreshold>,
 }
 
@@ -213,7 +211,7 @@ impl ContractState {
                 )
                 .context("failed to convert resharing key event")?;
 
-                // Reshare to the new degree: the contract carries the update only in
+                // Reshare to the new threshold: the contract carries the update only in
                 // `per_domain_thresholds`, not on the resharing key event's domain.
                 if let Some(new_threshold) = state.per_domain_thresholds.get(&key_event.domain.id) {
                     key_event.domain.reconstruction_threshold = *new_threshold;
@@ -622,7 +620,7 @@ mod tests {
     #[test]
     fn from_contract_state__should_override_resharing_key_threshold_from_per_domain_thresholds() {
         // Given a resharing state where the threshold update travels only in
-        // per_domain_thresholds; the contract leaves resharing_key at the old degree.
+        // per_domain_thresholds; the contract leaves resharing_key at the old threshold.
         let (_, mut resharing) = gen_resharing_state(1);
         let domain_id = resharing.resharing_key.domain().id;
         let old_threshold = resharing.resharing_key.domain().reconstruction_threshold;
@@ -633,7 +631,7 @@ mod tests {
         // When converting the on-chain state into the node's representation.
         let state = ContractState::from_contract_state(&dto, 0, None).unwrap();
 
-        // Then the resharing key event carries the new degree, the update is retained,
+        // Then the resharing key event carries the new threshold, the update is retained,
         // and the previous registry (old side of the reshare) keeps the old threshold.
         let ContractState::Running(running) = state else {
             panic!("resharing maps to a running state with resharing_state populated");

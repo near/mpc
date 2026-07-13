@@ -224,11 +224,11 @@ async fn per_domain_reconstruction_thresholds__should_be_preserved_for_each_doma
 
 /// Changing a domain's reconstruction threshold via a resharing proposal takes real
 /// cryptographic effect: after lowering `t` from 4 to 2, only 2 nodes need be online to
-/// sign — impossible unless the key was genuinely re-shared to the new degree.
+/// sign — impossible unless the key was genuinely re-shared to the new threshold.
 #[tokio::test]
 #[test_log::test]
 #[expect(non_snake_case)]
-async fn changing_reconstruction_threshold_via_resharing__should_reshare_the_key_to_the_new_degree()
+async fn changing_reconstruction_threshold_via_resharing__should_reshare_the_key_to_the_new_threshold()
 {
     // Given a 5-node cluster with a single CaitSith domain at t=4.
     const NUM_PARTICIPANTS: usize = 5;
