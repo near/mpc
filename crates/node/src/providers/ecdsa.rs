@@ -44,10 +44,10 @@ pub struct EcdsaSignatureProvider {
     /// `t`s is known up front and no on-demand creation is needed.
     triple_stores: HashMap<ReconstructionThreshold, Arc<TripleStorage>>,
     sign_request_store: Arc<SignRequestStorage>,
-    per_domain_data: HashMap<DomainId, PerDomainData>,
+    keyshares: HashMap<DomainId, EcdsaKeyshare>,
 }
 
-pub(super) type PerDomainData = ecdsa_common::PerDomainData<PresignOutput>;
+pub(super) type EcdsaKeyshare = ecdsa_common::EcdsaKeyshare<PresignOutput>;
 
 impl EcdsaSignatureProvider {
     pub fn new(
@@ -59,14 +59,14 @@ impl EcdsaSignatureProvider {
         sign_request_store: Arc<SignRequestStorage>,
         keyshares: HashMap<DomainId, (KeygenOutput, ReconstructionThreshold)>,
     ) -> anyhow::Result<Self> {
-        let per_domain_data = ecdsa_common::build_per_domain_data(&clock, &db, &client, keyshares)?;
+        let keyshares = ecdsa_common::build_keyshares(&clock, &db, &client, keyshares)?;
 
         // cait-sith triple generation runs with exactly `t` parties, so we keep
         // one store per distinct per-domain reconstruction threshold — known up
         // front, no on-demand creation. Domains may share a `t` or diverge; the
         // contract validates each domain's threshold independently.
         let mut triple_stores = HashMap::new();
-        for data in per_domain_data.values() {
+        for data in keyshares.values() {
             let t = data.reconstruction_threshold;
             if triple_stores.contains_key(&t) {
                 continue;
@@ -89,12 +89,12 @@ impl EcdsaSignatureProvider {
             client,
             triple_stores,
             sign_request_store,
-            per_domain_data,
+            keyshares,
         })
     }
 
-    pub(super) fn domain_data(&self, domain_id: DomainId) -> anyhow::Result<PerDomainData> {
-        ecdsa_common::lookup_domain_data(&self.per_domain_data, domain_id)
+    pub(super) fn keyshare(&self, domain_id: DomainId) -> anyhow::Result<EcdsaKeyshare> {
+        ecdsa_common::lookup_keyshare(&self.keyshares, domain_id)
     }
 
     /// Returns the triple store for `t`, or an error if no store was
@@ -275,7 +275,7 @@ impl SignatureProvider for EcdsaSignatureProvider {
         );
 
         let mut generate_presignatures = Vec::new();
-        for (domain_id, data) in &self.per_domain_data {
+        for (domain_id, data) in &self.keyshares {
             let t = data.reconstruction_threshold;
             let threshold_usize: usize = t.inner().try_into()?;
             let threshold_bound = TSReconstructionThreshold::from(threshold_usize);

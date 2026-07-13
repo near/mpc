@@ -229,7 +229,7 @@ async fn per_domain_reconstruction_thresholds__should_be_preserved_for_each_doma
 #[test_log::test]
 #[expect(non_snake_case)]
 async fn changing_reconstruction_threshold_via_resharing__should_reshare_the_key_to_the_new_threshold()
-{
+ {
     // Given a 5-node cluster with a single CaitSith domain at t=4.
     const NUM_PARTICIPANTS: usize = 5;
     const THRESHOLD: usize = 3;

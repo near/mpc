@@ -35,10 +35,10 @@ pub struct RobustEcdsaSignatureProvider {
     mpc_config: Arc<MpcConfig>,
     client: Arc<MeshNetworkClient>,
     sign_request_store: Arc<SignRequestStorage>,
-    per_domain_data: HashMap<DomainId, PerDomainData>,
+    keyshares: HashMap<DomainId, EcdsaKeyshare>,
 }
 
-pub(super) type PerDomainData = ecdsa_common::PerDomainData<PresignOutput>;
+pub(super) type EcdsaKeyshare = ecdsa_common::EcdsaKeyshare<PresignOutput>;
 
 #[derive(
     Debug, Copy, Clone, Eq, Ord, PartialEq, PartialOrd, derive_more::From, derive_more::Into,
@@ -61,19 +61,19 @@ impl RobustEcdsaSignatureProvider {
         sign_request_store: Arc<SignRequestStorage>,
         keyshares: HashMap<DomainId, (KeygenOutput, ReconstructionThreshold)>,
     ) -> anyhow::Result<Self> {
-        let per_domain_data = ecdsa_common::build_per_domain_data(&clock, &db, &client, keyshares)?;
+        let keyshares = ecdsa_common::build_keyshares(&clock, &db, &client, keyshares)?;
 
         Ok(Self {
             config,
             mpc_config,
             client,
             sign_request_store,
-            per_domain_data,
+            keyshares,
         })
     }
 
-    pub(super) fn domain_data(&self, domain_id: DomainId) -> anyhow::Result<PerDomainData> {
-        ecdsa_common::lookup_domain_data(&self.per_domain_data, domain_id)
+    pub(super) fn keyshare(&self, domain_id: DomainId) -> anyhow::Result<EcdsaKeyshare> {
+        ecdsa_common::lookup_keyshare(&self.keyshares, domain_id)
     }
 }
 
@@ -184,7 +184,7 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
     async fn spawn_background_tasks(self: Arc<Self>) -> anyhow::Result<()> {
         let mut task_labels: Vec<String> = Vec::new();
         let generate_presignatures = self
-            .per_domain_data
+            .keyshares
             .iter()
             .map(|(domain_id, data)| {
                 task_labels.push(format!("presignature generation (domain {})", domain_id.0));

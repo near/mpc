@@ -148,12 +148,12 @@ impl EcdsaSignatureProvider {
         // owned by the leader, never one of ours.
         id.validate_owned_by(leader)?;
         paired_triple_id.validate_owned_by(leader)?;
-        let domain_data = self.domain_data(domain_id)?;
+        let keyshare = self.keyshare(domain_id)?;
 
         // The triple store is keyed by the domain's reconstruction threshold
         // `t`. For cait-sith the leader pairs exactly `t` participants, so the
         // channel participant count must match — cross-check it.
-        let threshold = domain_data.reconstruction_threshold;
+        let threshold = keyshare.reconstruction_threshold;
         let threshold_usize: usize = threshold.inner().try_into()?;
         if channel.participants().len() != threshold_usize {
             metrics::MPC_NUM_BAD_PEER_PRESIGN_REQUESTS.inc();
@@ -166,10 +166,10 @@ impl EcdsaSignatureProvider {
         let triple_store = self.triple_store_for_t(threshold)?;
         FollowerPresignComputation {
             threshold: TSReconstructionThreshold::from(threshold_usize),
-            keygen_out: domain_data.keyshare,
+            keygen_out: keyshare.keyshare,
             triple_store,
             paired_triple_id,
-            out_presignature_store: domain_data.presignature_store,
+            out_presignature_store: keyshare.presignature_store,
             out_presignature_id: id,
         }
         .perform_leader_centric_computation(

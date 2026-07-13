@@ -157,15 +157,15 @@ impl RobustEcdsaSignatureProvider {
         domain_id: DomainId,
     ) -> anyhow::Result<()> {
         id.validate_owned_by(channel.sender().get_leader())?;
-        let domain_data = self.domain_data(domain_id)?;
+        let keyshare = self.keyshare(domain_id)?;
 
         let (_num_signers, damgard_et_al_threshold) =
-            compute_thresholds(domain_data.reconstruction_threshold)?;
+            compute_thresholds(keyshare.reconstruction_threshold)?;
 
         FollowerPresignComputation {
             max_malicious: damgard_et_al_threshold,
-            keygen_out: domain_data.keyshare,
-            out_presignature_store: domain_data.presignature_store,
+            keygen_out: keyshare.keyshare,
+            out_presignature_store: keyshare.presignature_store,
             out_presignature_id: id,
         }
         .perform_leader_centric_computation(

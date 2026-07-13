@@ -57,10 +57,10 @@ where
     ) -> anyhow::Result<((dtos::ForeignTxSignPayload, Signature), VerifyingKey)> {
         let foreign_tx_request = self.verify_foreign_tx_request_store.get(id).await?;
 
-        let domain_data = self
+        let keyshare = self
             .ecdsa_signature_provider
-            .domain_data(foreign_tx_request.domain_id)?;
-        let (presignature_id, presignature) = domain_data.presignature_store.take_owned().await;
+            .keyshare(foreign_tx_request.domain_id)?;
+        let (presignature_id, presignature) = keyshare.presignature_store.take_owned().await;
         let participants = presignature.participants.clone();
         let channel = self.ecdsa_signature_provider.new_channel_for_task(
             VerifyForeignTxTaskId::VerifyForeignTx {

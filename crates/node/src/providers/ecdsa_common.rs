@@ -66,7 +66,7 @@ where
 }
 
 /// Everything a secp256k1 provider keeps per signing domain.
-pub struct PerDomainData<P>
+pub struct EcdsaKeyshare<P>
 where
     P: Serialize + DeserializeOwned + Send + 'static,
 {
@@ -78,7 +78,7 @@ where
 }
 
 // Manual `Clone` so callers don't need `P: Clone` — every field is `Clone` regardless of `P`.
-impl<P> Clone for PerDomainData<P>
+impl<P> Clone for EcdsaKeyshare<P>
 where
     P: Serialize + DeserializeOwned + Send + 'static,
 {
@@ -101,16 +101,16 @@ pub fn active_participants_query(
 
 /// Builds the per-domain map shared by both secp256k1 providers: one presignature store per domain,
 /// each paired with its keyshare and reconstruction threshold.
-pub fn build_per_domain_data<P>(
+pub fn build_keyshares<P>(
     clock: &Clock,
     db: &Arc<SecretDB>,
     client: &Arc<MeshNetworkClient>,
     keyshares: HashMap<DomainId, (KeygenOutput, ReconstructionThreshold)>,
-) -> anyhow::Result<HashMap<DomainId, PerDomainData<P>>>
+) -> anyhow::Result<HashMap<DomainId, EcdsaKeyshare<P>>>
 where
     P: Serialize + DeserializeOwned + Send + 'static,
 {
-    let mut per_domain_data = HashMap::new();
+    let mut result = HashMap::new();
     for (domain_id, (keyshare, reconstruction_threshold)) in keyshares {
         let presignature_store = Arc::new(PresignatureStorage::new(
             clock.clone(),
@@ -118,27 +118,27 @@ where
             client,
             domain_id,
         )?);
-        per_domain_data.insert(
+        result.insert(
             domain_id,
-            PerDomainData {
+            EcdsaKeyshare {
                 keyshare,
                 presignature_store,
                 reconstruction_threshold,
             },
         );
     }
-    Ok(per_domain_data)
+    Ok(result)
 }
 
-/// Looks up a domain's data, cloning it out of the map.
-pub fn lookup_domain_data<P>(
-    per_domain_data: &HashMap<DomainId, PerDomainData<P>>,
+/// Looks up a domain's keyshare, cloning it out of the map.
+pub fn lookup_keyshare<P>(
+    keyshares: &HashMap<DomainId, EcdsaKeyshare<P>>,
     domain_id: DomainId,
-) -> anyhow::Result<PerDomainData<P>>
+) -> anyhow::Result<EcdsaKeyshare<P>>
 where
     P: Serialize + DeserializeOwned + Send + 'static,
 {
-    per_domain_data
+    keyshares
         .get(&domain_id)
         .cloned()
         .ok_or_else(|| anyhow::anyhow!("No keyshare for domain {:?}", domain_id))
@@ -147,7 +147,7 @@ where
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::build_per_domain_data;
+    use super::build_keyshares;
     use crate::db::SecretDB;
     use crate::network::testing::run_test_clients;
     use crate::tests::into_participant_ids;
@@ -174,8 +174,7 @@ mod tests {
     // only checks indirectly (by running a full multi-node signing round): each domain must keep
     // its OWN reconstruction threshold, never a single shared/governance value.
     #[tokio::test]
-    async fn build_per_domain_data__should_pair_each_domain_with_its_own_reconstruction_threshold()
-    {
+    async fn build_keyshares__should_pair_each_domain_with_its_own_reconstruction_threshold() {
         start_root_task_with_periodic_dump(async move {
             run_test_clients(
                 into_participant_ids(&generate_participants(2)),
@@ -195,17 +194,17 @@ mod tests {
                     let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
 
                     // When
-                    let per_domain_data =
-                        build_per_domain_data::<Vec<u8>>(&Clock::real(), &db, &client, keyshares)
+                    let keyshares =
+                        build_keyshares::<Vec<u8>>(&Clock::real(), &db, &client, keyshares)
                             .unwrap();
 
                     // Then each domain keeps the threshold it was configured with
                     assert_eq!(
-                        per_domain_data[&low].reconstruction_threshold,
+                        keyshares[&low].reconstruction_threshold,
                         ReconstructionThreshold::new(2)
                     );
                     assert_eq!(
-                        per_domain_data[&high].reconstruction_threshold,
+                        keyshares[&high].reconstruction_threshold,
                         ReconstructionThreshold::new(3)
                     );
                     Ok(())

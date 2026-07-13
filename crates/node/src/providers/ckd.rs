@@ -44,11 +44,11 @@ pub struct CKDProvider {
     mpc_config: Arc<MpcConfig>,
     client: Arc<MeshNetworkClient>,
     ckd_request_store: Arc<CKDRequestStorage>,
-    per_domain_data: HashMap<DomainId, PerDomainData>,
+    keyshares: HashMap<DomainId, CkdKeyshare>,
 }
 
 #[derive(Clone)]
-pub(super) struct PerDomainData {
+pub(super) struct CkdKeyshare {
     pub keyshare: KeygenOutput,
     /// Per-domain reconstruction threshold `t`, used as the CKD threshold.
     pub reconstruction_threshold: ReconstructionThreshold,
@@ -62,12 +62,12 @@ impl CKDProvider {
         ckd_request_store: Arc<CKDRequestStorage>,
         keyshares: HashMap<DomainId, (KeygenOutput, ReconstructionThreshold)>,
     ) -> Self {
-        let per_domain_data = keyshares
+        let keyshares = keyshares
             .into_iter()
             .map(|(domain_id, (keyshare, reconstruction_threshold))| {
                 (
                     domain_id,
-                    PerDomainData {
+                    CkdKeyshare {
                         keyshare,
                         reconstruction_threshold,
                     },
@@ -79,12 +79,12 @@ impl CKDProvider {
             mpc_config,
             client,
             ckd_request_store,
-            per_domain_data,
+            keyshares,
         }
     }
 
-    pub(super) fn domain_data(&self, domain_id: DomainId) -> anyhow::Result<PerDomainData> {
-        self.per_domain_data
+    pub(super) fn keyshare(&self, domain_id: DomainId) -> anyhow::Result<CkdKeyshare> {
+        self.keyshares
             .get(&domain_id)
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("No keyshare for domain {:?}", domain_id))

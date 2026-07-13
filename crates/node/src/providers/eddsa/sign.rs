@@ -24,8 +24,8 @@ impl EddsaSignatureProvider {
     ) -> anyhow::Result<(Signature, VerifyingKey)> {
         let sign_request = self.sign_request_store.get(id).await?;
 
-        let domain_data = self.domain_data(sign_request.domain)?;
-        let threshold: usize = domain_data.reconstruction_threshold.inner().try_into()?;
+        let keyshare = self.keyshare(sign_request.domain)?;
+        let threshold: usize = keyshare.reconstruction_threshold.inner().try_into()?;
         let threshold = ReconstructionThreshold::from(threshold);
         let running_participants: Vec<_> = self
             .mpc_config
@@ -48,7 +48,7 @@ impl EddsaSignatureProvider {
             .new_channel_for_task(EddsaTaskId::Signature { id }, participants.clone())?;
 
         let result = SignComputation {
-            keygen_output: domain_data.keyshare,
+            keygen_output: keyshare.keyshare,
             threshold,
             message: sign_request
                 .payload
@@ -92,13 +92,13 @@ impl EddsaSignatureProvider {
         .await??;
         metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_LOOKUP_SUCCEEDED.inc();
 
-        let domain_data = self.domain_data(sign_request.domain)?;
-        let threshold: usize = domain_data.reconstruction_threshold.inner().try_into()?;
+        let keyshare = self.keyshare(sign_request.domain)?;
+        let threshold: usize = keyshare.reconstruction_threshold.inner().try_into()?;
         let threshold = ReconstructionThreshold::from(threshold);
 
         let participants = channel.participants().to_vec();
         let _ = SignComputation {
-            keygen_output: domain_data.keyshare,
+            keygen_output: keyshare.keyshare,
             threshold,
             message: sign_request
                 .payload

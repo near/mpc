@@ -33,11 +33,11 @@ pub struct EddsaSignatureProvider {
     mpc_config: Arc<MpcConfig>,
     client: Arc<MeshNetworkClient>,
     sign_request_store: Arc<SignRequestStorage>,
-    per_domain_data: HashMap<DomainId, PerDomainData>,
+    keyshares: HashMap<DomainId, EddsaKeyshare>,
 }
 
 #[derive(Clone)]
-pub(super) struct PerDomainData {
+pub(super) struct EddsaKeyshare {
     pub keyshare: KeygenOutput,
     /// Per-domain reconstruction threshold `t`, used as the FROST signing
     /// threshold.
@@ -52,12 +52,12 @@ impl EddsaSignatureProvider {
         sign_request_store: Arc<SignRequestStorage>,
         keyshares: HashMap<DomainId, (KeygenOutput, ReconstructionThreshold)>,
     ) -> Self {
-        let per_domain_data = keyshares
+        let keyshares = keyshares
             .into_iter()
             .map(|(domain_id, (keyshare, reconstruction_threshold))| {
                 (
                     domain_id,
-                    PerDomainData {
+                    EddsaKeyshare {
                         keyshare,
                         reconstruction_threshold,
                     },
@@ -69,12 +69,12 @@ impl EddsaSignatureProvider {
             mpc_config,
             client,
             sign_request_store,
-            per_domain_data,
+            keyshares,
         }
     }
 
-    pub(super) fn domain_data(&self, domain_id: DomainId) -> anyhow::Result<PerDomainData> {
-        self.per_domain_data
+    pub(super) fn keyshare(&self, domain_id: DomainId) -> anyhow::Result<EddsaKeyshare> {
+        self.keyshares
             .get(&domain_id)
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("No keyshare for domain {:?}", domain_id))
