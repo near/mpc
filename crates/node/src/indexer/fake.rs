@@ -63,7 +63,7 @@ pub struct FakeReadSupportedForeignChain {
 struct FakeAttestationExpiryReader;
 
 impl ReadAttestationExpiry for FakeAttestationExpiryReader {
-    fn read_stored_dstack_expiry<'a>(
+    fn read_stored_attestation_expiry<'a>(
         &'a self,
         _tls_public_key: &'a near_mpc_contract_interface::types::Ed25519PublicKey,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<Option<u64>>> + Send + 'a>>

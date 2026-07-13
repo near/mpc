@@ -208,7 +208,7 @@ pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Ti
         let allowed_launcher_compose_hashes_in_contract =
             allowed_launcher_compose_hashes_in_contract.borrow().clone();
         let pre_submit_expiry = match attestation_reader
-            .read_stored_dstack_expiry(&tls_public_key)
+            .read_stored_attestation_expiry(&tls_public_key)
             .await
         {
             Ok(baseline) => baseline, // None just means nothing stored yet (e.g. first submit)
@@ -333,7 +333,7 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
             let allowed_launcher_compose_hashes_in_contract =
                 allowed_launcher_compose_hashes_in_contract.borrow().clone();
             let pre_submit_expiry = match attestation_reader
-                .read_stored_dstack_expiry(&tls_public_key)
+                .read_stored_attestation_expiry(&tls_public_key)
                 .await
             {
                 Ok(baseline) => baseline, // None just means nothing stored yet (e.g. first submit)
@@ -409,7 +409,7 @@ mod tests {
     struct StubAttestationExpiryReader;
 
     impl crate::indexer::ReadAttestationExpiry for StubAttestationExpiryReader {
-        fn read_stored_dstack_expiry<'a>(
+        fn read_stored_attestation_expiry<'a>(
             &'a self,
             _tls_public_key: &'a Ed25519PublicKey,
         ) -> std::pin::Pin<
@@ -422,7 +422,7 @@ mod tests {
     struct FailingAttestationExpiryReader;
 
     impl crate::indexer::ReadAttestationExpiry for FailingAttestationExpiryReader {
-        fn read_stored_dstack_expiry<'a>(
+        fn read_stored_attestation_expiry<'a>(
             &'a self,
             _tls_public_key: &'a Ed25519PublicKey,
         ) -> std::pin::Pin<

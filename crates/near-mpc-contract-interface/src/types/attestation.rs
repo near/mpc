@@ -75,6 +75,18 @@ pub enum VerifiedAttestation {
     Mock(MockAttestation),
 }
 
+impl VerifiedAttestation {
+    /// The stored expiry timestamp, if the attestation carries one. `Dstack`
+    /// entries always do; a `Mock` entry does only when it was stamped with an
+    /// expiry — contracts predating #3293 store `Mock::Valid` without one.
+    pub fn expiry_timestamp_seconds(&self) -> Option<u64> {
+        match self {
+            VerifiedAttestation::Dstack(attestation) => Some(attestation.expiry_timestamp_seconds),
+            VerifiedAttestation::Mock(attestation) => attestation.expiry_timestamp_seconds(),
+        }
+    }
+}
+
 #[derive(
     Clone,
     Debug,
@@ -182,6 +194,20 @@ pub enum MockAttestation {
         expiry_timestamp_seconds: Option<u64>,
         expected_measurements: Option<VerifiedMeasurements>,
     },
+}
+
+impl MockAttestation {
+    /// The configured expiry timestamp, if any. `Valid` and `Invalid` never
+    /// carry one.
+    pub fn expiry_timestamp_seconds(&self) -> Option<u64> {
+        match self {
+            MockAttestation::WithConstraints {
+                expiry_timestamp_seconds,
+                ..
+            } => *expiry_timestamp_seconds,
+            MockAttestation::Valid | MockAttestation::Invalid => None,
+        }
+    }
 }
 
 // TODO(#3494): superseded by `tee_verifier_interface::Collateral`; remove
