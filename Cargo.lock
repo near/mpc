@@ -3716,9 +3716,22 @@ name = "foreign-chain-config-tester"
 version = "3.13.0"
 dependencies = [
  "anyhow",
+ "clap",
+ "foreign-chain-health-check",
+ "mpc-node-config",
+ "serde",
+ "serde_yaml",
+ "tokio",
+ "toml 1.1.2+spec-1.1.0",
+]
+
+[[package]]
+name = "foreign-chain-health-check"
+version = "3.13.0"
+dependencies = [
+ "anyhow",
  "assert_matches",
  "bs58 0.5.1",
- "clap",
  "foreign-chain-inspector",
  "foreign-chain-rpc-auth",
  "foreign-chain-rpc-interfaces",
@@ -3727,11 +3740,8 @@ dependencies = [
  "httpmock",
  "mpc-node-config",
  "near-mpc-bounded-collections",
- "serde",
  "serde_json",
- "serde_yaml",
  "tokio",
- "toml 1.1.2+spec-1.1.0",
 ]
 
 [[package]]

@@ -253,6 +253,7 @@ pub async fn check_aptos(
 mod tests {
     use super::*;
     use crate::golden;
+    use crate::network::Network;
     use assert_matches::assert_matches;
     use httpmock::prelude::*;
 
@@ -274,7 +275,7 @@ mod tests {
     async fn check_aptos__should_pass_when_provider_returns_golden_event() {
         // Given
         let server = MockServer::start_async().await;
-        let aptos = golden::golden_set(golden::Network::Mainnet).aptos.unwrap();
+        let aptos = golden::golden_set(Network::Mainnet).aptos.unwrap();
         let tx = aptos.tx;
         let mock = server
             .mock_async(|when, then| {
@@ -359,7 +360,7 @@ mod tests {
     #[tokio::test]
     async fn check_sui__should_pass_when_provider_is_on_the_expected_network() {
         // Given
-        let sui = golden::golden_set(golden::Network::Mainnet).sui.unwrap();
+        let sui = golden::golden_set(Network::Mainnet).sui.unwrap();
         let client = MockSuiClient {
             chain_id: sui.chain_id.to_string(),
         };
@@ -375,13 +376,13 @@ mod tests {
     async fn check_sui__should_fail_when_chain_id_differs() {
         // Given — a provider on a different network.
         let client = MockSuiClient {
-            chain_id: golden::golden_set(golden::Network::Testnet)
+            chain_id: golden::golden_set(Network::Testnet)
                 .sui
                 .unwrap()
                 .chain_id
                 .to_string(),
         };
-        let expected = golden::golden_set(golden::Network::Mainnet).sui.unwrap();
+        let expected = golden::golden_set(Network::Mainnet).sui.unwrap();
 
         // When
         let result = check_sui(client, expected.chain_id).await;
@@ -397,7 +398,7 @@ mod tests {
     async fn check_aptos__should_fail_when_event_type_tag_differs() {
         // Given
         let server = MockServer::start_async().await;
-        let aptos = golden::golden_set(golden::Network::Mainnet).aptos.unwrap();
+        let aptos = golden::golden_set(Network::Mainnet).aptos.unwrap();
         let tx = aptos.tx;
         server
             .mock_async(|when, then| {

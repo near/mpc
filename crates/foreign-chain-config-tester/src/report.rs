@@ -1,30 +1,8 @@
-//! Result aggregation and human-readable table rendering.
+//! Human-readable table rendering of the shared check results.
 
 use std::fmt::Write as _;
 
-#[derive(Debug)]
-pub enum Status {
-    Passed,
-    Failed(String),
-    Skipped(String),
-}
-
-#[derive(Debug)]
-pub struct ProviderResult {
-    pub chain: &'static str,
-    pub provider: String,
-    pub status: Status,
-}
-
-impl ProviderResult {
-    pub fn skipped(chain: &'static str, provider: String, reason: impl Into<String>) -> Self {
-        Self {
-            chain,
-            provider,
-            status: Status::Skipped(reason.into()),
-        }
-    }
-}
+use foreign_chain_health_check::{ProviderResult, Status};
 
 /// Whether any provider check failed (skips do not count as failures).
 pub fn any_failed(results: &[ProviderResult]) -> bool {

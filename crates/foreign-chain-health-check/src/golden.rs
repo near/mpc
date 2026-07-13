@@ -4,20 +4,7 @@
 
 use anyhow::Context;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
-pub enum Network {
-    Mainnet,
-    Testnet,
-}
-
-impl Network {
-    pub fn label(self) -> &'static str {
-        match self {
-            Network::Mainnet => "mainnet",
-            Network::Testnet => "testnet",
-        }
-    }
-}
+use crate::network::Network;
 
 /// Hashes are hex, with or without a `0x` prefix.
 #[derive(Clone, Copy)]
