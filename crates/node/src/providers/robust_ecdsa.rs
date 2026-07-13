@@ -182,10 +182,12 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
     }
 
     async fn spawn_background_tasks(self: Arc<Self>) -> anyhow::Result<()> {
+        let mut task_labels: Vec<String> = Vec::new();
         let generate_presignatures = self
             .per_domain_data
             .iter()
             .map(|(domain_id, data)| {
+                task_labels.push(format!("presignature generation (domain {})", domain_id.0));
                 tracking::spawn(
                     &format!("generate presignatures for domain {}", domain_id.0),
                     presign::run_background_presignature_generation(
@@ -201,13 +203,16 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
             })
             .collect::<Vec<_>>();
 
-        for Err(join_error) in futures::future::join_all(generate_presignatures).await {
-            tracing::error!(
-                "Damgard et al background presignature task ended unexpectedly: {join_error}"
-            );
+        // Generators are `-> !`, so `select_all` fails fast on the first (panicking) exit rather than `join_all` masking it behind the siblings' infinite loops.
+        if generate_presignatures.is_empty() {
+            return Ok(());
         }
-
-        Ok(())
+        let (Err(join_error), index, _remaining) =
+            futures::future::select_all(generate_presignatures).await;
+        anyhow::bail!(
+            "Damgard et al background {} task ended unexpectedly: {join_error}",
+            task_labels[index]
+        )
     }
 }
 

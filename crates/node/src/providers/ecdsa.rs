@@ -250,9 +250,11 @@ impl SignatureProvider for EcdsaSignatureProvider {
         // triples are generated with exactly `t` parties, so each store is fed
         // by a generator running at its own threshold.
         let mut generate_triples = Vec::new();
+        let mut task_labels: Vec<String> = Vec::new();
         for (&t, triple_store) in &self.triple_stores {
             let threshold_usize: usize = t.inner().try_into()?;
             let threshold_bound = TSReconstructionThreshold::from(threshold_usize);
+            task_labels.push(format!("triple generation (t={})", t.inner()));
             generate_triples.push(tracking::spawn(
                 &format!("generate triples for t={}", t.inner()),
                 Self::run_background_triple_generation(
@@ -278,6 +280,7 @@ impl SignatureProvider for EcdsaSignatureProvider {
             let threshold_usize: usize = t.inner().try_into()?;
             let threshold_bound = TSReconstructionThreshold::from(threshold_usize);
             let triple_store = self.triple_store_for_t(t)?;
+            task_labels.push(format!("presignature generation (domain {})", domain_id.0));
             generate_presignatures.push(tracking::spawn(
                 &format!("generate presignatures for domain {}", domain_id.0),
                 Self::run_background_presignature_generation(
@@ -292,15 +295,18 @@ impl SignatureProvider for EcdsaSignatureProvider {
             ));
         }
 
-        for Err(join_error) in futures::future::join_all(generate_triples).await {
-            tracing::error!(
-                "ecdsa background triple generation task ended unexpectedly: {join_error}"
-            );
-        }
-        for Err(join_error) in futures::future::join_all(generate_presignatures).await {
-            tracing::error!("ecdsa background presignature task ended unexpectedly: {join_error}");
-        }
+        let mut background_tasks = generate_triples;
+        background_tasks.extend(generate_presignatures);
 
-        Ok(())
+        // Generators are `-> !`, so `select_all` fails fast on the first (panicking) exit rather than `join_all` masking it behind the siblings' infinite loops.
+        if background_tasks.is_empty() {
+            return Ok(());
+        }
+        let (Err(join_error), index, _remaining) =
+            futures::future::select_all(background_tasks).await;
+        anyhow::bail!(
+            "ecdsa background {} task ended unexpectedly: {join_error}",
+            task_labels[index]
+        )
     }
 }
